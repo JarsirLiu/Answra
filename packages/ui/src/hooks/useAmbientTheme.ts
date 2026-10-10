@@ -138,8 +138,6 @@ export const FALLBACK_TOKEN_KEYS = [
   "--icon-tint",
   "--glass-tint",
   "--glass-base",
-  "--glass-strong-tint",
-  "--glass-strong-base",
   "--panel-tint",
   "--panel-base",
   "--line-tint",

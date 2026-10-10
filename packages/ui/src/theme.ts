@@ -34,7 +34,7 @@ export const COLOR_GROUPS = {
   icon: { label: "图标", tokens: ["--icon-tint"] },
   surface: {
     label: "背景",
-    tokens: ["--glass-tint", "--glass-strong-tint", "--panel-tint", "--paper-tint"],
+    tokens: ["--glass-tint", "--panel-tint", "--paper-tint"],
   },
   accent: {
     label: "强调",

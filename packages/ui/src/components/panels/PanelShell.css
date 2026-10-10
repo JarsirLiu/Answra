@@ -10,9 +10,8 @@
   min-height: 400px;
   border: 1px solid var(--glass-line);
   border-radius: calc(var(--bar-radius) + 1px);
-  /* 注意：Electron 透明窗口中 backdrop-filter 只能模糊页面内元素，
-     糊不到窗口后面的编辑器内容，属无效开销；可读性完全由
-     --panel 的 alpha 地板保证（深色主题基数更高，见 tokens.css）。 */
+  /* 面板完全不透明（--panel-base: 1）：透明窗口里背景画面不参与混色，
+     内容区颜色绝对稳定，不随背后编辑器内容变化；透明感由胶囊条承担。 */
   background: var(--panel);
   box-shadow: var(--shadow-pop);
 }

@@ -53,15 +53,14 @@
   /* 【图标】比正文略柔，保证玻璃上可辨 */
   --icon-tint: 61 70 73;
 
-  /* 【背景与表面】glass=胶囊条 panel=内容面板/菜单 paper=纸面
-     半透明玻璃 + backdrop blur 保证可读；同一色相（中性冷灰，
-     低饱和：深浅背景上都不过分抢眼），alpha 才是透明度感的来源 */
-  --glass-tint: 236 240 242;
-  --glass-base: 0.62;
-  --glass-strong-tint: 236 240 242;
-  --glass-strong-base: 0.75;
-  --panel-tint: 236 240 242;
-  --panel-base: 0.78;
+  /* 【背景与表面】glass=胶囊条（半透明，随透明度滑杆变化）
+     panel=内容面板/菜单（完全不透明：背景不参与混色，颜色绝对稳定，
+     根除"随背后编辑器内容变化而变色"）paper=纸面
+     三者同一固有色 #A5C5DC；胶囊因半透明会略微偏浅，属设计预期 */
+  --glass-tint: 165 197 220;
+  --glass-base: 0.8;
+  --panel-tint: 165 197 220;
+  --panel-base: 1;
   --paper-tint: 255 255 255;
 
   /* 【强调】品牌薄荷绿系 */
@@ -101,8 +100,8 @@
   --mint-line: rgb(var(--mint-tint) / calc(0.25 * var(--fade)));
   --mint-line-focus: rgb(var(--mint-tint) / calc(0.5 * var(--fade)));
   --glass: rgb(var(--glass-tint) / max(calc(var(--glass-base) * var(--fade)), 0.55));
-  --glass-strong: rgb(var(--glass-strong-tint) / max(calc(var(--glass-strong-base) * var(--fade)), 0.7));
-  --panel: rgb(var(--panel-tint) / max(calc(var(--panel-base) * var(--fade)), 0.72));
+  /* 面板不随 fade 缩放：内容区颜色稳定是硬需求；透明感由胶囊承担 */
+  --panel: rgb(var(--panel-tint) / var(--panel-base));
   --glass-line: rgb(var(--line-tint) / calc(var(--line-base) * var(--fade)));
   --glass-line-soft: rgb(var(--line-tint) / calc(var(--line-soft-base) * var(--fade)));
   --hover: rgb(var(--hover-tint) / max(calc(var(--hover-base) * var(--fade)), 0.08));
@@ -129,14 +128,12 @@
   --ink-tint: 224 230 234;
   --icon-tint: 198 207 213;
 
-  /* 【背景与表面】深色冷灰玻璃。深色下底层编辑器的亮字更易透出，
-     alpha 基数整体高于浅色一档，压住透底 */
+  /* 【背景与表面】深色冷灰。面板与浅色同策略：完全不透明，
+     背景零参与混色；胶囊保留低透明弱存在感 */
   --glass-tint: 26 31 35;
   --glass-base: 0.78;
-  --glass-strong-tint: 31 37 42;
-  --glass-strong-base: 0.86;
   --panel-tint: 27 32 37;
-  --panel-base: 0.92;
+  --panel-base: 1;
   --paper-tint: 42 49 55;
 
   /* 【强调】薄荷绿提亮两档，深底上保持可辨 */
