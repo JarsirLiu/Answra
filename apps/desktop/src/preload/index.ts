@@ -1,4 +1,10 @@
-import { type ContentSize, type DesktopBridge, WindowChannels } from "@exam-assistant/shared";
+import {
+  AmbientChannels,
+  type AmbientColorPayload,
+  type ContentSize,
+  type DesktopBridge,
+  WindowChannels,
+} from "@exam-assistant/shared";
 import { contextBridge, ipcRenderer } from "electron";
 
 /**
@@ -11,6 +17,15 @@ const bridge: DesktopBridge = {
   },
   close: () => {
     ipcRenderer.send(WindowChannels.Close);
+  },
+  onAmbientColor: (listener: (payload: AmbientColorPayload) => void) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, payload: AmbientColorPayload) => {
+      listener(payload);
+    };
+    ipcRenderer.on(AmbientChannels.AmbientColor, wrapped);
+    return () => {
+      ipcRenderer.removeListener(AmbientChannels.AmbientColor, wrapped);
+    };
   },
 };
 

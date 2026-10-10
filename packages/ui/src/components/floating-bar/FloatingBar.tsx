@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
-import type { Mode, ModeAction, ModeDefinition, Panel } from "../../model";
 import { useDismissableOpen } from "../../hooks/useDismissableOpen";
+import type { Mode, ModeAction, ModeDefinition, Panel } from "../../model";
 import { FeatureActions } from "./FeatureActions";
 import { ModeMenu, ModePicker } from "./ModePicker";
 import { WorkspaceControls } from "./WorkspaceControls";

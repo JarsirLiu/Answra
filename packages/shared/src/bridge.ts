@@ -1,4 +1,4 @@
-import type { ContentSize } from "./channels";
+import type { AmbientColorPayload, ContentSize } from "./channels";
 
 /**
  * 悬浮条窗口的内容面板标识。
@@ -15,4 +15,9 @@ export interface DesktopBridge {
   fitContent: (size: ContentSize) => void;
   /** 关闭应用窗口。 */
   close: () => void;
+  /**
+   * 订阅背景主色推送（变色龙主题）；返回取消订阅函数。
+   * 浏览器预览/测试环境可未实现，调用方需判空。
+   */
+  onAmbientColor?: (listener: (payload: AmbientColorPayload) => void) => () => void;
 }

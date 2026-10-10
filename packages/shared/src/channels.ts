@@ -21,6 +21,25 @@ export interface ContentSize {
   height: number;
 }
 
+export const AmbientChannels = {
+  /**
+   * 主进程推送背景主色采样结果（变色龙主题）。
+   * 主进程经 desktopCapturer 采样悬浮条周边背景色后主动推送，
+   * 渲染器据此重算设计令牌；ok=false 表示采样失败，应回落默认主题。
+   */
+  AmbientColor: "exam-assistant:ambient:color",
+} as const;
+
+/** 背景主色采样结果（主进程 → 渲染进程推送）。 */
+export interface AmbientColorPayload {
+  /** 采样是否成功；失败时 hex/luminance 无效。 */
+  ok: boolean;
+  /** 背景主色，#rrggbb。 */
+  hex: string;
+  /** 背景相对亮度（0~1，sRGB 加权）。 */
+  luminance: number;
+}
+
 /**
  * 频道 → 请求/响应载荷 的类型映射。
  * preload 与 main 的 handler 均以此为准，实现三层类型安全。

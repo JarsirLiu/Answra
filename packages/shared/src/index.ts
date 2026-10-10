@@ -1,5 +1,7 @@
 export type { DesktopBridge, OverlayMode } from "./bridge";
 export {
+  AmbientChannels,
+  type AmbientColorPayload,
   type ChannelRequest,
   type ChannelResponse,
   type ContentSize,

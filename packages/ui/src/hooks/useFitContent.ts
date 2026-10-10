@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
 import type { DesktopBridge } from "@exam-assistant/shared";
+import { useEffect, useRef } from "react";
 
 /**
  * 外壳尺寸上报：ResizeObserver 观察 .overlay-root（fit-content 布局），

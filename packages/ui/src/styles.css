@@ -27,10 +27,12 @@
   --font-xs: 10px;
   --font-2xs: 9.5px;
 
-  /* 颜色令牌：浅色玻璃 */
+  /* 颜色令牌：浅色玻璃（变色龙主题会运行时覆盖其中性色） */
   --ink: #23282b;
+  --ink-soft: #3d4649;
   --muted: #6f787c;
   --faint: #9aa3a6;
+  --focus-ring: rgba(0, 0, 0, 0.35);
   --mint: #2fa171;
   --mint-deep: #278a60;
   --mint-wash: rgba(47, 161, 113, 0.13);
@@ -67,7 +69,7 @@ button {
 button:focus-visible,
 textarea:focus-visible,
 input:focus-visible {
-  outline: 1.5px solid rgba(0, 0, 0, 0.35);
+  outline: 1.5px solid var(--focus-ring);
   outline-offset: 1px;
 }
 
@@ -429,7 +431,7 @@ input:focus-visible {
   padding: 8px 10px;
   border: 1px solid var(--glass-line-soft);
   border-radius: 4px 11px 11px;
-  color: #3d4649;
+  color: var(--ink-soft);
   background: var(--field);
   font-size: 12px;
   line-height: 1.65;
@@ -638,7 +640,7 @@ input:focus-visible {
   clip: rect(0, 0, 0, 0);
 }
 .file-picker:focus-within {
-  outline: 1.5px solid rgba(0, 0, 0, 0.35);
+  outline: 1.5px solid var(--focus-ring);
   outline-offset: 1px;
 }
 .source-list {

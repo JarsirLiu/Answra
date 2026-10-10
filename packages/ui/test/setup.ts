@@ -15,5 +15,5 @@ Object.defineProperty(URL, "revokeObjectURL", {
 
 Object.defineProperty(window, "examAssistant", {
   configurable: true,
-  value: { fitContent: vi.fn(), close: vi.fn() },
+  value: { fitContent: vi.fn(), close: vi.fn(), onAmbientColor: vi.fn(() => () => {}) },
 });

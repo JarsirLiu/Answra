@@ -71,3 +71,6 @@ export const WELCOME_MESSAGE =
   "选择一个功能开始。笔试模式可以添加题目截图，再补充问题一起发送；会议模式可用会议记录记要点。";
 
 export const NOTE_STORAGE_KEY = "exam-assistant-note";
+
+/** 变色龙主题开关的本地持久化键；缺省视为开启。 */
+export const AMBIENT_FOLLOW_STORAGE_KEY = "exam-assistant-ambient-follow";

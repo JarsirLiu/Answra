@@ -5,8 +5,10 @@ import { type ChatAttachment, type ChatMessage, ChatPanel } from "../components/
 import { NotesPanel } from "../components/panels/NotesPanel";
 import { SettingsPanel } from "../components/panels/SettingsPanel";
 import { SourcesPanel } from "../components/panels/SourcesPanel";
+import { useAmbientTheme } from "../hooks/useAmbientTheme";
 import { useFitContent } from "../hooks/useFitContent";
 import {
+  AMBIENT_FOLLOW_STORAGE_KEY,
   MODES,
   type Mode,
   type ModeAction,
@@ -35,8 +37,17 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
   const [note, setNote] = useState(() => localStorage.getItem(NOTE_STORAGE_KEY) ?? "");
   const [sources, setSources] = useState<string[]>([]);
   const [localOnly, setLocalOnly] = useState(true);
+  const [ambientFollow, setAmbientFollow] = useState(
+    () => localStorage.getItem(AMBIENT_FOLLOW_STORAGE_KEY) !== "off",
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { ref: shellRef } = useFitContent(platform);
+  useAmbientTheme(platform, ambientFollow);
+
+  function setAmbientFollowPersisted(value: boolean) {
+    setAmbientFollow(value);
+    localStorage.setItem(AMBIENT_FOLLOW_STORAGE_KEY, value ? "on" : "off");
+  }
 
   function openPanel(next: Panel) {
     setPanel(next);
@@ -152,8 +163,10 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
 
       {panel === "settings" && (
         <SettingsPanel
+          ambientFollow={ambientFollow}
           localOnly={localOnly}
           modeLabel={modeLabel}
+          onAmbientFollowChange={setAmbientFollowPersisted}
           onClose={() => openPanel("closed")}
           onLocalOnlyChange={setLocalOnly}
         />

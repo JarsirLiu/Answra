@@ -59,6 +59,21 @@ describe("three-segment floating navigation", () => {
     expect(screen.getByText("尚未连接")).toBeInTheDocument();
   });
 
+  it("toggles ambient background following in settings and persists the choice", () => {
+    render(<FloatingBarApp />);
+    fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
+
+    const toggle = screen.getByRole("checkbox", { name: /跟随背景色/ });
+    expect(toggle).toBeChecked();
+
+    fireEvent.click(toggle);
+    expect(toggle).not.toBeChecked();
+    expect(localStorage.getItem("exam-assistant-ambient-follow")).toBe("off");
+
+    fireEvent.click(toggle);
+    expect(localStorage.getItem("exam-assistant-ambient-follow")).toBe("on");
+  });
+
   it("reports shell content size through the bridge and closes on demand", () => {
     const bridge = { fitContent: vi.fn(), close: vi.fn() };
     render(<FloatingBarApp bridge={bridge} />);
