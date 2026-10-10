@@ -14,14 +14,12 @@
         cursor: default;
         user-select: none;
       }
-      /* 选区只画一圈虚线，不加深色蒙层与色块填充：变色龙理念下尽量不干扰屏幕。
-         白色虚线负责深色背景可见性，外圈极淡深色描边负责浅色背景可见性。 */
+      /* 选区只有一圈虚线框：无蒙层、无填充、无外圈描边，变色龙理念下
+         对屏幕零干扰。颜色取中性中灰，深色与浅色背景上都可见。 */
       #rect {
         position: fixed;
         display: none;
-        border: 1px dashed rgba(255, 255, 255, 0.95);
-        box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.35);
-        background: rgba(255, 255, 255, 0.04);
+        border: 1px dashed rgba(148, 163, 184, 0.9);
       }
     </style>
   </head>
