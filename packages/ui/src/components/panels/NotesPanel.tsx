@@ -12,7 +12,7 @@ interface NotesPanelProps {
 /** 笔记本面板：备忘录式草稿，本地自动保存。 */
 export function NotesPanel({ note, modeLabel, onNoteChange, onClose }: NotesPanelProps) {
   return (
-    <PanelShell modeLabel={modeLabel} onClose={onClose} title="笔记本">
+    <PanelShell modeLabel={modeLabel} onClose={onClose} title="笔记本" variant="notes">
       <div className="notes-panel">
         <label htmlFor="exam-note">个人笔记</label>
         <textarea

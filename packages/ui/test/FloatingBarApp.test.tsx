@@ -59,14 +59,14 @@ describe("three-segment floating navigation", () => {
     expect(screen.getByText("尚未连接")).toBeInTheDocument();
   });
 
-  it("forwards mode switches and close through the desktop bridge", () => {
-    const bridge = { setMode: vi.fn(), close: vi.fn() };
+  it("reports shell content size through the bridge and closes on demand", () => {
+    const bridge = { fitContent: vi.fn(), close: vi.fn() };
     render(<FloatingBarApp bridge={bridge} />);
 
     fireEvent.click(screen.getByRole("button", { name: "打开笔记本" }));
-    expect(bridge.setMode).toHaveBeenCalledWith("notes");
+    expect(screen.getByRole("heading", { name: "笔记本" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "收起面板" }));
-    expect(bridge.setMode).toHaveBeenCalledWith("closed");
+    expect(screen.queryByRole("heading", { name: "笔记本" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "关闭应用" }));
     expect(bridge.close).toHaveBeenCalled();
   });

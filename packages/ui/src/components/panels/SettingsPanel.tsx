@@ -15,7 +15,7 @@ export function SettingsPanel({
   onClose,
 }: SettingsPanelProps) {
   return (
-    <PanelShell modeLabel={modeLabel} onClose={onClose} title="设置">
+    <PanelShell modeLabel={modeLabel} onClose={onClose} title="设置" variant="settings">
       <div className="settings-panel">
         <h2>本地运行</h2>
         <p>当前原型不连接云端服务。AI 服务将在后续本地 API 阶段配置。</p>

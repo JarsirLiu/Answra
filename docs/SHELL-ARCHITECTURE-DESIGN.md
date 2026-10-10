@@ -1,6 +1,6 @@
 # 悬浮壳架构演进方案
 
-状态：设计提案，供审查。现有交互描述见 `FLOATING-BAR-INTERACTION.md`，本文记录架构层的问题、决策与方案。
+状态：设计提案，供审查。决策一、二、三已落地（窗口 fit-content、FeatureRegistry 分段、Surface 拆分），见 `packages/ui` 与 `apps/desktop/src/main/window.ts`；决策四~六待实施。现有交互描述见 `FLOATING-BAR-INTERACTION.md`。
 
 ## 问题：胶囊过大
 

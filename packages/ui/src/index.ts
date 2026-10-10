@@ -1,7 +1,7 @@
 export { FloatingBarApp } from "./app/FloatingBarApp";
 export { FeatureActions } from "./components/floating-bar/FeatureActions";
 export { FloatingBar } from "./components/floating-bar/FloatingBar";
-export { ModePicker } from "./components/floating-bar/ModePicker";
+export { ModeMenu, ModePicker } from "./components/floating-bar/ModePicker";
 export { WorkspaceControls } from "./components/floating-bar/WorkspaceControls";
 export type { ChatAttachment, ChatMessage } from "./components/panels/ChatPanel";
 export { PanelShell } from "./components/panels/PanelShell";

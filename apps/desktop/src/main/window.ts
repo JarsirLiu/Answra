@@ -1,41 +1,42 @@
 import path from "node:path";
-import type { OverlayMode } from "@exam-assistant/shared";
+import type { ContentSize } from "@exam-assistant/shared";
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron";
 import { app, BrowserWindow, screen } from "electron";
 
-/** 各面板打开时的窗口高度；closed = 仅悬浮条。 */
-const WINDOW_HEIGHTS: Record<OverlayMode, number> = {
-  closed: 52,
-  chat: 760,
-  notes: 620,
-  sources: 620,
-  settings: 560,
-};
-
-const WINDOW_WIDTH = 780;
 const WORK_AREA_MARGIN = 24;
+/** 初始胶囊尺寸的兜底值；真实尺寸由渲染进程 fitContent 上报。 */
+const INITIAL_SIZE: ContentSize = { width: 340, height: 60 };
+/** 内容尺寸的绝对上限，防止渲染器异常上报撑爆屏幕。 */
+const MAX_SIZE: ContentSize = { width: 1200, height: 900 };
 
 let windowRef: BrowserWindow | undefined;
 
-function computeBounds(mode: OverlayMode): { x: number; y: number; width: number; height: number } {
+/** 把内容尺寸 clamp 到当前显示器工作区。 */
+function clampToWorkArea(size: ContentSize): ContentSize {
   const display = windowRef
     ? screen.getDisplayMatching(windowRef.getBounds())
     : screen.getPrimaryDisplay();
-  const { x: areaX, y: areaY, width: areaWidth, height: areaHeight } = display.workArea;
-  const width = Math.min(WINDOW_WIDTH, areaWidth - WORK_AREA_MARGIN);
-  const height = Math.min(WINDOW_HEIGHTS[mode], areaHeight - WORK_AREA_MARGIN);
+  const { width: areaWidth, height: areaHeight } = display.workArea;
   return {
-    width,
-    height,
-    x: Math.round(areaX + (areaWidth - width) / 2),
-    y: areaY + 12,
+    width: Math.min(size.width, MAX_SIZE.width, areaWidth - WORK_AREA_MARGIN),
+    height: Math.min(size.height, MAX_SIZE.height, areaHeight - WORK_AREA_MARGIN),
   };
 }
 
-/** 按面板模式调整窗口大小，保持居中并限制在当前显示器工作区内。 */
-export function resizeWindowForMode(mode: OverlayMode): void {
+/**
+ * 按渲染器上报的内容尺寸调整窗口，保持左上角锚点不动，
+ * 并把窗口整体推回工作区内。窗口尺寸永远紧贴外壳内容，
+ * 胶囊态窗口即胶囊大小，面板打开时向下/向右扩展。
+ */
+export function resizeWindowToContent(size: ContentSize): void {
   if (!windowRef || windowRef.isDestroyed()) return;
-  windowRef.setBounds(computeBounds(mode), true);
+  const clamped = clampToWorkArea(size);
+  const display = screen.getDisplayMatching(windowRef.getBounds());
+  const { x: areaX, y: areaY, width: areaWidth, height: areaHeight } = display.workArea;
+  const bounds = windowRef.getBounds();
+  const x = Math.min(Math.max(bounds.x, areaX), areaX + areaWidth - clamped.width);
+  const y = Math.min(Math.max(bounds.y, areaY), areaY + areaHeight - clamped.height);
+  windowRef.setBounds({ x, y, ...clamped }, true);
 }
 
 export function getWindow(): BrowserWindow | undefined {
@@ -51,11 +52,16 @@ export function isWindowFromSender(
 }
 
 export function createMainWindow(): BrowserWindow {
+  const display = screen.getPrimaryDisplay();
+  const initial = clampToWorkArea(INITIAL_SIZE);
+  const { x: areaX, y: areaY, width: areaWidth } = display.workArea;
   const createdWindow = new BrowserWindow({
-    ...computeBounds("closed"),
-    minWidth: 680,
-    minHeight: WINDOW_HEIGHTS.closed,
-    maxHeight: 900,
+    x: Math.round(areaX + (areaWidth - initial.width) / 2),
+    y: areaY + 12,
+    width: initial.width,
+    height: initial.height,
+    minWidth: 200,
+    minHeight: 40,
     frame: false,
     transparent: true,
     backgroundColor: "#00000000",

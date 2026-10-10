@@ -5,6 +5,7 @@ import { type ChatAttachment, type ChatMessage, ChatPanel } from "../components/
 import { NotesPanel } from "../components/panels/NotesPanel";
 import { SettingsPanel } from "../components/panels/SettingsPanel";
 import { SourcesPanel } from "../components/panels/SourcesPanel";
+import { useFitContent } from "../hooks/useFitContent";
 import {
   MODES,
   type Mode,
@@ -35,10 +36,10 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
   const [sources, setSources] = useState<string[]>([]);
   const [localOnly, setLocalOnly] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { ref: shellRef } = useFitContent(platform);
 
   function openPanel(next: Panel) {
     setPanel(next);
-    platform?.setMode(next);
   }
 
   function togglePanel(target: Exclude<Panel, "closed">) {
@@ -105,7 +106,7 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
   const modeLabel = MODES.find((item) => item.id === mode)?.label ?? "";
 
   return (
-    <main className="overlay-root">
+    <main className="overlay-root" ref={shellRef}>
       <FloatingBar
         mode={mode}
         modes={MODES}

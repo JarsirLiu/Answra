@@ -2,6 +2,7 @@ export type { DesktopBridge, OverlayMode } from "./bridge";
 export {
   type ChannelRequest,
   type ChannelResponse,
+  type ContentSize,
   type WindowChannelMap,
   WindowChannels,
 } from "./channels";

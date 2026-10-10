@@ -52,6 +52,7 @@ export function ChatPanel({
       modeLabel={modeLabel}
       onClose={onClose}
       title="AI 对话"
+      variant="chat"
     >
       <div aria-live="polite" className="conversation">
         {messages.map((message) => (

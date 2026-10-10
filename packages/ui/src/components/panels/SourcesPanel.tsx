@@ -17,7 +17,7 @@ export function SourcesPanel({ sources, modeLabel, onSourcesChange, onClose }: S
   }
 
   return (
-    <PanelShell modeLabel={modeLabel} onClose={onClose} title="参考资料">
+    <PanelShell modeLabel={modeLabel} onClose={onClose} title="参考资料" variant="sources">
       <div className="sources-panel">
         <div className="sources-title">
           <FileText aria-hidden="true" size={ICON_SM + 1} />

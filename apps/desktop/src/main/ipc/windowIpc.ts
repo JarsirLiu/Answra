@@ -1,6 +1,6 @@
-import { WindowChannels } from "@exam-assistant/shared";
+import { type ContentSize, WindowChannels } from "@exam-assistant/shared";
 import { ipcMain } from "electron";
-import { getWindow, isWindowFromSender, resizeWindowForMode } from "../window";
+import { getWindow, isWindowFromSender, resizeWindowToContent } from "../window";
 
 /**
  * 窗口控制 IPC。
@@ -8,9 +8,10 @@ import { getWindow, isWindowFromSender, resizeWindowForMode } from "../window";
  * 渲染进程只能通过 preload 暴露的桥访问，不直接触碰 ipcRenderer。
  */
 export function registerWindowIpc(): void {
-  ipcMain.on(WindowChannels.SetMode, (event, mode) => {
+  ipcMain.on(WindowChannels.FitContent, (event, size: ContentSize) => {
     if (!isWindowFromSender(getWindow(), event)) return;
-    resizeWindowForMode(mode);
+    if (!isValidSize(size)) return;
+    resizeWindowToContent(size);
   });
 
   ipcMain.on(WindowChannels.Close, (event) => {
@@ -18,4 +19,15 @@ export function registerWindowIpc(): void {
     if (!isWindowFromSender(window, event)) return;
     window?.close();
   });
+}
+
+function isValidSize(size: ContentSize): boolean {
+  return (
+    typeof size === "object" &&
+    size !== null &&
+    Number.isFinite(size.width) &&
+    Number.isFinite(size.height) &&
+    size.width > 0 &&
+    size.height > 0
+  );
 }

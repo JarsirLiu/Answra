@@ -4,6 +4,8 @@ import { ICON_SM } from "../../tokens";
 
 interface PanelShellProps {
   title: string;
+  /** 面板变体，对应 styles.css 的 content-panel--<variant> 尺寸分支。 */
+  variant: "chat" | "notes" | "sources" | "settings";
   modeLabel: string;
   /** 头部右侧的上下文提示（如“截图已添加”）。 */
   context?: string;
@@ -12,9 +14,16 @@ interface PanelShellProps {
 }
 
 /** 内容面板通用外壳：头部（标题/上下文/关闭）+ 内容区。 */
-export function PanelShell({ title, modeLabel, context, onClose, children }: PanelShellProps) {
+export function PanelShell({
+  title,
+  variant,
+  modeLabel,
+  context,
+  onClose,
+  children,
+}: PanelShellProps) {
   return (
-    <section aria-label={title} className={`content-panel content-panel--${title}`}>
+    <section aria-label={title} className={`content-panel content-panel--${variant}`}>
       <header className="panel-header">
         <div className="panel-heading">
           <div className="panel-mark">
