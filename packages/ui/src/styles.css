@@ -7,10 +7,12 @@
    分层结构：
      styles/tokens.css        设计令牌（:root 变量，变色龙主题运行时覆盖）
      styles/base.css          reset / 焦点可见性 / 应用外壳布局
+     styles/shared.css        跨面板共享的组件观感（如输入表面）
      components 目录          各组件同置样式，与组件文件一一对应
    ============================================================ */
 @import "./styles/tokens.css";
 @import "./styles/base.css";
+@import "./styles/shared.css";
 @import "./components/floating-bar/FloatingBar.css";
 @import "./components/floating-bar/ModePicker.css";
 @import "./components/floating-bar/FeatureActions.css";

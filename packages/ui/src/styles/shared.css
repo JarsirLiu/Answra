@@ -1,0 +1,13 @@
+/* ── 共享组件样式：跨面板复用的观感，在此统一管理 ─────────────────
+   面板内所有输入/编辑区（笔记本 textarea、对话 composer 等）一律挂
+   .input-surface，禁止各面板自定背景色/边框色，防止改一处漏一处。 */
+.input-surface {
+  border: 1px solid var(--glass-line);
+  border-radius: 9px;
+  background: var(--field-strong);
+  transition: border-color 140ms ease-out;
+}
+.input-surface:focus,
+.input-surface:focus-within {
+  border-color: var(--mint-line-focus);
+}

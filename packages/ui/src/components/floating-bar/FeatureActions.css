@@ -17,7 +17,7 @@
   padding: 0 var(--ctl-pad-x);
   border: 0;
   border-radius: var(--ctl-radius);
-  color: var(--ink);
+  color: var(--icon);
   background: transparent;
   cursor: pointer;
   transition:
@@ -33,16 +33,18 @@
 .feature-action--primary {
   min-width: 52px;
   gap: 4px;
-  color: var(--mint-text);
+  /* 主操作只靠底色与描边区分，图标颜色与其余图标保持统一 */
+  color: var(--icon);
   background: var(--mint-wash);
-  box-shadow: inset 0 0 0 1px rgba(47, 161, 113, 0.22);
+  box-shadow: inset 0 0 0 1px var(--mint-line);
 }
 .feature-action--primary:hover {
-  color: var(--mint-deep);
-  background: rgba(47, 161, 113, 0.2);
+  color: var(--icon);
+  background: var(--mint-wash-strong);
 }
 .feature-action--soon {
-  color: var(--faint);
+  /* 禁用占位：图标颜色不弱化，靠底色与 not-allowed 光标表达禁用 */
+  color: var(--icon);
   background: var(--field);
   cursor: not-allowed;
 }
@@ -50,6 +52,6 @@
   background: var(--field);
 }
 .feature-action.is-active {
-  color: var(--mint-text);
+  color: var(--icon);
   background: var(--mint-wash);
 }

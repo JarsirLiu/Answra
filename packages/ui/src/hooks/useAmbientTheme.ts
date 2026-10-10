@@ -116,6 +116,7 @@ export function deriveAmbientTokens(hex: string): AmbientTokens | undefined {
   return {
     "--ink-tint": toChannels(ink),
     "--ink-soft-tint": toChannels(inkSoft),
+    "--icon-tint": toChannels(inkSoft),
     "--muted-tint": toChannels(muted),
     "--faint-tint": toChannels(faint),
     "--glass-tint": toChannels(bg),
@@ -140,6 +141,7 @@ export function deriveAmbientTokens(hex: string): AmbientTokens | undefined {
 const FALLBACK_TOKEN_KEYS = [
   "--ink-tint",
   "--ink-soft-tint",
+  "--icon-tint",
   "--muted-tint",
   "--faint-tint",
   "--glass-tint",

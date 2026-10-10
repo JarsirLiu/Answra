@@ -10,16 +10,12 @@
   min-height: 220px;
   padding: 10px;
   resize: none;
-  border: 1px solid var(--glass-line);
-  border-radius: 9px;
   color: var(--ink);
-  background: var(--paper);
   font-size: 12px;
   line-height: 1.7;
 }
 .notes-panel textarea:focus {
   outline: none;
-  border-color: rgba(47, 161, 113, 0.5);
 }
 .notes-panel textarea::placeholder {
   color: var(--faint);

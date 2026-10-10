@@ -47,6 +47,8 @@ describe("ambient chameleon theme", () => {
     expect(tokens).toBeDefined();
     expect(tokens?.["--glass-base"]).toContain("0.55");
     expect(tokens?.["--ink-tint"]).toMatch(/^\d+ \d+ \d+$/);
+    // 图标令牌跟随背景派生，保证深浅背景下图标都可辨
+    expect(tokens?.["--icon-tint"]).toMatch(/^\d+ \d+ \d+$/);
     // 深色背景下品牌绿提亮为浅绿（非默认深绿），保证激活项可读
     expect(tokens?.["--mint-text-tint"]).toMatch(/^\d+ \d+ \d+$/);
     expect(tokens?.["--mint-wash-base"]).toContain("0.3");

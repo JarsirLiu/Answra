@@ -25,7 +25,7 @@
 }
 .mode-picker-chevron {
   flex: 0 0 auto;
-  color: var(--muted);
+  color: var(--icon);
 }
 /* 模式菜单：文档流内、紧跟胶囊下方；打开时窗口经 useFitContent 自动扩展。 */
 .mode-menu {

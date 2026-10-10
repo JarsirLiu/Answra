@@ -75,7 +75,7 @@ export function ChatPanel({
           </article>
         ))}
       </div>
-      <form className="composer" onSubmit={handleSubmit}>
+      <form className="composer input-surface" onSubmit={handleSubmit}>
         <input
           accept="image/*"
           aria-label="选择截图图片"

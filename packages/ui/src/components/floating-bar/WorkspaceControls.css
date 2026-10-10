@@ -12,18 +12,17 @@
   padding: 0 5px;
   border: 0;
   border-radius: var(--ctl-radius);
-  color: var(--muted);
+  color: var(--icon);
   background: transparent;
   cursor: pointer;
   transition: background 140ms ease-out;
 }
 .utility-action:hover,
 .utility-action.is-active {
-  color: var(--ink);
+  color: var(--icon);
   background: var(--hover);
 }
 .utility-action.is-active {
-  color: var(--mint-text);
   background: var(--mint-wash);
 }
 .utility-action--destination {
@@ -51,7 +50,7 @@
 }
 .destination-chevron {
   flex: 0 0 auto;
-  color: var(--muted);
+  color: var(--icon);
 }
 .utility-action--close:hover {
   color: #c0453e;

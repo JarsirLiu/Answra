@@ -44,12 +44,13 @@
   --fade: 1;
   --ink-tint: 35 40 43; /* #23282b */
   --ink-soft-tint: 61 70 73; /* #3d4649 */
+  --icon-tint: 61 70 73; /* 图标专用：比 muted 深、比正文略柔，保证玻璃上可辨 */
   --muted-tint: 111 120 124; /* #6f787c */
   --faint-tint: 154 163 166; /* #9aa3a6 */
   --mint-tint: 47 161 113; /* #2fa171 */
-  --mint-deep-tint: 39 138 96; /* #278a60 */
+  --mint-deep-tint: 24 112 74; /* 比品牌绿深两档，玻璃底上的主操作图标可辨 */
   --mint-text-tint: 31 122 83; /* #1f7a53 */
-  --mint-wash-base: 0.13;
+  --mint-wash-base: 0.2;
   --glass-tint: 213 224 233; /* 苹果玻璃冷灰蓝调，比纯白低饱和 */
   --glass-base: 0.66;
   --glass-strong-tint: 222 233 240;
@@ -68,18 +69,27 @@
   /* ── 感知令牌：fade 的显式函数（组件只允许引用这一层） ── */
   --ink: rgb(var(--ink-tint) / var(--fade));
   --ink-soft: rgb(var(--ink-soft-tint) / var(--fade));
+  --icon: rgb(var(--icon-tint) / var(--fade));
   --muted: rgb(var(--muted-tint) / var(--fade));
   --faint: rgb(var(--faint-tint) / var(--fade));
   --mint: rgb(var(--mint-tint) / var(--fade));
   --mint-deep: rgb(var(--mint-deep-tint) / var(--fade));
   --mint-text: rgb(var(--mint-text-tint) / var(--fade));
   --mint-wash: rgb(var(--mint-tint) / calc(var(--mint-wash-base) * var(--fade)));
+  --mint-wash-strong: rgb(
+    var(--mint-tint) / calc((var(--mint-wash-base) + 0.08) * var(--fade))
+  );
+  --mint-line: rgb(var(--mint-tint) / calc(0.25 * var(--fade)));
+  --mint-line-focus: rgb(var(--mint-tint) / calc(0.5 * var(--fade)));
   --glass: rgb(var(--glass-tint) / calc(var(--glass-base) * var(--fade)));
   --glass-strong: rgb(var(--glass-strong-tint) / calc(var(--glass-strong-base) * var(--fade)));
   --glass-line: rgb(var(--line-tint) / calc(var(--line-base) * var(--fade)));
   --glass-line-soft: rgb(var(--line-tint) / calc(var(--line-soft-base) * var(--fade)));
   --hover: rgb(var(--hover-tint) / max(calc(var(--hover-base) * var(--fade)), 0.08));
   --field: rgb(var(--field-tint) / calc(var(--field-base) * var(--fade)));
+  --field-strong: rgb(
+    var(--field-tint) / calc((var(--field-base) + 0.07) * var(--fade))
+  );
   --focus-ring: rgb(var(--focus-tint) / max(calc(var(--focus-base) * var(--fade)), 0.15));
   --paper: rgb(var(--paper-tint) / var(--fade));
   --shadow-bar:

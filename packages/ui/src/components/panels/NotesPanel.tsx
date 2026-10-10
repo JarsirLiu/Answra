@@ -17,6 +17,7 @@ export function NotesPanel({ note, onNoteChange, onClose }: NotesPanelProps) {
         <label htmlFor="exam-note">个人笔记</label>
         <textarea
           id="exam-note"
+          className="input-surface"
           onChange={(event) => onNoteChange(event.target.value)}
           placeholder="记录要点、思路或待确认的问题…"
           value={note}
