@@ -96,7 +96,6 @@ describe("three-segment floating navigation", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
     expect(screen.getByRole("heading", { name: "设置" })).toBeInTheDocument();
-    expect(screen.getByText("尚未连接")).toBeInTheDocument();
   });
 
   it("toggles ambient background following in settings and persists the choice", () => {
@@ -180,7 +179,6 @@ describe("three-segment floating navigation", () => {
 
     const toggle = screen.getByRole("checkbox", { name: /会议隐身/ });
     await waitFor(() => expect(toggle).toBeDisabled());
-    expect(screen.getByText(/当前系统不支持/)).toBeInTheDocument();
     // 能力未确认/不支持时，绝不向主进程发送隐身指令
     expect(bridge.setStealth).not.toHaveBeenCalled();
   });

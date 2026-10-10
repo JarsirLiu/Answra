@@ -22,18 +22,10 @@
   gap: 12px;
   border-top: 1px solid var(--glass-line-soft);
 }
-.setting-row span:first-child {
-  display: grid;
-  gap: 3px;
-}
 .setting-row strong {
   color: var(--ink);
   font-size: var(--font-sm);
   font-weight: 600;
-}
-.setting-row small {
-  color: var(--ink-soft);
-  font-size: var(--font-xs);
 }
 .setting-control {
   display: flex;

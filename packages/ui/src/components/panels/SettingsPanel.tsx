@@ -56,7 +56,6 @@ export function SettingsPanel({
           <label className="setting-row">
             <span>
               <strong>跟随背景色</strong>
-              <small>自动采样屏幕背景，调整悬浮条配色以减少视觉打扰</small>
             </span>
             <Switch
               ariaLabel="跟随背景色"
@@ -67,7 +66,6 @@ export function SettingsPanel({
           <div className="setting-row">
             <span>
               <strong>外观</strong>
-              <small>深色模式下玻璃与文字整体翻转，避免深色背景上扎眼</small>
             </span>
             <SegmentedControl
               ariaLabel="外观模式"
@@ -79,7 +77,6 @@ export function SettingsPanel({
           <div className="setting-row">
             <span>
               <strong>整体透明度</strong>
-              <small>背景、字体、图标随之一同变化；越低越不抢眼</small>
             </span>
             <span className="setting-control">
               <RangeSlider
@@ -96,11 +93,6 @@ export function SettingsPanel({
           <label className="setting-row">
             <span>
               <strong>会议隐身</strong>
-              <small>
-                {stealthSupported
-                  ? "开启后屏幕共享与截图捕获不到本应用，你自己仍可见"
-                  : "当前系统不支持可靠隐身，无法开启"}
-              </small>
             </span>
             <Switch
               ariaLabel="会议隐身"
@@ -116,7 +108,6 @@ export function SettingsPanel({
           <label className="setting-row">
             <span>
               <strong>仅使用本地服务</strong>
-              <small>不启用云端订阅或远程 API</small>
             </span>
             <Switch
               ariaLabel="仅使用本地服务"
@@ -127,7 +118,6 @@ export function SettingsPanel({
           <div className="setting-row setting-row--static">
             <span>
               <strong>AI 服务</strong>
-              <small>尚未连接</small>
             </span>
             <span className="setting-status">未配置</span>
           </div>
@@ -138,7 +128,6 @@ export function SettingsPanel({
           <div className="setting-row setting-row--static">
             <span>
               <strong>默认模型</strong>
-              <small>接入本地 AI 服务后在此切换</small>
             </span>
             <span className="setting-status">未配置</span>
           </div>
