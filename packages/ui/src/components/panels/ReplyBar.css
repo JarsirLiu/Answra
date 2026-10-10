@@ -40,7 +40,6 @@
   border-radius: 5px;
   color: white;
   background: var(--scrim);
-  cursor: pointer;
 }
 
 .attachment-thumb button:hover {

@@ -1,12 +1,12 @@
 import type { DesktopBridge } from "@answra/shared";
 import { useEffect, useState } from "react";
 import {
+  type AmbientTokens,
   applyTokens,
   deriveAmbientTokens,
   FALLBACK_TOKEN_KEYS,
   parseHex,
   resolveAmbientScheme,
-  type AmbientTokens,
 } from "./hooks/useAmbientTheme";
 import { COLOR_GROUP_STORAGE_PREFIX } from "./model";
 
@@ -21,7 +21,9 @@ import { COLOR_GROUP_STORAGE_PREFIX } from "./model";
  * data-theme 与内联令牌都由 useAppTheme 单点写入，不存在双写竞争。
  *
  * 写入优先级（同一原始参数上层的值胜出）：
- *   样式表默认 < ambient 变色龙 < 用户分组覆盖。
+ *   样式表默认 < 用户分组覆盖（仅变色龙关闭时生效） < ambient 变色龙。
+ *   变色龙开启时用户分组覆盖全部失效：背景/图标/文字等一切颜色
+ *   只由变色龙算法决定，不与任何其他颜色来源混算。
  */
 
 export interface ColorGroupDefinition {
@@ -95,11 +97,6 @@ export function saveColorGroups(groups: ColorGroupOverrides): void {
   }
 }
 
-/** 解析系统外观偏好；无 matchMedia 环境（jsdom/旧内核）回落浅色。 */
-function systemScheme(): "light" | "dark" {
-  return globalThis.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-}
-
 /**
  * 应用主题的唯一入口：data-theme 深浅方案 + 内联原始参数都由此写入。
  * @param bridge 桌面桥（浏览器预览/测试可能没有 onAmbientColor）
@@ -133,12 +130,18 @@ export function useAppTheme(
   }, [bridge, ambientFollow]);
 
   useEffect(() => {
-    const merged: AmbientTokens = { ...ambient, ...colorGroupTokens(colorGroups) };
-    // 全量回退表写入：ambient 消失的键显式移除，用户覆盖仍然保留
+    // 变色龙开启时独占一切颜色（用户分组覆盖失效）；
+    // 采样未到/失败时清空内联覆盖，整体回落样式表默认主题
+    const merged: AmbientTokens = ambient
+      ? { ...ambient }
+      : ambientFollow
+        ? {}
+        : colorGroupTokens(colorGroups);
+    // 全量回退表写入：merged 缺失的键显式移除，回落样式表默认
     const full: AmbientTokens = {};
     for (const key of FALLBACK_TOKEN_KEYS) full[key] = merged[key] ?? null;
     applyTokens(full);
-  }, [ambient, colorGroups]);
+  }, [ambient, ambientFollow, colorGroups]);
 
   // data-theme 单一写入方：变色龙深浅判定优先；
   // 变色龙关闭或尚未采样到有效背景时，回落跟随系统

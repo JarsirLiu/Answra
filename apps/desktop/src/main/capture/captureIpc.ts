@@ -1,4 +1,4 @@
-import type { RegionSelection, ScreenshotResult } from "@answra/shared";
+import type { RegionCaptureOptions, RegionSelection, ScreenshotResult } from "@answra/shared";
 import { CaptureChannels } from "@answra/shared";
 import type { IpcMainEvent } from "electron";
 import { ipcMain } from "electron";
@@ -17,15 +17,18 @@ import {
  * 3. 捕获所选显示器整屏 → 逻辑选区换算物理像素 → 裁剪编码 PNG data URL 返回。
  */
 export function registerCaptureIpc(): void {
-  ipcMain.handle(CaptureChannels.StartRegionCapture, async (event): Promise<ScreenshotResult> => {
-    if (!isWindowFromSender(getWindow(), event)) {
-      return { message: "非法调用方", ok: false, reason: "error" };
-    }
-    if (pendingCapture) {
-      return { message: "已有截图正在进行", ok: false, reason: "error" };
-    }
-    return runRegionCapture();
-  });
+  ipcMain.handle(
+    CaptureChannels.StartRegionCapture,
+    async (event, options: unknown): Promise<ScreenshotResult> => {
+      if (!isWindowFromSender(getWindow(), event)) {
+        return { message: "非法调用方", ok: false, reason: "error" };
+      }
+      if (pendingCapture) {
+        return { message: "已有截图正在进行", ok: false, reason: "error" };
+      }
+      return runRegionCapture(sanitizeSelectionLine(options));
+    },
+  );
 
   ipcMain.on(CaptureChannels.RegionSelected, (event, selection: RegionSelection) => {
     if (!isValidSelection(selection)) return;
@@ -39,13 +42,24 @@ export function registerCaptureIpc(): void {
 
 let pendingCapture: ((selection: RegionSelection | null) => void) | undefined;
 
-async function runRegionCapture(): Promise<ScreenshotResult> {
+/** 框选线色仅接受字面 CSS 颜色（hex / rgb[a]()），杜绝任意字符串注入页面。 */
+const CSS_COLOR_PATTERN = /^#[0-9a-fA-F]{3,8}$|^(?:rgb|rgba)\([0-9.,%\s/]+\)$/;
+
+/** 清洗渲染器上报的框选虚线颜色；非法或缺省返回 undefined 由 overlay 回落内置色。 */
+function sanitizeSelectionLine(options: unknown): string | undefined {
+  if (typeof options !== "object" || options === null) return undefined;
+  const line = (options as RegionCaptureOptions).line;
+  if (typeof line !== "string" || line.length === 0 || line.length > 64) return undefined;
+  return CSS_COLOR_PATTERN.test(line.trim()) ? line.trim() : undefined;
+}
+
+async function runRegionCapture(line?: string): Promise<ScreenshotResult> {
   const mainWindow = getWindow();
   const wasVisible = mainWindow?.isVisible() ?? false;
   let selection: RegionSelection | null;
   try {
     mainWindow?.hide();
-    const overlays = createSelectionWindows();
+    const overlays = createSelectionWindows(line);
     if (overlays.length === 0) {
       return { message: "没有可用的显示器", ok: false, reason: "unavailable" };
     }

@@ -1,12 +1,8 @@
 import { describe, expect, it } from "vitest";
-import {
-  deriveAmbientTokens,
-  parseHex,
-  resolveAmbientScheme,
-} from "../src/hooks/useAmbientTheme";
+import { deriveAmbientTokens, resolveAmbientScheme } from "../src/hooks/useAmbientTheme";
 
 /** "r g b" 通道串 → Rgb。 */
-function channels(value: string | undefined): { r: number; g: number; b: number } {
+function channels(value: string | null | undefined): { r: number; g: number; b: number } {
   const [r = 0, g = 0, b = 0] = (value ?? "").split(" ").map(Number);
   return { r, g, b };
 }
@@ -33,7 +29,8 @@ describe("ambient chameleon theme", () => {
     for (const hex of ["#1a1a1a", "#f5f2ec"]) {
       const tokens = deriveAmbientTokens(hex);
       const accent = channels(tokens?.["--mint-text-tint"]);
-      const spread = Math.max(accent.r, accent.g, accent.b) - Math.min(accent.r, accent.g, accent.b);
+      const spread =
+        Math.max(accent.r, accent.g, accent.b) - Math.min(accent.r, accent.g, accent.b);
       // 品牌绿通道极差 114；灰绿强调色必须明显更收敛
       expect(spread).toBeLessThan(48);
     }

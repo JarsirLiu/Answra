@@ -7,7 +7,6 @@
   height: 22px;
   margin: 0;
   background: transparent;
-  cursor: pointer;
 }
 .range-slider:focus-visible {
   outline: 2px solid var(--focus-ring);
@@ -54,6 +53,5 @@
   box-shadow: var(--shadow-ctl);
 }
 .range-slider:disabled {
-  cursor: not-allowed;
   opacity: 0.5;
 }

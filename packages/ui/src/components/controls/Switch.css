@@ -10,14 +10,6 @@
   inset: 0;
   margin: 0;
   opacity: 0;
-  cursor: pointer;
-}
-.switch.is-disabled .switch-input {
-  cursor: default;
-}
-.switch-input:focus-visible + .switch-track {
-  outline: 2px solid var(--mint-line-focus);
-  outline-offset: 2px;
 }
 .switch-track {
   display: block;
@@ -27,7 +19,13 @@
   border: 1px solid var(--glass-line);
   border-radius: 9px;
   background: var(--field-strong);
-  transition: background 140ms ease-out, border-color 140ms ease-out;
+  transition:
+    background 140ms ease-out,
+    border-color 140ms ease-out;
+}
+.switch-input:focus-visible + .switch-track {
+  outline: 2px solid var(--mint-line-focus);
+  outline-offset: 2px;
 }
 .switch.is-disabled .switch-track {
   opacity: 0.4;

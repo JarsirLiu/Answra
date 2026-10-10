@@ -46,6 +46,15 @@ export const CaptureChannels = {
   RegionCancelled: "answra:capture:region-cancelled",
 } as const;
 
+/** 发起区域截图的选项。 */
+export interface RegionCaptureOptions {
+  /**
+   * 框选虚线颜色：渲染器按当前主题派生的 CSS 颜色（当前墨色），
+   * 使框选线随变色龙/深浅模式与用户透明度联动；缺省时 overlay 回落内置灰。
+   */
+  line?: string;
+}
+
 /** 背景主色采样结果（主进程 → 渲染进程推送）。 */
 export interface AmbientColorPayload {
   /** 采样是否成功；失败时 hex/luminance 无效。 */
@@ -104,7 +113,10 @@ export interface WindowChannelMap {
 
 /** 截图频道 → 请求/响应载荷 的类型映射。 */
 export interface CaptureChannelMap {
-  [CaptureChannels.StartRegionCapture]: { request: undefined; response: ScreenshotResult };
+  [CaptureChannels.StartRegionCapture]: {
+    request: RegionCaptureOptions | undefined;
+    response: ScreenshotResult;
+  };
   [CaptureChannels.RegionSelected]: { request: RegionSelection; response: undefined };
   [CaptureChannels.RegionCancelled]: { request: undefined; response: undefined };
 }

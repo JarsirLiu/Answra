@@ -1,7 +1,7 @@
 import type { DesktopBridge } from "@answra/shared";
 import { act, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { colorGroupTokens, useAppTheme, type ColorGroupOverrides } from "../src/theme";
+import { type ColorGroupOverrides, colorGroupTokens, useAppTheme } from "../src/theme";
 
 interface AmbientPayload {
   ok: boolean;
@@ -59,22 +59,23 @@ describe("color group overrides", () => {
     expect(tokens["--danger-tint"]).toBeUndefined();
   });
 
-  it("lets user group overrides win over ambient push", () => {
+  it("gives ambient exclusive control over colors while chameleon is on", () => {
     const bridge = createBridge();
     const { rerender } = render(
       <Harness bridge={bridge} ambientFollow colorGroups={{ surface: "#aabbcc" }} />,
     );
     act(() => bridge.emit({ ok: true, hex: "#101018", luminance: 0.05 }));
-    // ambient 推送了 --glass-tint，但用户"背景"分组覆盖优先
-    expect(document.documentElement.style.getPropertyValue("--glass-tint")).toBe("170 187 204");
-    // 未被用户覆盖的 ambient 键仍然生效（前景 alpha 基数）
+    // 变色龙开启：用户"背景"分组覆盖失效，一切颜色只由 ambient 决定
+    expect(document.documentElement.style.getPropertyValue("--glass-tint")).toBe("16 16 24");
     expect(document.documentElement.style.getPropertyValue("--hover-base")).toBe("0.1");
 
-    // 关闭变色龙：ambient 键清除，用户覆盖保留
-    rerender(<Harness bridge={bridge} ambientFollow={false} colorGroups={{ surface: "#aabbcc" }} />);
+    // 关闭变色龙：ambient 键清除，用户覆盖恢复生效
+    rerender(
+      <Harness bridge={bridge} ambientFollow={false} colorGroups={{ surface: "#aabbcc" }} />,
+    );
     expect(document.documentElement.style.getPropertyValue("--hover-base")).toBe("");
     expect(document.documentElement.style.getPropertyValue("--glass-tint")).toBe("170 187 204");
-    // 背景组覆盖同时作用于面板（用户覆盖持久保留）
+    // 背景组覆盖同时作用于面板
     expect(document.documentElement.style.getPropertyValue("--panel-tint")).toBe("170 187 204");
   });
 });

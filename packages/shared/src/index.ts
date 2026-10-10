@@ -7,6 +7,7 @@ export {
   type ChannelRequest,
   type ChannelResponse,
   type ContentSize,
+  type RegionCaptureOptions,
   type RegionRect,
   type RegionSelection,
   type ScreenshotFailure,

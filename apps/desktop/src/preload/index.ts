@@ -4,6 +4,7 @@ import {
   CaptureChannels,
   type ContentSize,
   type DesktopBridge,
+  type RegionCaptureOptions,
   WindowChannels,
 } from "@answra/shared";
 import { contextBridge, ipcRenderer } from "electron";
@@ -23,7 +24,8 @@ const bridge: DesktopBridge = {
     ipcRenderer.send(WindowChannels.SetStealth, value);
   },
   getStealthSupport: () => ipcRenderer.invoke(WindowChannels.GetStealthSupport),
-  startRegionCapture: () => ipcRenderer.invoke(CaptureChannels.StartRegionCapture),
+  startRegionCapture: (options?: RegionCaptureOptions) =>
+    ipcRenderer.invoke(CaptureChannels.StartRegionCapture, options),
   onAmbientColor: (listener: (payload: AmbientColorPayload) => void) => {
     const wrapped = (_event: Electron.IpcRendererEvent, payload: AmbientColorPayload) => {
       listener(payload);

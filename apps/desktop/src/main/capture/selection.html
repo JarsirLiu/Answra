@@ -15,11 +15,12 @@
         user-select: none;
       }
       /* 选区只有一圈虚线框：无蒙层、无填充、无外圈描边，变色龙理念下
-         对屏幕零干扰。颜色取中性中灰，深色与浅色背景上都可见。 */
+         对屏幕零干扰。颜色由渲染器按当前主题派生（--selection-line，
+         发起截图时经 IPC 注入），未注入时回落中性中灰。 */
       #rect {
         position: fixed;
         display: none;
-        border: 1px dashed rgba(148, 163, 184, 0.9);
+        border: 1px dashed var(--selection-line, rgba(148, 163, 184, 0.9));
       }
     </style>
   </head>
@@ -27,7 +28,11 @@
     <div id="rect"></div>
     <script>
       // 本窗口由主进程按 display.bounds 创建并附带 ?displayId=，选区坐标相对本窗口原点
-      const displayId = Number(new URLSearchParams(location.search).get("displayId") ?? -1);
+      const params = new URLSearchParams(location.search);
+      const displayId = Number(params.get("displayId") ?? -1);
+      // 框选线色随发起方主题（变色龙/深浅模式）联动；主进程已校验为字面 CSS 颜色
+      const line = params.get("line");
+      if (line) document.documentElement.style.setProperty("--selection-line", line);
       const rectEl = document.getElementById("rect");
       const MIN_SIZE = 8; // 小于该尺寸视为点击误触，按取消处理
       let startPoint = null;

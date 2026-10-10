@@ -24,7 +24,6 @@
   border-radius: var(--ctl-radius);
   color: white;
   background: var(--mint);
-  cursor: pointer;
   font-size: var(--font-sm);
   font-weight: 600;
   transition: background 140ms ease-out;

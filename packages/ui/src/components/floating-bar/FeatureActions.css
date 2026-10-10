@@ -19,7 +19,6 @@
   border-radius: var(--ctl-radius);
   color: var(--icon);
   background: transparent;
-  cursor: pointer;
   transition:
     background 140ms ease-out,
     transform 90ms ease-out;
@@ -43,10 +42,9 @@
   background: var(--mint-wash-strong);
 }
 .feature-action--soon {
-  /* 禁用占位：图标颜色不弱化，靠底色与 not-allowed 光标表达禁用 */
+  /* 禁用占位：图标颜色不弱化，靠底色表达禁用 */
   color: var(--icon);
   background: var(--field);
-  cursor: not-allowed;
 }
 .feature-action--soon:hover {
   background: var(--field);

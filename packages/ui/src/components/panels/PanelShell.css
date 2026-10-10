@@ -51,7 +51,6 @@
   border-radius: var(--ctl-radius);
   color: var(--muted);
   background: transparent;
-  cursor: pointer;
   transition: background 140ms ease-out;
 }
 .panel-close:hover {

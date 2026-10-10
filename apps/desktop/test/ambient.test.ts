@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  */
 
 vi.mock("electron", () => ({
+  app: { isPackaged: true },
   desktopCapturer: {},
   screen: {},
 }));
@@ -90,6 +91,17 @@ describe("dominantColor", () => {
       b: 10,
     });
   });
+
+  it("uses the bucket median so stray pixels do not skew the color", () => {
+    // 25% 的杂散像素（47）与背景（32）落在同一 4bit 桶：
+    // 均值会被拉到 ~36，中位数应保持 32
+    const image = fakeImage(64, 64, (x, y) => (x < 32 && y < 32 ? [47, 47, 47] : [32, 32, 32]));
+    expect(dominantColor(image, 64, 64, { x: 0, y: 0, width: 0, height: 0 })).toEqual({
+      r: 32,
+      g: 32,
+      b: 32,
+    });
+  });
 });
 
 describe("expandInner", () => {
@@ -105,12 +117,12 @@ describe("expandInner", () => {
 
   it("clamps at the crop edges instead of going negative or overshooting", () => {
     const inner = { x: 4, y: 4, width: 80, height: 80 };
-    // pad=10 → x/y 夹到 0；宽高夹到裁剪图右/下边界
+    // pad=10 → x/y 夹到 0；右/下缘 = 原矩形边缘 + pad = 94，未触及裁剪边界不外撑
     expect(expandInner(inner, 10, 100, 100)).toEqual({
       x: 0,
       y: 0,
-      width: 100,
-      height: 100,
+      width: 94,
+      height: 94,
     });
   });
 });

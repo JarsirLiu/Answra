@@ -36,7 +36,7 @@ export function SettingsPanel({
       <div className="settings-panel">
         <section className="settings-group">
           <h2>常规</h2>
-          <label className="setting-row">
+          <div className="setting-row">
             <span>
               <strong>跟随背景色</strong>
             </span>
@@ -45,7 +45,7 @@ export function SettingsPanel({
               checked={ambientFollow}
               onChange={onAmbientFollowChange}
             />
-          </label>
+          </div>
           <div className="setting-row">
             <span>
               <strong>前景透明度</strong>
@@ -62,7 +62,7 @@ export function SettingsPanel({
               <span className="setting-value">{Math.round(opacity * 100)}%</span>
             </span>
           </div>
-          <label className="setting-row">
+          <div className="setting-row">
             <span>
               <strong>会议隐身</strong>
             </span>
@@ -72,7 +72,7 @@ export function SettingsPanel({
               disabled={!stealthSupported}
               onChange={onStealthChange}
             />
-          </label>
+          </div>
         </section>
 
         <section className="settings-group">

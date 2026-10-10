@@ -1,5 +1,5 @@
 import { AmbientChannels, type AmbientColorPayload } from "@answra/shared";
-import { type BrowserWindow, desktopCapturer, screen } from "electron";
+import { app, type BrowserWindow, desktopCapturer, screen } from "electron";
 
 /**
  * 变色龙主题：采样悬浮条周边的屏幕背景主色并推送给渲染器。
@@ -67,7 +67,8 @@ export function expandInner(
 
 /**
  * 从裁剪位图的环形区域（排除窗口自身矩形）统计主色。
- * 颜色按 4bit/通道 量化分桶，取最大桶的均值。导出供测试。
+ * 颜色按 4bit/通道 量化分桶，取最大桶的中位数（均值会被桶内少量
+ * 偏暗/偏亮的杂散像素拉偏，中位数更贴近桶的真实主色）。导出供测试。
  */
 export function dominantColor(
   bitmap: Electron.NativeImage,
@@ -100,9 +101,13 @@ export function dominantColor(
     }
   }
 
+  let bestKey = -1;
   let best: { count: number; r: number; g: number; b: number } | undefined;
-  for (const bucket of buckets.values()) {
-    if (!best || bucket.count > best.count) best = bucket;
+  for (const [key, bucket] of buckets) {
+    if (!best || bucket.count > best.count) {
+      best = bucket;
+      bestKey = key;
+    }
   }
   if (!best || !total) return undefined;
 
@@ -111,16 +116,99 @@ export function dominantColor(
     if (luminanceOf(avg) < 0.02) return undefined;
   }
 
-  return {
-    r: Math.round(best.r / best.count),
-    g: Math.round(best.g / best.count),
-    b: Math.round(best.b / best.count),
-  };
+  // 第二遍收集最大桶成员的通道值，取每通道中位数
+  const rs: number[] = [];
+  const gs: number[] = [];
+  const bs: number[] = [];
+  for (let y = 0; y < height; y += SAMPLE_STEP) {
+    for (let x = 0; x < width; x += SAMPLE_STEP) {
+      const inWindow =
+        x >= inner.x && x < inner.x + inner.width && y >= inner.y && y < inner.y + inner.height;
+      if (inWindow) continue;
+      const offset = (y * width + x) * 4;
+      const b = buffer[offset] ?? 0;
+      const g = buffer[offset + 1] ?? 0;
+      const r = buffer[offset + 2] ?? 0;
+      if ((((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4)) !== bestKey) continue;
+      rs.push(r);
+      gs.push(g);
+      bs.push(b);
+    }
+  }
+
+  return { r: median(rs), g: median(gs), b: median(bs) };
 }
+
+/** 中位数（偶数个取中间两值均值后四舍五入）。 */
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = sorted.length >> 1;
+  return sorted.length % 2
+    ? (sorted[mid] ?? 0)
+    : Math.round(((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2);
+}
+
+/** 整帧平均亮度（0~1）：用于诊断截屏是否整体发黑。 */
+function frameLuminance(bitmap: Electron.NativeImage): number {
+  const { width, height } = bitmap.getSize();
+  if (!width || !height) return 0;
+  const buffer = bitmap.toBitmap();
+  let sum = 0;
+  let count = 0;
+  for (let y = 0; y < height; y += 8) {
+    for (let x = 0; x < width; x += 8) {
+      const offset = (y * width + x) * 4;
+      const b = buffer[offset] ?? 0;
+      const g = buffer[offset + 1] ?? 0;
+      const r = buffer[offset + 2] ?? 0;
+      sum += luminanceOf({ r, g, b });
+      count += 1;
+    }
+  }
+  return count > 0 ? sum / count : 0;
+}
+
+/** 整帧最主色（4bit 分桶众数中位数）及其占比：用于区分"整帧近黑"与"仅环带采样错位"。 */
+function frameDominant(bitmap: Electron.NativeImage): { hex: string; share: number } {
+  const { width, height } = bitmap.getSize();
+  if (!width || !height) return { hex: "#000000", share: 0 };
+  const buffer = bitmap.toBitmap();
+  const buckets = new Map<number, { count: number; r: number; g: number; b: number }>();
+  let total = 0;
+  for (let y = 0; y < height; y += SAMPLE_STEP) {
+    for (let x = 0; x < width; x += SAMPLE_STEP) {
+      const offset = (y * width + x) * 4;
+      const b = buffer[offset] ?? 0;
+      const g = buffer[offset + 1] ?? 0;
+      const r = buffer[offset + 2] ?? 0;
+      const key = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);
+      const bucket = buckets.get(key) ?? { count: 0, r: 0, g: 0, b: 0 };
+      bucket.count += 1;
+      bucket.r += r;
+      bucket.g += g;
+      bucket.b += b;
+      buckets.set(key, bucket);
+      total += 1;
+    }
+  }
+  let best: { count: number; r: number; g: number; b: number } | undefined;
+  for (const bucket of buckets.values()) {
+    if (!best || bucket.count > best.count) best = bucket;
+  }
+  if (!best || !total) return { hex: "#000000", share: 0 };
+  const r = Math.round(best.r / best.count);
+  const g = Math.round(best.g / best.count);
+  const b = Math.round(best.b / best.count);
+  return { hex: toHex({ r, g, b }), share: best.count / total };
+}
+
+/** 诊断：最近一次推送的采样结果签名，变化时才打印，避免刷屏。 */
+let lastLoggedSignature: string | undefined;
 
 /** 采样一次并推送；任何失败都推送 ok=false，由渲染器回落默认主题。 */
 async function sampleAndPush(window: BrowserWindow): Promise<void> {
   let payload: AmbientColorPayload;
+  let diagnostic = "no-run";
   try {
     if (window.isDestroyed() || window.isMinimized()) return;
     const bounds = window.getBounds();
@@ -149,8 +237,8 @@ async function sampleAndPush(window: BrowserWindow): Promise<void> {
       height: Math.max(1, Math.round(display.size.height / 2)),
     };
     const sources = await desktopCapturer.getSources({ types: ["screen"], thumbnailSize });
-    const screenSource =
-      sources.find((source) => source.display_id === String(display.id)) ?? sources[0];
+    const matchedSource = sources.find((source) => source.display_id === String(display.id));
+    const screenSource = matchedSource ?? sources[0];
     const thumbnail = screenSource?.thumbnail;
     if (!thumbnail || thumbnail.isEmpty()) return;
 
@@ -183,10 +271,24 @@ async function sampleAndPush(window: BrowserWindow): Promise<void> {
     payload = color
       ? { ok: true, hex: toHex(color), luminance: luminanceOf(color) }
       : { ok: false, hex: "#ffffff", luminance: 1 };
-  } catch {
+    // 诊断信息：截屏源匹配 + 整帧主色/亮度（区分"整帧近黑"与"仅环带采样错位"）
+    const frame = frameDominant(thumbnail);
+    diagnostic =
+      `sources=${sources.length} matched=${matchedSource ? "yes" : "no"} ` +
+      `thumb=${thumbnail.getSize().width}x${thumbnail.getSize().height} ` +
+      `fullLum=${frameLuminance(thumbnail).toFixed(3)} ` +
+      `fDom=${frame.hex} fShare=${frame.share.toFixed(2)}`;
+  } catch (error) {
     payload = { ok: false, hex: "#ffffff", luminance: 1 };
+    diagnostic = `error:${error instanceof Error ? error.message : String(error)}`;
   }
   if (!window.isDestroyed()) {
+    // 开发期诊断：打印采样结果与截屏源信息（变化时），便于核对取色链路
+    const signature = `${diagnostic} -> ${payload.ok ? payload.hex : "unavailable"}`;
+    if (!app.isPackaged && signature !== lastLoggedSignature) {
+      lastLoggedSignature = signature;
+      console.log(`[answra:ambient] ${signature}`);
+    }
     window.webContents.send(AmbientChannels.AmbientColor, payload);
   }
 }

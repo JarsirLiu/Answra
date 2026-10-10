@@ -11,7 +11,7 @@ import { BrowserWindow, screen } from "electron";
 const activeWindows = new Set<BrowserWindow>();
 
 /** 为所有显示器创建框选 overlay 并显示；返回创建的窗口列表。 */
-export function createSelectionWindows(): BrowserWindow[] {
+export function createSelectionWindows(line?: string): BrowserWindow[] {
   closeSelectionWindows();
   for (const display of screen.getAllDisplays()) {
     const selectionWindow = new BrowserWindow({
@@ -48,7 +48,7 @@ export function createSelectionWindows(): BrowserWindow[] {
     selectionWindow.once("closed", () => activeWindows.delete(selectionWindow));
     activeWindows.add(selectionWindow);
     void selectionWindow.loadFile(path.join(__dirname, "../capture/selection.html"), {
-      query: { displayId: String(display.id) },
+      query: { displayId: String(display.id), ...(line ? { line } : {}) },
     });
   }
   return [...activeWindows];

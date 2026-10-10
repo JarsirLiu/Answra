@@ -18,13 +18,23 @@ import {
   STEALTH_STORAGE_KEY,
   WELCOME_MESSAGE,
 } from "../model";
-import {
-  type ColorGroupOverrides,
-  loadColorGroups,
-  useAppTheme,
-} from "../theme";
+import { type ColorGroupOverrides, loadColorGroups, useAppTheme } from "../theme";
 
 const SCREENSHOT_PROMPT = "请帮我分析这道题，先说明题意和解题思路。";
+
+/**
+ * 读取当前主题墨色（--ink 的解析值）作为框选虚线颜色：
+ * 变色龙/深浅模式/用户透明度变化时自动联动，无需在 overlay 侧再算色。
+ */
+function readInkColor(): string | undefined {
+  const probe = document.createElement("span");
+  probe.style.color = "var(--ink)";
+  probe.style.display = "none";
+  document.body.append(probe);
+  const color = getComputedStyle(probe).color;
+  probe.remove();
+  return color || undefined;
+}
 
 interface FloatingBarAppProps {
   /** 桌面平台桥；默认使用 preload 注入的 window.answra，测试可注入 mock。 */
@@ -139,7 +149,7 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
     startCapture: NonNullable<DesktopBridge["startRegionCapture"]>,
   ) {
     try {
-      const result = await startCapture();
+      const result = await startCapture({ line: readInkColor() });
       // 取消/失败静默收场，不弹回复条
       if (!result.ok) return;
       setReplyOpen(true);

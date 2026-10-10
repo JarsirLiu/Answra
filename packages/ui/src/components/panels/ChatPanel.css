@@ -112,7 +112,6 @@
   border-radius: 6px;
   color: var(--muted);
   background: transparent;
-  cursor: pointer;
 }
 .attachment-preview button:hover {
   color: var(--ink);
@@ -135,7 +134,6 @@
   border-radius: var(--ctl-radius);
   color: white;
   background: var(--mint);
-  cursor: pointer;
   font-size: var(--font-sm);
   transition: background 140ms ease-out;
 }
@@ -146,5 +144,4 @@
   color: var(--ink);
   opacity: 0.45;
   background: var(--field);
-  cursor: not-allowed;
 }

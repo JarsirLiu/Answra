@@ -1,4 +1,9 @@
-import type { AmbientColorPayload, ContentSize, ScreenshotResult } from "./channels";
+import type {
+  AmbientColorPayload,
+  ContentSize,
+  RegionCaptureOptions,
+  ScreenshotResult,
+} from "./channels";
 
 /**
  * 悬浮条窗口的内容面板标识。
@@ -32,7 +37,7 @@ export interface DesktopBridge {
    * PNG data URL；用户取消或截图失败时返回 ok=false（含原因）。
    * 浏览器预览/测试环境可未实现，调用方需判空。
    */
-  startRegionCapture?: () => Promise<ScreenshotResult>;
+  startRegionCapture?: (options?: RegionCaptureOptions) => Promise<ScreenshotResult>;
   /**
    * 订阅背景主色推送（变色龙主题）；返回取消订阅函数。
    * 浏览器预览/测试环境可未实现，调用方需判空。

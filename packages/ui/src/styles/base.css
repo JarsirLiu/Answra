@@ -45,8 +45,9 @@ input:focus-visible {
 }
 
 /* 统一光标：变色龙理念下应用内光标恒为系统默认箭头，不在输入框（I-beam）、
-   可点元素（pointer）、框选等场景变形；交互性由 hover/focus 底色提示承担。 */
+   可点元素、框选等场景变形；交互性由 hover/focus 底色提示承担。
+   各组件一律不得再声明 cursor，此规则是全应用唯一的 cursor 来源。 */
 .overlay-root,
 .overlay-root * {
-  cursor: default !important;
+  cursor: default;
 }
