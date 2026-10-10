@@ -46,6 +46,45 @@ describe("three-segment floating navigation", () => {
     expect(screen.getByRole("button", { name: "发送给 AI" })).toBeDisabled();
   });
 
+  it("captures a region screenshot through the bridge and attaches it to the chat", async () => {
+    const bridge = {
+      close: vi.fn(),
+      fitContent: vi.fn(),
+      startRegionCapture: vi.fn().mockResolvedValue({
+        dataUrl: "data:image/png;base64,QUJD",
+        height: 200,
+        ok: true,
+        width: 300,
+      }),
+    };
+    render(<FloatingBarApp bridge={bridge} />);
+    fireEvent.click(screen.getByRole("button", { name: "截图提问" }));
+
+    await waitFor(() => expect(screen.getByAltText("待发送截图预览")).toBeInTheDocument());
+    expect(bridge.startRegionCapture).toHaveBeenCalledTimes(1);
+    expect(screen.getByAltText("待发送截图预览")).toHaveAttribute(
+      "src",
+      "data:image/png;base64,QUJD",
+    );
+    // 成功后自动填入默认分析提示语
+    expect(screen.getByRole("textbox", { name: "补充问题" })).toHaveValue(
+      "请帮我分析这道题，先说明题意和解题思路。",
+    );
+  });
+
+  it("keeps the chat empty when the user cancels the region capture", async () => {
+    const bridge = {
+      close: vi.fn(),
+      fitContent: vi.fn(),
+      startRegionCapture: vi.fn().mockResolvedValue({ ok: false, reason: "cancelled" }),
+    };
+    render(<FloatingBarApp bridge={bridge} />);
+    fireEvent.click(screen.getByRole("button", { name: "截图提问" }));
+
+    await waitFor(() => expect(bridge.startRegionCapture).toHaveBeenCalledTimes(1));
+    expect(screen.queryByAltText("待发送截图预览")).not.toBeInTheDocument();
+  });
+
   it("saves notebook text locally and opens settings from the third segment", () => {
     render(<FloatingBarApp />);
     fireEvent.click(screen.getByRole("button", { name: "打开笔记本" }));

@@ -1,6 +1,7 @@
 import {
   AmbientChannels,
   type AmbientColorPayload,
+  CaptureChannels,
   type ContentSize,
   type DesktopBridge,
   WindowChannels,
@@ -22,6 +23,7 @@ const bridge: DesktopBridge = {
     ipcRenderer.send(WindowChannels.SetStealth, value);
   },
   getStealthSupport: () => ipcRenderer.invoke(WindowChannels.GetStealthSupport),
+  startRegionCapture: () => ipcRenderer.invoke(CaptureChannels.StartRegionCapture),
   onAmbientColor: (listener: (payload: AmbientColorPayload) => void) => {
     const wrapped = (_event: Electron.IpcRendererEvent, payload: AmbientColorPayload) => {
       listener(payload);

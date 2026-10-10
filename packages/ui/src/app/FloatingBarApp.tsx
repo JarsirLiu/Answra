@@ -110,8 +110,14 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
 
   function handleModeAction(action: ModeAction) {
     if (action.id === "screenshot") {
-      openPanel("chat");
-      window.setTimeout(() => fileInputRef.current?.click(), 0);
+      // 桌面端走主进程区域截图（框选 overlay）；浏览器预览/测试无桥，回落文件选择
+      const startCapture = platform?.startRegionCapture;
+      if (startCapture) {
+        void startRegionCapture(startCapture);
+      } else {
+        openPanel("chat");
+        window.setTimeout(() => fileInputRef.current?.click(), 0);
+      }
       return;
     }
     if (action.id === "record") {
@@ -119,6 +125,25 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
       return;
     }
     openPanel("chat");
+  }
+
+  async function startRegionCapture(
+    startCapture: NonNullable<DesktopBridge["startRegionCapture"]>,
+  ) {
+    openPanel("chat");
+    try {
+      const result = await startCapture();
+      // 取消/失败静默收场；失败原因提示待接入对话内反馈
+      if (!result.ok) return;
+      if (attachment) URL.revokeObjectURL(attachment.previewUrl);
+      setAttachment({
+        name: `screenshot-${new Date().toISOString().replace(/[:.]/g, "-")}.png`,
+        previewUrl: result.dataUrl,
+      });
+      setDraft((current) => current || SCREENSHOT_PROMPT);
+    } catch {
+      // 桥调用异常同样静默
+    }
   }
 
   function handleAttachmentChange(input: ChangeEvent<HTMLInputElement> | File | null) {

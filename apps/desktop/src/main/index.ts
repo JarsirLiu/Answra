@@ -1,10 +1,12 @@
 import { app, BrowserWindow } from "electron";
 import { startAmbientTheme } from "./ambient";
+import { registerCaptureIpc } from "./capture/captureIpc";
 import { registerWindowIpc } from "./ipc/windowIpc";
 import { createMainWindow } from "./window";
 
 app.whenReady().then(() => {
   registerWindowIpc();
+  registerCaptureIpc();
   const window = createMainWindow();
   const stopAmbient = startAmbientTheme(window);
   window.on("closed", stopAmbient);
