@@ -1,0 +1,32 @@
+{
+  "name": "exam-assistant-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.9.0",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @exam-assistant/desktop dev",
+    "dev:web": "pnpm --filter @exam-assistant/desktop dev:web",
+    "build": "pnpm -r build",
+    "test": "pnpm -r --if-present test",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "architecture:check": "node scripts/architecture/architecture-check.mjs check",
+    "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm architecture:check",
+    "dist:win": "pnpm --filter @exam-assistant/desktop dist:win",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,mjs,cjs,json,css}": [
+      "biome check --write"
+    ]
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.15",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7"
+  }
+}

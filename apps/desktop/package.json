@@ -1,0 +1,58 @@
+{
+  "name": "@exam-assistant/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Electron 桌面壳：main/preload/renderer 三进程，renderer 只做薄壳，业务 UI 在 @exam-assistant/ui。",
+  "type": "module",
+  "main": "out/main/index.cjs",
+  "scripts": {
+    "dev": "pnpm build:electron && concurrently -k \"vite --host 127.0.0.1 --port 5180 --strictPort\" \"wait-on http://127.0.0.1:5180 && electron .\"",
+    "dev:web": "vite --host 127.0.0.1 --port 5180 --strictPort",
+    "build": "pnpm build:electron && vite build",
+    "build:electron": "node ./scripts/build-electron.mjs",
+    "typecheck": "tsc -p tsconfig.main.json && tsc -p tsconfig.preload.json && tsc -p tsconfig.renderer.json",
+    "dist:win": "pnpm build && electron-builder --win nsis"
+  },
+  "build": {
+    "appId": "dev.examassistant.desktop",
+    "productName": "Exam Assistant",
+    "asar": true,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*",
+      "dist/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    }
+  },
+  "dependencies": {
+    "@exam-assistant/shared": "workspace:*",
+    "@exam-assistant/ui": "workspace:*",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "concurrently": "^10.0.6",
+    "electron": "^44.7.0",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.27.2",
+    "typescript": "~5.9.3",
+    "vite": "^8.3.4",
+    "wait-on": "^9.5.1"
+  }
+}

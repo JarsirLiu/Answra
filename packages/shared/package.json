@@ -1,0 +1,18 @@
+{
+  "name": "@exam-assistant/shared",
+  "version": "0.1.0",
+  "private": true,
+  "description": "跨进程/跨包契约：IPC 频道、请求响应类型、环境变量常量与领域类型。",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./channels": "./src/channels.ts",
+    "./env": "./src/env.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3"
+  }
+}
