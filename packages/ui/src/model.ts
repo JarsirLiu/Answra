@@ -77,3 +77,6 @@ export const AMBIENT_FOLLOW_STORAGE_KEY = "answra-ambient-follow";
 
 /** 整体透明度（0.5~1）的本地持久化键；缺省为 1。 */
 export const APP_OPACITY_STORAGE_KEY = "answra-opacity";
+
+/** 会议隐身（内容保护）开关的本地持久化键；缺省视为关闭。 */
+export const STEALTH_STORAGE_KEY = "answra-stealth";

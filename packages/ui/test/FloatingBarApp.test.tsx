@@ -88,6 +88,29 @@ describe("three-segment floating navigation", () => {
     expect(localStorage.getItem("answra-opacity")).toBe("0.6");
   });
 
+  it("toggles meeting stealth in settings, persists the choice, and notifies the bridge", () => {
+    const bridge = {
+      close: vi.fn(),
+      fitContent: vi.fn(),
+      setContentProtection: vi.fn(),
+    };
+    render(<FloatingBarApp bridge={bridge} />);
+    fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
+
+    const toggle = screen.getByRole("checkbox", { name: /会议隐身/ });
+    expect(toggle).not.toBeChecked();
+
+    fireEvent.click(toggle);
+    expect(toggle).toBeChecked();
+    expect(localStorage.getItem("answra-stealth")).toBe("on");
+    expect(bridge.setContentProtection).toHaveBeenCalledWith(true);
+
+    fireEvent.click(toggle);
+    expect(toggle).not.toBeChecked();
+    expect(localStorage.getItem("answra-stealth")).toBe("off");
+    expect(bridge.setContentProtection).toHaveBeenCalledWith(false);
+  });
+
   it("reports shell content size through the bridge and closes on demand", () => {
     const bridge = { fitContent: vi.fn(), close: vi.fn() };
     render(<FloatingBarApp bridge={bridge} />);

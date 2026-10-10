@@ -19,6 +19,13 @@ export function registerWindowIpc(): void {
     if (!isWindowFromSender(window, event)) return;
     window?.close();
   });
+
+  ipcMain.on(WindowChannels.SetContentProtection, (event, value: boolean) => {
+    const window = getWindow();
+    if (!isWindowFromSender(window, event)) return;
+    if (typeof value !== "boolean") return;
+    window?.setContentProtection(value);
+  });
 }
 
 function isValidSize(size: ContentSize): boolean {

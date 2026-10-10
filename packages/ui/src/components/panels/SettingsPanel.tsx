@@ -8,9 +8,11 @@ interface SettingsPanelProps {
   /** 整体透明度（0.5~1）；背景、字体、图标一同变化。 */
   opacity: number;
   localOnly: boolean;
+  stealth: boolean;
   onAmbientFollowChange: (value: boolean) => void;
   onOpacityChange: (value: number) => void;
   onLocalOnlyChange: (value: boolean) => void;
+  onStealthChange: (value: boolean) => void;
   onClose: () => void;
 }
 
@@ -22,9 +24,11 @@ export function SettingsPanel({
   ambientFollow,
   opacity,
   localOnly,
+  stealth,
   onAmbientFollowChange,
   onOpacityChange,
   onLocalOnlyChange,
+  onStealthChange,
   onClose,
 }: SettingsPanelProps) {
   return (
@@ -60,6 +64,17 @@ export function SettingsPanel({
               <span className="setting-value">{Math.round(opacity * 100)}%</span>
             </span>
           </div>
+          <label className="setting-row">
+            <span>
+              <strong>会议隐身</strong>
+              <small>开启后屏幕共享与截图捕获不到本应用，你自己仍可见</small>
+            </span>
+            <input
+              checked={stealth}
+              onChange={(event) => onStealthChange(event.target.checked)}
+              type="checkbox"
+            />
+          </label>
         </section>
 
         <section className="settings-group">

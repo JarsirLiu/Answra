@@ -18,6 +18,9 @@ const bridge: DesktopBridge = {
   close: () => {
     ipcRenderer.send(WindowChannels.Close);
   },
+  setContentProtection: (value: boolean) => {
+    ipcRenderer.send(WindowChannels.SetContentProtection, value);
+  },
   onAmbientColor: (listener: (payload: AmbientColorPayload) => void) => {
     const wrapped = (_event: Electron.IpcRendererEvent, payload: AmbientColorPayload) => {
       listener(payload);

@@ -11,6 +11,7 @@ import {
   AMBIENT_FOLLOW_STORAGE_KEY,
   APP_OPACITY_STORAGE_KEY,
   MODES,
+  STEALTH_STORAGE_KEY,
   type Mode,
   type ModeAction,
   NOTE_STORAGE_KEY,
@@ -45,6 +46,9 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
     const stored = Number(localStorage.getItem(APP_OPACITY_STORAGE_KEY));
     return Number.isFinite(stored) && stored >= 0.5 && stored <= 1 ? stored : 0.8;
   });
+  const [stealth, setStealth] = useState(
+    () => localStorage.getItem(STEALTH_STORAGE_KEY) === "on",
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { ref: shellRef } = useFitContent(platform);
   useAmbientTheme(platform, ambientFollow);
@@ -56,6 +60,11 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
     return () => document.documentElement.style.removeProperty("--fade");
   }, [opacity]);
 
+  // 会议隐身：开启后屏幕共享/截图捕获不到本窗口，自身仍可见（仅桌面端有效）
+  useEffect(() => {
+    platform?.setContentProtection?.(stealth);
+  }, [stealth, platform]);
+
   function setAmbientFollowPersisted(value: boolean) {
     setAmbientFollow(value);
     localStorage.setItem(AMBIENT_FOLLOW_STORAGE_KEY, value ? "on" : "off");
@@ -64,6 +73,11 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
   function setOpacityPersisted(value: number) {
     setOpacity(value);
     localStorage.setItem(APP_OPACITY_STORAGE_KEY, String(value));
+  }
+
+  function setStealthPersisted(value: boolean) {
+    setStealth(value);
+    localStorage.setItem(STEALTH_STORAGE_KEY, value ? "on" : "off");
   }
 
   function openPanel(next: Panel) {
@@ -177,7 +191,9 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
           onClose={() => openPanel("closed")}
           onLocalOnlyChange={setLocalOnly}
           onOpacityChange={setOpacityPersisted}
+          onStealthChange={setStealthPersisted}
           opacity={opacity}
+          stealth={stealth}
         />
       )}
     </main>
