@@ -11,11 +11,11 @@ import {
   AMBIENT_FOLLOW_STORAGE_KEY,
   APP_OPACITY_STORAGE_KEY,
   MODES,
-  STEALTH_STORAGE_KEY,
   type Mode,
   type ModeAction,
   NOTE_STORAGE_KEY,
   type Panel,
+  STEALTH_STORAGE_KEY,
   WELCOME_MESSAGE,
 } from "../model";
 
@@ -46,9 +46,7 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
     const stored = Number(localStorage.getItem(APP_OPACITY_STORAGE_KEY));
     return Number.isFinite(stored) && stored >= 0.5 && stored <= 1 ? stored : 0.8;
   });
-  const [stealth, setStealth] = useState(
-    () => localStorage.getItem(STEALTH_STORAGE_KEY) === "on",
-  );
+  const [stealth, setStealth] = useState(() => localStorage.getItem(STEALTH_STORAGE_KEY) === "on");
   /** 系统是否可靠支持隐身；null 表示查询中，未确认前不应用隐身。 */
   const [stealthSupported, setStealthSupported] = useState<boolean | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);

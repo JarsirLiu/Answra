@@ -76,9 +76,7 @@
   --mint-deep: rgb(var(--mint-deep-tint) / var(--fade));
   --mint-text: rgb(var(--mint-text-tint) / var(--fade));
   --mint-wash: rgb(var(--mint-tint) / calc(var(--mint-wash-base) * var(--fade)));
-  --mint-wash-strong: rgb(
-    var(--mint-tint) / calc((var(--mint-wash-base) + 0.08) * var(--fade))
-  );
+  --mint-wash-strong: rgb(var(--mint-tint) / calc((var(--mint-wash-base) + 0.08) * var(--fade)));
   --mint-line: rgb(var(--mint-tint) / calc(0.25 * var(--fade)));
   --mint-line-focus: rgb(var(--mint-tint) / calc(0.5 * var(--fade)));
   --glass: rgb(var(--glass-tint) / calc(var(--glass-base) * var(--fade)));
@@ -87,9 +85,7 @@
   --glass-line-soft: rgb(var(--line-tint) / calc(var(--line-soft-base) * var(--fade)));
   --hover: rgb(var(--hover-tint) / max(calc(var(--hover-base) * var(--fade)), 0.08));
   --field: rgb(var(--field-tint) / calc(var(--field-base) * var(--fade)));
-  --field-strong: rgb(
-    var(--field-tint) / calc((var(--field-base) + 0.07) * var(--fade))
-  );
+  --field-strong: rgb(var(--field-tint) / calc((var(--field-base) + 0.07) * var(--fade)));
   --focus-ring: rgb(var(--focus-tint) / max(calc(var(--focus-base) * var(--fade)), 0.15));
   --paper: rgb(var(--paper-tint) / var(--fade));
   --shadow-bar:
