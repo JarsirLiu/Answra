@@ -5,6 +5,7 @@ import { PanelShell } from "./PanelShell";
 import "./ChatPanel.css";
 
 export interface ChatAttachment {
+  id: string;
   name: string;
   previewUrl: string;
 }
@@ -13,17 +14,17 @@ export interface ChatMessage {
   id: string;
   role: "assistant" | "user";
   content: string;
-  attachment?: ChatAttachment;
+  attachments?: ChatAttachment[];
 }
 
 interface ChatPanelProps {
   messages: ChatMessage[];
   draft: string;
-  attachment: ChatAttachment | null;
+  attachments: ChatAttachment[];
   fileInputRef: RefObject<HTMLInputElement | null>;
   onDraftChange: (value: string) => void;
   onAttachmentChange: (file: File | null) => void;
-  onAttachmentRemove: () => void;
+  onAttachmentRemove: (id: string) => void;
   onSend: () => void;
   onClose: () => void;
 }
@@ -32,7 +33,7 @@ interface ChatPanelProps {
 export function ChatPanel({
   messages,
   draft,
-  attachment,
+  attachments,
   fileInputRef,
   onDraftChange,
   onAttachmentChange,
@@ -47,7 +48,7 @@ export function ChatPanel({
 
   return (
     <PanelShell
-      context={attachment ? "截图已添加，可补充问题" : undefined}
+      context={attachments.length ? "截图已添加，可补充问题" : undefined}
       onClose={onClose}
       title="AI 对话"
       variant="chat"
@@ -61,15 +62,12 @@ export function ChatPanel({
               </div>
             )}
             <div className="message-content">
-              {message.attachment && (
-                <figure className="message-attachment">
-                  <img
-                    alt={`用户添加的截图：${message.attachment.name}`}
-                    src={message.attachment.previewUrl}
-                  />
-                  <figcaption>{message.attachment.name}</figcaption>
+              {message.attachments?.map((att) => (
+                <figure className="message-attachment" key={att.id}>
+                  <img alt={`用户添加的截图：${att.name}`} src={att.previewUrl} />
+                  <figcaption>{att.name}</figcaption>
                 </figure>
-              )}
+              ))}
               {message.content}
             </div>
           </article>
@@ -87,15 +85,15 @@ export function ChatPanel({
           ref={fileInputRef}
           type="file"
         />
-        {attachment && (
-          <div className="attachment-preview">
-            <img alt="待发送截图预览" src={attachment.previewUrl} />
-            <span>{attachment.name}</span>
-            <button aria-label="移除截图" onClick={onAttachmentRemove} type="button">
+        {attachments.map((att) => (
+          <div className="attachment-preview" key={att.id}>
+            <img alt="待发送截图预览" src={att.previewUrl} />
+            <span>{att.name}</span>
+            <button aria-label="移除截图" onClick={() => onAttachmentRemove(att.id)} type="button">
               <X aria-hidden="true" size={ICON_SM} />
             </button>
           </div>
-        )}
+        ))}
         <textarea
           aria-label="补充问题"
           onChange={(event) => onDraftChange(event.target.value)}
@@ -105,12 +103,16 @@ export function ChatPanel({
               event.currentTarget.form?.requestSubmit();
             }
           }}
-          placeholder={attachment ? "补充问题或说明…" : "输入问题，或先从模式功能添加截图…"}
+          placeholder={attachments.length ? "补充问题或说明…" : "输入问题，或先从模式功能添加截图…"}
           value={draft}
         />
         <div className="composer-footer">
           <span>演示模式 · 尚未连接 AI</span>
-          <button aria-label="发送给 AI" disabled={!draft.trim() && !attachment} type="submit">
+          <button
+            aria-label="发送给 AI"
+            disabled={!draft.trim() && attachments.length === 0}
+            type="submit"
+          >
             <MessageSquareText aria-hidden="true" size={ICON_SM} />
             发送
           </button>

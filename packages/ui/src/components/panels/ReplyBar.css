@@ -1,0 +1,64 @@
+/* 回复条复用 ChatPanel 的对话/输入样式，并补充多图缩略条与布局约束 */
+@import "./ChatPanel.css";
+
+/* 原地回复条：对话区高度受限，便于就地滚动展示 AI 回复 */
+.reply-bar .conversation {
+  max-height: 280px;
+}
+
+.attachment-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.attachment-thumb {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  border: 1px solid var(--glass-line-soft);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.attachment-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.attachment-thumb button {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 5px;
+  color: white;
+  background: rgba(0, 0, 0, 0.55);
+  cursor: pointer;
+}
+
+.attachment-thumb button:hover {
+  background: rgba(0, 0, 0, 0.75);
+}
+
+.composer-actions {
+  display: flex;
+  gap: 6px;
+}
+
+/* 取消发送为次级按钮，与发送区分 */
+.composer-footer button.button-ghost {
+  color: var(--muted);
+  background: transparent;
+}
+
+.composer-footer button.button-ghost:hover {
+  color: var(--ink);
+  background: var(--hover);
+}

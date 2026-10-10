@@ -3,6 +3,7 @@ import { type ChangeEvent, useEffect, useRef, useState } from "react";
 import { FloatingBar } from "../components/floating-bar/FloatingBar";
 import { type ChatAttachment, type ChatMessage, ChatPanel } from "../components/panels/ChatPanel";
 import { NotesPanel } from "../components/panels/NotesPanel";
+import { ReplyBar } from "../components/panels/ReplyBar";
 import { SettingsPanel } from "../components/panels/SettingsPanel";
 import { SourcesPanel } from "../components/panels/SourcesPanel";
 import { useAmbientTheme } from "../hooks/useAmbientTheme";
@@ -35,7 +36,9 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
     { id: "welcome", role: "assistant", content: WELCOME_MESSAGE },
   ]);
   const [draft, setDraft] = useState("");
-  const [attachment, setAttachment] = useState<ChatAttachment | null>(null);
+  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
+  /** 原地回复条是否展开（截图提问走这里，不复用对话面板）。 */
+  const [replyOpen, setReplyOpen] = useState(false);
   const [note, setNote] = useState(() => localStorage.getItem(NOTE_STORAGE_KEY) ?? "");
   const [sources, setSources] = useState<string[]>([]);
   const [localOnly, setLocalOnly] = useState(true);
@@ -115,7 +118,8 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
       if (startCapture) {
         void startRegionCapture(startCapture);
       } else {
-        openPanel("chat");
+        // 无捕获桥（浏览器预览/测试）：回落到文件选择，仍走原地回复条
+        setReplyOpen(true);
         window.setTimeout(() => fileInputRef.current?.click(), 0);
       }
       return;
@@ -130,16 +134,19 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
   async function startRegionCapture(
     startCapture: NonNullable<DesktopBridge["startRegionCapture"]>,
   ) {
-    openPanel("chat");
     try {
       const result = await startCapture();
-      // 取消/失败静默收场；失败原因提示待接入对话内反馈
+      // 取消/失败静默收场，不弹回复条
       if (!result.ok) return;
-      if (attachment) URL.revokeObjectURL(attachment.previewUrl);
-      setAttachment({
-        name: `screenshot-${new Date().toISOString().replace(/[:.]/g, "-")}.png`,
-        previewUrl: result.dataUrl,
-      });
+      setReplyOpen(true);
+      setAttachments((current) => [
+        ...current,
+        {
+          id: crypto.randomUUID(),
+          name: `screenshot-${new Date().toISOString().replace(/[:.]/g, "-")}.png`,
+          previewUrl: result.dataUrl,
+        },
+      ]);
       setDraft((current) => current || SCREENSHOT_PROMPT);
     } catch {
       // 桥调用异常同样静默
@@ -149,30 +156,51 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
   function handleAttachmentChange(input: ChangeEvent<HTMLInputElement> | File | null) {
     const file = input instanceof File ? input : (input?.target.files?.[0] ?? null);
     if (!file?.type.startsWith("image/")) return;
-    if (attachment) URL.revokeObjectURL(attachment.previewUrl);
-    setAttachment({ name: file.name, previewUrl: URL.createObjectURL(file) });
+    setAttachments((current) => [
+      ...current,
+      { id: crypto.randomUUID(), name: file.name, previewUrl: URL.createObjectURL(file) },
+    ]);
     setDraft((current) => current || SCREENSHOT_PROMPT);
   }
 
-  function removeAttachment() {
-    if (attachment) URL.revokeObjectURL(attachment.previewUrl);
-    setAttachment(null);
+  function removeAttachment(id: string) {
+    setAttachments((current) => {
+      const target = current.find((candidate) => candidate.id === id);
+      if (target?.previewUrl.startsWith("blob:")) URL.revokeObjectURL(target.previewUrl);
+      return current.filter((candidate) => candidate.id !== id);
+    });
+  }
+
+  /** 取消发送：清空本轮未发送的消息（截图 + 草稿），并释放 blob URL。 */
+  function clearPending() {
+    setAttachments((current) => {
+      current.forEach((candidate) => {
+        if (candidate.previewUrl.startsWith("blob:")) URL.revokeObjectURL(candidate.previewUrl);
+      });
+      return [];
+    });
+    setDraft("");
+  }
+
+  /** 关闭回复条等同放弃本轮未发送内容。 */
+  function closeReplyBar() {
+    clearPending();
+    setReplyOpen(false);
   }
 
   function performSend() {
     const content = draft.trim();
-    if (!content && !attachment) return;
+    if (!content && attachments.length === 0) return;
 
-    const screenshot = attachment;
+    // 快照当前预备附件：发送后它们归属到消息，回复条内已清空（不在此 revoke，避免消息图失效）
+    const sent = attachments;
     setMessages((current) => [
       ...current,
       {
         id: crypto.randomUUID(),
         role: "user",
         content,
-        ...(screenshot && {
-          attachment: { name: screenshot.name, previewUrl: screenshot.previewUrl },
-        }),
+        attachments: sent,
       },
       {
         id: crypto.randomUUID(),
@@ -182,7 +210,7 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
       },
     ]);
     setDraft("");
-    setAttachment(null);
+    setAttachments([]);
   }
 
   function saveNote(value: string) {
@@ -204,13 +232,28 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
 
       {panel === "chat" && (
         <ChatPanel
-          attachment={attachment}
+          attachments={attachments}
           draft={draft}
           fileInputRef={fileInputRef}
           messages={messages}
           onAttachmentChange={handleAttachmentChange}
           onAttachmentRemove={removeAttachment}
           onClose={() => openPanel("closed")}
+          onDraftChange={setDraft}
+          onSend={performSend}
+        />
+      )}
+
+      {replyOpen && (
+        <ReplyBar
+          attachments={attachments}
+          draft={draft}
+          fileInputRef={fileInputRef}
+          messages={messages}
+          onAttachmentChange={handleAttachmentChange}
+          onAttachmentRemove={removeAttachment}
+          onClearAll={clearPending}
+          onClose={closeReplyBar}
           onDraftChange={setDraft}
           onSend={performSend}
         />
