@@ -83,6 +83,3 @@ export const STEALTH_STORAGE_KEY = "answra-stealth";
 
 /** 用户颜色分组覆盖的本地持久化键前缀；完整键为 `${前缀}${分组id}`，值是 hex 颜色。 */
 export const COLOR_GROUP_STORAGE_PREFIX = "answra-color-group-";
-
-/** 外观模式持久化键：auto=跟随系统（缺省），light/dark=手动指定。 */
-export const COLOR_SCHEME_STORAGE_KEY = "answra-color-scheme";

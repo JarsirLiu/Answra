@@ -1,14 +1,7 @@
 import type { DesktopBridge } from "@answra/shared";
 import { act, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  colorGroupTokens,
-  loadColorScheme,
-  useAppTheme,
-  useColorScheme,
-  type ColorGroupOverrides,
-  type ColorScheme,
-} from "../src/theme";
+import { colorGroupTokens, useAppTheme, type ColorGroupOverrides } from "../src/theme";
 
 interface AmbientPayload {
   ok: boolean;
@@ -50,9 +43,10 @@ function Harness({
 describe("color group overrides", () => {
   afterEach(() => {
     const style = document.documentElement.style;
-    for (const key of ["--ink-tint", "--glass-tint", "--danger-tint", "--glass-base"]) {
+    for (const key of ["--ink-tint", "--glass-tint", "--danger-tint", "--panel-tint"]) {
       style.removeProperty(key);
     }
+    delete document.documentElement.dataset.theme;
   });
 
   it("expands a group hex to all raw tokens of the group", () => {
@@ -73,45 +67,44 @@ describe("color group overrides", () => {
     act(() => bridge.emit({ ok: true, hex: "#101018", luminance: 0.05 }));
     // ambient 推送了 --glass-tint，但用户"背景"分组覆盖优先
     expect(document.documentElement.style.getPropertyValue("--glass-tint")).toBe("170 187 204");
-    // 未被用户覆盖的 ambient 键仍然生效
-    expect(document.documentElement.style.getPropertyValue("--glass-base")).toBe("0.55");
+    // 未被用户覆盖的 ambient 键仍然生效（前景 alpha 基数）
+    expect(document.documentElement.style.getPropertyValue("--hover-base")).toBe("0.16");
 
     // 关闭变色龙：ambient 键清除，用户覆盖保留
     rerender(<Harness bridge={bridge} ambientFollow={false} colorGroups={{ surface: "#aabbcc" }} />);
-    expect(document.documentElement.style.getPropertyValue("--glass-base")).toBe("");
+    expect(document.documentElement.style.getPropertyValue("--hover-base")).toBe("");
     expect(document.documentElement.style.getPropertyValue("--glass-tint")).toBe("170 187 204");
+    // 背景组覆盖同时作用于面板（用户覆盖持久保留）
+    expect(document.documentElement.style.getPropertyValue("--panel-tint")).toBe("170 187 204");
   });
 });
 
-describe("color scheme", () => {
-  function SchemeHarness({ scheme }: { scheme: ColorScheme }) {
-    useColorScheme(scheme);
-    return null;
-  }
-
+describe("color scheme resolution", () => {
   afterEach(() => {
     delete document.documentElement.dataset.theme;
-    localStorage.clear();
   });
 
-  it("writes explicit light/dark to data-theme", () => {
-    const { rerender } = render(<SchemeHarness scheme="dark" />);
+  it("follows the background luminance while chameleon is on", () => {
+    const bridge = createBridge();
+    render(<Harness bridge={bridge} ambientFollow colorGroups={{}} />);
+
+    act(() => bridge.emit({ ok: true, hex: "#101018", luminance: 0.05 }));
     expect(document.documentElement.dataset.theme).toBe("dark");
-    rerender(<SchemeHarness scheme="light" />);
+
+    act(() => bridge.emit({ ok: true, hex: "#f5f2ec", luminance: 0.9 }));
     expect(document.documentElement.dataset.theme).toBe("light");
   });
 
-  it("resolves auto from prefers-color-scheme", () => {
-    render(<SchemeHarness scheme="auto" />);
-    // jsdom 不实现 matchMedia，auto 回落浅色
+  it("falls back to the system scheme when chameleon is off", () => {
+    render(<Harness bridge={undefined} ambientFollow={false} colorGroups={{}} />);
+    // jsdom 不实现 matchMedia，回落浅色
     expect(document.documentElement.dataset.theme).toBe("light");
   });
 
-  it("loads stored scheme and falls back to auto", () => {
-    expect(loadColorScheme()).toBe("auto");
-    localStorage.setItem("answra-color-scheme", "dark");
-    expect(loadColorScheme()).toBe("dark");
-    localStorage.setItem("answra-color-scheme", "bogus");
-    expect(loadColorScheme()).toBe("auto");
+  it("falls back to the system scheme when sampling fails", () => {
+    const bridge = createBridge();
+    render(<Harness bridge={bridge} ambientFollow colorGroups={{}} />);
+    act(() => bridge.emit({ ok: false, hex: "#101018", luminance: 0.05 }));
+    expect(document.documentElement.dataset.theme).toBe("light");
   });
 });

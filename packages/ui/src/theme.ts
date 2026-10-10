@@ -5,20 +5,23 @@ import {
   deriveAmbientTokens,
   FALLBACK_TOKEN_KEYS,
   parseHex,
+  resolveAmbientScheme,
   type AmbientTokens,
 } from "./hooks/useAmbientTheme";
-import { COLOR_GROUP_STORAGE_PREFIX, COLOR_SCHEME_STORAGE_KEY } from "./model";
+import { COLOR_GROUP_STORAGE_PREFIX } from "./model";
 
 /**
- * 用户颜色分组主题层。
+ * 应用主题层：变色龙（ambient）+ 用户颜色分组覆盖，合成单一写入方。
  *
  * 颜色按组管理，与 styles/tokens.css 的「原始参数」分组一一对应；
  * 未来设置页逐组选色时只需写入本模块的覆盖表，无需触碰任何组件样式。
  *
+ * 外观方案（data-theme → tokens.css 的深/浅令牌组）没有手动开关：
+ *   变色龙开启时由背景亮度决定深/浅；关闭时回落跟随系统。
+ * data-theme 与内联令牌都由 useAppTheme 单点写入，不存在双写竞争。
+ *
  * 写入优先级（同一原始参数上层的值胜出）：
  *   样式表默认 < ambient 变色龙 < 用户分组覆盖。
- * ambient 与用户覆盖由 useAppTheme 合成后统一写入 :root（单一写入方），
- * 避免两个 effect 各自操作内联样式互相清除。
  */
 
 export interface ColorGroupDefinition {
@@ -92,10 +95,16 @@ export function saveColorGroups(groups: ColorGroupOverrides): void {
   }
 }
 
+/** 解析系统外观偏好；无 matchMedia 环境（jsdom/旧内核）回落浅色。 */
+function systemScheme(): "light" | "dark" {
+  return globalThis.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
 /**
- * 应用主题的唯一入口：ambient 推送 + 用户分组覆盖合成后写入 :root。
+ * 应用主题的唯一入口：data-theme 深浅方案 + 内联原始参数都由此写入。
  * @param bridge 桌面桥（浏览器预览/测试可能没有 onAmbientColor）
- * @param options.ambientFollow 变色龙开关；关闭或采样失败时该层回落默认
+ * @param options.ambientFollow 变色龙开关；开启时深浅方案随背景亮度，
+ *   关闭或采样失败时回落跟随系统
  * @param options.colorGroups 用户分组覆盖；优先级高于 ambient
  */
 export function useAppTheme(
@@ -104,14 +113,22 @@ export function useAppTheme(
 ): void {
   const { ambientFollow, colorGroups } = options;
   const [ambient, setAmbient] = useState<AmbientTokens | undefined>(undefined);
+  const [ambientScheme, setAmbientScheme] = useState<"light" | "dark" | undefined>(undefined);
 
   useEffect(() => {
     if (!ambientFollow || !bridge?.onAmbientColor) {
       setAmbient(undefined);
+      setAmbientScheme(undefined);
       return;
     }
     return bridge.onAmbientColor((payload) => {
-      setAmbient(payload.ok ? deriveAmbientTokens(payload.hex) : undefined);
+      if (payload.ok) {
+        setAmbient(deriveAmbientTokens(payload.hex));
+        setAmbientScheme(resolveAmbientScheme(payload.hex));
+      } else {
+        setAmbient(undefined);
+        setAmbientScheme(undefined);
+      }
     });
   }, [bridge, ambientFollow]);
 
@@ -122,40 +139,13 @@ export function useAppTheme(
     for (const key of FALLBACK_TOKEN_KEYS) full[key] = merged[key] ?? null;
     applyTokens(full);
   }, [ambient, colorGroups]);
-}
 
-/* ── 外观模式（浅色/深色/跟随系统） ──────────────────────────────── */
-
-export type ColorScheme = "auto" | "light" | "dark";
-
-/** 从 localStorage 读取外观模式；非法或缺省回落 auto（跟随系统）。 */
-export function loadColorScheme(): ColorScheme {
-  const stored = typeof localStorage === "undefined" ? null : localStorage.getItem(COLOR_SCHEME_STORAGE_KEY);
-  return stored === "light" || stored === "dark" ? stored : "auto";
-}
-
-/** 持久化外观模式。 */
-export function saveColorScheme(scheme: ColorScheme): void {
-  if (typeof localStorage === "undefined") return;
-  if (scheme === "auto") localStorage.removeItem(COLOR_SCHEME_STORAGE_KEY);
-  else localStorage.setItem(COLOR_SCHEME_STORAGE_KEY, scheme);
-}
-
-/** 解析 auto：跟随系统 prefers-color-scheme。 */
-function resolveScheme(scheme: ColorScheme): "light" | "dark" {
-  if (scheme !== "auto") return scheme;
-  return globalThis.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-}
-
-/**
- * 应用外观模式：解析后写 documentElement 的 data-theme（tokens.css 据此
- * 切换原始参数组），auto 时监听系统变化实时跟随。
- */
-export function useColorScheme(scheme: ColorScheme): void {
+  // data-theme 单一写入方：变色龙深浅判定优先；
+  // 变色龙关闭或尚未采样到有效背景时，回落跟随系统
   useEffect(() => {
     const root = document.documentElement;
-    if (scheme !== "auto") {
-      root.dataset.theme = scheme;
+    if (ambientFollow && ambientScheme) {
+      root.dataset.theme = ambientScheme;
       return;
     }
     const media = globalThis.matchMedia?.("(prefers-color-scheme: dark)");
@@ -167,5 +157,5 @@ export function useColorScheme(scheme: ColorScheme): void {
     return () => {
       media?.removeEventListener("change", apply);
     };
-  }, [scheme]);
+  }, [ambientFollow, ambientScheme]);
 }

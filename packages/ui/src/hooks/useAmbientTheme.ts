@@ -1,6 +1,3 @@
-import type { AmbientColorPayload, DesktopBridge } from "@answra/shared";
-import { useEffect } from "react";
-
 /**
  * 变色龙主题（ambient variant）：订阅主进程的背景主色推送，
  * 重算「原始参数」（-tint 通道 / -base alpha）写入 :root 内联样式。
@@ -96,10 +93,22 @@ function chooseMintText(bg: Rgb): Rgb | undefined {
 }
 
 /**
- * 由背景主色派生 ambient variant 的「原始参数」（tint 通道 + alpha 基数）。
+ * 判定背景对应的主题方案：深色背景→dark，浅色背景→light。
+ * useAppTheme 据此写 data-theme，让变色龙与 [data-theme] 令牌组联动，
+ * 而不是各自为战。
+ */
+export function resolveAmbientScheme(hex: string): "light" | "dark" | undefined {
+  const bg = parseHex(hex);
+  if (!bg) return undefined;
+  return relativeLuminance(bg) < DARK_THRESHOLD ? "dark" : "light";
+}
+
+/**
+ * 由背景主色派生 ambient variant 的「原始参数」（仅 tint 通道与前景 alpha 基数）。
  * 感知令牌（--ink/--glass/...）的 fade 公式仍在 tokens.css，本函数只换参数不换公式。
- * 深色背景：文字向白色求解到对比度达标，玻璃底为低透明背景色，
- * 品牌绿同步提亮；浅色背景：文字向黑色求解，保持浅玻璃观感但带背景色相。
+ * 硬约束：不写任何表面 alpha（表面恒不透明，背景零参与混色，颜色不随拖动抖动）。
+ * 深色背景：文字向白色求解到对比度达标，面板为加深一档的背景色，品牌绿同步提亮；
+ * 浅色背景：文字向黑色求解，面板为向白色提亮一档的背景色。
  */
 export function deriveAmbientTokens(hex: string): AmbientTokens | undefined {
   const bg = parseHex(hex);
@@ -110,14 +119,15 @@ export function deriveAmbientTokens(hex: string): AmbientTokens | undefined {
   const mintText = chooseMintText(bg);
   const paper = mix(bg, extreme, isDark ? 0.12 : 0.1);
   const inkSoft = mix(ink, bg, 0.12);
+  // 面板（不透明表面）：深色背景再压暗一档、浅色背景向白提亮一档，
+  // 与背景保持同色相的同时留出表面层次
+  const panel = isDark ? mix(bg, BLACK, 0.22) : mix(bg, WHITE, 0.86);
 
   return {
     "--ink-tint": toChannels(ink),
     "--icon-tint": toChannels(inkSoft),
     "--glass-tint": toChannels(bg),
-    "--glass-base": isDark ? "0.55" : "0.62",
-    "--glass-strong-tint": toChannels(bg),
-    "--glass-strong-base": isDark ? "0.74" : "0.85",
+    "--panel-tint": toChannels(panel),
     "--line-tint": toChannels(ink),
     "--hover-tint": toChannels(ink),
     "--hover-base": "0.16",
@@ -165,22 +175,4 @@ export function applyTokens(tokens: AmbientTokens | undefined): void {
     if (value === null) rootStyle.removeProperty(key);
     else rootStyle.setProperty(key, value);
   }
-}
-
-/**
- * 订阅背景主色并应用主题。
- * @param bridge 桌面桥（浏览器预览/测试可能没有 onAmbientColor）
- * @param enabled 设置开关；关闭或采样失败时清除内联覆盖回落默认主题
- */
-export function useAmbientTheme(bridge: DesktopBridge | undefined, enabled: boolean): void {
-  useEffect(() => {
-    if (!enabled || !bridge?.onAmbientColor) {
-      applyTokens(undefined);
-      return;
-    }
-    const unsubscribe = bridge.onAmbientColor((payload: AmbientColorPayload) => {
-      applyTokens(payload.ok ? deriveAmbientTokens(payload.hex) : undefined);
-    });
-    return unsubscribe;
-  }, [bridge, enabled]);
 }

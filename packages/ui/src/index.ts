@@ -4,7 +4,6 @@ export { FloatingBar } from "./components/floating-bar/FloatingBar";
 export { ModeMenu, ModePicker } from "./components/floating-bar/ModePicker";
 export { WorkspaceControls } from "./components/floating-bar/WorkspaceControls";
 export { RangeSlider } from "./components/controls/RangeSlider";
-export { SegmentedControl } from "./components/controls/SegmentedControl";
 export { Switch } from "./components/controls/Switch";
 export type { ChatAttachment, ChatMessage } from "./components/panels/ChatPanel";
 export { PanelShell } from "./components/panels/PanelShell";
@@ -15,13 +14,9 @@ export {
   COLOR_GROUPS,
   colorGroupTokens,
   loadColorGroups,
-  loadColorScheme,
   saveColorGroups,
-  saveColorScheme,
   useAppTheme,
-  useColorScheme,
   type ColorGroupId,
   type ColorGroupOverrides,
-  type ColorScheme,
 } from "./theme";
 export { ICON, ICON_SM, ICON_STROKE } from "./tokens";

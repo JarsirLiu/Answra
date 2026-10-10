@@ -1,23 +1,18 @@
 import { RangeSlider } from "../controls/RangeSlider";
-import { SegmentedControl } from "../controls/SegmentedControl";
 import { Switch } from "../controls/Switch";
-import type { ColorScheme } from "../../theme";
 import { PanelShell } from "./PanelShell";
 import "./SettingsPanel.css";
 
 interface SettingsPanelProps {
-  /** 是否跟随屏幕背景自动变色（变色龙主题）。 */
+  /** 是否跟随屏幕背景自动变色（变色龙主题）；开启时深浅方案随背景亮度自动决定。 */
   ambientFollow: boolean;
-  /** 外观模式：auto 跟随系统，light/dark 手动指定。 */
-  scheme: ColorScheme;
-  /** 整体透明度（0.5~1）；背景、字体、图标一同变化。 */
+  /** 前景透明度（0.5~1）；文字/图标/描边随之变化，表面恒不透明。 */
   opacity: number;
   localOnly: boolean;
   stealth: boolean;
   /** 系统是否可靠支持隐身（内容保护）；不支持时开关禁用。 */
   stealthSupported: boolean;
   onAmbientFollowChange: (value: boolean) => void;
-  onColorSchemeChange: (value: ColorScheme) => void;
   onOpacityChange: (value: number) => void;
   onLocalOnlyChange: (value: boolean) => void;
   onStealthChange: (value: boolean) => void;
@@ -27,22 +22,14 @@ interface SettingsPanelProps {
 const OPACITY_MIN = 0.5;
 const OPACITY_MAX = 1;
 
-const SCHEME_OPTIONS = [
-  { value: "auto", label: "跟随系统" },
-  { value: "light", label: "浅色" },
-  { value: "dark", label: "深色" },
-] as const satisfies ReadonlyArray<{ value: ColorScheme; label: string }>;
-
 /** 设置面板：常规/本地运行/模型分组；控件一律用统一令牌控件，不用原生样式。 */
 export function SettingsPanel({
   ambientFollow,
-  scheme,
   opacity,
   localOnly,
   stealth,
   stealthSupported,
   onAmbientFollowChange,
-  onColorSchemeChange,
   onOpacityChange,
   onLocalOnlyChange,
   onStealthChange,
@@ -63,17 +50,6 @@ export function SettingsPanel({
               onChange={onAmbientFollowChange}
             />
           </label>
-          <div className="setting-row">
-            <span>
-              <strong>外观</strong>
-            </span>
-            <SegmentedControl
-              ariaLabel="外观模式"
-              onChange={onColorSchemeChange}
-              options={SCHEME_OPTIONS}
-              value={scheme}
-            />
-          </div>
           <div className="setting-row">
             <span>
               <strong>前景透明度</strong>

@@ -128,20 +128,6 @@ describe("three-segment floating navigation", () => {
     expect(localStorage.getItem("answra-opacity")).toBe("0.6");
   });
 
-  it("switches color scheme via the segmented control and persists the choice", () => {
-    render(<FloatingBarApp />);
-    fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
-
-    const group = screen.getByRole("radiogroup", { name: "外观模式" });
-    expect(group).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: "跟随系统" })).toHaveAttribute("aria-checked", "true");
-
-    fireEvent.click(screen.getByRole("radio", { name: "深色" }));
-    expect(screen.getByRole("radio", { name: "深色" })).toHaveAttribute("aria-checked", "true");
-    expect(document.documentElement.dataset.theme).toBe("dark");
-    expect(localStorage.getItem("answra-color-scheme")).toBe("dark");
-  });
-
   it("toggles meeting stealth in settings, persists the choice, and notifies the bridge", async () => {
     const bridge = {
       close: vi.fn(),
