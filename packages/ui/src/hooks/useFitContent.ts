@@ -1,4 +1,4 @@
-import type { DesktopBridge } from "@exam-assistant/shared";
+import type { DesktopBridge } from "@answra/shared";
 import { useEffect, useRef } from "react";
 
 /**

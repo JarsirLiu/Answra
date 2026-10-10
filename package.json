@@ -1,5 +1,5 @@
 {
-  "name": "exam-assistant-workspace",
+  "name": "answra-workspace",
   "version": "0.1.0",
   "private": true,
   "packageManager": "pnpm@11.9.0",
@@ -7,8 +7,8 @@
     "node": ">=22.12.0"
   },
   "scripts": {
-    "dev": "pnpm --filter @exam-assistant/desktop dev",
-    "dev:web": "pnpm --filter @exam-assistant/desktop dev:web",
+    "dev": "pnpm --filter @answra/desktop dev",
+    "dev:web": "pnpm --filter @answra/desktop dev:web",
     "build": "pnpm -r build",
     "test": "pnpm -r --if-present test",
     "typecheck": "pnpm -r --if-present typecheck",
@@ -16,7 +16,7 @@
     "lint:fix": "biome check --write .",
     "architecture:check": "node scripts/architecture/architecture-check.mjs check",
     "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm architecture:check",
-    "dist:win": "pnpm --filter @exam-assistant/desktop dist:win",
+    "dist:win": "pnpm --filter @answra/desktop dist:win",
     "prepare": "husky"
   },
   "lint-staged": {

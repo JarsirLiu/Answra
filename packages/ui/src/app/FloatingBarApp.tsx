@@ -1,4 +1,4 @@
-import type { DesktopBridge } from "@exam-assistant/shared";
+import type { DesktopBridge } from "@answra/shared";
 import { type ChangeEvent, useRef, useState } from "react";
 import { FloatingBar } from "../components/floating-bar/FloatingBar";
 import { type ChatAttachment, type ChatMessage, ChatPanel } from "../components/panels/ChatPanel";
@@ -20,13 +20,13 @@ import {
 const SCREENSHOT_PROMPT = "请帮我分析这道题，先说明题意和解题思路。";
 
 interface FloatingBarAppProps {
-  /** 桌面平台桥；默认使用 preload 注入的 window.examAssistant，测试可注入 mock。 */
+  /** 桌面平台桥；默认使用 preload 注入的 window.answra，测试可注入 mock。 */
   bridge?: DesktopBridge;
 }
 
 export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
-  // 默认桥由 desktop preload 注入（window.examAssistant），浏览器预览与测试可传入 mock
-  const platform = bridge ?? (globalThis as { examAssistant?: DesktopBridge }).examAssistant;
+  // 默认桥由 desktop preload 注入（window.answra），浏览器预览与测试可传入 mock
+  const platform = bridge ?? (globalThis as { answra?: DesktopBridge }).answra;
   const [mode, setMode] = useState<Mode>("exam");
   const [panel, setPanel] = useState<Panel>("closed");
   const [messages, setMessages] = useState<ChatMessage[]>([

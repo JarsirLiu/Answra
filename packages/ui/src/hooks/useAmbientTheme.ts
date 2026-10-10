@@ -1,4 +1,4 @@
-import type { AmbientColorPayload, DesktopBridge } from "@exam-assistant/shared";
+import type { AmbientColorPayload, DesktopBridge } from "@answra/shared";
 import { useEffect } from "react";
 
 /**

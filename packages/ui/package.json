@@ -1,5 +1,5 @@
 {
-  "name": "@exam-assistant/ui",
+  "name": "@answra/ui",
   "version": "0.1.0",
   "private": true,
   "description": "悬浮导航条与内容面板的共享 React UI（桌面壳 renderer 只做薄壳，业务 UI 全部在本包）。",
@@ -21,7 +21,7 @@
     "react-dom": ">=19"
   },
   "devDependencies": {
-    "@exam-assistant/shared": "workspace:*",
+    "@answra/shared": "workspace:*",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@types/react": "^19.3.0",

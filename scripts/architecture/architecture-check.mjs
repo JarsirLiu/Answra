@@ -65,7 +65,7 @@ function checkImports(pkg) {
       const spec = match[1];
 
       // 1. workspace 包导入：必须是该包 exports 声明的入口
-      if (spec.startsWith("@exam-assistant/")) {
+      if (spec.startsWith("@answra/")) {
         imports.add(spec);
         const targetPkgName = dirByPkgName.has(spec)
           ? spec

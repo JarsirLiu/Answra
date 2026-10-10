@@ -20,10 +20,10 @@ importers:
 
   apps/desktop:
     dependencies:
-      '@exam-assistant/shared':
+      '@answra/shared':
         specifier: workspace:*
         version: link:../../packages/shared
-      '@exam-assistant/ui':
+      '@answra/ui':
         specifier: workspace:*
         version: link:../../packages/ui
       react:
@@ -79,7 +79,7 @@ importers:
         specifier: ^1.54.0
         version: 1.54.0(@types/react@19.3.0)(react@19.3.0)
     devDependencies:
-      '@exam-assistant/shared':
+      '@answra/shared':
         specifier: workspace:*
         version: link:../shared
       '@testing-library/jest-dom':

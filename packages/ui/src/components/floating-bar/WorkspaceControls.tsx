@@ -1,6 +1,7 @@
 import { BookOpen, FolderOpen, Settings, X } from "lucide-react";
 import type { Panel } from "../../model";
 import { ICON, ICON_SM, ICON_STROKE } from "../../tokens";
+import { ChevronDownGlyph } from "../icons";
 
 interface WorkspaceControlsProps {
   panel: Panel;
@@ -24,9 +25,7 @@ export function WorkspaceControls({ panel, onTogglePanel, onClose }: WorkspaceCo
           <small>记录到</small>
           <strong>笔记本</strong>
         </span>
-        <span aria-hidden="true" className="destination-chevron">
-          ⌄
-        </span>
+        <ChevronDownGlyph className="destination-chevron" />
       </button>
       <button
         aria-label="打开参考资料"

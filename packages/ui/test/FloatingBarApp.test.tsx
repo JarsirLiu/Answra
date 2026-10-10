@@ -52,7 +52,7 @@ describe("three-segment floating navigation", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "个人笔记" }), {
       target: { value: "先确认输入约束" },
     });
-    expect(localStorage.getItem("exam-assistant-note")).toBe("先确认输入约束");
+    expect(localStorage.getItem("answra-note")).toBe("先确认输入约束");
 
     fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
     expect(screen.getByRole("heading", { name: "设置" })).toBeInTheDocument();
@@ -68,10 +68,10 @@ describe("three-segment floating navigation", () => {
 
     fireEvent.click(toggle);
     expect(toggle).not.toBeChecked();
-    expect(localStorage.getItem("exam-assistant-ambient-follow")).toBe("off");
+    expect(localStorage.getItem("answra-ambient-follow")).toBe("off");
 
     fireEvent.click(toggle);
-    expect(localStorage.getItem("exam-assistant-ambient-follow")).toBe("on");
+    expect(localStorage.getItem("answra-ambient-follow")).toBe("on");
   });
 
   it("reports shell content size through the bridge and closes on demand", () => {

@@ -1,4 +1,4 @@
-import type { DesktopBridge } from "@exam-assistant/shared";
+import type { DesktopBridge } from "@answra/shared";
 import { act, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { deriveAmbientTokens, useAmbientTheme } from "../src/hooks/useAmbientTheme";

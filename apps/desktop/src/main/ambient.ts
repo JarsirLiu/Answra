@@ -1,4 +1,4 @@
-import { AmbientChannels, type AmbientColorPayload } from "@exam-assistant/shared";
+import { AmbientChannels, type AmbientColorPayload } from "@answra/shared";
 import { type BrowserWindow, desktopCapturer, screen } from "electron";
 
 /**

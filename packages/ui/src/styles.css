@@ -150,9 +150,8 @@ input:focus-visible {
   background: var(--hover);
 }
 .mode-picker-chevron {
+  flex: 0 0 auto;
   color: var(--muted);
-  font-size: var(--font-sm);
-  line-height: 1;
 }
 /* 模式菜单：文档流内、紧跟胶囊下方；打开时窗口经 useFitContent 自动扩展。 */
 .mode-menu {
@@ -190,8 +189,8 @@ input:focus-visible {
   background: var(--mint-wash);
 }
 .mode-menu-check {
+  flex: 0 0 auto;
   margin-left: auto;
-  font-size: var(--font-sm);
 }
 
 /* ── 第二段：模式功能 ─────────────────────────────────────────────── */
@@ -302,9 +301,8 @@ input:focus-visible {
   white-space: nowrap;
 }
 .destination-chevron {
+  flex: 0 0 auto;
   color: var(--muted);
-  font-size: var(--font-sm);
-  line-height: 1;
 }
 .utility-action--close:hover {
   color: #c0453e;

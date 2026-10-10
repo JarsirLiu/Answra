@@ -1,5 +1,5 @@
 import path from "node:path";
-import type { ContentSize } from "@exam-assistant/shared";
+import type { ContentSize } from "@answra/shared";
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron";
 import { app, BrowserWindow, screen } from "electron";
 

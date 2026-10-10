@@ -39,14 +39,14 @@ Windows 安装包通过 `pnpm dist:win` 构建，当前为未签名的 NSIS 安�
 
 ## 仓库结构
 
-pnpm workspace monorepo，按 ZCode 的团队协作标准组织：包间依赖只走 `workspace:*` 与各包 `exports` 声明的公开入口；IPC 频道与载荷类型集中在 `@exam-assistant/shared`；渲染层 UI 与平台能力（DesktopBridge）解耦，`packages/ui` 不允许直接接触 Electron。
+pnpm workspace monorepo，按 ZCode 的团队协作标准组织：包间依赖只走 `workspace:*` 与各包 `exports` 声明的公开入口；IPC 频道与载荷类型集中在 `@answra/shared`；渲染层 UI 与平台能力（DesktopBridge）解耦，`packages/ui` 不允许直接接触 Electron。
 
 ```text
 packages/shared        跨进程契约：IPC 频道常量 + ChannelMap 类型、环境变量常量、领域类型
 packages/ui            悬浮条与面板的全部业务 UI（React），含组件测试
 apps/desktop           Electron 桌面壳
   src/main             主进程：窗口管理、按领域拆分的 IPC handler
-  src/preload          contextBridge 桥（window.examAssistant）
+  src/preload          contextBridge 桥（window.answra）
   src/renderer         薄渲染层：仅挂载 <FloatingBarApp/>
 scripts/architecture   架构守护脚本（深导入/依赖环/平台越界检查）
 docs                   架构与交互决策

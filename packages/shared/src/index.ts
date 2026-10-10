@@ -10,7 +10,7 @@ export {
 } from "./channels";
 export {
   AI_SERVICE_BASE_URL,
-  EXAM_ASSISTANT_ENV,
-  type ExamAssistantEnv,
-  parseExamAssistantEnv,
+  ANSWRA_ENV,
+  type AnswraEnv,
+  parseAnswraEnv,
 } from "./env";

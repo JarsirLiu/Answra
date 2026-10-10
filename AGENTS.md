@@ -5,9 +5,9 @@
 ## 包结构与依赖方向
 
 ```text
-@exam-assistant/shared  ←  @exam-assistant/ui  ←  @exam-assistant/desktop(renderer)
+@answra/shared  ←  @answra/ui  ←  @answra/desktop(renderer)
                                     ↑
-@exam-assistant/shared  ←  @exam-assistant/desktop(main / preload)
+@answra/shared  ←  @answra/desktop(main / preload)
 ```
 
 - 依赖必须单向，禁止环（`pnpm architecture:check` 强制）。
@@ -19,19 +19,19 @@
 | 目录 | 职责 | 约束 |
 | --- | --- | --- |
 | `src/main` | 窗口管理、生命周期、按领域拆分的 IPC handler（`src/main/ipc/*Ipc.ts`） | 可用 electron / node 内置模块 |
-| `src/preload` | `contextBridge` 暴露唯一 `window.examAssistant` API 面 | 只做转发，不放业务逻辑 |
+| `src/preload` | `contextBridge` 暴露唯一 `window.answra` API 面 | 只做转发，不放业务逻辑 |
 | `src/renderer` | 薄壳：挂载 `<FloatingBarApp/>` | 禁止 import electron / node 模块 |
 
 ## IPC 约定（三层类型安全）
 
-1. 频道常量与请求/响应类型映射只写在 `packages/shared/src/channels.ts`，命名 `exam-assistant:<域>:<动作>`。
+1. 频道常量与请求/响应类型映射只写在 `packages/shared/src/channels.ts`，命名 `answra:<域>:<动作>`。
 2. main 侧 handler 按领域一个文件，注册前用 `isWindowFromSender` 校验来源。
 3. preload 消费 ChannelMap 类型；renderer 通过 `DesktopBridge` 接口访问，测试注入 mock bridge。
 
 ## 环境变量
 
 - 变量名只允许在 `packages/shared/src/env.ts` 定义一次；`.env.example` 逐项注明用途与是否 secret。
-- 运行时读取统一走类型化函数（如 `parseExamAssistantEnv`），禁止散落 `process.env.XXX`。
+- 运行时读取统一走类型化函数（如 `parseAnswraEnv`），禁止散落 `process.env.XXX`。
 
 ## 质量门禁
 

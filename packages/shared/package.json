@@ -1,5 +1,5 @@
 {
-  "name": "@exam-assistant/shared",
+  "name": "@answra/shared",
   "version": "0.1.0",
   "private": true,
   "description": "跨进程/跨包契约：IPC 频道、请求响应类型、环境变量常量与领域类型。",

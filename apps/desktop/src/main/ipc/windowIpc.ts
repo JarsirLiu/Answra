@@ -1,10 +1,10 @@
-import { type ContentSize, WindowChannels } from "@exam-assistant/shared";
+import { type ContentSize, WindowChannels } from "@answra/shared";
 import { ipcMain } from "electron";
 import { getWindow, isWindowFromSender, resizeWindowToContent } from "../window";
 
 /**
  * 窗口控制 IPC。
- * 频道常量与载荷类型来自 @exam-assistant/shared/channels，
+ * 频道常量与载荷类型来自 @answra/shared/channels，
  * 渲染进程只能通过 preload 暴露的桥访问，不直接触碰 ipcRenderer。
  */
 export function registerWindowIpc(): void {

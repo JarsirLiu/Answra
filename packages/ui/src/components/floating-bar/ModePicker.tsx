@@ -1,5 +1,6 @@
 import type { Mode, ModeDefinition } from "../../model";
 import { ICON, ICON_SM, ICON_STROKE } from "../../tokens";
+import { CheckGlyph, ChevronDownGlyph } from "../icons";
 
 interface ModePickerProps {
   modes: readonly ModeDefinition[];
@@ -26,9 +27,7 @@ export function ModePicker({ modes, mode, open, onToggle }: ModePickerProps) {
     >
       <ActiveIcon aria-hidden="true" size={ICON} strokeWidth={ICON_STROKE} />
       <span>{active.label}</span>
-      <span aria-hidden="true" className="mode-picker-chevron">
-        ⌄
-      </span>
+      <ChevronDownGlyph className="mode-picker-chevron" />
     </button>
   );
 }
@@ -56,11 +55,7 @@ export function ModeMenu({
         >
           <item.icon aria-hidden="true" size={ICON_SM} strokeWidth={ICON_STROKE} />
           <span>{item.label}</span>
-          {mode === item.id && (
-            <span aria-hidden="true" className="mode-menu-check">
-              ✓
-            </span>
-          )}
+          {mode === item.id && <CheckGlyph className="mode-menu-check" />}
         </button>
       ))}
     </div>

@@ -1,8 +1,8 @@
 {
-  "name": "@exam-assistant/desktop",
+  "name": "@answra/desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "Electron 桌面壳：main/preload/renderer 三进程，renderer 只做薄壳，业务 UI 在 @exam-assistant/ui。",
+  "description": "Electron 桌面壳：main/preload/renderer 三进程，renderer 只做薄壳，业务 UI 在 @answra/ui。",
   "type": "module",
   "main": "out/main/index.cjs",
   "scripts": {
@@ -14,7 +14,7 @@
     "dist:win": "pnpm build && electron-builder --win nsis"
   },
   "build": {
-    "appId": "dev.examassistant.desktop",
+    "appId": "dev.answra.desktop",
     "productName": "Exam Assistant",
     "asar": true,
     "directories": {
@@ -37,8 +37,8 @@
     }
   },
   "dependencies": {
-    "@exam-assistant/shared": "workspace:*",
-    "@exam-assistant/ui": "workspace:*",
+    "@answra/shared": "workspace:*",
+    "@answra/ui": "workspace:*",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },
