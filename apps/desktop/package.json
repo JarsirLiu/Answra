@@ -11,6 +11,8 @@
     "build": "pnpm build:electron && vite build",
     "build:electron": "node ./scripts/build-electron.mjs",
     "typecheck": "tsc -p tsconfig.main.json && tsc -p tsconfig.preload.json && tsc -p tsconfig.renderer.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "dist:win": "pnpm build && electron-builder --win nsis"
   },
   "build": {
@@ -53,6 +55,7 @@
     "esbuild": "^0.27.2",
     "typescript": "~5.9.3",
     "vite": "^8.3.4",
+    "vitest": "^5.0.3",
     "wait-on": "^9.5.1"
   }
 }

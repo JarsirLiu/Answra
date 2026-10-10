@@ -28,21 +28,21 @@ interface AmbientColor {
   b: number;
 }
 
-/** 相对亮度（sRGB 加权，0~1）。 */
-function luminanceOf({ r, g, b }: AmbientColor): number {
+/** 相对亮度（sRGB 加权，0~1）。导出供测试。 */
+export function luminanceOf({ r, g, b }: AmbientColor): number {
   return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
 }
 
-function toHex({ r, g, b }: AmbientColor): string {
+export function toHex({ r, g, b }: AmbientColor): string {
   const part = (value: number) => value.toString(16).padStart(2, "0");
   return `#${part(r)}${part(g)}${part(b)}`;
 }
 
 /**
  * 从裁剪位图的环形区域（排除窗口自身矩形）统计主色。
- * 颜色按 4bit/通道 量化分桶，取最大桶的均值。
+ * 颜色按 4bit/通道 量化分桶，取最大桶的均值。导出供测试。
  */
-function dominantColor(
+export function dominantColor(
   bitmap: Electron.NativeImage,
   width: number,
   height: number,

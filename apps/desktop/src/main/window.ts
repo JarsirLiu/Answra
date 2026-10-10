@@ -12,8 +12,8 @@ const MAX_SIZE: ContentSize = { width: 1200, height: 900 };
 
 let windowRef: BrowserWindow | undefined;
 
-/** 把内容尺寸 clamp 到当前显示器工作区。 */
-function clampToWorkArea(size: ContentSize): ContentSize {
+/** 把内容尺寸 clamp 到当前显示器工作区。导出供测试。 */
+export function clampToWorkArea(size: ContentSize): ContentSize {
   const display = windowRef
     ? screen.getDisplayMatching(windowRef.getBounds())
     : screen.getPrimaryDisplay();
