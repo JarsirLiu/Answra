@@ -2,15 +2,18 @@
    设计令牌（Design Tokens）
    所有尺寸/颜色集中在此，控件只引用变量，保证整体等比缩放。
 
-   颜色分四层管理：
+   颜色分五层管理：
    层0  Electron 窗口透明（desktop 侧负责）
    层1  variant 主题：默认苹果玻璃 / ambient 跟随背景。
         variant 只允许覆盖下方「原始参数」（-tint 通道 / -base alpha），
-        禁止直接覆盖带 fade 公式的感知令牌（useAmbientTheme 是唯一写入方）。
+        禁止直接覆盖带 fade 公式的感知令牌。
+   层1.5  用户颜色分组覆盖（theme.ts）：按「文字/图标/背景/强调/描边/
+        交互态/警示」分组选色，优先级高于 ambient；与 ambient 同为
+        原始参数层，由 useAppTheme 合成单一写入方写 :root。
    层2  fade 合成：--fade 是唯一透明度自由度（用户可调 0.5~1，
         FloatingBarApp 写入 :root）。所有感知令牌是它的显式函数，
         因此文字/玻璃/分隔线同步变淡，相对对比恒定；
-        hover/focus 用 max() 地板值保证低透明度下仍可感知。
+        hover/focus/面板表面用 max() 地板值保证低透明度下仍可读。
         注意：感知令牌声明在 :root，--fade 也必须写在 :root
         （自定义属性在声明元素处求值，写到子元素不会触发重算）。
    层3  组件 css 只消费感知令牌，不出现字面量颜色。
@@ -40,21 +43,34 @@
   --font-xs: 10px;
   --font-2xs: 9.5px;
 
-  /* ── 原始参数：-tint 为空格分隔 RGB 通道，-base 为 alpha 基数 ── */
-  --fade: 1;
+  /* ── 原始参数：-tint 为空格分隔 RGB 通道，-base 为 alpha 基数 ──
+     颜色按组管理（组内色相统一，theme.ts 据此支持用户逐组选色） */
+
+  /* 【文字】全应用唯一文字色相：层级靠字号/字重，状态靠元素透明度；
+     改文字颜色只动 --ink-tint 一个参数 */
   --ink-tint: 35 40 43; /* #23282b */
-  --ink-soft-tint: 61 70 73; /* #3d4649 */
-  --icon-tint: 61 70 73; /* 图标专用：比 muted 深、比正文略柔，保证玻璃上可辨 */
-  --muted-tint: 111 120 124; /* #6f787c */
-  --faint-tint: 154 163 166; /* #9aa3a6 */
+
+  /* 【图标】比正文略柔，保证玻璃上可辨 */
+  --icon-tint: 61 70 73;
+
+  /* 【背景与表面】glass=胶囊条 panel=内容面板/菜单 paper=纸面
+     半透明玻璃 + backdrop blur 保证可读；同一色相（中性冷灰，
+     低饱和：深浅背景上都不过分抢眼），alpha 才是透明度感的来源 */
+  --glass-tint: 236 240 242;
+  --glass-base: 0.62;
+  --glass-strong-tint: 236 240 242;
+  --glass-strong-base: 0.75;
+  --panel-tint: 236 240 242;
+  --panel-base: 0.78;
+  --paper-tint: 255 255 255;
+
+  /* 【强调】品牌薄荷绿系 */
   --mint-tint: 47 161 113; /* #2fa171 */
   --mint-deep-tint: 24 112 74; /* 比品牌绿深两档，玻璃底上的主操作图标可辨 */
   --mint-text-tint: 31 122 83; /* #1f7a53 */
   --mint-wash-base: 0.2;
-  --glass-tint: 213 224 233; /* 苹果玻璃冷灰蓝调，比纯白低饱和 */
-  --glass-base: 0.66;
-  --glass-strong-tint: 222 233 240;
-  --glass-strong-base: 0.85;
+
+  /* 【描边与交互态】 */
   --line-tint: 16 28 36;
   --line-base: 0.08;
   --line-soft-base: 0.06;
@@ -64,14 +80,19 @@
   --field-base: 0.05;
   --focus-tint: 0 0 0;
   --focus-base: 0.35;
-  --paper-tint: 255 255 255;
+
+  /* 【警示】关闭按钮等破坏性操作 */
+  --danger-tint: 192 69 62; /* #c0453e */
+
+  /* 【遮罩】图片缩略图上的浮层按钮底 */
+  --scrim-base: 0.55;
 
   /* ── 感知令牌：fade 的显式函数（组件只允许引用这一层） ── */
   --ink: rgb(var(--ink-tint) / var(--fade));
-  --ink-soft: rgb(var(--ink-soft-tint) / var(--fade));
+  --ink-soft: rgb(var(--ink-tint) / var(--fade));
   --icon: rgb(var(--icon-tint) / var(--fade));
-  --muted: rgb(var(--muted-tint) / var(--fade));
-  --faint: rgb(var(--faint-tint) / var(--fade));
+  --muted: rgb(var(--ink-tint) / var(--fade));
+  --faint: rgb(var(--ink-tint) / var(--fade));
   --mint: rgb(var(--mint-tint) / var(--fade));
   --mint-deep: rgb(var(--mint-deep-tint) / var(--fade));
   --mint-text: rgb(var(--mint-text-tint) / var(--fade));
@@ -79,8 +100,9 @@
   --mint-wash-strong: rgb(var(--mint-tint) / calc((var(--mint-wash-base) + 0.08) * var(--fade)));
   --mint-line: rgb(var(--mint-tint) / calc(0.25 * var(--fade)));
   --mint-line-focus: rgb(var(--mint-tint) / calc(0.5 * var(--fade)));
-  --glass: rgb(var(--glass-tint) / calc(var(--glass-base) * var(--fade)));
-  --glass-strong: rgb(var(--glass-strong-tint) / calc(var(--glass-strong-base) * var(--fade)));
+  --glass: rgb(var(--glass-tint) / max(calc(var(--glass-base) * var(--fade)), 0.55));
+  --glass-strong: rgb(var(--glass-strong-tint) / max(calc(var(--glass-strong-base) * var(--fade)), 0.7));
+  --panel: rgb(var(--panel-tint) / max(calc(var(--panel-base) * var(--fade)), 0.72));
   --glass-line: rgb(var(--line-tint) / calc(var(--line-base) * var(--fade)));
   --glass-line-soft: rgb(var(--line-tint) / calc(var(--line-soft-base) * var(--fade)));
   --hover: rgb(var(--hover-tint) / max(calc(var(--hover-base) * var(--fade)), 0.08));
@@ -88,8 +110,13 @@
   --field-strong: rgb(var(--field-tint) / calc((var(--field-base) + 0.07) * var(--fade)));
   --focus-ring: rgb(var(--focus-tint) / max(calc(var(--focus-base) * var(--fade)), 0.15));
   --paper: rgb(var(--paper-tint) / var(--fade));
+  --danger: rgb(var(--danger-tint) / var(--fade));
+  --danger-wash: rgb(var(--danger-tint) / calc(0.1 * var(--fade)));
+  --scrim: rgb(0 0 0 / max(calc(var(--scrim-base) * var(--fade)), 0.45));
+  --scrim-strong: rgb(0 0 0 / max(calc((var(--scrim-base) + 0.2) * var(--fade)), 0.6));
   --shadow-bar:
     0 8px 24px rgb(10 25 20 / calc(0.14 * var(--fade))),
     0 1px 3px rgb(10 25 20 / calc(0.08 * var(--fade)));
   --shadow-pop: 0 14px 34px rgb(10 25 20 / calc(0.2 * var(--fade)));
+  --shadow-ctl: 0 1px 3px rgb(10 25 20 / calc(0.25 * var(--fade)));
 }

@@ -80,3 +80,6 @@ export const APP_OPACITY_STORAGE_KEY = "answra-opacity";
 
 /** 会议隐身（内容保护）开关的本地持久化键；缺省视为关闭。 */
 export const STEALTH_STORAGE_KEY = "answra-stealth";
+
+/** 用户颜色分组覆盖的本地持久化键前缀；完整键为 `${前缀}${分组id}`，值是 hex 颜色。 */
+export const COLOR_GROUP_STORAGE_PREFIX = "answra-color-group-";

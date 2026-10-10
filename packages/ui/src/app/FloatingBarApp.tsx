@@ -6,7 +6,6 @@ import { NotesPanel } from "../components/panels/NotesPanel";
 import { ReplyBar } from "../components/panels/ReplyBar";
 import { SettingsPanel } from "../components/panels/SettingsPanel";
 import { SourcesPanel } from "../components/panels/SourcesPanel";
-import { useAmbientTheme } from "../hooks/useAmbientTheme";
 import { useFitContent } from "../hooks/useFitContent";
 import {
   AMBIENT_FOLLOW_STORAGE_KEY,
@@ -19,6 +18,7 @@ import {
   STEALTH_STORAGE_KEY,
   WELCOME_MESSAGE,
 } from "../model";
+import { loadColorGroups, useAppTheme, type ColorGroupOverrides } from "../theme";
 
 const SCREENSHOT_PROMPT = "请帮我分析这道题，先说明题意和解题思路。";
 
@@ -47,14 +47,15 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
   );
   const [opacity, setOpacity] = useState(() => {
     const stored = Number(localStorage.getItem(APP_OPACITY_STORAGE_KEY));
-    return Number.isFinite(stored) && stored >= 0.5 && stored <= 1 ? stored : 0.8;
+    return Number.isFinite(stored) && stored >= 0.5 && stored <= 1 ? stored : 1;
   });
   const [stealth, setStealth] = useState(() => localStorage.getItem(STEALTH_STORAGE_KEY) === "on");
   /** 系统是否可靠支持隐身；null 表示查询中，未确认前不应用隐身。 */
   const [stealthSupported, setStealthSupported] = useState<boolean | null>(null);
+  const [colorGroups] = useState<ColorGroupOverrides>(loadColorGroups);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { ref: shellRef } = useFitContent(platform);
-  useAmbientTheme(platform, ambientFollow);
+  useAppTheme(platform, { ambientFollow, colorGroups });
 
   // fade 是唯一透明度自由度：tokens.css 中所有感知令牌是它的函数。
   // 必须写在 :root（与令牌声明同元素），写到子元素不会触发自定义属性重算。

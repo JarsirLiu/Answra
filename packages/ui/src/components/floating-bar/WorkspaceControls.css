@@ -53,6 +53,6 @@
   color: var(--icon);
 }
 .utility-action--close:hover {
-  color: #c0453e;
-  background: rgba(192, 69, 62, 0.09);
+  color: var(--danger);
+  background: var(--danger-wash);
 }

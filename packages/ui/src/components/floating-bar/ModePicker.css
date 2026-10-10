@@ -36,8 +36,9 @@
   padding: 4px;
   border: 1px solid var(--glass-line);
   border-radius: calc(var(--ctl-radius) + 2px);
-  background: var(--glass-strong);
-  backdrop-filter: blur(24px) saturate(160%);
+  background: var(--panel);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
   box-shadow: var(--shadow-pop);
 }
 .mode-menu-item {

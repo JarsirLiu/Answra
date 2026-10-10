@@ -108,17 +108,12 @@ export function deriveAmbientTokens(hex: string): AmbientTokens | undefined {
   const extreme = isDark ? WHITE : BLACK;
   const ink = chooseInk(bg, isDark);
   const mintText = chooseMintText(bg);
-  const muted = mix(ink, bg, 0.22);
-  const faint = mix(ink, bg, 0.5);
   const paper = mix(bg, extreme, isDark ? 0.12 : 0.1);
   const inkSoft = mix(ink, bg, 0.12);
 
   return {
     "--ink-tint": toChannels(ink),
-    "--ink-soft-tint": toChannels(inkSoft),
     "--icon-tint": toChannels(inkSoft),
-    "--muted-tint": toChannels(muted),
-    "--faint-tint": toChannels(faint),
     "--glass-tint": toChannels(bg),
     "--glass-base": isDark ? "0.55" : "0.62",
     "--glass-strong-tint": toChannels(bg),
@@ -137,17 +132,16 @@ export function deriveAmbientTokens(hex: string): AmbientTokens | undefined {
   };
 }
 
-/** ambient variant 可能覆盖的全部原始参数；关闭跟随时逐一移除回落默认主题。 */
-const FALLBACK_TOKEN_KEYS = [
+/** 所有主题写入方可能覆盖的全部原始参数；关闭跟随/清除覆盖时逐一移除回落默认主题。 */
+export const FALLBACK_TOKEN_KEYS = [
   "--ink-tint",
-  "--ink-soft-tint",
   "--icon-tint",
-  "--muted-tint",
-  "--faint-tint",
   "--glass-tint",
   "--glass-base",
   "--glass-strong-tint",
   "--glass-strong-base",
+  "--panel-tint",
+  "--panel-base",
   "--line-tint",
   "--hover-tint",
   "--hover-base",
@@ -156,11 +150,14 @@ const FALLBACK_TOKEN_KEYS = [
   "--focus-tint",
   "--focus-base",
   "--paper-tint",
+  "--danger-tint",
+  "--scrim-base",
   "--mint-text-tint",
   "--mint-wash-base",
 ];
 
-function applyTokens(tokens: AmbientTokens | undefined): void {
+/** 令牌写入器：null 表示移除内联覆盖回落样式表默认；undefined 整体清除。 */
+export function applyTokens(tokens: AmbientTokens | undefined): void {
   const rootStyle = document.documentElement.style;
   if (!tokens) {
     for (const key of FALLBACK_TOKEN_KEYS) rootStyle.removeProperty(key);

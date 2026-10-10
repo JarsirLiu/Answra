@@ -38,7 +38,7 @@
   overflow-wrap: anywhere;
 }
 .chat-message--user .message-content {
-  border-color: rgba(47, 161, 113, 0.2);
+  border-color: var(--mint-line);
   border-radius: 11px 4px 11px 11px;
   color: var(--mint-text);
   background: var(--mint-wash);
@@ -143,7 +143,8 @@
   background: var(--mint-deep);
 }
 .composer-footer button:disabled {
-  color: var(--faint);
+  color: var(--ink);
+  opacity: 0.45;
   background: var(--field);
   cursor: not-allowed;
 }

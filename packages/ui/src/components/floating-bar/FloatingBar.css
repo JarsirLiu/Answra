@@ -16,7 +16,9 @@
   border: 1px solid var(--glass-line);
   border-radius: var(--bar-radius);
   background: var(--glass);
-  backdrop-filter: blur(24px) saturate(160%);
+  /* 不使用 backdrop-filter：拖动时底层内容在动，blur 实时采样移动背景、
+     saturate 放大背后色相，会让胶囊"跟着背景变色"。表面已提升不透明度，
+     颜色由自身决定、与位置无关。 */
   box-shadow: var(--shadow-bar);
   -webkit-app-region: drag;
 }
