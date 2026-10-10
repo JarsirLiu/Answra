@@ -1,0 +1,31 @@
+/* ── 统一分段选择：容器即输入场，选中项浮起为纸面片 ──────────────── */
+.segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--glass-line);
+  border-radius: var(--ctl-radius);
+  background: var(--field);
+}
+.segmented-item {
+  height: 22px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: calc(var(--ctl-radius) - 2px);
+  color: var(--ink-soft);
+  background: transparent;
+  cursor: pointer;
+  font-size: var(--font-xs);
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background 140ms ease-out, color 140ms ease-out;
+}
+.segmented-item:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+.segmented-item.is-active {
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: var(--shadow-ctl);
+}

@@ -1,4 +1,6 @@
 import { RangeSlider } from "../controls/RangeSlider";
+import { SegmentedControl } from "../controls/SegmentedControl";
+import { Switch } from "../controls/Switch";
 import type { ColorScheme } from "../../theme";
 import { PanelShell } from "./PanelShell";
 import "./SettingsPanel.css";
@@ -25,7 +27,13 @@ interface SettingsPanelProps {
 const OPACITY_MIN = 0.5;
 const OPACITY_MAX = 1;
 
-/** 设置面板：常规/本地运行/模型分组，透明度影响整个应用外观。 */
+const SCHEME_OPTIONS = [
+  { value: "auto", label: "跟随系统" },
+  { value: "light", label: "浅色" },
+  { value: "dark", label: "深色" },
+] as const satisfies ReadonlyArray<{ value: ColorScheme; label: string }>;
+
+/** 设置面板：常规/本地运行/模型分组；控件一律用统一令牌控件，不用原生样式。 */
 export function SettingsPanel({
   ambientFollow,
   scheme,
@@ -50,10 +58,10 @@ export function SettingsPanel({
               <strong>跟随背景色</strong>
               <small>自动采样屏幕背景，调整悬浮条配色以减少视觉打扰</small>
             </span>
-            <input
+            <Switch
+              ariaLabel="跟随背景色"
               checked={ambientFollow}
-              onChange={(event) => onAmbientFollowChange(event.target.checked)}
-              type="checkbox"
+              onChange={onAmbientFollowChange}
             />
           </label>
           <div className="setting-row">
@@ -61,18 +69,12 @@ export function SettingsPanel({
               <strong>外观</strong>
               <small>深色模式下玻璃与文字整体翻转，避免深色背景上扎眼</small>
             </span>
-            <span className="setting-control">
-              <select
-                aria-label="外观模式"
-                className="setting-select"
-                onChange={(event) => onColorSchemeChange(event.target.value as ColorScheme)}
-                value={scheme}
-              >
-                <option value="auto">跟随系统</option>
-                <option value="light">浅色</option>
-                <option value="dark">深色</option>
-              </select>
-            </span>
+            <SegmentedControl
+              ariaLabel="外观模式"
+              onChange={onColorSchemeChange}
+              options={SCHEME_OPTIONS}
+              value={scheme}
+            />
           </div>
           <div className="setting-row">
             <span>
@@ -100,11 +102,11 @@ export function SettingsPanel({
                   : "当前系统不支持可靠隐身，无法开启"}
               </small>
             </span>
-            <input
+            <Switch
+              ariaLabel="会议隐身"
               checked={stealth}
               disabled={!stealthSupported}
-              onChange={(event) => onStealthChange(event.target.checked)}
-              type="checkbox"
+              onChange={onStealthChange}
             />
           </label>
         </section>
@@ -116,10 +118,10 @@ export function SettingsPanel({
               <strong>仅使用本地服务</strong>
               <small>不启用云端订阅或远程 API</small>
             </span>
-            <input
+            <Switch
+              ariaLabel="仅使用本地服务"
               checked={localOnly}
-              onChange={(event) => onLocalOnlyChange(event.target.checked)}
-              type="checkbox"
+              onChange={onLocalOnlyChange}
             />
           </label>
           <div className="setting-row setting-row--static">
@@ -133,19 +135,13 @@ export function SettingsPanel({
 
         <section className="settings-group">
           <h2>模型</h2>
-          <label className="setting-row">
+          <div className="setting-row setting-row--static">
             <span>
               <strong>默认模型</strong>
               <small>接入本地 AI 服务后在此切换</small>
             </span>
-            <span className="setting-control">
-              <select className="setting-select" disabled defaultValue="">
-                <option value="" disabled>
-                  未配置
-                </option>
-              </select>
-            </span>
-          </label>
+            <span className="setting-status">未配置</span>
+          </div>
         </section>
       </div>
     </PanelShell>

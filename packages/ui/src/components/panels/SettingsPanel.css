@@ -35,11 +35,6 @@
   color: var(--ink-soft);
   font-size: var(--font-xs);
 }
-.setting-row input[type="checkbox"] {
-  width: 14px;
-  height: 14px;
-  accent-color: var(--mint);
-}
 .setting-control {
   display: flex;
   align-items: center;
@@ -51,15 +46,6 @@
   font-size: var(--font-xs);
   text-align: right;
   font-variant-numeric: tabular-nums;
-}
-.setting-select {
-  height: var(--ctl-h);
-  padding: 0 var(--ctl-pad-x);
-  border: 1px solid var(--glass-line);
-  border-radius: var(--ctl-radius);
-  color: var(--ink-soft);
-  background: var(--field);
-  font-size: var(--font-sm);
 }
 .setting-row--static {
   border-top: 1px solid var(--glass-line-soft);

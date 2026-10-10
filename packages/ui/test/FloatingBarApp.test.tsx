@@ -6,6 +6,7 @@ describe("three-segment floating navigation", () => {
   beforeEach(() => {
     localStorage.clear();
     vi.clearAllMocks();
+    delete document.documentElement.dataset.theme;
   });
 
   it("changes the middle feature group when the work mode changes", () => {
@@ -126,6 +127,20 @@ describe("three-segment floating navigation", () => {
     // fade 写在 :root（感知令牌在 :root 声明并求值），驱动全部令牌同步缩放
     expect(document.documentElement.style.getPropertyValue("--fade")).toBe("0.6");
     expect(localStorage.getItem("answra-opacity")).toBe("0.6");
+  });
+
+  it("switches color scheme via the segmented control and persists the choice", () => {
+    render(<FloatingBarApp />);
+    fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
+
+    const group = screen.getByRole("radiogroup", { name: "外观模式" });
+    expect(group).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "跟随系统" })).toHaveAttribute("aria-checked", "true");
+
+    fireEvent.click(screen.getByRole("radio", { name: "深色" }));
+    expect(screen.getByRole("radio", { name: "深色" })).toHaveAttribute("aria-checked", "true");
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(localStorage.getItem("answra-color-scheme")).toBe("dark");
   });
 
   it("toggles meeting stealth in settings, persists the choice, and notifies the bridge", async () => {

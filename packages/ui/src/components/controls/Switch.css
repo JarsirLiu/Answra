@@ -1,0 +1,52 @@
+/* ── 统一开关：轨道/拇指全部引用感知令牌，深浅色自动翻转 ──────────── */
+.switch {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+/* 真实 checkbox 铺满命中区域但视觉隐藏，语义与键盘行为交给原生 */
+.switch-input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.switch.is-disabled .switch-input {
+  cursor: default;
+}
+.switch-input:focus-visible + .switch-track {
+  outline: 2px solid var(--mint-line-focus);
+  outline-offset: 2px;
+}
+.switch-track {
+  display: block;
+  position: relative;
+  width: 30px;
+  height: 18px;
+  border: 1px solid var(--glass-line);
+  border-radius: 9px;
+  background: var(--field-strong);
+  transition: background 140ms ease-out, border-color 140ms ease-out;
+}
+.switch.is-disabled .switch-track {
+  opacity: 0.4;
+}
+.switch.is-on .switch-track {
+  border-color: transparent;
+  background: var(--mint);
+}
+.switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--paper);
+  box-shadow: var(--shadow-ctl);
+  transition: transform 140ms ease-out;
+}
+.switch.is-on .switch-thumb {
+  transform: translateX(12px);
+}

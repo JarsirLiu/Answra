@@ -129,10 +129,14 @@
   --ink-tint: 224 230 234;
   --icon-tint: 198 207 213;
 
-  /* 【背景与表面】深色冷灰玻璃，与浅色同色相逻辑、同 alpha 基数 */
+  /* 【背景与表面】深色冷灰玻璃。深色下底层编辑器的亮字更易透出，
+     alpha 基数整体高于浅色一档，压住透底 */
   --glass-tint: 26 31 35;
+  --glass-base: 0.78;
   --glass-strong-tint: 31 37 42;
+  --glass-strong-base: 0.86;
   --panel-tint: 27 32 37;
+  --panel-base: 0.92;
   --paper-tint: 42 49 55;
 
   /* 【强调】薄荷绿提亮两档，深底上保持可辨 */

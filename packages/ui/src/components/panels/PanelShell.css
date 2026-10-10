@@ -10,11 +10,10 @@
   min-height: 400px;
   border: 1px solid var(--glass-line);
   border-radius: calc(var(--bar-radius) + 1px);
-  /* 半透明玻璃 + blur（不带 saturate： saturate 会随底层内容拖动产生色偏）。
-     可读性由模糊与 alpha 地板共同保证，而非近不透明底色。 */
+  /* 注意：Electron 透明窗口中 backdrop-filter 只能模糊页面内元素，
+     糊不到窗口后面的编辑器内容，属无效开销；可读性完全由
+     --panel 的 alpha 地板保证（深色主题基数更高，见 tokens.css）。 */
   background: var(--panel);
-  backdrop-filter: blur(28px);
-  -webkit-backdrop-filter: blur(28px);
   box-shadow: var(--shadow-pop);
 }
 .content-panel--notes,
