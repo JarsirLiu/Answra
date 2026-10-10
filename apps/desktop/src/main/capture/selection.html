@@ -14,13 +14,14 @@
         cursor: default;
         user-select: none;
       }
-      /* 选区外暗色遮罩：用超大 box-shadow 铺满视口，避免多层元素 */
+      /* 选区只画一圈虚线，不加深色蒙层与色块填充：变色龙理念下尽量不干扰屏幕。
+         白色虚线负责深色背景可见性，外圈极淡深色描边负责浅色背景可见性。 */
       #rect {
         position: fixed;
         display: none;
-        border: 1px solid #4ade80;
-        background: rgba(74, 222, 128, 0.08);
-        box-shadow: 0 0 0 100000px rgba(15, 23, 42, 0.35);
+        border: 1px dashed rgba(255, 255, 255, 0.95);
+        box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.35);
+        background: rgba(255, 255, 255, 0.04);
       }
     </style>
   </head>
