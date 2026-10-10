@@ -120,3 +120,32 @@
   --shadow-pop: 0 14px 34px rgb(10 25 20 / calc(0.2 * var(--fade)));
   --shadow-ctl: 0 1px 3px rgb(10 25 20 / calc(0.25 * var(--fade)));
 }
+
+/* ── 深色主题：只覆盖原始参数，fade 合成层与组件样式零改动 ──
+   文字/描边翻转为浅色通道，表面翻转为深色玻璃；alpha 基数与浅色一致，
+   透明度滑杆在两种模式下行为相同。挂在 documentElement 的 data-theme 上。 */
+[data-theme="dark"] {
+  /* 【文字】【图标】浅灰，深色玻璃上可读 */
+  --ink-tint: 224 230 234;
+  --icon-tint: 198 207 213;
+
+  /* 【背景与表面】深色冷灰玻璃，与浅色同色相逻辑、同 alpha 基数 */
+  --glass-tint: 26 31 35;
+  --glass-strong-tint: 31 37 42;
+  --panel-tint: 27 32 37;
+  --paper-tint: 42 49 55;
+
+  /* 【强调】薄荷绿提亮两档，深底上保持可辨 */
+  --mint-tint: 63 194 141;
+  --mint-deep-tint: 118 226 180;
+  --mint-text-tint: 122 230 184;
+
+  /* 【描边与交互态】通道翻转为白，alpha 基数沿用浅色 */
+  --line-tint: 255 255 255;
+  --hover-tint: 255 255 255;
+  --field-tint: 255 255 255;
+  --focus-tint: 255 255 255;
+
+  /* 【警示】红提亮，深底上不闷 */
+  --danger-tint: 242 122 114;
+}

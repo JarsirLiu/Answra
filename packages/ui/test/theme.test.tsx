@@ -3,8 +3,11 @@ import { act, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   colorGroupTokens,
+  loadColorScheme,
   useAppTheme,
+  useColorScheme,
   type ColorGroupOverrides,
+  type ColorScheme,
 } from "../src/theme";
 
 interface AmbientPayload {
@@ -77,5 +80,38 @@ describe("color group overrides", () => {
     rerender(<Harness bridge={bridge} ambientFollow={false} colorGroups={{ surface: "#aabbcc" }} />);
     expect(document.documentElement.style.getPropertyValue("--glass-base")).toBe("");
     expect(document.documentElement.style.getPropertyValue("--glass-tint")).toBe("170 187 204");
+  });
+});
+
+describe("color scheme", () => {
+  function SchemeHarness({ scheme }: { scheme: ColorScheme }) {
+    useColorScheme(scheme);
+    return null;
+  }
+
+  afterEach(() => {
+    delete document.documentElement.dataset.theme;
+    localStorage.clear();
+  });
+
+  it("writes explicit light/dark to data-theme", () => {
+    const { rerender } = render(<SchemeHarness scheme="dark" />);
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    rerender(<SchemeHarness scheme="light" />);
+    expect(document.documentElement.dataset.theme).toBe("light");
+  });
+
+  it("resolves auto from prefers-color-scheme", () => {
+    render(<SchemeHarness scheme="auto" />);
+    // jsdom 不实现 matchMedia，auto 回落浅色
+    expect(document.documentElement.dataset.theme).toBe("light");
+  });
+
+  it("loads stored scheme and falls back to auto", () => {
+    expect(loadColorScheme()).toBe("auto");
+    localStorage.setItem("answra-color-scheme", "dark");
+    expect(loadColorScheme()).toBe("dark");
+    localStorage.setItem("answra-color-scheme", "bogus");
+    expect(loadColorScheme()).toBe("auto");
   });
 });

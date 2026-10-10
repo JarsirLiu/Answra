@@ -118,7 +118,8 @@ describe("three-segment floating navigation", () => {
     fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
 
     const slider = screen.getByRole("slider", { name: "整体透明度" });
-    expect(slider).toHaveValue("0.8");
+    // 缺省不透明（1）：0.8 会把面板玻璃 alpha 压到发灰，可读性靠 blur 承担
+    expect(slider).toHaveValue("1");
 
     fireEvent.change(slider, { target: { value: "0.6" } });
     expect(slider).toHaveValue("0.6");

@@ -1,10 +1,13 @@
 import { RangeSlider } from "../controls/RangeSlider";
+import type { ColorScheme } from "../../theme";
 import { PanelShell } from "./PanelShell";
 import "./SettingsPanel.css";
 
 interface SettingsPanelProps {
   /** 是否跟随屏幕背景自动变色（变色龙主题）。 */
   ambientFollow: boolean;
+  /** 外观模式：auto 跟随系统，light/dark 手动指定。 */
+  scheme: ColorScheme;
   /** 整体透明度（0.5~1）；背景、字体、图标一同变化。 */
   opacity: number;
   localOnly: boolean;
@@ -12,6 +15,7 @@ interface SettingsPanelProps {
   /** 系统是否可靠支持隐身（内容保护）；不支持时开关禁用。 */
   stealthSupported: boolean;
   onAmbientFollowChange: (value: boolean) => void;
+  onColorSchemeChange: (value: ColorScheme) => void;
   onOpacityChange: (value: number) => void;
   onLocalOnlyChange: (value: boolean) => void;
   onStealthChange: (value: boolean) => void;
@@ -24,11 +28,13 @@ const OPACITY_MAX = 1;
 /** 设置面板：常规/本地运行/模型分组，透明度影响整个应用外观。 */
 export function SettingsPanel({
   ambientFollow,
+  scheme,
   opacity,
   localOnly,
   stealth,
   stealthSupported,
   onAmbientFollowChange,
+  onColorSchemeChange,
   onOpacityChange,
   onLocalOnlyChange,
   onStealthChange,
@@ -50,6 +56,24 @@ export function SettingsPanel({
               type="checkbox"
             />
           </label>
+          <div className="setting-row">
+            <span>
+              <strong>外观</strong>
+              <small>深色模式下玻璃与文字整体翻转，避免深色背景上扎眼</small>
+            </span>
+            <span className="setting-control">
+              <select
+                aria-label="外观模式"
+                className="setting-select"
+                onChange={(event) => onColorSchemeChange(event.target.value as ColorScheme)}
+                value={scheme}
+              >
+                <option value="auto">跟随系统</option>
+                <option value="light">浅色</option>
+                <option value="dark">深色</option>
+              </select>
+            </span>
+          </div>
           <div className="setting-row">
             <span>
               <strong>整体透明度</strong>

@@ -7,7 +7,7 @@ import {
   parseHex,
   type AmbientTokens,
 } from "./hooks/useAmbientTheme";
-import { COLOR_GROUP_STORAGE_PREFIX } from "./model";
+import { COLOR_GROUP_STORAGE_PREFIX, COLOR_SCHEME_STORAGE_KEY } from "./model";
 
 /**
  * 用户颜色分组主题层。
@@ -122,4 +122,50 @@ export function useAppTheme(
     for (const key of FALLBACK_TOKEN_KEYS) full[key] = merged[key] ?? null;
     applyTokens(full);
   }, [ambient, colorGroups]);
+}
+
+/* ── 外观模式（浅色/深色/跟随系统） ──────────────────────────────── */
+
+export type ColorScheme = "auto" | "light" | "dark";
+
+/** 从 localStorage 读取外观模式；非法或缺省回落 auto（跟随系统）。 */
+export function loadColorScheme(): ColorScheme {
+  const stored = typeof localStorage === "undefined" ? null : localStorage.getItem(COLOR_SCHEME_STORAGE_KEY);
+  return stored === "light" || stored === "dark" ? stored : "auto";
+}
+
+/** 持久化外观模式。 */
+export function saveColorScheme(scheme: ColorScheme): void {
+  if (typeof localStorage === "undefined") return;
+  if (scheme === "auto") localStorage.removeItem(COLOR_SCHEME_STORAGE_KEY);
+  else localStorage.setItem(COLOR_SCHEME_STORAGE_KEY, scheme);
+}
+
+/** 解析 auto：跟随系统 prefers-color-scheme。 */
+function resolveScheme(scheme: ColorScheme): "light" | "dark" {
+  if (scheme !== "auto") return scheme;
+  return globalThis.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+/**
+ * 应用外观模式：解析后写 documentElement 的 data-theme（tokens.css 据此
+ * 切换原始参数组），auto 时监听系统变化实时跟随。
+ */
+export function useColorScheme(scheme: ColorScheme): void {
+  useEffect(() => {
+    const root = document.documentElement;
+    if (scheme !== "auto") {
+      root.dataset.theme = scheme;
+      return;
+    }
+    const media = globalThis.matchMedia?.("(prefers-color-scheme: dark)");
+    const apply = () => {
+      root.dataset.theme = media?.matches ? "dark" : "light";
+    };
+    apply();
+    media?.addEventListener("change", apply);
+    return () => {
+      media?.removeEventListener("change", apply);
+    };
+  }, [scheme]);
 }

@@ -18,7 +18,15 @@ import {
   STEALTH_STORAGE_KEY,
   WELCOME_MESSAGE,
 } from "../model";
-import { loadColorGroups, useAppTheme, type ColorGroupOverrides } from "../theme";
+import {
+  type ColorScheme,
+  type ColorGroupOverrides,
+  loadColorGroups,
+  loadColorScheme,
+  saveColorScheme,
+  useAppTheme,
+  useColorScheme,
+} from "../theme";
 
 const SCREENSHOT_PROMPT = "请帮我分析这道题，先说明题意和解题思路。";
 
@@ -53,6 +61,8 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
   /** 系统是否可靠支持隐身；null 表示查询中，未确认前不应用隐身。 */
   const [stealthSupported, setStealthSupported] = useState<boolean | null>(null);
   const [colorGroups] = useState<ColorGroupOverrides>(loadColorGroups);
+  const [scheme, setScheme] = useState<ColorScheme>(loadColorScheme);
+  useColorScheme(scheme);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { ref: shellRef } = useFitContent(platform);
   useAppTheme(platform, { ambientFollow, colorGroups });
@@ -102,6 +112,11 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
   function setStealthPersisted(value: boolean) {
     setStealth(value);
     localStorage.setItem(STEALTH_STORAGE_KEY, value ? "on" : "off");
+  }
+
+  function setSchemePersisted(value: ColorScheme) {
+    setScheme(value);
+    saveColorScheme(value);
   }
 
   function openPanel(next: Panel) {
@@ -278,10 +293,12 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
           localOnly={localOnly}
           onAmbientFollowChange={setAmbientFollowPersisted}
           onClose={() => openPanel("closed")}
+          onColorSchemeChange={setSchemePersisted}
           onLocalOnlyChange={setLocalOnly}
           onOpacityChange={setOpacityPersisted}
           onStealthChange={setStealthPersisted}
           opacity={opacity}
+          scheme={scheme}
           stealth={stealth && stealthSupported === true}
           stealthSupported={stealthSupported === true}
         />

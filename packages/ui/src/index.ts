@@ -12,9 +12,13 @@ export {
   COLOR_GROUPS,
   colorGroupTokens,
   loadColorGroups,
+  loadColorScheme,
   saveColorGroups,
+  saveColorScheme,
   useAppTheme,
+  useColorScheme,
   type ColorGroupId,
   type ColorGroupOverrides,
+  type ColorScheme,
 } from "./theme";
 export { ICON, ICON_SM, ICON_STROKE } from "./tokens";
