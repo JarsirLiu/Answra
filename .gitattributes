@@ -1,0 +1,3 @@
+# 统一行尾为 LF，与 biome formatter 默认保持一致；
+# 避免 Windows 上 autocrlf 检出 CRLF 后 lint 全量报格式错误。
+* text=auto eol=lf
