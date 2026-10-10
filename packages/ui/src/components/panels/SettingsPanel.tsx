@@ -76,11 +76,11 @@ export function SettingsPanel({
           </div>
           <div className="setting-row">
             <span>
-              <strong>整体透明度</strong>
+              <strong>前景透明度</strong>
             </span>
             <span className="setting-control">
               <RangeSlider
-                ariaLabel="整体透明度"
+                ariaLabel="前景透明度"
                 max={OPACITY_MAX}
                 min={OPACITY_MIN}
                 onChange={onOpacityChange}

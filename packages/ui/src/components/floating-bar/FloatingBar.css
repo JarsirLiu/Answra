@@ -1,4 +1,4 @@
-/* ── 悬浮条：紧凑浅色玻璃条 ─────────────────────────────────────── */
+/* ── 悬浮条：紧凑实色条 ─────────────────────────────────────────── */
 /* 胶囊与下方弹层（模式菜单）的堆叠容器，宽度即胶囊宽度。 */
 .floating-bar-stack {
   align-self: flex-start;
@@ -15,10 +15,9 @@
   padding: 0 var(--bar-pad-x);
   border: 1px solid var(--glass-line);
   border-radius: var(--bar-radius);
+  /* 表面完全不透明（--glass-base: 1）：颜色由自身决定、与位置无关，
+     拖动经过不同背景也不会变色；禁用一切 backdrop-filter。 */
   background: var(--glass);
-  /* 不使用 backdrop-filter：拖动时底层内容在动，blur 实时采样移动背景、
-     saturate 放大背后色相，会让胶囊"跟着背景变色"。表面已提升不透明度，
-     颜色由自身决定、与位置无关。 */
   box-shadow: var(--shadow-bar);
   -webkit-app-region: drag;
 }

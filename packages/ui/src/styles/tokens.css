@@ -53,12 +53,13 @@
   /* 【图标】比正文略柔，保证玻璃上可辨 */
   --icon-tint: 61 70 73;
 
-  /* 【背景与表面】glass=胶囊条（半透明，随透明度滑杆变化）
-     panel=内容面板/菜单（完全不透明：背景不参与混色，颜色绝对稳定，
-     根除"随背后编辑器内容变化而变色"）paper=纸面
-     三者同一固有色 #A5C5DC；胶囊因半透明会略微偏浅，属设计预期 */
+  /* 【背景与表面】glass=胶囊条 panel=内容面板/菜单 paper=纸面
+     全部表面完全不透明（base=1 且不乘 fade）：背景零参与混色，
+     拖动/滚动/切换窗口都不会改变应用颜色——这是硬约束，任何表面
+     不得引入半透明。透明度滑杆只作用于前景（文字/图标/描边/控件）。
+     三者同一固有色 #A5C5DC。 */
   --glass-tint: 165 197 220;
-  --glass-base: 0.8;
+  --glass-base: 1;
   --panel-tint: 165 197 220;
   --panel-base: 1;
   --paper-tint: 255 255 255;
@@ -99,8 +100,7 @@
   --mint-wash-strong: rgb(var(--mint-tint) / calc((var(--mint-wash-base) + 0.08) * var(--fade)));
   --mint-line: rgb(var(--mint-tint) / calc(0.25 * var(--fade)));
   --mint-line-focus: rgb(var(--mint-tint) / calc(0.5 * var(--fade)));
-  --glass: rgb(var(--glass-tint) / max(calc(var(--glass-base) * var(--fade)), 0.55));
-  /* 面板不随 fade 缩放：内容区颜色稳定是硬需求；透明感由胶囊承担 */
+  --glass: rgb(var(--glass-tint) / var(--glass-base));
   --panel: rgb(var(--panel-tint) / var(--panel-base));
   --glass-line: rgb(var(--line-tint) / calc(var(--line-base) * var(--fade)));
   --glass-line-soft: rgb(var(--line-tint) / calc(var(--line-soft-base) * var(--fade)));
@@ -128,10 +128,10 @@
   --ink-tint: 224 230 234;
   --icon-tint: 198 207 213;
 
-  /* 【背景与表面】深色冷灰。面板与浅色同策略：完全不透明，
-     背景零参与混色；胶囊保留低透明弱存在感 */
+  /* 【背景与表面】深色冷灰。与浅色同策略：全部表面完全不透明，
+     背景零参与混色 */
   --glass-tint: 26 31 35;
-  --glass-base: 0.78;
+  --glass-base: 1;
   --panel-tint: 27 32 37;
   --panel-base: 1;
   --paper-tint: 42 49 55;
