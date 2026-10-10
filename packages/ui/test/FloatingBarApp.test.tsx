@@ -75,7 +75,7 @@ describe("three-segment floating navigation", () => {
   });
 
   it("adjusts global opacity from settings and persists the choice", () => {
-    const { container } = render(<FloatingBarApp />);
+    render(<FloatingBarApp />);
     fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
 
     const slider = screen.getByRole("slider", { name: "整体透明度" });
@@ -83,9 +83,8 @@ describe("three-segment floating navigation", () => {
 
     fireEvent.change(slider, { target: { value: "0.6" } });
     expect(slider).toHaveValue("0.6");
-    expect(container.querySelector(".overlay-root")?.getAttribute("style")).toContain(
-      "--app-opacity: 0.6",
-    );
+    // fade 写在 :root（感知令牌在 :root 声明并求值），驱动全部令牌同步缩放
+    expect(document.documentElement.style.getPropertyValue("--fade")).toBe("0.6");
     expect(localStorage.getItem("answra-opacity")).toBe("0.6");
   });
 

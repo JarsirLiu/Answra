@@ -2,10 +2,10 @@ import type { AmbientColorPayload, DesktopBridge } from "@answra/shared";
 import { useEffect } from "react";
 
 /**
- * 变色龙主题：订阅主进程的背景主色推送，重算中性色设计令牌
- * 并写入 :root 内联样式。品牌色（--mint 系列）保持不变，只有
- * 玻璃底、文字、分隔线、hover 等中性色跟随背景，保证可读性的
- * 同时融入屏幕背景。
+ * 变色龙主题（ambient variant）：订阅主进程的背景主色推送，
+ * 重算「原始参数」（-tint 通道 / -base alpha）写入 :root 内联样式。
+ * 感知令牌的 fade 公式只存在于 tokens.css；本 hook 只换参数不换公式，
+ * 保证「跟随背景」与「用户透明度」两个自由度互不干扰。
  */
 
 /** 背景亮度低于该阈值判定为深色背景，文字切浅色。 */
@@ -29,12 +29,9 @@ function clamp(value: number): number {
   return Math.max(0, Math.min(255, Math.round(value)));
 }
 
-function toCss({ r, g, b }: Rgb): string {
-  return `rgb(${clamp(r)}, ${clamp(g)}, ${clamp(b)})`;
-}
-
-function toRgba({ r, g, b }: Rgb, alpha: number): string {
-  return `rgba(${clamp(r)}, ${clamp(g)}, ${clamp(b)}, ${alpha})`;
+/** 空格分隔的 RGB 通道值，对应 tokens.css 的 -tint 原始参数格式。 */
+function toChannels({ r, g, b }: Rgb): string {
+  return `${clamp(r)} ${clamp(g)} ${clamp(b)}`;
 }
 
 /** 向目标色（黑/白）混合，amount 为混合比例 0~1。 */
@@ -99,7 +96,8 @@ function chooseMintText(bg: Rgb): Rgb | undefined {
 }
 
 /**
- * 由背景主色派生整套中性色令牌。
+ * 由背景主色派生 ambient variant 的「原始参数」（tint 通道 + alpha 基数）。
+ * 感知令牌（--ink/--glass/...）的 fade 公式仍在 tokens.css，本函数只换参数不换公式。
  * 深色背景：文字向白色求解到对比度达标，玻璃底为低透明背景色，
  * 品牌绿同步提亮；浅色背景：文字向黑色求解，保持浅玻璃观感但带背景色相。
  */
@@ -116,39 +114,48 @@ export function deriveAmbientTokens(hex: string): AmbientTokens | undefined {
   const inkSoft = mix(ink, bg, 0.12);
 
   return {
-    "--ink": toCss(ink),
-    "--ink-soft": toCss(inkSoft),
-    "--muted": toCss(muted),
-    "--faint": toCss(faint),
-    "--glass": toRgba(bg, isDark ? 0.55 : 0.62),
-    "--glass-strong": toRgba(bg, isDark ? 0.74 : 0.85),
-    "--glass-line": toRgba(ink, 0.14),
-    "--glass-line-soft": toRgba(ink, 0.09),
-    "--hover": toRgba(ink, 0.16),
-    "--field": toRgba(ink, 0.09),
-    "--paper": toCss(paper),
-    "--focus-ring": toRgba(ink, 0.5),
+    "--ink-tint": toChannels(ink),
+    "--ink-soft-tint": toChannels(inkSoft),
+    "--muted-tint": toChannels(muted),
+    "--faint-tint": toChannels(faint),
+    "--glass-tint": toChannels(bg),
+    "--glass-base": isDark ? "0.55" : "0.62",
+    "--glass-strong-tint": toChannels(bg),
+    "--glass-strong-base": isDark ? "0.74" : "0.85",
+    "--line-tint": toChannels(ink),
+    "--hover-tint": toChannels(ink),
+    "--hover-base": "0.16",
+    "--field-tint": toChannels(ink),
+    "--field-base": "0.09",
+    "--focus-tint": toChannels(ink),
+    "--focus-base": "0.5",
+    "--paper-tint": toChannels(paper),
     // 品牌绿文字与激活底色：浅色背景不覆盖（默认深绿在浅底上可读）
-    "--mint-text": mintText ? toCss(mintText) : null,
-    "--mint-wash": mintText ? toRgba(MINT, 0.3) : null,
+    "--mint-text-tint": mintText ? toChannels(mintText) : null,
+    "--mint-wash-base": mintText ? "0.3" : null,
   };
 }
 
+/** ambient variant 可能覆盖的全部原始参数；关闭跟随时逐一移除回落默认主题。 */
 const FALLBACK_TOKEN_KEYS = [
-  "--ink",
-  "--ink-soft",
-  "--muted",
-  "--faint",
-  "--glass",
-  "--glass-strong",
-  "--glass-line",
-  "--glass-line-soft",
-  "--hover",
-  "--field",
-  "--paper",
-  "--focus-ring",
-  "--mint-text",
-  "--mint-wash",
+  "--ink-tint",
+  "--ink-soft-tint",
+  "--muted-tint",
+  "--faint-tint",
+  "--glass-tint",
+  "--glass-base",
+  "--glass-strong-tint",
+  "--glass-strong-base",
+  "--line-tint",
+  "--hover-tint",
+  "--hover-base",
+  "--field-tint",
+  "--field-base",
+  "--focus-tint",
+  "--focus-base",
+  "--paper-tint",
+  "--mint-text-tint",
+  "--mint-wash-base",
 ];
 
 function applyTokens(tokens: AmbientTokens | undefined): void {

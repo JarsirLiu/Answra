@@ -1,5 +1,5 @@
 import type { DesktopBridge } from "@answra/shared";
-import { type ChangeEvent, useRef, useState } from "react";
+import { type ChangeEvent, useEffect, useRef, useState } from "react";
 import { FloatingBar } from "../components/floating-bar/FloatingBar";
 import { type ChatAttachment, type ChatMessage, ChatPanel } from "../components/panels/ChatPanel";
 import { NotesPanel } from "../components/panels/NotesPanel";
@@ -48,6 +48,13 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { ref: shellRef } = useFitContent(platform);
   useAmbientTheme(platform, ambientFollow);
+
+  // fade 是唯一透明度自由度：tokens.css 中所有感知令牌是它的函数。
+  // 必须写在 :root（与令牌声明同元素），写到子元素不会触发自定义属性重算。
+  useEffect(() => {
+    document.documentElement.style.setProperty("--fade", String(opacity));
+    return () => document.documentElement.style.removeProperty("--fade");
+  }, [opacity]);
 
   function setAmbientFollowPersisted(value: boolean) {
     setAmbientFollow(value);
@@ -125,11 +132,7 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
   }
 
   return (
-    <main
-      className="overlay-root"
-      ref={shellRef}
-      style={{ ["--app-opacity" as string]: opacity } as React.CSSProperties}
-    >
+    <main className="overlay-root" ref={shellRef}>
       <FloatingBar
         mode={mode}
         modes={MODES}
