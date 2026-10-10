@@ -7,6 +7,7 @@
     "node": ">=22.12.0"
   },
   "scripts": {
+    "bootstrap": "node scripts/bootstrap.mjs",
     "dev": "pnpm --filter @answra/desktop dev",
     "dev:web": "pnpm --filter @answra/desktop dev:web",
     "build": "pnpm -r build",

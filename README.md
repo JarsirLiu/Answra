@@ -22,11 +22,11 @@
 
 ```powershell
 corepack enable
-pnpm install
+pnpm bootstrap
 pnpm dev
 ```
 
-`pnpm dev` 会同时启动 Vite 和 Electron。使用 `pnpm dev:web` 可只启动浏览器预览。桌面开发窗口使用 5180 端口；端口被占用时命令会报错退出，不会静默换端口。
+`pnpm bootstrap` 是统一的环境初始化入口：安装 workspace 依赖，并校验/通过 npmmirror 镜像补齐 Electron 二进制，避免 `pnpm dev` 启动时才临时下载卡住。`pnpm dev` 会同时启动 Vite 和 Electron。使用 `pnpm dev:web` 可只启动浏览器预览。桌面开发窗口使用 5180 端口；端口被占用时命令会报错退出，不会静默换端口。
 
 ## 检查
 
@@ -56,6 +56,7 @@ docs                   架构与交互决策
 
 | 命令 | 说明 |
 | --- | --- |
+| `pnpm bootstrap` | 环境初始化：安装依赖 + 校验/补齐 Electron 二进制 |
 | `pnpm dev` | 启动 Vite + Electron（先构建 main/preload bundle） |
 | `pnpm build` | 全 workspace 构建（desktop: esbuild + vite） |
 | `pnpm typecheck` | 各包依次 `tsc --noEmit`（desktop 按进程分三个编译单元） |
