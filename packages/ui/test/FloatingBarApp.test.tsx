@@ -92,7 +92,7 @@ describe("three-segment floating navigation", () => {
     const bridge = {
       close: vi.fn(),
       fitContent: vi.fn(),
-      setContentProtection: vi.fn(),
+      setStealth: vi.fn(),
     };
     render(<FloatingBarApp bridge={bridge} />);
     fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
@@ -103,12 +103,12 @@ describe("three-segment floating navigation", () => {
     fireEvent.click(toggle);
     expect(toggle).toBeChecked();
     expect(localStorage.getItem("answra-stealth")).toBe("on");
-    expect(bridge.setContentProtection).toHaveBeenCalledWith(true);
+    expect(bridge.setStealth).toHaveBeenCalledWith(true);
 
     fireEvent.click(toggle);
     expect(toggle).not.toBeChecked();
     expect(localStorage.getItem("answra-stealth")).toBe("off");
-    expect(bridge.setContentProtection).toHaveBeenCalledWith(false);
+    expect(bridge.setStealth).toHaveBeenCalledWith(false);
   });
 
   it("reports shell content size through the bridge and closes on demand", () => {

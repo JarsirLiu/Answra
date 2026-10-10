@@ -60,9 +60,10 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
     return () => document.documentElement.style.removeProperty("--fade");
   }, [opacity]);
 
-  // 会议隐身：开启后屏幕共享/截图捕获不到本窗口，自身仍可见（仅桌面端有效）
+  // 会议隐身：开启后屏幕共享/截图捕获不到本窗口，并从任务栏/Dock、
+  // Alt+Tab/Cmd+Tab 隐藏；自身屏幕仍可见（仅桌面端有效）
   useEffect(() => {
-    platform?.setContentProtection?.(stealth);
+    platform?.setStealth?.(stealth);
   }, [stealth, platform]);
 
   function setAmbientFollowPersisted(value: boolean) {

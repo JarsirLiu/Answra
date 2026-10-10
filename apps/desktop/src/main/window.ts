@@ -51,6 +51,23 @@ export function isWindowFromSender(
   return event.sender === window?.webContents;
 }
 
+/**
+ * 应用会议隐身：内容保护 + 从任务栏/Dock 与 Alt+Tab/Cmd+Tab 隐藏。
+ * - 内容保护：屏幕共享/截图捕获到空白（Windows 10 2004+ 可靠；macOS 不保证挡系统级共享）；
+ * - Windows/Linux：setSkipTaskbar 同时从任务栏与 Alt+Tab 移除（WS_EX_TOOLWINDOW）；
+ * - macOS：转为 accessory 激活策略，从 Dock 与 Cmd+Tab 移除。
+ */
+export function applyStealth(value: boolean): void {
+  const window = getWindow();
+  if (!window || window.isDestroyed()) return;
+  window.setContentProtection(value);
+  window.setSkipTaskbar(value);
+  if (process.platform === "darwin") {
+    if (value) app.dock?.hide();
+    else app.dock?.show();
+  }
+}
+
 export function createMainWindow(): BrowserWindow {
   const display = screen.getPrimaryDisplay();
   const initial = clampToWorkArea(INITIAL_SIZE);

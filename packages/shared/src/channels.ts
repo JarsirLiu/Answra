@@ -13,8 +13,8 @@ export const WindowChannels = {
   FitContent: "answra:window:fit-content",
   /** 关闭应用窗口。 */
   Close: "answra:window:close",
-  /** 切换窗口内容保护（会议隐身）：开启后屏幕共享/截图捕获不到本窗口。 */
-  SetContentProtection: "answra:window:set-content-protection",
+  /** 切换会议隐身：内容保护 + 从任务栏/Dock、Alt+Tab/Cmd+Tab 隐藏。 */
+  SetStealth: "answra:window:set-stealth",
 } as const;
 
 /** 渲染进程上报的内容尺寸（CSS 像素，含透明呼吸区）。 */
@@ -49,7 +49,7 @@ export interface AmbientColorPayload {
 export interface WindowChannelMap {
   [WindowChannels.FitContent]: { request: ContentSize; response: undefined };
   [WindowChannels.Close]: { request: undefined; response: undefined };
-  [WindowChannels.SetContentProtection]: { request: boolean; response: undefined };
+  [WindowChannels.SetStealth]: { request: boolean; response: undefined };
 }
 
 /** 按频道名取出请求/响应类型的工具类型。 */
