@@ -68,7 +68,7 @@ describe("color group overrides", () => {
     // ambient 推送了 --glass-tint，但用户"背景"分组覆盖优先
     expect(document.documentElement.style.getPropertyValue("--glass-tint")).toBe("170 187 204");
     // 未被用户覆盖的 ambient 键仍然生效（前景 alpha 基数）
-    expect(document.documentElement.style.getPropertyValue("--hover-base")).toBe("0.16");
+    expect(document.documentElement.style.getPropertyValue("--hover-base")).toBe("0.1");
 
     // 关闭变色龙：ambient 键清除，用户覆盖保留
     rerender(<Harness bridge={bridge} ambientFollow={false} colorGroups={{ surface: "#aabbcc" }} />);

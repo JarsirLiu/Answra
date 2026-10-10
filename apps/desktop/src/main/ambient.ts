@@ -5,14 +5,21 @@ import { type BrowserWindow, desktopCapturer, screen } from "electron";
  * 变色龙主题：采样悬浮条周边的屏幕背景主色并推送给渲染器。
  *
  * 采样原理：用 desktopCapturer 截取整个显示器（降采样），裁出窗口
- * bounds 外扩一圈的区域，统计时排除窗口自身覆盖的矩形，只取环形
- * 边缘带——这样不需要隐藏窗口即可拿到"身后"的背景色，无闪烁。
+ * bounds 外扩一圈的区域，统计时排除窗口自身矩形再外扩一圈投影带
+ * （悬浮条的 drop shadow 会压暗紧贴 bounds 的屏幕像素），只取更外侧
+ * 的环形边缘带——这样不需要隐藏窗口即可拿到"身后"的背景色，无闪烁。
  *
  * 采样时机：窗口移动（节流）、显示器变化、低频轮询（背景内容会变）。
  */
 
 /** 窗口 bounds 外扩的 CSS 像素，保证环形采样带有足够样本。 */
 const RING_PAD = 48;
+/** 采样排除矩形在窗口 bounds 基础上再外扩的 CSS 像素。
+ *  窗口 hasShadow=false 无系统投影；CSS 阴影只渲染进窗口自身约 8px
+ *  的透明 padding（超出即被窗口裁剪），外扩 12px 即可绕开边缘杂散像素。
+ *  注意：采样环必须紧贴窗口——环越宽越容易混入周边无关区域
+ *  （如编辑器更深色的侧栏/终端面板），导致主色偏离"正后方"的背景。 */
+const SHADOW_PAD = 12;
 /** 位图遍历步长（裁剪图内的像素间隔），控制统计成本。 */
 const SAMPLE_STEP = 4;
 /** 窗口移动采样的节流间隔。 */
@@ -36,6 +43,26 @@ export function luminanceOf({ r, g, b }: AmbientColor): number {
 export function toHex({ r, g, b }: AmbientColor): string {
   const part = (value: number) => value.toString(16).padStart(2, "0");
   return `#${part(r)}${part(g)}${part(b)}`;
+}
+
+/**
+ * 将窗口排除矩形向外扩 pad 像素，并夹紧在裁剪图内。
+ * 用于绕开窗口自身投影压暗的屏幕像素，避免主色被"染黑"。导出供测试。
+ */
+export function expandInner(
+  inner: { x: number; y: number; width: number; height: number },
+  pad: number,
+  width: number,
+  height: number,
+): { x: number; y: number; width: number; height: number } {
+  const x = Math.max(0, inner.x - pad);
+  const y = Math.max(0, inner.y - pad);
+  return {
+    x,
+    y,
+    width: Math.min(width - x, inner.width + (inner.x - x) + pad),
+    height: Math.min(height - y, inner.height + (inner.y - y) + pad),
+  };
 }
 
 /**
@@ -146,7 +173,13 @@ async function sampleAndPush(window: BrowserWindow): Promise<void> {
       width: Math.round(bounds.width * thumbScale),
       height: Math.round(bounds.height * thumbScale),
     };
-    const color = dominantColor(cropped, width, height, inner);
+    const color = dominantColor(
+      cropped,
+      width,
+      height,
+      // 排除矩形外扩投影带：悬浮条自身的 drop shadow 会压暗紧贴 bounds 的像素
+      expandInner(inner, Math.round(SHADOW_PAD * thumbScale), width, height),
+    );
     payload = color
       ? { ok: true, hex: toHex(color), luminance: luminanceOf(color) }
       : { ok: false, hex: "#ffffff", luminance: 1 };

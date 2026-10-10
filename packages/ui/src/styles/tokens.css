@@ -133,7 +133,7 @@
      背景零参与混色 */
   --glass-tint: 26 31 35;
   --glass-base: 1;
-  --panel-tint: 27 32 37;
+  --panel-tint: 26 31 35; /* 与胶囊同一固有色，面板不得有色差 */
   --panel-base: 1;
   --paper-tint: 42 49 55;
 

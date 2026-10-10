@@ -10,7 +10,7 @@ vi.mock("electron", () => ({
   screen: {},
 }));
 
-import { dominantColor, luminanceOf, toHex } from "../src/main/ambient";
+import { dominantColor, expandInner, luminanceOf, toHex } from "../src/main/ambient";
 
 type Bgra = [b: number, g: number, r: number];
 
@@ -88,6 +88,29 @@ describe("dominantColor", () => {
       r: 10,
       g: 10,
       b: 10,
+    });
+  });
+});
+
+describe("expandInner", () => {
+  it("expands the exclusion rect by pad on all sides", () => {
+    const inner = { x: 20, y: 20, width: 40, height: 40 };
+    expect(expandInner(inner, 10, 100, 100)).toEqual({
+      x: 10,
+      y: 10,
+      width: 60,
+      height: 60,
+    });
+  });
+
+  it("clamps at the crop edges instead of going negative or overshooting", () => {
+    const inner = { x: 4, y: 4, width: 80, height: 80 };
+    // pad=10 → x/y 夹到 0；宽高夹到裁剪图右/下边界
+    expect(expandInner(inner, 10, 100, 100)).toEqual({
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100,
     });
   });
 });

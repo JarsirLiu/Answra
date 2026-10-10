@@ -82,14 +82,21 @@ function chooseInk(bg: Rgb, isDark: boolean): Rgb {
   return extreme;
 }
 
-/** 深色背景下把品牌绿提亮到可读；浅色背景返回 undefined 保留默认深绿。 */
-function chooseMintText(bg: Rgb): Rgb | undefined {
-  if (relativeLuminance(bg) >= DARK_THRESHOLD) return undefined;
-  for (let amount = 0.25; amount <= 0.85; amount += 0.05) {
-    const candidate = mix(MINT, WHITE, amount);
-    if (contrastRatio(candidate, bg) >= TARGET_CONTRAST) return candidate;
+/** 强调色对背景的最低对比度（WCAG UI 组件级），低于文字要求。 */
+const ACCENT_CONTRAST = 3;
+
+/**
+ * 品牌绿降饱和为"灰绿"强调色：先向背景色拉近抹掉高饱和，
+ * 再按需向黑/白求解到 UI 组件级对比度；观感克制，不与页面抢眼。
+ */
+function chooseAccent(bg: Rgb, isDark: boolean): Rgb {
+  const muted = mix(MINT, bg, 0.55);
+  const extreme = isDark ? WHITE : BLACK;
+  for (let amount = 0; amount <= 0.9; amount += 0.05) {
+    const candidate = mix(muted, extreme, amount);
+    if (contrastRatio(candidate, bg) >= ACCENT_CONTRAST) return candidate;
   }
-  return undefined;
+  return muted;
 }
 
 /**
@@ -107,8 +114,9 @@ export function resolveAmbientScheme(hex: string): "light" | "dark" | undefined 
  * 由背景主色派生 ambient variant 的「原始参数」（仅 tint 通道与前景 alpha 基数）。
  * 感知令牌（--ink/--glass/...）的 fade 公式仍在 tokens.css，本函数只换参数不换公式。
  * 硬约束：不写任何表面 alpha（表面恒不透明，背景零参与混色，颜色不随拖动抖动）。
- * 深色背景：文字向白色求解到对比度达标，面板为加深一档的背景色，品牌绿同步提亮；
- * 浅色背景：文字向黑色求解，面板为向白色提亮一档的背景色。
+ * 低调原则：表面贴近背景色（深色背景轻微提亮而非压暗，避免"黑块"），
+ * 强调色降饱和为灰绿，交互态 alpha 基数降档——浮层以低对比、低轮廓伴随页面，
+ * 不以色块存在感压过页面；文字仍按 WCAG AA 对比度求解保证可读。
  */
 export function deriveAmbientTokens(hex: string): AmbientTokens | undefined {
   const bg = parseHex(hex);
@@ -116,29 +124,30 @@ export function deriveAmbientTokens(hex: string): AmbientTokens | undefined {
   const isDark = relativeLuminance(bg) < DARK_THRESHOLD;
   const extreme = isDark ? WHITE : BLACK;
   const ink = chooseInk(bg, isDark);
-  const mintText = chooseMintText(bg);
-  const paper = mix(bg, extreme, isDark ? 0.12 : 0.1);
+  const accent = chooseAccent(bg, isDark);
+  const paper = mix(bg, extreme, isDark ? 0.06 : 0.1);
   const inkSoft = mix(ink, bg, 0.12);
-  // 面板（不透明表面）：深色背景再压暗一档、浅色背景向白提亮一档，
-  // 与背景保持同色相的同时留出表面层次
-  const panel = isDark ? mix(bg, BLACK, 0.22) : mix(bg, WHITE, 0.86);
 
   return {
     "--ink-tint": toChannels(ink),
     "--icon-tint": toChannels(inkSoft),
     "--glass-tint": toChannels(bg),
-    "--panel-tint": toChannels(panel),
+    // 胶囊与面板是同一悬浮组件的两层：固有色必须完全一致（不可有微层次差），
+    // 层级感交给描边与投影表达
+    "--panel-tint": toChannels(bg),
     "--line-tint": toChannels(ink),
     "--hover-tint": toChannels(ink),
-    "--hover-base": "0.16",
+    "--hover-base": "0.1",
     "--field-tint": toChannels(ink),
-    "--field-base": "0.09",
+    "--field-base": "0.06",
     "--focus-tint": toChannels(ink),
-    "--focus-base": "0.5",
+    "--focus-base": "0.35",
     "--paper-tint": toChannels(paper),
-    // 品牌绿文字与激活底色：浅色背景不覆盖（默认深绿在浅底上可读）
-    "--mint-text-tint": mintText ? toChannels(mintText) : null,
-    "--mint-wash-base": mintText ? "0.3" : null,
+    // 强调色整体降饱和：文字/图标/激活底统一灰绿，不再出现高饱和亮绿
+    "--mint-tint": toChannels(accent),
+    "--mint-deep-tint": toChannels(mix(accent, extreme, 0.2)),
+    "--mint-text-tint": toChannels(accent),
+    "--mint-wash-base": "0.22",
   };
 }
 
@@ -160,6 +169,8 @@ export const FALLBACK_TOKEN_KEYS = [
   "--paper-tint",
   "--danger-tint",
   "--scrim-base",
+  "--mint-tint",
+  "--mint-deep-tint",
   "--mint-text-tint",
   "--mint-wash-base",
 ];

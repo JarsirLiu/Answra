@@ -1,10 +1,22 @@
 /* ── 设置 ─────────────────────────────────────────────────────────── */
+/* 内容超出面板高度时可滚动：min-height:0 解除 flex 子项默认拉伸，
+   使 overflow-y 生效（外层 content-panel 为 overflow:hidden）。
+   滚动条本身隐藏：与变色龙融底理念一致，不显示扎眼的定位条，
+   滚轮/触控板滚动不受影响。 */
+.settings-panel {
+  overflow-y: auto;
+  min-height: 0;
+  scrollbar-width: none;
+}
+.settings-panel::-webkit-scrollbar {
+  display: none;
+}
 .settings-panel h2 {
   margin: 0;
   color: var(--ink);
   font-size: 12px;
 }
-/* 设置分组：用细分隔线区隔，常规/本地运行/模型各自成块。 */
+/* 设置分组：用细分隔线区隔，常规/模型各自成块。 */
 .settings-group {
   display: flex;
   flex-direction: column;

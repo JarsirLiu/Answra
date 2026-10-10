@@ -45,7 +45,6 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
   const [replyOpen, setReplyOpen] = useState(false);
   const [note, setNote] = useState(() => localStorage.getItem(NOTE_STORAGE_KEY) ?? "");
   const [sources, setSources] = useState<string[]>([]);
-  const [localOnly, setLocalOnly] = useState(true);
   const [ambientFollow, setAmbientFollow] = useState(
     () => localStorage.getItem(AMBIENT_FOLLOW_STORAGE_KEY) === "on",
   );
@@ -279,10 +278,8 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
       {panel === "settings" && (
         <SettingsPanel
           ambientFollow={ambientFollow}
-          localOnly={localOnly}
           onAmbientFollowChange={setAmbientFollowPersisted}
           onClose={() => openPanel("closed")}
-          onLocalOnlyChange={setLocalOnly}
           onOpacityChange={setOpacityPersisted}
           onStealthChange={setStealthPersisted}
           opacity={opacity}

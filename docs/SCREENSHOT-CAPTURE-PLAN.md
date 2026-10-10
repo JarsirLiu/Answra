@@ -11,7 +11,7 @@
 
 两处能力割裂，导致用户无法一键截屏提问。
 
-另一个产品硬约束：浮层在考试/会议场景下使用，必须**不被对方的屏幕共享捕获**（Zoom/腾讯会议/Teams 不应拍到我们的工具栏），且捕获过程**不能打扰用户、不易被检测**。
+另一个产品硬约束：浮层在会议场景下作为不打扰的伴随工具使用，必须**不被对方的屏幕共享捕获**（Zoom/腾讯会议/Teams 不应拍到我们的工具栏），且捕获过程**无弹窗、无快门、不惊扰会议**。
 
 ## 决策一：复用主进程捕获通道，新增 IPC
 
@@ -37,7 +37,7 @@ return cropped.toDataURL();
 
 - **Windows**：`SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)`（Win10 2004+，值 `0x11`）。会议软件在 Windows 走 DXGI 桌面复制（`Windows.Graphics.Capture` / Desktop Duplication），正是被该标志排除的路径。设置后：对方共享画面无浮层，本地仍可见、可操作。
 - **macOS**：`NSWindow.sharingType = NSWindowSharingNone`，排除出 ScreenCaptureKit/录屏。
-- 仅对**自身浮层窗口**设标志，目标考试/会议窗口不受影响，照常进捕获结果。
+- 仅对**自身浮层窗口**设标志，目标会议窗口不受影响，照常进捕获结果。
 
 Electron 暴露为 `win.setContentProtection(true)`：
 
@@ -58,14 +58,14 @@ Electron 暴露为 `win.setContentProtection(true)`：
 
 全程无系统弹窗、无闪光、无工具栏残留。
 
-## 决策四：为何「不易被检测」与边界
+## 决策四：捕获过程对会议无感的原理与边界
 
 - OS 没有面向第三方的「有人截图了」全局事件（Windows 无；macOS 仅 ScreenCaptureKit 权限提示，属权限而非检测）。只要不用 PrintScreen / 系统截图工具的可视界面，就不会惊动用户或会议。
 - **捕获会黑/被挡的两种边界**（与方案无关，需预期）：
-  1. 考试窗口**自身**设了 display affinity 自保；
+  1. 目标窗口（如受保护的企业文档/会议应用）**自身**设了 display affinity 自保；
   2. 受 DRM/HDCP 保护的视频表面，DXGI 返回黑帧。
-  - 普通 DOM 考试页不受影响。
-- 企业监考软件自身的周期截屏是另一动态，不属于「屏幕共享捕获」范畴。
+  - 普通网页不受影响。
+- 企业合规软件自身的周期截屏是另一动态，不属于「屏幕共享捕获」范畴。
 
 ## 实施步骤（落地顺序）
 

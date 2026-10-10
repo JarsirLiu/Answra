@@ -8,13 +8,11 @@ interface SettingsPanelProps {
   ambientFollow: boolean;
   /** 前景透明度（0.5~1）；文字/图标/描边随之变化，表面恒不透明。 */
   opacity: number;
-  localOnly: boolean;
   stealth: boolean;
   /** 系统是否可靠支持隐身（内容保护）；不支持时开关禁用。 */
   stealthSupported: boolean;
   onAmbientFollowChange: (value: boolean) => void;
   onOpacityChange: (value: number) => void;
-  onLocalOnlyChange: (value: boolean) => void;
   onStealthChange: (value: boolean) => void;
   onClose: () => void;
 }
@@ -22,16 +20,14 @@ interface SettingsPanelProps {
 const OPACITY_MIN = 0.5;
 const OPACITY_MAX = 1;
 
-/** 设置面板：常规/本地运行/模型分组；控件一律用统一令牌控件，不用原生样式。 */
+/** 设置面板：常规/模型两组；控件一律用统一令牌控件，不用原生样式。 */
 export function SettingsPanel({
   ambientFollow,
   opacity,
-  localOnly,
   stealth,
   stealthSupported,
   onAmbientFollowChange,
   onOpacityChange,
-  onLocalOnlyChange,
   onStealthChange,
   onClose,
 }: SettingsPanelProps) {
@@ -80,27 +76,13 @@ export function SettingsPanel({
         </section>
 
         <section className="settings-group">
-          <h2>本地运行</h2>
-          <label className="setting-row">
-            <span>
-              <strong>仅使用本地服务</strong>
-            </span>
-            <Switch
-              ariaLabel="仅使用本地服务"
-              checked={localOnly}
-              onChange={onLocalOnlyChange}
-            />
-          </label>
+          <h2>模型</h2>
           <div className="setting-row setting-row--static">
             <span>
               <strong>AI 服务</strong>
             </span>
             <span className="setting-status">未配置</span>
           </div>
-        </section>
-
-        <section className="settings-group">
-          <h2>模型</h2>
           <div className="setting-row setting-row--static">
             <span>
               <strong>默认模型</strong>
