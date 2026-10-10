@@ -1,0 +1,59 @@
+/* ── 第三段：工作区与应用控制 ─────────────────────────────────────── */
+.utility-segment {
+  flex: 0 0 auto;
+}
+.utility-action {
+  min-width: var(--ctl-min-w);
+  height: var(--ctl-h);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 5px;
+  border: 0;
+  border-radius: var(--ctl-radius);
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  transition: background 140ms ease-out;
+}
+.utility-action:hover,
+.utility-action.is-active {
+  color: var(--ink);
+  background: var(--hover);
+}
+.utility-action.is-active {
+  color: var(--mint-text);
+  background: var(--mint-wash);
+}
+.utility-action--destination {
+  min-width: 0;
+  padding: 0 var(--ctl-pad-x);
+  color: var(--ink);
+}
+.destination-label {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  text-align: left;
+}
+.destination-label small {
+  display: none;
+}
+.destination-label strong {
+  overflow: hidden;
+  font-size: var(--font-sm);
+  font-weight: 600;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.destination-chevron {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+.utility-action--close:hover {
+  color: #c0453e;
+  background: rgba(192, 69, 62, 0.09);
+}

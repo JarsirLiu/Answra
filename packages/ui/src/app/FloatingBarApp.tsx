@@ -9,6 +9,7 @@ import { useAmbientTheme } from "../hooks/useAmbientTheme";
 import { useFitContent } from "../hooks/useFitContent";
 import {
   AMBIENT_FOLLOW_STORAGE_KEY,
+  APP_OPACITY_STORAGE_KEY,
   MODES,
   type Mode,
   type ModeAction,
@@ -38,8 +39,12 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
   const [sources, setSources] = useState<string[]>([]);
   const [localOnly, setLocalOnly] = useState(true);
   const [ambientFollow, setAmbientFollow] = useState(
-    () => localStorage.getItem(AMBIENT_FOLLOW_STORAGE_KEY) !== "off",
+    () => localStorage.getItem(AMBIENT_FOLLOW_STORAGE_KEY) === "on",
   );
+  const [opacity, setOpacity] = useState(() => {
+    const stored = Number(localStorage.getItem(APP_OPACITY_STORAGE_KEY));
+    return Number.isFinite(stored) && stored >= 0.5 && stored <= 1 ? stored : 0.8;
+  });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { ref: shellRef } = useFitContent(platform);
   useAmbientTheme(platform, ambientFollow);
@@ -47,6 +52,11 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
   function setAmbientFollowPersisted(value: boolean) {
     setAmbientFollow(value);
     localStorage.setItem(AMBIENT_FOLLOW_STORAGE_KEY, value ? "on" : "off");
+  }
+
+  function setOpacityPersisted(value: number) {
+    setOpacity(value);
+    localStorage.setItem(APP_OPACITY_STORAGE_KEY, String(value));
   }
 
   function openPanel(next: Panel) {
@@ -72,7 +82,7 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
 
   function handleAttachmentChange(input: ChangeEvent<HTMLInputElement> | File | null) {
     const file = input instanceof File ? input : (input?.target.files?.[0] ?? null);
-    if (!file || !file.type.startsWith("image/")) return;
+    if (!file?.type.startsWith("image/")) return;
     if (attachment) URL.revokeObjectURL(attachment.previewUrl);
     setAttachment({ name: file.name, previewUrl: URL.createObjectURL(file) });
     setDraft((current) => current || SCREENSHOT_PROMPT);
@@ -114,10 +124,12 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
     localStorage.setItem(NOTE_STORAGE_KEY, value);
   }
 
-  const modeLabel = MODES.find((item) => item.id === mode)?.label ?? "";
-
   return (
-    <main className="overlay-root" ref={shellRef}>
+    <main
+      className="overlay-root"
+      ref={shellRef}
+      style={{ ["--app-opacity" as string]: opacity } as React.CSSProperties}
+    >
       <FloatingBar
         mode={mode}
         modes={MODES}
@@ -134,7 +146,6 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
           draft={draft}
           fileInputRef={fileInputRef}
           messages={messages}
-          modeLabel={modeLabel}
           onAttachmentChange={handleAttachmentChange}
           onAttachmentRemove={removeAttachment}
           onClose={() => openPanel("closed")}
@@ -144,17 +155,11 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
       )}
 
       {panel === "notes" && (
-        <NotesPanel
-          modeLabel={modeLabel}
-          note={note}
-          onClose={() => openPanel("closed")}
-          onNoteChange={saveNote}
-        />
+        <NotesPanel note={note} onClose={() => openPanel("closed")} onNoteChange={saveNote} />
       )}
 
       {panel === "sources" && (
         <SourcesPanel
-          modeLabel={modeLabel}
           onClose={() => openPanel("closed")}
           onSourcesChange={setSources}
           sources={sources}
@@ -165,10 +170,11 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
         <SettingsPanel
           ambientFollow={ambientFollow}
           localOnly={localOnly}
-          modeLabel={modeLabel}
           onAmbientFollowChange={setAmbientFollowPersisted}
           onClose={() => openPanel("closed")}
           onLocalOnlyChange={setLocalOnly}
+          onOpacityChange={setOpacityPersisted}
+          opacity={opacity}
         />
       )}
     </main>

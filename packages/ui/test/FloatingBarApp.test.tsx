@@ -64,14 +64,29 @@ describe("three-segment floating navigation", () => {
     fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
 
     const toggle = screen.getByRole("checkbox", { name: /跟随背景色/ });
-    expect(toggle).toBeChecked();
-
-    fireEvent.click(toggle);
     expect(toggle).not.toBeChecked();
-    expect(localStorage.getItem("answra-ambient-follow")).toBe("off");
 
     fireEvent.click(toggle);
+    expect(toggle).toBeChecked();
     expect(localStorage.getItem("answra-ambient-follow")).toBe("on");
+
+    fireEvent.click(toggle);
+    expect(localStorage.getItem("answra-ambient-follow")).toBe("off");
+  });
+
+  it("adjusts global opacity from settings and persists the choice", () => {
+    const { container } = render(<FloatingBarApp />);
+    fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
+
+    const slider = screen.getByRole("slider", { name: "整体透明度" });
+    expect(slider).toHaveValue("0.8");
+
+    fireEvent.change(slider, { target: { value: "0.6" } });
+    expect(slider).toHaveValue("0.6");
+    expect(container.querySelector(".overlay-root")?.getAttribute("style")).toContain(
+      "--app-opacity: 0.6",
+    );
+    expect(localStorage.getItem("answra-opacity")).toBe("0.6");
   });
 
   it("reports shell content size through the bridge and closes on demand", () => {

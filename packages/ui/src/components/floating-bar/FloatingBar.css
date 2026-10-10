@@ -1,0 +1,38 @@
+/* ── 悬浮条：紧凑浅色玻璃条 ─────────────────────────────────────── */
+/* 胶囊与下方弹层（模式菜单）的堆叠容器，宽度即胶囊宽度。 */
+.floating-bar-stack {
+  align-self: flex-start;
+  width: max-content;
+  display: flex;
+  flex-direction: column;
+}
+.floating-bar {
+  width: max-content;
+  height: var(--bar-h);
+  display: flex;
+  align-items: center;
+  gap: var(--ctl-gap);
+  padding: 0 var(--bar-pad-x);
+  border: 1px solid var(--glass-line);
+  border-radius: var(--bar-radius);
+  background: var(--glass);
+  backdrop-filter: blur(24px) saturate(160%);
+  box-shadow: var(--shadow-bar);
+  -webkit-app-region: drag;
+}
+.floating-bar button {
+  -webkit-app-region: no-drag;
+}
+.nav-segment {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--ctl-gap);
+}
+.segment-divider {
+  flex: 0 0 1px;
+  width: 1px;
+  height: var(--divider-h);
+  margin: 0 var(--seg-gap);
+  background: var(--glass-line-soft);
+}

@@ -1,6 +1,7 @@
 import type { Mode, ModeDefinition } from "../../model";
 import { ICON, ICON_SM, ICON_STROKE } from "../../tokens";
 import { CheckGlyph, ChevronDownGlyph } from "../icons";
+import "./ModePicker.css";
 
 interface ModePickerProps {
   modes: readonly ModeDefinition[];
@@ -22,7 +23,6 @@ export function ModePicker({ modes, mode, open, onToggle }: ModePickerProps) {
       aria-haspopup="menu"
       className="mode-picker-trigger"
       onClick={onToggle}
-      title="切换工作模式"
       type="button"
     >
       <ActiveIcon aria-hidden="true" size={ICON} strokeWidth={ICON_STROKE} />

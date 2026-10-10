@@ -1,0 +1,70 @@
+/* ── 设置 ─────────────────────────────────────────────────────────── */
+.settings-panel h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 12px;
+}
+/* 设置分组：用细分隔线区隔，常规/本地运行/模型各自成块。 */
+.settings-group {
+  display: flex;
+  flex-direction: column;
+}
+.settings-group + .settings-group {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--glass-line-soft);
+}
+.setting-row {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid var(--glass-line-soft);
+}
+.setting-row span:first-child {
+  display: grid;
+  gap: 3px;
+}
+.setting-row strong {
+  color: var(--ink);
+  font-size: var(--font-sm);
+  font-weight: 600;
+}
+.setting-row small {
+  color: var(--ink-soft);
+  font-size: var(--font-xs);
+}
+.setting-row input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--mint);
+}
+.setting-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.setting-value {
+  min-width: 34px;
+  color: var(--ink-soft);
+  font-size: var(--font-xs);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.setting-select {
+  height: var(--ctl-h);
+  padding: 0 var(--ctl-pad-x);
+  border: 1px solid var(--glass-line);
+  border-radius: var(--ctl-radius);
+  color: var(--ink-soft);
+  background: var(--field);
+  font-size: var(--font-sm);
+}
+.setting-row--static {
+  border-top: 1px solid var(--glass-line-soft);
+}
+.setting-status {
+  color: var(--ink-soft);
+  font-size: var(--font-xs);
+}

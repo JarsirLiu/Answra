@@ -1,0 +1,68 @@
+/* ── 第一段：模式选择 ─────────────────────────────────────────────── */
+.mode-picker {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.mode-picker-trigger {
+  height: var(--ctl-h);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 var(--ctl-pad-x);
+  border: 0;
+  border-radius: var(--ctl-radius);
+  color: var(--ink);
+  background: transparent;
+  cursor: pointer;
+  font-size: var(--font-sm);
+  font-weight: 600;
+  transition: background 140ms ease-out;
+}
+.mode-picker-trigger:hover,
+.mode-picker-trigger[aria-expanded="true"] {
+  background: var(--hover);
+}
+.mode-picker-chevron {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+/* 模式菜单：文档流内、紧跟胶囊下方；打开时窗口经 useFitContent 自动扩展。 */
+.mode-menu {
+  width: var(--menu-w);
+  display: grid;
+  gap: 2px;
+  margin-top: 6px;
+  padding: 4px;
+  border: 1px solid var(--glass-line);
+  border-radius: calc(var(--ctl-radius) + 2px);
+  background: var(--glass-strong);
+  backdrop-filter: blur(24px) saturate(160%);
+  box-shadow: var(--shadow-pop);
+}
+.mode-menu-item {
+  height: var(--menu-item-h);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 var(--ctl-pad-x);
+  border: 0;
+  border-radius: var(--ctl-radius);
+  color: var(--ink);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  font-size: var(--font-sm);
+  transition: background 140ms ease-out;
+}
+.mode-menu-item:hover {
+  background: var(--hover);
+}
+.mode-menu-item.is-active {
+  color: var(--mint-text);
+  background: var(--mint-wash);
+}
+.mode-menu-check {
+  flex: 0 0 auto;
+  margin-left: auto;
+}

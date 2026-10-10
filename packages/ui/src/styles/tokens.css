@@ -1,0 +1,50 @@
+/* ============================================================
+   设计令牌（Design Tokens）
+   所有尺寸/颜色集中在此，控件只引用变量，保证整体等比缩放。
+   变色龙主题（useAmbientTheme）在运行时覆盖其中性色。
+   ============================================================ */
+:root {
+  font-family: "Segoe UI", "Microsoft YaHei UI", sans-serif;
+  color: var(--ink);
+  background: transparent;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+
+  /* 尺寸令牌 */
+  --bar-h: 36px;
+  --bar-radius: 11px;
+  --bar-pad-x: 6px;
+  --ctl-h: 26px;
+  --ctl-min-w: 26px;
+  --ctl-radius: 7px;
+  --ctl-pad-x: 7px;
+  --ctl-gap: 4px;
+  --seg-gap: 6px;
+  --divider-h: 14px;
+  --menu-w: 136px;
+  --menu-item-h: 28px;
+  --font-sm: 11px;
+  --font-xs: 10px;
+  --font-2xs: 9.5px;
+
+  /* 颜色令牌：浅色玻璃（变色龙主题会运行时覆盖其中性色） */
+  --ink: #23282b;
+  --ink-soft: #3d4649;
+  --muted: #6f787c;
+  --faint: #9aa3a6;
+  --focus-ring: rgba(0, 0, 0, 0.35);
+  --mint: #2fa171;
+  --mint-deep: #278a60;
+  --mint-wash: rgba(47, 161, 113, 0.13);
+  --mint-text: #1f7a53;
+  --glass: rgba(255, 255, 255, 0.72);
+  --glass-strong: rgba(255, 255, 255, 0.88);
+  --glass-line: rgba(0, 0, 0, 0.08);
+  --glass-line-soft: rgba(0, 0, 0, 0.06);
+  --hover: rgba(0, 0, 0, 0.09);
+  --shadow-bar: 0 8px 24px rgba(10, 25, 20, 0.14), 0 1px 3px rgba(10, 25, 20, 0.08);
+  --shadow-pop: 0 14px 34px rgba(10, 25, 20, 0.2);
+  --paper: #ffffff;
+  --field: rgba(0, 0, 0, 0.05);
+}

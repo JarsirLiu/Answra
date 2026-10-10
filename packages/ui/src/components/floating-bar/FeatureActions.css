@@ -1,0 +1,55 @@
+/* ── 第二段：模式功能 ─────────────────────────────────────────────── */
+.feature-segment {
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+.feature-actions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--ctl-gap);
+}
+.feature-action {
+  min-width: var(--ctl-min-w);
+  height: var(--ctl-h);
+  display: grid;
+  place-items: center;
+  padding: 0 var(--ctl-pad-x);
+  border: 0;
+  border-radius: var(--ctl-radius);
+  color: var(--ink);
+  background: transparent;
+  cursor: pointer;
+  transition:
+    background 140ms ease-out,
+    transform 90ms ease-out;
+}
+.feature-action:hover {
+  background: var(--hover);
+}
+.feature-action:active {
+  transform: translateY(1px);
+}
+.feature-action--primary {
+  min-width: 52px;
+  gap: 4px;
+  color: var(--mint-text);
+  background: var(--mint-wash);
+  box-shadow: inset 0 0 0 1px rgba(47, 161, 113, 0.22);
+}
+.feature-action--primary:hover {
+  color: var(--mint-deep);
+  background: rgba(47, 161, 113, 0.2);
+}
+.feature-action--soon {
+  color: var(--faint);
+  background: var(--field);
+  cursor: not-allowed;
+}
+.feature-action--soon:hover {
+  background: var(--field);
+}
+.feature-action.is-active {
+  color: var(--mint-text);
+  background: var(--mint-wash);
+}

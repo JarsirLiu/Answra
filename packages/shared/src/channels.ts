@@ -45,8 +45,8 @@ export interface AmbientColorPayload {
  * preload 与 main 的 handler 均以此为准，实现三层类型安全。
  */
 export interface WindowChannelMap {
-  [WindowChannels.FitContent]: { request: ContentSize; response: void };
-  [WindowChannels.Close]: { request: void; response: void };
+  [WindowChannels.FitContent]: { request: ContentSize; response: undefined };
+  [WindowChannels.Close]: { request: undefined; response: undefined };
 }
 
 /** 按频道名取出请求/响应类型的工具类型。 */

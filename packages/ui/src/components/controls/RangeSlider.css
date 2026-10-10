@@ -1,0 +1,59 @@
+/* 专用滑块：可见轨道 + 品牌色拇指，命中区域大、任意背景下可拖拽。
+   进度填充由组件内联 --slider-fill 变量驱动。 */
+.range-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 140px;
+  height: 22px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.range-slider:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: 999px;
+}
+.range-slider::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--mint) var(--slider-fill, 0%),
+    var(--hover) var(--slider-fill, 0%)
+  );
+  border: 1px solid var(--glass-line);
+}
+.range-slider::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--mint) var(--slider-fill, 0%),
+    var(--hover) var(--slider-fill, 0%)
+  );
+  border: 1px solid var(--glass-line);
+}
+.range-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -4px;
+  border-radius: 50%;
+  background: var(--mint);
+  border: 2px solid var(--paper);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+.range-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--mint);
+  border: 2px solid var(--paper);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+.range-slider:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}

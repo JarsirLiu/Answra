@@ -2,6 +2,7 @@ import { MessageSquareText, Sparkles, X } from "lucide-react";
 import type { FormEvent, RefObject } from "react";
 import { ICON_SM } from "../../tokens";
 import { PanelShell } from "./PanelShell";
+import "./ChatPanel.css";
 
 export interface ChatAttachment {
   name: string;
@@ -19,7 +20,6 @@ interface ChatPanelProps {
   messages: ChatMessage[];
   draft: string;
   attachment: ChatAttachment | null;
-  modeLabel: string;
   fileInputRef: RefObject<HTMLInputElement | null>;
   onDraftChange: (value: string) => void;
   onAttachmentChange: (file: File | null) => void;
@@ -33,7 +33,6 @@ export function ChatPanel({
   messages,
   draft,
   attachment,
-  modeLabel,
   fileInputRef,
   onDraftChange,
   onAttachmentChange,
@@ -48,8 +47,7 @@ export function ChatPanel({
 
   return (
     <PanelShell
-      context={attachment ? "截图已添加，可补充问题" : "对话"}
-      modeLabel={modeLabel}
+      context={attachment ? "截图已添加，可补充问题" : undefined}
       onClose={onClose}
       title="AI 对话"
       variant="chat"

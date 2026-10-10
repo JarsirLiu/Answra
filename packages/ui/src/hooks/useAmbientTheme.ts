@@ -52,7 +52,7 @@ const BLACK: Rgb = { r: 0, g: 0, b: 0 };
 /** 令牌名 → 值；null 表示移除该内联覆盖，回落样式表默认。 */
 export type AmbientTokens = Record<string, string | null>;
 
-/** 品牌薄荷绿（与 styles.css 的 --mint 保持一致，仅取色相派生文字色）。 */
+/** 品牌薄荷绿（与 styles/tokens.css 的 --mint 保持一致，仅取色相派生文字色）。 */
 const MINT: Rgb = { r: 47, g: 161, b: 113 };
 
 /** 文字/图标对背景的最低对比度（WCAG AA 正文级）。 */
@@ -110,10 +110,10 @@ export function deriveAmbientTokens(hex: string): AmbientTokens | undefined {
   const extreme = isDark ? WHITE : BLACK;
   const ink = chooseInk(bg, isDark);
   const mintText = chooseMintText(bg);
-  const muted = mix(ink, bg, 0.35);
-  const faint = mix(ink, bg, 0.6);
+  const muted = mix(ink, bg, 0.22);
+  const faint = mix(ink, bg, 0.5);
   const paper = mix(bg, extreme, isDark ? 0.12 : 0.1);
-  const inkSoft = mix(ink, bg, 0.16);
+  const inkSoft = mix(ink, bg, 0.12);
 
   return {
     "--ink": toCss(ink),
@@ -122,10 +122,10 @@ export function deriveAmbientTokens(hex: string): AmbientTokens | undefined {
     "--faint": toCss(faint),
     "--glass": toRgba(bg, isDark ? 0.55 : 0.62),
     "--glass-strong": toRgba(bg, isDark ? 0.74 : 0.85),
-    "--glass-line": toRgba(ink, 0.12),
-    "--glass-line-soft": toRgba(ink, 0.08),
-    "--hover": toRgba(ink, 0.09),
-    "--field": toRgba(ink, 0.055),
+    "--glass-line": toRgba(ink, 0.14),
+    "--glass-line-soft": toRgba(ink, 0.09),
+    "--hover": toRgba(ink, 0.16),
+    "--field": toRgba(ink, 0.09),
     "--paper": toCss(paper),
     "--focus-ring": toRgba(ink, 0.5),
     // 品牌绿文字与激活底色：浅色背景不覆盖（默认深绿在浅底上可读）

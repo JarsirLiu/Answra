@@ -1,0 +1,40 @@
+/* 基础层：reset、焦点可见性与应用外壳布局 */
+
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  width: fit-content;
+  height: fit-content;
+  overflow: hidden;
+  background: transparent;
+}
+button,
+textarea,
+input {
+  font: inherit;
+}
+button {
+  color: inherit;
+}
+button:focus-visible,
+textarea:focus-visible,
+input:focus-visible {
+  outline: 1.5px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+/* 外壳采用 fit-content 布局：窗口尺寸由渲染器测量上报（useFitContent），
+   胶囊态窗口即胶囊大小；面板打开时外壳向下扩展，宽度取胶囊与面板的较大者。 */
+.overlay-root {
+  position: relative;
+  width: fit-content;
+  height: fit-content;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  /* 整体透明度：背景、字体、图标随之一同变化（设置内可调）。 */
+  opacity: var(--app-opacity, 1);
+  padding: 4px 8px 8px;
+}

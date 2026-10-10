@@ -1,18 +1,18 @@
 import { Check } from "lucide-react";
 import { ICON_SM } from "../../tokens";
 import { PanelShell } from "./PanelShell";
+import "./NotesPanel.css";
 
 interface NotesPanelProps {
   note: string;
-  modeLabel: string;
   onNoteChange: (value: string) => void;
   onClose: () => void;
 }
 
 /** 笔记本面板：备忘录式草稿，本地自动保存。 */
-export function NotesPanel({ note, modeLabel, onNoteChange, onClose }: NotesPanelProps) {
+export function NotesPanel({ note, onNoteChange, onClose }: NotesPanelProps) {
   return (
-    <PanelShell modeLabel={modeLabel} onClose={onClose} title="笔记本" variant="notes">
+    <PanelShell onClose={onClose} title="笔记本" variant="notes">
       <div className="notes-panel">
         <label htmlFor="exam-note">个人笔记</label>
         <textarea

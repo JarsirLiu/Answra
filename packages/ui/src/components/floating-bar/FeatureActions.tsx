@@ -1,5 +1,6 @@
 import type { ModeAction, Panel } from "../../model";
 import { ICON, ICON_STROKE } from "../../tokens";
+import "./FeatureActions.css";
 
 interface FeatureActionsProps {
   actions: readonly ModeAction[];
@@ -25,7 +26,6 @@ export function FeatureActions({ actions, panel, onAction }: FeatureActionsProps
             disabled={soon}
             key={action.id}
             onClick={() => onAction(action)}
-            title={action.hint ?? action.label}
             type="button"
           >
             <action.icon aria-hidden="true" size={ICON} strokeWidth={ICON_STROKE} />

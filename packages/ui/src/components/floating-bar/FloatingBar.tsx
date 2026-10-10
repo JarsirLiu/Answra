@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { useDismissableOpen } from "../../hooks/useDismissableOpen";
 import type { Mode, ModeAction, ModeDefinition, Panel } from "../../model";
 import { FeatureActions } from "./FeatureActions";
+import "./FloatingBar.css";
 import { ModeMenu, ModePicker } from "./ModePicker";
 import { WorkspaceControls } from "./WorkspaceControls";
 

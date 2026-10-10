@@ -1,0 +1,34 @@
+/* ── 笔记 ─────────────────────────────────────────────────────────── */
+.notes-panel > label {
+  margin-bottom: 7px;
+  color: var(--ink);
+  font-size: var(--font-sm);
+  font-weight: 600;
+}
+.notes-panel textarea {
+  flex: 1;
+  min-height: 220px;
+  padding: 10px;
+  resize: none;
+  border: 1px solid var(--glass-line);
+  border-radius: 9px;
+  color: var(--ink);
+  background: var(--paper);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.notes-panel textarea:focus {
+  outline: none;
+  border-color: rgba(47, 161, 113, 0.5);
+}
+.notes-panel textarea::placeholder {
+  color: var(--faint);
+}
+.saved-state {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 7px;
+  color: var(--mint-text);
+  font-size: var(--font-xs);
+}

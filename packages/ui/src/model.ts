@@ -72,5 +72,8 @@ export const WELCOME_MESSAGE =
 
 export const NOTE_STORAGE_KEY = "answra-note";
 
-/** 变色龙主题开关的本地持久化键；缺省视为开启。 */
+/** 变色龙主题开关的本地持久化键；缺省视为关闭。 */
 export const AMBIENT_FOLLOW_STORAGE_KEY = "answra-ambient-follow";
+
+/** 整体透明度（0.5~1）的本地持久化键；缺省为 1。 */
+export const APP_OPACITY_STORAGE_KEY = "answra-opacity";

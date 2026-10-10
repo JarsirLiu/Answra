@@ -1,0 +1,67 @@
+/* ── 参考资料 ─────────────────────────────────────────────────────── */
+.sources-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink);
+  font-size: 12px;
+}
+.sources-title svg {
+  color: var(--mint);
+}
+.sources-panel > p {
+  margin: 7px 0 12px;
+  color: var(--ink-soft);
+  font-size: var(--font-sm);
+  line-height: 1.6;
+}
+.file-picker {
+  width: fit-content;
+  display: flex;
+  align-items: center;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: var(--ctl-radius);
+  color: white;
+  background: var(--mint);
+  cursor: pointer;
+  font-size: var(--font-sm);
+  font-weight: 600;
+  transition: background 140ms ease-out;
+}
+.file-picker:hover {
+  background: var(--mint-deep);
+}
+.file-picker input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+.file-picker:focus-within {
+  outline: 1.5px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+.source-list {
+  display: grid;
+  gap: 5px;
+  margin: 11px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.source-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border: 1px solid var(--glass-line-soft);
+  border-radius: 8px;
+  color: var(--ink);
+  font-size: var(--font-sm);
+  overflow-wrap: anywhere;
+}
+.source-list li svg {
+  flex: 0 0 auto;
+  color: var(--mint);
+}
