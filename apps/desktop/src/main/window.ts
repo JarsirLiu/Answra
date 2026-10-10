@@ -1,3 +1,4 @@
+import os from "node:os";
 import path from "node:path";
 import type { ContentSize } from "@answra/shared";
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron";
@@ -66,6 +67,21 @@ export function applyStealth(value: boolean): void {
     if (value) app.dock?.hide();
     else app.dock?.show();
   }
+}
+
+/** WDA_EXCLUDEFROMCAPTURE 从 Windows 10 2004（build 19041）开始可用。 */
+const MIN_WINDOWS_BUILD = 19041;
+
+/**
+ * 当前系统是否可靠支持会议隐身（内容保护）。
+ * 旧 Windows 会退化为捕获黑块（更扎眼），Linux 无等价能力，均视为不支持。
+ */
+export function isStealthSupported(): boolean {
+  if (process.platform === "win32") {
+    const build = Number(os.release().split(".")[2]);
+    return Number.isFinite(build) && build >= MIN_WINDOWS_BUILD;
+  }
+  return process.platform === "darwin";
 }
 
 export function createMainWindow(): BrowserWindow {

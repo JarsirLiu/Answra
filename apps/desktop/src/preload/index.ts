@@ -21,6 +21,7 @@ const bridge: DesktopBridge = {
   setStealth: (value: boolean) => {
     ipcRenderer.send(WindowChannels.SetStealth, value);
   },
+  getStealthSupport: () => ipcRenderer.invoke(WindowChannels.GetStealthSupport),
   onAmbientColor: (listener: (payload: AmbientColorPayload) => void) => {
     const wrapped = (_event: Electron.IpcRendererEvent, payload: AmbientColorPayload) => {
       listener(payload);

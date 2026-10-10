@@ -9,6 +9,8 @@ interface SettingsPanelProps {
   opacity: number;
   localOnly: boolean;
   stealth: boolean;
+  /** 系统是否可靠支持隐身（内容保护）；不支持时开关禁用。 */
+  stealthSupported: boolean;
   onAmbientFollowChange: (value: boolean) => void;
   onOpacityChange: (value: number) => void;
   onLocalOnlyChange: (value: boolean) => void;
@@ -25,6 +27,7 @@ export function SettingsPanel({
   opacity,
   localOnly,
   stealth,
+  stealthSupported,
   onAmbientFollowChange,
   onOpacityChange,
   onLocalOnlyChange,
@@ -67,10 +70,15 @@ export function SettingsPanel({
           <label className="setting-row">
             <span>
               <strong>会议隐身</strong>
-              <small>开启后屏幕共享与截图捕获不到本应用，你自己仍可见</small>
+              <small>
+                {stealthSupported
+                  ? "开启后屏幕共享与截图捕获不到本应用，你自己仍可见"
+                  : "当前系统不支持可靠隐身，无法开启"}
+              </small>
             </span>
             <input
               checked={stealth}
+              disabled={!stealthSupported}
               onChange={(event) => onStealthChange(event.target.checked)}
               type="checkbox"
             />

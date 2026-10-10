@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FloatingBarApp } from "../src/app/FloatingBarApp";
 
@@ -88,27 +88,46 @@ describe("three-segment floating navigation", () => {
     expect(localStorage.getItem("answra-opacity")).toBe("0.6");
   });
 
-  it("toggles meeting stealth in settings, persists the choice, and notifies the bridge", () => {
+  it("toggles meeting stealth in settings, persists the choice, and notifies the bridge", async () => {
     const bridge = {
       close: vi.fn(),
       fitContent: vi.fn(),
+      getStealthSupport: vi.fn().mockResolvedValue(true),
       setStealth: vi.fn(),
     };
     render(<FloatingBarApp bridge={bridge} />);
     fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
 
     const toggle = screen.getByRole("checkbox", { name: /会议隐身/ });
+    await waitFor(() => expect(toggle).not.toBeDisabled());
     expect(toggle).not.toBeChecked();
 
     fireEvent.click(toggle);
     expect(toggle).toBeChecked();
     expect(localStorage.getItem("answra-stealth")).toBe("on");
-    expect(bridge.setStealth).toHaveBeenCalledWith(true);
+    await waitFor(() => expect(bridge.setStealth).toHaveBeenCalledWith(true));
 
     fireEvent.click(toggle);
     expect(toggle).not.toBeChecked();
     expect(localStorage.getItem("answra-stealth")).toBe("off");
-    expect(bridge.setStealth).toHaveBeenCalledWith(false);
+    await waitFor(() => expect(bridge.setStealth).toHaveBeenCalledWith(false));
+  });
+
+  it("disables meeting stealth when the system does not support content protection", async () => {
+    const bridge = {
+      close: vi.fn(),
+      fitContent: vi.fn(),
+      getStealthSupport: vi.fn().mockResolvedValue(false),
+      setStealth: vi.fn(),
+    };
+    render(<FloatingBarApp bridge={bridge} />);
+    fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
+
+    const toggle = screen.getByRole("checkbox", { name: /会议隐身/ });
+    await waitFor(() => expect(toggle).toBeDisabled());
+    expect(screen.getByText(/当前系统不支持/)).toBeInTheDocument();
+    // 能力未确认/不支持时，绝不向主进程发送隐身指令
+    expect(bridge.setStealth).not.toHaveBeenCalled();
   });
 
   it("reports shell content size through the bridge and closes on demand", () => {

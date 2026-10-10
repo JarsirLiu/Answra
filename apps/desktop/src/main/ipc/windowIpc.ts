@@ -1,6 +1,12 @@
 import { type ContentSize, WindowChannels } from "@answra/shared";
 import { ipcMain } from "electron";
-import { applyStealth, getWindow, isWindowFromSender, resizeWindowToContent } from "../window";
+import {
+  applyStealth,
+  getWindow,
+  isStealthSupported,
+  isWindowFromSender,
+  resizeWindowToContent,
+} from "../window";
 
 /**
  * 窗口控制 IPC。
@@ -24,6 +30,11 @@ export function registerWindowIpc(): void {
     if (!isWindowFromSender(getWindow(), event)) return;
     if (typeof value !== "boolean") return;
     applyStealth(value);
+  });
+
+  ipcMain.handle(WindowChannels.GetStealthSupport, (event) => {
+    if (!isWindowFromSender(getWindow(), event)) return false;
+    return isStealthSupported();
   });
 }
 

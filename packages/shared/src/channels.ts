@@ -15,6 +15,8 @@ export const WindowChannels = {
   Close: "answra:window:close",
   /** 切换会议隐身：内容保护 + 从任务栏/Dock、Alt+Tab/Cmd+Tab 隐藏。 */
   SetStealth: "answra:window:set-stealth",
+  /** 查询当前系统是否可靠支持会议隐身（内容保护）。 */
+  GetStealthSupport: "answra:window:get-stealth-support",
 } as const;
 
 /** 渲染进程上报的内容尺寸（CSS 像素，含透明呼吸区）。 */
@@ -50,6 +52,7 @@ export interface WindowChannelMap {
   [WindowChannels.FitContent]: { request: ContentSize; response: undefined };
   [WindowChannels.Close]: { request: undefined; response: undefined };
   [WindowChannels.SetStealth]: { request: boolean; response: undefined };
+  [WindowChannels.GetStealthSupport]: { request: undefined; response: boolean };
 }
 
 /** 按频道名取出请求/响应类型的工具类型。 */

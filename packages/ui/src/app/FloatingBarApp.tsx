@@ -49,6 +49,8 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
   const [stealth, setStealth] = useState(
     () => localStorage.getItem(STEALTH_STORAGE_KEY) === "on",
   );
+  /** 系统是否可靠支持隐身；null 表示查询中，未确认前不应用隐身。 */
+  const [stealthSupported, setStealthSupported] = useState<boolean | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { ref: shellRef } = useFitContent(platform);
   useAmbientTheme(platform, ambientFollow);
@@ -57,14 +59,33 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
   // 必须写在 :root（与令牌声明同元素），写到子元素不会触发自定义属性重算。
   useEffect(() => {
     document.documentElement.style.setProperty("--fade", String(opacity));
-    return () => document.documentElement.style.removeProperty("--fade");
+    return () => {
+      document.documentElement.style.removeProperty("--fade");
+    };
   }, [opacity]);
 
-  // 会议隐身：开启后屏幕共享/截图捕获不到本窗口，并从任务栏/Dock、
-  // Alt+Tab/Cmd+Tab 隐藏；自身屏幕仍可见（仅桌面端有效）
+  // 查询系统能力：旧 Windows 捕获到黑块而非排除，Linux 无等价能力，
+  // 这些系统不允许开启隐身（settings 中禁用开关）
   useEffect(() => {
+    let cancelled = false;
+    platform
+      ?.getStealthSupport?.()
+      .then((supported) => {
+        if (!cancelled) setStealthSupported(supported);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [platform]);
+
+  // 会议隐身：开启后屏幕共享/截图捕获不到本窗口，并从任务栏/Dock、
+  // Alt+Tab/Cmd+Tab 隐藏；自身屏幕仍可见。仅桌面端且系统支持时应用；
+  // 能力未确认（null）前不调用，避免旧系统在查询完成前误开内容保护。
+  useEffect(() => {
+    if (stealthSupported === null || !stealthSupported) return;
     platform?.setStealth?.(stealth);
-  }, [stealth, platform]);
+  }, [stealth, platform, stealthSupported]);
 
   function setAmbientFollowPersisted(value: boolean) {
     setAmbientFollow(value);
@@ -194,7 +215,8 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
           onOpacityChange={setOpacityPersisted}
           onStealthChange={setStealthPersisted}
           opacity={opacity}
-          stealth={stealth}
+          stealth={stealth && stealthSupported === true}
+          stealthSupported={stealthSupported === true}
         />
       )}
     </main>

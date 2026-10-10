@@ -22,6 +22,12 @@ export interface DesktopBridge {
    */
   setStealth?: (value: boolean) => void;
   /**
+   * 查询当前系统是否可靠支持会议隐身（内容保护）。
+   * 旧 Windows（build < 19041）与 Linux 会返回 false。
+   * 浏览器预览/测试环境可未实现，调用方需判空。
+   */
+  getStealthSupport?: () => Promise<boolean>;
+  /**
    * 订阅背景主色推送（变色龙主题）；返回取消订阅函数。
    * 浏览器预览/测试环境可未实现，调用方需判空。
    */
