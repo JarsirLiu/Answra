@@ -1,152 +1,102 @@
-/* 横条式回复条：一条贴着浮条的窄条，编辑态放截图/输入，流式态滚动 AI 回复。 */
+/* 横条式回复条：与悬浮胶囊同一表面语言（floating-surface 提供边框/底色/投影，
+   本文件只管布局与内部控件）。编辑态 = 缩略条 + 图标操作组（条内不设输入框，
+   隐身模式下打字经输入法候选窗会被捕获暴露）；流式态 = 匀速跑马灯 + 停止键。 */
+
+/* ── 条体：贴内容自适应宽度（不再撑满/挤占），超宽时整条封顶 ───── */
 .reply-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  width: 100%;
-  box-sizing: border-box;
-  padding: 8px 10px;
-  border-radius: 14px;
+  gap: 10px;
+  width: max-content;
+  max-width: 520px;
+  min-height: var(--bar-h);
+  padding: 6px var(--bar-pad-x);
+  border-radius: var(--bar-radius);
 }
 
-.reply-compose {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: 1;
-  min-width: 0;
-}
-
-.reply-input {
-  flex: 1;
-  min-width: 0;
-  background: transparent;
-  border: 0;
-  outline: none;
-  color: var(--ink);
-  font: inherit;
-}
-
-.reply-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.reply-actions button,
-.reply-close {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  border: 0;
-  border-radius: 9px;
-  padding: 6px 10px;
-  font: inherit;
-  color: var(--ink);
-  background: var(--hover);
-}
-
-.reply-actions .reply-ghost {
-  background: transparent;
-  color: var(--muted);
-}
-
-.reply-actions .reply-ghost:hover {
-  color: var(--ink);
-  background: var(--hover);
-}
-
-.reply-actions .reply-send {
-  /* mint 强调色（与产品定义一致），深色文字保证对比 */
-  background: var(--accent, #34d399);
-  color: #06281c;
-}
-
-.reply-actions button:disabled {
-  opacity: 0.45;
-}
-
-/* 收起按钮：小圆 ×，与缩略图删除键同源观感 */
-.reply-close {
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  color: var(--muted);
-  background: transparent;
-}
-
-.reply-close:hover {
-  color: var(--ink);
-  background: var(--hover);
-}
-
-/* ── 缩略条：截图贴在横条上，每张独立可删 ───────────────────────── */
+/* ── 缩略条：可横向滚动、可收缩，截图多时不再把操作组挤出窗口 ──── */
 .attachment-strip {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.attachment-strip::-webkit-scrollbar {
+  display: none;
 }
 
 .attachment-thumb {
   position: relative;
-  width: 44px;
-  height: 44px;
-  border: 1px solid var(--glass-line-soft);
-  border-radius: 8px;
-  overflow: hidden;
   flex: none;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--glass-line-soft);
+  border-radius: var(--ctl-radius);
+  overflow: hidden;
 }
 
-.attachment-placeholder {
+.attachment-thumb-image {
+  display: block;
   width: 100%;
   height: 100%;
-  display: grid;
-  place-items: center;
-  color: var(--muted);
-  font-size: 10px;
-  background: var(--hover);
+  object-fit: cover;
+  background: var(--field);
 }
 
-/* 每张缩略图右上角的删除按钮：半圆深色底盘 + 白色 ×，常驻可见、点按区域够大，
+/* 缩略图右上角删除键：深色小圆底盘 + 纸白 ×，常驻可见、点按区域够大，
    点击只移除该张截图（onAttachmentRemove 按 id），其余保留、不会发往 AI。 */
-.attachment-thumb button {
+.attachment-thumb .attachment-remove {
   position: absolute;
   top: 2px;
   right: 2px;
   width: 18px;
   height: 18px;
-  display: grid;
-  place-items: center;
-  border: 0;
+  min-width: 18px;
+  padding: 0;
   border-radius: 50%;
-  color: #fff;
-  background: rgba(15, 23, 42, 0.55);
+  background: var(--scrim);
+  color: var(--paper);
   transition: background 0.15s ease;
 }
 
-.attachment-thumb button:hover {
-  background: rgba(15, 23, 42, 0.82);
+.attachment-thumb .attachment-remove:hover {
+  background: var(--scrim-strong);
+  color: var(--paper);
 }
 
-/* 缩略条末尾的「继续截图」加号瓦片：虚线描边、悬停高亮。 */
-.attachment-add {
-  width: 44px;
-  height: 44px;
+/* ── 操作组：固定不收缩；发送/停止键为方形纯图标键，不再带占位文字 ── */
+.reply-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   flex: none;
-  display: grid;
-  place-items: center;
-  border: 1px dashed var(--glass-line-soft);
-  border-radius: 8px;
-  color: var(--muted);
-  background: transparent;
 }
 
-.attachment-add:hover {
+.reply-send,
+.reply-stop {
+  min-width: var(--ctl-h);
+  padding: 0;
+}
+
+/* 收起按钮：小圆 ×，与缩略图删除键同源观感 */
+.reply-close {
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 50%;
+  color: var(--muted);
+}
+
+.reply-close:hover {
   color: var(--ink);
-  border-color: var(--muted);
 }
 
 /* ── 悬浮条同级语言：专注发送态里回复条是屏幕上唯一的条，
@@ -160,52 +110,15 @@
   -webkit-app-region: no-drag;
 }
 
-/* ── 流式态：左侧波形 + 匀速滚动跑马灯 ──────────────────────────── */
+/* ── 流式态：左侧整体是匀速滚动跑马灯，右侧原发送位是停止键 + 收起键 ── */
 .reply-bar--stream {
-  gap: 10px;
-}
-
-.waveform {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  height: 18px;
-  flex: none;
-}
-
-.waveform span {
-  width: 3px;
-  height: 5px;
-  border-radius: 2px;
-  background: var(--ink);
-  animation: reply-wave 0.9s ease-in-out infinite;
-}
-
-.waveform span:nth-child(2) {
-  animation-delay: 0.12s;
-}
-.waveform span:nth-child(3) {
-  animation-delay: 0.24s;
-}
-.waveform span:nth-child(4) {
-  animation-delay: 0.36s;
-}
-.waveform span:nth-child(5) {
-  animation-delay: 0.48s;
-}
-
-@keyframes reply-wave {
-  0%,
-  100% {
-    height: 4px;
-  }
-  50% {
-    height: 16px;
-  }
+  width: 360px;
 }
 
 .ticker {
   position: relative;
+  display: flex;
+  align-items: center;
   flex: 1;
   min-width: 0;
   height: 20px;
@@ -219,6 +132,8 @@
   white-space: nowrap;
   padding-left: 100%;
   color: var(--ink);
+  font-size: 12px;
+  line-height: 20px;
   will-change: transform;
   animation-name: reply-ticker;
   animation-timing-function: linear;

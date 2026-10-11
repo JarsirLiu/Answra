@@ -49,16 +49,15 @@ describe("three-segment floating navigation", () => {
       target: { files: [new File(["image"], "question.png", { type: "image/png" })] },
     });
 
-    expect(screen.getByRole("img", { name: "截图已添加" })).toBeInTheDocument();
-    const prompt = screen.getByRole("textbox", { name: "补充问题" });
-    fireEvent.change(prompt, { target: { value: "请解释这道题的边界条件" } });
+    expect(screen.getByRole("img", { name: "question.png" })).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "补充问题" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "确认发送" }));
 
     // 发送后横条进入流式态：AI 回复（含“尚未连接 AI 服务”）在条上匀速滚动展示，
     // 预备截图与输入区已撤离，不再可见。
     expect(screen.getByText(/演示回复/)).toBeInTheDocument();
     expect(screen.getByText(/当前尚未连接 AI 服务/)).toBeInTheDocument();
-    expect(screen.queryByRole("img", { name: "截图已添加" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: "question.png" })).not.toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: "补充问题" })).not.toBeInTheDocument();
   });
 
@@ -77,14 +76,36 @@ describe("three-segment floating navigation", () => {
     fireEvent.click(screen.getByRole("button", { name: "截图提问" }));
 
     await waitFor(() =>
-      expect(screen.getByRole("img", { name: "截图已添加" })).toBeInTheDocument(),
+      expect(screen.getByRole("img", { name: /screenshot-.*\.png/ })).toBeInTheDocument(),
     );
     expect(bridge.startRegionCapture).toHaveBeenCalledTimes(1);
-    expect(screen.queryByRole("img", { name: "待发送截图预览" })).not.toBeInTheDocument();
-    // 成功后自动填入默认分析提示语
-    expect(screen.getByRole("textbox", { name: "补充问题" })).toHaveValue(
-      "请帮我分析这道题，先说明题意和解题思路。",
+    expect(screen.queryByRole("textbox", { name: "补充问题" })).not.toBeInTheDocument();
+  });
+
+  it("cancels an inline reply and returns to the same send bar", async () => {
+    const bridge = {
+      close: vi.fn(),
+      fitContent: vi.fn(),
+      startRegionCapture: vi.fn().mockResolvedValue({
+        dataUrl: "data:image/png;base64,QUJD",
+        height: 200,
+        ok: true,
+        width: 300,
+      }),
+    };
+    render(<FloatingBarApp bridge={bridge} />);
+    fireEvent.click(screen.getByRole("button", { name: "截图提问" }));
+    await waitFor(() =>
+      expect(screen.getByRole("img", { name: /screenshot-.*\.png/ })).toBeInTheDocument(),
     );
+    fireEvent.click(screen.getByRole("button", { name: "确认发送" }));
+
+    expect(screen.getByText(/演示回复/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "取消回复并返回发送" }));
+
+    expect(screen.getByRole("button", { name: "继续截图" })).toBeInTheDocument();
+    expect(screen.queryByText(/演示回复/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "截图提问" })).not.toBeInTheDocument();
   });
 
   it("syncs screenshot workflow to the detached reply window instead of rendering it in the toolbar", async () => {
@@ -115,10 +136,10 @@ describe("three-segment floating navigation", () => {
       const state = bridge.setReplyBarState.mock.calls.at(-1)?.[0];
       expect(state).toMatchObject({
         phase: "composing",
-        draft: expect.stringContaining("分析这道题"),
+        draft: "",
       });
       expect(state.attachments).toHaveLength(1);
-      expect(screen.queryByRole("img", { name: "截图已添加" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("img", { name: /screenshot-.*\.png/ })).not.toBeInTheDocument();
       expect(screen.queryByRole("button", { name: "截图提问" })).not.toBeInTheDocument();
       expect(bridge.fitContent).toHaveBeenCalledTimes(1);
     } finally {
@@ -150,12 +171,12 @@ describe("three-segment floating navigation", () => {
     render(<FloatingBarApp bridge={bridge} />);
     fireEvent.click(screen.getByRole("button", { name: "截图提问" }));
     await waitFor(() =>
-      expect(screen.getByRole("img", { name: "截图已添加" })).toBeInTheDocument(),
+      expect(screen.getByRole("img", { name: /screenshot-.*\.png/ })).toBeInTheDocument(),
     );
 
     fireEvent.click(screen.getByRole("button", { name: "继续截图" }));
     await waitFor(() => expect(bridge.startRegionCapture).toHaveBeenCalledTimes(2));
-    expect(screen.getAllByRole("img", { name: "截图已添加" })).toHaveLength(2);
+    expect(screen.getAllByRole("img", { name: /screenshot-.*\.png/ })).toHaveLength(2);
   });
 
   it("keeps the chat empty when the user cancels the region capture", async () => {
@@ -168,7 +189,7 @@ describe("three-segment floating navigation", () => {
     fireEvent.click(screen.getByRole("button", { name: "截图提问" }));
 
     await waitFor(() => expect(bridge.startRegionCapture).toHaveBeenCalledTimes(1));
-    expect(screen.queryByRole("img", { name: "截图已添加" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: /screenshot-.*\.png/ })).not.toBeInTheDocument();
   });
 
   it("surfaces a capture failure on screen instead of silently returning to the pill", async () => {
@@ -187,7 +208,7 @@ describe("three-segment floating navigation", () => {
     // 非取消的失败必须屏幕可见（role=alert），且回复条不出现
     await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
     expect(screen.getByText("没有可用的屏幕画面")).toBeInTheDocument();
-    expect(screen.queryByRole("img", { name: "截图已添加" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: /screenshot-.*\.png/ })).not.toBeInTheDocument();
   });
 
   it("does not show an error when the capture is cancelled by the user", async () => {
@@ -201,7 +222,7 @@ describe("three-segment floating navigation", () => {
 
     await waitFor(() => expect(bridge.startRegionCapture).toHaveBeenCalledTimes(1));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(screen.queryByRole("img", { name: "截图已添加" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: /screenshot-.*\\.png/ })).not.toBeInTheDocument();
   });
 
   it("hides the pill in focused send mode and restores it when the reply bar closes", async () => {
@@ -220,7 +241,7 @@ describe("three-segment floating navigation", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "截图提问" }));
     await waitFor(() =>
-      expect(screen.getByRole("img", { name: "截图已添加" })).toBeInTheDocument(),
+      expect(screen.getByRole("img", { name: /screenshot-.*\.png/ })).toBeInTheDocument(),
     );
 
     // 专注发送态：胶囊退场，全屏只留回复条
@@ -249,7 +270,7 @@ describe("three-segment floating navigation", () => {
     fireEvent.click(screen.getByRole("button", { name: "截图提问" }));
 
     await waitFor(() =>
-      expect(screen.getByRole("img", { name: "截图已添加" })).toBeInTheDocument(),
+      expect(screen.getByRole("img", { name: /screenshot-.*\.png/ })).toBeInTheDocument(),
     );
     expect(screen.queryByRole("heading", { name: "笔记本" })).not.toBeInTheDocument();
 
@@ -290,6 +311,7 @@ describe("three-segment floating navigation", () => {
       close: vi.fn(),
       fitContent: vi.fn(),
       getStealthSupport: vi.fn().mockResolvedValue(true),
+      setAmbientFollow: vi.fn(),
       setStealth: vi.fn(),
     };
     render(<FloatingBarApp bridge={bridge} />);
@@ -298,6 +320,7 @@ describe("three-segment floating navigation", () => {
     const ambientToggle = screen.getByRole("checkbox", { name: "跟随背景色" });
     const stealthToggle = screen.getByRole("checkbox", { name: "会议隐身" });
     await waitFor(() => expect(stealthToggle).not.toBeDisabled());
+    bridge.setAmbientFollow.mockClear();
     bridge.setStealth.mockClear();
 
     fireEvent.click(ambientToggle);
@@ -306,12 +329,14 @@ describe("three-segment floating navigation", () => {
     expect(localStorage.getItem("answra-ambient-follow")).toBe("on");
     expect(localStorage.getItem("answra-stealth")).toBeNull();
     expect(bridge.setStealth).not.toHaveBeenCalledWith(true);
+    await waitFor(() => expect(bridge.setAmbientFollow).toHaveBeenCalledWith(true));
 
     fireEvent.click(stealthToggle);
     expect(stealthToggle).toBeChecked();
     expect(ambientToggle).toBeChecked();
     expect(localStorage.getItem("answra-stealth")).toBe("on");
     expect(localStorage.getItem("answra-ambient-follow")).toBe("on");
+    expect(bridge.setAmbientFollow).toHaveBeenCalledWith(true);
     await waitFor(() => expect(bridge.setStealth).toHaveBeenCalledWith(true));
   });
 

@@ -1,0 +1,54 @@
+/* 悬浮按钮的浏览器归零规则和产品控件令牌集中在此。 */
+.surface-control {
+  appearance: none;
+  -webkit-appearance: none;
+  min-width: var(--ctl-min-w);
+  height: var(--ctl-h);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ctl-gap);
+  padding: 0 var(--ctl-pad-x);
+  border: 0;
+  border-radius: var(--ctl-radius);
+  font: inherit;
+  line-height: 1;
+  color: var(--icon);
+  background: transparent;
+  cursor: pointer;
+  transition:
+    background 140ms ease-out,
+    color 140ms ease-out,
+    transform 90ms ease-out;
+}
+
+.surface-control:hover {
+  background: var(--hover);
+}
+
+.surface-control:active {
+  transform: translateY(1px);
+}
+
+.surface-control:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.surface-control--primary {
+  color: var(--icon);
+  background: var(--mint-wash);
+  box-shadow: inset 0 0 0 1px var(--mint-line);
+}
+
+.surface-control--primary:hover {
+  background: var(--mint-wash-strong);
+}
+
+.surface-control--quiet {
+  color: var(--muted);
+}
+
+.surface-control--quiet:hover {
+  color: var(--ink);
+}

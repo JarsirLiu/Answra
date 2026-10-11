@@ -131,7 +131,7 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
           onAttachmentChange={handleAttachmentChange}
           onAttachmentRemove={removeAttachment}
           onClose={closeReplyBar}
-          onDraftChange={setDraft}
+          onCancel={reply.cancelReply}
           onScreenshot={triggerScreenshot}
           onSend={performSend}
         />

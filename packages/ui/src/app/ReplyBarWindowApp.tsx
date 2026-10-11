@@ -62,7 +62,7 @@ export function ReplyBarWindowApp({ bridge }: ReplyBarWindowAppProps) {
         }}
         onAttachmentRemove={(id) => send({ type: "attachment/remove", id })}
         onClose={() => send({ type: "close" })}
-        onDraftChange={(value) => send({ type: "draft/change", value })}
+        onCancel={() => send({ type: "cancel" })}
         onScreenshot={() => send({ type: "screenshot/start" })}
         onSend={() => send({ type: "send" })}
       />

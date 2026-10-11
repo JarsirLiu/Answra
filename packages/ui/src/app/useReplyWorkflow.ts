@@ -3,8 +3,6 @@ import { type ChangeEvent, useCallback, useEffect, useRef, useState } from "reac
 import type { ChatAttachment } from "../components/panels/ChatPanel";
 import type { ReplyPhase } from "../components/panels/ReplyBar";
 
-const SCREENSHOT_PROMPT = "请帮我分析这道题，先说明题意和解题思路。";
-
 interface UseReplyWorkflowOptions {
   platform: DesktopBridge | undefined;
   phase: ReplyPhase | "closed";
@@ -101,7 +99,6 @@ export function useReplyWorkflow({
         ...current,
         { id: crypto.randomUUID(), name: file.name, previewUrl: URL.createObjectURL(file) },
       ]);
-      setDraft((current) => current || SCREENSHOT_PROMPT);
     },
     [],
   );
@@ -136,7 +133,6 @@ export function useReplyWorkflow({
             previewUrl: result.dataUrl,
           },
         ]);
-        setDraft((current) => current || SCREENSHOT_PROMPT);
       } catch (error) {
         console.error("[reply] 截图桥调用异常:", error);
         onCaptureError("截图调用异常，请查看终端日志");
@@ -160,6 +156,12 @@ export function useReplyWorkflow({
     setReplyText("");
   }, [clearPending, onWorkflowFinish]);
 
+  const cancelReply = useCallback(() => {
+    // 取消只退出当前回复态，保留独立回复窗口，让用户能继续截图发送。
+    setReplyText("");
+    onWorkflowPhase("composing");
+  }, [onWorkflowPhase]);
+
   const performSend = useCallback(() => {
     const content = draft.trim();
     if (!content && attachments.length === 0) return;
@@ -181,7 +183,6 @@ export function useReplyWorkflow({
         break;
       case "attachment/add":
         setAttachments((current) => [...current, action.attachment]);
-        setDraft((current) => current || SCREENSHOT_PROMPT);
         break;
       case "attachment/remove":
         removeAttachment(action.id);
@@ -191,6 +192,9 @@ export function useReplyWorkflow({
         break;
       case "send":
         performSend();
+        break;
+      case "cancel":
+        cancelReply();
         break;
       case "close":
         closeReplyBar();
@@ -213,6 +217,7 @@ export function useReplyWorkflow({
     handleAttachmentChange,
     removeAttachment,
     closeReplyBar,
+    cancelReply,
     performSend,
     setDraft,
   };
