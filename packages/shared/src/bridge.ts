@@ -56,4 +56,6 @@ export interface DesktopBridge {
    * 浏览器预览/测试环境可未实现，调用方需判空。
    */
   onAmbientColor?: (listener: (payload: AmbientColorPayload) => void) => () => void;
+  /** 按用户设置启停主进程变色龙屏幕采样。 */
+  setAmbientFollow?: (value: boolean) => void;
 }

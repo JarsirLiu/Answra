@@ -15,6 +15,10 @@ export function useAppearanceController(bridge: DesktopBridge | undefined) {
 
   useAppTheme(bridge, { ambientFollow, colorGroups });
 
+  useEffect(() => {
+    bridge?.setAmbientFollow?.(ambientFollow);
+  }, [bridge, ambientFollow]);
+
   // All surfaces read the same root-level perception tokens, including floating layers.
   useEffect(() => {
     document.documentElement.style.setProperty("--fade", String(opacity));

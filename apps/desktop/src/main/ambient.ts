@@ -149,7 +149,7 @@ function median(values: number[]): number {
 }
 
 /** 采样一次并推送；任何失败都推送 ok=false，由渲染器回落默认主题。 */
-async function sampleAndPush(window: BrowserWindow): Promise<void> {
+async function sampleAndPush(window: BrowserWindow, isCurrent: () => boolean): Promise<void> {
   let payload: AmbientColorPayload;
   try {
     if (window.isDestroyed() || window.isMinimized()) return;
@@ -179,6 +179,7 @@ async function sampleAndPush(window: BrowserWindow): Promise<void> {
       height: Math.max(1, Math.round(display.size.height / 2)),
     };
     const sources = await desktopCapturer.getSources({ types: ["screen"], thumbnailSize });
+    if (!isCurrent()) return;
     const matchedSource = sources.find((source) => source.display_id === String(display.id));
     const screenSource = matchedSource ?? sources[0];
     const thumbnail = screenSource?.thumbnail;
@@ -216,54 +217,79 @@ async function sampleAndPush(window: BrowserWindow): Promise<void> {
   } catch {
     payload = { ok: false, hex: "#ffffff", luminance: 1 };
   }
-  if (!window.isDestroyed()) {
+  if (isCurrent() && !window.isDestroyed()) {
     window.webContents.send(AmbientChannels.AmbientColor, payload);
   }
 }
 
-/**
- * 每次调度：执行主进程整屏采样（desktopCapturer）并推送背景主色。
- * 渲染器据此重算变色龙令牌；此为唯一采样路径，无 v2 分支。
- */
-function scheduleRun(window: BrowserWindow): void {
-  void sampleAndPush(window);
-}
-
-/** 启动变色龙采样：绑定窗口移动/显示器变化/轮询，返回清理函数。 */
-export function startAmbientTheme(window: BrowserWindow): () => void {
-  let lastRun = 0;
-  let pending = false;
+/** The persisted renderer preference controls whether native screen sampling exists at all. */
+export function createAmbientThemeController(window: BrowserWindow): {
+  setEnabled: (enabled: boolean) => void;
+  dispose: () => void;
+} {
+  let enabled = false;
   let disposed = false;
+  let generation = 0;
+  let lastRun = 0;
+  let sampling = false;
+  let poll: ReturnType<typeof setInterval> | undefined;
+  let throttle: ReturnType<typeof setTimeout> | undefined;
+
+  const isCurrent = (runGeneration: number) => enabled && !disposed && generation === runGeneration;
+
+  const sample = () => {
+    if (!enabled || disposed || sampling || window.isDestroyed() || window.isMinimized()) return;
+    sampling = true;
+    const runGeneration = generation;
+    lastRun = Date.now();
+    void sampleAndPush(window, () => isCurrent(runGeneration)).finally(() => {
+      sampling = false;
+    });
+  };
 
   const schedule = () => {
-    if (disposed) return;
-    const now = Date.now();
-    if (now - lastRun < MOVE_THROTTLE_MS) {
-      if (!pending) {
-        pending = true;
-        setTimeout(
-          () => {
-            pending = false;
-            lastRun = Date.now();
-            scheduleRun(window);
-          },
-          MOVE_THROTTLE_MS - (now - lastRun),
-        );
-      }
+    if (!enabled || disposed) return;
+    const remaining = MOVE_THROTTLE_MS - (Date.now() - lastRun);
+    if (remaining <= 0) {
+      sample();
       return;
     }
-    lastRun = now;
-    scheduleRun(window);
+    if (throttle) return;
+    throttle = setTimeout(() => {
+      throttle = undefined;
+      sample();
+    }, remaining);
   };
 
-  const poll = setInterval(schedule, POLL_INTERVAL_MS);
-  screen.on("display-metrics-changed", schedule);
-  window.on("moved", schedule);
-  window.once("ready-to-show", schedule);
+  const onReady = () => schedule();
 
-  return () => {
+  const setEnabled = (value: boolean) => {
+    if (disposed || enabled === value) return;
+    enabled = value;
+    generation += 1;
+    if (!enabled) {
+      if (poll) clearInterval(poll);
+      if (throttle) clearTimeout(throttle);
+      poll = undefined;
+      throttle = undefined;
+      screen.removeListener("display-metrics-changed", schedule);
+      window.removeListener("moved", schedule);
+      window.removeListener("ready-to-show", onReady);
+      return;
+    }
+    lastRun = 0;
+    poll = setInterval(schedule, POLL_INTERVAL_MS);
+    screen.on("display-metrics-changed", schedule);
+    window.on("moved", schedule);
+    window.on("ready-to-show", onReady);
+    schedule();
+  };
+
+  const dispose = () => {
+    if (disposed) return;
+    setEnabled(false);
     disposed = true;
-    clearInterval(poll);
-    screen.removeListener("display-metrics-changed", schedule);
   };
+
+  return { setEnabled, dispose };
 }

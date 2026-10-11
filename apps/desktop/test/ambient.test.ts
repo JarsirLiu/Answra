@@ -7,11 +7,28 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("electron", () => ({
   app: { isPackaged: true },
-  desktopCapturer: {},
-  screen: {},
+  desktopCapturer: { getSources: vi.fn(async () => []) },
+  screen: {
+    getAllDisplays: vi.fn(() => [{ id: 1, size: { width: 800, height: 600 }, scaleFactor: 1 }]),
+    getPrimaryDisplay: vi.fn(() => ({ id: 1, size: { width: 800, height: 600 }, scaleFactor: 1 })),
+    getDisplayMatching: vi.fn(() => ({
+      id: 1,
+      size: { width: 800, height: 600 },
+      bounds: { x: 0, y: 0, width: 800, height: 600 },
+    })),
+    on: vi.fn(),
+    removeListener: vi.fn(),
+  },
 }));
 
-import { dominantColor, expandInner, luminanceOf, toHex } from "../src/main/ambient";
+import { desktopCapturer, screen } from "electron";
+import {
+  createAmbientThemeController,
+  dominantColor,
+  expandInner,
+  luminanceOf,
+  toHex,
+} from "../src/main/ambient";
 
 type Bgra = [b: number, g: number, r: number];
 
@@ -124,5 +141,40 @@ describe("expandInner", () => {
       width: 94,
       height: 94,
     });
+  });
+});
+
+describe("ambient sampling lifecycle", () => {
+  it("samples only while enabled", async () => {
+    vi.useFakeTimers();
+    const window = {
+      isDestroyed: () => false,
+      isMinimized: () => false,
+      getBounds: () => ({ x: 300, y: 200, width: 100, height: 48 }),
+      webContents: { send: vi.fn() },
+      on: vi.fn(),
+      removeListener: vi.fn(),
+    };
+    const controller = createAmbientThemeController(window as never);
+    vi.mocked(desktopCapturer.getSources).mockClear();
+
+    await vi.advanceTimersByTimeAsync(8_000);
+    expect(desktopCapturer.getSources).not.toHaveBeenCalled();
+    expect(screen.on).not.toHaveBeenCalled();
+
+    controller.setEnabled(true);
+    await vi.waitFor(() => expect(desktopCapturer.getSources).toHaveBeenCalledOnce());
+    expect(screen.on).toHaveBeenCalledWith("display-metrics-changed", expect.any(Function));
+
+    controller.setEnabled(false);
+    await vi.advanceTimersByTimeAsync(8_000);
+    expect(desktopCapturer.getSources).toHaveBeenCalledOnce();
+    expect(screen.removeListener).toHaveBeenCalledWith(
+      "display-metrics-changed",
+      expect.any(Function),
+    );
+    expect(window.removeListener).toHaveBeenCalledWith("moved", expect.any(Function));
+    controller.dispose();
+    vi.useRealTimers();
   });
 });

@@ -59,6 +59,9 @@ const bridge: DesktopBridge = {
       ipcRenderer.removeListener(AmbientChannels.AmbientColor, wrapped);
     };
   },
+  setAmbientFollow: (value: boolean) => {
+    ipcRenderer.send(AmbientChannels.SetFollow, value);
+  },
 };
 
 contextBridge.exposeInMainWorld("answra", bridge);

@@ -161,6 +161,7 @@ export interface CaptureChannelMap {
 
 /** 变色龙频道 → 请求/响应载荷 的类型映射。 */
 export interface AmbientChannelMap {
+  [AmbientChannels.SetFollow]: { request: boolean; response: undefined };
   [AmbientChannels.AmbientColor]: { request: undefined; response: undefined };
 }
 
