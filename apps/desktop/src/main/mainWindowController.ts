@@ -1,0 +1,117 @@
+import path from "node:path";
+import type { ContentSize } from "@answra/shared";
+import { app, BrowserWindow, screen } from "electron";
+import { clampContentSize } from "./windowLayout";
+
+const WORK_AREA_MARGIN = 24;
+const INITIAL_SIZE: ContentSize = { width: 340, height: 60 };
+const MAX_SIZE: ContentSize = { width: 1200, height: 900 };
+
+export interface MainWindowControllerHost {
+  onNativeShow: () => void;
+  onNativeResize: () => void;
+  onClosed: () => void;
+}
+
+/** 主导航窗口的唯一生命周期所有者；隐身策略通过 host 回调接入。 */
+export function createMainWindowController(host: MainWindowControllerHost) {
+  let windowRef: BrowserWindow | undefined;
+
+  function clampToWorkArea(size: ContentSize): ContentSize {
+    const display = windowRef
+      ? screen.getDisplayMatching(windowRef.getBounds())
+      : screen.getPrimaryDisplay();
+    return clampContentSize(
+      size,
+      { width: display.workArea.width, height: display.workArea.height },
+      WORK_AREA_MARGIN,
+      MAX_SIZE,
+    );
+  }
+
+  function resizeToContent(size: ContentSize): void {
+    if (!windowRef || windowRef.isDestroyed()) return;
+    const clamped = clampToWorkArea(size);
+    const display = screen.getDisplayMatching(windowRef.getBounds());
+    const area = display.workArea;
+    const bounds = windowRef.getBounds();
+    const x = Math.min(Math.max(bounds.x, area.x), area.x + area.width - clamped.width);
+    const y = Math.min(Math.max(bounds.y, area.y), area.y + area.height - clamped.height);
+    if (
+      bounds.x === x &&
+      bounds.y === y &&
+      bounds.width === clamped.width &&
+      bounds.height === clamped.height
+    )
+      return;
+    windowRef.setBounds({ x, y, ...clamped }, false);
+  }
+
+  function create(): BrowserWindow {
+    const display = screen.getPrimaryDisplay();
+    const initial = clampToWorkArea(INITIAL_SIZE);
+    const area = display.workArea;
+    const created = new BrowserWindow({
+      x: Math.round(area.x + (area.width - initial.width) / 2),
+      y: area.y + 12,
+      width: initial.width,
+      height: initial.height,
+      minWidth: 200,
+      minHeight: 40,
+      frame: false,
+      transparent: true,
+      backgroundColor: "#00000000",
+      resizable: false,
+      movable: true,
+      minimizable: false,
+      maximizable: false,
+      fullscreenable: false,
+      skipTaskbar: false,
+      hasShadow: false,
+      roundedCorners: true,
+      show: false,
+      webPreferences: {
+        preload: path.join(__dirname, "../preload/index.cjs"),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+      },
+    });
+    windowRef = created;
+    created.setAlwaysOnTop(true, "floating");
+    created.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+    created.webContents.on("will-navigate", (event) => event.preventDefault());
+    created.on("show", host.onNativeShow);
+    created.on("resize", host.onNativeResize);
+    created.once("ready-to-show", () => created.show());
+    created.webContents.on("render-process-gone", (_event, details) =>
+      console.error("[window] 渲染进程消失:", details),
+    );
+    created.on("unresponsive", () =>
+      console.error("[window] 渲染进程无响应（疑似死锁或主线程卡死）"),
+    );
+    created.webContents.on("did-fail-load", (_event, code, description) =>
+      console.error("[window] 页面加载失败:", code, description),
+    );
+    created.webContents.on("console-message", (...args: unknown[]) => {
+      const event = args[0] as { message?: unknown } | undefined;
+      const message =
+        typeof event?.message === "string"
+          ? event.message
+          : typeof args[2] === "string"
+            ? args[2]
+            : "";
+      if (/^\[settings\]\[stealth\].*(failed|rejected|unavailable)/i.test(message))
+        console.warn("[renderer]", message);
+    });
+    if (app.isPackaged) void created.loadFile(path.join(__dirname, "../../dist/index.html"));
+    else void created.loadURL("http://127.0.0.1:5180");
+    created.on("closed", () => {
+      if (windowRef === created) windowRef = undefined;
+      host.onClosed();
+    });
+    return created;
+  }
+
+  return { clampToWorkArea, create, getWindow: () => windowRef, resizeToContent };
+}

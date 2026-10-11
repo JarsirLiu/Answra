@@ -11,3 +11,10 @@
 .input-surface:focus-within {
   border-color: var(--mint-line-focus);
 }
+
+/* 导航栏和独立工作流条共用同一层表面；窗口可以不同，视觉令牌不能分叉。 */
+.floating-surface {
+  border: 1px solid var(--glass-line);
+  background: var(--glass);
+  box-shadow: var(--shadow-bar);
+}

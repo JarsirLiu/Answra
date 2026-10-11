@@ -125,7 +125,7 @@ function isValidReplyBarAction(action: unknown): action is ReplyBarAction {
     id?: unknown;
     attachment?: unknown;
   };
-  if (["send", "close", "screenshot/start"].includes(String(candidate.type))) return true;
+  if (["send", "cancel", "close", "screenshot/start"].includes(String(candidate.type))) return true;
   if (candidate.type === "draft/change") return typeof candidate.value === "string";
   if (candidate.type === "attachment/remove") return typeof candidate.id === "string";
   if (

@@ -1,5 +1,6 @@
 import type { ModeAction, Panel } from "../../model";
 import { ICON, ICON_STROKE } from "../../tokens";
+import { SurfaceButton } from "../controls/SurfaceButton";
 import "./FeatureActions.css";
 
 interface FeatureActionsProps {
@@ -17,7 +18,7 @@ export function FeatureActions({ actions, panel, onAction }: FeatureActionsProps
         const isChatEntry = action.id === "chat";
         const soon = action.disabled === true;
         return (
-          <button
+          <SurfaceButton
             aria-label={action.label}
             aria-pressed={isChatEntry ? panel === "chat" : undefined}
             className={`feature-action${action.id === "screenshot" ? " feature-action--primary" : ""}${
@@ -27,9 +28,10 @@ export function FeatureActions({ actions, panel, onAction }: FeatureActionsProps
             key={action.id}
             onClick={() => onAction(action)}
             type="button"
+            variant={action.id === "screenshot" ? "primary" : "default"}
           >
             <action.icon aria-hidden="true" size={ICON} strokeWidth={ICON_STROKE} />
-          </button>
+          </SurfaceButton>
         );
       })}
     </div>

@@ -1,6 +1,8 @@
 export { FloatingBarApp } from "./app/FloatingBarApp";
 export { ReplyBarWindowApp } from "./app/ReplyBarWindowApp";
 export { RangeSlider } from "./components/controls/RangeSlider";
+export type { SurfaceButtonProps, SurfaceButtonVariant } from "./components/controls/SurfaceButton";
+export { SurfaceButton } from "./components/controls/SurfaceButton";
 export { Switch } from "./components/controls/Switch";
 export { FeatureActions } from "./components/floating-bar/FeatureActions";
 export { FloatingBar } from "./components/floating-bar/FloatingBar";

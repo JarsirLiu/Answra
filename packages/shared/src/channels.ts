@@ -56,9 +56,12 @@ export type ReplyBarAction =
   | { type: "attachment/remove"; id: string }
   | { type: "screenshot/start" }
   | { type: "send" }
+  | { type: "cancel" }
   | { type: "close" };
 
 export const AmbientChannels = {
+  /** renderer 按用户变色龙设置启停主进程的屏幕采样。 */
+  SetFollow: "answra:ambient:set-follow",
   /**
    * 主进程推送背景主色采样结果（变色龙路径）。
    * 主进程经 desktopCapturer 整屏采样悬浮条周边背景色后主动推送，

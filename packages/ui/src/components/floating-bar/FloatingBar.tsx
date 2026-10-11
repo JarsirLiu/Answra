@@ -44,7 +44,7 @@ export function FloatingBar({
 
   return (
     <div className={`floating-bar-stack${modeMenuOpen ? " is-menu-open" : ""}`} ref={stackRef}>
-      <section aria-label="悬浮导航" className="floating-bar">
+      <section aria-label="悬浮导航" className="floating-bar floating-surface">
         <div className="nav-segment mode-segment">
           <ModePicker mode={mode} modes={modes} onToggle={onToggleModeMenu} open={modeMenuOpen} />
         </div>

@@ -15,5 +15,10 @@ Object.defineProperty(URL, "revokeObjectURL", {
 
 Object.defineProperty(window, "answra", {
   configurable: true,
-  value: { fitContent: vi.fn(), close: vi.fn(), onAmbientColor: vi.fn(() => () => {}) },
+  value: {
+    fitContent: vi.fn(),
+    close: vi.fn(),
+    onAmbientColor: vi.fn(() => () => {}),
+    setAmbientFollow: vi.fn(),
+  },
 });

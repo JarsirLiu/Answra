@@ -13,6 +13,7 @@
 @import "./styles/tokens.css";
 @import "./styles/base.css";
 @import "./styles/shared.css";
+@import "./components/controls/SurfaceButton.css";
 @import "./components/floating-bar/FloatingBar.css";
 @import "./components/floating-bar/ModePicker.css";
 @import "./components/floating-bar/FeatureActions.css";
