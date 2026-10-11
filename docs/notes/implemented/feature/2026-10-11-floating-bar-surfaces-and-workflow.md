@@ -1,4 +1,45 @@
-# 悬浮导航交互方案
+# Note：悬浮导航、面板与任务工作流
+
+状态：已实施
+
+## 问题
+
+悬浮导航、模式菜单、二级面板、通知和截图发送条有不同的开合与恢复语义；若都当作同一种面板处理，会争用位置并互相关闭或丢失工作状态。
+
+## 决定
+
+悬浮导航是统一入口。面板占用互斥的内容表面槽，普通菜单和提示属于浮层，截图后的发送条属于持久任务工作流并使用独立 BrowserWindow。各表面都消费根级外观状态；隐身捕获策略由 desktop 管理，不由 UI 表面开合驱动。
+
+## 涉及范围
+
+- `packages/ui/src/app/surfaceState.ts` 协调面板、浮层和工作流状态。
+- `packages/ui/src/components/floating-bar/` 呈现导航与浮层。
+- `apps/desktop/src/main/window.ts` 创建主窗口和独立回复窗口。
+- `packages/shared/src/channels.ts` 与 DesktopBridge 定义回复条状态和动作契约。
+
+## 影响表面
+
+- 悬浮导航是功能入口。
+- 面板互斥并占用内容表面槽；菜单、通知和权限提示使用浮层宿主。
+- 截图回复条是持久工作流，不因点击外部关闭；结束后恢复此前面板。
+
+## 曾考虑的替代方案
+
+- **把模式菜单也当成二级面板：** 会占用面板槽，无法覆盖现有面板并执行“点外部关闭”的菜单语义。
+- **在主窗口内显示持久发送条：** 回复条尺寸和生命周期会改变主 HWND；Windows/Electron 捕获问题验证表明独立窗口隔离该生命周期更稳定。
+- **由 renderer 决定所有窗口显隐与捕获策略：** renderer 不拥有原生窗口；策略集中在 main，避免不同功能各自重复实现。
+
+## 后果与防回退
+
+- 新增 UI 表面必须先说明属于面板、浮层还是持久工作流，并定义关闭、恢复、焦点和捕获行为。
+- 回复工作流状态仍由主 renderer 持有，回复窗口只呈现状态并回传动作；不允许窗口之间形成互相写状态的第二条路径。
+- 所有窗口内容保护效果仍需在目标 Electron 和操作系统版本实测，API 状态不能替代系统捕获验证。
+
+## 验证
+
+- `packages/ui/test/surfaceState.test.ts` 验证面板、浮层和工作流的状态转换。
+- `packages/ui/test/FloatingBarApp.test.tsx` 验证 UI 行为。
+- `apps/desktop/test/window.test.ts`、`windowIpc.test.ts` 与 `windowCaptureProtection.test.ts` 验证主进程窗口契约。
 
 ## 交互结构
 

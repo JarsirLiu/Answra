@@ -35,10 +35,15 @@
 
 ## 质量门禁
 
-- `pnpm verify` = biome lint + 全包 typecheck + vitest + 架构守护；husky pre-push 自动执行。
+- `pnpm verify` = biome lint + 文档门禁 + 全包 typecheck + vitest + 架构守护；husky pre-push 自动执行。
 - 每个 UI 行为变化在 `packages/ui/test/` 补测试；main 进程逻辑后续用 node:test/vitest 覆盖。
 - 提交信息使用 Conventional Commits，标题简明。
 
 ## 文档
 
-- 交互决策记录在 `docs/`（如 `FLOATING-BAR-INTERACTION.md`）；结构性变更同步本文件与 README 的仓库结构表。
+- `docs/notes/` 是方案、功能决策、缺陷复盘、架构约束和流程经验的唯一长期存放处；`docs/` 根目录不新增平铺专题文档。
+- 功能新增/删除、用户行为变化、有复盘价值的缺陷、跨模块契约、架构/依赖/持久化/测试策略/工具流程变化，必须在同一变更中新增或更新 Note。纯格式、typo 和纯机械重命名可豁免。
+- 每项独立功能或决策分别留痕。Note 必须写问题、影响范围、决定、真实替代方案及舍弃理由、后果，以及验证证据或防止重复踩坑的约束。
+- Note 按 `proposed`、`implemented`、`rejected`、`archived` 生命周期和功能类别归档；格式与转换规则见 `docs/README.md` 和模板。
+- AI 开发流程见 `.agents/skills/answra-change/SKILL.md`。`pnpm notes:check` 在缺少配套 Note、Note 格式不完整或本地链接失效时失败。
+- 结构性变更同时同步本文件、Note 和 README 仓库结构表。

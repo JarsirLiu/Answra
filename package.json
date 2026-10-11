@@ -16,7 +16,9 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "architecture:check": "node scripts/architecture/architecture-check.mjs check",
-    "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm architecture:check",
+    "notes:check": "node scripts/docs/check-notes.mjs",
+    "docs:check": "pnpm notes:check",
+    "verify": "pnpm lint && pnpm notes:check && pnpm typecheck && pnpm test && pnpm architecture:check",
     "dist:win": "pnpm --filter @answra/desktop dist:win",
     "prepare": "husky"
   },

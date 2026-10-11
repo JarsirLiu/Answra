@@ -10,6 +10,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v4
 
@@ -23,6 +25,11 @@ jobs:
 
       - name: Lint
         run: pnpm lint
+
+      - name: Engineering Note check
+        env:
+          NOTE_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: pnpm notes:check --base "$env:NOTE_BASE"
 
       - name: Architecture check
         run: pnpm architecture:check

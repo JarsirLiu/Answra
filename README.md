@@ -1,16 +1,17 @@
-# 笔试助手
+# 会议辅助工具
 
-面向笔试练习的本地优先桌面助手。当前阶段聚焦 Electron 桌面交互原型，使用 React、TypeScript 和 Vite 构建界面。
+面向办公会议场景的本地优先桌面助手，使用 React、TypeScript 和 Electron 构建界面。
 
 ## 当前范围
 
 - 三段式悬浮导航：模式选择、模式功能、笔记/资料/设置等全局入口。
 - 按需展开的对话、笔记、参考资料和设置面板。
-- 笔试模式支持添加本地截图、填写补充问题并作为同一条消息发送。
+- 支持应用内区域截图、添加本地图片、填写补充问题并作为同一条消息发送。
 - 对话回复为演示内容，尚未连接后端或 AI 模型。
-- 当前不进行桌面截屏、麦克风、摄像头或系统音频采集。
+- 隐身模式通过 Electron 窗口捕获保护请求系统排除应用表面；实际效果需按 Electron 和 Windows 版本验证。
+- 当前不采集麦克风、摄像头或系统音频。
 
-运行边界和阶段规划见[架构方案](docs/ARCHITECTURE.md)，悬浮导航交互见[交互方案](docs/FLOATING-BAR-INTERACTION.md)。
+工程决策、功能方案、缺陷复盘和架构边界统一记录在[工程 Note](docs/README.md)。
 
 ## 环境要求
 
@@ -31,7 +32,7 @@ pnpm dev
 ## 检查
 
 ```powershell
-pnpm verify   # lint + typecheck + test + architecture:check
+pnpm verify   # lint + notes:check + typecheck + test + architecture:check
 pnpm build
 ```
 
@@ -49,7 +50,10 @@ apps/desktop           Electron 桌面壳
   src/preload          contextBridge 桥（window.answra）
   src/renderer         薄渲染层：仅挂载 <FloatingBarApp/>
 scripts/architecture   架构守护脚本（深导入/依赖环/平台越界检查）
-docs                   架构与交互决策
+scripts/docs           文档门禁
+.agents/skills         AI 开发流程指南
+docs/notes             按生命周期与类别管理的工程 Note
+docs                   Note 索引
 ```
 
 常用命令：
@@ -61,8 +65,9 @@ docs                   架构与交互决策
 | `pnpm build` | 全 workspace 构建（desktop: esbuild + vite） |
 | `pnpm typecheck` | 各包依次 `tsc --noEmit`（desktop 按进程分三个编译单元） |
 | `pnpm test` | 各包测试（ui 使用 vitest + jsdom） |
+| `pnpm notes:check` | 检查 Note 格式、本地链接和变更配对 |
 | `pnpm architecture:check` | 架构守护检查 |
-| `pnpm verify` | lint + typecheck + test + architecture（pre-push 同款） |
+| `pnpm verify` | lint + docs + typecheck + test + architecture（pre-push 同款） |
 
 ## 参与开发
 

@@ -1,4 +1,54 @@
-# 悬浮壳架构演进方案
+# Note：悬浮壳尺寸与表面边界
+
+状态：已实施
+
+## 问题
+
+固定宽度和按面板查表设置高度，会让悬浮壳尺寸与真实内容脱节；面板和任务条也需要清楚的表面边界。
+
+## 决定
+
+决策一至三已实施：窗口按内容测量并由 main 限制在工作区内；导航功能按分段注册；面板通过根级表面状态协调。决策四至六是未实施的后续构想，仍保留在下文作为历史提案，不构成当前承诺或事实。
+
+## 涉及范围
+
+- `packages/ui/src/app/`：内容测量、导航注册和表面组合。
+- `apps/desktop/src/main/window.ts`：窗口边界与工作区限制。
+- `packages/shared/src/channels.ts`：尺寸上报契约。
+
+## 模块边界
+
+- UI 测量内容并通过 DesktopBridge 上报有限尺寸；主进程校验和限制窗口边界。
+- 导航和二级面板属于主窗口表面；持久回复工作流使用独立窗口，详见[悬浮导航 Note](../feature/2026-10-11-floating-bar-surfaces-and-workflow.md)。
+- 消息数据、Spot 播放游标、Agent runtime 和 CopilotKit/Pi 桥接仍是未来设计，不由本 Note 变为已批准架构。
+
+## 曾考虑的替代方案
+
+- **固定主窗口尺寸表：** 会产生空白区域，且每个新面板都需同步修改 main 的尺寸映射。
+- **让 renderer 传入任意窗口坐标或尺寸：** 会扩大不可信 IPC 输入；实际由 main 做校验和工作区 clamp。
+- **立即实现 Spot 窗口、全局消息 store 和 Agent runtime：** 这些功能尚无已验收的产品契约，先保留提案，待需求和验证条件明确再单独评审。
+
+## 后果
+
+- fit-content 生命周期需要保护窗口最小/最大尺寸、显示器工作区和捕获保护状态。
+- FeatureRegistry 和 surface 状态需维持单一所有者；新能力不能绕过既有入口直接操作窗口。
+- 决策四至六需要新提案和验收，不可因为历史文档曾描述就视作已批准。
+
+## 曾考虑的替代方案
+
+- **固定宽度并按面板种类硬编码窗口高度：** 会留下空白，并让 UI 增长必须同步修改主进程映射。
+- **为菜单、通知和面板分别扩展一套互斥状态：** 会让关闭与恢复规则分散，故使用统一表面 reducer 管理生命周期。
+- **现在就实施未来的 Spot/Agent 方案：** 产品契约尚未确定，先保留为待评审提案，不把它并入已交付边界。
+
+## 后果与防回退
+
+- 新增表面时先确定其类别、生命周期和窗口归属，不以临时条件分支绕过 surface owner。
+- 未来构想必须迁入单独的 `proposed` Note，评审和验收后再实施；本文只记录第一至三项已交付决定。
+
+## 验证
+
+- `packages/ui/test/surfaceState.test.ts` 和 `FloatingBarApp.test.tsx` 覆盖表面切换与内容行为。
+- `apps/desktop/test/window.test.ts` 覆盖 fit-content 的主窗口边界。
 
 状态：设计提案，供审查。决策一、二、三已落地（窗口 fit-content、FeatureRegistry 分段、Surface 拆分），见 `packages/ui` 与 `apps/desktop/src/main/window.ts`；决策四~六待实施。现有交互描述见 `FLOATING-BAR-INTERACTION.md`。
 
