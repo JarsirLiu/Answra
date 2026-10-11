@@ -1,5 +1,5 @@
 import type { DesktopBridge, ReplyBarAction, ReplyBarState } from "@answra/shared";
-import { type ChangeEvent, useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { type ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
 import { FloatingBar } from "../components/floating-bar/FloatingBar";
 import { FloatingLayerHost } from "../components/floating-bar/FloatingLayerHost";
 import { type ChatAttachment, type ChatMessage, ChatPanel } from "../components/panels/ChatPanel";
@@ -9,16 +9,9 @@ import { SettingsPanel } from "../components/panels/SettingsPanel";
 import { SourcesPanel } from "../components/panels/SourcesPanel";
 import { useFitContent } from "../hooks/useFitContent";
 import { useMeetingStealth } from "../hooks/useMeetingStealth";
-import {
-  MODES,
-  type Mode,
-  type ModeAction,
-  NOTE_STORAGE_KEY,
-  type Panel,
-  WELCOME_MESSAGE,
-} from "../model";
-import { initialSurfaceState, surfaceReducer } from "./surfaceState";
+import { MODES, type Mode, type ModeAction, NOTE_STORAGE_KEY, WELCOME_MESSAGE } from "../model";
 import { useAppearanceController } from "./useAppearanceController";
+import { useSurfaceCoordinator } from "./useSurfaceCoordinator";
 
 const SCREENSHOT_PROMPT = "请帮我分析这道题，先说明题意和解题思路。";
 
@@ -45,7 +38,7 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
   // 默认桥由 desktop preload 注入（window.answra），浏览器预览与测试可传入 mock
   const platform = bridge ?? (globalThis as { answra?: DesktopBridge }).answra;
   const [mode, setMode] = useState<Mode>("exam");
-  const [surfaces, dispatchSurface] = useReducer(surfaceReducer, initialSurfaceState);
+  const surfaces = useSurfaceCoordinator();
   const { panel, workflow, floatingLayers } = surfaces;
   const [messages] = useState<ChatMessage[]>([
     { id: "welcome", role: "assistant", content: WELCOME_MESSAGE },
@@ -112,25 +105,9 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
     return () => observer.disconnect();
   }, [detachedReplyBar, platform, readReplyBarState, replyPhase]);
 
-  const dismissFloatingLayer = useCallback(
-    (id: string) => dispatchSurface({ type: "layer/dismiss", id }),
-    [],
-  );
-
-  function openPanel(next: Panel) {
-    dispatchSurface({ type: "panel/open", panel: next });
-  }
-
-  function togglePanel(target: Exclude<Panel, "closed">) {
-    dispatchSurface({ type: "panel/toggle", panel: target });
-  }
-
   function toggleModeMenu() {
-    dispatchSurface(
-      surfaces.layer === "mode-menu"
-        ? { type: "layer/close" }
-        : { type: "layer/open", layer: "mode-menu" },
-    );
+    if (surfaces.layer === "mode-menu") surfaces.closeFloatingLayers();
+    else surfaces.openModeMenu();
   }
 
   /** 触发区域截图；桌面端由主进程框选，无桥时回落文件选择。 */
@@ -139,7 +116,7 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
     if (startCapture) {
       void startRegionCapture(startCapture);
     } else {
-      dispatchSurface({ type: "workflow/start" });
+      surfaces.startWorkflow();
       window.setTimeout(() => fileInputRef.current?.click(), 0);
     }
   }
@@ -150,10 +127,10 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
       return;
     }
     if (action.id === "record") {
-      openPanel("notes");
+      surfaces.openPanel("notes");
       return;
     }
-    openPanel("chat");
+    surfaces.openPanel("chat");
   }
 
   async function startRegionCapture(
@@ -166,7 +143,7 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
       // 失败：取消是用户主动行为不打扰；其余失败屏幕可见，便于排查根因
       if (result.ok === false) {
         if (result.reason !== "cancelled") {
-          dispatchSurface({
+          surfaces.dispatch({
             type: "layer/show-notice",
             id: "capture-error",
             message: result.message ?? "截图失败，请重试",
@@ -175,7 +152,7 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
         return;
       }
       // 截图回复是持久任务工作流：独占内容表面槽，结束后恢复此前打开的面板。
-      dispatchSurface({ type: "workflow/start" });
+      surfaces.startWorkflow();
       console.log("[reply] 进入回复条预备区，追加截图附件");
       setAttachments((current) => [
         ...current,
@@ -188,7 +165,7 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
       setDraft((current) => current || SCREENSHOT_PROMPT);
     } catch (error) {
       console.error("[reply] 截图桥调用异常:", error);
-      dispatchSurface({
+      surfaces.dispatch({
         type: "layer/show-notice",
         id: "capture-error",
         message: "截图调用异常，请查看终端日志",
@@ -228,7 +205,7 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
   /** 关闭任务工作流；桌面端关闭独立回复窗口并恢复主工具栏。 */
   function closeReplyBar() {
     clearPending();
-    dispatchSurface({ type: "workflow/finish" });
+    surfaces.finishWorkflow();
     setReplyText("");
   }
 
@@ -245,7 +222,7 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
     setReplyText(
       `演示回复：已收到${sent.length ? ` ${sent.length} 张截图` : ""}${content ? "与你的补充问题" : ""}。当前尚未连接 AI 服务；接入本地 API 后，这条横条会以匀速滚动的方式显示实际分析结果。`,
     );
-    dispatchSurface({ type: "workflow/phase", phase: "streaming" });
+    surfaces.dispatch({ type: "workflow/phase", phase: "streaming" });
     setDraft("");
     setAttachments([]);
   }
@@ -299,14 +276,14 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
           onClose={() => platform?.close()}
           onModeAction={handleModeAction}
           onModeChange={setMode}
-          onDismissModeMenu={() => dispatchSurface({ type: "layer/close" })}
+          onDismissModeMenu={surfaces.closeFloatingLayers}
           onToggleModeMenu={toggleModeMenu}
-          onTogglePanel={togglePanel}
+          onTogglePanel={surfaces.togglePanel}
           panel={panel}
         />
       )}
 
-      <FloatingLayerHost layers={floatingLayers} onDismiss={dismissFloatingLayer} />
+      <FloatingLayerHost layers={floatingLayers} onDismiss={surfaces.dismissFloatingLayer} />
 
       {panel === "chat" && (
         <ChatPanel
@@ -316,7 +293,7 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
           messages={messages}
           onAttachmentChange={handleAttachmentChange}
           onAttachmentRemove={removeAttachment}
-          onClose={() => openPanel("closed")}
+          onClose={() => surfaces.openPanel("closed")}
           onDraftChange={setDraft}
           onSend={performSend}
         />
@@ -339,12 +316,16 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
       )}
 
       {panel === "notes" && (
-        <NotesPanel note={note} onClose={() => openPanel("closed")} onNoteChange={saveNote} />
+        <NotesPanel
+          note={note}
+          onClose={() => surfaces.openPanel("closed")}
+          onNoteChange={saveNote}
+        />
       )}
 
       {panel === "sources" && (
         <SourcesPanel
-          onClose={() => openPanel("closed")}
+          onClose={() => surfaces.openPanel("closed")}
           onSourcesChange={setSources}
           sources={sources}
         />
@@ -354,7 +335,7 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
         <SettingsPanel
           ambientFollow={appearance.ambientFollow}
           onAmbientFollowChange={appearance.setAmbientFollow}
-          onClose={() => openPanel("closed")}
+          onClose={() => surfaces.openPanel("closed")}
           onOpacityChange={appearance.setOpacity}
           onStealthChange={stealthSetting.setEnabled}
           opacity={appearance.opacity}
