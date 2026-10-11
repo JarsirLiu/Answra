@@ -26,6 +26,9 @@ interface ChatPanelProps {
   onAttachmentChange: (file: File | null) => void;
   onAttachmentRemove: (id: string) => void;
   onSend: () => void;
+  onCancel: () => void;
+  configured: boolean;
+  streaming: boolean;
   onClose: () => void;
 }
 
@@ -39,6 +42,9 @@ export function ChatPanel({
   onAttachmentChange,
   onAttachmentRemove,
   onSend,
+  onCancel,
+  configured,
+  streaming,
   onClose,
 }: ChatPanelProps) {
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -107,10 +113,15 @@ export function ChatPanel({
           value={draft}
         />
         <div className="composer-footer">
-          <span>演示模式 · 尚未连接 AI</span>
+          <span>{configured ? "OpenAI-compatible" : "请先配置模型服务"}</span>
+          {streaming && (
+            <button aria-label="停止回复" onClick={onCancel} type="button">
+              停止
+            </button>
+          )}
           <button
             aria-label="发送给 AI"
-            disabled={!draft.trim() && attachments.length === 0}
+            disabled={streaming || (!draft.trim() && attachments.length === 0)}
             type="submit"
           >
             <MessageSquareText aria-hidden="true" size={ICON_SM} />

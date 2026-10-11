@@ -5,6 +5,9 @@ import type { ReplyPhase } from "../components/panels/ReplyBar";
 
 interface UseReplyWorkflowOptions {
   platform: DesktopBridge | undefined;
+  sendMessage: (text: string, attachments: ChatAttachment[]) => Promise<string>;
+  cancelMessage: () => void;
+  replyText: string;
   phase: ReplyPhase | "closed";
   stealth: boolean;
   onWorkflowStart: () => void;
@@ -26,6 +29,9 @@ function readInkColor(): string | undefined {
 /** Owns screenshot attachments, draft state and the detached reply-bar bridge. */
 export function useReplyWorkflow({
   platform,
+  sendMessage,
+  cancelMessage,
+  replyText,
   phase,
   stealth,
   onWorkflowStart,
@@ -35,7 +41,6 @@ export function useReplyWorkflow({
 }: UseReplyWorkflowOptions) {
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
-  const [replyText, setReplyText] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const replyWindowWasOpen = useRef(false);
   const actionHandler = useRef<(action: ReplyBarAction) => void>(() => undefined);
@@ -153,28 +158,31 @@ export function useReplyWorkflow({
   const closeReplyBar = useCallback(() => {
     clearPending();
     onWorkflowFinish();
-    setReplyText("");
   }, [clearPending, onWorkflowFinish]);
 
   const cancelReply = useCallback(() => {
     // 取消只退出当前回复态，保留独立回复窗口，让用户能继续截图发送。
-    setReplyText("");
+    cancelMessage();
     onWorkflowPhase("composing");
-  }, [onWorkflowPhase]);
+  }, [cancelMessage, onWorkflowPhase]);
 
-  const performSend = useCallback(() => {
+  const performSend = useCallback(async () => {
     const content = draft.trim();
     if (!content && attachments.length === 0) return;
+    onWorkflowPhase("streaming");
+    try {
+      await sendMessage(content, attachments);
+    } catch (error) {
+      onWorkflowPhase("composing");
+      onCaptureError(error instanceof Error ? error.message : "发送失败");
+      return;
+    }
     attachments.forEach((candidate) => {
       if (candidate.previewUrl.startsWith("blob:")) URL.revokeObjectURL(candidate.previewUrl);
     });
-    setReplyText(
-      `演示回复：已收到${attachments.length ? ` ${attachments.length} 张截图` : ""}${content ? "与你的补充问题" : ""}。当前尚未连接 AI 服务；接入本地 API 后，这条横条会以匀速滚动的方式显示实际分析结果。`,
-    );
-    onWorkflowPhase("streaming");
     setDraft("");
     setAttachments([]);
-  }, [attachments, draft, onWorkflowPhase]);
+  }, [attachments, draft, onCaptureError, onWorkflowPhase, sendMessage]);
 
   actionHandler.current = (action) => {
     switch (action.type) {
@@ -218,6 +226,7 @@ export function useReplyWorkflow({
     removeAttachment,
     closeReplyBar,
     cancelReply,
+    clearPending,
     performSend,
     setDraft,
   };

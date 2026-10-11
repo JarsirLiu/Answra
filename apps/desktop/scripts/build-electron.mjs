@@ -32,6 +32,15 @@ await Promise.all([
     external: ["electron"],
     outfile: "out/preload/selection.cjs",
   }),
+  build({
+    entryPoints: ["src/main/conversation/worker.ts"],
+    bundle: true,
+    platform: "node",
+    format: "cjs",
+    target: "node20.9",
+    external: ["electron"],
+    outfile: "out/main/conversation/worker.cjs",
+  }),
   mkdir("out/capture", { recursive: true }).then(() =>
     copyFile("src/main/capture/selection.html", "out/capture/selection.html"),
   ),

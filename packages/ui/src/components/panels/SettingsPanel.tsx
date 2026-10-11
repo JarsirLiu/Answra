@@ -1,3 +1,5 @@
+import type { ConversationModelConfig } from "@answra/shared";
+import { useState } from "react";
 import { RangeSlider } from "../controls/RangeSlider";
 import { Switch } from "../controls/Switch";
 import { PanelShell } from "./PanelShell";
@@ -15,6 +17,8 @@ interface SettingsPanelProps {
   onOpacityChange: (value: number) => void;
   onStealthChange: (value: boolean) => void;
   onClose: () => void;
+  modelConfig: { baseUrl: string; model: string; configured: boolean };
+  onModelConfigSave: (config: ConversationModelConfig) => Promise<void>;
 }
 
 const OPACITY_MIN = 0.5;
@@ -30,7 +34,31 @@ export function SettingsPanel({
   onOpacityChange,
   onStealthChange,
   onClose,
+  modelConfig,
+  onModelConfigSave,
 }: SettingsPanelProps) {
+  const [baseUrl, setBaseUrl] = useState(modelConfig.baseUrl);
+  const [model, setModel] = useState(modelConfig.model);
+  const [apiKey, setApiKey] = useState("");
+  const [saveError, setSaveError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function saveModelConfig() {
+    setSaving(true);
+    setSaveError("");
+    try {
+      await onModelConfigSave({
+        baseUrl: baseUrl.trim(),
+        model: model.trim(),
+        ...(apiKey ? { apiKey } : {}),
+      });
+      setApiKey("");
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "保存模型配置失败");
+    } finally {
+      setSaving(false);
+    }
+  }
   return (
     <PanelShell onClose={onClose} title="设置" variant="settings">
       <div className="settings-panel">
@@ -77,18 +105,48 @@ export function SettingsPanel({
 
         <section className="settings-group">
           <h2>模型</h2>
-          <div className="setting-row setting-row--static">
-            <span>
-              <strong>AI 服务</strong>
-            </span>
-            <span className="setting-status">未配置</span>
+          <label className="setting-field">
+            <span>OpenAI-compatible 地址</span>
+            <input
+              autoComplete="url"
+              onChange={(event) => setBaseUrl(event.target.value)}
+              placeholder="http://127.0.0.1:1234/v1"
+              value={baseUrl}
+            />
+          </label>
+          <label className="setting-field">
+            <span>模型名称</span>
+            <input
+              onChange={(event) => setModel(event.target.value)}
+              placeholder="模型 ID"
+              value={model}
+            />
+          </label>
+          <label className="setting-field">
+            <span>API Key（可选）</span>
+            <input
+              autoComplete="new-password"
+              onChange={(event) => setApiKey(event.target.value)}
+              placeholder="留空保留已保存的 Key"
+              type="password"
+              value={apiKey}
+            />
+          </label>
+          <div className="setting-model-footer">
+            <span className="setting-status">{modelConfig.configured ? "已配置" : "尚未配置"}</span>
+            <button
+              disabled={saving || !baseUrl.trim() || !model.trim()}
+              onClick={() => void saveModelConfig()}
+              type="button"
+            >
+              {saving ? "保存中" : "保存"}
+            </button>
           </div>
-          <div className="setting-row setting-row--static">
-            <span>
-              <strong>默认模型</strong>
-            </span>
-            <span className="setting-status">未配置</span>
-          </div>
+          {saveError && (
+            <p className="setting-error" role="alert">
+              {saveError}
+            </p>
+          )}
         </section>
       </div>
     </PanelShell>

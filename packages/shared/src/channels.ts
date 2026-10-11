@@ -82,6 +82,43 @@ export const CaptureChannels = {
   RegionCancelled: "answra:capture:region-cancelled",
 } as const;
 
+export const ConversationChannels = {
+  Configure: "answra:conversation:configure",
+  GetConfig: "answra:conversation:get-config",
+  Send: "answra:conversation:send",
+  Cancel: "answra:conversation:cancel",
+  Event: "answra:conversation:event",
+} as const;
+
+export interface ConversationModelConfig {
+  baseUrl: string;
+  model: string;
+  apiKey?: string;
+}
+
+export interface ConversationSendRequest {
+  text: string;
+  images: Array<{ name: string; dataUrl: string }>;
+}
+
+export type ConversationEvent =
+  | { type: "run/started"; runId: string; conversationId: string }
+  | { type: "text/delta"; runId: string; delta: string }
+  | { type: "run/completed"; runId: string }
+  | { type: "run/failed"; runId: string; message: string }
+  | { type: "run/cancelled"; runId: string };
+
+export interface ConversationChannelMap {
+  [ConversationChannels.Configure]: { request: ConversationModelConfig; response: undefined };
+  [ConversationChannels.GetConfig]: {
+    request: undefined;
+    response: Omit<ConversationModelConfig, "apiKey"> & { configured: boolean };
+  };
+  [ConversationChannels.Send]: { request: ConversationSendRequest; response: { runId: string } };
+  [ConversationChannels.Cancel]: { request: { runId: string }; response: undefined };
+  [ConversationChannels.Event]: { request: undefined; response: undefined };
+}
+
 /** 发起区域截图的选项。 */
 export interface RegionCaptureOptions {
   /**

@@ -3,6 +3,10 @@ import {
   type AmbientColorPayload,
   CaptureChannels,
   type ContentSize,
+  ConversationChannels,
+  type ConversationEvent,
+  type ConversationModelConfig,
+  type ConversationSendRequest,
   type DesktopBridge,
   type RegionCaptureOptions,
   type ReplyBarAction,
@@ -61,6 +65,19 @@ const bridge: DesktopBridge = {
   },
   setAmbientFollow: (value: boolean) => {
     ipcRenderer.send(AmbientChannels.SetFollow, value);
+  },
+  configureConversation: (config: ConversationModelConfig) =>
+    ipcRenderer.invoke(ConversationChannels.Configure, config),
+  getConversationConfig: () => ipcRenderer.invoke(ConversationChannels.GetConfig),
+  sendConversationMessage: (request: ConversationSendRequest) =>
+    ipcRenderer.invoke(ConversationChannels.Send, request),
+  cancelConversationRun: (runId: string) =>
+    ipcRenderer.send(ConversationChannels.Cancel, { runId }),
+  onConversationEvent: (listener: (event: ConversationEvent) => void) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, payload: ConversationEvent) =>
+      listener(payload);
+    ipcRenderer.on(ConversationChannels.Event, wrapped);
+    return () => ipcRenderer.removeListener(ConversationChannels.Event, wrapped);
   },
 };
 

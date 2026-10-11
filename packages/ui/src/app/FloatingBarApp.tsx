@@ -1,16 +1,17 @@
 import type { DesktopBridge } from "@answra/shared";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { FloatingBar } from "../components/floating-bar/FloatingBar";
 import { FloatingLayerHost } from "../components/floating-bar/FloatingLayerHost";
-import { type ChatMessage, ChatPanel } from "../components/panels/ChatPanel";
+import { ChatPanel } from "../components/panels/ChatPanel";
 import { NotesPanel } from "../components/panels/NotesPanel";
 import { ReplyBar } from "../components/panels/ReplyBar";
 import { SettingsPanel } from "../components/panels/SettingsPanel";
 import { SourcesPanel } from "../components/panels/SourcesPanel";
 import { useFitContent } from "../hooks/useFitContent";
 import { useMeetingStealth } from "../hooks/useMeetingStealth";
-import { MODES, type Mode, type ModeAction, NOTE_STORAGE_KEY, WELCOME_MESSAGE } from "../model";
+import { MODES, type Mode, type ModeAction, NOTE_STORAGE_KEY } from "../model";
 import { useAppearanceController } from "./useAppearanceController";
+import { useConversationChat } from "./useConversationChat";
 import { useReplyWorkflow } from "./useReplyWorkflow";
 import { useSurfaceCoordinator } from "./useSurfaceCoordinator";
 
@@ -25,23 +26,30 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
   const [mode, setMode] = useState<Mode>("exam");
   const surfaces = useSurfaceCoordinator();
   const { panel, workflow, floatingLayers } = surfaces;
-  const [messages] = useState<ChatMessage[]>([
-    { id: "welcome", role: "assistant", content: WELCOME_MESSAGE },
-  ]);
   const replyPhase = workflow?.phase ?? "closed";
   /** 截图失败原因：屏幕可见的错误提示，避免失败被静默吞掉、只看到胶囊。 */
   const [note, setNote] = useState(() => localStorage.getItem(NOTE_STORAGE_KEY) ?? "");
   const [sources, setSources] = useState<string[]>([]);
   const appearance = useAppearanceController(platform);
   const stealthSetting = useMeetingStealth(platform);
+  const conversation = useConversationChat(platform);
+  useEffect(() => {
+    if (panel !== "chat" && replyPhase === "closed") conversation.clearMessages();
+  }, [conversation.clearMessages, panel, replyPhase]);
   const reply = useReplyWorkflow({
+    cancelMessage: conversation.cancel,
     onCaptureError: (message) =>
       surfaces.dispatch({ type: "layer/show-notice", id: "capture-error", message }),
-    onWorkflowFinish: surfaces.finishWorkflow,
+    onWorkflowFinish: () => {
+      conversation.clearMessages();
+      surfaces.finishWorkflow();
+    },
     onWorkflowPhase: (phase) => surfaces.dispatch({ type: "workflow/phase", phase }),
     onWorkflowStart: surfaces.startWorkflow,
     phase: replyPhase,
     platform,
+    replyText: conversation.replyText,
+    sendMessage: conversation.send,
     stealth: stealthSetting.enabled,
   });
   const {
@@ -112,12 +120,32 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
           attachments={attachments}
           draft={draft}
           fileInputRef={fileInputRef}
-          messages={messages}
+          configured={conversation.config.configured}
+          streaming={Boolean(conversation.activeRunId)}
+          messages={conversation.messages}
+          onCancel={conversation.cancel}
           onAttachmentChange={handleAttachmentChange}
           onAttachmentRemove={removeAttachment}
-          onClose={() => surfaces.openPanel("closed")}
+          onClose={() => {
+            surfaces.openPanel("closed");
+            conversation.clearMessages();
+          }}
           onDraftChange={setDraft}
-          onSend={performSend}
+          onSend={() => {
+            void conversation
+              .send(draft, attachments)
+              .then(() => {
+                reply.clearPending();
+                setDraft("");
+              })
+              .catch((error: unknown) =>
+                surfaces.dispatch({
+                  type: "layer/show-notice",
+                  id: "conversation-error",
+                  message: error instanceof Error ? error.message : "发送失败",
+                }),
+              );
+          }}
         />
       )}
 
@@ -140,7 +168,10 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
       {panel === "notes" && (
         <NotesPanel
           note={note}
-          onClose={() => surfaces.openPanel("closed")}
+          onClose={() => {
+            surfaces.openPanel("closed");
+            conversation.clearMessages();
+          }}
           onNoteChange={saveNote}
         />
       )}
@@ -156,6 +187,8 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
       {panel === "settings" && (
         <SettingsPanel
           ambientFollow={appearance.ambientFollow}
+          modelConfig={conversation.config}
+          onModelConfigSave={conversation.configure}
           onAmbientFollowChange={appearance.setAmbientFollow}
           onClose={() => surfaces.openPanel("closed")}
           onOpacityChange={appearance.setOpacity}

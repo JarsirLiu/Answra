@@ -1,6 +1,9 @@
 import type {
   AmbientColorPayload,
   ContentSize,
+  ConversationEvent,
+  ConversationModelConfig,
+  ConversationSendRequest,
   RegionCaptureOptions,
   ReplyBarAction,
   ReplyBarState,
@@ -58,4 +61,11 @@ export interface DesktopBridge {
   onAmbientColor?: (listener: (payload: AmbientColorPayload) => void) => () => void;
   /** 按用户设置启停主进程变色龙屏幕采样。 */
   setAmbientFollow?: (value: boolean) => void;
+  configureConversation?: (config: ConversationModelConfig) => Promise<void>;
+  getConversationConfig?: () => Promise<
+    Omit<ConversationModelConfig, "apiKey"> & { configured: boolean }
+  >;
+  sendConversationMessage?: (request: ConversationSendRequest) => Promise<{ runId: string }>;
+  cancelConversationRun?: (runId: string) => void;
+  onConversationEvent?: (listener: (event: ConversationEvent) => void) => () => void;
 }

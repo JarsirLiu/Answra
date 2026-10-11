@@ -2,6 +2,8 @@ import { app, BrowserWindow } from "electron";
 import { createAmbientThemeController } from "./ambient";
 import { registerCaptureIpc } from "./capture/captureIpc";
 import { configureChromiumCompatibility } from "./chromiumCompatibility";
+import { AppService } from "./conversation/appService";
+import { registerConversationIpc } from "./conversation/conversationIpc";
 import { registerAmbientIpc } from "./ipc/ambientIpc";
 import { registerWindowIpc } from "./ipc/windowIpc";
 import { createMainWindow } from "./window";
@@ -10,12 +12,19 @@ import { createMainWindow } from "./window";
 configureChromiumCompatibility({ app });
 
 let ambientController: ReturnType<typeof createAmbientThemeController> | undefined;
+const appService = new AppService();
 
 app.whenReady().then(() => {
   registerWindowIpc();
   registerCaptureIpc();
   registerAmbientIpc((enabled) => ambientController?.setEnabled(enabled));
+  registerConversationIpc(appService);
+  void appService.start().catch((error) => console.error("[app-service] failed to start", error));
   createManagedMainWindow();
+});
+
+app.on("before-quit", () => {
+  void appService.stop();
 });
 
 app.on("activate", () => {

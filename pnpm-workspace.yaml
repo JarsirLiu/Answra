@@ -5,5 +5,7 @@ allowBuilds:
   electron: true
   electron-winstaller: true
   esbuild: true
+  node: true
+  node-bin-setup: true
 minimumReleaseAgeExclude:
   - '@types/node@26.6.5'

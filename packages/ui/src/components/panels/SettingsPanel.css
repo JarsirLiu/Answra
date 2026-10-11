@@ -58,3 +58,42 @@
   color: var(--ink-soft);
   font-size: var(--font-xs);
 }
+.setting-field {
+  display: grid;
+  gap: 5px;
+  padding: 8px 0;
+  color: var(--ink-soft);
+  font-size: var(--font-xs);
+}
+.setting-field input {
+  min-width: 0;
+  padding: 8px 9px;
+  border: 1px solid var(--glass-line-soft);
+  border-radius: 6px;
+  color: var(--ink);
+  background: var(--glass-fill);
+  font: inherit;
+}
+.setting-model-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+}
+.setting-model-footer button {
+  padding: 6px 12px;
+  border: 1px solid var(--glass-line-soft);
+  border-radius: 6px;
+  color: var(--ink);
+  background: var(--glass-fill);
+  font: inherit;
+  cursor: pointer;
+}
+.setting-model-footer button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.setting-error {
+  color: #b42318;
+  font-size: var(--font-xs);
+}

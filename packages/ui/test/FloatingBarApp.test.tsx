@@ -1,12 +1,40 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ConversationEvent } from "@answra/shared";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FloatingBarApp } from "../src/app/FloatingBarApp";
+
+let emitConversationEvent: ((event: ConversationEvent) => void) | undefined;
+
+function createConversationBridge() {
+  return {
+    close: vi.fn(),
+    fitContent: vi.fn(),
+    getConversationConfig: vi
+      .fn()
+      .mockResolvedValue({ baseUrl: "http://localhost/v1", model: "test", configured: true }),
+    sendConversationMessage: vi.fn().mockResolvedValue({ runId: "run-1" }),
+    cancelConversationRun: vi.fn(),
+    onConversationEvent: vi.fn((listener: (event: ConversationEvent) => void) => {
+      emitConversationEvent = listener;
+      return () => {
+        emitConversationEvent = undefined;
+      };
+    }),
+    startRegionCapture: vi.fn().mockResolvedValue({
+      dataUrl: "data:image/png;base64,QUJD",
+      height: 200,
+      ok: true,
+      width: 300,
+    }),
+  };
+}
 
 describe("three-segment floating navigation", () => {
   beforeEach(() => {
     localStorage.clear();
     vi.clearAllMocks();
     delete document.documentElement.dataset.theme;
+    emitConversationEvent = undefined;
   });
 
   it("changes the middle feature group when the work mode changes", () => {
@@ -40,38 +68,40 @@ describe("three-segment floating navigation", () => {
     expect(screen.getByRole("heading", { name: "笔记本" })).toBeInTheDocument();
   });
 
-  it("attaches a screenshot, accepts a follow-up prompt, and streams the reply in the bar", () => {
-    const { container } = render(<FloatingBarApp />);
+  it("attaches a screenshot, accepts a follow-up prompt, and streams the reply in the bar", async () => {
+    const bridge = createConversationBridge();
+    render(<FloatingBarApp bridge={bridge} />);
     fireEvent.click(screen.getByRole("button", { name: "截图提问" }));
-    const fileInput = container.querySelector<HTMLInputElement>('input[aria-label="选择截图图片"]');
-    expect(fileInput).not.toBeNull();
-    fireEvent.change(fileInput as HTMLInputElement, {
-      target: { files: [new File(["image"], "question.png", { type: "image/png" })] },
-    });
+    await waitFor(() =>
+      expect(screen.getByRole("img", { name: /screenshot-.*\.png/ })).toBeInTheDocument(),
+    );
 
-    expect(screen.getByRole("img", { name: "question.png" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: /screenshot-.*\.png/ })).toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: "补充问题" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "确认发送" }));
 
-    // 发送后横条进入流式态：AI 回复（含“尚未连接 AI 服务”）在条上匀速滚动展示，
-    // 预备截图与输入区已撤离，不再可见。
-    expect(screen.getByText(/演示回复/)).toBeInTheDocument();
-    expect(screen.getByText(/当前尚未连接 AI 服务/)).toBeInTheDocument();
-    expect(screen.queryByRole("img", { name: "question.png" })).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(bridge.sendConversationMessage).toHaveBeenCalledWith({
+        text: "",
+        images: [expect.objectContaining({ dataUrl: "data:image/png;base64,QUJD" })],
+      }),
+    );
+    act(() =>
+      emitConversationEvent?.({
+        type: "run/started",
+        runId: "run-1",
+        conversationId: "conversation-1",
+      }),
+    );
+    act(() =>
+      emitConversationEvent?.({ type: "text/delta", runId: "run-1", delta: "截图内容已识别" }),
+    );
+    await waitFor(() => expect(screen.getByText("截图内容已识别")).toBeInTheDocument());
     expect(screen.queryByRole("textbox", { name: "补充问题" })).not.toBeInTheDocument();
   });
 
   it("captures a region screenshot through the bridge and attaches it to the chat", async () => {
-    const bridge = {
-      close: vi.fn(),
-      fitContent: vi.fn(),
-      startRegionCapture: vi.fn().mockResolvedValue({
-        dataUrl: "data:image/png;base64,QUJD",
-        height: 200,
-        ok: true,
-        width: 300,
-      }),
-    };
+    const bridge = createConversationBridge();
     render(<FloatingBarApp bridge={bridge} />);
     fireEvent.click(screen.getByRole("button", { name: "截图提问" }));
 
@@ -83,16 +113,7 @@ describe("three-segment floating navigation", () => {
   });
 
   it("cancels an inline reply and returns to the same send bar", async () => {
-    const bridge = {
-      close: vi.fn(),
-      fitContent: vi.fn(),
-      startRegionCapture: vi.fn().mockResolvedValue({
-        dataUrl: "data:image/png;base64,QUJD",
-        height: 200,
-        ok: true,
-        width: 300,
-      }),
-    };
+    const bridge = createConversationBridge();
     render(<FloatingBarApp bridge={bridge} />);
     fireEvent.click(screen.getByRole("button", { name: "截图提问" }));
     await waitFor(() =>
@@ -100,8 +121,16 @@ describe("three-segment floating navigation", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "确认发送" }));
 
-    expect(screen.getByText(/演示回复/)).toBeInTheDocument();
+    await waitFor(() => expect(bridge.sendConversationMessage).toHaveBeenCalled());
+    act(() =>
+      emitConversationEvent?.({
+        type: "run/started",
+        runId: "run-1",
+        conversationId: "conversation-1",
+      }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "取消回复并返回发送" }));
+    expect(bridge.cancelConversationRun).toHaveBeenCalledWith("run-1");
 
     expect(screen.getByRole("button", { name: "继续截图" })).toBeInTheDocument();
     expect(screen.queryByText(/演示回复/)).not.toBeInTheDocument();

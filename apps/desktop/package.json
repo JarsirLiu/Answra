@@ -6,9 +6,9 @@
   "type": "module",
   "main": "out/main/index.cjs",
   "scripts": {
-    "dev": "pnpm build:electron && concurrently -k \"vite --host 127.0.0.1 --port 5180 --strictPort\" \"wait-on http://127.0.0.1:5180 && electron .\"",
+    "dev": "pnpm --filter @answra/app build && pnpm build:electron && concurrently -k \"vite --host 127.0.0.1 --port 5180 --strictPort\" \"wait-on http://127.0.0.1:5180 && electron .\"",
     "dev:web": "vite --host 127.0.0.1 --port 5180 --strictPort",
-    "build": "pnpm build:electron && vite build",
+    "build": "pnpm --filter @answra/app build && pnpm build:electron && vite build",
     "build:electron": "node ./scripts/build-electron.mjs",
     "typecheck": "tsc -p tsconfig.main.json && tsc -p tsconfig.preload.json && tsc -p tsconfig.renderer.json",
     "test": "vitest run",
@@ -45,6 +45,7 @@
     "react-dom": "^19.3.0"
   },
   "devDependencies": {
+    "@answra/app": "workspace:*",
     "@types/node": "^26.6.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
