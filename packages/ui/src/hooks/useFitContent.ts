@@ -1,18 +1,21 @@
 import type { DesktopBridge } from "@answra/shared";
-import { useEffect, useRef } from "react";
+import { useLayoutEffect, useRef } from "react";
 
 /**
  * 外壳尺寸上报：ResizeObserver 观察 .overlay-root（fit-content 布局），
  * 尺寸变化即通过桥上报主进程调整窗口。窗口永远紧贴外壳内容。
  */
-export function useFitContent(bridge: DesktopBridge | undefined): {
+export function useFitContent(
+  bridge: Pick<DesktopBridge, "fitContent"> | undefined,
+  enabled = true,
+): {
   ref: React.RefObject<HTMLElement | null>;
 } {
   const ref = useRef<HTMLElement | null>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const element = ref.current;
-    if (!element || !bridge) return;
+    if (!element || !bridge || !enabled) return;
 
     const report = () => {
       const { offsetWidth, offsetHeight } = element;
@@ -26,7 +29,7 @@ export function useFitContent(bridge: DesktopBridge | undefined): {
     const observer = new ResizeObserver(report);
     observer.observe(element);
     return () => observer.disconnect();
-  }, [bridge]);
+  }, [bridge, enabled]);
 
   return { ref };
 }

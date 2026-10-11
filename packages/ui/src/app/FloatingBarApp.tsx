@@ -1,24 +1,24 @@
-import type { DesktopBridge } from "@answra/shared";
-import { type ChangeEvent, useEffect, useRef, useState } from "react";
+import type { DesktopBridge, ReplyBarAction, ReplyBarState } from "@answra/shared";
+import { type ChangeEvent, useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { FloatingBar } from "../components/floating-bar/FloatingBar";
+import { FloatingLayerHost } from "../components/floating-bar/FloatingLayerHost";
 import { type ChatAttachment, type ChatMessage, ChatPanel } from "../components/panels/ChatPanel";
 import { NotesPanel } from "../components/panels/NotesPanel";
 import { ReplyBar } from "../components/panels/ReplyBar";
 import { SettingsPanel } from "../components/panels/SettingsPanel";
 import { SourcesPanel } from "../components/panels/SourcesPanel";
 import { useFitContent } from "../hooks/useFitContent";
+import { useMeetingStealth } from "../hooks/useMeetingStealth";
 import {
-  AMBIENT_FOLLOW_STORAGE_KEY,
-  APP_OPACITY_STORAGE_KEY,
   MODES,
   type Mode,
   type ModeAction,
   NOTE_STORAGE_KEY,
   type Panel,
-  STEALTH_STORAGE_KEY,
   WELCOME_MESSAGE,
 } from "../model";
-import { type ColorGroupOverrides, loadColorGroups, useAppTheme } from "../theme";
+import { initialSurfaceState, surfaceReducer } from "./surfaceState";
+import { useAppearanceController } from "./useAppearanceController";
 
 const SCREENSHOT_PROMPT = "请帮我分析这道题，先说明题意和解题思路。";
 
@@ -45,97 +45,108 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
   // 默认桥由 desktop preload 注入（window.answra），浏览器预览与测试可传入 mock
   const platform = bridge ?? (globalThis as { answra?: DesktopBridge }).answra;
   const [mode, setMode] = useState<Mode>("exam");
-  const [panel, setPanel] = useState<Panel>("closed");
-  const [messages, setMessages] = useState<ChatMessage[]>([
+  const [surfaces, dispatchSurface] = useReducer(surfaceReducer, initialSurfaceState);
+  const { panel, workflow, floatingLayers } = surfaces;
+  const [messages] = useState<ChatMessage[]>([
     { id: "welcome", role: "assistant", content: WELCOME_MESSAGE },
   ]);
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
-  /** 原地回复条是否展开（截图提问走这里，不复用对话面板）。 */
-  const [replyOpen, setReplyOpen] = useState(false);
+  const replyPhase = workflow?.phase ?? "closed";
+  /** 流式展示中的 AI 回复文本。 */
+  const [replyText, setReplyText] = useState("");
+  /** 截图失败原因：屏幕可见的错误提示，避免失败被静默吞掉、只看到胶囊。 */
   const [note, setNote] = useState(() => localStorage.getItem(NOTE_STORAGE_KEY) ?? "");
   const [sources, setSources] = useState<string[]>([]);
-  const [ambientFollow, setAmbientFollow] = useState(
-    () => localStorage.getItem(AMBIENT_FOLLOW_STORAGE_KEY) === "on",
-  );
-  const [opacity, setOpacity] = useState(() => {
-    const stored = Number(localStorage.getItem(APP_OPACITY_STORAGE_KEY));
-    return Number.isFinite(stored) && stored >= 0.5 && stored <= 1 ? stored : 1;
-  });
-  const [stealth, setStealth] = useState(() => localStorage.getItem(STEALTH_STORAGE_KEY) === "on");
-  /** 系统是否可靠支持隐身；null 表示查询中，未确认前不应用隐身。 */
-  const [stealthSupported, setStealthSupported] = useState<boolean | null>(null);
-  const [colorGroups] = useState<ColorGroupOverrides>(loadColorGroups);
+  const appearance = useAppearanceController(platform);
+  const stealthSetting = useMeetingStealth(platform);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { ref: shellRef } = useFitContent(platform);
-  useAppTheme(platform, { ambientFollow, colorGroups });
+  const replyWindowWasOpen = useRef(false);
+  const replyActionHandler = useRef<(action: ReplyBarAction) => void>(() => undefined);
+  const detachedReplyBar = typeof platform?.setReplyBarState === "function";
+  // The hidden toolbar keeps its last native bounds while the reply workflow
+  // owns a separate HWND; measuring its temporarily empty shell would shrink it.
+  const { ref: shellRef } = useFitContent(platform, !detachedReplyBar || replyPhase === "closed");
 
-  // fade 是唯一透明度自由度：tokens.css 中所有感知令牌是它的函数。
-  // 必须写在 :root（与令牌声明同元素），写到子元素不会触发自定义属性重算。
-  useEffect(() => {
-    document.documentElement.style.setProperty("--fade", String(opacity));
-    return () => {
-      document.documentElement.style.removeProperty("--fade");
+  const readReplyBarState = useCallback((): ReplyBarState => {
+    const root = document.documentElement;
+    const computed = getComputedStyle(root);
+    const variables: Record<string, string> = {};
+    for (let index = 0; index < computed.length; index += 1) {
+      const name = computed.item(index);
+      if (name.startsWith("--")) variables[name] = computed.getPropertyValue(name).trim();
+    }
+    variables["--fade"] = root.style.getPropertyValue("--fade") || "1";
+    return {
+      phase: replyPhase === "streaming" ? "streaming" : "composing",
+      attachments,
+      draft,
+      replyText,
+      stealth: stealthSetting.enabled,
+      theme: { scheme: root.dataset.theme, variables },
     };
-  }, [opacity]);
+  }, [attachments, draft, replyPhase, replyText, stealthSetting.enabled]);
 
-  // 查询系统能力：旧 Windows 捕获到黑块而非排除，Linux 无等价能力，
-  // 这些系统不允许开启隐身（settings 中禁用开关）
   useEffect(() => {
-    let cancelled = false;
-    platform
-      ?.getStealthSupport?.()
-      .then((supported) => {
-        if (!cancelled) setStealthSupported(supported);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [platform]);
+    if (!detachedReplyBar) return;
+    if (replyPhase === "closed") {
+      if (replyWindowWasOpen.current) {
+        platform?.setReplyBarState?.(null);
+        replyWindowWasOpen.current = false;
+      }
+      return;
+    }
+    replyWindowWasOpen.current = true;
+    platform?.setReplyBarState?.(readReplyBarState());
+  }, [detachedReplyBar, platform, readReplyBarState, replyPhase]);
 
-  // 会议隐身：开启后屏幕共享/截图捕获不到本窗口，并从任务栏/Dock、
-  // Alt+Tab/Cmd+Tab 隐藏；自身屏幕仍可见。仅桌面端且系统支持时应用；
-  // 能力未确认（null）前不调用，避免旧系统在查询完成前误开内容保护。
   useEffect(() => {
-    if (stealthSupported === null || !stealthSupported) return;
-    platform?.setStealth?.(stealth);
-  }, [stealth, platform, stealthSupported]);
+    if (!detachedReplyBar || replyPhase === "closed") return;
+    const observer = new MutationObserver(() => {
+      platform?.setReplyBarState?.(readReplyBarState());
+    });
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme", "style"],
+    });
+    return () => observer.disconnect();
+  }, [detachedReplyBar, platform, readReplyBarState, replyPhase]);
 
-  function setAmbientFollowPersisted(value: boolean) {
-    setAmbientFollow(value);
-    localStorage.setItem(AMBIENT_FOLLOW_STORAGE_KEY, value ? "on" : "off");
-  }
-
-  function setOpacityPersisted(value: number) {
-    setOpacity(value);
-    localStorage.setItem(APP_OPACITY_STORAGE_KEY, String(value));
-  }
-
-  function setStealthPersisted(value: boolean) {
-    setStealth(value);
-    localStorage.setItem(STEALTH_STORAGE_KEY, value ? "on" : "off");
-  }
+  const dismissFloatingLayer = useCallback(
+    (id: string) => dispatchSurface({ type: "layer/dismiss", id }),
+    [],
+  );
 
   function openPanel(next: Panel) {
-    setPanel(next);
+    dispatchSurface({ type: "panel/open", panel: next });
   }
 
   function togglePanel(target: Exclude<Panel, "closed">) {
-    openPanel(panel === target ? "closed" : target);
+    dispatchSurface({ type: "panel/toggle", panel: target });
+  }
+
+  function toggleModeMenu() {
+    dispatchSurface(
+      surfaces.layer === "mode-menu"
+        ? { type: "layer/close" }
+        : { type: "layer/open", layer: "mode-menu" },
+    );
+  }
+
+  /** 触发区域截图；桌面端由主进程框选，无桥时回落文件选择。 */
+  function triggerScreenshot() {
+    const startCapture = platform?.startRegionCapture;
+    if (startCapture) {
+      void startRegionCapture(startCapture);
+    } else {
+      dispatchSurface({ type: "workflow/start" });
+      window.setTimeout(() => fileInputRef.current?.click(), 0);
+    }
   }
 
   function handleModeAction(action: ModeAction) {
     if (action.id === "screenshot") {
-      // 桌面端走主进程区域截图（框选 overlay）；浏览器预览/测试无桥，回落文件选择
-      const startCapture = platform?.startRegionCapture;
-      if (startCapture) {
-        void startRegionCapture(startCapture);
-      } else {
-        // 无捕获桥（浏览器预览/测试）：回落到文件选择，仍走原地回复条
-        setReplyOpen(true);
-        window.setTimeout(() => fileInputRef.current?.click(), 0);
-      }
+      triggerScreenshot();
       return;
     }
     if (action.id === "record") {
@@ -148,11 +159,24 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
   async function startRegionCapture(
     startCapture: NonNullable<DesktopBridge["startRegionCapture"]>,
   ) {
+    console.log("[reply] 触发区域截图");
     try {
       const result = await startCapture({ line: readInkColor() });
-      // 取消/失败静默收场，不弹回复条
-      if (!result.ok) return;
-      setReplyOpen(true);
+      console.log("[reply] 截图结果:", result);
+      // 失败：取消是用户主动行为不打扰；其余失败屏幕可见，便于排查根因
+      if (result.ok === false) {
+        if (result.reason !== "cancelled") {
+          dispatchSurface({
+            type: "layer/show-notice",
+            id: "capture-error",
+            message: result.message ?? "截图失败，请重试",
+          });
+        }
+        return;
+      }
+      // 截图回复是持久任务工作流：独占内容表面槽，结束后恢复此前打开的面板。
+      dispatchSurface({ type: "workflow/start" });
+      console.log("[reply] 进入回复条预备区，追加截图附件");
       setAttachments((current) => [
         ...current,
         {
@@ -162,8 +186,13 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
         },
       ]);
       setDraft((current) => current || SCREENSHOT_PROMPT);
-    } catch {
-      // 桥调用异常同样静默
+    } catch (error) {
+      console.error("[reply] 截图桥调用异常:", error);
+      dispatchSurface({
+        type: "layer/show-notice",
+        id: "capture-error",
+        message: "截图调用异常，请查看终端日志",
+      });
     }
   }
 
@@ -196,36 +225,59 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
     setDraft("");
   }
 
-  /** 关闭回复条等同放弃本轮未发送内容。 */
+  /** 关闭任务工作流；桌面端关闭独立回复窗口并恢复主工具栏。 */
   function closeReplyBar() {
     clearPending();
-    setReplyOpen(false);
+    dispatchSurface({ type: "workflow/finish" });
+    setReplyText("");
   }
 
   function performSend() {
     const content = draft.trim();
     if (!content && attachments.length === 0) return;
 
-    // 快照当前预备附件：发送后它们归属到消息，回复条内已清空（不在此 revoke，避免消息图失效）
+    // 回复条不走对话面板：发送后整条进入流式态，匀速滚动演示回复；
+    // 预备截图已“发出”，释放 blob 预览并清空预备区。
     const sent = attachments;
-    setMessages((current) => [
-      ...current,
-      {
-        id: crypto.randomUUID(),
-        role: "user",
-        content,
-        attachments: sent,
-      },
-      {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content:
-          "演示回复：已收到截图和补充消息。当前尚未连接 AI 服务；接入本地 API 后，这里会显示实际分析结果。",
-      },
-    ]);
+    sent.forEach((candidate) => {
+      if (candidate.previewUrl.startsWith("blob:")) URL.revokeObjectURL(candidate.previewUrl);
+    });
+    setReplyText(
+      `演示回复：已收到${sent.length ? ` ${sent.length} 张截图` : ""}${content ? "与你的补充问题" : ""}。当前尚未连接 AI 服务；接入本地 API 后，这条横条会以匀速滚动的方式显示实际分析结果。`,
+    );
+    dispatchSurface({ type: "workflow/phase", phase: "streaming" });
     setDraft("");
     setAttachments([]);
   }
+
+  replyActionHandler.current = (action) => {
+    switch (action.type) {
+      case "draft/change":
+        setDraft(action.value);
+        break;
+      case "attachment/add":
+        setAttachments((current) => [...current, action.attachment]);
+        setDraft((current) => current || SCREENSHOT_PROMPT);
+        break;
+      case "attachment/remove":
+        removeAttachment(action.id);
+        break;
+      case "screenshot/start":
+        triggerScreenshot();
+        break;
+      case "send":
+        performSend();
+        break;
+      case "close":
+        closeReplyBar();
+        break;
+    }
+  };
+
+  useEffect(() => {
+    if (!detachedReplyBar) return;
+    return platform?.onReplyBarAction?.((action) => replyActionHandler.current(action));
+  }, [detachedReplyBar, platform]);
 
   function saveNote(value: string) {
     setNote(value);
@@ -233,16 +285,28 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
   }
 
   return (
-    <main className="overlay-root" ref={shellRef}>
-      <FloatingBar
-        mode={mode}
-        modes={MODES}
-        onClose={() => platform?.close()}
-        onModeAction={handleModeAction}
-        onModeChange={setMode}
-        onTogglePanel={togglePanel}
-        panel={panel}
-      />
+    <main
+      className="overlay-root"
+      data-stealth={stealthSetting.enabled ? "true" : undefined}
+      ref={shellRef}
+    >
+      {/* 专注发送态：回复条激活期间胶囊退场，全屏只留一条发送条 */}
+      {replyPhase === "closed" && (
+        <FloatingBar
+          modeMenuOpen={surfaces.layer === "mode-menu"}
+          mode={mode}
+          modes={MODES}
+          onClose={() => platform?.close()}
+          onModeAction={handleModeAction}
+          onModeChange={setMode}
+          onDismissModeMenu={() => dispatchSurface({ type: "layer/close" })}
+          onToggleModeMenu={toggleModeMenu}
+          onTogglePanel={togglePanel}
+          panel={panel}
+        />
+      )}
+
+      <FloatingLayerHost layers={floatingLayers} onDismiss={dismissFloatingLayer} />
 
       {panel === "chat" && (
         <ChatPanel
@@ -258,17 +322,18 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
         />
       )}
 
-      {replyOpen && (
+      {replyPhase !== "closed" && !detachedReplyBar && (
         <ReplyBar
           attachments={attachments}
           draft={draft}
           fileInputRef={fileInputRef}
-          messages={messages}
+          phase={replyPhase}
+          replyText={replyText}
           onAttachmentChange={handleAttachmentChange}
           onAttachmentRemove={removeAttachment}
-          onClearAll={clearPending}
           onClose={closeReplyBar}
           onDraftChange={setDraft}
+          onScreenshot={triggerScreenshot}
           onSend={performSend}
         />
       )}
@@ -287,14 +352,14 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
 
       {panel === "settings" && (
         <SettingsPanel
-          ambientFollow={ambientFollow}
-          onAmbientFollowChange={setAmbientFollowPersisted}
+          ambientFollow={appearance.ambientFollow}
+          onAmbientFollowChange={appearance.setAmbientFollow}
           onClose={() => openPanel("closed")}
-          onOpacityChange={setOpacityPersisted}
-          onStealthChange={setStealthPersisted}
-          opacity={opacity}
-          stealth={stealth && stealthSupported === true}
-          stealthSupported={stealthSupported === true}
+          onOpacityChange={appearance.setOpacity}
+          onStealthChange={stealthSetting.setEnabled}
+          opacity={appearance.opacity}
+          stealth={stealthSetting.enabled}
+          stealthSupported={stealthSetting.supported}
         />
       )}
     </main>

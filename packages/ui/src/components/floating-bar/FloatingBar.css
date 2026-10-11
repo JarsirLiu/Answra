@@ -1,10 +1,16 @@
 /* ── 悬浮条：紧凑实色条 ─────────────────────────────────────────── */
 /* 胶囊与下方弹层（模式菜单）的堆叠容器，宽度即胶囊宽度。 */
 .floating-bar-stack {
+  position: relative;
+  z-index: 2;
   align-self: flex-start;
   width: max-content;
   display: flex;
   flex-direction: column;
+}
+.floating-bar-stack.is-menu-open {
+  /* Reserve hit-test/window area while drawing the menu over the panel below it. */
+  padding-bottom: calc(var(--menu-item-h) * 3 + 18px);
 }
 .floating-bar {
   width: max-content;

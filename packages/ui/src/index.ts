@@ -1,4 +1,5 @@
 export { FloatingBarApp } from "./app/FloatingBarApp";
+export { ReplyBarWindowApp } from "./app/ReplyBarWindowApp";
 export { RangeSlider } from "./components/controls/RangeSlider";
 export { Switch } from "./components/controls/Switch";
 export { FeatureActions } from "./components/floating-bar/FeatureActions";

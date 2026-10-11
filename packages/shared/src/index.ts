@@ -1,5 +1,6 @@
 export type { DesktopBridge, OverlayMode } from "./bridge";
 export {
+  type AmbientChannelMap,
   AmbientChannels,
   type AmbientColorPayload,
   type CaptureChannelMap,
@@ -10,6 +11,9 @@ export {
   type RegionCaptureOptions,
   type RegionRect,
   type RegionSelection,
+  type ReplyBarAction,
+  type ReplyBarAttachment,
+  type ReplyBarState,
   type ScreenshotFailure,
   type ScreenshotResult,
   type ScreenshotSuccess,

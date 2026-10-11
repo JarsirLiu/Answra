@@ -1,5 +1,5 @@
-import type { DesktopBridge } from "@answra/shared";
-import { useEffect, useState } from "react";
+import type { AmbientColorPayload, DesktopBridge } from "@answra/shared";
+import { useCallback, useEffect, useState } from "react";
 import {
   type AmbientTokens,
   applyTokens,
@@ -112,6 +112,17 @@ export function useAppTheme(
   const [ambient, setAmbient] = useState<AmbientTokens | undefined>(undefined);
   const [ambientScheme, setAmbientScheme] = useState<"light" | "dark" | undefined>(undefined);
 
+  const applyPayload = useCallback((payload: AmbientColorPayload) => {
+    if (payload.ok) {
+      setAmbient(deriveAmbientTokens(payload.hex));
+      setAmbientScheme(resolveAmbientScheme(payload.hex));
+    } else {
+      setAmbient(undefined);
+      setAmbientScheme(undefined);
+    }
+  }, []);
+
+  // 主进程整屏采样推送（变色龙 v1 路径）；消费端据此重算设计令牌。
   useEffect(() => {
     if (!ambientFollow || !bridge?.onAmbientColor) {
       setAmbient(undefined);
@@ -119,15 +130,9 @@ export function useAppTheme(
       return;
     }
     return bridge.onAmbientColor((payload) => {
-      if (payload.ok) {
-        setAmbient(deriveAmbientTokens(payload.hex));
-        setAmbientScheme(resolveAmbientScheme(payload.hex));
-      } else {
-        setAmbient(undefined);
-        setAmbientScheme(undefined);
-      }
+      applyPayload(payload);
     });
-  }, [bridge, ambientFollow]);
+  }, [bridge, ambientFollow, applyPayload]);
 
   useEffect(() => {
     // 变色龙开启时独占一切颜色（用户分组覆盖失效）；

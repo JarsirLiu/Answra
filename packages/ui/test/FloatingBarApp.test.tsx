@@ -27,7 +27,20 @@ describe("three-segment floating navigation", () => {
     expect(screen.getByRole("button", { name: "打开设置" })).toBeInTheDocument();
   });
 
-  it("attaches a screenshot, accepts a follow-up prompt, and sends both together", () => {
+  it("shows the mode menu as a dismissible layer without replacing the open panel", () => {
+    render(<FloatingBarApp />);
+    fireEvent.click(screen.getByRole("button", { name: "打开笔记本" }));
+    fireEvent.click(screen.getByRole("button", { name: "笔试" }));
+
+    expect(screen.getByRole("heading", { name: "笔记本" })).toBeInTheDocument();
+    expect(screen.getByRole("menu", { name: "工作模式" })).toBeInTheDocument();
+
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByRole("menu", { name: "工作模式" })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "笔记本" })).toBeInTheDocument();
+  });
+
+  it("attaches a screenshot, accepts a follow-up prompt, and streams the reply in the bar", () => {
     const { container } = render(<FloatingBarApp />);
     fireEvent.click(screen.getByRole("button", { name: "截图提问" }));
     const fileInput = container.querySelector<HTMLInputElement>('input[aria-label="选择截图图片"]');
@@ -36,15 +49,17 @@ describe("three-segment floating navigation", () => {
       target: { files: [new File(["image"], "question.png", { type: "image/png" })] },
     });
 
-    expect(screen.getByAltText("待发送截图预览")).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "截图已添加" })).toBeInTheDocument();
     const prompt = screen.getByRole("textbox", { name: "补充问题" });
     fireEvent.change(prompt, { target: { value: "请解释这道题的边界条件" } });
-    fireEvent.click(screen.getByRole("button", { name: "发送给 AI" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认发送" }));
 
-    expect(screen.getByText("请解释这道题的边界条件")).toBeInTheDocument();
-    expect(screen.getByAltText("用户添加的截图：question.png")).toBeInTheDocument();
+    // 发送后横条进入流式态：AI 回复（含“尚未连接 AI 服务”）在条上匀速滚动展示，
+    // 预备截图与输入区已撤离，不再可见。
+    expect(screen.getByText(/演示回复/)).toBeInTheDocument();
     expect(screen.getByText(/当前尚未连接 AI 服务/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "发送给 AI" })).toBeDisabled();
+    expect(screen.queryByRole("img", { name: "截图已添加" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "补充问题" })).not.toBeInTheDocument();
   });
 
   it("captures a region screenshot through the bridge and attaches it to the chat", async () => {
@@ -61,16 +76,86 @@ describe("three-segment floating navigation", () => {
     render(<FloatingBarApp bridge={bridge} />);
     fireEvent.click(screen.getByRole("button", { name: "截图提问" }));
 
-    await waitFor(() => expect(screen.getByAltText("待发送截图预览")).toBeInTheDocument());
-    expect(bridge.startRegionCapture).toHaveBeenCalledTimes(1);
-    expect(screen.getByAltText("待发送截图预览")).toHaveAttribute(
-      "src",
-      "data:image/png;base64,QUJD",
+    await waitFor(() =>
+      expect(screen.getByRole("img", { name: "截图已添加" })).toBeInTheDocument(),
     );
+    expect(bridge.startRegionCapture).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("img", { name: "待发送截图预览" })).not.toBeInTheDocument();
     // 成功后自动填入默认分析提示语
     expect(screen.getByRole("textbox", { name: "补充问题" })).toHaveValue(
       "请帮我分析这道题，先说明题意和解题思路。",
     );
+  });
+
+  it("syncs screenshot workflow to the detached reply window instead of rendering it in the toolbar", async () => {
+    const originalWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetWidth");
+    const originalHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetHeight");
+    Object.defineProperties(HTMLElement.prototype, {
+      offsetHeight: { configurable: true, get: () => 48 },
+      offsetWidth: { configurable: true, get: () => 400 },
+    });
+    const bridge = {
+      close: vi.fn(),
+      fitContent: vi.fn(),
+      fitReplyBar: vi.fn(),
+      setReplyBarState: vi.fn(),
+      startRegionCapture: vi.fn().mockResolvedValue({
+        dataUrl: "data:image/png;base64,QUJD",
+        height: 200,
+        ok: true,
+        width: 300,
+      }),
+    };
+    const view = render(<FloatingBarApp bridge={bridge} />);
+    try {
+      expect(bridge.fitContent).toHaveBeenCalledWith({ height: 48, width: 400 });
+      fireEvent.click(screen.getByRole("button", { name: "截图提问" }));
+
+      await waitFor(() => expect(bridge.setReplyBarState).toHaveBeenCalled());
+      const state = bridge.setReplyBarState.mock.calls.at(-1)?.[0];
+      expect(state).toMatchObject({
+        phase: "composing",
+        draft: expect.stringContaining("分析这道题"),
+      });
+      expect(state.attachments).toHaveLength(1);
+      expect(screen.queryByRole("img", { name: "截图已添加" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "截图提问" })).not.toBeInTheDocument();
+      expect(bridge.fitContent).toHaveBeenCalledTimes(1);
+    } finally {
+      view.unmount();
+      if (originalWidth) {
+        Object.defineProperty(HTMLElement.prototype, "offsetWidth", originalWidth);
+      } else {
+        Reflect.deleteProperty(HTMLElement.prototype, "offsetWidth");
+      }
+      if (originalHeight) {
+        Object.defineProperty(HTMLElement.prototype, "offsetHeight", originalHeight);
+      } else {
+        Reflect.deleteProperty(HTMLElement.prototype, "offsetHeight");
+      }
+    }
+  });
+
+  it("appends another screenshot when 继续截图 is clicked inside the reply bar", async () => {
+    const bridge = {
+      close: vi.fn(),
+      fitContent: vi.fn(),
+      startRegionCapture: vi.fn().mockResolvedValue({
+        dataUrl: "data:image/png;base64,QUJD",
+        height: 200,
+        ok: true,
+        width: 300,
+      }),
+    };
+    render(<FloatingBarApp bridge={bridge} />);
+    fireEvent.click(screen.getByRole("button", { name: "截图提问" }));
+    await waitFor(() =>
+      expect(screen.getByRole("img", { name: "截图已添加" })).toBeInTheDocument(),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "继续截图" }));
+    await waitFor(() => expect(bridge.startRegionCapture).toHaveBeenCalledTimes(2));
+    expect(screen.getAllByRole("img", { name: "截图已添加" })).toHaveLength(2);
   });
 
   it("keeps the chat empty when the user cancels the region capture", async () => {
@@ -83,7 +168,93 @@ describe("three-segment floating navigation", () => {
     fireEvent.click(screen.getByRole("button", { name: "截图提问" }));
 
     await waitFor(() => expect(bridge.startRegionCapture).toHaveBeenCalledTimes(1));
-    expect(screen.queryByAltText("待发送截图预览")).not.toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: "截图已添加" })).not.toBeInTheDocument();
+  });
+
+  it("surfaces a capture failure on screen instead of silently returning to the pill", async () => {
+    const bridge = {
+      close: vi.fn(),
+      fitContent: vi.fn(),
+      startRegionCapture: vi.fn().mockResolvedValue({
+        message: "没有可用的屏幕画面",
+        ok: false,
+        reason: "unavailable",
+      }),
+    };
+    render(<FloatingBarApp bridge={bridge} />);
+    fireEvent.click(screen.getByRole("button", { name: "截图提问" }));
+
+    // 非取消的失败必须屏幕可见（role=alert），且回复条不出现
+    await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
+    expect(screen.getByText("没有可用的屏幕画面")).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: "截图已添加" })).not.toBeInTheDocument();
+  });
+
+  it("does not show an error when the capture is cancelled by the user", async () => {
+    const bridge = {
+      close: vi.fn(),
+      fitContent: vi.fn(),
+      startRegionCapture: vi.fn().mockResolvedValue({ ok: false, reason: "cancelled" }),
+    };
+    render(<FloatingBarApp bridge={bridge} />);
+    fireEvent.click(screen.getByRole("button", { name: "截图提问" }));
+
+    await waitFor(() => expect(bridge.startRegionCapture).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: "截图已添加" })).not.toBeInTheDocument();
+  });
+
+  it("hides the pill in focused send mode and restores it when the reply bar closes", async () => {
+    const bridge = {
+      close: vi.fn(),
+      fitContent: vi.fn(),
+      startRegionCapture: vi.fn().mockResolvedValue({
+        dataUrl: "data:image/png;base64,QUJD",
+        height: 200,
+        ok: true,
+        width: 300,
+      }),
+    };
+    render(<FloatingBarApp bridge={bridge} />);
+    expect(screen.getByRole("button", { name: "截图提问" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "截图提问" }));
+    await waitFor(() =>
+      expect(screen.getByRole("img", { name: "截图已添加" })).toBeInTheDocument(),
+    );
+
+    // 专注发送态：胶囊退场，全屏只留回复条
+    expect(screen.queryByRole("button", { name: "截图提问" })).not.toBeInTheDocument();
+
+    // 收起任务条后，主导航回归
+    fireEvent.click(screen.getByRole("button", { name: "收起回复条" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "截图提问" })).toBeInTheDocument(),
+    );
+  });
+
+  it("restores the panel that was open before entering screenshot reply workflow", async () => {
+    const bridge = {
+      close: vi.fn(),
+      fitContent: vi.fn(),
+      startRegionCapture: vi.fn().mockResolvedValue({
+        dataUrl: "data:image/png;base64,QUJD",
+        height: 200,
+        ok: true,
+        width: 300,
+      }),
+    };
+    render(<FloatingBarApp bridge={bridge} />);
+    fireEvent.click(screen.getByRole("button", { name: "打开笔记本" }));
+    fireEvent.click(screen.getByRole("button", { name: "截图提问" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("img", { name: "截图已添加" })).toBeInTheDocument(),
+    );
+    expect(screen.queryByRole("heading", { name: "笔记本" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "收起回复条" }));
+    expect(await screen.findByRole("heading", { name: "笔记本" })).toBeInTheDocument();
   });
 
   it("saves notebook text locally and opens settings from the third segment", () => {
@@ -104,6 +275,7 @@ describe("three-segment floating navigation", () => {
 
     const toggle = screen.getByRole("checkbox", { name: /跟随背景色/ });
     expect(toggle).not.toBeChecked();
+    expect(toggle).not.toBeDisabled();
 
     fireEvent.click(toggle);
     expect(toggle).toBeChecked();
@@ -111,6 +283,36 @@ describe("three-segment floating navigation", () => {
 
     fireEvent.click(toggle);
     expect(localStorage.getItem("answra-ambient-follow")).toBe("off");
+  });
+
+  it("keeps ambient and stealth settings independent", async () => {
+    const bridge = {
+      close: vi.fn(),
+      fitContent: vi.fn(),
+      getStealthSupport: vi.fn().mockResolvedValue(true),
+      setStealth: vi.fn(),
+    };
+    render(<FloatingBarApp bridge={bridge} />);
+    fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
+
+    const ambientToggle = screen.getByRole("checkbox", { name: "跟随背景色" });
+    const stealthToggle = screen.getByRole("checkbox", { name: "会议隐身" });
+    await waitFor(() => expect(stealthToggle).not.toBeDisabled());
+    bridge.setStealth.mockClear();
+
+    fireEvent.click(ambientToggle);
+    expect(ambientToggle).toBeChecked();
+    expect(stealthToggle).not.toBeChecked();
+    expect(localStorage.getItem("answra-ambient-follow")).toBe("on");
+    expect(localStorage.getItem("answra-stealth")).toBeNull();
+    expect(bridge.setStealth).not.toHaveBeenCalledWith(true);
+
+    fireEvent.click(stealthToggle);
+    expect(stealthToggle).toBeChecked();
+    expect(ambientToggle).toBeChecked();
+    expect(localStorage.getItem("answra-stealth")).toBe("on");
+    expect(localStorage.getItem("answra-ambient-follow")).toBe("on");
+    await waitFor(() => expect(bridge.setStealth).toHaveBeenCalledWith(true));
   });
 
   it("adjusts global opacity from settings and persists the choice", () => {
@@ -141,14 +343,17 @@ describe("three-segment floating navigation", () => {
     const toggle = screen.getByRole("checkbox", { name: /会议隐身/ });
     await waitFor(() => expect(toggle).not.toBeDisabled());
     expect(toggle).not.toBeChecked();
+    expect(document.querySelector(".overlay-root")).not.toHaveAttribute("data-stealth");
 
     fireEvent.click(toggle);
     expect(toggle).toBeChecked();
+    expect(document.querySelector(".overlay-root")).toHaveAttribute("data-stealth", "true");
     expect(localStorage.getItem("answra-stealth")).toBe("on");
     await waitFor(() => expect(bridge.setStealth).toHaveBeenCalledWith(true));
 
     fireEvent.click(toggle);
     expect(toggle).not.toBeChecked();
+    expect(document.querySelector(".overlay-root")).not.toHaveAttribute("data-stealth");
     expect(localStorage.getItem("answra-stealth")).toBe("off");
     await waitFor(() => expect(bridge.setStealth).toHaveBeenCalledWith(false));
   });
@@ -165,8 +370,44 @@ describe("three-segment floating navigation", () => {
 
     const toggle = screen.getByRole("checkbox", { name: /会议隐身/ });
     await waitFor(() => expect(toggle).toBeDisabled());
-    // 能力未确认/不支持时，绝不向主进程发送隐身指令
+    // 不支持时不向主进程发送隐身指令
     expect(bridge.setStealth).not.toHaveBeenCalled();
+  });
+
+  it("treats a failed stealth capability query as unsupported", async () => {
+    const bridge = {
+      close: vi.fn(),
+      fitContent: vi.fn(),
+      getStealthSupport: vi.fn().mockRejectedValue(new Error("IPC unavailable")),
+      setStealth: vi.fn(),
+    };
+    render(<FloatingBarApp bridge={bridge} />);
+    fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
+
+    await waitFor(() => expect(screen.getByRole("checkbox", { name: /会议隐身/ })).toBeDisabled());
+    expect(bridge.setStealth).not.toHaveBeenCalledWith(true);
+    expect(bridge.setStealth).not.toHaveBeenCalled();
+  });
+
+  it("allows disabling a persisted stealth state when support detection fails", async () => {
+    localStorage.setItem("answra-stealth", "on");
+    const bridge = {
+      close: vi.fn(),
+      fitContent: vi.fn(),
+      getStealthSupport: vi.fn().mockRejectedValue(new Error("IPC unavailable")),
+      setStealth: vi.fn(),
+    };
+    render(<FloatingBarApp bridge={bridge} />);
+    fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
+
+    const toggle = screen.getByRole("checkbox", { name: "会议隐身" });
+    await waitFor(() => expect(toggle).not.toBeDisabled());
+    expect(toggle).toBeChecked();
+
+    fireEvent.click(toggle);
+    expect(toggle).not.toBeChecked();
+    expect(localStorage.getItem("answra-stealth")).toBe("off");
+    await waitFor(() => expect(bridge.setStealth).toHaveBeenCalledWith(false));
   });
 
   it("reports shell content size through the bridge and closes on demand", () => {

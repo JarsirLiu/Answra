@@ -1,17 +1,18 @@
 import path from "node:path";
 import { BrowserWindow, screen } from "electron";
+import { setWindowCaptureProtection } from "../windowCaptureProtection";
 
 /**
  * 区域框选 overlay 窗口。
  *
  * 每个显示器盖一个透明全屏窗（逻辑边界 = display.bounds），用户在暗色遮罩上
- * 拖拽出选区。窗口自身开启内容保护：框选界面不应出现在其他应用的截图/共享里。
+ * 拖拽出选区。仅会议隐身开启时排除此窗口，普通应用内截图不能改变系统截图结果。
  */
 
 const activeWindows = new Set<BrowserWindow>();
 
 /** 为所有显示器创建框选 overlay 并显示；返回创建的窗口列表。 */
-export function createSelectionWindows(line?: string): BrowserWindow[] {
+export function createSelectionWindows(line?: string, stealth = false): BrowserWindow[] {
   closeSelectionWindows();
   for (const display of screen.getAllDisplays()) {
     const selectionWindow = new BrowserWindow({
@@ -39,16 +40,18 @@ export function createSelectionWindows(line?: string): BrowserWindow[] {
     });
     // screen-saver 层级确保压过主窗口的 floating 层
     selectionWindow.setAlwaysOnTop(true, "screen-saver");
-    try {
-      selectionWindow.setContentProtection(true);
-    } catch {
-      // 平台能力差异时静默降级
+    if (stealth) {
+      setWindowCaptureProtection(selectionWindow, true);
     }
     selectionWindow.once("ready-to-show", () => selectionWindow.show());
     selectionWindow.once("closed", () => activeWindows.delete(selectionWindow));
     activeWindows.add(selectionWindow);
     void selectionWindow.loadFile(path.join(__dirname, "../capture/selection.html"), {
-      query: { displayId: String(display.id), ...(line ? { line } : {}) },
+      query: {
+        displayId: String(display.id),
+        ...(line ? { line } : {}),
+        ...(stealth ? { stealth: "true" } : {}),
+      },
     });
   }
   return [...activeWindows];

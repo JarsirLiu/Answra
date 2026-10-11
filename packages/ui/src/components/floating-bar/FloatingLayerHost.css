@@ -1,0 +1,76 @@
+.floating-layer-host {
+  z-index: 4;
+  align-self: flex-end;
+  width: min(420px, calc(100vw - 16px));
+  display: grid;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.floating-layer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--glass-line);
+  border-radius: var(--bar-radius);
+  color: var(--ink);
+  background: var(--panel);
+  box-shadow: var(--shadow-pop);
+  font-size: var(--font-sm);
+}
+
+.floating-notice svg {
+  flex: none;
+  color: var(--danger);
+}
+
+.floating-layer-message {
+  flex: 1;
+  min-width: 0;
+}
+
+.floating-layer-close {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  color: var(--muted);
+  background: transparent;
+}
+
+.floating-layer-close:hover {
+  color: var(--ink);
+  background: var(--hover);
+}
+
+.floating-permission {
+  display: block;
+  padding: 12px;
+}
+
+.floating-permission p {
+  margin: 6px 0 12px;
+  color: var(--muted);
+}
+
+.floating-permission-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.floating-permission-actions button {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 9px;
+  border: 1px solid var(--glass-line-soft);
+  border-radius: var(--ctl-radius);
+  color: var(--ink);
+  background: var(--hover);
+}

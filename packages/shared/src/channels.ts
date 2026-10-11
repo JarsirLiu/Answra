@@ -13,10 +13,20 @@ export const WindowChannels = {
   FitContent: "answra:window:fit-content",
   /** 关闭应用窗口。 */
   Close: "answra:window:close",
-  /** 切换会议隐身：内容保护 + 从任务栏/Dock、Alt+Tab/Cmd+Tab 隐藏。 */
+  /** 切换会议隐身：排除系统支持的捕获路径，并从任务栏/Dock、Alt+Tab/Cmd+Tab 隐藏。 */
   SetStealth: "answra:window:set-stealth",
   /** 查询当前系统是否可靠支持会议隐身（内容保护）。 */
   GetStealthSupport: "answra:window:get-stealth-support",
+  /** 主窗口同步任务工作流到独立回复窗口；null 表示结束工作流。 */
+  SetReplyBarState: "answra:window:set-reply-bar-state",
+  /** 独立回复窗口上报自身尺寸，不调整主工具栏窗口。 */
+  FitReplyBar: "answra:window:fit-reply-bar",
+  /** 回复窗口发起的用户操作。 */
+  ReplyBarAction: "answra:window:reply-bar-action",
+  /** 主进程把最新任务状态推送给回复窗口。 */
+  ReplyBarState: "answra:window:reply-bar-state",
+  /** 回复窗口订阅就绪后请求当前状态，避免启动时序丢失首次推送。 */
+  ReplyBarReady: "answra:window:reply-bar-ready",
 } as const;
 
 /** 渲染进程上报的内容尺寸（CSS 像素，含透明呼吸区）。 */
@@ -25,10 +35,33 @@ export interface ContentSize {
   height: number;
 }
 
+export interface ReplyBarAttachment {
+  id: string;
+  name: string;
+  previewUrl: string;
+}
+
+export interface ReplyBarState {
+  phase: "composing" | "streaming";
+  attachments: ReplyBarAttachment[];
+  draft: string;
+  replyText: string;
+  stealth: boolean;
+  theme: { scheme?: string; variables: Record<string, string> };
+}
+
+export type ReplyBarAction =
+  | { type: "draft/change"; value: string }
+  | { type: "attachment/add"; attachment: ReplyBarAttachment }
+  | { type: "attachment/remove"; id: string }
+  | { type: "screenshot/start" }
+  | { type: "send" }
+  | { type: "close" };
+
 export const AmbientChannels = {
   /**
-   * 主进程推送背景主色采样结果（变色龙主题）。
-   * 主进程经 desktopCapturer 采样悬浮条周边背景色后主动推送，
+   * 主进程推送背景主色采样结果（变色龙路径）。
+   * 主进程经 desktopCapturer 整屏采样悬浮条周边背景色后主动推送，
    * 渲染器据此重算设计令牌；ok=false 表示采样失败，应回落默认主题。
    */
   AmbientColor: "answra:ambient:color",
@@ -109,6 +142,11 @@ export interface WindowChannelMap {
   [WindowChannels.Close]: { request: undefined; response: undefined };
   [WindowChannels.SetStealth]: { request: boolean; response: undefined };
   [WindowChannels.GetStealthSupport]: { request: undefined; response: boolean };
+  [WindowChannels.SetReplyBarState]: { request: ReplyBarState | null; response: undefined };
+  [WindowChannels.FitReplyBar]: { request: ContentSize; response: undefined };
+  [WindowChannels.ReplyBarAction]: { request: ReplyBarAction; response: undefined };
+  [WindowChannels.ReplyBarState]: { request: undefined; response: undefined };
+  [WindowChannels.ReplyBarReady]: { request: undefined; response: undefined };
 }
 
 /** 截图频道 → 请求/响应载荷 的类型映射。 */
@@ -119,6 +157,11 @@ export interface CaptureChannelMap {
   };
   [CaptureChannels.RegionSelected]: { request: RegionSelection; response: undefined };
   [CaptureChannels.RegionCancelled]: { request: undefined; response: undefined };
+}
+
+/** 变色龙频道 → 请求/响应载荷 的类型映射。 */
+export interface AmbientChannelMap {
+  [AmbientChannels.AmbientColor]: { request: undefined; response: undefined };
 }
 
 /** 按频道名取出请求/响应类型的工具类型。 */

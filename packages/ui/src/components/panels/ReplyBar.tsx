@@ -1,16 +1,20 @@
-import { MessageSquareText, Sparkles, X } from "lucide-react";
-import { type FormEvent, type RefObject, useEffect, useRef } from "react";
+import { ImagePlus, Send, X } from "lucide-react";
+import type { FormEvent, RefObject } from "react";
 import { ICON_SM } from "../../tokens";
-import type { ChatAttachment, ChatMessage } from "./ChatPanel";
-import { PanelShell } from "./PanelShell";
+import type { ChatAttachment } from "./ChatPanel";
 import "./ReplyBar.css";
 
+/** 回复条两种形态：编辑预备区（composing）/ 流式滚动回复（streaming）。 */
+export type ReplyPhase = "composing" | "streaming";
+
 interface ReplyBarProps {
-  /** 会话消息流（与 AI 对话面板共用同一份 state）。 */
-  messages: ChatMessage[];
+  /** 当前形态。 */
+  phase: ReplyPhase;
   /** 本轮预备发送的多张截图。 */
   attachments: ChatAttachment[];
   draft: string;
+  /** 流式展示中的 AI 回复文本（streaming 态）。 */
+  replyText: string;
   /** 隐藏的文件选择框 ref（无捕获桥时回落选择本地图片）。 */
   fileInputRef: RefObject<HTMLInputElement | null>;
   onDraftChange: (value: string) => void;
@@ -18,36 +22,54 @@ interface ReplyBarProps {
   onAttachmentChange: (file: File | null) => void;
   /** 移除某张预备截图（按 id）。 */
   onAttachmentRemove: (id: string) => void;
-  /** 取消发送：清空本轮未发送的消息（截图 + 草稿）。 */
-  onClearAll: () => void;
+  /** 在原地回复条内继续追加一次截图。 */
+  onScreenshot: () => void;
+  /** 确认发送：进入流式态。 */
   onSend: () => void;
+  /** 收起回复条（放弃本轮，或结束流式展示）。 */
   onClose: () => void;
 }
 
 /**
- * 原地回复条：截图提问走这里，而非打开完整对话面板。
- * 上方是会话流（AI 回复自动滚到底），下方是预备发送区（多图缩略条 + 输入框 + 取消/发送）。
+ * 横条式回复条：编辑态以占位块表示已添加截图，点发送后整条变成匀速滚动的跑马灯
+ * 输出 AI 回复，左侧波形动效传达“正在说话”的活体感；不打开、不复用对话面板。
  */
 export function ReplyBar({
-  messages,
+  phase,
   attachments,
   draft,
+  replyText,
   fileInputRef,
   onDraftChange,
   onAttachmentChange,
   onAttachmentRemove,
-  onClearAll,
+  onScreenshot,
   onSend,
   onClose,
 }: ReplyBarProps) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  // AI 回复到位后自动滚到底
-  // biome-ignore lint/correctness/useExhaustiveDependencies: 依赖 messages 变化触发滚动，body 内只操作 DOM 故未直接引用
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [messages]);
+  if (phase === "streaming") {
+    // 匀速：动画时长随文本长度线性增长，保证恒定像素速度（恒定阅读节奏）。
+    const duration = Math.max(8, replyText.length * 0.3);
+    return (
+      <section aria-live="polite" className="reply-bar reply-bar--stream input-surface">
+        <div className="waveform" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+          <span />
+          <span />
+        </div>
+        <div className="ticker">
+          <span className="ticker-text" style={{ animationDuration: `${duration}s` }}>
+            {replyText}
+          </span>
+        </div>
+        <button aria-label="收起回复条" className="reply-close" onClick={onClose} type="button">
+          <X aria-hidden="true" size={ICON_SM} />
+        </button>
+      </section>
+    );
+  }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -55,28 +77,8 @@ export function ReplyBar({
   }
 
   return (
-    <PanelShell className="reply-bar" onClose={onClose} title="回复" variant="chat">
-      <div aria-live="polite" className="conversation" ref={scrollRef}>
-        {messages.map((message) => (
-          <article className={`chat-message chat-message--${message.role}`} key={message.id}>
-            {message.role === "assistant" && (
-              <div className="assistant-avatar">
-                <Sparkles aria-hidden="true" size={ICON_SM} />
-              </div>
-            )}
-            <div className="message-content">
-              {message.attachments?.map((att) => (
-                <figure className="message-attachment" key={att.id}>
-                  <img alt={`用户添加的截图：${att.name}`} src={att.previewUrl} />
-                  <figcaption>{att.name}</figcaption>
-                </figure>
-              ))}
-              {message.content}
-            </div>
-          </article>
-        ))}
-      </div>
-      <form className="composer input-surface" onSubmit={handleSubmit}>
+    <section className="reply-bar reply-bar--compose input-surface">
+      <form className="reply-compose" onSubmit={handleSubmit}>
         <input
           accept="image/*"
           aria-label="选择截图图片"
@@ -92,7 +94,10 @@ export function ReplyBar({
           <div className="attachment-strip">
             {attachments.map((att) => (
               <div className="attachment-thumb" key={att.id}>
-                <img alt="待发送截图预览" src={att.previewUrl} />
+                {/* 排查系统截图黑块时不在原生窗口中解码或绘制截图缩略图。 */}
+                <span aria-label="截图已添加" className="attachment-placeholder" role="img">
+                  已添加
+                </span>
                 <button
                   aria-label="移除截图"
                   onClick={() => onAttachmentRemove(att.id)}
@@ -102,13 +107,23 @@ export function ReplyBar({
                 </button>
               </div>
             ))}
+            <button
+              aria-label="继续添加截图"
+              className="attachment-add"
+              onClick={onScreenshot}
+              title="继续截图"
+              type="button"
+            >
+              <ImagePlus aria-hidden="true" size={ICON_SM} />
+            </button>
           </div>
         )}
-        <textarea
+        <input
           aria-label="补充问题"
+          className="reply-input"
           onChange={(event) => onDraftChange(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
+            if (event.key === "Enter") {
               event.preventDefault();
               event.currentTarget.form?.requestSubmit();
             }
@@ -116,28 +131,26 @@ export function ReplyBar({
           placeholder={attachments.length ? "补充问题或说明…" : "输入问题，或先从模式功能添加截图…"}
           value={draft}
         />
-        <div className="composer-footer">
-          <span>演示模式 · 尚未连接 AI</span>
-          <div className="composer-actions">
-            <button
-              aria-label="取消发送"
-              className="button-ghost"
-              onClick={onClearAll}
-              type="button"
-            >
-              取消发送
-            </button>
-            <button
-              aria-label="发送给 AI"
-              disabled={!draft.trim() && attachments.length === 0}
-              type="submit"
-            >
-              <MessageSquareText aria-hidden="true" size={ICON_SM} />
-              发送
-            </button>
-          </div>
-        </div>
       </form>
-    </PanelShell>
+      <div className="reply-actions">
+        <button aria-label="继续截图" className="reply-ghost" onClick={onScreenshot} type="button">
+          <ImagePlus aria-hidden="true" size={ICON_SM} />
+          继续截图
+        </button>
+        <button
+          aria-label="确认发送"
+          className="reply-send"
+          disabled={!draft.trim() && attachments.length === 0}
+          onClick={onSend}
+          type="button"
+        >
+          <Send aria-hidden="true" size={ICON_SM} />
+          确认发送
+        </button>
+        <button aria-label="收起回复条" className="reply-close" onClick={onClose} type="button">
+          <X aria-hidden="true" size={ICON_SM} />
+        </button>
+      </div>
+    </section>
   );
 }

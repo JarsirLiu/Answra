@@ -69,7 +69,7 @@ export function SettingsPanel({
             <Switch
               ariaLabel="会议隐身"
               checked={stealth}
-              disabled={!stealthSupported}
+              disabled={!stealthSupported && !stealth}
               onChange={onStealthChange}
             />
           </div>

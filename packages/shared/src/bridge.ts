@@ -2,6 +2,8 @@ import type {
   AmbientColorPayload,
   ContentSize,
   RegionCaptureOptions,
+  ReplyBarAction,
+  ReplyBarState,
   ScreenshotResult,
 } from "./channels";
 
@@ -20,9 +22,20 @@ export interface DesktopBridge {
   fitContent: (size: ContentSize) => void;
   /** 关闭应用窗口。 */
   close: () => void;
+  /** Syncs task state to the separately protected reply window. */
+  setReplyBarState?: (state: ReplyBarState | null) => void;
+  /** Measures the detached reply window without resizing the toolbar HWND. */
+  fitReplyBar?: (size: ContentSize) => void;
+  /** Routes reply window controls back to the state owning renderer. */
+  sendReplyBarAction?: (action: ReplyBarAction) => void;
+  onReplyBarAction?: (listener: (action: ReplyBarAction) => void) => () => void;
+  onReplyBarState?: (listener: (state: ReplyBarState) => void) => () => void;
+  /** Requests the latest workflow snapshot after the reply renderer subscribes. */
+  requestReplyBarState?: () => void;
   /**
-   * 切换会议隐身。开启后，屏幕共享与截图工具捕获到的是空白而非本应用内容，
+   * 切换会议隐身。开启后，系统支持的捕获路径会排除本应用窗口，
    * 且应用从任务栏/Dock 与 Alt+Tab/Cmd+Tab 中隐藏；用户自身屏幕上仍正常可见。
+   * 实际捕获行为由操作系统和捕获应用决定，不能覆盖忽略窗口排除标志的捕获路径。
    * 浏览器预览/测试环境可未实现。
    */
   setStealth?: (value: boolean) => void;
@@ -39,7 +52,7 @@ export interface DesktopBridge {
    */
   startRegionCapture?: (options?: RegionCaptureOptions) => Promise<ScreenshotResult>;
   /**
-   * 订阅背景主色推送（变色龙主题）；返回取消订阅函数。
+   * 订阅背景主色推送（变色龙）；返回取消订阅函数。
    * 浏览器预览/测试环境可未实现，调用方需判空。
    */
   onAmbientColor?: (listener: (payload: AmbientColorPayload) => void) => () => void;

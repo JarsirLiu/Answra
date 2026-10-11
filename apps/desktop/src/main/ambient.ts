@@ -1,8 +1,8 @@
 import { AmbientChannels, type AmbientColorPayload } from "@answra/shared";
-import { app, type BrowserWindow, desktopCapturer, screen } from "electron";
+import { type BrowserWindow, desktopCapturer, screen } from "electron";
 
 /**
- * 变色龙主题：采样悬浮条周边的屏幕背景主色并推送给渲染器。
+ * 变色龙主题：主进程采样悬浮条周边的屏幕背景主色并推送（v1 路径）。
  *
  * 采样原理：用 desktopCapturer 截取整个显示器（降采样），裁出窗口
  * bounds 外扩一圈的区域，统计时排除窗口自身矩形再外扩一圈投影带
@@ -148,67 +148,9 @@ function median(values: number[]): number {
     : Math.round(((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2);
 }
 
-/** 整帧平均亮度（0~1）：用于诊断截屏是否整体发黑。 */
-function frameLuminance(bitmap: Electron.NativeImage): number {
-  const { width, height } = bitmap.getSize();
-  if (!width || !height) return 0;
-  const buffer = bitmap.toBitmap();
-  let sum = 0;
-  let count = 0;
-  for (let y = 0; y < height; y += 8) {
-    for (let x = 0; x < width; x += 8) {
-      const offset = (y * width + x) * 4;
-      const b = buffer[offset] ?? 0;
-      const g = buffer[offset + 1] ?? 0;
-      const r = buffer[offset + 2] ?? 0;
-      sum += luminanceOf({ r, g, b });
-      count += 1;
-    }
-  }
-  return count > 0 ? sum / count : 0;
-}
-
-/** 整帧最主色（4bit 分桶众数中位数）及其占比：用于区分"整帧近黑"与"仅环带采样错位"。 */
-function frameDominant(bitmap: Electron.NativeImage): { hex: string; share: number } {
-  const { width, height } = bitmap.getSize();
-  if (!width || !height) return { hex: "#000000", share: 0 };
-  const buffer = bitmap.toBitmap();
-  const buckets = new Map<number, { count: number; r: number; g: number; b: number }>();
-  let total = 0;
-  for (let y = 0; y < height; y += SAMPLE_STEP) {
-    for (let x = 0; x < width; x += SAMPLE_STEP) {
-      const offset = (y * width + x) * 4;
-      const b = buffer[offset] ?? 0;
-      const g = buffer[offset + 1] ?? 0;
-      const r = buffer[offset + 2] ?? 0;
-      const key = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);
-      const bucket = buckets.get(key) ?? { count: 0, r: 0, g: 0, b: 0 };
-      bucket.count += 1;
-      bucket.r += r;
-      bucket.g += g;
-      bucket.b += b;
-      buckets.set(key, bucket);
-      total += 1;
-    }
-  }
-  let best: { count: number; r: number; g: number; b: number } | undefined;
-  for (const bucket of buckets.values()) {
-    if (!best || bucket.count > best.count) best = bucket;
-  }
-  if (!best || !total) return { hex: "#000000", share: 0 };
-  const r = Math.round(best.r / best.count);
-  const g = Math.round(best.g / best.count);
-  const b = Math.round(best.b / best.count);
-  return { hex: toHex({ r, g, b }), share: best.count / total };
-}
-
-/** 诊断：最近一次推送的采样结果签名，变化时才打印，避免刷屏。 */
-let lastLoggedSignature: string | undefined;
-
 /** 采样一次并推送；任何失败都推送 ok=false，由渲染器回落默认主题。 */
 async function sampleAndPush(window: BrowserWindow): Promise<void> {
   let payload: AmbientColorPayload;
-  let diagnostic = "no-run";
   try {
     if (window.isDestroyed() || window.isMinimized()) return;
     const bounds = window.getBounds();
@@ -271,26 +213,20 @@ async function sampleAndPush(window: BrowserWindow): Promise<void> {
     payload = color
       ? { ok: true, hex: toHex(color), luminance: luminanceOf(color) }
       : { ok: false, hex: "#ffffff", luminance: 1 };
-    // 诊断信息：截屏源匹配 + 整帧主色/亮度（区分"整帧近黑"与"仅环带采样错位"）
-    const frame = frameDominant(thumbnail);
-    diagnostic =
-      `sources=${sources.length} matched=${matchedSource ? "yes" : "no"} ` +
-      `thumb=${thumbnail.getSize().width}x${thumbnail.getSize().height} ` +
-      `fullLum=${frameLuminance(thumbnail).toFixed(3)} ` +
-      `fDom=${frame.hex} fShare=${frame.share.toFixed(2)}`;
-  } catch (error) {
+  } catch {
     payload = { ok: false, hex: "#ffffff", luminance: 1 };
-    diagnostic = `error:${error instanceof Error ? error.message : String(error)}`;
   }
   if (!window.isDestroyed()) {
-    // 开发期诊断：打印采样结果与截屏源信息（变化时），便于核对取色链路
-    const signature = `${diagnostic} -> ${payload.ok ? payload.hex : "unavailable"}`;
-    if (!app.isPackaged && signature !== lastLoggedSignature) {
-      lastLoggedSignature = signature;
-      console.log(`[answra:ambient] ${signature}`);
-    }
     window.webContents.send(AmbientChannels.AmbientColor, payload);
   }
+}
+
+/**
+ * 每次调度：执行主进程整屏采样（desktopCapturer）并推送背景主色。
+ * 渲染器据此重算变色龙令牌；此为唯一采样路径，无 v2 分支。
+ */
+function scheduleRun(window: BrowserWindow): void {
+  void sampleAndPush(window);
 }
 
 /** 启动变色龙采样：绑定窗口移动/显示器变化/轮询，返回清理函数。 */
@@ -309,7 +245,7 @@ export function startAmbientTheme(window: BrowserWindow): () => void {
           () => {
             pending = false;
             lastRun = Date.now();
-            void sampleAndPush(window);
+            scheduleRun(window);
           },
           MOVE_THROTTLE_MS - (now - lastRun),
         );
@@ -317,7 +253,7 @@ export function startAmbientTheme(window: BrowserWindow): () => void {
       return;
     }
     lastRun = now;
-    void sampleAndPush(window);
+    scheduleRun(window);
   };
 
   const poll = setInterval(schedule, POLL_INTERVAL_MS);

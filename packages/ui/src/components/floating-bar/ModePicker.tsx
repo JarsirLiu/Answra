@@ -6,12 +6,12 @@ import "./ModePicker.css";
 interface ModePickerProps {
   modes: readonly ModeDefinition[];
   mode: Mode;
-  /** 菜单开关状态由 FloatingBar 持有：菜单渲染在胶囊下方的文档流里。 */
+  /** 菜单开关状态由根级表面协调器持有。 */
   open: boolean;
   onToggle: () => void;
 }
 
-/** 第一段：工作模式选择器（仅触发按钮；菜单由 FloatingBar 渲染在胶囊下方）。 */
+/** 第一段：工作模式选择器（菜单由导航浮层层级锚定渲染）。 */
 export function ModePicker({ modes, mode, open, onToggle }: ModePickerProps) {
   const active = modes.find((item) => item.id === mode) ?? modes[0];
   if (!active) return null;
@@ -32,7 +32,7 @@ export function ModePicker({ modes, mode, open, onToggle }: ModePickerProps) {
   );
 }
 
-/** 模式菜单列表；由 FloatingBar 渲染在胶囊下方，参与文档流。 */
+/** 模式菜单列表；由 FloatingBar 锚定到选择器并覆盖内容面板。 */
 export function ModeMenu({
   modes,
   mode,

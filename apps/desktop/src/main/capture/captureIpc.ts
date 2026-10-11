@@ -1,8 +1,18 @@
+import { randomUUID } from "node:crypto";
 import type { RegionCaptureOptions, RegionSelection, ScreenshotResult } from "@answra/shared";
 import { CaptureChannels } from "@answra/shared";
 import type { IpcMainEvent } from "electron";
 import { ipcMain } from "electron";
-import { getWindow, isWindowFromSender } from "../window";
+import {
+  getWindow,
+  hideReplyBarWindowForCapture,
+  isStealthEnabled,
+  isWindowFromSender,
+  refreshStealthCaptureProtection,
+  restoreReplyBarWindowAfterCapture,
+  setReplyBarAnchor,
+} from "../window";
+import { getWindowCaptureDiagnostics } from "../windowCaptureProtection";
 import { captureDisplay, cropToDataUrl, ScreenCaptureError } from "./captureService";
 import {
   closeSelectionWindows,
@@ -20,13 +30,17 @@ export function registerCaptureIpc(): void {
   ipcMain.handle(
     CaptureChannels.StartRegionCapture,
     async (event, options: unknown): Promise<ScreenshotResult> => {
-      if (!isWindowFromSender(getWindow(), event)) {
+      const fromSender = isWindowFromSender(getWindow(), event);
+      console.log("[capture] StartRegionCapture 调用, 合法调用方:", fromSender);
+      if (!fromSender) {
+        console.error("[capture] 拒绝：非法调用方");
         return { message: "非法调用方", ok: false, reason: "error" };
       }
       if (pendingCapture) {
+        console.warn("[capture] 已有截图进行中，忽略重复请求");
         return { message: "已有截图正在进行", ok: false, reason: "error" };
       }
-      return runRegionCapture(sanitizeSelectionLine(options));
+      return runRegionCapture(sanitizeSelectionLine(options), randomUUID());
     },
   );
 
@@ -53,32 +67,65 @@ function sanitizeSelectionLine(options: unknown): string | undefined {
   return CSS_COLOR_PATTERN.test(line.trim()) ? line.trim() : undefined;
 }
 
-async function runRegionCapture(line?: string): Promise<ScreenshotResult> {
+async function runRegionCapture(
+  line: string | undefined,
+  captureId: string,
+): Promise<ScreenshotResult> {
   const mainWindow = getWindow();
   const wasVisible = mainWindow?.isVisible() ?? false;
-  let selection: RegionSelection | null;
+  const replyBarWasVisible = hideReplyBarWindowForCapture();
+  console.info("[capture][diagnostic] started", {
+    captureId,
+    windowId: mainWindow?.id,
+    wasVisible,
+    stealth: isStealthEnabled(),
+    bounds: mainWindow?.getBounds?.(),
+  });
   try {
     mainWindow?.hide();
-    const overlays = createSelectionWindows(line);
+    console.info("[capture][diagnostic] main window hidden", {
+      captureId,
+      visible: mainWindow?.isVisible(),
+    });
+    const overlays = createSelectionWindows(line, isStealthEnabled());
+    console.info("[capture][diagnostic] selection overlays created", {
+      captureId,
+      count: overlays.length,
+      windowIds: overlays.map((window) => window.id),
+      protected: isStealthEnabled(),
+    });
     if (overlays.length === 0) {
+      console.error("[capture] 无可用显示器");
       return { message: "没有可用的显示器", ok: false, reason: "unavailable" };
     }
-    selection = await new Promise<RegionSelection | null>((resolve) => {
+    const selection = await new Promise<RegionSelection | null>((resolve) => {
       pendingCapture = resolve;
     });
-  } finally {
+    console.info("[capture][diagnostic] selection settled", { captureId, selection });
+    if (!selection) {
+      console.log("[capture] 用户取消截图");
+      return { ok: false, reason: "cancelled" };
+    }
+    // The detached reply surface is positioned near the selection. Keep the
+    // toolbar HWND and its bounds independent from the screenshot workflow.
+    setReplyBarAnchor(selection);
     pendingCapture = undefined;
     closeSelectionWindows();
-    // showInactive 恢复可见但不抢焦点，避免打断截图后的输入流
-    if (wasVisible) mainWindow?.showInactive();
-  }
-
-  if (!selection) return { ok: false, reason: "cancelled" };
-
-  try {
+    console.info("[capture][diagnostic] display capture started", {
+      captureId,
+      displayId: selection.displayId,
+      windowVisible: mainWindow?.isVisible(),
+    });
     const capture = await captureDisplay(selection.displayId);
-    return cropToDataUrl(capture, selection.rect);
+    const result = cropToDataUrl(capture, selection.rect);
+    console.info("[capture][diagnostic] display capture completed", {
+      captureId,
+      width: result.width,
+      height: result.height,
+    });
+    return result;
   } catch (error) {
+    console.error("[capture][diagnostic] failed", { captureId, error });
     if (error instanceof ScreenCaptureError) {
       return { message: error.message, ok: false, reason: error.reason };
     }
@@ -87,6 +134,33 @@ async function runRegionCapture(line?: string): Promise<ScreenshotResult> {
       ok: false,
       reason: "error",
     };
+  } finally {
+    pendingCapture = undefined;
+    closeSelectionWindows();
+    // showInactive 恢复可见但不抢焦点；之后重申捕获排除，覆盖窗口隐藏/恢复周期。
+    if (wasVisible && mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.showInactive();
+      refreshStealthCaptureProtection();
+      if (isStealthEnabled() && process.platform === "win32") {
+        // Electron applies display affinity on the next desktop composition; give DWM time
+        // before the renderer receives the result and the user can start another capture.
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      console.info("[capture][diagnostic] main window restored", {
+        captureId,
+        windowId: mainWindow.id,
+        visible: mainWindow.isVisible(),
+        stealth: isStealthEnabled(),
+        ...getWindowCaptureDiagnostics(mainWindow),
+      });
+    } else {
+      console.info("[capture][diagnostic] main window restore skipped", {
+        captureId,
+        wasVisible,
+        destroyed: mainWindow?.isDestroyed(),
+      });
+    }
+    restoreReplyBarWindowAfterCapture(replyBarWasVisible);
   }
 }
 

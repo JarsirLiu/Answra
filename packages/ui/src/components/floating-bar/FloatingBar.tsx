@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef } from "react";
 import { useDismissableOpen } from "../../hooks/useDismissableOpen";
 import type { Mode, ModeAction, ModeDefinition, Panel } from "../../model";
 import { FeatureActions } from "./FeatureActions";
@@ -10,7 +10,10 @@ interface FloatingBarProps {
   modes: readonly ModeDefinition[];
   mode: Mode;
   panel: Panel;
+  modeMenuOpen: boolean;
   onModeChange: (mode: Mode) => void;
+  onToggleModeMenu: () => void;
+  onDismissModeMenu: () => void;
   onModeAction: (action: ModeAction) => void;
   onTogglePanel: (panel: Exclude<Panel, "closed">) => void;
   onClose: () => void;
@@ -25,28 +28,25 @@ export function FloatingBar({
   modes,
   mode,
   panel,
+  modeMenuOpen,
   onModeChange,
+  onToggleModeMenu,
+  onDismissModeMenu,
   onModeAction,
   onTogglePanel,
   onClose,
 }: FloatingBarProps) {
-  const [menuOpen, setMenuOpen] = useState(false);
   const stackRef = useRef<HTMLDivElement>(null);
-  useDismissableOpen(stackRef, menuOpen, () => setMenuOpen(false));
+  useDismissableOpen(stackRef, modeMenuOpen, onDismissModeMenu);
 
   const activeMode = modes.find((item) => item.id === mode) ?? modes[0];
   if (!activeMode) return null;
 
   return (
-    <div className="floating-bar-stack" ref={stackRef}>
+    <div className={`floating-bar-stack${modeMenuOpen ? " is-menu-open" : ""}`} ref={stackRef}>
       <section aria-label="悬浮导航" className="floating-bar">
         <div className="nav-segment mode-segment">
-          <ModePicker
-            mode={mode}
-            modes={modes}
-            onToggle={() => setMenuOpen((open) => !open)}
-            open={menuOpen}
-          />
+          <ModePicker mode={mode} modes={modes} onToggle={onToggleModeMenu} open={modeMenuOpen} />
         </div>
         <span aria-hidden="true" className="segment-divider" />
         <div className="nav-segment feature-segment">
@@ -57,13 +57,13 @@ export function FloatingBar({
           <WorkspaceControls onClose={onClose} onTogglePanel={onTogglePanel} panel={panel} />
         </div>
       </section>
-      {menuOpen && (
+      {modeMenuOpen && (
         <ModeMenu
           mode={mode}
           modes={modes}
           onModeChange={(next) => {
             onModeChange(next);
-            setMenuOpen(false);
+            onDismissModeMenu();
           }}
         />
       )}

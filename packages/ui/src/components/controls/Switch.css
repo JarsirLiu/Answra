@@ -8,8 +8,11 @@
 .switch-input {
   position: absolute;
   inset: 0;
+  width: 100%;
+  height: 100%;
   margin: 0;
   opacity: 0;
+  z-index: 1;
 }
 .switch-track {
   display: block;
@@ -26,9 +29,6 @@
 .switch-input:focus-visible + .switch-track {
   outline: 2px solid var(--mint-line-focus);
   outline-offset: 2px;
-}
-.switch.is-disabled .switch-track {
-  opacity: 0.4;
 }
 .switch.is-on .switch-track {
   border-color: transparent;
@@ -47,4 +47,17 @@
 }
 .switch.is-on .switch-thumb {
   transform: translateX(12px);
+}
+/* 禁用态：保持完整轮廓与拇指可见、只降低内部对比，放在基础规则之后。
+   不能用整体 opacity——叠在深色表面上整颗开关会直接隐形 */
+.switch.is-disabled .switch-track {
+  background: var(--field);
+}
+.switch.is-disabled.is-on .switch-track {
+  border-color: var(--mint-line);
+  background: var(--mint-wash-strong);
+}
+.switch.is-disabled .switch-thumb {
+  background: var(--icon);
+  opacity: 0.6;
 }

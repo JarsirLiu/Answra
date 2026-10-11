@@ -21,7 +21,11 @@ vi.mock("electron", () => ({
 const osState = vi.hoisted(() => ({ release: "10.0.19045" }));
 vi.mock("node:os", () => ({ default: { release: () => osState.release } }));
 
-import { clampToWorkArea, isStealthSupported } from "../src/main/window";
+import {
+  clampToWorkArea,
+  isStealthSupported,
+  positionWindowNearSelection,
+} from "../src/main/window";
 
 function setPlatform(platform: NodeJS.Platform): void {
   Object.defineProperty(process, "platform", { value: platform, configurable: true });
@@ -81,5 +85,42 @@ describe("clampToWorkArea", () => {
 
   it("keeps sizes exactly at the clamp boundary", () => {
     expect(clampToWorkArea({ width: 776, height: 576 })).toEqual({ width: 776, height: 576 });
+  });
+});
+
+describe("positionWindowNearSelection", () => {
+  const WORK_AREA = { x: 0, y: 0, width: 800, height: 600 };
+
+  it("places the window top just below the selection, centered on it", () => {
+    expect(
+      positionWindowNearSelection(
+        { x: 100, y: 100, width: 200, height: 80 },
+        { x: 0, y: 0 },
+        WORK_AREA,
+        { width: 300, height: 60 },
+      ),
+    ).toEqual({ x: 50, y: 192 });
+  });
+
+  it("clamps back into the work area when the selection sits near the edges", () => {
+    expect(
+      positionWindowNearSelection(
+        { x: 650, y: 500, width: 120, height: 80 },
+        { x: 0, y: 0 },
+        WORK_AREA,
+        { width: 300, height: 60 },
+      ),
+    ).toEqual({ x: 500, y: 540 });
+  });
+
+  it("offsets by the display origin on secondary displays", () => {
+    expect(
+      positionWindowNearSelection(
+        { x: 100, y: 100, width: 200, height: 80 },
+        { x: 1920, y: 0 },
+        { x: 1920, y: 0, width: 1920, height: 1080 },
+        { width: 300, height: 60 },
+      ),
+    ).toEqual({ x: 1970, y: 192 });
   });
 });

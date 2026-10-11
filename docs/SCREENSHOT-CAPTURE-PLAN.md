@@ -39,11 +39,13 @@ return cropped.toDataURL();
 - **macOS**：`NSWindow.sharingType = NSWindowSharingNone`，排除出 ScreenCaptureKit/录屏。
 - 仅对**自身浮层窗口**设标志，目标会议窗口不受影响，照常进捕获结果。
 
-Electron 暴露为 `win.setContentProtection(true)`：
+Electron 暴露为 `win.setContentProtection(true)`。当前 Electron 文档说明 Windows 上使用
+`WDA_EXCLUDEFROMCAPTURE`，Windows 10 2004+ 会将窗口从捕获结果中移除；更旧系统退化为
+`WDA_MONITOR`，捕获结果会出现黑块，因此这些系统不能启用会议隐身。macOS 上该 API 设置
+`NSWindowSharingNone`。捕获应用或驱动若不遵循系统窗口排除标志，无法由应用保证隐藏效果。
 
-- Windows 上它实际设 `WDA_MONITOR`（`0x10`），可挡捕获，但某些远程桌面/旧驱动下会让窗口变黑；
-- 更稳健的是 `WDA_EXCLUDEFROMCAPTURE`（仅排除、本地可见），Electron 未直接暴露，需主进程用 `ffi-napi` 或极小的原生 addon 调一次 `user32.SetWindowDisplayAffinity`；
-- macOS 上 `setContentProtection(true)` 即 `NSWindowSharingNone`，可直接用。
+该 API 只应在会议隐身开启时调用。临时截图选区窗口在隐身关闭时不能设置内容保护，
+否则普通应用内截图也会改变后续系统截图的捕获结果。
 
 副作用利好：因自身窗口被排除，我们截出的图**天然不含工具栏**，无需额外处理即得干净提问素材。
 

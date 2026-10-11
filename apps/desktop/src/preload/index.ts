@@ -5,6 +5,8 @@ import {
   type ContentSize,
   type DesktopBridge,
   type RegionCaptureOptions,
+  type ReplyBarAction,
+  type ReplyBarState,
   WindowChannels,
 } from "@answra/shared";
 import { contextBridge, ipcRenderer } from "electron";
@@ -19,6 +21,28 @@ const bridge: DesktopBridge = {
   },
   close: () => {
     ipcRenderer.send(WindowChannels.Close);
+  },
+  setReplyBarState: (state: ReplyBarState | null) => {
+    ipcRenderer.send(WindowChannels.SetReplyBarState, state);
+  },
+  fitReplyBar: (size: ContentSize) => {
+    ipcRenderer.send(WindowChannels.FitReplyBar, size);
+  },
+  sendReplyBarAction: (action: ReplyBarAction) => {
+    ipcRenderer.send(WindowChannels.ReplyBarAction, action);
+  },
+  onReplyBarAction: (listener: (action: ReplyBarAction) => void) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, action: ReplyBarAction) => listener(action);
+    ipcRenderer.on(WindowChannels.ReplyBarAction, wrapped);
+    return () => ipcRenderer.removeListener(WindowChannels.ReplyBarAction, wrapped);
+  },
+  onReplyBarState: (listener: (state: ReplyBarState) => void) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, state: ReplyBarState) => listener(state);
+    ipcRenderer.on(WindowChannels.ReplyBarState, wrapped);
+    return () => ipcRenderer.removeListener(WindowChannels.ReplyBarState, wrapped);
+  },
+  requestReplyBarState: () => {
+    ipcRenderer.send(WindowChannels.ReplyBarReady);
   },
   setStealth: (value: boolean) => {
     ipcRenderer.send(WindowChannels.SetStealth, value);

@@ -11,8 +11,14 @@
         height: 100%;
         overflow: hidden;
         background: transparent;
-        cursor: default;
+        cursor: crosshair;
         user-select: none;
+      }
+      /* 普通截图框选用十字光标提示拖拽；隐身模式必须覆盖此提示，
+         让截图、选择与其他操作都不改变光标形状。 */
+      html.stealth,
+      html.stealth * {
+        cursor: default;
       }
       /* 选区只有一圈虚线框：无蒙层、无填充、无外圈描边，变色龙理念下
          对屏幕零干扰。颜色由渲染器按当前主题派生（--selection-line，
@@ -22,9 +28,25 @@
         display: none;
         border: 1px dashed var(--selection-line, rgba(148, 163, 184, 0.9));
       }
+      /* 顶部操作提示：overlay 默认完全透明，用户往往不知需拖拽；
+         给出明确指引，且 pointer-events:none 不挡绘制。 */
+      #hint {
+        position: fixed;
+        top: 16px;
+        left: 50%;
+        transform: translateX(-50%);
+        padding: 6px 12px;
+        border-radius: 8px;
+        background: rgba(15, 23, 42, 0.72);
+        color: #fff;
+        font: 12px/1.4 system-ui, sans-serif;
+        white-space: nowrap;
+        pointer-events: none;
+      }
     </style>
   </head>
   <body>
+    <div id="hint">按住拖拽选择区域，按 Esc 取消</div>
     <div id="rect"></div>
     <script>
       // 本窗口由主进程按 display.bounds 创建并附带 ?displayId=，选区坐标相对本窗口原点
@@ -33,38 +55,15 @@
       // 框选线色随发起方主题（变色龙/深浅模式）联动；主进程已校验为字面 CSS 颜色
       const line = params.get("line");
       if (line) document.documentElement.style.setProperty("--selection-line", line);
+      // 与主窗口共用主进程维护的隐身状态，避免框选 overlay 绕过隐身光标约束。
+      if (params.get("stealth") === "true") document.documentElement.classList.add("stealth");
       const rectEl = document.getElementById("rect");
-      const MIN_SIZE = 8; // 小于该尺寸视为点击误触，按取消处理
+      const hintEl = document.getElementById("hint");
+      const MIN_SIZE = 8; // 小于该尺寸视为点击误触，保持 overlay 打开而非取消
       let startPoint = null;
 
-      window.addEventListener("mousedown", (event) => {
-        startPoint = { x: event.clientX, y: event.clientY };
-        draw(event);
-      });
-      window.addEventListener("mousemove", (event) => {
-        if (startPoint) draw(event);
-      });
-      window.addEventListener("mouseup", (event) => {
-        if (!startPoint) return;
-        startPoint = null;
-        const rect = normalize(event);
-        if (rect.width < MIN_SIZE || rect.height < MIN_SIZE) {
-          window.answraSelection.cancel();
-        } else {
-          window.answraSelection.confirm({ displayId, rect });
-        }
-      });
-      window.addEventListener("keydown", (event) => {
-        if (event.key === "Escape") window.answraSelection.cancel();
-      });
-
-      function draw(event) {
-        const rect = normalize(event);
-        rectEl.style.display = "block";
-        rectEl.style.left = `${rect.x}px`;
-        rectEl.style.top = `${rect.y}px`;
-        rectEl.style.width = `${rect.width}px`;
-        rectEl.style.height = `${rect.height}px`;
+      function clamp(value, min, max) {
+        return Math.min(Math.max(value, min), max);
       }
 
       // 归一化为左上角原点的正矩形，并 clamp 到视口内（拖出窗口边缘时）
@@ -82,9 +81,38 @@
         };
       }
 
-      function clamp(value, min, max) {
-        return Math.min(Math.max(value, min), max);
+      function draw(event) {
+        const rect = normalize(event);
+        rectEl.style.display = "block";
+        rectEl.style.left = `${rect.x}px`;
+        rectEl.style.top = `${rect.y}px`;
+        rectEl.style.width = `${rect.width}px`;
+        rectEl.style.height = `${rect.height}px`;
+        if (hintEl) hintEl.style.display = "none";
       }
+
+      window.addEventListener("mousedown", (event) => {
+        startPoint = { x: event.clientX, y: event.clientY };
+        draw(event);
+      });
+      window.addEventListener("mousemove", (event) => {
+        if (startPoint) draw(event);
+      });
+      window.addEventListener("mouseup", (event) => {
+        if (!startPoint) return;
+        const rect = normalize(event);
+        startPoint = null;
+        // 误触（未拖出有效区域）：保持 overlay 打开，等待有效拖拽或 Esc，不再静默取消
+        if (rect.width < MIN_SIZE || rect.height < MIN_SIZE) {
+          rectEl.style.display = "none";
+          if (hintEl) hintEl.style.display = "block";
+          return;
+        }
+        window.answraSelection.confirm({ displayId, rect });
+      });
+      window.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") window.answraSelection.cancel();
+      });
     </script>
   </body>
 </html>
