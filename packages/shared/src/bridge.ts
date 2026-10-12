@@ -14,6 +14,8 @@ import type {
   WorkspaceCreateRequest,
   WorkspaceFileContent,
   WorkspaceNode,
+  InterviewAudioFrame,
+  InterviewChange,
 } from "./channels";
 
 /**
@@ -23,7 +25,7 @@ import type {
  * 面板只决定渲染器画什么，窗口大小由渲染器测量后经
  * `fitContent` 上报（见 channels.ts 的 FitContent 频道）。
  */
-export type OverlayMode = "closed" | "chat" | "notes" | "sources" | "settings";
+export type OverlayMode = "closed" | "chat" | "interview" | "notes" | "sources" | "settings";
 
 /** 渲染进程暴露给 UI 的桌面平台桥（由 preload 注入，测试可 mock）。 */
 export interface DesktopBridge {
@@ -89,6 +91,10 @@ export interface DesktopBridge {
   ) => Promise<{ runId: string }>;
   cancelConversationRun?: (runId: string) => void;
   onConversationChange?: (listener: (change: ConversationChange) => void) => () => void;
+  startInterview?: () => Promise<{ sessionId: string }>;
+  stopInterview?: (sessionId: string) => void;
+  sendInterviewAudioFrame?: (frame: InterviewAudioFrame) => void;
+  onInterviewChange?: (listener: (change: InterviewChange) => void) => () => void;
   // ---- 本地工作区（合并笔记本与资料；浏览器预览/测试环境可未实现，调用方需判空） ----
   /** 读取缓存的上一工作区根目录；未选择过时 root 为 null。 */
   getWorkspaceRoot?: () => Promise<{ root: string | null }>;

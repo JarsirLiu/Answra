@@ -19,10 +19,12 @@
   "dependencies": {
     "@ai-sdk/openai-compatible": "2.0.81",
     "@answra/shared": "workspace:*",
-    "ai": "6.0.303"
+    "ai": "6.0.303",
+    "ws": "^8.22.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
+    "@types/ws": "^8.18.2",
     "esbuild": "^0.27.2",
     "typescript": "~5.9.3",
     "vitest": "^5.0.3"

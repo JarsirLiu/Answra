@@ -1,4 +1,11 @@
 export type { DesktopBridge, OverlayMode } from "./bridge";
+export { InterviewChannels } from "./channels";
+export type {
+  InterviewAudioFrame,
+  InterviewChange,
+  InterviewSpeaker,
+  InterviewState,
+} from "./channels";
 export {
   ActiveExamConversationId,
   type AmbientChannelMap,

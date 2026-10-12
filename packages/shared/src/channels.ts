@@ -111,6 +111,37 @@ export const ConversationChannels = {
   Change: "answra:conversation:change",
 } as const;
 
+export const InterviewChannels = {
+  Start: "answra:interview:start",
+  Stop: "answra:interview:stop",
+  AudioFrame: "answra:interview:audio-frame",
+  Change: "answra:interview:change",
+} as const;
+
+export type InterviewSpeaker = "interviewer" | "user";
+export type InterviewState = "connecting" | "listening" | "thinking" | "stopped" | "error";
+
+export type InterviewChange =
+  | { sessionId: string; type: "state"; state: InterviewState; message?: string }
+  | {
+      sessionId: string;
+      type: "transcript";
+      speaker: InterviewSpeaker;
+      text: string;
+      final: boolean;
+      timestamp: number;
+    }
+  | { sessionId: string; type: "answer-start"; questionId: string; question: string }
+  | { sessionId: string; type: "answer"; questionId: string; text: string }
+  | { sessionId: string; type: "answer-ignored"; questionId: string }
+  | { sessionId: string; type: "answer-stale"; questionId: string };
+
+export interface InterviewAudioFrame {
+  sessionId: string;
+  speaker: InterviewSpeaker;
+  pcm16Base64: string;
+}
+
 export const ActiveExamConversationId = "active-exam-conversation";
 
 export interface ConversationModelConfig {
