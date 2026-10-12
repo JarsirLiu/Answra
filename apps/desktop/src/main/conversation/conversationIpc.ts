@@ -12,6 +12,10 @@ export function registerConversationIpc(service: AppService): void {
     if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用方");
     return service.getConfig();
   });
+  ipcMain.handle(ConversationChannels.GetApiKey, (event) => {
+    if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用方");
+    return service.getApiKey();
+  });
   ipcMain.handle(ConversationChannels.Configure, async (event, config: ConversationModelConfig) => {
     if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用方");
     await service.configure(config);

@@ -51,6 +51,11 @@ export class AppService {
     };
   }
 
+  /** 按需返回已解密 API Key（设置面板显隐回显）；未保存时为 null。 */
+  async getApiKey(): Promise<{ apiKey: string | null }> {
+    return { apiKey: this.config?.apiKey ?? null };
+  }
+
   async configure(config: ConversationModelConfig): Promise<void> {
     validateConfig(config);
     const previous = this.config;

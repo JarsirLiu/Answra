@@ -1,3 +1,5 @@
+import type { UIMessageChunk } from "ai";
+
 /**
  * IPC 频道常量。
  *
@@ -85,6 +87,8 @@ export const CaptureChannels = {
 export const ConversationChannels = {
   Configure: "answra:conversation:configure",
   GetConfig: "answra:conversation:get-config",
+  /** 按需拉取已解密 API Key（用户点显隐时回显）；无 Key 返回 null。 */
+  GetApiKey: "answra:conversation:get-api-key",
   Send: "answra:conversation:send",
   Cancel: "answra:conversation:cancel",
   Event: "answra:conversation:event",
@@ -103,7 +107,7 @@ export interface ConversationSendRequest {
 
 export type ConversationEvent =
   | { type: "run/started"; runId: string; conversationId: string }
-  | { type: "text/delta"; runId: string; delta: string }
+  | { type: "stream/chunk"; runId: string; chunk: UIMessageChunk }
   | { type: "run/completed"; runId: string }
   | { type: "run/failed"; runId: string; message: string }
   | { type: "run/cancelled"; runId: string };
@@ -114,6 +118,7 @@ export interface ConversationChannelMap {
     request: undefined;
     response: Omit<ConversationModelConfig, "apiKey"> & { configured: boolean };
   };
+  [ConversationChannels.GetApiKey]: { request: undefined; response: { apiKey: string | null } };
   [ConversationChannels.Send]: { request: ConversationSendRequest; response: { runId: string } };
   [ConversationChannels.Cancel]: { request: { runId: string }; response: undefined };
   [ConversationChannels.Event]: { request: undefined; response: undefined };

@@ -19,6 +19,7 @@
   transition:
     background 140ms ease-out,
     color 140ms ease-out,
+    filter 140ms ease-out,
     transform 90ms ease-out;
 }
 
@@ -35,14 +36,23 @@
   opacity: 0.45;
 }
 
+/* 主操作（确认类）：品牌薄荷绿实底 + 对比文字，替代原淡绿描边款。
+   hover 用 brightness 微调而不是换底色：深浅主题的 mint 明度方向相反，
+   换色令牌会导致一个主题 hover 变亮、另一个变暗。 */
 .surface-control--primary {
-  color: var(--icon);
-  background: var(--mint-wash);
-  box-shadow: inset 0 0 0 1px var(--mint-line);
+  color: var(--mint-contrast);
+  background: var(--mint);
+  font-weight: 600;
+  box-shadow: var(--shadow-ctl);
 }
 
 .surface-control--primary:hover {
-  background: var(--mint-wash-strong);
+  background: var(--mint);
+  filter: brightness(1.08);
+}
+
+.surface-control--primary:active {
+  filter: brightness(0.96);
 }
 
 .surface-control--quiet {

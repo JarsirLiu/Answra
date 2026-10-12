@@ -65,6 +65,11 @@ export interface DesktopBridge {
   getConversationConfig?: () => Promise<
     Omit<ConversationModelConfig, "apiKey"> & { configured: boolean }
   >;
+  /**
+   * 按需拉取已解密的 API Key（用户点显隐图标时回显）。
+   * 未保存 Key 时返回 null；不随配置查询自动下发，浏览器预览/测试环境可未实现。
+   */
+  getConversationApiKey?: () => Promise<{ apiKey: string | null }>;
   sendConversationMessage?: (request: ConversationSendRequest) => Promise<{ runId: string }>;
   cancelConversationRun?: (runId: string) => void;
   onConversationEvent?: (listener: (event: ConversationEvent) => void) => () => void;

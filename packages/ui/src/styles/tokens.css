@@ -101,6 +101,8 @@
   --mint-wash-strong: rgb(var(--mint-tint) / calc((var(--mint-wash-base) + 0.08) * var(--fade)));
   --mint-line: rgb(var(--mint-tint) / calc(0.25 * var(--fade)));
   --mint-line-focus: rgb(var(--mint-tint) / calc(0.5 * var(--fade)));
+  /* 主操作按钮（primary）实底薄荷绿上的文字色：浅色主题用纯白 */
+  --mint-contrast: rgb(255 255 255 / var(--fade));
   --glass: rgb(var(--glass-tint) / var(--glass-base));
   --panel: rgb(var(--panel-tint) / var(--panel-base));
   --glass-line: rgb(var(--line-tint) / calc(var(--line-base) * var(--fade)));
@@ -141,6 +143,8 @@
   --mint-tint: 63 194 141;
   --mint-deep-tint: 118 226 180;
   --mint-text-tint: 122 230 184;
+  /* 深色主题薄荷绿更亮，主操作按钮文字翻转为深绿黑保证对比 */
+  --mint-contrast: rgb(8 34 24 / var(--fade));
 
   /* 【描边与交互态】通道翻转为白，alpha 基数沿用浅色 */
   --line-tint: 255 255 255;

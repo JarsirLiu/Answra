@@ -91,6 +91,10 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
     localStorage.setItem(NOTE_STORAGE_KEY, value);
   }
 
+  /** 按需回显已保存的 API Key；桥未实现（浏览器预览/测试）时无此能力。 */
+  const getConversationApiKey = platform?.getConversationApiKey?.bind(platform);
+  const revealApiKey = getConversationApiKey ? () => getConversationApiKey() : undefined;
+
   return (
     <main
       className="overlay-root"
@@ -189,6 +193,7 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
           ambientFollow={appearance.ambientFollow}
           modelConfig={conversation.config}
           onModelConfigSave={conversation.configure}
+          onRevealApiKey={revealApiKey}
           onAmbientFollowChange={appearance.setAmbientFollow}
           onClose={() => surfaces.openPanel("closed")}
           onOpacityChange={appearance.setOpacity}

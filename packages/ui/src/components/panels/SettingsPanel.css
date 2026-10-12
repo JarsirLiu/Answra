@@ -58,6 +58,9 @@
   color: var(--ink-soft);
   font-size: var(--font-xs);
 }
+.setting-status--saved {
+  color: var(--mint-text);
+}
 .setting-field {
   display: grid;
   gap: 5px;
@@ -74,24 +77,40 @@
   background: var(--glass-fill);
   font: inherit;
 }
+.setting-secret-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.setting-secret-field input {
+  width: 100%;
+  padding-right: 34px;
+}
+/* 小眼睛：嵌在输入框内的幽灵图标钮，与输入框同高对齐、无边框无底色，
+   hover 才浮现淡底，避免像一颗突兀的独立按钮。 */
+.setting-secret-toggle {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  translate: 0 -50%;
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  padding: 0;
+  border-radius: 5px;
+}
+.setting-secret-toggle svg {
+  width: 15px;
+  height: 15px;
+}
 .setting-model-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 8px 0;
 }
-.setting-model-footer button {
-  padding: 6px 12px;
-  border: 1px solid var(--glass-line-soft);
-  border-radius: 6px;
-  color: var(--ink);
-  background: var(--glass-fill);
-  font: inherit;
-  cursor: pointer;
-}
-.setting-model-footer button:disabled {
-  opacity: 0.5;
-  cursor: default;
+.setting-model-footer .surface-control {
+  min-width: 72px;
 }
 .setting-error {
   color: #b42318;

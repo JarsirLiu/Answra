@@ -1,6 +1,8 @@
 import type { ConversationModelConfig } from "@answra/shared";
-import { useState } from "react";
+import { Eye, EyeOff } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { RangeSlider } from "../controls/RangeSlider";
+import { SurfaceButton } from "../controls/SurfaceButton";
 import { Switch } from "../controls/Switch";
 import { PanelShell } from "./PanelShell";
 import "./SettingsPanel.css";
@@ -19,6 +21,8 @@ interface SettingsPanelProps {
   onClose: () => void;
   modelConfig: { baseUrl: string; model: string; configured: boolean };
   onModelConfigSave: (config: ConversationModelConfig) => Promise<void>;
+  /** 按需拉取已保存的 API Key（显隐回显）；未实现或无 Key 时返回 null。 */
+  onRevealApiKey?: () => Promise<{ apiKey: string | null }>;
 }
 
 const OPACITY_MIN = 0.5;
@@ -36,27 +40,54 @@ export function SettingsPanel({
   onClose,
   modelConfig,
   onModelConfigSave,
+  onRevealApiKey,
 }: SettingsPanelProps) {
   const [baseUrl, setBaseUrl] = useState(modelConfig.baseUrl);
   const [model, setModel] = useState(modelConfig.model);
   const [apiKey, setApiKey] = useState("");
+  const [showApiKey, setShowApiKey] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout>>(null);
+
+  useEffect(() => {
+    return () => clearTimeout(savedTimerRef.current ?? undefined);
+  }, []);
 
   async function saveModelConfig() {
     setSaving(true);
     setSaveError("");
+    setJustSaved(false);
     try {
       await onModelConfigSave({
         baseUrl: baseUrl.trim(),
         model: model.trim(),
         ...(apiKey ? { apiKey } : {}),
       });
+      // Key 出于安全不回显，保存成功即清空输入框；
+      // 用"已保存"状态提示替代静默清空，避免被误解为保存失败。
       setApiKey("");
+      setJustSaved(true);
+      clearTimeout(savedTimerRef.current ?? undefined);
+      savedTimerRef.current = setTimeout(() => setJustSaved(false), 2500);
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : "保存模型配置失败");
     } finally {
       setSaving(false);
+    }
+  }
+  /** 点眼睛显示时才向主进程拉取已解密的 Key 回显；输入框已有内容则仅切换显隐。 */
+  async function toggleRevealApiKey() {
+    const nextVisible = !showApiKey;
+    setShowApiKey(nextVisible);
+    if (nextVisible && !apiKey && onRevealApiKey) {
+      try {
+        const { apiKey: savedKey } = await onRevealApiKey();
+        if (savedKey) setApiKey(savedKey);
+      } catch {
+        // 拉取失败保持空输入，不阻塞显隐切换
+      }
     }
   }
   return (
@@ -124,23 +155,39 @@ export function SettingsPanel({
           </label>
           <label className="setting-field">
             <span>API Key（可选）</span>
-            <input
-              autoComplete="new-password"
-              onChange={(event) => setApiKey(event.target.value)}
-              placeholder="留空保留已保存的 Key"
-              type="password"
-              value={apiKey}
-            />
+            <span className="setting-secret-field">
+              <input
+                autoComplete="new-password"
+                onChange={(event) => setApiKey(event.target.value)}
+                placeholder="留空保留已保存的 Key"
+                type={showApiKey ? "text" : "password"}
+                value={apiKey}
+              />
+              <SurfaceButton
+                aria-label={showApiKey ? "隐藏 API Key" : "显示 API Key"}
+                className="setting-secret-toggle"
+                onClick={() => void toggleRevealApiKey()}
+                title={showApiKey ? "隐藏 API Key" : "显示 API Key"}
+                variant="quiet"
+              >
+                {showApiKey ? <EyeOff size={16} /> : <Eye size={16} />}
+              </SurfaceButton>
+            </span>
           </label>
           <div className="setting-model-footer">
-            <span className="setting-status">{modelConfig.configured ? "已配置" : "尚未配置"}</span>
-            <button
+            <span
+              className={justSaved ? "setting-status setting-status--saved" : "setting-status"}
+              role="status"
+            >
+              {justSaved ? "已保存" : modelConfig.configured ? "已配置" : "尚未配置"}
+            </span>
+            <SurfaceButton
               disabled={saving || !baseUrl.trim() || !model.trim()}
               onClick={() => void saveModelConfig()}
-              type="button"
+              variant="primary"
             >
               {saving ? "保存中" : "保存"}
-            </button>
+            </SurfaceButton>
           </div>
           {saveError && (
             <p className="setting-error" role="alert">

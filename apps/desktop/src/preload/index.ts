@@ -69,6 +69,7 @@ const bridge: DesktopBridge = {
   configureConversation: (config: ConversationModelConfig) =>
     ipcRenderer.invoke(ConversationChannels.Configure, config),
   getConversationConfig: () => ipcRenderer.invoke(ConversationChannels.GetConfig),
+  getConversationApiKey: () => ipcRenderer.invoke(ConversationChannels.GetApiKey),
   sendConversationMessage: (request: ConversationSendRequest) =>
     ipcRenderer.invoke(ConversationChannels.Send, request),
   cancelConversationRun: (runId: string) =>
