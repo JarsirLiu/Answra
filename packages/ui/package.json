@@ -28,7 +28,10 @@
     "pdfjs-dist": "4.10.38",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
-    "shiki": "^3.23.0"
+    "shiki": "^3.23.0",
+    "@iconify/react": "^5.2.1",
+    "@iconify-json/vscode-icons": "^1.2.0",
+    "vscode-icons-js": "^11.6.1"
   },
   "peerDependencies": {
     "react": ">=19",

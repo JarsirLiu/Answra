@@ -6,6 +6,7 @@
     "moduleResolution": "Bundler",
     "jsx": "react-jsx",
     "noEmit": true,
+    "resolveJsonModule": true,
     "types": ["vitest/globals"]
   },
   "include": ["src", "vitest.config.ts", "test"]

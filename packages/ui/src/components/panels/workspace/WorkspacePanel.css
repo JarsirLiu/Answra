@@ -70,7 +70,7 @@
 }
 
 .workspace-panel__sidebar {
-  flex: 0 0 clamp(128px, 30%, 168px);
+  flex: 0 0 clamp(128px, 24%, 200px);
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -79,16 +79,17 @@
   border-right: 1px solid var(--glass-line-soft);
 }
 
+/* 收起态：尽量窄，把面积全部让给预览区。 */
 .workspace-panel__body--collapsed .workspace-panel__sidebar {
-  flex-basis: 36px;
+  flex-basis: 20px;
   align-items: center;
-  padding: 8px 4px;
+  padding: 6px 2px;
 }
 
 .workspace-panel__sidebar-toggle {
-  width: 26px;
-  height: 26px;
-  flex: 0 0 26px;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
   display: grid;
   place-items: center;
   border: 0;
@@ -96,6 +97,12 @@
   color: var(--muted);
   background: transparent;
   cursor: pointer;
+}
+
+.workspace-panel__body--collapsed .workspace-panel__sidebar-toggle {
+  width: 16px;
+  flex-basis: 16px;
+  padding: 0;
 }
 
 .workspace-panel__sidebar-toggle:hover {
@@ -389,9 +396,28 @@
   border-radius: 6px;
 }
 
-
 .workspace-preview-pdf-state > .workspace-preview-status {
   min-height: 0;
   padding: 12px;
   text-align: center;
+}
+
+/* 细滚动条：预览区两侧尽量少占面积。 */
+.workspace-panel ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.workspace-panel ::-webkit-scrollbar-thumb {
+  background: var(--glass-line-soft);
+  border-radius: 3px;
+}
+
+.workspace-panel ::-webkit-scrollbar-thumb:hover {
+  background: var(--glass-line);
+}
+
+.workspace-panel ::-webkit-scrollbar-track,
+.workspace-panel ::-webkit-scrollbar-corner {
+  background: transparent;
 }

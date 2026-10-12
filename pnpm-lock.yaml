@@ -134,6 +134,12 @@ importers:
       '@codemirror/view':
         specifier: ^6.43.14
         version: 6.43.14
+      '@iconify-json/vscode-icons':
+        specifier: ^1.2.0
+        version: 1.2.87
+      '@iconify/react':
+        specifier: ^5.2.1
+        version: 5.2.1(react@19.3.0)
       '@lezer/highlight':
         specifier: ^1.2.5
         version: 1.2.5
@@ -161,6 +167,9 @@ importers:
       shiki:
         specifier: ^3.23.0
         version: 3.23.0
+      vscode-icons-js:
+        specifier: ^11.6.1
+        version: 11.6.1
     devDependencies:
       '@answra/shared':
         specifier: workspace:*
@@ -765,6 +774,17 @@ packages:
   '@hapi/topo@6.0.2':
     resolution: {integrity: sha512-KR3rD5inZbGMrHmgPxsJ9dbi6zEK+C3ZwUwTa+eMwWLz7oijWUTWD2pMSNNYJAU6Qq+65NkxXjqHr/7LM2Xkqg==}
 
+  '@iconify-json/vscode-icons@1.2.87':
+    resolution: {integrity: sha512-PZ3Jt8bqFQxi9/DOXzoqHCYwCPB9gtuBqz2iJc1OpW3h31RYG0J+qFZY4prgNfGxHBpyvNKDEK+YiZRiGDhseQ==}
+
+  '@iconify/react@5.2.1':
+    resolution: {integrity: sha512-37GDR3fYDZmnmUn9RagyaX+zca24jfVOMY8E1IXTqJuE8pxNtN51KWPQe3VODOWvuUurq7q9uUu3CFrpqj5Iqg==}
+    peerDependencies:
+      react: '>=16'
+
+  '@iconify/types@2.0.0':
+    resolution: {integrity: sha512-+wluvCrRhXrhyOmRDJ3q8mux9JkKy5SJ/v8ol2tu4FVjyYvtEzkc/3pK15ET6RKg4b4w4BmTk1+gsCUhf21Ykg==}
+
   '@isaacs/fs-minipass@4.0.1':
     resolution: {integrity: sha512-wgm9Ehl2jpeqP3zw/7mo3kRHFp5MEDhqAdwy1fTGkHAwnkGOVsgpvQhL8B5n1qlb01jV3n/bI0ZfZp5lWA1k4w==}
     engines: {node: '>=18.0.0'}
@@ -1121,6 +1141,9 @@ packages:
 
   '@types/istanbul-reports@3.0.4':
     resolution: {integrity: sha512-pk2B1NWalF9toCRu6gjBzR69syFjP4Od8WRAX+0mmf9lAjCRicLOWc+ZrxZHx/0XRjotgkF9t6iaMJ+aXcOdZQ==}
+
+  '@types/jasmine@3.10.19':
+    resolution: {integrity: sha512-Bz6P2XoeIN13AhvVe0nS7+m2RfxVllETDjFQ/s6lyEwEfIVpPCc1Q8vPdFopFAOU5mzrU1zypXJ1xGDl5EVU9Q==}
 
   '@types/keyv@3.1.4':
     resolution: {integrity: sha512-BQ5aZNSCpj7D6K2ksrRCTmKRLEpnPvWDiLPfoGyhZ++8YtiK9d/3DBKPJgry359X/P1PfruyYwvnvwFjuEiEIg==}
@@ -3050,6 +3073,9 @@ packages:
       jsdom:
         optional: true
 
+  vscode-icons-js@11.6.1:
+    resolution: {integrity: sha512-rht18IFYv117UlqBn6o9j258SOtwhDBmtVrGwdoLPpSj6Z5LKQIzarQDd/tCRWneU68KEX25+nsh48tAoknKNw==}
+
   w3c-keyname@2.2.8:
     resolution: {integrity: sha512-dpojBhNsCNN7T82Tm7k26A6G9ML3NkhDsnw9n/eoxSRlVBB4CEtIQ/KTCLI2Fwf3ataSXRhYFkQi3SlnFwPvPQ==}
 
@@ -3665,6 +3691,17 @@ snapshots:
     dependencies:
       '@hapi/hoek': 11.0.7
 
+  '@iconify-json/vscode-icons@1.2.87':
+    dependencies:
+      '@iconify/types': 2.0.0
+
+  '@iconify/react@5.2.1(react@19.3.0)':
+    dependencies:
+      '@iconify/types': 2.0.0
+      react: 19.3.0
+
+  '@iconify/types@2.0.0': {}
+
   '@isaacs/fs-minipass@4.0.1':
     dependencies:
       minipass: 7.1.3
@@ -3984,6 +4021,8 @@ snapshots:
   '@types/istanbul-reports@3.0.4':
     dependencies:
       '@types/istanbul-lib-report': 3.0.3
+
+  '@types/jasmine@3.10.19': {}
 
   '@types/keyv@3.1.4':
     dependencies:
@@ -6327,6 +6366,10 @@ snapshots:
       jsdom: 30.1.2(@noble/hashes@2.4.0)
     transitivePeerDependencies:
       - msw
+
+  vscode-icons-js@11.6.1:
+    dependencies:
+      '@types/jasmine': 3.10.19
 
   w3c-keyname@2.2.8: {}
 

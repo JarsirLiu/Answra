@@ -1,19 +1,21 @@
 import type { WorkspaceNode } from "@answra/shared";
-import {
-  ChevronDown,
-  ChevronRight,
-  FileCode2,
-  FileImage,
-  FileJson,
-  FilePlus,
-  FileText,
-  FolderPlus,
-  Trash2,
-} from "lucide-react";
+import { addCollection, Icon } from "@iconify/react";
+// VS Code 图标集离线注册（Iconify 官方离线用法：导入一次，全应用可用）。
+import vscodeIconsCollection from "@iconify-json/vscode-icons/icons.json";
+import { ChevronDown, ChevronRight, FilePlus, FolderPlus, Search, Trash2, X } from "lucide-react";
 import { type FormEvent, useState } from "react";
+import { getIconForFile } from "vscode-icons-js";
 import { ICON_SM } from "../../../tokens";
-import { classifyFile } from "./fileKind";
 import "./DirectoryTree.css";
+
+addCollection(vscodeIconsCollection);
+
+/** 文件名 → VS Code 图标（vscode-icons-js v11 返回 "markdown.svg" 形式，未知回退普通文件图标）。 */
+function fileIconId(name: string): string {
+  const icon = getIconForFile(name);
+  if (!icon) return "vscode-icons:default-file";
+  return `vscode-icons:file-type-${icon.replace(/\.svg$/, "")}`;
+}
 
 interface DirectoryTreeProps {
   nodes: WorkspaceNode[];
@@ -27,18 +29,57 @@ interface DirectoryTreeProps {
 interface TreeNodeProps extends DirectoryTreeProps {
   node: WorkspaceNode;
   depth: number;
+  /** 小写筛选词；空串表示未筛选。 */
+  needle: string;
+  /** 该节点自身或任一后代命中筛选。 */
+  matches: (node: WorkspaceNode) => boolean;
 }
 
-/** 目录树纯展示组件；展开/新建交互在本组件内，数据由 useWorkspace 提供。 */
+/** 目录树纯展示组件；筛选/展开/新建交互在本组件内，数据由 useWorkspace 提供。 */
 export function DirectoryTree(props: DirectoryTreeProps) {
   const { nodes } = props;
   const [creating, setCreating] = useState<null | "dir" | "file">(null);
+  const [filter, setFilter] = useState("");
+  const needle = filter.trim().toLowerCase();
+
+  const matches = (node: WorkspaceNode): boolean => {
+    if (needle.length === 0) return true;
+    if (node.name.toLowerCase().includes(needle)) return true;
+    return (
+      node.kind === "dir" &&
+      nodes.some(
+        (child) =>
+          child.path.startsWith(`${node.path}/`) && child.name.toLowerCase().includes(needle),
+      )
+    );
+  };
+
+  const visibleRoots = nodes.filter(matches);
 
   if (nodes.length === 0)
     return <p className="workspace-tree__empty">目录为空，可在下方新建文档或文件夹。</p>;
 
   return (
     <div className="workspace-tree">
+      <div className="workspace-tree__filter">
+        <Search aria-hidden="true" size={12} />
+        <input
+          value={filter}
+          onChange={(event) => setFilter(event.target.value)}
+          placeholder="筛选文件…"
+          aria-label="筛选文件"
+        />
+        {filter && (
+          <button
+            type="button"
+            className="workspace-tree__filter-clear"
+            aria-label="清除筛选"
+            onClick={() => setFilter("")}
+          >
+            <X aria-hidden="true" size={12} />
+          </button>
+        )}
+      </div>
       <div className="workspace-tree__actions">
         <button
           type="button"
@@ -69,11 +110,22 @@ export function DirectoryTree(props: DirectoryTreeProps) {
           }}
         />
       )}
-      <ul className="workspace-tree__list">
-        {nodes.map((node) => (
-          <TreeNodeView key={node.path} {...props} node={node} depth={0} />
-        ))}
-      </ul>
+      {visibleRoots.length === 0 ? (
+        <p className="workspace-tree__empty">没有匹配的文件。</p>
+      ) : (
+        <ul className="workspace-tree__list">
+          {visibleRoots.map((node) => (
+            <TreeNodeView
+              key={node.path}
+              {...props}
+              needle={needle}
+              matches={matches}
+              node={node}
+              depth={0}
+            />
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
@@ -104,15 +156,17 @@ function NewEntryForm({
   );
 }
 
-function TreeNodeView({ node, depth, ...treeProps }: TreeNodeProps) {
+function TreeNodeView({ node, depth, needle, matches, ...treeProps }: TreeNodeProps) {
   const { selectedPath, onSelect, nodes, onDelete } = treeProps;
-  const [expanded, setExpanded] = useState(depth === 0 && node.kind === "dir");
+  const [expandedByUser, setExpandedByUser] = useState(depth === 0 && node.kind === "dir");
   const isDir = node.kind === "dir";
   const childNodes = isDir ? nodes.filter((child) => child.path.startsWith(`${node.path}/`)) : [];
   const directChildren = childNodes.filter((child) => {
     const rest = child.path.slice(node.path.length + 1);
-    return !rest.includes("/");
+    return !rest.includes("/") && matches(child);
   });
+  // 筛选时忽略用户手动展开状态：有命中后代即自动展开，保证结果可见。
+  const expanded = needle.length > 0 ? directChildren.length > 0 : expandedByUser;
   const selected = selectedPath === node.path;
   return (
     <li>
@@ -122,7 +176,7 @@ function TreeNodeView({ node, depth, ...treeProps }: TreeNodeProps) {
           className="workspace-tree__item"
           aria-expanded={isDir ? expanded : undefined}
           onClick={() => {
-            if (isDir) setExpanded((value) => !value);
+            if (isDir) setExpandedByUser((value) => !value);
             else onSelect(node);
           }}
           title={node.path}
@@ -155,7 +209,14 @@ function TreeNodeView({ node, depth, ...treeProps }: TreeNodeProps) {
       {isDir && expanded && (
         <ul className="workspace-tree__children">
           {directChildren.map((child) => (
-            <TreeNodeView key={child.path} {...treeProps} node={child} depth={depth + 1} />
+            <TreeNodeView
+              key={child.path}
+              {...treeProps}
+              needle={needle}
+              matches={matches}
+              node={child}
+              depth={depth + 1}
+            />
           ))}
         </ul>
       )}
@@ -164,16 +225,12 @@ function TreeNodeView({ node, depth, ...treeProps }: TreeNodeProps) {
 }
 
 function TreeFileIcon({ name }: { name: string }) {
-  const kind = classifyFile(name);
-  const Icon =
-    kind === "markdown"
-      ? FileText
-      : kind === "text"
-        ? name.toLowerCase().endsWith(".json")
-          ? FileJson
-          : FileCode2
-        : kind === "image"
-          ? FileImage
-          : FileText;
-  return <Icon aria-hidden="true" size={ICON_SM} className={`workspace-tree__icon-${kind}`} />;
+  return (
+    <Icon
+      aria-hidden="true"
+      className="workspace-tree__icon-vscode"
+      fontSize={16}
+      icon={fileIconId(name)}
+    />
+  );
 }
