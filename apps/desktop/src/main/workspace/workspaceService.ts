@@ -1,4 +1,4 @@
-import { promises as fs, watch as fsWatch, type FSWatcher } from "node:fs";
+import { type FSWatcher, promises as fs, watch as fsWatch } from "node:fs";
 import path from "node:path";
 
 /**

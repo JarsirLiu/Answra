@@ -1,5 +1,4 @@
 export type { DesktopBridge, OverlayMode } from "./bridge";
-export { InterviewChannels } from "./channels";
 export type {
   InterviewAudioFrame,
   InterviewChange,
@@ -25,6 +24,7 @@ export {
   type ConversationSendCommand,
   type ConversationSendRequest,
   type ConversationSnapshot,
+  InterviewChannels,
   type RegionCaptureOptions,
   type RegionRect,
   type RegionSelection,

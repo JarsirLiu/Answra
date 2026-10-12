@@ -5,11 +5,11 @@ import { PanelShell } from "../PanelShell";
 import { DirectoryTree } from "./DirectoryTree";
 import { DocxPreviewPane } from "./DocxPreviewPane";
 import { classifyFile } from "./fileKind";
-import { TextPreviewPane } from "./TextPreviewPane";
-import { ZoomablePreview } from "./ZoomablePreview";
 import { type EditorViewMode, MarkdownEditorPane } from "./MarkdownEditorPane";
 import { PdfPreviewPane } from "./PdfPreviewPane";
+import { TextPreviewPane } from "./TextPreviewPane";
 import { useWorkspace } from "./useWorkspace";
+import { ZoomablePreview } from "./ZoomablePreview";
 import "./WorkspacePanel.css";
 
 interface WorkspacePanelProps {

@@ -5,6 +5,8 @@ import type {
   ConversationModelConfig,
   ConversationSendRequest,
   ConversationSnapshot,
+  InterviewAudioFrame,
+  InterviewChange,
   RegionCaptureOptions,
   ReplyBarAction,
   ReplyBarPlacement,
@@ -14,8 +16,6 @@ import type {
   WorkspaceCreateRequest,
   WorkspaceFileContent,
   WorkspaceNode,
-  InterviewAudioFrame,
-  InterviewChange,
 } from "./channels";
 
 /**

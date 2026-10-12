@@ -1,5 +1,5 @@
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { Maximize, Minus, Plus, RotateCcw } from "lucide-react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 
 const MIN_ZOOM = 0.2;
 const MAX_ZOOM = 5;
