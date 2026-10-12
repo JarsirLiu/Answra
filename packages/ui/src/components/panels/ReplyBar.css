@@ -220,9 +220,10 @@
 
 .reply-activity-item--thinking {
   color: #7652a3;
+  font-style: italic;
 }
 .reply-activity-item--text {
-  color: var(--ink);
+  color: #34618f;
 }
 .reply-activity-item--tool {
   color: #176b68;

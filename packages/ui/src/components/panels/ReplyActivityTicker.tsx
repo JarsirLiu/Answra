@@ -30,7 +30,10 @@ export function ReplyActivityTicker({
   replyText,
 }: ReplyActivityTickerProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
-  const items = activities.length
+  const trackRef = useRef<HTMLDivElement>(null);
+  const followLatestRef = useRef<(kind?: ReplyBarActivity["kind"]) => void>(() => undefined);
+  const scrollSpeedRef = useRef(140);
+  const recentActivities = activities.length
     ? activities.slice(-5)
     : error
       ? [{ id: "error", kind: "error" as const, label: "模型错误", text: error }]
@@ -46,11 +49,66 @@ export function ReplyActivityTicker({
               },
             ]
           : [];
+  const latest = recentActivities.at(-1) ?? EMPTY_ACTIVITY;
+  let lastProcessIndex = -1;
+  for (let index = recentActivities.length - 1; index >= 0; index -= 1) {
+    if (recentActivities[index]?.kind !== "text") {
+      lastProcessIndex = index;
+      break;
+    }
+  }
+  const items =
+    latest.kind === "text" ? recentActivities.slice(lastProcessIndex + 1) : recentActivities;
   const current = items.at(-1) ?? EMPTY_ACTIVITY;
   useLayoutEffect(() => {
     const viewport = viewportRef.current;
-    if (viewport) viewport.scrollLeft = viewport.scrollWidth;
-  });
+    const track = trackRef.current;
+    if (!viewport || !track || typeof ResizeObserver === "undefined") return;
+
+    let frame: number | undefined;
+    let lastTime: number | undefined;
+    const step = (time: number) => {
+      if (lastTime === undefined) lastTime = time;
+      const elapsed = Math.min(time - lastTime, 50);
+      lastTime = time;
+      const target = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
+      const distance = target - viewport.scrollLeft;
+      if (Math.abs(distance) <= 1) {
+        viewport.scrollLeft = target;
+        frame = undefined;
+        lastTime = undefined;
+        return;
+      }
+      viewport.scrollLeft +=
+        Math.sign(distance) *
+        Math.min(Math.abs(distance), (scrollSpeedRef.current * elapsed) / 1000);
+      frame = requestAnimationFrame(step);
+    };
+    const followLatest = (kind?: ReplyBarActivity["kind"]) => {
+      if (kind !== undefined) scrollSpeedRef.current = kind === "text" ? 24 : 140;
+      if (frame === undefined) {
+        lastTime = undefined;
+        frame = requestAnimationFrame(step);
+      }
+    };
+
+    followLatestRef.current = followLatest;
+    const observer = new ResizeObserver(() => followLatest());
+    observer.observe(viewport);
+    observer.observe(track);
+    followLatest();
+    return () => {
+      if (frame !== undefined) cancelAnimationFrame(frame);
+      observer.disconnect();
+      followLatestRef.current = () => undefined;
+    };
+  }, []);
+
+  useLayoutEffect(() => {
+    // Kind changes switch between quick process updates and slower answer reading.
+    if (current.kind === "text" && viewportRef.current) viewportRef.current.scrollLeft = 0;
+    followLatestRef.current(current.kind);
+  }, [current.kind]);
 
   const Icon = getActivityIcon(current.kind);
 
@@ -64,7 +122,7 @@ export function ReplyActivityTicker({
       >
         <Icon
           aria-hidden="true"
-          className={pending ? "reply-activity-spinner" : undefined}
+          className={pending && current.kind === "status" ? "reply-activity-spinner" : undefined}
           size={16}
         />
       </span>
@@ -75,7 +133,7 @@ export function ReplyActivityTicker({
         ref={viewportRef}
         role="log"
       >
-        <div className="reply-activity-track">
+        <div className="reply-activity-track" ref={trackRef}>
           {items.map((activity) => (
             <span
               className={`reply-activity-item reply-activity-item--${activity.kind}`}

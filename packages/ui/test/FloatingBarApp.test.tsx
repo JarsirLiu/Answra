@@ -99,6 +99,12 @@ describe("three-segment floating navigation", () => {
       }),
     );
     await waitFor(() => expect(screen.getByLabelText("当前事件：思考")).toBeInTheDocument());
+    expect(screen.getByLabelText("当前事件：思考").querySelector("svg")).not.toHaveClass(
+      "reply-activity-spinner",
+    );
+    expect(screen.getByText("先分析题目条件").closest(".reply-activity-item")).toHaveClass(
+      "reply-activity-item--thinking",
+    );
     act(() =>
       emitConversationEvent?.({
         runId: "run-1",
@@ -125,14 +131,19 @@ describe("three-segment floating navigation", () => {
     );
     act(() => emitConversationEvent?.({ runId: "run-1", chunk: { type: "finish" } }));
     await waitFor(() => expect(screen.getByText("截图内容已识别")).toBeInTheDocument());
-    expect(screen.getByText("思考")).toBeInTheDocument();
-    expect(screen.getByText("先分析题目条件")).toBeInTheDocument();
-    expect(screen.getByText("工具：search")).toBeInTheDocument();
-    expect(screen.getByText("已完成检索")).toBeInTheDocument();
+    expect(screen.queryByText("先分析题目条件")).not.toBeInTheDocument();
+    expect(screen.queryByText("工具：search")).not.toBeInTheDocument();
+    expect(screen.queryByText("已完成检索")).not.toBeInTheDocument();
     const activityViewport = screen.getByRole("log", { name: "模型回复活动" });
     expect(activityViewport).toHaveAttribute("data-orientation", "horizontal");
     expect(activityViewport.querySelector(".reply-activity-track")).toBeInTheDocument();
     expect(screen.getByLabelText("当前事件：回答")).toBeInTheDocument();
+    expect(screen.getByText("截图内容已识别").closest(".reply-activity-item")).toHaveClass(
+      "reply-activity-item--text",
+    );
+    expect(screen.getByLabelText("当前事件：回答").querySelector("svg")).not.toHaveClass(
+      "reply-activity-spinner",
+    );
     const stopButton = screen.getByRole("button", { name: "取消回复并返回发送" });
     const closeButton = screen.getByRole("button", { name: "收起回复条" });
     expect(stopButton.closest(".reply-actions--stream")).toBe(
