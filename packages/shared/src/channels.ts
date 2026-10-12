@@ -101,7 +101,10 @@ export const ConversationChannels = {
   GetApiKey: "answra:conversation:get-api-key",
   Send: "answra:conversation:send",
   Cancel: "answra:conversation:cancel",
-  Event: "answra:conversation:event",
+  GetSnapshot: "answra:conversation:get-snapshot",
+  Create: "answra:conversation:create",
+  ReadEvents: "answra:conversation:read-events",
+  Change: "answra:conversation:change",
 } as const;
 
 export interface ConversationModelConfig {
@@ -115,7 +118,50 @@ export interface ConversationSendRequest {
   images: Array<{ name: string; dataUrl: string }>;
 }
 
-export type ConversationEvent = { runId: string; chunk: UIMessageChunk };
+export interface ConversationSendCommand {
+  conversationId: string;
+  request: ConversationSendRequest;
+}
+
+export type ConversationMessage = {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
+  images: Array<{ name: string; dataUrl: string }>;
+  status: "complete" | "streaming" | "interrupted";
+};
+
+export type ConversationSnapshot = {
+  conversationId: string;
+  revision: number;
+  messages: ConversationMessage[];
+  activeRunId?: string;
+};
+
+export type ConversationEvent = {
+  conversationId: string;
+  runId: string;
+  revision: number;
+  chunk: UIMessageChunk;
+};
+
+export type ConversationChange =
+  | { type: "snapshot"; snapshot: ConversationSnapshot }
+  | {
+      type: "messages-appended";
+      conversationId: string;
+      revision: number;
+      messages: ConversationMessage[];
+      activeRunId: string;
+    }
+  | { type: "event"; event: ConversationEvent }
+  | {
+      type: "run-finished";
+      conversationId: string;
+      revision: number;
+      runId: string;
+      message: ConversationMessage;
+    };
 
 export interface ConversationChannelMap {
   [ConversationChannels.Configure]: { request: ConversationModelConfig; response: undefined };
@@ -124,9 +170,24 @@ export interface ConversationChannelMap {
     response: Omit<ConversationModelConfig, "apiKey"> & { configured: boolean };
   };
   [ConversationChannels.GetApiKey]: { request: undefined; response: { apiKey: string | null } };
-  [ConversationChannels.Send]: { request: ConversationSendRequest; response: { runId: string } };
+  [ConversationChannels.Send]: {
+    request: ConversationSendCommand;
+    response: { runId: string };
+  };
   [ConversationChannels.Cancel]: { request: { runId: string }; response: undefined };
-  [ConversationChannels.Event]: { request: undefined; response: undefined };
+  [ConversationChannels.GetSnapshot]: {
+    request: { conversationId: string };
+    response: ConversationSnapshot;
+  };
+  [ConversationChannels.Create]: {
+    request: { conversationId: string };
+    response: ConversationSnapshot;
+  };
+  [ConversationChannels.ReadEvents]: {
+    request: { conversationId: string; afterRevision: number };
+    response: ConversationChange[];
+  };
+  [ConversationChannels.Change]: { request: undefined; response: undefined };
 }
 
 /** 发起区域截图的选项。 */

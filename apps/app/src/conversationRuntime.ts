@@ -1,11 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type {
-  ConversationEvent,
+  ConversationChange,
   ConversationModelConfig,
   ConversationSendRequest,
 } from "@answra/shared";
 import { streamText } from "ai";
+import {
+  type ConversationStore,
+  createUserMessage,
+  MemoryConversationStore,
+} from "./conversationStore";
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
@@ -13,8 +18,28 @@ const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "i
 export class ConversationRuntime {
   private config?: ConversationModelConfig;
   private readonly runs = new Map<string, AbortController>();
+  private readonly store: ConversationStore;
+  private readonly unsubscribeStore: () => void;
 
-  constructor(private readonly emit: (event: ConversationEvent) => void) {}
+  constructor(
+    emit: (change: ConversationChange) => void,
+    store: ConversationStore = new MemoryConversationStore(),
+  ) {
+    this.store = store;
+    this.unsubscribeStore = store.subscribe(emit);
+  }
+
+  getSnapshot(conversationId: string) {
+    return this.store.load(conversationId);
+  }
+
+  readEventsAfter(conversationId: string, revision: number) {
+    return this.store.readAfter(conversationId, revision);
+  }
+
+  async createConversation(conversationId: string) {
+    return this.store.create(conversationId);
+  }
 
   configure(config: ConversationModelConfig): void {
     const url = new URL(config.baseUrl);
@@ -29,15 +54,17 @@ export class ConversationRuntime {
     this.config = { ...config };
   }
 
-  async send(request: ConversationSendRequest): Promise<{ runId: string }> {
+  async send(conversationId: string, request: ConversationSendRequest): Promise<{ runId: string }> {
     if (!this.config) throw new Error("请先在设置中配置模型服务");
     validateRequest(request);
 
     const runId = randomUUID();
     const controller = new AbortController();
     const config = this.config;
+    await this.store.create(conversationId);
+    await this.store.beginRun(conversationId, runId, createUserMessage(randomUUID(), request));
     this.runs.set(runId, controller);
-    void this.execute(runId, config, request, controller);
+    void this.execute(conversationId, runId, config, request, controller);
     return { runId };
   }
 
@@ -48,6 +75,7 @@ export class ConversationRuntime {
   dispose(): void {
     for (const controller of this.runs.values()) controller.abort();
     this.runs.clear();
+    this.unsubscribeStore();
   }
 
   get activeRunCount(): number {
@@ -55,6 +83,7 @@ export class ConversationRuntime {
   }
 
   private async execute(
+    conversationId: string,
     runId: string,
     config: ConversationModelConfig,
     request: ConversationSendRequest,
@@ -64,11 +93,11 @@ export class ConversationRuntime {
     const chunkCounts: Record<string, number> = {};
     let started = false;
     let terminal = false;
-    const emitChunk = (chunk: import("ai").UIMessageChunk) => {
+    const emitChunk = async (chunk: import("ai").UIMessageChunk) => {
       chunkCounts[chunk.type] = (chunkCounts[chunk.type] ?? 0) + 1;
       if (Object.keys(chunkCounts).length === 1 && chunkCounts[chunk.type] === 1)
         console.info("[conversation][run] first chunk", { runId, type: chunk.type });
-      this.emit({ runId, chunk });
+      await this.store.appendEvent({ conversationId, runId, chunk });
       if (chunk.type === "start") started = true;
       if (chunk.type === "finish" || chunk.type === "abort") terminal = true;
     };
@@ -104,24 +133,29 @@ export class ConversationRuntime {
         generateMessageId: () => runId,
         onError: (error) => (error instanceof Error ? error.message.slice(0, 300) : "模型请求失败"),
       }))
-        emitChunk(chunk);
+        await emitChunk(chunk);
     } catch (error) {
       console.error("[conversation][run] failed", {
         runId,
         elapsedMs: Date.now() - startedAt,
         ...summarizeError(error),
       });
-      if (!started) emitChunk({ type: "start", messageId: runId });
-      if (controller.signal.aborted) emitChunk({ type: "abort" });
+      if (!started) await emitChunk({ type: "start", messageId: runId });
+      if (controller.signal.aborted) await emitChunk({ type: "abort" });
       else {
-        emitChunk({
+        await emitChunk({
           type: "error",
           errorText: error instanceof Error ? error.message : "模型请求失败",
         });
-        emitChunk({ type: "finish", finishReason: "error" });
+        await emitChunk({ type: "finish", finishReason: "error" });
       }
     } finally {
-      if (!terminal) emitChunk({ type: "finish" });
+      if (!terminal) await emitChunk({ type: "finish" });
+      await this.store.finishRun(
+        conversationId,
+        runId,
+        controller.signal.aborted ? "interrupted" : "complete",
+      );
       console.info("[conversation][run] finished", {
         runId,
         elapsedMs: Date.now() - startedAt,

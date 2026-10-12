@@ -3,8 +3,8 @@ import {
   type AmbientColorPayload,
   CaptureChannels,
   type ContentSize,
+  type ConversationChange,
   ConversationChannels,
-  type ConversationEvent,
   type ConversationModelConfig,
   type ConversationSendRequest,
   type DesktopBridge,
@@ -70,15 +70,21 @@ const bridge: DesktopBridge = {
     ipcRenderer.invoke(ConversationChannels.Configure, config),
   getConversationConfig: () => ipcRenderer.invoke(ConversationChannels.GetConfig),
   getConversationApiKey: () => ipcRenderer.invoke(ConversationChannels.GetApiKey),
-  sendConversationMessage: (request: ConversationSendRequest) =>
-    ipcRenderer.invoke(ConversationChannels.Send, request),
+  getConversationSnapshot: (conversationId: string) =>
+    ipcRenderer.invoke(ConversationChannels.GetSnapshot, { conversationId }),
+  createConversation: (conversationId: string) =>
+    ipcRenderer.invoke(ConversationChannels.Create, { conversationId }),
+  readConversationEvents: (conversationId: string, afterRevision: number) =>
+    ipcRenderer.invoke(ConversationChannels.ReadEvents, { conversationId, afterRevision }),
+  sendConversationMessage: (conversationId: string, request: ConversationSendRequest) =>
+    ipcRenderer.invoke(ConversationChannels.Send, { conversationId, request }),
   cancelConversationRun: (runId: string) =>
     ipcRenderer.send(ConversationChannels.Cancel, { runId }),
-  onConversationEvent: (listener: (event: ConversationEvent) => void) => {
-    const wrapped = (_event: Electron.IpcRendererEvent, payload: ConversationEvent) =>
-      listener(payload);
-    ipcRenderer.on(ConversationChannels.Event, wrapped);
-    return () => ipcRenderer.removeListener(ConversationChannels.Event, wrapped);
+  onConversationChange: (listener: (change: ConversationChange) => void) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, change: ConversationChange) =>
+      listener(change);
+    ipcRenderer.on(ConversationChannels.Change, wrapped);
+    return () => ipcRenderer.removeListener(ConversationChannels.Change, wrapped);
   },
 };
 

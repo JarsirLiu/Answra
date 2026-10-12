@@ -1,9 +1,11 @@
-import type { ConversationEvent } from "@answra/shared";
+import type { ConversationChange, ConversationMessage, ConversationSnapshot } from "@answra/shared";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { UIMessageChunk } from "ai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FloatingBarApp } from "../src/app/FloatingBarApp";
 
-let emitConversationEvent: ((event: ConversationEvent) => void) | undefined;
+let emitConversationEvent: ((event: { runId: string; chunk: UIMessageChunk }) => void) | undefined;
+const conversationId = "active-exam-conversation";
 
 function createConversationBridge() {
   return {
@@ -12,10 +14,61 @@ function createConversationBridge() {
     getConversationConfig: vi
       .fn()
       .mockResolvedValue({ baseUrl: "http://localhost/v1", model: "test", configured: true }),
+    getConversationSnapshot: vi.fn().mockResolvedValue(emptySnapshot()),
+    createConversation: vi.fn().mockResolvedValue(emptySnapshot()),
     sendConversationMessage: vi.fn().mockResolvedValue({ runId: "run-1" }),
     cancelConversationRun: vi.fn(),
-    onConversationEvent: vi.fn((listener: (event: ConversationEvent) => void) => {
-      emitConversationEvent = listener;
+    onConversationChange: vi.fn((listener: (change: ConversationChange) => void) => {
+      let revision = 0;
+      const messages: ConversationMessage[] = [];
+      emitConversationEvent = ({ runId, chunk }) => {
+        revision += 1;
+        if (chunk.type === "text-delta") {
+          const assistant = messages.find((message) => message.id === runId);
+          if (assistant) assistant.text += chunk.delta;
+          else
+            messages.push({
+              id: runId,
+              role: "assistant",
+              text: chunk.delta,
+              images: [],
+              status: "streaming",
+            });
+        }
+        if (chunk.type === "finish" || chunk.type === "abort") {
+          const assistant = messages.find((message) => message.id === runId);
+          if (assistant) assistant.status = "complete";
+        }
+        const event = { conversationId, revision, runId, chunk };
+        listener({
+          type: "event",
+          event,
+        });
+        if (chunk.type === "finish" || chunk.type === "abort") {
+          revision += 1;
+          let assistant = messages.find((message) => message.id === runId);
+          if (!assistant) {
+            assistant = {
+              id: runId,
+              role: "assistant",
+              text: "",
+              images: [],
+              status: "complete",
+            };
+            messages.push(assistant);
+          }
+          listener({
+            type: "run-finished",
+            conversationId,
+            revision,
+            runId,
+            message: {
+              ...assistant,
+              status: chunk.type === "abort" ? "interrupted" : "complete",
+            },
+          });
+        }
+      };
       return () => {
         emitConversationEvent = undefined;
       };
@@ -27,6 +80,10 @@ function createConversationBridge() {
       width: 300,
     }),
   };
+}
+
+function emptySnapshot(): ConversationSnapshot {
+  return { conversationId, revision: 0, messages: [] };
 }
 
 describe("three-segment floating navigation", () => {
@@ -76,12 +133,11 @@ describe("three-segment floating navigation", () => {
       expect(screen.getByRole("img", { name: /screenshot-.*\.png/ })).toBeInTheDocument(),
     );
 
-    expect(screen.getByRole("img", { name: /screenshot-.*\.png/ })).toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: "补充问题" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "确认发送" }));
 
     await waitFor(() =>
-      expect(bridge.sendConversationMessage).toHaveBeenCalledWith({
+      expect(bridge.sendConversationMessage).toHaveBeenCalledWith(conversationId, {
         text: "",
         images: [expect.objectContaining({ dataUrl: "data:image/png;base64,QUJD" })],
       }),
@@ -181,7 +237,9 @@ describe("three-segment floating navigation", () => {
     await waitFor(() =>
       expect(screen.getByText("模型服务返回 401：API Key 无效")).toBeInTheDocument(),
     );
-    expect(screen.getByRole("img", { name: /screenshot-.*\.png/ })).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByRole("img", { name: /screenshot-.*\.png/ })).toBeInTheDocument(),
+    );
     expect(screen.getByRole("button", { name: "确认发送" })).toBeInTheDocument();
   });
 
@@ -208,7 +266,7 @@ describe("three-segment floating navigation", () => {
 
     await waitFor(() => expect(bridge.sendConversationMessage).toHaveBeenCalled());
     fireEvent.click(screen.getByRole("button", { name: "取消回复并返回发送" }));
-    expect(bridge.cancelConversationRun).toHaveBeenCalledWith("run-1");
+    await waitFor(() => expect(bridge.cancelConversationRun).toHaveBeenCalledWith("run-1"));
 
     expect(screen.getByRole("button", { name: "继续截图" })).toBeInTheDocument();
     expect(screen.queryByText(/演示回复/)).not.toBeInTheDocument();

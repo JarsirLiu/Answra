@@ -3,7 +3,7 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { AppCommand, AppFrame } from "@answra/app";
 import type {
-  ConversationEvent,
+  ConversationChange,
   ConversationModelConfig,
   ConversationSendRequest,
 } from "@answra/shared";
@@ -16,7 +16,7 @@ export class AppService {
   private worker?: UtilityProcess;
   private readonly pending = new Map<string, Pending>();
   private config?: ConversationModelConfig;
-  private readonly listeners = new Set<(event: ConversationEvent) => void>();
+  private readonly listeners = new Set<(change: ConversationChange) => void>();
 
   async start(): Promise<void> {
     this.config = await this.readConfig();
@@ -37,7 +37,7 @@ export class AppService {
     console.info("[app-service] started", { pid: worker.pid, packaged: app.isPackaged });
   }
 
-  onEvent(listener: (event: ConversationEvent) => void): () => void {
+  onChange(listener: (change: ConversationChange) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }
@@ -71,10 +71,22 @@ export class AppService {
     }
   }
 
-  async send(request: ConversationSendRequest): Promise<{ runId: string }> {
+  async getSnapshot(conversationId: string) {
+    return this.request("snapshot", { conversationId });
+  }
+
+  async createConversation(conversationId: string) {
+    return this.request("create-conversation", { conversationId });
+  }
+
+  async readEvents(conversationId: string, afterRevision: number) {
+    return this.request("read-events", { conversationId, afterRevision });
+  }
+
+  async send(conversationId: string, request: ConversationSendRequest): Promise<{ runId: string }> {
     if (!this.config) throw new Error("请先在设置中配置模型服务");
     validateSendRequest(request);
-    return (await this.request("send", { request })) as { runId: string };
+    return (await this.request("send", { conversationId, request })) as { runId: string };
   }
 
   cancel(runId: string): void {
@@ -103,8 +115,8 @@ export class AppService {
 
   private onFrame(frame: AppFrame): void {
     if (frame.version !== 1) return;
-    if (frame.type === "event") {
-      for (const listener of this.listeners) listener(frame.event);
+    if (frame.type === "change") {
+      for (const listener of this.listeners) listener(frame.change);
       return;
     }
     const pending = this.pending.get(frame.id);

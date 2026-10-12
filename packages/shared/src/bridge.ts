@@ -1,9 +1,10 @@
 import type {
   AmbientColorPayload,
   ContentSize,
-  ConversationEvent,
+  ConversationChange,
   ConversationModelConfig,
   ConversationSendRequest,
+  ConversationSnapshot,
   RegionCaptureOptions,
   ReplyBarAction,
   ReplyBarState,
@@ -70,7 +71,16 @@ export interface DesktopBridge {
    * 未保存 Key 时返回 null；不随配置查询自动下发，浏览器预览/测试环境可未实现。
    */
   getConversationApiKey?: () => Promise<{ apiKey: string | null }>;
-  sendConversationMessage?: (request: ConversationSendRequest) => Promise<{ runId: string }>;
+  getConversationSnapshot?: (conversationId: string) => Promise<ConversationSnapshot>;
+  createConversation?: (conversationId: string) => Promise<ConversationSnapshot>;
+  readConversationEvents?: (
+    conversationId: string,
+    afterRevision: number,
+  ) => Promise<ConversationChange[]>;
+  sendConversationMessage?: (
+    conversationId: string,
+    request: ConversationSendRequest,
+  ) => Promise<{ runId: string }>;
   cancelConversationRun?: (runId: string) => void;
-  onConversationEvent?: (listener: (event: ConversationEvent) => void) => () => void;
+  onConversationChange?: (listener: (change: ConversationChange) => void) => () => void;
 }
