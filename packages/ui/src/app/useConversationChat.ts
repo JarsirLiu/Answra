@@ -1,13 +1,30 @@
 import { useChat } from "@ai-sdk/react";
-import type { ConversationEvent, ConversationModelConfig, DesktopBridge } from "@answra/shared";
-import type { ChatTransport, FileUIPart, UIMessage, UIMessageChunk } from "ai";
+import type {
+  ConversationEvent,
+  ConversationModelConfig,
+  DesktopBridge,
+  ReplyBarActivity,
+} from "@answra/shared";
+import {
+  type ChatTransport,
+  type FileUIPart,
+  type UIMessage,
+  type UIMessageChunk,
+  uiMessageChunkSchema,
+} from "ai";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChatAttachment, ChatMessage } from "../components/panels/ChatPanel";
 
 export function useConversationChat(platform: DesktopBridge | undefined) {
   const [config, setConfig] = useState({ baseUrl: "", model: "", configured: false });
   const [activeRunId, setActiveRunId] = useState<string>();
+  const [replyError, setReplyError] = useState<string>();
+  const [replyPending, setReplyPending] = useState(false);
+  const [replyActivities, setReplyActivities] = useState<ReplyBarActivity[]>([]);
   const runIdRef = useRef<string | undefined>(undefined);
+  const terminalWaiter = useRef<
+    { resolve: (errorText?: string) => void; reject: (error: Error) => void } | undefined
+  >(undefined);
   useEffect(() => {
     void platform
       ?.getConversationConfig?.()
@@ -36,6 +53,8 @@ export function useConversationChat(platform: DesktopBridge | undefined) {
         let runId: string | undefined;
         let stopped = false;
         let terminal = false;
+        let runError: string | undefined;
+        let eventQueue = Promise.resolve();
         const earlyEvents: ConversationEvent[] = [];
         const flush = () => {
           while (streamController && chunks.length) {
@@ -43,24 +62,111 @@ export function useConversationChat(platform: DesktopBridge | undefined) {
             if (chunk) streamController.enqueue(chunk);
           }
         };
-        const handleEvent = (event: ConversationEvent) => {
+        const handleEvent = async (event: ConversationEvent) => {
           if (stopped) return;
           if (event.runId !== runId) return;
-          if (event.type === "text/delta")
-            chunks.push({ type: "text-delta", id: runId, delta: event.delta });
-          if (event.type === "run/failed") chunks.push({ type: "error", errorText: event.message });
-          if (
-            event.type === "run/completed" ||
-            event.type === "run/cancelled" ||
-            event.type === "run/failed"
-          ) {
-            chunks.push({ type: "text-end", id: runId });
-            chunks.push({ type: event.type === "run/cancelled" ? "abort" : "finish" });
+          const validation = await uiMessageChunkSchema().validate?.(event.chunk);
+          if (!validation || validation.success === false)
+            throw new Error("收到无效的 AI 消息事件");
+          chunks.push(validation.value);
+          const chunk = validation.value;
+          const addActivity = (activity: ReplyBarActivity, merge = false) => {
+            setReplyActivities((current) => {
+              const last = current.at(-1);
+              if (merge && last?.id === activity.id && last.kind === activity.kind)
+                return [...current.slice(0, -1), { ...last, text: last.text + activity.text }];
+              return [...current, activity];
+            });
+          };
+          if (chunk.type === "text-delta")
+            addActivity({ id: chunk.id, kind: "text", label: "回答", text: chunk.delta }, true);
+          else if (chunk.type === "reasoning-delta")
+            addActivity({ id: chunk.id, kind: "thinking", label: "思考", text: chunk.delta }, true);
+          else if (chunk.type === "tool-input-start")
+            addActivity({
+              id: `${chunk.toolCallId}:input-start`,
+              kind: "tool",
+              label: `工具：${chunk.title ?? chunk.toolName}`,
+              text: "准备调用",
+            });
+          else if (chunk.type === "tool-input-delta")
+            addActivity(
+              {
+                id: `${chunk.toolCallId}:input-delta`,
+                kind: "tool",
+                label: "工具参数",
+                text: chunk.inputTextDelta,
+              },
+              true,
+            );
+          else if (chunk.type === "tool-input-available")
+            addActivity({
+              id: `${chunk.toolCallId}:input-ready`,
+              kind: "tool",
+              label: `工具：${chunk.title ?? chunk.toolName}`,
+              text: JSON.stringify(chunk.input),
+            });
+          else if (chunk.type === "tool-input-error" || chunk.type === "tool-output-error")
+            addActivity({
+              id: `${chunk.toolCallId}:${chunk.type}`,
+              kind: "error",
+              label: "工具失败",
+              text: chunk.errorText,
+            });
+          else if (chunk.type === "tool-output-available")
+            addActivity({
+              id: `${chunk.toolCallId}:output`,
+              kind: "tool",
+              label: "工具结果",
+              text: formatActivityValue(chunk.output),
+            });
+          else if (chunk.type === "tool-output-denied")
+            addActivity({
+              id: `${chunk.toolCallId}:denied`,
+              kind: "status",
+              label: "工具调用已拒绝",
+              text: "",
+            });
+          else if (chunk.type === "error")
+            addActivity({
+              id: `error-${Date.now()}`,
+              kind: "error",
+              label: "模型错误",
+              text: chunk.errorText,
+            });
+          else if (chunk.type === "source-url" || chunk.type === "source-document")
+            addActivity({
+              id: chunk.sourceId,
+              kind: "source",
+              label: "来源",
+              text: chunk.type === "source-url" ? (chunk.title ?? chunk.url) : chunk.title,
+            });
+          else if (chunk.type === "file")
+            addActivity({
+              id: `file-${Date.now()}`,
+              kind: "status",
+              label: "模型生成文件",
+              text: chunk.mediaType,
+            });
+          else if (chunk.type === "start")
+            addActivity({
+              id: "run-start",
+              kind: "status",
+              label: "模型已连接，等待输出",
+              text: "",
+            });
+          if (event.chunk.type === "error") {
+            runError = event.chunk.errorText;
+            setReplyError(runError);
+          }
+          if (event.chunk.type === "abort") runError = "__cancelled__";
+          if (event.chunk.type === "finish" || event.chunk.type === "abort") {
             stopped = true;
             terminal = true;
             unsubscribe();
             abortSignal?.removeEventListener("abort", abort);
             setActiveRunId(undefined);
+            setReplyPending(false);
             runIdRef.current = undefined;
             flush();
             try {
@@ -68,17 +174,45 @@ export function useConversationChat(platform: DesktopBridge | undefined) {
             } catch {
               /* Stream was cancelled by the consumer. */
             }
+            terminalWaiter.current?.resolve(runError);
+            terminalWaiter.current = undefined;
             return;
           }
           flush();
         };
         const onEvent = (event: ConversationEvent) => {
           if (!runId) {
-            if (event.type === "run/started") runId = event.runId;
             earlyEvents.push(event);
             return;
           }
-          handleEvent(event);
+          eventQueue = eventQueue
+            .then(() => handleEvent(event))
+            .catch((error: unknown) => {
+              chunks.push(
+                {
+                  type: "error",
+                  errorText: error instanceof Error ? error.message : "AI 消息事件无效",
+                },
+                { type: "finish", finishReason: "error" },
+              );
+              stopped = true;
+              terminal = true;
+              unsubscribe();
+              abortSignal?.removeEventListener("abort", abort);
+              setActiveRunId(undefined);
+              setReplyPending(false);
+              runIdRef.current = undefined;
+              flush();
+              try {
+                streamController?.close();
+              } catch {
+                /* Stream was cancelled by the consumer. */
+              }
+              terminalWaiter.current?.reject(
+                error instanceof Error ? error : new Error("AI 消息事件无效"),
+              );
+              terminalWaiter.current = undefined;
+            });
         };
         const unsubscribe = platform.onConversationEvent?.(onEvent) ?? (() => undefined);
         const abort = () => {
@@ -89,12 +223,14 @@ export function useConversationChat(platform: DesktopBridge | undefined) {
         try {
           const result = await platform.sendConversationMessage({ text, images });
           runId = result.runId;
-          chunks.unshift({ type: "start", messageId: runId }, { type: "text-start", id: runId });
           if (!terminal) {
             runIdRef.current = runId;
             setActiveRunId(runId);
+            setReplyPending(true);
           }
-          for (const event of earlyEvents) handleEvent(event);
+          for (const event of earlyEvents) {
+            eventQueue = eventQueue.then(() => handleEvent(event));
+          }
           flush();
           return new ReadableStream<UIMessageChunk>({
             start(controller) {
@@ -106,6 +242,9 @@ export function useConversationChat(platform: DesktopBridge | undefined) {
               stopped = true;
               unsubscribe();
               abortSignal?.removeEventListener("abort", abort);
+              setReplyPending(false);
+              terminalWaiter.current?.resolve();
+              terminalWaiter.current = undefined;
               if (runId) platform.cancelConversationRun?.(runId);
             },
           });
@@ -113,6 +252,9 @@ export function useConversationChat(platform: DesktopBridge | undefined) {
           stopped = true;
           unsubscribe();
           abortSignal?.removeEventListener("abort", abort);
+          setReplyPending(false);
+          terminalWaiter.current?.reject(error instanceof Error ? error : new Error("发送失败"));
+          terminalWaiter.current = undefined;
           throw error;
         }
       },
@@ -149,18 +291,33 @@ export function useConversationChat(platform: DesktopBridge | undefined) {
   const send = useCallback(
     async (text: string, attachments: ChatAttachment[]) => {
       if (runIdRef.current) throw new Error("当前回复尚未完成");
-      const files: FileUIPart[] = await Promise.all(
-        attachments.map(async (attachment) => ({
-          type: "file" as const,
-          filename: attachment.name,
-          mediaType: await getImageMediaType(attachment.previewUrl),
-          url: attachment.previewUrl.startsWith("data:")
-            ? attachment.previewUrl
-            : await blobUrlToDataUrl(attachment.previewUrl),
-        })),
-      );
-      await sendMessage({ text, files });
-      return runIdRef.current ?? "completed";
+      setReplyError(undefined);
+      setReplyActivities([]);
+      setReplyPending(true);
+      const completed = new Promise<string | undefined>((resolve, reject) => {
+        terminalWaiter.current = { resolve, reject };
+      });
+      try {
+        const files: FileUIPart[] = await Promise.all(
+          attachments.map(async (attachment) => ({
+            type: "file" as const,
+            filename: attachment.name,
+            mediaType: await getImageMediaType(attachment.previewUrl),
+            url: attachment.previewUrl.startsWith("data:")
+              ? attachment.previewUrl
+              : await blobUrlToDataUrl(attachment.previewUrl),
+          })),
+        );
+        await sendMessage({ text, files });
+        const errorText = await completed;
+        if (errorText === "__cancelled__") return "cancelled";
+        if (errorText) throw new Error(errorText);
+        return runIdRef.current ?? "completed";
+      } catch (error) {
+        setReplyPending(false);
+        terminalWaiter.current = undefined;
+        throw error;
+      }
     },
     [sendMessage],
   );
@@ -176,6 +333,9 @@ export function useConversationChat(platform: DesktopBridge | undefined) {
 
   const cancel = useCallback(() => {
     if (runIdRef.current) platform?.cancelConversationRun?.(runIdRef.current);
+    setReplyPending(false);
+    terminalWaiter.current?.resolve();
+    terminalWaiter.current = undefined;
     stop();
   }, [platform, stop]);
 
@@ -183,6 +343,8 @@ export function useConversationChat(platform: DesktopBridge | undefined) {
     cancel();
     setMessages([]);
     setActiveRunId(undefined);
+    setReplyPending(false);
+    setReplyError(undefined);
     runIdRef.current = undefined;
   }, [cancel, setMessages]);
 
@@ -194,8 +356,20 @@ export function useConversationChat(platform: DesktopBridge | undefined) {
     configure,
     messages,
     replyText: resolvedReplyText,
+    replyError,
+    replyPending,
+    replyActivities,
     send,
   };
+}
+
+function formatActivityValue(value: unknown): string {
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return "工具已返回结果";
+  }
 }
 
 async function getImageMediaType(url: string): Promise<string> {

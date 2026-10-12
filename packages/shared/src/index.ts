@@ -17,6 +17,7 @@ export {
   type RegionRect,
   type RegionSelection,
   type ReplyBarAction,
+  type ReplyBarActivity,
   type ReplyBarAttachment,
   type ReplyBarState,
   type ScreenshotFailure,

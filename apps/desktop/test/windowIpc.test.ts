@@ -40,6 +40,7 @@ const validState = {
   attachments: [],
   draft: "question",
   replyText: "",
+  replyActivities: [],
   stealth: true,
   theme: { variables: {} },
 };
@@ -60,6 +61,13 @@ describe("detached reply window IPC", () => {
     shared.handlers[WindowChannels.SetReplyBarState](
       { sender: "main" },
       { ...validState, phase: "bad" },
+    );
+    shared.handlers[WindowChannels.SetReplyBarState](
+      { sender: "main" },
+      {
+        ...validState,
+        replyActivities: [{ id: "bad", kind: "unexpected", label: "bad", text: "bad" }],
+      },
     );
 
     expect(shared.setReplyBarWindowState).toHaveBeenCalledTimes(1);

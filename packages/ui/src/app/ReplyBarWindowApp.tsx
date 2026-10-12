@@ -43,6 +43,9 @@ export function ReplyBarWindowApp({ bridge }: ReplyBarWindowAppProps) {
         fileInputRef={fileInputRef}
         phase={state.phase}
         replyText={state.replyText}
+        replyActivities={state.replyActivities ?? []}
+        replyError={state.replyError}
+        replyPending={state.replyPending}
         onAttachmentChange={(file) => {
           if (!file) return;
           const reader = new FileReader();

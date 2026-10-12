@@ -49,6 +49,9 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
     phase: replyPhase,
     platform,
     replyText: conversation.replyText,
+    replyActivities: conversation.replyActivities,
+    replyError: conversation.replyError,
+    replyPending: conversation.replyPending,
     sendMessage: conversation.send,
     stealth: stealthSetting.enabled,
   });
@@ -62,6 +65,8 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
     performSend,
     removeAttachment,
     replyText,
+    replyActivities,
+    replyError,
     setDraft,
     triggerScreenshot,
   } = reply;
@@ -160,6 +165,9 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
           fileInputRef={fileInputRef}
           phase={replyPhase}
           replyText={replyText}
+          replyActivities={replyActivities}
+          replyError={replyError}
+          replyPending={conversation.replyPending}
           onAttachmentChange={handleAttachmentChange}
           onAttachmentRemove={removeAttachment}
           onClose={closeReplyBar}

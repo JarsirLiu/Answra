@@ -88,16 +88,90 @@ describe("three-segment floating navigation", () => {
     );
     act(() =>
       emitConversationEvent?.({
-        type: "run/started",
         runId: "run-1",
-        conversationId: "conversation-1",
+        chunk: { type: "reasoning-start", id: "reasoning-1" },
       }),
     );
     act(() =>
-      emitConversationEvent?.({ type: "text/delta", runId: "run-1", delta: "截图内容已识别" }),
+      emitConversationEvent?.({
+        runId: "run-1",
+        chunk: { type: "reasoning-delta", id: "reasoning-1", delta: "先分析题目条件" },
+      }),
     );
+    await waitFor(() => expect(screen.getByLabelText("当前事件：思考")).toBeInTheDocument());
+    act(() =>
+      emitConversationEvent?.({
+        runId: "run-1",
+        chunk: { type: "tool-input-start", toolCallId: "tool-1", toolName: "search" },
+      }),
+    );
+    act(() =>
+      emitConversationEvent?.({
+        runId: "run-1",
+        chunk: { type: "tool-output-available", toolCallId: "tool-1", output: "已完成检索" },
+      }),
+    );
+    act(() =>
+      emitConversationEvent?.({
+        runId: "run-1",
+        chunk: { type: "text-start", id: "segment-1" },
+      }),
+    );
+    act(() =>
+      emitConversationEvent?.({
+        runId: "run-1",
+        chunk: { type: "text-delta", id: "segment-1", delta: "截图内容已识别" },
+      }),
+    );
+    act(() => emitConversationEvent?.({ runId: "run-1", chunk: { type: "finish" } }));
     await waitFor(() => expect(screen.getByText("截图内容已识别")).toBeInTheDocument());
+    expect(screen.getByText("思考")).toBeInTheDocument();
+    expect(screen.getByText("先分析题目条件")).toBeInTheDocument();
+    expect(screen.getByText("工具：search")).toBeInTheDocument();
+    expect(screen.getByText("已完成检索")).toBeInTheDocument();
+    const activityViewport = screen.getByRole("log", { name: "模型回复活动" });
+    expect(activityViewport).toHaveAttribute("data-orientation", "horizontal");
+    expect(activityViewport.querySelector(".reply-activity-track")).toBeInTheDocument();
+    expect(screen.getByLabelText("当前事件：回答")).toBeInTheDocument();
+    const stopButton = screen.getByRole("button", { name: "取消回复并返回发送" });
+    const closeButton = screen.getByRole("button", { name: "收起回复条" });
+    expect(stopButton.closest(".reply-actions--stream")).toBe(
+      closeButton.closest(".reply-actions--stream"),
+    );
+    expect(
+      stopButton.compareDocumentPosition(closeButton) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(screen.queryByRole("textbox", { name: "补充问题" })).not.toBeInTheDocument();
+  });
+
+  it("shows model errors and keeps the screenshot available for retry", async () => {
+    const bridge = createConversationBridge();
+    render(<FloatingBarApp bridge={bridge} />);
+    fireEvent.click(screen.getByRole("button", { name: "截图提问" }));
+    await waitFor(() =>
+      expect(screen.getByRole("img", { name: /screenshot-.*\.png/ })).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "确认发送" }));
+    await waitFor(() => expect(bridge.sendConversationMessage).toHaveBeenCalled());
+
+    act(() =>
+      emitConversationEvent?.({
+        runId: "run-1",
+        chunk: { type: "error", errorText: "模型服务返回 401：API Key 无效" },
+      }),
+    );
+    act(() =>
+      emitConversationEvent?.({
+        runId: "run-1",
+        chunk: { type: "finish", finishReason: "error" },
+      }),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByText("模型服务返回 401：API Key 无效")).toBeInTheDocument(),
+    );
+    expect(screen.getByRole("img", { name: /screenshot-.*\.png/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "确认发送" })).toBeInTheDocument();
   });
 
   it("captures a region screenshot through the bridge and attaches it to the chat", async () => {
@@ -122,13 +196,6 @@ describe("three-segment floating navigation", () => {
     fireEvent.click(screen.getByRole("button", { name: "确认发送" }));
 
     await waitFor(() => expect(bridge.sendConversationMessage).toHaveBeenCalled());
-    act(() =>
-      emitConversationEvent?.({
-        type: "run/started",
-        runId: "run-1",
-        conversationId: "conversation-1",
-      }),
-    );
     fireEvent.click(screen.getByRole("button", { name: "取消回复并返回发送" }));
     expect(bridge.cancelConversationRun).toHaveBeenCalledWith("run-1");
 

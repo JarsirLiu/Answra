@@ -1,4 +1,9 @@
-import type { DesktopBridge, ReplyBarAction, ReplyBarState } from "@answra/shared";
+import type {
+  DesktopBridge,
+  ReplyBarAction,
+  ReplyBarActivity,
+  ReplyBarState,
+} from "@answra/shared";
 import { type ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
 import type { ChatAttachment } from "../components/panels/ChatPanel";
 import type { ReplyPhase } from "../components/panels/ReplyBar";
@@ -8,6 +13,10 @@ interface UseReplyWorkflowOptions {
   sendMessage: (text: string, attachments: ChatAttachment[]) => Promise<string>;
   cancelMessage: () => void;
   replyText: string;
+  replyActivities: ReplyBarActivity[];
+  replyError?: string;
+  replyPending?: boolean;
+  replyConfigured?: boolean;
   phase: ReplyPhase | "closed";
   stealth: boolean;
   onWorkflowStart: () => void;
@@ -32,6 +41,9 @@ export function useReplyWorkflow({
   sendMessage,
   cancelMessage,
   replyText,
+  replyActivities,
+  replyError,
+  replyPending,
   phase,
   stealth,
   onWorkflowStart,
@@ -60,10 +72,13 @@ export function useReplyWorkflow({
       attachments,
       draft,
       replyText,
+      replyActivities,
+      ...(replyError ? { replyError } : {}),
+      replyPending: replyPending ?? phase === "streaming",
       stealth,
       theme: { scheme: root.dataset.theme, variables },
     };
-  }, [attachments, draft, phase, replyText, stealth]);
+  }, [attachments, draft, phase, replyActivities, replyError, replyPending, replyText, stealth]);
 
   useEffect(() => {
     if (!detachedReplyBar) return;
@@ -171,10 +186,11 @@ export function useReplyWorkflow({
     if (!content && attachments.length === 0) return;
     onWorkflowPhase("streaming");
     try {
-      await sendMessage(content, attachments);
+      const outcome = await sendMessage(content, attachments);
+      if (outcome === "cancelled") return;
     } catch (error) {
+      console.error("[reply] model run failed", error);
       onWorkflowPhase("composing");
-      onCaptureError(error instanceof Error ? error.message : "发送失败");
       return;
     }
     attachments.forEach((candidate) => {
@@ -182,7 +198,7 @@ export function useReplyWorkflow({
     });
     setDraft("");
     setAttachments([]);
-  }, [attachments, draft, onCaptureError, onWorkflowPhase, sendMessage]);
+  }, [attachments, draft, onWorkflowPhase, sendMessage]);
 
   actionHandler.current = (action) => {
     switch (action.type) {
@@ -219,6 +235,8 @@ export function useReplyWorkflow({
     attachments,
     draft,
     replyText,
+    replyActivities,
+    replyError,
     fileInputRef,
     detachedReplyBar,
     triggerScreenshot,

@@ -4,6 +4,17 @@ import { afterEach, vi } from "vitest";
 
 afterEach(cleanup);
 
+class TestResizeObserver implements ResizeObserver {
+  constructor(_callback: ResizeObserverCallback) {}
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+Object.defineProperty(globalThis, "ResizeObserver", {
+  configurable: true,
+  value: TestResizeObserver,
+});
+
 Object.defineProperty(URL, "createObjectURL", {
   configurable: true,
   value: vi.fn(() => "blob:exam-screenshot"),

@@ -1,6 +1,6 @@
 /* 横条式回复条：与悬浮胶囊同一表面语言（floating-surface 提供边框/底色/投影，
    本文件只管布局与内部控件）。编辑态 = 缩略条 + 图标操作组（条内不设输入框，
-   隐身模式下打字经输入法候选窗会被捕获暴露）；流式态 = 匀速跑马灯 + 停止键。 */
+   隐身模式下打字经输入法候选窗会被捕获暴露）；流式态 = 活动流 + 固定操作组。 */
 
 /* ── 条体：贴内容自适应宽度（不再撑满/挤占），超宽时整条封顶 ───── */
 .reply-bar {
@@ -25,6 +25,7 @@
   border: 0;
   padding: 0;
   overflow-x: auto;
+  overscroll-behavior-x: contain;
   scrollbar-width: none;
 }
 
@@ -79,6 +80,10 @@
   flex: none;
 }
 
+.reply-actions > button {
+  flex: none;
+}
+
 .reply-error {
   max-width: 300px;
   overflow: hidden;
@@ -91,7 +96,9 @@
 
 .reply-send,
 .reply-stop {
+  width: var(--ctl-h);
   min-width: var(--ctl-h);
+  height: var(--ctl-h);
   padding: 0;
 }
 
@@ -120,30 +127,121 @@
   -webkit-app-region: no-drag;
 }
 
-/* ── 流式态：左侧整体是匀速跑马灯（rAF 驱动），右侧原发送位是停止键 + 收起键 ── */
+/* ── 流式态：活动内容在左侧滚动，右侧操作组保持固定宽度和顺序 ── */
 .reply-bar--stream {
-  width: 360px;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  width: min(440px, calc(100vw - 24px));
+  min-width: 260px;
 }
 
-.ticker {
-  position: relative;
+.reply-actions--stream {
+  width: max-content;
+}
+
+.reply-activity-ticker {
+  display: contents;
+}
+
+.reply-activity-indicator {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  color: var(--muted);
+}
+
+.reply-activity-ticker--thinking .reply-activity-indicator {
+  color: #7652a3;
+}
+.reply-activity-ticker--text .reply-activity-indicator {
+  color: var(--ink);
+}
+.reply-activity-ticker--tool .reply-activity-indicator {
+  color: #176b68;
+}
+.reply-activity-ticker--error .reply-activity-indicator {
+  color: var(--danger, #b42318);
+}
+
+.reply-activity-spinner {
+  animation: reply-activity-spin 1.2s linear infinite;
+}
+
+@keyframes reply-activity-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.reply-activity-viewport {
+  min-width: 0;
+  height: 22px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  white-space: nowrap;
+  overscroll-behavior-x: contain;
+}
+
+.reply-activity-viewport::-webkit-scrollbar {
+  display: none;
+}
+
+.reply-activity-track {
   display: flex;
   align-items: center;
-  flex: 1;
-  min-width: 0;
-  height: 20px;
-  overflow: hidden;
-  -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
-  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+  width: max-content;
+  min-width: 100%;
+  height: 22px;
+  gap: 22px;
 }
 
-/* 滚动位移由 rAF 直接写 transform（恒定 75px/s），CSS 不再定义动画：
-   animationDuration 随流式文本增长被改写时会按时间比例重算进度，肉眼可见跳变。 */
-.ticker-text {
-  display: inline-block;
-  white-space: nowrap;
+.reply-activity-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  max-width: none;
   color: var(--ink);
-  font-size: 12px;
+  font-size: 11px;
   line-height: 20px;
-  will-change: transform;
+  white-space: nowrap;
+}
+
+.reply-activity-item strong {
+  font-weight: 650;
+}
+
+.reply-activity-item span {
+  min-width: 0;
+}
+
+.reply-activity-item--thinking {
+  color: #7652a3;
+}
+.reply-activity-item--text {
+  color: var(--ink);
+}
+.reply-activity-item--tool {
+  color: #176b68;
+}
+.reply-activity-item--status,
+.reply-activity-item--source {
+  color: var(--muted);
+}
+.reply-activity-item--error {
+  color: var(--danger, #b42318);
+}
+
+/* 防止活动文字换行参与窗口测宽，溢出内容由横向 viewport 跟随。 */
+.reply-activity-ticker {
+  min-width: 0;
+}
+
+@media (max-width: 480px) {
+  .reply-bar--stream {
+    width: calc(100vw - 24px);
+  }
 }

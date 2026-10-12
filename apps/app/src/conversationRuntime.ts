@@ -37,7 +37,6 @@ export class ConversationRuntime {
     const controller = new AbortController();
     const config = this.config;
     this.runs.set(runId, controller);
-    this.emit({ type: "run/started", runId, conversationId: runId });
     void this.execute(runId, config, request, controller);
     return { runId };
   }
@@ -61,7 +60,26 @@ export class ConversationRuntime {
     request: ConversationSendRequest,
     controller: AbortController,
   ): Promise<void> {
+    const startedAt = Date.now();
+    const chunkCounts: Record<string, number> = {};
+    let started = false;
+    let terminal = false;
+    const emitChunk = (chunk: import("ai").UIMessageChunk) => {
+      chunkCounts[chunk.type] = (chunkCounts[chunk.type] ?? 0) + 1;
+      if (Object.keys(chunkCounts).length === 1 && chunkCounts[chunk.type] === 1)
+        console.info("[conversation][run] first chunk", { runId, type: chunk.type });
+      this.emit({ runId, chunk });
+      if (chunk.type === "start") started = true;
+      if (chunk.type === "finish" || chunk.type === "abort") terminal = true;
+    };
     try {
+      console.info("[conversation][run] started", {
+        runId,
+        model: config.model,
+        host: new URL(config.baseUrl).host,
+        imageCount: request.images.length,
+        textLength: request.text.length,
+      });
       const provider = createOpenAICompatible({
         name: "answra",
         baseURL: config.baseUrl,
@@ -78,22 +96,51 @@ export class ConversationRuntime {
         model: provider(config.model),
         messages: [{ role: "user", content }],
         abortSignal: controller.signal,
+        onError: ({ error }) => {
+          console.error("[conversation][run] provider error", summarizeError(error));
+        },
       });
-      for await (const delta of result.textStream) this.emit({ type: "text/delta", runId, delta });
-      if (controller.signal.aborted) throw new Error("请求已取消");
-      this.emit({ type: "run/completed", runId });
+      for await (const chunk of result.toUIMessageStream({
+        generateMessageId: () => runId,
+        onError: (error) => (error instanceof Error ? error.message.slice(0, 300) : "模型请求失败"),
+      }))
+        emitChunk(chunk);
     } catch (error) {
-      if (controller.signal.aborted) this.emit({ type: "run/cancelled", runId });
-      else
-        this.emit({
-          type: "run/failed",
-          runId,
-          message: error instanceof Error ? error.message : "模型请求失败",
+      console.error("[conversation][run] failed", {
+        runId,
+        elapsedMs: Date.now() - startedAt,
+        ...summarizeError(error),
+      });
+      if (!started) emitChunk({ type: "start", messageId: runId });
+      if (controller.signal.aborted) emitChunk({ type: "abort" });
+      else {
+        emitChunk({
+          type: "error",
+          errorText: error instanceof Error ? error.message : "模型请求失败",
         });
+        emitChunk({ type: "finish", finishReason: "error" });
+      }
     } finally {
+      if (!terminal) emitChunk({ type: "finish" });
+      console.info("[conversation][run] finished", {
+        runId,
+        elapsedMs: Date.now() - startedAt,
+        chunkCounts,
+        cancelled: controller.signal.aborted,
+      });
       this.runs.delete(runId);
     }
   }
+}
+
+function summarizeError(error: unknown): { errorName: string; error: string; statusCode?: number } {
+  const value = error as { name?: unknown; message?: unknown; statusCode?: unknown } | null;
+  const statusCode = typeof value?.statusCode === "number" ? value.statusCode : undefined;
+  return {
+    errorName: typeof value?.name === "string" ? value.name : "Error",
+    error: typeof value?.message === "string" ? value.message.slice(0, 300) : "模型请求失败",
+    ...(statusCode === undefined ? {} : { statusCode }),
+  };
 }
 
 function validateRequest(request: ConversationSendRequest): void {

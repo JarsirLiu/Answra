@@ -12,6 +12,9 @@
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
+  "dependencies": {
+    "ai": "6.0.303"
+  },
   "devDependencies": {
     "typescript": "~5.9.3"
   }

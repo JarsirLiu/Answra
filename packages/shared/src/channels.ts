@@ -43,11 +43,21 @@ export interface ReplyBarAttachment {
   previewUrl: string;
 }
 
+export interface ReplyBarActivity {
+  id: string;
+  kind: "thinking" | "text" | "tool" | "status" | "source" | "error";
+  label: string;
+  text: string;
+}
+
 export interface ReplyBarState {
   phase: "composing" | "streaming";
   attachments: ReplyBarAttachment[];
   draft: string;
   replyText: string;
+  replyActivities: ReplyBarActivity[];
+  replyError?: string;
+  replyPending?: boolean;
   stealth: boolean;
   theme: { scheme?: string; variables: Record<string, string> };
 }
@@ -105,12 +115,7 @@ export interface ConversationSendRequest {
   images: Array<{ name: string; dataUrl: string }>;
 }
 
-export type ConversationEvent =
-  | { type: "run/started"; runId: string; conversationId: string }
-  | { type: "stream/chunk"; runId: string; chunk: UIMessageChunk }
-  | { type: "run/completed"; runId: string }
-  | { type: "run/failed"; runId: string; message: string }
-  | { type: "run/cancelled"; runId: string };
+export type ConversationEvent = { runId: string; chunk: UIMessageChunk };
 
 export interface ConversationChannelMap {
   [ConversationChannels.Configure]: { request: ConversationModelConfig; response: undefined };

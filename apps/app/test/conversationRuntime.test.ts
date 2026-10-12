@@ -25,7 +25,7 @@ describe("ephemeral conversation runtime", () => {
       response.writeHead(200, { "content-type": "text/event-stream" });
       response.end(
         [
-          `data: ${JSON.stringify({ id: "test", object: "chat.completion.chunk", created: 1, model: "vision-test", choices: [{ index: 0, delta: { role: "assistant", content: "收到" }, finish_reason: null }] })}\n\n`,
+          `data: ${JSON.stringify({ id: "test", object: "chat.completion.chunk", created: 1, model: "vision-test", choices: [{ index: 0, delta: { role: "assistant", reasoning_content: "分析中", content: "收到" }, finish_reason: null }] })}\n\n`,
           `data: ${JSON.stringify({ id: "test", object: "chat.completion.chunk", created: 1, model: "vision-test", choices: [{ index: 0, delta: {}, finish_reason: "stop" }] })}\n\n`,
           "data: [DONE]\n\n",
         ].join(""),
@@ -61,7 +61,15 @@ describe("ephemeral conversation runtime", () => {
     expect(JSON.stringify(requests[1]?.messages)).toContain("只看问题 B");
     expect(JSON.stringify(requests[1]?.messages)).not.toContain("解释截图 A");
     expect(runtime.activeRunCount).toBe(0);
-    expect(events.filter((event) => event.type === "run/completed")).toHaveLength(2);
+    expect(events.filter((event) => event.chunk.type === "finish")).toHaveLength(2);
+    expect(
+      events.some(
+        (event) => event.chunk.type === "reasoning-delta" && event.chunk.delta === "分析中",
+      ),
+    ).toBe(true);
+    expect(
+      events.some((event) => event.chunk.type === "text-delta" && event.chunk.delta === "收到"),
+    ).toBe(true);
   });
 
   it("rejects unsupported or oversized images without starting a run", async () => {
@@ -87,7 +95,36 @@ describe("ephemeral conversation runtime", () => {
     runtime.cancel(runId);
     await waitForTerminal(runId);
 
-    expect(events).toContainEqual({ type: "run/cancelled", runId });
+    expect(events).toContainEqual({
+      runId,
+      chunk: expect.objectContaining({ type: "abort" }),
+    });
+    expect(runtime.activeRunCount).toBe(0);
+  });
+
+  it("emits a visible error and terminal chunk when the model endpoint rejects the request", async () => {
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+    server = createServer((_request, response) => {
+      response.writeHead(401, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: { message: "invalid api key" } }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("test server did not bind");
+    runtime.configure({ baseUrl: `http://127.0.0.1:${address.port}/v1`, model: "vision-test" });
+
+    const { runId } = await runtime.send({ text: "hello", images: [] });
+    await waitForTerminal(runId);
+
+    expect(events.some((event) => event.runId === runId && event.chunk.type === "error")).toBe(
+      true,
+    );
+    expect(events.some((event) => event.runId === runId && event.chunk.type === "finish")).toBe(
+      true,
+    );
     expect(runtime.activeRunCount).toBe(0);
   });
 
@@ -96,10 +133,8 @@ describe("ephemeral conversation runtime", () => {
       if (
         events.some(
           (event) =>
-            event.runId === runId &&
-            (event.type === "run/completed" ||
-              event.type === "run/cancelled" ||
-              event.type === "run/failed"),
+            (event.runId === runId && event.chunk.type === "finish") ||
+            event.chunk.type === "abort",
         )
       )
         return;

@@ -110,6 +110,16 @@ function isValidReplyBarState(state: ReplyBarState | null): boolean {
       ) &&
       typeof state.draft === "string" &&
       typeof state.replyText === "string" &&
+      Array.isArray(state.replyActivities) &&
+      state.replyActivities.every(
+        (activity) =>
+          typeof activity?.id === "string" &&
+          ["thinking", "text", "tool", "status", "source", "error"].includes(activity.kind) &&
+          typeof activity.label === "string" &&
+          typeof activity.text === "string",
+      ) &&
+      (state.replyError === undefined || typeof state.replyError === "string") &&
+      (state.replyPending === undefined || typeof state.replyPending === "boolean") &&
       typeof state.stealth === "boolean" &&
       typeof state.theme?.variables === "object" &&
       state.theme.variables !== null &&
