@@ -7,7 +7,8 @@ import {
   MessageSquareText,
   Wrench,
 } from "lucide-react";
-import { useLayoutEffect, useRef } from "react";
+import { useRef } from "react";
+import { useHorizontalTickerScroll } from "./useHorizontalTickerScroll";
 
 interface ReplyActivityTickerProps {
   activities: ReplyBarActivity[];
@@ -31,8 +32,6 @@ export function ReplyActivityTicker({
 }: ReplyActivityTickerProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
-  const followLatestRef = useRef<(kind?: ReplyBarActivity["kind"]) => void>(() => undefined);
-  const scrollSpeedRef = useRef(140);
   const recentActivities = activities.length
     ? activities.slice(-5)
     : error
@@ -60,65 +59,23 @@ export function ReplyActivityTicker({
   const items =
     latest.kind === "text" ? recentActivities.slice(lastProcessIndex + 1) : recentActivities;
   const current = items.at(-1) ?? EMPTY_ACTIVITY;
-  useLayoutEffect(() => {
-    const viewport = viewportRef.current;
-    const track = trackRef.current;
-    if (!viewport || !track || typeof ResizeObserver === "undefined") return;
-
-    let frame: number | undefined;
-    let lastTime: number | undefined;
-    const step = (time: number) => {
-      if (lastTime === undefined) lastTime = time;
-      const elapsed = Math.min(time - lastTime, 50);
-      lastTime = time;
-      const target = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
-      const distance = target - viewport.scrollLeft;
-      if (Math.abs(distance) <= 1) {
-        viewport.scrollLeft = target;
-        frame = undefined;
-        lastTime = undefined;
-        return;
-      }
-      viewport.scrollLeft +=
-        Math.sign(distance) *
-        Math.min(Math.abs(distance), (scrollSpeedRef.current * elapsed) / 1000);
-      frame = requestAnimationFrame(step);
-    };
-    const followLatest = (kind?: ReplyBarActivity["kind"]) => {
-      if (kind !== undefined) scrollSpeedRef.current = kind === "text" ? 24 : 140;
-      if (frame === undefined) {
-        lastTime = undefined;
-        frame = requestAnimationFrame(step);
-      }
-    };
-
-    followLatestRef.current = followLatest;
-    const observer = new ResizeObserver(() => followLatest());
-    observer.observe(viewport);
-    observer.observe(track);
-    followLatest();
-    return () => {
-      if (frame !== undefined) cancelAnimationFrame(frame);
-      observer.disconnect();
-      followLatestRef.current = () => undefined;
-    };
-  }, []);
-
-  useLayoutEffect(() => {
-    // Kind changes switch between quick process updates and slower answer reading.
-    if (current.kind === "text" && viewportRef.current) viewportRef.current.scrollLeft = 0;
-    followLatestRef.current(current.kind);
-  }, [current.kind]);
+  const currentLabel = current.label || getActivityLabel(current.kind);
+  useHorizontalTickerScroll({
+    viewportRef,
+    trackRef,
+    phase: current.kind === "text" ? "text" : "process",
+    pending,
+  });
 
   const Icon = getActivityIcon(current.kind);
 
   return (
     <div className={`reply-activity-ticker reply-activity-ticker--${current.kind}`}>
       <span
-        aria-label={`当前事件：${current.label}`}
+        aria-label={`当前事件：${currentLabel}`}
         className="reply-activity-indicator"
         role="img"
-        title={current.label}
+        title={currentLabel}
       >
         <Icon
           aria-hidden="true"
@@ -139,7 +96,7 @@ export function ReplyActivityTicker({
               className={`reply-activity-item reply-activity-item--${activity.kind}`}
               key={`${activity.id}-${activity.kind}`}
             >
-              <strong>{activity.label}</strong>
+              {activity.label ? <strong>{activity.label}</strong> : null}
               {activity.text ? <span>{activity.text}</span> : null}
             </span>
           ))}
@@ -163,5 +120,16 @@ function getActivityIcon(kind: ReplyBarActivity["kind"]) {
       return AlertCircle;
     default:
       return LoaderCircle;
+  }
+}
+
+function getActivityLabel(kind: ReplyBarActivity["kind"]): string {
+  switch (kind) {
+    case "text":
+      return "回答";
+    case "thinking":
+      return "思考";
+    default:
+      return "模型活动";
   }
 }

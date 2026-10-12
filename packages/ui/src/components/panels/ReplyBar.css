@@ -222,6 +222,9 @@
   color: #7652a3;
   font-style: italic;
 }
+.reply-activity-item--thinking > span {
+  font-style: italic;
+}
 .reply-activity-item--text {
   color: #34618f;
 }

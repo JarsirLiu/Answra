@@ -187,6 +187,7 @@ describe("three-segment floating navigation", () => {
     );
     act(() => emitConversationEvent?.({ runId: "run-1", chunk: { type: "finish" } }));
     await waitFor(() => expect(screen.getByText("截图内容已识别")).toBeInTheDocument());
+    expect(screen.queryByText("回答")).not.toBeInTheDocument();
     expect(screen.queryByText("先分析题目条件")).not.toBeInTheDocument();
     expect(screen.queryByText("工具：search")).not.toBeInTheDocument();
     expect(screen.queryByText("已完成检索")).not.toBeInTheDocument();

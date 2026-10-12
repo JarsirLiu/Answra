@@ -375,7 +375,7 @@ function projectActivity(
       return [...current, activity];
     });
   if (chunk.type === "text-delta")
-    add({ id: chunk.id, kind: "text", label: "回答", text: chunk.delta }, true);
+    add({ id: chunk.id, kind: "text", label: "", text: chunk.delta }, true);
   else if (chunk.type === "reasoning-delta")
     add({ id: chunk.id, kind: "thinking", label: "思考", text: chunk.delta }, true);
   else if (chunk.type === "tool-input-start")
