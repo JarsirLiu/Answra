@@ -300,22 +300,22 @@ function inferMediaType(absolutePath: string): string {
  * 缺省 watcher 工厂：@parcel/watcher 递归监听 + 简单合并。
  * 依赖经 createRequire 惰性加载，测试注入工厂时不触发原生二进制加载。
  */
-const parcelWatchFactory: WatchFactory = (dir, listener) => {
+const parcelWatchFactory: WatchFactory = async (dir, listener) => {
   // main is bundled as CommonJS; import.meta.url is undefined in the generated file.
   // Keep the source module testable while resolving the external native watcher from
   // the actual bundled file when Electron starts.
   const require = createRequire(
     typeof __filename === "string" ? __filename : `${process.cwd()}${path.sep}workspace.cjs`,
   );
-  const { watch } = require("@parcel/watcher") as {
-    watch: (
+  const { subscribe } = require("@parcel/watcher") as {
+    subscribe: (
       dir: string,
       callback: (error: Error | null, events: Array<{ type: string; path: string }>) => void,
-    ) => { unsubscribe: () => Promise<void> };
+    ) => Promise<{ unsubscribe: () => Promise<void> }>;
   };
   let pending: string[] = [];
   let timer: NodeJS.Timeout | null = null;
-  const subscription = watch(dir, (error, events) => {
+  const subscription = await subscribe(dir, (error, events) => {
     if (error) {
       console.warn("[workspace] watcher error", error);
       return;

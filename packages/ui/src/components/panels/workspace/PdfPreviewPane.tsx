@@ -2,7 +2,6 @@ import type { WorkspaceFileContent } from "@answra/shared";
 import { Minus, Plus, RotateCcw } from "lucide-react";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { useEffect, useRef, useState } from "react";
-import { createPdfWorkerBootstrap, ensurePromiseTry } from "./pdfPromiseCompat";
 
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 2;
@@ -10,6 +9,13 @@ const ZOOM_STEP = 0.1;
 
 /**
  * pdf 预览：pdfjs-dist 渲染到 canvas（懒加载 worker，首次打开才加载）。
+ *
+ * 走 pdf.js 标准路径：只设置 GlobalWorkerOptions.workerSrc，由 pdf.js 自行创建
+ * worker、处理 file:// 跨源包装（_createCDNWrapper）并在 worker 失败时降级主线程
+ * 解析（fake worker）。禁止手工 new Worker + PDFWorker.fromPort/create({ port })——
+ * 该自定义管道在 Electron 29 的 renderer 中会导致 GetDocRequest 握手静默挂起。
+ *
+ * 缩放通过 CSS 改变画布显示尺寸，不重新解析或重渲染文档（类似网页缩放体验）。
  */
 export function PdfPreviewPane({
   content,
@@ -19,9 +25,12 @@ export function PdfPreviewPane({
   path?: string;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const pagesRef = useRef<Array<{ canvas: HTMLCanvasElement; width: number; height: number }>>([]);
+  const zoomRef = useRef(1);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
+  zoomRef.current = zoom;
 
   useEffect(() => {
     const host = hostRef.current;
@@ -29,26 +38,15 @@ export function PdfPreviewPane({
     let cancelled = false;
     let timedOut = false;
     let failed = false;
-    const canvases: Array<HTMLCanvasElement> = [];
-    let worker: Worker | null = null;
-    let workerBlobUrl: string | null = null;
-    let pdfWorker: import("pdfjs-dist").PDFWorker | null = null;
     let destroyLoadingTask: (() => Promise<void>) | null = null;
     let disposePromise: Promise<void> | null = null;
     let stage = "loading pdfjs";
-    console.info(
-      "[workspace][pdf] open",
-      JSON.stringify({ path, base64Length: content.dataBase64.length, zoom }),
-    );
+    pagesRef.current = [];
     const timeout = window.setTimeout(() => {
       if (!cancelled) {
         timedOut = true;
-        console.error(
-          "[workspace][pdf] timeout",
-          JSON.stringify({ path, stage, timeoutMs: 30_000 }),
-        );
         setStatus("error");
-        setError(`PDF 在${stage}阶段超时，请检查启动终端中的 [workspace][pdf] 日志`);
+        setError(`${path}: PDF 解析在${stage}阶段超时`);
         void dispose();
       }
     }, 30_000);
@@ -56,112 +54,42 @@ export function PdfPreviewPane({
     setError(null);
     void (async () => {
       try {
-        const needsPromiseTryPolyfill = ensurePromiseTry();
         const pdfjs = await import("pdfjs-dist");
         const workerEntryUrl = new URL(workerUrl, window.location.href).href;
         pdfjs.GlobalWorkerOptions.workerSrc = workerEntryUrl;
         const bytes = base64ToBytes(content.dataBase64);
         stage = "validating bytes";
-        console.info(
-          "[workspace][pdf] worker-config",
-          JSON.stringify({
-            path,
-            workerUrl: workerEntryUrl,
-            bytes: bytes.length,
-          }),
-        );
         if (cancelled) return;
         const header = String.fromCharCode(...bytes.subarray(0, Math.min(bytes.length, 1024)));
         if (!header.includes("%PDF-")) {
           throw new Error("文件内容不是有效的 PDF（缺少 %PDF- 文件头）");
         }
-        let workerScriptUrl = workerEntryUrl;
-        if (
-          window.location.origin === "null" ||
-          new URL(workerEntryUrl).origin !== window.location.origin ||
-          needsPromiseTryPolyfill
-        ) {
-          workerBlobUrl = URL.createObjectURL(
-            new Blob([createPdfWorkerBootstrap(workerEntryUrl)], {
-              type: "text/javascript",
-            }),
-          );
-          workerScriptUrl = workerBlobUrl;
-        }
-        stage = "starting PDF worker";
-        worker = new Worker(workerScriptUrl, { type: "module" });
-        const onWorkerError = (event: ErrorEvent) => {
-          event.preventDefault();
-          if (cancelled || timedOut || failed) return;
-          failed = true;
-          const message = event.message || event.error?.message || "PDF worker 加载失败";
-          console.error(
-            "[workspace][pdf] worker-error",
-            JSON.stringify({
-              path,
-              stage,
-              message,
-              filename: event.filename,
-              line: event.lineno,
-              column: event.colno,
-              stack: event.error instanceof Error ? event.error.stack : null,
-            }),
-          );
-          setStatus("error");
-          setError(`${message}（阶段：${stage}；详见启动终端 [workspace][pdf] 日志）`);
-          void dispose();
-        };
-        worker.addEventListener("error", onWorkerError);
-        console.info(
-          "[workspace][pdf] worker-created",
-          JSON.stringify({ path, workerUrl: workerScriptUrl, wrapped: workerBlobUrl !== null }),
-        );
-        pdfWorker = pdfjs.PDFWorker.create({ port: worker });
-        if (cancelled) return;
         stage = "loading document";
-        console.info(
-          "[workspace][pdf] document-start",
-          JSON.stringify({ path, bytes: bytes.length }),
-        );
-        const loadingTask = pdfjs.getDocument({ data: bytes, worker: pdfWorker });
+        const loadingTask = pdfjs.getDocument({ data: bytes });
         destroyLoadingTask = () => loadingTask.destroy();
-        loadingTask.onProgress = ({ loaded, total }: { loaded: number; total: number }) => {
-          console.info(
-            "[workspace][pdf] progress",
-            JSON.stringify({ path, loaded, total: total || null }),
-          );
-        };
         const doc = await loadingTask.promise;
-        worker.removeEventListener("error", onWorkerError);
         if (cancelled) return;
         stage = "rendering pages";
-        console.info(
-          "[workspace][pdf] document-ready",
-          JSON.stringify({ path, pages: doc.numPages }),
-        );
         host.replaceChildren();
+        const pixelRatio = window.devicePixelRatio || 1;
         for (let pageNumber = 1; pageNumber <= doc.numPages; pageNumber += 1) {
           if (cancelled) return;
           stage = `rendering page ${pageNumber}/${doc.numPages}`;
-          console.info("[workspace][pdf] page-start", JSON.stringify({ path, page: pageNumber }));
           const page = await doc.getPage(pageNumber);
-          const viewport = page.getViewport({ scale: zoom });
-          const pixelRatio = window.devicePixelRatio || 1;
+          const viewport = page.getViewport({ scale: 1 });
           const canvas = document.createElement("canvas");
           canvas.width = Math.floor(viewport.width * pixelRatio);
           canvas.height = Math.floor(viewport.height * pixelRatio);
-          canvas.style.width = `${viewport.width}px`;
-          canvas.style.height = `${viewport.height}px`;
-          canvases.push(canvas);
+          canvas.style.width = `${Math.round(viewport.width * zoomRef.current)}px`;
+          canvas.style.height = `${Math.round(viewport.height * zoomRef.current)}px`;
           host.append(canvas);
+          pagesRef.current.push({ canvas, width: viewport.width, height: viewport.height });
           const context = canvas.getContext("2d");
           if (!context) throw new Error("浏览器无法创建 PDF 画布，请检查 renderer 控制台");
           await page.render({
-            canvas,
             canvasContext: context,
-            viewport: page.getViewport({ scale: zoom * pixelRatio }),
+            viewport: page.getViewport({ scale: pixelRatio }),
           }).promise;
-          console.info("[workspace][pdf] page-ready", JSON.stringify({ path, page: pageNumber }));
           if (pageNumber === 1) {
             window.clearTimeout(timeout);
             setStatus("ready");
@@ -170,7 +98,6 @@ export function PdfPreviewPane({
         if (!cancelled) {
           window.clearTimeout(timeout);
           setStatus("ready");
-          console.info("[workspace][pdf] complete", JSON.stringify({ path, pages: doc.numPages }));
         }
       } catch (cause) {
         if (!cancelled && !timedOut && !failed) {
@@ -178,16 +105,7 @@ export function PdfPreviewPane({
           failed = true;
           setStatus("error");
           const message = cause instanceof Error ? cause.message : String(cause);
-          console.error(
-            "[workspace][pdf] failed",
-            JSON.stringify({
-              path,
-              stage,
-              message,
-              stack: cause instanceof Error ? cause.stack : null,
-            }),
-          );
-          setError(`${message}（阶段：${stage}；详见启动终端 [workspace][pdf] 日志）`);
+          setError(`${path}: ${message}（阶段：${stage}）`);
           void dispose();
         }
       }
@@ -196,20 +114,25 @@ export function PdfPreviewPane({
       cancelled = true;
       window.clearTimeout(timeout);
       void dispose();
-      for (const canvas of canvases) canvas.remove();
+      for (const page of pagesRef.current) page.canvas.remove();
     };
 
     function dispose(): Promise<void> {
       if (disposePromise) return disposePromise;
       disposePromise = (async () => {
         if (destroyLoadingTask) await destroyLoadingTask().catch(() => undefined);
-        await pdfWorker?.destroy();
-        worker?.terminate();
-        if (workerBlobUrl) URL.revokeObjectURL(workerBlobUrl);
       })();
       return disposePromise;
     }
-  }, [content, path, zoom]);
+  }, [content, path]);
+
+  // 缩放只改变画布显示尺寸（CSS），不重新解析或重渲染文档，类似网页缩放体验。
+  useEffect(() => {
+    for (const page of pagesRef.current) {
+      page.canvas.style.width = `${Math.round(page.width * zoom)}px`;
+      page.canvas.style.height = `${Math.round(page.height * zoom)}px`;
+    }
+  }, [zoom]);
 
   return (
     <div className="workspace-preview-pdf-state">

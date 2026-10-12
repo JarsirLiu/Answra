@@ -1,5 +1,5 @@
 import type { DesktopBridge, WorkspaceNode } from "@answra/shared";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DocxPreviewPane } from "../src/components/panels/workspace/DocxPreviewPane";
 import {
@@ -9,63 +9,18 @@ import {
   toResourceUrl,
 } from "../src/components/panels/workspace/fileKind";
 import { PdfPreviewPane } from "../src/components/panels/workspace/PdfPreviewPane";
-import {
-  createPdfWorkerBootstrap,
-  ensurePromiseTry,
-} from "../src/components/panels/workspace/pdfPromiseCompat";
 import { WorkspacePanel } from "../src/components/panels/workspace/WorkspacePanel";
 
-const { renderDocx, pdfGetDocument, pdfWorkerCreate } = vi.hoisted(() => ({
+const { renderDocx, pdfGetDocument } = vi.hoisted(() => ({
   renderDocx: vi.fn(),
   pdfGetDocument: vi.fn(),
-  pdfWorkerCreate: vi.fn(),
 }));
 vi.mock("docx-preview", () => ({ renderAsync: renderDocx }));
 vi.mock("pdfjs-dist/build/pdf.worker.min.mjs?url", () => ({ default: "/assets/pdf.worker.mjs" }));
 vi.mock("pdfjs-dist", () => ({
   GlobalWorkerOptions: { workerSrc: "" },
-  PDFWorker: { create: pdfWorkerCreate },
   getDocument: pdfGetDocument,
 }));
-
-class TestWorker {
-  static instances: TestWorker[] = [];
-  private readonly listeners = new Set<EventListener>();
-  terminated = false;
-
-  constructor(
-    readonly url: string | URL,
-    readonly options?: WorkerOptions,
-  ) {
-    TestWorker.instances.push(this);
-  }
-
-  addEventListener(type: string, listener: EventListener): void {
-    if (type === "error") this.listeners.add(listener);
-  }
-
-  removeEventListener(type: string, listener: EventListener): void {
-    if (type === "error") this.listeners.delete(listener);
-  }
-
-  terminate(): void {
-    this.terminated = true;
-  }
-
-  dispatchError(message: string): void {
-    const event = {
-      message,
-      error: new Error(message),
-      filename: String(this.url),
-      lineno: 0,
-      colno: 0,
-      preventDefault: vi.fn(),
-    } as unknown as ErrorEvent;
-    this.listeners.forEach((listener) => {
-      listener.call(this as unknown as Worker, event);
-    });
-  }
-}
 
 describe("workspace fileKind", () => {
   it("classifies file kinds", () => {
@@ -244,12 +199,6 @@ describe("DocxPreviewPane", () => {
 
 describe("PdfPreviewPane", () => {
   beforeEach(() => {
-    TestWorker.instances = [];
-    vi.stubGlobal("Worker", TestWorker);
-    pdfWorkerCreate.mockReset().mockImplementation(({ port }: { port: Worker }) => ({
-      port,
-      destroy: vi.fn().mockResolvedValue(undefined),
-    }));
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
       {} as CanvasRenderingContext2D,
     );
@@ -280,39 +229,22 @@ describe("PdfPreviewPane", () => {
     );
     expect(screen.getByText("PDF 解析中…")).toBeInTheDocument();
     await waitFor(() => expect(pdfGetDocument).toHaveBeenCalledTimes(1));
-    const pdfWorker = pdfWorkerCreate.mock.results[0]?.value;
-    expect(pdfWorkerCreate).toHaveBeenCalledWith({ port: expect.any(TestWorker) });
     expect(pdfGetDocument).toHaveBeenCalledWith({
       data: new Uint8Array([37, 80, 68, 70, 45, 49, 46, 55]),
-      worker: pdfWorker,
     });
     await waitFor(() =>
       expect(container.querySelector(".workspace-preview-pdf")).not.toHaveAttribute("hidden"),
     );
     fireEvent.click(screen.getByRole("button", { name: "放大 PDF" }));
     expect(await screen.findByText("110%")).toBeInTheDocument();
-    await waitFor(() => expect(pdfGetDocument).toHaveBeenCalledTimes(2));
-  });
-
-  it("provides Promise.try in the renderer and PDF worker on older Chromium", async () => {
-    const nativeTry = Reflect.get(Promise, "try");
-    Reflect.deleteProperty(Promise, "try");
-    try {
-      expect(ensurePromiseTry()).toBe(true);
-      const installedTry = Reflect.get(Promise, "try") as (
-        callback: () => number,
-      ) => Promise<number>;
-      await expect(installedTry(() => 42)).resolves.toBe(42);
-      expect(createPdfWorkerBootstrap("https://example.test/pdf.worker.mjs")).toContain(
-        "if (!Promise.try)",
-      );
-      expect(createPdfWorkerBootstrap("https://example.test/pdf.worker.mjs")).toContain(
-        'await import("https://example.test/pdf.worker.mjs");',
-      );
-    } finally {
-      if (nativeTry) Reflect.set(Promise, "try", nativeTry);
-      else Reflect.deleteProperty(Promise, "try");
-    }
+    // 缩放只改画布显示尺寸（CSS），不重新解析或重渲染文档，故 getDocument 仅调用一次。
+    expect(pdfGetDocument).toHaveBeenCalledTimes(1);
+    const canvas = container.querySelector(
+      ".workspace-preview-pdf canvas",
+    ) as HTMLCanvasElement | null;
+    expect(canvas).not.toBeNull();
+    expect(canvas?.style.width).toBe("220px");
+    expect(canvas?.style.height).toBe("330px");
   });
 
   it("shows PDF load failures without exposing an empty canvas host", async () => {
@@ -329,25 +261,6 @@ describe("PdfPreviewPane", () => {
     expect(container.querySelector(".workspace-preview-pdf")).toHaveAttribute("hidden");
   });
 
-  it("reports worker startup failures instead of leaving the preview loading", async () => {
-    pdfGetDocument.mockReturnValueOnce({
-      promise: new Promise(() => undefined),
-      destroy: vi.fn().mockResolvedValue(undefined),
-    });
-    const { container } = render(
-      <PdfPreviewPane
-        content={{ mediaType: "application/pdf", dataBase64: "JVBERi0xLjc=", text: null }}
-      />,
-    );
-    await waitFor(() => expect(pdfGetDocument).toHaveBeenCalledTimes(1));
-    act(() => TestWorker.instances[0]?.dispatchError("Failed to load PDF worker"));
-    expect(
-      await screen.findByText(/Failed to load PDF worker.*loading document/),
-    ).toBeInTheDocument();
-    expect(container.querySelector(".workspace-preview-pdf")).toHaveAttribute("hidden");
-    expect(TestWorker.instances[0]?.terminated).toBe(true);
-  });
-
   it("shows a useful message when the file bytes do not have a PDF header", async () => {
     render(
       <PdfPreviewPane content={{ mediaType: "application/pdf", dataBase64: "AQID", text: null }} />,
@@ -356,7 +269,6 @@ describe("PdfPreviewPane", () => {
       await screen.findByText(/文件内容不是有效的 PDF（缺少 %PDF- 文件头）/),
     ).toBeInTheDocument();
     expect(pdfGetDocument).not.toHaveBeenCalled();
-    expect(pdfWorkerCreate).not.toHaveBeenCalled();
   });
 });
 

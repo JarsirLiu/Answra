@@ -25,7 +25,7 @@
     "docx-preview": "^0.3.7",
     "jszip": "^3.10.2",
     "lucide-react": "^1.54.0",
-    "pdfjs-dist": "^5.7.284",
+    "pdfjs-dist": "4.10.38",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "shiki": "^3.23.0"
