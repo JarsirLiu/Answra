@@ -1,9 +1,13 @@
-import type { WorkspaceNode } from "@answra/shared";
+import type { DesktopBridge, WorkspaceNode } from "@answra/shared";
 import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  classifyFile,
+  pasteImageName,
+  resolveRelative,
+  toResourceUrl,
+} from "../src/components/panels/workspace/fileKind";
 import { WorkspacePanel } from "../src/components/panels/workspace/WorkspacePanel";
-import { classifyFile, pasteImageName, resolveRelative, toResourceUrl } from "../src/components/panels/workspace/fileKind";
-import type { DesktopBridge } from "@answra/shared";
 
 describe("workspace fileKind", () => {
   it("classifies file kinds", () => {
@@ -62,7 +66,10 @@ describe("WorkspacePanel", () => {
     ];
     render(
       <WorkspacePanel
-        bridge={createBridge({ getWorkspaceRoot: vi.fn().mockResolvedValue({ root: "D:/notes" }) })}
+        bridge={createBridge({
+          getWorkspaceRoot: vi.fn().mockResolvedValue({ root: "D:/notes" }),
+          listWorkspaceTree: vi.fn().mockResolvedValue(tree),
+        })}
         onClose={() => undefined}
       />,
     );

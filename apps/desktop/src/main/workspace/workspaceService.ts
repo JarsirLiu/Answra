@@ -230,8 +230,10 @@ export class WorkspaceService {
       const handle = await this.watchFactory(root, (paths) => {
         if (!active || this.root !== root) return;
         const relativePaths = paths
-          .map((filePath) => path.isAbsolute(filePath) ? path.relative(root, filePath) : filePath)
-          .filter((filePath) => filePath && !filePath.startsWith("..") && !path.isAbsolute(filePath))
+          .map((filePath) => (path.isAbsolute(filePath) ? path.relative(root, filePath) : filePath))
+          .filter(
+            (filePath) => filePath && !filePath.startsWith("..") && !path.isAbsolute(filePath),
+          )
           .map((filePath) => filePath.split(path.sep).join("/"));
         if (relativePaths.length > 0) this.onChange?.(relativePaths);
       });
