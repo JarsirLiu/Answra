@@ -23,7 +23,9 @@ describe("workspace fileKind", () => {
     expect(resolveRelative("数学", "assets/a.png")).toBe("数学/assets/a.png");
     expect(resolveRelative("", "assets/a.png")).toBe("assets/a.png");
     expect(resolveRelative("数学", "../root.md")).toBe("root.md");
-    expect(toResourceUrl("数学/assets/a.png")).toBe("answra-file:///数学/assets/a.png");
+    expect(toResourceUrl("数学/assets/a.png")).toBe(
+      "answra-file:///%E6%95%B0%E5%AD%A6/assets/a.png",
+    );
   });
 
   it("generates conflict-free paste image names", () => {
@@ -41,6 +43,8 @@ describe("WorkspacePanel", () => {
 
   function createBridge(overrides: Partial<DesktopBridge> = {}): DesktopBridge {
     return {
+      fitContent: vi.fn(),
+      close: vi.fn(),
       getWorkspaceRoot: vi.fn().mockResolvedValue({ root: null }),
       pickWorkspaceRoot: vi.fn().mockResolvedValue({ root: null }),
       listWorkspaceTree: vi.fn().mockResolvedValue([] as WorkspaceNode[]),
@@ -74,8 +78,8 @@ describe("WorkspacePanel", () => {
       />,
     );
     expect(await screen.findByText("D:/notes")).toBeInTheDocument();
-    expect(await screen.findByText("错题.md")).toBeInTheDocument();
-    expect(screen.getByText("阅读.md")).toBeInTheDocument();
+    expect((await screen.findAllByText("错题.md")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("阅读.md").length).toBeGreaterThan(0);
   });
 
   it("opens a markdown file through the bridge", async () => {

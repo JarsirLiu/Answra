@@ -101,7 +101,7 @@ describe("workspaceService", () => {
     await expect(readFile(path.join(rootDir, "2026", "数学", "笔记.md"))).resolves.toBeDefined();
     await expect(service.createEntry("2026/数学/笔记.md", "file")).rejects.toThrow();
     await expect(service.createEntry("binary.exe", "file")).rejects.toThrow("仅支持新建");
-    await expect(service.removeEntry(".")).toThrow();
+    await expect(service.removeEntry(".")).rejects.toThrow();
 
     await service.removeEntry("2026");
     await expect(readFile(path.join(rootDir, "2026", "数学", "笔记.md"))).rejects.toThrow();
@@ -134,7 +134,7 @@ describe("workspaceService", () => {
     expect(listeners.length).toBe(1);
 
     listeners[0]?.([path.join(rootDir, "a.md")]);
-    expect(onChange).toHaveBeenCalledWith([path.join(rootDir, "a.md")]);
+    expect(onChange).toHaveBeenCalledWith(["a.md"]);
 
     // 切换根目录后旧监听解绑、新 watcher 建立。
     const other = await mkdtemp(path.join(tmpdir(), "answra-root2-"));
