@@ -3,13 +3,14 @@ import {
   type ContentSize,
   type RegionSelection,
   type ReplyBarAction,
+  type ReplyBarPlacement,
   type ReplyBarState,
   WindowChannels,
 } from "@answra/shared";
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron";
 import { app, BrowserWindow, screen } from "electron";
 import { setWindowCaptureProtection } from "./windowCaptureProtection";
-import { positionWindowNearSelection } from "./windowLayout";
+import { positionReplyBarSize, positionWindowNearSelection } from "./windowLayout";
 
 const WORK_AREA_MARGIN = 24;
 const REPLY_BAR_SIZE: ContentSize = { width: 480, height: 76 };
@@ -28,6 +29,7 @@ export function createReplyBarWindowController(host: ReplyBarWindowHost) {
   let state: ReplyBarState | null = null;
   let rendererReady = false;
   let readyToShow = false;
+  let placement: ReplyBarPlacement = "above";
 
   function setAnchor(selection: RegionSelection): void {
     const display = screen
@@ -71,8 +73,13 @@ export function createReplyBarWindowController(host: ReplyBarWindowHost) {
   }
 
   function createWindow(mainWindow: BrowserWindow): void {
+    const initialPosition = position ?? {
+      x: mainWindow.getBounds().x,
+      y: mainWindow.getBounds().y,
+    };
+    position = initialPosition;
     const created = new BrowserWindow({
-      ...(position ?? { x: mainWindow.getBounds().x, y: mainWindow.getBounds().y }),
+      ...initialPosition,
       ...REPLY_BAR_SIZE,
       frame: false,
       transparent: true,
@@ -138,6 +145,10 @@ export function createReplyBarWindowController(host: ReplyBarWindowHost) {
     return event.sender === windowRef?.webContents;
   }
 
+  function getWindow(): BrowserWindow | undefined {
+    return windowRef;
+  }
+
   function hideForCapture(): boolean {
     if (!windowRef || windowRef.isDestroyed() || !windowRef.isVisible()) return false;
     windowRef.hide();
@@ -154,14 +165,31 @@ export function createReplyBarWindowController(host: ReplyBarWindowHost) {
   function resize(size: ContentSize): void {
     if (!windowRef || windowRef.isDestroyed() || !isValidContentSize(size)) return;
     const area = screen.getDisplayMatching(windowRef.getBounds()).workArea;
-    const width = Math.min(size.width, area.width - WORK_AREA_MARGIN, 1200);
-    const height = Math.min(size.height, area.height - WORK_AREA_MARGIN, 900);
+    if (!isValidWorkArea(area)) return;
+    const width = clampDimension(size.width, area.width, 1200);
+    const height = clampDimension(size.height, area.height, 900);
     const bounds = windowRef.getBounds();
-    const x = Math.min(Math.max(bounds.x, area.x), area.x + area.width - width);
-    const y = Math.min(Math.max(bounds.y, area.y), area.y + area.height - height);
+    const boundsAndPlacement = positionReplyBarSize(
+      position ?? { x: bounds.x, y: bounds.y },
+      area,
+      { width, height },
+      REPLY_BAR_SIZE,
+    );
+    const { x, y, placement: nextPlacement } = boundsAndPlacement;
+    if (placement !== nextPlacement) {
+      placement = nextPlacement;
+      windowRef.webContents.send(WindowChannels.ReplyBarPlacement, placement);
+    }
+    const nextBounds = { x, y, width, height };
+    if (!isValidWindowBounds(nextBounds)) return;
     if (bounds.x === x && bounds.y === y && bounds.width === width && bounds.height === height)
       return;
-    windowRef.setBounds({ x, y, width, height }, false);
+    try {
+      windowRef.setBounds(nextBounds, false);
+    } catch (error) {
+      console.error("[reply-bar] failed to resize native window", error);
+      return;
+    }
     setWindowCaptureProtection(windowRef, host.isStealthEnabled());
   }
 
@@ -183,10 +211,12 @@ export function createReplyBarWindowController(host: ReplyBarWindowHost) {
     position = undefined;
     rendererReady = false;
     readyToShow = false;
+    placement = "above";
   }
 
   return {
     close,
+    getWindow,
     hideForCapture,
     isFromSender,
     resize,
@@ -201,5 +231,33 @@ export function createReplyBarWindowController(host: ReplyBarWindowHost) {
 function isValidContentSize(size: ContentSize): boolean {
   return (
     Number.isFinite(size.width) && Number.isFinite(size.height) && size.width > 0 && size.height > 0
+  );
+}
+
+function isValidWorkArea(area: Electron.Rectangle): boolean {
+  return (
+    Number.isFinite(area.x) &&
+    Number.isFinite(area.y) &&
+    Number.isFinite(area.width) &&
+    Number.isFinite(area.height) &&
+    area.width > 0 &&
+    area.height > 0
+  );
+}
+
+function clampDimension(requested: number, available: number, maximum: number): number {
+  const workAreaLimit = Math.max(1, Math.floor(available));
+  const marginLimit = Math.max(1, workAreaLimit - WORK_AREA_MARGIN);
+  return Math.max(1, Math.min(Math.round(requested), marginLimit, maximum));
+}
+
+function isValidWindowBounds(bounds: Electron.Rectangle): boolean {
+  return (
+    Number.isSafeInteger(bounds.x) &&
+    Number.isSafeInteger(bounds.y) &&
+    Number.isSafeInteger(bounds.width) &&
+    Number.isSafeInteger(bounds.height) &&
+    bounds.width > 0 &&
+    bounds.height > 0
   );
 }

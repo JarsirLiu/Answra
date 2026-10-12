@@ -7,6 +7,7 @@ import type {
   ConversationSnapshot,
   RegionCaptureOptions,
   ReplyBarAction,
+  ReplyBarPlacement,
   ReplyBarState,
   ScreenshotResult,
 } from "./channels";
@@ -30,6 +31,7 @@ export interface DesktopBridge {
   setReplyBarState?: (state: ReplyBarState | null) => void;
   /** Measures the detached reply window without resizing the toolbar HWND. */
   fitReplyBar?: (size: ContentSize) => void;
+  onReplyBarPlacement?: (listener: (placement: ReplyBarPlacement) => void) => () => void;
   /** Routes reply window controls back to the state owning renderer. */
   sendReplyBarAction?: (action: ReplyBarAction) => void;
   onReplyBarAction?: (listener: (action: ReplyBarAction) => void) => () => void;

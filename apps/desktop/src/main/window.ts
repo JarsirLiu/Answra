@@ -1,5 +1,8 @@
 import {
+  ActiveExamConversationId,
   type ContentSize,
+  type ConversationChange,
+  ConversationChannels,
   type RegionSelection,
   type ReplyBarAction,
   type ReplyBarState,
@@ -46,6 +49,26 @@ export function resizeWindowToContent(size: ContentSize): void {
 export function getWindow(): BrowserWindow | undefined {
   ensureControllers();
   return windowController.getWindow();
+}
+export function getReplyBarWindow(): BrowserWindow | undefined {
+  ensureControllers();
+  return replyBarController.getWindow();
+}
+export function sendConversationChange(change: ConversationChange): void {
+  const mainWindow = getWindow();
+  if (mainWindow && !mainWindow.isDestroyed())
+    mainWindow.webContents.send(ConversationChannels.Change, change);
+  const replyWindow = getReplyBarWindow();
+  if (
+    conversationIdOf(change) === ActiveExamConversationId &&
+    replyWindow &&
+    !replyWindow.isDestroyed()
+  )
+    replyWindow.webContents.send(ConversationChannels.Change, change);
+}
+function conversationIdOf(change: ConversationChange): string {
+  if (change.type === "event") return change.event.conversationId;
+  return change.type === "snapshot" ? change.snapshot.conversationId : change.conversationId;
 }
 export function isStealthEnabled(): boolean {
   ensureControllers();

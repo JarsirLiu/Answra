@@ -1,10 +1,16 @@
 import {
+  ActiveExamConversationId,
   ConversationChannels,
   type ConversationModelConfig,
   type ConversationSendCommand,
 } from "@answra/shared";
 import { ipcMain } from "electron";
-import { getWindow, isWindowFromSender } from "../window";
+import {
+  getWindow,
+  isReplyBarWindowFromSender,
+  isWindowFromSender,
+  sendConversationChange,
+} from "../window";
 import type { AppService } from "./appService";
 
 export function registerConversationIpc(service: AppService): void {
@@ -25,7 +31,8 @@ export function registerConversationIpc(service: AppService): void {
     return service.send(payload.conversationId, payload.request);
   });
   ipcMain.handle(ConversationChannels.GetSnapshot, (event, payload: { conversationId: string }) => {
-    if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用方");
+    if (!isValidConversationId(payload?.conversationId)) throw new Error("会话请求无效");
+    if (!isConversationReadSender(event, payload.conversationId)) throw new Error("非法调用方");
     return service.getSnapshot(payload.conversationId);
   });
   ipcMain.handle(ConversationChannels.Create, (event, payload: { conversationId: string }) => {
@@ -35,7 +42,13 @@ export function registerConversationIpc(service: AppService): void {
   ipcMain.handle(
     ConversationChannels.ReadEvents,
     (event, payload: { conversationId: string; afterRevision: number }) => {
-      if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用方");
+      if (
+        !isValidConversationId(payload?.conversationId) ||
+        !Number.isSafeInteger(payload?.afterRevision) ||
+        payload.afterRevision < 0
+      )
+        throw new Error("会话请求无效");
+      if (!isConversationReadSender(event, payload.conversationId)) throw new Error("非法调用方");
       return service.readEvents(payload.conversationId, payload.afterRevision);
     },
   );
@@ -43,9 +56,21 @@ export function registerConversationIpc(service: AppService): void {
     if (!isWindowFromSender(getWindow(), event) || typeof payload?.runId !== "string") return;
     service.cancel(payload.runId);
   });
-  service.onChange((payload) => {
-    const window = getWindow();
-    if (window && !window.isDestroyed())
-      window.webContents.send(ConversationChannels.Change, payload);
-  });
+  service.onChange(sendConversationChange);
+}
+
+function isValidConversationId(conversationId: unknown): conversationId is string {
+  return (
+    typeof conversationId === "string" && conversationId.length > 0 && conversationId.length <= 128
+  );
+}
+
+function isConversationReadSender(
+  event: Parameters<typeof isWindowFromSender>[1],
+  conversationId: string | undefined,
+): boolean {
+  return (
+    isWindowFromSender(getWindow(), event) ||
+    (conversationId === ActiveExamConversationId && isReplyBarWindowFromSender(event))
+  );
 }

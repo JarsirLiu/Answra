@@ -1,11 +1,12 @@
 import { useChat } from "@ai-sdk/react";
-import type {
-  ConversationChange,
-  ConversationEvent,
-  ConversationMessage,
-  ConversationModelConfig,
-  DesktopBridge,
-  ReplyBarActivity,
+import {
+  ActiveExamConversationId,
+  type ConversationChange,
+  type ConversationEvent,
+  type ConversationMessage,
+  type ConversationModelConfig,
+  type DesktopBridge,
+  type ReplyBarActivity,
 } from "@answra/shared";
 import {
   type ChatTransport,
@@ -16,8 +17,9 @@ import {
 } from "ai";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChatAttachment, ChatMessage } from "../components/panels/ChatPanel";
+import { projectReplyActivity } from "./replyActivity";
 
-const ACTIVE_CONVERSATION_ID = "active-exam-conversation";
+export const ACTIVE_CONVERSATION_ID = ActiveExamConversationId;
 type TerminalWaiter = { resolve: () => void; reject: (error: Error) => void };
 
 export function useConversationChat(platform: DesktopBridge | undefined) {
@@ -60,8 +62,11 @@ export function useConversationChat(platform: DesktopBridge | undefined) {
                 change.type === "event" &&
                 change.event.runId === initial.activeRunId &&
                 change.event.revision <= initial.revision
-              )
-                projectActivity(change, setReplyActivities, setReplyError);
+              ) {
+                setReplyActivities((current) => projectReplyActivity(current, change.event));
+                if (change.event.chunk.type === "error")
+                  setReplyError(change.event.chunk.errorText);
+              }
             }
           }
         }
@@ -201,8 +206,11 @@ export function useConversationChat(platform: DesktopBridge | undefined) {
             throw new Error("收到无效的 AI 消息事件");
           const chunk = validation.value;
           queue.push(chunk);
-          projectActivity({ type: "event", event }, setReplyActivities, setReplyError);
-          if (chunk.type === "error") runErrorRef.current = chunk.errorText;
+          setReplyActivities((current) => projectReplyActivity(current, event));
+          if (chunk.type === "error") {
+            runErrorRef.current = chunk.errorText;
+            setReplyError(chunk.errorText);
+          }
           flush();
           if (chunk.type === "finish" || chunk.type === "abort") {
             closed = true;
@@ -359,84 +367,6 @@ export function useConversationChat(platform: DesktopBridge | undefined) {
     replyActivities,
     send,
   };
-}
-
-function projectActivity(
-  change: Extract<ConversationChange, { type: "event" }>,
-  setActivities: React.Dispatch<React.SetStateAction<ReplyBarActivity[]>>,
-  setError: React.Dispatch<React.SetStateAction<string | undefined>>,
-): void {
-  const { chunk, runId } = change.event;
-  const add = (activity: ReplyBarActivity, merge = false) =>
-    setActivities((current) => {
-      const last = current.at(-1);
-      if (merge && last?.id === activity.id && last.kind === activity.kind)
-        return [...current.slice(0, -1), { ...last, text: last.text + activity.text }];
-      return [...current, activity];
-    });
-  if (chunk.type === "text-delta")
-    add({ id: chunk.id, kind: "text", label: "", text: chunk.delta }, true);
-  else if (chunk.type === "reasoning-delta")
-    add({ id: chunk.id, kind: "thinking", label: "思考", text: chunk.delta }, true);
-  else if (chunk.type === "tool-input-start")
-    add({
-      id: `${chunk.toolCallId}:start`,
-      kind: "tool",
-      label: `工具：${chunk.title ?? chunk.toolName}`,
-      text: "准备调用",
-    });
-  else if (chunk.type === "tool-input-delta")
-    add(
-      {
-        id: `${chunk.toolCallId}:input`,
-        kind: "tool",
-        label: "工具参数",
-        text: chunk.inputTextDelta,
-      },
-      true,
-    );
-  else if (chunk.type === "tool-input-available")
-    add({
-      id: `${chunk.toolCallId}:input-ready`,
-      kind: "tool",
-      label: `工具：${chunk.title ?? chunk.toolName}`,
-      text: formatValue(chunk.input),
-    });
-  else if (chunk.type === "tool-output-available")
-    add({
-      id: `${chunk.toolCallId}:output`,
-      kind: "tool",
-      label: "工具结果",
-      text: formatValue(chunk.output),
-    });
-  else if (chunk.type === "tool-input-error" || chunk.type === "tool-output-error")
-    add({
-      id: `${chunk.toolCallId}:error`,
-      kind: "error",
-      label: "工具失败",
-      text: chunk.errorText,
-    });
-  else if (chunk.type === "error") {
-    setError(chunk.errorText);
-    add({ id: `${runId}:error`, kind: "error", label: "模型错误", text: chunk.errorText });
-  } else if (chunk.type === "start")
-    add({ id: `${runId}:start`, kind: "status", label: "模型已连接，等待输出", text: "" });
-  else if (chunk.type === "source-url" || chunk.type === "source-document")
-    add({
-      id: chunk.sourceId,
-      kind: "source",
-      label: "来源",
-      text: chunk.type === "source-url" ? (chunk.title ?? chunk.url) : chunk.title,
-    });
-}
-
-function formatValue(value: unknown): string {
-  if (typeof value === "string") return value;
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return "工具已返回结果";
-  }
 }
 
 function changeRevision(change: ConversationChange): number {

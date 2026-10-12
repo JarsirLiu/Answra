@@ -1,4 +1,4 @@
-import type { RegionRect } from "@answra/shared";
+import type { RegionRect, ReplyBarPlacement } from "@answra/shared";
 
 const SELECTION_GAP = 12;
 
@@ -27,4 +27,48 @@ export function clampContentSize(
     width: Math.min(size.width, maxSize.width, workArea.width - margin),
     height: Math.min(size.height, maxSize.height, workArea.height - margin),
   };
+}
+
+export function positionReplyBarSize(
+  anchor: { x: number; y: number },
+  workArea: { x: number; y: number; width: number; height: number },
+  size: { width: number; height: number },
+  barSize: { width: number; height: number },
+): { x: number; y: number; placement: ReplyBarPlacement } {
+  const areaX = finiteRound(workArea.x);
+  const areaY = finiteRound(workArea.y);
+  const areaWidth = Math.max(1, finiteFloor(workArea.width, 1));
+  const areaHeight = Math.max(1, finiteFloor(workArea.height, 1));
+  const width = clamp(finiteRound(size.width, 1), 1, areaWidth);
+  const height = clamp(finiteRound(size.height, 1), 1, areaHeight);
+  const barHeight = clamp(finiteRound(barSize.height, 1), 1, areaHeight);
+  const anchorX = finiteRound(anchor.x);
+  const anchorY = finiteRound(anchor.y);
+  const expanded = height > barHeight + 20;
+  const extraHeight = Math.max(0, height - barHeight);
+  const aboveSpace = anchorY - areaY;
+  const belowSpace = areaY + areaHeight - anchorY - barHeight;
+  const placement: ReplyBarPlacement = !expanded
+    ? "above"
+    : aboveSpace >= extraHeight || aboveSpace >= belowSpace
+      ? "above"
+      : "below";
+  const barWidth = finiteRound(barSize.width, width);
+  const centeredX = anchorX + (barWidth - width) / 2;
+  const x = clamp(finiteRound(centeredX), areaX, areaX + areaWidth - width);
+  const preferredY = placement === "above" ? anchorY + barHeight - height : anchorY;
+  const y = clamp(finiteRound(preferredY), areaY, areaY + areaHeight - height);
+  return { x, y, placement };
+}
+
+function finiteRound(value: number, fallback = 0): number {
+  return Number.isFinite(value) ? Math.round(value) : fallback;
+}
+
+function finiteFloor(value: number, fallback: number): number {
+  return Number.isFinite(value) ? Math.floor(value) : fallback;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
 }

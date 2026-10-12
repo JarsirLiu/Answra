@@ -8,13 +8,14 @@
   padding: 14px 14px 10px;
 }
 .chat-message {
-  max-width: 92%;
+  max-width: 94%;
   display: flex;
   align-items: flex-start;
   gap: 7px;
 }
 .chat-message--user {
   align-self: flex-end;
+  max-width: 76%;
 }
 .assistant-avatar {
   width: 22px;
@@ -27,7 +28,7 @@
   background: var(--mint-wash);
 }
 .message-content {
-  padding: 8px 10px;
+  padding: 7px 9px;
   border: 1px solid var(--glass-line-soft);
   border-radius: 4px 11px 11px;
   color: var(--ink-soft);
@@ -48,34 +49,20 @@
 }
 .message-attachment img {
   display: block;
-  max-width: 260px;
-  max-height: 220px;
-  border-radius: 7px;
+  width: min(140px, 100%);
+  max-height: 100px;
+  border-radius: 5px;
   object-fit: contain;
   background: var(--field);
 }
-.message-attachment figcaption {
-  margin-top: 4px;
-  color: var(--muted);
+.composer-stop-button {
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--glass-line);
+  border-radius: var(--ctl-radius);
+  color: var(--ink-soft);
+  background: var(--field);
   font-size: var(--font-xs);
-}
-.composer {
-  margin: 0 10px 10px;
-  padding: 7px 8px 6px;
-}
-.composer textarea {
-  width: 100%;
-  min-height: 58px;
-  resize: none;
-  border: 0;
-  outline: 0;
-  color: var(--ink);
-  background: transparent;
-  font-size: 12px;
-  line-height: 1.6;
-}
-.composer textarea::placeholder {
-  color: var(--faint);
 }
 .file-input-hidden {
   display: none;
@@ -116,32 +103,4 @@
 .attachment-preview button:hover {
   color: var(--ink);
   background: var(--hover);
-}
-.composer-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  color: var(--faint);
-  font-size: var(--font-xs);
-}
-.composer-footer button {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  height: 26px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: var(--ctl-radius);
-  color: white;
-  background: var(--mint);
-  font-size: var(--font-sm);
-  transition: background 140ms ease-out;
-}
-.composer-footer button:hover {
-  background: var(--mint-deep);
-}
-.composer-footer button:disabled {
-  color: var(--ink);
-  opacity: 0.45;
-  background: var(--field);
 }

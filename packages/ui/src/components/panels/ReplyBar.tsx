@@ -1,5 +1,5 @@
 import type { ReplyBarActivity } from "@answra/shared";
-import { Camera, Send, Square, X } from "lucide-react";
+import { Camera, ChevronDown, ChevronUp, Send, Square, X } from "lucide-react";
 import type { RefObject } from "react";
 import { ICON, ICON_SM, ICON_STROKE } from "../../tokens";
 import { SurfaceButton } from "../controls/SurfaceButton";
@@ -21,6 +21,11 @@ interface ReplyBarProps {
   replyActivities: ReplyBarActivity[];
   replyError?: string;
   replyPending?: boolean;
+  showConversationToggle?: boolean;
+  conversationExpanded?: boolean;
+  conversationPinned?: boolean;
+  onConversationHover?: () => void;
+  onToggleConversation?: () => void;
   /** 隐藏的文件选择框 ref（无捕获桥时回落选择本地图片）。 */
   fileInputRef: RefObject<HTMLInputElement | null>;
   /** 从文件选择框追加一张本地图片。 */
@@ -51,6 +56,11 @@ export function ReplyBar({
   replyActivities,
   replyError,
   replyPending,
+  showConversationToggle = false,
+  conversationExpanded = false,
+  conversationPinned = false,
+  onConversationHover,
+  onToggleConversation,
   fileInputRef,
   onAttachmentChange,
   onAttachmentRemove,
@@ -65,10 +75,31 @@ export function ReplyBar({
         <ReplyActivityTicker
           activities={replyActivities}
           error={replyError}
+          onConversationHover={onConversationHover}
           pending={replyPending}
           replyText={replyText}
         />
         <div className="reply-actions reply-actions--stream">
+          {showConversationToggle && (
+            <SurfaceButton
+              aria-expanded={conversationExpanded}
+              aria-label={
+                conversationPinned
+                  ? "取消固定并收起对话面板"
+                  : conversationExpanded
+                    ? "固定对话面板"
+                    : "展开对话面板"
+              }
+              onClick={onToggleConversation}
+              type="button"
+            >
+              {conversationExpanded ? (
+                <ChevronDown aria-hidden="true" size={ICON_SM} strokeWidth={ICON_STROKE} />
+              ) : (
+                <ChevronUp aria-hidden="true" size={ICON_SM} strokeWidth={ICON_STROKE} />
+              )}
+            </SurfaceButton>
+          )}
           {/* 保持发送/停止键在关闭键左侧，流式内容不能挤压这组操作。 */}
           <SurfaceButton
             aria-label="取消回复并返回发送"
@@ -136,6 +167,26 @@ export function ReplyBar({
         </span>
       )}
       <div className="reply-actions">
+        {showConversationToggle && (
+          <SurfaceButton
+            aria-expanded={conversationExpanded}
+            aria-label={
+              conversationPinned
+                ? "取消固定并收起对话面板"
+                : conversationExpanded
+                  ? "固定对话面板"
+                  : "展开对话面板"
+            }
+            onClick={onToggleConversation}
+            type="button"
+          >
+            {conversationExpanded ? (
+              <ChevronDown aria-hidden="true" size={ICON_SM} strokeWidth={ICON_STROKE} />
+            ) : (
+              <ChevronUp aria-hidden="true" size={ICON_SM} strokeWidth={ICON_STROKE} />
+            )}
+          </SurfaceButton>
+        )}
         <SurfaceButton aria-label="继续截图" onClick={onScreenshot}>
           <Camera aria-hidden="true" size={ICON} strokeWidth={ICON_STROKE} />
         </SurfaceButton>

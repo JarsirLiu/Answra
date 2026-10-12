@@ -10,6 +10,7 @@ import {
   type DesktopBridge,
   type RegionCaptureOptions,
   type ReplyBarAction,
+  type ReplyBarPlacement,
   type ReplyBarState,
   WindowChannels,
 } from "@answra/shared";
@@ -31,6 +32,12 @@ const bridge: DesktopBridge = {
   },
   fitReplyBar: (size: ContentSize) => {
     ipcRenderer.send(WindowChannels.FitReplyBar, size);
+  },
+  onReplyBarPlacement: (listener: (placement: ReplyBarPlacement) => void) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, placement: ReplyBarPlacement) =>
+      listener(placement);
+    ipcRenderer.on(WindowChannels.ReplyBarPlacement, wrapped);
+    return () => ipcRenderer.removeListener(WindowChannels.ReplyBarPlacement, wrapped);
   },
   sendReplyBarAction: (action: ReplyBarAction) => {
     ipcRenderer.send(WindowChannels.ReplyBarAction, action);

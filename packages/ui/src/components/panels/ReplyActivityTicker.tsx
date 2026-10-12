@@ -14,6 +14,7 @@ interface ReplyActivityTickerProps {
   activities: ReplyBarActivity[];
   error?: string;
   pending?: boolean;
+  onConversationHover?: () => void;
   replyText: string;
 }
 
@@ -28,6 +29,7 @@ export function ReplyActivityTicker({
   activities,
   error,
   pending,
+  onConversationHover,
   replyText,
 }: ReplyActivityTickerProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -87,6 +89,7 @@ export function ReplyActivityTicker({
         aria-label="模型回复活动"
         className="reply-activity-viewport"
         data-orientation="horizontal"
+        onMouseEnter={onConversationHover}
         ref={viewportRef}
         role="log"
       >

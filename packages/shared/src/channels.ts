@@ -23,6 +23,8 @@ export const WindowChannels = {
   SetReplyBarState: "answra:window:set-reply-bar-state",
   /** 独立回复窗口上报自身尺寸，不调整主工具栏窗口。 */
   FitReplyBar: "answra:window:fit-reply-bar",
+  /** 回复窗口上报展开面板的位置方向。 */
+  ReplyBarPlacement: "answra:window:reply-bar-placement",
   /** 回复窗口发起的用户操作。 */
   ReplyBarAction: "answra:window:reply-bar-action",
   /** 主进程把最新任务状态推送给回复窗口。 */
@@ -30,6 +32,8 @@ export const WindowChannels = {
   /** 回复窗口订阅就绪后请求当前状态，避免启动时序丢失首次推送。 */
   ReplyBarReady: "answra:window:reply-bar-ready",
 } as const;
+
+export type ReplyBarPlacement = "above" | "below";
 
 /** 渲染进程上报的内容尺寸（CSS 像素，含透明呼吸区）。 */
 export interface ContentSize {
@@ -106,6 +110,8 @@ export const ConversationChannels = {
   ReadEvents: "answra:conversation:read-events",
   Change: "answra:conversation:change",
 } as const;
+
+export const ActiveExamConversationId = "active-exam-conversation";
 
 export interface ConversationModelConfig {
   baseUrl: string;

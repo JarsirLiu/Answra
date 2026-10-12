@@ -1,6 +1,7 @@
-import { MessageSquareText, Sparkles, X } from "lucide-react";
-import type { FormEvent, RefObject } from "react";
+import { Sparkles, X } from "lucide-react";
+import type { RefObject } from "react";
 import { ICON_SM } from "../../tokens";
+import { ConversationComposer } from "./ConversationComposer";
 import { PanelShell } from "./PanelShell";
 import "./ChatPanel.css";
 
@@ -47,11 +48,6 @@ export function ChatPanel({
   streaming,
   onClose,
 }: ChatPanelProps) {
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    onSend();
-  }
-
   return (
     <PanelShell
       context={attachments.length ? "截图已添加，可补充问题" : undefined}
@@ -70,8 +66,7 @@ export function ChatPanel({
             <div className="message-content">
               {message.attachments?.map((att) => (
                 <figure className="message-attachment" key={att.id}>
-                  <img alt={`用户添加的截图：${att.name}`} src={att.previewUrl} />
-                  <figcaption>{att.name}</figcaption>
+                  <img alt="用户添加的截图" src={att.previewUrl} />
                 </figure>
               ))}
               {message.content}
@@ -79,7 +74,28 @@ export function ChatPanel({
           </article>
         ))}
       </div>
-      <form className="composer input-surface" onSubmit={handleSubmit}>
+      <ConversationComposer
+        footerLabel={configured ? "OpenAI-compatible" : "请先配置模型服务"}
+        inputLabel="补充问题"
+        onAddAttachment={() => fileInputRef.current?.click()}
+        onSubmit={onSend}
+        onValueChange={onDraftChange}
+        placeholder={attachments.length ? "补充问题或说明…" : "输入问题，或先从模式功能添加截图…"}
+        submitDisabled={streaming || (!draft.trim() && attachments.length === 0)}
+        value={draft}
+        beforeSubmit={
+          streaming ? (
+            <button
+              aria-label="停止回复"
+              className="composer-stop-button"
+              onClick={onCancel}
+              type="button"
+            >
+              停止
+            </button>
+          ) : null
+        }
+      >
         <input
           accept="image/*"
           aria-label="选择截图图片"
@@ -100,35 +116,7 @@ export function ChatPanel({
             </button>
           </div>
         ))}
-        <textarea
-          aria-label="补充问题"
-          onChange={(event) => onDraftChange(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              event.currentTarget.form?.requestSubmit();
-            }
-          }}
-          placeholder={attachments.length ? "补充问题或说明…" : "输入问题，或先从模式功能添加截图…"}
-          value={draft}
-        />
-        <div className="composer-footer">
-          <span>{configured ? "OpenAI-compatible" : "请先配置模型服务"}</span>
-          {streaming && (
-            <button aria-label="停止回复" onClick={onCancel} type="button">
-              停止
-            </button>
-          )}
-          <button
-            aria-label="发送给 AI"
-            disabled={streaming || (!draft.trim() && attachments.length === 0)}
-            type="submit"
-          >
-            <MessageSquareText aria-hidden="true" size={ICON_SM} />
-            发送
-          </button>
-        </div>
-      </form>
+      </ConversationComposer>
     </PanelShell>
   );
 }

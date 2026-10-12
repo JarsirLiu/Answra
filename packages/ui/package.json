@@ -16,7 +16,9 @@
   "dependencies": {
     "@ai-sdk/react": "3.0.306",
     "ai": "6.0.303",
-    "lucide-react": "^1.54.0"
+    "lucide-react": "^1.54.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
   },
   "peerDependencies": {
     "react": ">=19",

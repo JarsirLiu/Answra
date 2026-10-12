@@ -1,5 +1,6 @@
 export type { DesktopBridge, OverlayMode } from "./bridge";
 export {
+  ActiveExamConversationId,
   type AmbientChannelMap,
   AmbientChannels,
   type AmbientColorPayload,
@@ -23,6 +24,7 @@ export {
   type ReplyBarAction,
   type ReplyBarActivity,
   type ReplyBarAttachment,
+  type ReplyBarPlacement,
   type ReplyBarState,
   type ScreenshotFailure,
   type ScreenshotResult,
