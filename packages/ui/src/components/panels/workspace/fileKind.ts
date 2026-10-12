@@ -7,7 +7,7 @@ export type WorkspaceFileKind = "markdown" | "docx" | "pdf" | "image" | "text" |
 export function classifyFile(fileName: string): WorkspaceFileKind {
   const ext = fileName.slice(fileName.lastIndexOf(".") + 1).toLowerCase();
   if (ext === "md" || ext === "markdown") return "markdown";
-  if (ext === "docx") return "docx";
+  if (ext === "docx" || ext === "doc") return "docx";
   if (ext === "pdf") return "pdf";
   if (["png", "jpg", "jpeg", "webp", "gif"].includes(ext)) return "image";
   if (["txt", "json"].includes(ext)) return "text";

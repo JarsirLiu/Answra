@@ -1,6 +1,7 @@
 import type { DesktopBridge, WorkspaceFileContent } from "@answra/shared";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { pasteImageName, resolveRelative, toResourceUrl } from "./fileKind";
+import { ZoomablePreview } from "./ZoomablePreview";
 import "./WorkspacePanel.css";
 
 /**
@@ -275,7 +276,9 @@ export function MarkdownEditorPane({
       {viewMode === "edit" ? (
         <div ref={hostRef} className="workspace-editor__host" />
       ) : (
-        <MarkdownStaticPreview text={baselineRef.current} dir={dir} />
+        <ZoomablePreview className="workspace-preview-markdown-zoom">
+          <MarkdownStaticPreview text={baselineRef.current} dir={dir} />
+        </ZoomablePreview>
       )}
     </div>
   );

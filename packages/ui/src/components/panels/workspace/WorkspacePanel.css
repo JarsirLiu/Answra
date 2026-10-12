@@ -305,6 +305,91 @@
   font-size: 12px;
 }
 
+/* 统一预览缩放容器：工具栏 + 可滚动视口，内容以 CSS zoom 缩放（不重渲染）。 */
+.zoomable-preview {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+
+.zoomable-preview__toolbar {
+  display: flex;
+  flex: 0 0 30px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  padding-bottom: 4px;
+}
+
+.zoomable-preview__toolbar button {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border: 0;
+  border-radius: var(--ctl-radius);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.zoomable-preview__toolbar button:hover:not(:disabled) {
+  color: var(--ink);
+  background: var(--hover);
+}
+
+.zoomable-preview__toolbar button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.zoomable-preview__value {
+  min-width: 48px;
+  font-variant-numeric: tabular-nums;
+}
+
+.zoomable-preview__viewport {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+}
+
+.zoomable-preview__content {
+  transform-origin: top center;
+  margin: auto;
+}
+
+/* 纯文本预览 */
+.workspace-preview-text {
+  margin: 0;
+  padding: 10px 12px;
+  align-self: stretch;
+  width: 100%;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--glass-line-soft);
+  border-radius: var(--ctl-radius);
+}
+
+/* 图片预览 */
+.workspace-preview-image {
+  display: block;
+  margin: 0 auto;
+  max-width: none;
+  border-radius: 6px;
+}
+
+
 .workspace-preview-pdf-state > .workspace-preview-status {
   min-height: 0;
   padding: 12px;

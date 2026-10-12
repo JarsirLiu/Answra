@@ -1,11 +1,7 @@
 import type { WorkspaceFileContent } from "@answra/shared";
-import { Minus, Plus, RotateCcw } from "lucide-react";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { useEffect, useRef, useState } from "react";
-
-const MIN_ZOOM = 0.5;
-const MAX_ZOOM = 2;
-const ZOOM_STEP = 0.1;
+import { ZoomablePreview } from "./ZoomablePreview";
 
 /**
  * pdf 预览：pdfjs-dist 渲染到 canvas（懒加载 worker，首次打开才加载）。
@@ -15,7 +11,7 @@ const ZOOM_STEP = 0.1;
  * 解析（fake worker）。禁止手工 new Worker + PDFWorker.fromPort/create({ port })——
  * 该自定义管道在 Electron 29 的 renderer 中会导致 GetDocRequest 握手静默挂起。
  *
- * 缩放通过 CSS 改变画布显示尺寸，不重新解析或重渲染文档（类似网页缩放体验）。
+ * 缩放由外层 `ZoomablePreview` 的 CSS `zoom` 承担（网页式，不重渲染文档）。
  */
 export function PdfPreviewPane({
   content,
@@ -26,11 +22,8 @@ export function PdfPreviewPane({
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const pagesRef = useRef<Array<{ canvas: HTMLCanvasElement; width: number; height: number }>>([]);
-  const zoomRef = useRef(1);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState<string | null>(null);
-  const [zoom, setZoom] = useState(1);
-  zoomRef.current = zoom;
 
   useEffect(() => {
     const host = hostRef.current;
@@ -80,8 +73,8 @@ export function PdfPreviewPane({
           const canvas = document.createElement("canvas");
           canvas.width = Math.floor(viewport.width * pixelRatio);
           canvas.height = Math.floor(viewport.height * pixelRatio);
-          canvas.style.width = `${Math.round(viewport.width * zoomRef.current)}px`;
-          canvas.style.height = `${Math.round(viewport.height * zoomRef.current)}px`;
+          canvas.style.width = `${Math.round(viewport.width)}px`;
+          canvas.style.height = `${Math.round(viewport.height)}px`;
           host.append(canvas);
           pagesRef.current.push({ canvas, width: viewport.width, height: viewport.height });
           const context = canvas.getContext("2d");
@@ -126,54 +119,12 @@ export function PdfPreviewPane({
     }
   }, [content, path]);
 
-  // 缩放只改变画布显示尺寸（CSS），不重新解析或重渲染文档，类似网页缩放体验。
-  useEffect(() => {
-    for (const page of pagesRef.current) {
-      page.canvas.style.width = `${Math.round(page.width * zoom)}px`;
-      page.canvas.style.height = `${Math.round(page.height * zoom)}px`;
-    }
-  }, [zoom]);
-
   return (
-    <div className="workspace-preview-pdf-state">
-      <div className="workspace-pdf-toolbar" role="toolbar" aria-label="PDF 缩放">
-        <button
-          type="button"
-          aria-label="缩小 PDF"
-          title="缩小 PDF"
-          disabled={zoom <= MIN_ZOOM}
-          onClick={() =>
-            setZoom((value) => Math.max(MIN_ZOOM, Math.round((value - ZOOM_STEP) * 10) / 10))
-          }
-        >
-          <Minus aria-hidden="true" size={14} />
-        </button>
-        <span aria-live="polite">{Math.round(zoom * 100)}%</span>
-        <button
-          type="button"
-          aria-label="放大 PDF"
-          title="放大 PDF"
-          disabled={zoom >= MAX_ZOOM}
-          onClick={() =>
-            setZoom((value) => Math.min(MAX_ZOOM, Math.round((value + ZOOM_STEP) * 10) / 10))
-          }
-        >
-          <Plus aria-hidden="true" size={14} />
-        </button>
-        <button
-          type="button"
-          aria-label="重置 PDF 缩放"
-          title="重置缩放"
-          disabled={zoom === 1}
-          onClick={() => setZoom(1)}
-        >
-          <RotateCcw aria-hidden="true" size={13} />
-        </button>
-      </div>
+    <ZoomablePreview className="workspace-preview-pdf-zoom" fitSignal={status === "ready" ? 1 : 0}>
       {status === "loading" && <div className="workspace-preview-status">PDF 解析中…</div>}
       {status === "error" && <div className="workspace-preview-status">{error}</div>}
       <div ref={hostRef} className="workspace-preview-pdf" hidden={status !== "ready"} />
-    </div>
+    </ZoomablePreview>
   );
 }
 

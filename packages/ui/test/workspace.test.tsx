@@ -235,16 +235,16 @@ describe("PdfPreviewPane", () => {
     await waitFor(() =>
       expect(container.querySelector(".workspace-preview-pdf")).not.toHaveAttribute("hidden"),
     );
-    fireEvent.click(screen.getByRole("button", { name: "放大 PDF" }));
+    fireEvent.click(screen.getByRole("button", { name: "放大" }));
     expect(await screen.findByText("110%")).toBeInTheDocument();
-    // 缩放只改画布显示尺寸（CSS），不重新解析或重渲染文档，故 getDocument 仅调用一次。
+    // 缩放由外层 ZoomablePreview 的 CSS zoom 承担，不重新解析或重渲染文档，故 getDocument 仅调用一次。
     expect(pdfGetDocument).toHaveBeenCalledTimes(1);
     const canvas = container.querySelector(
       ".workspace-preview-pdf canvas",
     ) as HTMLCanvasElement | null;
     expect(canvas).not.toBeNull();
-    expect(canvas?.style.width).toBe("220px");
-    expect(canvas?.style.height).toBe("330px");
+    expect(canvas?.style.width).toBe("200px");
+    expect(canvas?.style.height).toBe("300px");
   });
 
   it("shows PDF load failures without exposing an empty canvas host", async () => {

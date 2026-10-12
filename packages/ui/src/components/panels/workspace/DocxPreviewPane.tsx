@@ -1,20 +1,33 @@
 import type { WorkspaceFileContent } from "@answra/shared";
 import { useEffect, useRef, useState } from "react";
+import { ZoomablePreview } from "./ZoomablePreview";
 
 /**
  * docx 预览：docx-preview 在渲染进程把文档字节渲染为 HTML。
  * 与 Codex 桌面版同款技术路线（纯前端解析，不依赖 Office）。
+ *
+ * 缩放由外层 `ZoomablePreview` 承担（网页式，不重渲染）；内容就绪后自动适应宽度。
+ * 旧版 .doc（OLE2 二进制）docx-preview 无法解析，给出明确提示而非崩溃。
  */
-export function DocxPreviewPane({ content }: { content: WorkspaceFileContent }) {
+export function DocxPreviewPane({
+  content,
+  name,
+}: {
+  content: WorkspaceFileContent;
+  name?: string;
+}) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState<string | null>(null);
 
+  const isLegacyDoc =
+    !!name && name.toLowerCase().endsWith(".doc") && !name.toLowerCase().endsWith(".docx");
+
   useEffect(() => {
+    if (isLegacyDoc) return;
     const host = hostRef.current;
     if (!host) return;
     let cancelled = false;
-    let resizeObserver: ResizeObserver | null = null;
     void (async () => {
       try {
         const { renderAsync } = await import("docx-preview");
@@ -27,20 +40,7 @@ export function DocxPreviewPane({ content }: { content: WorkspaceFileContent }) 
           experimental: true,
           useBase64URL: true,
         });
-        if (cancelled) return;
-        const fitPage = () => {
-          const page = host.querySelector<HTMLElement>(".docx");
-          if (!page || host.clientWidth === 0) return;
-          host.style.zoom = "1";
-          const pageWidth = page.offsetWidth;
-          if (pageWidth > 0) host.style.zoom = `${Math.min(1, host.clientWidth / pageWidth)}`;
-        };
-        fitPage();
-        if (typeof ResizeObserver !== "undefined") {
-          resizeObserver = new ResizeObserver(fitPage);
-          resizeObserver.observe(host);
-        }
-        setStatus("ready");
+        if (!cancelled) setStatus("ready");
       } catch (cause) {
         if (!cancelled) {
           setStatus("error");
@@ -50,16 +50,23 @@ export function DocxPreviewPane({ content }: { content: WorkspaceFileContent }) 
     })();
     return () => {
       cancelled = true;
-      resizeObserver?.disconnect();
     };
-  }, [content]);
+  }, [content, isLegacyDoc]);
+
+  if (isLegacyDoc) {
+    return (
+      <div className="workspace-preview-placeholder">
+        旧版 .doc 格式暂不支持应用内预览，请在 Word 中另存为 .docx 后重试。
+      </div>
+    );
+  }
 
   return (
-    <div className="workspace-preview-docx-state">
+    <ZoomablePreview className="workspace-preview-docx-zoom" fitSignal={status === "ready" ? 1 : 0}>
       {status === "loading" && <div className="workspace-preview-status">docx 解析中…</div>}
       {status === "error" && <div className="workspace-preview-status">{error}</div>}
       <div ref={hostRef} className="workspace-preview-docx" hidden={status !== "ready"} />
-    </div>
+    </ZoomablePreview>
   );
 }
 

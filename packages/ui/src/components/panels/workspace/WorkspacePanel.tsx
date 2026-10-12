@@ -5,6 +5,8 @@ import { PanelShell } from "../PanelShell";
 import { DirectoryTree } from "./DirectoryTree";
 import { DocxPreviewPane } from "./DocxPreviewPane";
 import { classifyFile } from "./fileKind";
+import { TextPreviewPane } from "./TextPreviewPane";
+import { ZoomablePreview } from "./ZoomablePreview";
 import { type EditorViewMode, MarkdownEditorPane } from "./MarkdownEditorPane";
 import { PdfPreviewPane } from "./PdfPreviewPane";
 import { useWorkspace } from "./useWorkspace";
@@ -185,18 +187,17 @@ export function WorkspacePanel({ bridge, onClose }: WorkspacePanelProps) {
                     onViewModeChange={setViewMode}
                   />
                 )}
-                {selected && kind === "docx" && content && <DocxPreviewPane content={content} />}
+                {selected && kind === "docx" && content && (
+                  <DocxPreviewPane content={content} name={selected.name} />
+                )}
                 {selected && kind === "pdf" && content && (
                   <PdfPreviewPane content={content} path={selected.path} />
                 )}
                 {selected && kind === "image" && content && (
-                  <img
-                    alt={selected.name}
-                    className="workspace-preview-image"
-                    src={`answra-file:///${selected.path}`}
-                  />
+                  <ImagePreviewPane path={selected.path} name={selected.name} />
                 )}
-                {selected && (kind === "other" || kind === "text") && (
+                {selected && kind === "text" && content && <TextPreviewPane content={content} />}
+                {selected && kind === "other" && (
                   <div className="workspace-preview-placeholder">该文件类型暂不支持应用内预览</div>
                 )}
               </div>
@@ -205,5 +206,20 @@ export function WorkspacePanel({ bridge, onClose }: WorkspacePanelProps) {
         )}
       </div>
     </PanelShell>
+  );
+}
+
+/** 图片预览：加载完成后自动适应宽度，缩放由 `ZoomablePreview` 承担。 */
+function ImagePreviewPane({ path, name }: { path: string; name: string }) {
+  const [loaded, setLoaded] = useState(false);
+  return (
+    <ZoomablePreview className="workspace-preview-image-zoom" fitSignal={loaded ? name : undefined}>
+      <img
+        alt={name}
+        className="workspace-preview-image"
+        onLoad={() => setLoaded(true)}
+        src={`answra-file:///${path}`}
+      />
+    </ZoomablePreview>
   );
 }
