@@ -1,6 +1,6 @@
 # Note：笔记本与资料合并为本地工作区
 
-状态：提案
+状态：已实施
 
 ## 问题
 
@@ -12,7 +12,7 @@
 - UI/进程/协议/持久化表面：悬浮条 `notes`/`sources` 两个面板入口、新增 `answra:workspace:*` IPC 频道、主进程文件系统访问、自定义 `answra-file://` protocol、磁盘持久化
 - 相关 Note：[markdown 编辑与图片粘贴](./2026-10-12-workspace-markdown-editor.md)、[本地文档预览与文件监听](./2026-10-12-workspace-file-preview.md)
 
-## 提案
+## 决定
 
 - 面板层：保留 `OverlayMode` 的 `notes`/`sources` 两个入口值，两者都渲染同一个 `WorkspacePanel`（左目录树 + 右内容区），后续可再合并入口；不改 `OverlayMode` 字符串值，避免波及 windowIpc 与回复窗口同步链路。
 - 数据层：用户首次进入面板时通过 `dialog.showOpenDialog` 选择一个工作区根目录；主进程把上次根目录缓存到 `userData/workspace.json`（仅存路径字符串），下次启动面板时若该路径仍存在则自动恢复，不再重复弹窗。
@@ -38,6 +38,14 @@
 - 可观察结果：选择根目录后能看到目录树；可新建多级目录与 md 文档；md 可编辑并即时写盘；重启应用后文件仍在原目录。
 - 自动化验证：`packages/ui/test/` 覆盖工作区面板的目录树渲染、文档打开/保存、旧笔记迁移；main 侧路径越界拒绝逻辑用 node:test/vitest 覆盖。
 - 需要的实机验证：Windows 上验证 `answra-file://` 图片加载与 `isWindowFromSender` 来源校验不阻断正常面板。
+
+## 后果与防回退
+
+- 文件内容和工作区根目录由 main 进程落盘管理；renderer 只能通过类型化 `DesktopBridge` 操作，路径越界必须继续被拒绝。
+
+## 验证
+
+- `apps/desktop/test/workspaceService.test.ts` 与 `packages/ui/test/workspace.test.tsx` 覆盖核心读写、目录树、迁移和 watcher 行为。
 
 ## 风险
 

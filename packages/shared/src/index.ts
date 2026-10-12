@@ -31,6 +31,12 @@ export {
   type ScreenshotSuccess,
   type WindowChannelMap,
   WindowChannels,
+  type WorkspaceChangeSet,
+  type WorkspaceChannelMap,
+  WorkspaceChannels,
+  type WorkspaceCreateRequest,
+  type WorkspaceFileContent,
+  type WorkspaceNode,
 } from "./channels";
 export {
   AI_SERVICE_BASE_URL,

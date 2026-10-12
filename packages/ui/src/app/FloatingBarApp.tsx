@@ -3,13 +3,12 @@ import { useEffect, useState } from "react";
 import { FloatingBar } from "../components/floating-bar/FloatingBar";
 import { FloatingLayerHost } from "../components/floating-bar/FloatingLayerHost";
 import { ChatPanel } from "../components/panels/ChatPanel";
-import { NotesPanel } from "../components/panels/NotesPanel";
 import { ReplyBar } from "../components/panels/ReplyBar";
 import { SettingsPanel } from "../components/panels/SettingsPanel";
-import { SourcesPanel } from "../components/panels/SourcesPanel";
+import { WorkspacePanel } from "../components/panels/workspace/WorkspacePanel";
 import { useFitContent } from "../hooks/useFitContent";
 import { useMeetingStealth } from "../hooks/useMeetingStealth";
-import { MODES, type Mode, type ModeAction, NOTE_STORAGE_KEY } from "../model";
+import { MODES, type Mode, type ModeAction } from "../model";
 import { useAppearanceController } from "./useAppearanceController";
 import { useConversationChat } from "./useConversationChat";
 import { useReplyWorkflow } from "./useReplyWorkflow";
@@ -28,8 +27,6 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
   const { panel, workflow, floatingLayers } = surfaces;
   const replyPhase = workflow?.phase ?? "closed";
   /** 截图失败原因：屏幕可见的错误提示，避免失败被静默吞掉、只看到胶囊。 */
-  const [note, setNote] = useState(() => localStorage.getItem(NOTE_STORAGE_KEY) ?? "");
-  const [sources, setSources] = useState<string[]>([]);
   const appearance = useAppearanceController(platform);
   const stealthSetting = useMeetingStealth(platform);
   const conversation = useConversationChat(platform);
@@ -89,11 +86,6 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
       return;
     }
     surfaces.openPanel("chat");
-  }
-
-  function saveNote(value: string) {
-    setNote(value);
-    localStorage.setItem(NOTE_STORAGE_KEY, value);
   }
 
   /** 按需回显已保存的 API Key；桥未实现（浏览器预览/测试）时无此能力。 */
@@ -177,22 +169,13 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
         />
       )}
 
-      {panel === "notes" && (
-        <NotesPanel
-          note={note}
+      {(panel === "notes" || panel === "sources") && (
+        <WorkspacePanel
+          bridge={platform}
           onClose={() => {
             surfaces.openPanel("closed");
             conversation.clearMessages();
           }}
-          onNoteChange={saveNote}
-        />
-      )}
-
-      {panel === "sources" && (
-        <SourcesPanel
-          onClose={() => surfaces.openPanel("closed")}
-          onSourcesChange={setSources}
-          sources={sources}
         />
       )}
 

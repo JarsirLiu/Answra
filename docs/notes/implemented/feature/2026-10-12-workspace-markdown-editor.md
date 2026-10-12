@@ -1,6 +1,6 @@
 # Note：工作区 markdown 编辑器与图片粘贴
 
-状态：提案
+状态：已实施
 
 ## 问题
 
@@ -12,7 +12,7 @@
 - UI/进程/协议/持久化表面：工作区面板内容区；图片经 `workspace` IPC 写入文档同目录 `assets/`；外部变更经 `changed` 推送刷新
 - 相关 Note：[工作区合并](./2026-10-12-workspace-merge.md)、[本地文档预览与文件监听](./2026-10-12-workspace-file-preview.md)
 
-## 提案
+## 决定
 
 - 编辑器采用 CodeMirror 6 + `@codemirror/lang-markdown`（Codex 桌面版同款选型），预览复用现有 `react-markdown` + `remark-gfm`，编辑/预览双态切换。
 - 粘贴图片：编辑器监听 `paste` 事件，`clipboardData` 中含图片文件时调用 `workspace` IPC 把 PNG 写入当前文档同目录 `assets/<时间戳>-<原名>.png`，并在光标处插入相对链接（`\!\[\]\(assets/xxx.png\)` 形式，路径以 `assets/` 为前缀）；预览与 `answra-file://` 按相对路径解析。
@@ -36,6 +36,14 @@
 - 可观察结果：md 编辑有语法高亮；粘贴截图后文档目录出现 `assets/` 图片且预览立即可见；外部编辑器修改文件后（无未保存编辑时）应用内内容自动刷新且光标大致保留。
 - 自动化验证：`packages/ui/test/` 覆盖粘贴写盘路径拼接、相对链接插入、外部刷新的冲突保护分支。
 - 需要的实机验证：Windows 剪贴板截图粘贴（截图工具/微信/浏览器复制图片）写入与展示。
+
+## 后果与防回退
+
+- CodeMirror 持有编辑状态，自动保存和外部修改冲突提示集中在编辑器组件；图片写入必须经过 workspace IPC。
+
+## 验证
+
+- 工作区 UI 测试覆盖路径解析、资源 URL 和迁移；CodeMirror 粘贴与冲突分支保留桌面实机验证要求。
 
 ## 风险
 

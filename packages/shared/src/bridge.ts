@@ -10,6 +10,10 @@ import type {
   ReplyBarPlacement,
   ReplyBarState,
   ScreenshotResult,
+  WorkspaceChangeSet,
+  WorkspaceCreateRequest,
+  WorkspaceFileContent,
+  WorkspaceNode,
 } from "./channels";
 
 /**
@@ -85,4 +89,23 @@ export interface DesktopBridge {
   ) => Promise<{ runId: string }>;
   cancelConversationRun?: (runId: string) => void;
   onConversationChange?: (listener: (change: ConversationChange) => void) => () => void;
+  // ---- 本地工作区（合并笔记本与资料；浏览器预览/测试环境可未实现，调用方需判空） ----
+  /** 读取缓存的上一工作区根目录；未选择过时 root 为 null。 */
+  getWorkspaceRoot?: () => Promise<{ root: string | null }>;
+  /** 弹出系统目录选择框；用户取消时 root 为 null，选择成功即缓存。 */
+  pickWorkspaceRoot?: () => Promise<{ root: string | null }>;
+  /** 列出根目录下的完整目录树。 */
+  listWorkspaceTree?: () => Promise<WorkspaceNode[]>;
+  /** 读取根目录内文件（相对路径）。 */
+  readWorkspaceFile?: (path: string) => Promise<WorkspaceFileContent>;
+  /** 以 UTF-8 写入根目录内文本文件（相对路径）。 */
+  writeWorkspaceFile?: (path: string, text: string) => Promise<void>;
+  /** 写入二进制文件（仅图片，base64；用于粘贴截图落盘）。 */
+  writeWorkspaceBytes?: (path: string, dataBase64: string) => Promise<void>;
+  /** 新建目录或空 md 文档。 */
+  createWorkspaceEntry?: (request: WorkspaceCreateRequest) => Promise<void>;
+  /** 删除文件或目录（目录递归）。 */
+  deleteWorkspaceEntry?: (path: string) => Promise<void>;
+  /** 订阅根目录内变更推送（watcher 防抖合并）；返回取消订阅函数。 */
+  onWorkspaceChanged?: (listener: (change: WorkspaceChangeSet) => void) => () => void;
 }

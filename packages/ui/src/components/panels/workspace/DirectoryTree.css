@@ -1,0 +1,115 @@
+.workspace-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow: auto;
+  height: 100%;
+}
+
+.workspace-tree__empty {
+  color: var(--panel-muted, #888);
+  font-size: 12px;
+  padding: 8px;
+}
+
+.workspace-tree__actions {
+  display: flex;
+  gap: 6px;
+}
+
+.workspace-tree__action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  border: 1px solid var(--panel-border, #ccc);
+  background: transparent;
+  color: inherit;
+  border-radius: 6px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+.workspace-tree__action:hover {
+  background: var(--panel-hover, rgba(0, 0, 0, 0.05));
+}
+
+.workspace-tree__new input {
+  width: 100%;
+  font-size: 12px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--panel-border, #ccc);
+  background: transparent;
+  color: inherit;
+}
+
+.workspace-tree__list,
+.workspace-tree ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.workspace-tree ul {
+  padding-left: 0;
+}
+
+.workspace-tree__row {
+  display: flex;
+  align-items: center;
+  border-radius: 6px;
+}
+
+.workspace-tree__row:hover {
+  background: var(--panel-hover, rgba(0, 0, 0, 0.05));
+}
+
+.workspace-tree__row--selected,
+.workspace-tree__row--selected:hover {
+  background: var(--panel-active, rgba(59, 130, 246, 0.18));
+}
+
+.workspace-tree__item {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  text-align: left;
+  padding: 3px 4px;
+  cursor: pointer;
+}
+
+.workspace-tree__item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-tree__icon-known {
+  opacity: 0.8;
+}
+
+.workspace-tree__delete {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  opacity: 0;
+  cursor: pointer;
+  padding: 3px;
+  border-radius: 4px;
+}
+
+.workspace-tree__row:hover .workspace-tree__delete {
+  opacity: 0.6;
+}
+
+.workspace-tree__row .workspace-tree__delete:hover {
+  opacity: 1;
+  color: #d33;
+}

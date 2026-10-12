@@ -117,12 +117,12 @@ describe("three-segment floating navigation", () => {
     fireEvent.click(screen.getByRole("button", { name: "打开笔记本" }));
     fireEvent.click(screen.getByRole("button", { name: "笔试" }));
 
-    expect(screen.getByRole("heading", { name: "笔记本" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "笔记本 / 资料" })).toBeInTheDocument();
     expect(screen.getByRole("menu", { name: "工作模式" })).toBeInTheDocument();
 
     fireEvent.pointerDown(document.body);
     expect(screen.queryByRole("menu", { name: "工作模式" })).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "笔记本" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "笔记本 / 资料" })).toBeInTheDocument();
   });
 
   it("attaches a screenshot, accepts a follow-up prompt, and streams the reply in the bar", async () => {
@@ -438,19 +438,16 @@ describe("three-segment floating navigation", () => {
     await waitFor(() =>
       expect(screen.getByRole("img", { name: /screenshot-.*\.png/ })).toBeInTheDocument(),
     );
-    expect(screen.queryByRole("heading", { name: "笔记本" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "笔记本 / 资料" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "收起回复条" }));
-    expect(await screen.findByRole("heading", { name: "笔记本" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "笔记本 / 资料" })).toBeInTheDocument();
   });
 
-  it("saves notebook text locally and opens settings from the third segment", () => {
+  it("opens the workspace panel with directory pick entry and opens settings from the third segment", () => {
     render(<FloatingBarApp />);
     fireEvent.click(screen.getByRole("button", { name: "打开笔记本" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "个人笔记" }), {
-      target: { value: "先确认输入约束" },
-    });
-    expect(localStorage.getItem("answra-note")).toBe("先确认输入约束");
+    expect(screen.getByRole("button", { name: /选择目录/ })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
     expect(screen.getByRole("heading", { name: "设置" })).toBeInTheDocument();
@@ -678,9 +675,9 @@ describe("three-segment floating navigation", () => {
     render(<FloatingBarApp bridge={bridge} />);
 
     fireEvent.click(screen.getByRole("button", { name: "打开笔记本" }));
-    expect(screen.getByRole("heading", { name: "笔记本" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "笔记本 / 资料" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "收起面板" }));
-    expect(screen.queryByRole("heading", { name: "笔记本" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "笔记本 / 资料" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "关闭应用" }));
     expect(bridge.close).toHaveBeenCalled();
   });

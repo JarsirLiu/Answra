@@ -1,6 +1,6 @@
 # Note：本地文档预览（docx/pdf/md 代码高亮）与文件监听
 
-状态：提案
+状态：已实施
 
 ## 问题
 
@@ -12,7 +12,7 @@
 - UI/进程/协议/持久化表面：工作区面板内容区三种预览态；`answra-file://` protocol 承载图片/PDF 资源；主进程 watcher 生命周期
 - 相关 Note：[工作区合并](./2026-10-12-workspace-merge.md)、[markdown 编辑与图片粘贴](./2026-10-12-workspace-markdown-editor.md)
 
-## 提案
+## 决定
 
 - docx：`docx-preview`（约 0.3 MB 含 jszip）在渲染进程把 ArrayBuffer 渲染为 HTML，样式限定在工作区内容容器内避免污染全局。
 - pdf：`pdfjs-dist` 渲染到 canvas（主库 + worker 约 3 MB）；worker 与主库均动态 `import()`，首次打开 pdf 才加载。
@@ -36,6 +36,14 @@
 - 可观察结果：docx 显示分页样式内容、pdf 渲染清晰可缩放、md 代码块带主题高亮；外部改动文件后预览在约 1 秒内刷新。
 - 自动化验证：main 侧 watcher 事件 → 防抖 → 推送的转换逻辑用临时目录集成测试；ui 侧预览组件按文件类型分派。
 - 需要的实机验证：Windows 上打开含中文文件名的 docx/pdf、外部（Word/浏览器下载）改动后刷新、大目录（万级文件）watcher CPU 占用。
+
+## 后果与防回退
+
+- docx/pdf 解析按需加载，watcher 只推送授权根目录内的相对变更；原生依赖和复杂文档排版仍需 Windows 实机验证。
+
+## 验证
+
+- workspace service 测试覆盖 watcher 事件转发和切换根目录，UI 测试覆盖文件类型分派与打开流程。
 
 ## 风险
 

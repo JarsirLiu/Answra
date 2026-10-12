@@ -72,6 +72,9 @@ export const WELCOME_MESSAGE =
 
 export const NOTE_STORAGE_KEY = "answra-note";
 
+/** 旧版 localStorage 笔记是否已迁移到工作区的标记键（值为 "1"）。 */
+export const NOTE_MIGRATED_FLAG = "answra-note-migrated";
+
 /** 变色龙主题开关的本地持久化键；缺省视为关闭。 */
 export const AMBIENT_FOLLOW_STORAGE_KEY = "answra-ambient-follow";
 

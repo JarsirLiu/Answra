@@ -5,7 +5,6 @@ import { afterEach, vi } from "vitest";
 afterEach(cleanup);
 
 class TestResizeObserver implements ResizeObserver {
-  constructor(_callback: ResizeObserverCallback) {}
   observe() {}
   unobserve() {}
   disconnect() {}
