@@ -335,6 +335,78 @@ describe("three-segment floating navigation", () => {
     expect(localStorage.getItem("answra-ambient-follow")).toBe("off");
   });
 
+  it("masks the API key with a closed eye and uses the shared primary save button", async () => {
+    const bridge = {
+      ...createConversationBridge(),
+      configureConversation: vi.fn().mockResolvedValue(undefined),
+    };
+    render(<FloatingBarApp bridge={bridge} />);
+    fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
+
+    const keyInput = screen.getByPlaceholderText("必填");
+    expect(keyInput).toHaveAttribute("type", "password");
+    fireEvent.change(keyInput, { target: { value: "secret" } });
+    fireEvent.click(screen.getByRole("button", { name: "显示 API Key" }));
+    expect(keyInput).toHaveAttribute("type", "text");
+    expect(screen.getByRole("button", { name: "保存" })).toHaveClass("surface-control--primary");
+    fireEvent.click(screen.getByRole("button", { name: "隐藏 API Key" }));
+    expect(keyInput).toHaveAttribute("type", "password");
+  });
+
+  it("shows a saved confirmation and keeps the masked key after a successful save", async () => {
+    const bridge = {
+      ...createConversationBridge(),
+      configureConversation: vi.fn().mockResolvedValue(undefined),
+    };
+    render(<FloatingBarApp bridge={bridge} />);
+    fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
+
+    const baseUrlInput = screen.getByPlaceholderText("http://127.0.0.1:1234/v1");
+    const modelInput = screen.getByPlaceholderText("模型 ID");
+    fireEvent.change(baseUrlInput, { target: { value: "http://127.0.0.1:1234/v1" } });
+    fireEvent.change(modelInput, { target: { value: "test-model" } });
+
+    const keyInput = screen.getByPlaceholderText("必填");
+    fireEvent.change(keyInput, { target: { value: "secret" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => expect(bridge.configureConversation).toHaveBeenCalledTimes(1));
+    expect(bridge.configureConversation).toHaveBeenCalledWith({
+      baseUrl: "http://127.0.0.1:1234/v1",
+      model: "test-model",
+      apiKey: "secret",
+    });
+    // Key 默认掩码回显，保存成功后保留掩码展示，"已保存"状态给出反馈
+    expect(keyInput).toHaveValue("secret");
+    expect(keyInput).toHaveAttribute("type", "password");
+    expect(screen.getByRole("status")).toHaveTextContent("已保存");
+  });
+
+  it("echoes the saved API key masked on open and toggles visibility with the eye icon", async () => {
+    const bridge = {
+      ...createConversationBridge(),
+      getConversationApiKey: vi.fn().mockResolvedValue({ apiKey: "saved-key" }),
+    };
+    render(<FloatingBarApp bridge={bridge} />);
+    fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
+
+    const keyInput = screen.getByPlaceholderText("必填");
+    // 打开面板即拉取已保存 Key，默认掩码展示
+    await waitFor(() => expect(bridge.getConversationApiKey).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(keyInput).toHaveValue("saved-key"));
+    expect(keyInput).toHaveAttribute("type", "password");
+
+    fireEvent.click(screen.getByRole("button", { name: "显示 API Key" }));
+    expect(keyInput).toHaveAttribute("type", "text");
+    expect(keyInput).toHaveValue("saved-key");
+
+    // 再次切换只改显隐，不重复拉取
+    fireEvent.click(screen.getByRole("button", { name: "隐藏 API Key" }));
+    fireEvent.click(screen.getByRole("button", { name: "显示 API Key" }));
+    expect(keyInput).toHaveValue("saved-key");
+    expect(bridge.getConversationApiKey).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps ambient and stealth settings independent", async () => {
     const bridge = {
       close: vi.fn(),

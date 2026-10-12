@@ -79,6 +79,16 @@
   flex: none;
 }
 
+.reply-error {
+  max-width: 300px;
+  overflow: hidden;
+  color: var(--danger, #b42318);
+  font-size: 11px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .reply-send,
 .reply-stop {
   min-width: var(--ctl-h);
@@ -110,7 +120,7 @@
   -webkit-app-region: no-drag;
 }
 
-/* ── 流式态：左侧整体是匀速滚动跑马灯，右侧原发送位是停止键 + 收起键 ── */
+/* ── 流式态：左侧整体是匀速跑马灯（rAF 驱动），右侧原发送位是停止键 + 收起键 ── */
 .reply-bar--stream {
   width: 360px;
 }
@@ -127,24 +137,13 @@
   mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
 }
 
+/* 滚动位移由 rAF 直接写 transform（恒定 75px/s），CSS 不再定义动画：
+   animationDuration 随流式文本增长被改写时会按时间比例重算进度，肉眼可见跳变。 */
 .ticker-text {
   display: inline-block;
   white-space: nowrap;
-  padding-left: 100%;
   color: var(--ink);
   font-size: 12px;
   line-height: 20px;
   will-change: transform;
-  animation-name: reply-ticker;
-  animation-timing-function: linear;
-  animation-iteration-count: infinite;
-}
-
-@keyframes reply-ticker {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(-100%);
-  }
 }

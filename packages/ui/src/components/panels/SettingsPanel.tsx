@@ -45,6 +45,8 @@ export function SettingsPanel({
   const [baseUrl, setBaseUrl] = useState(modelConfig.baseUrl);
   const [model, setModel] = useState(modelConfig.model);
   const [apiKey, setApiKey] = useState("");
+  // 打开面板即回显已保存的 Key，默认掩码（password 圆点）+ 闭眼图标；
+  // 点眼睛切换明文，不再要求"点开才拉取"。
   const [showApiKey, setShowApiKey] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -53,6 +55,25 @@ export function SettingsPanel({
 
   useEffect(() => {
     return () => clearTimeout(savedTimerRef.current ?? undefined);
+  }, []);
+
+  const revealRef = useRef(onRevealApiKey);
+  revealRef.current = onRevealApiKey;
+
+  useEffect(() => {
+    // 打开面板即拉取已保存的 Key 回显（掩码展示）；未配置或未实现时保持空。
+    // 通过 ref 取回调：上游每次渲染传新箭头函数，依赖它会造成重复拉取。
+    const fetchKey = revealRef.current;
+    if (!fetchKey) return;
+    let cancelled = false;
+    fetchKey()
+      .then(({ apiKey: savedKey }) => {
+        if (!cancelled && savedKey) setApiKey(savedKey);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   async function saveModelConfig() {
@@ -65,9 +86,8 @@ export function SettingsPanel({
         model: model.trim(),
         ...(apiKey ? { apiKey } : {}),
       });
-      // Key 出于安全不回显，保存成功即清空输入框；
-      // 用"已保存"状态提示替代静默清空，避免被误解为保存失败。
-      setApiKey("");
+      // Key 现在默认掩码回显，保存成功后保留输入内容不再清空；
+      // 用"已保存"状态提示确认结果。
       setJustSaved(true);
       clearTimeout(savedTimerRef.current ?? undefined);
       savedTimerRef.current = setTimeout(() => setJustSaved(false), 2500);
@@ -77,19 +97,7 @@ export function SettingsPanel({
       setSaving(false);
     }
   }
-  /** 点眼睛显示时才向主进程拉取已解密的 Key 回显；输入框已有内容则仅切换显隐。 */
-  async function toggleRevealApiKey() {
-    const nextVisible = !showApiKey;
-    setShowApiKey(nextVisible);
-    if (nextVisible && !apiKey && onRevealApiKey) {
-      try {
-        const { apiKey: savedKey } = await onRevealApiKey();
-        if (savedKey) setApiKey(savedKey);
-      } catch {
-        // 拉取失败保持空输入，不阻塞显隐切换
-      }
-    }
-  }
+
   return (
     <PanelShell onClose={onClose} title="设置" variant="settings">
       <div className="settings-panel">
@@ -154,23 +162,24 @@ export function SettingsPanel({
             />
           </label>
           <label className="setting-field">
-            <span>API Key（可选）</span>
+            <span>API Key</span>
             <span className="setting-secret-field">
               <input
                 autoComplete="new-password"
                 onChange={(event) => setApiKey(event.target.value)}
-                placeholder="留空保留已保存的 Key"
+                placeholder="必填"
                 type={showApiKey ? "text" : "password"}
                 value={apiKey}
               />
               <SurfaceButton
                 aria-label={showApiKey ? "隐藏 API Key" : "显示 API Key"}
                 className="setting-secret-toggle"
-                onClick={() => void toggleRevealApiKey()}
+                onClick={() => setShowApiKey((visible) => !visible)}
                 title={showApiKey ? "隐藏 API Key" : "显示 API Key"}
                 variant="quiet"
               >
-                {showApiKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                {/* 掩码态 = 闭眼，明文态 = 睁眼，与直觉一致。 */}
+                {showApiKey ? <Eye size={16} /> : <EyeOff size={16} />}
               </SurfaceButton>
             </span>
           </label>

@@ -1,5 +1,5 @@
 import { Camera, Send, Square, X } from "lucide-react";
-import type { RefObject } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 import { ICON, ICON_SM, ICON_STROKE } from "../../tokens";
 import { SurfaceButton } from "../controls/SurfaceButton";
 import type { ChatAttachment } from "./ChatPanel";
@@ -7,6 +7,11 @@ import "./ReplyBar.css";
 
 /** 回复条两种形态：编辑预备区（composing）/ 流式滚动回复（streaming）。 */
 export type ReplyPhase = "composing" | "streaming";
+
+/** 跑马灯恒定滚动速度（px/s）：按时长线性跟读的舒适区，回复长短不再影响快慢。 */
+const TICKER_SPEED = 75;
+/** 循环一圈后重新入场前的空档（px）：固定小间距，不再随容器宽度拉长等待。 */
+const TICKER_GAP = 48;
 
 interface ReplyBarProps {
   /** 当前形态。 */
@@ -16,6 +21,8 @@ interface ReplyBarProps {
   draft: string;
   /** 流式展示中的 AI 回复文本（streaming 态）。 */
   replyText: string;
+  replyError?: string;
+  replyPending?: boolean;
   /** 隐藏的文件选择框 ref（无捕获桥时回落选择本地图片）。 */
   fileInputRef: RefObject<HTMLInputElement | null>;
   /** 从文件选择框追加一张本地图片。 */
@@ -43,6 +50,8 @@ export function ReplyBar({
   attachments,
   draft,
   replyText,
+  replyError,
+  replyPending,
   fileInputRef,
   onAttachmentChange,
   onAttachmentRemove,
@@ -51,25 +60,87 @@ export function ReplyBar({
   onClose,
   onCancel,
 }: ReplyBarProps) {
+  const tickerTextRef = useRef<HTMLSpanElement>(null);
+  // 滚动偏移放在 ref 里跨 effect 保留：流式文本每帧变长时位置无缝续走，
+  // 不会像改 animationDuration 那样按时间比例重算进度而肉眼跳变。
+  const tickerXRef = useRef(0);
+
+  // 恒速跑马灯：rAF 每帧按 TICKER_SPEED px/s 平移 transform，文本增长只改
+  // 位移终点，不改当前位置。宽度变化交给 ResizeObserver 重测（transform
+  // 不参与布局，不会自触发）。不用 setState，避免每次 delta 额外重渲染
+  // （回复窗口按渲染上报尺寸，多余渲染会造成重复 fitContent）。
+  useEffect(() => {
+    const element = tickerTextRef.current;
+    const ticker = element?.parentElement;
+    if (!element || !ticker || phase !== "streaming") return;
+
+    let textWidth = 0;
+    let containerWidth = ticker.clientWidth;
+    let overflowing = false;
+
+    const measure = () => {
+      containerWidth = ticker.clientWidth;
+      textWidth = element.offsetWidth;
+      const wasOverflowing = overflowing;
+      overflowing = textWidth > containerWidth;
+      if (overflowing && !wasOverflowing) {
+        // 文本刚超出容器：从右端入场，起点与既有滚动衔接。
+        tickerXRef.current = containerWidth;
+      } else if (!overflowing) {
+        // 未超出则原位静止，等流式增量把它撑宽。
+        tickerXRef.current = 0;
+        element.style.transform = "";
+      }
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    observer.observe(ticker);
+
+    let last = performance.now();
+    let raf = 0;
+    const frame = (now: number) => {
+      const dt = Math.min((now - last) / 1000, 0.1);
+      last = now;
+      if (overflowing) {
+        tickerXRef.current -= TICKER_SPEED * dt;
+        if (tickerXRef.current < -(textWidth + TICKER_GAP)) {
+          tickerXRef.current = containerWidth;
+        }
+        element.style.transform = `translateX(${tickerXRef.current}px)`;
+      }
+      raf = requestAnimationFrame(frame);
+    };
+    raf = requestAnimationFrame(frame);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      observer.disconnect();
+      element.style.transform = "";
+    };
+  }, [phase]);
+
   if (phase === "streaming") {
-    // 匀速：动画时长随文本长度线性增长，保证恒定像素速度（恒定阅读节奏）。
-    const duration = Math.max(8, replyText.length * 0.3);
     return (
       <section aria-live="polite" className="reply-bar reply-bar--stream floating-surface">
         <div className="ticker">
-          <span className="ticker-text" style={{ animationDuration: `${duration}s` }}>
-            {replyText}
+          <span className="ticker-text" ref={tickerTextRef}>
+            {replyError || (replyPending ? replyText || "正在等待模型回复…" : replyText || "模型未返回文本回复")}
           </span>
         </div>
         {/* 原发送键的位置切换为“进行中”停止键，点击取消并回退到发送态。 */}
         <SurfaceButton
           aria-label="取消回复并返回发送"
           className="reply-stop"
-          onClick={onCancel}
+          onClick={replyPending || replyError ? onCancel : onClose}
           type="button"
           variant="primary"
         >
-          <Square aria-hidden="true" fill="currentColor" size={ICON_SM} strokeWidth={ICON_STROKE} />
+          {replyPending ? (
+            <Square aria-hidden="true" fill="currentColor" size={ICON_SM} strokeWidth={ICON_STROKE} />
+          ) : (
+            <Send aria-hidden="true" size={ICON_SM} strokeWidth={ICON_STROKE} />
+          )}
         </SurfaceButton>
         <SurfaceButton aria-label="收起回复条" className="reply-close" onClick={onClose}>
           <X aria-hidden="true" size={ICON_SM} strokeWidth={ICON_STROKE} />
@@ -112,6 +183,7 @@ export function ReplyBar({
           ))}
         </fieldset>
       )}
+      {replyError && <span className="reply-error" role="alert">{replyError}</span>}
       <div className="reply-actions">
         <SurfaceButton aria-label="继续截图" onClick={onScreenshot}>
           <Camera aria-hidden="true" size={ICON} strokeWidth={ICON_STROKE} />

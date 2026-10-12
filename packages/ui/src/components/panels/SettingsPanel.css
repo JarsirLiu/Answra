@@ -110,7 +110,11 @@
   padding: 8px 0;
 }
 .setting-model-footer .surface-control {
-  min-width: 72px;
+  /* 保存键紧凑化：两字文案不需要全高全宽的大按钮 */
+  min-width: 44px;
+  height: 26px;
+  padding: 0 12px;
+  font-size: var(--font-xs);
 }
 .setting-error {
   color: #b42318;
