@@ -301,7 +301,12 @@ function inferMediaType(absolutePath: string): string {
  * 依赖经 createRequire 惰性加载，测试注入工厂时不触发原生二进制加载。
  */
 const parcelWatchFactory: WatchFactory = (dir, listener) => {
-  const require = createRequire(import.meta.url);
+  // main is bundled as CommonJS; import.meta.url is undefined in the generated file.
+  // Keep the source module testable while resolving the external native watcher from
+  // the actual bundled file when Electron starts.
+  const require = createRequire(
+    typeof __filename === "string" ? __filename : `${process.cwd()}${path.sep}workspace.cjs`,
+  );
   const { watch } = require("@parcel/watcher") as {
     watch: (
       dir: string,

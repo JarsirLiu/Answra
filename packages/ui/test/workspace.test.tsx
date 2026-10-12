@@ -1,13 +1,71 @@
 import type { DesktopBridge, WorkspaceNode } from "@answra/shared";
-import { render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DocxPreviewPane } from "../src/components/panels/workspace/DocxPreviewPane";
 import {
   classifyFile,
   pasteImageName,
   resolveRelative,
   toResourceUrl,
 } from "../src/components/panels/workspace/fileKind";
+import { PdfPreviewPane } from "../src/components/panels/workspace/PdfPreviewPane";
+import {
+  createPdfWorkerBootstrap,
+  ensurePromiseTry,
+} from "../src/components/panels/workspace/pdfPromiseCompat";
 import { WorkspacePanel } from "../src/components/panels/workspace/WorkspacePanel";
+
+const { renderDocx, pdfGetDocument, pdfWorkerCreate } = vi.hoisted(() => ({
+  renderDocx: vi.fn(),
+  pdfGetDocument: vi.fn(),
+  pdfWorkerCreate: vi.fn(),
+}));
+vi.mock("docx-preview", () => ({ renderAsync: renderDocx }));
+vi.mock("pdfjs-dist/build/pdf.worker.min.mjs?url", () => ({ default: "/assets/pdf.worker.mjs" }));
+vi.mock("pdfjs-dist", () => ({
+  GlobalWorkerOptions: { workerSrc: "" },
+  PDFWorker: { create: pdfWorkerCreate },
+  getDocument: pdfGetDocument,
+}));
+
+class TestWorker {
+  static instances: TestWorker[] = [];
+  private readonly listeners = new Set<EventListener>();
+  terminated = false;
+
+  constructor(
+    readonly url: string | URL,
+    readonly options?: WorkerOptions,
+  ) {
+    TestWorker.instances.push(this);
+  }
+
+  addEventListener(type: string, listener: EventListener): void {
+    if (type === "error") this.listeners.add(listener);
+  }
+
+  removeEventListener(type: string, listener: EventListener): void {
+    if (type === "error") this.listeners.delete(listener);
+  }
+
+  terminate(): void {
+    this.terminated = true;
+  }
+
+  dispatchError(message: string): void {
+    const event = {
+      message,
+      error: new Error(message),
+      filename: String(this.url),
+      lineno: 0,
+      colno: 0,
+      preventDefault: vi.fn(),
+    } as unknown as ErrorEvent;
+    this.listeners.forEach((listener) => {
+      listener.call(this as unknown as Worker, event);
+    });
+  }
+}
 
 describe("workspace fileKind", () => {
   it("classifies file kinds", () => {
@@ -60,6 +118,10 @@ describe("WorkspacePanel", () => {
   it("shows the directory picker when no root is cached", async () => {
     render(<WorkspacePanel bridge={createBridge()} onClose={() => undefined} />);
     expect(await screen.findByRole("button", { name: /选择目录/ })).toBeInTheDocument();
+    expect(screen.getByText(/选择一个本地目录/)).toHaveClass("workspace-panel__empty-copy");
+    expect(screen.getByRole("button", { name: /选择目录/ })).toHaveClass(
+      "surface-control--primary",
+    );
   });
 
   it("restores the cached root and renders the tree", async () => {
@@ -80,6 +142,24 @@ describe("WorkspacePanel", () => {
     expect(await screen.findByText("D:/notes")).toBeInTheDocument();
     expect((await screen.findAllByText("错题.md")).length).toBeGreaterThan(0);
     expect(screen.getAllByText("阅读.md").length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "数学" })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: "数学" })).toHaveClass("workspace-tree__item");
+    expect(screen.getByText("阅读.md").closest(".workspace-tree__row")).toHaveClass(
+      "workspace-tree__row",
+    );
+    expect(screen.getByRole("button", { name: "新建文档" })).toHaveClass("workspace-tree__action");
+    expect(screen.getAllByText("错题.md")[0]?.closest("ul")).toHaveClass(
+      "workspace-tree__children",
+    );
+    const collapseButton = screen.getByRole("button", { name: "收起目录" });
+    expect(collapseButton).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(collapseButton);
+    expect(screen.getByRole("button", { name: "展开目录" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(screen.queryByText("阅读.md")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "放大预览区域" })).not.toBeInTheDocument();
   });
 
   it("opens a markdown file through the bridge", async () => {
@@ -126,6 +206,157 @@ describe("WorkspacePanel", () => {
     createWorkspaceEntry.mockClear();
     render(<WorkspacePanel bridge={createBridge()} onClose={() => undefined} />);
     await waitFor(() => expect(createWorkspaceEntry).not.toHaveBeenCalled());
+  });
+});
+
+describe("DocxPreviewPane", () => {
+  beforeEach(() => {
+    renderDocx.mockReset().mockResolvedValue(undefined);
+  });
+
+  it("passes document bytes to docx-preview and mounts the preview host only after success", async () => {
+    const { container } = render(
+      <DocxPreviewPane
+        content={{ mediaType: "application/docx", dataBase64: "AQID", text: null }}
+      />,
+    );
+    expect(screen.getByText("docx 解析中…")).toBeInTheDocument();
+    expect(container.querySelector(".workspace-preview-docx")).toHaveAttribute("hidden");
+    await waitFor(() => expect(renderDocx).toHaveBeenCalled());
+    expect(renderDocx.mock.calls[0]?.[0]).toBeInstanceOf(Uint8Array);
+    expect(renderDocx.mock.calls[0]?.[0]).toEqual(new Uint8Array([1, 2, 3]));
+    await waitFor(() =>
+      expect(container.querySelector(".workspace-preview-docx")).not.toHaveAttribute("hidden"),
+    );
+  });
+
+  it("shows an error without rendering an empty document pane", async () => {
+    renderDocx.mockRejectedValueOnce(new Error("无法解析文档"));
+    const { container } = render(
+      <DocxPreviewPane
+        content={{ mediaType: "application/docx", dataBase64: "AQID", text: null }}
+      />,
+    );
+    expect(await screen.findByText("无法解析文档")).toBeInTheDocument();
+    expect(container.querySelector(".workspace-preview-docx")).toHaveAttribute("hidden");
+  });
+});
+
+describe("PdfPreviewPane", () => {
+  beforeEach(() => {
+    TestWorker.instances = [];
+    vi.stubGlobal("Worker", TestWorker);
+    pdfWorkerCreate.mockReset().mockImplementation(({ port }: { port: Worker }) => ({
+      port,
+      destroy: vi.fn().mockResolvedValue(undefined),
+    }));
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
+      {} as CanvasRenderingContext2D,
+    );
+    pdfGetDocument.mockReset().mockReturnValue({
+      promise: Promise.resolve({
+        numPages: 1,
+        getPage: vi.fn().mockResolvedValue({
+          getViewport: vi.fn(({ scale }: { scale: number }) => ({
+            width: 200 * scale,
+            height: 300 * scale,
+          })),
+          render: vi.fn().mockReturnValue({ promise: Promise.resolve() }),
+        }),
+      }),
+      destroy: vi.fn().mockResolvedValue(undefined),
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("loads PDF bytes and reveals the canvas host after rendering", async () => {
+    const { container } = render(
+      <PdfPreviewPane
+        content={{ mediaType: "application/pdf", dataBase64: "JVBERi0xLjc=", text: null }}
+      />,
+    );
+    expect(screen.getByText("PDF 解析中…")).toBeInTheDocument();
+    await waitFor(() => expect(pdfGetDocument).toHaveBeenCalledTimes(1));
+    const pdfWorker = pdfWorkerCreate.mock.results[0]?.value;
+    expect(pdfWorkerCreate).toHaveBeenCalledWith({ port: expect.any(TestWorker) });
+    expect(pdfGetDocument).toHaveBeenCalledWith({
+      data: new Uint8Array([37, 80, 68, 70, 45, 49, 46, 55]),
+      worker: pdfWorker,
+    });
+    await waitFor(() =>
+      expect(container.querySelector(".workspace-preview-pdf")).not.toHaveAttribute("hidden"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "放大 PDF" }));
+    expect(await screen.findByText("110%")).toBeInTheDocument();
+    await waitFor(() => expect(pdfGetDocument).toHaveBeenCalledTimes(2));
+  });
+
+  it("provides Promise.try in the renderer and PDF worker on older Chromium", async () => {
+    const nativeTry = Reflect.get(Promise, "try");
+    Reflect.deleteProperty(Promise, "try");
+    try {
+      expect(ensurePromiseTry()).toBe(true);
+      const installedTry = Reflect.get(Promise, "try") as (
+        callback: () => number,
+      ) => Promise<number>;
+      await expect(installedTry(() => 42)).resolves.toBe(42);
+      expect(createPdfWorkerBootstrap("https://example.test/pdf.worker.mjs")).toContain(
+        "if (!Promise.try)",
+      );
+      expect(createPdfWorkerBootstrap("https://example.test/pdf.worker.mjs")).toContain(
+        'await import("https://example.test/pdf.worker.mjs");',
+      );
+    } finally {
+      if (nativeTry) Reflect.set(Promise, "try", nativeTry);
+      else Reflect.deleteProperty(Promise, "try");
+    }
+  });
+
+  it("shows PDF load failures without exposing an empty canvas host", async () => {
+    pdfGetDocument.mockReturnValueOnce({
+      promise: Promise.reject(new Error("PDF 数据无效")),
+      destroy: vi.fn().mockResolvedValue(undefined),
+    });
+    const { container } = render(
+      <PdfPreviewPane
+        content={{ mediaType: "application/pdf", dataBase64: "JVBERi0xLjc=", text: null }}
+      />,
+    );
+    expect(await screen.findByText(/PDF 数据无效.*阶段：loading document/)).toBeInTheDocument();
+    expect(container.querySelector(".workspace-preview-pdf")).toHaveAttribute("hidden");
+  });
+
+  it("reports worker startup failures instead of leaving the preview loading", async () => {
+    pdfGetDocument.mockReturnValueOnce({
+      promise: new Promise(() => undefined),
+      destroy: vi.fn().mockResolvedValue(undefined),
+    });
+    const { container } = render(
+      <PdfPreviewPane
+        content={{ mediaType: "application/pdf", dataBase64: "JVBERi0xLjc=", text: null }}
+      />,
+    );
+    await waitFor(() => expect(pdfGetDocument).toHaveBeenCalledTimes(1));
+    act(() => TestWorker.instances[0]?.dispatchError("Failed to load PDF worker"));
+    expect(
+      await screen.findByText(/Failed to load PDF worker.*loading document/),
+    ).toBeInTheDocument();
+    expect(container.querySelector(".workspace-preview-pdf")).toHaveAttribute("hidden");
+    expect(TestWorker.instances[0]?.terminated).toBe(true);
+  });
+
+  it("shows a useful message when the file bytes do not have a PDF header", async () => {
+    render(
+      <PdfPreviewPane content={{ mediaType: "application/pdf", dataBase64: "AQID", text: null }} />,
+    );
+    expect(
+      await screen.findByText(/文件内容不是有效的 PDF（缺少 %PDF- 文件头）/),
+    ).toBeInTheDocument();
+    expect(pdfGetDocument).not.toHaveBeenCalled();
+    expect(pdfWorkerCreate).not.toHaveBeenCalled();
   });
 });
 

@@ -94,15 +94,19 @@ export function createMainWindowController(host: MainWindowControllerHost) {
       console.error("[window] 页面加载失败:", code, description),
     );
     created.webContents.on("console-message", (...args: unknown[]) => {
-      const event = args[0] as { message?: unknown } | undefined;
-      const message =
-        typeof event?.message === "string"
-          ? event.message
-          : typeof args[2] === "string"
-            ? args[2]
-            : "";
-      if (/^\[settings\]\[stealth\].*(failed|rejected|unavailable)/i.test(message))
+      const details = args.find(
+        (value): value is { message: string } =>
+          typeof value === "object" &&
+          value !== null &&
+          "message" in value &&
+          typeof value.message === "string",
+      );
+      const message = details?.message ?? (typeof args[2] === "string" ? args[2] : "");
+      if (message.startsWith("[workspace][pdf]")) {
+        console.info("[renderer]", message);
+      } else if (/^\[settings\]\[stealth\].*(failed|rejected|unavailable)/i.test(message)) {
         console.warn("[renderer]", message);
+      }
     });
     if (app.isPackaged) void created.loadFile(path.join(__dirname, "../../dist/index.html"));
     else void created.loadURL("http://127.0.0.1:5180");

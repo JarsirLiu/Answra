@@ -2,7 +2,7 @@ import type { WorkspaceFileContent } from "@answra/shared";
 import { useEffect, useRef, useState } from "react";
 
 /**
- * docx 预览：docx-preview 在渲染进程把 ArrayBuffer 渲染为 HTML。
+ * docx 预览：docx-preview 在渲染进程把文档字节渲染为 HTML。
  * 与 Codex 桌面版同款技术路线（纯前端解析，不依赖 Office）。
  */
 export function DocxPreviewPane({ content }: { content: WorkspaceFileContent }) {
@@ -14,23 +14,33 @@ export function DocxPreviewPane({ content }: { content: WorkspaceFileContent }) 
     const host = hostRef.current;
     if (!host) return;
     let cancelled = false;
+    let resizeObserver: ResizeObserver | null = null;
     void (async () => {
       try {
-        const [{ renderAsync }, { default: jszipModule }] = await Promise.all([
-          import("docx-preview"),
-          import("jszip"),
-        ]);
+        const { renderAsync } = await import("docx-preview");
         if (cancelled) return;
         const bytes = base64ToBytes(content.dataBase64);
-        const zip = await jszipModule.loadAsync(bytes);
         host.replaceChildren();
-        await renderAsync(zip, host, undefined, {
+        await renderAsync(bytes, host, host, {
           inWrapper: true,
           ignoreWidth: false,
           experimental: true,
           useBase64URL: true,
         });
-        if (!cancelled) setStatus("ready");
+        if (cancelled) return;
+        const fitPage = () => {
+          const page = host.querySelector<HTMLElement>(".docx");
+          if (!page || host.clientWidth === 0) return;
+          host.style.zoom = "1";
+          const pageWidth = page.offsetWidth;
+          if (pageWidth > 0) host.style.zoom = `${Math.min(1, host.clientWidth / pageWidth)}`;
+        };
+        fitPage();
+        if (typeof ResizeObserver !== "undefined") {
+          resizeObserver = new ResizeObserver(fitPage);
+          resizeObserver.observe(host);
+        }
+        setStatus("ready");
       } catch (cause) {
         if (!cancelled) {
           setStatus("error");
@@ -40,14 +50,15 @@ export function DocxPreviewPane({ content }: { content: WorkspaceFileContent }) 
     })();
     return () => {
       cancelled = true;
+      resizeObserver?.disconnect();
     };
   }, [content]);
 
   return (
-    <div className="workspace-preview-docx-wrap" style={{ display: "flex", flex: 1, minHeight: 0 }}>
+    <div className="workspace-preview-docx-state">
       {status === "loading" && <div className="workspace-preview-status">docx 解析中…</div>}
       {status === "error" && <div className="workspace-preview-status">{error}</div>}
-      <div ref={hostRef} className="workspace-preview-docx" />
+      <div ref={hostRef} className="workspace-preview-docx" hidden={status !== "ready"} />
     </div>
   );
 }

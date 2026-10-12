@@ -1,5 +1,5 @@
 import type { DesktopBridge, WorkspaceFileContent, WorkspaceNode } from "@answra/shared";
-import { FolderOpen } from "lucide-react";
+import { FolderOpen, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { PanelShell } from "../PanelShell";
 import { DirectoryTree } from "./DirectoryTree";
@@ -27,6 +27,7 @@ export function WorkspacePanel({ bridge, onClose }: WorkspacePanelProps) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<EditorViewMode>("edit");
   const [externalVersion, setExternalVersion] = useState(0);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const dirtyRef = useRef(false);
   const selectedPathRef = useRef<string | null>(null);
   selectedPathRef.current = selected?.path ?? null;
@@ -101,10 +102,12 @@ export function WorkspacePanel({ bridge, onClose }: WorkspacePanelProps) {
       <div className="workspace-panel">
         {!workspace.root ? (
           <div className="workspace-panel__empty">
-            <span>选择一个本地目录作为工作区，目录下的 md 文档可编辑，docx/pdf 可预览。</span>
+            <p className="workspace-panel__empty-copy">
+              选择一个本地目录作为工作区，目录下的 md 文档可编辑，docx/pdf 可预览。
+            </p>
             <button
               type="button"
-              className="workspace-panel__pick"
+              className="surface-control surface-control--primary workspace-panel__pick"
               onClick={() => void workspace.pickRoot()}
             >
               <FolderOpen aria-hidden="true" size={14} /> 选择目录
@@ -125,28 +128,46 @@ export function WorkspacePanel({ bridge, onClose }: WorkspacePanelProps) {
               </button>
               {workspace.error && <div className="workspace-panel__error">{workspace.error}</div>}
             </div>
-            <div className="workspace-panel__body">
-              <div className="workspace-panel__sidebar">
-                <DirectoryTree
-                  nodes={workspace.tree}
-                  selectedPath={selected?.path ?? null}
-                  onSelect={openNode}
-                  onCreate={(parentDir, entryKind, name) => {
-                    const path = parentDir.length > 0 ? `${parentDir}/${name}` : name;
-                    void workspace
-                      .createEntry(path, entryKind)
-                      .catch(
-                        (cause: unknown) =>
-                          workspace.error ??
-                          setLoadError(cause instanceof Error ? cause.message : "创建失败"),
-                      );
-                  }}
-                  onDelete={(path) => {
-                    if (selectedPathRef.current === path) setSelected(null);
-                    void workspace.deleteEntry(path).catch(() => undefined);
-                  }}
-                />
-              </div>
+            <div
+              className={`workspace-panel__body${sidebarCollapsed ? " workspace-panel__body--collapsed" : ""}`}
+            >
+              <aside className="workspace-panel__sidebar" aria-label="工作区目录">
+                <button
+                  type="button"
+                  className="workspace-panel__sidebar-toggle"
+                  aria-label={sidebarCollapsed ? "展开目录" : "收起目录"}
+                  aria-expanded={!sidebarCollapsed}
+                  title={sidebarCollapsed ? "展开目录" : "收起目录"}
+                  onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
+                >
+                  {sidebarCollapsed ? (
+                    <PanelLeftOpen aria-hidden="true" size={15} />
+                  ) : (
+                    <PanelLeftClose aria-hidden="true" size={15} />
+                  )}
+                </button>
+                {!sidebarCollapsed && (
+                  <DirectoryTree
+                    nodes={workspace.tree}
+                    selectedPath={selected?.path ?? null}
+                    onSelect={openNode}
+                    onCreate={(parentDir, entryKind, name) => {
+                      const path = parentDir.length > 0 ? `${parentDir}/${name}` : name;
+                      void workspace
+                        .createEntry(path, entryKind)
+                        .catch(
+                          (cause: unknown) =>
+                            workspace.error ??
+                            setLoadError(cause instanceof Error ? cause.message : "创建失败"),
+                        );
+                    }}
+                    onDelete={(path) => {
+                      if (selectedPathRef.current === path) setSelected(null);
+                      void workspace.deleteEntry(path).catch(() => undefined);
+                    }}
+                  />
+                )}
+              </aside>
               <div className="workspace-panel__content">
                 {loadError && <div className="workspace-panel__error">{loadError}</div>}
                 {!selected && <div className="workspace-preview-placeholder">左侧选择文件打开</div>}
@@ -165,7 +186,9 @@ export function WorkspacePanel({ bridge, onClose }: WorkspacePanelProps) {
                   />
                 )}
                 {selected && kind === "docx" && content && <DocxPreviewPane content={content} />}
-                {selected && kind === "pdf" && content && <PdfPreviewPane content={content} />}
+                {selected && kind === "pdf" && content && (
+                  <PdfPreviewPane content={content} path={selected.path} />
+                )}
                 {selected && kind === "image" && content && (
                   <img
                     alt={selected.name}

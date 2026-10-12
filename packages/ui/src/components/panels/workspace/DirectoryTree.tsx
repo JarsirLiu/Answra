@@ -2,9 +2,11 @@ import type { WorkspaceNode } from "@answra/shared";
 import {
   ChevronDown,
   ChevronRight,
+  FileCode2,
+  FileImage,
+  FileJson,
   FilePlus,
   FileText,
-  Folder,
   FolderPlus,
   Trash2,
 } from "lucide-react";
@@ -41,18 +43,20 @@ export function DirectoryTree(props: DirectoryTreeProps) {
         <button
           type="button"
           className="workspace-tree__action"
+          aria-label="新建文档"
           title="新建文档"
           onClick={() => setCreating("file")}
         >
-          <FilePlus aria-hidden="true" size={ICON_SM} /> 新建文档
+          <FilePlus aria-hidden="true" size={ICON_SM} />
         </button>
         <button
           type="button"
           className="workspace-tree__action"
+          aria-label="新建文件夹"
           title="新建文件夹"
           onClick={() => setCreating("dir")}
         >
-          <FolderPlus aria-hidden="true" size={ICON_SM} /> 新建文件夹
+          <FolderPlus aria-hidden="true" size={ICON_SM} />
         </button>
       </div>
       {creating && (
@@ -112,13 +116,11 @@ function TreeNodeView({ node, depth, ...treeProps }: TreeNodeProps) {
   const selected = selectedPath === node.path;
   return (
     <li>
-      <div
-        className={`workspace-tree__row${selected ? " workspace-tree__row--selected" : ""}`}
-        style={{ paddingLeft: `${depth * 14 + 6}px` }}
-      >
+      <div className={`workspace-tree__row${selected ? " workspace-tree__row--selected" : ""}`}>
         <button
           type="button"
           className="workspace-tree__item"
+          aria-expanded={isDir ? expanded : undefined}
           onClick={() => {
             if (isDir) setExpanded((value) => !value);
             else onSelect(node);
@@ -126,22 +128,18 @@ function TreeNodeView({ node, depth, ...treeProps }: TreeNodeProps) {
           title={node.path}
         >
           {isDir ? (
-            <>
+            <span className="workspace-tree__chevron">
               {expanded ? (
                 <ChevronDown aria-hidden="true" size={ICON_SM} />
               ) : (
                 <ChevronRight aria-hidden="true" size={ICON_SM} />
               )}
-              <Folder aria-hidden="true" size={ICON_SM} />
-            </>
+            </span>
           ) : (
-            <FileText
-              aria-hidden="true"
-              size={ICON_SM}
-              className={
-                classifyFile(node.name) !== "other" ? "workspace-tree__icon-known" : undefined
-              }
-            />
+            <>
+              <span className="workspace-tree__chevron-spacer" />
+              <TreeFileIcon name={node.name} />
+            </>
           )}
           <span>{node.name}</span>
         </button>
@@ -155,7 +153,7 @@ function TreeNodeView({ node, depth, ...treeProps }: TreeNodeProps) {
         </button>
       </div>
       {isDir && expanded && (
-        <ul>
+        <ul className="workspace-tree__children">
           {directChildren.map((child) => (
             <TreeNodeView key={child.path} {...treeProps} node={child} depth={depth + 1} />
           ))}
@@ -163,4 +161,19 @@ function TreeNodeView({ node, depth, ...treeProps }: TreeNodeProps) {
       )}
     </li>
   );
+}
+
+function TreeFileIcon({ name }: { name: string }) {
+  const kind = classifyFile(name);
+  const Icon =
+    kind === "markdown"
+      ? FileText
+      : kind === "text"
+        ? name.toLowerCase().endsWith(".json")
+          ? FileJson
+          : FileCode2
+        : kind === "image"
+          ? FileImage
+          : FileText;
+  return <Icon aria-hidden="true" size={ICON_SM} className={`workspace-tree__icon-${kind}`} />;
 }
