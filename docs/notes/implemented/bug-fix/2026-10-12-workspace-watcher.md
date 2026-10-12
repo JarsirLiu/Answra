@@ -36,6 +36,11 @@
 
 `apps/desktop` 主进程对 `@parcel/watcher` 的调用必须使用 v2 的 `subscribe()`（返回 Promise），禁止改用 v1 的 `watch()` 或假定其同步返回订阅对象。
 
+## 曾考虑的替代方案
+
+- **降级到 `@parcel/watcher` v1 以恢复 `watch()` API：** v1 与 v2 的事件语义、订阅生命周期不同，且降级会引入与 Electron/Node ABI 组合未经验证的旧版本；v2 的 `subscribe()` 只是函数更名，修复成本更低，故舍弃降级。
+- **换用 `chokidar` 等纯 JS 监听库：** 引入新依赖只为绕过一个函数更名，收益不成比例，且当时已锁定 `@parcel/watcher` 的原生性能优势；故舍弃，保留 v2 API 适配。
+
 ## 验证
 
 `pnpm --filter @answra/desktop typecheck`、`pnpm lint` 均通过。
