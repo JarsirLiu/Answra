@@ -1,10 +1,44 @@
 import { Check, ChevronDown, CodeXml, Copy } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
+import ReactMarkdown, { type Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { ICON_SM } from "../../tokens";
 
-export function AicssTextResponse({ children }: { children: ReactNode }) {
-  return <div className="aicss-text-response">{children}</div>;
+const markdownComponents: Components = {
+  code({ children, className }) {
+    return <code className={className ?? "reply-conversation-inline-code"}>{children}</code>;
+  },
+  pre({ children }) {
+    const code = children as ReactElement<{ className?: string; children?: ReactNode }>;
+    const language = /language-(\w+)/.exec(code.props.className ?? "")?.[1] ?? "text";
+    return <AicssCodeBlock code={String(code.props.children).replace(/\n$/, "")} lang={language} />;
+  },
+  table({ children }) {
+    return (
+      <div className="reply-conversation-table-scroll">
+        <table>{children}</table>
+      </div>
+    );
+  },
+};
+
+export function AicssMarkdown({ text }: { text: string }) {
+  return (
+    <ReactMarkdown components={markdownComponents} remarkPlugins={[remarkGfm]}>
+      {text}
+    </ReactMarkdown>
+  );
+}
+
+export function AicssTextResponse({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return <div className={`aicss-text-response${className ? ` ${className}` : ""}`}>{children}</div>;
 }
 
 export function AicssStreamingText({
@@ -135,7 +169,9 @@ export function AicssThinkingReasoning({ text, isActive }: { text: string; isAct
       <div className={`aicss-thinking-reasoning-collapsible${expanded ? " is-expanded" : ""}`}>
         <div className="aicss-thinking-reasoning-inner">
           <div className="aicss-thinking-reasoning-body">
-            <p>{text}</p>
+            <AicssTextResponse className="aicss-text-response--thinking">
+              <AicssMarkdown text={text} />
+            </AicssTextResponse>
           </div>
         </div>
       </div>

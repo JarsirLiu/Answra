@@ -61,6 +61,37 @@ export function positionReplyBarSize(
   return { x, y, placement };
 }
 
+export function clampWindowBoundsToWorkArea(
+  bounds: { x: number; y: number; width: number; height: number },
+  workArea: { x: number; y: number; width: number; height: number },
+): { x: number; y: number; width: number; height: number } {
+  const areaX = finiteRound(workArea.x);
+  const areaY = finiteRound(workArea.y);
+  const areaRight = areaX + Math.max(1, finiteFloor(workArea.width, 1));
+  const areaBottom = areaY + Math.max(1, finiteFloor(workArea.height, 1));
+  const width = Math.max(1, finiteRound(bounds.width, 1));
+  const height = Math.max(1, finiteRound(bounds.height, 1));
+  const maxX = Math.max(areaX, areaRight - width);
+  const maxY = Math.max(areaY, areaBottom - height);
+  return {
+    x: clamp(finiteRound(bounds.x), areaX, maxX),
+    y: clamp(finiteRound(bounds.y), areaY, maxY),
+    width,
+    height,
+  };
+}
+
+export function replyBarAnchorFromBounds(
+  bounds: { x: number; y: number; width: number; height: number },
+  barSize: { width: number; height: number },
+  placement: ReplyBarPlacement,
+): { x: number; y: number } {
+  return {
+    x: bounds.x + Math.round((bounds.width - barSize.width) / 2),
+    y: placement === "above" ? bounds.y + bounds.height - barSize.height : bounds.y,
+  };
+}
+
 function finiteRound(value: number, fallback = 0): number {
   return Number.isFinite(value) ? Math.round(value) : fallback;
 }

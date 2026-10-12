@@ -1,13 +1,10 @@
 import type { ReplyBarActivity } from "@answra/shared";
 import { AlertCircle, FileText, Wrench } from "lucide-react";
-import type { ReactElement, ReactNode } from "react";
 import { useCallback, useLayoutEffect, useRef } from "react";
-import ReactMarkdown, { type Components } from "react-markdown";
-import remarkGfm from "remark-gfm";
 import type { ReplyConversationMessage } from "../../app/useReplyConversation";
 import { ICON_SM } from "../../tokens";
 import {
-  AicssCodeBlock,
+  AicssMarkdown,
   AicssStreamingText,
   AicssTextResponse,
   AicssThinkingReasoning,
@@ -24,24 +21,6 @@ interface ReplyConversationPopoverProps {
   placement: "above" | "below";
   stealth: boolean;
 }
-
-const markdownComponents: Components = {
-  code({ children, className }) {
-    return <code className={className ?? "reply-conversation-inline-code"}>{children}</code>;
-  },
-  pre({ children }) {
-    const code = children as ReactElement<{ className?: string; children?: ReactNode }>;
-    const language = /language-(\w+)/.exec(code.props.className ?? "")?.[1] ?? "text";
-    return <AicssCodeBlock code={String(code.props.children).replace(/\n$/, "")} lang={language} />;
-  },
-  table({ children }) {
-    return (
-      <div className="reply-conversation-table-scroll">
-        <table>{children}</table>
-      </div>
-    );
-  },
-};
 
 export function ReplyConversationPopover({
   messages,
@@ -208,9 +187,7 @@ function MessageTextBlock({
       render={(visibleText) =>
         visibleText ? (
           <AicssTextResponse>
-            <ReactMarkdown components={markdownComponents} remarkPlugins={[remarkGfm]}>
-              {visibleText}
-            </ReactMarkdown>
+            <AicssMarkdown text={visibleText} />
           </AicssTextResponse>
         ) : (
           <AicssThinkingState />

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { positionReplyBarSize } from "../src/main/windowLayout";
+import {
+  clampWindowBoundsToWorkArea,
+  positionReplyBarSize,
+  replyBarAnchorFromBounds,
+} from "../src/main/windowLayout";
 
 const workArea = { x: 0, y: 0, width: 1920, height: 1080 };
 const barSize = { width: 480, height: 76 };
@@ -58,5 +62,25 @@ describe("positionReplyBarSize", () => {
       barSize,
     );
     expect(result).toEqual({ x: -20, y: -10, placement: "above" });
+  });
+});
+
+describe("reply window movement", () => {
+  it("clamps the full window inside the matched display work area", () => {
+    expect(
+      clampWindowBoundsToWorkArea(
+        { x: -100, y: 900, width: 560, height: 600 },
+        { x: 100, y: 50, width: 800, height: 700 },
+      ),
+    ).toEqual({ x: 100, y: 150, width: 560, height: 600 });
+  });
+
+  it("keeps the reply bar position as the resize anchor for either expansion direction", () => {
+    expect(
+      replyBarAnchorFromBounds({ x: 500, y: 200, width: 560, height: 600 }, barSize, "above"),
+    ).toEqual({ x: 540, y: 724 });
+    expect(
+      replyBarAnchorFromBounds({ x: 500, y: 200, width: 560, height: 600 }, barSize, "below"),
+    ).toEqual({ x: 540, y: 200 });
   });
 });

@@ -10,7 +10,12 @@ import {
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron";
 import { app, BrowserWindow, screen } from "electron";
 import { setWindowCaptureProtection } from "./windowCaptureProtection";
-import { positionReplyBarSize, positionWindowNearSelection } from "./windowLayout";
+import {
+  clampWindowBoundsToWorkArea,
+  positionReplyBarSize,
+  positionWindowNearSelection,
+  replyBarAnchorFromBounds,
+} from "./windowLayout";
 
 const WORK_AREA_MARGIN = 24;
 const REPLY_BAR_SIZE: ContentSize = { width: 480, height: 76 };
@@ -54,16 +59,20 @@ export function createReplyBarWindowController(host: ReplyBarWindowHost) {
       rendererReady = false;
       readyToShow = false;
       if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.showInactive();
-        host.logCaptureSurfaceState("reply-bar-closed", mainWindow);
+        if (!mainWindow.isVisible()) {
+          mainWindow.showInactive();
+          host.logCaptureSurfaceState("reply-bar-closed", mainWindow);
+        }
       }
       position = undefined;
       return;
     }
 
     if (!mainWindow || mainWindow.isDestroyed()) return;
-    mainWindow.hide();
-    host.logCaptureSurfaceState("reply-bar-opened-main-hidden", mainWindow);
+    if (mainWindow.isVisible()) {
+      mainWindow.hide();
+      host.logCaptureSurfaceState("reply-bar-opened-main-hidden", mainWindow);
+    }
     if (!windowRef || windowRef.isDestroyed()) {
       createWindow(mainWindow);
       return;
@@ -109,6 +118,20 @@ export function createReplyBarWindowController(host: ReplyBarWindowHost) {
     setWindowCaptureProtection(created, host.isStealthEnabled());
     created.on("show", () => setWindowCaptureProtection(created, host.isStealthEnabled()));
     created.on("resize", () => setWindowCaptureProtection(created, host.isStealthEnabled()));
+    created.on("move", () => {
+      if (created.isDestroyed()) return;
+      const bounds = created.getBounds();
+      const workArea = screen.getDisplayMatching(bounds).workArea;
+      if (!isValidWorkArea(workArea)) return;
+      const clamped = clampWindowBoundsToWorkArea(bounds, workArea);
+      if (bounds.x !== clamped.x || bounds.y !== clamped.y)
+        created.setPosition(clamped.x, clamped.y, false);
+      position = replyBarAnchorFromBounds(
+        { ...bounds, x: clamped.x, y: clamped.y },
+        REPLY_BAR_SIZE,
+        placement,
+      );
+    });
     created.once("ready-to-show", () => {
       readyToShow = true;
       if (rendererReady && state && !created.isDestroyed()) {
