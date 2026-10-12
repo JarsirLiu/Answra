@@ -39,3 +39,7 @@
 ## 验证
 
 `pnpm --filter @answra/desktop typecheck`、`pnpm lint` 均通过。
+
+## 后续
+
+`@parcel/watcher` 在 Electron 29 下仍暴露原生二进制加载（含本 note 的 `watch is not a function` 与另一 note 的 `createRequire`/`import.meta.url` 问题），最终决定弃用该依赖，改用 Node 内置 `fs.watch` 做递归监听（见功能 note）。本 note 的 `subscribe()` 修复随之作废。

@@ -41,13 +41,11 @@
   "dependencies": {
     "@answra/shared": "workspace:*",
     "@answra/ui": "workspace:*",
-    "@parcel/watcher": "^2.6.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },
   "devDependencies": {
     "@answra/app": "workspace:*",
-    "@parcel/watcher-win32-x64": "^2.6.0",
     "@types/node": "^26.6.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",

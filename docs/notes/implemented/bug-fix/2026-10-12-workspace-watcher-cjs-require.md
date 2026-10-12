@@ -47,3 +47,7 @@ Electron main 输出格式保持 CJS 时，运行时 require 的基准必须来�
 ## 验证
 
 `pnpm --filter @answra/desktop build` 成功，且 esbuild 不再报告 `import.meta` 在 CJS 输出中被清空；`pnpm --filter @answra/desktop test -- workspaceService.test.ts` 通过。Windows 桌面实机启动和文件变更行为待确认。
+
+## 后续
+
+`@parcel/watcher` 最终被移除，`workspaceService.ts` 不再通过 `createRequire` 加载任何原生 watcher，相关 `import.meta.url`/`__filename` 推导逻辑随之删除；监控改用 Node 内置 `fs.watch`（见功能 note）。本 note 的 CJS require 修复随之作废。

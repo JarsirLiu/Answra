@@ -1,5 +1,4 @@
-import { promises as fs } from "node:fs";
-import { createRequire } from "node:module";
+import { promises as fs, watch as fsWatch, type FSWatcher } from "node:fs";
 import path from "node:path";
 
 /**
@@ -13,7 +12,7 @@ export interface WatchHandle {
   unsubscribe: () => Promise<void>;
 }
 
-/** watcher 工厂签名；与 @parcel/watcher 的 `watch` 兼容，测试可注入内存实现。 */
+/** watcher 工厂签名；测试可注入内存实现，运行时使用 Node 内置 `fs.watch`。 */
 export type WatchFactory = (
   dir: string,
   listener: (paths: string[]) => void,
@@ -22,7 +21,7 @@ export type WatchFactory = (
 export interface WorkspaceServiceOptions {
   /** 持久化目录（Electron userData），根目录缓存写在这里的 workspace.json。 */
   configDir: string;
-  /** 变更监听工厂；缺省使用 @parcel/watcher 递归监听。 */
+  /** 变更监听工厂；缺省使用 Node 内置 `fs.watch` 递归监听。 */
   watchFactory?: WatchFactory;
   /** 目录树枚举的最大深度，防止超大目录拖垮 IPC。 */
   maxDepth?: number;
@@ -73,7 +72,7 @@ export class WorkspaceService {
 
   constructor(options: WorkspaceServiceOptions) {
     this.configDir = options.configDir;
-    this.watchFactory = options.watchFactory ?? parcelWatchFactory;
+    this.watchFactory = options.watchFactory ?? nodeWatchFactory;
     this.maxDepth = options.maxDepth ?? 8;
     this.maxNodes = options.maxNodes ?? 5000;
   }
@@ -297,41 +296,75 @@ function inferMediaType(absolutePath: string): string {
 }
 
 /**
- * 缺省 watcher 工厂：@parcel/watcher 递归监听 + 简单合并。
- * 依赖经 createRequire 惰性加载，测试注入工厂时不触发原生二进制加载。
+ * 缺省 watcher 工厂：Node 内置 `fs.watch` 递归监听（无原生依赖）。
+ *
+ * `fs.watch` 的 `recursive` 选项在 Linux 不支持，这里改为手动逐层 watch：
+ * 启动时先遍历目录树为每个子目录建立监听，新建子目录时再补挂监听。
+ * 所有变更经 300ms 合并后统一回调，避免一次操作触发大量刷新。
  */
-const parcelWatchFactory: WatchFactory = async (dir, listener) => {
-  // main is bundled as CommonJS; import.meta.url is undefined in the generated file.
-  // Keep the source module testable while resolving the external native watcher from
-  // the actual bundled file when Electron starts.
-  const require = createRequire(
-    typeof __filename === "string" ? __filename : `${process.cwd()}${path.sep}workspace.cjs`,
-  );
-  const { subscribe } = require("@parcel/watcher") as {
-    subscribe: (
-      dir: string,
-      callback: (error: Error | null, events: Array<{ type: string; path: string }>) => void,
-    ) => Promise<{ unsubscribe: () => Promise<void> }>;
-  };
+const nodeWatchFactory: WatchFactory = async (dir, listener) => {
+  const watchers = new Set<FSWatcher>();
+  const watchedDirs = new Set<string>();
   let pending: string[] = [];
   let timer: NodeJS.Timeout | null = null;
-  const subscription = await subscribe(dir, (error, events) => {
-    if (error) {
-      console.warn("[workspace] watcher error", error);
-      return;
-    }
-    pending.push(...events.map((event) => event.path));
+
+  const schedule = (...paths: string[]) => {
+    pending.push(...paths);
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => {
-      const paths = pending;
+      timer = null;
+      const batch = pending;
       pending = [];
-      listener(paths);
+      if (batch.length) listener(batch);
     }, 300);
-  });
-  return Promise.resolve({
-    unsubscribe: () => {
+  };
+
+  const watchDir = async (target: string) => {
+    if (watchedDirs.has(target)) return;
+    try {
+      const watcher = fsWatch(target, (_event, filename) => {
+        if (!filename) return;
+        const full = path.join(target, filename);
+        schedule(full);
+        // 新创建的子目录需要补挂监听。
+        fs.stat(full)
+          .then((stat) => {
+            if (stat.isDirectory()) void watchDir(full);
+          })
+          .catch(() => undefined);
+      });
+      watchers.add(watcher);
+      watchedDirs.add(target);
+      watcher.on("error", () => {
+        watchers.delete(watcher);
+        watchedDirs.delete(target);
+      });
+    } catch {
+      // 不可监听的目录（权限不足等）直接跳过。
+    }
+  };
+
+  const walk = async (root: string) => {
+    await watchDir(root);
+    let entries: import("node:fs").Dirent[];
+    try {
+      entries = await fs.readdir(root, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (entry.isDirectory()) await walk(path.join(root, entry.name));
+    }
+  };
+
+  await walk(dir);
+
+  return {
+    unsubscribe: async () => {
       if (timer) clearTimeout(timer);
-      return subscription.unsubscribe();
+      for (const watcher of watchers) watcher.close();
+      watchers.clear();
+      watchedDirs.clear();
     },
-  });
+  };
 };
