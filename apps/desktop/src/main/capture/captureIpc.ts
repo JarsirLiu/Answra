@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { RegionCaptureOptions, RegionSelection, ScreenshotResult } from "@answra/shared";
 import { CaptureChannels } from "@answra/shared";
 import type { IpcMainEvent } from "electron";
-import { ipcMain } from "electron";
+import { globalShortcut, ipcMain } from "electron";
 import {
   getWindow,
   hideReplyBarWindowForCapture,
@@ -55,6 +55,7 @@ export function registerCaptureIpc(): void {
 }
 
 let pendingCapture: ((selection: RegionSelection | null) => void) | undefined;
+let escapeShortcutRegistered = false;
 
 /** 框选线色仅接受字面 CSS 颜色（hex / rgb[a]()），杜绝任意字符串注入页面。 */
 const CSS_COLOR_PATTERN = /^#[0-9a-fA-F]{3,8}$|^(?:rgb|rgba)\([0-9.,%\s/]+\)$/;
@@ -98,9 +99,21 @@ async function runRegionCapture(
       console.error("[capture] 无可用显示器");
       return { message: "没有可用的显示器", ok: false, reason: "unavailable" };
     }
-    const selection = await new Promise<RegionSelection | null>((resolve) => {
+    const selectionPromise = new Promise<RegionSelection | null>((resolve) => {
       pendingCapture = resolve;
     });
+    if (process.platform === "win32") {
+      // The Windows selection overlay is intentionally non-activating, so its
+      // DOM keydown handler cannot receive Escape. Scope the global shortcut
+      // to the active capture session and always unregister it in finally.
+      escapeShortcutRegistered = globalShortcut.register("Escape", () => {
+        pendingCapture?.(null);
+      });
+      if (!escapeShortcutRegistered) {
+        console.warn("[capture] could not register temporary Escape shortcut");
+      }
+    }
+    const selection = await selectionPromise;
     console.info("[capture][diagnostic] selection settled", { captureId, selection });
     if (!selection) {
       console.log("[capture] 用户取消截图");
@@ -136,6 +149,10 @@ async function runRegionCapture(
     };
   } finally {
     pendingCapture = undefined;
+    if (escapeShortcutRegistered) {
+      globalShortcut.unregister("Escape");
+      escapeShortcutRegistered = false;
+    }
     closeSelectionWindows();
     // showInactive 恢复可见但不抢焦点；之后重申捕获排除，覆盖窗口隐藏/恢复周期。
     if (wasVisible && mainWindow && !mainWindow.isDestroyed()) {

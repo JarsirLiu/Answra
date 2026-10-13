@@ -6,8 +6,10 @@ const state = vi.hoisted(() => ({
     loadFile: ReturnType<typeof vi.fn>;
     once: ReturnType<typeof vi.fn>;
     setAlwaysOnTop: ReturnType<typeof vi.fn>;
+    setFocusable: ReturnType<typeof vi.fn>;
     setContentProtection: ReturnType<typeof vi.fn>;
     isDestroyed: ReturnType<typeof vi.fn>;
+    showInactive: ReturnType<typeof vi.fn>;
   }>,
 }));
 
@@ -17,8 +19,11 @@ vi.mock("electron", () => ({
     loadFile = vi.fn();
     once = vi.fn();
     setAlwaysOnTop = vi.fn();
+    setFocusable = vi.fn();
     setContentProtection = vi.fn();
     isDestroyed = vi.fn(() => false);
+    showInactive = vi.fn();
+    on = vi.fn();
 
     constructor() {
       state.windows.push(this);

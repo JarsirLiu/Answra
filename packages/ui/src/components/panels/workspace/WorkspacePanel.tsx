@@ -15,6 +15,7 @@ import "./WorkspacePanel.css";
 interface WorkspacePanelProps {
   bridge: DesktopBridge | undefined;
   onClose: () => void;
+  stealth?: boolean;
 }
 
 /**
@@ -22,8 +23,8 @@ interface WorkspacePanelProps {
  * 左目录树、右内容区（md 编辑/预览、docx/pdf 预览、图片查看）。
  * notes/sources 两个入口共用本面板。
  */
-export function WorkspacePanel({ bridge, onClose }: WorkspacePanelProps) {
-  const workspace = useWorkspace(bridge);
+export function WorkspacePanel({ bridge, onClose, stealth = false }: WorkspacePanelProps) {
+  const workspace = useWorkspace(bridge, stealth);
   const [selected, setSelected] = useState<WorkspaceNode | null>(null);
   const [content, setContent] = useState<WorkspaceFileContent | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);

@@ -32,3 +32,15 @@ Object.defineProperty(window, "answra", {
     setAmbientFollow: vi.fn(),
   },
 });
+
+if (
+  typeof HTMLElement !== "undefined" &&
+  !Object.getOwnPropertyDescriptor(HTMLElement.prototype, "isContentEditable")
+) {
+  Object.defineProperty(HTMLElement.prototype, "isContentEditable", {
+    configurable: true,
+    get() {
+      return this.getAttribute("contenteditable") === "true";
+    },
+  });
+}

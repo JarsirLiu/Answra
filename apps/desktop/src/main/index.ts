@@ -6,7 +6,7 @@ import { AppService } from "./conversation/appService";
 import { registerConversationIpc } from "./conversation/conversationIpc";
 import { registerAmbientIpc } from "./ipc/ambientIpc";
 import { registerWindowIpc } from "./ipc/windowIpc";
-import { createMainWindow, getWindow } from "./window";
+import { createMainWindow, getWindow, isStealthEnabled } from "./window";
 import {
   registerWorkspaceFileProtocol,
   registerWorkspaceSchemePrivileges,
@@ -29,7 +29,7 @@ app.whenReady().then(() => {
   registerAmbientIpc((enabled) => ambientController?.setEnabled(enabled));
   registerConversationIpc(appService);
   registerWorkspaceFileProtocol(workspaceService);
-  registerWorkspaceIpc(workspaceService, getWindow);
+  registerWorkspaceIpc(workspaceService, getWindow, isStealthEnabled);
   void appService.start().catch((error) => console.error("[app-service] failed to start", error));
   void workspaceService
     .restoreRoot()

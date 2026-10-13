@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ReplyBar } from "../components/panels/ReplyBar";
 import { ReplyConversationPopover } from "../components/panels/ReplyConversationPopover";
 import { useFitContent } from "../hooks/useFitContent";
+import { useStealthInputGuard } from "../hooks/useStealthInputGuard";
 import { useReplyConversation } from "./useReplyConversation";
 
 interface ReplyBarWindowAppProps {
@@ -24,6 +25,7 @@ export function ReplyBarWindowApp({ bridge }: ReplyBarWindowAppProps) {
   const [placement, setPlacement] = useState<ReplyBarPlacement>("above");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const expanded = !dismissed && (hovered || pinned);
+  useStealthInputGuard(Boolean(state?.stealth));
   const measureBridge = platform?.fitReplyBar ? { fitContent: platform.fitReplyBar } : undefined;
   const { ref } = useFitContent(measureBridge);
   const conversation = useReplyConversation(

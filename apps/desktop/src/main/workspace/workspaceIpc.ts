@@ -11,6 +11,7 @@ import type { WorkspaceService } from "./workspaceService";
 export function registerWorkspaceIpc(
   service: WorkspaceService,
   getWindow: () => BrowserWindow | undefined,
+  isStealthEnabled: () => boolean,
 ): void {
   ipcMain.handle(WorkspaceChannels.GetRoot, (event) => {
     if (!isWindowFromSender(getWindow(), event)) throw new Error("非法来源");
@@ -21,6 +22,10 @@ export function registerWorkspaceIpc(
     if (!isWindowFromSender(getWindow(), event)) return { root: null };
     const window = getWindow();
     if (!window) return { root: null };
+    if (isStealthEnabled()) {
+      console.info("[workspace] directory picker blocked while stealth is enabled");
+      return { root: null };
+    }
     const picked = await dialog.showOpenDialog(window, {
       title: "选择工作区目录",
       properties: ["openDirectory", "createDirectory"],

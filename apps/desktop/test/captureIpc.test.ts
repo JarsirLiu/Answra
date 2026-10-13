@@ -23,6 +23,7 @@ const shared = vi.hoisted(() => ({
   visible: true,
   replyVisible: false,
   stealthEnabled: false,
+  escapeHandler: undefined as (() => void) | undefined,
   handlers: {} as Record<string, (...args: unknown[]) => unknown>,
 }));
 
@@ -35,6 +36,15 @@ vi.mock("electron", () => ({
     on: (channel: string, fn: (...args: unknown[]) => unknown) => {
       shared.handlers[channel] = fn;
     },
+  },
+  globalShortcut: {
+    register: vi.fn((_accelerator: string, callback: () => void) => {
+      shared.escapeHandler = callback;
+      return true;
+    }),
+    unregister: vi.fn(() => {
+      shared.escapeHandler = undefined;
+    }),
   },
   screen: {
     getAllDisplays: () => [],
@@ -153,6 +163,21 @@ describe("captureIpc 区域截图编排", () => {
 
     expect(createSelectionWindows).toHaveBeenCalledWith(undefined, true);
   });
+
+  it.skipIf(process.platform !== "win32")(
+    "registers Escape for the active Windows capture and unregisters after cancellation",
+    async () => {
+      const { globalShortcut } = await import("electron");
+      const start = shared.handlers[CaptureChannels.StartRegionCapture]({}, {});
+      expect(globalShortcut.register).toHaveBeenCalledWith("Escape", expect.any(Function));
+
+      shared.escapeHandler?.();
+      const result = await start;
+
+      expect(result).toEqual({ ok: false, reason: "cancelled" });
+      expect(globalShortcut.unregister).toHaveBeenCalledWith("Escape");
+    },
+  );
 
   it("keeps the main window hidden during capture and reapplies stealth after restoring it", async () => {
     shared.stealthEnabled = true;

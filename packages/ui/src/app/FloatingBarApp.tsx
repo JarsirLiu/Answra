@@ -8,6 +8,7 @@ import { SettingsPanel } from "../components/panels/SettingsPanel";
 import { WorkspacePanel } from "../components/panels/workspace/WorkspacePanel";
 import { useFitContent } from "../hooks/useFitContent";
 import { useMeetingStealth } from "../hooks/useMeetingStealth";
+import { useStealthInputGuard } from "../hooks/useStealthInputGuard";
 import { MODES, type Mode, type ModeAction } from "../model";
 import { useAppearanceController } from "./useAppearanceController";
 import { useConversationChat } from "./useConversationChat";
@@ -29,6 +30,7 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
   /** 截图失败原因：屏幕可见的错误提示，避免失败被静默吞掉、只看到胶囊。 */
   const appearance = useAppearanceController(platform);
   const stealthSetting = useMeetingStealth(platform);
+  useStealthInputGuard(stealthSetting.enabled);
   const conversation = useConversationChat(platform);
   useEffect(() => {
     if (panel !== "chat" && replyPhase === "closed") conversation.clearMessages();
@@ -192,6 +194,7 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
             surfaces.openPanel("closed");
             conversation.clearMessages();
           }}
+          stealth={stealthSetting.enabled}
         />
       )}
 

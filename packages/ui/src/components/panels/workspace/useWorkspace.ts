@@ -17,7 +17,7 @@ export interface WorkspaceState {
   deleteEntry: (path: string) => Promise<void>;
 }
 
-export function useWorkspace(bridge: DesktopBridge | undefined): WorkspaceState {
+export function useWorkspace(bridge: DesktopBridge | undefined, stealth = false): WorkspaceState {
   const [root, setRoot] = useState<string | null>(null);
   const [tree, setTree] = useState<WorkspaceNode[]>([]);
   const [loading, setLoading] = useState(false);
@@ -60,6 +60,7 @@ export function useWorkspace(bridge: DesktopBridge | undefined): WorkspaceState 
   }, [bridge]);
 
   const pickRoot = useCallback(async () => {
+    if (stealth) return;
     if (!bridge?.pickWorkspaceRoot || !bridge.listWorkspaceTree) return;
     try {
       setError(null);
@@ -74,7 +75,7 @@ export function useWorkspace(bridge: DesktopBridge | undefined): WorkspaceState 
     } finally {
       setLoading(false);
     }
-  }, [bridge]);
+  }, [bridge, stealth]);
 
   const createEntry = useCallback(
     async (path: string, kind: "dir" | "file") => {

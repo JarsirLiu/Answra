@@ -1,6 +1,7 @@
 import path from "node:path";
 import { BrowserWindow, screen } from "electron";
 import { setWindowCaptureProtection } from "../windowCaptureProtection";
+import { attachNonActivatingWindow } from "../windowInteractionPolicy";
 
 /**
  * 区域框选 overlay 窗口。
@@ -40,10 +41,13 @@ export function createSelectionWindows(line?: string, stealth = false): BrowserW
     });
     // screen-saver 层级确保压过主窗口的 floating 层
     selectionWindow.setAlwaysOnTop(true, "screen-saver");
+    // The selection surface only needs mouse input. On Windows, keep the
+    // meeting application foreground while the user drags the selection.
+    attachNonActivatingWindow(selectionWindow, { requiresKeyboardChannel: false });
     if (stealth) {
       setWindowCaptureProtection(selectionWindow, true);
     }
-    selectionWindow.once("ready-to-show", () => selectionWindow.show());
+    selectionWindow.once("ready-to-show", () => selectionWindow.showInactive());
     selectionWindow.once("closed", () => activeWindows.delete(selectionWindow));
     activeWindows.add(selectionWindow);
     void selectionWindow.loadFile(path.join(__dirname, "../capture/selection.html"), {
