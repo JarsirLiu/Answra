@@ -98,16 +98,6 @@
   background: var(--hover);
 }
 
-.workspace-tree__new input {
-  width: 100%;
-  font-size: 12px;
-  padding: 3px 6px;
-  border-radius: 6px;
-  border: 1px solid var(--glass-line-soft);
-  background: transparent;
-  color: inherit;
-}
-
 .workspace-tree__list,
 .workspace-tree ul {
   list-style: none;

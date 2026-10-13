@@ -5,15 +5,13 @@ import vscodeIconsCollection from "@iconify-json/vscode-icons/icons.json";
 import {
   ChevronDown,
   ChevronRight,
-  FilePlus,
-  FolderPlus,
   PanelLeftClose,
   PanelLeftOpen,
   Search,
   Trash2,
   X,
 } from "lucide-react";
-import { type FormEvent, useState } from "react";
+import { useState } from "react";
 import { getIconForFile } from "vscode-icons-js";
 import { ICON_SM } from "../../../tokens";
 import "./DirectoryTree.css";
@@ -31,8 +29,6 @@ interface DirectoryTreeProps {
   nodes: WorkspaceNode[];
   selectedPath: string | null;
   onSelect: (node: WorkspaceNode) => void;
-  /** 在根目录（V1 固定 parentDir=""）下新建目录或文档。 */
-  onCreate: (parentDir: string, kind: "dir" | "file", name: string) => void;
   onDelete: (path: string) => void;
   /** 侧栏收起状态与切换（按钮并入树头部动作行，不独占竖条）。 */
   collapsed?: boolean;
@@ -48,10 +44,9 @@ interface TreeNodeProps extends DirectoryTreeProps {
   matches: (node: WorkspaceNode) => boolean;
 }
 
-/** 目录树纯展示组件；筛选/展开/新建交互在本组件内，数据由 useWorkspace 提供。 */
+/** 目录树纯展示组件；筛选/展开交互在本组件内，数据由 useWorkspace 提供。 */
 export function DirectoryTree(props: DirectoryTreeProps) {
   const { nodes } = props;
-  const [creating, setCreating] = useState<null | "dir" | "file">(null);
   const [filter, setFilter] = useState("");
   const needle = filter.trim().toLowerCase();
 
@@ -69,8 +64,7 @@ export function DirectoryTree(props: DirectoryTreeProps) {
 
   const visibleRoots = nodes.filter(matches);
 
-  if (nodes.length === 0)
-    return <p className="workspace-tree__empty">目录为空，可在下方新建文档或文件夹。</p>;
+  if (nodes.length === 0) return <p className="workspace-tree__empty">目录为空。</p>;
 
   return (
     <div className="workspace-tree">
@@ -109,36 +103,7 @@ export function DirectoryTree(props: DirectoryTreeProps) {
             )}
           </button>
         )}
-        <span className="workspace-tree__actions-spacer" />
-        <button
-          type="button"
-          className="workspace-tree__action"
-          aria-label="新建文档"
-          title="新建文档"
-          onClick={() => setCreating("file")}
-        >
-          <FilePlus aria-hidden="true" size={ICON_SM} />
-        </button>
-        <button
-          type="button"
-          className="workspace-tree__action"
-          aria-label="新建文件夹"
-          title="新建文件夹"
-          onClick={() => setCreating("dir")}
-        >
-          <FolderPlus aria-hidden="true" size={ICON_SM} />
-        </button>
       </div>
-      {creating && (
-        <NewEntryForm
-          kind={creating}
-          onCancel={() => setCreating(null)}
-          onSubmit={(name) => {
-            setCreating(null);
-            if (name.trim()) props.onCreate("", creating, name.trim());
-          }}
-        />
-      )}
       {visibleRoots.length === 0 ? (
         <p className="workspace-tree__empty">没有匹配的文件。</p>
       ) : (
@@ -156,32 +121,6 @@ export function DirectoryTree(props: DirectoryTreeProps) {
         </ul>
       )}
     </div>
-  );
-}
-
-function NewEntryForm({
-  kind,
-  onSubmit,
-  onCancel,
-}: {
-  kind: "dir" | "file";
-  onSubmit: (name: string) => void;
-  onCancel: () => void;
-}) {
-  const [name, setName] = useState(kind === "file" ? "未命名.md" : "新建文件夹");
-  function submit(event: FormEvent) {
-    event.preventDefault();
-    onSubmit(name);
-  }
-  return (
-    <form className="workspace-tree__new" onSubmit={submit}>
-      <input
-        value={name}
-        onChange={(event) => setName(event.target.value)}
-        onBlur={onCancel}
-        aria-label={kind === "file" ? "新文档名称" : "新文件夹名称"}
-      />
-    </form>
   );
 }
 

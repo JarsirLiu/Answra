@@ -153,16 +153,6 @@ export function WorkspacePanel({ bridge, onClose }: WorkspacePanelProps) {
                     onSelect={openNode}
                     collapsed={false}
                     onToggleCollapse={() => setSidebarCollapsed(true)}
-                    onCreate={(parentDir, entryKind, name) => {
-                      const path = parentDir.length > 0 ? `${parentDir}/${name}` : name;
-                      void workspace
-                        .createEntry(path, entryKind)
-                        .catch(
-                          (cause: unknown) =>
-                            workspace.error ??
-                            setLoadError(cause instanceof Error ? cause.message : "创建失败"),
-                        );
-                    }}
                     onDelete={(path) => {
                       if (selectedPathRef.current === path) setSelected(null);
                       void workspace.deleteEntry(path).catch(() => undefined);

@@ -102,7 +102,6 @@ describe("WorkspacePanel", () => {
     expect(screen.getByText("阅读.md").closest(".workspace-tree__row")).toHaveClass(
       "workspace-tree__row",
     );
-    expect(screen.getByRole("button", { name: "新建文档" })).toHaveClass("workspace-tree__action");
     expect(screen.getAllByText("错题.md")[0]?.closest("ul")).toHaveClass(
       "workspace-tree__children",
     );
