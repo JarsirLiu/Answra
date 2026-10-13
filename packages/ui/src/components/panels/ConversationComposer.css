@@ -122,3 +122,28 @@
   border-radius: 2.5px;
   background: currentColor;
 }
+
+/* 紧凑变体：弹窗等窄面板下收缩内边距、按钮与输入行，让消息区占主要空间。 */
+.conversation-composer.is-compact {
+  gap: 2px;
+  margin: 0 10px 10px;
+  padding: 7px 10px 5px;
+  border-radius: 16px;
+}
+.conversation-composer.is-compact textarea {
+  min-height: 18px;
+  max-height: 72px;
+  font-size: 12px;
+  line-height: 17px;
+}
+.conversation-composer.is-compact .conversation-composer-footer {
+  min-height: 24px;
+}
+.conversation-composer.is-compact .conversation-composer-icon-button {
+  width: 24px;
+  height: 24px;
+}
+.conversation-composer.is-compact .conversation-composer-stop-glyph {
+  width: 8px;
+  height: 8px;
+}

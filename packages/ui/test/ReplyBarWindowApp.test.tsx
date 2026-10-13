@@ -192,19 +192,22 @@ describe("ReplyBarWindowApp live conversation popover", () => {
 
     expect(await screen.findByText("先检查题目条件")).toBeInTheDocument();
     expect(await screen.findByText("最终答案")).toBeInTheDocument();
-    const toggle = screen.getByRole("button", { name: "思考过程" });
+    const toggle = screen.getByRole("button", { name: "切换思考过程" });
     expect(toggle).toHaveAttribute("aria-expanded", "false");
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute("aria-expanded", "true");
-    expect(document.querySelector(".aicss-thinking-reasoning-collapsible")).toHaveClass(
-      "is-expanded",
-    );
+    expect(screen.getByText("先检查题目条件")).toBeInTheDocument();
     expect(screen.getByText("最终答案")).toBeInTheDocument();
   });
 
   it("uses one thinking state and collapses reasoning when the answer block starts", async () => {
     const bridge = createBridge();
-    bridge.getConversationSnapshot.mockResolvedValue({ ...snapshot, revision: 2 });
+    bridge.getConversationSnapshot.mockResolvedValue({
+      ...snapshot,
+      revision: 2,
+      // 本轮刚开口：只有思维链，回答正文尚未开始
+      messages: [snapshot.messages[0], { ...snapshot.messages[1], text: "" }],
+    });
     bridge.readConversationEvents.mockResolvedValue([
       {
         type: "event",
@@ -224,9 +227,9 @@ describe("ReplyBarWindowApp live conversation popover", () => {
     act(() => stateListener?.(replyState()));
     fireEvent.mouseEnter(document.querySelector(".reply-activity-viewport") as HTMLElement);
 
-    expect(await screen.findByText("正在思考")).toBeInTheDocument();
-    expect(screen.getAllByText("正在思考")).toHaveLength(1);
-    expect(screen.getByRole("button", { name: "正在思考" })).toHaveAttribute(
+    expect(await screen.findByText("思考中…")).toBeInTheDocument();
+    expect(screen.getAllByText("思考中…")).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "切换思考过程" })).toHaveAttribute(
       "aria-expanded",
       "true",
     );
@@ -243,10 +246,10 @@ describe("ReplyBarWindowApp live conversation popover", () => {
       });
     });
 
-    const thoughtToggle = await screen.findByRole("button", { name: "思考过程" });
+    const thoughtToggle = await screen.findByRole("button", { name: "切换思考过程" });
     await waitFor(() => expect(thoughtToggle).toHaveAttribute("aria-expanded", "false"));
     expect(screen.getByText(/答案/)).toBeInTheDocument();
-    expect(screen.queryByText("正在思考")).not.toBeInTheDocument();
+    expect(screen.queryByText("思考中…")).not.toBeInTheDocument();
   });
 
   it("shows message actions only after a completed assistant reply", async () => {
@@ -263,7 +266,7 @@ describe("ReplyBarWindowApp live conversation popover", () => {
     await waitFor(() => expect(bridge.getConversationSnapshot).toHaveBeenCalled());
     fireEvent.mouseEnter(document.querySelector(".reply-activity-viewport") as HTMLElement);
 
-    expect(screen.queryByRole("button", { name: "Copy message" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "复制" })).not.toBeInTheDocument();
     act(() => {
       changeListener?.({
         type: "run-finished",
@@ -274,7 +277,7 @@ describe("ReplyBarWindowApp live conversation popover", () => {
       });
     });
 
-    const copy = await screen.findByRole("button", { name: "Copy message" });
+    const copy = await screen.findByRole("button", { name: "复制" });
     expect(copy).toBeInTheDocument();
     fireEvent.click(copy);
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("初始 **文本**"));
@@ -329,7 +332,7 @@ describe("ReplyBarWindowApp live conversation popover", () => {
     });
     await waitFor(() => expect(screen.getByText(/新答案/)).toBeInTheDocument());
     expect(scrollTop).toBe(100);
-    expect(screen.queryByRole("button", { name: "滚动到最新回复" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "定位到最新回复" })).toBeInTheDocument();
   });
 
   it("shows user screenshots as compact previews without filenames", async () => {

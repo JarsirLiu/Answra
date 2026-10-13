@@ -11,6 +11,10 @@ interface AssistantMessageProps {
   content?: string;
   /** 思考阶段：思维链仍在流出且回答正文未开始。 */
   thinking?: boolean;
+  /** 本条消息仍在流式输出：操作条延迟到回复完毕后出现。 */
+  streaming?: boolean;
+  /** 正文流式中：正文末尾显示输出光标。 */
+  caret?: boolean;
   /** 思考耗时（毫秒）。 */
   thinkingMs?: number;
   /** 回复完成时间，用于操作条的时间显示。 */
@@ -32,6 +36,8 @@ export function AssistantMessage({
   reasoning,
   content,
   thinking = false,
+  streaming = false,
+  caret = false,
   thinkingMs,
   sentAt,
   onCopy,
@@ -41,7 +47,7 @@ export function AssistantMessage({
   children,
 }: AssistantMessageProps) {
   const text = content?.trim();
-  const done = !thinking && Boolean(text);
+  const done = !thinking && !streaming && Boolean(text);
   return (
     <div className={styles.stack}>
       {reasoning || thinking ? (
@@ -51,7 +57,7 @@ export function AssistantMessage({
           thinking={thinking}
         />
       ) : null}
-      {text ? <TextResponse>{text}</TextResponse> : null}
+      {text ? <TextResponse caret={caret} text={text} /> : null}
       {children}
       {done ? (
         <MessageActions

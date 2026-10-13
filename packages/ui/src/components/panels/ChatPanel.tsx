@@ -89,6 +89,7 @@ export function ChatPanel({
                 onReply={() => composerInputRef.current?.focus()}
                 onVote={onVote}
                 reasoning={message.reasoning}
+                streaming={Boolean(streaming) && message.id === messages.at(-1)?.id}
                 thinking={Boolean(streaming && !message.content)}
                 thinkingMs={thinkingMs}
               />

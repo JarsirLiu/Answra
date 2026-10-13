@@ -27,6 +27,7 @@ export function useFollowLatest(contentKey: string) {
   }, []);
 
   // 内容变化：跟随模式下滚到底部，并刷新按钮可见性
+  // biome-ignore lint/correctness/useExhaustiveDependencies: contentKey 是内容指纹，故意作为触发信号列入依赖
   useLayoutEffect(() => {
     const viewport = viewportRef.current;
     if (!viewport) return;

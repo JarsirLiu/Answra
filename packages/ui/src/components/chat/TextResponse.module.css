@@ -143,3 +143,29 @@
   background: var(--tr-block-bg, #f8f8fa);
   font-weight: 600;
 }
+
+/* 流式输出光标：挂在最后一个块级元素的行内末尾，随正文增长移动。 */
+.prose[data-caret] > :last-child::after {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 1.05em;
+  margin-left: 2px;
+  background: var(--tr-fg, currentColor);
+  vertical-align: text-bottom;
+  animation: caret-blink 1s step-end infinite;
+}
+@keyframes caret-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .prose[data-caret] > :last-child::after {
+    animation: none;
+  }
+}

@@ -29,11 +29,11 @@ const markdownComponents: Components = {
 };
 
 /** AI 正文：Markdown 渲染（GFM），流式期间随文本增长实时重排。 */
-export function TextResponse({ children }: { children?: ReactNode }) {
+export function TextResponse({ text, caret = false }: { text: string; caret?: boolean }) {
   return (
-    <div className={styles.prose}>
+    <div className={styles.prose} data-caret={caret || undefined}>
       <ReactMarkdown components={markdownComponents} remarkPlugins={[remarkGfm]}>
-        {typeof children === "string" ? children : ""}
+        {text}
       </ReactMarkdown>
     </div>
   );

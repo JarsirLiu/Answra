@@ -9,6 +9,8 @@ interface ConversationComposerProps {
   inputLabel: string;
   submitDisabled?: boolean;
   disabled?: boolean;
+  /** 紧凑变体：弹窗等窄面板里缩小内边距与控件尺寸，把空间让给消息区。 */
+  compact?: boolean;
   /** 流式进行中：发送按钮切换为停止按钮。 */
   streaming?: boolean;
   children?: ReactNode;
@@ -27,6 +29,7 @@ export function ConversationComposer({
   inputLabel,
   submitDisabled = false,
   disabled = false,
+  compact = false,
   streaming = false,
   children,
   inputRef,
@@ -42,7 +45,7 @@ export function ConversationComposer({
 
   return (
     <form
-      className={`conversation-composer input-surface${disabled ? " is-readonly" : ""}`}
+      className={`conversation-composer input-surface${compact ? " is-compact" : ""}${disabled ? " is-readonly" : ""}`}
       onSubmit={handleSubmit}
     >
       {children}
