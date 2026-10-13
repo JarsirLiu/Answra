@@ -195,7 +195,7 @@ function TreeNodeView({ node, depth, needle, matches, ...treeProps }: TreeNodePr
               <TreeFileIcon name={node.name} />
             </>
           )}
-          <span>{node.name}</span>
+          <span className="workspace-tree__name">{node.name}</span>
         </button>
         <button
           type="button"

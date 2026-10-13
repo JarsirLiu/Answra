@@ -70,7 +70,10 @@
 }
 
 .workspace-panel__sidebar {
-  flex: 0 0 clamp(128px, 24%, 200px);
+  /* 固定比例栏：最小 96px、按 16% 弹性、最大 150px；硬裁切不让内容撑开。 */
+  flex: 0 0 clamp(96px, 16%, 150px);
+  min-width: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   min-height: 0;

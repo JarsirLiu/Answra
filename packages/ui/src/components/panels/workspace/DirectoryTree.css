@@ -2,7 +2,10 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  overflow: auto;
+  min-width: 0;
+  /* 纵向可滚动，横向一律裁切：长文件名绝不把目录推宽。 */
+  overflow-y: auto;
+  overflow-x: hidden;
   height: 100%;
 }
 
@@ -117,6 +120,8 @@
 .workspace-tree__row {
   display: flex;
   align-items: center;
+  min-width: 0;
+  overflow: hidden;
   min-height: 24px;
   border-radius: 6px;
   box-sizing: border-box;
@@ -138,6 +143,7 @@
   align-items: center;
   gap: 5px;
   min-width: 0;
+  overflow: hidden;
   border: 0;
   background: transparent;
   color: inherit;
@@ -179,7 +185,9 @@
   border-radius: 4px;
 }
 
-.workspace-tree__item span {
+.workspace-tree__name {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
