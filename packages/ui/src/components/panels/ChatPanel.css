@@ -5,6 +5,7 @@
   flex-direction: column;
   gap: 12px;
   overflow: auto;
+  overflow-x: hidden;
   padding: 14px 14px 10px;
 }
 .chat-message {
@@ -17,15 +18,10 @@
   align-self: flex-end;
   max-width: 76%;
 }
-.assistant-avatar {
-  width: 22px;
-  height: 22px;
-  display: grid;
-  flex: 0 0 22px;
-  place-items: center;
-  border-radius: var(--ctl-radius);
-  color: var(--mint-text);
-  background: var(--mint-wash);
+/* 助手消息不套气泡：思考 + 正文通栏排布，自然衔接。 */
+.chat-message--assistant {
+  max-width: 100%;
+  display: block;
 }
 .message-content {
   padding: 7px 9px;
@@ -44,6 +40,37 @@
   color: var(--mint-text);
   background: var(--mint-wash);
 }
+/* 对话区自定义滚动条：细圆条，避免原生粗灰条。 */
+.conversation,
+.conversation-composer textarea {
+  scrollbar-width: thin;
+  scrollbar-color: var(--glass-line) transparent;
+}
+
+.conversation::-webkit-scrollbar,
+.conversation-composer textarea::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.conversation::-webkit-scrollbar-thumb,
+.conversation-composer textarea::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: var(--glass-line);
+}
+
+.conversation::-webkit-scrollbar-thumb:hover,
+.conversation-composer textarea::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+
+.conversation::-webkit-scrollbar-track,
+.conversation::-webkit-scrollbar-corner,
+.conversation-composer textarea::-webkit-scrollbar-track,
+.conversation-composer textarea::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 .message-attachment {
   margin: 0 0 7px;
 }
@@ -54,15 +81,6 @@
   border-radius: 5px;
   object-fit: contain;
   background: var(--field);
-}
-.composer-stop-button {
-  min-height: 24px;
-  padding: 0 8px;
-  border: 1px solid var(--glass-line);
-  border-radius: var(--ctl-radius);
-  color: var(--ink-soft);
-  background: var(--field);
-  font-size: var(--font-xs);
 }
 .file-input-hidden {
   display: none;

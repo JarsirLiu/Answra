@@ -247,5 +247,6 @@ export function useReplyWorkflow({
     clearPending,
     performSend,
     setDraft,
+    setAttachments,
   };
 }

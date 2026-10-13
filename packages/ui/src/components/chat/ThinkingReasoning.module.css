@@ -1,0 +1,180 @@
+/* 复刻 AICSS ThinkingReasoning：数值与动效曲线保持原设计。
+   与演示版的差异：内容高度实测（句子长度不定）、思考中视口自动跟读到底部。 */
+.tr {
+  display: flex;
+  flex-direction: column;
+  width: 360px;
+  max-width: 100%;
+  /* 主题变量：保留原设计的浅色取值。 */
+  --tre-label: color-mix(in srgb, #a1a1a1 68%, transparent);
+  --tre-verb: #a1a1a1;
+  --tre-chevron: #a1a1a1;
+  --tre-sentence: #a1a1a1;
+  --tre-hover: #a3a3a3;
+  /* 挂载时轻微淡入。 */
+  animation: tr-block-in 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes tr-block-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.trHeader {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  min-height: 20px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: default;
+  font: inherit;
+}
+
+.trHeader.isClickable {
+  cursor: pointer;
+}
+
+.trLabel {
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--tre-label);
+  letter-spacing: -0.005em;
+}
+
+.trVerb {
+  color: var(--tre-verb);
+}
+
+.trChevron {
+  color: var(--tre-chevron);
+  transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
+  /* 基础路径是上箭头；折叠态旋转 180° 指向下。 */
+  transform: rotate(180deg);
+}
+
+.trHeader[aria-expanded="true"] .trChevron {
+  transform: rotate(0deg);
+}
+
+.trHeader.isClickable:hover .trChevron {
+  color: var(--tre-hover);
+}
+
+/* 折叠动画：grid-template-rows 0fr↔1fr。 */
+.trCollapsible {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition:
+    grid-template-rows 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 220ms ease;
+}
+
+.trCollapsible.isCollapsed {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.trInner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* 视口：随内容长高，封顶 MAX_H。思考中内容在软遮罩后自动跟读；
+   用户展开后变为原生滚动，遮罩跟随滚动位置。
+   折叠时高度与外边距由内联样式归零，避免残留空隙。 */
+.trViewport {
+  margin-top: 6px;
+  overflow: hidden;
+  transition:
+    height 360ms cubic-bezier(0.22, 1, 0.36, 1),
+    margin-top 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.trViewport.isScroll {
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.trViewport.isScroll::-webkit-scrollbar {
+  display: none;
+}
+
+.trStream {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: transform 560ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+.trSentence {
+  margin: 0;
+  line-height: 20px;
+  font-size: 13px;
+  font-weight: 425;
+  color: var(--tre-sentence);
+  letter-spacing: -0.005em;
+  overflow-wrap: anywhere;
+  animation: tr-sentence-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes tr-sentence-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* tr-shimmer：一道亮度谷值扫过文字。 */
+.trShimmer {
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  background: linear-gradient(
+    90deg,
+    #a1a1a1 0%,
+    #a1a1a1 30%,
+    rgb(161 161 161 / 45%) 45%,
+    rgb(161 161 161 / 45%) 55%,
+    #a1a1a1 70%,
+    #a1a1a1 100%
+  );
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: tr-shine 2.25s cubic-bezier(0.25, 0.1, 0.25, 1) infinite;
+}
+
+@keyframes tr-shine {
+  0%,
+  18% {
+    background-position: 100% 0;
+  }
+  82%,
+  100% {
+    background-position: 0% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tr,
+  .trSentence,
+  .trShimmer,
+  .trViewport,
+  .trStream,
+  .trCollapsible {
+    animation: none;
+    transition: none;
+  }
+}

@@ -1,0 +1,76 @@
+.stream {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.viewport {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: var(--glass-line, #c9c9cf) transparent;
+}
+.viewport::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.viewport::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: var(--glass-line, #c9c9cf);
+}
+.viewport::-webkit-scrollbar-thumb:hover {
+  background: var(--muted, #8a8a90);
+}
+.viewport::-webkit-scrollbar-track,
+.viewport::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.jumpButton {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  translate: -50% 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border: 1px solid var(--glass-line, #d4d4d8);
+  border-radius: 999px;
+  background: var(--glass-surface, #ffffffee);
+  color: var(--foreground, #1a1a1a);
+  font-size: 12px;
+  line-height: 1;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 12%);
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition:
+    background 120ms ease,
+    transform 120ms ease;
+  animation: ms-jump-in 160ms ease;
+}
+.jumpButton:hover {
+  background: var(--glass-hover, #f2f2f5);
+}
+.jumpButton:active {
+  transform: scale(0.96);
+}
+.jumpButton:focus-visible {
+  outline: 2px solid var(--accent, #4b6bfb);
+  outline-offset: 1px;
+}
+
+@keyframes ms-jump-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

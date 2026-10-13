@@ -1,0 +1,145 @@
+/* Theme follows the nearest [data-theme] ancestor (preview switch),
+   then .dark, then the OS when no data-theme is set. */
+::global(:root),
+::global([data-theme="light"]) {
+  --tr-fg: #1a1a1a;
+  --tr-muted: #6b6b6b;
+  --tr-border: #e4e4e7;
+  --tr-code-bg: #f4f5f7;
+  --tr-block-bg: #f8f8fa;
+}
+::global([data-theme="dark"]),
+::global(.dark) {
+  --tr-fg: #f5f5f5;
+  --tr-muted: #9d9da3;
+  --tr-border: #333338;
+  --tr-code-bg: #242424;
+  --tr-block-bg: #1c1c1f;
+}
+@media (prefers-color-scheme: dark) {
+  :global(:root:not([data-theme])) {
+    --tr-fg: #f5f5f5;
+    --tr-muted: #9d9da3;
+    --tr-border: #333338;
+    --tr-code-bg: #242424;
+    --tr-block-bg: #1c1c1f;
+  }
+}
+
+.prose {
+  max-width: 100%;
+  font-size: 14px;
+  line-height: 21px;
+  color: var(--tr-fg, #1a1a1a);
+  overflow-wrap: anywhere;
+}
+.prose > :first-child {
+  margin-top: 0;
+}
+.prose > :last-child {
+  margin-bottom: 0;
+}
+.prose p {
+  margin: 0 0 10px;
+}
+.prose h1,
+.prose h2,
+.prose h3,
+.prose h4 {
+  margin: 16px 0 8px;
+  line-height: 1.35;
+  font-weight: 650;
+}
+.prose h1 {
+  font-size: 17px;
+}
+.prose h2 {
+  font-size: 15.5px;
+}
+.prose h3,
+.prose h4 {
+  font-size: 14.5px;
+}
+.prose ul,
+.prose ol {
+  margin: 0 0 10px;
+  padding-left: 22px;
+}
+.prose li {
+  margin: 3px 0;
+}
+.prose blockquote {
+  margin: 0 0 10px;
+  padding: 2px 12px;
+  border-left: 3px solid var(--tr-border, #e4e4e7);
+  color: var(--tr-muted, #6b6b6b);
+}
+.prose hr {
+  border: none;
+  border-top: 1px solid var(--tr-border, #e4e4e7);
+  margin: 14px 0;
+}
+.prose a {
+  color: inherit;
+}
+.prose code {
+  font-family: ui-monospace, monospace;
+  font-size: 12.5px;
+  color: inherit;
+  background: var(--tr-code-bg, #f4f5f7);
+  padding: 3px 5px 1px;
+  border-radius: 5px;
+}
+.inlineCode {
+  font-family: ui-monospace, monospace;
+  font-size: 12.5px;
+  color: inherit;
+  background: var(--tr-code-bg, #f4f5f7);
+  padding: 3px 5px 1px;
+  border-radius: 5px;
+}
+.prose pre {
+  margin: 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  font-size: 12.5px;
+  line-height: 18px;
+}
+.prose pre code {
+  background: none;
+  padding: 0;
+}
+.codeBlock {
+  margin: 0 0 10px;
+  border: 1px solid var(--tr-border, #e4e4e7);
+  border-radius: 8px;
+  background: var(--tr-block-bg, #f8f8fa);
+  overflow: hidden;
+}
+.codeLang {
+  display: block;
+  padding: 5px 12px;
+  font-size: 11px;
+  color: var(--tr-muted, #6b6b6b);
+  border-bottom: 1px solid var(--tr-border, #e4e4e7);
+  text-transform: lowercase;
+}
+.tableScroll {
+  margin: 0 0 10px;
+  overflow-x: auto;
+}
+.prose table {
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.prose th,
+.prose td {
+  border: 1px solid var(--tr-border, #e4e4e7);
+  padding: 5px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.prose th {
+  background: var(--tr-block-bg, #f8f8fa);
+  font-weight: 600;
+}

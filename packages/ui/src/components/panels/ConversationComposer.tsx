@@ -1,5 +1,5 @@
 import { ArrowUp, Plus } from "lucide-react";
-import type { FormEvent, ReactNode } from "react";
+import type { FormEvent, ReactNode, RefObject } from "react";
 import { ICON_SM } from "../../tokens";
 import "./ConversationComposer.css";
 
@@ -9,11 +9,16 @@ interface ConversationComposerProps {
   inputLabel: string;
   submitDisabled?: boolean;
   disabled?: boolean;
-  beforeSubmit?: ReactNode;
+  /** 流式进行中：发送按钮切换为停止按钮。 */
+  streaming?: boolean;
   children?: ReactNode;
+  /** 外部持有输入框引用（如消息操作条的"引用回复"聚焦）。 */
+  inputRef?: RefObject<HTMLTextAreaElement | null>;
   onValueChange?: (value: string) => void;
   onAddAttachment?: () => void;
   onSubmit?: () => void;
+  /** 停止当前回复（streaming 时替换发送按钮）。 */
+  onStop?: () => void;
 }
 
 export function ConversationComposer({
@@ -22,12 +27,13 @@ export function ConversationComposer({
   inputLabel,
   submitDisabled = false,
   disabled = false,
-  footerLabel,
-  beforeSubmit,
+  streaming = false,
   children,
+  inputRef,
   onValueChange,
   onAddAttachment,
   onSubmit,
+  onStop,
 }: ConversationComposerProps) {
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -50,6 +56,7 @@ export function ConversationComposer({
           event.currentTarget.form?.requestSubmit();
         }}
         placeholder={placeholder}
+        ref={inputRef}
         rows={1}
         value={value}
       />
@@ -67,16 +74,27 @@ export function ConversationComposer({
           </button>
         </div>
         <div className="conversation-composer-actions">
-          {beforeSubmit}
-          <button
-            aria-label="发送消息"
-            className="conversation-composer-icon-button conversation-composer-submit"
-            disabled={disabled || submitDisabled}
-            title="发送消息"
-            type="submit"
-          >
-            <ArrowUp aria-hidden="true" size={ICON_SM} />
-          </button>
+          {streaming ? (
+            <button
+              aria-label="停止回复"
+              className="conversation-composer-icon-button conversation-composer-stop"
+              onClick={onStop}
+              title="停止回复"
+              type="button"
+            >
+              <span aria-hidden="true" className="conversation-composer-stop-glyph" />
+            </button>
+          ) : (
+            <button
+              aria-label="发送消息"
+              className="conversation-composer-icon-button conversation-composer-submit"
+              disabled={disabled || submitDisabled}
+              title="发送消息"
+              type="submit"
+            >
+              <ArrowUp aria-hidden="true" size={ICON_SM} />
+            </button>
+          )}
         </div>
       </div>
     </form>

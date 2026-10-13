@@ -1,0 +1,31 @@
+/* 工具调用卡片：与消息流风格一致的轻量卡片。 */
+.tool {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 100%;
+  padding: 6px 9px;
+  border: 1px solid var(--glass-line-soft);
+  border-radius: 8px;
+  background: var(--field);
+  font-size: 12.5px;
+}
+
+.name {
+  color: var(--ink-soft);
+  font-family: ui-monospace, monospace;
+}
+
+.tool[data-status="running"] .name::after {
+  content: "…";
+}
+
+.tool[data-status="error"] .name {
+  color: #c0392b;
+}
+
+.output {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}

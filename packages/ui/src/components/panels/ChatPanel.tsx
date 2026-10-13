@@ -1,6 +1,7 @@
-import { Sparkles, X } from "lucide-react";
-import type { RefObject } from "react";
+import { X } from "lucide-react";
+import { type RefObject, useRef } from "react";
 import { ICON_SM } from "../../tokens";
+import { AssistantMessage, MessageStream } from "../chat";
 import { ConversationComposer } from "./ConversationComposer";
 import { PanelShell } from "./PanelShell";
 import "./ChatPanel.css";
@@ -15,6 +16,8 @@ export interface ChatMessage {
   id: string;
   role: "assistant" | "user";
   content: string;
+  /** 模型思维链（reasoning part），流式更新；可能为空。 */
+  reasoning?: string;
   attachments?: ChatAttachment[];
 }
 
@@ -28,8 +31,13 @@ interface ChatPanelProps {
   onAttachmentRemove: (id: string) => void;
   onSend: () => void;
   onCancel: () => void;
-  configured: boolean;
   streaming: boolean;
+  /** 本轮思考耗时（毫秒），回答开始输出后冻结。 */
+  thinkingMs?: number;
+  /** 分叉对话：从当前消息开启新对话。 */
+  onFork?: () => void;
+  /** 点赞/点踩反馈。 */
+  onVote?: (vote: "up" | "down" | null) => void;
   onClose: () => void;
 }
 
@@ -44,10 +52,17 @@ export function ChatPanel({
   onAttachmentRemove,
   onSend,
   onCancel,
-  configured,
   streaming,
+  thinkingMs,
+  onFork,
+  onVote,
   onClose,
 }: ChatPanelProps) {
+  const composerInputRef = useRef<HTMLTextAreaElement>(null);
+  // 内容指纹：消息增减/正文与思维链流式增长都会变化，驱动 MessageStream 自动跟随。
+  const contentKey = messages
+    .map((message) => `${message.id}:${message.content.length}:${message.reasoning?.length ?? 0}`)
+    .join("|");
   return (
     <PanelShell
       context={attachments.length ? "截图已添加，可补充问题" : undefined}
@@ -55,45 +70,43 @@ export function ChatPanel({
       title="AI 对话"
       variant="chat"
     >
-      <div aria-live="polite" className="conversation">
+      <MessageStream ariaLabel="对话消息" contentKey={contentKey} viewportClassName="conversation">
         {messages.map((message) => (
           <article className={`chat-message chat-message--${message.role}`} key={message.id}>
-            {message.role === "assistant" && (
-              <div className="assistant-avatar">
-                <Sparkles aria-hidden="true" size={ICON_SM} />
+            {message.role === "user" ? (
+              <div className="message-content">
+                {message.attachments?.map((att) => (
+                  <figure className="message-attachment" key={att.id}>
+                    <img alt="用户添加的截图" src={att.previewUrl} />
+                  </figure>
+                ))}
+                {message.content}
               </div>
+            ) : (
+              <AssistantMessage
+                content={message.content}
+                onFork={onFork}
+                onReply={() => composerInputRef.current?.focus()}
+                onVote={onVote}
+                reasoning={message.reasoning}
+                thinking={Boolean(streaming && !message.content)}
+                thinkingMs={thinkingMs}
+              />
             )}
-            <div className="message-content">
-              {message.attachments?.map((att) => (
-                <figure className="message-attachment" key={att.id}>
-                  <img alt="用户添加的截图" src={att.previewUrl} />
-                </figure>
-              ))}
-              {message.content}
-            </div>
           </article>
         ))}
-      </div>
+      </MessageStream>
       <ConversationComposer
         inputLabel="补充问题"
+        inputRef={composerInputRef}
         onAddAttachment={() => fileInputRef.current?.click()}
+        onStop={onCancel}
         onSubmit={onSend}
         onValueChange={onDraftChange}
         placeholder={attachments.length ? "补充问题或说明…" : "输入问题，或先从模式功能添加截图…"}
-        submitDisabled={streaming || (!draft.trim() && attachments.length === 0)}
+        streaming={streaming}
+        submitDisabled={!draft.trim() && attachments.length === 0}
         value={draft}
-        beforeSubmit={
-          streaming ? (
-            <button
-              aria-label="停止回复"
-              className="composer-stop-button"
-              onClick={onCancel}
-              type="button"
-            >
-              停止
-            </button>
-          ) : null
-        }
       >
         <input
           accept="image/*"

@@ -1,0 +1,8 @@
+/* AI 消息部件统一纵排：思考 / 正文 / 工具共用一套间距，衔接紧凑。 */
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+}

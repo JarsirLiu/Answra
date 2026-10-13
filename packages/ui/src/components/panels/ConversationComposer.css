@@ -7,8 +7,17 @@
   margin: 0 12px 12px;
   padding: 11px 12px 8px;
   border-radius: 22px;
-  background: var(--field-strong);
-  box-shadow: 0 4px 14px rgb(0 0 0 / 6%);
+}
+
+/* 输入区不做特殊背景色，仅保留边框与焦点态（覆盖 .input-surface 的背景）。
+   框线比全局 --glass-line 略重一档（alpha 基数 +0.04），沿令牌公式双主题自适应。 */
+.conversation-composer.input-surface {
+  background: transparent;
+  box-shadow: none;
+  border-color: rgb(var(--line-tint) / calc((var(--line-base) + 0.04) * var(--fade)));
+}
+.conversation-composer.input-surface:focus-within {
+  border-color: rgb(var(--line-tint) / calc((var(--line-base) + 0.1) * var(--fade)));
 }
 
 .conversation-composer textarea {
@@ -97,4 +106,19 @@
   color: var(--panel);
   background: var(--muted);
   opacity: 1;
+}
+
+/* 进行中：停止按钮（深色圆底 + 白色方块），回复结束后切回发送按钮 */
+.conversation-composer-stop {
+  color: white;
+  background: var(--ink, #1f1f23);
+}
+.conversation-composer-stop:hover {
+  background: var(--ink-deep, #3a3a40);
+}
+.conversation-composer-stop-glyph {
+  width: 10px;
+  height: 10px;
+  border-radius: 2.5px;
+  background: currentColor;
 }

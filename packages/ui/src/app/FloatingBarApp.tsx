@@ -65,6 +65,7 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
     replyActivities,
     replyError,
     setDraft,
+    setAttachments,
     triggerScreenshot,
   } = reply;
   // The hidden toolbar keeps its last native bounds while the reply workflow
@@ -121,8 +122,8 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
           attachments={attachments}
           draft={draft}
           fileInputRef={fileInputRef}
-          configured={conversation.config.configured}
           streaming={Boolean(conversation.activeRunId)}
+          thinkingMs={conversation.thinkingMs}
           messages={conversation.messages}
           onCancel={conversation.cancel}
           onAttachmentChange={handleAttachmentChange}
@@ -132,20 +133,35 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
             conversation.clearMessages();
           }}
           onDraftChange={setDraft}
+          onFork={() => {
+            conversation.clearMessages();
+            setDraft("");
+          }}
+          onVote={(vote) =>
+            surfaces.dispatch({
+              type: "layer/show-notice",
+              id: "conversation-vote",
+              message: vote === "up" ? "感谢反馈！" : "已收到反馈，我们会继续改进",
+            })
+          }
           onSend={() => {
+            // 发送即清空输入框与附件；失败时恢复草稿，避免丢失输入。
+            const sentDraft = draft;
+            const sentAttachments = attachments;
+            setDraft("");
+            setAttachments([]);
             void conversation
-              .send(draft, attachments)
-              .then(() => {
-                reply.clearPending();
-                setDraft("");
-              })
-              .catch((error: unknown) =>
+              .send(sentDraft, sentAttachments)
+              .then(() => reply.clearPending())
+              .catch((error: unknown) => {
+                setDraft(sentDraft);
+                setAttachments(sentAttachments);
                 surfaces.dispatch({
                   type: "layer/show-notice",
                   id: "conversation-error",
                   message: error instanceof Error ? error.message : "发送失败",
-                }),
-              );
+                });
+              });
           }}
         />
       )}

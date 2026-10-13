@@ -266,6 +266,20 @@ export function useConversationChat(platform: DesktopBridge | undefined) {
   );
   const chat = useChat({ id: ACTIVE_CONVERSATION_ID, transport });
   setMessagesRef.current = chat.setMessages;
+  // 思考耗时：从本轮发起计时，到助手正文出现第一个字为止。
+  const [thinkingMs, setThinkingMs] = useState<number>();
+  const runStartRef = useRef<number | undefined>(undefined);
+  const thinkingSetRef = useRef(true);
+  useEffect(() => {
+    if (chat.status !== "streaming" && chat.status !== "submitted") return;
+    if (thinkingSetRef.current) return;
+    const streaming = chat.messages.at(-1);
+    const hasText = streaming?.parts.some((part) => part.type === "text" && part.text);
+    if (hasText && runStartRef.current !== undefined) {
+      thinkingSetRef.current = true;
+      setThinkingMs(Date.now() - runStartRef.current);
+    }
+  }, [chat.status, chat.messages]);
   const messages: ChatMessage[] = useMemo(
     () =>
       chat.messages.map((message) => ({
@@ -273,6 +287,10 @@ export function useConversationChat(platform: DesktopBridge | undefined) {
         role: message.role === "assistant" ? "assistant" : "user",
         content: message.parts
           .filter((part) => part.type === "text")
+          .map((part) => part.text)
+          .join(""),
+        reasoning: message.parts
+          .filter((part) => part.type === "reasoning")
           .map((part) => part.text)
           .join(""),
         attachments: message.parts.flatMap((part) =>
@@ -302,6 +320,9 @@ export function useConversationChat(platform: DesktopBridge | undefined) {
       runErrorRef.current = undefined;
       runCancelledRef.current = false;
       cancelRequestedRef.current = false;
+      runStartRef.current = Date.now();
+      thinkingSetRef.current = false;
+      setThinkingMs(undefined);
       let resolveTerminal: () => void = () => {};
       let rejectTerminal: (error: Error) => void = () => {};
       const terminal = new Promise<void>((resolve, reject) => {
@@ -366,6 +387,7 @@ export function useConversationChat(platform: DesktopBridge | undefined) {
     replyPending: Boolean(activeRunId || sendPending),
     replyActivities,
     send,
+    thinkingMs,
   };
 }
 
