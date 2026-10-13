@@ -177,7 +177,17 @@ function settleFromOverlay(event: IpcMainEvent, selection: RegionSelection | nul
 function isValidSelection(selection: unknown): selection is RegionSelection {
   if (typeof selection !== "object" || selection === null) return false;
   const candidate = selection as RegionSelection;
-  return Number.isFinite(candidate.displayId) && isValidRect(candidate.rect);
+  return (
+    Number.isFinite(candidate.displayId) &&
+    isValidRect(candidate.rect) &&
+    isValidPoint(candidate.point)
+  );
+}
+
+function isValidPoint(point: unknown): point is { x: number; y: number } {
+  if (typeof point !== "object" || point === null) return false;
+  const candidate = point as { x?: unknown; y?: unknown };
+  return Number.isFinite(candidate.x) && Number.isFinite(candidate.y);
 }
 
 function isValidRect(rect: unknown): boolean {

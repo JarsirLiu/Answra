@@ -335,6 +335,8 @@ export interface RegionRect {
 export interface RegionSelection {
   displayId: number;
   rect: RegionRect;
+  /** 最终 mouseup 位置，坐标相对目标显示器左上角，用于回复条定位。 */
+  point: { x: number; y: number };
 }
 
 /** 区域截图成功结果：PNG data URL 与物理像素尺寸。 */

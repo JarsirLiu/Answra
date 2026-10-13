@@ -108,7 +108,14 @@
           if (hintEl) hintEl.style.display = "block";
           return;
         }
-        window.answraSelection.confirm({ displayId, rect });
+        window.answraSelection.confirm({
+          displayId,
+          rect,
+          point: {
+            x: clamp(event.clientX, 0, window.innerWidth - 1),
+            y: clamp(event.clientY, 0, window.innerHeight - 1),
+          },
+        });
       });
       window.addEventListener("keydown", (event) => {
         if (event.key === "Escape") window.answraSelection.cancel();

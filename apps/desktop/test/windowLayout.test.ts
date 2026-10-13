@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   clampWindowBoundsToWorkArea,
   positionReplyBarSize,
+  positionWindowNearPoint,
   replyBarAnchorFromBounds,
 } from "../src/main/windowLayout";
 
@@ -62,6 +63,26 @@ describe("positionReplyBarSize", () => {
       barSize,
     );
     expect(result).toEqual({ x: -20, y: -10, placement: "above" });
+  });
+});
+
+describe("positionWindowNearPoint", () => {
+  it("centers the reply bar on the final pointer position", () => {
+    expect(
+      positionWindowNearPoint({ x: 400, y: 300 }, { x: 0, y: 0 }, workArea, {
+        width: 480,
+        height: 76,
+      }),
+    ).toEqual({ x: 160, y: 312 });
+  });
+
+  it("clamps the reply bar when the pointer is near a display edge", () => {
+    expect(
+      positionWindowNearPoint({ x: 10, y: 1070 }, { x: 0, y: 0 }, workArea, {
+        width: 480,
+        height: 76,
+      }),
+    ).toEqual({ x: 0, y: 1004 });
   });
 });
 

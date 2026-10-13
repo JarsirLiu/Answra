@@ -101,6 +101,7 @@ import {
 const VALID_SELECTION = {
   displayId: 1,
   rect: { height: 10, width: 10, x: 0, y: 0 },
+  point: { x: 10, y: 10 },
 };
 
 describe("captureIpc 区域截图编排", () => {

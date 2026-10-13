@@ -17,6 +17,21 @@ export function positionWindowNearSelection(
   };
 }
 
+/** Places the reply bar below the pointer that completed the selection. */
+export function positionWindowNearPoint(
+  point: { x: number; y: number },
+  displayBounds: { x: number; y: number },
+  workArea: { x: number; y: number; width: number; height: number },
+  windowSize: { width: number; height: number },
+): { x: number; y: number } {
+  const x = Math.round(point.x + displayBounds.x - windowSize.width / 2);
+  const y = Math.round(point.y + displayBounds.y + SELECTION_GAP);
+  return {
+    x: Math.min(Math.max(x, workArea.x), workArea.x + workArea.width - windowSize.width),
+    y: Math.min(Math.max(y, workArea.y), workArea.y + workArea.height - windowSize.height),
+  };
+}
+
 export function clampContentSize(
   size: { width: number; height: number },
   workArea: { width: number; height: number },

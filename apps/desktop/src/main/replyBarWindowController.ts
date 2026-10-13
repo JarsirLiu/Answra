@@ -13,7 +13,7 @@ import { setWindowCaptureProtection } from "./windowCaptureProtection";
 import {
   clampWindowBoundsToWorkArea,
   positionReplyBarSize,
-  positionWindowNearSelection,
+  positionWindowNearPoint,
   replyBarAnchorFromBounds,
 } from "./windowLayout";
 
@@ -41,8 +41,8 @@ export function createReplyBarWindowController(host: ReplyBarWindowHost) {
       .getAllDisplays()
       .find((candidate) => candidate.id === selection.displayId);
     if (!display) return;
-    position = positionWindowNearSelection(
-      selection.rect,
+    position = positionWindowNearPoint(
+      selection.point,
       display.bounds,
       display.workArea,
       REPLY_BAR_SIZE,
