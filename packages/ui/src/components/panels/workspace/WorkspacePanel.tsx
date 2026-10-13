@@ -1,5 +1,5 @@
 import type { DesktopBridge, WorkspaceFileContent, WorkspaceNode } from "@answra/shared";
-import { FolderOpen, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { FolderOpen, PanelLeftOpen } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { PanelShell } from "../PanelShell";
 import { DirectoryTree } from "./DirectoryTree";
@@ -135,25 +135,24 @@ export function WorkspacePanel({ bridge, onClose }: WorkspacePanelProps) {
               className={`workspace-panel__body${sidebarCollapsed ? " workspace-panel__body--collapsed" : ""}`}
             >
               <aside className="workspace-panel__sidebar" aria-label="工作区目录">
-                <button
-                  type="button"
-                  className="workspace-panel__sidebar-toggle"
-                  aria-label={sidebarCollapsed ? "展开目录" : "收起目录"}
-                  aria-expanded={!sidebarCollapsed}
-                  title={sidebarCollapsed ? "展开目录" : "收起目录"}
-                  onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
-                >
-                  {sidebarCollapsed ? (
+                {sidebarCollapsed ? (
+                  // 收起态：只留一个展开按钮的窄条。
+                  <button
+                    type="button"
+                    className="workspace-panel__sidebar-toggle"
+                    aria-label="展开目录"
+                    title="展开目录"
+                    onClick={() => setSidebarCollapsed(false)}
+                  >
                     <PanelLeftOpen aria-hidden="true" size={15} />
-                  ) : (
-                    <PanelLeftClose aria-hidden="true" size={15} />
-                  )}
-                </button>
-                {!sidebarCollapsed && (
+                  </button>
+                ) : (
                   <DirectoryTree
                     nodes={workspace.tree}
                     selectedPath={selected?.path ?? null}
                     onSelect={openNode}
+                    collapsed={false}
+                    onToggleCollapse={() => setSidebarCollapsed(true)}
                     onCreate={(parentDir, entryKind, name) => {
                       const path = parentDir.length > 0 ? `${parentDir}/${name}` : name;
                       void workspace

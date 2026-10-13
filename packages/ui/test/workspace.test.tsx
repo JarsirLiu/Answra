@@ -107,11 +107,10 @@ describe("WorkspacePanel", () => {
       "workspace-tree__children",
     );
     const collapseButton = screen.getByRole("button", { name: "收起目录" });
-    expect(collapseButton).toHaveAttribute("aria-expanded", "true");
+    expect(collapseButton).toHaveClass("workspace-tree__action");
     fireEvent.click(collapseButton);
-    expect(screen.getByRole("button", { name: "展开目录" })).toHaveAttribute(
-      "aria-expanded",
-      "false",
+    expect(screen.getByRole("button", { name: "展开目录" })).toHaveClass(
+      "workspace-panel__sidebar-toggle",
     );
     expect(screen.queryByText("阅读.md")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "放大预览区域" })).not.toBeInTheDocument();

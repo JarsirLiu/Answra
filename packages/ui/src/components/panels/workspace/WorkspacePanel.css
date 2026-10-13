@@ -70,21 +70,21 @@
 }
 
 .workspace-panel__sidebar {
-  /* 固定比例栏：最小 96px、按 16% 弹性、最大 150px；硬裁切不让内容撑开。 */
-  flex: 0 0 clamp(96px, 16%, 150px);
+  /* 复刻 VS Code 资源管理器：侧栏足够放下文件名，硬裁切不让内容撑开。 */
+  flex: 0 0 clamp(150px, 21%, 230px);
   min-width: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   min-height: 0;
   gap: 8px;
-  padding: 8px;
+  padding: 8px 6px 8px 8px;
   border-right: 1px solid var(--glass-line-soft);
 }
 
-/* 收起态：尽量窄，把面积全部让给预览区。 */
+/* 收起态：只留一个展开按钮的窄条。 */
 .workspace-panel__body--collapsed .workspace-panel__sidebar {
-  flex-basis: 20px;
+  flex-basis: 26px;
   align-items: center;
   padding: 6px 2px;
 }

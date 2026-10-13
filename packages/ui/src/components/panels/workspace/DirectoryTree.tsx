@@ -2,7 +2,17 @@ import type { WorkspaceNode } from "@answra/shared";
 import { addCollection, Icon } from "@iconify/react";
 // VS Code 图标集离线注册（Iconify 官方离线用法：导入一次，全应用可用）。
 import vscodeIconsCollection from "@iconify-json/vscode-icons/icons.json";
-import { ChevronDown, ChevronRight, FilePlus, FolderPlus, Search, Trash2, X } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  FilePlus,
+  FolderPlus,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Search,
+  Trash2,
+  X,
+} from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { getIconForFile } from "vscode-icons-js";
 import { ICON_SM } from "../../../tokens";
@@ -10,11 +20,11 @@ import "./DirectoryTree.css";
 
 addCollection(vscodeIconsCollection);
 
-/** 文件名 → VS Code 图标（vscode-icons-js v11 返回 "markdown.svg" 形式，未知回退普通文件图标）。 */
+/** 文件名 → VS Code 图标。vscode-icons-js 返回 "file_type_markdown.svg"，下划线转连字符即为 Iconify 键。 */
 function fileIconId(name: string): string {
   const icon = getIconForFile(name);
   if (!icon) return "vscode-icons:default-file";
-  return `vscode-icons:file-type-${icon.replace(/\.svg$/, "")}`;
+  return `vscode-icons:${icon.replace(/\.svg$/, "").replace(/_/g, "-")}`;
 }
 
 interface DirectoryTreeProps {
@@ -24,6 +34,9 @@ interface DirectoryTreeProps {
   /** 在根目录（V1 固定 parentDir=""）下新建目录或文档。 */
   onCreate: (parentDir: string, kind: "dir" | "file", name: string) => void;
   onDelete: (path: string) => void;
+  /** 侧栏收起状态与切换（按钮并入树头部动作行，不独占竖条）。 */
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
 }
 
 interface TreeNodeProps extends DirectoryTreeProps {
@@ -81,6 +94,22 @@ export function DirectoryTree(props: DirectoryTreeProps) {
         )}
       </div>
       <div className="workspace-tree__actions">
+        {props.onToggleCollapse && (
+          <button
+            type="button"
+            className="workspace-tree__action"
+            aria-label={props.collapsed ? "展开目录" : "收起目录"}
+            title={props.collapsed ? "展开目录" : "收起目录"}
+            onClick={props.onToggleCollapse}
+          >
+            {props.collapsed ? (
+              <PanelLeftOpen aria-hidden="true" size={ICON_SM} />
+            ) : (
+              <PanelLeftClose aria-hidden="true" size={ICON_SM} />
+            )}
+          </button>
+        )}
+        <span className="workspace-tree__actions-spacer" />
         <button
           type="button"
           className="workspace-tree__action"
@@ -190,10 +219,8 @@ function TreeNodeView({ node, depth, needle, matches, ...treeProps }: TreeNodePr
               )}
             </span>
           ) : (
-            <>
-              <span className="workspace-tree__chevron-spacer" />
-              <TreeFileIcon name={node.name} />
-            </>
+            // 文件图标与文件夹箭头同列起点（VS Code 式对齐），不加占位符。
+            <TreeFileIcon name={node.name} />
           )}
           <span className="workspace-tree__name">{node.name}</span>
         </button>
