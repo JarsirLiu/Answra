@@ -9,7 +9,6 @@ interface ConversationComposerProps {
   inputLabel: string;
   submitDisabled?: boolean;
   disabled?: boolean;
-  footerLabel?: string;
   beforeSubmit?: ReactNode;
   children?: ReactNode;
   onValueChange?: (value: string) => void;
@@ -66,7 +65,6 @@ export function ConversationComposer({
           >
             <Plus aria-hidden="true" size={ICON_SM} />
           </button>
-          {footerLabel && <span>{footerLabel}</span>}
         </div>
         <div className="conversation-composer-actions">
           {beforeSubmit}

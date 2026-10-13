@@ -75,7 +75,6 @@ export function ChatPanel({
         ))}
       </div>
       <ConversationComposer
-        footerLabel={configured ? "OpenAI-compatible" : "请先配置模型服务"}
         inputLabel="补充问题"
         onAddAttachment={() => fileInputRef.current?.click()}
         onSubmit={onSend}

@@ -23,11 +23,15 @@ textarea {
 button {
   color: inherit;
 }
-button:focus-visible,
-textarea:focus-visible,
-input:focus-visible {
+button:focus-visible {
   outline: 1.5px solid var(--focus-ring);
   outline-offset: 1px;
+}
+/* textarea/input 的焦点态统一由容器（.input-surface:focus-within）呈现：
+   自身不再画 outline，避免 composer 等复合组件内出现"原生输入框"内框。 */
+textarea:focus-visible,
+input:focus-visible {
+  outline: none;
 }
 
 /* 外壳采用 fit-content 布局：窗口尺寸由渲染器测量上报（useFitContent），

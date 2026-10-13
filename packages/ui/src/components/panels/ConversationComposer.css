@@ -2,26 +2,26 @@
   display: flex;
   flex: none;
   flex-direction: column;
-  gap: 5px;
+  gap: 6px;
   min-width: 0;
-  margin: 0 10px 10px;
-  padding: 7px 9px;
-  border-radius: 16px;
+  margin: 0 12px 12px;
+  padding: 11px 12px 8px;
+  border-radius: 22px;
   background: var(--field-strong);
-  box-shadow: 0 2px 5px rgb(0 0 0 / 4%);
+  box-shadow: 0 4px 14px rgb(0 0 0 / 6%);
 }
 
 .conversation-composer textarea {
   display: block;
   width: 100%;
-  min-height: 20px;
-  max-height: 64px;
-  padding: 0 2px;
+  min-height: 22px;
+  max-height: 96px;
+  padding: 0 4px;
   border: 0;
-  outline: 0;
+  outline: none;
   color: var(--ink);
   background: transparent;
-  font-size: 12px;
+  font-size: 12.5px;
   line-height: 18px;
   overflow-y: auto;
 }
@@ -50,27 +50,27 @@
 
 .conversation-composer-footer {
   justify-content: space-between;
-  min-height: 26px;
+  min-height: 28px;
   color: var(--faint);
   font-size: var(--font-xs);
 }
 
 .conversation-composer-leading,
 .conversation-composer-actions {
-  gap: 7px;
+  gap: 8px;
 }
 
 .conversation-composer-icon-button {
   display: grid;
   flex: none;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   place-items: center;
   padding: 0;
   border: 0;
   border-radius: 50%;
   color: var(--ink-soft);
-  background: var(--field);
+  background: transparent;
   transition: background 140ms ease-out;
 }
 
