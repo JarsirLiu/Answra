@@ -10,7 +10,7 @@ import type { UIMessageChunk } from "ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ReplyBarWindowApp } from "../src/app/ReplyBarWindowApp";
 
-const conversationId = "active-exam-conversation";
+const conversationId = "screenshot-01234567-89ab-4cde-8fab-0123456789ab";
 const runId = "run-live";
 let stateListener: ((state: ReplyBarState) => void) | undefined;
 let changeListener: ((change: ConversationChange) => void) | undefined;
@@ -67,6 +67,7 @@ function createBridge() {
 function replyState(stealth = false): ReplyBarState {
   return {
     phase: "streaming",
+    conversationId,
     attachments: [],
     draft: "",
     replyText: "用于 ticker 的摘要",

@@ -6,6 +6,7 @@ import { FloatingBarApp } from "../src/app/FloatingBarApp";
 
 let emitConversationEvent: ((event: { runId: string; chunk: UIMessageChunk }) => void) | undefined;
 const conversationId = "active-exam-conversation";
+let emittedConversationId = conversationId;
 
 function createConversationBridge() {
   return {
@@ -16,7 +17,10 @@ function createConversationBridge() {
       .mockResolvedValue({ baseUrl: "http://localhost/v1", model: "test", configured: true }),
     getConversationSnapshot: vi.fn().mockResolvedValue(emptySnapshot()),
     createConversation: vi.fn().mockResolvedValue(emptySnapshot()),
-    sendConversationMessage: vi.fn().mockResolvedValue({ runId: "run-1" }),
+    sendConversationMessage: vi.fn().mockImplementation(async (id: string) => {
+      emittedConversationId = id;
+      return { runId: "run-1" };
+    }),
     cancelConversationRun: vi.fn(),
     onConversationChange: vi.fn((listener: (change: ConversationChange) => void) => {
       let revision = 0;
@@ -39,7 +43,7 @@ function createConversationBridge() {
           const assistant = messages.find((message) => message.id === runId);
           if (assistant) assistant.status = "complete";
         }
-        const event = { conversationId, revision, runId, chunk };
+        const event = { conversationId: emittedConversationId, revision, runId, chunk };
         listener({
           type: "event",
           event,
@@ -59,7 +63,7 @@ function createConversationBridge() {
           }
           listener({
             type: "run-finished",
-            conversationId,
+            conversationId: emittedConversationId,
             revision,
             runId,
             message: {
@@ -92,6 +96,7 @@ describe("three-segment floating navigation", () => {
     vi.clearAllMocks();
     delete document.documentElement.dataset.theme;
     emitConversationEvent = undefined;
+    emittedConversationId = conversationId;
   });
 
   it("changes the middle feature group when the work mode changes", () => {
@@ -136,12 +141,17 @@ describe("three-segment floating navigation", () => {
     expect(screen.queryByRole("textbox", { name: "补充问题" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "确认发送" }));
 
-    await waitFor(() =>
-      expect(bridge.sendConversationMessage).toHaveBeenCalledWith(conversationId, {
+    await waitFor(() => {
+      const [sentId, request] = bridge.sendConversationMessage.mock.calls[0] ?? [];
+      expect(sentId).toMatch(/^screenshot-/);
+      expect(sentId).not.toBe(conversationId);
+      expect(request).toEqual({
         text: "",
         images: [expect.objectContaining({ dataUrl: "data:image/png;base64,QUJD" })],
-      }),
-    );
+      });
+      expect(bridge.createConversation).toHaveBeenCalledWith(sentId);
+      emittedConversationId = sentId as string;
+    });
     act(() =>
       emitConversationEvent?.({
         runId: "run-1",

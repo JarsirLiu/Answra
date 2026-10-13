@@ -5,7 +5,6 @@ import type {
   DesktopBridge,
   ReplyBarActivity,
 } from "@answra/shared";
-import { ActiveExamConversationId } from "@answra/shared";
 import { useEffect, useRef, useState } from "react";
 import { projectReplyActivity } from "./replyActivity";
 
@@ -23,6 +22,7 @@ const EMPTY_STATE: ReplyConversationState = { messages: [] };
 
 export function useReplyConversation(
   platform: DesktopBridge | undefined,
+  conversationId: string | undefined,
   enabled: boolean,
 ): ReplyConversationState {
   const [state, setState] = useState(EMPTY_STATE);
@@ -31,6 +31,7 @@ export function useReplyConversation(
   useEffect(() => {
     if (
       !enabled ||
+      !conversationId ||
       !platform?.getConversationSnapshot ||
       !platform.readConversationEvents ||
       !platform.onConversationChange
@@ -51,7 +52,7 @@ export function useReplyConversation(
     const applySnapshot = (snapshot: ConversationSnapshot) => {
       if (
         !alive ||
-        snapshot.conversationId !== ActiveExamConversationId ||
+        snapshot.conversationId !== conversationId ||
         snapshot.revision < revisionRef.current
       )
         return;
@@ -129,21 +130,20 @@ export function useReplyConversation(
     };
 
     const applyWithRecovery = async (change: ConversationChange) => {
-      if (change.type === "event" && change.event.conversationId !== ActiveExamConversationId)
-        return;
+      if (change.type === "event" && change.event.conversationId !== conversationId) return;
       if (
         change.type !== "event" &&
         change.type !== "snapshot" &&
-        change.conversationId !== ActiveExamConversationId
+        change.conversationId !== conversationId
       )
         return;
       const revision = getRevision(change);
       if (revision <= revisionRef.current) return;
       if (revision > revisionRef.current + 1) {
-        const missing = await readConversationEvents(ActiveExamConversationId, revisionRef.current);
+        const missing = await readConversationEvents(conversationId, revisionRef.current);
         for (const recovered of missing) applyContiguous(recovered);
         if (revision > revisionRef.current + 1) {
-          const latest = await getConversationSnapshot(ActiveExamConversationId);
+          const latest = await getConversationSnapshot(conversationId);
           applySnapshot(latest);
         }
       }
@@ -164,10 +164,10 @@ export function useReplyConversation(
 
     const initialize = async () => {
       try {
-        const snapshot = await getConversationSnapshot(ActiveExamConversationId);
+        const snapshot = await getConversationSnapshot(conversationId);
         if (!alive) return;
         applySnapshot(snapshot);
-        const history = await readConversationEvents(ActiveExamConversationId, 0);
+        const history = await readConversationEvents(conversationId, 0);
         if (!alive) return;
         const later: ConversationChange[] = [];
         for (const change of history) {
@@ -221,7 +221,7 @@ export function useReplyConversation(
       unsubscribe();
       queued = [];
     };
-  }, [enabled, platform]);
+  }, [conversationId, enabled, platform]);
 
   return state;
 }

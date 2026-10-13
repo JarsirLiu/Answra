@@ -101,6 +101,7 @@ function isValidReplyBarState(state: ReplyBarState | null): boolean {
     state === null ||
     (typeof state === "object" &&
       (state.phase === "composing" || state.phase === "streaming") &&
+      (state.conversationId === undefined || typeof state.conversationId === "string") &&
       Array.isArray(state.attachments) &&
       state.attachments.every(
         (attachment) =>

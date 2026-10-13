@@ -28,6 +28,7 @@ export function ReplyBarWindowApp({ bridge }: ReplyBarWindowAppProps) {
   const { ref } = useFitContent(measureBridge);
   const conversation = useReplyConversation(
     platform,
+    state?.conversationId,
     Boolean(state && (state.phase === "streaming" || expanded)),
   );
   const togglePinned = useCallback(() => {

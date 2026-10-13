@@ -56,6 +56,8 @@ export interface ReplyBarActivity {
 
 export interface ReplyBarState {
   phase: "composing" | "streaming";
+  /** One-send screenshot transcript; absent until a screenshot is submitted. */
+  conversationId?: string;
   attachments: ReplyBarAttachment[];
   draft: string;
   replyText: string;

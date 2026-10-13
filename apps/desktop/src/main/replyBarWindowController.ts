@@ -172,6 +172,10 @@ export function createReplyBarWindowController(host: ReplyBarWindowHost) {
     return windowRef;
   }
 
+  function getConversationId(): string | undefined {
+    return state?.conversationId;
+  }
+
   function hideForCapture(): boolean {
     if (!windowRef || windowRef.isDestroyed() || !windowRef.isVisible()) return false;
     windowRef.hide();
@@ -240,6 +244,7 @@ export function createReplyBarWindowController(host: ReplyBarWindowHost) {
   return {
     close,
     getWindow,
+    getConversationId,
     hideForCapture,
     isFromSender,
     resize,

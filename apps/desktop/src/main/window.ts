@@ -1,5 +1,4 @@
 import {
-  ActiveExamConversationId,
   type ContentSize,
   type ConversationChange,
   ConversationChannels,
@@ -60,7 +59,7 @@ export function sendConversationChange(change: ConversationChange): void {
     mainWindow.webContents.send(ConversationChannels.Change, change);
   const replyWindow = getReplyBarWindow();
   if (
-    conversationIdOf(change) === ActiveExamConversationId &&
+    conversationIdOf(change) === replyBarController.getConversationId() &&
     replyWindow &&
     !replyWindow.isDestroyed()
   )
@@ -86,6 +85,10 @@ export function setReplyBarWindowState(state: ReplyBarState | null): void {
 export function isReplyBarWindowFromSender(event: IpcMainEvent | IpcMainInvokeEvent): boolean {
   ensureControllers();
   return replyBarController.isFromSender(event);
+}
+export function isReplyBarConversationId(conversationId: string): boolean {
+  ensureControllers();
+  return replyBarController.getConversationId() === conversationId;
 }
 export function hideReplyBarWindowForCapture(): boolean {
   ensureControllers();

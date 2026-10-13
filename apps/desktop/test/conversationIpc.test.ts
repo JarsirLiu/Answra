@@ -5,6 +5,7 @@ const shared = vi.hoisted(() => ({
   onChange: vi.fn(),
   send: vi.fn(),
   mainWindow: { webContents: { id: "main" } },
+  replyConversationId: "screenshot-01234567-89ab-4cde-8fab-0123456789ab",
 }));
 
 vi.mock("electron", () => ({
@@ -21,6 +22,8 @@ vi.mock("electron", () => ({
 vi.mock("../src/main/window", () => ({
   getWindow: () => shared.mainWindow,
   isReplyBarWindowFromSender: (event: { sender: { id: string } }) => event.sender.id === "reply",
+  isReplyBarConversationId: (conversationId: string) =>
+    conversationId === shared.replyConversationId,
   isWindowFromSender: (
     window: { webContents: { id: string } },
     event: { sender: { id: string } },
@@ -28,7 +31,7 @@ vi.mock("../src/main/window", () => ({
   sendConversationChange: shared.send,
 }));
 
-import { ActiveExamConversationId, ConversationChannels } from "@answra/shared";
+import { ConversationChannels } from "@answra/shared";
 import { registerConversationIpc } from "../src/main/conversation/conversationIpc";
 
 const service = {
@@ -37,7 +40,7 @@ const service = {
   getConfig: vi.fn(),
   getSnapshot: vi
     .fn()
-    .mockResolvedValue({ conversationId: ActiveExamConversationId, revision: 0, messages: [] }),
+    .mockResolvedValue({ conversationId: shared.replyConversationId, revision: 0, messages: [] }),
   readEvents: vi.fn().mockResolvedValue([]),
   send: vi.fn(),
   cancel: vi.fn(),
@@ -64,14 +67,14 @@ describe("conversation IPC read access for reply renderer", () => {
     const getSnapshot = getHandler(ConversationChannels.GetSnapshot);
     const readEvents = getHandler(ConversationChannels.ReadEvents);
     await expect(
-      getSnapshot({ sender: { id: "reply" } }, { conversationId: ActiveExamConversationId }),
+      getSnapshot({ sender: { id: "reply" } }, { conversationId: shared.replyConversationId }),
     ).resolves.toMatchObject({
       revision: 0,
     });
     await expect(
       readEvents(
         { sender: { id: "reply" } },
-        { conversationId: ActiveExamConversationId, afterRevision: 0 },
+        { conversationId: shared.replyConversationId, afterRevision: 0 },
       ),
     ).resolves.toEqual([]);
     await expect(() =>
@@ -89,13 +92,13 @@ describe("conversation IPC read access for reply renderer", () => {
     await expect(() =>
       getHandler(ConversationChannels.Create)(
         { sender: { id: "reply" } },
-        { conversationId: ActiveExamConversationId },
+        { conversationId: shared.replyConversationId },
       ),
     ).toThrow("非法调用方");
     expect(() =>
       getHandler(ConversationChannels.Send)(
         { sender: { id: "reply" } },
-        { conversationId: ActiveExamConversationId, request: { text: "x", images: [] } },
+        { conversationId: shared.replyConversationId, request: { text: "x", images: [] } },
       ),
     ).toThrow("非法调用方");
     expect(service.send).not.toHaveBeenCalled();

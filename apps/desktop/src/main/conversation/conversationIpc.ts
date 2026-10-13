@@ -1,5 +1,4 @@
 import {
-  ActiveExamConversationId,
   ConversationChannels,
   type ConversationModelConfig,
   type ConversationSendCommand,
@@ -7,6 +6,7 @@ import {
 import { ipcMain } from "electron";
 import {
   getWindow,
+  isReplyBarConversationId,
   isReplyBarWindowFromSender,
   isWindowFromSender,
   sendConversationChange,
@@ -71,6 +71,8 @@ function isConversationReadSender(
 ): boolean {
   return (
     isWindowFromSender(getWindow(), event) ||
-    (conversationId === ActiveExamConversationId && isReplyBarWindowFromSender(event))
+    (conversationId !== undefined &&
+      isReplyBarConversationId(conversationId) &&
+      isReplyBarWindowFromSender(event))
   );
 }

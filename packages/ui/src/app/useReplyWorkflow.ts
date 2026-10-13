@@ -10,7 +10,11 @@ import type { ReplyPhase } from "../components/panels/ReplyBar";
 
 interface UseReplyWorkflowOptions {
   platform: DesktopBridge | undefined;
-  sendMessage: (text: string, attachments: ChatAttachment[]) => Promise<string>;
+  sendMessage: (
+    text: string,
+    attachments: ChatAttachment[],
+    conversationId?: string,
+  ) => Promise<string>;
   cancelMessage: () => void;
   replyText: string;
   replyActivities: ReplyBarActivity[];
@@ -53,6 +57,7 @@ export function useReplyWorkflow({
 }: UseReplyWorkflowOptions) {
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
+  const [conversationId, setConversationId] = useState<string>();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const replyWindowWasOpen = useRef(false);
   const actionHandler = useRef<(action: ReplyBarAction) => void>(() => undefined);
@@ -69,6 +74,7 @@ export function useReplyWorkflow({
     variables["--fade"] = root.style.getPropertyValue("--fade") || "1";
     return {
       phase: phase === "streaming" ? "streaming" : "composing",
+      ...(conversationId ? { conversationId } : {}),
       attachments,
       draft,
       replyText,
@@ -78,7 +84,17 @@ export function useReplyWorkflow({
       stealth,
       theme: { scheme: root.dataset.theme, variables },
     };
-  }, [attachments, draft, phase, replyActivities, replyError, replyPending, replyText, stealth]);
+  }, [
+    attachments,
+    conversationId,
+    draft,
+    phase,
+    replyActivities,
+    replyError,
+    replyPending,
+    replyText,
+    stealth,
+  ]);
 
   useEffect(() => {
     if (!detachedReplyBar) return;
@@ -131,6 +147,7 @@ export function useReplyWorkflow({
       return [];
     });
     setDraft("");
+    setConversationId(undefined);
   }, []);
 
   const startRegionCapture = useCallback(
@@ -178,15 +195,18 @@ export function useReplyWorkflow({
   const cancelReply = useCallback(() => {
     // 取消只退出当前回复态，保留独立回复窗口，让用户能继续截图发送。
     cancelMessage();
+    setConversationId(undefined);
     onWorkflowPhase("composing");
   }, [cancelMessage, onWorkflowPhase]);
 
   const performSend = useCallback(async () => {
     const content = draft.trim();
     if (!content && attachments.length === 0) return;
+    const nextConversationId = `screenshot-${crypto.randomUUID()}`;
+    setConversationId(nextConversationId);
     onWorkflowPhase("streaming");
     try {
-      const outcome = await sendMessage(content, attachments);
+      const outcome = await sendMessage(content, attachments, nextConversationId);
       if (outcome === "cancelled") return;
     } catch (error) {
       console.error("[reply] model run failed", error);
@@ -198,6 +218,7 @@ export function useReplyWorkflow({
     });
     setDraft("");
     setAttachments([]);
+    setConversationId(undefined);
     onWorkflowFinish();
   }, [attachments, draft, onWorkflowFinish, onWorkflowPhase, sendMessage]);
 

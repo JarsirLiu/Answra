@@ -35,6 +35,7 @@ export function useConversationChat(platform: DesktopBridge | undefined) {
   const runCancelledRef = useRef(false);
   const runErrorRef = useRef<string | undefined>(undefined);
   const revisionRef = useRef(0);
+  const sendConversationIdRef = useRef(ACTIVE_CONVERSATION_ID);
 
   useEffect(() => {
     let alive = true;
@@ -155,6 +156,7 @@ export function useConversationChat(platform: DesktopBridge | undefined) {
   const transport = useMemo<ChatTransport<UIMessage>>(
     () => ({
       sendMessages: async ({ messages: uiMessages, abortSignal }) => {
+        const conversationId = sendConversationIdRef.current;
         const user = [...uiMessages].reverse().find((message) => message.role === "user");
         if (!user) throw new Error("没有可发送的用户消息");
         if (!platform?.sendConversationMessage)
@@ -183,8 +185,7 @@ export function useConversationChat(platform: DesktopBridge | undefined) {
         const onChange = (change: ConversationChange) => {
           if (change.type !== "event") return;
           const { event } = change;
-          if (event.conversationId !== ACTIVE_CONVERSATION_ID || (runId && event.runId !== runId))
-            return;
+          if (event.conversationId !== conversationId || (runId && event.runId !== runId)) return;
           eventQueue = eventQueue.then(async () => {
             if (closed) return;
             if (!runId) {
@@ -232,7 +233,7 @@ export function useConversationChat(platform: DesktopBridge | undefined) {
         };
         abortSignal?.addEventListener("abort", abort, { once: true });
         try {
-          const result = await platform.sendConversationMessage(ACTIVE_CONVERSATION_ID, {
+          const result = await platform.sendConversationMessage(conversationId, {
             text,
             images,
           });
@@ -310,7 +311,11 @@ export function useConversationChat(platform: DesktopBridge | undefined) {
   const lastAssistant = [...messages].reverse().find((message) => message.role === "assistant");
 
   const send = useCallback(
-    async (text: string, attachments: ChatAttachment[]) => {
+    async (
+      text: string,
+      attachments: ChatAttachment[],
+      conversationId = ACTIVE_CONVERSATION_ID,
+    ) => {
       if (!platform?.sendConversationMessage)
         throw new Error("本地 AI 服务未连接，请重启应用后重试");
       if (activeRunId || runIdRef.current) throw new Error("当前回复尚未完成");
@@ -331,6 +336,10 @@ export function useConversationChat(platform: DesktopBridge | undefined) {
       });
       waiterRef.current = { resolve: resolveTerminal, reject: rejectTerminal };
       try {
+        sendConversationIdRef.current = conversationId;
+        if (conversationId !== ACTIVE_CONVERSATION_ID) {
+          await platform.createConversation?.(conversationId);
+        }
         const files: FileUIPart[] = await Promise.all(
           attachments.map(async (attachment) => ({
             type: "file" as const,
@@ -370,6 +379,7 @@ export function useConversationChat(platform: DesktopBridge | undefined) {
   }, [platform, chat.stop]);
 
   const clearMessages = useCallback(() => {
+    setMessagesRef.current([]);
     setReplyActivities([]);
     setReplyError(undefined);
   }, []);
