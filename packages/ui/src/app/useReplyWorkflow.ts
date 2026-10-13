@@ -198,7 +198,8 @@ export function useReplyWorkflow({
     });
     setDraft("");
     setAttachments([]);
-  }, [attachments, draft, onWorkflowPhase, sendMessage]);
+    onWorkflowFinish();
+  }, [attachments, draft, onWorkflowFinish, onWorkflowPhase, sendMessage]);
 
   actionHandler.current = (action) => {
     switch (action.type) {

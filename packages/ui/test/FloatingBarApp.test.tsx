@@ -186,29 +186,11 @@ describe("three-segment floating navigation", () => {
       }),
     );
     act(() => emitConversationEvent?.({ runId: "run-1", chunk: { type: "finish" } }));
-    await waitFor(() => expect(screen.getByText("截图内容已识别")).toBeInTheDocument());
-    expect(screen.queryByText("回答")).not.toBeInTheDocument();
-    expect(screen.queryByText("先分析题目条件")).not.toBeInTheDocument();
-    expect(screen.queryByText("工具：search")).not.toBeInTheDocument();
-    expect(screen.queryByText("已完成检索")).not.toBeInTheDocument();
-    const activityViewport = screen.getByRole("log", { name: "模型回复活动" });
-    expect(activityViewport).toHaveAttribute("data-orientation", "horizontal");
-    expect(activityViewport.querySelector(".reply-activity-track")).toBeInTheDocument();
-    expect(screen.getByLabelText("当前事件：回答")).toBeInTheDocument();
-    expect(screen.getByText("截图内容已识别").closest(".reply-activity-item")).toHaveClass(
-      "reply-activity-item--text",
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "截图提问" })).toBeInTheDocument(),
     );
-    expect(screen.getByLabelText("当前事件：回答").querySelector("svg")).not.toHaveClass(
-      "reply-activity-spinner",
-    );
-    const stopButton = screen.getByRole("button", { name: "取消回复并返回发送" });
-    const closeButton = screen.getByRole("button", { name: "收起回复条" });
-    expect(stopButton.closest(".reply-actions--stream")).toBe(
-      closeButton.closest(".reply-actions--stream"),
-    );
-    expect(
-      stopButton.compareDocumentPosition(closeButton) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    expect(screen.queryByText("截图内容已识别")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "取消回复并返回发送" })).not.toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: "补充问题" })).not.toBeInTheDocument();
   });
 

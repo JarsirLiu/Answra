@@ -252,6 +252,54 @@ describe("ReplyBarWindowApp live conversation popover", () => {
     expect(screen.queryByText("思考中…")).not.toBeInTheDocument();
   });
 
+  it("keeps growing reasoning in the outer conversation flow while thinking", async () => {
+    const bridge = createBridge();
+    bridge.getConversationSnapshot.mockResolvedValue({
+      ...snapshot,
+      messages: [snapshot.messages[0], { ...snapshot.messages[1], text: "" }],
+    });
+    render(<ReplyBarWindowApp bridge={bridge as DesktopBridge} />);
+    act(() => stateListener?.(replyState()));
+    fireEvent.mouseEnter(document.querySelector(".reply-activity-viewport") as HTMLElement);
+    await screen.findByRole("region", { name: "当前对话" });
+
+    act(() => {
+      changeListener?.({
+        type: "event",
+        event: {
+          conversationId,
+          runId,
+          revision: 2,
+          chunk: {
+            type: "reasoning-delta",
+            id: "reasoning-1",
+            delta: "先检查题目条件。",
+          } as UIMessageChunk,
+        },
+      });
+    });
+    expect(await screen.findByText("先检查题目条件。")).toBeInTheDocument();
+    expect(document.querySelector('[class*="trViewport"]')?.className).not.toContain("isScroll");
+
+    act(() => {
+      changeListener?.({
+        type: "event",
+        event: {
+          conversationId,
+          runId,
+          revision: 3,
+          chunk: {
+            type: "reasoning-delta",
+            id: "reasoning-1",
+            delta: "继续逐步核对每个条件，并计算最终结果。",
+          } as UIMessageChunk,
+        },
+      });
+    });
+    expect(await screen.findByText(/继续逐步核对每个条件/)).toBeInTheDocument();
+    expect(document.querySelector('[class*="trViewport"]')?.className).not.toContain("isScroll");
+  });
+
   it("shows message actions only after a completed assistant reply", async () => {
     const bridge = createBridge();
     const writeText = vi.fn().mockResolvedValue(undefined);

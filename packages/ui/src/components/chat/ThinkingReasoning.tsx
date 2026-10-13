@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import styles from "./ThinkingReasoning.module.css";
 
 /** 视口最大高度（与 CSS 保持同步）：内容超出后封顶滚动。 */
@@ -45,21 +45,12 @@ export function ThinkingReasoning({ reasoning, thinking, durationMs }: ThinkingR
     return () => observer.disconnect();
   }, []);
 
-  // 封顶且处于思考中时，把最新的句子推到可视区底部（自动跟读）。
-  useEffect(() => {
-    if (done || !capped(streamRef.current?.scrollHeight ?? 0)) return;
-    const viewport = viewportRef.current;
-    const stream = streamRef.current;
-    if (viewport && stream) {
-      viewport.scrollTop = viewport.scrollHeight;
-    }
-  });
-
   const expanded = done ? open : true;
-  const cappedNow = contentH > MAX_H;
+  // 流式阶段交给外层 MessageStream 滚动，避免这里再创建一个滚动层。
+  // 完成后才限制历史思考块高度，展开查看时使用内部滚动。
+  const cappedNow = done && expanded && contentH > MAX_H;
   const viewH = cappedNow ? MAX_H : contentH;
-  const scrollable = done && open;
-  const translate = scrollable || !cappedNow ? 0 : Math.min(0, MAX_H - FADE - contentH);
+  const scrollable = cappedNow;
 
   const showTop = scrollable ? fade.top : cappedNow;
   const showBottom = scrollable ? fade.bottom : cappedNow;
@@ -137,11 +128,7 @@ export function ThinkingReasoning({ reasoning, thinking, durationMs }: ThinkingR
             }}
             onScroll={scrollable ? onScroll : undefined}
           >
-            <div
-              className={styles.trStream}
-              ref={streamRef}
-              style={{ transform: `translateY(${translate}px)` }}
-            >
+            <div className={styles.trStream} ref={streamRef}>
               {sentences.map((sentence, index) => (
                 // biome-ignore lint/suspicious/noArrayIndexKey: 流式句子无稳定 id，且只追加不重排
                 <p className={styles.trSentence} key={index}>
@@ -154,8 +141,4 @@ export function ThinkingReasoning({ reasoning, thinking, durationMs }: ThinkingR
       </div>
     </div>
   );
-}
-
-function capped(height: number): boolean {
-  return height > MAX_H;
 }
