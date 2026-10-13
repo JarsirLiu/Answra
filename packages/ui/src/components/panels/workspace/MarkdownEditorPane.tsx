@@ -5,13 +5,19 @@ import { ZoomablePreview } from "./ZoomablePreview";
 import "./WorkspacePanel.css";
 
 /**
- * markdown 编辑器（CodeMirror 6 懒加载）。
+ * markdown 面板：两种模式。
+ *
+ * - 源码（默认）：CodeMirror 6 编辑原始 markdown。
+ * - 预览：react-markdown + remark-gfm + rehype-raw 静态渲染
+ *   （内嵌 HTML 如 br/a 经 rehype-raw 渲染，rehype-sanitize 兜底安全），
+ *   图片走 answra-file 协议。
  *
  * 职责边界：本组件持有编辑器实例与脏状态；文件读写经 bridge 完成；
- * 外部变更由父层经 `content` prop 注入并触发冲突检查。
+ * 外部变更由父层经 `content` prop 注入并触发冲突检查（主进程已抑制
+ * 自身写盘的 watcher 回声，此处收到的 externalVersion 均为真外部修改）。
  */
 
-export type EditorViewMode = "edit" | "preview";
+export type EditorViewMode = "source" | "preview";
 
 interface MarkdownEditorPaneProps {
   path: string;
@@ -45,6 +51,9 @@ export function MarkdownEditorPane({
   const hostRef = useRef<HTMLDivElement | null>(null);
   const bundleRef = useRef<CodeMirrorBundle>({ view: null });
   const baselineRef = useRef<string>(content.text ?? "");
+  // 最近一次编辑器全文：切换到预览态时 CodeMirror 被销毁，
+  // 挂起的自动保存从这里取文本，避免误写旧基线丢改动。
+  const lastTextRef = useRef<string>(content.text ?? "");
   const dirtyRef = useRef(false);
   const [dirty, setDirty] = useState(false);
   const [conflict, setConflict] = useState(false);
@@ -63,13 +72,13 @@ export function MarkdownEditorPane({
   // biome-ignore lint/correctness/useExhaustiveDependencies: 编辑器实例仅在文件/视图模式变化时重建；粘贴与脏状态回调经 ref 读取，不作为响应依赖。
   useEffect(() => {
     const host = hostRef.current;
-    if (!host || viewMode !== "edit") return;
+    if (!host || viewMode !== "source") return;
     let disposed = false;
     let view: import("@codemirror/view").EditorView | null = null;
     void (async () => {
       try {
         const [
-          { EditorView, keymap, lineNumbers, drawSelection, highlightActiveLine },
+          { EditorView, keymap, drawSelection, highlightActiveLine },
           { defaultKeymap, history, historyKeymap },
           { markdown },
           { HighlightStyle, syntaxHighlighting },
@@ -99,7 +108,6 @@ export function MarkdownEditorPane({
           state: (await import("@codemirror/state")).EditorState.create({
             doc: baselineRef.current,
             extensions: [
-              lineNumbers(),
               history(),
               drawSelection(),
               highlightActiveLine(),
@@ -133,11 +141,13 @@ export function MarkdownEditorPane({
     })();
     return () => {
       disposed = true;
+      // 销毁前捕获最终文本：预览态没有编辑器实例，挂起的自动保存依赖它。
+      if (view) lastTextRef.current = view.state.doc.toString();
       view?.destroy();
       bundleRef.current.view = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path, viewMode]);
+  }, [path, viewMode, setDirtyState]);
 
   async function handlePasteImage(file: File) {
     if (!bridge?.writeWorkspaceBytes || !bundleRef.current.view) return;
@@ -160,33 +170,38 @@ export function MarkdownEditorPane({
   // biome-ignore lint/correctness/useExhaustiveDependencies: 仅在文件切换时重置基线；content.text 为该文件的打开快照。
   useEffect(() => {
     baselineRef.current = content.text ?? "";
+    lastTextRef.current = content.text ?? "";
     setDirtyState(false);
     setConflict(false);
     setError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path]);
 
-  // 外部变更：磁盘内容变化时，无未保存编辑则静默刷新，否则提示冲突。
+  // 外部变更（仅来自主进程确认的非自身写入）：未保存编辑则提示冲突，否则静默重载。
   // biome-ignore lint/correctness/useExhaustiveDependencies: 桥函数按引用稳定，不作为响应依赖；仅监听版本与路径。
   useEffect(() => {
     if (externalVersion === 0) return;
-    if (!bridge?.readWorkspaceFile || dirtyRef.current) {
-      if (dirtyRef.current) setConflict(true);
+    // 已有未保存编辑：直接提示冲突即可，无需再读盘（读了也会被丢弃）。
+    if (dirtyRef.current) {
+      setConflict(true);
       return;
     }
+    if (!bridge?.readWorkspaceFile) return;
     let cancelled = false;
     void bridge
       .readWorkspaceFile(path)
       .then((fresh) => {
         if (cancelled) return;
-        baselineRef.current = fresh.text ?? "";
+        const text = fresh.text ?? "";
+        baselineRef.current = text;
+        lastTextRef.current = text;
         const view = bundleRef.current.view;
         if (view) {
           const length = view.state.doc.length;
           view.dispatch({
-            changes: { from: 0, to: length, insert: fresh.text ?? "" },
+            changes: { from: 0, to: length, insert: text },
             selection: {
-              anchor: Math.min(view.state.selection.main.anchor, (fresh.text ?? "").length),
+              anchor: Math.min(view.state.selection.main.anchor, text.length),
             },
           });
         }
@@ -201,9 +216,10 @@ export function MarkdownEditorPane({
   const save = useCallback(async () => {
     if (!bridge?.writeWorkspaceFile || !dirtyRef.current) return;
     const view = bundleRef.current.view;
-    const text = view ? view.state.doc.toString() : baselineRef.current;
+    const text = view ? view.state.doc.toString() : lastTextRef.current;
     try {
       await bridge.writeWorkspaceFile(path, text);
+      // 主进程已抑制自身写盘产生的 watcher 回声，这里只需更新基线并清除脏标记。
       baselineRef.current = text;
       setDirtyState(false);
       setConflict(false);
@@ -234,13 +250,26 @@ export function MarkdownEditorPane({
   return (
     <div className="workspace-editor">
       <div className="workspace-editor__toolbar">
-        <button
-          type="button"
-          className="workspace-editor__mode"
-          onClick={() => onViewModeChange(viewMode === "edit" ? "preview" : "edit")}
-        >
-          {viewMode === "edit" ? "预览" : "编辑"}
-        </button>
+        <div className="workspace-editor__modes" role="tablist" aria-label="视图模式">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={viewMode === "source"}
+            className={`workspace-editor__mode${viewMode === "source" ? " workspace-editor__mode--active" : ""}`}
+            onClick={() => onViewModeChange("source")}
+          >
+            源码
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={viewMode === "preview"}
+            className={`workspace-editor__mode${viewMode === "preview" ? " workspace-editor__mode--active" : ""}`}
+            onClick={() => onViewModeChange("preview")}
+          >
+            预览
+          </button>
+        </div>
         {dirty ? (
           <span className="workspace-editor__status workspace-editor__status--dirty">未保存…</span>
         ) : (
@@ -260,6 +289,7 @@ export function MarkdownEditorPane({
               setConflict(false);
               void bridge?.readWorkspaceFile?.(path).then((fresh) => {
                 baselineRef.current = fresh.text ?? "";
+                lastTextRef.current = fresh.text ?? "";
                 const view = bundleRef.current.view;
                 if (view)
                   view.dispatch({
@@ -273,7 +303,7 @@ export function MarkdownEditorPane({
         </div>
       )}
       {error && <div className="workspace-panel__error">{error}</div>}
-      {viewMode === "edit" ? (
+      {viewMode === "source" ? (
         <div ref={hostRef} className="workspace-editor__host" />
       ) : (
         <ZoomablePreview className="workspace-preview-markdown-zoom">
@@ -288,36 +318,47 @@ export function MarkdownEditorPane({
 interface MarkdownRendererProps {
   children?: string;
   remarkPlugins?: unknown[];
+  rehypePlugins?: unknown[];
   components?: {
     img?: (props: { src?: unknown; alt?: unknown }) => ReactNode;
   };
 }
 
-/** 预览态：复用包内 react-markdown + remark-gfm，图片走 answra-file 协议。 */
+/**
+ * 预览态：react-markdown + remark-gfm + rehype-raw（渲染内嵌 HTML，如 br/a），
+ * rehype-sanitize 兜底白名单；图片走 answra-file 协议。
+ */
 function MarkdownStaticPreview({ text, dir }: { text: string; dir: string }) {
   const [renderer, setRenderer] = useState<null | ((props: MarkdownRendererProps) => ReactNode)>(
     null,
   );
-  const [remarkGfm, setRemarkGfm] = useState<null | unknown>(null);
+  const [plugins, setPlugins] = useState<{ remark: unknown[]; rehype: unknown[] } | null>(null);
   useEffect(() => {
     let cancelled = false;
-    void Promise.all([import("react-markdown"), import("remark-gfm")]).then(
-      ([markdownModule, gfmModule]) => {
-        if (cancelled) return;
-        setRenderer(() => markdownModule.default as (props: MarkdownRendererProps) => ReactNode);
-        setRemarkGfm(() => gfmModule.default);
-      },
-    );
+    void Promise.all([
+      import("react-markdown"),
+      import("remark-gfm"),
+      import("rehype-raw"),
+      import("rehype-sanitize"),
+    ]).then(([markdownModule, gfmModule, rawModule, sanitizeModule]) => {
+      if (cancelled) return;
+      setRenderer(() => markdownModule.default as (props: MarkdownRendererProps) => ReactNode);
+      setPlugins({
+        remark: [gfmModule.default],
+        rehype: [rawModule.default, sanitizeModule.default],
+      });
+    });
     return () => {
       cancelled = true;
     };
   }, []);
-  if (!renderer || !remarkGfm) return <div className="workspace-preview-status">预览加载中…</div>;
+  if (!renderer || !plugins) return <div className="workspace-preview-status">预览加载中…</div>;
   const ReactMarkdown = renderer;
   return (
     <div className="workspace-preview-markdown">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={plugins.remark}
+        rehypePlugins={plugins.rehype}
         components={{
           img: ({ src, alt }) => {
             if (typeof src !== "string") return null;

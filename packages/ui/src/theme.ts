@@ -1,12 +1,12 @@
 import type { AmbientColorPayload, DesktopBridge } from "@answra/shared";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   type AmbientTokens,
   applyTokens,
   deriveAmbientTokens,
   FALLBACK_TOKEN_KEYS,
   parseHex,
-  resolveAmbientScheme,
+  resolveAmbientSchemeHysteresis,
 } from "./hooks/useAmbientTheme";
 import { COLOR_GROUP_STORAGE_PREFIX } from "./model";
 
@@ -111,12 +111,22 @@ export function useAppTheme(
   const { ambientFollow, colorGroups } = options;
   const [ambient, setAmbient] = useState<AmbientTokens | undefined>(undefined);
   const [ambientScheme, setAmbientScheme] = useState<"light" | "dark" | undefined>(undefined);
+  // 上一轮有效推送的 hex 与深浅判定；用于去重噪声采样与阈值滞回。
+  const lastHexRef = useRef<string | undefined>(undefined);
+  const lastSchemeRef = useRef<"light" | "dark" | undefined>(undefined);
 
   const applyPayload = useCallback((payload: AmbientColorPayload) => {
+    // 主进程轮询不管颜色是否变化都会推送；hex 未变时跳过 setState，
+    // 避免全量令牌重写引发整棵 DOM 样式重算（表现为周期性"闪/抖"）。
+    if (payload.ok && payload.hex === lastHexRef.current) return;
+    lastHexRef.current = payload.ok ? payload.hex : undefined;
     if (payload.ok) {
+      const scheme = resolveAmbientSchemeHysteresis(payload.hex, lastSchemeRef.current);
+      lastSchemeRef.current = scheme;
       setAmbient(deriveAmbientTokens(payload.hex));
-      setAmbientScheme(resolveAmbientScheme(payload.hex));
+      setAmbientScheme(scheme);
     } else {
+      lastSchemeRef.current = undefined;
       setAmbient(undefined);
       setAmbientScheme(undefined);
     }

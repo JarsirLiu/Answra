@@ -111,6 +111,27 @@ export function resolveAmbientScheme(hex: string): "light" | "dark" | undefined 
 }
 
 /**
+ * 带滞回的深浅判定：背景亮度在 0.5 阈值附近时，朴素判定会随采样噪声
+ * 反复翻转 data-theme，表现为全窗口明暗闪烁。规则：维持现状，直到
+ * 亮度越过阈值 ±0.07 的滞回带才翻转；无历史判定时沿用朴素阈值。
+ */
+export function resolveAmbientSchemeHysteresis(
+  hex: string,
+  previous: "light" | "dark" | undefined,
+): "light" | "dark" | undefined {
+  const bg = parseHex(hex);
+  if (!bg) return undefined;
+  const luminance = relativeLuminance(bg);
+  if (previous === "dark") return luminance < DARK_THRESHOLD + SCHEME_HYSTERESIS ? "dark" : "light";
+  if (previous === "light")
+    return luminance < DARK_THRESHOLD - SCHEME_HYSTERESIS ? "dark" : "light";
+  return luminance < DARK_THRESHOLD ? "dark" : "light";
+}
+
+/** 深浅滞回带宽：亮度越过 DARK_THRESHOLD ± 该值才翻转方案。 */
+const SCHEME_HYSTERESIS = 0.07;
+
+/**
  * 由背景主色派生 ambient variant 的「原始参数」（仅 tint 通道与前景 alpha 基数）。
  * 感知令牌（--ink/--glass/...）的 fade 公式仍在 tokens.css，本函数只换参数不换公式。
  * 硬约束：不写任何表面 alpha（表面恒不透明，背景零参与混色，颜色不随拖动抖动）。

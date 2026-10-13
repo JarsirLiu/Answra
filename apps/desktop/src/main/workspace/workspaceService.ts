@@ -69,6 +69,10 @@ export class WorkspaceService {
   private readonly maxDepth: number;
   private readonly maxNodes: number;
   private handle: WatchHandle | null = null;
+  /** 自身写盘的时间戳（相对路径 → 时间）；用于抑制写盘经 watcher 回传为"外部变更"。 */
+  private readonly selfWrites = new Map<string, number>();
+  /** 写盘回声抑制窗口：覆盖 fs.watch 的异步延迟，超过即视为真实外部修改。 */
+  private readonly selfWriteSuppressionMs = 1000;
 
   constructor(options: WorkspaceServiceOptions) {
     this.configDir = options.configDir;
@@ -151,6 +155,7 @@ export class WorkspaceService {
     if (!TEXT_EXTENSIONS.has(path.extname(absolute).toLowerCase()))
       throw new Error("仅支持写入文本文件");
     await fs.writeFile(absolute, text, "utf8");
+    this.selfWrites.set(relPath.split(/[\\/]/).join("/"), Date.now());
   }
 
   /** 写入二进制文件；仅允许图片扩展名，供粘贴截图落盘。 */
@@ -234,7 +239,17 @@ export class WorkspaceService {
             (filePath) => filePath && !filePath.startsWith("..") && !path.isAbsolute(filePath),
           )
           .map((filePath) => filePath.split(path.sep).join("/"));
-        if (relativePaths.length > 0) this.onChange?.(relativePaths);
+        if (relativePaths.length === 0) return;
+        // 过滤自身写盘引起的 watcher 回声：这些不是外部修改，不应推给渲染进程。
+        const reportable = relativePaths.filter((changed) => {
+          const when = this.selfWrites.get(changed);
+          if (when !== undefined && Date.now() - when < this.selfWriteSuppressionMs) {
+            this.selfWrites.delete(changed);
+            return false;
+          }
+          return true;
+        });
+        if (reportable.length > 0) this.onChange?.(reportable);
       });
       this.handle = {
         unsubscribe: async () => {

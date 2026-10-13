@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { deriveAmbientTokens, resolveAmbientScheme } from "../src/hooks/useAmbientTheme";
+import {
+  deriveAmbientTokens,
+  resolveAmbientScheme,
+  resolveAmbientSchemeHysteresis,
+} from "../src/hooks/useAmbientTheme";
 
 /** "r g b" 通道串 → Rgb。 */
 function channels(value: string | null | undefined): { r: number; g: number; b: number } {
@@ -87,5 +91,19 @@ describe("ambient chameleon theme", () => {
 
   it("returns undefined for invalid colors", () => {
     expect(deriveAmbientTokens("not-a-color")).toBeUndefined();
+  });
+
+  it("applies hysteresis so the scheme does not flip on threshold noise", () => {
+    // 亮度略高于 0.5 阈值：维持 dark（未越过 +0.07 滞回带不翻转）
+    expect(resolveAmbientSchemeHysteresis("#8a8a8a", "dark")).toBe("dark");
+    // 越过滞回带后才翻转
+    expect(resolveAmbientSchemeHysteresis("#f5f2ec", "dark")).toBe("light");
+    // 亮度略低于阈值但仍在滞回带内：维持 light
+    expect(resolveAmbientSchemeHysteresis("#b6b6b6", "light")).toBe("light");
+    expect(resolveAmbientSchemeHysteresis("#1a1a1a", "light")).toBe("dark");
+    // 无历史判定时等同朴素阈值
+    expect(resolveAmbientSchemeHysteresis("#1a1a1a", undefined)).toBe("dark");
+    expect(resolveAmbientSchemeHysteresis("#f5f2ec", undefined)).toBe("light");
+    expect(resolveAmbientSchemeHysteresis("not-a-color", undefined)).toBeUndefined();
   });
 });

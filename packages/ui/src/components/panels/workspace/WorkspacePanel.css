@@ -140,14 +140,29 @@
   padding-bottom: 4px;
 }
 
+.workspace-editor__modes {
+  display: flex;
+  gap: 2px;
+}
+
 .workspace-editor__mode {
-  border: 1px solid var(--glass-line-soft);
+  border: 0;
   background: transparent;
-  color: inherit;
+  color: var(--muted);
   font-size: 11px;
   border-radius: 6px;
   padding: 2px 8px;
   cursor: pointer;
+}
+
+.workspace-editor__mode:hover {
+  color: var(--ink);
+  background: var(--hover);
+}
+
+.workspace-editor__mode--active {
+  color: var(--ink);
+  background: var(--hover);
 }
 
 .workspace-editor__status {
@@ -162,13 +177,20 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  border: 1px solid var(--glass-line-soft);
-  border-radius: var(--ctl-radius);
 }
 
+/* 源码模式（CodeMirror）。 */
 .workspace-editor__host .cm-editor {
   height: 100%;
   font-size: 12px;
+  background: transparent;
+  color: var(--ink);
+}
+
+/* 行号槽：去默认灰白底与分隔线，融入透明背景。 */
+.workspace-editor__host .cm-gutters {
+  background: transparent;
+  border-right: 0;
 }
 
 .workspace-editor__host .cm-scroller {
@@ -188,11 +210,71 @@
   overflow: auto;
   flex: 1;
   min-height: 0;
+  padding: 4px 8px;
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: var(--ink);
+}
+
+.workspace-preview-markdown h1,
+.workspace-preview-markdown h2,
+.workspace-preview-markdown h3,
+.workspace-preview-markdown h4 {
+  margin: 0.8em 0 0.4em;
+  line-height: 1.35;
+}
+
+.workspace-preview-markdown h1 {
+  font-size: 1.5em;
+}
+
+.workspace-preview-markdown h2 {
+  font-size: 1.28em;
+}
+
+.workspace-preview-markdown h3 {
+  font-size: 1.12em;
+}
+
+.workspace-preview-markdown p {
+  margin: 0.5em 0;
+}
+
+.workspace-preview-markdown blockquote {
+  margin: 0.6em 0;
+  padding: 0.1em 0.9em;
+  border-left: 3px solid var(--glass-line-soft);
+  color: var(--muted);
+}
+
+.workspace-preview-markdown code {
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 0.92em;
+  background: var(--hover);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+}
+
+.workspace-preview-markdown pre code {
+  background: transparent;
+  padding: 0;
+}
+
+.workspace-preview-markdown table {
+  border-collapse: collapse;
+  margin: 0.6em 0;
+}
+
+.workspace-preview-markdown th,
+.workspace-preview-markdown td {
   border: 1px solid var(--glass-line-soft);
-  border-radius: var(--ctl-radius);
-  padding: 10px 12px;
-  font-size: 12.5px;
-  line-height: 1.6;
+  padding: 4px 10px;
+}
+
+.workspace-preview-markdown hr {
+  border: 0;
+  border-top: 1px solid var(--glass-line-soft);
+  margin: 1em 0;
 }
 
 .workspace-preview-markdown img {

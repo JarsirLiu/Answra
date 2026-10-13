@@ -27,7 +27,7 @@ export function WorkspacePanel({ bridge, onClose }: WorkspacePanelProps) {
   const [selected, setSelected] = useState<WorkspaceNode | null>(null);
   const [content, setContent] = useState<WorkspaceFileContent | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<EditorViewMode>("edit");
+  const [viewMode, setViewMode] = useState<EditorViewMode>("source");
   const [externalVersion, setExternalVersion] = useState(0);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const dirtyRef = useRef(false);
@@ -37,7 +37,8 @@ export function WorkspacePanel({ bridge, onClose }: WorkspacePanelProps) {
   const openNode = (node: WorkspaceNode) => {
     if (node.kind !== "file") return;
     setSelected(node);
-    setViewMode(classifyFile(node.name) === "markdown" ? "edit" : "preview");
+    // md 默认打开源码编辑，预览经工具栏切换。
+    setViewMode("source");
   };
 
   // 选中文件变化时读取内容。
