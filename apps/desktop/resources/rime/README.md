@@ -1,30 +1,16 @@
 # Bundled librime resources
 
-Place the official platform runtime and dictionaries here before packaging:
+Run `pnpm --filter @answra/desktop ime:prepare` to download and verify the
+current platform's official librime runtime, OpenCC data, Rime dictionaries,
+and the prebuilt Answra helper. The version and SHA-256 pins are in
+`apps/desktop/native/rime-resources.json`. The helper release is built by
+`.github/workflows/rime-host-release.yml` from tag `answra-rime-host-v1.0.0`.
 
-```text
-rime/
-  win32/librime.dll
-  darwin/librime.dylib
-  shared/essay.txt
-  shared/luna_pinyin_simp.schema.yaml
-  shared/luna_pinyin.dict.yaml
-  shared/easy_en.schema.yaml
-  shared/easy_en.yaml
-  shared/easy_en.dict.yaml
-  shared/opencc/t2s.json
-  shared/opencc/*.ocd2
-```
+Downloads are cached in `apps/desktop/.cache-rime/`; prepared runtime files
+are written here and shipped outside ASAR. Neither directory is committed.
+The command does not compile native code. Missing or unverifiable resources
+fail preparation; the application never falls back to the system IME.
 
-`pnpm --filter @answra/desktop ime:prepare` validates the current platform.
-The helper is shipped as a prebuilt binary beside the runtime library; this
-command never invokes CMake. Missing resources disable input; the
-application never falls back to the system input method. The files are copied
-outside ASAR by electron-builder.
-
-The selected schema is `luna_pinyin_simp`. Its base dictionaries are official
-`rime-luna-pinyin` and `rime-essay`; OpenCC data from the official librime
-dependency package provides Traditional-to-Simplified conversion. The upstream
-community `rime-easy-en` dictionary is included through the schema patch for
-English completion and mixed Chinese/English terms. No project dictionary
-replaces the official `luna_pinyin` translator.
+The schema is `luna_pinyin_simp`. It uses upstream `rime-luna-pinyin`,
+`rime-stroke`, `rime-essay`, `rime-prelude`, OpenCC data from librime deps,
+and upstream `rime-easy-en` through the checked-in schema patch.

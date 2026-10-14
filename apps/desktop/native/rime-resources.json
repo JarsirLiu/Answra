@@ -1,0 +1,83 @@
+{
+  "librimeVersion": "1.17.0",
+  "platforms": {
+    "win32": {
+      "runtime": {
+        "name": "rime-33e7814-Windows-msvc-x64.7z",
+        "url": "https://github.com/rime/librime/releases/download/1.17.0/rime-33e7814-Windows-msvc-x64.7z",
+        "sha256": "7478c7caa4ff6b37de86daba1f7ce4a994a4f5ba24872a820fb2b3a9b01fed15",
+        "format": "7z"
+      },
+      "deps": {
+        "name": "rime-deps-33e7814-Windows-msvc-x64.7z",
+        "url": "https://github.com/rime/librime/releases/download/1.17.0/rime-deps-33e7814-Windows-msvc-x64.7z",
+        "sha256": "9ef5608d8a54ff52bbad7a9b4128de42b232f8e3dd1f5fd3bff42a0b1bacd7e8",
+        "format": "7z"
+      }
+    },
+    "darwin": {
+      "runtime": {
+        "name": "rime-33e7814-macOS-universal.tar.bz2",
+        "url": "https://github.com/rime/librime/releases/download/1.17.0/rime-33e7814-macOS-universal.tar.bz2",
+        "sha256": "11d8dc663c6ec06d5ccb6111ba664a9e7b631b703ac6acd07cffbac664021850",
+        "format": "tar.bz2"
+      },
+      "deps": {
+        "name": "rime-deps-33e7814-macOS-universal.tar.bz2",
+        "url": "https://github.com/rime/librime/releases/download/1.17.0/rime-deps-33e7814-macOS-universal.tar.bz2",
+        "sha256": "dfe6047e87be271963d7466bd1a6e3d9e660c30e5e73e4bb94e8782c0a6ac8df",
+        "format": "tar.bz2"
+      }
+    }
+  },
+  "dictionaries": [
+    {
+      "name": "rime-prelude",
+      "url": "https://api.github.com/repos/rime/rime-prelude/tarball/082425ea0684bca36474415d4a0e8db9b016487e",
+      "sha256": "ef9496790e8b8c99c25ea563dfd31d1c324dc4f788534531dcb3d184513a1aa3",
+      "format": "tar.gz",
+      "files": ["default.yaml", "key_bindings.yaml", "punctuation.yaml", "symbols.yaml"]
+    },
+    {
+      "name": "rime-luna-pinyin",
+      "url": "https://api.github.com/repos/rime/rime-luna-pinyin/tarball/56b934b099dfbeab842320f13aa8b461a6ab3e42",
+      "sha256": "af8a779d30a1e928369a585167ae7361b0a20440428a5eef777c5843330c31a2",
+      "format": "tar.gz",
+      "files": [
+        "luna_pinyin.schema.yaml",
+        "luna_pinyin_simp.schema.yaml",
+        "luna_pinyin.dict.yaml",
+        "pinyin.yaml"
+      ]
+    },
+    {
+      "name": "rime-stroke",
+      "url": "https://api.github.com/repos/rime/rime-stroke/tarball/1e8fff9b9494ddec23b0cbc526bcfd8171a6fd48",
+      "sha256": "217b2ec97b0aee53ce86cd13fa253cb9439f2274f48c6bb6e1bdf67b7ce16c61",
+      "format": "tar.gz",
+      "files": ["stroke.schema.yaml", "stroke.dict.yaml"]
+    },
+    {
+      "name": "rime-essay",
+      "url": "https://api.github.com/repos/rime/rime-essay/tarball/054920de4f54c9e5994276a96a4fc2a35cb51aa3",
+      "sha256": "fbba0988f7652fafd86b3985795765240754ce760cfa6f3ea1b6892a3a09f71c",
+      "format": "tar.gz",
+      "files": ["essay.txt"]
+    },
+    {
+      "name": "rime-easy-en",
+      "url": "https://api.github.com/repos/BlindingDark/rime-easy-en/tarball/54a4a07289412efc54134092c0d945f895a71ed3",
+      "sha256": "3dd4915562d9671ca766c2b36c2d90a439821217fc0499d0dd418914cf35a606",
+      "format": "tar.gz",
+      "files": ["easy_en.schema.yaml", "easy_en.yaml", "easy_en.dict.yaml"]
+    }
+  ],
+  "helper": {
+    "repository": "JarsirLiu/Answra",
+    "tag": "answra-rime-host-v1.0.0",
+    "assets": {
+      "win32": "answra-rime-host-win32.exe",
+      "darwin": "answra-rime-host-darwin"
+    }
+  }
+}

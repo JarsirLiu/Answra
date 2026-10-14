@@ -38,7 +38,7 @@
 - librime 和 `answra-rime-host` 使用预编译资源，不在 `pnpm dev`、`pnpm bootstrap` 或打包时编译。
 - 二进制和词库不提交 Git；放在 `apps/desktop/resources/rime/`，并在打包前执行 `pnpm --filter @answra/desktop ime:prepare`。
 - Windows 使用 MSVC x64 运行库，macOS 使用 universal 运行库；发布包只携带目标平台资源。
-- CI/发布流程必须固定下载地址和 SHA-256，资源准备完成后再执行 `pnpm bootstrap`、`pnpm dist:win` 或 macOS 打包命令。
+- 下载来源与 SHA-256 固定在 `apps/desktop/native/rime-resources.json`；helper 使用固定 GitHub Release tag 和随 release 发布的 `SHA256SUMS` 校验。资源准备完成后再执行 `pnpm bootstrap`、`pnpm dist:win` 或 macOS 打包命令。
 - `luna_pinyin_simp` 依赖 `rime-luna-pinyin`、`rime-essay` 和 librime `deps` 包中的
   `share/opencc/*`；英文联想使用上游 `BlindingDark/rime-easy-en` 的
   `easy_en.schema.yaml`、`easy_en.yaml`、`easy_en.dict.yaml`，并由

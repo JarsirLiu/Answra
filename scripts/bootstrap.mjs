@@ -4,8 +4,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 // 环境初始化流程（对齐 WeCode 的 `pnpm bootstrap`）：
 // 1. pnpm install 安装 workspace 依赖
-// 2. 校验 Electron 桌面二进制是否已落盘；缺失时通过 npmmirror 镜像补下载，
-//    避免 `pnpm dev` 启动时才临时下载导致卡住。
+// 2. 校验 Electron 桌面二进制，缺失时通过 npmmirror 下载
+// 3. 下载并校验固定版本的内置 Rime 资源
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
@@ -45,7 +45,7 @@ function isElectronBinaryReady(electronDir) {
   return binaryName.length > 0 && existsSync(join(electronDir, "dist", binaryName));
 }
 
-console.log("[bootstrap] 1/2 安装 workspace 依赖...");
+console.log("[bootstrap] 1/3 安装 workspace 依赖...");
 run(pnpmCommand, ["install"]);
 
 const electronDir = resolveElectronDir();
@@ -54,7 +54,7 @@ if (!electronDir) {
   process.exit(1);
 }
 
-console.log("[bootstrap] 2/2 校验 Electron 二进制...");
+console.log("[bootstrap] 2/3 校验 Electron 二进制...");
 if (isElectronBinaryReady(electronDir)) {
   console.log("[bootstrap] Electron 二进制已就绪。");
 } else {
@@ -74,6 +74,6 @@ if (isElectronBinaryReady(electronDir)) {
   console.log("[bootstrap] Electron 二进制下载完成。");
 }
 
-console.log("[bootstrap] 3/3 校验内置输入法资源...");
+console.log("[bootstrap] 3/3 下载并校验内置输入法资源...");
 run(pnpmCommand, ["--filter", "@answra/desktop", "ime:prepare"]);
 console.log("[bootstrap] 完成，可以运行 pnpm dev。");

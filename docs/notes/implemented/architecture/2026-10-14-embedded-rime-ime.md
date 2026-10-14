@@ -33,7 +33,7 @@ Answra 的隐身模式需要在应用内提供中文物理键盘输入，同时�
 
 采用官方预编译 librime 加独立原生 `answra-rime-host` helper。helper 使用随 librime 发布的 `rime_api.h`，通过 `rime_get_api()` 获取官方版本化函数表，负责 `RimeSetup`、`RimeInitialize`、session、`RimeProcessKey`、上下文和 commit 的完整生命周期。Electron main 只通过带序号的 stdin/stdout JSON 协议与 helper 通信；renderer 只消费已有的 `ImeState`。
 
-helper 作为按平台准备好的预编译二进制随资源提供；`ime:prepare` 只校验并整理资源，不在 `pnpm dev`、`pnpm bootstrap` 或用户机器上调用 CMake。候选 UI、提交文本和编辑器状态由 renderer 控制；原生资源只由 main 启动 ASAR 外的 helper。
+helper 作为按平台准备好的预编译二进制随资源提供；`ime:prepare` 下载固定版本并校验 SHA-256，不在 `pnpm dev`、`pnpm bootstrap` 或用户机器上调用 CMake。helper 从固定 GitHub Release tag 获取， librime 和词库来源及摘要锁定在 `apps/desktop/native/rime-resources.json`。候选 UI、提交文本和编辑器状态由 renderer 控制；原生资源只由 main 启动 ASAR 外的 helper。
 
 ## 模块边界
 
@@ -103,7 +103,7 @@ helper 作为按平台准备好的预编译二进制随资源提供；`ime:prepa
 
 候选 UI 使用 Windows 横向候选条样式：预编辑拼音独立显示在候选条上方，候选项在同一行展示序号与文本，当前项使用主题强调色。左右控制发送 `ArrowLeft`/`ArrowRight`，上下控制发送 librime 标准 `PageUp`/`PageDown` keysym；候选选择和分页状态仍由原生引擎返回，UI 不自行推算页码或索引。保留横向滚动以适配窄窗口。
 
-默认 schema 固定为 `luna_pinyin_simp`。主 translator 保持官方 `rime-luna-pinyin` 的 `luna_pinyin.dict.yaml` 和句子联想排序，并通过 schema patch 启用 `rime-essay` 的常用词数据；不创建或挂载项目自定义主词典。开发启动时从受版本控制的 `native/rime-data` 安装官方 schema patch；`ime:prepare` 在原生 helper 编译前复制相同配置。首次启动将 schema patch 安装到用户配置目录，仅在文件不存在时创建，保留用户后续编辑。
+默认 schema 固定为 `luna_pinyin_simp`。主 translator 保持官方 `rime-luna-pinyin` 的 `luna_pinyin.dict.yaml` 和句子联想排序，并通过 schema patch 启用 `rime-essay` 的常用词数据；不创建或挂载项目自定义主词典。开发启动时从受版本控制的 `native/rime-data` 安装官方 schema patch；`ime:prepare` 下载、验 hash 并准备同一份配置及官方词库。首次启动将 schema patch 安装到用户配置目录，仅在文件不存在时创建，保留用户后续编辑。
 
 `luna_pinyin_simp` 的简体输出还依赖官方 librime `deps` 包中的 `share/opencc` 数据；缺少 `opencc/t2s.json` 时会退化为繁体候选并记录 `opencc config not found`。英文联想采用上游 `BlindingDark/rime-easy-en` 的 `easy_en` schema/dict，通过 schema patch 接入；关闭其造句模式，避免把未完成的中文拼音组合生成带 `☯` 标记的伪英文候选，不启用可选的 Lua 分词扩展。
 

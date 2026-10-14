@@ -35,7 +35,8 @@ function runtimePaths():
   const cwd = join(root, "rime", platform);
   const suffix = process.platform === "win32" ? ".exe" : "";
   const helper = join(cwd, `answra-rime-host${suffix}`);
-  const library = join(cwd, process.platform === "win32" ? "librime.dll" : "librime.dylib");
+  const library =
+    process.platform === "win32" ? join(cwd, "librime.dll") : join(cwd, "lib", "librime.dylib");
   if (!existsSync(helper) || !existsSync(library)) return undefined;
   return {
     helper,
@@ -136,7 +137,7 @@ export class RimeBridge {
           root,
           "rime",
           platform,
-          process.platform === "win32" ? "librime.dll" : "librime.dylib",
+          process.platform === "win32" ? "librime.dll" : join("lib", "librime.dylib"),
         ),
         hint: "run pnpm --filter @answra/desktop ime:prepare",
       });

@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.20)
 project(answra_rime_host LANGUAGES CXX)
 
+if(MSVC)
+  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
 if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/include/rime_api.h")
   message(FATAL_ERROR "official librime rime_api.h is required")
 endif()
