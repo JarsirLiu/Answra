@@ -2,7 +2,7 @@ import type { ImeState } from "@answra/shared";
 import { ArrowUp, Languages, Plus } from "lucide-react";
 import type { FormEvent, ReactNode, RefObject } from "react";
 import { ICON_SM } from "../../tokens";
-import { ImeCandidatePopup } from "./ImeCandidatePopup";
+import { ImeCandidateOverlay } from "./ImeCandidateOverlay";
 import "./ConversationComposer.css";
 
 interface ConversationComposerProps {
@@ -63,7 +63,7 @@ export function ConversationComposer({
     >
       {children}
       {ime && (
-        <ImeCandidatePopup onNavigate={ime.onNavigate} onSelect={ime.onSelect} state={ime.state} />
+        <ImeCandidateOverlay onNavigate={ime.onNavigate} onSelect={ime.onSelect} state={ime.state} />
       )}
       <textarea
         aria-label={inputLabel}
