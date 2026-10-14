@@ -128,6 +128,8 @@ export function ReplyBarWindowApp({ bridge }: ReplyBarWindowAppProps) {
       messages={conversation.messages}
       placement={placement}
       stealth={state.stealth}
+      bridge={platform}
+      conversationId={state.conversationId}
     />
   ) : null;
 

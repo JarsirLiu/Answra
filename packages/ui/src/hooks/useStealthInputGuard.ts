@@ -11,7 +11,25 @@ import { useEffect } from "react";
  */
 export function useStealthInputGuard(enabled: boolean): void {
   useEffect(() => {
-    if (!enabled) return;
+    const onCompositionStart = (event: CompositionEvent) => {
+      if (!isTextEntryTarget(event.target)) return;
+      console.warn("[ime-ui] system composition blocked");
+      event.preventDefault();
+    };
+    const onBeforeInput = (event: InputEvent) => {
+      if (!isTextEntryTarget(event.target)) return;
+      if (!event.inputType.startsWith("insertComposition")) return;
+      event.preventDefault();
+    };
+
+    document.addEventListener("compositionstart", onCompositionStart, true);
+    document.addEventListener("beforeinput", onBeforeInput, true);
+    if (!enabled) {
+      return () => {
+        document.removeEventListener("compositionstart", onCompositionStart, true);
+        document.removeEventListener("beforeinput", onBeforeInput, true);
+      };
+    }
 
     const blurActiveElement = () => {
       const active = document.activeElement;
@@ -21,19 +39,29 @@ export function useStealthInputGuard(enabled: boolean): void {
     blurActiveElement();
 
     const onPointerDown = (event: PointerEvent) => {
+      if (isEmbeddedImeTarget(event.target)) return;
+      if (isEmbeddedImeCandidateTarget(event.target)) {
+        event.preventDefault();
+        (event.target as HTMLElement).dataset.imeFocusPending = "true";
+        return;
+      }
       if (!isTextEntryTarget(event.target)) return;
       event.preventDefault();
       (event.target as HTMLElement).blur();
     };
     const onFocusIn = (event: FocusEvent) => {
+      if (isEmbeddedImeTarget(event.target)) return;
+      if (isEmbeddedImeCandidateTarget(event.target)) {
+        (event.target as HTMLElement).dataset.imeFocusPending = "true";
+        (event.target as HTMLElement).blur();
+        return;
+      }
       if (!isTextEntryTarget(event.target)) return;
       event.preventDefault();
       (event.target as HTMLElement).blur();
     };
-    const onBeforeInput = (event: InputEvent) => {
-      if (isTextEntryTarget(event.target)) event.preventDefault();
-    };
     const onKeyDown = (event: KeyboardEvent) => {
+      if (isEmbeddedImeTarget(event.target)) return;
       if (isTextEntryTarget(event.target)) event.preventDefault();
     };
     const onClick = (event: MouseEvent) => {
@@ -42,17 +70,25 @@ export function useStealthInputGuard(enabled: boolean): void {
 
     document.addEventListener("pointerdown", onPointerDown, true);
     document.addEventListener("focusin", onFocusIn, true);
-    document.addEventListener("beforeinput", onBeforeInput, true);
     document.addEventListener("keydown", onKeyDown, true);
     document.addEventListener("click", onClick, true);
     return () => {
       document.removeEventListener("pointerdown", onPointerDown, true);
       document.removeEventListener("focusin", onFocusIn, true);
+      document.removeEventListener("compositionstart", onCompositionStart, true);
       document.removeEventListener("beforeinput", onBeforeInput, true);
       document.removeEventListener("keydown", onKeyDown, true);
       document.removeEventListener("click", onClick, true);
     };
   }, [enabled]);
+}
+
+function isEmbeddedImeTarget(target: EventTarget | null): boolean {
+  return target instanceof HTMLTextAreaElement && target.dataset.embeddedImeTarget === "true";
+}
+
+function isEmbeddedImeCandidateTarget(target: EventTarget | null): boolean {
+  return target instanceof HTMLTextAreaElement && target.dataset.embeddedImeTarget === "true";
 }
 
 function isTextEntryTarget(target: EventTarget | null): target is HTMLElement {

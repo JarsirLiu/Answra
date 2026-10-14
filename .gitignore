@@ -9,3 +9,11 @@ coverage/
 .env.local
 .env.*
 !.env.example
+
+# Downloaded platform-specific librime artifacts are prepared locally/ in CI.
+apps/desktop/.cache-rime/
+apps/desktop/resources/rime/**
+!apps/desktop/resources/rime/README.md
+# Temporary upstream IME source archives used while preparing bundled resources.
+apps/desktop/native/rime-data/*_upstream/
+apps/desktop/native/rime-data/rime-deps.7z

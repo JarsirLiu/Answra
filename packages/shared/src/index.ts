@@ -1,5 +1,8 @@
 export type { DesktopBridge, OverlayMode } from "./bridge";
 export type {
+  ImeCandidate,
+  ImeKeyRequest,
+  ImeState,
   InterviewAudioFrame,
   InterviewChange,
   InterviewSpeaker,
@@ -24,6 +27,7 @@ export {
   type ConversationSendCommand,
   type ConversationSendRequest,
   type ConversationSnapshot,
+  ImeChannels,
   InterviewChannels,
   type RegionCaptureOptions,
   type RegionRect,

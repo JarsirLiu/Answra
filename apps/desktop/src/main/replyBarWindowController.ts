@@ -16,6 +16,7 @@ import {
   positionWindowNearPoint,
   replyBarAnchorFromBounds,
 } from "./windowLayout";
+import { setNativeImeEnabled } from "./windowStealthController";
 
 const WORK_AREA_MARGIN = 24;
 const REPLY_BAR_SIZE: ContentSize = { width: 480, height: 76 };
@@ -116,7 +117,11 @@ export function createReplyBarWindowController(host: ReplyBarWindowHost) {
     created.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
     created.webContents.on("will-navigate", (event) => event.preventDefault());
     setWindowCaptureProtection(created, host.isStealthEnabled());
-    created.on("show", () => setWindowCaptureProtection(created, host.isStealthEnabled()));
+    setNativeImeEnabled(created, false);
+    created.on("show", () => {
+      setWindowCaptureProtection(created, host.isStealthEnabled());
+      setNativeImeEnabled(created, false);
+    });
     created.on("resize", () => setWindowCaptureProtection(created, host.isStealthEnabled()));
     created.on("move", () => {
       if (created.isDestroyed()) return;

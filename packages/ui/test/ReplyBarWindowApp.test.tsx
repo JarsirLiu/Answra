@@ -405,15 +405,13 @@ describe("ReplyBarWindowApp live conversation popover", () => {
     expect(image.closest("figure")).toHaveClass("reply-conversation-image");
   });
 
-  it("keeps a disabled composer below the conversation and identifies stealth mode", async () => {
+  it("keeps the composer focusable when the embedded IME is unavailable", async () => {
     const bridge = createBridge();
     render(<ReplyBarWindowApp bridge={bridge as DesktopBridge} />);
     act(() => stateListener?.(replyState(true)));
     fireEvent.mouseEnter(document.querySelector(".reply-activity-viewport") as HTMLElement);
 
-    expect(await screen.findByRole("textbox", { name: "消息输入" })).toBeDisabled();
-    expect(screen.getByPlaceholderText("隐身模式下不可输入")).toBeDisabled();
-    expect(screen.getByRole("button", { name: "添加附件" })).toBeDisabled();
+    expect(await screen.findByRole("textbox", { name: "消息输入" })).not.toBeDisabled();
     expect(screen.getByRole("button", { name: "发送消息" })).toBeDisabled();
     expect(document.querySelector(".conversation-composer")?.nextElementSibling).toBeNull();
   });

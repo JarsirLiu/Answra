@@ -1,0 +1,137 @@
+import type { DesktopBridge, ImeKeyRequest, ImeState } from "@answra/shared";
+import { useCallback, useEffect, useState } from "react";
+
+const EMPTY_STATE: ImeState = {
+  enabled: false,
+  composing: false,
+  preedit: "",
+  candidates: [],
+  selectedIndex: 0,
+  page: 0,
+  hasNextPage: false,
+};
+
+/** Coordinates the optional native IME without changing the editor's draft state. */
+export function useEmbeddedIme(
+  bridge: DesktopBridge | undefined,
+  onCommit?: (text: string) => void,
+  enabled = true,
+) {
+  const available = Boolean(
+    bridge?.imeAvailable && bridge.imeKey && bridge.imeEnable && bridge.imeSelect,
+  );
+  const [imeEnabled, setImeEnabled] = useState(true);
+  const [state, setState] = useState<ImeState>(EMPTY_STATE);
+
+  useEffect(() => {
+    console.info("[ime-ui] bridge", { available, enabled, imeEnabled });
+    if (!available || !enabled || !imeEnabled) {
+      setState(EMPTY_STATE);
+      if (available && (!enabled || !imeEnabled)) void bridge?.imeEnable?.(false);
+      return;
+    }
+    const unsubscribe = bridge?.onImeChange?.(setState);
+    let retryTimer: number | undefined;
+    const enable = () =>
+      bridge
+        ?.imeEnable?.(true)
+        .then((next) => {
+          setState(next);
+          if (!next.enabled && retryTimer === undefined)
+            retryTimer = window.setInterval(() => void enable(), 250);
+          if (next.enabled && retryTimer !== undefined) {
+            window.clearInterval(retryTimer);
+            retryTimer = undefined;
+          }
+          console.info("[ime-ui] session", { available, enabled: next.enabled });
+        })
+        .catch((error: unknown) => console.error("[ime-ui] enable failed", error));
+    void enable();
+    return () => {
+      if (retryTimer !== undefined) window.clearInterval(retryTimer);
+      unsubscribe?.();
+      void bridge?.imeEnable?.(false);
+    };
+  }, [available, bridge, enabled, imeEnabled]);
+
+  useEffect(() => {
+    if (!state.enabled) return;
+    const pending = document.querySelector<HTMLTextAreaElement>("[data-ime-focus-pending='true']");
+    if (!pending) return;
+    delete pending.dataset.imeFocusPending;
+    pending.focus();
+  }, [state.enabled]);
+
+  const sendKey = useCallback(
+    (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (!available || !enabled || !state.enabled || !bridge?.imeKey) return false;
+      if (event.key === "Backspace" && !state.composing) return false;
+      if ((event.ctrlKey || event.altKey || event.metaKey) && !state.composing) return false;
+      const key = normalizeKey(event.key, event.code);
+      if (!key || (key.length !== 1 && !state.composing)) return false;
+      const request: ImeKeyRequest = {
+        key,
+        code: event.code,
+        shift: event.shiftKey,
+        ctrl: event.ctrlKey,
+        alt: event.altKey,
+        meta: event.metaKey,
+      };
+      console.info("[ime-ui] dispatch key", { key, code: event.code });
+      void bridge.imeKey(request).then((next) => {
+        setState(next);
+        if (next.committedText) onCommit?.(next.committedText);
+        return next;
+      });
+      return true;
+    },
+    [available, bridge, enabled, onCommit, state.composing, state.enabled],
+  );
+
+  const sendNavigation = useCallback(
+    (key: string) => {
+      if (!available || !enabled || !state.enabled || !bridge?.imeKey) return;
+      const request: ImeKeyRequest = {
+        key,
+        code: key,
+        shift: false,
+        ctrl: false,
+        alt: false,
+        meta: false,
+      };
+      void bridge.imeKey(request).then((next) => {
+        setState(next);
+        if (next.committedText) onCommit?.(next.committedText);
+      });
+    },
+    [available, bridge, enabled, onCommit, state.enabled],
+  );
+
+  const select = useCallback(
+    (index: number) => {
+      if (!bridge?.imeSelect) return;
+      void bridge.imeSelect(index).then(setState);
+    },
+    [bridge],
+  );
+
+  return {
+    available: enabled && available,
+    imeEnabled,
+    active: enabled && imeEnabled && available && state.enabled,
+    state,
+    sendKey,
+    sendNavigation,
+    select,
+    toggle: () => setImeEnabled((current) => !current),
+  };
+}
+
+/** Windows marks keys consumed by its IME as "Process"; recover the physical key. */
+function normalizeKey(key: string, code: string): string | undefined {
+  if (key !== "Process") return key;
+  if (/^Key[A-Z]$/.test(code)) return code.slice(3).toLowerCase();
+  if (/^Digit[0-9]$/.test(code)) return code.slice(5);
+  if (/^Numpad[0-9]$/.test(code)) return code.slice(6);
+  return undefined;
+}

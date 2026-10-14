@@ -13,7 +13,7 @@ await Promise.all([
     bundle: true,
     platform: "node",
     format: "cjs",
-    external: ["electron"],
+    external: ["electron", "koffi"],
     outfile: "out/main/index.cjs",
   }),
   build({
@@ -21,7 +21,7 @@ await Promise.all([
     bundle: true,
     platform: "node",
     format: "cjs",
-    external: ["electron"],
+    external: ["electron", "koffi"],
     outfile: "out/preload/index.cjs",
   }),
   build({
@@ -29,7 +29,7 @@ await Promise.all([
     bundle: true,
     platform: "node",
     format: "cjs",
-    external: ["electron"],
+    external: ["electron", "koffi"],
     outfile: "out/preload/selection.cjs",
   }),
   build({
@@ -38,7 +38,7 @@ await Promise.all([
     platform: "node",
     format: "cjs",
     target: "node20.9",
-    external: ["electron"],
+    external: ["electron", "koffi"],
     outfile: "out/main/conversation/worker.cjs",
   }),
   mkdir("out/capture", { recursive: true }).then(() =>

@@ -15,6 +15,15 @@ textarea,
 input {
   font: inherit;
 }
+/* The OS IME is never an application input backend. Text conversion is owned
+   by the embedded Rime bridge; this also covers settings and workspace fields. */
+input:not([type="button"]):not([type="checkbox"]):not([type="file"]):not([type="hidden"]):not(
+  [type="image"]
+):not([type="radio"]):not([type="range"]):not([type="reset"]):not([type="submit"]),
+textarea,
+[contenteditable="true"] {
+  ime-mode: disabled;
+}
 /* 缩放手势角落会强制显示斜向缩放光标（cursor 规则管不到 resizer），
    统一禁用 textarea 手动缩放，保证光标恒不变形；高度由内容自适应。 */
 textarea {

@@ -5,6 +5,8 @@ import type {
   ConversationModelConfig,
   ConversationSendRequest,
   ConversationSnapshot,
+  ImeKeyRequest,
+  ImeState,
   InterviewAudioFrame,
   InterviewChange,
   RegionCaptureOptions,
@@ -29,6 +31,13 @@ export type OverlayMode = "closed" | "chat" | "interview" | "notes" | "sources" 
 
 /** 渲染进程暴露给 UI 的桌面平台桥（由 preload 注入，测试可 mock）。 */
 export interface DesktopBridge {
+  /** 应用内输入法；隐身模式下未能启用时，文本输入保持阻断。 */
+  imeAvailable?: boolean;
+  imeEnable?: (enabled: boolean) => Promise<ImeState>;
+  imeKey?: (request: ImeKeyRequest) => Promise<ImeState>;
+  imeSelect?: (index: number) => Promise<ImeState>;
+  imeReset?: () => Promise<ImeState>;
+  onImeChange?: (listener: (state: ImeState) => void) => () => void;
   /** 上报外壳内容尺寸，主进程据此调整窗口大小。 */
   fitContent: (size: ContentSize) => void;
   /** 关闭应用窗口。 */

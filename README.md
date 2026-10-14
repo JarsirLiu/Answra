@@ -29,6 +29,41 @@ pnpm dev
 
 `pnpm bootstrap` 是统一的环境初始化入口：安装 workspace 依赖，并校验/通过 npmmirror 镜像补齐 Electron 二进制，避免 `pnpm dev` 启动时才临时下载卡住。`pnpm dev` 会同时启动 Vite 和 Electron。使用 `pnpm dev:web` 可只启动浏览器预览。桌面开发窗口使用 5180 端口；端口被占用时命令会报错退出，不会静默换端口。
 
+### 内置输入法资源
+
+librime 二进制不提交 Git。开发或发布前从官方 release 获取当前平台资源，放入 `apps/desktop/resources/rime/`：
+
+```text
+rime/win32/librime.dll
+rime/darwin/librime.dylib
+rime/shared/            # rime-luna-pinyin、rime-essay、OpenCC、easy_en
+```
+
+Windows 使用官方 MSVC x64 包，macOS 使用 universal 包。准备完成后执行：
+
+```powershell
+pnpm --filter @answra/desktop ime:prepare
+pnpm dev                 # 开发测试
+pnpm dist:win            # Windows 发布包
+```
+
+`ime:prepare` 只校验并整理已下载的官方 librime runtime、预编译 helper 与词库资源，
+不安装 CMake，也不在开发机编译输入法。`pnpm bootstrap` 会自动执行此校验。
+
+输入方案为简体 `luna_pinyin_simp`。基础词库使用官方 `rime-luna-pinyin`
+（拼音词典）和 `rime-essay`（常用词/语言模型）。英文联想使用上游
+`BlindingDark/rime-easy-en` 的 `easy_en` schema/dict，并通过
+`luna_pinyin_simp.custom.yaml` 接入中英混输。
+
+资源更新流程：下载官方 librime 对应平台包及其 `deps` 包，固定版本和 SHA-256；
+将运行库放入 `resources/rime/win32` 或 `darwin`，将 `share/opencc/*` 解压到
+`resources/rime/shared/opencc`，并更新 `native/rime-data` 中的官方词库和
+`easy_en` 文件。然后执行 `pnpm --filter @answra/desktop ime:prepare`，再执行
+`pnpm bootstrap`、`pnpm dev` 或平台打包命令。不要运行 CMake，也不要手工修改用户目录
+下的 `rime/build`；首次启动会由 librime 按当前资源重新部署 schema。
+
+发布构建只放对应平台资源；资源目录已加入 `.gitignore`，CI 应在打包步骤前下载并校验 SHA-256。
+
 ## 检查
 
 ```powershell
@@ -60,8 +95,9 @@ docs                   Note 索引
 
 | 命令 | 说明 |
 | --- | --- |
-| `pnpm bootstrap` | 环境初始化：安装依赖 + 校验/补齐 Electron 二进制 |
+| `pnpm bootstrap` | 环境初始化：安装依赖 + 校验/补齐 Electron 二进制 + 校验内置输入法资源 |
 | `pnpm dev` | 启动 Vite + Electron（先构建 main/preload bundle） |
+| `pnpm --filter @answra/desktop ime:prepare` | 校验并整理当前平台的预编译 librime/helper 与词库资源 |
 | `pnpm build` | 全 workspace 构建（desktop: esbuild + vite） |
 | `pnpm typecheck` | 各包依次 `tsc --noEmit`（desktop 按进程分三个编译单元） |
 | `pnpm test` | 各包测试（ui 使用 vitest + jsdom） |

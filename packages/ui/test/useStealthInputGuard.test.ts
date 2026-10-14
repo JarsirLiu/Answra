@@ -37,6 +37,20 @@ describe("useStealthInputGuard", () => {
     expect(fileClick.defaultPrevented).toBe(true);
   });
 
+  it("allows focus on the embedded IME target", () => {
+    const textarea = document.createElement("textarea");
+    textarea.dataset.embeddedImeTarget = "true";
+    document.body.append(textarea);
+    renderHook(() => useStealthInputGuard(true));
+
+    const pointer = new PointerEvent("pointerdown", { bubbles: true, cancelable: true });
+    textarea.dispatchEvent(pointer);
+    expect(pointer.defaultPrevented).toBe(false);
+
+    textarea.focus();
+    expect(document.activeElement).toBe(textarea);
+  });
+
   it("restores text input when stealth is disabled", () => {
     const input = document.createElement("input");
     document.body.append(input);
@@ -47,5 +61,28 @@ describe("useStealthInputGuard", () => {
 
     input.focus();
     expect(document.activeElement).toBe(input);
+  });
+
+  it("blocks system composition even when stealth is disabled", () => {
+    const textarea = document.createElement("textarea");
+    document.body.append(textarea);
+    renderHook(() => useStealthInputGuard(false));
+
+    const composition = new CompositionEvent("compositionstart", {
+      bubbles: true,
+      cancelable: true,
+      data: "ni",
+    });
+    textarea.dispatchEvent(composition);
+    const beforeInput = new InputEvent("beforeinput", {
+      bubbles: true,
+      cancelable: true,
+      inputType: "insertCompositionText",
+      data: "你",
+    });
+    textarea.dispatchEvent(beforeInput);
+
+    expect(composition.defaultPrevented).toBe(true);
+    expect(beforeInput.defaultPrevented).toBe(true);
   });
 });

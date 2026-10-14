@@ -4,6 +4,7 @@ import { registerCaptureIpc } from "./capture/captureIpc";
 import { configureChromiumCompatibility } from "./chromiumCompatibility";
 import { AppService } from "./conversation/appService";
 import { registerConversationIpc } from "./conversation/conversationIpc";
+import { registerImeIpc } from "./ime/imeIpc";
 import { registerAmbientIpc } from "./ipc/ambientIpc";
 import { registerWindowIpc } from "./ipc/windowIpc";
 import { createMainWindow, getWindow, isStealthEnabled } from "./window";
@@ -20,11 +21,13 @@ configureChromiumCompatibility({ app });
 registerWorkspaceSchemePrivileges();
 
 let ambientController: ReturnType<typeof createAmbientThemeController> | undefined;
+let imeController: ReturnType<typeof registerImeIpc> | undefined;
 const appService = new AppService();
 const workspaceService = new WorkspaceService({ configDir: app.getPath("userData") });
 
 app.whenReady().then(() => {
   registerWindowIpc();
+  imeController = registerImeIpc();
   registerCaptureIpc();
   registerAmbientIpc((enabled) => ambientController?.setEnabled(enabled));
   registerConversationIpc(appService);
@@ -38,6 +41,7 @@ app.whenReady().then(() => {
 });
 
 app.on("before-quit", () => {
+  imeController?.dispose();
   void appService.stop();
   void workspaceService.dispose();
 });

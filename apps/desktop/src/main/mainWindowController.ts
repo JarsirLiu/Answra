@@ -83,6 +83,7 @@ export function createMainWindowController(host: MainWindowControllerHost) {
     created.webContents.on("will-navigate", (event) => event.preventDefault());
     created.on("show", host.onNativeShow);
     created.on("resize", host.onNativeResize);
+    created.webContents.on("did-finish-load", host.onNativeShow);
     created.once("ready-to-show", () => created.show());
     created.webContents.on("render-process-gone", (_event, details) =>
       console.error("[window] 渲染进程消失:", details),

@@ -8,6 +8,9 @@ import {
   type ConversationModelConfig,
   type ConversationSendRequest,
   type DesktopBridge,
+  ImeChannels,
+  type ImeKeyRequest,
+  type ImeState,
   type RegionCaptureOptions,
   type ReplyBarAction,
   type ReplyBarPlacement,
@@ -24,6 +27,17 @@ import { contextBridge, ipcRenderer } from "electron";
  * 频道名与载荷类型来自 shared 契约，禁止在此之外新增 IPC 通道。
  */
 const bridge: DesktopBridge = {
+  // Set true only when the packaged librime bridge has been installed.
+  imeAvailable: true,
+  imeEnable: (enabled: boolean) => ipcRenderer.invoke(ImeChannels.Enable, enabled),
+  imeKey: (request: ImeKeyRequest) => ipcRenderer.invoke(ImeChannels.Key, request),
+  imeSelect: (index: number) => ipcRenderer.invoke(ImeChannels.Select, { index }),
+  imeReset: () => ipcRenderer.invoke(ImeChannels.Reset),
+  onImeChange: (listener: (state: ImeState) => void) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, state: ImeState) => listener(state);
+    ipcRenderer.on(ImeChannels.Change, wrapped);
+    return () => ipcRenderer.removeListener(ImeChannels.Change, wrapped);
+  },
   fitContent: (size: ContentSize) => {
     ipcRenderer.send(WindowChannels.FitContent, size);
   },

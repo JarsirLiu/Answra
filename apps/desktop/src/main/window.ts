@@ -12,7 +12,7 @@ import { app, type BrowserWindow } from "electron";
 import { createMainWindowController } from "./mainWindowController";
 import { createReplyBarWindowController } from "./replyBarWindowController";
 import { getWindowCaptureDiagnostics } from "./windowCaptureProtection";
-import { createWindowStealthController } from "./windowStealthController";
+import { createWindowStealthController, setNativeImeEnabled } from "./windowStealthController";
 
 let windowController: ReturnType<typeof createMainWindowController>;
 let stealthController: ReturnType<typeof createWindowStealthController>;
@@ -34,6 +34,10 @@ function ensureControllers(): void {
   stealthController = createWindowStealthController({
     getMainWindow: () => windowController.getWindow(),
     setReplyBarProtection: (enabled) => replyBarController.setCaptureProtection(enabled),
+    setReplyBarInputMethod: () => {
+      const replyBar = replyBarController.getWindow();
+      if (replyBar) setNativeImeEnabled(replyBar, false);
+    },
   });
 }
 
@@ -137,6 +141,8 @@ function logCaptureSurfaceState(reason: string, window: BrowserWindow): void {
 }
 export function createMainWindow(): BrowserWindow {
   ensureControllers();
-  return windowController.create();
+  const window = windowController.create();
+  setNativeImeEnabled(window, false);
+  return window;
 }
 export { app };

@@ -33,6 +33,18 @@
 - 变量名只允许在 `packages/shared/src/env.ts` 定义一次；`.env.example` 逐项注明用途与是否 secret。
 - 运行时读取统一走类型化函数（如 `parseAnswraEnv`），禁止散落 `process.env.XXX`。
 
+## 内置输入法资源
+
+- librime 和 `answra-rime-host` 使用预编译资源，不在 `pnpm dev`、`pnpm bootstrap` 或打包时编译。
+- 二进制和词库不提交 Git；放在 `apps/desktop/resources/rime/`，并在打包前执行 `pnpm --filter @answra/desktop ime:prepare`。
+- Windows 使用 MSVC x64 运行库，macOS 使用 universal 运行库；发布包只携带目标平台资源。
+- CI/发布流程必须固定下载地址和 SHA-256，资源准备完成后再执行 `pnpm bootstrap`、`pnpm dist:win` 或 macOS 打包命令。
+- `luna_pinyin_simp` 依赖 `rime-luna-pinyin`、`rime-essay` 和 librime `deps` 包中的
+  `share/opencc/*`；英文联想使用上游 `BlindingDark/rime-easy-en` 的
+  `easy_en.schema.yaml`、`easy_en.yaml`、`easy_en.dict.yaml`，并由
+  `native/rime-data/luna_pinyin_simp.custom.yaml` 接入。更新资源时必须同步更新来源、版本和
+  SHA-256，并重新执行 `ime:prepare`，不能只替换 DLL。
+
 ## 质量门禁
 
 - `pnpm verify` = biome lint + 文档门禁 + 全包 typecheck + vitest + 架构守护；husky pre-push 自动执行。

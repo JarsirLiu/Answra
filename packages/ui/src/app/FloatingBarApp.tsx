@@ -121,6 +121,8 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
 
       {panel === "chat" && (
         <ChatPanel
+          bridge={platform}
+          stealth={stealthSetting.enabled}
           attachments={attachments}
           draft={draft}
           fileInputRef={fileInputRef}

@@ -1,3 +1,4 @@
+import type { DesktopBridge } from "@answra/shared";
 import { X } from "lucide-react";
 import { type RefObject, useRef } from "react";
 import { ICON_SM } from "../../tokens";
@@ -5,6 +6,7 @@ import { AssistantMessage, MessageStream } from "../chat";
 import { ConversationComposer } from "./ConversationComposer";
 import { PanelShell } from "./PanelShell";
 import "./ChatPanel.css";
+import { useEmbeddedIme } from "../../hooks/useEmbeddedIme";
 
 export interface ChatAttachment {
   id: string;
@@ -39,6 +41,8 @@ interface ChatPanelProps {
   /** 点赞/点踩反馈。 */
   onVote?: (vote: "up" | "down" | null) => void;
   onClose: () => void;
+  bridge?: DesktopBridge;
+  stealth: boolean;
 }
 
 /** AI 对话面板：消息流 + 截图附件 + 输入区。 */
@@ -57,8 +61,20 @@ export function ChatPanel({
   onFork,
   onVote,
   onClose,
+  bridge,
 }: ChatPanelProps) {
   const composerInputRef = useRef<HTMLTextAreaElement>(null);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const ime = useEmbeddedIme(
+    bridge,
+    (text) => {
+      const next = `${draftRef.current}${text}`;
+      draftRef.current = next;
+      onDraftChange(next);
+    },
+    true,
+  );
   // 内容指纹：消息增减/正文与思维链流式增长都会变化，驱动 MessageStream 自动跟随。
   const contentKey = messages
     .map((message) => `${message.id}:${message.content.length}:${message.reasoning?.length ?? 0}`)
@@ -108,6 +124,20 @@ export function ChatPanel({
         streaming={streaming}
         submitDisabled={!draft.trim() && attachments.length === 0}
         value={draft}
+        ime={
+          ime.available
+            ? {
+                available: ime.available,
+                active: ime.active,
+                imeEnabled: ime.imeEnabled,
+                state: ime.state,
+                onKeyDown: ime.sendKey,
+                onNavigate: ime.sendNavigation,
+                onSelect: ime.select,
+                onToggle: ime.toggle,
+              }
+            : undefined
+        }
       >
         <input
           accept="image/*"

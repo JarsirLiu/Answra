@@ -229,6 +229,50 @@ export const WorkspaceChannels = {
   Changed: "answra:workspace:changed",
 } as const;
 
+/** 应用内输入法频道；引擎状态由 main 持有，候选 UI 由 renderer 绘制。 */
+export const ImeChannels = {
+  Enable: "answra:ime:enable",
+  Key: "answra:ime:key",
+  Select: "answra:ime:select",
+  Reset: "answra:ime:reset",
+  Change: "answra:ime:change",
+} as const;
+
+export interface ImeCandidate {
+  text: string;
+  comment?: string;
+}
+
+export interface ImeState {
+  enabled: boolean;
+  composing: boolean;
+  preedit: string;
+  candidates: ImeCandidate[];
+  selectedIndex: number;
+  page: number;
+  hasNextPage: boolean;
+  committedText?: string;
+  /** Whether the native engine consumed the last key event. */
+  handled?: boolean;
+}
+
+export interface ImeKeyRequest {
+  key: string;
+  code: string;
+  shift: boolean;
+  ctrl: boolean;
+  alt: boolean;
+  meta: boolean;
+}
+
+export interface ImeChannelMap {
+  [ImeChannels.Enable]: { request: boolean; response: ImeState };
+  [ImeChannels.Key]: { request: ImeKeyRequest; response: ImeState };
+  [ImeChannels.Select]: { request: { index: number }; response: ImeState };
+  [ImeChannels.Reset]: { request: undefined; response: ImeState };
+  [ImeChannels.Change]: { request: undefined; response: ImeState };
+}
+
 /** 工作区目录树节点；`path` 为相对根目录的 POSIX 风格路径，根目录本身不出现。 */
 export interface WorkspaceNode {
   name: string;

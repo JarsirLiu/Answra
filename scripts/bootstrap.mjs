@@ -74,4 +74,6 @@ if (isElectronBinaryReady(electronDir)) {
   console.log("[bootstrap] Electron 二进制下载完成。");
 }
 
+console.log("[bootstrap] 3/3 校验内置输入法资源...");
+run(pnpmCommand, ["--filter", "@answra/desktop", "ime:prepare"]);
 console.log("[bootstrap] 完成，可以运行 pnpm dev。");

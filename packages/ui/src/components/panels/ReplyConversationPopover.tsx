@@ -1,6 +1,8 @@
-import type { ReplyBarActivity } from "@answra/shared";
+import type { DesktopBridge, ReplyBarActivity } from "@answra/shared";
 import { AlertCircle, FileText, Wrench } from "lucide-react";
+import { useRef, useState } from "react";
 import type { ReplyConversationMessage } from "../../app/useReplyConversation";
+import { useEmbeddedIme } from "../../hooks/useEmbeddedIme";
 import { ICON_SM } from "../../tokens";
 import { AssistantMessage, MessageStream } from "../chat";
 import { ConversationComposer } from "./ConversationComposer";
@@ -12,6 +14,8 @@ interface ReplyConversationPopoverProps {
   error?: string;
   placement: "above" | "below";
   stealth: boolean;
+  bridge?: DesktopBridge;
+  conversationId?: string;
 }
 
 /**
@@ -24,8 +28,23 @@ export function ReplyConversationPopover({
   activeRunId,
   error,
   placement,
-  stealth,
+  bridge,
+  conversationId,
 }: ReplyConversationPopoverProps) {
+  const [draft, setDraft] = useState("");
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const ime = useEmbeddedIme(bridge, (text) => setDraft((current) => `${current}${text}`), true);
+  const send = async () => {
+    const text = draftRef.current.trim();
+    if (!text || !conversationId || !bridge?.sendConversationMessage) return;
+    setDraft("");
+    try {
+      await bridge.sendConversationMessage(conversationId, { text, images: [] });
+    } catch {
+      setDraft(text);
+    }
+  };
   const contentKey = messages
     .map(
       (message) =>
@@ -99,10 +118,27 @@ export function ReplyConversationPopover({
       </MessageStream>
       <ConversationComposer
         compact
-        disabled
+        disabled={false}
         inputLabel="消息输入"
-        placeholder={stealth ? "隐身模式下不可输入" : "当前对话为只读"}
-        value=""
+        onSubmit={() => void send()}
+        onValueChange={setDraft}
+        placeholder="继续输入消息…"
+        submitDisabled={!draft.trim()}
+        value={draft}
+        ime={
+          ime.available
+            ? {
+                available: ime.available,
+                active: ime.active,
+                imeEnabled: ime.imeEnabled,
+                state: ime.state,
+                onKeyDown: ime.sendKey,
+                onNavigate: ime.sendNavigation,
+                onSelect: ime.select,
+                onToggle: ime.toggle,
+              }
+            : undefined
+        }
       />
     </section>
   );
