@@ -6,7 +6,7 @@ import type {
   ConversationSendRequest,
   ConversationSnapshot,
   ImeCandidateAction,
-  ImeCandidateAnchor,
+  ImeCandidateUpdate,
   ImeKeyRequest,
   ImeState,
   InterviewAudioFrame,
@@ -40,7 +40,7 @@ export interface DesktopBridge {
   imeSelect?: (index: number) => Promise<ImeState>;
   imeReset?: () => Promise<ImeState>;
   onImeChange?: (listener: (state: ImeState) => void) => () => void;
-  setImeCandidate?: (payload: { state: ImeState; anchor: ImeCandidateAnchor } | null) => void;
+  setImeCandidate?: (payload: ImeCandidateUpdate) => void;
   onImeCandidateAction?: (listener: (action: ImeCandidateAction) => void) => () => void;
   onImeCandidateState?: (listener: (state: ImeState) => void) => () => void;
   requestImeCandidateState?: () => void;

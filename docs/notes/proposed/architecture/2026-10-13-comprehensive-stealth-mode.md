@@ -83,6 +83,7 @@ Answra 不全局隐藏系统鼠标。这样能保持本地拖拽、点击和会�
 - 主窗口和回复条的永久非激活仍暂缓。优先验证中文 IME 候选/联想窗是否进入会议共享，以及回复条在不抢焦点的前提下可接受哪些输入方式；原生键盘钩子本身不视为中文输入方案。
 - 两个 renderer 根部接入 `useStealthInputGuard`：隐身开启时阻止 `input`/`textarea`/`contenteditable`（包括 CodeMirror）获得焦点或接收键盘输入，关闭隐身后恢复；按钮、滑块和选择控件继续可用。
 - 系统组件选择器纳入禁止范围：renderer 阻止 `input[type=file]` 的直接或程序化打开，workspace main IPC 在隐身时拒绝目录 `showOpenDialog`；隐身关闭后恢复。
+- BrowserWindow 共享捕获策略已由 `windowPolicyRegistry` 统一登记，四类现有窗口都在显式显示前检查策略，并在 show/restore/resize 和隐身切换时重应用；新增窗口由 `architecture:check` 检查登记和显示前预检。
 
 提案仍保持 `proposed`，直到主窗口/回复条的键盘通道、动态辅助窗口和 Zoom/Teams 实机矩阵完成验证。
 
@@ -132,8 +133,8 @@ Answra 不全局隐藏系统鼠标。这样能保持本地拖拽、点击和会�
 
 ## 后续实施顺序
 
-1. 先实现窗口注册表、独立交互策略模块和诊断模型，不改变主窗口输入行为。
+1. **已完成：** 窗口策略注册表和静态接入门禁，详见[原生窗口生命周期与共享策略注册](../../implemented/architecture/2026-10-14-window-surface-lifecycle.md)。
 2. 给截图选择 overlay 接入 Windows 非激活策略并补测试、实机验证。
 3. 设计并验证键盘输入转发，再评估主窗口和回复条的永久非激活策略。
-4. 将动态创建的服务窗口纳入同一注册边界，补齐捕获保护重应用和窗口重建测试。
-5. 完成 Zoom/Teams 实机矩阵后，将提案迁移到 `implemented/`，记录实际限制和防回退规则。
+4. 将未来动态服务窗口纳入同一注册边界，补齐 renderer reload/crash 恢复及窗口重建测试。
+5. 完成 Zoom/Teams 实机矩阵后，将本提案迁移到 `implemented/`，记录实际限制和防回退规则。

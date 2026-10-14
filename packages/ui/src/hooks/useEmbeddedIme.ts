@@ -1,7 +1,7 @@
 import type {
   DesktopBridge,
   ImeCandidateAction,
-  ImeCandidateAnchor,
+  ImeCandidateUpdate,
   ImeKeyRequest,
   ImeState,
 } from "@answra/shared";
@@ -29,17 +29,12 @@ export function useEmbeddedIme(
   const [imeEnabled, setImeEnabled] = useState(true);
   const [state, setState] = useState<ImeState>(EMPTY_STATE);
   const onCommitRef = useRef(onCommit);
-  const disableTimerRef = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     onCommitRef.current = onCommit;
   }, [onCommit]);
 
   useEffect(() => {
-    if (disableTimerRef.current !== undefined) {
-      window.clearTimeout(disableTimerRef.current);
-      disableTimerRef.current = undefined;
-    }
     console.info("[ime-ui] bridge", { available, enabled, imeEnabled });
     if (!available || !enabled || !imeEnabled) {
       setState(EMPTY_STATE);
@@ -66,12 +61,6 @@ export function useEmbeddedIme(
     return () => {
       if (retryTimer !== undefined) window.clearInterval(retryTimer);
       unsubscribe?.();
-      // React StrictMode replays mount effects. Defer shutdown one task so the
-      // replacement effect can cancel it instead of disabling the shared Rime session.
-      disableTimerRef.current = window.setTimeout(() => {
-        disableTimerRef.current = undefined;
-        void bridge?.imeEnable?.(false);
-      }, 0);
     };
   }, [available, bridge, enabled, imeEnabled]);
 
@@ -153,7 +142,7 @@ export function useEmbeddedIme(
   }, [available, bridge, enabled, sendCandidateAction]);
 
   const updateCandidate = useCallback(
-    (payload: { state: ImeState; anchor: ImeCandidateAnchor } | null) => {
+    (payload: ImeCandidateUpdate) => {
       bridge?.setImeCandidate?.(payload);
     },
     [bridge],

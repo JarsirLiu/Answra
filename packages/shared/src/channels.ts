@@ -255,13 +255,18 @@ export interface ImeCandidateAnchor {
   lineBottom: number;
 }
 
+export type ImeCandidateUpdate =
+  | { type: "show"; state: ImeState; anchor: ImeCandidateAnchor }
+  | { type: "suspend" }
+  | { type: "clear"; state?: ImeState };
+
 export type ImeCandidateAction =
   | { type: "select"; index: number }
   | { type: "navigate"; key: "PageUp" | "PageDown" };
 
 export interface ImeCandidateChannelMap {
   [ImeCandidateChannels.Update]: {
-    request: { state: ImeState; anchor: ImeCandidateAnchor } | null;
+    request: ImeCandidateUpdate;
     response: undefined;
   };
   [ImeCandidateChannels.State]: { request: undefined; response: ImeState };

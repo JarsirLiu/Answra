@@ -9,8 +9,8 @@ import {
   type ConversationSendRequest,
   type DesktopBridge,
   type ImeCandidateAction,
-  type ImeCandidateAnchor,
   ImeCandidateChannels,
+  type ImeCandidateUpdate,
   ImeChannels,
   type ImeKeyRequest,
   type ImeState,
@@ -41,7 +41,7 @@ const bridge: DesktopBridge = {
     ipcRenderer.on(ImeChannels.Change, wrapped);
     return () => ipcRenderer.removeListener(ImeChannels.Change, wrapped);
   },
-  setImeCandidate: (payload: { state: ImeState; anchor: ImeCandidateAnchor } | null) => {
+  setImeCandidate: (payload: ImeCandidateUpdate) => {
     ipcRenderer.send(ImeCandidateChannels.Update, payload);
   },
   onImeCandidateAction: (listener: (action: ImeCandidateAction) => void) => {

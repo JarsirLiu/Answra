@@ -3,6 +3,7 @@ export type {
   ImeCandidate,
   ImeCandidateAction,
   ImeCandidateAnchor,
+  ImeCandidateUpdate,
   ImeKeyRequest,
   ImeState,
   InterviewAudioFrame,

@@ -1,7 +1,7 @@
 import path from "node:path";
 import { BrowserWindow, screen } from "electron";
-import { setWindowCaptureProtection } from "../windowCaptureProtection";
 import { attachNonActivatingWindow } from "../windowInteractionPolicy";
+import type { WindowPolicyDescriptor } from "../windowPolicyRegistry";
 
 /**
  * 区域框选 overlay 窗口。
@@ -11,9 +11,17 @@ import { attachNonActivatingWindow } from "../windowInteractionPolicy";
  */
 
 const activeWindows = new Set<BrowserWindow>();
+export interface SelectionWindowPolicyHost {
+  registerWindowPolicy: (window: BrowserWindow, descriptor: WindowPolicyDescriptor) => void;
+  prepareWindowToShow: (window: BrowserWindow) => boolean;
+}
 
 /** 为所有显示器创建框选 overlay 并显示；返回创建的窗口列表。 */
-export function createSelectionWindows(line?: string, stealth = false): BrowserWindow[] {
+export function createSelectionWindows(
+  line: string | undefined,
+  stealth: boolean,
+  policyHost: SelectionWindowPolicyHost,
+): BrowserWindow[] {
   closeSelectionWindows();
   for (const display of screen.getAllDisplays()) {
     const selectionWindow = new BrowserWindow({
@@ -39,15 +47,20 @@ export function createSelectionWindows(line?: string, stealth = false): BrowserW
         sandbox: true,
       },
     });
+    policyHost.registerWindowPolicy(selectionWindow, {
+      role: "selection-overlay",
+      captureProtection: "stealth-only",
+      failClosed: true,
+    });
     // screen-saver 层级确保压过主窗口的 floating 层
     selectionWindow.setAlwaysOnTop(true, "screen-saver");
     // The selection surface only needs mouse input. On Windows, keep the
     // meeting application foreground while the user drags the selection.
     attachNonActivatingWindow(selectionWindow, { requiresKeyboardChannel: false });
-    if (stealth) {
-      setWindowCaptureProtection(selectionWindow, true);
-    }
-    selectionWindow.once("ready-to-show", () => selectionWindow.showInactive());
+    selectionWindow.once("ready-to-show", () => {
+      if (policyHost.prepareWindowToShow(selectionWindow)) selectionWindow.showInactive();
+      else selectionWindow.close();
+    });
     selectionWindow.once("closed", () => activeWindows.delete(selectionWindow));
     activeWindows.add(selectionWindow);
     void selectionWindow.loadFile(path.join(__dirname, "../capture/selection.html"), {

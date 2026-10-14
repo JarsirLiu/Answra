@@ -167,9 +167,14 @@ describe("IME candidate window controller", () => {
     const owner = new shared.MockWindow({ x: 100, y: 50, width: 800, height: 600 });
     const controller = createImeCandidateWindowController({
       isOwnerWindow: (candidate) => candidate === owner,
-      isStealthEnabled: () => true,
+      registerWindowPolicy: (window, descriptor) => {
+        if (descriptor.captureProtection === "stealth-only")
+          shared.setCaptureProtection(window, true);
+      },
+      prepareWindowToShow: () => true,
     });
     controller.update(owner as never, {
+      type: "show",
       state,
       anchor: { x: 240, lineTop: 120, lineBottom: 144 },
     });
@@ -191,7 +196,7 @@ describe("IME candidate window controller", () => {
     controller.routeAction(action);
     expect(owner.sent).toContainEqual([ImeCandidateChannels.OwnerAction, action]);
 
-    controller.update(owner as never, null);
+    controller.update(owner as never, { type: "clear" });
     expect(candidate.visible).toBe(false);
     controller.routeAction(action);
     expect(owner.sent).toHaveLength(1);
@@ -202,9 +207,11 @@ describe("IME candidate window controller", () => {
     const owner = new shared.MockWindow({ x: 100, y: 50, width: 800, height: 600 });
     const controller = createImeCandidateWindowController({
       isOwnerWindow: (candidate) => candidate === owner,
-      isStealthEnabled: () => false,
+      registerWindowPolicy: vi.fn(),
+      prepareWindowToShow: () => true,
     });
     controller.update(owner as never, {
+      type: "show",
       state,
       anchor: { x: 240, lineTop: 120, lineBottom: 144 },
     });
@@ -225,5 +232,69 @@ describe("IME candidate window controller", () => {
     controller.dispose();
     expect(shared.screen.listenerCount("display-metrics-changed")).toBe(0);
     expect(candidate.destroyed).toBe(true);
+  });
+
+  it("hides on owner blur but preserves the composition until a fresh anchor arrives", () => {
+    const owner = new shared.MockWindow({ x: 100, y: 50, width: 800, height: 600 });
+    const controller = createImeCandidateWindowController({
+      isOwnerWindow: (candidate) => candidate === owner,
+      registerWindowPolicy: vi.fn(),
+      prepareWindowToShow: () => true,
+    });
+    const payload = {
+      type: "show" as const,
+      state,
+      anchor: { x: 240, lineTop: 120, lineBottom: 144 },
+    };
+    controller.update(owner as never, payload);
+    const candidate = shared.windows.at(-1);
+    if (!candidate) throw new Error("candidate window was not created");
+    controller.markRendererReady();
+    candidate.webContents.emit("did-finish-load");
+    expect(candidate.visible).toBe(true);
+
+    owner.emit("blur");
+    expect(candidate.visible).toBe(false);
+    const action = { type: "select", index: 0 } as const;
+    controller.routeAction(action);
+    expect(owner.sent).toHaveLength(0);
+
+    controller.update(owner as never, payload);
+    expect(candidate.visible).toBe(true);
+    controller.routeAction(action);
+    expect(owner.sent).toContainEqual([ImeCandidateChannels.OwnerAction, action]);
+    controller.dispose();
+  });
+
+  it("does not clear an active composition when the renderer reports a transient empty state", () => {
+    const owner = new shared.MockWindow({ x: 100, y: 50, width: 800, height: 600 });
+    const controller = createImeCandidateWindowController({
+      isOwnerWindow: (candidate) => candidate === owner,
+      registerWindowPolicy: vi.fn(),
+      prepareWindowToShow: () => true,
+    });
+    controller.update(owner as never, {
+      type: "show",
+      state,
+      anchor: { x: 240, lineTop: 120, lineBottom: 144 },
+    });
+    const candidate = shared.windows.at(-1);
+    if (!candidate) throw new Error("candidate window was not created");
+    controller.markRendererReady();
+    candidate.webContents.emit("did-finish-load");
+
+    controller.update(owner as never, {
+      type: "clear",
+      state: { ...state, preedit: "", candidates: [] },
+    });
+    expect(candidate.visible).toBe(false);
+
+    controller.update(owner as never, {
+      type: "show",
+      state,
+      anchor: { x: 240, lineTop: 120, lineBottom: 144 },
+    });
+    expect(candidate.visible).toBe(true);
+    controller.dispose();
   });
 });

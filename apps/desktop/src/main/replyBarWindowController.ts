@@ -9,13 +9,13 @@ import {
 } from "@answra/shared";
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron";
 import { app, BrowserWindow, screen } from "electron";
-import { setWindowCaptureProtection } from "./windowCaptureProtection";
 import {
   clampWindowBoundsToWorkArea,
   positionReplyBarSize,
   positionWindowNearPoint,
   replyBarAnchorFromBounds,
 } from "./windowLayout";
+import type { WindowPolicyDescriptor } from "./windowPolicyRegistry";
 import { setNativeImeEnabled } from "./windowStealthController";
 
 const WORK_AREA_MARGIN = 24;
@@ -23,7 +23,8 @@ const REPLY_BAR_SIZE: ContentSize = { width: 480, height: 76 };
 
 export interface ReplyBarWindowHost {
   getMainWindow: () => BrowserWindow | undefined;
-  isStealthEnabled: () => boolean;
+  registerWindowPolicy: (window: BrowserWindow, descriptor: WindowPolicyDescriptor) => void;
+  prepareWindowToShow: (window: BrowserWindow) => boolean;
   logCaptureSurfaceState: (reason: string, window: BrowserWindow) => void;
   sendReplyBarAction: (action: ReplyBarAction) => void;
 }
@@ -61,7 +62,7 @@ export function createReplyBarWindowController(host: ReplyBarWindowHost) {
       readyToShow = false;
       if (mainWindow && !mainWindow.isDestroyed()) {
         if (!mainWindow.isVisible()) {
-          mainWindow.showInactive();
+          if (host.prepareWindowToShow(mainWindow)) mainWindow.showInactive();
           host.logCaptureSurfaceState("reply-bar-closed", mainWindow);
         }
       }
@@ -79,7 +80,7 @@ export function createReplyBarWindowController(host: ReplyBarWindowHost) {
       return;
     }
     windowRef.webContents.send(WindowChannels.ReplyBarState, next);
-    if (!windowRef.isVisible()) windowRef.showInactive();
+    if (!windowRef.isVisible() && host.prepareWindowToShow(windowRef)) windowRef.showInactive();
   }
 
   function createWindow(mainWindow: BrowserWindow): void {
@@ -110,19 +111,17 @@ export function createReplyBarWindowController(host: ReplyBarWindowHost) {
       },
     });
     windowRef = created;
+    host.registerWindowPolicy(created, { role: "reply-bar", captureProtection: "stealth-only" });
     rendererReady = false;
     readyToShow = false;
     created.setAlwaysOnTop(true, "floating");
     created.setSkipTaskbar(true);
     created.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
     created.webContents.on("will-navigate", (event) => event.preventDefault());
-    setWindowCaptureProtection(created, host.isStealthEnabled());
     setNativeImeEnabled(created, false);
     created.on("show", () => {
-      setWindowCaptureProtection(created, host.isStealthEnabled());
       setNativeImeEnabled(created, false);
     });
-    created.on("resize", () => setWindowCaptureProtection(created, host.isStealthEnabled()));
     created.on("move", () => {
       if (created.isDestroyed()) return;
       const bounds = created.getBounds();
@@ -141,7 +140,7 @@ export function createReplyBarWindowController(host: ReplyBarWindowHost) {
       readyToShow = true;
       if (rendererReady && state && !created.isDestroyed()) {
         created.webContents.send(WindowChannels.ReplyBarState, state);
-        created.showInactive();
+        if (host.prepareWindowToShow(created)) created.showInactive();
       }
     });
     created.on("closed", () => {
@@ -154,7 +153,7 @@ export function createReplyBarWindowController(host: ReplyBarWindowHost) {
         state = null;
         const owner = host.getMainWindow();
         if (owner && !owner.isDestroyed()) {
-          owner.showInactive();
+          if (host.prepareWindowToShow(owner)) owner.showInactive();
           host.logCaptureSurfaceState("reply-bar-native-close", owner);
         }
         host.sendReplyBarAction({ type: "close" });
@@ -189,8 +188,7 @@ export function createReplyBarWindowController(host: ReplyBarWindowHost) {
 
   function restoreAfterCapture(wasVisible: boolean): void {
     if (wasVisible && windowRef && !windowRef.isDestroyed()) {
-      windowRef.showInactive();
-      setWindowCaptureProtection(windowRef, host.isStealthEnabled());
+      if (host.prepareWindowToShow(windowRef)) windowRef.showInactive();
     }
   }
 
@@ -222,18 +220,14 @@ export function createReplyBarWindowController(host: ReplyBarWindowHost) {
       console.error("[reply-bar] failed to resize native window", error);
       return;
     }
-    setWindowCaptureProtection(windowRef, host.isStealthEnabled());
   }
 
   function sendState(): void {
     if (!state || !windowRef || windowRef.isDestroyed()) return;
     rendererReady = true;
     windowRef.webContents.send(WindowChannels.ReplyBarState, state);
-    if (readyToShow && !windowRef.isVisible()) windowRef.showInactive();
-  }
-
-  function setCaptureProtection(enabled: boolean): void {
-    if (windowRef && !windowRef.isDestroyed()) setWindowCaptureProtection(windowRef, enabled);
+    if (readyToShow && !windowRef.isVisible() && host.prepareWindowToShow(windowRef))
+      windowRef.showInactive();
   }
 
   function close(): void {
@@ -256,7 +250,6 @@ export function createReplyBarWindowController(host: ReplyBarWindowHost) {
     restoreAfterCapture,
     sendState,
     setAnchor,
-    setCaptureProtection,
     setState,
   };
 }

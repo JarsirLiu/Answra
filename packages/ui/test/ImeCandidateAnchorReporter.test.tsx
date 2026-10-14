@@ -33,6 +33,7 @@ describe("ImeCandidateAnchorReporter", () => {
 
     expect(container.querySelector('[role="listbox"]')).toBeNull();
     expect(onUpdate).toHaveBeenLastCalledWith({
+      type: "show",
       state,
       anchor: { x: 0, lineTop: 0, lineBottom: 0 },
     });
@@ -64,12 +65,13 @@ describe("ImeCandidateAnchorReporter", () => {
     fireEvent.focusIn(textarea);
 
     expect(onUpdate).toHaveBeenLastCalledWith({
+      type: "show",
       state,
       anchor: { x: 106, lineTop: 50, lineBottom: 50 },
     });
   });
 
-  it("clears the native candidate window when focus leaves the IME target", () => {
+  it("suspends the candidate window while keeping an active composition on blur", () => {
     const onUpdate = vi.fn();
     const { host, textarea } = mountHost();
     render(<ImeCandidateAnchorReporter onUpdate={onUpdate} state={state} />, { container: host });
@@ -77,7 +79,7 @@ describe("ImeCandidateAnchorReporter", () => {
     fireEvent.focusIn(textarea);
     fireEvent.focusOut(textarea);
 
-    expect(onUpdate).toHaveBeenLastCalledWith(null);
+    expect(onUpdate).toHaveBeenLastCalledWith({ type: "suspend" });
   });
 
   it("does not publish candidates while the engine is disabled", () => {
@@ -92,6 +94,43 @@ describe("ImeCandidateAnchorReporter", () => {
     host.appendChild(textarea);
     fireEvent.focusIn(textarea);
 
-    expect(onUpdate).toHaveBeenLastCalledWith(null);
+    expect(onUpdate).toHaveBeenLastCalledWith({
+      type: "clear",
+      state: { ...state, enabled: false },
+    });
+  });
+
+  it("suspends instead of clearing while composition is active but candidates are transiently empty", () => {
+    const onUpdate = vi.fn();
+    const { host, textarea } = mountHost();
+    render(
+      <ImeCandidateAnchorReporter
+        onUpdate={onUpdate}
+        state={{ ...state, preedit: "", candidates: [] }}
+      />,
+      { container: host },
+    );
+    host.appendChild(textarea);
+    fireEvent.focusIn(textarea);
+
+    expect(onUpdate).toHaveBeenLastCalledWith({ type: "suspend" });
+  });
+
+  it("re-publishes the active anchor when the native renderer regains focus", () => {
+    const onUpdate = vi.fn();
+    const { host, textarea } = mountHost();
+    render(<ImeCandidateAnchorReporter onUpdate={onUpdate} state={state} />, { container: host });
+    host.appendChild(textarea);
+    fireEvent.focusIn(textarea);
+    textarea.focus();
+    fireEvent.blur(window);
+    expect(onUpdate).toHaveBeenLastCalledWith({ type: "suspend" });
+
+    fireEvent.focus(window);
+    expect(onUpdate).toHaveBeenLastCalledWith({
+      type: "show",
+      state,
+      anchor: { x: 0, lineTop: 0, lineBottom: 0 },
+    });
   });
 });

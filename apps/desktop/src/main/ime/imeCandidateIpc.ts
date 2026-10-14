@@ -1,8 +1,7 @@
 import {
   type ImeCandidateAction,
-  type ImeCandidateAnchor,
   ImeCandidateChannels,
-  type ImeState,
+  type ImeCandidateUpdate,
 } from "@answra/shared";
 import { BrowserWindow, ipcMain } from "electron";
 import {
@@ -20,10 +19,6 @@ export function registerImeCandidateIpc(): void {
   ipcMain.on(ImeCandidateChannels.Update, (event, payload: unknown) => {
     const owner = BrowserWindow.fromWebContents(event.sender);
     if (!owner || !isOwnerWindow(owner, event)) return;
-    if (payload === null) {
-      setImeCandidateState(owner, null);
-      return;
-    }
     if (!isCandidateUpdate(payload)) return;
     setImeCandidateState(owner, payload);
   });
@@ -50,12 +45,24 @@ function isOwnerWindow(owner: BrowserWindow, event: Electron.IpcMainEvent): bool
   return !!reply && owner === reply && isWindowFromSender(reply, event);
 }
 
-function isCandidateUpdate(
-  value: unknown,
-): value is { state: ImeState; anchor: ImeCandidateAnchor } {
-  if (!isRecord(value) || !isRecord(value.state) || !isRecord(value.anchor)) return false;
-  const state = value.state;
-  const anchor = value.anchor;
+function isCandidateUpdate(value: unknown): value is ImeCandidateUpdate {
+  if (!isRecord(value)) return false;
+  if (value.type === "suspend") return true;
+  if (value.type === "clear") return value.state === undefined || isImeState(value.state);
+  if (value.type !== "show") return false;
+  const payload = value as { state?: unknown; anchor?: unknown };
+  if (!isImeState(payload.state) || !isRecord(payload.anchor)) return false;
+  const anchor = payload.anchor;
+  return (
+    Number.isFinite(anchor.x) &&
+    Number.isFinite(anchor.lineTop) &&
+    Number.isFinite(anchor.lineBottom)
+  );
+}
+
+function isImeState(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const state = value;
   return (
     typeof state.enabled === "boolean" &&
     typeof state.composing === "boolean" &&
@@ -69,10 +76,7 @@ function isCandidateUpdate(
     ) &&
     Number.isInteger(state.selectedIndex) &&
     Number.isInteger(state.page) &&
-    typeof state.hasNextPage === "boolean" &&
-    Number.isFinite(anchor.x) &&
-    Number.isFinite(anchor.lineTop) &&
-    Number.isFinite(anchor.lineBottom)
+    typeof state.hasNextPage === "boolean"
   );
 }
 

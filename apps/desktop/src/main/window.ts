@@ -3,8 +3,7 @@ import {
   type ConversationChange,
   ConversationChannels,
   type ImeCandidateAction,
-  type ImeCandidateAnchor,
-  type ImeState,
+  type ImeCandidateUpdate,
   type RegionSelection,
   type ReplyBarAction,
   type ReplyBarState,
@@ -16,35 +15,50 @@ import { createImeCandidateWindowController } from "./ime/imeCandidateWindowCont
 import { createMainWindowController } from "./mainWindowController";
 import { createReplyBarWindowController } from "./replyBarWindowController";
 import { getWindowCaptureDiagnostics } from "./windowCaptureProtection";
+import { createWindowPolicyRegistry, type WindowPolicyDescriptor } from "./windowPolicyRegistry";
 import { createWindowStealthController, setNativeImeEnabled } from "./windowStealthController";
 
 let windowController: ReturnType<typeof createMainWindowController>;
 let stealthController: ReturnType<typeof createWindowStealthController>;
 let replyBarController: ReturnType<typeof createReplyBarWindowController>;
 let imeCandidateController: ReturnType<typeof createImeCandidateWindowController>;
+const windowPolicyRegistry = createWindowPolicyRegistry();
+
+export function registerWindowPolicy(
+  window: BrowserWindow,
+  descriptor: WindowPolicyDescriptor,
+): () => void {
+  return windowPolicyRegistry.register(window, descriptor);
+}
+
+export function prepareWindowToShow(window: BrowserWindow): boolean {
+  return windowPolicyRegistry.prepareToShow(window);
+}
 
 function ensureControllers(): void {
   if (windowController) return;
   windowController = createMainWindowController({
-    onNativeShow: () => stealthController?.refresh("native-show"),
-    onNativeResize: () => stealthController?.refresh("native-resize"),
+    registerWindowPolicy,
+    prepareWindowToShow,
     onClosed: () => replyBarController?.close(),
   });
   replyBarController = createReplyBarWindowController({
     getMainWindow: () => windowController.getWindow(),
-    isStealthEnabled: () => stealthController?.isEnabled() ?? false,
+    registerWindowPolicy,
+    prepareWindowToShow,
     logCaptureSurfaceState,
     sendReplyBarAction,
   });
   imeCandidateController = createImeCandidateWindowController({
     isOwnerWindow: (window) =>
       window === windowController.getWindow() || window === replyBarController.getWindow(),
-    isStealthEnabled: () => stealthController?.isEnabled() ?? false,
+    registerWindowPolicy,
+    prepareWindowToShow,
   });
   stealthController = createWindowStealthController({
     getMainWindow: () => windowController.getWindow(),
-    setReplyBarProtection: (enabled) => replyBarController.setCaptureProtection(enabled),
-    setImeCandidateProtection: (enabled) => imeCandidateController.setCaptureProtection(enabled),
+    applyWindowPolicies: (enabled) => windowPolicyRegistry.setStealthEnabled(enabled),
+    refreshWindowPolicies: (reason) => windowPolicyRegistry.refresh(reason),
     setReplyBarInputMethod: () => {
       const replyBar = replyBarController.getWindow();
       if (replyBar) setNativeImeEnabled(replyBar, false);
@@ -68,10 +82,7 @@ export function getReplyBarWindow(): BrowserWindow | undefined {
   ensureControllers();
   return replyBarController.getWindow();
 }
-export function setImeCandidateState(
-  owner: BrowserWindow,
-  payload: { state: ImeState; anchor: ImeCandidateAnchor } | null,
-): void {
+export function setImeCandidateState(owner: BrowserWindow, payload: ImeCandidateUpdate): void {
   ensureControllers();
   imeCandidateController.update(owner, payload);
 }

@@ -4,13 +4,12 @@ import koffi from "koffi";
 import {
   getWindowCaptureDiagnostics,
   isWindowCaptureProtectionSupported,
-  setWindowCaptureProtection,
 } from "./windowCaptureProtection";
 
 export interface WindowStealthControllerHost {
   getMainWindow: () => BrowserWindow | undefined;
-  setReplyBarProtection: (enabled: boolean) => void;
-  setImeCandidateProtection?: (enabled: boolean) => void;
+  applyWindowPolicies: (enabled: boolean) => boolean;
+  refreshWindowPolicies: (reason: string) => boolean;
   setReplyBarInputMethod?: (enabled: boolean) => void;
 }
 
@@ -76,7 +75,7 @@ export function createWindowStealthController(host: WindowStealthControllerHost)
   function refresh(reason = "window-restore"): void {
     const window = host.getMainWindow();
     if (!enabled || !window || window.isDestroyed()) return;
-    setWindowCaptureProtection(window, true);
+    host.refreshWindowPolicies(reason);
     setNativeImeEnabled(window, false);
     if (reason === "diagnostic")
       console.info("[window][capture-protection] refreshed", getWindowCaptureDiagnostics(window));
@@ -89,13 +88,11 @@ export function createWindowStealthController(host: WindowStealthControllerHost)
       return;
     }
     enabled = value;
-    const applied = setWindowCaptureProtection(window, value);
+    const applied = host.applyWindowPolicies(value);
     // The embedded Rime editor owns all text input in this application. Stealth
     // changes capture policy only; leaving stealth must not re-enable Windows IME.
     setNativeImeEnabled(window, false);
     host.setReplyBarInputMethod?.(false);
-    host.setReplyBarProtection(value);
-    host.setImeCandidateProtection?.(value);
     window.setSkipTaskbar(value);
     if (process.platform === "darwin") value ? app.dock?.hide() : app.dock?.show();
     console.info("[settings][stealth] application result", {

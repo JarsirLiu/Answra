@@ -8,7 +8,8 @@ import {
   hideReplyBarWindowForCapture,
   isStealthEnabled,
   isWindowFromSender,
-  refreshStealthCaptureProtection,
+  prepareWindowToShow,
+  registerWindowPolicy,
   restoreReplyBarWindowAfterCapture,
   setReplyBarAnchor,
 } from "../window";
@@ -88,7 +89,10 @@ async function runRegionCapture(
       captureId,
       visible: mainWindow?.isVisible(),
     });
-    const overlays = createSelectionWindows(line, isStealthEnabled());
+    const overlays = createSelectionWindows(line, isStealthEnabled(), {
+      registerWindowPolicy,
+      prepareWindowToShow,
+    });
     console.info("[capture][diagnostic] selection overlays created", {
       captureId,
       count: overlays.length,
@@ -102,6 +106,11 @@ async function runRegionCapture(
     const selectionPromise = new Promise<RegionSelection | null>((resolve) => {
       pendingCapture = resolve;
     });
+    for (const overlay of overlays) {
+      overlay.once("closed", () => {
+        if (pendingCapture && getActiveSelectionWindows().length === 0) pendingCapture(null);
+      });
+    }
     if (process.platform === "win32") {
       // The Windows selection overlay is intentionally non-activating, so its
       // DOM keydown handler cannot receive Escape. Scope the global shortcut
@@ -156,8 +165,7 @@ async function runRegionCapture(
     closeSelectionWindows();
     // showInactive 恢复可见但不抢焦点；之后重申捕获排除，覆盖窗口隐藏/恢复周期。
     if (wasVisible && mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.showInactive();
-      refreshStealthCaptureProtection();
+      if (prepareWindowToShow(mainWindow)) mainWindow.showInactive();
       if (isStealthEnabled() && process.platform === "win32") {
         // Electron applies display affinity on the next desktop composition; give DWM time
         // before the renderer receives the result and the user can start another capture.

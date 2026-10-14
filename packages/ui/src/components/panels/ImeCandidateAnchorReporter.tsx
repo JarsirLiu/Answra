@@ -1,9 +1,9 @@
-import type { ImeCandidateAnchor, ImeState } from "@answra/shared";
+import type { ImeCandidateAnchor, ImeCandidateUpdate, ImeState } from "@answra/shared";
 import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 
 interface ImeCandidateAnchorReporterProps {
   state: ImeState;
-  onUpdate: (payload: { state: ImeState; anchor: ImeCandidateAnchor } | null) => void;
+  onUpdate: (payload: ImeCandidateUpdate) => void;
 }
 
 const MIRROR_STYLE_KEYS = [
@@ -44,6 +44,16 @@ export function ImeCandidateAnchorReporter({ state, onUpdate }: ImeCandidateAnch
         : null,
     );
   }, []);
+  const refreshFocusedAnchor = useCallback(() => {
+    const active = document.activeElement;
+    setAnchor(
+      active instanceof HTMLTextAreaElement && active.matches("[data-embedded-ime-target]")
+        ? active
+        : null,
+    );
+    bump();
+  }, [bump]);
+  const suspendOnWindowBlur = useCallback(() => onUpdate({ type: "suspend" }), [onUpdate]);
 
   useEffect(() => {
     const active = document.activeElement;
@@ -53,12 +63,16 @@ export function ImeCandidateAnchorReporter({ state, onUpdate }: ImeCandidateAnch
     document.addEventListener("focusin", handleFocus, true);
     document.addEventListener("focusout", handleFocus, true);
     window.addEventListener("resize", bump);
+    window.addEventListener("focus", refreshFocusedAnchor);
+    window.addEventListener("blur", suspendOnWindowBlur);
     return () => {
       document.removeEventListener("focusin", handleFocus, true);
       document.removeEventListener("focusout", handleFocus, true);
       window.removeEventListener("resize", bump);
+      window.removeEventListener("focus", refreshFocusedAnchor);
+      window.removeEventListener("blur", suspendOnWindowBlur);
     };
-  }, [bump, handleFocus]);
+  }, [bump, handleFocus, refreshFocusedAnchor, suspendOnWindowBlur]);
 
   useEffect(() => {
     if (!anchor) return;
@@ -73,19 +87,23 @@ export function ImeCandidateAnchorReporter({ state, onUpdate }: ImeCandidateAnch
   // Scroll and resize invalidate caret geometry without changing the focused element.
   // biome-ignore lint/correctness/useExhaustiveDependencies: tick is the explicit layout invalidation signal.
   useLayoutEffect(() => {
-    if (!visible || !anchor) {
-      onUpdate(null);
+    if (!anchor) {
+      onUpdate(state.enabled && state.composing ? { type: "suspend" } : { type: "clear", state });
+      return;
+    }
+    if (!visible) {
+      onUpdate(state.enabled && state.composing ? { type: "suspend" } : { type: "clear", state });
       return;
     }
     const composition = measureComposition(anchor, state.preedit.length);
     if (!composition) {
-      onUpdate(null);
+      onUpdate({ type: "suspend" });
       return;
     }
-    onUpdate({ state, anchor: composition });
+    onUpdate({ type: "show", state, anchor: composition });
   }, [anchor, onUpdate, state, tick, visible]);
 
-  useEffect(() => () => onUpdate(null), [onUpdate]);
+  useEffect(() => () => onUpdate({ type: "clear" }), [onUpdate]);
   return null;
 }
 

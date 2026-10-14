@@ -35,21 +35,36 @@ vi.mock("electron", () => ({
 }));
 
 import { createSelectionWindows } from "../src/main/capture/selectionWindow";
+import { createWindowPolicyRegistry } from "../src/main/windowPolicyRegistry";
 
 describe("selectionWindow capture protection", () => {
   beforeEach(() => {
     state.windows.length = 0;
   });
 
+  function createPolicyHost(stealth: boolean) {
+    const registry = createWindowPolicyRegistry({
+      applyCaptureProtection: (window, enabled) => {
+        window.setContentProtection(enabled);
+        return true;
+      },
+    });
+    registry.setStealthEnabled(stealth);
+    return {
+      registerWindowPolicy: registry.register,
+      prepareWindowToShow: registry.prepareToShow,
+    };
+  }
+
   it("does not alter system capture behavior when meeting stealth is off", () => {
-    createSelectionWindows("#ffffff", false);
+    createSelectionWindows("#ffffff", false, createPolicyHost(false));
 
     expect(state.windows).toHaveLength(1);
-    expect(state.windows[0].setContentProtection).not.toHaveBeenCalled();
+    expect(state.windows[0].setContentProtection).toHaveBeenCalledWith(false);
   });
 
   it("excludes the selection overlay while meeting stealth is on", () => {
-    createSelectionWindows("#ffffff", true);
+    createSelectionWindows("#ffffff", true, createPolicyHost(true));
 
     expect(state.windows).toHaveLength(1);
     expect(state.windows[0].setContentProtection).toHaveBeenCalledWith(true);

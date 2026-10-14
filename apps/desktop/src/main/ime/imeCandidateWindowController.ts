@@ -1,9 +1,14 @@
 import path from "node:path";
-import type { ImeCandidateAction, ImeCandidateAnchor, ImeState } from "@answra/shared";
+import type {
+  ImeCandidateAction,
+  ImeCandidateAnchor,
+  ImeCandidateUpdate,
+  ImeState,
+} from "@answra/shared";
 import { ImeCandidateChannels } from "@answra/shared";
 import { app, BrowserWindow, screen, type WebContents } from "electron";
-import { setWindowCaptureProtection } from "../windowCaptureProtection";
 import { attachNonActivatingWindow } from "../windowInteractionPolicy";
+import type { WindowPolicyDescriptor } from "../windowPolicyRegistry";
 import { positionImeCandidate } from "./imeCandidateLayout";
 
 const INITIAL_SIZE = { width: 640, height: 56 };
@@ -18,7 +23,8 @@ export function resolveImeCandidateWindowPaths(mainBundleDirectory: string) {
 
 export interface ImeCandidateWindowHost {
   isOwnerWindow(window: BrowserWindow): boolean;
-  isStealthEnabled(): boolean;
+  registerWindowPolicy: (window: BrowserWindow, descriptor: WindowPolicyDescriptor) => void;
+  prepareWindowToShow: (window: BrowserWindow) => boolean;
 }
 
 /** Owns the native candidate surface; the focused input renderer remains the IME state owner. */
@@ -26,6 +32,7 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
   let windowRef: BrowserWindow | undefined;
   let ownerWindow: BrowserWindow | undefined;
   let ownerClosedListener: (() => void) | undefined;
+  let ownerBlurListener: (() => void) | undefined;
   let ownerBoundsListener: (() => void) | undefined;
   let state: ImeState | undefined;
   let anchor: ImeCandidateAnchor | undefined;
@@ -35,12 +42,21 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
   let rendererReady = false;
   let displayListenersAttached = false;
 
-  function update(
-    owner: BrowserWindow,
-    payload: { state: ImeState; anchor: ImeCandidateAnchor } | null,
-  ) {
+  function update(owner: BrowserWindow, payload: ImeCandidateUpdate) {
     if (!host.isOwnerWindow(owner) || owner.isDestroyed()) return;
-    if (!payload || !hasCandidates(payload.state)) {
+    if (payload.type === "suspend") {
+      suspend(owner, "owner-suspended");
+      return;
+    }
+    if (payload.type === "clear") {
+      if (payload.state?.enabled && payload.state.composing) {
+        suspend(owner, "owner-reported-composition-active-without-candidates");
+        return;
+      }
+      if (ownerWindow === owner) hide("owner-reported-no-candidates");
+      return;
+    }
+    if (!hasCandidates(payload.state)) {
       if (ownerWindow === owner) hide("owner-reported-no-candidates");
       return;
     }
@@ -58,8 +74,10 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
     detachOwnerListener();
     ownerWindow = nextOwner;
     ownerClosedListener = () => hide("owner-closed");
+    ownerBlurListener = () => suspend(nextOwner, "owner-window-blur");
     ownerBoundsListener = () => positionAndShow();
     nextOwner.once("closed", ownerClosedListener);
+    nextOwner.on("blur", ownerBlurListener);
     nextOwner.on("move", ownerBoundsListener);
     nextOwner.on("resize", ownerBoundsListener);
   }
@@ -89,14 +107,17 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
       },
     });
     windowRef = created;
+    host.registerWindowPolicy(created, {
+      role: "ime-candidate",
+      captureProtection: "stealth-only",
+      failClosed: true,
+    });
     pageLoaded = false;
     rendererRequestedReady = false;
     rendererReady = false;
     created.setAlwaysOnTop(true, "pop-up-menu");
     created.setSkipTaskbar(true);
     attachNonActivatingWindow(created);
-    setWindowCaptureProtection(created, host.isStealthEnabled());
-    created.on("show", () => setWindowCaptureProtection(created, host.isStealthEnabled()));
     created.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
     created.webContents.on("will-navigate", (event) => event.preventDefault());
     created.webContents.on("preload-error", (_event, preloadPath, error) => {
@@ -174,7 +195,7 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
       { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
       false,
     );
-    if (!window.isVisible()) window.showInactive();
+    if (!window.isVisible() && host.prepareWindowToShow(window)) window.showInactive();
   }
 
   function resize(nextSize: { width: number; height: number }): void {
@@ -201,7 +222,16 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
   }
 
   function routeAction(action: ImeCandidateAction): void {
-    if (!state || !ownerWindow || ownerWindow.isDestroyed()) return;
+    if (
+      !state ||
+      !anchor ||
+      !windowRef ||
+      windowRef.isDestroyed() ||
+      !windowRef.isVisible() ||
+      !ownerWindow ||
+      ownerWindow.isDestroyed()
+    )
+      return;
     ownerWindow.webContents.send(ImeCandidateChannels.OwnerAction, action);
   }
 
@@ -210,6 +240,22 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
   }
 
   function hide(reason: string): void {
+    hideWindow(reason);
+    detachOwnerListener();
+    ownerWindow = undefined;
+    state = undefined;
+    anchor = undefined;
+  }
+
+  function suspend(owner: BrowserWindow, reason: string): void {
+    if (ownerWindow !== owner) return;
+    if (anchor === undefined && (!windowRef || windowRef.isDestroyed() || !windowRef.isVisible()))
+      return;
+    hideWindow(reason);
+    anchor = undefined;
+  }
+
+  function hideWindow(reason: string): void {
     if (windowRef && !windowRef.isDestroyed()) {
       const wasVisible = windowRef.isVisible();
       console.info("[ime-candidate] hide requested", {
@@ -219,25 +265,21 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
       });
       if (wasVisible) windowRef.hide();
     }
-    detachOwnerListener();
-    ownerWindow = undefined;
-    state = undefined;
-    anchor = undefined;
-  }
-
-  function setCaptureProtection(enabled: boolean): void {
-    if (windowRef && !windowRef.isDestroyed()) setWindowCaptureProtection(windowRef, enabled);
   }
 
   function detachOwnerListener(): void {
     if (ownerWindow && ownerClosedListener && !ownerWindow.isDestroyed()) {
       ownerWindow.removeListener("closed", ownerClosedListener);
     }
+    if (ownerWindow && ownerBlurListener && !ownerWindow.isDestroyed()) {
+      ownerWindow.removeListener("blur", ownerBlurListener);
+    }
     if (ownerWindow && ownerBoundsListener && !ownerWindow.isDestroyed()) {
       ownerWindow.removeListener("move", ownerBoundsListener);
       ownerWindow.removeListener("resize", ownerBoundsListener);
     }
     ownerClosedListener = undefined;
+    ownerBlurListener = undefined;
     ownerBoundsListener = undefined;
   }
 
@@ -274,7 +316,6 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
     routeAction,
     markRendererReady,
     sendState,
-    setCaptureProtection,
     update,
   };
 }

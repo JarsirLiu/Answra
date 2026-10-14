@@ -59,7 +59,7 @@ describe("IME candidate IPC", () => {
   });
 
   it("accepts candidate geometry only from an owned input window", () => {
-    const payload = { state, anchor: { x: 10, lineTop: 20, lineBottom: 40 } };
+    const payload = { type: "show", state, anchor: { x: 10, lineTop: 20, lineBottom: 40 } };
     shared.handlers[ImeCandidateChannels.Update]({ sender: { id: "main" } }, payload);
     shared.handlers[ImeCandidateChannels.Update]({ sender: { id: "other" } }, payload);
     shared.handlers[ImeCandidateChannels.Update](
@@ -72,6 +72,12 @@ describe("IME candidate IPC", () => {
 
     expect(shared.setImeCandidateState).toHaveBeenCalledOnce();
     expect(shared.setImeCandidateState).toHaveBeenCalledWith(shared.owner, payload);
+  });
+
+  it("accepts a suspend signal from the active input window", () => {
+    shared.handlers[ImeCandidateChannels.Update]({ sender: { id: "main" } }, { type: "suspend" });
+
+    expect(shared.setImeCandidateState).toHaveBeenCalledWith(shared.owner, { type: "suspend" });
   });
 
   it("routes candidate actions only from the native candidate window", () => {

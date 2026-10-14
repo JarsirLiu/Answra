@@ -15,7 +15,7 @@ const emptyState: ImeState = {
 };
 
 describe("useEmbeddedIme candidate routing", () => {
-  it("does not let StrictMode's effect replay disable the replacement Rime session", async () => {
+  it("does not disable the main-owned Rime session when its renderer hook unmounts", async () => {
     const imeEnable = vi.fn().mockResolvedValue(emptyState);
     const bridge = {
       imeAvailable: true,
@@ -25,8 +25,9 @@ describe("useEmbeddedIme candidate routing", () => {
     } as unknown as DesktopBridge;
     const wrapper = ({ children }: { children: ReactNode }) => <StrictMode>{children}</StrictMode>;
 
-    renderHook(() => useEmbeddedIme(bridge), { wrapper });
+    const { unmount } = renderHook(() => useEmbeddedIme(bridge), { wrapper });
     await waitFor(() => expect(imeEnable).toHaveBeenCalledWith(true));
+    unmount();
     await new Promise((resolve) => window.setTimeout(resolve, 10));
 
     expect(imeEnable).not.toHaveBeenCalledWith(false);

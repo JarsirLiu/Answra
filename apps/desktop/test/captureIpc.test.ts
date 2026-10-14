@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  */
 
 const shared = vi.hoisted(() => ({
-  fakeOverlay: { webContents: { id: "overlay" } },
+  fakeOverlay: { once: vi.fn(), webContents: { id: "overlay" } },
   fakeWindow: {
     id: 2,
     hide: vi.fn(() => {
@@ -70,6 +70,8 @@ vi.mock("../src/main/window", () => ({
   }),
   setReplyBarAnchor: vi.fn(),
   refreshStealthCaptureProtection: vi.fn(),
+  registerWindowPolicy: vi.fn(),
+  prepareWindowToShow: vi.fn(() => true),
 }));
 
 vi.mock("../src/main/capture/selectionWindow", () => ({
@@ -102,11 +104,7 @@ import {
   ScreenCaptureError,
 } from "../src/main/capture/captureService";
 import { createSelectionWindows } from "../src/main/capture/selectionWindow";
-import {
-  isWindowFromSender,
-  refreshStealthCaptureProtection,
-  setReplyBarAnchor,
-} from "../src/main/window";
+import { isWindowFromSender, prepareWindowToShow, setReplyBarAnchor } from "../src/main/window";
 
 const VALID_SELECTION = {
   displayId: 1,
@@ -141,7 +139,7 @@ describe("captureIpc 区域截图编排", () => {
     const result = (await start) as { ok: boolean; reason?: string };
 
     expect(result.ok).toBe(true);
-    expect(createSelectionWindows).toHaveBeenCalledWith("#ffffff", false);
+    expect(createSelectionWindows).toHaveBeenCalledWith("#ffffff", false, expect.any(Object));
     expect(captureDisplay).toHaveBeenCalledWith(1);
     expect(shared.fakeWindow.hide.mock.invocationCallOrder[0]).toBeLessThan(
       vi.mocked(captureDisplay).mock.invocationCallOrder[0],
@@ -161,7 +159,7 @@ describe("captureIpc 区域截图编排", () => {
     shared.handlers[CaptureChannels.RegionCancelled]({ sender: shared.fakeOverlay.webContents });
     await start;
 
-    expect(createSelectionWindows).toHaveBeenCalledWith(undefined, true);
+    expect(createSelectionWindows).toHaveBeenCalledWith(undefined, true, expect.any(Object));
   });
 
   it.skipIf(process.platform !== "win32")(
@@ -200,7 +198,10 @@ describe("captureIpc 区域截图编排", () => {
     await start;
 
     expect(shared.fakeWindow.isVisible()).toBe(true);
-    expect(refreshStealthCaptureProtection).toHaveBeenCalledOnce();
+    expect(prepareWindowToShow).toHaveBeenCalledWith(shared.fakeWindow);
+    expect(prepareWindowToShow.mock.invocationCallOrder[0]).toBeLessThan(
+      shared.fakeWindow.showInactive.mock.invocationCallOrder.at(-1) ?? Infinity,
+    );
   });
 
   it("returns ok:false reason cancelled when the user cancels the selection", async () => {

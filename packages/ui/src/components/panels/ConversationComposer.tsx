@@ -1,4 +1,4 @@
-import type { ImeCandidateAnchor, ImeState } from "@answra/shared";
+import type { ImeCandidateUpdate, ImeState } from "@answra/shared";
 import { ArrowUp, Languages, Plus } from "lucide-react";
 import type { FormEvent, ReactNode, RefObject } from "react";
 import { ICON_SM } from "../../tokens";
@@ -31,7 +31,7 @@ interface ConversationComposerProps {
     onKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => boolean;
     onSelect: (index: number) => void;
     onNavigate: (key: string) => void;
-    onCandidateUpdate: (payload: { state: ImeState; anchor: ImeCandidateAnchor } | null) => void;
+    onCandidateUpdate: (payload: ImeCandidateUpdate) => void;
     onToggle: () => void;
   };
 }

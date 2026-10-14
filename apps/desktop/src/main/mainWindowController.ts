@@ -2,14 +2,15 @@ import path from "node:path";
 import type { ContentSize } from "@answra/shared";
 import { app, BrowserWindow, screen } from "electron";
 import { clampContentSize } from "./windowLayout";
+import type { WindowPolicyDescriptor } from "./windowPolicyRegistry";
 
 const WORK_AREA_MARGIN = 24;
 const INITIAL_SIZE: ContentSize = { width: 340, height: 60 };
 const MAX_SIZE: ContentSize = { width: 1200, height: 900 };
 
 export interface MainWindowControllerHost {
-  onNativeShow: () => void;
-  onNativeResize: () => void;
+  registerWindowPolicy: (window: BrowserWindow, descriptor: WindowPolicyDescriptor) => void;
+  prepareWindowToShow: (window: BrowserWindow) => boolean;
   onClosed: () => void;
 }
 
@@ -78,13 +79,13 @@ export function createMainWindowController(host: MainWindowControllerHost) {
       },
     });
     windowRef = created;
+    host.registerWindowPolicy(created, { role: "main", captureProtection: "stealth-only" });
     created.setAlwaysOnTop(true, "floating");
     created.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
     created.webContents.on("will-navigate", (event) => event.preventDefault());
-    created.on("show", host.onNativeShow);
-    created.on("resize", host.onNativeResize);
-    created.webContents.on("did-finish-load", host.onNativeShow);
-    created.once("ready-to-show", () => created.show());
+    created.once("ready-to-show", () => {
+      if (host.prepareWindowToShow(created)) created.show();
+    });
     created.webContents.on("render-process-gone", (_event, details) =>
       console.error("[window] 渲染进程消失:", details),
     );
