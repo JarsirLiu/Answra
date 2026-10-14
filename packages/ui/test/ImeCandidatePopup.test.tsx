@@ -14,17 +14,22 @@ const state: ImeState = {
 };
 
 describe("ImeCandidatePopup", () => {
-  it("renders preedit and candidates and reports selection", () => {
+  it("renders candidates with windows-style paging and reports selection", () => {
     const onSelect = vi.fn();
     render(<ImeCandidatePopup onNavigate={vi.fn()} onSelect={onSelect} state={state} />);
 
-    expect(screen.getByText("nihao")).toBeInTheDocument();
     expect(screen.getByText("你好")).toBeInTheDocument();
+    expect(screen.getByText("拟好")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("option", { name: /拟好/ }));
     expect(onSelect).toHaveBeenCalledWith(1);
   });
 
-  it("routes candidate movement and paging controls to the IME engine", () => {
+  it("does not render the preedit row; pinyin lives inside the input", () => {
+    render(<ImeCandidatePopup onNavigate={vi.fn()} onSelect={vi.fn()} state={state} />);
+    expect(screen.queryByText("nihao")).not.toBeInTheDocument();
+  });
+
+  it("routes paging controls to the IME engine", () => {
     const onNavigate = vi.fn();
     render(
       <ImeCandidatePopup
@@ -34,16 +39,21 @@ describe("ImeCandidatePopup", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "向左选择候选词" }));
-    fireEvent.click(screen.getByRole("button", { name: "向右选择候选词" }));
-    fireEvent.click(screen.getByRole("button", { name: "上翻候选页" }));
-    fireEvent.click(screen.getByRole("button", { name: "下翻候选页" }));
-    expect(onNavigate.mock.calls).toEqual([
-      ["ArrowLeft"],
-      ["ArrowRight"],
-      ["PageUp"],
-      ["PageDown"],
-    ]);
+    fireEvent.click(screen.getByRole("button", { name: "上一页候选" }));
+    fireEvent.click(screen.getByRole("button", { name: "下一页候选" }));
+    expect(onNavigate.mock.calls).toEqual([["PageUp"], ["PageDown"]]);
+  });
+
+  it("shows the preedit inline when no candidates are available", () => {
+    render(
+      <ImeCandidatePopup
+        onNavigate={vi.fn()}
+        onSelect={vi.fn()}
+        state={{ ...state, candidates: [], hasNextPage: false }}
+      />,
+    );
+    expect(screen.getByText("nihao")).toBeInTheDocument();
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 
   it("stays hidden without composition state", () => {

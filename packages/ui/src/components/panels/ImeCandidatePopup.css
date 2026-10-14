@@ -1,41 +1,40 @@
+/* 候选词窗口：微软拼音风格 —— 单条横向候选条，左侧蓝色竖条，选中项整块高亮。 */
 .ime-candidate-popup {
   position: absolute;
   inset: auto 10px calc(100% - 2px) auto;
   z-index: 5;
   display: flex;
-  max-width: calc(100% - 20px);
-  flex-direction: column;
-  gap: 2px;
-}
-
-.ime-candidate-preedit {
-  align-self: flex-start;
-  padding: 0 5px;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 17px;
-}
-
-.ime-candidate-row {
-  display: flex;
   width: max-content;
-  min-width: 100%;
-  min-height: 42px;
+  max-width: calc(100% - 20px);
+  min-height: 44px;
   align-items: stretch;
   gap: 2px;
-  padding: 4px 5px;
+  padding: 5px 6px 5px 10px;
   border: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
-  border-radius: 13px;
+  border-radius: 8px;
   background: color-mix(in srgb, var(--surface) 97%, white);
   box-shadow: 0 5px 16px rgb(0 0 0 / 14%);
   overflow: hidden;
   scrollbar-width: none;
 }
 
+/* 微软拼音候选条左缘的蓝色竖条 */
+.ime-candidate-popup::before {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: 0;
+  width: 4px;
+  border-radius: 0 4px 4px 0;
+  background: var(--accent);
+  content: "";
+}
+
 .ime-candidate-options {
   display: flex;
   min-width: 0;
   flex: 1 1 auto;
+  align-items: center;
   gap: 2px;
   overflow-x: auto;
   scrollbar-width: none;
@@ -45,44 +44,37 @@
   display: none;
 }
 
-.ime-candidate-row::-webkit-scrollbar {
-  display: none;
-}
-
 .ime-candidate-item {
   display: inline-flex;
   flex: 0 0 auto;
   min-width: 58px;
   max-width: 150px;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   min-height: 32px;
-  padding: 4px 10px;
+  padding: 4px 12px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 6px;
   color: var(--ink);
   background: transparent;
+  font-size: 14px;
   text-align: left;
   white-space: nowrap;
 }
 
+/* 选中候选：整块浅色高亮（微软拼音样式），无左侧竖条装饰 */
 .ime-candidate-item.is-selected {
-  position: relative;
-  padding-left: 14px;
-  background: color-mix(in srgb, var(--ink) 7%, transparent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  font-weight: 500;
 }
-.ime-candidate-item.is-selected::before {
-  position: absolute;
-  top: 6px;
-  bottom: 6px;
-  left: 3px;
-  width: 4px;
-  border-radius: 4px;
-  background: var(--accent);
-  content: "";
+.ime-candidate-item.is-selected .ime-candidate-index {
+  color: var(--accent);
 }
 .ime-candidate-item:hover {
   background: color-mix(in srgb, var(--ink) 7%, transparent);
+}
+.ime-candidate-item.is-selected:hover {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 .ime-candidate-index {
   color: var(--muted);
@@ -98,6 +90,17 @@
   color: var(--muted);
   font-size: 12px;
 }
+
+/* 无候选仅有 preedit 时的占位提示文本 */
+.ime-candidate-preedit {
+  align-self: center;
+  padding: 0 8px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 32px;
+  white-space: nowrap;
+}
+
 .ime-candidate-controls {
   display: flex;
   flex: 0 0 auto;
@@ -110,9 +113,9 @@
 
 .ime-candidate-control {
   display: grid;
-  width: 24px;
-  height: 30px;
-  flex: 0 0 24px;
+  width: 26px;
+  height: 32px;
+  flex: 0 0 26px;
   place-items: center;
   padding: 0;
   border: 0;
@@ -128,11 +131,4 @@
 
 .ime-candidate-control:disabled {
   opacity: 0.38;
-}
-
-.ime-candidate-page {
-  min-width: 18px;
-  color: var(--muted);
-  font-size: 11px;
-  text-align: center;
 }

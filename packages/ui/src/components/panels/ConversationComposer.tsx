@@ -124,7 +124,8 @@ export function ConversationComposer({
         placeholder={placeholder}
         ref={inputRef}
         rows={1}
-        value={value}
+        // 拼音 preedit 像原生输入法一样直接显示在输入框末尾（展示用，不进 draft）。
+        value={value + (ime?.active ? ime.state.preedit : "")}
       />
       <div className="conversation-composer-footer">
         <div className="conversation-composer-leading">

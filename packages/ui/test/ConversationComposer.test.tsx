@@ -103,4 +103,36 @@ describe("ConversationComposer", () => {
     fireEvent.change(input, { target: { value: "native composition" } });
     expect(onValueChange).not.toHaveBeenCalled();
   });
+
+  it("renders the ime preedit inline at the end of the textarea value", () => {
+    render(
+      <ConversationComposer
+        inputLabel="补充问题"
+        ime={{
+          active: true,
+          available: true,
+          imeEnabled: true,
+          onKeyDown: vi.fn(() => false),
+          onNavigate: vi.fn(),
+          onSelect: vi.fn(),
+          onToggle: vi.fn(),
+          state: {
+            enabled: true,
+            composing: true,
+            preedit: "ni shi shui",
+            candidates: [],
+            selectedIndex: 0,
+            page: 0,
+            hasNextPage: false,
+          },
+        }}
+        onValueChange={vi.fn()}
+        placeholder="输入问题"
+        value="已输入"
+      />,
+    );
+
+    const input = screen.getByRole("textbox", { name: "补充问题" });
+    expect(input).toHaveValue("已输入ni shi shui");
+  });
 });
