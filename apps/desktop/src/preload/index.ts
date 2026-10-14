@@ -8,6 +8,9 @@ import {
   type ConversationModelConfig,
   type ConversationSendRequest,
   type DesktopBridge,
+  type ImeCandidateAction,
+  type ImeCandidateAnchor,
+  ImeCandidateChannels,
   ImeChannels,
   type ImeKeyRequest,
   type ImeState,
@@ -37,6 +40,29 @@ const bridge: DesktopBridge = {
     const wrapped = (_event: Electron.IpcRendererEvent, state: ImeState) => listener(state);
     ipcRenderer.on(ImeChannels.Change, wrapped);
     return () => ipcRenderer.removeListener(ImeChannels.Change, wrapped);
+  },
+  setImeCandidate: (payload: { state: ImeState; anchor: ImeCandidateAnchor } | null) => {
+    ipcRenderer.send(ImeCandidateChannels.Update, payload);
+  },
+  onImeCandidateAction: (listener: (action: ImeCandidateAction) => void) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, action: ImeCandidateAction) =>
+      listener(action);
+    ipcRenderer.on(ImeCandidateChannels.OwnerAction, wrapped);
+    return () => ipcRenderer.removeListener(ImeCandidateChannels.OwnerAction, wrapped);
+  },
+  onImeCandidateState: (listener: (state: ImeState) => void) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, state: ImeState) => listener(state);
+    ipcRenderer.on(ImeCandidateChannels.State, wrapped);
+    return () => ipcRenderer.removeListener(ImeCandidateChannels.State, wrapped);
+  },
+  requestImeCandidateState: () => {
+    ipcRenderer.send(ImeCandidateChannels.Ready);
+  },
+  fitImeCandidate: (size: ContentSize) => {
+    ipcRenderer.send(ImeCandidateChannels.Fit, size);
+  },
+  sendImeCandidateAction: (action: ImeCandidateAction) => {
+    ipcRenderer.send(ImeCandidateChannels.Action, action);
   },
   fitContent: (size: ContentSize) => {
     ipcRenderer.send(WindowChannels.FitContent, size);

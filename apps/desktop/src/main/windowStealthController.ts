@@ -10,6 +10,7 @@ import {
 export interface WindowStealthControllerHost {
   getMainWindow: () => BrowserWindow | undefined;
   setReplyBarProtection: (enabled: boolean) => void;
+  setImeCandidateProtection?: (enabled: boolean) => void;
   setReplyBarInputMethod?: (enabled: boolean) => void;
 }
 
@@ -94,6 +95,7 @@ export function createWindowStealthController(host: WindowStealthControllerHost)
     setNativeImeEnabled(window, false);
     host.setReplyBarInputMethod?.(false);
     host.setReplyBarProtection(value);
+    host.setImeCandidateProtection?.(value);
     window.setSkipTaskbar(value);
     if (process.platform === "darwin") value ? app.dock?.hide() : app.dock?.show();
     console.info("[settings][stealth] application result", {

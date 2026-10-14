@@ -134,6 +134,7 @@ export function ChatPanel({
                 onKeyDown: ime.sendKey,
                 onNavigate: ime.sendNavigation,
                 onSelect: ime.select,
+                onCandidateUpdate: ime.updateCandidate,
                 onToggle: ime.toggle,
               }
             : undefined

@@ -2,6 +2,9 @@ import {
   type ContentSize,
   type ConversationChange,
   ConversationChannels,
+  type ImeCandidateAction,
+  type ImeCandidateAnchor,
+  type ImeState,
   type RegionSelection,
   type ReplyBarAction,
   type ReplyBarState,
@@ -9,6 +12,7 @@ import {
 } from "@answra/shared";
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron";
 import { app, type BrowserWindow } from "electron";
+import { createImeCandidateWindowController } from "./ime/imeCandidateWindowController";
 import { createMainWindowController } from "./mainWindowController";
 import { createReplyBarWindowController } from "./replyBarWindowController";
 import { getWindowCaptureDiagnostics } from "./windowCaptureProtection";
@@ -17,6 +21,7 @@ import { createWindowStealthController, setNativeImeEnabled } from "./windowStea
 let windowController: ReturnType<typeof createMainWindowController>;
 let stealthController: ReturnType<typeof createWindowStealthController>;
 let replyBarController: ReturnType<typeof createReplyBarWindowController>;
+let imeCandidateController: ReturnType<typeof createImeCandidateWindowController>;
 
 function ensureControllers(): void {
   if (windowController) return;
@@ -31,9 +36,15 @@ function ensureControllers(): void {
     logCaptureSurfaceState,
     sendReplyBarAction,
   });
+  imeCandidateController = createImeCandidateWindowController({
+    isOwnerWindow: (window) =>
+      window === windowController.getWindow() || window === replyBarController.getWindow(),
+    isStealthEnabled: () => stealthController?.isEnabled() ?? false,
+  });
   stealthController = createWindowStealthController({
     getMainWindow: () => windowController.getWindow(),
     setReplyBarProtection: (enabled) => replyBarController.setCaptureProtection(enabled),
+    setImeCandidateProtection: (enabled) => imeCandidateController.setCaptureProtection(enabled),
     setReplyBarInputMethod: () => {
       const replyBar = replyBarController.getWindow();
       if (replyBar) setNativeImeEnabled(replyBar, false);
@@ -56,6 +67,33 @@ export function getWindow(): BrowserWindow | undefined {
 export function getReplyBarWindow(): BrowserWindow | undefined {
   ensureControllers();
   return replyBarController.getWindow();
+}
+export function setImeCandidateState(
+  owner: BrowserWindow,
+  payload: { state: ImeState; anchor: ImeCandidateAnchor } | null,
+): void {
+  ensureControllers();
+  imeCandidateController.update(owner, payload);
+}
+export function resizeImeCandidateWindow(size: ContentSize): void {
+  ensureControllers();
+  imeCandidateController.resize(size);
+}
+export function isImeCandidateWindowFromSender(event: IpcMainEvent | IpcMainInvokeEvent): boolean {
+  ensureControllers();
+  return imeCandidateController.isCandidateContents(event.sender);
+}
+export function sendImeCandidateState(): void {
+  ensureControllers();
+  imeCandidateController.markRendererReady();
+}
+export function sendImeCandidateAction(action: ImeCandidateAction): void {
+  ensureControllers();
+  imeCandidateController.routeAction(action);
+}
+export function disposeImeCandidateWindow(): void {
+  if (!imeCandidateController) return;
+  imeCandidateController.dispose();
 }
 export function sendConversationChange(change: ConversationChange): void {
   const mainWindow = getWindow();

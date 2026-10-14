@@ -1,4 +1,5 @@
 export { FloatingBarApp } from "./app/FloatingBarApp";
+export { ImeCandidateWindowApp } from "./app/ImeCandidateWindowApp";
 export { ReplyBarWindowApp } from "./app/ReplyBarWindowApp";
 export { RangeSlider } from "./components/controls/RangeSlider";
 export type { SurfaceButtonProps, SurfaceButtonVariant } from "./components/controls/SurfaceButton";

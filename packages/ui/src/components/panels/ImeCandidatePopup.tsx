@@ -46,6 +46,7 @@ export function ImeCandidatePopup({ state, onSelect, onNavigate }: ImeCandidateP
             className="ime-candidate-control"
             disabled={state.page <= 0}
             onClick={() => onNavigate("PageUp")}
+            title="上一页候选"
             type="button"
           >
             <ChevronLeft aria-hidden="true" size={ICON_SM} />
@@ -55,6 +56,7 @@ export function ImeCandidatePopup({ state, onSelect, onNavigate }: ImeCandidateP
             className="ime-candidate-control"
             disabled={!state.hasNextPage}
             onClick={() => onNavigate("PageDown")}
+            title="下一页候选"
             type="button"
           >
             <ChevronRight aria-hidden="true" size={ICON_SM} />

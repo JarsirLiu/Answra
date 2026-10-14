@@ -5,6 +5,8 @@ import type {
   ConversationModelConfig,
   ConversationSendRequest,
   ConversationSnapshot,
+  ImeCandidateAction,
+  ImeCandidateAnchor,
   ImeKeyRequest,
   ImeState,
   InterviewAudioFrame,
@@ -38,6 +40,12 @@ export interface DesktopBridge {
   imeSelect?: (index: number) => Promise<ImeState>;
   imeReset?: () => Promise<ImeState>;
   onImeChange?: (listener: (state: ImeState) => void) => () => void;
+  setImeCandidate?: (payload: { state: ImeState; anchor: ImeCandidateAnchor } | null) => void;
+  onImeCandidateAction?: (listener: (action: ImeCandidateAction) => void) => () => void;
+  onImeCandidateState?: (listener: (state: ImeState) => void) => () => void;
+  requestImeCandidateState?: () => void;
+  fitImeCandidate?: (size: ContentSize) => void;
+  sendImeCandidateAction?: (action: ImeCandidateAction) => void;
   /** 上报外壳内容尺寸，主进程据此调整窗口大小。 */
   fitContent: (size: ContentSize) => void;
   /** 关闭应用窗口。 */

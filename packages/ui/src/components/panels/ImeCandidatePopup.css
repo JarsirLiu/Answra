@@ -1,10 +1,10 @@
 /* 候选词窗口：微软拼音风格 —— 单条横向候选条，左侧蓝色竖条，选中项整块高亮。
-   定位由 ImeCandidateOverlay 的 portal 浮层控制，这里只负责视觉。 */
+   位置和窗口尺寸由主进程候选窗口 controller 管理。 */
 .ime-candidate-popup {
   position: relative;
   display: flex;
   width: max-content;
-  max-width: min(480px, calc(100vw - 16px));
+  max-width: min(640px, calc(100vw - 16px));
   min-height: 44px;
   align-items: stretch;
   gap: 2px;
@@ -66,6 +66,10 @@
   background: color-mix(in srgb, var(--accent) 18%, transparent);
   font-weight: 500;
 }
+.ime-candidate-index {
+  color: var(--muted);
+  font-size: 13px;
+}
 .ime-candidate-item.is-selected .ime-candidate-index {
   color: var(--accent);
 }
@@ -74,10 +78,6 @@
 }
 .ime-candidate-item.is-selected:hover {
   background: color-mix(in srgb, var(--accent) 22%, transparent);
-}
-.ime-candidate-index {
-  color: var(--muted);
-  font-size: 13px;
 }
 .ime-candidate-text {
   min-width: 0;
@@ -129,5 +129,6 @@
 }
 
 .ime-candidate-control:disabled {
-  opacity: 0.38;
+  color: color-mix(in srgb, var(--muted) 72%, var(--ink));
+  opacity: 0.72;
 }

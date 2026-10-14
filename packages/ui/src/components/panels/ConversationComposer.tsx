@@ -1,8 +1,8 @@
-import type { ImeState } from "@answra/shared";
+import type { ImeCandidateAnchor, ImeState } from "@answra/shared";
 import { ArrowUp, Languages, Plus } from "lucide-react";
 import type { FormEvent, ReactNode, RefObject } from "react";
 import { ICON_SM } from "../../tokens";
-import { ImeCandidateOverlay } from "./ImeCandidateOverlay";
+import { ImeCandidateAnchorReporter } from "./ImeCandidateAnchorReporter";
 import "./ConversationComposer.css";
 
 interface ConversationComposerProps {
@@ -31,6 +31,7 @@ interface ConversationComposerProps {
     onKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => boolean;
     onSelect: (index: number) => void;
     onNavigate: (key: string) => void;
+    onCandidateUpdate: (payload: { state: ImeState; anchor: ImeCandidateAnchor } | null) => void;
     onToggle: () => void;
   };
 }
@@ -62,9 +63,7 @@ export function ConversationComposer({
       onSubmit={handleSubmit}
     >
       {children}
-      {ime && (
-        <ImeCandidateOverlay onNavigate={ime.onNavigate} onSelect={ime.onSelect} state={ime.state} />
-      )}
+      {ime && <ImeCandidateAnchorReporter onUpdate={ime.onCandidateUpdate} state={ime.state} />}
       <textarea
         aria-label={inputLabel}
         className={ime ? "embedded-ime-input" : undefined}

@@ -45,9 +45,17 @@ export function registerImeIpc(): { dispose: () => void; available: boolean } {
     console.info("[ime] disable result", { windowId: window.id, enabled: state.enabled });
     return state;
   });
-  ipcMain.handle(ImeChannels.Key, (event, request: ImeKeyRequest) => {
+  ipcMain.handle(ImeChannels.Key, async (event, request: ImeKeyRequest) => {
     if (!windowFor(event) || !isKeyRequest(request)) return bridge.enable(false);
-    return bridge.key(request);
+    const state = await bridge.key(request);
+    console.info("[ime] key result", {
+      code: request.code,
+      handled: state.handled,
+      composing: state.composing,
+      preeditLength: state.preedit.length,
+      candidateCount: state.candidates.length,
+    });
+    return state;
   });
   ipcMain.handle(ImeChannels.Select, (event, request: { index?: unknown }) => {
     if (!windowFor(event) || !Number.isInteger(request?.index)) return bridge.enable(false);

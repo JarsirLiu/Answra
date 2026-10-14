@@ -103,7 +103,9 @@ export function createMainWindowController(host: MainWindowControllerHost) {
           typeof value.message === "string",
       );
       const message = details?.message ?? (typeof args[2] === "string" ? args[2] : "");
-      if (message.startsWith("[workspace][pdf]")) {
+      if (message.startsWith("[ime-ui]")) {
+        console.info("[renderer]", message);
+      } else if (message.startsWith("[workspace][pdf]")) {
         console.info("[renderer]", message);
       } else if (/^\[settings\]\[stealth\].*(failed|rejected|unavailable)/i.test(message)) {
         console.warn("[renderer]", message);

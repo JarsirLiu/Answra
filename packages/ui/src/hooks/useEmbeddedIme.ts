@@ -1,5 +1,11 @@
-import type { DesktopBridge, ImeKeyRequest, ImeState } from "@answra/shared";
-import { useCallback, useEffect, useState } from "react";
+import type {
+  DesktopBridge,
+  ImeCandidateAction,
+  ImeCandidateAnchor,
+  ImeKeyRequest,
+  ImeState,
+} from "@answra/shared";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 const EMPTY_STATE: ImeState = {
   enabled: false,
@@ -22,8 +28,18 @@ export function useEmbeddedIme(
   );
   const [imeEnabled, setImeEnabled] = useState(true);
   const [state, setState] = useState<ImeState>(EMPTY_STATE);
+  const onCommitRef = useRef(onCommit);
+  const disableTimerRef = useRef<number | undefined>(undefined);
 
   useEffect(() => {
+    onCommitRef.current = onCommit;
+  }, [onCommit]);
+
+  useEffect(() => {
+    if (disableTimerRef.current !== undefined) {
+      window.clearTimeout(disableTimerRef.current);
+      disableTimerRef.current = undefined;
+    }
     console.info("[ime-ui] bridge", { available, enabled, imeEnabled });
     if (!available || !enabled || !imeEnabled) {
       setState(EMPTY_STATE);
@@ -50,7 +66,12 @@ export function useEmbeddedIme(
     return () => {
       if (retryTimer !== undefined) window.clearInterval(retryTimer);
       unsubscribe?.();
-      void bridge?.imeEnable?.(false);
+      // React StrictMode replays mount effects. Defer shutdown one task so the
+      // replacement effect can cancel it instead of disabling the shared Rime session.
+      disableTimerRef.current = window.setTimeout(() => {
+        disableTimerRef.current = undefined;
+        void bridge?.imeEnable?.(false);
+      }, 0);
     };
   }, [available, bridge, enabled, imeEnabled]);
 
@@ -80,12 +101,12 @@ export function useEmbeddedIme(
       console.info("[ime-ui] dispatch key", { key, code: event.code });
       void bridge.imeKey(request).then((next) => {
         setState(next);
-        if (next.committedText) onCommit?.(next.committedText);
+        if (next.committedText) onCommitRef.current?.(next.committedText);
         return next;
       });
       return true;
     },
-    [available, bridge, enabled, onCommit, state.composing, state.enabled],
+    [available, bridge, enabled, state.composing, state.enabled],
   );
 
   const sendNavigation = useCallback(
@@ -101,16 +122,39 @@ export function useEmbeddedIme(
       };
       void bridge.imeKey(request).then((next) => {
         setState(next);
-        if (next.committedText) onCommit?.(next.committedText);
+        if (next.committedText) onCommitRef.current?.(next.committedText);
       });
     },
-    [available, bridge, enabled, onCommit, state.enabled],
+    [available, bridge, enabled, state.enabled],
   );
 
   const select = useCallback(
     (index: number) => {
       if (!bridge?.imeSelect) return;
-      void bridge.imeSelect(index).then(setState);
+      void bridge.imeSelect(index).then((next) => {
+        setState(next);
+        if (next.committedText) onCommitRef.current?.(next.committedText);
+      });
+    },
+    [bridge],
+  );
+
+  const sendCandidateAction = useCallback(
+    (action: ImeCandidateAction) => {
+      if (action.type === "select") select(action.index);
+      else sendNavigation(action.key);
+    },
+    [select, sendNavigation],
+  );
+
+  useEffect(() => {
+    if (!available || !enabled) return;
+    return bridge?.onImeCandidateAction?.(sendCandidateAction);
+  }, [available, bridge, enabled, sendCandidateAction]);
+
+  const updateCandidate = useCallback(
+    (payload: { state: ImeState; anchor: ImeCandidateAnchor } | null) => {
+      bridge?.setImeCandidate?.(payload);
     },
     [bridge],
   );
@@ -123,6 +167,7 @@ export function useEmbeddedIme(
     sendKey,
     sendNavigation,
     select,
+    updateCandidate,
     toggle: () => setImeEnabled((current) => !current),
   };
 }

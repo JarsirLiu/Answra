@@ -238,6 +238,39 @@ export const ImeChannels = {
   Change: "answra:ime:change",
 } as const;
 
+/** 候选条独立窗口协议：输入窗口推送状态，候选窗口只回传用户操作。 */
+export const ImeCandidateChannels = {
+  Update: "answra:ime-candidate:update",
+  State: "answra:ime-candidate:state",
+  Ready: "answra:ime-candidate:ready",
+  Fit: "answra:ime-candidate:fit",
+  Action: "answra:ime-candidate:action",
+  OwnerAction: "answra:ime-candidate:owner-action",
+} as const;
+
+export interface ImeCandidateAnchor {
+  /** Start of the active preedit in the input renderer viewport, in CSS pixels. */
+  x: number;
+  lineTop: number;
+  lineBottom: number;
+}
+
+export type ImeCandidateAction =
+  | { type: "select"; index: number }
+  | { type: "navigate"; key: "PageUp" | "PageDown" };
+
+export interface ImeCandidateChannelMap {
+  [ImeCandidateChannels.Update]: {
+    request: { state: ImeState; anchor: ImeCandidateAnchor } | null;
+    response: undefined;
+  };
+  [ImeCandidateChannels.State]: { request: undefined; response: ImeState };
+  [ImeCandidateChannels.Ready]: { request: undefined; response: undefined };
+  [ImeCandidateChannels.Fit]: { request: ContentSize; response: undefined };
+  [ImeCandidateChannels.Action]: { request: ImeCandidateAction; response: undefined };
+  [ImeCandidateChannels.OwnerAction]: { request: undefined; response: undefined };
+}
+
 export interface ImeCandidate {
   text: string;
   comment?: string;

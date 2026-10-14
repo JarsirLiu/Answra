@@ -44,6 +44,23 @@ describe("ImeCandidatePopup", () => {
     expect(onNavigate.mock.calls).toEqual([["PageUp"], ["PageDown"]]);
   });
 
+  it("keeps both paging controls visible when a direction is unavailable", () => {
+    render(
+      <ImeCandidatePopup
+        onNavigate={vi.fn()}
+        onSelect={vi.fn()}
+        state={{ ...state, page: 0, hasNextPage: false }}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "上一页候选" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "下一页候选" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "下一页候选" })).toHaveAttribute(
+      "title",
+      "下一页候选",
+    );
+  });
+
   it("shows the preedit inline when no candidates are available", () => {
     render(
       <ImeCandidatePopup

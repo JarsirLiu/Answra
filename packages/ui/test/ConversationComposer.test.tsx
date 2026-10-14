@@ -39,6 +39,7 @@ describe("ConversationComposer", () => {
           imeEnabled: false,
           onKeyDown: vi.fn(() => false),
           onNavigate: vi.fn(),
+          onCandidateUpdate: vi.fn(),
           onSelect: vi.fn(),
           onToggle,
           state: {
@@ -77,6 +78,7 @@ describe("ConversationComposer", () => {
           imeEnabled: true,
           onKeyDown,
           onNavigate: vi.fn(),
+          onCandidateUpdate: vi.fn(),
           onSelect: vi.fn(),
           onToggle: vi.fn(),
           state: {
@@ -114,6 +116,7 @@ describe("ConversationComposer", () => {
           imeEnabled: true,
           onKeyDown: vi.fn(() => false),
           onNavigate: vi.fn(),
+          onCandidateUpdate: vi.fn(),
           onSelect: vi.fn(),
           onToggle: vi.fn(),
           state: {
