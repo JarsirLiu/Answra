@@ -10,7 +10,6 @@ import {
   rename,
   rm,
   stat,
-  writeFile,
 } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -21,6 +20,8 @@ const execFile = promisify(execFileCallback);
 const desktopRoot = process.cwd();
 const resourceRoot = join(desktopRoot, "resources", "rime");
 const cacheRoot = join(desktopRoot, ".cache-rime");
+const DOWNLOAD_TIMEOUT_MS = 10 * 60 * 1000;
+const CURL_COMMAND = process.platform === "win32" ? "curl.exe" : "curl";
 const manifest = JSON.parse(
   await readFile(join(desktopRoot, "native", "rime-resources.json"), "utf8"),
 );
@@ -56,6 +57,7 @@ try {
   const depsArchive = await acquire(platformManifest.deps, temporaryRoot);
   const depsExtracted = await extract(depsArchive, platformManifest.deps.format, temporaryRoot);
   const opencc = await findDirectory(depsExtracted, "opencc", "share");
+  if (!opencc) throw new Error("directory share/opencc not found in extracted upstream archive");
   await cp(opencc, join(sharedRoot, "opencc"), { recursive: true, dereference: false });
   for (const file of ["t2s.json", "TSCharacters.ocd2", "TSPhrases.ocd2"]) {
     await copyFile(join(sharedRoot, "opencc", file), join(sharedRoot, file));
@@ -102,15 +104,15 @@ async function acquire(asset, temp) {
 
   const partial = join(temp, `${asset.name}.part`);
   console.log(`[ime] downloading ${asset.name}`);
-  const response = await fetchWithRetry(asset.url);
-  const bytes = Buffer.from(await response.arrayBuffer());
+  await downloadWithCurl(asset.url, partial);
+  const bytes = await readFile(partial);
   const hash = createHash("sha256").update(bytes).digest("hex");
   if (hash !== asset.sha256.toLowerCase()) {
+    await rm(partial, { force: true });
     throw new Error(
       `SHA-256 mismatch for ${asset.name}: expected ${asset.sha256}, received ${hash}`,
     );
   }
-  await writeFile(partial, bytes);
   await rm(cacheFile, { force: true });
   await rename(partial, cacheFile);
   return cacheFile;
@@ -127,25 +129,33 @@ async function hasExpectedHash(file, expected) {
   }
 }
 
-async function fetchWithRetry(url) {
+async function downloadWithCurl(url, outputPath) {
   for (let attempt = 0; attempt < 3; attempt += 1) {
+    const args = [
+      "--fail",
+      "--location",
+      "--silent",
+      "--show-error",
+      "--connect-timeout",
+      "60",
+      "--max-time",
+      String(DOWNLOAD_TIMEOUT_MS / 1000),
+    ];
+    if (outputPath) args.push("--output", outputPath);
+    args.push(url);
+
     try {
-      const response = await fetch(url, {
-        redirect: "follow",
-        signal: AbortSignal.timeout(120_000),
-      });
-      if (response.ok) return response;
-      if (response.status < 500 && response.status !== 429)
-        throw new Error(`download failed (${response.status}): ${url}`);
-      if (attempt === 2) throw new Error(`download failed (${response.status}): ${url}`);
+      const { stdout } = await execFile(CURL_COMMAND, args, { maxBuffer: 1024 * 1024 });
+      return stdout;
     } catch (error) {
-      if (
-        attempt === 2 ||
-        (error instanceof Error && error.message.startsWith("download failed (4"))
-      )
-        throw error;
+      const details = `${error instanceof Error ? error.message : String(error)} ${error?.stderr ?? ""}`;
+      const status = Number(details.match(/returned error:\s*(\d{3})/i)?.[1]);
+      const permanentHttpError = status >= 400 && status < 500 && status !== 429;
+      if (permanentHttpError || attempt === 2) throw error;
+
+      if (outputPath) await rm(outputPath, { force: true });
+      await delay(500 * (attempt + 1));
     }
-    await delay(500 * (attempt + 1));
   }
   throw new Error(`download failed after retries: ${url}`);
 }
@@ -195,24 +205,24 @@ async function findDirectory(root, name, parentName) {
     const match = await findDirectory(path, name, parentName);
     if (match) return match;
   }
-  throw new Error(`directory ${parentName}/${name} not found in extracted upstream archive`);
+  return undefined;
 }
 
 async function installHelper(platformRoot, targetPlatform) {
   const tag = manifest.helper.tag;
   const base = `https://github.com/${manifest.helper.repository}/releases/download/${tag}`;
-  let checksumResponse;
+  let checksumList;
   try {
-    checksumResponse = await fetchWithRetry(`${base}/SHA256SUMS`);
+    checksumList = await downloadWithCurl(`${base}/SHA256SUMS`);
   } catch (error) {
-    if (error instanceof Error && error.message.includes("(404)")) {
+    const details = `${error instanceof Error ? error.message : String(error)} ${error?.stderr ?? ""}`;
+    if (details.includes("404")) {
       throw new Error(
         `helper release ${tag} is not available; publish the tagged helper release first`,
       );
     }
     throw error;
   }
-  const checksumList = await checksumResponse.text();
   const assetName = manifest.helper.assets[targetPlatform];
   const checksumLine = checksumList
     .split(/\r?\n/)

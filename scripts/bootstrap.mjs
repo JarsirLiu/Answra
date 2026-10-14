@@ -13,13 +13,22 @@ const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const desktopDir = resolve(rootDir, "apps/desktop");
 const isWin = process.platform === "win32";
 const pnpmCommand = isWin ? "pnpm.cmd" : "pnpm";
+const pnpmCli = isWin
+  ? process.env.npm_execpath?.trim() ||
+    join(dirname(process.execPath), "node_modules", "corepack", "dist", "pnpm.js")
+  : null;
 const DEFAULT_ELECTRON_MIRROR = "https://npmmirror.com/mirrors/electron/";
 
 function run(command, args, options = {}) {
-  const result = spawnSync(command, args, {
+  const isPnpm = isWin && command === pnpmCommand;
+  if (isPnpm && !existsSync(pnpmCli)) {
+    throw new Error(`未找到 pnpm CLI：${pnpmCli}；请通过 Corepack 或 pnpm 安装 pnpm。`);
+  }
+  const executable = isPnpm ? process.execPath : command;
+  const executableArgs = isPnpm ? [pnpmCli, ...args] : args;
+  const result = spawnSync(executable, executableArgs, {
     cwd: rootDir,
     stdio: "inherit",
-    shell: isWin,
     ...options,
   });
   if (result.status !== 0) {
