@@ -1,6 +1,7 @@
-import type { ConversationModelConfig } from "@answra/shared";
+import type { ConversationModelConfig, DesktopBridge } from "@answra/shared";
 import { Eye, EyeOff } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { EmbeddedImeInput } from "../controls/EmbeddedImeInput";
 import { RangeSlider } from "../controls/RangeSlider";
 import { SurfaceButton } from "../controls/SurfaceButton";
 import { Switch } from "../controls/Switch";
@@ -8,6 +9,7 @@ import { PanelShell } from "./PanelShell";
 import "./SettingsPanel.css";
 
 interface SettingsPanelProps {
+  bridge?: DesktopBridge;
   /** 是否跟随屏幕背景自动变色（变色龙主题）；开启时深浅方案随背景亮度自动决定。 */
   ambientFollow: boolean;
   /** 前景透明度（0.5~1）；文字/图标/描边随之变化，表面恒不透明。 */
@@ -30,6 +32,7 @@ const OPACITY_MAX = 1;
 
 /** 设置面板：常规/模型两组；控件一律用统一令牌控件，不用原生样式。 */
 export function SettingsPanel({
+  bridge,
   ambientFollow,
   opacity,
   stealth,
@@ -144,28 +147,38 @@ export function SettingsPanel({
 
         <section className="settings-group">
           <h2>模型</h2>
-          <label className="setting-field">
+          <div className="setting-field">
             <span>OpenAI-compatible 地址</span>
-            <input
+            <EmbeddedImeInput
+              bridge={bridge}
+              id="settings-base-url-input"
+              aria-label="OpenAI-compatible 地址"
+              targetId="settings-base-url"
               autoComplete="url"
-              onChange={(event) => setBaseUrl(event.target.value)}
+              onValueChange={setBaseUrl}
               placeholder="http://127.0.0.1:1234/v1"
+              type="url"
               value={baseUrl}
             />
-          </label>
-          <label className="setting-field">
+          </div>
+          <div className="setting-field">
             <span>模型名称</span>
-            <input
-              onChange={(event) => setModel(event.target.value)}
+            <EmbeddedImeInput
+              bridge={bridge}
+              id="settings-model-input"
+              aria-label="模型名称"
+              targetId="settings-model"
+              onValueChange={setModel}
               placeholder="模型 ID"
               value={model}
             />
-          </label>
+          </div>
           <label className="setting-field">
             <span>API Key</span>
             <span className="setting-secret-field">
               <input
                 autoComplete="new-password"
+                data-ime-policy="excluded"
                 onChange={(event) => setApiKey(event.target.value)}
                 placeholder="必填"
                 type={showApiKey ? "text" : "password"}

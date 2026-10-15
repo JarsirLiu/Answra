@@ -10,7 +10,7 @@
 
 - 代码/模块：`apps/desktop/src/main/windowPolicyRegistry.ts`、`window.ts`、各 BrowserWindow controller、`capture/selectionWindow.ts`、`windowStealthController.ts`、`scripts/architecture/architecture-check.mjs`。
 - UI/进程/协议/持久化表面：main 进程的窗口实例、捕获保护生命周期、隐身切换和 controller teardown；不改变 renderer 页面路由及 IPC 业务协议。
-- 相关 Note：[主窗口生命周期与隐身策略拆分](../../implemented/architecture/2026-10-11-main-window-and-stealth-boundaries.md)、[会议场景隐身模式的窗口与捕获边界](../../proposed/architecture/2026-10-13-comprehensive-stealth-mode.md)、[输入法与窗口生命周期、隐私策略](../../proposed/architecture/2026-10-14-ime-window-lifecycle-and-privacy.md)。
+- 相关 Note：[主窗口生命周期与隐身策略拆分](../../implemented/architecture/2026-10-11-main-window-and-stealth-boundaries.md)、[会议场景隐身模式的窗口与捕获边界](../../proposed/architecture/2026-10-13-comprehensive-stealth-mode.md)、[统一 IME 输入目标与窗口生命周期](./2026-10-15-unified-ime-target-lifecycle.md)。
 
 ## 决定
 

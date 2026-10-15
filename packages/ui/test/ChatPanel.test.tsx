@@ -49,7 +49,13 @@ describe("ChatPanel", () => {
     const onDraftChange = vi.fn();
     const bridge = {
       imeAvailable: true,
-      imeEnable: vi.fn().mockResolvedValue(enabledImeState),
+      imeAcquire: vi.fn().mockResolvedValue({
+        state: enabledImeState,
+        targetId: "chat-composer",
+        generation: 1,
+        accepted: true,
+      }),
+      imeRelease: vi.fn().mockResolvedValue({ state: enabledImeState, accepted: true }),
       imeKey: vi.fn().mockResolvedValue({ ...enabledImeState, committedText: "新" }),
       imeSelect: vi.fn().mockResolvedValue(enabledImeState),
       onImeChange: vi.fn(() => () => undefined),
@@ -73,9 +79,9 @@ describe("ChatPanel", () => {
         streaming={false}
       />,
     );
-    await waitFor(() => expect(bridge.imeEnable).toHaveBeenCalledWith(true));
-
     const input = screen.getByRole("textbox", { name: "补充问题" }) as HTMLTextAreaElement;
+    fireEvent.focus(input);
+    await waitFor(() => expect(bridge.imeAcquire).toHaveBeenCalledWith("chat-composer"));
     input.setSelectionRange(1, 3);
     fireEvent.keyDown(input, { key: "n", code: "KeyN" });
     await waitFor(() => expect(onDraftChange).toHaveBeenCalledWith("a新d"));

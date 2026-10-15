@@ -15,11 +15,19 @@ import {
   setImeCandidateState,
 } from "../window";
 
-export function registerImeCandidateIpc(): void {
+export function registerImeCandidateIpc(
+  isCurrentLease: (owner: BrowserWindow, targetId: string, generation: number) => boolean,
+): void {
   ipcMain.on(ImeCandidateChannels.Update, (event, payload: unknown) => {
     const owner = BrowserWindow.fromWebContents(event.sender);
     if (!owner || !isOwnerWindow(owner, event)) return;
-    if (!isCandidateUpdate(payload)) return;
+    if (
+      !isCandidateUpdate(payload) ||
+      !payload.targetId ||
+      payload.generation === undefined ||
+      !isCurrentLease(owner, payload.targetId, payload.generation)
+    )
+      return;
     setImeCandidateState(owner, payload);
   });
 
@@ -33,9 +41,22 @@ export function registerImeCandidateIpc(): void {
   });
 
   ipcMain.on(ImeCandidateChannels.Action, (event, action: unknown) => {
-    if (!isImeCandidateWindowFromSender(event) || !isCandidateAction(action)) return;
+    if (
+      !isImeCandidateWindowFromSender(event) ||
+      !isCandidateAction(action) ||
+      !isCurrentLeaseForAction(action)
+    )
+      return;
     sendImeCandidateAction(action);
   });
+
+  function isCurrentLeaseForAction(action: ImeCandidateAction): boolean {
+    const candidateOwner = getWindow();
+    if (candidateOwner && isCurrentLease(candidateOwner, action.targetId, action.generation))
+      return true;
+    const replyOwner = getReplyBarWindow();
+    return !!replyOwner && isCurrentLease(replyOwner, action.targetId, action.generation);
+  }
 }
 
 function isOwnerWindow(owner: BrowserWindow, event: Electron.IpcMainEvent): boolean {
@@ -47,16 +68,27 @@ function isOwnerWindow(owner: BrowserWindow, event: Electron.IpcMainEvent): bool
 
 function isCandidateUpdate(value: unknown): value is ImeCandidateUpdate {
   if (!isRecord(value)) return false;
-  if (value.type === "suspend") return true;
-  if (value.type === "clear") return value.state === undefined || isImeState(value.state);
+  if (value.type === "suspend" || value.type === "clear")
+    return (
+      typeof value.targetId === "string" &&
+      Number.isInteger(value.generation) &&
+      (value.state === undefined || isImeState(value.state))
+    );
   if (value.type !== "show") return false;
-  const payload = value as { state?: unknown; anchor?: unknown };
+  const payload = value as {
+    state?: unknown;
+    anchor?: unknown;
+    targetId?: unknown;
+    generation?: unknown;
+  };
   if (!isImeState(payload.state) || !isRecord(payload.anchor)) return false;
   const anchor = payload.anchor;
   return (
     Number.isFinite(anchor.x) &&
     Number.isFinite(anchor.lineTop) &&
-    Number.isFinite(anchor.lineBottom)
+    Number.isFinite(anchor.lineBottom) &&
+    typeof payload.targetId === "string" &&
+    Number.isInteger(payload.generation)
   );
 }
 
@@ -82,6 +114,7 @@ function isImeState(value: unknown): boolean {
 
 function isCandidateAction(value: unknown): value is ImeCandidateAction {
   if (!isRecord(value)) return false;
+  if (typeof value.targetId !== "string" || !Number.isInteger(value.generation)) return false;
   if (value.type === "select") return Number.isInteger(value.index) && (value.index as number) >= 0;
   return value.type === "navigate" && ["PageUp", "PageDown"].includes(String(value.key));
 }

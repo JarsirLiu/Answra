@@ -86,6 +86,7 @@ export function ChatPanel({
       onDraftChange(next);
     },
     true,
+    "chat-composer",
   );
   preeditLengthRef.current = ime.state.preedit.length;
   useLayoutEffect(() => {
@@ -177,6 +178,10 @@ export function ChatPanel({
                 onNavigate: ime.sendNavigation,
                 onSelect: ime.select,
                 onCandidateUpdate: ime.updateCandidate,
+                onFocus: ime.acquire,
+                onBlur: ime.blur,
+                targetId: "chat-composer",
+                generation: ime.generation,
                 onToggle: ime.toggle,
               }
             : undefined
@@ -186,6 +191,7 @@ export function ChatPanel({
           accept="image/*"
           aria-label="选择截图图片"
           className="file-input-hidden"
+          data-ime-policy="excluded"
           onChange={(event) => {
             onAttachmentChange(event.target.files?.[0] ?? null);
             event.target.value = "";

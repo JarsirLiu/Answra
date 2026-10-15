@@ -1,5 +1,7 @@
 import type { DesktopBridge, WorkspaceFileContent } from "@answra/shared";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { useEmbeddedIme } from "../../../hooks/useEmbeddedIme";
+import { ImeCandidateAnchorReporter } from "../ImeCandidateAnchorReporter";
 import { pasteImageName, resolveRelative, toResourceUrl } from "./fileKind";
 import { ZoomablePreview } from "./ZoomablePreview";
 import "./WorkspacePanel.css";
@@ -48,6 +50,19 @@ export function MarkdownEditorPane({
   onDirtyChange,
   dir,
 }: MarkdownEditorPaneProps) {
+  const ime = useEmbeddedIme(
+    bridge,
+    (text) => {
+      const view = bundleRef.current.view;
+      if (!view) return;
+      view.dispatch(view.state.replaceSelection(text));
+      setDirtyState(true);
+    },
+    true,
+    "workspace-markdown-editor",
+  );
+  const imeRef = useRef(ime);
+  imeRef.current = ime;
   const hostRef = useRef<HTMLDivElement | null>(null);
   const bundleRef = useRef<CodeMirrorBundle>({ view: null });
   const baselineRef = useRef<string>(content.text ?? "");
@@ -112,6 +127,11 @@ export function MarkdownEditorPane({
               drawSelection(),
               highlightActiveLine(),
               EditorView.lineWrapping,
+              EditorView.contentAttributes.of({
+                "data-embedded-ime-target": "true",
+                "data-ime-policy": "text",
+                "data-ime-target-id": "workspace-markdown-editor",
+              }),
               markdown(),
               syntaxHighlighting(highlight),
               keymap.of([...defaultKeymap, ...historyKeymap]),
@@ -121,6 +141,31 @@ export function MarkdownEditorPane({
               }),
               // 粘贴图片：拦截剪贴板图片文件，落盘 assets/ 并插入相对链接。
               EditorView.domEventHandlers({
+                keydown: (event, editor) => {
+                  if (imeRef.current.sendKey(event)) return true;
+                  if (
+                    imeRef.current.active &&
+                    !imeRef.current.state.composing &&
+                    event.key === "Enter" &&
+                    !event.ctrlKey &&
+                    !event.altKey &&
+                    !event.metaKey
+                  ) {
+                    editor.dispatch(editor.state.replaceSelection("\n"));
+                    return true;
+                  }
+                  return false;
+                },
+                beforeinput: (event) => {
+                  if (!imeRef.current.active) return false;
+                  event.preventDefault();
+                  return true;
+                },
+                compositionstart: (event) => {
+                  if (!imeRef.current.imeEnabled) return false;
+                  event.preventDefault();
+                  return true;
+                },
                 paste: (event) => {
                   const files = Array.from(event.clipboardData?.files ?? []).filter((file) =>
                     file.type.startsWith("image/"),
@@ -135,6 +180,9 @@ export function MarkdownEditorPane({
           }),
         });
         bundleRef.current.view = view;
+        view.contentDOM.addEventListener("focus", onEditorFocus);
+        view.contentDOM.addEventListener("blur", onEditorBlur);
+        if (document.activeElement === view.contentDOM) void imeRef.current.acquire();
       } catch (cause) {
         if (!disposed) setError(cause instanceof Error ? cause.message : "编辑器加载失败");
       }
@@ -143,11 +191,22 @@ export function MarkdownEditorPane({
       disposed = true;
       // 销毁前捕获最终文本：预览态没有编辑器实例，挂起的自动保存依赖它。
       if (view) lastTextRef.current = view.state.doc.toString();
+      view?.contentDOM.removeEventListener("focus", onEditorFocus);
+      view?.contentDOM.removeEventListener("blur", onEditorBlur);
+      void imeRef.current.release();
       view?.destroy();
       bundleRef.current.view = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path, viewMode, setDirtyState]);
+
+  function onEditorFocus() {
+    void imeRef.current.acquire();
+  }
+
+  function onEditorBlur() {
+    imeRef.current.blur();
+  }
 
   async function handlePasteImage(file: File) {
     if (!bridge?.writeWorkspaceBytes || !bundleRef.current.view) return;
@@ -249,6 +308,14 @@ export function MarkdownEditorPane({
 
   return (
     <div className="workspace-editor">
+      {viewMode === "source" && (
+        <ImeCandidateAnchorReporter
+          generation={ime.generation}
+          onUpdate={ime.updateCandidate}
+          state={ime.state}
+          targetId="workspace-markdown-editor"
+        />
+      )}
       <div className="workspace-editor__toolbar">
         <div className="workspace-editor__modes" role="tablist" aria-label="视图模式">
           <button

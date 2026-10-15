@@ -23,12 +23,12 @@
 按隐私与状态完整性优先级分批处理：
 
 1. 候选条布局已在本次变更中改为 preedit 起点，并提高禁用分页控件的可见度；自动化测试覆盖坐标和按钮语义。
-2. 生命周期与隐私架构见[输入法与窗口生命周期、隐私策略提案](../architecture/2026-10-14-ime-window-lifecycle-and-privacy.md)。该提案先定义 owner lease、原生焦点和 renderer 焦点、窗口策略生命周期及注销边界；本 Note 不再重复设计细节。
+2. 生命周期与隐私架构见[统一 IME 输入目标与窗口生命周期](../../implemented/architecture/2026-10-15-unified-ime-target-lifecycle.md)。该 Note 定义 owner lease、原生焦点和 renderer 焦点、窗口策略生命周期及注销边界；本 Note 不再重复设计细节。
 3. 生命周期实现稳定后再单独修 Shift 键码映射和 idle 状态按键转发，并在 Windows 11 实机确认。
 
 ## 提案
 
-候选条可读性、输入法/窗口生命周期与隐私、Shift 切换分别处理。先锁定位置和候选分页行为；再依照[生命周期与隐私架构提案](../architecture/2026-10-14-ime-window-lifecycle-and-privacy.md)稳定 owner、焦点与窗口策略；最后单独接通 Shift keysym，避免同时改变输入状态机和按键语义。
+候选条可读性、输入法/窗口生命周期与隐私、Shift 切换分别处理。先锁定位置和候选分页行为；再依照[生命周期与隐私架构](../../implemented/architecture/2026-10-15-unified-ime-target-lifecycle.md)稳定 owner、焦点与窗口策略；最后单独接通 Shift keysym，避免同时改变输入状态机和按键语义。
 
 ## 修复顺序
 

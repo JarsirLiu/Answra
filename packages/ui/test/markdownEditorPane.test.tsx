@@ -1,6 +1,6 @@
 import type { DesktopBridge, WorkspaceFileContent } from "@answra/shared";
 import { EditorView } from "@codemirror/view";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MarkdownEditorPane } from "../src/components/panels/workspace/MarkdownEditorPane";
 
@@ -50,9 +50,96 @@ describe("MarkdownEditorPane", () => {
   it("mounts the source editor and shows the file content", async () => {
     renderPane(createBridge());
     // CodeMirror 异步挂载（懒加载 chunk）。
-    await waitFor(() => expect(document.querySelector(".cm-content")).not.toBeNull());
+    await waitFor(() => expect(document.querySelector(".cm-content")).not.toBeNull(), {
+      timeout: 5000,
+    });
     expect(document.querySelector(".cm-content")?.textContent).toContain("标题");
     expect(screen.getByRole("tab", { name: "源码" })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("routes CodeMirror text through its own Rime lease and selection adapter", async () => {
+    const imeState = {
+      enabled: true,
+      composing: false,
+      preedit: "",
+      candidates: [],
+      selectedIndex: 0,
+      page: 0,
+      hasNextPage: false,
+    };
+    const imeAcquire = vi.fn().mockResolvedValue({
+      accepted: true,
+      targetId: "workspace-markdown-editor",
+      generation: 12,
+      state: imeState,
+    });
+    const imeKey = vi.fn().mockResolvedValue({ ...imeState, committedText: "问" });
+    const bridge = createBridge({
+      imeAvailable: true,
+      imeAcquire,
+      imeRelease: vi.fn().mockResolvedValue({ accepted: true, state: imeState }),
+      imeKey,
+    });
+    renderPane(bridge);
+    await waitFor(() => expect(document.querySelector(".cm-content")).not.toBeNull(), {
+      timeout: 5000,
+    });
+    const content = document.querySelector(".cm-content") as HTMLElement;
+    expect(content).toHaveAttribute("data-embedded-ime-target", "true");
+    expect(content).toHaveAttribute("data-ime-policy", "text");
+    fireEvent.focus(content);
+    await waitFor(() => expect(imeAcquire).toHaveBeenCalledWith("workspace-markdown-editor"));
+    const view = EditorView.findFromDOM(document.querySelector(".cm-editor") as HTMLElement);
+    expect(view).not.toBeNull();
+    if (!view) throw new Error("expected CodeMirror EditorView to be mounted");
+    view.dispatch({ selection: { anchor: 2, head: 2 } });
+    fireEvent.keyDown(content, { key: "n", code: "KeyN" });
+    await waitFor(() =>
+      expect(imeKey).toHaveBeenCalledWith(expect.objectContaining({ generation: 12 })),
+    );
+    await waitFor(() => expect(view.state.doc.toString()).toBe("# 问标题\n\n正文第一行。"));
+  });
+
+  it("handles an uncomposed Enter as an editor newline while embedded IME is active", async () => {
+    const imeState = {
+      enabled: true,
+      composing: false,
+      preedit: "",
+      candidates: [],
+      selectedIndex: 0,
+      page: 0,
+      hasNextPage: false,
+    };
+    const imeAcquire = vi.fn().mockResolvedValue({
+      accepted: true,
+      targetId: "workspace-markdown-editor",
+      generation: 13,
+      state: imeState,
+    });
+    const imeKey = vi.fn().mockResolvedValue(imeState);
+    const bridge = createBridge({
+      imeAvailable: true,
+      imeAcquire,
+      imeRelease: vi.fn().mockResolvedValue({ accepted: true, state: imeState }),
+      imeKey,
+    });
+    renderPane(bridge);
+    await waitFor(() => expect(document.querySelector(".cm-content")).not.toBeNull());
+    const content = document.querySelector(".cm-content") as HTMLElement;
+    fireEvent.focus(content);
+    await waitFor(() => expect(imeAcquire).toHaveBeenCalled());
+
+    const view = EditorView.findFromDOM(document.querySelector(".cm-editor") as HTMLElement);
+    expect(view).not.toBeNull();
+    if (!view) throw new Error("expected CodeMirror EditorView to be mounted");
+    view.dispatch({ selection: { anchor: 0 } });
+
+    fireEvent.keyDown(content, { key: "Enter", code: "Enter" });
+    await waitFor(() => expect(view.state.doc.toString()).toBe("\n# 标题\n\n正文第一行。"));
+    expect(imeKey).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(content, { key: "Backspace", code: "Backspace" });
+    await waitFor(() => expect(view.state.doc.toString()).toBe(sampleContent.text));
   });
 
   it("renders markdown in preview, including inline HTML via rehype-raw", async () => {

@@ -8,6 +8,7 @@ const shared = vi.hoisted(() => ({
   resizeImeCandidateWindow: vi.fn(),
   sendImeCandidateAction: vi.fn(),
   sendImeCandidateState: vi.fn(),
+  isCurrentLease: vi.fn(() => true),
 }));
 
 vi.mock("electron", () => ({
@@ -55,11 +56,18 @@ describe("IME candidate IPC", () => {
     shared.resizeImeCandidateWindow.mockClear();
     shared.sendImeCandidateAction.mockClear();
     shared.sendImeCandidateState.mockClear();
-    registerImeCandidateIpc();
+    shared.isCurrentLease.mockReturnValue(true);
+    registerImeCandidateIpc(shared.isCurrentLease);
   });
 
   it("accepts candidate geometry only from an owned input window", () => {
-    const payload = { type: "show", state, anchor: { x: 10, lineTop: 20, lineBottom: 40 } };
+    const payload = {
+      type: "show",
+      state,
+      anchor: { x: 10, lineTop: 20, lineBottom: 40 },
+      targetId: "composer",
+      generation: 3,
+    };
     shared.handlers[ImeCandidateChannels.Update]({ sender: { id: "main" } }, payload);
     shared.handlers[ImeCandidateChannels.Update]({ sender: { id: "other" } }, payload);
     shared.handlers[ImeCandidateChannels.Update](
@@ -72,16 +80,18 @@ describe("IME candidate IPC", () => {
 
     expect(shared.setImeCandidateState).toHaveBeenCalledOnce();
     expect(shared.setImeCandidateState).toHaveBeenCalledWith(shared.owner, payload);
+    expect(shared.isCurrentLease).toHaveBeenCalledWith(shared.owner, "composer", 3);
   });
 
   it("accepts a suspend signal from the active input window", () => {
-    shared.handlers[ImeCandidateChannels.Update]({ sender: { id: "main" } }, { type: "suspend" });
+    const payload = { type: "suspend", targetId: "composer", generation: 3 };
+    shared.handlers[ImeCandidateChannels.Update]({ sender: { id: "main" } }, payload);
 
-    expect(shared.setImeCandidateState).toHaveBeenCalledWith(shared.owner, { type: "suspend" });
+    expect(shared.setImeCandidateState).toHaveBeenCalledWith(shared.owner, payload);
   });
 
   it("routes candidate actions only from the native candidate window", () => {
-    const action = { type: "select", index: 0 };
+    const action = { type: "select", index: 0, targetId: "composer", generation: 3 };
     shared.handlers[ImeCandidateChannels.Action]({ sender: { id: "main" } }, action);
     shared.handlers[ImeCandidateChannels.Action]({ sender: { id: "candidate" } }, action);
     shared.handlers[ImeCandidateChannels.Ready]({ sender: { id: "candidate" } });

@@ -1,6 +1,8 @@
 import path from "node:path";
 import type { ContentSize } from "@answra/shared";
 import { app, BrowserWindow, screen } from "electron";
+import { logImeDiagnostic } from "./ime/imeDiagnostics";
+import { isCurrentProcessForeground } from "./windowForeground";
 import { clampContentSize } from "./windowLayout";
 import type { WindowPolicyDescriptor } from "./windowPolicyRegistry";
 
@@ -79,12 +81,59 @@ export function createMainWindowController(host: MainWindowControllerHost) {
       },
     });
     windowRef = created;
+    logImeDiagnostic("main-window-created", {
+      windowId: created.id,
+      bounds: JSON.stringify(created.getBounds()),
+    });
     host.registerWindowPolicy(created, { role: "main", captureProtection: "stealth-only" });
     created.setAlwaysOnTop(true, "floating");
+    logImeDiagnostic("main-window-always-on-top", { windowId: created.id, level: "floating" });
     created.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
     created.webContents.on("will-navigate", (event) => event.preventDefault());
     created.once("ready-to-show", () => {
-      if (host.prepareWindowToShow(created)) created.show();
+      const allowed = host.prepareWindowToShow(created);
+      logImeDiagnostic("main-window-ready-to-show", { windowId: created.id, allowed });
+      if (allowed) created.show();
+    });
+    created.on("show", () => {
+      logImeDiagnostic("main-window-shown", {
+        windowId: created.id,
+        visible: created.isVisible(),
+        focused: created.isFocused(),
+        bounds: JSON.stringify(created.getBounds()),
+        appForeground: isCurrentProcessForeground(),
+      });
+    });
+    created.on("hide", () => {
+      logImeDiagnostic("main-window-hidden", {
+        windowId: created.id,
+        focusedWindowId: BrowserWindow.getFocusedWindow()?.id,
+        appForeground: isCurrentProcessForeground(),
+      });
+    });
+    created.on("blur", () => {
+      logImeDiagnostic("main-window-blur", {
+        windowId: created.id,
+        focusedWindowId: BrowserWindow.getFocusedWindow()?.id,
+        visible: created.isVisible(),
+        appForeground: isCurrentProcessForeground(),
+      });
+    });
+    created.on("focus", () => {
+      logImeDiagnostic("main-window-focus", {
+        windowId: created.id,
+        visible: created.isVisible(),
+        appForeground: isCurrentProcessForeground(),
+      });
+    });
+    created.on("minimize", () => {
+      logImeDiagnostic("main-window-minimized", { windowId: created.id });
+    });
+    created.on("restore", () => {
+      logImeDiagnostic("main-window-restored", {
+        windowId: created.id,
+        visible: created.isVisible(),
+      });
     });
     created.webContents.on("render-process-gone", (_event, details) =>
       console.error("[window] 渲染进程消失:", details),
@@ -105,7 +154,8 @@ export function createMainWindowController(host: MainWindowControllerHost) {
       );
       const message = details?.message ?? (typeof args[2] === "string" ? args[2] : "");
       if (message.startsWith("[ime-ui]")) {
-        console.info("[renderer]", message);
+        if (message.includes("blocked") || message.includes("failed"))
+          console.warn("[renderer]", message);
       } else if (message.startsWith("[workspace][pdf]")) {
         console.info("[renderer]", message);
       } else if (/^\[settings\]\[stealth\].*(failed|rejected|unavailable)/i.test(message)) {

@@ -202,6 +202,7 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
 
       {panel === "settings" && (
         <SettingsPanel
+          bridge={platform}
           ambientFollow={appearance.ambientFollow}
           modelConfig={conversation.config}
           onModelConfigSave={conversation.configure}

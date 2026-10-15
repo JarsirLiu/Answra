@@ -231,8 +231,11 @@ export const WorkspaceChannels = {
 
 /** 应用内输入法频道；引擎状态由 main 持有，候选 UI 由 renderer 绘制。 */
 export const ImeChannels = {
-  Enable: "answra:ime:enable",
+  Acquire: "answra:ime:acquire",
+  Release: "answra:ime:release",
+  ConfirmFocus: "answra:ime:confirm-focus",
   Key: "answra:ime:key",
+  Diagnostic: "answra:ime:diagnostic",
   Select: "answra:ime:select",
   Reset: "answra:ime:reset",
   Change: "answra:ime:change",
@@ -256,20 +259,32 @@ export interface ImeCandidateAnchor {
 }
 
 export type ImeCandidateUpdate =
-  | { type: "show"; state: ImeState; anchor: ImeCandidateAnchor }
-  | { type: "suspend" }
-  | { type: "clear"; state?: ImeState };
+  | {
+      type: "show";
+      state: ImeState;
+      anchor: ImeCandidateAnchor;
+      targetId: string;
+      generation: number;
+    }
+  | { type: "suspend"; targetId?: string; generation?: number }
+  | { type: "clear"; state?: ImeState; targetId?: string; generation?: number };
 
 export type ImeCandidateAction =
-  | { type: "select"; index: number }
-  | { type: "navigate"; key: "PageUp" | "PageDown" };
+  | { type: "select"; index: number; targetId: string; generation: number }
+  | { type: "navigate"; key: "PageUp" | "PageDown"; targetId: string; generation: number };
+
+export interface ImeCandidateSnapshot {
+  state: ImeState;
+  targetId?: string;
+  generation?: number;
+}
 
 export interface ImeCandidateChannelMap {
   [ImeCandidateChannels.Update]: {
     request: ImeCandidateUpdate;
     response: undefined;
   };
-  [ImeCandidateChannels.State]: { request: undefined; response: ImeState };
+  [ImeCandidateChannels.State]: { request: undefined; response: ImeCandidateSnapshot };
   [ImeCandidateChannels.Ready]: { request: undefined; response: undefined };
   [ImeCandidateChannels.Fit]: { request: ContentSize; response: undefined };
   [ImeCandidateChannels.Action]: { request: ImeCandidateAction; response: undefined };
@@ -295,6 +310,7 @@ export interface ImeState {
 }
 
 export interface ImeKeyRequest {
+  generation: number;
   key: string;
   code: string;
   shift: boolean;
@@ -303,12 +319,91 @@ export interface ImeKeyRequest {
   meta: boolean;
 }
 
+export type ImeRendererDiagnosticEvent =
+  | "input-mounted"
+  | "acquire-start"
+  | "acquire-result"
+  | "confirm-focus-start"
+  | "confirm-focus-result"
+  | "input-focus"
+  | "input-blur"
+  | "window-focus"
+  | "window-blur"
+  | "document-keydown"
+  | "selection-after-shortcut"
+  | "key-routing"
+  | "candidate-rendered";
+
+export interface ImeDiagnosticRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface ImeDiagnosticElement {
+  rect: ImeDiagnosticRect;
+  text: string;
+  display: string;
+  visibility: string;
+  opacity: string;
+  childCount: number;
+}
+
+/** Local IME diagnostics. IME text is intentionally retained for troubleshooting. */
+export interface ImeRendererDiagnostic {
+  event: ImeRendererDiagnosticEvent;
+  targetId: string;
+  ownerTargetId?: string;
+  source?: "input-focus" | "window-focus";
+  generation?: number;
+  activeElementTarget?: boolean;
+  documentHasFocus?: boolean;
+  focusedRef?: boolean;
+  imeAvailable?: boolean;
+  imeEnabled?: boolean;
+  composing?: boolean;
+  accepted?: boolean;
+  key?: string;
+  keyCode?: string;
+  keyKind?: "text" | "process" | "backspace" | "enter" | "navigation" | "other";
+  repeat?: boolean;
+  ctrl?: boolean;
+  alt?: boolean;
+  meta?: boolean;
+  selectionStart?: number;
+  selectionEnd?: number;
+  selectionLength?: number;
+  valueLength?: number;
+  preedit?: string;
+  committedText?: string;
+  candidates?: ImeCandidate[];
+  documentVisibility?: string;
+  selectedIndex?: number;
+  page?: number;
+  candidateRoot?: ImeDiagnosticElement;
+  candidatePopup?: ImeDiagnosticElement;
+}
+
 export interface ImeChannelMap {
-  [ImeChannels.Enable]: { request: boolean; response: ImeState };
+  [ImeChannels.Acquire]: { request: { targetId: string }; response: ImeLeaseResponse };
+  [ImeChannels.Release]: { request: { generation: number }; response: ImeLeaseResponse };
+  [ImeChannels.ConfirmFocus]: {
+    request: { targetId: string; generation: number };
+    response: ImeLeaseResponse;
+  };
   [ImeChannels.Key]: { request: ImeKeyRequest; response: ImeState };
-  [ImeChannels.Select]: { request: { index: number }; response: ImeState };
-  [ImeChannels.Reset]: { request: undefined; response: ImeState };
+  [ImeChannels.Diagnostic]: { request: ImeRendererDiagnostic; response: undefined };
+  [ImeChannels.Select]: { request: { index: number; generation: number }; response: ImeState };
+  [ImeChannels.Reset]: { request: { generation: number }; response: ImeState };
   [ImeChannels.Change]: { request: undefined; response: ImeState };
+}
+
+export interface ImeLeaseResponse {
+  state: ImeState;
+  targetId?: string;
+  generation?: number;
+  accepted: boolean;
 }
 
 /** 工作区目录树节点；`path` 为相对根目录的 POSIX 风格路径，根目录本身不出现。 */

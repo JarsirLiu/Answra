@@ -7,10 +7,12 @@ import type {
 } from "@answra/shared";
 import { ImeCandidateChannels } from "@answra/shared";
 import { app, BrowserWindow, screen, type WebContents } from "electron";
+import { getWindowCaptureDiagnostics } from "../windowCaptureProtection";
 import { isCurrentProcessForeground } from "../windowForeground";
 import { attachNonActivatingWindow } from "../windowInteractionPolicy";
 import type { WindowPolicyDescriptor } from "../windowPolicyRegistry";
 import { positionImeCandidate } from "./imeCandidateLayout";
+import { logImeDiagnostic } from "./imeDiagnostics";
 
 const INITIAL_SIZE = { width: 640, height: 56 };
 const DEFAULT_SIZE = INITIAL_SIZE;
@@ -35,73 +37,158 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
   let ownerWindow: BrowserWindow | undefined;
   let ownerClosedListener: (() => void) | undefined;
   let ownerBlurListener: (() => void) | undefined;
+  let ownerFocusListener: (() => void) | undefined;
   let ownerBoundsListener: (() => void) | undefined;
   let state: ImeState | undefined;
   let anchor: ImeCandidateAnchor | undefined;
+  let targetId: string | undefined;
+  let generation: number | undefined;
   let size = DEFAULT_SIZE;
   let pageLoaded = false;
   let rendererRequestedReady = false;
   let rendererReady = false;
   let displayListenersAttached = false;
+  let lastPositionStatus = "";
+  let lastNativePositionSignature = "";
+  let anchorLeaseKey: string | undefined;
+  let anchorReportedAvailable = false;
 
   function update(owner: BrowserWindow, payload: ImeCandidateUpdate) {
     if (!host.isOwnerWindow(owner) || owner.isDestroyed()) return;
     if (payload.type === "suspend") {
+      if (!matchesCandidate(owner, payload.targetId, payload.generation)) return;
       suspend(owner, "owner-suspended");
       return;
     }
     if (payload.type === "clear") {
+      if (!matchesCandidate(owner, payload.targetId, payload.generation)) return;
       if (payload.state?.enabled && payload.state.composing) {
         suspend(owner, "owner-reported-composition-active-without-candidates");
         return;
       }
+      logImeDiagnostic("candidate-update-clear", {
+        windowId: owner.id,
+        targetId: payload.targetId,
+        generation: payload.generation,
+        reason: "owner-reported-no-candidates",
+        state: payload.state,
+      });
+      if (payload.targetId && payload.generation !== undefined)
+        reportAnchorUnavailable(owner, payload.targetId, payload.generation, "clear");
       if (ownerWindow === owner) hide("owner-reported-no-candidates");
       return;
     }
     if (!hasCandidates(payload.state)) {
       if (ownerWindow === owner) hide("owner-reported-no-candidates");
+      logImeDiagnostic("candidate-update-empty", {
+        windowId: owner.id,
+        targetId: payload.targetId,
+        generation: payload.generation,
+        composing: payload.state.composing,
+        preedit: payload.state.preedit,
+        candidates: payload.state.candidates,
+      });
       return;
     }
 
     setOwner(owner);
     state = payload.state;
     anchor = payload.anchor;
+    targetId = payload.targetId;
+    generation = payload.generation;
+    reportAnchorAvailable(owner, payload.targetId, payload.generation, payload.anchor);
     if (!windowRef || windowRef.isDestroyed()) createWindow();
     positionAndShow();
     sendState();
+    logImeDiagnostic("candidate-update-show", {
+      windowId: owner.id,
+      targetId: payload.targetId,
+      generation: payload.generation,
+      preedit: payload.state.preedit,
+      candidates: payload.state.candidates,
+      anchorX: Math.round(payload.anchor.x),
+      anchorY: Math.round(payload.anchor.lineBottom),
+    });
+  }
+
+  function matchesCandidate(
+    owner: BrowserWindow,
+    nextTargetId: string | undefined,
+    nextGeneration: number | undefined,
+  ): boolean {
+    return (
+      nextTargetId !== undefined &&
+      nextGeneration !== undefined &&
+      ownerWindow === owner &&
+      targetId === nextTargetId &&
+      generation === nextGeneration
+    );
   }
 
   function setOwner(nextOwner: BrowserWindow): void {
     if (ownerWindow === nextOwner) return;
     detachOwnerListener();
     ownerWindow = nextOwner;
-    if (windowRef && !windowRef.isDestroyed()) windowRef.setParentWindow(nextOwner);
-    ownerClosedListener = () => hide("owner-closed");
+    if (windowRef && !windowRef.isDestroyed()) {
+      windowRef.setParentWindow(nextOwner);
+    }
+    ownerClosedListener = () => {
+      if (targetId && generation !== undefined)
+        reportAnchorUnavailable(nextOwner, targetId, generation, "owner-closed");
+      hide("owner-closed");
+    };
+    ownerFocusListener = () => {
+      const candidate = windowRef;
+      const focusedWindow = BrowserWindow.getFocusedWindow();
+      logImeDiagnostic("candidate-owner-focus", {
+        ownerWindowId: nextOwner.id,
+        targetId,
+        generation,
+        hasAnchor: anchor !== undefined,
+        anchor: anchor
+          ? {
+              x: Math.round(anchor.x),
+              lineTop: Math.round(anchor.lineTop),
+              lineBottom: Math.round(anchor.lineBottom),
+            }
+          : undefined,
+        candidateWindowId: candidate?.isDestroyed() ? undefined : candidate?.id,
+        candidateVisible: candidate && !candidate.isDestroyed() ? candidate.isVisible() : false,
+        candidateAlwaysOnTop:
+          candidate && !candidate.isDestroyed() ? candidate.isAlwaysOnTop() : false,
+        candidateBounds: candidate && !candidate.isDestroyed() ? candidate.getBounds() : undefined,
+        focusedWindowId: focusedWindow?.id,
+        appForeground: isCurrentProcessForeground(),
+      });
+    };
     ownerBlurListener = () => {
       setTimeout(() => {
         if (ownerWindow !== nextOwner || nextOwner.isDestroyed()) return;
         const focusedWindow = BrowserWindow.getFocusedWindow();
         const appForeground = isCurrentProcessForeground();
-        console.info("[ime-candidate] owner blur observed", {
-          ownerWindowId: nextOwner.id,
+        const shouldPreserve =
+          appForeground &&
+          (!focusedWindow || focusedWindow === nextOwner || focusedWindow === windowRef);
+        logImeDiagnostic("candidate-owner-blur-settled", {
+          windowId: nextOwner.id,
           candidateWindowId: windowRef?.id,
           focusedWindowId: focusedWindow?.id,
           appForeground,
+          candidateVisible: windowRef && !windowRef.isDestroyed() ? windowRef.isVisible() : false,
+          hasAnchor: anchor !== undefined,
+          decision: shouldPreserve ? "preserve" : "suspend",
           settleMs: OWNER_BLUR_SETTLE_MS,
         });
         // The candidate popup is a non-activating child of its input owner.
         // BrowserWindow focus alone is insufficient here; use the OS process
         // foreground check before treating this blur as an app switch.
-        if (
-          appForeground &&
-          (!focusedWindow || focusedWindow === nextOwner || focusedWindow === windowRef)
-        )
-          return;
+        if (shouldPreserve) return;
         suspend(nextOwner, "owner-window-blur");
       }, OWNER_BLUR_SETTLE_MS);
     };
     ownerBoundsListener = () => positionAndShow();
     nextOwner.once("closed", ownerClosedListener);
+    nextOwner.on("focus", ownerFocusListener);
     nextOwner.on("blur", ownerBlurListener);
     nextOwner.on("move", ownerBoundsListener);
     nextOwner.on("resize", ownerBoundsListener);
@@ -131,8 +218,16 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
         sandbox: true,
       },
     });
+    logImeDiagnostic("candidate-window-created", {
+      windowId: created.id,
+      ownerWindowId: ownerWindow?.id,
+      focusable: false,
+      stealthPolicyExpected: true,
+    });
     windowRef = created;
-    if (ownerWindow && !ownerWindow.isDestroyed()) created.setParentWindow(ownerWindow);
+    if (ownerWindow && !ownerWindow.isDestroyed()) {
+      created.setParentWindow(ownerWindow);
+    }
     host.registerWindowPolicy(created, {
       role: "ime-candidate",
       captureProtection: "stealth-only",
@@ -152,6 +247,10 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
     created.webContents.on("did-finish-load", () => {
       if (windowRef !== created || created.isDestroyed()) return;
       pageLoaded = true;
+      logImeDiagnostic("candidate-renderer-page-loaded", {
+        windowId: created.id,
+        rendererRequestedReady,
+      });
       activateRendererIfReady();
     });
     created.webContents.on(
@@ -166,14 +265,23 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
       },
     );
     created.on("show", () => {
-      console.info("[ime-candidate] window shown", {
-        windowId: created.id,
-        bounds: created.getBounds(),
-        ownerWindowId: ownerWindow?.id,
+      reportNativeWindow("candidate-native-show", {
+        state: state
+          ? {
+              composing: state.composing,
+              preedit: state.preedit,
+              candidates: state.candidates,
+            }
+          : undefined,
       });
     });
     created.on("hide", () => {
-      console.info("[ime-candidate] window hidden", { windowId: created.id });
+      logImeDiagnostic("candidate-window-hidden", {
+        windowId: created.id,
+        ownerWindowId: ownerWindow?.id,
+        targetId,
+        generation,
+      });
     });
     created.on("closed", () => {
       if (windowRef !== created) return;
@@ -197,15 +305,26 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
   function positionAndShow(): void {
     const window = windowRef;
     const source = ownerWindow;
-    if (
-      !rendererReady ||
-      !window ||
-      window.isDestroyed() ||
-      !source ||
-      source.isDestroyed() ||
-      !anchor
-    )
+    if (!rendererReady || !window || window.isDestroyed()) {
+      reportPositionStatus("renderer-not-ready", {
+        windowId: window?.id,
+        pageLoaded,
+        rendererRequestedReady,
+      });
       return;
+    }
+    if (!source || source.isDestroyed()) {
+      reportPositionStatus("owner-unavailable", { windowId: window.id });
+      return;
+    }
+    if (!anchor) {
+      reportPositionStatus("anchor-unavailable", {
+        windowId: window.id,
+        targetId,
+        generation,
+      });
+      return;
+    }
     const sourceBounds = source.getContentBounds();
     const screenAnchor = {
       x: sourceBounds.x + anchor.x,
@@ -221,7 +340,42 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
       { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
       false,
     );
-    if (!window.isVisible() && host.prepareWindowToShow(window)) window.showInactive();
+    reportNativeWindow("candidate-native-positioned", {
+      targetId,
+      generation,
+      anchor: screenAnchor,
+      ownerContentBounds: sourceBounds,
+      candidateBounds: bounds,
+      rendererReady,
+    });
+    if (window.isVisible()) {
+      reportPositionStatus("already-visible", {
+        windowId: window.id,
+        bounds: JSON.stringify(bounds),
+      });
+      return;
+    }
+    const allowed = host.prepareWindowToShow(window);
+    if (!allowed) {
+      reportNativeWindow("candidate-native-show-denied", {
+        targetId,
+        generation,
+        reason: "prepare-to-show-denied",
+        stealth: true,
+      });
+      reportPositionStatus("prepare-to-show-denied", {
+        windowId: window.id,
+        stealth: true,
+        bounds: JSON.stringify(bounds),
+      });
+      return;
+    }
+    window.showInactive();
+    reportPositionStatus(window.isVisible() ? "show-request-visible" : "show-request-not-visible", {
+      windowId: window.id,
+      bounds: JSON.stringify(bounds),
+      ownerWindowId: source.id,
+    });
   }
 
   function resize(nextSize: { width: number; height: number }): void {
@@ -232,17 +386,42 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
 
   function sendState(): void {
     if (!pageLoaded || !rendererReady || !windowRef || windowRef.isDestroyed()) return;
-    if (state) windowRef.webContents.send(ImeCandidateChannels.State, state);
+    if (state) {
+      windowRef.webContents.send(ImeCandidateChannels.State, { state, targetId, generation });
+      logImeDiagnostic("candidate-state-sent", {
+        windowId: windowRef.id,
+        targetId,
+        generation,
+        composing: state.composing,
+        preedit: state.preedit,
+        candidates: state.candidates,
+        selectedIndex: state.selectedIndex,
+        page: state.page,
+      });
+    }
   }
 
   function markRendererReady(): void {
     rendererRequestedReady = true;
+    logImeDiagnostic("candidate-renderer-ready-request", {
+      windowId: windowRef?.id,
+      pageLoaded,
+      rendererReady,
+    });
     activateRendererIfReady();
   }
 
   function activateRendererIfReady(): void {
     if (!pageLoaded || !rendererRequestedReady || !windowRef || windowRef.isDestroyed()) return;
     rendererReady = true;
+    logImeDiagnostic("candidate-renderer-ready", {
+      windowId: windowRef.id,
+      pageLoaded,
+      hasState: state !== undefined,
+      hasAnchor: anchor !== undefined,
+      targetId,
+      generation,
+    });
     sendState();
     positionAndShow();
   }
@@ -255,7 +434,9 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
       windowRef.isDestroyed() ||
       !windowRef.isVisible() ||
       !ownerWindow ||
-      ownerWindow.isDestroyed()
+      ownerWindow.isDestroyed() ||
+      action.targetId !== targetId ||
+      action.generation !== generation
     )
       return;
     ownerWindow.webContents.send(ImeCandidateChannels.OwnerAction, action);
@@ -271,12 +452,16 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
     ownerWindow = undefined;
     state = undefined;
     anchor = undefined;
+    targetId = undefined;
+    generation = undefined;
   }
 
   function suspend(owner: BrowserWindow, reason: string): void {
     if (ownerWindow !== owner) return;
     if (anchor === undefined && (!windowRef || windowRef.isDestroyed() || !windowRef.isVisible()))
       return;
+    if (targetId && generation !== undefined)
+      reportAnchorUnavailable(owner, targetId, generation, reason);
     hideWindow(reason);
     anchor = undefined;
   }
@@ -284,13 +469,100 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
   function hideWindow(reason: string): void {
     if (windowRef && !windowRef.isDestroyed()) {
       const wasVisible = windowRef.isVisible();
-      console.info("[ime-candidate] hide requested", {
-        windowId: windowRef.id,
+      reportNativeWindow("candidate-native-hide-requested", {
+        targetId,
+        generation,
+        reason,
+        wasVisible,
+        state: state
+          ? {
+              enabled: state.enabled,
+              composing: state.composing,
+              preedit: state.preedit,
+              candidates: state.candidates,
+            }
+          : undefined,
+      });
+      if (wasVisible) windowRef.hide();
+      reportNativeWindow("candidate-native-hide-result", {
+        targetId,
+        generation,
         reason,
         wasVisible,
       });
-      if (wasVisible) windowRef.hide();
     }
+  }
+
+  function reportNativeWindow(event: string, details: Record<string, unknown> = {}): void {
+    const window = windowRef;
+    if (!window || window.isDestroyed()) return;
+    const bounds = window.getBounds();
+    const display = screen.getDisplayNearestPoint({
+      x: bounds.x + Math.round(bounds.width / 2),
+      y: bounds.y + Math.round(bounds.height / 2),
+    });
+    const focusedWindow = BrowserWindow.getFocusedWindow();
+    const protection = getWindowCaptureDiagnostics(window);
+    const snapshot = {
+      windowId: window.id,
+      ownerWindowId: ownerWindow?.id,
+      targetId,
+      generation,
+      nativeHandle: protection.nativeHandle,
+      bounds,
+      contentBounds: window.getContentBounds(),
+      visible: window.isVisible(),
+      minimized: window.isMinimized(),
+      focused: window.isFocused(),
+      focusedWindowId: focusedWindow?.id,
+      alwaysOnTop: window.isAlwaysOnTop(),
+      focusable: window.isFocusable(),
+      ownerVisible: ownerWindow && !ownerWindow.isDestroyed() ? ownerWindow.isVisible() : undefined,
+      ownerFocused: ownerWindow && !ownerWindow.isDestroyed() ? ownerWindow.isFocused() : undefined,
+      appForeground: isCurrentProcessForeground(),
+      display: {
+        id: display.id,
+        bounds: display.bounds,
+        workArea: display.workArea,
+        scaleFactor: display.scaleFactor,
+      },
+      captureProtection: {
+        reportedProtected: protection.reportedProtected,
+        protectionBounds: protection.bounds,
+        protectionVisible: protection.visible,
+      },
+      ...details,
+    };
+
+    if (event === "candidate-native-positioned") {
+      const signature = JSON.stringify({
+        targetId,
+        generation,
+        bounds,
+        visible: snapshot.visible,
+        minimized: snapshot.minimized,
+        focused: snapshot.focused,
+        focusedWindowId: snapshot.focusedWindowId,
+        alwaysOnTop: snapshot.alwaysOnTop,
+        ownerVisible: snapshot.ownerVisible,
+        ownerFocused: snapshot.ownerFocused,
+        appForeground: snapshot.appForeground,
+        reportedProtected: protection.reportedProtected,
+      });
+      if (signature === lastNativePositionSignature) return;
+      lastNativePositionSignature = signature;
+    }
+
+    logImeDiagnostic(event, snapshot);
+  }
+
+  function reportPositionStatus(
+    status: string,
+    details: Record<string, string | number | boolean | null | undefined>,
+  ) {
+    if (lastPositionStatus === status) return;
+    lastPositionStatus = status;
+    logImeDiagnostic("candidate-position-status", { status, ...details });
   }
 
   function detachOwnerListener(): void {
@@ -300,13 +572,56 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
     if (ownerWindow && ownerBlurListener && !ownerWindow.isDestroyed()) {
       ownerWindow.removeListener("blur", ownerBlurListener);
     }
+    if (ownerWindow && ownerFocusListener && !ownerWindow.isDestroyed()) {
+      ownerWindow.removeListener("focus", ownerFocusListener);
+    }
     if (ownerWindow && ownerBoundsListener && !ownerWindow.isDestroyed()) {
       ownerWindow.removeListener("move", ownerBoundsListener);
       ownerWindow.removeListener("resize", ownerBoundsListener);
     }
     ownerClosedListener = undefined;
     ownerBlurListener = undefined;
+    ownerFocusListener = undefined;
     ownerBoundsListener = undefined;
+  }
+
+  function reportAnchorAvailable(
+    owner: BrowserWindow,
+    nextTargetId: string,
+    nextGeneration: number,
+    nextAnchor: ImeCandidateAnchor,
+  ): void {
+    const nextLeaseKey = `${owner.id}:${nextTargetId}:${nextGeneration}`;
+    if (anchorLeaseKey === nextLeaseKey && anchorReportedAvailable) return;
+    anchorLeaseKey = nextLeaseKey;
+    anchorReportedAvailable = true;
+    logImeDiagnostic("candidate-anchor", {
+      state: "available",
+      windowId: owner.id,
+      targetId: nextTargetId,
+      generation: nextGeneration,
+      x: Math.round(nextAnchor.x),
+      lineTop: Math.round(nextAnchor.lineTop),
+      lineBottom: Math.round(nextAnchor.lineBottom),
+    });
+  }
+
+  function reportAnchorUnavailable(
+    owner: BrowserWindow,
+    nextTargetId: string,
+    nextGeneration: number,
+    reason: string,
+  ): void {
+    const nextLeaseKey = `${owner.id}:${nextTargetId}:${nextGeneration}`;
+    if (anchorLeaseKey !== nextLeaseKey || !anchorReportedAvailable) return;
+    anchorReportedAvailable = false;
+    logImeDiagnostic("candidate-anchor", {
+      state: "unavailable",
+      windowId: owner.id,
+      targetId: nextTargetId,
+      generation: nextGeneration,
+      reason,
+    });
   }
 
   function dispose(): void {

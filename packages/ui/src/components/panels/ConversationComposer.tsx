@@ -34,6 +34,10 @@ interface ConversationComposerProps {
     onSelect: (index: number) => void;
     onNavigate: (key: string) => void;
     onCandidateUpdate: (payload: ImeCandidateUpdate) => void;
+    onFocus: () => void;
+    onBlur: () => void;
+    targetId: string;
+    generation?: number;
     onToggle: () => void;
   };
 }
@@ -103,16 +107,26 @@ export function ConversationComposer({
       onSubmit={handleSubmit}
     >
       {children}
-      {ime && <ImeCandidateAnchorReporter onUpdate={ime.onCandidateUpdate} state={ime.state} />}
+      {ime && (
+        <ImeCandidateAnchorReporter
+          generation={ime.generation}
+          onUpdate={ime.onCandidateUpdate}
+          state={ime.state}
+          targetId={ime.targetId}
+        />
+      )}
       <textarea
         aria-label={inputLabel}
         className={ime ? "embedded-ime-input" : undefined}
         data-embedded-ime-target={ime ? "true" : undefined}
         data-embedded-ime-active={ime?.active ? "true" : undefined}
+        data-ime-policy={ime ? "text" : "excluded"}
+        data-ime-target-id={ime?.targetId}
+        data-ime-preedit-in-value={ime ? "true" : undefined}
         disabled={disabled}
-        readOnly={disabled || Boolean(ime)}
+        readOnly={disabled || Boolean(ime?.imeEnabled)}
         onChange={(event) => {
-          if (ime) return;
+          if (ime?.active) return;
           onValueChange?.(event.target.value);
         }}
         onCompositionStart={(event) => {
@@ -133,16 +147,6 @@ export function ConversationComposer({
           }
         }}
         onKeyDown={(event) => {
-          if (ime) {
-            console.info("[ime-ui] composer key", {
-              key: event.key,
-              code: event.code,
-              available: ime.available,
-              imeEnabled: ime.imeEnabled,
-              active: ime.active,
-              composing: ime.state.composing,
-            });
-          }
           if (
             ime?.active &&
             !ime.state.composing &&
@@ -171,8 +175,12 @@ export function ConversationComposer({
           event.preventDefault();
           event.currentTarget.form?.requestSubmit();
         }}
-        onFocus={() => console.info("[ime-ui] composer focus", { label: inputLabel })}
-        onBlur={() => console.info("[ime-ui] composer blur", { label: inputLabel })}
+        onFocus={() => {
+          ime?.onFocus();
+        }}
+        onBlur={() => {
+          ime?.onBlur();
+        }}
         placeholder={placeholder}
         ref={textareaRef}
         rows={1}

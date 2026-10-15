@@ -37,6 +37,7 @@ export function RangeSlider({
     <input
       aria-label={ariaLabel}
       className="range-slider"
+      data-ime-policy="excluded"
       disabled={disabled}
       max={max}
       min={min}

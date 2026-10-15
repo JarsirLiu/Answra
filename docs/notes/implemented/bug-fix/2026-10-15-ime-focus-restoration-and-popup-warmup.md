@@ -10,7 +10,7 @@
 
 - 代码/模块：`packages/ui/src/hooks/useEmbeddedIme.ts`、`apps/desktop/native/rime-host/main.cpp`、`apps/desktop/src/main/ime/imeCandidateWindowController.ts`、`apps/desktop/src/main/window.ts`、对应 UI 和 main 测试。
 - UI/进程/协议/持久化表面：窗口重新聚焦后的 Rime 模式恢复；候选 BrowserWindow 的启动和首次显示；逐键日志负载。
-- 相关 Note：[输入法焦点生命周期与 Shift 切换](../../proposed/bug-fix/2026-10-14-ime-shift-and-screenshot-lifecycle.md)、[输入法与窗口生命周期、隐私策略提案](../../proposed/architecture/2026-10-14-ime-window-lifecycle-and-privacy.md)、[内置 Rime 输入法桥接](../architecture/2026-10-14-embedded-rime-ime.md)。
+- 相关 Note：[输入法焦点生命周期与 Shift 切换](../../proposed/bug-fix/2026-10-14-ime-shift-and-screenshot-lifecycle.md)、[统一 IME 输入目标与窗口生命周期](../architecture/2026-10-15-unified-ime-target-lifecycle.md)、[内置 Rime 输入法桥接](../architecture/2026-10-14-embedded-rime-ime.md)。
 
 ## 根因
 

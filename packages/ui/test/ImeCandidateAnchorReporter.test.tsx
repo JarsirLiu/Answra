@@ -18,7 +18,8 @@ function mountHost() {
   document.body.appendChild(host);
   const textarea = document.createElement("textarea");
   textarea.readOnly = true;
-  textarea.dataset.embeddedImeTarget = "true";
+  textarea.dataset.imePolicy = "text";
+  textarea.dataset.imeTargetId = "composer";
   textarea.value = state.preedit;
   textarea.setSelectionRange(state.preedit.length, state.preedit.length);
   return { host, textarea };
@@ -30,9 +31,17 @@ describe("ImeCandidateAnchorReporter", () => {
   it("reports textarea caret geometry without rendering popup content in the input window", () => {
     const onUpdate = vi.fn();
     const { host, textarea } = mountHost();
-    const { container } = render(<ImeCandidateAnchorReporter onUpdate={onUpdate} state={state} />, {
-      container: host,
-    });
+    const { container } = render(
+      <ImeCandidateAnchorReporter
+        onUpdate={onUpdate}
+        state={state}
+        targetId="composer"
+        generation={2}
+      />,
+      {
+        container: host,
+      },
+    );
     host.appendChild(textarea);
     fireEvent.focusIn(textarea);
 
@@ -41,6 +50,8 @@ describe("ImeCandidateAnchorReporter", () => {
       type: "show",
       state,
       anchor: { x: 0, lineTop: 0, lineBottom: 0 },
+      targetId: "composer",
+      generation: 2,
     });
   });
 
@@ -62,7 +73,15 @@ describe("ImeCandidateAnchorReporter", () => {
       height: 30,
       toJSON: () => ({}),
     });
-    render(<ImeCandidateAnchorReporter onUpdate={onUpdate} state={state} />, { container: host });
+    render(
+      <ImeCandidateAnchorReporter
+        onUpdate={onUpdate}
+        state={state}
+        targetId="composer"
+        generation={2}
+      />,
+      { container: host },
+    );
     host.appendChild(textarea);
     fireEvent.focusIn(textarea);
 
@@ -70,13 +89,23 @@ describe("ImeCandidateAnchorReporter", () => {
       type: "show",
       state,
       anchor: { x: 106, lineTop: 43, lineBottom: 43 },
+      targetId: "composer",
+      generation: 2,
     });
   });
 
   it("keeps the candidate anchor through DOM blur while composition is active", () => {
     const onUpdate = vi.fn();
     const { host, textarea } = mountHost();
-    render(<ImeCandidateAnchorReporter onUpdate={onUpdate} state={state} />, { container: host });
+    render(
+      <ImeCandidateAnchorReporter
+        onUpdate={onUpdate}
+        state={state}
+        targetId="composer"
+        generation={2}
+      />,
+      { container: host },
+    );
     host.appendChild(textarea);
     fireEvent.focusIn(textarea);
     const hasFocus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
@@ -86,6 +115,8 @@ describe("ImeCandidateAnchorReporter", () => {
       type: "show",
       state,
       anchor: { x: 0, lineTop: 0, lineBottom: 0 },
+      targetId: "composer",
+      generation: 2,
     });
     hasFocus.mockRestore();
   });
@@ -94,7 +125,12 @@ describe("ImeCandidateAnchorReporter", () => {
     const onUpdate = vi.fn();
     const { host, textarea } = mountHost();
     render(
-      <ImeCandidateAnchorReporter onUpdate={onUpdate} state={{ ...state, enabled: false }} />,
+      <ImeCandidateAnchorReporter
+        onUpdate={onUpdate}
+        state={{ ...state, enabled: false }}
+        targetId="composer"
+        generation={2}
+      />,
       { container: host },
     );
     host.appendChild(textarea);
@@ -103,6 +139,8 @@ describe("ImeCandidateAnchorReporter", () => {
     expect(onUpdate).toHaveBeenLastCalledWith({
       type: "clear",
       state: { ...state, enabled: false },
+      targetId: "composer",
+      generation: 2,
     });
   });
 
@@ -113,6 +151,8 @@ describe("ImeCandidateAnchorReporter", () => {
       <ImeCandidateAnchorReporter
         onUpdate={onUpdate}
         state={{ ...state, preedit: "", candidates: [] }}
+        targetId="composer"
+        generation={2}
       />,
       { container: host },
     );
@@ -129,7 +169,15 @@ describe("ImeCandidateAnchorReporter", () => {
   it("waits for a textarea anchor instead of suspending an active composition", () => {
     const onUpdate = vi.fn();
     const { host, textarea } = mountHost();
-    render(<ImeCandidateAnchorReporter onUpdate={onUpdate} state={state} />, { container: host });
+    render(
+      <ImeCandidateAnchorReporter
+        onUpdate={onUpdate}
+        state={state}
+        targetId="composer"
+        generation={2}
+      />,
+      { container: host },
+    );
 
     expect(onUpdate).not.toHaveBeenCalledWith({ type: "suspend" });
     expect(onUpdate).not.toHaveBeenCalledWith({ type: "clear", state });
@@ -141,13 +189,23 @@ describe("ImeCandidateAnchorReporter", () => {
       type: "show",
       state,
       anchor: { x: 0, lineTop: 0, lineBottom: 0 },
+      targetId: "composer",
+      generation: 2,
     });
   });
 
   it("preserves and restores the last IME textarea across window focus changes", () => {
     const onUpdate = vi.fn();
     const { host, textarea } = mountHost();
-    render(<ImeCandidateAnchorReporter onUpdate={onUpdate} state={state} />, { container: host });
+    render(
+      <ImeCandidateAnchorReporter
+        onUpdate={onUpdate}
+        state={state}
+        targetId="composer"
+        generation={2}
+      />,
+      { container: host },
+    );
     host.appendChild(textarea);
     fireEvent.focusIn(textarea);
     const hasFocus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
@@ -156,6 +214,8 @@ describe("ImeCandidateAnchorReporter", () => {
       type: "show",
       state,
       anchor: { x: 0, lineTop: 0, lineBottom: 0 },
+      targetId: "composer",
+      generation: 2,
     });
 
     fireEvent.focus(window);
@@ -165,6 +225,8 @@ describe("ImeCandidateAnchorReporter", () => {
       type: "show",
       state,
       anchor: { x: 0, lineTop: 0, lineBottom: 0 },
+      targetId: "composer",
+      generation: 2,
     });
     hasFocus.mockRestore();
   });

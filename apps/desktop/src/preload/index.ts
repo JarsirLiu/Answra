@@ -10,9 +10,11 @@ import {
   type DesktopBridge,
   type ImeCandidateAction,
   ImeCandidateChannels,
+  type ImeCandidateSnapshot,
   type ImeCandidateUpdate,
   ImeChannels,
   type ImeKeyRequest,
+  type ImeRendererDiagnostic,
   type ImeState,
   type RegionCaptureOptions,
   type ReplyBarAction,
@@ -32,10 +34,17 @@ import { contextBridge, ipcRenderer } from "electron";
 const bridge: DesktopBridge = {
   // Set true only when the packaged librime bridge has been installed.
   imeAvailable: true,
-  imeEnable: (enabled: boolean) => ipcRenderer.invoke(ImeChannels.Enable, enabled),
+  imeAcquire: (targetId: string) => ipcRenderer.invoke(ImeChannels.Acquire, { targetId }),
+  imeRelease: (generation: number) => ipcRenderer.invoke(ImeChannels.Release, { generation }),
+  imeConfirmFocus: (targetId: string, generation: number) =>
+    ipcRenderer.invoke(ImeChannels.ConfirmFocus, { targetId, generation }),
   imeKey: (request: ImeKeyRequest) => ipcRenderer.invoke(ImeChannels.Key, request),
-  imeSelect: (index: number) => ipcRenderer.invoke(ImeChannels.Select, { index }),
-  imeReset: () => ipcRenderer.invoke(ImeChannels.Reset),
+  imeDiagnostic: (diagnostic: ImeRendererDiagnostic) => {
+    ipcRenderer.send(ImeChannels.Diagnostic, diagnostic);
+  },
+  imeSelect: (index: number, generation: number) =>
+    ipcRenderer.invoke(ImeChannels.Select, { index, generation }),
+  imeReset: (generation: number) => ipcRenderer.invoke(ImeChannels.Reset, { generation }),
   onImeChange: (listener: (state: ImeState) => void) => {
     const wrapped = (_event: Electron.IpcRendererEvent, state: ImeState) => listener(state);
     ipcRenderer.on(ImeChannels.Change, wrapped);
@@ -50,8 +59,9 @@ const bridge: DesktopBridge = {
     ipcRenderer.on(ImeCandidateChannels.OwnerAction, wrapped);
     return () => ipcRenderer.removeListener(ImeCandidateChannels.OwnerAction, wrapped);
   },
-  onImeCandidateState: (listener: (state: ImeState) => void) => {
-    const wrapped = (_event: Electron.IpcRendererEvent, state: ImeState) => listener(state);
+  onImeCandidateState: (listener: (snapshot: ImeCandidateSnapshot) => void) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, snapshot: ImeCandidateSnapshot) =>
+      listener(snapshot);
     ipcRenderer.on(ImeCandidateChannels.State, wrapped);
     return () => ipcRenderer.removeListener(ImeCandidateChannels.State, wrapped);
   },

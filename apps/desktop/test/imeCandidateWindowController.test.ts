@@ -50,6 +50,7 @@ const shared = vi.hoisted(() => {
     parent: MockWindow | null = null;
     visible = false;
     destroyed = false;
+    alwaysOnTopCalls: unknown[][] = [];
 
     constructor(options: Partial<Electron.Rectangle>) {
       super();
@@ -71,6 +72,26 @@ const shared = vi.hoisted(() => {
 
     isVisible() {
       return this.visible;
+    }
+
+    isMinimized() {
+      return false;
+    }
+
+    isFocused() {
+      return false;
+    }
+
+    isAlwaysOnTop() {
+      return true;
+    }
+
+    isFocusable() {
+      return false;
+    }
+
+    getNativeWindowHandle() {
+      return Buffer.from([this.id, 0, 0, 0]);
     }
 
     setBounds(bounds: Electron.Rectangle) {
@@ -97,7 +118,9 @@ const shared = vi.hoisted(() => {
       this.emit("closed");
     }
 
-    setAlwaysOnTop() {}
+    setAlwaysOnTop(...args: unknown[]) {
+      this.alwaysOnTopCalls.push(args);
+    }
     setSkipTaskbar() {}
     loadURL() {
       return Promise.resolve();
@@ -109,7 +132,12 @@ const shared = vi.hoisted(() => {
 
   class MockScreen extends Emitter {
     getDisplayNearestPoint() {
-      return { workArea: { x: 0, y: 0, width: 1920, height: 1080 } };
+      return {
+        id: 1,
+        bounds: { x: 0, y: 0, width: 1920, height: 1080 },
+        workArea: { x: 0, y: 0, width: 1920, height: 1080 },
+        scaleFactor: 1,
+      };
     }
   }
 
@@ -132,6 +160,12 @@ vi.mock("electron", () => ({
 
 vi.mock("../src/main/windowCaptureProtection", () => ({
   setWindowCaptureProtection: shared.setCaptureProtection,
+  getWindowCaptureDiagnostics: (window: shared.MockWindow) => ({
+    nativeHandle: `0x${window.id.toString(16)}`,
+    bounds: window.getBounds(),
+    visible: window.isVisible(),
+    reportedProtected: true,
+  }),
 }));
 
 vi.mock("../src/main/windowInteractionPolicy", () => ({
@@ -142,11 +176,16 @@ vi.mock("../src/main/windowForeground", () => ({
   isCurrentProcessForeground: () => shared.appFocused,
 }));
 
+vi.mock("../src/main/ime/imeDiagnostics", () => ({
+  logImeDiagnostic: vi.fn(),
+}));
+
 import { ImeCandidateChannels, type ImeState } from "@answra/shared";
 import {
   createImeCandidateWindowController,
   resolveImeCandidateWindowPaths,
 } from "../src/main/ime/imeCandidateWindowController";
+import { logImeDiagnostic } from "../src/main/ime/imeDiagnostics";
 
 const state: ImeState = {
   enabled: true,
@@ -166,6 +205,7 @@ describe("IME candidate window controller", () => {
     shared.MockWindow.nextId = 1;
     shared.setCaptureProtection.mockClear();
     shared.attachNonActivatingWindow.mockClear();
+    vi.mocked(logImeDiagnostic).mockClear();
     shared.screen.removeAllListeners();
   });
 
@@ -190,6 +230,8 @@ describe("IME candidate window controller", () => {
       type: "show",
       state,
       anchor: { x: 240, lineTop: 120, lineBottom: 144 },
+      targetId: "composer",
+      generation: 1,
     });
     const candidate = shared.windows.at(-1);
     if (!candidate) throw new Error("candidate window was not created");
@@ -204,16 +246,99 @@ describe("IME candidate window controller", () => {
 
     candidate.webContents.emit("did-finish-load");
     expect(candidate.visible).toBe(true);
+    expect(candidate.alwaysOnTopCalls).toContainEqual([true, "pop-up-menu"]);
+    expect(logImeDiagnostic).toHaveBeenCalledWith(
+      "candidate-native-positioned",
+      expect.objectContaining({
+        nativeHandle: expect.any(String),
+        visible: false,
+        alwaysOnTop: true,
+        focusable: false,
+        captureProtection: expect.objectContaining({ reportedProtected: true }),
+        display: expect.objectContaining({ scaleFactor: 1 }),
+      }),
+    );
+    expect(logImeDiagnostic).toHaveBeenCalledWith(
+      "candidate-native-show",
+      expect.objectContaining({ visible: true, alwaysOnTop: true }),
+    );
+    expect(logImeDiagnostic).toHaveBeenCalledWith(
+      "candidate-native-show",
+      expect.objectContaining({ visible: true, alwaysOnTop: true }),
+    );
     expect(candidate.bounds).toMatchObject({ x: 332, y: 192 });
-    expect(candidate.sent).toContainEqual([ImeCandidateChannels.State, state]);
-    const action = { type: "select", index: 0 } as const;
+    expect(candidate.sent).toContainEqual([
+      ImeCandidateChannels.State,
+      { state, targetId: "composer", generation: 1 },
+    ]);
+    const action = { type: "select", index: 0, targetId: "composer", generation: 1 } as const;
     controller.routeAction(action);
     expect(owner.sent).toContainEqual([ImeCandidateChannels.OwnerAction, action]);
 
-    controller.update(owner as never, { type: "clear" });
+    controller.update(owner as never, { type: "clear", targetId: "composer", generation: 0 });
+    expect(candidate.visible).toBe(true);
+    controller.update(owner as never, { type: "clear", targetId: "composer", generation: 1 });
     expect(candidate.visible).toBe(false);
+    expect(logImeDiagnostic).toHaveBeenCalledWith(
+      "candidate-native-hide-result",
+      expect.objectContaining({ visible: false, reason: "owner-reported-no-candidates" }),
+    );
     controller.routeAction(action);
     expect(owner.sent).toHaveLength(1);
+    controller.dispose();
+  });
+
+  it("logs anchor lifecycle and candidate state when the owner regains focus", () => {
+    const owner = new shared.MockWindow({ x: 100, y: 50, width: 800, height: 600 });
+    const controller = createImeCandidateWindowController({
+      isOwnerWindow: (candidate) => candidate === owner,
+      registerWindowPolicy: vi.fn(),
+      prepareWindowToShow: () => true,
+    });
+    const payload = {
+      type: "show" as const,
+      state,
+      anchor: { x: 240, lineTop: 120, lineBottom: 144 },
+      targetId: "composer",
+      generation: 4,
+    };
+
+    controller.update(owner as never, payload);
+    const candidate = shared.windows.at(-1);
+    if (!candidate) throw new Error("candidate window was not created");
+    controller.markRendererReady();
+    candidate.webContents.emit("did-finish-load");
+
+    controller.update(owner as never, {
+      ...payload,
+      anchor: { x: 248, lineTop: 120, lineBottom: 144 },
+    });
+    owner.emit("focus");
+
+    expect(
+      vi.mocked(logImeDiagnostic).mock.calls.filter(([event]) => event === "candidate-anchor"),
+    ).toEqual([
+      ["candidate-anchor", expect.objectContaining({ state: "available", x: 240, generation: 4 })],
+    ]);
+    expect(logImeDiagnostic).toHaveBeenCalledWith(
+      "candidate-owner-focus",
+      expect.objectContaining({
+        hasAnchor: true,
+        candidateVisible: true,
+        candidateAlwaysOnTop: true,
+        focusedWindowId: undefined,
+      }),
+    );
+
+    controller.update(owner as never, {
+      type: "clear",
+      targetId: "composer",
+      generation: 4,
+    });
+    expect(logImeDiagnostic).toHaveBeenCalledWith(
+      "candidate-anchor",
+      expect.objectContaining({ state: "unavailable", reason: "clear" }),
+    );
     controller.dispose();
   });
 
@@ -228,6 +353,8 @@ describe("IME candidate window controller", () => {
       type: "show",
       state,
       anchor: { x: 240, lineTop: 120, lineBottom: 144 },
+      targetId: "composer",
+      generation: 1,
     });
     const candidate = shared.windows.at(-1);
     if (!candidate) throw new Error("candidate window was not created");
@@ -241,6 +368,13 @@ describe("IME candidate window controller", () => {
     owner.bounds = { ...owner.bounds, x: 300 };
     owner.emit("move");
     expect(candidate.bounds.x).toBe(originalX + 200);
+    const positionedCount = () =>
+      vi
+        .mocked(logImeDiagnostic)
+        .mock.calls.filter(([event]) => event === "candidate-native-positioned").length;
+    const afterMove = positionedCount();
+    owner.emit("resize");
+    expect(positionedCount()).toBe(afterMove);
 
     expect(shared.screen.listenerCount("display-metrics-changed")).toBe(1);
     controller.dispose();
@@ -275,6 +409,8 @@ describe("IME candidate window controller", () => {
       type: "show" as const,
       state,
       anchor: { x: 240, lineTop: 120, lineBottom: 144 },
+      targetId: "composer",
+      generation: 1,
     };
     controller.update(owner as never, payload);
     const candidate = shared.windows.at(-1);
@@ -288,6 +424,10 @@ describe("IME candidate window controller", () => {
     await vi.advanceTimersByTimeAsync(120);
     vi.useRealTimers();
     expect(candidate.visible).toBe(true);
+    expect(logImeDiagnostic).toHaveBeenCalledWith(
+      "candidate-owner-blur-settled",
+      expect.objectContaining({ decision: "preserve", hasAnchor: true }),
+    );
     controller.dispose();
   });
 
@@ -302,6 +442,8 @@ describe("IME candidate window controller", () => {
       type: "show",
       state,
       anchor: { x: 240, lineTop: 120, lineBottom: 144 },
+      targetId: "composer",
+      generation: 1,
     });
     const candidate = shared.windows.at(-1);
     if (!candidate) throw new Error("candidate window was not created");
@@ -331,6 +473,8 @@ describe("IME candidate window controller", () => {
       type: "show" as const,
       state,
       anchor: { x: 240, lineTop: 120, lineBottom: 144 },
+      targetId: "composer",
+      generation: 1,
     };
     controller.update(owner as never, payload);
     const candidate = shared.windows.at(-1);
@@ -345,7 +489,11 @@ describe("IME candidate window controller", () => {
     await vi.advanceTimersByTimeAsync(120);
     vi.useRealTimers();
     expect(candidate.visible).toBe(false);
-    const action = { type: "select", index: 0 } as const;
+    expect(logImeDiagnostic).toHaveBeenCalledWith(
+      "candidate-owner-blur-settled",
+      expect.objectContaining({ decision: "suspend", hasAnchor: true }),
+    );
+    const action = { type: "select", index: 0, targetId: "composer", generation: 1 } as const;
     controller.routeAction(action);
     expect(owner.sent).toHaveLength(0);
 
@@ -367,6 +515,8 @@ describe("IME candidate window controller", () => {
       type: "show",
       state,
       anchor: { x: 240, lineTop: 120, lineBottom: 144 },
+      targetId: "composer",
+      generation: 1,
     });
     const candidate = shared.windows.at(-1);
     if (!candidate) throw new Error("candidate window was not created");
@@ -376,6 +526,8 @@ describe("IME candidate window controller", () => {
     controller.update(owner as never, {
       type: "clear",
       state: { ...state, preedit: "", candidates: [] },
+      targetId: "composer",
+      generation: 1,
     });
     expect(candidate.visible).toBe(false);
 
@@ -383,6 +535,8 @@ describe("IME candidate window controller", () => {
       type: "show",
       state,
       anchor: { x: 240, lineTop: 120, lineBottom: 144 },
+      targetId: "composer",
+      generation: 1,
     });
     expect(candidate.visible).toBe(true);
     controller.dispose();

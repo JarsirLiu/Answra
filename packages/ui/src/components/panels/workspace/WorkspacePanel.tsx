@@ -149,6 +149,7 @@ export function WorkspacePanel({ bridge, onClose, stealth = false }: WorkspacePa
                   </button>
                 ) : (
                   <DirectoryTree
+                    bridge={bridge}
                     nodes={workspace.tree}
                     selectedPath={selected?.path ?? null}
                     onSelect={openNode}

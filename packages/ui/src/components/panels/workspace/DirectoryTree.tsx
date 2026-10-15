@@ -1,4 +1,4 @@
-import type { WorkspaceNode } from "@answra/shared";
+import type { DesktopBridge, WorkspaceNode } from "@answra/shared";
 import { addCollection, Icon } from "@iconify/react";
 // VS Code 图标集离线注册（Iconify 官方离线用法：导入一次，全应用可用）。
 import vscodeIconsCollection from "@iconify-json/vscode-icons/icons.json";
@@ -14,6 +14,7 @@ import {
 import { useState } from "react";
 import { getIconForFile } from "vscode-icons-js";
 import { ICON_SM } from "../../../tokens";
+import { EmbeddedImeInput } from "../../controls/EmbeddedImeInput";
 import "./DirectoryTree.css";
 
 addCollection(vscodeIconsCollection);
@@ -26,6 +27,7 @@ function fileIconId(name: string): string {
 }
 
 interface DirectoryTreeProps {
+  bridge?: DesktopBridge;
   nodes: WorkspaceNode[];
   selectedPath: string | null;
   onSelect: (node: WorkspaceNode) => void;
@@ -70,9 +72,11 @@ export function DirectoryTree(props: DirectoryTreeProps) {
     <div className="workspace-tree">
       <div className="workspace-tree__filter">
         <Search aria-hidden="true" size={12} />
-        <input
+        <EmbeddedImeInput
+          bridge={props.bridge}
+          targetId="workspace-directory-filter"
           value={filter}
-          onChange={(event) => setFilter(event.target.value)}
+          onValueChange={setFilter}
           placeholder="筛选文件…"
           aria-label="筛选文件"
         />

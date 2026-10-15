@@ -6,8 +6,11 @@ import type {
   ConversationSendRequest,
   ConversationSnapshot,
   ImeCandidateAction,
+  ImeCandidateSnapshot,
   ImeCandidateUpdate,
   ImeKeyRequest,
+  ImeLeaseResponse,
+  ImeRendererDiagnostic,
   ImeState,
   InterviewAudioFrame,
   InterviewChange,
@@ -35,14 +38,17 @@ export type OverlayMode = "closed" | "chat" | "interview" | "notes" | "sources" 
 export interface DesktopBridge {
   /** 应用内输入法；隐身模式下未能启用时，文本输入保持阻断。 */
   imeAvailable?: boolean;
-  imeEnable?: (enabled: boolean) => Promise<ImeState>;
+  imeAcquire?: (targetId: string) => Promise<ImeLeaseResponse>;
+  imeRelease?: (generation: number) => Promise<ImeLeaseResponse>;
+  imeConfirmFocus?: (targetId: string, generation: number) => Promise<ImeLeaseResponse>;
   imeKey?: (request: ImeKeyRequest) => Promise<ImeState>;
-  imeSelect?: (index: number) => Promise<ImeState>;
-  imeReset?: () => Promise<ImeState>;
+  imeDiagnostic?: (diagnostic: ImeRendererDiagnostic) => void;
+  imeSelect?: (index: number, generation: number) => Promise<ImeState>;
+  imeReset?: (generation: number) => Promise<ImeState>;
   onImeChange?: (listener: (state: ImeState) => void) => () => void;
   setImeCandidate?: (payload: ImeCandidateUpdate) => void;
   onImeCandidateAction?: (listener: (action: ImeCandidateAction) => void) => () => void;
-  onImeCandidateState?: (listener: (state: ImeState) => void) => () => void;
+  onImeCandidateState?: (listener: (snapshot: ImeCandidateSnapshot) => void) => () => void;
   requestImeCandidateState?: () => void;
   fitImeCandidate?: (size: ContentSize) => void;
   sendImeCandidateAction?: (action: ImeCandidateAction) => void;

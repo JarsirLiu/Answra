@@ -4,6 +4,14 @@ import { afterEach, vi } from "vitest";
 
 afterEach(cleanup);
 
+// jsdom has no layout engine; CodeMirror's scheduled measurement still expects Range geometry APIs.
+if (typeof Range !== "undefined" && !Range.prototype.getClientRects) {
+  Object.defineProperty(Range.prototype, "getClientRects", {
+    configurable: true,
+    value: () => [],
+  });
+}
+
 class TestResizeObserver implements ResizeObserver {
   observe() {}
   unobserve() {}

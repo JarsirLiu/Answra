@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ConversationComposer } from "../src/components/panels/ConversationComposer";
 
@@ -23,6 +23,9 @@ function imeProps(
     onSelect: vi.fn(),
     onNavigate: vi.fn(),
     onCandidateUpdate: vi.fn(),
+    onFocus: vi.fn(),
+    onBlur: vi.fn(),
+    targetId: "test-composer",
     onToggle: vi.fn(),
     state: EMPTY_IME_STATE,
     ...overrides,
@@ -60,7 +63,7 @@ describe("ConversationComposer", () => {
     expect(onPasteImages).toHaveBeenCalledWith([file]);
   });
 
-  it("uses a focused read-only textarea while the embedded IME owns input", () => {
+  it("keeps the textarea read-only while the embedded IME owns input", async () => {
     const onKeyDown = vi.fn(() => true);
     const onToggle = vi.fn();
     render(
@@ -77,10 +80,32 @@ describe("ConversationComposer", () => {
     expect(input).toHaveProperty("readOnly", true);
     expect(input).toHaveAttribute("data-embedded-ime-target", "true");
     expect(input).not.toHaveAttribute("contenteditable");
+    input.focus();
+    await waitFor(() =>
+      expect(document.querySelector("[data-ime-visual-caret='true']")).not.toBeNull(),
+    );
     fireEvent.keyDown(input, { key: "Process", code: "KeyN" });
     expect(onKeyDown).toHaveBeenCalledOnce();
     fireEvent.click(screen.getByRole("button", { name: "关闭内置输入法" }));
     expect(onToggle).toHaveBeenCalledOnce();
+  });
+
+  it("restores ordinary text editing when the embedded IME is disabled", () => {
+    const onValueChange = vi.fn();
+    render(
+      <ConversationComposer
+        ime={imeProps({ active: false, imeEnabled: false })}
+        inputLabel="补充问题"
+        onValueChange={onValueChange}
+        placeholder="输入问题"
+        value=""
+      />,
+    );
+
+    const input = screen.getByRole("textbox", { name: "补充问题" });
+    expect(input).toHaveProperty("readOnly", false);
+    fireEvent.change(input, { target: { value: "hello" } });
+    expect(onValueChange).toHaveBeenCalledWith("hello");
   });
 
   it("renders Rime preedit at the current textarea selection", () => {

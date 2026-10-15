@@ -10,7 +10,7 @@
 
 - 代码/模块：`packages/shared/src/channels.ts`、`packages/ui/src/hooks/useEmbeddedIme.ts`、`packages/ui/src/components/panels/ImeCandidateAnchorReporter.tsx`、`apps/desktop/src/main/ime/imeCandidateIpc.ts`、`apps/desktop/src/main/ime/imeCandidateWindowController.ts`
 - UI/进程/协议/持久化表面：renderer 上报组合快照，main 校验后控制独立候选窗口；不改变 Rime 组合本身。
-- 相关 Note：[输入法焦点生命周期与 Shift 切换](../../proposed/bug-fix/2026-10-14-ime-shift-and-screenshot-lifecycle.md)、[输入法与窗口生命周期、隐私策略提案](../../proposed/architecture/2026-10-14-ime-window-lifecycle-and-privacy.md)
+- 相关 Note：[输入法焦点生命周期与 Shift 切换](../../proposed/bug-fix/2026-10-14-ime-shift-and-screenshot-lifecycle.md)、[统一 IME 输入目标与窗口生命周期](../architecture/2026-10-15-unified-ime-target-lifecycle.md)
 
 ## 根因
 

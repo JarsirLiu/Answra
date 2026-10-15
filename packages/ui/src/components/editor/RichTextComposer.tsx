@@ -137,6 +137,7 @@ export function RichTextComposer({
           role: "textbox",
           "aria-multiline": "true",
           "aria-label": ariaLabel ?? "",
+          "data-ime-policy": "excluded",
           ...(imeBlocked ? { "aria-readonly": "true", "data-embedded-ime-target": "true" } : {}),
           ...(imeActive ? { "data-embedded-ime-active": "true" } : {}),
           // 输入法接管期间保持可聚焦，keydown 才能送达 Rime 处理。

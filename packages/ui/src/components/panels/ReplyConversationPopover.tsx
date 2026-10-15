@@ -55,6 +55,7 @@ export function ReplyConversationPopover({
       setDraft(next);
     },
     true,
+    "reply-composer",
   );
   preeditLengthRef.current = ime.state.preedit.length;
   useLayoutEffect(() => {
@@ -180,6 +181,10 @@ export function ReplyConversationPopover({
                 onNavigate: ime.sendNavigation,
                 onSelect: ime.select,
                 onCandidateUpdate: ime.updateCandidate,
+                onFocus: ime.acquire,
+                onBlur: ime.blur,
+                targetId: "reply-composer",
+                generation: ime.generation,
                 onToggle: ime.toggle,
               }
             : undefined
