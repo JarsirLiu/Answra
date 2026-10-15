@@ -317,6 +317,7 @@ export interface ImeKeyRequest {
   ctrl: boolean;
   alt: boolean;
   meta: boolean;
+  release?: boolean;
 }
 
 export type ImeRendererDiagnosticEvent =

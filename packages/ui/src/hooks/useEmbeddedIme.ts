@@ -28,6 +28,8 @@ export function useEmbeddedIme(
   );
   const [imeEnabled, setImeEnabled] = useState(true);
   const [state, setState] = useState<ImeState>(EMPTY_STATE);
+  const [asciiMode, setAsciiMode] = useState(false);
+  const asciiModeRef = useRef(false);
   const [generation, setGeneration] = useState<number | undefined>(undefined);
   const generationRef = useRef<number | undefined>(undefined);
   const focusedRef = useRef(false);
@@ -41,6 +43,8 @@ export function useEmbeddedIme(
     generationRef.current = undefined;
     setGeneration(undefined);
     focusedRef.current = false;
+    asciiModeRef.current = false;
+    setAsciiMode(false);
     setState(EMPTY_STATE);
     releaseImeInputTarget(targetId);
     if (generation !== undefined) {
@@ -107,8 +111,11 @@ export function useEmbeddedIme(
           result?.accepted &&
           result.targetId === targetId &&
           result.generation === generation
-        )
+        ) {
+          asciiModeRef.current = false;
+          setAsciiMode(false);
           setState(result.state);
+        }
         return;
       }
       if (acquirePromiseRef.current) return acquirePromiseRef.current;
@@ -141,6 +148,8 @@ export function useEmbeddedIme(
           return;
         }
         generationRef.current = result.generation;
+        asciiModeRef.current = false;
+        setAsciiMode(false);
         setGeneration(result.generation);
         setState(result.state);
         bridge.imeDiagnostic?.({
@@ -298,7 +307,7 @@ export function useEmbeddedIme(
   );
 
   const sendKey = useCallback(
-    (event: KeyboardEvent | React.KeyboardEvent<HTMLElement>) => {
+    (event: KeyboardEvent | React.KeyboardEvent<HTMLElement>, release = false) => {
       const activeElement = document.activeElement;
       const keyKind = getKeyKind(event.key);
       const reportRouting = (accepted: boolean) => {
@@ -354,7 +363,52 @@ export function useEmbeddedIme(
         return false;
       }
       const key = normalizeKey(event.key, event.code);
+      const isShiftKey = key === "Shift";
+      const togglesAsciiMode =
+        isShiftKey &&
+        !release &&
+        !event.repeat &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        !event.metaKey;
+      if (togglesAsciiMode) {
+        const nextAsciiMode = !asciiModeRef.current;
+        asciiModeRef.current = nextAsciiMode;
+        setAsciiMode(nextAsciiMode);
+      }
+      if (
+        asciiModeRef.current &&
+        !isShiftKey &&
+        !release &&
+        key?.length === 1 &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        !event.metaKey
+      ) {
+        reportRouting(false);
+        return false;
+      }
+      if (
+        !asciiModeRef.current &&
+        !state.composing &&
+        key &&
+        /^[0-9]$/.test(key) &&
+        !event.shiftKey &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        !event.metaKey
+      ) {
+        onCommitRef.current?.(key);
+        reportRouting(true);
+        return true;
+      }
       if (!key || (key.length !== 1 && !state.composing)) {
+        if (key !== "Shift") {
+          reportRouting(false);
+          return false;
+        }
+      }
+      if (release && key !== "Shift") {
         reportRouting(false);
         return false;
       }
@@ -366,14 +420,21 @@ export function useEmbeddedIme(
         ctrl: event.ctrlKey,
         alt: event.altKey,
         meta: event.metaKey,
+        release,
       };
-      enqueueInput(
-        (generation) => bridge.imeKey?.({ ...request, generation }) ?? Promise.resolve(EMPTY_STATE),
-      );
+      enqueueInput(async (generation) => {
+        if (togglesAsciiMode && state.composing) await bridge.imeReset?.(generation);
+        return bridge.imeKey?.({ ...request, generation }) ?? EMPTY_STATE;
+      });
       reportRouting(true);
       return true;
     },
     [available, bridge, enabled, enqueueInput, imeEnabled, state.composing, targetId],
+  );
+
+  const sendKeyUp = useCallback(
+    (event: KeyboardEvent | React.KeyboardEvent<HTMLElement>) => sendKey(event, true),
+    [sendKey],
   );
 
   const sendNavigation = useCallback(
@@ -449,6 +510,7 @@ export function useEmbeddedIme(
   return {
     available: enabled && available,
     imeEnabled,
+    asciiMode,
     active: enabled && imeEnabled && available && state.enabled,
     state,
     generation,
@@ -456,6 +518,7 @@ export function useEmbeddedIme(
     release,
     blur,
     sendKey,
+    sendKeyUp,
     sendNavigation,
     select,
     cancelComposition,
@@ -502,6 +565,7 @@ function getSelectionSummary(target: EventTarget | null): {
 
 /** Windows marks keys consumed by its IME as "Process"; recover the physical key. */
 function normalizeKey(key: string, code: string): string | undefined {
+  if (key === "Shift" && (code === "ShiftLeft" || code === "ShiftRight")) return "Shift";
   if (key !== "Process") return key;
   if (/^Key[A-Z]$/.test(code)) return code.slice(3).toLowerCase();
   if (/^Digit[0-9]$/.test(code)) return code.slice(5);

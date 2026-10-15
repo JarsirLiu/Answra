@@ -555,7 +555,8 @@ function isKeyRequest(value: unknown): value is ImeKeyRequest {
   return (
     Number.isInteger(value.generation) &&
     ["key", "code"].every((key) => typeof value[key] === "string") &&
-    ["shift", "ctrl", "alt", "meta"].every((key) => typeof value[key] === "boolean")
+    ["shift", "ctrl", "alt", "meta"].every((key) => typeof value[key] === "boolean") &&
+    (value.release === undefined || typeof value.release === "boolean")
   );
 }
 

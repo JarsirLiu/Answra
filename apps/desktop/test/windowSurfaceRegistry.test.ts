@@ -16,6 +16,8 @@ class MockWindow {
   setParentWindow = vi.fn((parent: MockWindow | null) => {
     this.parent = parent;
   });
+  getMediaSourceId = vi.fn(() => `window:${this.id}`);
+  moveAbove = vi.fn();
   isDestroyed = () => this.destroyed;
   isVisible = () => this.visible;
 
@@ -94,6 +96,7 @@ describe("window surface registry", () => {
 
     registry.attachAbove(candidate as never, reply as never);
     expect(candidate.parent).toBe(reply);
+    expect(candidate.moveAbove).toHaveBeenCalledWith(`window:${reply.id}`);
     const callsBeforeFocus = candidate.setParentWindow.mock.calls.length;
     reply.emit("focus");
     expect(candidate.setParentWindow).toHaveBeenCalledTimes(callsBeforeFocus + 1);

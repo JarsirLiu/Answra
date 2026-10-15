@@ -318,6 +318,9 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
       rendererReady,
     });
     if (window.isVisible()) {
+      // 已可见时也要重新断言 z 序：owner 被 setBounds/激活后，
+      // Windows 不会自动保持 owned 候选窗口在 owner 之上。
+      host.attachAbove(window, source);
       reportPositionStatus("already-visible", {
         windowId: window.id,
         bounds: JSON.stringify(bounds),

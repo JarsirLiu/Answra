@@ -64,18 +64,18 @@ export function EmbeddedImeInput({
       />
       <input
         {...props}
-        aria-readonly={ime.active || undefined}
+        aria-readonly={(ime.active && !ime.asciiMode) || undefined}
         data-embedded-ime-target="true"
         data-ime-policy="text"
         data-ime-target-id={targetId}
         onBeforeInput={(event) => {
           props.onBeforeInput?.(event);
-          if (ime.active) event.preventDefault();
+          if (ime.active && !ime.asciiMode) event.preventDefault();
         }}
         onBlur={() => ime.blur()}
         onCompositionStart={(event) => {
           props.onCompositionStart?.(event);
-          if (ime.active) event.preventDefault();
+          if (ime.active && !ime.asciiMode) event.preventDefault();
         }}
         onFocus={() => void ime.acquire()}
         onKeyDown={(event) => {
@@ -83,19 +83,26 @@ export function EmbeddedImeInput({
             event.preventDefault();
             return;
           }
-          if (ime.active && !ime.state.composing && event.key === "Backspace") {
+          if (ime.active && !ime.asciiMode && !ime.state.composing && event.key === "Backspace") {
             event.preventDefault();
             replaceSelection("");
             return;
           }
           props.onKeyDown?.(event);
         }}
-        readOnly={ime.active || props.readOnly}
+        onKeyUp={(event) => {
+          if (ime.sendKeyUp(event)) {
+            event.preventDefault();
+            return;
+          }
+          props.onKeyUp?.(event);
+        }}
+        readOnly={(ime.active && !ime.asciiMode) || props.readOnly}
         ref={inputRef}
         type={type}
         value={value}
         onChange={(event) => {
-          if (!ime.active) onValueChange(event.currentTarget.value);
+          if (!ime.active || ime.asciiMode) onValueChange(event.currentTarget.value);
         }}
       />
     </>

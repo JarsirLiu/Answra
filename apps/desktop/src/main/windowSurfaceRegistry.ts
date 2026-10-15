@@ -221,6 +221,10 @@ export function createWindowSurfaceRegistry(
     if (child.isDestroyed() || owner.isDestroyed() || ownerByChild.get(child) !== owner) return;
     child.setParentWindow(owner);
     applySurfacePolicy(child, "ime-candidate");
+    // Windows 上 floating/pop-up-menu 两个 alwaysOnTop 层级都映射到同一
+    // HWND_TOPMOST 带，setAlwaysOnTop 不会保证 owned 窗口排在 owner 之上；
+    // 必须显式 moveAbove，否则候选窗口会被 owner 内的 DOM（发送按钮等）盖住。
+    child.moveAbove(owner.getMediaSourceId());
   }
 
   function publishFocus(window: BrowserWindow, focused: boolean): void {

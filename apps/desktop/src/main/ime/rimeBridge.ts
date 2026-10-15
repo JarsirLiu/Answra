@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import type { ImeKeyRequest, ImeState } from "@answra/shared";
 import { app } from "electron";
+import { rimeKeyCode, rimeKeyMask } from "./rimeKeyMapping";
 
 const EMPTY: ImeState = {
   enabled: false,
@@ -82,13 +83,9 @@ export class RimeBridge {
       });
       return { ...this.state, handled: false };
     }
-    const keycode = request.key.length === 1 ? x11Keysym(request.key) : namedKey(request.key);
+    const keycode = rimeKeyCode(request);
     if (keycode === undefined) return { ...this.state, handled: false };
-    let mask = 0;
-    if (request.shift) mask |= 1;
-    if (request.ctrl) mask |= 2;
-    if (request.alt) mask |= 4;
-    if (request.meta) mask |= 8;
+    const mask = rimeKeyMask(request);
     const state = await this.command("key", String(keycode), String(mask));
     if (!state.handled && !state.composing)
       console.info("[ime] key unhandled", { key: request.key, code: request.code });
@@ -153,7 +150,10 @@ export class RimeBridge {
       let migrateLegacyPatch = false;
       if (existsSync(schemaPatch)) {
         const existing = await readFile(schemaPatch, "utf8");
-        migrateLegacyPatch = existing.includes("translator/dictionary: answra");
+        migrateLegacyPatch =
+          existing.includes("translator/dictionary: answra") ||
+          (existing.includes("translator/dictionary: luna_pinyin") &&
+            !existing.includes("ascii_composer/switch_key/Shift_L"));
       }
       if (!existsSync(schemaPatch) || migrateLegacyPatch) {
         await copyFile(join(paths.shared, "luna_pinyin_simp.custom.yaml"), schemaPatch);
@@ -237,25 +237,4 @@ export class RimeBridge {
     for (const entry of this.pending.values()) entry.reject(error);
     this.pending.clear();
   }
-}
-
-function namedKey(key: string): number | undefined {
-  return {
-    Backspace: 0xff08,
-    Tab: 0xff09,
-    Enter: 0xff0d,
-    Escape: 0xff1b,
-    Delete: 0xffff,
-    ArrowLeft: 0xff51,
-    ArrowUp: 0xff52,
-    ArrowRight: 0xff53,
-    ArrowDown: 0xff54,
-    PageUp: 0xff55,
-    PageDown: 0xff56,
-    " ": 0x20,
-  }[key as keyof Record<string, number>];
-}
-
-function x11Keysym(key: string): number {
-  return key.charCodeAt(0);
 }

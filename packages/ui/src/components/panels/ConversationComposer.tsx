@@ -29,8 +29,10 @@ interface ConversationComposerProps {
     available: boolean;
     active: boolean;
     imeEnabled: boolean;
+    asciiMode?: boolean;
     state: ImeState;
     onKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => boolean;
+    onKeyUp?: (event: React.KeyboardEvent<HTMLTextAreaElement>) => boolean;
     onSelect: (index: number) => void;
     onNavigate: (key: string) => void;
     onCandidateUpdate: (payload: ImeCandidateUpdate) => void;
@@ -124,17 +126,17 @@ export function ConversationComposer({
         data-ime-target-id={ime?.targetId}
         data-ime-preedit-in-value={ime ? "true" : undefined}
         disabled={disabled}
-        readOnly={disabled || Boolean(ime?.imeEnabled)}
+        readOnly={disabled || Boolean(ime?.active && !ime.asciiMode)}
         onChange={(event) => {
-          if (ime?.active) return;
+          if (ime?.active && !ime.asciiMode) return;
           onValueChange?.(event.target.value);
         }}
         onCompositionStart={(event) => {
-          if (!ime?.imeEnabled) return;
+          if (!ime?.active || ime.asciiMode) return;
           event.preventDefault();
         }}
         onBeforeInput={(event) => {
-          if (ime?.imeEnabled) event.preventDefault();
+          if (ime?.active && !ime.asciiMode) event.preventDefault();
         }}
         onPaste={(event) => {
           if (ime) return;
@@ -149,6 +151,7 @@ export function ConversationComposer({
         onKeyDown={(event) => {
           if (
             ime?.active &&
+            !ime.asciiMode &&
             !ime.state.composing &&
             (event.key.length === 1 || event.key === "Process") &&
             !event.ctrlKey &&
@@ -174,6 +177,9 @@ export function ConversationComposer({
           if (disabled || event.key !== "Enter" || event.shiftKey) return;
           event.preventDefault();
           event.currentTarget.form?.requestSubmit();
+        }}
+        onKeyUp={(event) => {
+          if (ime?.onKeyUp?.(event)) event.preventDefault();
         }}
         onFocus={() => {
           ime?.onFocus();

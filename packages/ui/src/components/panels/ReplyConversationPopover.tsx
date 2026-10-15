@@ -162,9 +162,11 @@ export function ReplyConversationPopover({
                 available: ime.available,
                 active: ime.active,
                 imeEnabled: ime.imeEnabled,
+                asciiMode: ime.asciiMode,
                 state: ime.state,
                 onKeyDown: (event) => {
                   if (
+                    !ime.asciiMode &&
                     !ime.state.composing &&
                     (event.key.length === 1 || event.key === "Process") &&
                     !event.ctrlKey &&
@@ -178,6 +180,7 @@ export function ReplyConversationPopover({
                   }
                   return ime.sendKey(event);
                 },
+                onKeyUp: ime.sendKeyUp,
                 onNavigate: ime.sendNavigation,
                 onSelect: ime.select,
                 onCandidateUpdate: ime.updateCandidate,

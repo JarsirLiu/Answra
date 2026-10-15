@@ -26,7 +26,7 @@
 
 ## 决定
 
-继续保留 main 持有 Rime session、renderer 持有编辑器和候选状态的既有边界。窗口重新聚焦时通过现有 `imeEnable(true)` typed IPC 恢复 session，并由 native helper 在每次 enable 时显式设置 `ascii_mode=false`。候选窗口由主窗口初始化流程预热，页面 ready 后保持隐藏，直到真实候选状态到达。按键路径移除逐键日志；生命周期和启动错误仍保留诊断日志。
+继续保留 main 持有 Rime session、renderer 持有编辑器和候选状态的既有边界。窗口重新聚焦时通过现有 `imeEnable(true)` typed IPC 恢复 session，并由 native helper 在每次 enable 时显式设置 `ascii_mode=false`。Shift 中英文切换见[内置 Rime Shift 模式切换](../feature/2026-10-15-ime-shift-language-toggle.md)。候选窗口由主窗口初始化流程预热，页面 ready 后保持隐藏，直到真实候选状态到达。按键路径移除逐键日志；生命周期和启动错误仍保留诊断日志。
 
 main IPC 以最近显式启用 session 的 BrowserWindow 作为当前 owner。按键、选词、reset 和 disable 仅接受当前 owner；新窗口显式启用后取得 owner。这是操作路由隔离，不承诺跨 renderer 保留彼此独立的拼音 composition。
 
@@ -58,7 +58,7 @@ main IPC 以最近显式启用 session 的 BrowserWindow 作为当前 owner。�
 
 ## 后果与防回退
 
-- 每次应用窗口重新聚焦都会将 Rime 模式设回中文。当前产品尚未实现可用的 Shift 英文切换；若以后增加 ASCII 模式开关，焦点恢复策略需要改为恢复用户明确选择的模式，而不能无条件切中文。
+- 每次应用窗口重新聚焦都会将 Rime 模式设回中文；Shift 切换只在当前活跃 lease 内生效。跨焦点保留模式需要更新预编译 helper，并按资源发布流程产生新版本。
 - 启动时多创建一个隐藏 BrowserWindow 和 renderer，增加少量常驻资源占用；候选 UI 首次显示不再等待窗口页面加载。
 - `useEmbeddedIme` 目前只挂在主对话和回复对话的 composer；其他设置/工作区文本控件没有内置 Rime 接入。Windows UI 线程的系统 IME 按隐私策略禁用，因此不得宣称其他字段已获得中文 IME 支持。扩展前需设计可复用的 text target、selection/commit、候选锚点和隐身捕获策略，并覆盖跨窗口 owner 测试。
 - 当前 owner 检查只约束共享 session 的操作归属，不保存每个 BrowserWindow 独立的 preedit；两个输入窗口交替使用时，产品若要求各自保留未提交组合，仍需实现独立 session 或明确的 owner lease 生命周期。
