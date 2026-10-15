@@ -239,6 +239,9 @@ export const ImeChannels = {
   Select: "answra:ime:select",
   Reset: "answra:ime:reset",
   Change: "answra:ime:change",
+  SessionCommand: "answra:ime:session-command",
+  SessionSnapshot: "answra:ime:session-snapshot",
+  SetInputMode: "answra:ime:set-input-mode",
 } as const;
 
 /** 候选条独立窗口协议：输入窗口推送状态，候选窗口只回传用户操作。 */
@@ -261,13 +264,12 @@ export interface ImeCandidateAnchor {
 export type ImeCandidateUpdate =
   | {
       type: "show";
-      state: ImeState;
       anchor: ImeCandidateAnchor;
       targetId: string;
       generation: number;
     }
   | { type: "suspend"; targetId?: string; generation?: number }
-  | { type: "clear"; state?: ImeState; targetId?: string; generation?: number };
+  | { type: "clear"; targetId?: string; generation?: number };
 
 export type ImeCandidateAction =
   | { type: "select"; index: number; targetId: string; generation: number }
@@ -298,6 +300,8 @@ export interface ImeCandidate {
 
 export interface ImeState {
   enabled: boolean;
+  /** Native Rime mode reported by helper protocol v2. */
+  inputMode: ImeInputMode;
   composing: boolean;
   preedit: string;
   candidates: ImeCandidate[];
@@ -307,6 +311,89 @@ export interface ImeState {
   committedText?: string;
   /** Whether the native engine consumed the last key event. */
   handled?: boolean;
+}
+
+export type ImeInputMode = "chinese" | "ascii";
+export type ImeSessionPhase = "idle" | "owned" | "suspended" | "unavailable" | "disposed";
+
+export interface ImeSessionOwner {
+  windowId: number;
+  webContentsId: number;
+  targetId: string;
+  generation: number;
+}
+
+/** Main-owned view of the engine session and its current input target. */
+export interface ImeSessionSnapshot {
+  phase: ImeSessionPhase;
+  owner?: ImeSessionOwner;
+  engine: Omit<ImeState, "committedText" | "handled"> & { inputMode: ImeInputMode };
+  revision: number;
+}
+
+export type ImeSessionCommand =
+  | {
+      type: "acquireTarget";
+      commandId: string;
+      expectedRevision?: number;
+      targetId: string;
+    }
+  | {
+      type: "releaseTarget" | "suspend" | "resume";
+      commandId: string;
+      expectedRevision?: number;
+      targetId: string;
+      generation: number;
+    }
+  | {
+      type: "processKey";
+      commandId: string;
+      expectedRevision?: number;
+      targetId: string;
+      generation: number;
+      key: string;
+      code: string;
+      shift: boolean;
+      ctrl: boolean;
+      alt: boolean;
+      meta: boolean;
+      release?: boolean;
+    }
+  | {
+      type: "setInputMode";
+      commandId: string;
+      expectedRevision?: number;
+      targetId: string;
+      generation: number;
+      inputMode: ImeInputMode;
+    }
+  | {
+      type: "cancelComposition";
+      commandId: string;
+      expectedRevision?: number;
+      targetId: string;
+      generation: number;
+    }
+  | {
+      type: "selectCandidate";
+      commandId: string;
+      expectedRevision?: number;
+      targetId: string;
+      generation: number;
+      index: number;
+    };
+
+export interface ImeSessionCommandResult {
+  commandId: string;
+  accepted: boolean;
+  reason?: "stale-owner" | "stale-revision" | "invalid-transition" | "engine-unavailable";
+  snapshot: ImeSessionSnapshot;
+  /** Present only when this command produced text; apply at most once per commandId. */
+  commit?: { text: string; revision: number };
+}
+
+export interface ImeSessionSnapshotUpdate {
+  snapshot: ImeSessionSnapshot;
 }
 
 export interface ImeKeyRequest {
@@ -398,6 +485,18 @@ export interface ImeChannelMap {
   [ImeChannels.Select]: { request: { index: number; generation: number }; response: ImeState };
   [ImeChannels.Reset]: { request: { generation: number }; response: ImeState };
   [ImeChannels.Change]: { request: undefined; response: ImeState };
+  [ImeChannels.SessionCommand]: {
+    request: ImeSessionCommand;
+    response: ImeSessionCommandResult;
+  };
+  [ImeChannels.SessionSnapshot]: {
+    request: undefined;
+    response: ImeSessionSnapshotUpdate;
+  };
+  [ImeChannels.SetInputMode]: {
+    request: { generation: number; targetId: string; inputMode: ImeInputMode };
+    response: ImeState;
+  };
 }
 
 export interface ImeLeaseResponse {

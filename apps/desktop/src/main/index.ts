@@ -29,7 +29,7 @@ const workspaceService = new WorkspaceService({ configDir: app.getPath("userData
 app.whenReady().then(() => {
   registerWindowIpc();
   imeController = registerImeIpc();
-  registerImeCandidateIpc(imeController.isCurrentLease);
+  registerImeCandidateIpc(imeController.isCurrentLease, imeController.getSessionSnapshot);
   registerCaptureIpc();
   registerAmbientIpc((enabled) => ambientController?.setEnabled(enabled));
   registerConversationIpc(appService);

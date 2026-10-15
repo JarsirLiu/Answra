@@ -5,6 +5,7 @@ import { ImeCandidateAnchorReporter } from "../src/components/panels/ImeCandidat
 
 const state: ImeState = {
   enabled: true,
+  inputMode: "chinese",
   composing: true,
   preedit: "nihao",
   candidates: [{ text: "你好" }, { text: "拟好" }],
@@ -48,7 +49,6 @@ describe("ImeCandidateAnchorReporter", () => {
     expect(container.querySelector('[role="listbox"]')).toBeNull();
     expect(onUpdate).toHaveBeenLastCalledWith({
       type: "show",
-      state,
       anchor: { x: 0, lineTop: 0, lineBottom: 0 },
       targetId: "composer",
       generation: 2,
@@ -87,7 +87,6 @@ describe("ImeCandidateAnchorReporter", () => {
 
     expect(onUpdate).toHaveBeenLastCalledWith({
       type: "show",
-      state,
       anchor: { x: 106, lineTop: 43, lineBottom: 43 },
       targetId: "composer",
       generation: 2,
@@ -113,7 +112,6 @@ describe("ImeCandidateAnchorReporter", () => {
 
     expect(onUpdate).toHaveBeenLastCalledWith({
       type: "show",
-      state,
       anchor: { x: 0, lineTop: 0, lineBottom: 0 },
       targetId: "composer",
       generation: 2,
@@ -138,7 +136,6 @@ describe("ImeCandidateAnchorReporter", () => {
 
     expect(onUpdate).toHaveBeenLastCalledWith({
       type: "clear",
-      state: { ...state, enabled: false },
       targetId: "composer",
       generation: 2,
     });
@@ -162,7 +159,6 @@ describe("ImeCandidateAnchorReporter", () => {
     expect(onUpdate).not.toHaveBeenCalledWith({ type: "suspend" });
     expect(onUpdate).not.toHaveBeenCalledWith({
       type: "clear",
-      state: { ...state, preedit: "", candidates: [] },
     });
   });
 
@@ -180,14 +176,13 @@ describe("ImeCandidateAnchorReporter", () => {
     );
 
     expect(onUpdate).not.toHaveBeenCalledWith({ type: "suspend" });
-    expect(onUpdate).not.toHaveBeenCalledWith({ type: "clear", state });
+    expect(onUpdate).not.toHaveBeenCalledWith({ type: "clear", targetId: "composer" });
 
     host.appendChild(textarea);
     fireEvent.focusIn(textarea);
 
     expect(onUpdate).toHaveBeenLastCalledWith({
       type: "show",
-      state,
       anchor: { x: 0, lineTop: 0, lineBottom: 0 },
       targetId: "composer",
       generation: 2,
@@ -212,7 +207,6 @@ describe("ImeCandidateAnchorReporter", () => {
     fireEvent.focusOut(textarea);
     expect(onUpdate).toHaveBeenLastCalledWith({
       type: "show",
-      state,
       anchor: { x: 0, lineTop: 0, lineBottom: 0 },
       targetId: "composer",
       generation: 2,
@@ -223,7 +217,6 @@ describe("ImeCandidateAnchorReporter", () => {
     expect(document.activeElement).toBe(textarea);
     expect(onUpdate).toHaveBeenLastCalledWith({
       type: "show",
-      state,
       anchor: { x: 0, lineTop: 0, lineBottom: 0 },
       targetId: "composer",
       generation: 2,

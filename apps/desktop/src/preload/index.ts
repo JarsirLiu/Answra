@@ -13,8 +13,13 @@ import {
   type ImeCandidateSnapshot,
   type ImeCandidateUpdate,
   ImeChannels,
+  type ImeInputMode,
   type ImeKeyRequest,
   type ImeRendererDiagnostic,
+  type ImeSessionCommand,
+  type ImeSessionCommandResult,
+  type ImeSessionSnapshot,
+  type ImeSessionSnapshotUpdate,
   type ImeState,
   type RegionCaptureOptions,
   type ReplyBarAction,
@@ -45,6 +50,22 @@ const bridge: DesktopBridge = {
   imeSelect: (index: number, generation: number) =>
     ipcRenderer.invoke(ImeChannels.Select, { index, generation }),
   imeReset: (generation: number) => ipcRenderer.invoke(ImeChannels.Reset, { generation }),
+  imeSetInputMode: (targetId: string, generation: number, inputMode: ImeInputMode) =>
+    ipcRenderer.invoke(ImeChannels.SetInputMode, { targetId, generation, inputMode }),
+  imeSessionCommand: (command: ImeSessionCommand): Promise<ImeSessionCommandResult> =>
+    ipcRenderer.invoke(ImeChannels.SessionCommand, command),
+  getImeSessionSnapshot: async (): Promise<ImeSessionSnapshot> => {
+    const update = (await ipcRenderer.invoke(
+      ImeChannels.SessionSnapshot,
+    )) as ImeSessionSnapshotUpdate;
+    return update.snapshot;
+  },
+  onImeSessionSnapshot: (listener: (snapshot: ImeSessionSnapshot) => void) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, update: ImeSessionSnapshotUpdate) =>
+      listener(update.snapshot);
+    ipcRenderer.on(ImeChannels.SessionSnapshot, wrapped);
+    return () => ipcRenderer.removeListener(ImeChannels.SessionSnapshot, wrapped);
+  },
   onImeChange: (listener: (state: ImeState) => void) => {
     const wrapped = (_event: Electron.IpcRendererEvent, state: ImeState) => listener(state);
     ipcRenderer.on(ImeChannels.Change, wrapped);

@@ -19,31 +19,31 @@
 ## 决定
 
 - Windows 和 macOS 统一使用单独的左或右 Shift 切换中英文，键位使用物理 `event.code` 识别，避免依赖键盘布局对应的字符。
-- 左右 Shift 的 keydown 和 keyup 都经过当前 IME owner 的输入队列。keyup 设置 Rime release bit；普通字符仍只按原路径处理 keydown。
-- `luna_pinyin_simp` schema 显式将 `Shift_L`、`Shift_R` 配置为 `commit_code`，由 librime 的 `ascii_composer` 执行切换，不在 renderer 手动绕过 Rime 输入。若切换时仍有未选词的拼音组合，renderer 先清除该临时组合，再将 Shift 交给 Rime，避免把拼音码提交成草稿文本。
-- 当前 hook 跟踪当前 lease 的 ASCII 模式：非组合状态按左右 Shift 时切换；ASCII 模式下普通字符、数字、标点和文本编辑由原生编辑器处理，Shift 仍发送给 Rime。中文模式下，未组合时未按 Shift 的数字直接提交到当前选区，不要求 Rime 显示候选 UI；组合过程中数字仍发送给 Rime 作为候选序号。小数点没有中文模式直通特例，输入小数前先切换 ASCII。lease 重新获取或焦点恢复时复位为中文，以匹配 helper 的 `ascii_mode=false` 恢复策略。
-- 焦点恢复重新启用 helper 时仍回到中文模式，这是当前固定预编译 helper 的既有行为；本变更不承诺跨失焦保留 ASCII 模式。
+- Shift 只发送目标模式命令，不作为 Rime 按键；keydown 切换一次，keyup 只消费事件。main helper 使用 `set_option/get_option("ascii_mode")`，返回实际模式，renderer 不先行翻转。
+- 切换模式不依赖 composition 状态。helper 不 reset、不提交、不清除或改写未完成的拼音；模式结果同时返回原 composition 和候选状态。左右 Shift 与候选、文本编辑状态独立。
+- 中文模式未组合时，数字直接提交到当前选区；组合过程中数字仍发送给 Rime 作为候选序号。ASCII 模式下普通字符、数字、标点和文本编辑由编辑器处理。helper enable、窗口恢复和目标切换不得隐式重置模式。
+- 新 helper 协议 v2 的二进制尚需按固定 release 流程发布；旧协议 v1 不提供权威模式，main 必须拒绝启动旧 helper，不能伪装兼容。跨失焦模式保持由 v2 helper 验证。
 
 ## 影响表面
 
-- 用户可见：在对话、回复及 `EmbeddedImeInput` 文本输入框中按左或右 Shift，Rime 在中文输入与英文 ASCII 模式间切换；ASCII 模式可直接输入和编辑英文、数字及标点，回到中文后继续使用候选输入。中文未组合时数字直接输入，候选组合期间数字仍用于选择候选。未选词的拼音在切换模式时清除，不会写入消息草稿。
-- 平台：Windows 与 macOS 使用相同的 Shift 习惯，renderer 依据标准 `event.code` 将物理左右 Shift 映射到相应 Rime keysym。
+- 用户可见：在对话、回复及 `EmbeddedImeInput` 文本输入框中按左或右 Shift，Rime 在中文输入与英文 ASCII 模式间切换；ASCII 模式可直接输入和编辑英文、数字及标点，回到中文后继续使用候选输入。切换期间 composition 保持原样；中文未组合时数字直接输入，候选组合期间数字仍用于选择候选。
+- 平台：Windows 与 macOS 使用相同的 Shift 习惯；renderer 将左右 Shift 映射为模式命令，不映射为 Rime keysym。
 
 ## 曾考虑的替代方案
 
-- **Shift 在组合中将 `commit_code` 写入聊天草稿：** 舍弃。运行日志确认这会把未选词的编码提交为真实文本，并意外启用发送按钮；改为先清除未提交组合，再由 Rime 切换模式。后果是切换模式时会丢弃当前未选词的拼音。
+- **让 Shift 作为 Rime 按键并由 schema 处理：** 舍弃。其行为与 composition、`commit_code` 绑定，可能提交或清除未选词拼音；模式命令直接设置 `ascii_mode`，不触碰编辑状态。
 - **renderer 自行切换到普通文本输入：** 舍弃。会绕过 Rime，造成候选、组合和编辑器提交路径分叉。
 - **macOS 使用 Control+Space、Windows 使用 Shift：** 舍弃为默认方案。macOS 的 Control+Space 常用于系统输入源切换，存在快捷键冲突；两平台统一使用 Rime 的 Shift 规则，平台差异由物理键码适配。
-- **在当前变更中修改 helper 并直接编译：** 舍弃。仓库固定使用校验过的预编译 helper；更新 helper 必须发布新资源版本，不能让 dev/打包流程临时编译 native 代码。
+- **沿用 helper v1 并在 renderer 猜测模式：** 舍弃。v1 不回报 `ascii_mode`，无法区分模式命令是否成功；v2 必须经固定 tag 的 release workflow 生成预编译资源。
 
 ## 后果与防回退
 
-- Shift 按下时 renderer 同步更新当前 lease 的编辑模式，以便随后的字符进入正确输入路径；Rime 仍负责引擎模式切换。切换时先取消未提交组合，不能将拼音码写入聊天草稿。测试覆盖该顺序、ASCII 模式普通字符直通、中文未组合数字直插、组合中数字继续交给 Rime，以及焦点恢复重置为中文。小数点应在 ASCII 模式输入；不要将其添加为中文模式数字直通键，以免破坏 Rime 标点规则。
-- 输入 owner 失焦并重新启用时 helper 会强制回到中文；跨焦点保留模式需要提升 helper 版本并在两个平台更新受校验的资源。
+- Shift 模式只在 main 收到 helper 权威响应或对应 revisioned snapshot 后更新；不得由 renderer 先行切换，也不得因模式键清理 composition。`useEmbeddedIme` 使用 typed `setInputMode` session command，并从 main snapshot 同步跨输入目标模式。小数点应在 ASCII 模式输入；不要将其添加为中文模式数字直通键，以免破坏 Rime 标点规则。
+- 应用窗口重新聚焦和输入目标切换不得隐式改变 Rime 模式。helper 协议 v2 及匹配预编译资源发布前，不能宣称新模式切换路径已可运行。
 - 数字键的候选序号选择和非组合数字输入不由本变更改动。
 
 ## 验证
 
-- 自动化：纯函数测试覆盖左右 Shift keysym 与 release/modifier mask；UI hook 测试覆盖空组合状态的 Shift down/up 按顺序发送。
-- 门禁：记录本次运行的 `pnpm notes:check`、`pnpm verify` 结果。
-- 实机：当前环境为 Windows；需在 Windows 11 与 macOS 各验证左右 Shift 切换、Shift+字母、组合中 Shift 提交、候选显示/隐藏及失焦恢复。自动化测试不替代原生 librime 行为实测。
+- 自动化：UI hook 测试覆盖左右 Shift 只发一次模式命令、keyup 不发命令、模式由 main 响应更新，以及组合中的 preedit 保持不变；main IPC 测试覆盖 owner 校验与不调用 reset。
+- 门禁：UI `useEmbeddedIme` 13 项测试、desktop `imeIpc` 9 项测试、全 workspace typecheck、Biome、`notes:check` 和 `git diff --check` 通过。
+- 原生/实机：helper v2 源码增加版本握手、模式查询与设置；当前环境仍只有 helper v1，v2 release `answra-rime-host-v2.0.0` 尚无 SHA256SUMS（HTTP 404），所以 helper 编译、`ime:prepare` 和 Windows/macOS 实机切换均待该固定 release 生成后验证。不得将自动化 IPC 测试当作原生验证。

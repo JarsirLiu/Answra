@@ -145,7 +145,6 @@ export function ImeCandidateAnchorReporter({
       if (state.enabled && state.composing) return;
       onUpdate({
         type: "clear",
-        state,
         targetId,
         ...(generation !== undefined ? { generation } : {}),
       });
@@ -153,12 +152,12 @@ export function ImeCandidateAnchorReporter({
     }
     if (!visible) {
       if (state.enabled && state.composing) return;
-      onUpdate({ type: "clear", state, targetId, generation });
+      onUpdate({ type: "clear", targetId, generation });
       return;
     }
     const position = measureAnchor(anchor, state.preedit.length);
     if (!position) return;
-    onUpdate({ type: "show", state, anchor: position, targetId, generation });
+    onUpdate({ type: "show", anchor: position, targetId, generation });
   }, [anchor, generation, onUpdate, state, targetId, tick, visible]);
 
   useEffect(

@@ -1,10 +1,5 @@
 import path from "node:path";
-import type {
-  ImeCandidateAction,
-  ImeCandidateAnchor,
-  ImeCandidateUpdate,
-  ImeState,
-} from "@answra/shared";
+import type { ImeCandidateAction, ImeCandidateAnchor, ImeState } from "@answra/shared";
 import { ImeCandidateChannels } from "@answra/shared";
 import { app, BrowserWindow, screen, type WebContents } from "electron";
 import { getWindowCaptureDiagnostics } from "../windowCaptureProtection";
@@ -15,6 +10,17 @@ import { logImeDiagnostic } from "./imeDiagnostics";
 
 const INITIAL_SIZE = { width: 640, height: 56 };
 const DEFAULT_SIZE = INITIAL_SIZE;
+
+export type ImeCandidatePresentationUpdate =
+  | {
+      type: "show";
+      state: ImeState;
+      anchor: ImeCandidateAnchor;
+      targetId: string;
+      generation: number;
+    }
+  | { type: "suspend"; targetId?: string; generation?: number }
+  | { type: "clear"; state?: ImeState; targetId?: string; generation?: number };
 
 export function resolveImeCandidateWindowPaths(mainBundleDirectory: string) {
   return {
@@ -54,7 +60,7 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
   let anchorLeaseKey: string | undefined;
   let anchorReportedAvailable = false;
 
-  function update(owner: BrowserWindow, payload: ImeCandidateUpdate) {
+  function update(owner: BrowserWindow, payload: ImeCandidatePresentationUpdate) {
     if (!host.isOwnerWindow(owner) || owner.isDestroyed()) return;
     if (payload.type === "suspend") {
       if (!matchesCandidate(owner, payload.targetId, payload.generation)) return;

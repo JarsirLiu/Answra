@@ -3,6 +3,7 @@ import { AlertCircle, FileText, Wrench } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
 import type { ReplyConversationMessage } from "../../app/useReplyConversation";
 import { useEmbeddedIme } from "../../hooks/useEmbeddedIme";
+import { replaceTextRange } from "../../ime/adapters/controlledTextAdapter";
 import { ICON_SM } from "../../tokens";
 import { AssistantMessage, MessageStream } from "../chat";
 import { ConversationComposer } from "./ConversationComposer";
@@ -49,10 +50,10 @@ export function ReplyConversationPopover({
         Math.max(0, (input?.selectionStart ?? draftRef.current.length) - preeditLength);
       const end = range?.end ?? Math.max(0, (input?.selectionEnd ?? start) - preeditLength);
       composingRangeRef.current = null;
-      const next = `${draftRef.current.slice(0, start)}${text}${draftRef.current.slice(end)}`;
-      pendingCaretRef.current = start + text.length;
-      draftRef.current = next;
-      setDraft(next);
+      const edit = replaceTextRange(draftRef.current, { start, end }, text);
+      pendingCaretRef.current = edit.caret;
+      draftRef.current = edit.value;
+      setDraft(edit.value);
     },
     true,
     "reply-composer",
@@ -162,23 +163,14 @@ export function ReplyConversationPopover({
                 available: ime.available,
                 active: ime.active,
                 imeEnabled: ime.imeEnabled,
-                asciiMode: ime.asciiMode,
+                textPolicy: ime.textPolicy,
+                shouldPreventBeforeInput: ime.shouldPreventBeforeInput,
                 state: ime.state,
                 onKeyDown: (event) => {
-                  if (
-                    !ime.asciiMode &&
-                    !ime.state.composing &&
-                    (event.key.length === 1 || event.key === "Process") &&
-                    !event.ctrlKey &&
-                    !event.altKey &&
-                    !event.metaKey
-                  ) {
-                    composingRangeRef.current = {
-                      start: event.currentTarget.selectionStart,
-                      end: event.currentTarget.selectionEnd,
-                    };
-                  }
                   return ime.sendKey(event);
+                },
+                onTextStart: (range) => {
+                  composingRangeRef.current = range;
                 },
                 onKeyUp: ime.sendKeyUp,
                 onNavigate: ime.sendNavigation,

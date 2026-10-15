@@ -1,6 +1,9 @@
 import type { ImeCandidateUpdate, ImeState } from "@answra/shared";
 import { ArrowUp, Languages, Plus } from "lucide-react";
 import { type FormEvent, type ReactNode, type RefObject, useLayoutEffect, useRef } from "react";
+import type { TextSelectionRange } from "../../ime/adapters/controlledTextAdapter";
+import { backwardDeletionRange, replaceTextRange } from "../../ime/adapters/controlledTextAdapter";
+import type { ImeTextPolicy } from "../../ime/imeTextPolicy";
 import { ICON_SM } from "../../tokens";
 import { ImeCandidateAnchorReporter } from "./ImeCandidateAnchorReporter";
 import "./ConversationComposer.css";
@@ -29,13 +32,15 @@ interface ConversationComposerProps {
     available: boolean;
     active: boolean;
     imeEnabled: boolean;
-    asciiMode?: boolean;
+    textPolicy: ImeTextPolicy;
+    shouldPreventBeforeInput: (inputType: string) => boolean;
     state: ImeState;
     onKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => boolean;
     onKeyUp?: (event: React.KeyboardEvent<HTMLTextAreaElement>) => boolean;
     onSelect: (index: number) => void;
     onNavigate: (key: string) => void;
     onCandidateUpdate: (payload: ImeCandidateUpdate) => void;
+    onTextStart?: (range: TextSelectionRange) => void;
     onFocus: () => void;
     onBlur: () => void;
     targetId: string;
@@ -62,11 +67,11 @@ export function ConversationComposer({
   ime,
 }: ConversationComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const compositionStart = useRef(value.length);
+  const compositionRange = useRef<TextSelectionRange>({ start: value.length, end: value.length });
   const previousPreeditLength = useRef(0);
   const pendingCaret = useRef<number | null>(null);
   const preedit = ime?.active ? ime.state.preedit : "";
-  const displayValue = `${value.slice(0, compositionStart.current)}${preedit}${value.slice(compositionStart.current)}`;
+  const displayValue = `${value.slice(0, compositionRange.current.start)}${preedit}${value.slice(compositionRange.current.end)}`;
 
   useLayoutEffect(() => {
     if (inputRef) inputRef.current = textareaRef.current;
@@ -82,18 +87,18 @@ export function ConversationComposer({
     if (caret !== null) {
       textarea.setSelectionRange(caret, caret);
       pendingCaret.current = null;
-      compositionStart.current = caret;
+      compositionRange.current = { start: caret, end: caret };
       return;
     }
     if (preedit) {
       if (document.activeElement !== textarea) textarea.focus({ preventScroll: true });
-      const caretAfterPreedit = compositionStart.current + preedit.length;
+      const caretAfterPreedit = compositionRange.current.start + preedit.length;
       textarea.setSelectionRange(caretAfterPreedit, caretAfterPreedit);
       previousPreeditLength.current = preedit.length;
       return;
     }
     if (previousPreeditLength.current > 0) {
-      textarea.setSelectionRange(compositionStart.current, compositionStart.current);
+      textarea.setSelectionRange(compositionRange.current.start, compositionRange.current.start);
       previousPreeditLength.current = 0;
     }
   });
@@ -126,17 +131,17 @@ export function ConversationComposer({
         data-ime-target-id={ime?.targetId}
         data-ime-preedit-in-value={ime ? "true" : undefined}
         disabled={disabled}
-        readOnly={disabled || Boolean(ime?.active && !ime.asciiMode)}
+        readOnly={disabled || Boolean(ime?.textPolicy.readOnly)}
         onChange={(event) => {
-          if (ime?.active && !ime.asciiMode) return;
+          if (ime && !ime.textPolicy.useNativeTextInput) return;
           onValueChange?.(event.target.value);
         }}
         onCompositionStart={(event) => {
-          if (!ime?.active || ime.asciiMode) return;
-          event.preventDefault();
+          if (ime?.textPolicy.blockComposition) event.preventDefault();
         }}
         onBeforeInput={(event) => {
-          if (ime?.active && !ime.asciiMode) event.preventDefault();
+          const inputType = event.nativeEvent.inputType;
+          if (ime?.shouldPreventBeforeInput(inputType)) event.preventDefault();
         }}
         onPaste={(event) => {
           if (ime) return;
@@ -150,28 +155,33 @@ export function ConversationComposer({
         }}
         onKeyDown={(event) => {
           if (
-            ime?.active &&
-            !ime.asciiMode &&
-            !ime.state.composing &&
+            ime?.textPolicy.captureCompositionStart &&
             (event.key.length === 1 || event.key === "Process") &&
             !event.ctrlKey &&
             !event.altKey &&
             !event.metaKey
           ) {
-            compositionStart.current = event.currentTarget.selectionStart;
+            const range = {
+              start: event.currentTarget.selectionStart,
+              end: event.currentTarget.selectionEnd,
+            };
+            compositionRange.current = range;
+            ime.onTextStart?.(range);
           }
           if (ime?.onKeyDown(event)) {
             event.preventDefault();
             return;
           }
-          if (ime?.active && event.key === "Backspace") {
+          if (ime?.textPolicy.backspace === "editor" && event.key === "Backspace") {
             event.preventDefault();
             const { selectionStart, selectionEnd } = event.currentTarget;
-            const start =
-              selectionStart === selectionEnd ? Math.max(0, selectionStart - 1) : selectionStart;
-            const next = value.slice(0, start) + value.slice(selectionEnd);
-            pendingCaret.current = start;
-            onValueChange?.(next);
+            const range = backwardDeletionRange(value, {
+              start: selectionStart,
+              end: selectionEnd,
+            });
+            const edit = replaceTextRange(value, range, "");
+            pendingCaret.current = edit.caret;
+            onValueChange?.(edit.value);
             return;
           }
           if (disabled || event.key !== "Enter" || event.shiftKey) return;

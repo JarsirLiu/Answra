@@ -74,7 +74,7 @@
   ],
   "helper": {
     "repository": "JarsirLiu/Answra",
-    "tag": "answra-rime-host-v1.0.0",
+    "tag": "answra-rime-host-v2.0.0",
     "assets": {
       "win32": "answra-rime-host-win32.exe",
       "darwin": "answra-rime-host-darwin"

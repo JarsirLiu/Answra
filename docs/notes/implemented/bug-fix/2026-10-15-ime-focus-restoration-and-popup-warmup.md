@@ -58,7 +58,7 @@ main IPC 以最近显式启用 session 的 BrowserWindow 作为当前 owner。�
 
 ## 后果与防回退
 
-- 每次应用窗口重新聚焦都会将 Rime 模式设回中文；Shift 切换只在当前活跃 lease 内生效。跨焦点保留模式需要更新预编译 helper，并按资源发布流程产生新版本。
+- 本 Note 原先规定焦点恢复时强制回中文；该行为由 2026-10-15 IME 权威会话提案及 helper 协议 v2 取代。helper v2 与预编译资源发布前，跨焦点模式保持尚未交付。
 - 启动时多创建一个隐藏 BrowserWindow 和 renderer，增加少量常驻资源占用；候选 UI 首次显示不再等待窗口页面加载。
 - `useEmbeddedIme` 目前只挂在主对话和回复对话的 composer；其他设置/工作区文本控件没有内置 Rime 接入。Windows UI 线程的系统 IME 按隐私策略禁用，因此不得宣称其他字段已获得中文 IME 支持。扩展前需设计可复用的 text target、selection/commit、候选锚点和隐身捕获策略，并覆盖跨窗口 owner 测试。
 - 当前 owner 检查只约束共享 session 的操作归属，不保存每个 BrowserWindow 独立的 preedit；两个输入窗口交替使用时，产品若要求各自保留未提交组合，仍需实现独立 session 或明确的 owner lease 生命周期。

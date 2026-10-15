@@ -15,7 +15,7 @@ const shared = vi.hoisted(() => ({
     on: vi.fn(),
     once: vi.fn(),
     removeListener: vi.fn(),
-    webContents: { id: 11, on: vi.fn(), removeListener: vi.fn() },
+    webContents: { id: 11, on: vi.fn(), removeListener: vi.fn(), send: vi.fn() },
   },
   reply: {
     id: 2,
@@ -23,24 +23,29 @@ const shared = vi.hoisted(() => ({
     on: vi.fn(),
     once: vi.fn(),
     removeListener: vi.fn(),
-    webContents: { id: 22, on: vi.fn(), removeListener: vi.fn() },
+    webContents: { id: 22, on: vi.fn(), removeListener: vi.fn(), send: vi.fn() },
   },
   candidate: {
     id: 3,
     isDestroyed: () => false,
-    webContents: { id: 33, on: vi.fn(), removeListener: vi.fn() },
+    webContents: { id: 33, on: vi.fn(), removeListener: vi.fn(), send: vi.fn() },
   },
   bridge: {
     available: true,
-    enable: vi.fn(async () => ({
-      enabled: true,
+    snapshot: {
+      enabled: false,
+      inputMode: "chinese" as const,
       composing: false,
       preedit: "",
       candidates: [],
       selectedIndex: 0,
       page: 0,
       hasNextPage: false,
-    })),
+    },
+    enable: vi.fn(async (enabled: boolean) => {
+      shared.bridge.snapshot = { ...shared.bridge.snapshot, enabled };
+      return shared.bridge.snapshot;
+    }),
     key: vi.fn(async () => ({
       enabled: true,
       composing: true,
@@ -51,7 +56,26 @@ const shared = vi.hoisted(() => ({
       hasNextPage: false,
     })),
     select: vi.fn(),
-    reset: vi.fn(),
+    setInputMode: vi.fn(async (inputMode: "chinese" | "ascii") => ({
+      enabled: true,
+      inputMode,
+      composing: false,
+      preedit: "",
+      candidates: [],
+      selectedIndex: 0,
+      page: 0,
+      hasNextPage: false,
+    })),
+    reset: vi.fn(async () => {
+      shared.bridge.snapshot = {
+        ...shared.bridge.snapshot,
+        composing: false,
+        preedit: "",
+        candidates: [],
+        selectedIndex: 0,
+      };
+      return shared.bridge.snapshot;
+    }),
     dispose: vi.fn(),
   },
   setNativeImeEnabled: vi.fn(() => true),
@@ -103,9 +127,13 @@ vi.mock("../src/main/windowForeground", () => ({
 vi.mock("../src/main/ime/rimeBridge", () => ({
   RimeBridge: class {
     available = shared.bridge.available;
+    get snapshot() {
+      return shared.bridge.snapshot;
+    }
     enable = shared.bridge.enable;
     key = shared.bridge.key;
     select = shared.bridge.select;
+    setInputMode = shared.bridge.setInputMode;
     reset = shared.bridge.reset;
     dispose = shared.bridge.dispose;
   },
@@ -121,6 +149,7 @@ import { registerImeIpc } from "../src/main/ime/imeIpc";
 
 const emptyState = {
   enabled: false,
+  inputMode: "chinese",
   composing: false,
   preedit: "",
   candidates: [],
@@ -141,14 +170,84 @@ describe("IME IPC session ownership", () => {
     shared.focusSubscribers.clear();
     shared.focusedWindow = shared.main;
     shared.appForeground = true;
+    shared.bridge.snapshot = { ...emptyState };
     shared.bridge.enable.mockClear();
     shared.bridge.key.mockClear();
     shared.bridge.select.mockClear();
+    shared.bridge.setInputMode.mockClear();
     shared.bridge.reset.mockClear();
     shared.bridge.dispose.mockClear();
     shared.setNativeImeEnabled.mockClear();
     shared.setImeCandidateState.mockClear();
+    shared.main.webContents.send.mockClear();
+    shared.reply.webContents.send.mockClear();
     registerImeIpc();
+  });
+
+  it("serves and broadcasts authoritative snapshots through the typed session API", async () => {
+    const result = (await invoke(ImeChannels.SessionCommand, 11, {
+      type: "acquireTarget",
+      commandId: "acquire-1",
+      targetId: "main-composer",
+    })) as { accepted: boolean; snapshot: { phase: string; owner?: { targetId: string } } };
+
+    expect(result).toMatchObject({
+      accepted: true,
+      snapshot: { phase: "owned", owner: { targetId: "main-composer" } },
+    });
+    expect(shared.main.webContents.send).toHaveBeenCalledWith(
+      ImeChannels.SessionSnapshot,
+      expect.objectContaining({ snapshot: expect.objectContaining({ phase: "owned" }) }),
+    );
+    await expect(invoke(ImeChannels.SessionSnapshot, 11)).resolves.toMatchObject({
+      snapshot: { phase: "owned", owner: { targetId: "main-composer" } },
+    });
+    const unauthorized = (await invoke(ImeChannels.SessionSnapshot, 99)) as {
+      snapshot: Record<string, unknown>;
+    };
+    expect(unauthorized.snapshot.phase).toBe("idle");
+    expect(unauthorized.snapshot).not.toHaveProperty("owner");
+  });
+
+  it("rejects stale revisions and deduplicates repeated command IDs", async () => {
+    const lease = (await invoke(ImeChannels.SessionCommand, 11, {
+      type: "acquireTarget",
+      commandId: "acquire-1",
+      targetId: "main-composer",
+    })) as { snapshot: { owner: { generation: number }; revision: number } };
+    const generation = lease.snapshot.owner.generation;
+    const before = shared.bridge.key.mock.calls.length;
+
+    await expect(
+      invoke(ImeChannels.SessionCommand, 11, {
+        type: "processKey",
+        commandId: "stale-key",
+        expectedRevision: lease.snapshot.revision - 1,
+        targetId: "main-composer",
+        generation,
+        key: "n",
+        code: "KeyN",
+        shift: false,
+        ctrl: false,
+        alt: false,
+        meta: false,
+      }),
+    ).resolves.toMatchObject({ accepted: false, reason: "stale-revision" });
+    expect(shared.bridge.key).toHaveBeenCalledTimes(before);
+
+    const command = {
+      type: "setInputMode",
+      commandId: "mode-1",
+      targetId: "main-composer",
+      generation,
+      inputMode: "ascii",
+    };
+    const first = await invoke(ImeChannels.SessionCommand, 11, command);
+    const calls = shared.bridge.setInputMode.mock.calls.length;
+    const repeated = await invoke(ImeChannels.SessionCommand, 11, command);
+
+    expect(repeated).toEqual(first);
+    expect(shared.bridge.setInputMode).toHaveBeenCalledTimes(calls);
   });
 
   it("routes a shared Rime session only through its latest owning lease", async () => {
@@ -180,7 +279,7 @@ describe("IME IPC session ownership", () => {
       meta: false,
     });
 
-    expect(shared.bridge.enable).toHaveBeenCalledTimes(4);
+    expect(shared.bridge.enable).toHaveBeenCalledOnce();
     expect(shared.bridge.key).toHaveBeenCalledOnce();
     expect(shared.bridge.key).toHaveBeenCalledWith({
       generation: replyLease.generation,
@@ -210,9 +309,70 @@ describe("IME IPC session ownership", () => {
       invoke(ImeChannels.Reset, 99, { generation: replyLease.generation }),
     ).resolves.toEqual(emptyState);
 
-    expect(shared.bridge.enable).toHaveBeenCalledTimes(4);
+    expect(shared.bridge.enable).toHaveBeenCalledOnce();
     expect(shared.bridge.select).not.toHaveBeenCalled();
-    expect(shared.bridge.reset).toHaveBeenCalledTimes(2);
+    expect(shared.bridge.reset).not.toHaveBeenCalled();
+  });
+
+  it("sets the authoritative mode for the current target without resetting composition", async () => {
+    const lease = (await invoke(ImeChannels.Acquire, 11, { targetId: "main-composer" })) as {
+      generation: number;
+    };
+    shared.bridge.reset.mockClear();
+    shared.bridge.setInputMode.mockResolvedValue({
+      enabled: true,
+      inputMode: "ascii",
+      composing: true,
+      preedit: "ni",
+      candidates: [{ text: "你" }],
+      selectedIndex: 0,
+      page: 0,
+      hasNextPage: false,
+    });
+
+    const result = await invoke(ImeChannels.SetInputMode, 11, {
+      targetId: "main-composer",
+      generation: lease.generation,
+      inputMode: "ascii",
+    });
+
+    expect(result).toMatchObject({ inputMode: "ascii", composing: true, preedit: "ni" });
+    expect(shared.bridge.setInputMode).toHaveBeenCalledWith("ascii");
+    expect(shared.bridge.reset).not.toHaveBeenCalled();
+  });
+
+  it("keeps the engine enabled and preserves its mode when a lease is released", async () => {
+    const lease = (await invoke(ImeChannels.Acquire, 11, { targetId: "main-composer" })) as {
+      generation: number;
+    };
+    shared.bridge.snapshot = { ...emptyState, enabled: true, inputMode: "ascii" };
+
+    const released = await invoke(ImeChannels.Release, 11, { generation: lease.generation });
+
+    expect(released).toMatchObject({
+      accepted: true,
+      state: { enabled: true, inputMode: "ascii" },
+    });
+    expect(shared.bridge.enable).toHaveBeenCalledOnce();
+    expect(shared.bridge.reset).not.toHaveBeenCalled();
+  });
+
+  it("cancels the previous target composition on transfer while retaining engine mode", async () => {
+    const first = (await invoke(ImeChannels.Acquire, 11, { targetId: "main-composer" })) as {
+      generation: number;
+    };
+    shared.bridge.snapshot = { ...emptyState, enabled: true, inputMode: "ascii", composing: true };
+
+    const second = await invoke(ImeChannels.Acquire, 22, { targetId: "reply-composer" });
+
+    expect(shared.bridge.reset).toHaveBeenCalledOnce();
+    expect(shared.bridge.enable).toHaveBeenCalledOnce();
+    expect(second).toMatchObject({
+      accepted: true,
+      targetId: "reply-composer",
+      generation: first.generation + 1,
+      state: { enabled: true, inputMode: "ascii" },
+    });
   });
 
   it("suspends the lease from the shared native focus stream after an app switch", async () => {

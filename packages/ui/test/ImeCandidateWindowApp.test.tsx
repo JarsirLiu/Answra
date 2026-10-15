@@ -5,6 +5,7 @@ import { ImeCandidateWindowApp } from "../src/app/ImeCandidateWindowApp";
 
 const state: ImeState = {
   enabled: true,
+  inputMode: "chinese",
   composing: true,
   preedit: "ni",
   candidates: [{ text: "你" }, { text: "尼" }],

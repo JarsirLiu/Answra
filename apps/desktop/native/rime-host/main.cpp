@@ -79,6 +79,7 @@ class RimeHost {
         !RIME_API_AVAILABLE(api_, get_commit) ||
         !RIME_API_AVAILABLE(api_, free_commit) ||
         !RIME_API_AVAILABLE(api_, set_option) ||
+        !RIME_API_AVAILABLE(api_, get_option) ||
         !RIME_API_AVAILABLE(api_, clear_composition) ||
         !RIME_API_AVAILABLE(api_, destroy_session)) return false;
 
@@ -153,6 +154,7 @@ class RimeHost {
     bool has_next = has_context && !context.menu.is_last_page;
     if (has_context) api_->free_context(&context);
     return std::string("{\"enabled\":") + (enabled_ ? "true" : "false") +
+           ",\"inputMode\":\"" + (api_->get_option(session_, "ascii_mode") ? "ascii" : "chinese") + "\"" +
            ",\"composing\":" + ((preedit.size() || count) ? "true" : "false") +
            ",\"preedit\":\"" + preedit + "\",\"candidates\":" + candidates.str() +
            ",\"selectedIndex\":" + std::to_string(selected) +
@@ -168,13 +170,15 @@ class RimeHost {
     const std::string& command = fields[0];
     if (command == "enable" && fields.size() == 2) {
       enabled_ = fields[1] == "1";
-      if (enabled_) {
-        // Focus restoration must not inherit an ASCII mode left by a prior owner.
-        api_->set_option(session_, "ascii_mode", False);
-      } else {
+      if (!enabled_) {
         api_->clear_composition(session_);
       }
       return state(false);
+    }
+    if (command == "set-mode" && fields.size() == 2 && enabled_ &&
+        (fields[1] == "0" || fields[1] == "1")) {
+      api_->set_option(session_, "ascii_mode", fields[1] == "1" ? True : False);
+      return state(true);
     }
     if (command == "key" && fields.size() == 3 && enabled_) {
       const bool handled = api_->process_key(session_, std::stoi(fields[1]),
@@ -239,7 +243,8 @@ static int run(const std::vector<std::string>& args) {
   if (args.size() != 5) return 2;
   RimeHost host;
   const bool available = host.initialize(args[1], args[2], args[3], args[4]);
-  std::cout << "0\t{\"available\":" << (available ? "true" : "false") << "}\n" << std::flush;
+  std::cout << "0\t{\"protocolVersion\":2,\"available\":"
+            << (available ? "true" : "false") << "}\n" << std::flush;
   if (!available) return 3;
   std::string line;
   while (std::getline(std::cin, line)) {

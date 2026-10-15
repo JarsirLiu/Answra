@@ -9,6 +9,21 @@ const shared = vi.hoisted(() => ({
   sendImeCandidateAction: vi.fn(),
   sendImeCandidateState: vi.fn(),
   isCurrentLease: vi.fn(() => true),
+  getSessionSnapshot: vi.fn(() => ({
+    phase: "owned",
+    owner: { windowId: 1, webContentsId: 1, targetId: "composer", generation: 3 },
+    engine: {
+      enabled: true,
+      inputMode: "chinese",
+      composing: true,
+      preedit: "ni",
+      candidates: [{ text: "你" }],
+      selectedIndex: 0,
+      page: 0,
+      hasNextPage: false,
+    },
+    revision: 4,
+  })),
 }));
 
 vi.mock("electron", () => ({
@@ -36,18 +51,8 @@ vi.mock("../src/main/window", () => ({
   setImeCandidateState: shared.setImeCandidateState,
 }));
 
-import { ImeCandidateChannels, type ImeState } from "@answra/shared";
+import { ImeCandidateChannels } from "@answra/shared";
 import { registerImeCandidateIpc } from "../src/main/ime/imeCandidateIpc";
-
-const state: ImeState = {
-  enabled: true,
-  composing: true,
-  preedit: "ni",
-  candidates: [{ text: "你" }],
-  selectedIndex: 0,
-  page: 0,
-  hasNextPage: false,
-};
 
 describe("IME candidate IPC", () => {
   beforeEach(() => {
@@ -57,13 +62,13 @@ describe("IME candidate IPC", () => {
     shared.sendImeCandidateAction.mockClear();
     shared.sendImeCandidateState.mockClear();
     shared.isCurrentLease.mockReturnValue(true);
-    registerImeCandidateIpc(shared.isCurrentLease);
+    shared.getSessionSnapshot.mockClear();
+    registerImeCandidateIpc(shared.isCurrentLease, shared.getSessionSnapshot);
   });
 
   it("accepts candidate geometry only from an owned input window", () => {
     const payload = {
       type: "show",
-      state,
       anchor: { x: 10, lineTop: 20, lineBottom: 40 },
       targetId: "composer",
       generation: 3,
@@ -79,8 +84,56 @@ describe("IME candidate IPC", () => {
     );
 
     expect(shared.setImeCandidateState).toHaveBeenCalledOnce();
-    expect(shared.setImeCandidateState).toHaveBeenCalledWith(shared.owner, payload);
+    expect(shared.setImeCandidateState).toHaveBeenCalledWith(
+      shared.owner,
+      payload,
+      expect.objectContaining({ inputMode: "chinese", preedit: "ni" }),
+    );
     expect(shared.isCurrentLease).toHaveBeenCalledWith(shared.owner, "composer", 3);
+    expect(shared.getSessionSnapshot).toHaveBeenCalledOnce();
+  });
+
+  it("rejects geometry when the authoritative session has moved to another generation", () => {
+    shared.getSessionSnapshot.mockReturnValueOnce({
+      phase: "owned",
+      owner: { windowId: 1, webContentsId: 1, targetId: "composer", generation: 4 },
+      engine: {
+        enabled: true,
+        inputMode: "chinese",
+        composing: true,
+        preedit: "ni",
+        candidates: [{ text: "你" }],
+        selectedIndex: 0,
+        page: 0,
+        hasNextPage: false,
+      },
+      revision: 5,
+    });
+    const payload = {
+      type: "show",
+      anchor: { x: 10, lineTop: 20, lineBottom: 40 },
+      targetId: "composer",
+      generation: 3,
+    };
+
+    shared.handlers[ImeCandidateChannels.Update]({ sender: { id: "main" } }, payload);
+
+    expect(shared.setImeCandidateState).not.toHaveBeenCalled();
+  });
+
+  it("rejects renderer-supplied engine state", () => {
+    const payload = {
+      type: "show",
+      state: { enabled: true },
+      anchor: { x: 10, lineTop: 20, lineBottom: 40 },
+      targetId: "composer",
+      generation: 3,
+    };
+
+    shared.handlers[ImeCandidateChannels.Update]({ sender: { id: "main" } }, payload);
+
+    expect(shared.setImeCandidateState).not.toHaveBeenCalled();
+    expect(shared.getSessionSnapshot).not.toHaveBeenCalled();
   });
 
   it("accepts a suspend signal from the active input window", () => {
@@ -88,6 +141,7 @@ describe("IME candidate IPC", () => {
     shared.handlers[ImeCandidateChannels.Update]({ sender: { id: "main" } }, payload);
 
     expect(shared.setImeCandidateState).toHaveBeenCalledWith(shared.owner, payload);
+    expect(shared.getSessionSnapshot).not.toHaveBeenCalled();
   });
 
   it("routes candidate actions only from the native candidate window", () => {

@@ -4,6 +4,7 @@ import {
   ConversationChannels,
   type ImeCandidateAction,
   type ImeCandidateUpdate,
+  type ImeState,
   type RegionSelection,
   type ReplyBarAction,
   type ReplyBarState,
@@ -11,7 +12,10 @@ import {
 } from "@answra/shared";
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron";
 import { app, type BrowserWindow } from "electron";
-import { createImeCandidateWindowController } from "./ime/imeCandidateWindowController";
+import {
+  createImeCandidateWindowController,
+  type ImeCandidatePresentationUpdate,
+} from "./ime/imeCandidateWindowController";
 import { createMainWindowController } from "./mainWindowController";
 import { createReplyBarWindowController } from "./replyBarWindowController";
 import { getWindowCaptureDiagnostics } from "./windowCaptureProtection";
@@ -94,9 +98,23 @@ export function getReplyBarWindow(): BrowserWindow | undefined {
   ensureControllers();
   return replyBarController.getWindow();
 }
-export function setImeCandidateState(owner: BrowserWindow, payload: ImeCandidateUpdate): void {
+export function setImeCandidateState(
+  owner: BrowserWindow,
+  payload: ImeCandidateUpdate,
+  state?: ImeState,
+): void {
   ensureControllers();
-  imeCandidateController.update(owner, payload);
+  const presentation = toCandidatePresentationUpdate(payload, state);
+  if (presentation) imeCandidateController.update(owner, presentation);
+}
+
+function toCandidatePresentationUpdate(
+  payload: ImeCandidateUpdate,
+  state?: ImeState,
+): ImeCandidatePresentationUpdate | undefined {
+  if (payload.type === "show") return state ? { ...payload, state } : undefined;
+  if (payload.type === "clear") return { ...payload, ...(state ? { state } : {}) };
+  return payload;
 }
 export function resizeImeCandidateWindow(size: ContentSize): void {
   ensureControllers();

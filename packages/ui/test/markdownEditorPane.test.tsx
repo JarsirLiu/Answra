@@ -1,11 +1,17 @@
-import type { DesktopBridge, WorkspaceFileContent } from "@answra/shared";
+import type {
+  DesktopBridge,
+  ImeSessionCommand,
+  ImeSessionSnapshot,
+  ImeState,
+  WorkspaceFileContent,
+} from "@answra/shared";
 import { EditorView } from "@codemirror/view";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MarkdownEditorPane } from "../src/components/panels/workspace/MarkdownEditorPane";
 
 function createBridge(overrides: Partial<DesktopBridge> = {}): DesktopBridge {
-  return {
+  const bridge: DesktopBridge = {
     fitContent: vi.fn(),
     close: vi.fn(),
     getWorkspaceRoot: vi.fn(),
@@ -18,6 +24,86 @@ function createBridge(overrides: Partial<DesktopBridge> = {}): DesktopBridge {
     onWorkspaceChanged: vi.fn(() => () => undefined),
     ...overrides,
   };
+  let state: ImeState = {
+    enabled: false,
+    inputMode: "chinese",
+    composing: false,
+    preedit: "",
+    candidates: [],
+    selectedIndex: 0,
+    page: 0,
+    hasNextPage: false,
+  };
+  let owner: ImeSessionSnapshot["owner"];
+  let revision = 0;
+  const snapshot = (): ImeSessionSnapshot => ({
+    phase: owner ? "owned" : "idle",
+    ...(owner ? { owner } : {}),
+    engine: state,
+    revision,
+  });
+  bridge.imeSessionCommand = async (command: ImeSessionCommand) => {
+    let result: unknown;
+    if (command.type === "acquireTarget") {
+      result = await bridge.imeAcquire?.(command.targetId);
+      const lease = result as {
+        accepted?: boolean;
+        generation?: number;
+        targetId?: string;
+        state?: ImeState;
+      };
+      if (lease.accepted && lease.generation !== undefined) {
+        state = lease.state ?? state;
+        owner = {
+          windowId: 1,
+          webContentsId: 1,
+          targetId: lease.targetId ?? command.targetId,
+          generation: lease.generation,
+        };
+      }
+    } else {
+      switch (command.type) {
+        case "releaseTarget":
+          result = await bridge.imeRelease?.(command.generation);
+          owner = undefined;
+          break;
+        case "processKey":
+          result = await bridge.imeKey?.(command);
+          break;
+        case "setInputMode":
+          result = await bridge.imeSetInputMode?.(
+            command.targetId,
+            command.generation,
+            command.inputMode,
+          );
+          break;
+        case "selectCandidate":
+          result = await bridge.imeSelect?.(command.index, command.generation);
+          break;
+        case "cancelComposition":
+          result = await bridge.imeReset?.(command.generation);
+          break;
+        case "resume":
+          result = await bridge.imeConfirmFocus?.(command.targetId, command.generation);
+          break;
+        case "suspend":
+          break;
+      }
+    }
+    const response = result as (ImeState & { accepted?: boolean; state?: ImeState }) | undefined;
+    if (response && "state" in response && response.state) state = response.state;
+    else if (response && "enabled" in response) state = response;
+    revision += 1;
+    return {
+      commandId: command.commandId,
+      accepted: response && "accepted" in response ? response.accepted === true : state.enabled,
+      snapshot: snapshot(),
+      ...(state.committedText ? { commit: { text: state.committedText, revision } } : {}),
+    };
+  };
+  bridge.getImeSessionSnapshot = async () => snapshot();
+  bridge.onImeSessionSnapshot = () => () => undefined;
+  return bridge;
 }
 
 const sampleContent: WorkspaceFileContent = {
@@ -60,6 +146,7 @@ describe("MarkdownEditorPane", () => {
   it("routes CodeMirror text through its own Rime lease and selection adapter", async () => {
     const imeState = {
       enabled: true,
+      inputMode: "chinese" as const,
       composing: false,
       preedit: "",
       candidates: [],
@@ -103,6 +190,7 @@ describe("MarkdownEditorPane", () => {
   it("handles an uncomposed Enter as an editor newline while embedded IME is active", async () => {
     const imeState = {
       enabled: true,
+      inputMode: "chinese" as const,
       composing: false,
       preedit: "",
       candidates: [],

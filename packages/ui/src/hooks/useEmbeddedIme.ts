@@ -1,13 +1,23 @@
-import type { DesktopBridge, ImeCandidateUpdate, ImeKeyRequest, ImeState } from "@answra/shared";
+import type {
+  DesktopBridge,
+  ImeCandidateUpdate,
+  ImeSessionCommand,
+  ImeSessionCommandResult,
+  ImeSessionSnapshot,
+  ImeState,
+} from "@answra/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   activateImeInputTarget,
   isActiveImeInputTarget,
   releaseImeInputTarget,
 } from "../ime/imeInputTargetCoordinator";
+import { resolveImeKeyRoute } from "../ime/imeKeyRouter";
+import { resolveImeTextPolicy, shouldPreventImeBeforeInput } from "../ime/imeTextPolicy";
 
 const EMPTY_STATE: ImeState = {
   enabled: false,
+  inputMode: "chinese",
   composing: false,
   preedit: "",
   candidates: [],
@@ -16,6 +26,12 @@ const EMPTY_STATE: ImeState = {
   hasNextPage: false,
 };
 
+type ImeSessionCommandInput = ImeSessionCommand extends infer Command
+  ? Command extends ImeSessionCommand
+    ? Omit<Command, "commandId" | "expectedRevision">
+    : never
+  : never;
+
 /** Registers one input target with the main-owned session when its editor receives focus. */
 export function useEmbeddedIme(
   bridge: DesktopBridge | undefined,
@@ -23,35 +39,88 @@ export function useEmbeddedIme(
   enabled = true,
   targetId = "conversation-composer",
 ) {
-  const available = Boolean(
-    bridge?.imeAvailable && bridge.imeKey && bridge.imeAcquire && bridge.imeRelease,
-  );
+  const available = Boolean(bridge?.imeAvailable && bridge.imeSessionCommand);
   const [imeEnabled, setImeEnabled] = useState(true);
   const [state, setState] = useState<ImeState>(EMPTY_STATE);
   const [asciiMode, setAsciiMode] = useState(false);
   const asciiModeRef = useRef(false);
+  const [targetEngaged, setTargetEngaged] = useState(false);
   const [generation, setGeneration] = useState<number | undefined>(undefined);
   const generationRef = useRef<number | undefined>(undefined);
+  const revisionRef = useRef(0);
+  const commandIdRef = useRef(0);
   const focusedRef = useRef(false);
   const onCommitRef = useRef(onCommit);
   const inputQueueRef = useRef<Promise<void>>(Promise.resolve());
   const acquirePromiseRef = useRef<Promise<void> | undefined>(undefined);
   onCommitRef.current = onCommit;
 
+  const applySnapshot = useCallback(
+    (snapshot: ImeSessionSnapshot) => {
+      if (snapshot.revision < revisionRef.current) return;
+      const previousRevision = revisionRef.current;
+      revisionRef.current = snapshot.revision;
+      const isAscii = snapshot.engine.inputMode === "ascii";
+      asciiModeRef.current = isAscii;
+      setAsciiMode(isAscii);
+      const generation = generationRef.current;
+      if (
+        generation !== undefined &&
+        snapshot.owner?.generation === generation &&
+        snapshot.owner.targetId === targetId
+      ) {
+        setState(snapshot.engine);
+        setTargetEngaged(snapshot.phase === "owned");
+      } else if (generation !== undefined && snapshot.revision > previousRevision) {
+        generationRef.current = undefined;
+        setGeneration(undefined);
+        setState({ ...EMPTY_STATE, inputMode: snapshot.engine.inputMode });
+        setTargetEngaged(false);
+      }
+    },
+    [targetId],
+  );
+
+  const sendCommand = useCallback(
+    async (command: ImeSessionCommandInput): Promise<ImeSessionCommandResult | undefined> => {
+      if (!bridge?.imeSessionCommand) return undefined;
+      let result = await bridge.imeSessionCommand({
+        ...command,
+        commandId: `ui-${++commandIdRef.current}`,
+        expectedRevision: revisionRef.current,
+      } as ImeSessionCommand);
+      if (result.reason === "stale-revision") {
+        applySnapshot(result.snapshot);
+        result = await bridge.imeSessionCommand({
+          ...command,
+          commandId: `ui-${++commandIdRef.current}`,
+          expectedRevision: revisionRef.current,
+        } as ImeSessionCommand);
+      }
+      applySnapshot(result.snapshot);
+      return result;
+    },
+    [applySnapshot, bridge],
+  );
+
+  useEffect(() => {
+    const unsubscribe = bridge?.onImeSessionSnapshot?.(applySnapshot);
+    void bridge?.getImeSessionSnapshot?.().then(applySnapshot);
+    return unsubscribe;
+  }, [applySnapshot, bridge]);
+
   const release = useCallback(async () => {
     const generation = generationRef.current;
     generationRef.current = undefined;
     setGeneration(undefined);
     focusedRef.current = false;
-    asciiModeRef.current = false;
-    setAsciiMode(false);
+    setTargetEngaged(false);
     setState(EMPTY_STATE);
     releaseImeInputTarget(targetId);
     if (generation !== undefined) {
-      const pendingRelease = bridge?.imeRelease?.(generation);
-      await pendingRelease?.catch(() => undefined);
+      await sendCommand({ type: "releaseTarget", targetId, generation }).catch(() => undefined);
     }
-  }, [bridge, targetId]);
+  }, [sendCommand, targetId]);
 
   const blur = useCallback(() => {
     bridge?.imeDiagnostic?.({
@@ -84,11 +153,12 @@ export function useEmbeddedIme(
       if (source === "input-focus")
         bridge?.imeDiagnostic?.({ event: "input-focus", ...focusDetails });
       bridge?.imeDiagnostic?.({ event: "acquire-start", ...focusDetails });
-      if (!available || !enabled || !imeEnabled || !bridge?.imeAcquire) {
+      if (!available || !enabled || !imeEnabled || !bridge?.imeSessionCommand) {
         bridge?.imeDiagnostic?.({ event: "acquire-result", ...focusDetails, accepted: false });
         return;
       }
       focusedRef.current = true;
+      setTargetEngaged(true);
       activateImeInputTarget(targetId, () => void release());
       if (generationRef.current !== undefined) {
         const generation = generationRef.current;
@@ -98,7 +168,7 @@ export function useEmbeddedIme(
           generation,
           focusedRef: focusedRef.current,
         });
-        const result = await bridge.imeConfirmFocus?.(targetId, generation);
+        const result = await sendCommand({ type: "resume", targetId, generation });
         bridge.imeDiagnostic?.({
           event: "confirm-focus-result",
           ...focusDetails,
@@ -109,53 +179,64 @@ export function useEmbeddedIme(
         if (
           focusedRef.current &&
           result?.accepted &&
-          result.targetId === targetId &&
-          result.generation === generation
+          result.snapshot.owner?.generation === generation
         ) {
-          asciiModeRef.current = false;
-          setAsciiMode(false);
-          setState(result.state);
+          applySnapshot(result.snapshot);
+        } else {
+          setTargetEngaged(false);
         }
         return;
       }
       if (acquirePromiseRef.current) return acquirePromiseRef.current;
       const pendingAcquire = (async () => {
-        const result = await bridge.imeAcquire?.(targetId);
+        const result = await sendCommand({ type: "acquireTarget", targetId });
         if (!result) {
+          setTargetEngaged(false);
           bridge.imeDiagnostic?.({ event: "acquire-result", ...focusDetails, accepted: false });
           return;
         }
         if (!focusedRef.current) {
-          if (result.generation !== undefined) await bridge.imeRelease?.(result.generation);
+          setTargetEngaged(false);
+          if (result.snapshot.owner?.generation !== undefined)
+            await sendCommand({
+              type: "releaseTarget",
+              targetId,
+              generation: result.snapshot.owner.generation,
+            });
           bridge.imeDiagnostic?.({
             event: "acquire-result",
             ...focusDetails,
-            generation: result.generation,
+            generation: result.snapshot.owner?.generation,
             focusedRef: false,
             accepted: false,
           });
           return;
         }
-        if (!result.accepted || result.targetId !== targetId || result.generation === undefined) {
-          if (result.generation !== undefined) await bridge.imeRelease?.(result.generation);
+        const acquiredGeneration = result.snapshot.owner?.generation;
+        if (
+          !result.accepted ||
+          result.snapshot.owner?.targetId !== targetId ||
+          acquiredGeneration === undefined
+        ) {
+          setTargetEngaged(false);
+          if (acquiredGeneration !== undefined)
+            await sendCommand({ type: "releaseTarget", targetId, generation: acquiredGeneration });
           setState(EMPTY_STATE);
           bridge.imeDiagnostic?.({
             event: "acquire-result",
             ...focusDetails,
-            generation: result.generation,
+            generation: acquiredGeneration,
             accepted: false,
           });
           return;
         }
-        generationRef.current = result.generation;
-        asciiModeRef.current = false;
-        setAsciiMode(false);
-        setGeneration(result.generation);
-        setState(result.state);
+        generationRef.current = acquiredGeneration;
+        setGeneration(acquiredGeneration);
+        applySnapshot(result.snapshot);
         bridge.imeDiagnostic?.({
           event: "acquire-result",
           ...focusDetails,
-          generation: result.generation,
+          generation: acquiredGeneration,
           focusedRef: focusedRef.current,
           accepted: true,
         });
@@ -167,7 +248,7 @@ export function useEmbeddedIme(
         if (acquirePromiseRef.current === pendingAcquire) acquirePromiseRef.current = undefined;
       }
     },
-    [available, bridge, enabled, imeEnabled, release, targetId],
+    [applySnapshot, available, bridge, enabled, imeEnabled, release, sendCommand, targetId],
   );
 
   useEffect(() => {
@@ -287,7 +368,7 @@ export function useEmbeddedIme(
   useEffect(() => () => void release(), [release]);
 
   const enqueueInput = useCallback(
-    (request: (generation: number) => Promise<ImeState>) => {
+    (request: (generation: number) => Promise<ImeSessionCommandResult | undefined>) => {
       if (!isActiveImeInputTarget(targetId) || !focusedRef.current) return;
       inputQueueRef.current = inputQueueRef.current
         .catch(() => undefined)
@@ -296,14 +377,15 @@ export function useEmbeddedIme(
           const generation = generationRef.current;
           if (generation === undefined) return;
           if (generationRef.current !== generation || !focusedRef.current) return;
-          const next = await request(generation);
+          const result = await request(generation);
+          if (!result?.accepted) return;
           if (generationRef.current !== generation || !focusedRef.current) return;
-          setState(next);
-          if (next.committedText) onCommitRef.current?.(next.committedText);
+          applySnapshot(result.snapshot);
+          if (result.commit) onCommitRef.current?.(result.commit.text);
         })
         .catch((error: unknown) => console.error("[ime-ui] key processing failed", error));
     },
-    [targetId],
+    [applySnapshot, targetId],
   );
 
   const sendKey = useCallback(
@@ -344,7 +426,7 @@ export function useEmbeddedIme(
         !available ||
         !enabled ||
         !imeEnabled ||
-        !bridge?.imeKey ||
+        !bridge?.imeSessionCommand ||
         !isActiveImeInputTarget(targetId)
       ) {
         reportRouting(false);
@@ -354,82 +436,60 @@ export function useEmbeddedIme(
         reportRouting(false);
         return false;
       }
-      if (event.key === "Backspace" && !state.composing) {
-        reportRouting(false);
-        return false;
-      }
-      if ((event.ctrlKey || event.altKey || event.metaKey) && !state.composing) {
-        reportRouting(false);
-        return false;
-      }
-      const key = normalizeKey(event.key, event.code);
-      const isShiftKey = key === "Shift";
-      const togglesAsciiMode =
-        isShiftKey &&
-        !release &&
-        !event.repeat &&
-        !event.ctrlKey &&
-        !event.altKey &&
-        !event.metaKey;
-      if (togglesAsciiMode) {
-        const nextAsciiMode = !asciiModeRef.current;
-        asciiModeRef.current = nextAsciiMode;
-        setAsciiMode(nextAsciiMode);
-      }
-      if (
-        asciiModeRef.current &&
-        !isShiftKey &&
-        !release &&
-        key?.length === 1 &&
-        !event.ctrlKey &&
-        !event.altKey &&
-        !event.metaKey
-      ) {
-        reportRouting(false);
-        return false;
-      }
-      if (
-        !asciiModeRef.current &&
-        !state.composing &&
-        key &&
-        /^[0-9]$/.test(key) &&
-        !event.shiftKey &&
-        !event.ctrlKey &&
-        !event.altKey &&
-        !event.metaKey
-      ) {
-        onCommitRef.current?.(key);
+      const route = resolveImeKeyRoute(
+        event,
+        { inputMode: asciiModeRef.current ? "ascii" : "chinese", composing: state.composing },
+        release,
+      );
+      if (route.type === "toggle-mode") {
+        enqueueInput(async (generation) => {
+          const inputMode = asciiModeRef.current ? "chinese" : "ascii";
+          const result = await sendCommand({
+            type: "setInputMode",
+            targetId,
+            generation,
+            inputMode,
+          });
+          return result?.snapshot.engine.inputMode === inputMode ? result : undefined;
+        });
         reportRouting(true);
         return true;
       }
-      if (!key || (key.length !== 1 && !state.composing)) {
-        if (key !== "Shift") {
-          reportRouting(false);
-          return false;
-        }
+      if (route.type === "consumed") {
+        reportRouting(true);
+        return true;
       }
-      if (release && key !== "Shift") {
+      if (route.type === "editor" && route.text) {
+        onCommitRef.current?.(route.text);
+        reportRouting(true);
+        return true;
+      }
+      if (route.type === "browser") {
         reportRouting(false);
         return false;
       }
-      const request: ImeKeyRequest = {
-        generation: generationRef.current ?? -1,
-        key,
-        code: event.code,
-        shift: event.shiftKey,
-        ctrl: event.ctrlKey,
-        alt: event.altKey,
-        meta: event.metaKey,
-        release,
-      };
+      if (route.type !== "engine") {
+        reportRouting(false);
+        return false;
+      }
       enqueueInput(async (generation) => {
-        if (togglesAsciiMode && state.composing) await bridge.imeReset?.(generation);
-        return bridge.imeKey?.({ ...request, generation }) ?? EMPTY_STATE;
+        return sendCommand({
+          type: "processKey",
+          targetId,
+          generation,
+          key: route.key,
+          code: event.code,
+          shift: event.shiftKey,
+          ctrl: event.ctrlKey,
+          alt: event.altKey,
+          meta: event.metaKey,
+          release: route.release,
+        });
       });
       reportRouting(true);
       return true;
     },
-    [available, bridge, enabled, enqueueInput, imeEnabled, state.composing, targetId],
+    [available, bridge, enabled, enqueueInput, imeEnabled, sendCommand, state, targetId],
   );
 
   const sendKeyUp = useCallback(
@@ -439,40 +499,41 @@ export function useEmbeddedIme(
 
   const sendNavigation = useCallback(
     (key: string) => {
-      if (!bridge?.imeKey) return;
-      enqueueInput(
-        (generation) =>
-          bridge.imeKey?.({
-            generation,
-            key,
-            code: key,
-            shift: false,
-            ctrl: false,
-            alt: false,
-            meta: false,
-          }) ?? Promise.resolve(EMPTY_STATE),
+      if (!bridge?.imeSessionCommand) return;
+      enqueueInput((generation) =>
+        sendCommand({
+          type: "processKey",
+          targetId,
+          generation,
+          key,
+          code: key,
+          shift: false,
+          ctrl: false,
+          alt: false,
+          meta: false,
+        }),
       );
     },
-    [bridge, enqueueInput],
+    [bridge, enqueueInput, sendCommand, targetId],
   );
 
   const select = useCallback(
     (index: number) => {
-      if (!bridge?.imeSelect) return;
-      enqueueInput(
-        (generation) => bridge.imeSelect?.(index, generation) ?? Promise.resolve(EMPTY_STATE),
+      if (!bridge?.imeSessionCommand) return;
+      enqueueInput((generation) =>
+        sendCommand({ type: "selectCandidate", targetId, generation, index }),
       );
     },
-    [bridge, enqueueInput],
+    [bridge, enqueueInput, sendCommand, targetId],
   );
 
   const cancelComposition = useCallback(() => {
-    if (!bridge?.imeReset) {
+    if (!bridge?.imeSessionCommand) {
       setState(EMPTY_STATE);
       return;
     }
-    enqueueInput((generation) => bridge.imeReset?.(generation) ?? Promise.resolve(EMPTY_STATE));
-  }, [bridge, enqueueInput]);
+    enqueueInput((generation) => sendCommand({ type: "cancelComposition", targetId, generation }));
+  }, [bridge, enqueueInput, sendCommand, targetId]);
 
   useEffect(() => {
     if (!available || !enabled) return;
@@ -506,11 +567,20 @@ export function useEmbeddedIme(
   );
 
   const toggle = useCallback(() => setImeEnabled((current) => !current), []);
+  const textPolicy = resolveImeTextPolicy({
+    targetOwned: targetEngaged,
+    inputMode: asciiMode ? "ascii" : "chinese",
+    composing: state.composing,
+  });
 
   return {
     available: enabled && available,
     imeEnabled,
     asciiMode,
+    targetEngaged,
+    textPolicy,
+    shouldPreventBeforeInput: (inputType: string) =>
+      shouldPreventImeBeforeInput(textPolicy, inputType),
     active: enabled && imeEnabled && available && state.enabled,
     state,
     generation,
@@ -561,14 +631,4 @@ function getSelectionSummary(target: EventTarget | null): {
     selectionLength: selection.toString().length,
     valueLength: target.textContent?.length ?? 0,
   };
-}
-
-/** Windows marks keys consumed by its IME as "Process"; recover the physical key. */
-function normalizeKey(key: string, code: string): string | undefined {
-  if (key === "Shift" && (code === "ShiftLeft" || code === "ShiftRight")) return "Shift";
-  if (key !== "Process") return key;
-  if (/^Key[A-Z]$/.test(code)) return code.slice(3).toLowerCase();
-  if (/^Digit[0-9]$/.test(code)) return code.slice(5);
-  if (/^Numpad[0-9]$/.test(code)) return code.slice(6);
-  return undefined;
 }

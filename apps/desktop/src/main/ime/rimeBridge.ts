@@ -3,12 +3,13 @@ import { existsSync } from "node:fs";
 import { copyFile, mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
-import type { ImeKeyRequest, ImeState } from "@answra/shared";
+import type { ImeInputMode, ImeKeyRequest, ImeState } from "@answra/shared";
 import { app } from "electron";
 import { rimeKeyCode, rimeKeyMask } from "./rimeKeyMapping";
 
 const EMPTY: ImeState = {
   enabled: false,
+  inputMode: "chinese",
   composing: false,
   preedit: "",
   candidates: [],
@@ -56,6 +57,7 @@ export class RimeBridge {
   private state: ImeState = EMPTY;
   private startup?: Promise<void>;
   private availableValue = false;
+  private helperProtocolVersion = 0;
   private nextId = 1;
   private readonly pending = new Map<number, Pending>();
 
@@ -64,7 +66,11 @@ export class RimeBridge {
   }
 
   get available(): boolean {
-    return this.availableValue;
+    return this.availableValue && this.helperProtocolVersion === 2;
+  }
+
+  get snapshot(): ImeState {
+    return this.state;
   }
 
   async enable(enabled: boolean): Promise<ImeState> {
@@ -103,6 +109,12 @@ export class RimeBridge {
     await this.startup;
     if (!this.available) return { ...EMPTY, handled: false };
     return this.command("reset");
+  }
+
+  async setInputMode(inputMode: ImeInputMode): Promise<ImeState> {
+    await this.startup;
+    if (!this.available || !this.state.enabled) return { ...this.state, handled: false };
+    return this.command("set-mode", inputMode === "ascii" ? "1" : "0");
   }
 
   dispose(): void {
@@ -152,8 +164,9 @@ export class RimeBridge {
         const existing = await readFile(schemaPatch, "utf8");
         migrateLegacyPatch =
           existing.includes("translator/dictionary: answra") ||
-          (existing.includes("translator/dictionary: luna_pinyin") &&
-            !existing.includes("ascii_composer/switch_key/Shift_L"));
+          existing.includes("translator/dictionary: luna_pinyin") ||
+          existing.includes("ascii_composer/switch_key/Shift_L") ||
+          existing.includes("ascii_composer/switch_key/Shift_R");
       }
       if (!existsSync(schemaPatch) || migrateLegacyPatch) {
         await copyFile(join(paths.shared, "luna_pinyin_simp.custom.yaml"), schemaPatch);
@@ -185,9 +198,13 @@ export class RimeBridge {
           clearTimeout(timeout);
           try {
             const [id, payload] = line.split("\t", 2);
-            const result = JSON.parse(payload ?? "{}") as { available?: boolean };
-            if (id !== "0" || result.available !== true)
-              throw new Error("librime initialization failed");
+            const result = JSON.parse(payload ?? "{}") as {
+              available?: boolean;
+              protocolVersion?: number;
+            };
+            if (id !== "0" || result.available !== true || result.protocolVersion !== 2)
+              throw new Error("librime helper protocol v2 is required");
+            this.helperProtocolVersion = result.protocolVersion;
             this.availableValue = true;
             lines.on("line", (message) => this.receive(message));
             resolve();

@@ -1,9 +1,11 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ConversationComposer } from "../src/components/panels/ConversationComposer";
+import { resolveImeTextPolicy, shouldPreventImeBeforeInput } from "../src/ime/imeTextPolicy";
 
 const EMPTY_IME_STATE = {
   enabled: false,
+  inputMode: "chinese" as const,
   composing: false,
   preedit: "",
   candidates: [],
@@ -19,6 +21,20 @@ function imeProps(
     active: true,
     available: true,
     imeEnabled: true,
+    textPolicy: resolveImeTextPolicy({
+      targetOwned: true,
+      inputMode: "chinese",
+      composing: false,
+    }),
+    shouldPreventBeforeInput: (inputType: string) =>
+      shouldPreventImeBeforeInput(
+        resolveImeTextPolicy({
+          targetOwned: true,
+          inputMode: "chinese",
+          composing: false,
+        }),
+        inputType,
+      ),
     onKeyDown: vi.fn(() => true),
     onSelect: vi.fn(),
     onNavigate: vi.fn(),
@@ -94,7 +110,24 @@ describe("ConversationComposer", () => {
     const onValueChange = vi.fn();
     render(
       <ConversationComposer
-        ime={imeProps({ active: false, imeEnabled: false })}
+        ime={imeProps({
+          active: false,
+          imeEnabled: false,
+          textPolicy: resolveImeTextPolicy({
+            targetOwned: false,
+            inputMode: "chinese",
+            composing: false,
+          }),
+          shouldPreventBeforeInput: (inputType) =>
+            shouldPreventImeBeforeInput(
+              resolveImeTextPolicy({
+                targetOwned: false,
+                inputMode: "chinese",
+                composing: false,
+              }),
+              inputType,
+            ),
+        })}
         inputLabel="补充问题"
         onValueChange={onValueChange}
         placeholder="输入问题"
@@ -106,6 +139,40 @@ describe("ConversationComposer", () => {
     expect(input).toHaveProperty("readOnly", false);
     fireEvent.change(input, { target: { value: "hello" } });
     expect(onValueChange).toHaveBeenCalledWith("hello");
+  });
+
+  it("keeps ASCII text and Backspace native while blocking platform composition", () => {
+    const onValueChange = vi.fn();
+    const onKeyDown = vi.fn(() => false);
+    render(
+      <ConversationComposer
+        ime={imeProps({
+          onKeyDown,
+          textPolicy: resolveImeTextPolicy({
+            targetOwned: true,
+            inputMode: "ascii",
+            composing: false,
+          }),
+        })}
+        inputLabel="补充问题"
+        onValueChange={onValueChange}
+        placeholder="输入问题"
+        value="text"
+      />,
+    );
+
+    const input = screen.getByRole("textbox", { name: "补充问题" });
+    expect(input).toHaveProperty("readOnly", false);
+    fireEvent.change(input, { target: { value: "text!" } });
+    expect(onValueChange).toHaveBeenCalledWith("text!");
+    fireEvent.keyDown(input, { key: "Backspace", code: "Backspace" });
+    expect(onKeyDown).toHaveBeenCalledOnce();
+    const compositionStart = new CompositionEvent("compositionstart", {
+      bubbles: true,
+      cancelable: true,
+    });
+    input.dispatchEvent(compositionStart);
+    expect(compositionStart.defaultPrevented).toBe(true);
   });
 
   it("renders Rime preedit at the current textarea selection", () => {

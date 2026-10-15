@@ -2,6 +2,7 @@ import {
   type ImeCandidateAction,
   ImeCandidateChannels,
   type ImeCandidateUpdate,
+  type ImeSessionSnapshot,
 } from "@answra/shared";
 import { BrowserWindow, ipcMain } from "electron";
 import {
@@ -17,6 +18,7 @@ import {
 
 export function registerImeCandidateIpc(
   isCurrentLease: (owner: BrowserWindow, targetId: string, generation: number) => boolean,
+  getSessionSnapshot: () => ImeSessionSnapshot,
 ): void {
   ipcMain.on(ImeCandidateChannels.Update, (event, payload: unknown) => {
     const owner = BrowserWindow.fromWebContents(event.sender);
@@ -28,7 +30,18 @@ export function registerImeCandidateIpc(
       !isCurrentLease(owner, payload.targetId, payload.generation)
     )
       return;
-    setImeCandidateState(owner, payload);
+    if (payload.type === "suspend") {
+      setImeCandidateState(owner, payload);
+      return;
+    }
+    const snapshot = getSessionSnapshot();
+    if (
+      snapshot.phase !== "owned" ||
+      snapshot.owner?.targetId !== payload.targetId ||
+      snapshot.owner.generation !== payload.generation
+    )
+      return;
+    setImeCandidateState(owner, payload, snapshot.engine);
   });
 
   ipcMain.on(ImeCandidateChannels.Fit, (event, size: unknown) => {
@@ -68,20 +81,16 @@ function isOwnerWindow(owner: BrowserWindow, event: Electron.IpcMainEvent): bool
 
 function isCandidateUpdate(value: unknown): value is ImeCandidateUpdate {
   if (!isRecord(value)) return false;
+  if (Object.hasOwn(value, "state")) return false;
   if (value.type === "suspend" || value.type === "clear")
-    return (
-      typeof value.targetId === "string" &&
-      Number.isInteger(value.generation) &&
-      (value.state === undefined || isImeState(value.state))
-    );
+    return typeof value.targetId === "string" && Number.isInteger(value.generation);
   if (value.type !== "show") return false;
   const payload = value as {
-    state?: unknown;
     anchor?: unknown;
     targetId?: unknown;
     generation?: unknown;
   };
-  if (!isImeState(payload.state) || !isRecord(payload.anchor)) return false;
+  if (!isRecord(payload.anchor)) return false;
   const anchor = payload.anchor;
   return (
     Number.isFinite(anchor.x) &&
@@ -89,26 +98,6 @@ function isCandidateUpdate(value: unknown): value is ImeCandidateUpdate {
     Number.isFinite(anchor.lineBottom) &&
     typeof payload.targetId === "string" &&
     Number.isInteger(payload.generation)
-  );
-}
-
-function isImeState(value: unknown): boolean {
-  if (!isRecord(value)) return false;
-  const state = value;
-  return (
-    typeof state.enabled === "boolean" &&
-    typeof state.composing === "boolean" &&
-    typeof state.preedit === "string" &&
-    Array.isArray(state.candidates) &&
-    state.candidates.every(
-      (candidate) =>
-        isRecord(candidate) &&
-        typeof candidate.text === "string" &&
-        (candidate.comment === undefined || typeof candidate.comment === "string"),
-    ) &&
-    Number.isInteger(state.selectedIndex) &&
-    Number.isInteger(state.page) &&
-    typeof state.hasNextPage === "boolean"
   );
 }
 

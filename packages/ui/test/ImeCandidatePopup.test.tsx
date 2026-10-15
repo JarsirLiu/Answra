@@ -5,6 +5,7 @@ import { ImeCandidatePopup } from "../src/components/panels/ImeCandidatePopup";
 
 const state: ImeState = {
   enabled: true,
+  inputMode: "chinese",
   composing: true,
   preedit: "nihao",
   candidates: [{ text: "你好", comment: "常用" }, { text: "拟好" }],

@@ -1,6 +1,7 @@
 import type { DesktopBridge, WorkspaceFileContent } from "@answra/shared";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useEmbeddedIme } from "../../../hooks/useEmbeddedIme";
+import { createCodeMirrorTextAdapter } from "../../../ime/adapters/codeMirrorTextAdapter";
 import { ImeCandidateAnchorReporter } from "../ImeCandidateAnchorReporter";
 import { pasteImageName, resolveRelative, toResourceUrl } from "./fileKind";
 import { ZoomablePreview } from "./ZoomablePreview";
@@ -55,7 +56,7 @@ export function MarkdownEditorPane({
     (text) => {
       const view = bundleRef.current.view;
       if (!view) return;
-      view.dispatch(view.state.replaceSelection(text));
+      createCodeMirrorTextAdapter(view).insertText(text);
       setDirtyState(true);
     },
     true,
@@ -144,25 +145,27 @@ export function MarkdownEditorPane({
                 keydown: (event, editor) => {
                   if (imeRef.current.sendKey(event)) return true;
                   if (
-                    imeRef.current.active &&
+                    imeRef.current.targetEngaged &&
                     !imeRef.current.state.composing &&
                     event.key === "Enter" &&
                     !event.ctrlKey &&
                     !event.altKey &&
                     !event.metaKey
                   ) {
-                    editor.dispatch(editor.state.replaceSelection("\n"));
+                    createCodeMirrorTextAdapter(editor).insertText("\n");
                     return true;
                   }
                   return false;
                 },
                 beforeinput: (event) => {
-                  if (!imeRef.current.active) return false;
-                  event.preventDefault();
-                  return true;
+                  if (imeRef.current.shouldPreventBeforeInput(event.inputType)) {
+                    event.preventDefault();
+                    return true;
+                  }
+                  return false;
                 },
                 compositionstart: (event) => {
-                  if (!imeRef.current.imeEnabled) return false;
+                  if (!imeRef.current.textPolicy.blockComposition) return false;
                   event.preventDefault();
                   return true;
                 },
@@ -218,7 +221,7 @@ export function MarkdownEditorPane({
       const target = dir.length > 0 ? `${dir}/assets/${name}` : `assets/${name}`;
       await bridge.writeWorkspaceBytes(target, base64);
       const editor = bundleRef.current.view;
-      editor.dispatch(editor.state.replaceSelection(`![](assets/${name})\n`));
+      createCodeMirrorTextAdapter(editor).insertText(`![](assets/${name})\n`);
       setDirtyState(true);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "图片保存失败");

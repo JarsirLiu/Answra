@@ -14,6 +14,7 @@ interface ImeCandidateWindowAppProps {
 
 const EMPTY_STATE: ImeState = {
   enabled: false,
+  inputMode: "chinese",
   composing: false,
   preedit: "",
   candidates: [],

@@ -22,7 +22,7 @@
 
 ## 决定
 
-main 持有唯一 Rime session lease；每次输入目标切换取得新 generation。main 串行处理 acquire/release/focus confirmation/key/select/reset，并验证 BrowserWindow sender、target 与 generation。窗口原生 blur 暂停 lease 并隐藏候选，不清除 composition；恢复后必须由当前 renderer 再确认 editor focus，之后才允许键盘和候选更新。
+main 持有唯一输入目标 lease；每次输入目标切换取得新 generation。main 串行处理 acquire/release/focus confirmation/key/select/reset，并验证 BrowserWindow sender、target 与 generation。窗口原生 blur 暂停 lease 并隐藏候选，不清除 composition；恢复后必须由当前 renderer 再确认 editor focus，之后才允许键盘和候选更新。lease 只决定输入命令 owner，不拥有 Rime session 生命周期或输入模式。目标切换、目标释放和 renderer 销毁时显式取消旧组合；单纯 acquire/release 不 disable 或重新 enable 引擎，输入模式跨目标保留。
 
 每个 renderer 使用单一 `imeInputTargetCoordinator` 维护当前 target。控件显式声明 `data-ime-policy="text"` 或 `data-ime-policy="excluded"`，只有登记的自由文本目标可以申请 lease。各编辑器保留自己的 adapter：input/textarea 使用 selection range；CodeMirror 使用 `EditorView` selection、`replaceSelection` 和 content DOM caret 几何。内置 IME 接管期间 input/textarea 保持原生 `readOnly` 以隔离系统 IME；renderer 根据真实 selection 和文本布局绘制应用内 caret，Rime commit 由 adapter 更新受控值。候选更新、清理、暂停和 action 均携带 target/generation；candidate controller 仅接受与当前候选 identity 匹配的清理消息。
 
@@ -48,9 +48,10 @@ main 持有唯一 Rime session lease；每次输入目标切换取得新 generat
 ## 模块边界
 
 - `imeSessionState.ts`：定义 owner lease 的纯状态转移，不执行 IPC 或 Rime 操作。
-- `imeIpc.ts`：在 main 内串行持有 `RimeBridge`，校验 sender/target/generation，并绑定 BrowserWindow 与 WebContents 生命周期。
+- `imeSessionManager.ts`：main 唯一持有 lease reducer、Rime engine state、revision 和命令串行队列；acquire/release/focus/key/select/reset/mode 命令通过 manager 顺序执行。
+- `imeIpc.ts`：校验 sender/target/generation，绑定 BrowserWindow 与 WebContents 生命周期，并协调候选窗口/原生焦点副作用；旧 API 与 typed session command 共用相同 handler。通过 `SessionSnapshot` 查询/推送权威 revisioned snapshot；commandId 重放去重，expectedRevision 在 manager 串行队列执行点复核。
 - `imeInputTargetCoordinator.ts`：每个 renderer module instance 只允许一个活动 target；target hook 只在焦点、候选与输入事件上调用 coordinator。
-- `useEmbeddedIme.ts`：负责当前 target lease、本地按键队列和 commit callback，不拥有跨窗口 session。
+- `useEmbeddedIme.ts`：通过 typed session command 管理当前 target lease、按键请求和 commit callback；订阅 main revisioned snapshot 同步输入模式，不拥有跨窗口 session。
 - input/textarea、CodeMirror 分别使用各自编辑模型处理 selection、commit 和 caret；`ImeCandidateAnchorReporter` 仅发布当前目标的屏幕锚点。
 - `imeCandidateIpc.ts` 与 candidate window controller：校验当前 lease 和候选身份，管理候选内容及几何位置；`windowSurfaceRegistry` 管理其 BrowserWindow 层级、当前 owner 原生关系、捕获和原生焦点事件。
 - `windowSurfaceRegistry.ts`：集中登记 BrowserWindow surface 角色、捕获保护、层级、non-activating 交互及原生 focus/blur；IME lease manager 订阅原生焦点事实并作 suspend/resume 判断，renderer 的 DOM focus confirmation 仍是恢复输入的必要条件。
@@ -58,7 +59,7 @@ main 持有唯一 Rime session lease；每次输入目标切换取得新 generat
 
 ## 后果与防回退
 
-- 同一时刻只有一个 renderer owner 和一个 renderer 内活动 target。跨窗口或同窗口 target 切换会使旧 generation 失效，未提交 composition 被清空，避免拼音写进错误草稿。
+- 同一时刻只有一个 renderer owner 和一个 renderer 内活动 target。跨窗口或同窗口 target 切换会使旧 generation 失效，未提交 composition 被显式取消，避免拼音写进错误草稿；引擎保持运行且输入模式保留。blur 只暂停 lease 并保留组合。
 - 普通文本目标共享统一生命周期，但 adapter 仍需逐种验证 selection、commit、caret 和锚点；没有 adapter 的编辑器必须保持 `excluded`。IME input/textarea 继续使用 `readOnly`；若 Chromium 不绘制其原生 caret，必须以应用内 caret 覆盖显示，不能为显示光标而恢复系统 IME 可接管的可编辑状态。
 - 可用目标为：对话/回复 textarea、设置 URL/模型输入、工作区目录筛选和 CodeMirror Markdown 源码。TipTap `RichTextComposer` 当前没有接入并标记 excluded；不能称为已支持。
 - `data-ime-policy` 是输入边界的一部分。新增或更改输入控件时必须标 `text` 或 `excluded`，敏感字段即使显示为 text 也必须 excluded。
@@ -69,6 +70,6 @@ main 持有唯一 Rime session lease；每次输入目标切换取得新 generat
 
 ## 验证
 
-- 自动化：lease 状态 reducer、跨主/回复窗口 owner 竞争、stale owner 操作拒绝、候选 IPC 身份校验、候选 controller stale clear 拒绝、renderer 单活动 target、首次 Acquire pending 按键排队、释放后的 queued key 作废、textarea 锚点，以及 CodeMirror 选区提交、Enter 换行和未组合 Backspace 均有测试。
+- 自动化：lease 状态 reducer、跨主/回复窗口 owner 竞争、stale owner 操作拒绝、候选 IPC 身份校验、候选 controller stale clear 拒绝、renderer 单活动 target、首次 Acquire pending 按键排队、释放后的 queued key 作废、textarea 锚点，以及 CodeMirror 选区提交、Enter 换行和未组合 Backspace 均有测试。main IPC 测试验证 lease acquire/release 不启停引擎、目标切换只取消活动组合且保留输入模式、typed command 的 sender/revision 校验、commandId 去重与 snapshot 推送；session manager 测试验证权威快照 revision 与命令串行顺序。
 - 已通过：`pnpm verify`（Biome、Note 检查、全包 typecheck、UI 117 tests、desktop 106 tests、app 7 tests、architecture check）；`git diff --check`。
 - Windows 实机：需要用户启动应用验证主窗口/回复窗口切换、系统 IME 不接管、候选窗焦点恢复、CodeMirror 中英文和选区替换，以及隐身状态下候选窗截图表现。自动化测试不能证明 Electron/Windows native focus 时序或第三方采集工具遵守 capture exclusion。

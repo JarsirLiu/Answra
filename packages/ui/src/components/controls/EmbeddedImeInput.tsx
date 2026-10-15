@@ -1,6 +1,7 @@
 import type { DesktopBridge } from "@answra/shared";
 import { type InputHTMLAttributes, useCallback, useLayoutEffect, useRef } from "react";
 import { useEmbeddedIme } from "../../hooks/useEmbeddedIme";
+import { backwardDeletionRange, replaceTextRange } from "../../ime/adapters/controlledTextAdapter";
 import { ImeCandidateAnchorReporter } from "../panels/ImeCandidateAnchorReporter";
 
 interface EmbeddedImeInputProps
@@ -28,12 +29,14 @@ export function EmbeddedImeInput({
       const input = inputRef.current;
       const start = input?.selectionStart ?? value.length;
       const end = input?.selectionEnd ?? start;
-      pendingCaret.current = start + text.length;
-      onValueChange(`${value.slice(0, start)}${text}${value.slice(end)}`);
+      const edit = replaceTextRange(value, { start, end }, text);
+      pendingCaret.current = edit.caret;
+      onValueChange(edit.value);
     },
     [onValueChange, value],
   );
   const ime = useEmbeddedIme(bridge, commit, true, targetId);
+  const textPolicy = ime.textPolicy;
 
   useLayoutEffect(() => {
     const caret = pendingCaret.current;
@@ -48,10 +51,10 @@ export function EmbeddedImeInput({
     if (!input) return;
     const start = input.selectionStart ?? value.length;
     const end = input.selectionEnd ?? start;
-    const from = text ? start : start === end ? Math.max(0, start - 1) : start;
-    const to = text ? end : end;
-    pendingCaret.current = from + text.length;
-    onValueChange(`${value.slice(0, from)}${text}${value.slice(to)}`);
+    const range = text ? { start, end } : backwardDeletionRange(value, { start, end });
+    const edit = replaceTextRange(value, range, text);
+    pendingCaret.current = edit.caret;
+    onValueChange(edit.value);
   };
 
   return (
@@ -64,18 +67,18 @@ export function EmbeddedImeInput({
       />
       <input
         {...props}
-        aria-readonly={(ime.active && !ime.asciiMode) || undefined}
+        aria-readonly={textPolicy.readOnly || props.readOnly || undefined}
         data-embedded-ime-target="true"
         data-ime-policy="text"
         data-ime-target-id={targetId}
         onBeforeInput={(event) => {
           props.onBeforeInput?.(event);
-          if (ime.active && !ime.asciiMode) event.preventDefault();
+          if (ime.shouldPreventBeforeInput(event.nativeEvent.inputType)) event.preventDefault();
         }}
         onBlur={() => ime.blur()}
         onCompositionStart={(event) => {
           props.onCompositionStart?.(event);
-          if (ime.active && !ime.asciiMode) event.preventDefault();
+          if (textPolicy.blockComposition) event.preventDefault();
         }}
         onFocus={() => void ime.acquire()}
         onKeyDown={(event) => {
@@ -83,7 +86,7 @@ export function EmbeddedImeInput({
             event.preventDefault();
             return;
           }
-          if (ime.active && !ime.asciiMode && !ime.state.composing && event.key === "Backspace") {
+          if (textPolicy.backspace === "editor" && event.key === "Backspace") {
             event.preventDefault();
             replaceSelection("");
             return;
@@ -97,12 +100,12 @@ export function EmbeddedImeInput({
           }
           props.onKeyUp?.(event);
         }}
-        readOnly={(ime.active && !ime.asciiMode) || props.readOnly}
+        readOnly={textPolicy.readOnly || props.readOnly}
         ref={inputRef}
         type={type}
         value={value}
         onChange={(event) => {
-          if (!ime.active || ime.asciiMode) onValueChange(event.currentTarget.value);
+          if (textPolicy.useNativeTextInput) onValueChange(event.currentTarget.value);
         }}
       />
     </>
