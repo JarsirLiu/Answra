@@ -73,7 +73,7 @@ describe("reply bar window lifecycle", () => {
     const logCaptureSurfaceState = vi.fn();
     const controller = createReplyBarWindowController({
       getMainWindow: () => mainWindow as never,
-      registerWindowPolicy: vi.fn(),
+      registerWindowSurface: vi.fn(),
       prepareWindowToShow: () => true,
       logCaptureSurfaceState,
       sendReplyBarAction: vi.fn(),
@@ -110,7 +110,7 @@ describe("reply bar window lifecycle", () => {
     };
     const controller = createReplyBarWindowController({
       getMainWindow: () => mainWindow as never,
-      registerWindowPolicy: vi.fn(),
+      registerWindowSurface: vi.fn(),
       prepareWindowToShow: () => true,
       logCaptureSurfaceState: vi.fn(),
       sendReplyBarAction: vi.fn(),

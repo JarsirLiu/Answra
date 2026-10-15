@@ -4,14 +4,14 @@ import { app, BrowserWindow, screen } from "electron";
 import { logImeDiagnostic } from "./ime/imeDiagnostics";
 import { isCurrentProcessForeground } from "./windowForeground";
 import { clampContentSize } from "./windowLayout";
-import type { WindowPolicyDescriptor } from "./windowPolicyRegistry";
+import type { WindowSurfaceDescriptor } from "./windowSurfaceRegistry";
 
 const WORK_AREA_MARGIN = 24;
 const INITIAL_SIZE: ContentSize = { width: 340, height: 60 };
 const MAX_SIZE: ContentSize = { width: 1200, height: 900 };
 
 export interface MainWindowControllerHost {
-  registerWindowPolicy: (window: BrowserWindow, descriptor: WindowPolicyDescriptor) => void;
+  registerWindowSurface: (window: BrowserWindow, descriptor: WindowSurfaceDescriptor) => void;
   prepareWindowToShow: (window: BrowserWindow) => boolean;
   onClosed: () => void;
 }
@@ -85,9 +85,7 @@ export function createMainWindowController(host: MainWindowControllerHost) {
       windowId: created.id,
       bounds: JSON.stringify(created.getBounds()),
     });
-    host.registerWindowPolicy(created, { role: "main", captureProtection: "stealth-only" });
-    created.setAlwaysOnTop(true, "floating");
-    logImeDiagnostic("main-window-always-on-top", { windowId: created.id, level: "floating" });
+    host.registerWindowSurface(created, { role: "main", captureProtection: "stealth-only" });
     created.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
     created.webContents.on("will-navigate", (event) => event.preventDefault());
     created.once("ready-to-show", () => {

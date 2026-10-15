@@ -83,7 +83,7 @@ Answra 不全局隐藏系统鼠标。这样能保持本地拖拽、点击和会�
 - 主窗口和回复条的永久非激活仍暂缓。优先验证中文 IME 候选/联想窗是否进入会议共享，以及回复条在不抢焦点的前提下可接受哪些输入方式；原生键盘钩子本身不视为中文输入方案。
 - 两个 renderer 根部接入 `useStealthInputGuard`：隐身开启时阻止 `input`/`textarea`/`contenteditable`（包括 CodeMirror）获得焦点或接收键盘输入，关闭隐身后恢复；按钮、滑块和选择控件继续可用。
 - 系统组件选择器纳入禁止范围：renderer 阻止 `input[type=file]` 的直接或程序化打开，workspace main IPC 在隐身时拒绝目录 `showOpenDialog`；隐身关闭后恢复。
-- BrowserWindow 共享捕获策略已由 `windowPolicyRegistry` 统一登记，四类现有窗口都在显式显示前检查策略，并在 show/restore/resize 和隐身切换时重应用；新增窗口由 `architecture:check` 检查登记和显示前预检。
+- BrowserWindow 共享捕获策略已由 `windowSurfaceRegistry` 统一登记，四类现有窗口都在显式显示前检查策略，并在 show/restore/resize 和隐身切换时重应用；层级、non-activating 交互和原生焦点事实也在同一 surface 登记入口管理。新增窗口由 `architecture:check` 检查登记和显示前预检。
 
 提案仍保持 `proposed`，直到主窗口/回复条的键盘通道、动态辅助窗口和 Zoom/Teams 实机矩阵完成验证。
 

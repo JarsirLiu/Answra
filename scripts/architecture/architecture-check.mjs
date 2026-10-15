@@ -65,7 +65,7 @@ function checkImports(pkg) {
       rel.replaceAll("\\", "/").startsWith("apps/desktop/src/main/") &&
       /new\s+BrowserWindow\s*\(/.test(code)
     ) {
-      if (!code.includes("registerWindowPolicy")) {
+      if (!code.includes("registerWindowSurface")) {
         errors.push(`${rel}: BrowserWindow 必须登记窗口角色和共享策略`);
       }
       if (!code.includes("prepareWindowToShow")) {

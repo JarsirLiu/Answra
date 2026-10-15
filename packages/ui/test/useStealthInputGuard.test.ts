@@ -1,8 +1,12 @@
 import { renderHook } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { useStealthInputGuard } from "../src/hooks/useStealthInputGuard";
 
 describe("useStealthInputGuard", () => {
+  beforeEach(() => {
+    document.documentElement.removeAttribute("data-native-ime-isolation-failed");
+  });
+
   it("blurs and blocks text controls while stealth is enabled", () => {
     const input = document.createElement("input");
     const textarea = document.createElement("textarea");
@@ -84,5 +88,9 @@ describe("useStealthInputGuard", () => {
 
     expect(composition.defaultPrevented).toBe(true);
     expect(beforeInput.defaultPrevented).toBe(true);
+    expect(document.activeElement).not.toBe(textarea);
+
+    textarea.focus();
+    expect(document.activeElement).not.toBe(textarea);
   });
 });

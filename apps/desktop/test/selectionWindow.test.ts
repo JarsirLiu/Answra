@@ -35,7 +35,7 @@ vi.mock("electron", () => ({
 }));
 
 import { createSelectionWindows } from "../src/main/capture/selectionWindow";
-import { createWindowPolicyRegistry } from "../src/main/windowPolicyRegistry";
+import { createWindowSurfaceRegistry } from "../src/main/windowSurfaceRegistry";
 
 describe("selectionWindow capture protection", () => {
   beforeEach(() => {
@@ -43,7 +43,7 @@ describe("selectionWindow capture protection", () => {
   });
 
   function createPolicyHost(stealth: boolean) {
-    const registry = createWindowPolicyRegistry({
+    const registry = createWindowSurfaceRegistry({
       applyCaptureProtection: (window, enabled) => {
         window.setContentProtection(enabled);
         return true;
@@ -51,7 +51,7 @@ describe("selectionWindow capture protection", () => {
     });
     registry.setStealthEnabled(stealth);
     return {
-      registerWindowPolicy: registry.register,
+      registerWindowSurface: registry.register,
       prepareWindowToShow: registry.prepareToShow,
     };
   }

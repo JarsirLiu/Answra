@@ -9,14 +9,12 @@ import { ImeCandidateChannels } from "@answra/shared";
 import { app, BrowserWindow, screen, type WebContents } from "electron";
 import { getWindowCaptureDiagnostics } from "../windowCaptureProtection";
 import { isCurrentProcessForeground } from "../windowForeground";
-import { attachNonActivatingWindow } from "../windowInteractionPolicy";
-import type { WindowPolicyDescriptor } from "../windowPolicyRegistry";
+import type { WindowSurfaceDescriptor } from "../windowSurfaceRegistry";
 import { positionImeCandidate } from "./imeCandidateLayout";
 import { logImeDiagnostic } from "./imeDiagnostics";
 
 const INITIAL_SIZE = { width: 640, height: 56 };
 const DEFAULT_SIZE = INITIAL_SIZE;
-const OWNER_BLUR_SETTLE_MS = 120;
 
 export function resolveImeCandidateWindowPaths(mainBundleDirectory: string) {
   return {
@@ -27,8 +25,12 @@ export function resolveImeCandidateWindowPaths(mainBundleDirectory: string) {
 
 export interface ImeCandidateWindowHost {
   isOwnerWindow(window: BrowserWindow): boolean;
-  registerWindowPolicy: (window: BrowserWindow, descriptor: WindowPolicyDescriptor) => void;
+  registerWindowSurface: (window: BrowserWindow, descriptor: WindowSurfaceDescriptor) => void;
   prepareWindowToShow: (window: BrowserWindow) => boolean;
+  attachAbove: (child: BrowserWindow, owner: BrowserWindow) => void;
+  subscribeFocus?: (
+    listener: (event: { window: BrowserWindow; focused: boolean; visible: boolean }) => void,
+  ) => () => void;
 }
 
 /** Owns the native candidate surface; the focused input renderer remains the IME state owner. */
@@ -36,8 +38,7 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
   let windowRef: BrowserWindow | undefined;
   let ownerWindow: BrowserWindow | undefined;
   let ownerClosedListener: (() => void) | undefined;
-  let ownerBlurListener: (() => void) | undefined;
-  let ownerFocusListener: (() => void) | undefined;
+  let ownerFocusUnsubscribe: (() => void) | undefined;
   let ownerBoundsListener: (() => void) | undefined;
   let state: ImeState | undefined;
   let anchor: ImeCandidateAnchor | undefined;
@@ -129,15 +130,14 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
     if (ownerWindow === nextOwner) return;
     detachOwnerListener();
     ownerWindow = nextOwner;
-    if (windowRef && !windowRef.isDestroyed()) {
-      windowRef.setParentWindow(nextOwner);
-    }
+    if (windowRef && !windowRef.isDestroyed()) host.attachAbove(windowRef, nextOwner);
     ownerClosedListener = () => {
       if (targetId && generation !== undefined)
         reportAnchorUnavailable(nextOwner, targetId, generation, "owner-closed");
       hide("owner-closed");
     };
-    ownerFocusListener = () => {
+    ownerFocusUnsubscribe = host.subscribeFocus?.(({ window, focused }) => {
+      if (window !== nextOwner || !focused) return;
       const candidate = windowRef;
       const focusedWindow = BrowserWindow.getFocusedWindow();
       logImeDiagnostic("candidate-owner-focus", {
@@ -160,36 +160,9 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
         focusedWindowId: focusedWindow?.id,
         appForeground: isCurrentProcessForeground(),
       });
-    };
-    ownerBlurListener = () => {
-      setTimeout(() => {
-        if (ownerWindow !== nextOwner || nextOwner.isDestroyed()) return;
-        const focusedWindow = BrowserWindow.getFocusedWindow();
-        const appForeground = isCurrentProcessForeground();
-        const shouldPreserve =
-          appForeground &&
-          (!focusedWindow || focusedWindow === nextOwner || focusedWindow === windowRef);
-        logImeDiagnostic("candidate-owner-blur-settled", {
-          windowId: nextOwner.id,
-          candidateWindowId: windowRef?.id,
-          focusedWindowId: focusedWindow?.id,
-          appForeground,
-          candidateVisible: windowRef && !windowRef.isDestroyed() ? windowRef.isVisible() : false,
-          hasAnchor: anchor !== undefined,
-          decision: shouldPreserve ? "preserve" : "suspend",
-          settleMs: OWNER_BLUR_SETTLE_MS,
-        });
-        // The candidate popup is a non-activating child of its input owner.
-        // BrowserWindow focus alone is insufficient here; use the OS process
-        // foreground check before treating this blur as an app switch.
-        if (shouldPreserve) return;
-        suspend(nextOwner, "owner-window-blur");
-      }, OWNER_BLUR_SETTLE_MS);
-    };
+    });
     ownerBoundsListener = () => positionAndShow();
     nextOwner.once("closed", ownerClosedListener);
-    nextOwner.on("focus", ownerFocusListener);
-    nextOwner.on("blur", ownerBlurListener);
     nextOwner.on("move", ownerBoundsListener);
     nextOwner.on("resize", ownerBoundsListener);
   }
@@ -225,20 +198,16 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
       stealthPolicyExpected: true,
     });
     windowRef = created;
-    if (ownerWindow && !ownerWindow.isDestroyed()) {
-      created.setParentWindow(ownerWindow);
-    }
-    host.registerWindowPolicy(created, {
+    host.registerWindowSurface(created, {
       role: "ime-candidate",
       captureProtection: "stealth-only",
       failClosed: true,
     });
+    if (ownerWindow && !ownerWindow.isDestroyed()) host.attachAbove(created, ownerWindow);
     pageLoaded = false;
     rendererRequestedReady = false;
     rendererReady = false;
-    created.setAlwaysOnTop(true, "pop-up-menu");
     created.setSkipTaskbar(true);
-    attachNonActivatingWindow(created);
     created.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
     created.webContents.on("will-navigate", (event) => event.preventDefault());
     created.webContents.on("preload-error", (_event, preloadPath, error) => {
@@ -569,19 +538,12 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
     if (ownerWindow && ownerClosedListener && !ownerWindow.isDestroyed()) {
       ownerWindow.removeListener("closed", ownerClosedListener);
     }
-    if (ownerWindow && ownerBlurListener && !ownerWindow.isDestroyed()) {
-      ownerWindow.removeListener("blur", ownerBlurListener);
-    }
-    if (ownerWindow && ownerFocusListener && !ownerWindow.isDestroyed()) {
-      ownerWindow.removeListener("focus", ownerFocusListener);
-    }
+    ownerFocusUnsubscribe?.();
     if (ownerWindow && ownerBoundsListener && !ownerWindow.isDestroyed()) {
       ownerWindow.removeListener("move", ownerBoundsListener);
       ownerWindow.removeListener("resize", ownerBoundsListener);
     }
     ownerClosedListener = undefined;
-    ownerBlurListener = undefined;
-    ownerFocusListener = undefined;
     ownerBoundsListener = undefined;
   }
 

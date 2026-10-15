@@ -9,7 +9,7 @@ import {
   isStealthEnabled,
   isWindowFromSender,
   prepareWindowToShow,
-  registerWindowPolicy,
+  registerWindowSurface,
   restoreReplyBarWindowAfterCapture,
   setReplyBarAnchor,
 } from "../window";
@@ -90,7 +90,7 @@ async function runRegionCapture(
       visible: mainWindow?.isVisible(),
     });
     const overlays = createSelectionWindows(line, isStealthEnabled(), {
-      registerWindowPolicy,
+      registerWindowSurface,
       prepareWindowToShow,
     });
     console.info("[capture][diagnostic] selection overlays created", {

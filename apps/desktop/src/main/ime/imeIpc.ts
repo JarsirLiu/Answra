@@ -13,6 +13,7 @@ import {
   isStealthEnabled,
   isWindowFromSender,
   setImeCandidateState,
+  subscribeToWindowFocus,
 } from "../window";
 import { isCurrentProcessForeground } from "../windowForeground";
 import { setNativeImeEnabled } from "../windowStealthController";
@@ -226,6 +227,13 @@ export function registerImeIpc(): {
     const onFocus = () => {
       if (blurTimer) clearTimeout(blurTimer);
       blurTimer = undefined;
+      if (!setNativeImeEnabled(window, false)) {
+        suspendCurrent("native-ime-isolation-failed-on-focus");
+        logImeDiagnostic("native-ime-isolation-failed-on-focus", {
+          windowId: window.id,
+          generation,
+        });
+      }
     };
     const onClosed = () => {
       const currentWindow = findWindow(owner.windowId);
@@ -249,8 +257,11 @@ export function registerImeIpc(): {
       detachLeaseListeners();
     };
     const onGone = () => onClosed();
-    window.on("blur", onBlur);
-    window.on("focus", onFocus);
+    const unsubscribeFocus = subscribeToWindowFocus(({ window: eventWindow, focused }) => {
+      if (eventWindow !== window) return;
+      if (focused) onFocus();
+      else onBlur();
+    });
     window.once("closed", onClosed);
     window.webContents.on("render-process-gone", onGone);
     window.webContents.on("did-start-navigation", onNavigation);
@@ -263,8 +274,7 @@ export function registerImeIpc(): {
       if (isMainFrame && !isInPlace) onClosed();
     }
     leaseListeners = [
-      () => window.removeListener("blur", onBlur),
-      () => window.removeListener("focus", onFocus),
+      unsubscribeFocus,
       () => window.removeListener("closed", onClosed),
       () => window.webContents.removeListener("render-process-gone", onGone),
       () => window.webContents.removeListener("did-start-navigation", onNavigation),

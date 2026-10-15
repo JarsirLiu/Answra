@@ -129,6 +129,10 @@ textarea 仅在原生 session 成功、`imeEnable(true)` 返回 `enabled=true` �
 
 系统 IME 在应用所有模式和所有文本控件中都禁止作为输入后端。基础样式对输入框、textarea 与 contenteditable 设置 `ime-mode: disabled`；renderer 在捕获阶段拒绝 `compositionstart` 和 `insertComposition*`，避免系统组合文本提交到编辑器。内置 Rime 不可用时不得允许系统组合事件回退；普通直接输入仍可用于诊断，但只接收非组合键盘输入。Windows 原生 HWND context 隔离继续作为平台层防线，不能以 renderer 防线取代。
 
+IME lease owner 的 BrowserWindow 每次重新获得原生焦点时，必须重新对该窗口执行 Windows IME context detach；Electron/Windows 的激活切换可能让先前的窗口级隔离不再足以保证输入路径。若重新隔离失败，lease 立即进入 suspended 并隐藏候选，不继续接受内置输入请求；renderer 仍保持只读和 composition guard，不能退回系统 IME。此路径由 `windowSurfaceRegistry` 分发原生焦点事实，`imeIpc` lease manager 执行隔离和 fail-closed 状态迁移。
+
+收到文本目标上的原生 `compositionstart` 代表系统输入链路已越过主进程隔离防线，必须按隔离故障处理：阻止 DOM 默认行为和后续事件传播，立即让目标失焦，并在当前 renderer 生命周期锁住所有文本目标，直到页面重载。此 renderer 兜底只能缩短意外系统 UI 的存续时间，不能证明其从未显示；Windows 实机必须验证候选系统 UI 不出现，且 native isolation 的 API 返回值不能代替该证据。触发锁定时输入不可用是有意的 fail-closed 行为，不得静默重试并让系统 IME 接管。
+
 Rime 启动必须通过官方 `deploy_schema` 部署当前 schema 后再创建 session；仅调用 `start_maintenance` 不保证新加入的 `luna_pinyin_simp` 生成 prism，表现为 session 看似启用但所有字母均 `handled=false`。helper 启动时必须记录部署失败，协议测试需验证 `n/i` 返回 `handled=true` 和非空 preedit。
 
 已验证：官方头文件 helper 的 Windows C++ 语法检查、Electron main/preload/renderer typecheck、Note 门禁和 diff whitespace 检查。未启动 Electron；真实候选词/退格 UI 闭环、Windows helper 与 DLL 的实机协议测试和 macOS universal 构建仍需在具备对应官方运行库和 CMake 的构建机执行。

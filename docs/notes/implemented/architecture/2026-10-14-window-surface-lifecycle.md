@@ -8,17 +8,17 @@
 
 ## 涉及范围
 
-- 代码/模块：`apps/desktop/src/main/windowPolicyRegistry.ts`、`window.ts`、各 BrowserWindow controller、`capture/selectionWindow.ts`、`windowStealthController.ts`、`scripts/architecture/architecture-check.mjs`。
+- 代码/模块：`apps/desktop/src/main/windowSurfaceRegistry.ts`、`window.ts`、各 BrowserWindow controller、`capture/selectionWindow.ts`、`windowStealthController.ts`、`ime/imeIpc.ts`、`scripts/architecture/architecture-check.mjs`。
 - UI/进程/协议/持久化表面：main 进程的窗口实例、捕获保护生命周期、隐身切换和 controller teardown；不改变 renderer 页面路由及 IPC 业务协议。
 - 相关 Note：[主窗口生命周期与隐身策略拆分](../../implemented/architecture/2026-10-11-main-window-and-stealth-boundaries.md)、[会议场景隐身模式的窗口与捕获边界](../../proposed/architecture/2026-10-13-comprehensive-stealth-mode.md)、[统一 IME 输入目标与窗口生命周期](./2026-10-15-unified-ime-target-lifecycle.md)。
 
 ## 决定
 
-每个原生窗口仍由专职 controller 创建并管理业务状态、几何和销毁；main 进程的 `windowPolicyRegistry` 统一登记窗口角色、捕获策略和生命周期 listener。注册表在注册、show/restore/resize、隐身切换时应用捕获策略，在关闭时撤销自身 listener 和登记。敏感窗口在实际调用 `show`/`showInactive` 前执行 `prepareWindowToShow`，策略失败时保持隐藏。
+每个原生窗口仍由专职 controller 创建并管理业务状态、几何和显隐；main 进程的 `windowSurfaceRegistry` 统一登记窗口角色、捕获策略、always-on-top 层级、non-activating 交互策略、原生 owner 关系及 BrowserWindow focus/blur 事件。注册表在登记、显示/恢复和显式 owner reconciliation 时应用相应窗口策略；resize 与隐身切换更新捕获保护；窗口关闭时撤销 listener、焦点订阅和 owner 关系。敏感窗口在实际调用 `show`/`showInactive` 前执行 `prepareWindowToShow`，策略失败时保持隐藏。
 
 UI 页面继续由 renderer 路由管理。只有需要独立原生位置、焦点、z-order 或捕获策略的 surface 才创建 BrowserWindow。页面卸载不能直接销毁应用级共享服务。
 
-窗口角色首批固定为 `main`、`reply-bar`、`ime-candidate`、`selection-overlay`。捕获保护与非激活交互、键盘输入能力是不同能力；本次只统一捕获策略生命周期，不改变既有焦点和键盘行为。
+窗口角色首批固定为 `main`、`reply-bar`、`ime-candidate`、`selection-overlay`。各角色的层级和交互能力由 registry 内的策略表唯一声明。BrowserWindow 原生焦点事件由 registry 统一分发；DOM 输入控件焦点、IME lease owner 和 Rime composition 仍归 IME lease manager，不能从 BrowserWindow focus 推断。
 
 ## 生命周期契约
 
@@ -32,10 +32,11 @@ UI 页面继续由 renderer 路由管理。只有需要独立原生位置、焦�
 
 ## 模块边界
 
-- `windowPolicyRegistry.ts`：main 进程唯一窗口策略登记点；只管 role、捕获保护应用、生命周期监听和策略诊断。
-- 各窗口 controller：拥有对应 BrowserWindow 的创建、加载、业务状态、位置和显隐；在显示前请求策略许可。
+- `windowSurfaceRegistry.ts`：main 进程唯一原生 surface 登记点；集中角色策略、捕获保护、z-order、non-activating 交互、原生 owner 关系、原生焦点事件分发和 teardown。
+- 各窗口 controller：拥有对应 BrowserWindow 的创建、加载、业务状态、位置和显隐；声明角色，在显示前请求策略许可，并在业务 owner 变化时请求关系更新。
 - `windowStealthController.ts`：持有隐身模式状态并通知窗口注册表；任务栏/Dock 等应用级策略仍在此处。
-- `windowInteractionPolicy.ts`：保留平台非激活交互策略，与捕获保护彼此独立。
+- `windowInteractionPolicy.ts`：只提供平台能力判断；BrowserWindow 的交互属性由 `windowSurfaceRegistry` 统一应用。
+- IME lease manager：订阅 registry 的原生窗口 focus/blur 事实，决定 lease suspend/resume；renderer DOM focus confirmation 仍是恢复输入的必要条件。
 - renderer 页面：只管理页面/组件生命周期，不直接控制 BrowserWindow 或应用级共享 session。
 
 ## 曾考虑的替代方案
@@ -47,16 +48,16 @@ UI 页面继续由 renderer 路由管理。只有需要独立原生位置、焦�
 
 ## 后果与防回退
 
-- 新建 `BrowserWindow` 必须登记窗口角色和共享策略，并在显示前经过 `prepareWindowToShow`；`architecture:check` 对 main 进程中的每个 `new BrowserWindow(...)` 强制检查这两项接入标记。
+- 新建 `BrowserWindow` 必须通过 `registerWindowSurface` 登记角色和共享策略，并在显示前经过 `prepareWindowToShow`；`architecture:check` 对 main 进程中的每个 `new BrowserWindow(...)` 强制检查这两项接入标记。
 - 增加 renderer 内部页面时优先使用页面路由，不新增 BrowserWindow；只有原生 surface 能力需求才新增窗口角色。
-- 捕获保护策略和非激活交互分别声明、分别验证，不允许用 `showInactive()` 代替捕获保护。
+- 捕获保护、层级和非激活交互由同一 surface 描述登记，但分别执行、分别验证；不允许用 `showInactive()` 代替捕获保护。
 - 注册表只释放自己拥有的 listener；各 controller 继续负责业务 listener 和资源 teardown。
-- 本阶段不实现 IME lease、renderer crash 后业务状态恢复或全应用统一 dispose 编排，后续使用独立 Note 和分阶段变更。
+- IME lease 仍是输入目标焦点、generation 和 composition 的唯一权威；surface registry 只发布 BrowserWindow 原生焦点事实。renderer crash 后业务状态恢复和全应用统一 dispose 编排不属于本阶段。
 
 ## 验证
 
-- 自动化：`windowPolicyRegistry.test.ts` 覆盖未登记窗口拒绝显示、当前隐身状态、隐身切换、restore、策略失败 fail-closed、closed 清理及重复注册；selection/reply/candidate/capture controller 相关测试通过。
-- 自动化：`pnpm --filter @answra/desktop typecheck`、目标 Vitest 20 项、`pnpm architecture:check` 通过。
+- 自动化：`windowSurfaceRegistry.test.ts` 覆盖角色策略、捕获保护、原生焦点订阅、候选 owner attach/reconcile/解绑、策略失败 fail-closed、closed 清理和重复注册；IME IPC 测试覆盖共享原生 focus 流触发 lease suspend；selection/reply/candidate/capture controller 测试通过。
+- 自动化：`pnpm --filter @answra/desktop typecheck`、desktop 全量 Vitest、`pnpm architecture:check` 通过。
 - 完整门禁：`pnpm notes:check`、`pnpm verify`、`git diff --check` 通过；全仓 207 项测试通过。
 - 实机：Windows 11 22631、Electron 29.4.6 的外部截图行为尚未复测；Electron API 状态不作为第三方捕获绝对保证。
 

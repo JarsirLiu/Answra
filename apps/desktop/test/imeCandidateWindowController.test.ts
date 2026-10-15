@@ -148,7 +148,6 @@ const shared = vi.hoisted(() => {
     MockWindow,
     screen: new MockScreen(),
     setCaptureProtection: vi.fn(),
-    attachNonActivatingWindow: vi.fn(),
   };
 });
 
@@ -168,9 +167,7 @@ vi.mock("../src/main/windowCaptureProtection", () => ({
   }),
 }));
 
-vi.mock("../src/main/windowInteractionPolicy", () => ({
-  attachNonActivatingWindow: shared.attachNonActivatingWindow,
-}));
+vi.mock("../src/main/windowInteractionPolicy", () => ({}));
 
 vi.mock("../src/main/windowForeground", () => ({
   isCurrentProcessForeground: () => shared.appFocused,
@@ -204,7 +201,6 @@ describe("IME candidate window controller", () => {
     shared.focusedWindow.mockReset().mockReturnValue(undefined);
     shared.MockWindow.nextId = 1;
     shared.setCaptureProtection.mockClear();
-    shared.attachNonActivatingWindow.mockClear();
     vi.mocked(logImeDiagnostic).mockClear();
     shared.screen.removeAllListeners();
   });
@@ -220,11 +216,12 @@ describe("IME candidate window controller", () => {
     const owner = new shared.MockWindow({ x: 100, y: 50, width: 800, height: 600 });
     const controller = createImeCandidateWindowController({
       isOwnerWindow: (candidate) => candidate === owner,
-      registerWindowPolicy: (window, descriptor) => {
+      registerWindowSurface: (window, descriptor) => {
         if (descriptor.captureProtection === "stealth-only")
           shared.setCaptureProtection(window, true);
       },
       prepareWindowToShow: () => true,
+      attachAbove: (child, owner) => child.setParentWindow(owner),
     });
     controller.update(owner as never, {
       type: "show",
@@ -238,7 +235,6 @@ describe("IME candidate window controller", () => {
 
     expect(candidate.visible).toBe(false);
     expect(candidate.parent).toBe(owner);
-    expect(shared.attachNonActivatingWindow).toHaveBeenCalledWith(candidate);
     expect(shared.setCaptureProtection).toHaveBeenCalledWith(candidate, true);
 
     controller.markRendererReady();
@@ -246,7 +242,7 @@ describe("IME candidate window controller", () => {
 
     candidate.webContents.emit("did-finish-load");
     expect(candidate.visible).toBe(true);
-    expect(candidate.alwaysOnTopCalls).toContainEqual([true, "pop-up-menu"]);
+    expect(candidate.parent).toBe(owner);
     expect(logImeDiagnostic).toHaveBeenCalledWith(
       "candidate-native-positioned",
       expect.objectContaining({
@@ -292,8 +288,14 @@ describe("IME candidate window controller", () => {
     const owner = new shared.MockWindow({ x: 100, y: 50, width: 800, height: 600 });
     const controller = createImeCandidateWindowController({
       isOwnerWindow: (candidate) => candidate === owner,
-      registerWindowPolicy: vi.fn(),
+      registerWindowSurface: vi.fn(),
       prepareWindowToShow: () => true,
+      attachAbove: (child, owner) => child.setParentWindow(owner),
+      subscribeFocus: (listener) => {
+        const onFocus = () => listener({ window: owner as never, focused: true, visible: true });
+        owner.on("focus", onFocus);
+        return () => owner.removeListener("focus", onFocus);
+      },
     });
     const payload = {
       type: "show" as const,
@@ -346,8 +348,9 @@ describe("IME candidate window controller", () => {
     const owner = new shared.MockWindow({ x: 100, y: 50, width: 800, height: 600 });
     const controller = createImeCandidateWindowController({
       isOwnerWindow: (candidate) => candidate === owner,
-      registerWindowPolicy: vi.fn(),
+      registerWindowSurface: vi.fn(),
       prepareWindowToShow: () => true,
+      attachAbove: (child, owner) => child.setParentWindow(owner),
     });
     controller.update(owner as never, {
       type: "show",
@@ -385,8 +388,9 @@ describe("IME candidate window controller", () => {
   it("warms the candidate renderer before the first composition", () => {
     const controller = createImeCandidateWindowController({
       isOwnerWindow: () => true,
-      registerWindowPolicy: vi.fn(),
+      registerWindowSurface: vi.fn(),
       prepareWindowToShow: () => true,
+      attachAbove: (child, owner) => child.setParentWindow(owner),
     });
 
     controller.warmup();
@@ -398,118 +402,13 @@ describe("IME candidate window controller", () => {
     controller.dispose();
   });
 
-  it("keeps candidates on transient owner blur while the app remains foreground", async () => {
-    const owner = new shared.MockWindow({ x: 100, y: 50, width: 800, height: 600 });
-    const controller = createImeCandidateWindowController({
-      isOwnerWindow: (candidate) => candidate === owner,
-      registerWindowPolicy: vi.fn(),
-      prepareWindowToShow: () => true,
-    });
-    const payload = {
-      type: "show" as const,
-      state,
-      anchor: { x: 240, lineTop: 120, lineBottom: 144 },
-      targetId: "composer",
-      generation: 1,
-    };
-    controller.update(owner as never, payload);
-    const candidate = shared.windows.at(-1);
-    if (!candidate) throw new Error("candidate window was not created");
-    controller.markRendererReady();
-    candidate.webContents.emit("did-finish-load");
-    expect(candidate.visible).toBe(true);
-
-    vi.useFakeTimers();
-    owner.emit("blur");
-    await vi.advanceTimersByTimeAsync(120);
-    vi.useRealTimers();
-    expect(candidate.visible).toBe(true);
-    expect(logImeDiagnostic).toHaveBeenCalledWith(
-      "candidate-owner-blur-settled",
-      expect.objectContaining({ decision: "preserve", hasAnchor: true }),
-    );
-    controller.dispose();
-  });
-
-  it("does not hide candidates when foreground briefly drops during owner blur", async () => {
-    const owner = new shared.MockWindow({ x: 100, y: 50, width: 800, height: 600 });
-    const controller = createImeCandidateWindowController({
-      isOwnerWindow: (candidate) => candidate === owner,
-      registerWindowPolicy: vi.fn(),
-      prepareWindowToShow: () => true,
-    });
-    controller.update(owner as never, {
-      type: "show",
-      state,
-      anchor: { x: 240, lineTop: 120, lineBottom: 144 },
-      targetId: "composer",
-      generation: 1,
-    });
-    const candidate = shared.windows.at(-1);
-    if (!candidate) throw new Error("candidate window was not created");
-    controller.markRendererReady();
-    candidate.webContents.emit("did-finish-load");
-    expect(candidate.visible).toBe(true);
-
-    vi.useFakeTimers();
-    shared.appFocused = false;
-    owner.emit("blur");
-    await vi.advanceTimersByTimeAsync(60);
-    shared.appFocused = true;
-    await vi.advanceTimersByTimeAsync(60);
-    vi.useRealTimers();
-    expect(candidate.visible).toBe(true);
-    controller.dispose();
-  });
-
-  it("hides on app deactivation but preserves composition until a fresh anchor arrives", async () => {
-    const owner = new shared.MockWindow({ x: 100, y: 50, width: 800, height: 600 });
-    const controller = createImeCandidateWindowController({
-      isOwnerWindow: (candidate) => candidate === owner,
-      registerWindowPolicy: vi.fn(),
-      prepareWindowToShow: () => true,
-    });
-    const payload = {
-      type: "show" as const,
-      state,
-      anchor: { x: 240, lineTop: 120, lineBottom: 144 },
-      targetId: "composer",
-      generation: 1,
-    };
-    controller.update(owner as never, payload);
-    const candidate = shared.windows.at(-1);
-    if (!candidate) throw new Error("candidate window was not created");
-    controller.markRendererReady();
-    candidate.webContents.emit("did-finish-load");
-    expect(candidate.visible).toBe(true);
-
-    shared.appFocused = false;
-    vi.useFakeTimers();
-    owner.emit("blur");
-    await vi.advanceTimersByTimeAsync(120);
-    vi.useRealTimers();
-    expect(candidate.visible).toBe(false);
-    expect(logImeDiagnostic).toHaveBeenCalledWith(
-      "candidate-owner-blur-settled",
-      expect.objectContaining({ decision: "suspend", hasAnchor: true }),
-    );
-    const action = { type: "select", index: 0, targetId: "composer", generation: 1 } as const;
-    controller.routeAction(action);
-    expect(owner.sent).toHaveLength(0);
-
-    controller.update(owner as never, payload);
-    expect(candidate.visible).toBe(true);
-    controller.routeAction(action);
-    expect(owner.sent).toContainEqual([ImeCandidateChannels.OwnerAction, action]);
-    controller.dispose();
-  });
-
   it("does not clear an active composition when the renderer reports a transient empty state", () => {
     const owner = new shared.MockWindow({ x: 100, y: 50, width: 800, height: 600 });
     const controller = createImeCandidateWindowController({
       isOwnerWindow: (candidate) => candidate === owner,
-      registerWindowPolicy: vi.fn(),
+      registerWindowSurface: vi.fn(),
       prepareWindowToShow: () => true,
+      attachAbove: (child, owner) => child.setParentWindow(owner),
     });
     controller.update(owner as never, {
       type: "show",

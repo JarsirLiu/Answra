@@ -15,36 +15,46 @@ import { createImeCandidateWindowController } from "./ime/imeCandidateWindowCont
 import { createMainWindowController } from "./mainWindowController";
 import { createReplyBarWindowController } from "./replyBarWindowController";
 import { getWindowCaptureDiagnostics } from "./windowCaptureProtection";
-import { createWindowPolicyRegistry, type WindowPolicyDescriptor } from "./windowPolicyRegistry";
 import { createWindowStealthController, setNativeImeEnabled } from "./windowStealthController";
+import { createWindowSurfaceRegistry, type WindowSurfaceDescriptor } from "./windowSurfaceRegistry";
 
 let windowController: ReturnType<typeof createMainWindowController>;
 let stealthController: ReturnType<typeof createWindowStealthController>;
 let replyBarController: ReturnType<typeof createReplyBarWindowController>;
 let imeCandidateController: ReturnType<typeof createImeCandidateWindowController>;
-const windowPolicyRegistry = createWindowPolicyRegistry();
+const windowSurfaceRegistry = createWindowSurfaceRegistry();
 
-export function registerWindowPolicy(
+export function registerWindowSurface(
   window: BrowserWindow,
-  descriptor: WindowPolicyDescriptor,
+  descriptor: WindowSurfaceDescriptor,
 ): () => void {
-  return windowPolicyRegistry.register(window, descriptor);
+  return windowSurfaceRegistry.register(window, descriptor);
 }
 
 export function prepareWindowToShow(window: BrowserWindow): boolean {
-  return windowPolicyRegistry.prepareToShow(window);
+  return windowSurfaceRegistry.prepareToShow(window);
+}
+
+export function attachWindowAbove(child: BrowserWindow, owner: BrowserWindow): void {
+  windowSurfaceRegistry.attachAbove(child, owner);
+}
+
+export function subscribeToWindowFocus(
+  listener: Parameters<typeof windowSurfaceRegistry.subscribeFocus>[0],
+): () => void {
+  return windowSurfaceRegistry.subscribeFocus(listener);
 }
 
 function ensureControllers(): void {
   if (windowController) return;
   windowController = createMainWindowController({
-    registerWindowPolicy,
+    registerWindowSurface,
     prepareWindowToShow,
     onClosed: () => replyBarController?.close(),
   });
   replyBarController = createReplyBarWindowController({
     getMainWindow: () => windowController.getWindow(),
-    registerWindowPolicy,
+    registerWindowSurface,
     prepareWindowToShow,
     logCaptureSurfaceState,
     sendReplyBarAction,
@@ -52,13 +62,15 @@ function ensureControllers(): void {
   imeCandidateController = createImeCandidateWindowController({
     isOwnerWindow: (window) =>
       window === windowController.getWindow() || window === replyBarController.getWindow(),
-    registerWindowPolicy,
+    registerWindowSurface,
     prepareWindowToShow,
+    attachAbove: attachWindowAbove,
+    subscribeFocus: windowSurfaceRegistry.subscribeFocus,
   });
   stealthController = createWindowStealthController({
     getMainWindow: () => windowController.getWindow(),
-    applyWindowPolicies: (enabled) => windowPolicyRegistry.setStealthEnabled(enabled),
-    refreshWindowPolicies: (reason) => windowPolicyRegistry.refresh(reason),
+    applyWindowPolicies: (enabled) => windowSurfaceRegistry.setStealthEnabled(enabled),
+    refreshWindowPolicies: (reason) => windowSurfaceRegistry.refresh(reason),
     setReplyBarInputMethod: () => {
       const replyBar = replyBarController.getWindow();
       if (replyBar) setNativeImeEnabled(replyBar, false);

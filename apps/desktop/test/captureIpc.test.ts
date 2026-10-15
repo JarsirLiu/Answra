@@ -70,7 +70,7 @@ vi.mock("../src/main/window", () => ({
   }),
   setReplyBarAnchor: vi.fn(),
   refreshStealthCaptureProtection: vi.fn(),
-  registerWindowPolicy: vi.fn(),
+  registerWindowSurface: vi.fn(),
   prepareWindowToShow: vi.fn(() => true),
 }));
 

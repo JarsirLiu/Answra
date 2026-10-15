@@ -15,15 +15,15 @@ import {
   positionWindowNearPoint,
   replyBarAnchorFromBounds,
 } from "./windowLayout";
-import type { WindowPolicyDescriptor } from "./windowPolicyRegistry";
 import { setNativeImeEnabled } from "./windowStealthController";
+import type { WindowSurfaceDescriptor } from "./windowSurfaceRegistry";
 
 const WORK_AREA_MARGIN = 24;
 const REPLY_BAR_SIZE: ContentSize = { width: 480, height: 76 };
 
 export interface ReplyBarWindowHost {
   getMainWindow: () => BrowserWindow | undefined;
-  registerWindowPolicy: (window: BrowserWindow, descriptor: WindowPolicyDescriptor) => void;
+  registerWindowSurface: (window: BrowserWindow, descriptor: WindowSurfaceDescriptor) => void;
   prepareWindowToShow: (window: BrowserWindow) => boolean;
   logCaptureSurfaceState: (reason: string, window: BrowserWindow) => void;
   sendReplyBarAction: (action: ReplyBarAction) => void;
@@ -111,10 +111,9 @@ export function createReplyBarWindowController(host: ReplyBarWindowHost) {
       },
     });
     windowRef = created;
-    host.registerWindowPolicy(created, { role: "reply-bar", captureProtection: "stealth-only" });
+    host.registerWindowSurface(created, { role: "reply-bar", captureProtection: "stealth-only" });
     rendererReady = false;
     readyToShow = false;
-    created.setAlwaysOnTop(true, "floating");
     created.setSkipTaskbar(true);
     created.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
     created.webContents.on("will-navigate", (event) => event.preventDefault());

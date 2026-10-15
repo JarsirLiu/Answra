@@ -11,23 +11,45 @@ import { useEffect } from "react";
  */
 export function useStealthInputGuard(enabled: boolean): void {
   useEffect(() => {
+    const reportedCompositionTargets = new WeakSet<HTMLElement>();
+    const nativeCompositionFailureAttribute = "data-native-ime-isolation-failed";
+    const hasNativeCompositionFailure = () =>
+      document.documentElement.hasAttribute(nativeCompositionFailureAttribute);
     const onCompositionStart = (event: CompositionEvent) => {
       if (!isTextEntryTarget(event.target)) return;
-      console.warn("[ime-ui] system composition blocked");
+      document.documentElement.setAttribute(nativeCompositionFailureAttribute, "true");
+      if (!reportedCompositionTargets.has(event.target)) {
+        reportedCompositionTargets.add(event.target);
+        console.error("[ime-ui] unexpected system composition; text input locked until reload");
+      }
       event.preventDefault();
+      event.stopImmediatePropagation();
+      event.target.blur();
     };
     const onBeforeInput = (event: InputEvent) => {
       if (!isTextEntryTarget(event.target)) return;
       if (!event.inputType.startsWith("insertComposition")) return;
       event.preventDefault();
     };
+    const lockTextAfterCompositionFailure = (event: Event) => {
+      if (!hasNativeCompositionFailure() || !isTextEntryTarget(event.target)) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      event.target.blur();
+    };
 
     document.addEventListener("compositionstart", onCompositionStart, true);
     document.addEventListener("beforeinput", onBeforeInput, true);
+    document.addEventListener("pointerdown", lockTextAfterCompositionFailure, true);
+    document.addEventListener("focusin", lockTextAfterCompositionFailure, true);
+    document.addEventListener("keydown", lockTextAfterCompositionFailure, true);
     if (!enabled) {
       return () => {
         document.removeEventListener("compositionstart", onCompositionStart, true);
         document.removeEventListener("beforeinput", onBeforeInput, true);
+        document.removeEventListener("pointerdown", lockTextAfterCompositionFailure, true);
+        document.removeEventListener("focusin", lockTextAfterCompositionFailure, true);
+        document.removeEventListener("keydown", lockTextAfterCompositionFailure, true);
       };
     }
 
@@ -77,6 +99,9 @@ export function useStealthInputGuard(enabled: boolean): void {
       document.removeEventListener("focusin", onFocusIn, true);
       document.removeEventListener("compositionstart", onCompositionStart, true);
       document.removeEventListener("beforeinput", onBeforeInput, true);
+      document.removeEventListener("pointerdown", lockTextAfterCompositionFailure, true);
+      document.removeEventListener("focusin", lockTextAfterCompositionFailure, true);
+      document.removeEventListener("keydown", lockTextAfterCompositionFailure, true);
       document.removeEventListener("keydown", onKeyDown, true);
       document.removeEventListener("click", onClick, true);
     };

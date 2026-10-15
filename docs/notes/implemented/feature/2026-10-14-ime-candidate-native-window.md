@@ -21,12 +21,12 @@
 
 ## 决定
 
-1. 主进程 `imeCandidateWindowController` 独占原生候选窗口生命周期、owner、屏幕定位、窗口尺寸和捕获保护。主窗口或回复窗口只能经校验后的 IPC 上报当前 `ImeState` 与 textarea caret viewport 坐标。
+1. 主进程 `imeCandidateWindowController` 独占原生候选窗口生命周期、IME owner、屏幕定位和窗口尺寸；`windowSurfaceRegistry` 统一应用窗口层级、候选到当前 owner 的原生关系及捕获保护。主窗口或回复窗口只能经校验后的 IPC 上报当前 `ImeState` 与 textarea caret viewport 坐标。
 2. 候选 renderer 只渲染共享候选 UI并上报自身内容尺寸。主进程使用 owner BrowserWindow content bounds 转换为屏幕 DIP，选择输入位置所在显示器，再用纯函数将窗口尺寸和位置限制到 work area。owner move/resize 及 display metrics/add/remove 事件会重新定位。
 3. 窗口设为 `focusable: false`、`showInactive()` 和 always-on-top；Windows 额外应用仓库已有 non-activating window policy。IME 键盘事件仍留在原输入 renderer。
 4. 候选窗口只有在页面加载完成、renderer 已安装 IPC 监听并发出 Ready 后才推送状态和显示。主进程兼容两个就绪事件任意先后，避免 renderer 尚未订阅时发送状态或显示空窗口。
 5. 候选 renderer 只能发送有限的 `select`/`navigate` 动作。主进程转发给当前 owner；owner hook 负责调用 Rime 并在结果包含 `committedText` 时提交给草稿，候选窗口不直接调用引擎。
-6. 输入失焦、引擎禁用/无候选和 owner 关闭时隐藏候选窗口；隐身状态改变时同步更新候选窗口捕获保护。
+6. 输入失焦、引擎禁用/无候选和 owner 关闭时隐藏候选窗口；隐身状态改变时由 `windowSurfaceRegistry` 更新候选窗口捕获保护。owner 重新获得原生焦点时 registry 重申候选窗与 owner 的关系和层级，不直接恢复候选内容；IME lease 仍须等待 renderer 确认 DOM focus。
 
 ## 曾考虑的替代方案
 

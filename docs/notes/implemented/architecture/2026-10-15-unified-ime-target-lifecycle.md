@@ -52,7 +52,8 @@ main 持有唯一 Rime session lease；每次输入目标切换取得新 generat
 - `imeInputTargetCoordinator.ts`：每个 renderer module instance 只允许一个活动 target；target hook 只在焦点、候选与输入事件上调用 coordinator。
 - `useEmbeddedIme.ts`：负责当前 target lease、本地按键队列和 commit callback，不拥有跨窗口 session。
 - input/textarea、CodeMirror 分别使用各自编辑模型处理 selection、commit 和 caret；`ImeCandidateAnchorReporter` 仅发布当前目标的屏幕锚点。
-- `imeCandidateIpc.ts` 与 candidate window controller：校验当前 lease 和候选身份，管理原生候选窗口及其几何位置。
+- `imeCandidateIpc.ts` 与 candidate window controller：校验当前 lease 和候选身份，管理候选内容及几何位置；`windowSurfaceRegistry` 管理其 BrowserWindow 层级、当前 owner 原生关系、捕获和原生焦点事件。
+- `windowSurfaceRegistry.ts`：集中登记 BrowserWindow surface 角色、捕获保护、层级、non-activating 交互及原生 focus/blur；IME lease manager 订阅原生焦点事实并作 suspend/resume 判断，renderer 的 DOM focus confirmation 仍是恢复输入的必要条件。
 - shared channels/preload：定义 acquire/release/focus confirmation 和候选状态载荷；preload 只转发，不持有编辑业务状态。
 
 ## 后果与防回退

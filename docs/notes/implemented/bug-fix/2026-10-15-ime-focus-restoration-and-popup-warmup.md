@@ -36,7 +36,7 @@ main IPC 以最近显式启用 session 的 BrowserWindow 作为当前 owner。�
 - 候选锚点 reporter 保留最近聚焦的 IME 编辑器；renderer 窗口恢复焦点且 DOM 焦点落在 `body` 时恢复该编辑器焦点并重新发布当前候选锚点，避免只恢复 Rime 模式却没有可接收按键的 DOM 输入目标。
 - owner `blur` 延迟 120ms 检查 Electron focused window 与 OS foreground；只有失焦状态持续到检查时才隐藏候选窗。DOM `focusout` 在活跃 composition 期间保留输入锚点；窗口重新聚焦后 reporter 会重新发布锚点。
 - reporter 在 composition 活跃时若暂时没有可测量锚点，不发送 `suspend` 或 `clear`，保留 main 已有候选状态；textarea 重新聚焦后再发布新锚点。失焦时隐藏候选由 main 的 owner 生命周期处理，避免 renderer 的瞬时 DOM 状态关闭 native surface。
-- 候选窗显示时必须通过 `setParentWindow` 绑定当前 IME owner，包括从预热状态第一次显示和 owner 在主窗口/回复窗口间切换；否则 Windows 可能将候选 surface 当成独立窗口，产生 renderer blur 并隐藏候选。实机收到 blur 时应核实 OS foreground 与 Electron focused window 两种信号，不能仅凭 blur 事件清除输入锚点。
+- 候选窗显示时必须由 `windowSurfaceRegistry.attachAbove` 绑定当前 IME owner，包括从预热状态第一次显示和 owner 在主窗口/回复窗口间切换；owner 重新获得焦点时 registry 重申该关系。IME lease manager 通过 registry 的原生焦点事件检查 OS foreground 与 Electron focused window，不能仅凭 blur 事件清除输入锚点。
 - `useEmbeddedIme` 必须将物理按键、候选翻页和候选选择放入同一个 Promise 队列，按输入顺序调用 native bridge 并依序应用响应；不可让较早的空候选快照覆盖后续仍在组合的状态。这里借鉴 `fydeRhythm` 的 session mutex 与 key sequence 思路，不移植其 Chrome `input.ime` API。
 - IME IPC 校验失败或请求来自非 owner 时只能返回空状态，不能调用全局 `enable(false)`；共享 session 的 enable/disable、按键、选词和 reset 必须受同一个 owner 约束。
 - `RimeHost` 在每次 enable 时设置 `ascii_mode=false`，避免恢复后继承英文模式；disable 时仍按原行为清除未提交 composition。

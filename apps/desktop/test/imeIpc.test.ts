@@ -3,6 +3,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const shared = vi.hoisted(() => ({
   handlers: {} as Record<string, (...args: unknown[]) => unknown>,
   listeners: {} as Record<string, (...args: unknown[]) => unknown>,
+  focusSubscribers: new Set<
+    (event: { window: unknown; focused: boolean; visible: boolean }) => void
+  >(),
+  focusedWindow: undefined as unknown,
+  appForeground: true,
+  setImeCandidateState: vi.fn(),
   main: {
     id: 1,
     isDestroyed: () => false,
@@ -53,7 +59,7 @@ const shared = vi.hoisted(() => ({
 
 vi.mock("electron", () => ({
   BrowserWindow: {
-    getFocusedWindow: () => shared.main,
+    getFocusedWindow: () => shared.focusedWindow,
     fromWebContents: (contents: { id: number }) =>
       contents.id === shared.candidate.webContents.id ? shared.candidate : undefined,
   },
@@ -73,7 +79,13 @@ vi.mock("../src/main/window", () => ({
   getReplyBarWindow: () => shared.reply,
   isStealthEnabled: () => false,
   isImeCandidateWindowFromSender: (event: { sender: { id: number } }) => event.sender.id === 33,
-  setImeCandidateState: vi.fn(),
+  setImeCandidateState: shared.setImeCandidateState,
+  subscribeToWindowFocus: (
+    listener: (event: { window: unknown; focused: boolean; visible: boolean }) => void,
+  ) => {
+    shared.focusSubscribers.add(listener);
+    return () => shared.focusSubscribers.delete(listener);
+  },
   isWindowFromSender: (
     window: { webContents: { id: number } },
     event: { sender: { id: number } },
@@ -82,6 +94,10 @@ vi.mock("../src/main/window", () => ({
 
 vi.mock("../src/main/windowStealthController", () => ({
   setNativeImeEnabled: shared.setNativeImeEnabled,
+}));
+
+vi.mock("../src/main/windowForeground", () => ({
+  isCurrentProcessForeground: () => shared.appForeground,
 }));
 
 vi.mock("../src/main/ime/rimeBridge", () => ({
@@ -122,12 +138,16 @@ describe("IME IPC session ownership", () => {
   beforeEach(() => {
     shared.handlers = {};
     shared.listeners = {};
+    shared.focusSubscribers.clear();
+    shared.focusedWindow = shared.main;
+    shared.appForeground = true;
     shared.bridge.enable.mockClear();
     shared.bridge.key.mockClear();
     shared.bridge.select.mockClear();
     shared.bridge.reset.mockClear();
     shared.bridge.dispose.mockClear();
     shared.setNativeImeEnabled.mockClear();
+    shared.setImeCandidateState.mockClear();
     registerImeIpc();
   });
 
@@ -193,6 +213,62 @@ describe("IME IPC session ownership", () => {
     expect(shared.bridge.enable).toHaveBeenCalledTimes(4);
     expect(shared.bridge.select).not.toHaveBeenCalled();
     expect(shared.bridge.reset).toHaveBeenCalledTimes(2);
+  });
+
+  it("suspends the lease from the shared native focus stream after an app switch", async () => {
+    const lease = (await invoke(ImeChannels.Acquire, 11, { targetId: "main-composer" })) as {
+      generation: number;
+    };
+    vi.useFakeTimers();
+    shared.focusedWindow = undefined;
+    shared.appForeground = false;
+    for (const listener of shared.focusSubscribers)
+      listener({ window: shared.main, focused: false, visible: true });
+
+    await vi.advanceTimersByTimeAsync(120);
+
+    expect(logImeDiagnostic).toHaveBeenCalledWith(
+      "lease-suspended",
+      expect.objectContaining({ windowId: 1, generation: lease.generation }),
+    );
+    expect(shared.setNativeImeEnabled).toHaveBeenCalledWith(shared.main, false);
+    expect(shared.setImeCandidateState).toHaveBeenCalledWith(shared.main, {
+      type: "suspend",
+      targetId: "main-composer",
+      generation: lease.generation,
+    });
+    vi.useRealTimers();
+  });
+
+  it("reapplies native IME isolation when the owning window regains focus", async () => {
+    await invoke(ImeChannels.Acquire, 11, { targetId: "main-composer" });
+    shared.setNativeImeEnabled.mockClear();
+
+    for (const listener of shared.focusSubscribers)
+      listener({ window: shared.main, focused: true, visible: true });
+
+    expect(shared.setNativeImeEnabled).toHaveBeenCalledOnce();
+    expect(shared.setNativeImeEnabled).toHaveBeenCalledWith(shared.main, false);
+  });
+
+  it("suspends the lease if native IME isolation fails after focus returns", async () => {
+    const lease = (await invoke(ImeChannels.Acquire, 11, { targetId: "main-composer" })) as {
+      generation: number;
+    };
+    shared.setNativeImeEnabled.mockReturnValue(false);
+
+    for (const listener of shared.focusSubscribers)
+      listener({ window: shared.main, focused: true, visible: true });
+
+    expect(shared.setImeCandidateState).toHaveBeenCalledWith(shared.main, {
+      type: "suspend",
+      targetId: "main-composer",
+      generation: lease.generation,
+    });
+    expect(logImeDiagnostic).toHaveBeenCalledWith("native-ime-isolation-failed-on-focus", {
+      windowId: shared.main.id,
+      generation: lease.generation,
+    });
   });
 
   it("forwards whitelisted focus diagnostics while suppressing key-routing noise", () => {
