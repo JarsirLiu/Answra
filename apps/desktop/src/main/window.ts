@@ -192,6 +192,7 @@ export function createMainWindow(): BrowserWindow {
   ensureControllers();
   const window = windowController.create();
   setNativeImeEnabled(window, false);
+  imeCandidateController.warmup();
   return window;
 }
 export { app };

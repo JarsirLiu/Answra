@@ -1,6 +1,6 @@
 import type { DesktopBridge } from "@answra/shared";
 import { X } from "lucide-react";
-import { type RefObject, useRef } from "react";
+import { type RefObject, useLayoutEffect, useRef } from "react";
 import { ICON_SM } from "../../tokens";
 import { AssistantMessage, MessageStream } from "../chat";
 import { ConversationComposer } from "./ConversationComposer";
@@ -65,16 +65,36 @@ export function ChatPanel({
 }: ChatPanelProps) {
   const composerInputRef = useRef<HTMLTextAreaElement>(null);
   const draftRef = useRef(draft);
+  const preeditLengthRef = useRef(0);
+  const composingRangeRef = useRef<{ start: number; end: number } | null>(null);
+  const pendingCaretRef = useRef<number | null>(null);
   draftRef.current = draft;
   const ime = useEmbeddedIme(
     bridge,
     (text) => {
-      const next = `${draftRef.current}${text}`;
+      const input = composerInputRef.current;
+      const preeditLength = preeditLengthRef.current;
+      const range = composingRangeRef.current;
+      const start =
+        range?.start ??
+        Math.max(0, (input?.selectionStart ?? draftRef.current.length) - preeditLength);
+      const end = range?.end ?? Math.max(0, (input?.selectionEnd ?? start) - preeditLength);
+      composingRangeRef.current = null;
+      const next = `${draftRef.current.slice(0, start)}${text}${draftRef.current.slice(end)}`;
+      pendingCaretRef.current = start + text.length;
       draftRef.current = next;
       onDraftChange(next);
     },
     true,
   );
+  preeditLengthRef.current = ime.state.preedit.length;
+  useLayoutEffect(() => {
+    const caret = pendingCaretRef.current;
+    const input = composerInputRef.current;
+    if (caret === null || !input) return;
+    input.setSelectionRange(caret, caret);
+    pendingCaretRef.current = null;
+  });
   // 内容指纹：消息增减/正文与思维链流式增长都会变化，驱动 MessageStream 自动跟随。
   const contentKey = messages
     .map((message) => `${message.id}:${message.content.length}:${message.reasoning?.length ?? 0}`)
@@ -100,6 +120,11 @@ export function ChatPanel({
               </div>
             ) : (
               <AssistantMessage
+                caret={
+                  Boolean(streaming) &&
+                  message.id === messages.at(-1)?.id &&
+                  Boolean(message.content)
+                }
                 content={message.content}
                 onFork={onFork}
                 onReply={() => composerInputRef.current?.focus()}
@@ -117,6 +142,9 @@ export function ChatPanel({
         inputLabel="补充问题"
         inputRef={composerInputRef}
         onAddAttachment={() => fileInputRef.current?.click()}
+        onPasteImages={(files) => {
+          if (files[0]) onAttachmentChange(files[0]);
+        }}
         onStop={onCancel}
         onSubmit={onSend}
         onValueChange={onDraftChange}
@@ -131,7 +159,21 @@ export function ChatPanel({
                 active: ime.active,
                 imeEnabled: ime.imeEnabled,
                 state: ime.state,
-                onKeyDown: ime.sendKey,
+                onKeyDown: (event) => {
+                  if (
+                    !ime.state.composing &&
+                    (event.key.length === 1 || event.key === "Process") &&
+                    !event.ctrlKey &&
+                    !event.altKey &&
+                    !event.metaKey
+                  ) {
+                    composingRangeRef.current = {
+                      start: event.currentTarget.selectionStart,
+                      end: event.currentTarget.selectionEnd,
+                    };
+                  }
+                  return ime.sendKey(event);
+                },
                 onNavigate: ime.sendNavigation,
                 onSelect: ime.select,
                 onCandidateUpdate: ime.updateCandidate,

@@ -15,6 +15,23 @@ const emptyState: ImeState = {
 };
 
 describe("useEmbeddedIme candidate routing", () => {
+  it("reasserts Chinese mode when the application window regains focus", async () => {
+    const imeEnable = vi.fn().mockResolvedValue(emptyState);
+    const bridge = {
+      imeAvailable: true,
+      imeEnable,
+      imeKey: vi.fn(),
+      imeSelect: vi.fn(),
+    } as unknown as DesktopBridge;
+    const { unmount } = renderHook(() => useEmbeddedIme(bridge));
+
+    await waitFor(() => expect(imeEnable).toHaveBeenCalledTimes(1));
+    act(() => window.dispatchEvent(new Event("focus")));
+    await waitFor(() => expect(imeEnable).toHaveBeenCalledTimes(2));
+    expect(imeEnable).toHaveBeenLastCalledWith(true);
+    unmount();
+  });
+
   it("does not disable the main-owned Rime session when its renderer hook unmounts", async () => {
     const imeEnable = vi.fn().mockResolvedValue(emptyState);
     const bridge = {
@@ -60,5 +77,43 @@ describe("useEmbeddedIme candidate routing", () => {
     act(() => receiveAction?.({ type: "select", index: 0 }));
     await waitFor(() => expect(onCommit).toHaveBeenCalledWith("你"));
     expect(imeSelect).toHaveBeenCalledWith(0);
+  });
+
+  it("serializes physical key requests so stale replies cannot replace newer composition", async () => {
+    let resolveFirst: ((state: ImeState) => void) | undefined;
+    const first = new Promise<ImeState>((resolve) => {
+      resolveFirst = resolve;
+    });
+    const imeKey = vi
+      .fn()
+      .mockReturnValueOnce(first)
+      .mockResolvedValueOnce({
+        ...emptyState,
+        preedit: "ni",
+        candidates: [{ text: "你" }],
+      });
+    const bridge = {
+      imeAvailable: true,
+      imeEnable: vi.fn().mockResolvedValue(emptyState),
+      imeKey,
+      imeSelect: vi.fn(),
+    } as unknown as DesktopBridge;
+    const { result } = renderHook(() => useEmbeddedIme(bridge));
+
+    await waitFor(() => expect(result.current.state.enabled).toBe(true));
+    const keyEvent = (key: string, code: string) =>
+      ({ key, code, ctrlKey: false, altKey: false, metaKey: false, shiftKey: false }) as never;
+    act(() => {
+      result.current.sendKey(keyEvent("n", "KeyN"));
+      result.current.sendKey(keyEvent("i", "KeyI"));
+    });
+
+    await waitFor(() => expect(imeKey).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      resolveFirst?.({ ...emptyState, preedit: "n", candidates: [{ text: "你" }] });
+      await first;
+    });
+    await waitFor(() => expect(imeKey).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(result.current.state.preedit).toBe("ni"));
   });
 });

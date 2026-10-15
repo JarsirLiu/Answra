@@ -22,10 +22,11 @@ Rime 会话由 main 进程持有，renderer cleanup 只解除订阅，不管理�
 
 ## 修复
 
-- renderer 以 `ImeState.composing` 判断输入会话是否仍活跃。组合期间候选或 preedit 暂时为空时只发送 `suspend`，隐藏候选窗但保留 owner；非组合状态才发送带状态快照的 `clear`。
+- renderer 以 `ImeState.composing` 判断输入会话是否仍活跃。组合期间候选或 preedit 暂时为空时保留 main 已有候选状态，不发送 `suspend` 或 `clear`；有有效锚点后重新发送 show。非组合状态才发送带状态快照的 `clear`。
 - main 收到带有 `enabled && composing` 的 clear 快照时降级为 suspend，避免 renderer 的展示状态清理掉仍活跃的 Rime 组合。
 - IPC 校验 clear 中可选的状态快照，沿用 show 状态相同的结构校验。
 - `useEmbeddedIme` 在 effect cleanup 时只清除 renderer 监听和重试定时器，不再发送全局 disable；用户显式关闭仍由状态变更触发 disable。
+- main IME IPC 只允许最近启用 session 的 BrowserWindow 发键、选词和 reset；非所有者或无效请求返回空状态，不能通过错误请求关闭共享 Rime session。
 
 ## 曾考虑的替代方案
 
@@ -41,6 +42,6 @@ Rime 会话由 main 进程持有，renderer cleanup 只解除订阅，不管理�
 
 ## 验证
 
-- 自动化：`useEmbeddedIme` 覆盖 renderer hook 卸载时不关闭 main-owned Rime；`ImeCandidateAnchorReporter` 覆盖组合活跃但候选暂空时发送 suspend；candidate controller 覆盖带活跃组合状态的 clear 只隐藏、不释放 owner，并可由后续 show 恢复。
+- 自动化：`useEmbeddedIme` 覆盖 renderer hook 卸载时不关闭 main-owned Rime；`ImeCandidateAnchorReporter` 覆盖组合活跃但候选暂空或锚点暂缺时不清除候选；candidate controller 覆盖带活跃组合状态的 clear 只隐藏、不释放 owner，并可由后续 show 恢复。IME IPC 覆盖窗口 owner 隔离和无效调用不关闭 session。
 - 自动化：运行 `pnpm notes:check`、`pnpm verify` 与 `git diff --check`。
 - 实机：当前未在 Windows 外部截图工具中复测。用户日志来自 Windows 11 22631，但不足以证明补丁后的焦点/候选恢复行为。

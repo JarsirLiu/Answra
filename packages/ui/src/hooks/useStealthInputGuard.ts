@@ -84,11 +84,12 @@ export function useStealthInputGuard(enabled: boolean): void {
 }
 
 function isEmbeddedImeTarget(target: EventTarget | null): boolean {
-  return target instanceof HTMLTextAreaElement && target.dataset.embeddedImeTarget === "true";
+  if (!(target instanceof Element)) return false;
+  return target.closest("[data-embedded-ime-target]") !== null;
 }
 
 function isEmbeddedImeCandidateTarget(target: EventTarget | null): boolean {
-  return target instanceof HTMLTextAreaElement && target.dataset.embeddedImeTarget === "true";
+  return isEmbeddedImeTarget(target);
 }
 
 function isTextEntryTarget(target: EventTarget | null): target is HTMLElement {

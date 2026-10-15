@@ -1,11 +1,22 @@
-import { ImeChannels, type ImeKeyRequest } from "@answra/shared";
+import { ImeChannels, type ImeKeyRequest, type ImeState } from "@answra/shared";
 import { ipcMain } from "electron";
 import { getReplyBarWindow, getWindow, isStealthEnabled, isWindowFromSender } from "../window";
 import { setNativeImeEnabled } from "../windowStealthController";
 import { RimeBridge } from "./rimeBridge";
 
+const EMPTY_STATE: ImeState = {
+  enabled: false,
+  composing: false,
+  preedit: "",
+  candidates: [],
+  selectedIndex: 0,
+  page: 0,
+  hasNextPage: false,
+};
+
 export function registerImeIpc(): { dispose: () => void; available: boolean } {
   const bridge = new RimeBridge();
+  let sessionOwner: Electron.BrowserWindow | undefined;
   const windowFor = (event: Electron.IpcMainInvokeEvent) => {
     const main = getWindow();
     if (main && isWindowFromSender(main, event)) return main;
@@ -20,8 +31,9 @@ export function registerImeIpc(): { dispose: () => void; available: boolean } {
       available: bridge.available,
       stealth: isStealthEnabled(),
     });
-    if (!window || typeof enabled !== "boolean") return bridge.enable(false);
+    if (!window || typeof enabled !== "boolean") return { ...EMPTY_STATE };
     if (enabled) {
+      sessionOwner = window;
       const nativeImeDisabled = setNativeImeEnabled(window, false);
       if (!nativeImeDisabled) {
         console.error("[ime] refusing input because system IME could not be disabled", {
@@ -29,7 +41,9 @@ export function registerImeIpc(): { dispose: () => void; available: boolean } {
           librimeAvailable: bridge.available,
           stealth: isStealthEnabled(),
         });
-        return bridge.enable(false);
+        sessionOwner = undefined;
+        await bridge.enable(false);
+        return { ...EMPTY_STATE };
       }
       const state = await bridge.enable(true);
       console.info("[ime] enable result", {
@@ -40,32 +54,41 @@ export function registerImeIpc(): { dispose: () => void; available: boolean } {
       // Fail closed: librime/helper failure must not reopen the system IME.
       return state;
     }
+    if (sessionOwner !== window) return { ...EMPTY_STATE };
+    sessionOwner = undefined;
     setNativeImeEnabled(window, false);
     const state = await bridge.enable(enabled);
     console.info("[ime] disable result", { windowId: window.id, enabled: state.enabled });
     return state;
   });
   ipcMain.handle(ImeChannels.Key, async (event, request: ImeKeyRequest) => {
-    if (!windowFor(event) || !isKeyRequest(request)) return bridge.enable(false);
-    const state = await bridge.key(request);
-    console.info("[ime] key result", {
-      code: request.code,
-      handled: state.handled,
-      composing: state.composing,
-      preeditLength: state.preedit.length,
-      candidateCount: state.candidates.length,
-    });
-    return state;
+    const window = windowFor(event);
+    if (!window || sessionOwner !== window || !isKeyRequest(request)) return { ...EMPTY_STATE };
+    return bridge.key(request);
   });
   ipcMain.handle(ImeChannels.Select, (event, request: { index?: unknown }) => {
-    if (!windowFor(event) || !Number.isInteger(request?.index)) return bridge.enable(false);
+    const window = windowFor(event);
+    if (
+      !window ||
+      sessionOwner !== window ||
+      !Number.isInteger(request?.index) ||
+      (request.index as number) < 0
+    )
+      return { ...EMPTY_STATE };
     return bridge.select(request.index as number);
   });
   ipcMain.handle(ImeChannels.Reset, (event) => {
-    if (!windowFor(event)) return bridge.enable(false);
+    const window = windowFor(event);
+    if (!window || sessionOwner !== window) return { ...EMPTY_STATE };
     return bridge.reset();
   });
-  return { available: bridge.available, dispose: () => bridge.dispose() };
+  return {
+    available: bridge.available,
+    dispose: () => {
+      sessionOwner = undefined;
+      bridge.dispose();
+    },
+  };
 }
 
 function isKeyRequest(value: unknown): value is ImeKeyRequest {

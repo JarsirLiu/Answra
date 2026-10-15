@@ -1,6 +1,6 @@
 import type { DesktopBridge, ReplyBarActivity } from "@answra/shared";
 import { AlertCircle, FileText, Wrench } from "lucide-react";
-import { useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { ReplyConversationMessage } from "../../app/useReplyConversation";
 import { useEmbeddedIme } from "../../hooks/useEmbeddedIme";
 import { ICON_SM } from "../../tokens";
@@ -32,9 +32,38 @@ export function ReplyConversationPopover({
   conversationId,
 }: ReplyConversationPopoverProps) {
   const [draft, setDraft] = useState("");
+  const composerInputRef = useRef<HTMLTextAreaElement>(null);
   const draftRef = useRef(draft);
+  const preeditLengthRef = useRef(0);
+  const composingRangeRef = useRef<{ start: number; end: number } | null>(null);
+  const pendingCaretRef = useRef<number | null>(null);
   draftRef.current = draft;
-  const ime = useEmbeddedIme(bridge, (text) => setDraft((current) => `${current}${text}`), true);
+  const ime = useEmbeddedIme(
+    bridge,
+    (text) => {
+      const input = composerInputRef.current;
+      const preeditLength = preeditLengthRef.current;
+      const range = composingRangeRef.current;
+      const start =
+        range?.start ??
+        Math.max(0, (input?.selectionStart ?? draftRef.current.length) - preeditLength);
+      const end = range?.end ?? Math.max(0, (input?.selectionEnd ?? start) - preeditLength);
+      composingRangeRef.current = null;
+      const next = `${draftRef.current.slice(0, start)}${text}${draftRef.current.slice(end)}`;
+      pendingCaretRef.current = start + text.length;
+      draftRef.current = next;
+      setDraft(next);
+    },
+    true,
+  );
+  preeditLengthRef.current = ime.state.preedit.length;
+  useLayoutEffect(() => {
+    const caret = pendingCaretRef.current;
+    const input = composerInputRef.current;
+    if (caret === null || !input) return;
+    input.setSelectionRange(caret, caret);
+    pendingCaretRef.current = null;
+  });
   const send = async () => {
     const text = draftRef.current.trim();
     if (!text || !conversationId || !bridge?.sendConversationMessage) return;
@@ -120,6 +149,7 @@ export function ReplyConversationPopover({
         compact
         disabled={false}
         inputLabel="消息输入"
+        inputRef={composerInputRef}
         onSubmit={() => void send()}
         onValueChange={setDraft}
         placeholder="继续输入消息…"
@@ -132,7 +162,21 @@ export function ReplyConversationPopover({
                 active: ime.active,
                 imeEnabled: ime.imeEnabled,
                 state: ime.state,
-                onKeyDown: ime.sendKey,
+                onKeyDown: (event) => {
+                  if (
+                    !ime.state.composing &&
+                    (event.key.length === 1 || event.key === "Process") &&
+                    !event.ctrlKey &&
+                    !event.altKey &&
+                    !event.metaKey
+                  ) {
+                    composingRangeRef.current = {
+                      start: event.currentTarget.selectionStart,
+                      end: event.currentTarget.selectionEnd,
+                    };
+                  }
+                  return ime.sendKey(event);
+                },
                 onNavigate: ime.sendNavigation,
                 onSelect: ime.select,
                 onCandidateUpdate: ime.updateCandidate,

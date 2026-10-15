@@ -168,7 +168,12 @@ class RimeHost {
     const std::string& command = fields[0];
     if (command == "enable" && fields.size() == 2) {
       enabled_ = fields[1] == "1";
-      if (!enabled_) api_->clear_composition(session_);
+      if (enabled_) {
+        // Focus restoration must not inherit an ASCII mode left by a prior owner.
+        api_->set_option(session_, "ascii_mode", False);
+      } else {
+        api_->clear_composition(session_);
+      }
       return state(false);
     }
     if (command == "key" && fields.size() == 3 && enabled_) {

@@ -29,10 +29,22 @@ export function useEmbeddedIme(
   const [imeEnabled, setImeEnabled] = useState(true);
   const [state, setState] = useState<ImeState>(EMPTY_STATE);
   const onCommitRef = useRef(onCommit);
+  const inputQueueRef = useRef<Promise<void>>(Promise.resolve());
 
   useEffect(() => {
     onCommitRef.current = onCommit;
   }, [onCommit]);
+
+  const enqueueInput = useCallback((request: () => Promise<ImeState>) => {
+    inputQueueRef.current = inputQueueRef.current
+      .catch(() => undefined)
+      .then(request)
+      .then((next) => {
+        setState(next);
+        if (next.committedText) onCommitRef.current?.(next.committedText);
+      })
+      .catch((error: unknown) => console.error("[ime-ui] key processing failed", error));
+  }, []);
 
   useEffect(() => {
     console.info("[ime-ui] bridge", { available, enabled, imeEnabled });
@@ -66,19 +78,32 @@ export function useEmbeddedIme(
 
   useEffect(() => {
     if (!state.enabled) return;
-    const pending = document.querySelector<HTMLTextAreaElement>("[data-ime-focus-pending='true']");
+    const pending = document.querySelector<HTMLElement>("[data-ime-focus-pending='true']");
     if (!pending) return;
     delete pending.dataset.imeFocusPending;
     pending.focus();
   }, [state.enabled]);
 
+  useEffect(() => {
+    if (!available || !enabled || !imeEnabled || !bridge?.imeEnable) return;
+    const restoreChineseMode = () => {
+      void bridge
+        .imeEnable?.(true)
+        .then(setState)
+        .catch((error: unknown) => console.error("[ime-ui] focus restore failed", error));
+    };
+    window.addEventListener("focus", restoreChineseMode);
+    return () => window.removeEventListener("focus", restoreChineseMode);
+  }, [available, bridge, enabled, imeEnabled]);
+
   const sendKey = useCallback(
-    (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    (event: React.KeyboardEvent<HTMLElement>) => {
       if (!available || !enabled || !state.enabled || !bridge?.imeKey) return false;
       if (event.key === "Backspace" && !state.composing) return false;
       if ((event.ctrlKey || event.altKey || event.metaKey) && !state.composing) return false;
       const key = normalizeKey(event.key, event.code);
       if (!key || (key.length !== 1 && !state.composing)) return false;
+      const imeKey = bridge.imeKey;
       const request: ImeKeyRequest = {
         key,
         code: event.code,
@@ -87,20 +112,16 @@ export function useEmbeddedIme(
         alt: event.altKey,
         meta: event.metaKey,
       };
-      console.info("[ime-ui] dispatch key", { key, code: event.code });
-      void bridge.imeKey(request).then((next) => {
-        setState(next);
-        if (next.committedText) onCommitRef.current?.(next.committedText);
-        return next;
-      });
+      enqueueInput(() => imeKey(request));
       return true;
     },
-    [available, bridge, enabled, state.composing, state.enabled],
+    [available, bridge, enabled, enqueueInput, state.composing, state.enabled],
   );
 
   const sendNavigation = useCallback(
     (key: string) => {
       if (!available || !enabled || !state.enabled || !bridge?.imeKey) return;
+      const imeKey = bridge.imeKey;
       const request: ImeKeyRequest = {
         key,
         code: key,
@@ -109,23 +130,18 @@ export function useEmbeddedIme(
         alt: false,
         meta: false,
       };
-      void bridge.imeKey(request).then((next) => {
-        setState(next);
-        if (next.committedText) onCommitRef.current?.(next.committedText);
-      });
+      enqueueInput(() => imeKey(request));
     },
-    [available, bridge, enabled, state.enabled],
+    [available, bridge, enabled, enqueueInput, state.enabled],
   );
 
   const select = useCallback(
     (index: number) => {
       if (!bridge?.imeSelect) return;
-      void bridge.imeSelect(index).then((next) => {
-        setState(next);
-        if (next.committedText) onCommitRef.current?.(next.committedText);
-      });
+      const imeSelect = bridge.imeSelect;
+      enqueueInput(() => imeSelect(index));
     },
-    [bridge],
+    [bridge, enqueueInput],
   );
 
   const sendCandidateAction = useCallback(

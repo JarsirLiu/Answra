@@ -1,6 +1,6 @@
 import type { ImeState } from "@answra/shared";
 import { fireEvent, render } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ImeCandidateAnchorReporter } from "../src/components/panels/ImeCandidateAnchorReporter";
 
 const state: ImeState = {
@@ -17,12 +17,17 @@ function mountHost() {
   const host = document.createElement("div");
   document.body.appendChild(host);
   const textarea = document.createElement("textarea");
+  textarea.readOnly = true;
   textarea.dataset.embeddedImeTarget = "true";
+  textarea.value = state.preedit;
+  textarea.setSelectionRange(state.preedit.length, state.preedit.length);
   return { host, textarea };
 }
 
 describe("ImeCandidateAnchorReporter", () => {
-  it("reports caret geometry without rendering popup content in the input window", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("reports textarea caret geometry without rendering popup content in the input window", () => {
     const onUpdate = vi.fn();
     const { host, textarea } = mountHost();
     const { container } = render(<ImeCandidateAnchorReporter onUpdate={onUpdate} state={state} />, {
@@ -39,26 +44,23 @@ describe("ImeCandidateAnchorReporter", () => {
     });
   });
 
-  it("anchors the native candidate window at the start of the active preedit", () => {
+  it("anchors candidates at the beginning of the preedit at the current selection", () => {
     const onUpdate = vi.fn();
     const { host, textarea } = mountHost();
-    textarea.value = "draft nihao";
-    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+    textarea.value = "abcnihaoz";
+    textarea.setSelectionRange(8, 8);
+    vi.spyOn(HTMLElement.prototype, "offsetLeft", "get").mockReturnValue(6);
+    vi.spyOn(HTMLElement.prototype, "offsetTop", "get").mockReturnValue(3);
     vi.spyOn(textarea, "getBoundingClientRect").mockReturnValue({
       x: 100,
-      y: 50,
+      y: 40,
       left: 100,
-      top: 50,
+      top: 40,
       right: 300,
-      bottom: 90,
+      bottom: 70,
       width: 200,
-      height: 40,
+      height: 30,
       toJSON: () => ({}),
-    });
-    vi.spyOn(HTMLElement.prototype, "offsetLeft", "get").mockImplementation(function (
-      this: HTMLElement,
-    ) {
-      return this instanceof HTMLSpanElement ? (this.previousSibling?.textContent?.length ?? 0) : 0;
     });
     render(<ImeCandidateAnchorReporter onUpdate={onUpdate} state={state} />, { container: host });
     host.appendChild(textarea);
@@ -67,19 +69,25 @@ describe("ImeCandidateAnchorReporter", () => {
     expect(onUpdate).toHaveBeenLastCalledWith({
       type: "show",
       state,
-      anchor: { x: 106, lineTop: 50, lineBottom: 50 },
+      anchor: { x: 106, lineTop: 43, lineBottom: 43 },
     });
   });
 
-  it("suspends the candidate window while keeping an active composition on blur", () => {
+  it("keeps the candidate anchor through DOM blur while composition is active", () => {
     const onUpdate = vi.fn();
     const { host, textarea } = mountHost();
     render(<ImeCandidateAnchorReporter onUpdate={onUpdate} state={state} />, { container: host });
     host.appendChild(textarea);
     fireEvent.focusIn(textarea);
+    const hasFocus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
     fireEvent.focusOut(textarea);
 
-    expect(onUpdate).toHaveBeenLastCalledWith({ type: "suspend" });
+    expect(onUpdate).toHaveBeenLastCalledWith({
+      type: "show",
+      state,
+      anchor: { x: 0, lineTop: 0, lineBottom: 0 },
+    });
+    hasFocus.mockRestore();
   });
 
   it("does not publish candidates while the engine is disabled", () => {
@@ -87,9 +95,7 @@ describe("ImeCandidateAnchorReporter", () => {
     const { host, textarea } = mountHost();
     render(
       <ImeCandidateAnchorReporter onUpdate={onUpdate} state={{ ...state, enabled: false }} />,
-      {
-        container: host,
-      },
+      { container: host },
     );
     host.appendChild(textarea);
     fireEvent.focusIn(textarea);
@@ -100,7 +106,7 @@ describe("ImeCandidateAnchorReporter", () => {
     });
   });
 
-  it("suspends instead of clearing while composition is active but candidates are transiently empty", () => {
+  it("preserves the current candidate surface while composition is active but candidates are transiently empty", () => {
     const onUpdate = vi.fn();
     const { host, textarea } = mountHost();
     render(
@@ -113,24 +119,53 @@ describe("ImeCandidateAnchorReporter", () => {
     host.appendChild(textarea);
     fireEvent.focusIn(textarea);
 
-    expect(onUpdate).toHaveBeenLastCalledWith({ type: "suspend" });
+    expect(onUpdate).not.toHaveBeenCalledWith({ type: "suspend" });
+    expect(onUpdate).not.toHaveBeenCalledWith({
+      type: "clear",
+      state: { ...state, preedit: "", candidates: [] },
+    });
   });
 
-  it("re-publishes the active anchor when the native renderer regains focus", () => {
+  it("waits for a textarea anchor instead of suspending an active composition", () => {
     const onUpdate = vi.fn();
     const { host, textarea } = mountHost();
     render(<ImeCandidateAnchorReporter onUpdate={onUpdate} state={state} />, { container: host });
+
+    expect(onUpdate).not.toHaveBeenCalledWith({ type: "suspend" });
+    expect(onUpdate).not.toHaveBeenCalledWith({ type: "clear", state });
+
     host.appendChild(textarea);
     fireEvent.focusIn(textarea);
-    textarea.focus();
-    fireEvent.blur(window);
-    expect(onUpdate).toHaveBeenLastCalledWith({ type: "suspend" });
 
-    fireEvent.focus(window);
     expect(onUpdate).toHaveBeenLastCalledWith({
       type: "show",
       state,
       anchor: { x: 0, lineTop: 0, lineBottom: 0 },
     });
+  });
+
+  it("preserves and restores the last IME textarea across window focus changes", () => {
+    const onUpdate = vi.fn();
+    const { host, textarea } = mountHost();
+    render(<ImeCandidateAnchorReporter onUpdate={onUpdate} state={state} />, { container: host });
+    host.appendChild(textarea);
+    fireEvent.focusIn(textarea);
+    const hasFocus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    fireEvent.focusOut(textarea);
+    expect(onUpdate).toHaveBeenLastCalledWith({
+      type: "show",
+      state,
+      anchor: { x: 0, lineTop: 0, lineBottom: 0 },
+    });
+
+    fireEvent.focus(window);
+
+    expect(document.activeElement).toBe(textarea);
+    expect(onUpdate).toHaveBeenLastCalledWith({
+      type: "show",
+      state,
+      anchor: { x: 0, lineTop: 0, lineBottom: 0 },
+    });
+    hasFocus.mockRestore();
   });
 });

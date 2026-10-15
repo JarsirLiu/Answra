@@ -1,6 +1,6 @@
 import type { ImeCandidateUpdate, ImeState } from "@answra/shared";
 import { ArrowUp, Languages, Plus } from "lucide-react";
-import type { FormEvent, ReactNode, RefObject } from "react";
+import { type FormEvent, type ReactNode, type RefObject, useLayoutEffect, useRef } from "react";
 import { ICON_SM } from "../../tokens";
 import { ImeCandidateAnchorReporter } from "./ImeCandidateAnchorReporter";
 import "./ConversationComposer.css";
@@ -19,6 +19,8 @@ interface ConversationComposerProps {
   /** 外部持有输入框引用（如消息操作条的"引用回复"聚焦）。 */
   inputRef?: RefObject<HTMLTextAreaElement | null>;
   onValueChange?: (value: string) => void;
+  /** 粘贴图片文件（走宿主附件通道，不内联进文本）。 */
+  onPasteImages?: (files: File[]) => void;
   onAddAttachment?: () => void;
   onSubmit?: () => void;
   /** 停止当前回复（streaming 时替换发送按钮）。 */
@@ -47,11 +49,49 @@ export function ConversationComposer({
   children,
   inputRef,
   onValueChange,
+  onPasteImages,
   onAddAttachment,
   onSubmit,
   onStop,
   ime,
 }: ConversationComposerProps) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const compositionStart = useRef(value.length);
+  const previousPreeditLength = useRef(0);
+  const pendingCaret = useRef<number | null>(null);
+  const preedit = ime?.active ? ime.state.preedit : "";
+  const displayValue = `${value.slice(0, compositionStart.current)}${preedit}${value.slice(compositionStart.current)}`;
+
+  useLayoutEffect(() => {
+    if (inputRef) inputRef.current = textareaRef.current;
+    return () => {
+      if (inputRef?.current === textareaRef.current) inputRef.current = null;
+    };
+  }, [inputRef]);
+
+  useLayoutEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    const caret = pendingCaret.current;
+    if (caret !== null) {
+      textarea.setSelectionRange(caret, caret);
+      pendingCaret.current = null;
+      compositionStart.current = caret;
+      return;
+    }
+    if (preedit) {
+      if (document.activeElement !== textarea) textarea.focus({ preventScroll: true });
+      const caretAfterPreedit = compositionStart.current + preedit.length;
+      textarea.setSelectionRange(caretAfterPreedit, caretAfterPreedit);
+      previousPreeditLength.current = preedit.length;
+      return;
+    }
+    if (previousPreeditLength.current > 0) {
+      textarea.setSelectionRange(compositionStart.current, compositionStart.current);
+      previousPreeditLength.current = 0;
+    }
+  });
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!disabled && !submitDisabled) onSubmit?.();
@@ -69,30 +109,28 @@ export function ConversationComposer({
         className={ime ? "embedded-ime-input" : undefined}
         data-embedded-ime-target={ime ? "true" : undefined}
         data-embedded-ime-active={ime?.active ? "true" : undefined}
-        // Keep the control focusable while librime is starting. A disabled
-        // textarea cannot receive the focus event needed to activate it.
         disabled={disabled}
-        // While Rime owns keystrokes, Chromium must not start a native IME
-        // composition in this editable control. readOnly preserves focus and
-        // keydown delivery while preventing OS composition text insertion.
-        // Keep the control read-only until the native helper is confirmed
-        // ready; otherwise the operating system IME can take over startup.
         readOnly={disabled || Boolean(ime)}
         onChange={(event) => {
-          if (ime) {
-            console.warn("[ime-ui] unexpected native text input blocked");
-            return;
-          }
+          if (ime) return;
           onValueChange?.(event.target.value);
         }}
         onCompositionStart={(event) => {
           if (!ime?.imeEnabled) return;
-          console.warn("[ime-ui] unexpected native composition blocked");
           event.preventDefault();
         }}
         onBeforeInput={(event) => {
-          if (!ime?.imeEnabled) return;
-          event.preventDefault();
+          if (ime?.imeEnabled) event.preventDefault();
+        }}
+        onPaste={(event) => {
+          if (ime) return;
+          const files = Array.from(event.clipboardData.files).filter((file) =>
+            file.type.startsWith("image/"),
+          );
+          if (files.length) {
+            event.preventDefault();
+            onPasteImages?.(files);
+          }
         }}
         onKeyDown={(event) => {
           if (ime) {
@@ -105,13 +143,28 @@ export function ConversationComposer({
               composing: ime.state.composing,
             });
           }
+          if (
+            ime?.active &&
+            !ime.state.composing &&
+            (event.key.length === 1 || event.key === "Process") &&
+            !event.ctrlKey &&
+            !event.altKey &&
+            !event.metaKey
+          ) {
+            compositionStart.current = event.currentTarget.selectionStart;
+          }
           if (ime?.onKeyDown(event)) {
             event.preventDefault();
             return;
           }
           if (ime?.active && event.key === "Backspace") {
             event.preventDefault();
-            onValueChange?.(value.slice(0, Math.max(0, value.length - 1)));
+            const { selectionStart, selectionEnd } = event.currentTarget;
+            const start =
+              selectionStart === selectionEnd ? Math.max(0, selectionStart - 1) : selectionStart;
+            const next = value.slice(0, start) + value.slice(selectionEnd);
+            pendingCaret.current = start;
+            onValueChange?.(next);
             return;
           }
           if (disabled || event.key !== "Enter" || event.shiftKey) return;
@@ -121,10 +174,9 @@ export function ConversationComposer({
         onFocus={() => console.info("[ime-ui] composer focus", { label: inputLabel })}
         onBlur={() => console.info("[ime-ui] composer blur", { label: inputLabel })}
         placeholder={placeholder}
-        ref={inputRef}
+        ref={textareaRef}
         rows={1}
-        // 拼音 preedit 像原生输入法一样直接显示在输入框末尾（展示用，不进 draft）。
-        value={value + (ime?.active ? ime.state.preedit : "")}
+        value={displayValue}
       />
       <div className="conversation-composer-footer">
         <div className="conversation-composer-leading">

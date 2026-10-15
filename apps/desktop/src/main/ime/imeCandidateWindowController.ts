@@ -7,12 +7,14 @@ import type {
 } from "@answra/shared";
 import { ImeCandidateChannels } from "@answra/shared";
 import { app, BrowserWindow, screen, type WebContents } from "electron";
+import { isCurrentProcessForeground } from "../windowForeground";
 import { attachNonActivatingWindow } from "../windowInteractionPolicy";
 import type { WindowPolicyDescriptor } from "../windowPolicyRegistry";
 import { positionImeCandidate } from "./imeCandidateLayout";
 
 const INITIAL_SIZE = { width: 640, height: 56 };
 const DEFAULT_SIZE = INITIAL_SIZE;
+const OWNER_BLUR_SETTLE_MS = 120;
 
 export function resolveImeCandidateWindowPaths(mainBundleDirectory: string) {
   return {
@@ -73,8 +75,31 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
     if (ownerWindow === nextOwner) return;
     detachOwnerListener();
     ownerWindow = nextOwner;
+    if (windowRef && !windowRef.isDestroyed()) windowRef.setParentWindow(nextOwner);
     ownerClosedListener = () => hide("owner-closed");
-    ownerBlurListener = () => suspend(nextOwner, "owner-window-blur");
+    ownerBlurListener = () => {
+      setTimeout(() => {
+        if (ownerWindow !== nextOwner || nextOwner.isDestroyed()) return;
+        const focusedWindow = BrowserWindow.getFocusedWindow();
+        const appForeground = isCurrentProcessForeground();
+        console.info("[ime-candidate] owner blur observed", {
+          ownerWindowId: nextOwner.id,
+          candidateWindowId: windowRef?.id,
+          focusedWindowId: focusedWindow?.id,
+          appForeground,
+          settleMs: OWNER_BLUR_SETTLE_MS,
+        });
+        // The candidate popup is a non-activating child of its input owner.
+        // BrowserWindow focus alone is insufficient here; use the OS process
+        // foreground check before treating this blur as an app switch.
+        if (
+          appForeground &&
+          (!focusedWindow || focusedWindow === nextOwner || focusedWindow === windowRef)
+        )
+          return;
+        suspend(nextOwner, "owner-window-blur");
+      }, OWNER_BLUR_SETTLE_MS);
+    };
     ownerBoundsListener = () => positionAndShow();
     nextOwner.once("closed", ownerClosedListener);
     nextOwner.on("blur", ownerBlurListener);
@@ -107,6 +132,7 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
       },
     });
     windowRef = created;
+    if (ownerWindow && !ownerWindow.isDestroyed()) created.setParentWindow(ownerWindow);
     host.registerWindowPolicy(created, {
       role: "ime-candidate",
       captureProtection: "stealth-only",
@@ -314,6 +340,7 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
     isCandidateContents,
     resize,
     routeAction,
+    warmup: createWindow,
     markRendererReady,
     sendState,
     update,
