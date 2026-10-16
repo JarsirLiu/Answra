@@ -352,6 +352,23 @@ describe("ReplyBarWindowApp live conversation popover", () => {
     expect(bridge.sendReplyBarAction).toHaveBeenCalledWith({ type: "close" });
   });
 
+  it("collapses the pinned conversation when the workflow returns to the send bar", async () => {
+    const bridge = createBridge();
+    render(<ReplyBarWindowApp bridge={bridge as DesktopBridge} />);
+    act(() => stateListener?.(replyState()));
+    await waitFor(() => expect(bridge.getConversationSnapshot).toHaveBeenCalled());
+
+    fireEvent.mouseEnter(document.querySelector(".reply-activity-viewport") as HTMLElement);
+    fireEvent.click(screen.getByRole("button", { name: "固定对话面板" }));
+    expect(await screen.findByRole("region", { name: "当前对话" })).toBeInTheDocument();
+
+    act(() => stateListener?.({ ...replyState(), phase: "composing" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("region", { name: "当前对话" })).not.toBeInTheDocument(),
+    );
+    expect(screen.getByRole("button", { name: "确认发送" })).toBeInTheDocument();
+  });
+
   it("follows new output while at the bottom and pauses when the reader scrolls up", async () => {
     const bridge = createBridge();
     render(<ReplyBarWindowApp bridge={bridge as DesktopBridge} />);

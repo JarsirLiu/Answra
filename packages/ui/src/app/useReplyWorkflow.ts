@@ -188,9 +188,18 @@ export function useReplyWorkflow({
   }, [onWorkflowStart, platform, startRegionCapture]);
 
   const closeReplyBar = useCallback(() => {
+    // 发送条（composing）：收起发送条本身，结束工作流并恢复悬浮导航条。
+    if (phase === "composing") {
+      clearPending();
+      onWorkflowFinish();
+      return;
+    }
+    // 回复条（streaming / done）：收起回复条回到发送条，而不是直接回退到悬浮导航条。
+    // 结束流式运行并清空本轮截图与草稿，让发送条以空白状态重新开始。
+    if (phase === "streaming") cancelMessage();
     clearPending();
-    onWorkflowFinish();
-  }, [clearPending, onWorkflowFinish]);
+    onWorkflowPhase("composing");
+  }, [cancelMessage, clearPending, onWorkflowFinish, onWorkflowPhase, phase]);
 
   const cancelReply = useCallback(() => {
     // 取消只退出当前回复态，保留独立回复窗口，让用户能继续截图发送。

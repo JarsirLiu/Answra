@@ -203,11 +203,20 @@ describe("three-segment floating navigation", () => {
     expect(screen.queryByRole("textbox", { name: "补充问题" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "继续截图" })).toBeInTheDocument();
 
+    // 收起回复条 -> 回到发送条（清空本轮截图与答案），而不是直接回悬浮导航条。
+    fireEvent.click(screen.getByRole("button", { name: "收起回复条" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "确认发送" })).toBeInTheDocument(),
+    );
+    expect(screen.queryByRole("button", { name: "截图提问" })).not.toBeInTheDocument();
+    expect(screen.queryByText("截图内容已识别")).not.toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: /screenshot-.*\.png/ })).not.toBeInTheDocument();
+
+    // 再收起发送条，才回悬浮导航条。
     fireEvent.click(screen.getByRole("button", { name: "收起回复条" }));
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "截图提问" })).toBeInTheDocument(),
     );
-    expect(screen.queryByText("截图内容已识别")).not.toBeInTheDocument();
   });
 
   it("shows model errors and keeps the screenshot available for retry", async () => {

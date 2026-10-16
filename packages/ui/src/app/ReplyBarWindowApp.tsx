@@ -64,6 +64,15 @@ export function ReplyBarWindowApp({ bridge }: ReplyBarWindowAppProps) {
     root.style.setProperty("--fade", state.theme.variables["--fade"] ?? "1");
   }, [state]);
 
+  // 回复条收起回到发送条时，折叠可能仍展开或固定的对话面板，避免留给空白发送条。
+  const phase = state?.phase;
+  useEffect(() => {
+    if (phase !== "composing") return;
+    setPinned(false);
+    setHovered(false);
+    setDismissed(false);
+  }, [phase]);
+
   useEffect(() => {
     if (!expanded) return;
     const onKeyDown = (event: KeyboardEvent) => {
