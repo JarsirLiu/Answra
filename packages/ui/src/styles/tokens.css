@@ -89,6 +89,10 @@
   --scrim-base: 0.55;
 
   /* ── 感知令牌：fade 的显式函数（组件只允许引用这一层） ── */
+  /* --fade 默认值：FloatingBarApp 按用户透明度内联覆盖该值；
+     没有外观控制器的独立窗口（如候选窗）靠这一行才能让下面全部
+     感知令牌成立——否则整层令牌无效，文字回落到 UA 默认色。 */
+  --fade: 1;
   --ink: rgb(var(--ink-tint) / var(--fade));
   --ink-soft: rgb(var(--ink-tint) / var(--fade));
   --icon: rgb(var(--icon-tint) / var(--fade));

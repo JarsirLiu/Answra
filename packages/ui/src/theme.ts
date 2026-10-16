@@ -8,7 +8,11 @@ import {
   parseHex,
   resolveAmbientSchemeHysteresis,
 } from "./hooks/useAmbientTheme";
-import { COLOR_GROUP_STORAGE_PREFIX } from "./model";
+import {
+  AMBIENT_FOLLOW_STORAGE_KEY,
+  APP_OPACITY_STORAGE_KEY,
+  COLOR_GROUP_STORAGE_PREFIX,
+} from "./model";
 
 /**
  * 应用主题层：变色龙（ambient）+ 用户颜色分组覆盖，合成单一写入方。
@@ -95,6 +99,29 @@ export function saveColorGroups(groups: ColorGroupOverrides): void {
     if (hex && parseHex(hex)) localStorage.setItem(key, hex);
     else localStorage.removeItem(key);
   }
+}
+
+/**
+ * 从 localStorage 读取变色龙开关。
+ * 独立窗口（候选窗等）没有外观控制器，只能自己读同一份偏好，
+ * 才能和主窗口落到同一套令牌与深浅方案。
+ */
+export function loadAmbientFollow(): boolean {
+  if (typeof localStorage === "undefined") return false;
+  return localStorage.getItem(AMBIENT_FOLLOW_STORAGE_KEY) === "on";
+}
+
+/** 从 localStorage 读取用户透明度（0.5~1）；缺失或非法回落 1。 */
+export function loadAppOpacity(): number {
+  if (typeof localStorage === "undefined") return 1;
+  const stored = Number(localStorage.getItem(APP_OPACITY_STORAGE_KEY));
+  return Number.isFinite(stored) && stored >= 0.5 && stored <= 1 ? stored : 1;
+}
+
+/** 持久化用户透明度（0.5~1）。 */
+export function saveAppOpacity(value: number): void {
+  if (typeof localStorage === "undefined") return;
+  localStorage.setItem(APP_OPACITY_STORAGE_KEY, String(value));
 }
 
 /**

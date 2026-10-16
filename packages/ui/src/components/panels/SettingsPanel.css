@@ -74,7 +74,7 @@
   border: 1px solid var(--glass-line-soft);
   border-radius: 6px;
   color: var(--ink);
-  background: var(--glass-fill);
+  background: var(--field);
   font: inherit;
 }
 .setting-secret-field {

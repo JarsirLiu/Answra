@@ -1,15 +1,17 @@
 /* Theme follows the nearest [data-theme] ancestor (preview switch),
-   then .dark, then the OS when no data-theme is set. */
-::global(:root),
-::global([data-theme="light"]) {
+   then .dark, then the OS when no data-theme is set.
+   必须写单冒号 :global()：lightningcss 不识别 ::global()，会把整条规则
+   原样留在产物里成为无效选择器，--tr-* 静默失效（深色下正文变深字不可见）。 */
+:global(:root),
+:global([data-theme="light"]) {
   --tr-fg: #1a1a1a;
   --tr-muted: #6b6b6b;
   --tr-border: #e4e4e7;
   --tr-code-bg: #f4f5f7;
   --tr-block-bg: #f8f8fa;
 }
-::global([data-theme="dark"]),
-::global(.dark) {
+:global([data-theme="dark"]),
+:global(.dark) {
   --tr-fg: #f5f5f5;
   --tr-muted: #9d9da3;
   --tr-border: #333338;

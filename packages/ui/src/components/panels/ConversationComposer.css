@@ -113,7 +113,7 @@
 
 .conversation-composer-ime.is-active {
   color: var(--ink);
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  background: var(--mint-wash);
 }
 
 .conversation-composer-icon-button:disabled {
@@ -137,13 +137,15 @@
   opacity: 1;
 }
 
-/* 进行中：停止按钮（深色圆底 + 白色方块），回复结束后切回发送按钮 */
+/* 进行中：停止按钮（实底圆底 + 反色方块），回复结束后切回发送按钮。
+   实底用 --ink、文字用 --panel：两者在深浅主题里恒为反色，
+   不能写死白色，否则深色主题下 --ink 变浅底、白字消失。 */
 .conversation-composer-stop {
-  color: white;
-  background: var(--ink, #1f1f23);
+  color: var(--panel);
+  background: var(--ink);
 }
 .conversation-composer-stop:hover {
-  background: var(--ink-deep, #3a3a40);
+  background: var(--ink-soft);
 }
 .conversation-composer-stop-glyph {
   width: 10px;

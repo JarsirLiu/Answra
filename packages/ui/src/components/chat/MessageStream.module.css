@@ -39,13 +39,13 @@
   align-items: center;
   gap: 5px;
   padding: 6px 12px;
-  border: 1px solid var(--glass-line, #d4d4d8);
+  border: 1px solid var(--glass-line);
   border-radius: 999px;
-  background: var(--glass-surface, #ffffffee);
-  color: var(--foreground, #1a1a1a);
+  background: var(--glass);
+  color: var(--ink);
   font-size: 12px;
   line-height: 1;
-  box-shadow: 0 4px 14px rgb(0 0 0 / 12%);
+  box-shadow: var(--shadow-ctl);
   cursor: pointer;
   backdrop-filter: blur(8px);
   transition:
@@ -54,13 +54,13 @@
   animation: ms-jump-in 160ms ease;
 }
 .jumpButton:hover {
-  background: var(--glass-hover, #f2f2f5);
+  background: var(--hover);
 }
 .jumpButton:active {
   transform: scale(0.96);
 }
 .jumpButton:focus-visible {
-  outline: 2px solid var(--accent, #4b6bfb);
+  outline: 2px solid var(--mint);
   outline-offset: 1px;
 }
 
