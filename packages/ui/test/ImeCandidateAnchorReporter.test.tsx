@@ -288,7 +288,7 @@ describe("ImeCandidateAnchorReporter", () => {
     const { host, textarea } = mountHost();
     textarea.readOnly = false;
     vi.spyOn(document, "hasFocus").mockReturnValue(true);
-    const { container } = render(
+    render(
       <ImeCandidateAnchorReporter
         blockNativeEditing
         generation={2}
@@ -302,7 +302,10 @@ describe("ImeCandidateAnchorReporter", () => {
     act(() => textarea.focus());
     fireEvent.focusIn(textarea);
 
-    expect(container.querySelector('[data-ime-visual-caret="true"]')).not.toBeNull();
+    expect(document.querySelector('[data-ime-visual-caret="true"]')).not.toBeNull();
+    expect(document.querySelector('[data-ime-visual-caret="true"]')?.parentElement).toBe(
+      document.body,
+    );
   });
 
   it("does not sniff the DOM readOnly attribute to decide the visual caret", () => {
@@ -310,7 +313,7 @@ describe("ImeCandidateAnchorReporter", () => {
     const { host, textarea } = mountHost();
     expect(textarea.readOnly).toBe(true);
     vi.spyOn(document, "hasFocus").mockReturnValue(true);
-    const { container } = render(
+    render(
       <ImeCandidateAnchorReporter
         generation={2}
         onUpdate={onUpdate}
@@ -323,15 +326,16 @@ describe("ImeCandidateAnchorReporter", () => {
     act(() => textarea.focus());
     fireEvent.focusIn(textarea);
 
-    expect(container.querySelector('[data-ime-visual-caret="true"]')).toBeNull();
+    expect(document.querySelector('[data-ime-visual-caret="true"]')).toBeNull();
   });
 
-  it("derives window focus on demand instead of caching a copy", () => {
+  it("portal the visual caret out of transformed ancestors so its fixed coordinates stay window-relative", () => {
     const onUpdate = vi.fn();
     const { host, textarea } = mountHost();
     textarea.readOnly = false;
-    const hasFocus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
-    const { container } = render(
+    vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    host.style.transform = "translateY(0)";
+    render(
       <ImeCandidateAnchorReporter
         blockNativeEditing
         generation={2}
@@ -344,11 +348,36 @@ describe("ImeCandidateAnchorReporter", () => {
     host.appendChild(textarea);
     act(() => textarea.focus());
     fireEvent.focusIn(textarea);
-    expect(container.querySelector('[data-ime-visual-caret="true"]')).not.toBeNull();
+
+    const caret = document.querySelector('[data-ime-visual-caret="true"]');
+    expect(caret).not.toBeNull();
+    expect(caret?.parentElement).toBe(document.body);
+    expect(host.contains(caret)).toBe(false);
+  });
+
+  it("derives window focus on demand instead of caching a copy", () => {
+    const onUpdate = vi.fn();
+    const { host, textarea } = mountHost();
+    textarea.readOnly = false;
+    const hasFocus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    render(
+      <ImeCandidateAnchorReporter
+        blockNativeEditing
+        generation={2}
+        onUpdate={onUpdate}
+        state={{ ...state, candidates: [], composing: false, preedit: "" }}
+        targetId="composer"
+      />,
+      { container: host },
+    );
+    host.appendChild(textarea);
+    act(() => textarea.focus());
+    fireEvent.focusIn(textarea);
+    expect(document.querySelector('[data-ime-visual-caret="true"]')).not.toBeNull();
 
     hasFocus.mockReturnValue(false);
     fireEvent.blur(window);
 
-    expect(container.querySelector('[data-ime-visual-caret="true"]')).toBeNull();
+    expect(document.querySelector('[data-ime-visual-caret="true"]')).toBeNull();
   });
 });

@@ -12,7 +12,7 @@
   /* chat/ 部件的正文主题变量对齐到面板令牌 */
   --tr-fg: var(--ink);
   --tr-code-bg: var(--field);
-  animation: reply-conversation-enter 150ms ease-out both;
+  animation: reply-conversation-enter 150ms ease-out;
 }
 
 @keyframes reply-conversation-enter {

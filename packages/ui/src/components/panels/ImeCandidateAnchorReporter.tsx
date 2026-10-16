@@ -1,5 +1,6 @@
 import type { ImeCandidateAnchor, ImeCandidateUpdate, ImeState } from "@answra/shared";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import "./ImeCandidateAnchorReporter.css";
 
 interface ImeCandidateAnchorReporterProps {
@@ -158,7 +159,8 @@ export function ImeCandidateAnchorReporter({
       onUpdate({ type: "clear", targetId, ...(generation !== undefined ? { generation } : {}) }),
     [generation, onUpdate, targetId],
   );
-  return caretAnchor && windowFocused && !state.composing ? (
+  if (!caretAnchor || !windowFocused || state.composing) return null;
+  return createPortal(
     <span
       aria-hidden="true"
       className="ime-visual-caret"
@@ -168,8 +170,9 @@ export function ImeCandidateAnchorReporter({
         left: caretAnchor.x,
         top: caretAnchor.lineTop,
       }}
-    />
-  ) : null;
+    />,
+    document.body,
+  );
 }
 
 function resolveAnchor(target: EventTarget | null, targetId: string): HTMLElement | null {
