@@ -15,15 +15,14 @@ export interface ImeTextPolicy {
   blockNativeEditing: boolean;
   /** Prevent the platform composition path only for the current lease owner. */
   blockComposition: boolean;
-  /** Whether Backspace must be handled by the engine, editor adapter, or browser. */
-  backspace: "engine" | "editor" | "native";
   /** Capture the selection before the first Chinese key in a new composition. */
   captureCompositionStart: boolean;
 }
 
 /**
  * Centralizes text-event routing without owning session, focus, or editor state.
- * The caller still decides how to apply the selected route to its editor.
+ * Key-by-key routing (including Backspace) belongs to the key router; this policy
+ * only decides whether native text events are routed to the engine or the editor.
  */
 export function resolveImeTextPolicy(input: ImeTextPolicyInput): ImeTextPolicy {
   if (!input.targetOwned) {
@@ -31,7 +30,6 @@ export function resolveImeTextPolicy(input: ImeTextPolicyInput): ImeTextPolicy {
       useNativeTextInput: true,
       blockNativeEditing: false,
       blockComposition: false,
-      backspace: "native",
       captureCompositionStart: false,
     };
   }
@@ -40,7 +38,6 @@ export function resolveImeTextPolicy(input: ImeTextPolicyInput): ImeTextPolicy {
     useNativeTextInput: false,
     blockNativeEditing: true,
     blockComposition: true,
-    backspace: input.composing ? "engine" : "editor",
     captureCompositionStart: !input.composing,
   };
 }

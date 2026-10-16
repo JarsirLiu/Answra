@@ -1,6 +1,5 @@
 import type { ImeKeyRequest, ImeSessionSnapshot, ImeState } from "@answra/shared";
 import {
-  type ImeOwnerIdentity,
   type ImeSessionEvent,
   type ImeSessionState,
   initialImeSessionState,
@@ -133,8 +132,4 @@ export function isActiveImeLease(
   state: ImeSessionState,
 ): state is Extract<ImeSessionState, { status: "owned" | "suspended" }> {
   return state.status === "owned" || state.status === "suspended";
-}
-
-export function imeLeaseOwner(state: ImeSessionState): ImeOwnerIdentity | undefined {
-  return isActiveImeLease(state) ? state.owner : undefined;
 }

@@ -7,11 +7,15 @@ describe("resolveImeTextPolicy", () => {
       useNativeTextInput: false,
       blockNativeEditing: true,
       blockComposition: true,
-      backspace: "editor",
       captureCompositionStart: true,
     });
 
-    expect(resolveImeTextPolicy({ targetOwned: true, composing: true }).backspace).toBe("engine");
+    expect(resolveImeTextPolicy({ targetOwned: true, composing: true })).toEqual({
+      useNativeTextInput: false,
+      blockNativeEditing: true,
+      blockComposition: true,
+      captureCompositionStart: false,
+    });
   });
 
   it("returns all text events to the editor after the lease is released", () => {
@@ -19,7 +23,6 @@ describe("resolveImeTextPolicy", () => {
       useNativeTextInput: true,
       blockNativeEditing: false,
       blockComposition: false,
-      backspace: "native",
       captureCompositionStart: false,
     });
   });

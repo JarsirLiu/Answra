@@ -11,8 +11,6 @@ const SUPPRESSED_EVENTS = new Set([
   "renderer-input-focus",
   "renderer-acquire-start",
   "renderer-acquire-result",
-  "renderer-confirm-focus-start",
-  "renderer-confirm-focus-result",
   "renderer-input-blur",
   "renderer-window-focus",
   "renderer-window-blur",
@@ -24,12 +22,7 @@ const SUPPRESSED_EVENTS = new Set([
   "renderer-document-keydown",
 ]);
 const compositionByLease = new Map<string, boolean>();
-let debugEnabled = parseAnswraImeDebug(process.env[ANSWRA_IME_DEBUG]);
-
-/** Toggles the verbose IME diagnostics (focus/acquire/key-routing) at runtime. */
-export function setImeDebugEnabled(value: boolean): void {
-  debugEnabled = value;
-}
+const debugEnabled = parseAnswraImeDebug(process.env[ANSWRA_IME_DEBUG]);
 
 export function isImeDebugEnabled(): boolean {
   return debugEnabled;
