@@ -118,6 +118,7 @@ export function ConversationComposer({
       {children}
       {ime && (
         <ImeCandidateAnchorReporter
+          blockNativeEditing={ime.textPolicy.blockNativeEditing}
           generation={ime.generation}
           onUpdate={ime.onCandidateUpdate}
           state={ime.state}

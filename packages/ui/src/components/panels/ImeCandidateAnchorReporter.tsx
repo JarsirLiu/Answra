@@ -6,6 +6,13 @@ interface ImeCandidateAnchorReporterProps {
   state: ImeState;
   targetId: string;
   generation?: number;
+  /**
+   * Derived from `imeTextPolicy.blockNativeEditing` by the owning editor. While the
+   * target is leased the browser caret is suppressed, so the reporter draws its own.
+   * The reporter must not sniff DOM `readOnly`: that attribute also carries business
+   * read-only/disabled intent and is not the single writer of this fact.
+   */
+  blockNativeEditing?: boolean;
   onUpdate: (payload: ImeCandidateUpdate) => void;
 }
 
@@ -34,15 +41,18 @@ export function ImeCandidateAnchorReporter({
   state,
   targetId,
   generation,
+  blockNativeEditing = false,
   onUpdate,
 }: ImeCandidateAnchorReporterProps) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [caretAnchor, setCaretAnchor] = useState<ImeCandidateAnchor | null>(null);
-  const [windowFocused, setWindowFocused] = useState(true);
   const [tick, setTick] = useState(0);
   const stateRef = useRef(state);
   stateRef.current = state;
   const bump = useCallback(() => setTick((current) => current + 1), []);
+  // Window focus is a DOM fact with a single owner (the browser). Read it on demand
+  // instead of caching a copy; a render is scheduled by the focus/blur listeners below.
+  const windowFocused = document.hasFocus();
 
   const handleFocus = useCallback(
     (event: FocusEvent) => {
@@ -58,16 +68,15 @@ export function ImeCandidateAnchorReporter({
   );
 
   const refreshFocusedAnchor = useCallback(() => {
-    setWindowFocused(true);
     const next = resolveAnchor(document.activeElement, targetId);
     setAnchor(next);
     bump();
   }, [bump, targetId]);
 
-  const handleWindowBlur = useCallback(() => {
-    setWindowFocused(false);
-    setCaretAnchor(null);
-  }, []);
+  // Window blur invalidates the visual caret; the derived `windowFocused` read then
+  // hides it. This must not `bump()`: `tick` also invalidates candidate publishing,
+  // and a blurred window must not re-assert a candidate anchor.
+  const handleWindowBlur = useCallback(() => setCaretAnchor(null), []);
 
   useEffect(() => {
     setAnchor(resolveAnchor(document.activeElement, targetId));
@@ -109,7 +118,7 @@ export function ImeCandidateAnchorReporter({
       anchor !== document.activeElement ||
       (!(anchor instanceof HTMLInputElement) && !(anchor instanceof HTMLTextAreaElement)) ||
       anchor.disabled ||
-      !anchor.readOnly
+      !blockNativeEditing
     ) {
       setCaretAnchor(null);
       return;
@@ -122,7 +131,7 @@ export function ImeCandidateAnchorReporter({
         ? current
         : (next ?? null),
     );
-  }, [anchor, generation, tick, windowFocused]);
+  }, [anchor, blockNativeEditing, generation, tick, windowFocused]);
 
   // Scroll and resize invalidate caret geometry without changing the focused element.
   // biome-ignore lint/correctness/useExhaustiveDependencies: tick is the explicit layout invalidation signal.

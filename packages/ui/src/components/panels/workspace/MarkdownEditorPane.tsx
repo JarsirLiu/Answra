@@ -352,6 +352,7 @@ export function MarkdownEditorPane({
     <div className="workspace-editor">
       {viewMode === "source" && (
         <ImeCandidateAnchorReporter
+          blockNativeEditing={ime.textPolicy.blockNativeEditing}
           generation={ime.generation}
           onUpdate={ime.updateCandidate}
           state={ime.state}

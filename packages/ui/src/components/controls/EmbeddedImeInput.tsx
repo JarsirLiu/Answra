@@ -57,6 +57,7 @@ export function EmbeddedImeInput({
   return (
     <>
       <ImeCandidateAnchorReporter
+        blockNativeEditing={textPolicy.blockNativeEditing}
         generation={ime.generation}
         onUpdate={ime.updateCandidate}
         state={ime.state}

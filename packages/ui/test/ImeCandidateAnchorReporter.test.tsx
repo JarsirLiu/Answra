@@ -1,5 +1,5 @@
 import type { ImeState } from "@answra/shared";
-import { fireEvent, render } from "@testing-library/react";
+import { act, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ImeCandidateAnchorReporter } from "../src/components/panels/ImeCandidateAnchorReporter";
 
@@ -281,5 +281,74 @@ describe("ImeCandidateAnchorReporter", () => {
       generation: 2,
     });
     hasFocus.mockRestore();
+  });
+
+  it("draws the visual caret from the derived blockNativeEditing fact, not DOM readOnly", () => {
+    const onUpdate = vi.fn();
+    const { host, textarea } = mountHost();
+    textarea.readOnly = false;
+    vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    const { container } = render(
+      <ImeCandidateAnchorReporter
+        blockNativeEditing
+        generation={2}
+        onUpdate={onUpdate}
+        state={{ ...state, candidates: [], composing: false, preedit: "" }}
+        targetId="composer"
+      />,
+      { container: host },
+    );
+    host.appendChild(textarea);
+    act(() => textarea.focus());
+    fireEvent.focusIn(textarea);
+
+    expect(container.querySelector('[data-ime-visual-caret="true"]')).not.toBeNull();
+  });
+
+  it("does not sniff the DOM readOnly attribute to decide the visual caret", () => {
+    const onUpdate = vi.fn();
+    const { host, textarea } = mountHost();
+    expect(textarea.readOnly).toBe(true);
+    vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    const { container } = render(
+      <ImeCandidateAnchorReporter
+        generation={2}
+        onUpdate={onUpdate}
+        state={{ ...state, candidates: [], composing: false, preedit: "" }}
+        targetId="composer"
+      />,
+      { container: host },
+    );
+    host.appendChild(textarea);
+    act(() => textarea.focus());
+    fireEvent.focusIn(textarea);
+
+    expect(container.querySelector('[data-ime-visual-caret="true"]')).toBeNull();
+  });
+
+  it("derives window focus on demand instead of caching a copy", () => {
+    const onUpdate = vi.fn();
+    const { host, textarea } = mountHost();
+    textarea.readOnly = false;
+    const hasFocus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    const { container } = render(
+      <ImeCandidateAnchorReporter
+        blockNativeEditing
+        generation={2}
+        onUpdate={onUpdate}
+        state={{ ...state, candidates: [], composing: false, preedit: "" }}
+        targetId="composer"
+      />,
+      { container: host },
+    );
+    host.appendChild(textarea);
+    act(() => textarea.focus());
+    fireEvent.focusIn(textarea);
+    expect(container.querySelector('[data-ime-visual-caret="true"]')).not.toBeNull();
+
+    hasFocus.mockReturnValue(false);
+    fireEvent.blur(window);
+
+    expect(container.querySelector('[data-ime-visual-caret="true"]')).toBeNull();
   });
 });

@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ConversationComposer } from "../src/components/panels/ConversationComposer";
 import type { ImeEditorCommand } from "../src/ime/imeKeyRouter";
 import { resolveImeTextPolicy, shouldPreventImeBeforeInput } from "../src/ime/imeTextPolicy";
@@ -49,6 +49,8 @@ function imeProps(
 }
 
 describe("ConversationComposer", () => {
+  afterEach(() => vi.restoreAllMocks());
+
   it("keeps normal editing, paste and Enter submit callbacks available", () => {
     const onValueChange = vi.fn();
     const onPasteImages = vi.fn();
@@ -82,6 +84,8 @@ describe("ConversationComposer", () => {
   it("keeps the textarea read-only while the embedded IME owns input", async () => {
     const onKeyDown = vi.fn(() => true);
     const onToggle = vi.fn();
+    // The reporter reads window focus on demand; jsdom has no focused window by default.
+    vi.spyOn(document, "hasFocus").mockReturnValue(true);
     render(
       <ConversationComposer
         ime={imeProps({ onKeyDown, onToggle })}
