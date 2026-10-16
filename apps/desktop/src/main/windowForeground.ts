@@ -17,6 +17,8 @@ const getClassName =
         .load("user32.dll")
         .func("int __stdcall GetClassNameW(void *hWnd, void *lpClassName, int nMaxCount)")
     : undefined;
+const CLASS_NAME_BUFFER_BYTES = 512;
+const CLASS_NAME_MAX_CHARS = CLASS_NAME_BUFFER_BYTES / 2;
 
 /** Checks the foreground OS process, including when Electron has no focused BrowserWindow. */
 export function isCurrentProcessForeground(): boolean {
@@ -46,9 +48,13 @@ export function describeForegroundWindow(): ForegroundWindowInfo {
     getWindowThreadProcessId(handle, processId);
     let className: string | undefined;
     if (getClassName) {
-      const buffer = Buffer.alloc(512);
-      getClassName(handle, buffer, 256);
-      className = koffi.decode(buffer, "str16");
+      const buffer = Buffer.alloc(CLASS_NAME_BUFFER_BYTES);
+      const length = getClassName(handle, buffer, CLASS_NAME_MAX_CHARS);
+      // Decode with an explicit code-unit count. Decoding a JS buffer as `str16`
+      // makes Koffi treat the buffer contents as a string pointer and dereference
+      // it; the resulting access violation kills the main process outright
+      // instead of raising a catchable error.
+      if (length > 0) className = koffi.decode(buffer, "char16_t", length) as string;
     }
     return {
       pid: processId[0],
