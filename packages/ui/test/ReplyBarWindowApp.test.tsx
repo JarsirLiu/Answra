@@ -332,6 +332,26 @@ describe("ReplyBarWindowApp live conversation popover", () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("初始 **文本**"));
   });
 
+  it("keeps the completed answer in the bar until the user dismisses it", async () => {
+    const bridge = createBridge();
+    render(<ReplyBarWindowApp bridge={bridge as DesktopBridge} />);
+    act(() =>
+      stateListener?.({
+        ...replyState(),
+        phase: "done",
+        replyPending: false,
+        replyActivities: [{ id: "text-1", kind: "text", label: "回答", text: "识别的题目答案" }],
+      }),
+    );
+
+    expect(screen.getByText("识别的题目答案")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "取消回复并返回发送" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "继续截图" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "收起回复条" }));
+    expect(bridge.sendReplyBarAction).toHaveBeenCalledWith({ type: "close" });
+  });
+
   it("follows new output while at the bottom and pauses when the reader scrolls up", async () => {
     const bridge = createBridge();
     render(<ReplyBarWindowApp bridge={bridge as DesktopBridge} />);

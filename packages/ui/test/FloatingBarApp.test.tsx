@@ -196,12 +196,18 @@ describe("three-segment floating navigation", () => {
       }),
     );
     act(() => emitConversationEvent?.({ runId: "run-1", chunk: { type: "finish" } }));
+    // 完成态：回复条保留答案，停在原地等用户收起，不回退到悬浮导航栏。
+    await waitFor(() => expect(screen.getByText("截图内容已识别")).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: "截图提问" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "取消回复并返回发送" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "补充问题" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "继续截图" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "收起回复条" }));
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "截图提问" })).toBeInTheDocument(),
     );
     expect(screen.queryByText("截图内容已识别")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "取消回复并返回发送" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("textbox", { name: "补充问题" })).not.toBeInTheDocument();
   });
 
   it("shows model errors and keeps the screenshot available for retry", async () => {

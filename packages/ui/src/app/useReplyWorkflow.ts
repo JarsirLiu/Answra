@@ -73,14 +73,14 @@ export function useReplyWorkflow({
     }
     variables["--fade"] = root.style.getPropertyValue("--fade") || "1";
     return {
-      phase: phase === "streaming" ? "streaming" : "composing",
+      phase: phase === "streaming" ? "streaming" : phase === "done" ? "done" : "composing",
       ...(conversationId ? { conversationId } : {}),
       attachments,
       draft,
       replyText,
       replyActivities,
       ...(replyError ? { replyError } : {}),
-      replyPending: replyPending ?? phase === "streaming",
+      replyPending: phase === "done" ? false : (replyPending ?? phase === "streaming"),
       stealth,
       theme: { scheme: root.dataset.theme, variables },
     };
@@ -218,9 +218,10 @@ export function useReplyWorkflow({
     });
     setDraft("");
     setAttachments([]);
-    setConversationId(undefined);
-    onWorkflowFinish();
-  }, [attachments, draft, onWorkflowFinish, onWorkflowPhase, sendMessage]);
+    // 保留 conversationId 与已完成回复，让回复条进入完成态：用户可继续查看答案、
+    // 展开详细面板看思考过程，或自行收起回退到发送条。
+    onWorkflowPhase("done");
+  }, [attachments, draft, onWorkflowPhase, sendMessage]);
 
   actionHandler.current = (action) => {
     switch (action.type) {

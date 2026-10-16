@@ -7,8 +7,8 @@ import type { ChatAttachment } from "./ChatPanel";
 import { ReplyActivityTicker } from "./ReplyActivityTicker";
 import "./ReplyBar.css";
 
-/** 回复条两种形态：编辑预备区（composing）/ 流式滚动回复（streaming）。 */
-export type ReplyPhase = "composing" | "streaming";
+/** 回复条三种形态：编辑预备区（composing）/ 流式滚动回复（streaming）/ 完成态（done）。 */
+export type ReplyPhase = "composing" | "streaming" | "done";
 
 interface ReplyBarProps {
   /** 当前形态。 */
@@ -46,7 +46,7 @@ interface ReplyBarProps {
  * 横条式回复条：编辑态 = 截图缩略条 + 图标操作组（条内不设输入框，隐身模式
  * 下打字经输入法候选窗会被捕获暴露）；点发送后左侧整体变成可滚动的活动流
  * 输出 AI 回复，发送键原位切换为可点击取消的“进行中”停止键，取消后回到
- * 发送态；不打开、不复用对话面板。
+ * 发送态；回复完成后停在完成态保留答案，等待用户收起或展开详细面板；不打开、不复用对话面板。
  */
 export function ReplyBar({
   phase,
@@ -118,6 +118,48 @@ export function ReplyBar({
             ) : (
               <Send aria-hidden="true" size={ICON_SM} strokeWidth={ICON_STROKE} />
             )}
+          </SurfaceButton>
+          <SurfaceButton aria-label="收起回复条" className="reply-close" onClick={onClose}>
+            <X aria-hidden="true" size={ICON_SM} strokeWidth={ICON_STROKE} />
+          </SurfaceButton>
+        </div>
+      </section>
+    );
+  }
+
+  if (phase === "done") {
+    return (
+      <section aria-live="polite" className="reply-bar reply-bar--stream floating-surface">
+        <ReplyActivityTicker
+          activities={replyActivities}
+          error={replyError}
+          onConversationHover={onConversationHover}
+          pending={false}
+          replyText={replyText}
+        />
+        <div className="reply-actions reply-actions--stream">
+          {showConversationToggle && (
+            <SurfaceButton
+              aria-expanded={conversationExpanded}
+              aria-label={
+                conversationPinned
+                  ? "取消固定并收起对话面板"
+                  : conversationExpanded
+                    ? "固定对话面板"
+                    : "展开对话面板"
+              }
+              onClick={onToggleConversation}
+              type="button"
+            >
+              {conversationExpanded ? (
+                <ChevronDown aria-hidden="true" size={ICON_SM} strokeWidth={ICON_STROKE} />
+              ) : (
+                <ChevronUp aria-hidden="true" size={ICON_SM} strokeWidth={ICON_STROKE} />
+              )}
+            </SurfaceButton>
+          )}
+          <SurfaceButton aria-label="继续截图" onClick={onScreenshot}>
+            <Camera aria-hidden="true" size={ICON_SM} strokeWidth={ICON_STROKE} />
           </SurfaceButton>
           <SurfaceButton aria-label="收起回复条" className="reply-close" onClick={onClose}>
             <X aria-hidden="true" size={ICON_SM} strokeWidth={ICON_STROKE} />
