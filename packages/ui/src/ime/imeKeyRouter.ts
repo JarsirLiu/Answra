@@ -1,3 +1,5 @@
+import type { ImeInputMode } from "@answra/shared";
+
 export type ImeKeyRoute =
   | { type: "consumed" }
   | { type: "editor"; command: ImeEditorCommand }
@@ -24,9 +26,18 @@ export interface ImeKeyEvent {
   repeat: boolean;
 }
 
+/**
+ * The engine facts a key route depends on. Callers must read them from the single
+ * session snapshot (`selectImeEngineState`) instead of assembling the fields themselves.
+ */
+export interface ImeEngineState {
+  inputMode: ImeInputMode;
+  composing: boolean;
+}
+
 export function resolveImeKeyRoute(
   event: ImeKeyEvent,
-  state: { inputMode: "ascii" | "chinese"; composing: boolean },
+  engine: ImeEngineState,
   release = false,
 ): ImeKeyRoute {
   const key = normalizeKey(event.key, event.code);
@@ -40,7 +51,7 @@ export function resolveImeKeyRoute(
   if (key?.length === 1 && !event.ctrlKey && !event.altKey && !event.metaKey)
     return { type: "engine", key, release: false };
   if (key === "Backspace" || key === "Delete") {
-    return state.composing
+    return engine.composing
       ? { type: "engine", key, release: false }
       : {
           type: "editor",
@@ -50,11 +61,11 @@ export function resolveImeKeyRoute(
   if (!key) return { type: "ignored" };
   const direction = navigationDirection(key);
   if (direction) {
-    return state.composing
+    return engine.composing
       ? { type: "engine", key, release: false }
       : { type: "editor", command: { type: "moveCaret", direction, extend: event.shiftKey } };
   }
-  if (key.length !== 1 && !state.composing) return { type: "ignored" };
+  if (key.length !== 1 && !engine.composing) return { type: "ignored" };
   return { type: "engine", key, release: false };
 }
 

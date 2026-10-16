@@ -5,6 +5,7 @@ import type {
   ImeSessionCommandResult,
   ImeSessionSnapshot,
 } from "@answra/shared";
+import type { ImeEngineState } from "./imeKeyRouter";
 
 /**
  * Renderer-side session client: the single owner of the latest main-published snapshot,
@@ -40,23 +41,37 @@ export function getLatestImeSessionSnapshot(): ImeSessionSnapshot | undefined {
 }
 
 /** Generation currently owned by `targetId`; undefined once another target holds it. */
-export function getImeOwnedGeneration(targetId: string): number | undefined {
-  const owner = latestSnapshot?.owner;
+export function selectImeOwnedGeneration(
+  snapshot: ImeSessionSnapshot | undefined,
+  targetId: string,
+): number | undefined {
+  const owner = snapshot?.owner;
   return owner && owner.targetId === targetId ? owner.generation : undefined;
 }
 
-/** True only while main reports this target as the owner of an active lease. */
-export function isImeTargetOwned(targetId: string): boolean {
-  return latestSnapshot?.phase === "owned" && latestSnapshot.owner?.targetId === targetId;
+export function getImeOwnedGeneration(targetId: string): number | undefined {
+  return selectImeOwnedGeneration(latestSnapshot, targetId);
+}
+
+/**
+ * The engine facts a key route reads. This is the single projection of
+ * `snapshot.engine` into the router's input: callers must not assemble the fields
+ * from the two separate getters below, or the routing decision gains a second source.
+ */
+export function selectImeEngineState(snapshot: ImeSessionSnapshot | undefined): ImeEngineState {
+  return {
+    inputMode: snapshot?.engine.inputMode ?? "chinese",
+    composing: snapshot?.engine.composing === true,
+  };
 }
 
 /** Engine mode is session-wide, not per target, and always comes from main. */
 export function getImeInputMode(): ImeInputMode {
-  return latestSnapshot?.engine.inputMode ?? "chinese";
+  return selectImeEngineState(latestSnapshot).inputMode;
 }
 
 export function getImeComposing(): boolean {
-  return latestSnapshot?.engine.composing === true;
+  return selectImeEngineState(latestSnapshot).composing;
 }
 
 /**

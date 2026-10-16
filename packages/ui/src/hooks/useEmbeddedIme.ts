@@ -22,6 +22,8 @@ import {
   getImeOwnedGeneration,
   getLatestImeSessionSnapshot,
   publishImeSessionSnapshot,
+  selectImeEngineState,
+  selectImeOwnedGeneration,
   sendImeSessionCommand,
   subscribeImeSessionSnapshot,
 } from "../ime/imeSessionClient";
@@ -73,7 +75,8 @@ export function useEmbeddedIme(
   const acquirePromiseRef = useRef<Promise<void> | undefined>(undefined);
   onCommitRef.current = onCommit;
 
-  const ownsLease = session?.owner?.targetId === targetId;
+  const generation = selectImeOwnedGeneration(session, targetId);
+  const ownsLease = generation !== undefined;
   const state = useMemo<ImeState>(
     () =>
       ownsLease && session
@@ -81,7 +84,6 @@ export function useEmbeddedIme(
         : { ...EMPTY_STATE, inputMode: session?.engine.inputMode ?? "chinese" },
     [ownsLease, session],
   );
-  const generation = ownsLease ? session?.owner?.generation : undefined;
   const targetRegistered = registeredTargetId === targetId;
   // Native input stays blocked for a target this renderer just registered (acquire in
   // flight) as well as for the lease owner, so Chromium never gets a free shot at the
@@ -239,12 +241,11 @@ export function useEmbeddedIme(
   // A registration must not outlive the lease it was opened for: if main reports the
   // session as idle or owned elsewhere while this renderer still routes input here,
   // drop the registration so keys fall back to the editor instead of being swallowed.
-  const sessionHoldsTarget = ownsLease || session?.owner?.targetId === targetId;
   useEffect(() => {
-    if (!targetRegistered || sessionHoldsTarget) return;
+    if (!targetRegistered || ownsLease) return;
     if (acquirePromiseRef.current) return;
     releaseImeInputTarget(targetId);
-  }, [sessionHoldsTarget, targetId, targetRegistered]);
+  }, [ownsLease, targetId, targetRegistered]);
 
   useEffect(() => {
     bridge?.imeDiagnostic?.({
@@ -494,11 +495,7 @@ export function useEmbeddedIme(
           undefined,
           (latest) => {
             if (!latest) return "ignored";
-            const engine = latest.engine;
-            const route = resolveImeKeyRoute(routingEvent, {
-              inputMode: engine.inputMode,
-              composing: engine.composing,
-            });
+            const route = resolveImeKeyRoute(routingEvent, selectImeEngineState(latest));
             return route.type === "editor"
               ? route.command
               : route.type === "engine"
@@ -512,7 +509,7 @@ export function useEmbeddedIme(
       }
       const route = resolveImeKeyRoute(
         event,
-        { inputMode: getImeInputMode(), composing: getImeComposing() },
+        selectImeEngineState(getLatestImeSessionSnapshot()),
         release,
       );
       if (route.type === "consumed") {
