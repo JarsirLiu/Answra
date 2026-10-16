@@ -1,7 +1,12 @@
 import type { DesktopBridge, WorkspaceFileContent } from "@answra/shared";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useEmbeddedIme } from "../../../hooks/useEmbeddedIme";
-import { createCodeMirrorTextAdapter } from "../../../ime/adapters/codeMirrorTextAdapter";
+import {
+  applyCodeMirrorImeCommand,
+  codeMirrorImeCompositionField,
+  createCodeMirrorTextAdapter,
+  setCodeMirrorImeComposition,
+} from "../../../ime/adapters/codeMirrorTextAdapter";
 import { ImeCandidateAnchorReporter } from "../ImeCandidateAnchorReporter";
 import { pasteImageName, resolveRelative, toResourceUrl } from "./fileKind";
 import { ZoomablePreview } from "./ZoomablePreview";
@@ -64,6 +69,7 @@ export function MarkdownEditorPane({
   );
   const imeRef = useRef(ime);
   imeRef.current = ime;
+  const compositionRangeRef = useRef<{ from: number; to: number } | null>(null);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const bundleRef = useRef<CodeMirrorBundle>({ view: null });
   const baselineRef = useRef<string>(content.text ?? "");
@@ -134,6 +140,7 @@ export function MarkdownEditorPane({
                 "data-ime-target-id": "workspace-markdown-editor",
               }),
               markdown(),
+              codeMirrorImeCompositionField,
               syntaxHighlighting(highlight),
               keymap.of([...defaultKeymap, ...historyKeymap]),
               EditorView.updateListener.of((update) => {
@@ -143,7 +150,23 @@ export function MarkdownEditorPane({
               // 粘贴图片：拦截剪贴板图片文件，落盘 assets/ 并插入相对链接。
               EditorView.domEventHandlers({
                 keydown: (event, editor) => {
-                  if (imeRef.current.sendKey(event)) return true;
+                  if (
+                    imeRef.current.textPolicy.captureCompositionStart &&
+                    (event.key.length === 1 || event.key === "Process") &&
+                    !event.ctrlKey &&
+                    !event.altKey &&
+                    !event.metaKey
+                  ) {
+                    const selection = editor.state.selection.main;
+                    compositionRangeRef.current = { from: selection.from, to: selection.to };
+                  }
+                  if (
+                    imeRef.current.sendKey(event, false, (command) => {
+                      if (bundleRef.current.view === editor)
+                        applyCodeMirrorImeCommand(editor, command);
+                    })
+                  )
+                    return true;
                   if (
                     imeRef.current.targetEngaged &&
                     !imeRef.current.state.composing &&
@@ -202,6 +225,22 @@ export function MarkdownEditorPane({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path, viewMode, setDirtyState]);
+
+  useEffect(() => {
+    const view = bundleRef.current.view;
+    const range = compositionRangeRef.current;
+    if (!view) return;
+    if (!ime.state.composing || !ime.state.preedit || !range) {
+      setCodeMirrorImeComposition(view, null);
+      if (!ime.state.composing) compositionRangeRef.current = null;
+      return;
+    }
+    setCodeMirrorImeComposition(view, {
+      ...range,
+      preedit: ime.state.preedit,
+      targetId: "workspace-markdown-editor",
+    });
+  }, [ime.state.composing, ime.state.preedit]);
 
   function onEditorFocus() {
     void imeRef.current.acquire();

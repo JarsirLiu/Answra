@@ -1,4 +1,4 @@
-import type { ImeInputMode, ImeKeyRequest, ImeSessionSnapshot, ImeState } from "@answra/shared";
+import type { ImeKeyRequest, ImeSessionSnapshot, ImeState } from "@answra/shared";
 import {
   type ImeOwnerIdentity,
   type ImeSessionEvent,
@@ -86,10 +86,6 @@ export class ImeSessionManager {
 
   async selectCandidate(index: number): Promise<ImeState> {
     return this.trackEngineState(await this.engine.select(index));
-  }
-
-  async setInputMode(mode: ImeInputMode): Promise<ImeState> {
-    return this.trackEngineState(await this.engine.setInputMode(mode));
   }
 
   async resetComposition(): Promise<ImeState> {

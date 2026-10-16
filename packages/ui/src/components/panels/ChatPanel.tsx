@@ -1,7 +1,7 @@
 import type { DesktopBridge } from "@answra/shared";
 import { X } from "lucide-react";
-import { type RefObject, useLayoutEffect, useRef } from "react";
-import { replaceTextRange } from "../../ime/adapters/controlledTextAdapter";
+import { type RefObject, useEffect, useRef } from "react";
+import { useControlledImeTextAdapter } from "../../ime/adapters/useControlledImeTextAdapter";
 import { ICON_SM } from "../../tokens";
 import { AssistantMessage, MessageStream } from "../chat";
 import { ConversationComposer } from "./ConversationComposer";
@@ -65,38 +65,15 @@ export function ChatPanel({
   bridge,
 }: ChatPanelProps) {
   const composerInputRef = useRef<HTMLTextAreaElement>(null);
-  const draftRef = useRef(draft);
-  const preeditLengthRef = useRef(0);
-  const composingRangeRef = useRef<{ start: number; end: number } | null>(null);
-  const pendingCaretRef = useRef<number | null>(null);
-  draftRef.current = draft;
-  const ime = useEmbeddedIme(
-    bridge,
-    (text) => {
-      const input = composerInputRef.current;
-      const preeditLength = preeditLengthRef.current;
-      const range = composingRangeRef.current;
-      const start =
-        range?.start ??
-        Math.max(0, (input?.selectionStart ?? draftRef.current.length) - preeditLength);
-      const end = range?.end ?? Math.max(0, (input?.selectionEnd ?? start) - preeditLength);
-      composingRangeRef.current = null;
-      const edit = replaceTextRange(draftRef.current, { start, end }, text);
-      pendingCaretRef.current = edit.caret;
-      draftRef.current = edit.value;
-      onDraftChange(edit.value);
-    },
-    true,
-    "chat-composer",
-  );
-  preeditLengthRef.current = ime.state.preedit.length;
-  useLayoutEffect(() => {
-    const caret = pendingCaretRef.current;
-    const input = composerInputRef.current;
-    if (caret === null || !input) return;
-    input.setSelectionRange(caret, caret);
-    pendingCaretRef.current = null;
+  const controlledImeText = useControlledImeTextAdapter({
+    inputRef: composerInputRef,
+    value: draft,
+    onChange: onDraftChange,
   });
+  const ime = useEmbeddedIme(bridge, controlledImeText.commit, true, "chat-composer");
+  useEffect(() => {
+    if (!ime.state.composing) controlledImeText.cancelComposition();
+  }, [controlledImeText.cancelComposition, ime.state.composing]);
   // 内容指纹：消息增减/正文与思维链流式增长都会变化，驱动 MessageStream 自动跟随。
   const contentKey = messages
     .map((message) => `${message.id}:${message.content.length}:${message.reasoning?.length ?? 0}`)
@@ -163,12 +140,13 @@ export function ChatPanel({
                 textPolicy: ime.textPolicy,
                 shouldPreventBeforeInput: ime.shouldPreventBeforeInput,
                 state: ime.state,
-                onKeyDown: (event) => {
-                  return ime.sendKey(event);
+                onKeyDown: (event, applyEditorCommand) => {
+                  return ime.sendKey(event, false, applyEditorCommand);
                 },
                 onTextStart: (range) => {
-                  composingRangeRef.current = range;
+                  controlledImeText.captureCompositionStart(range, ime.state.composing);
                 },
+                compositionRange: controlledImeText.compositionRange,
                 onKeyUp: ime.sendKeyUp,
                 onNavigate: ime.sendNavigation,
                 onSelect: ime.select,

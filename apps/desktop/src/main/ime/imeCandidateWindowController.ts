@@ -311,6 +311,21 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
       y: screenAnchor.lineBottom,
     });
     const bounds = positionImeCandidate(screenAnchor, display.workArea, size);
+    if (bounds.height === 0) {
+      hideWindow("no-space-below-composition-caret");
+      reportPositionStatus("no-space-below-composition-caret", {
+        windowId: window.id,
+        targetId,
+        generation,
+        anchorX: Math.round(screenAnchor.x),
+        anchorY: Math.round(screenAnchor.lineBottom),
+        workAreaX: display.workArea.x,
+        workAreaY: display.workArea.y,
+        workAreaWidth: display.workArea.width,
+        workAreaHeight: display.workArea.height,
+      });
+      return;
+    }
     window.setBounds(
       { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
       false,

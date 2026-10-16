@@ -1,0 +1,35 @@
+.ime-composition-mirror {
+  white-space: pre-wrap;
+  pointer-events: none;
+}
+
+.ime-composition-active[data-ime-composition-active="true"] {
+  --ime-composition-text-color: var(--ime-input-text-color, var(--ink, currentColor));
+  color: transparent;
+  caret-color: transparent;
+  -webkit-text-fill-color: transparent;
+  text-shadow: none;
+}
+
+.ime-composition-active[data-ime-composition-active="true"]::selection {
+  background: transparent;
+}
+
+.ime-composition-mirror-content {
+  min-height: 100%;
+  white-space: inherit;
+  overflow-wrap: inherit;
+}
+
+.ime-composition-preedit {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+.ime-composition-caret {
+  display: inline-block;
+  width: 1px;
+  height: 1em;
+  vertical-align: text-bottom;
+}

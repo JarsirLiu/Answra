@@ -111,12 +111,10 @@ export function ImeCandidateAnchorReporter({
     return () => window.removeEventListener("scroll", bump, true);
   }, [anchor, bump]);
 
-  const visible = Boolean(
-    state.enabled && anchor && (state.preedit.length > 0 || state.candidates.length > 0),
-  );
+  const visible = Boolean(state.enabled && anchor && state.candidates.length > 0);
 
-  // The selected position changes with Rime preedit and DOM selection events.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: state.preedit and tick invalidate measured caret geometry.
+  // Selection, scroll, and resize changes invalidate the measured caret geometry.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: tick is the explicit layout invalidation signal.
   useLayoutEffect(() => {
     if (
       !windowFocused ||
@@ -128,7 +126,7 @@ export function ImeCandidateAnchorReporter({
       setCaretAnchor(null);
       return;
     }
-    const next = measureAnchor(anchor, 0);
+    const next = measureAnchor(anchor);
     setCaretAnchor((current) =>
       current?.x === next?.x &&
       current?.lineTop === next?.lineTop &&
@@ -136,13 +134,12 @@ export function ImeCandidateAnchorReporter({
         ? current
         : (next ?? null),
     );
-  }, [anchor, state.preedit, tick, windowFocused]);
+  }, [anchor, tick, windowFocused]);
 
   // Scroll and resize invalidate caret geometry without changing the focused element.
   // biome-ignore lint/correctness/useExhaustiveDependencies: tick is the explicit layout invalidation signal.
   useLayoutEffect(() => {
     if (!anchor || anchor.dataset.imeTargetId !== targetId || generation === undefined) {
-      if (state.enabled && state.composing) return;
       onUpdate({
         type: "clear",
         targetId,
@@ -151,11 +148,10 @@ export function ImeCandidateAnchorReporter({
       return;
     }
     if (!visible) {
-      if (state.enabled && state.composing) return;
       onUpdate({ type: "clear", targetId, generation });
       return;
     }
-    const position = measureAnchor(anchor, state.preedit.length);
+    const position = measureAnchor(anchor);
     if (!position) return;
     onUpdate({ type: "show", anchor: position, targetId, generation });
   }, [anchor, generation, onUpdate, state, targetId, tick, visible]);
@@ -165,7 +161,7 @@ export function ImeCandidateAnchorReporter({
       onUpdate({ type: "clear", targetId, ...(generation !== undefined ? { generation } : {}) }),
     [generation, onUpdate, targetId],
   );
-  return caretAnchor && windowFocused ? (
+  return caretAnchor && windowFocused && !state.composing ? (
     <span
       aria-hidden="true"
       className="ime-visual-caret"
@@ -195,15 +191,22 @@ function resolveAnchor(target: EventTarget | null, targetId: string): HTMLElemen
   return element;
 }
 
-function measureAnchor(
-  element: HTMLElement,
-  preeditLength: number,
-): ImeCandidateAnchor | undefined {
+function measureAnchor(element: HTMLElement): ImeCandidateAnchor | undefined {
+  const targetId = element.dataset.imeTargetId;
+  const compositionProjection = Array.from(
+    document.querySelectorAll<HTMLElement>("[data-ime-composition-target]"),
+  ).find((projection) => projection.dataset.imeCompositionTarget === targetId);
+  const compositionCaret = compositionProjection?.querySelector<HTMLElement>(
+    "[data-ime-composition-caret='true']",
+  );
+  if (compositionCaret) {
+    const rect = compositionCaret.getBoundingClientRect();
+    if (rect.width || rect.height)
+      return { x: rect.left, lineTop: rect.top, lineBottom: rect.bottom };
+  }
   if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
     const caret = element.selectionStart ?? element.value.length;
-    const hasInlinePreedit = element.dataset.imePreeditInValue === "true";
-    const position = hasInlinePreedit ? Math.max(0, caret - preeditLength) : caret;
-    return measureInputCaret(element, position);
+    return measureInputCaret(element, caret);
   }
   const selection = window.getSelection();
   if (selection?.rangeCount) {

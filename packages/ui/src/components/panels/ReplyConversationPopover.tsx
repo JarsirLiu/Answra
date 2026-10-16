@@ -1,9 +1,9 @@
 import type { DesktopBridge, ReplyBarActivity } from "@answra/shared";
 import { AlertCircle, FileText, Wrench } from "lucide-react";
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReplyConversationMessage } from "../../app/useReplyConversation";
 import { useEmbeddedIme } from "../../hooks/useEmbeddedIme";
-import { replaceTextRange } from "../../ime/adapters/controlledTextAdapter";
+import { useControlledImeTextAdapter } from "../../ime/adapters/useControlledImeTextAdapter";
 import { ICON_SM } from "../../tokens";
 import { AssistantMessage, MessageStream } from "../chat";
 import { ConversationComposer } from "./ConversationComposer";
@@ -35,37 +35,16 @@ export function ReplyConversationPopover({
   const [draft, setDraft] = useState("");
   const composerInputRef = useRef<HTMLTextAreaElement>(null);
   const draftRef = useRef(draft);
-  const preeditLengthRef = useRef(0);
-  const composingRangeRef = useRef<{ start: number; end: number } | null>(null);
-  const pendingCaretRef = useRef<number | null>(null);
   draftRef.current = draft;
-  const ime = useEmbeddedIme(
-    bridge,
-    (text) => {
-      const input = composerInputRef.current;
-      const preeditLength = preeditLengthRef.current;
-      const range = composingRangeRef.current;
-      const start =
-        range?.start ??
-        Math.max(0, (input?.selectionStart ?? draftRef.current.length) - preeditLength);
-      const end = range?.end ?? Math.max(0, (input?.selectionEnd ?? start) - preeditLength);
-      composingRangeRef.current = null;
-      const edit = replaceTextRange(draftRef.current, { start, end }, text);
-      pendingCaretRef.current = edit.caret;
-      draftRef.current = edit.value;
-      setDraft(edit.value);
-    },
-    true,
-    "reply-composer",
-  );
-  preeditLengthRef.current = ime.state.preedit.length;
-  useLayoutEffect(() => {
-    const caret = pendingCaretRef.current;
-    const input = composerInputRef.current;
-    if (caret === null || !input) return;
-    input.setSelectionRange(caret, caret);
-    pendingCaretRef.current = null;
+  const controlledImeText = useControlledImeTextAdapter({
+    inputRef: composerInputRef,
+    value: draft,
+    onChange: setDraft,
   });
+  const ime = useEmbeddedIme(bridge, controlledImeText.commit, true, "reply-composer");
+  useEffect(() => {
+    if (!ime.state.composing) controlledImeText.cancelComposition();
+  }, [controlledImeText.cancelComposition, ime.state.composing]);
   const send = async () => {
     const text = draftRef.current.trim();
     if (!text || !conversationId || !bridge?.sendConversationMessage) return;
@@ -166,12 +145,13 @@ export function ReplyConversationPopover({
                 textPolicy: ime.textPolicy,
                 shouldPreventBeforeInput: ime.shouldPreventBeforeInput,
                 state: ime.state,
-                onKeyDown: (event) => {
-                  return ime.sendKey(event);
+                onKeyDown: (event, applyEditorCommand) => {
+                  return ime.sendKey(event, false, applyEditorCommand);
                 },
                 onTextStart: (range) => {
-                  composingRangeRef.current = range;
+                  controlledImeText.captureCompositionStart(range, ime.state.composing);
                 },
+                compositionRange: controlledImeText.compositionRange,
                 onKeyUp: ime.sendKeyUp,
                 onNavigate: ime.sendNavigation,
                 onSelect: ime.select,

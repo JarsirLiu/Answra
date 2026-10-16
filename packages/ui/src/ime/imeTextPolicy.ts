@@ -10,8 +10,8 @@ export interface ImeTextPolicyInput {
 export interface ImeTextPolicy {
   /** Native input is allowed for ASCII mode or for a target outside the lease. */
   useNativeTextInput: boolean;
-  /** Keep the native control read-only while Rime owns Chinese text input. */
-  readOnly: boolean;
+  /** Block direct browser mutations; editor adapter commands remain writable. */
+  blockNativeEditing: boolean;
   /** Prevent the platform composition path only for the current lease owner. */
   blockComposition: boolean;
   /** Whether Backspace must be handled by the engine, editor adapter, or browser. */
@@ -28,7 +28,7 @@ export function resolveImeTextPolicy(input: ImeTextPolicyInput): ImeTextPolicy {
   if (!input.targetOwned) {
     return {
       useNativeTextInput: true,
-      readOnly: false,
+      blockNativeEditing: false,
       blockComposition: false,
       backspace: "native",
       captureCompositionStart: false,
@@ -38,7 +38,7 @@ export function resolveImeTextPolicy(input: ImeTextPolicyInput): ImeTextPolicy {
   if (input.inputMode === "ascii") {
     return {
       useNativeTextInput: true,
-      readOnly: false,
+      blockNativeEditing: false,
       blockComposition: true,
       backspace: "native",
       captureCompositionStart: false,
@@ -47,7 +47,7 @@ export function resolveImeTextPolicy(input: ImeTextPolicyInput): ImeTextPolicy {
 
   return {
     useNativeTextInput: false,
-    readOnly: true,
+    blockNativeEditing: true,
     blockComposition: true,
     backspace: input.composing ? "engine" : "editor",
     captureCompositionStart: !input.composing,

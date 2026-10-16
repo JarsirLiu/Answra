@@ -15,7 +15,7 @@ import {
   positionWindowNearPoint,
   replyBarAnchorFromBounds,
 } from "./windowLayout";
-import { setNativeImeEnabled } from "./windowStealthController";
+import { isolateNativeIme } from "./windowStealthController";
 import type { WindowSurfaceDescriptor } from "./windowSurfaceRegistry";
 
 const WORK_AREA_MARGIN = 24;
@@ -117,9 +117,9 @@ export function createReplyBarWindowController(host: ReplyBarWindowHost) {
     created.setSkipTaskbar(true);
     created.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
     created.webContents.on("will-navigate", (event) => event.preventDefault());
-    setNativeImeEnabled(created, false);
+    isolateNativeIme(created);
     created.on("show", () => {
-      setNativeImeEnabled(created, false);
+      isolateNativeIme(created);
     });
     created.on("move", () => {
       if (created.isDestroyed()) return;

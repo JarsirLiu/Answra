@@ -9,10 +9,13 @@ import type {
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   activateImeInputTarget,
+  enqueueImeInput,
+  getLatestImeSessionSnapshot,
   isActiveImeInputTarget,
+  publishImeSessionSnapshot,
   releaseImeInputTarget,
 } from "../ime/imeInputTargetCoordinator";
-import { resolveImeKeyRoute } from "../ime/imeKeyRouter";
+import { type ImeEditorCommand, resolveImeKeyRoute } from "../ime/imeKeyRouter";
 import { resolveImeTextPolicy, shouldPreventImeBeforeInput } from "../ime/imeTextPolicy";
 
 const EMPTY_STATE: ImeState = {
@@ -48,16 +51,15 @@ export function useEmbeddedIme(
   const [generation, setGeneration] = useState<number | undefined>(undefined);
   const generationRef = useRef<number | undefined>(undefined);
   const revisionRef = useRef(0);
-  const commandIdRef = useRef(0);
   const focusedRef = useRef(false);
   const onCommitRef = useRef(onCommit);
-  const inputQueueRef = useRef<Promise<void>>(Promise.resolve());
   const acquirePromiseRef = useRef<Promise<void> | undefined>(undefined);
   onCommitRef.current = onCommit;
 
   const applySnapshot = useCallback(
     (snapshot: ImeSessionSnapshot) => {
       if (snapshot.revision < revisionRef.current) return;
+      publishImeSessionSnapshot(snapshot);
       const previousRevision = revisionRef.current;
       revisionRef.current = snapshot.revision;
       const isAscii = snapshot.engine.inputMode === "ascii";
@@ -86,14 +88,14 @@ export function useEmbeddedIme(
       if (!bridge?.imeSessionCommand) return undefined;
       let result = await bridge.imeSessionCommand({
         ...command,
-        commandId: `ui-${++commandIdRef.current}`,
+        commandId: globalThis.crypto.randomUUID(),
         expectedRevision: revisionRef.current,
       } as ImeSessionCommand);
       if (result.reason === "stale-revision") {
         applySnapshot(result.snapshot);
         result = await bridge.imeSessionCommand({
           ...command,
-          commandId: `ui-${++commandIdRef.current}`,
+          commandId: globalThis.crypto.randomUUID(),
           expectedRevision: revisionRef.current,
         } as ImeSessionCommand);
       }
@@ -368,28 +370,52 @@ export function useEmbeddedIme(
   useEffect(() => () => void release(), [release]);
 
   const enqueueInput = useCallback(
-    (request: (generation: number) => Promise<ImeSessionCommandResult | undefined>) => {
+    (
+      request: (
+        generation: number,
+        snapshot: ImeSessionSnapshot | undefined,
+      ) => Promise<ImeSessionCommandResult | undefined>,
+      applyFallback?: (result: ImeSessionCommandResult) => void,
+      routeLatest?: (
+        snapshot: ImeSessionSnapshot | undefined,
+      ) => ImeEditorCommand | "ignored" | undefined,
+      applyEditorCommand?: (command: ImeEditorCommand) => void,
+    ) => {
       if (!isActiveImeInputTarget(targetId) || !focusedRef.current) return;
-      inputQueueRef.current = inputQueueRef.current
-        .catch(() => undefined)
-        .then(async () => {
-          if (generationRef.current === undefined) await acquirePromiseRef.current;
-          const generation = generationRef.current;
-          if (generation === undefined) return;
-          if (generationRef.current !== generation || !focusedRef.current) return;
-          const result = await request(generation);
-          if (!result?.accepted) return;
-          if (generationRef.current !== generation || !focusedRef.current) return;
-          applySnapshot(result.snapshot);
-          if (result.commit) onCommitRef.current?.(result.commit.text);
-        })
-        .catch((error: unknown) => console.error("[ime-ui] key processing failed", error));
+      void enqueueImeInput(targetId, async (latest) => {
+        if (latest) applySnapshot(latest);
+        if (generationRef.current === undefined) await acquirePromiseRef.current;
+        const generation = generationRef.current;
+        if (generation === undefined || !focusedRef.current) return;
+        const currentSnapshot = getLatestImeSessionSnapshot() ?? latest;
+        if (currentSnapshot) applySnapshot(currentSnapshot);
+        const editorCommand = routeLatest?.(currentSnapshot);
+        if (editorCommand === "ignored") return;
+        if (editorCommand) {
+          applyEditorCommand?.(editorCommand);
+          return;
+        }
+        const result = await request(generation, currentSnapshot);
+        if (!result?.accepted || generationRef.current !== generation || !focusedRef.current)
+          return;
+        applySnapshot(result.snapshot);
+        if (result.commit) onCommitRef.current?.(result.commit.text);
+        else if (result.engineHandled === false) {
+          applyFallback?.(result);
+          const fallback = routeLatest?.(result.snapshot);
+          if (fallback && fallback !== "ignored") applyEditorCommand?.(fallback);
+        }
+      }).catch((error: unknown) => console.error("[ime-ui] key processing failed", error));
     },
     [applySnapshot, targetId],
   );
 
   const sendKey = useCallback(
-    (event: KeyboardEvent | React.KeyboardEvent<HTMLElement>, release = false) => {
+    (
+      event: KeyboardEvent | React.KeyboardEvent<HTMLElement>,
+      release = false,
+      applyEditorCommand?: (command: ImeEditorCommand) => void,
+    ) => {
       const activeElement = document.activeElement;
       const keyKind = getKeyKind(event.key);
       const reportRouting = (accepted: boolean) => {
@@ -436,31 +462,73 @@ export function useEmbeddedIme(
         reportRouting(false);
         return false;
       }
+      const queuedEditorKey =
+        !release &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        !event.metaKey &&
+        [
+          "Backspace",
+          "Delete",
+          "ArrowLeft",
+          "ArrowRight",
+          "ArrowUp",
+          "ArrowDown",
+          "PageUp",
+          "PageDown",
+        ].includes(event.key);
+      if (queuedEditorKey) {
+        const routingEvent = Object.freeze({
+          key: event.key,
+          code: event.code,
+          shiftKey: event.shiftKey,
+          ctrlKey: event.ctrlKey,
+          altKey: event.altKey,
+          metaKey: event.metaKey,
+          repeat: event.repeat,
+        });
+        const keyEvent = {
+          key: routingEvent.key,
+          code: routingEvent.code,
+          shift: routingEvent.shiftKey,
+          ctrl: routingEvent.ctrlKey,
+          alt: routingEvent.altKey,
+          meta: routingEvent.metaKey,
+          release: false,
+        };
+        enqueueInput(
+          (generation) =>
+            sendCommand({
+              type: "processKey",
+              targetId,
+              generation,
+              ...keyEvent,
+            }),
+          undefined,
+          (latest) => {
+            if (!latest) return "ignored";
+            const engine = latest.engine;
+            const route = resolveImeKeyRoute(routingEvent, {
+              inputMode: engine.inputMode,
+              composing: engine.composing,
+            });
+            return route.type === "editor"
+              ? route.command
+              : route.type === "engine"
+                ? undefined
+                : "ignored";
+          },
+          applyEditorCommand,
+        );
+        reportRouting(true);
+        return true;
+      }
       const route = resolveImeKeyRoute(
         event,
         { inputMode: asciiModeRef.current ? "ascii" : "chinese", composing: state.composing },
         release,
       );
-      if (route.type === "toggle-mode") {
-        enqueueInput(async (generation) => {
-          const inputMode = asciiModeRef.current ? "chinese" : "ascii";
-          const result = await sendCommand({
-            type: "setInputMode",
-            targetId,
-            generation,
-            inputMode,
-          });
-          return result?.snapshot.engine.inputMode === inputMode ? result : undefined;
-        });
-        reportRouting(true);
-        return true;
-      }
       if (route.type === "consumed") {
-        reportRouting(true);
-        return true;
-      }
-      if (route.type === "editor" && route.text) {
-        onCommitRef.current?.(route.text);
         reportRouting(true);
         return true;
       }
@@ -472,20 +540,50 @@ export function useEmbeddedIme(
         reportRouting(false);
         return false;
       }
-      enqueueInput(async (generation) => {
-        return sendCommand({
-          type: "processKey",
-          targetId,
-          generation,
-          key: route.key,
-          code: event.code,
-          shift: event.shiftKey,
-          ctrl: event.ctrlKey,
-          alt: event.altKey,
-          meta: event.metaKey,
-          release: route.release,
-        });
-      });
+      const keyEvent = {
+        key: route.key,
+        code: event.code,
+        shift: event.shiftKey,
+        ctrl: event.ctrlKey,
+        alt: event.altKey,
+        meta: event.metaKey,
+        release: route.release,
+        text: event.key.length === 1 ? event.key : undefined,
+      };
+      enqueueInput(
+        (generation) =>
+          sendCommand({
+            type: "processKey",
+            targetId,
+            generation,
+            key: keyEvent.key,
+            code: keyEvent.code,
+            shift: keyEvent.shift,
+            ctrl: keyEvent.ctrl,
+            alt: keyEvent.alt,
+            meta: keyEvent.meta,
+            release: keyEvent.release,
+          }),
+        (result) => {
+          if (!keyEvent.text || result.engineHandled !== false) return;
+          const engine = result.snapshot.engine;
+          const chineseNumericFallback =
+            engine.inputMode === "chinese" &&
+            !engine.composing &&
+            /^[0-9]$/.test(keyEvent.key) &&
+            !keyEvent.shift &&
+            !keyEvent.ctrl &&
+            !keyEvent.alt &&
+            !keyEvent.meta;
+          const printableFallback =
+            engine.inputMode === "ascii" &&
+            keyEvent.text !== undefined &&
+            !keyEvent.ctrl &&
+            !keyEvent.alt &&
+            !keyEvent.meta;
+          if (printableFallback || chineseNumericFallback) onCommitRef.current?.(keyEvent.text);
+        },
+      );
       reportRouting(true);
       return true;
     },

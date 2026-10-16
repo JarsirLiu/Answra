@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ConversationComposer } from "../src/components/panels/ConversationComposer";
+import type { ImeEditorCommand } from "../src/ime/imeKeyRouter";
 import { resolveImeTextPolicy, shouldPreventImeBeforeInput } from "../src/ime/imeTextPolicy";
 
 const EMPTY_IME_STATE = {
@@ -106,6 +107,35 @@ describe("ConversationComposer", () => {
     expect(onToggle).toHaveBeenCalledOnce();
   });
 
+  it("lets editor adapter commands update draft while native textarea editing is blocked", () => {
+    const onValueChange = vi.fn();
+    const onKeyDown = vi.fn(
+      (
+        _event: React.KeyboardEvent<HTMLTextAreaElement>,
+        applyEditorCommand: (command: ImeEditorCommand) => void,
+      ) => {
+        applyEditorCommand({ type: "deleteBackward" });
+        return true;
+      },
+    );
+    render(
+      <ConversationComposer
+        ime={imeProps({ onKeyDown })}
+        inputLabel="补充问题"
+        onValueChange={onValueChange}
+        placeholder="输入问题"
+        value="ab"
+      />,
+    );
+
+    const input = screen.getByRole("textbox", { name: "补充问题" }) as HTMLTextAreaElement;
+    input.setSelectionRange(1, 1);
+    expect(input.readOnly).toBe(true);
+    fireEvent.keyDown(input, { key: "Backspace", code: "Backspace" });
+
+    expect(onValueChange).toHaveBeenCalledWith("b");
+  });
+
   it("restores ordinary text editing when the embedded IME is disabled", () => {
     const onValueChange = vi.fn();
     render(
@@ -175,14 +205,15 @@ describe("ConversationComposer", () => {
     expect(compositionStart.defaultPrevented).toBe(true);
   });
 
-  it("renders Rime preedit at the current textarea selection", () => {
+  it("projects Rime preedit inside the editor while keeping the controlled draft unchanged", async () => {
     const props = imeProps({
       state: { ...EMPTY_IME_STATE, enabled: true, composing: true, preedit: "n" },
     });
     const onKeyDown = vi.fn(() => true);
+    const onTextStart = vi.fn();
     const { rerender } = render(
       <ConversationComposer
-        ime={imeProps({ active: true, onKeyDown })}
+        ime={imeProps({ active: true, onKeyDown, onTextStart, compositionRange: null })}
         inputLabel="补充问题"
         placeholder="输入问题"
         value="abcd"
@@ -190,18 +221,48 @@ describe("ConversationComposer", () => {
     );
     const input = screen.getByRole("textbox", { name: "补充问题" }) as HTMLTextAreaElement;
     input.setSelectionRange(2, 2);
+    input.focus();
     fireEvent.keyDown(input, { key: "n", code: "KeyN" });
 
     rerender(
       <ConversationComposer
-        ime={props}
+        ime={{ ...props, onKeyDown, onTextStart, compositionRange: { start: 2, end: 2 } }}
         inputLabel="补充问题"
         placeholder="输入问题"
         value="abcd"
       />,
     );
-    expect(input.value).toBe("abncd");
-    expect(input.selectionStart).toBe(3);
+    expect(input.value).toBe("abcd");
+    expect(input.selectionStart).toBe(2);
+    expect(input.selectionEnd).toBe(2);
+    expect(input).not.toHaveAttribute("data-ime-preedit-in-value");
+    expect(onTextStart).toHaveBeenCalledWith({ start: 2, end: 2 });
+    const preedit = await screen.findByText("n");
+    expect(preedit).toHaveAttribute("data-ime-composition-preedit", "true");
+    expect(preedit.closest("[data-ime-composition-projection='true']")).toBeInTheDocument();
     expect(document.activeElement).toBe(input);
+  });
+
+  it("renders composition projection without changing the business draft", async () => {
+    const onValueChange = vi.fn();
+    render(
+      <ConversationComposer
+        ime={imeProps({
+          state: { ...EMPTY_IME_STATE, enabled: true, composing: true, preedit: "ni" },
+          compositionRange: { start: 1, end: 3 },
+        })}
+        inputLabel="补充问题"
+        onValueChange={onValueChange}
+        placeholder="输入问题"
+        value="abcd"
+      />,
+    );
+    const input = screen.getByRole("textbox", { name: "补充问题" }) as HTMLTextAreaElement;
+    expect(input.value).toBe("abcd");
+    expect(await screen.findByText("ni")).toHaveAttribute("data-ime-composition-preedit", "true");
+    expect(document.querySelector("[data-ime-composition-projection='true']")?.textContent).toBe(
+      "anid",
+    );
+    expect(onValueChange).not.toHaveBeenCalled();
   });
 });

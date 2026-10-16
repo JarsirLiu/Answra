@@ -21,6 +21,12 @@
   border-color: rgb(var(--line-tint) / calc((var(--line-base) + 0.1) * var(--fade)));
 }
 
+.conversation-composer-editor {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
 .conversation-composer textarea {
   display: block;
   width: 100%;
@@ -35,6 +41,22 @@
   font-size: 12.5px;
   line-height: 18px;
   overflow-y: auto;
+}
+
+.conversation-composer-editor.is-composing textarea {
+  --ime-composition-text-color: var(--ime-input-text-color, var(--ink));
+  color: transparent;
+  caret-color: transparent;
+  -webkit-text-fill-color: transparent;
+  text-shadow: none;
+}
+
+.conversation-composer-editor.is-composing textarea::selection {
+  background: transparent;
+}
+
+.conversation-composer-editor.is-composing {
+  overflow: hidden;
 }
 
 .conversation-composer textarea::placeholder {

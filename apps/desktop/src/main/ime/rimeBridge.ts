@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { copyFile, mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
-import type { ImeInputMode, ImeKeyRequest, ImeState } from "@answra/shared";
+import type { ImeKeyRequest, ImeState } from "@answra/shared";
 import { app } from "electron";
 import { rimeKeyCode, rimeKeyMask } from "./rimeKeyMapping";
 
@@ -109,12 +109,6 @@ export class RimeBridge {
     await this.startup;
     if (!this.available) return { ...EMPTY, handled: false };
     return this.command("reset");
-  }
-
-  async setInputMode(inputMode: ImeInputMode): Promise<ImeState> {
-    await this.startup;
-    if (!this.available || !this.state.enabled) return { ...this.state, handled: false };
-    return this.command("set-mode", inputMode === "ascii" ? "1" : "0");
   }
 
   dispose(): void {

@@ -13,6 +13,8 @@ export interface WindowStealthControllerHost {
   setReplyBarInputMethod?: (enabled: boolean) => void;
 }
 
+export type NativeImeIsolationResult = "applied" | "not-required" | "failed";
+
 const nativePointer = koffi.pointer("void");
 const immAssociateContext =
   process.platform === "win32"
@@ -33,10 +35,10 @@ const immDisableIme =
 let electronThreadImeDisabled: boolean | undefined;
 let lastImeIsolationResult: boolean | undefined;
 
-export function setNativeImeEnabled(window: BrowserWindow, enabled: boolean): boolean {
-  if (window.isDestroyed()) return false;
+export function isolateNativeIme(window: BrowserWindow): NativeImeIsolationResult {
+  if (window.isDestroyed()) return "failed";
   if (!immAssociateContext || !immAssociateContextEx || !immDisableIme)
-    return process.platform !== "win32";
+    return process.platform !== "win32" ? "not-required" : "failed";
   try {
     // Every Electron BrowserWindow belongs to the main UI thread. Disable that
     // thread's TSF/IMM input path; HWND association alone did not stop Chromium
@@ -46,9 +48,8 @@ export function setNativeImeEnabled(window: BrowserWindow, enabled: boolean): bo
     const handle = koffi.decode(window.getNativeWindowHandle(), "void *");
     // Detach the top-level Chromium host first, then all child HWNDs. The
     // previous child-only call left an existing top-level composition alive.
-    if (!enabled) immAssociateContext(handle, null);
-    const flags = enabled ? 0x11 : 0x01;
-    const applied = immAssociateContextEx(handle, null, flags);
+    immAssociateContext(handle, null);
+    const applied = immAssociateContextEx(handle, null, 0x01);
     const disabled = process.platform !== "win32" || electronThreadImeDisabled;
     const result = Boolean(applied) && Boolean(disabled);
     if (!result && lastImeIsolationResult !== false) {
@@ -59,12 +60,12 @@ export function setNativeImeEnabled(window: BrowserWindow, enabled: boolean): bo
       });
     }
     lastImeIsolationResult = result;
-    return result;
+    return result ? "applied" : "failed";
   } catch (error) {
     if (lastImeIsolationResult !== false)
       console.warn("[ime] Windows system IME isolation failed", error);
     lastImeIsolationResult = false;
-    return false;
+    return "failed";
   }
 }
 
@@ -76,7 +77,7 @@ export function createWindowStealthController(host: WindowStealthControllerHost)
     const window = host.getMainWindow();
     if (!enabled || !window || window.isDestroyed()) return;
     host.refreshWindowPolicies(reason);
-    setNativeImeEnabled(window, false);
+    isolateNativeIme(window);
     if (reason === "diagnostic")
       console.info("[window][capture-protection] refreshed", getWindowCaptureDiagnostics(window));
   }
@@ -91,7 +92,7 @@ export function createWindowStealthController(host: WindowStealthControllerHost)
     const applied = host.applyWindowPolicies(value);
     // The embedded Rime editor owns all text input in this application. Stealth
     // changes capture policy only; leaving stealth must not re-enable Windows IME.
-    setNativeImeEnabled(window, false);
+    isolateNativeIme(window);
     host.setReplyBarInputMethod?.(false);
     window.setSkipTaskbar(value);
     if (process.platform === "darwin") value ? app.dock?.hide() : app.dock?.show();

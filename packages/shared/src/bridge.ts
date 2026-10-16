@@ -8,7 +8,6 @@ import type {
   ImeCandidateAction,
   ImeCandidateSnapshot,
   ImeCandidateUpdate,
-  ImeInputMode,
   ImeKeyRequest,
   ImeLeaseResponse,
   ImeRendererDiagnostic,
@@ -49,11 +48,6 @@ export interface DesktopBridge {
   imeDiagnostic?: (diagnostic: ImeRendererDiagnostic) => void;
   imeSelect?: (index: number, generation: number) => Promise<ImeState>;
   imeReset?: (generation: number) => Promise<ImeState>;
-  imeSetInputMode?: (
-    targetId: string,
-    generation: number,
-    inputMode: ImeInputMode,
-  ) => Promise<ImeState>;
   /** New authoritative session API; adopted incrementally by main and renderer. */
   imeSessionCommand?: (command: ImeSessionCommand) => Promise<ImeSessionCommandResult>;
   getImeSessionSnapshot?: () => Promise<ImeSessionSnapshot>;

@@ -1,5 +1,8 @@
 import type {
   DesktopBridge,
+  ImeCandidateAction,
+  ImeCandidateSnapshot,
+  ImeCandidateUpdate,
   ImeSessionCommand,
   ImeSessionSnapshot,
   ImeState,
@@ -8,7 +11,9 @@ import type {
 import { EditorView } from "@codemirror/view";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ImeCandidateWindowApp } from "../src/app/ImeCandidateWindowApp";
 import { MarkdownEditorPane } from "../src/components/panels/workspace/MarkdownEditorPane";
+import { resetImeInputTargetCoordinatorForTests } from "../src/ime/imeInputTargetCoordinator";
 
 function createBridge(overrides: Partial<DesktopBridge> = {}): DesktopBridge {
   const bridge: DesktopBridge = {
@@ -70,13 +75,6 @@ function createBridge(overrides: Partial<DesktopBridge> = {}): DesktopBridge {
         case "processKey":
           result = await bridge.imeKey?.(command);
           break;
-        case "setInputMode":
-          result = await bridge.imeSetInputMode?.(
-            command.targetId,
-            command.generation,
-            command.inputMode,
-          );
-          break;
         case "selectCandidate":
           result = await bridge.imeSelect?.(command.index, command.generation);
           break;
@@ -127,7 +125,10 @@ function renderPane(bridge: DesktopBridge, viewMode: "source" | "preview" = "sou
 }
 
 describe("MarkdownEditorPane", () => {
-  beforeEach(() => localStorage.clear());
+  beforeEach(() => {
+    localStorage.clear();
+    resetImeInputTargetCoordinatorForTests();
+  });
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
@@ -185,6 +186,143 @@ describe("MarkdownEditorPane", () => {
       expect(imeKey).toHaveBeenCalledWith(expect.objectContaining({ generation: 12 })),
     );
     await waitFor(() => expect(view.state.doc.toString()).toBe("# 问标题\n\n正文第一行。"));
+  });
+
+  it("connects CodeMirror selection, candidate presentation, commit, and release cancellation", async () => {
+    const idleState: ImeState = {
+      enabled: false,
+      inputMode: "chinese",
+      composing: false,
+      preedit: "",
+      candidates: [],
+      selectedIndex: 0,
+      page: 0,
+      hasNextPage: false,
+    };
+    const composingState: ImeState = {
+      ...idleState,
+      enabled: true,
+      composing: true,
+      preedit: "wen",
+      candidates: [{ text: "文" }, { text: "问" }],
+      hasNextPage: false,
+    };
+    const committedState: ImeState = {
+      ...idleState,
+      enabled: true,
+      committedText: "问",
+    };
+    let receiveCandidateAction: ((action: ImeCandidateAction) => void) | undefined;
+    let receiveCandidateState: ((snapshot: ImeCandidateSnapshot) => void) | undefined;
+    let engineState = idleState;
+    const imeAcquire = vi.fn().mockResolvedValue({
+      accepted: true,
+      targetId: "workspace-markdown-editor",
+      generation: 30,
+      state: { ...idleState, enabled: true },
+    });
+    const imeKey = vi.fn(async () => {
+      engineState = composingState;
+      return composingState;
+    });
+    const imeSelect = vi.fn(async () => {
+      engineState = idleState;
+      return committedState;
+    });
+    const imeRelease = vi.fn(async () => {
+      engineState = idleState;
+      return { accepted: true, state: idleState };
+    });
+    const setImeCandidate = vi.fn((update: ImeCandidateUpdate) => {
+      if (update.type === "show") {
+        receiveCandidateState?.({
+          state: engineState,
+          targetId: update.targetId,
+          generation: update.generation,
+        });
+      } else if (update.type === "clear") {
+        receiveCandidateState?.({
+          state: idleState,
+          ...(update.targetId ? { targetId: update.targetId } : {}),
+          ...(update.generation !== undefined ? { generation: update.generation } : {}),
+        });
+      }
+    });
+    const bridge = createBridge({
+      imeAvailable: true,
+      imeAcquire,
+      imeKey,
+      imeSelect,
+      imeRelease,
+      setImeCandidate,
+      onImeCandidateAction: (listener) => {
+        receiveCandidateAction = listener;
+        return () => {
+          receiveCandidateAction = undefined;
+        };
+      },
+      onImeCandidateState: (listener) => {
+        receiveCandidateState = listener;
+        return () => {
+          receiveCandidateState = undefined;
+        };
+      },
+      requestImeCandidateState: vi.fn(),
+      sendImeCandidateAction: (action) => receiveCandidateAction?.(action),
+    });
+    const pane = renderPane(bridge);
+    render(<ImeCandidateWindowApp bridge={bridge} />);
+    await waitFor(() => expect(document.querySelector(".cm-content")).not.toBeNull(), {
+      timeout: 5000,
+    });
+    const content = document.querySelector(".cm-content") as HTMLElement;
+    fireEvent.focus(content);
+    fireEvent.focusIn(content);
+    await waitFor(() => expect(imeAcquire).toHaveBeenCalledOnce());
+    const view = EditorView.findFromDOM(document.querySelector(".cm-editor") as HTMLElement);
+    expect(view).not.toBeNull();
+    if (!view) throw new Error("expected CodeMirror EditorView to be mounted");
+    view.dispatch({ selection: { anchor: 2, head: 4 } });
+
+    fireEvent.keyDown(content, { key: "n", code: "KeyN" });
+    await waitFor(() => expect(imeKey).toHaveBeenCalledOnce());
+    await waitFor(() => expect(setImeCandidate).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByRole("listbox", { name: "输入法候选词" })).toBeTruthy());
+    expect(setImeCandidate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "show",
+        targetId: "workspace-markdown-editor",
+        generation: 30,
+      }),
+    );
+    expect(screen.getByText("wen")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("option", { name: /问/ }));
+    await waitFor(() => expect(view.state.doc.toString()).toBe("# 问\n\n正文第一行。"));
+    expect(imeSelect).toHaveBeenCalledWith(1, 30);
+    expect(view.state.selection.main.head).toBe(3);
+    await waitFor(() => expect(screen.queryByRole("listbox", { name: "输入法候选词" })).toBeNull());
+
+    fireEvent.keyDown(content, { key: "n", code: "KeyN" });
+    await waitFor(() => expect(screen.getByText("wen")).toBeInTheDocument());
+    const textBeforeCancel = view.state.doc.toString();
+    const selectionBeforeCancel = view.state.selection.main;
+    pane.rerender(
+      <MarkdownEditorPane
+        path="错题.md"
+        content={sampleContent}
+        bridge={bridge}
+        viewMode="preview"
+        onViewModeChange={() => undefined}
+        externalVersion={0}
+        dir=""
+      />,
+    );
+    await waitFor(() => expect(imeRelease).toHaveBeenCalled());
+    expect(view.state.doc.toString()).toBe(textBeforeCancel);
+    expect(view.state.selection.main).toEqual(selectionBeforeCancel);
+    await waitFor(() => expect(screen.queryByRole("listbox", { name: "输入法候选词" })).toBeNull());
+    expect(imeSelect).toHaveBeenCalledOnce();
   });
 
   it("handles an uncomposed Enter as an editor newline while embedded IME is active", async () => {

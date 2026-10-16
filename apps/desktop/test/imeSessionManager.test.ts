@@ -22,11 +22,6 @@ describe("ImeSessionManager", () => {
       enable: vi.fn(async () => state),
       key: vi.fn(async () => state),
       select: vi.fn(async () => state),
-      setInputMode: vi.fn(async (inputMode: "chinese" | "ascii") => {
-        state = { ...state, inputMode };
-        engine.snapshot = state;
-        return state;
-      }),
       reset: vi.fn(async () => state),
       dispose: vi.fn(),
     };
@@ -41,7 +36,18 @@ describe("ImeSessionManager", () => {
       revision: 1,
     });
 
-    await manager.setInputMode("ascii");
+    state = { ...state, inputMode: "ascii" };
+    engine.snapshot = state;
+    await manager.processKey({
+      generation: 1,
+      key: "Shift",
+      code: "ShiftLeft",
+      shift: false,
+      ctrl: false,
+      alt: false,
+      meta: false,
+      release: true,
+    });
     expect(manager.snapshot).toMatchObject({
       engine: { inputMode: "ascii" },
       revision: 2,
@@ -51,22 +57,20 @@ describe("ImeSessionManager", () => {
   it("serializes engine commands in invocation order", async () => {
     const order: string[] = [];
     let releaseFirst: (() => void) | undefined;
+    let calls = 0;
     const engine = {
       snapshot: initialState,
       enable: vi.fn(async () => initialState),
-      key: vi.fn(async () => {
-        order.push("key-start");
-        await new Promise<void>((resolve) => {
-          releaseFirst = resolve;
-        });
-        order.push("key-end");
+      key: vi.fn(async (request: { key: string }) => {
+        order.push(`${request.key}-start`);
+        if (calls++ === 0)
+          await new Promise<void>((resolve) => {
+            releaseFirst = resolve;
+          });
+        order.push(`${request.key}-end`);
         return initialState;
       }),
       select: vi.fn(async () => initialState),
-      setInputMode: vi.fn(async () => {
-        order.push("mode");
-        return initialState;
-      }),
       reset: vi.fn(async () => initialState),
       dispose: vi.fn(),
     };
@@ -75,20 +79,31 @@ describe("ImeSessionManager", () => {
     const key = manager.serialize(() =>
       manager.processKey({
         generation: 1,
-        key: "a",
-        code: "KeyA",
-        shift: false,
+        key: "Shift",
+        code: "ShiftLeft",
+        shift: true,
         ctrl: false,
         alt: false,
         meta: false,
       }),
     );
-    const mode = manager.serialize(() => manager.setInputMode("ascii"));
+    const release = manager.serialize(() =>
+      manager.processKey({
+        generation: 1,
+        key: "Shift",
+        code: "ShiftLeft",
+        shift: false,
+        ctrl: false,
+        alt: false,
+        meta: false,
+        release: true,
+      }),
+    );
     await Promise.resolve();
-    expect(order).toEqual(["key-start"]);
+    expect(order).toEqual(["Shift-start"]);
 
     releaseFirst?.();
-    await Promise.all([key, mode]);
-    expect(order).toEqual(["key-start", "key-end", "mode"]);
+    await Promise.all([key, release]);
+    expect(order).toEqual(["Shift-start", "Shift-end", "Shift-start", "Shift-end"]);
   });
 });

@@ -15,30 +15,35 @@ function key(key: string, overrides: Partial<Parameters<typeof resolveImeKeyRout
 }
 
 describe("resolveImeKeyRoute", () => {
-  it("routes Shift keydown to mode only, and consumes no engine keyup", () => {
+  it("routes both Shift edges to Rime with the physical key identity", () => {
     expect(resolveImeKeyRoute(key("Shift"), { inputMode: "chinese", composing: true })).toEqual({
-      type: "toggle-mode",
+      type: "engine",
+      key: "Shift",
+      release: false,
     });
     expect(
       resolveImeKeyRoute(key("Shift"), { inputMode: "chinese", composing: true }, true),
-    ).toEqual({ type: "consumed" });
+    ).toEqual({ type: "engine", key: "Shift", release: true });
   });
 
-  it("sends composing digits to the engine and idle digits to the editor once", () => {
+  it("routes printable keys through Rime regardless of the cached mode", () => {
     expect(resolveImeKeyRoute(key("5"), { inputMode: "chinese", composing: true })).toEqual({
       type: "engine",
       key: "5",
       release: false,
     });
     expect(resolveImeKeyRoute(key("5"), { inputMode: "chinese", composing: false })).toEqual({
-      type: "editor",
-      text: "5",
+      type: "engine",
+      key: "5",
+      release: false,
     });
   });
 
-  it("leaves ASCII text and browser shortcuts to the editor/browser", () => {
+  it("routes ASCII text through the engine and leaves browser shortcuts alone", () => {
     expect(resolveImeKeyRoute(key("a"), { inputMode: "ascii", composing: false })).toEqual({
-      type: "browser",
+      type: "engine",
+      key: "a",
+      release: false,
     });
     expect(
       resolveImeKeyRoute(key("a", { ctrlKey: true }), {
@@ -46,6 +51,28 @@ describe("resolveImeKeyRoute", () => {
         composing: false,
       }),
     ).toEqual({ type: "browser" });
+  });
+
+  it("returns typed editor commands for deletion and navigation outside composition", () => {
+    expect(
+      resolveImeKeyRoute(key("Backspace"), { inputMode: "chinese", composing: false }),
+    ).toEqual({
+      type: "editor",
+      command: { type: "deleteBackward" },
+    });
+    expect(resolveImeKeyRoute(key("Delete"), { inputMode: "ascii", composing: false })).toEqual({
+      type: "editor",
+      command: { type: "deleteForward" },
+    });
+    expect(
+      resolveImeKeyRoute(key("ArrowLeft", { shiftKey: true }), {
+        inputMode: "chinese",
+        composing: false,
+      }),
+    ).toEqual({ type: "editor", command: { type: "moveCaret", direction: "left", extend: true } });
+    expect(resolveImeKeyRoute(key("Backspace"), { inputMode: "chinese", composing: true })).toEqual(
+      { type: "engine", key: "Backspace", release: false },
+    );
   });
 
   it("normalizes Windows Process key codes for engine routing", () => {

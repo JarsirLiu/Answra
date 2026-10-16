@@ -2,7 +2,12 @@ import { history, undo } from "@codemirror/commands";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { afterEach, describe, expect, it } from "vitest";
-import { createCodeMirrorTextAdapter } from "../src/ime/adapters/codeMirrorTextAdapter";
+import {
+  applyCodeMirrorImeCommand,
+  codeMirrorImeCompositionField,
+  createCodeMirrorTextAdapter,
+  setCodeMirrorImeComposition,
+} from "../src/ime/adapters/codeMirrorTextAdapter";
 
 let view: EditorView | undefined;
 
@@ -18,7 +23,7 @@ describe("CodeMirror text adapter", () => {
       state: EditorState.create({
         doc: "hello world",
         selection: { anchor: 6, head: 11 },
-        extensions: [history()],
+        extensions: [history(), codeMirrorImeCompositionField],
       }),
     });
 
@@ -28,5 +33,52 @@ describe("CodeMirror text adapter", () => {
     expect(view.state.selection.main.head).toBe(12);
     expect(undo(view)).toBe(true);
     expect(view.state.doc.toString()).toBe("hello world");
+  });
+
+  it("applies editor fallback commands without routing them back through the browser", () => {
+    view = new EditorView({
+      parent: document.body,
+      state: EditorState.create({ doc: "abcd", selection: { anchor: 2 } }),
+    });
+    applyCodeMirrorImeCommand(view, { type: "deleteBackward" });
+    expect(view.state.doc.toString()).toBe("acd");
+    applyCodeMirrorImeCommand(view, { type: "moveCaret", direction: "right", extend: false });
+    expect(view.state.selection.main.head).toBe(2);
+  });
+
+  it("projects composition with a mapped bookmark without changing the document", () => {
+    view = new EditorView({
+      parent: document.body,
+      state: EditorState.create({
+        doc: "abcd",
+        selection: { anchor: 1, head: 3 },
+        extensions: [codeMirrorImeCompositionField],
+      }),
+    });
+
+    setCodeMirrorImeComposition(view, {
+      from: 1,
+      to: 3,
+      preedit: "ni",
+      targetId: "workspace-editor",
+    });
+
+    expect(view.state.doc.toString()).toBe("abcd");
+    expect(
+      view.dom.querySelector("[data-ime-composition-target='workspace-editor']")?.textContent,
+    ).toBe("ni");
+    expect(view.dom.querySelector("[data-ime-composition-caret='true']")).not.toBeNull();
+
+    view.dispatch({ changes: { from: 0, insert: "x" } });
+    setCodeMirrorImeComposition(view, {
+      from: 1,
+      to: 3,
+      preedit: "nihao",
+      targetId: "workspace-editor",
+    });
+    expect(view.state.doc.toString()).toBe("xabcd");
+    expect(
+      view.dom.querySelector("[data-ime-composition-target='workspace-editor']")?.textContent,
+    ).toBe("nihao");
   });
 });

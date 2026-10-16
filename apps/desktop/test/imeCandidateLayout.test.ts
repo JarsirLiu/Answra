@@ -11,10 +11,10 @@ describe("positionImeCandidate", () => {
     ).toEqual({ x: 2192, y: 322, width: 420, height: 52, placement: "below" });
   });
 
-  it("flips above the caret and clamps to the work area edges", () => {
+  it("keeps the candidate below the caret and reduces its height near the work area edge", () => {
     expect(
       positionImeCandidate({ x: 3198, lineTop: 950, lineBottom: 974 }, workArea, size),
-    ).toEqual({ x: 2772, y: 892, width: 420, height: 52, placement: "above" });
+    ).toEqual({ x: 2772, y: 972, width: 420, height: 20, placement: "below" });
   });
 
   it("reduces window dimensions when the display work area is smaller", () => {
@@ -25,5 +25,11 @@ describe("positionImeCandidate", () => {
         { width: 500, height: 200 },
       ),
     ).toEqual({ x: -92, y: 58, width: 284, height: 104, placement: "below" });
+  });
+
+  it("returns zero height when no work area remains below the caret", () => {
+    expect(
+      positionImeCandidate({ x: 2200, lineTop: 990, lineBottom: 1000 }, workArea, size),
+    ).toEqual({ x: 2192, y: 998, width: 420, height: 0, placement: "below" });
   });
 });

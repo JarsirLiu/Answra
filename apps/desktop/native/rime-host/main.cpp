@@ -175,11 +175,6 @@ class RimeHost {
       }
       return state(false);
     }
-    if (command == "set-mode" && fields.size() == 2 && enabled_ &&
-        (fields[1] == "0" || fields[1] == "1")) {
-      api_->set_option(session_, "ascii_mode", fields[1] == "1" ? True : False);
-      return state(true);
-    }
     if (command == "key" && fields.size() == 3 && enabled_) {
       const bool handled = api_->process_key(session_, std::stoi(fields[1]),
                                              std::stoi(fields[2])) != False;

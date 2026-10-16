@@ -1,7 +1,9 @@
 import type { DesktopBridge } from "@answra/shared";
-import { type InputHTMLAttributes, useCallback, useLayoutEffect, useRef } from "react";
+import { type InputHTMLAttributes, useEffect, useLayoutEffect, useRef } from "react";
 import { useEmbeddedIme } from "../../hooks/useEmbeddedIme";
-import { backwardDeletionRange, replaceTextRange } from "../../ime/adapters/controlledTextAdapter";
+import { ControlledTextCompositionMirror } from "../../ime/adapters/ControlledTextCompositionMirror";
+import { applyControlledTextCommand } from "../../ime/adapters/controlledTextAdapter";
+import { useControlledImeTextAdapter } from "../../ime/adapters/useControlledImeTextAdapter";
 import { ImeCandidateAnchorReporter } from "../panels/ImeCandidateAnchorReporter";
 
 interface EmbeddedImeInputProps
@@ -23,20 +25,17 @@ export function EmbeddedImeInput({
   ...props
 }: EmbeddedImeInputProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const controlledText = useControlledImeTextAdapter({
+    inputRef,
+    value,
+    onChange: onValueChange,
+  });
   const pendingCaret = useRef<number | null>(null);
-  const commit = useCallback(
-    (text: string) => {
-      const input = inputRef.current;
-      const start = input?.selectionStart ?? value.length;
-      const end = input?.selectionEnd ?? start;
-      const edit = replaceTextRange(value, { start, end }, text);
-      pendingCaret.current = edit.caret;
-      onValueChange(edit.value);
-    },
-    [onValueChange, value],
-  );
-  const ime = useEmbeddedIme(bridge, commit, true, targetId);
+  const ime = useEmbeddedIme(bridge, controlledText.commit, true, targetId);
   const textPolicy = ime.textPolicy;
+  useEffect(() => {
+    if (!ime.state.composing) controlledText.cancelComposition();
+  }, [controlledText.cancelComposition, ime.state.composing]);
 
   useLayoutEffect(() => {
     const caret = pendingCaret.current;
@@ -46,13 +45,11 @@ export function EmbeddedImeInput({
     pendingCaret.current = null;
   });
 
-  const replaceSelection = (text: string) => {
+  const applyEditorCommand = (command: Parameters<typeof applyControlledTextCommand>[2]) => {
     const input = inputRef.current;
     if (!input) return;
-    const start = input.selectionStart ?? value.length;
-    const end = input.selectionEnd ?? start;
-    const range = text ? { start, end } : backwardDeletionRange(value, { start, end });
-    const edit = replaceTextRange(value, range, text);
+    const edit = applyControlledTextCommand(input, value, command);
+    if (!edit) return;
     pendingCaret.current = edit.caret;
     onValueChange(edit.value);
   };
@@ -67,8 +64,10 @@ export function EmbeddedImeInput({
       />
       <input
         {...props}
-        aria-readonly={textPolicy.readOnly || props.readOnly || undefined}
+        className={`${props.className ?? ""} embedded-ime-input${ime.state.composing ? " ime-composition-active" : ""}`.trim()}
+        aria-readonly={textPolicy.blockNativeEditing || props.readOnly || undefined}
         data-embedded-ime-target="true"
+        data-ime-composition-active={ime.state.composing ? "true" : undefined}
         data-ime-policy="text"
         data-ime-target-id={targetId}
         onBeforeInput={(event) => {
@@ -82,13 +81,23 @@ export function EmbeddedImeInput({
         }}
         onFocus={() => void ime.acquire()}
         onKeyDown={(event) => {
-          if (ime.sendKey(event)) {
-            event.preventDefault();
-            return;
+          if (
+            textPolicy.captureCompositionStart &&
+            (event.key.length === 1 || event.key === "Process") &&
+            !event.ctrlKey &&
+            !event.altKey &&
+            !event.metaKey
+          ) {
+            controlledText.captureCompositionStart(
+              {
+                start: event.currentTarget.selectionStart ?? value.length,
+                end: event.currentTarget.selectionEnd ?? value.length,
+              },
+              ime.state.composing,
+            );
           }
-          if (textPolicy.backspace === "editor" && event.key === "Backspace") {
+          if (ime.sendKey(event, false, applyEditorCommand)) {
             event.preventDefault();
-            replaceSelection("");
             return;
           }
           props.onKeyDown?.(event);
@@ -100,7 +109,7 @@ export function EmbeddedImeInput({
           }
           props.onKeyUp?.(event);
         }}
-        readOnly={textPolicy.readOnly || props.readOnly}
+        readOnly={textPolicy.blockNativeEditing || props.readOnly}
         ref={inputRef}
         type={type}
         value={value}
@@ -108,6 +117,15 @@ export function EmbeddedImeInput({
           if (textPolicy.useNativeTextInput) onValueChange(event.currentTarget.value);
         }}
       />
+      {ime.state.composing && ime.state.preedit && controlledText.compositionRange && (
+        <ControlledTextCompositionMirror
+          inputRef={inputRef}
+          preedit={ime.state.preedit}
+          range={controlledText.compositionRange}
+          targetId={targetId}
+          value={value}
+        />
+      )}
     </>
   );
 }

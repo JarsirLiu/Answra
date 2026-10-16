@@ -55,11 +55,11 @@ describe("ImeCandidateAnchorReporter", () => {
     });
   });
 
-  it("anchors candidates at the beginning of the preedit at the current selection", () => {
+  it("anchors candidates at the editor selection without preedit offset correction", () => {
     const onUpdate = vi.fn();
     const { host, textarea } = mountHost();
-    textarea.value = "abcnihaoz";
-    textarea.setSelectionRange(8, 8);
+    textarea.value = "abcxyz";
+    textarea.setSelectionRange(3, 3);
     vi.spyOn(HTMLElement.prototype, "offsetLeft", "get").mockReturnValue(6);
     vi.spyOn(HTMLElement.prototype, "offsetTop", "get").mockReturnValue(3);
     vi.spyOn(textarea, "getBoundingClientRect").mockReturnValue({
@@ -96,6 +96,24 @@ describe("ImeCandidateAnchorReporter", () => {
   it("keeps the candidate anchor through DOM blur while composition is active", () => {
     const onUpdate = vi.fn();
     const { host, textarea } = mountHost();
+    const wrapper = document.createElement("div");
+    wrapper.className = "conversation-composer-editor";
+    wrapper.dataset.imeCompositionTarget = "composer";
+    wrapper.dataset.imeCompositionProjection = "true";
+    const marker = document.createElement("span");
+    marker.dataset.imeCompositionCaret = "true";
+    vi.spyOn(marker, "getBoundingClientRect").mockReturnValue({
+      x: 164,
+      y: 92,
+      left: 164,
+      top: 92,
+      right: 165,
+      bottom: 110,
+      width: 1,
+      height: 18,
+      toJSON: () => ({}),
+    });
+    wrapper.append(textarea, marker);
     render(
       <ImeCandidateAnchorReporter
         onUpdate={onUpdate}
@@ -134,14 +152,14 @@ describe("ImeCandidateAnchorReporter", () => {
     host.appendChild(textarea);
     fireEvent.focusIn(textarea);
 
-    expect(onUpdate).toHaveBeenLastCalledWith({
+    expect(onUpdate).toHaveBeenCalledWith({
       type: "clear",
       targetId: "composer",
       generation: 2,
     });
   });
 
-  it("preserves the current candidate surface while composition is active but candidates are transiently empty", () => {
+  it("clears the candidate surface while composition is active but has no candidates", () => {
     const onUpdate = vi.fn();
     const { host, textarea } = mountHost();
     render(
@@ -156,9 +174,51 @@ describe("ImeCandidateAnchorReporter", () => {
     host.appendChild(textarea);
     fireEvent.focusIn(textarea);
 
-    expect(onUpdate).not.toHaveBeenCalledWith({ type: "suspend" });
-    expect(onUpdate).not.toHaveBeenCalledWith({
+    expect(onUpdate).toHaveBeenLastCalledWith({
       type: "clear",
+      targetId: "composer",
+      generation: 2,
+    });
+  });
+
+  it("anchors candidates to the rendered composition caret marker", () => {
+    const onUpdate = vi.fn();
+    const { host, textarea } = mountHost();
+    const wrapper = document.createElement("div");
+    wrapper.className = "conversation-composer-editor";
+    wrapper.dataset.imeCompositionTarget = "composer";
+    wrapper.dataset.imeCompositionProjection = "true";
+    const marker = document.createElement("span");
+    marker.dataset.imeCompositionCaret = "true";
+    vi.spyOn(marker, "getBoundingClientRect").mockReturnValue({
+      x: 164,
+      y: 92,
+      left: 164,
+      top: 92,
+      right: 165,
+      bottom: 110,
+      width: 1,
+      height: 18,
+      toJSON: () => ({}),
+    });
+    wrapper.append(textarea, marker);
+    render(
+      <ImeCandidateAnchorReporter
+        onUpdate={onUpdate}
+        state={state}
+        targetId="composer"
+        generation={2}
+      />,
+      { container: host },
+    );
+    host.appendChild(wrapper);
+    fireEvent.focusIn(textarea);
+
+    expect(onUpdate).toHaveBeenLastCalledWith({
+      type: "show",
+      anchor: { x: 164, lineTop: 92, lineBottom: 110 },
+      targetId: "composer",
+      generation: 2,
     });
   });
 

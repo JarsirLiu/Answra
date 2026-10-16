@@ -1,6 +1,5 @@
 import {
   ImeChannels,
-  type ImeInputMode,
   type ImeKeyRequest,
   type ImeLeaseResponse,
   type ImeRendererDiagnostic,
@@ -20,7 +19,7 @@ import {
   subscribeToWindowFocus,
 } from "../window";
 import { isCurrentProcessForeground } from "../windowForeground";
-import { setNativeImeEnabled } from "../windowStealthController";
+import { isolateNativeIme } from "../windowStealthController";
 import { logImeDiagnostic } from "./imeDiagnostics";
 import { ImeSessionManager, isActiveImeLease } from "./imeSessionManager";
 import type { ImeOwnerIdentity, ImeSessionState } from "./imeSessionState";
@@ -60,7 +59,10 @@ export function registerImeIpc(): {
   let leaseWindow: BrowserWindow | undefined;
   let leaseListeners: Array<() => void> = [];
   let lastPublishedRevision = -1;
-  const commandResults = new Map<string, ImeSessionCommandResult>();
+  const commandResults = new Map<
+    string,
+    { fingerprint: string; result: ImeSessionCommandResult }
+  >();
   const expectedRevisionByEvent = new WeakMap<Electron.IpcMainInvokeEvent, number>();
   const invokeHandlers = new Map<
     string,
@@ -258,7 +260,7 @@ export function registerImeIpc(): {
     const onFocus = () => {
       if (blurTimer) clearTimeout(blurTimer);
       blurTimer = undefined;
-      if (!setNativeImeEnabled(window, false)) {
+      if (isolateNativeIme(window) === "failed") {
         suspendCurrent("native-ime-isolation-failed-on-focus");
         logImeDiagnostic("native-ime-isolation-failed-on-focus", {
           windowId: window.id,
@@ -334,8 +336,6 @@ export function registerImeIpc(): {
       if (manager.lease.status === "disposed" || manager.lease.status === "unavailable")
         return rejectLease();
       const previous = manager.lease;
-      manager.transition({ type: "acquire", owner });
-      const generation = manager.lease.generation;
       detachLeaseListeners();
       if (previous.status === "owned" || previous.status === "suspended") {
         const oldWindow = findWindow(previous.owner.windowId);
@@ -347,11 +347,13 @@ export function registerImeIpc(): {
           });
       }
       if (isActiveImeLease(previous) && bridge.snapshot.composing) await manager.resetComposition();
-      const isolated = setNativeImeEnabled(window, false);
-      if (!isolated) {
+      const isolation = isolateNativeIme(window);
+      if (isolation === "failed") {
         manager.transition({ type: "unavailable" });
         return rejectLease();
       }
+      manager.transition({ type: "acquire", owner });
+      const generation = manager.lease.generation;
       attachLeaseListeners(window, owner, generation);
       const state = await manager.enableEngine();
       if (manager.lease.status !== "owned" || manager.lease.generation !== generation)
@@ -489,35 +491,16 @@ export function registerImeIpc(): {
       return manager.resetComposition();
     }),
   );
-  handle(ImeChannels.SetInputMode, (event, request: unknown) =>
-    serialize(event, async () => {
-      if (
-        !isRecord(request) ||
-        !isTargetId(request.targetId) ||
-        !Number.isInteger(request.generation) ||
-        (request.inputMode !== "chinese" && request.inputMode !== "ascii")
-      )
-        return { ...EMPTY_STATE, handled: false };
-      const current = matchesCurrent(event, request.generation as number);
-      if (!current || current.owner.targetId !== request.targetId)
-        return { ...EMPTY_STATE, handled: false };
-      const state = await manager.setInputMode(request.inputMode as ImeInputMode);
-      logImeDiagnostic("input-mode-set", {
-        windowId: current.window.id,
-        targetId: current.owner.targetId,
-        generation: request.generation,
-        inputMode: state.inputMode,
-        accepted: state.inputMode === request.inputMode,
-      });
-      return state;
-    }),
-  );
-
   handle(ImeChannels.SessionCommand, async (event, payload: unknown) => {
     if (!isImeSessionCommand(payload)) return rejectedSessionCommand("", "invalid-transition");
     const cacheKey = `${event.sender.id}:${payload.commandId}`;
+    const fingerprint = JSON.stringify(payload);
     const cached = commandResults.get(cacheKey);
-    if (cached) return cached;
+    if (cached) {
+      return cached.fingerprint === fingerprint
+        ? cached.result
+        : rejectedSessionCommand(payload.commandId, "command-id-conflict", manager.snapshot);
+    }
     const before = manager.snapshot;
     if (payload.expectedRevision !== undefined && payload.expectedRevision !== before.revision)
       return rejectedSessionCommand(payload.commandId, "stale-revision", before);
@@ -546,14 +529,6 @@ export function registerImeIpc(): {
         case "processKey":
           result = await invokeLegacyHandler(
             ImeChannels.Key,
-            event,
-            payload,
-            payload.expectedRevision,
-          );
-          break;
-        case "setInputMode":
-          result = await invokeLegacyHandler(
-            ImeChannels.SetInputMode,
             event,
             payload,
             payload.expectedRevision,
@@ -602,7 +577,10 @@ export function registerImeIpc(): {
               manager.snapshot.revision !== payload.expectedRevision
             )
               return { staleRevision: true };
-            if (manager.lease.status !== "suspended" || !setNativeImeEnabled(current.window, false))
+            if (
+              manager.lease.status !== "suspended" ||
+              isolateNativeIme(current.window) === "failed"
+            )
               return { invalidTransition: true };
             manager.transition({
               type: "confirm-focus",
@@ -628,20 +606,25 @@ export function registerImeIpc(): {
     const commandResult: ImeSessionCommandResult = {
       commandId: payload.commandId,
       accepted,
+      ...(payload.type === "processKey" && isRecord(state) && typeof state.handled === "boolean"
+        ? { engineHandled: state.handled }
+        : {}),
       ...(!accepted ? { reason: "engine-unavailable" as const } : {}),
       snapshot,
       ...(isRecord(state) && typeof state.committedText === "string"
         ? { commit: { text: state.committedText, revision: snapshot.revision } }
         : {}),
     };
-    cacheCommandResult(cacheKey, commandResult);
+    cacheCommandResult(cacheKey, fingerprint, commandResult);
     return commandResult;
   });
 
-  handle(ImeChannels.SessionSnapshot, (event) => {
-    if (!windowFor(event)) return { snapshot: emptySessionSnapshot() };
-    return { snapshot: manager.snapshot };
-  });
+  handle(ImeChannels.SessionSnapshot, (event) =>
+    serialize(event, async () => {
+      if (!windowFor(event)) return { snapshot: emptySessionSnapshot() };
+      return { snapshot: manager.snapshot };
+    }),
+  );
 
   function matchesSessionCommand(
     event: Electron.IpcMainInvokeEvent,
@@ -656,8 +639,12 @@ export function registerImeIpc(): {
     return current;
   }
 
-  function cacheCommandResult(key: string, result: ImeSessionCommandResult): void {
-    commandResults.set(key, result);
+  function cacheCommandResult(
+    key: string,
+    fingerprint: string,
+    result: ImeSessionCommandResult,
+  ): void {
+    commandResults.set(key, { fingerprint, result });
     if (commandResults.size > 512)
       commandResults.delete(commandResults.keys().next().value as string);
   }
@@ -766,8 +753,6 @@ function isImeSessionCommand(value: unknown): value is ImeSessionCommand {
         ["shift", "ctrl", "alt", "meta"].every((key) => typeof value[key] === "boolean") &&
         (value.release === undefined || typeof value.release === "boolean")
       );
-    case "setInputMode":
-      return value.inputMode === "chinese" || value.inputMode === "ascii";
     case "selectCandidate":
       return Number.isInteger(value.index) && (value.index as number) >= 0;
     default:

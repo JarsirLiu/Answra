@@ -25,9 +25,21 @@ describe("ImeCandidatePopup", () => {
     expect(onSelect).toHaveBeenCalledWith(1);
   });
 
-  it("does not render the preedit row; pinyin lives inside the input", () => {
+  it("renders only candidates and keeps preedit out of the candidate surface", () => {
     render(<ImeCandidatePopup onNavigate={vi.fn()} onSelect={vi.fn()} state={state} />);
     expect(screen.queryByText("nihao")).not.toBeInTheDocument();
+    expect(screen.getByText("你好")).toBeInTheDocument();
+  });
+
+  it("hides the candidate surface when composition has no candidates", () => {
+    const { container } = render(
+      <ImeCandidatePopup
+        onNavigate={vi.fn()}
+        onSelect={vi.fn()}
+        state={{ ...state, candidates: [] }}
+      />,
+    );
+    expect(container.firstChild).toBeNull();
   });
 
   it("routes paging controls to the IME engine", () => {
@@ -62,15 +74,15 @@ describe("ImeCandidatePopup", () => {
     );
   });
 
-  it("shows the preedit inline when no candidates are available", () => {
-    render(
+  it("hides when no candidates are available", () => {
+    const { container } = render(
       <ImeCandidatePopup
         onNavigate={vi.fn()}
         onSelect={vi.fn()}
         state={{ ...state, candidates: [], hasNextPage: false }}
       />,
     );
-    expect(screen.getByText("nihao")).toBeInTheDocument();
+    expect(container.firstChild).toBeNull();
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 

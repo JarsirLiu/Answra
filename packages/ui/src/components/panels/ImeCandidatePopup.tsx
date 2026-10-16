@@ -12,10 +12,10 @@ interface ImeCandidatePopupProps {
 /**
  * 候选词窗口：复刻 Windows 微软拼音的横向候选条 ——
  * 左侧蓝色竖条 + 编号/词条横排 + 选中项整块高亮 + 右侧翻页箭头。
- * 拼音 preedit 不再显示在这里，而是直接呈现在输入框内。
+ * 组合文本由编辑器呈现；此 surface 只呈现候选和导航操作。
  */
 export function ImeCandidatePopup({ state, onSelect, onNavigate }: ImeCandidatePopupProps) {
-  if (!state.enabled || (!state.preedit && state.candidates.length === 0)) return null;
+  if (!state.enabled || state.candidates.length === 0) return null;
   return (
     <div aria-label="输入法候选词" className="ime-candidate-popup" role="listbox">
       <div className="ime-candidate-options">
@@ -35,9 +35,6 @@ export function ImeCandidatePopup({ state, onSelect, onNavigate }: ImeCandidateP
             )}
           </button>
         ))}
-        {state.candidates.length === 0 && state.preedit && (
-          <span className="ime-candidate-preedit">{state.preedit}</span>
-        )}
       </div>
       {state.candidates.length > 0 && (
         <div className="ime-candidate-controls">

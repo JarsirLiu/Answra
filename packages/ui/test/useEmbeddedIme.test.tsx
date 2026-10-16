@@ -7,8 +7,9 @@ import type {
   ImeState,
 } from "@answra/shared";
 import { act, fireEvent, renderHook, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useEmbeddedIme } from "../src/hooks/useEmbeddedIme";
+import { resetImeInputTargetCoordinatorForTests } from "../src/ime/imeInputTargetCoordinator";
 
 const enabledState: ImeState = {
   enabled: true,
@@ -89,13 +90,6 @@ function withSessionApi(legacyBridge: DesktopBridge): DesktopBridge {
           case "processKey":
             response = await legacyBridge.imeKey?.(command);
             break;
-          case "setInputMode":
-            response = await legacyBridge.imeSetInputMode?.(
-              command.targetId,
-              command.generation,
-              command.inputMode,
-            );
-            break;
           case "cancelComposition":
             response = await legacyBridge.imeReset?.(command.generation);
             break;
@@ -113,8 +107,7 @@ function withSessionApi(legacyBridge: DesktopBridge): DesktopBridge {
         state = wrapped.state as ImeState;
       else if (wrapped && "enabled" in wrapped && wrapped.enabled !== undefined)
         state = wrapped as ImeState;
-      else if (!state.enabled && (command.type === "processKey" || command.type === "setInputMode"))
-        state = { ...state, enabled: true };
+      else if (!state.enabled && command.type === "processKey") state = { ...state, enabled: true };
       revision += 1;
       const nextSnapshot = snapshot();
       for (const listener of listeners) listener(nextSnapshot);
@@ -125,6 +118,10 @@ function withSessionApi(legacyBridge: DesktopBridge): DesktopBridge {
             ? wrapped.accepted
             : command.type === "suspend" || state.enabled,
         snapshot: nextSnapshot,
+        ...(command.type === "processKey" &&
+        typeof (wrapped as ImeState | undefined)?.handled === "boolean"
+          ? { engineHandled: (wrapped as ImeState).handled }
+          : {}),
         ...(state.committedText ? { commit: { text: state.committedText, revision } } : {}),
       };
     }),
@@ -139,18 +136,23 @@ function withSessionApi(legacyBridge: DesktopBridge): DesktopBridge {
 }
 
 describe("useEmbeddedIme lease routing", () => {
-  it("sends Shift keydown as a mode command and never forwards either edge to Rime keys", async () => {
-    const imeKey = vi.fn();
-    const imeSetInputMode = vi.fn().mockResolvedValue({ ...enabledState, inputMode: "ascii" });
-    const bridge = {
+  beforeEach(() => resetImeInputTargetCoordinatorForTests());
+
+  it("sends both Shift edges to Rime and updates mode only from its snapshot", async () => {
+    const imeKey = vi.fn(async (request: { release?: boolean }) => ({
+      ...enabledState,
+      composing: false,
+      preedit: "",
+      candidates: [],
+      inputMode: request.release ? "ascii" : "chinese",
+    }));
+    const bridge = withSessionApi({
       imeAvailable: true,
       imeKey,
-      imeSetInputMode,
       imeAcquire: vi.fn().mockResolvedValue(lease(3, { ...enabledState, composing: false })),
       imeRelease: vi.fn(),
-    } as unknown as DesktopBridge;
-    const typedBridge = withSessionApi(bridge);
-    const { result } = renderHook(() => useEmbeddedIme(typedBridge, undefined, true, "composer"));
+    } as unknown as DesktopBridge);
+    const { result } = renderHook(() => useEmbeddedIme(bridge, undefined, true, "composer"));
     const input = document.createElement("input");
     input.dataset.imeTargetId = "composer";
     document.body.appendChild(input);
@@ -172,21 +174,32 @@ describe("useEmbeddedIme lease routing", () => {
       expect(result.current.sendKeyUp(shiftUp as never)).toBe(true);
     });
 
-    await waitFor(() => expect(imeSetInputMode).toHaveBeenCalledOnce());
-    expect(imeSetInputMode).toHaveBeenCalledWith("composer", 3, "ascii");
-    expect(typedBridge.imeSessionCommand).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "setInputMode", targetId: "composer", inputMode: "ascii" }),
+    await waitFor(() => expect(result.current.asciiMode).toBe(true));
+    expect(imeKey).toHaveBeenCalledTimes(2);
+    expect(imeKey).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ key: "Shift", code: "ShiftLeft", release: false }),
     );
-    expect(imeKey).not.toHaveBeenCalled();
+    expect(imeKey).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ key: "Shift", code: "ShiftLeft", release: true }),
+    );
+    const commandApi = bridge.imeSessionCommand;
+    if (!commandApi) throw new Error("typed session API was not installed");
+    const commands = vi.mocked(commandApi).mock.calls.map(([command]) => command);
+    expect(commands).toHaveLength(3);
+    expect(new Set(commands.map((command) => command.commandId)).size).toBe(3);
     input.remove();
   });
 
-  it("serializes rapid Shift toggles against the latest authoritative mode", async () => {
+  it("preserves native Shift ordering for rapid presses", async () => {
     const modes: string[] = [];
+    let inputMode: "chinese" | "ascii" = "chinese";
     const bridge = withSessionApi({
       imeAvailable: true,
       imeAcquire: vi.fn().mockResolvedValue(lease(32, { ...enabledState, composing: false })),
-      imeSetInputMode: vi.fn(async (_targetId, _generation, inputMode) => {
+      imeKey: vi.fn(async (request: { release?: boolean }) => {
+        if (request.release) inputMode = inputMode === "ascii" ? "chinese" : "ascii";
         modes.push(inputMode);
         return { ...enabledState, composing: false, inputMode };
       }),
@@ -197,7 +210,57 @@ describe("useEmbeddedIme lease routing", () => {
     document.body.appendChild(input);
     input.focus();
     await act(async () => result.current.acquire());
+    const shift = {
+      key: "Shift",
+      code: "ShiftLeft",
+      ctrlKey: false,
+      altKey: false,
+      metaKey: false,
+      shiftKey: true,
+      repeat: false,
+    };
 
+    act(() => {
+      result.current.sendKey(shift as never);
+      result.current.sendKeyUp({ ...shift, shiftKey: false } as never);
+      result.current.sendKey(shift as never);
+      result.current.sendKeyUp({ ...shift, shiftKey: false } as never);
+    });
+    await waitFor(() => expect(modes).toHaveLength(4));
+    expect(modes).toEqual(["chinese", "ascii", "ascii", "chinese"]);
+    expect(result.current.asciiMode).toBe(false);
+    input.remove();
+  });
+
+  it("queues printable text after Shift and inserts only after the ASCII snapshot returns", async () => {
+    let resolveShiftUp: ((state: ImeState) => void) | undefined;
+    const imeKey = vi.fn((request: { key: string; release?: boolean }) => {
+      if (request.key === "Shift" && request.release)
+        return new Promise<ImeState>((resolve) => {
+          resolveShiftUp = resolve;
+        });
+      return Promise.resolve({
+        ...enabledState,
+        handled: false,
+        composing: false,
+        preedit: "",
+        candidates: [],
+        inputMode: request.key === "a" ? "ascii" : "chinese",
+      });
+    });
+    const onCommit = vi.fn();
+    const bridge = withSessionApi({
+      imeAvailable: true,
+      imeKey,
+      imeAcquire: vi.fn().mockResolvedValue(lease(8, { ...enabledState, composing: false })),
+      imeRelease: vi.fn(),
+    } as unknown as DesktopBridge);
+    const { result } = renderHook(() => useEmbeddedIme(bridge, onCommit, true, "composer"));
+    const input = document.createElement("input");
+    input.dataset.imeTargetId = "composer";
+    document.body.appendChild(input);
+    input.focus();
+    await act(async () => result.current.acquire());
     const shift = {
       key: "Shift",
       code: "ShiftLeft",
@@ -209,68 +272,81 @@ describe("useEmbeddedIme lease routing", () => {
     };
     act(() => {
       expect(result.current.sendKey(shift as never)).toBe(true);
-      expect(result.current.sendKey(shift as never)).toBe(true);
+      expect(result.current.sendKeyUp({ ...shift, shiftKey: false } as never)).toBe(true);
+      expect(
+        result.current.sendKey({ ...shift, key: "a", code: "KeyA", shiftKey: false } as never),
+      ).toBe(true);
     });
-
-    await waitFor(() => expect(modes).toEqual(["ascii", "chinese"]));
-    expect(result.current.asciiMode).toBe(false);
+    await waitFor(() => expect(resolveShiftUp).toBeDefined());
+    expect(imeKey).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      resolveShiftUp?.({
+        ...enabledState,
+        handled: false,
+        composing: false,
+        preedit: "",
+        candidates: [],
+        inputMode: "ascii",
+      });
+    });
+    await waitFor(() => expect(imeKey).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(onCommit).toHaveBeenCalledWith("a"));
+    expect(imeKey).toHaveBeenNthCalledWith(3, expect.objectContaining({ key: "a" }));
     input.remove();
   });
 
-  it("routes printable keys through the editor after Shift switches to ASCII", async () => {
-    const imeKey = vi.fn();
-    const imeSetInputMode = vi
-      .fn()
-      .mockResolvedValueOnce({ ...enabledState, composing: false, inputMode: "ascii" })
-      .mockResolvedValueOnce({ ...enabledState, composing: false, inputMode: "chinese" });
-    const bridge = {
+  it("routes Backspace using the snapshot produced by the preceding queued key", async () => {
+    const imeKey = vi.fn(async (request: { key: string }) => ({
+      ...enabledState,
+      handled: true,
+      composing: request.key === "n" || request.key === "Backspace",
+      preedit: request.key === "n" ? "n" : "",
+      candidates: [],
+    }));
+    const bridge = withSessionApi({
       imeAvailable: true,
+      imeAcquire: vi
+        .fn()
+        .mockResolvedValue(
+          lease(44, { ...enabledState, composing: false, preedit: "", candidates: [] }),
+        ),
       imeKey,
-      imeSetInputMode,
-      imeAcquire: vi.fn().mockResolvedValue(lease(8, { ...enabledState, composing: false })),
       imeRelease: vi.fn(),
-    } as unknown as DesktopBridge;
-    const { result } = renderHook(() =>
-      useEmbeddedIme(withSessionApi(bridge), undefined, true, "composer"),
-    );
+    } as unknown as DesktopBridge);
+    const { result } = renderHook(() => useEmbeddedIme(bridge, undefined, true, "composer"));
     const input = document.createElement("input");
     input.dataset.imeTargetId = "composer";
     document.body.appendChild(input);
     input.focus();
     await act(async () => result.current.acquire());
+    const event = (key: string, code = key) =>
+      ({
+        key,
+        code,
+        ctrlKey: false,
+        altKey: false,
+        metaKey: false,
+        shiftKey: false,
+        repeat: false,
+      }) as never;
 
-    const shift = {
-      key: "Shift",
-      code: "ShiftLeft",
-      ctrlKey: false,
-      altKey: false,
-      metaKey: false,
-      shiftKey: true,
-      repeat: false,
-    };
-    act(() => expect(result.current.sendKey(shift as never)).toBe(true));
-    await waitFor(() => expect(result.current.asciiMode).toBe(true));
-    expect(imeSetInputMode).toHaveBeenCalledWith("composer", 8, "ascii");
-    expect(imeKey).not.toHaveBeenCalled();
-
-    const sentBeforeAsciiInput = imeKey.mock.calls.length;
-    const asciiLetter = { ...shift, key: "a", code: "KeyA", shiftKey: false };
-    act(() => expect(result.current.sendKey(asciiLetter as never)).toBe(false));
-    expect(imeKey).toHaveBeenCalledTimes(sentBeforeAsciiInput);
-
-    act(() => expect(result.current.sendKeyUp({ ...shift, shiftKey: false } as never)).toBe(true));
-    act(() => expect(result.current.sendKey({ ...shift, repeat: false } as never)).toBe(true));
-    await waitFor(() => expect(result.current.asciiMode).toBe(false));
-    expect(imeSetInputMode).toHaveBeenCalledTimes(2);
-    expect(imeKey).not.toHaveBeenCalled();
+    act(() => {
+      expect(result.current.sendKey(event("n", "KeyN"))).toBe(true);
+      expect(result.current.sendKey(event("Backspace"))).toBe(true);
+    });
+    await waitFor(() => expect(imeKey).toHaveBeenCalledTimes(2));
+    expect(imeKey.mock.calls.map(([request]) => request.key)).toEqual(["n", "Backspace"]);
     input.remove();
   });
 
-  it("synchronizes the authoritative mode snapshot across input targets", async () => {
+  it("synchronizes the engine-reported Shift mode across input targets", async () => {
     const bridge = withSessionApi({
       imeAvailable: true,
       imeAcquire: vi.fn().mockResolvedValue(lease(31, { ...enabledState, composing: false })),
-      imeSetInputMode: vi.fn().mockResolvedValue({ ...enabledState, inputMode: "ascii" }),
+      imeKey: vi.fn(async (request: { key: string; release?: boolean }) => ({
+        ...enabledState,
+        inputMode: request.key === "Shift" && request.release ? "ascii" : "chinese",
+      })),
       imeRelease: vi.fn(),
     } as unknown as DesktopBridge);
     const first = renderHook(() => useEmbeddedIme(bridge, undefined, true, "composer"));
@@ -280,8 +356,7 @@ describe("useEmbeddedIme lease routing", () => {
     document.body.appendChild(input);
     input.focus();
     await act(async () => first.result.current.acquire());
-
-    act(() =>
+    act(() => {
       first.result.current.sendKey({
         key: "Shift",
         code: "ShiftLeft",
@@ -290,8 +365,17 @@ describe("useEmbeddedIme lease routing", () => {
         metaKey: false,
         shiftKey: true,
         repeat: false,
-      } as never),
-    );
+      } as never);
+      first.result.current.sendKeyUp({
+        key: "Shift",
+        code: "ShiftLeft",
+        ctrlKey: false,
+        altKey: false,
+        metaKey: false,
+        shiftKey: false,
+        repeat: false,
+      } as never);
+    });
 
     await waitFor(() => expect(second.result.current.asciiMode).toBe(true));
     first.unmount();
@@ -299,54 +383,62 @@ describe("useEmbeddedIme lease routing", () => {
     input.remove();
   });
 
-  it("changes mode during composition without clearing, committing, or keying the composition", async () => {
-    const imeKey = vi.fn();
-    const imeReset = vi.fn().mockImplementation(async () => {
-      return { ...enabledState, composing: false, preedit: "", candidates: [] };
-    });
-    const imeSetInputMode = vi.fn().mockResolvedValue({ ...enabledState, inputMode: "ascii" });
+  it("applies composition and candidate changes exactly as returned by Rime", async () => {
+    const imeKey = vi
+      .fn()
+      .mockResolvedValueOnce(enabledState)
+      .mockResolvedValueOnce({
+        ...enabledState,
+        inputMode: "ascii",
+        candidates: [],
+      });
     const onCommit = vi.fn();
-    const bridge = {
+    const bridge = withSessionApi({
       imeAvailable: true,
       imeKey,
-      imeReset,
-      imeSetInputMode,
       imeAcquire: vi.fn().mockResolvedValue(lease(9)),
       imeRelease: vi.fn(),
-    } as unknown as DesktopBridge;
-    const { result } = renderHook(() =>
-      useEmbeddedIme(withSessionApi(bridge), onCommit, true, "composer"),
-    );
+    } as unknown as DesktopBridge);
+    const { result } = renderHook(() => useEmbeddedIme(bridge, onCommit, true, "composer"));
     const input = document.createElement("input");
     input.dataset.imeTargetId = "composer";
     document.body.appendChild(input);
     input.focus();
     await act(async () => result.current.acquire());
+    const shift = {
+      key: "Shift",
+      code: "ShiftLeft",
+      ctrlKey: false,
+      altKey: false,
+      metaKey: false,
+      shiftKey: true,
+      repeat: false,
+    };
+    act(() => {
+      result.current.sendKey(shift as never);
+      result.current.sendKeyUp({ ...shift, shiftKey: false } as never);
+    });
+    await waitFor(() => expect(result.current.asciiMode).toBe(true));
 
-    act(() =>
-      result.current.sendKey({
-        key: "Shift",
-        code: "ShiftLeft",
-        ctrlKey: false,
-        altKey: false,
-        metaKey: false,
-        shiftKey: true,
-        repeat: false,
-      } as never),
-    );
-    await waitFor(() => expect(imeSetInputMode).toHaveBeenCalledOnce());
-
-    expect(imeSetInputMode).toHaveBeenCalledWith("composer", 9, "ascii");
-    expect(imeReset).not.toHaveBeenCalled();
-    expect(imeKey).not.toHaveBeenCalled();
+    expect(imeKey).toHaveBeenCalledTimes(2);
+    expect(result.current.state).toMatchObject({
+      inputMode: "ascii",
+      composing: true,
+      preedit: "ni",
+      candidates: [],
+    });
     expect(onCommit).not.toHaveBeenCalled();
-    expect(result.current.asciiMode).toBe(true);
-    expect(result.current.state).toMatchObject({ composing: true, preedit: "ni" });
     input.remove();
   });
 
-  it("inserts unshifted digits directly when Chinese composition is inactive", async () => {
-    const imeKey = vi.fn();
+  it("uses the engine result before inserting an unshifted Chinese-mode digit", async () => {
+    const imeKey = vi.fn().mockResolvedValue({
+      ...enabledState,
+      handled: false,
+      composing: false,
+      preedit: "",
+      candidates: [],
+    });
     const onCommit = vi.fn();
     const bridge = {
       imeAvailable: true,
@@ -377,8 +469,8 @@ describe("useEmbeddedIme lease routing", () => {
       ).toBe(true),
     );
 
-    expect(onCommit).toHaveBeenCalledWith("7");
-    expect(imeKey).not.toHaveBeenCalled();
+    await waitFor(() => expect(onCommit).toHaveBeenCalledWith("7"));
+    expect(imeKey).toHaveBeenCalledWith(expect.objectContaining({ key: "7" }));
     input.remove();
   });
 
@@ -543,7 +635,7 @@ describe("useEmbeddedIme lease routing", () => {
         key: "a",
         ctrl: true,
         composing: true,
-        accepted: true,
+        accepted: false,
         selectionStart: 0,
         selectionEnd: 13,
         selectionLength: 13,

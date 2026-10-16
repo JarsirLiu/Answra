@@ -46,26 +46,29 @@ const shared = vi.hoisted(() => ({
       shared.bridge.snapshot = { ...shared.bridge.snapshot, enabled };
       return shared.bridge.snapshot;
     }),
-    key: vi.fn(async () => ({
-      enabled: true,
-      composing: true,
-      preedit: "n",
-      candidates: [],
-      selectedIndex: 0,
-      page: 0,
-      hasNextPage: false,
-    })),
+    key: vi.fn(async (request: { key: string; release?: boolean }) => {
+      const current = shared.bridge.snapshot;
+      const next =
+        request.key === "Shift"
+          ? request.release
+            ? {
+                ...current,
+                inputMode:
+                  current.inputMode === "ascii" ? ("chinese" as const) : ("ascii" as const),
+                candidates: current.inputMode === "ascii" ? current.candidates : [],
+              }
+            : current
+          : {
+              ...current,
+              enabled: true,
+              composing: true,
+              preedit: "n",
+              candidates: [],
+            };
+      shared.bridge.snapshot = next;
+      return { ...next, handled: request.key !== "Shift" };
+    }),
     select: vi.fn(),
-    setInputMode: vi.fn(async (inputMode: "chinese" | "ascii") => ({
-      enabled: true,
-      inputMode,
-      composing: false,
-      preedit: "",
-      candidates: [],
-      selectedIndex: 0,
-      page: 0,
-      hasNextPage: false,
-    })),
     reset: vi.fn(async () => {
       shared.bridge.snapshot = {
         ...shared.bridge.snapshot,
@@ -78,7 +81,7 @@ const shared = vi.hoisted(() => ({
     }),
     dispose: vi.fn(),
   },
-  setNativeImeEnabled: vi.fn(() => true),
+  isolateNativeIme: vi.fn(() => "applied"),
 }));
 
 vi.mock("electron", () => ({
@@ -117,7 +120,7 @@ vi.mock("../src/main/window", () => ({
 }));
 
 vi.mock("../src/main/windowStealthController", () => ({
-  setNativeImeEnabled: shared.setNativeImeEnabled,
+  isolateNativeIme: shared.isolateNativeIme,
 }));
 
 vi.mock("../src/main/windowForeground", () => ({
@@ -133,7 +136,6 @@ vi.mock("../src/main/ime/rimeBridge", () => ({
     enable = shared.bridge.enable;
     key = shared.bridge.key;
     select = shared.bridge.select;
-    setInputMode = shared.bridge.setInputMode;
     reset = shared.bridge.reset;
     dispose = shared.bridge.dispose;
   },
@@ -174,10 +176,9 @@ describe("IME IPC session ownership", () => {
     shared.bridge.enable.mockClear();
     shared.bridge.key.mockClear();
     shared.bridge.select.mockClear();
-    shared.bridge.setInputMode.mockClear();
     shared.bridge.reset.mockClear();
     shared.bridge.dispose.mockClear();
-    shared.setNativeImeEnabled.mockClear();
+    shared.isolateNativeIme.mockClear();
     shared.setImeCandidateState.mockClear();
     shared.main.webContents.send.mockClear();
     shared.reply.webContents.send.mockClear();
@@ -209,6 +210,21 @@ describe("IME IPC session ownership", () => {
     expect(unauthorized.snapshot).not.toHaveProperty("owner");
   });
 
+  it("keeps the existing lease path when no native isolation API applies", async () => {
+    shared.isolateNativeIme.mockReturnValueOnce("not-required");
+
+    await expect(
+      invoke(ImeChannels.SessionCommand, 11, {
+        type: "acquireTarget",
+        commandId: "acquire-without-native-isolation",
+        targetId: "main-composer",
+      }),
+    ).resolves.toMatchObject({
+      accepted: true,
+      snapshot: { phase: "owned", owner: { targetId: "main-composer" } },
+    });
+  });
+
   it("rejects stale revisions and deduplicates repeated command IDs", async () => {
     const lease = (await invoke(ImeChannels.SessionCommand, 11, {
       type: "acquireTarget",
@@ -236,18 +252,34 @@ describe("IME IPC session ownership", () => {
     expect(shared.bridge.key).toHaveBeenCalledTimes(before);
 
     const command = {
-      type: "setInputMode",
-      commandId: "mode-1",
+      type: "processKey",
+      commandId: "shift-up-1",
       targetId: "main-composer",
       generation,
-      inputMode: "ascii",
+      key: "Shift",
+      code: "ShiftLeft",
+      shift: false,
+      ctrl: false,
+      alt: false,
+      meta: false,
+      release: true,
     };
     const first = await invoke(ImeChannels.SessionCommand, 11, command);
-    const calls = shared.bridge.setInputMode.mock.calls.length;
+    const calls = shared.bridge.key.mock.calls.length;
     const repeated = await invoke(ImeChannels.SessionCommand, 11, command);
 
     expect(repeated).toEqual(first);
-    expect(shared.bridge.setInputMode).toHaveBeenCalledTimes(calls);
+    expect(shared.bridge.key).toHaveBeenCalledTimes(calls);
+
+    const conflict = await invoke(ImeChannels.SessionCommand, 11, {
+      ...command,
+      code: "ShiftRight",
+    });
+    expect(conflict).toMatchObject({
+      accepted: false,
+      reason: "command-id-conflict",
+    });
+    expect(shared.bridge.key).toHaveBeenCalledTimes(calls);
   });
 
   it("routes a shared Rime session only through its latest owning lease", async () => {
@@ -314,30 +346,63 @@ describe("IME IPC session ownership", () => {
     expect(shared.bridge.reset).not.toHaveBeenCalled();
   });
 
-  it("sets the authoritative mode for the current target without resetting composition", async () => {
+  it("sends physical Shift edges to the engine and publishes its authoritative state", async () => {
     const lease = (await invoke(ImeChannels.Acquire, 11, { targetId: "main-composer" })) as {
       generation: number;
     };
     shared.bridge.reset.mockClear();
-    shared.bridge.setInputMode.mockResolvedValue({
+    shared.bridge.snapshot = {
       enabled: true,
-      inputMode: "ascii",
+      inputMode: "chinese",
       composing: true,
       preedit: "ni",
       candidates: [{ text: "你" }],
       selectedIndex: 0,
       page: 0,
       hasNextPage: false,
-    });
+    };
 
-    const result = await invoke(ImeChannels.SetInputMode, 11, {
+    await invoke(ImeChannels.SessionCommand, 11, {
+      type: "processKey",
+      commandId: "shift-down",
       targetId: "main-composer",
       generation: lease.generation,
-      inputMode: "ascii",
+      key: "Shift",
+      code: "ShiftLeft",
+      shift: true,
+      ctrl: false,
+      alt: false,
+      meta: false,
     });
+    const result = (await invoke(ImeChannels.SessionCommand, 11, {
+      type: "processKey",
+      commandId: "shift-up",
+      targetId: "main-composer",
+      generation: lease.generation,
+      key: "Shift",
+      code: "ShiftLeft",
+      shift: false,
+      ctrl: false,
+      alt: false,
+      meta: false,
+      release: true,
+    })) as { engineHandled?: boolean; snapshot: { engine: Record<string, unknown> } };
 
-    expect(result).toMatchObject({ inputMode: "ascii", composing: true, preedit: "ni" });
-    expect(shared.bridge.setInputMode).toHaveBeenCalledWith("ascii");
+    expect(result.snapshot.engine).toMatchObject({
+      inputMode: "ascii",
+      composing: true,
+      preedit: "ni",
+      candidates: [],
+    });
+    expect(result.engineHandled).toBe(false);
+    expect(shared.bridge.key).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ key: "Shift", code: "ShiftLeft", shift: true }),
+    );
+    expect(shared.bridge.key).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ key: "Shift", code: "ShiftLeft", release: true }),
+    );
     expect(shared.bridge.reset).not.toHaveBeenCalled();
   });
 
@@ -375,6 +440,94 @@ describe("IME IPC session ownership", () => {
     });
   });
 
+  it("does not expose a new owner until the previous composition has been reset", async () => {
+    const first = (await invoke(ImeChannels.Acquire, 11, { targetId: "main-composer" })) as {
+      generation: number;
+    };
+    shared.bridge.snapshot = {
+      ...emptyState,
+      enabled: true,
+      composing: true,
+      preedit: "ni",
+      candidates: [{ text: "你" }],
+    };
+    shared.isolateNativeIme.mockClear();
+
+    let finishReset: (() => void) | undefined;
+    let resetStarted: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => {
+      resetStarted = resolve;
+    });
+    shared.bridge.reset.mockImplementationOnce(async () => {
+      resetStarted?.();
+      await new Promise<void>((resolve) => {
+        finishReset = resolve;
+      });
+      shared.bridge.snapshot = {
+        ...shared.bridge.snapshot,
+        composing: false,
+        preedit: "",
+        candidates: [],
+      };
+      return shared.bridge.snapshot;
+    });
+
+    const nextLease = invoke(ImeChannels.Acquire, 22, { targetId: "reply-composer" });
+    await started;
+    expect(shared.isolateNativeIme).not.toHaveBeenCalled();
+
+    const staleKey = invoke(ImeChannels.SessionCommand, 11, {
+      type: "processKey",
+      commandId: "old-target-key",
+      targetId: "main-composer",
+      generation: first.generation,
+      key: "n",
+      code: "KeyN",
+      shift: false,
+      ctrl: false,
+      alt: false,
+      meta: false,
+    });
+    const staleCandidate = invoke(ImeChannels.SessionCommand, 11, {
+      type: "selectCandidate",
+      commandId: "old-target-candidate",
+      targetId: "main-composer",
+      generation: first.generation,
+      index: 0,
+    });
+    let snapshotResolved = false;
+    const snapshot = invoke(ImeChannels.SessionSnapshot, 22).then((result) => {
+      snapshotResolved = true;
+      return result;
+    });
+    await Promise.resolve();
+    expect(snapshotResolved).toBe(false);
+
+    finishReset?.();
+    const acquired = (await nextLease) as {
+      accepted: boolean;
+      targetId: string;
+      commit?: unknown;
+    };
+    expect(acquired).toMatchObject({
+      accepted: true,
+      targetId: "reply-composer",
+    });
+    expect(acquired).not.toHaveProperty("commit");
+    expect(shared.isolateNativeIme).toHaveBeenCalledOnce();
+    await expect(staleKey).resolves.toMatchObject({ accepted: false });
+    await expect(staleCandidate).resolves.toMatchObject({ accepted: false });
+    expect(shared.bridge.key).not.toHaveBeenCalled();
+    expect(shared.bridge.select).not.toHaveBeenCalled();
+    await expect(snapshot).resolves.toMatchObject({
+      snapshot: {
+        owner: { targetId: "reply-composer" },
+        engine: { composing: false, preedit: "", candidates: [] },
+      },
+    });
+    expect(first.generation).toBe(1);
+  });
+
   it("suspends the lease from the shared native focus stream after an app switch", async () => {
     const lease = (await invoke(ImeChannels.Acquire, 11, { targetId: "main-composer" })) as {
       generation: number;
@@ -391,7 +544,7 @@ describe("IME IPC session ownership", () => {
       "lease-suspended",
       expect.objectContaining({ windowId: 1, generation: lease.generation }),
     );
-    expect(shared.setNativeImeEnabled).toHaveBeenCalledWith(shared.main, false);
+    expect(shared.isolateNativeIme).toHaveBeenCalledWith(shared.main);
     expect(shared.setImeCandidateState).toHaveBeenCalledWith(shared.main, {
       type: "suspend",
       targetId: "main-composer",
@@ -402,20 +555,20 @@ describe("IME IPC session ownership", () => {
 
   it("reapplies native IME isolation when the owning window regains focus", async () => {
     await invoke(ImeChannels.Acquire, 11, { targetId: "main-composer" });
-    shared.setNativeImeEnabled.mockClear();
+    shared.isolateNativeIme.mockClear();
 
     for (const listener of shared.focusSubscribers)
       listener({ window: shared.main, focused: true, visible: true });
 
-    expect(shared.setNativeImeEnabled).toHaveBeenCalledOnce();
-    expect(shared.setNativeImeEnabled).toHaveBeenCalledWith(shared.main, false);
+    expect(shared.isolateNativeIme).toHaveBeenCalledOnce();
+    expect(shared.isolateNativeIme).toHaveBeenCalledWith(shared.main);
   });
 
   it("suspends the lease if native IME isolation fails after focus returns", async () => {
     const lease = (await invoke(ImeChannels.Acquire, 11, { targetId: "main-composer" })) as {
       generation: number;
     };
-    shared.setNativeImeEnabled.mockReturnValue(false);
+    shared.isolateNativeIme.mockReturnValue("failed");
 
     for (const listener of shared.focusSubscribers)
       listener({ window: shared.main, focused: true, visible: true });

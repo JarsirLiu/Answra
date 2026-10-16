@@ -90,16 +90,6 @@
   font-size: 12px;
 }
 
-/* 无候选仅有 preedit 时的占位提示文本 */
-.ime-candidate-preedit {
-  align-self: center;
-  padding: 0 8px;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 32px;
-  white-space: nowrap;
-}
-
 .ime-candidate-controls {
   display: flex;
   flex: 0 0 auto;

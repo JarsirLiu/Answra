@@ -7,7 +7,7 @@ describe("resolveImeTextPolicy", () => {
       resolveImeTextPolicy({ targetOwned: true, inputMode: "chinese", composing: false }),
     ).toEqual({
       useNativeTextInput: false,
-      readOnly: true,
+      blockNativeEditing: true,
       blockComposition: true,
       backspace: "editor",
       captureCompositionStart: true,
@@ -23,7 +23,7 @@ describe("resolveImeTextPolicy", () => {
       resolveImeTextPolicy({ targetOwned: true, inputMode: "ascii", composing: false }),
     ).toEqual({
       useNativeTextInput: true,
-      readOnly: false,
+      blockNativeEditing: false,
       blockComposition: true,
       backspace: "native",
       captureCompositionStart: false,
@@ -35,7 +35,7 @@ describe("resolveImeTextPolicy", () => {
       resolveImeTextPolicy({ targetOwned: false, inputMode: "chinese", composing: true }),
     ).toEqual({
       useNativeTextInput: true,
-      readOnly: false,
+      blockNativeEditing: false,
       blockComposition: false,
       backspace: "native",
       captureCompositionStart: false,

@@ -241,7 +241,6 @@ export const ImeChannels = {
   Change: "answra:ime:change",
   SessionCommand: "answra:ime:session-command",
   SessionSnapshot: "answra:ime:session-snapshot",
-  SetInputMode: "answra:ime:set-input-mode",
 } as const;
 
 /** 候选条独立窗口协议：输入窗口推送状态，候选窗口只回传用户操作。 */
@@ -360,14 +359,6 @@ export type ImeSessionCommand =
       release?: boolean;
     }
   | {
-      type: "setInputMode";
-      commandId: string;
-      expectedRevision?: number;
-      targetId: string;
-      generation: number;
-      inputMode: ImeInputMode;
-    }
-  | {
       type: "cancelComposition";
       commandId: string;
       expectedRevision?: number;
@@ -386,7 +377,14 @@ export type ImeSessionCommand =
 export interface ImeSessionCommandResult {
   commandId: string;
   accepted: boolean;
-  reason?: "stale-owner" | "stale-revision" | "invalid-transition" | "engine-unavailable";
+  /** Whether Rime consumed the key; distinct from IPC/session acceptance. */
+  engineHandled?: boolean;
+  reason?:
+    | "stale-owner"
+    | "stale-revision"
+    | "invalid-transition"
+    | "engine-unavailable"
+    | "command-id-conflict";
   snapshot: ImeSessionSnapshot;
   /** Present only when this command produced text; apply at most once per commandId. */
   commit?: { text: string; revision: number };
@@ -492,10 +490,6 @@ export interface ImeChannelMap {
   [ImeChannels.SessionSnapshot]: {
     request: undefined;
     response: ImeSessionSnapshotUpdate;
-  };
-  [ImeChannels.SetInputMode]: {
-    request: { generation: number; targetId: string; inputMode: ImeInputMode };
-    response: ImeState;
   };
 }
 

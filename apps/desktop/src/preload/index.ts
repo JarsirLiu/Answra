@@ -13,7 +13,6 @@ import {
   type ImeCandidateSnapshot,
   type ImeCandidateUpdate,
   ImeChannels,
-  type ImeInputMode,
   type ImeKeyRequest,
   type ImeRendererDiagnostic,
   type ImeSessionCommand,
@@ -50,8 +49,6 @@ const bridge: DesktopBridge = {
   imeSelect: (index: number, generation: number) =>
     ipcRenderer.invoke(ImeChannels.Select, { index, generation }),
   imeReset: (generation: number) => ipcRenderer.invoke(ImeChannels.Reset, { generation }),
-  imeSetInputMode: (targetId: string, generation: number, inputMode: ImeInputMode) =>
-    ipcRenderer.invoke(ImeChannels.SetInputMode, { targetId, generation, inputMode }),
   imeSessionCommand: (command: ImeSessionCommand): Promise<ImeSessionCommandResult> =>
     ipcRenderer.invoke(ImeChannels.SessionCommand, command),
   getImeSessionSnapshot: async (): Promise<ImeSessionSnapshot> => {
