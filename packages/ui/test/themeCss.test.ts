@@ -3,8 +3,8 @@ import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
- * 主题 CSS 完整性守卫：下面两类写法失效时都不会报错，
- * 只会静默地把文字/表面变回浅色主题值（深色下即不可见）。
+ * 主题 CSS 完整性守卫：下面几类写法失效时都不会报错，
+ * 只会静默地把文字/表面变回浅色主题值（深色下即不可见），或让隐身模式露指针形状。
  */
 
 const sourceRoot = resolve(process.cwd(), "src");
@@ -65,5 +65,18 @@ describe("theme CSS integrity", () => {
       .filter((token) => !declared.has(token))
       .sort();
     expect(unknown).toEqual([]);
+  });
+
+  it("keeps the stealth cursor override strong enough to beat component cursor rules", () => {
+    // 隐身模式下指针必须恒为默认箭头，否则指针形状会暴露正在输入/选择。
+    // 组件里的 cursor 规则会追平覆盖规则的 (0,2,0)（如 `.trHeader.isClickable`），
+    // 同特异性由源顺序决定；`.x button:hover:not(:disabled)` 更是 (0,3,1)。
+    // 因此覆盖必须带 !important，去掉后这些元素在隐身模式下会重新露出非默认指针。
+    const base = stripComments(readFileSync(join(sourceRoot, "styles", "base.css"), "utf8"));
+    expect(base).toContain('.overlay-root[data-stealth="true"] *');
+    expect(base).toContain('.reply-window-root[data-stealth="true"] *');
+    expect(base).toMatch(
+      /\.overlay-root\[data-stealth="true"\][^{}]*\{[^}]*cursor:\s*default\s*!important/,
+    );
   });
 });
