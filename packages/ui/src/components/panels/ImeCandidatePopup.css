@@ -4,7 +4,10 @@
   position: relative;
   display: flex;
   width: max-content;
-  max-width: min(640px, calc(100vw - 16px));
+  /* 上限必须是常量：候选窗尺寸由本元素被测量后上报主进程，
+     若上限依赖 100vw（等于候选窗自身宽度），窗口只会变窄不会变宽。 */
+  max-width: 640px;
+  flex: 0 0 auto;
   min-height: 44px;
   align-items: stretch;
   gap: 2px;

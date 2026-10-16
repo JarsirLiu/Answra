@@ -64,4 +64,45 @@ describe("ImeCandidateWindowApp", () => {
       generation: 3,
     });
   });
+
+  it("reports unclipped content size so a shrunk candidate window can grow back", () => {
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    let receiveState:
+      | ((next: { state: ImeState; targetId: string; generation: number }) => void)
+      | undefined;
+    const fitImeCandidate = vi.fn();
+    const bridge = {
+      onImeCandidateState: (listener) => {
+        receiveState = listener;
+        return vi.fn();
+      },
+      requestImeCandidateState: vi.fn(),
+      fitImeCandidate,
+    } satisfies Partial<DesktopBridge>;
+    const { container } = render(
+      <ImeCandidateWindowApp bridge={bridge as unknown as DesktopBridge} />,
+    );
+    const root = container.firstChild as HTMLElement;
+    vi.spyOn(root, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      width: 160,
+      height: 52,
+      top: 0,
+      left: 0,
+      right: 160,
+      bottom: 52,
+      toJSON: () => ({}),
+    } as DOMRect);
+    Object.defineProperty(root, "scrollWidth", { configurable: true, value: 472 });
+    Object.defineProperty(root, "scrollHeight", { configurable: true, value: 72 });
+
+    act(() => receiveState?.({ state, targetId: "composer", generation: 1 }));
+
+    expect(fitImeCandidate).toHaveBeenCalledWith({ width: 472, height: 72 });
+  });
 });

@@ -105,8 +105,12 @@ export function ImeCandidateWindowApp({ bridge }: ImeCandidateWindowAppProps) {
       return;
     const reportSize = () => {
       const bounds = root.getBoundingClientRect();
-      if (bounds.width > 0 && bounds.height > 0) {
-        fitImeCandidate({ width: bounds.width, height: bounds.height });
+      // scrollWidth/scrollHeight 反映未裁剪的内容：窗口偏小时仍能上报真实内容尺寸，
+      // 否则上报值会被夹在当前窗口宽度内，窗口只能收窄不能恢复。
+      const width = Math.max(bounds.width, root.scrollWidth);
+      const height = Math.max(bounds.height, root.scrollHeight);
+      if (width > 0 && height > 0) {
+        fitImeCandidate({ width, height });
       }
     };
     const observer = new ResizeObserver(reportSize);

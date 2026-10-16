@@ -6,6 +6,8 @@
   min-height: 0;
   padding: 8px;
   box-sizing: border-box;
-  overflow: auto;
+  /* 内容尺寸按 scrollWidth/scrollHeight 上报，窗口偏小时不再被视口裁剪；
+     hidden 仍可读出溢出内容，且避免透明窗出现滚动条。 */
+  overflow: hidden;
   pointer-events: auto;
 }
