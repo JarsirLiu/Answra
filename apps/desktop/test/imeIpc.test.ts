@@ -952,4 +952,126 @@ describe("IME IPC session ownership", () => {
       candidatePopup: undefined,
     });
   });
+
+  it("always carries a snapshot and only explains rejected results with a reason", async () => {
+    const accepted = (await acquire(11, "main-composer")) as ImeSessionCommandResult;
+    expect(accepted.accepted).toBe(true);
+    expect(accepted.snapshot.phase).toBe("owned");
+    expect(accepted).not.toHaveProperty("reason");
+
+    const rejected = (await invoke(ImeChannels.SessionCommand, 11, {
+      type: "processKey",
+      commandId: "non-owner-envelope",
+      targetId: "reply-composer",
+      generation: leaseGeneration(accepted),
+      key: "n",
+      code: "KeyN",
+      shift: false,
+      ctrl: false,
+      alt: false,
+      meta: false,
+    })) as ImeSessionCommandResult;
+
+    expect(rejected.accepted).toBe(false);
+    expect(rejected.reason).toBe("stale-owner");
+    expect(rejected.snapshot.phase).toBe("owned");
+  });
+
+  it("attaches commit only when the engine produced text and engineHandled only for processKey", async () => {
+    const generation = leaseGeneration(await acquire(11, "main-composer"));
+
+    const keyed = (await invoke(ImeChannels.SessionCommand, 11, {
+      type: "processKey",
+      commandId: "envelope-plain-key",
+      targetId: "main-composer",
+      generation,
+      key: "n",
+      code: "KeyN",
+      shift: false,
+      ctrl: false,
+      alt: false,
+      meta: false,
+    })) as ImeSessionCommandResult;
+    expect(keyed).not.toHaveProperty("commit");
+    expect(keyed.engineHandled).toBe(true);
+
+    shared.bridge.key.mockImplementationOnce(async () => ({
+      ...emptyState,
+      enabled: true,
+      committedText: "ni",
+      handled: true,
+    }));
+    const committed = (await invoke(ImeChannels.SessionCommand, 11, {
+      type: "processKey",
+      commandId: "envelope-committing-key",
+      targetId: "main-composer",
+      generation,
+      key: " ",
+      code: "Space",
+      shift: false,
+      ctrl: false,
+      alt: false,
+      meta: false,
+    })) as ImeSessionCommandResult;
+    expect(committed.commit?.text).toBe("ni");
+
+    shared.bridge.select.mockImplementationOnce(async () => ({
+      ...emptyState,
+      enabled: true,
+      committedText: "你",
+    }));
+    const selected = (await invoke(ImeChannels.SessionCommand, 11, {
+      type: "selectCandidate",
+      commandId: "envelope-candidate",
+      targetId: "main-composer",
+      generation,
+      index: 0,
+    })) as ImeSessionCommandResult;
+    expect(selected.commit?.text).toBe("你");
+    expect(selected).not.toHaveProperty("engineHandled");
+  });
+
+  it("records the release reason when the renderer process is gone", async () => {
+    shared.main.webContents.on.mockClear();
+    const generation = leaseGeneration(await acquire(11, "main-composer"));
+    vi.mocked(logImeDiagnostic).mockClear();
+    const onGone = shared.main.webContents.on.mock.calls.find(
+      ([event]) => event === "render-process-gone",
+    )?.[1] as (() => void) | undefined;
+
+    onGone?.();
+
+    expect(logImeDiagnostic).toHaveBeenCalledWith(
+      "lease-released",
+      expect.objectContaining({
+        windowId: 1,
+        targetId: "main-composer",
+        generation,
+        reason: "renderer-process-gone",
+      }),
+    );
+  });
+
+  it("records the release reason when the owner window navigates", async () => {
+    shared.main.webContents.on.mockClear();
+    const generation = leaseGeneration(await acquire(11, "main-composer"));
+    vi.mocked(logImeDiagnostic).mockClear();
+    const onNavigation = shared.main.webContents.on.mock.calls.find(
+      ([event]) => event === "did-start-navigation",
+    )?.[1] as
+      | ((event: unknown, url: string, isInPlace: boolean, isMainFrame: boolean) => void)
+      | undefined;
+
+    onNavigation?.({}, "answra://main", false, true);
+
+    expect(logImeDiagnostic).toHaveBeenCalledWith(
+      "lease-released",
+      expect.objectContaining({
+        windowId: 1,
+        targetId: "main-composer",
+        generation,
+        reason: "window-navigation",
+      }),
+    );
+  });
 });

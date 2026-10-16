@@ -4,6 +4,7 @@ import {
   getImeComposing,
   getImeInputMode,
   getImeOwnedGeneration,
+  getLatestImeSessionSnapshot,
   publishImeSessionSnapshot,
   resetImeSessionClientForTests,
   selectImeEngineState,
@@ -59,5 +60,17 @@ describe("imeSessionClient selectors", () => {
     expect(getImeInputMode()).toBe("ascii");
     expect(getImeComposing()).toBe(true);
     expect(getImeOwnedGeneration("chat-composer")).toBeUndefined();
+  });
+
+  it("ignores a snapshot that regresses the authoritative revision", () => {
+    publishImeSessionSnapshot(
+      snapshot({ revision: 5, engine: { ...snapshot().engine, inputMode: "ascii" } }),
+    );
+    publishImeSessionSnapshot(
+      snapshot({ revision: 4, engine: { ...snapshot().engine, inputMode: "chinese" } }),
+    );
+
+    expect(getImeInputMode()).toBe("ascii");
+    expect(getLatestImeSessionSnapshot()?.revision).toBe(5);
   });
 });
