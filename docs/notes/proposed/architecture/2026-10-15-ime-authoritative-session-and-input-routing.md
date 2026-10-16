@@ -134,6 +134,9 @@ Ctrl/Alt/Meta 浏览器快捷键、编辑器导航和非文本命令须在契约
 - 2026-10-16 增加 CodeMirror 投影/bookmark 映射测试；UI 定向 45 项通过，UI typecheck 通过。候选 anchor reporter 测试现在使用实际 composition projection marker 的 DOM 结构。
 - 本轮最终验证：`pnpm verify` 通过，UI 148、desktop 127、app 7 项测试通过，lint、全包 typecheck、Note 门禁和 architecture check 均通过。
 - 隔离/编辑器契约收口：renderer policy 用 `blockNativeEditing` 描述浏览器直接变更门控；editor adapter 命令仍可写入。main 用 `isolateNativeIme` 返回 `applied | not-required | failed`；`failed` 仍阻止或暂停 lease，`not-required` 保持原有平台路径但不作为实机隔离证据。定向 UI 9 项、desktop 15 项测试与两包 typecheck 通过。
+- 2026-10-16 文本隔离收口为"受管目标恒只读"：`imeTextPolicy` 去掉 `inputMode` 分支，lease 持有期间 `readOnly`/`blockNativeEditing`/`blockComposition` 恒真，模式只影响按键路由；`useStealthInputGuard` 对 `[data-embedded-ime-target]` 只取消 composition、不再 blur 或写失败标记，隐身关闭时零副作用。这消除"ASCII 模式重新变成原生文本目标"的路径，但**没有**改变 `readOnly` 仍同时承担"阻止浏览器原生文本写入"和"阻止系统 IME 接管"两个职责的事实。
+- 2026-10-16 候选面尺寸契约：候选窗尺寸只能来自 renderer 上报的**未裁剪内容尺寸**（`scrollWidth/scrollHeight`），上限只能是常量或 main 的 work area；禁止测量依赖当前窗口尺寸（`100vw`/`vh`/`%`/`flex-shrink`）。见[候选窗宽度棘轮](../../implemented/bug-fix/2026-10-16-ime-candidate-window-width-ratchet.md)。
+- 2026-10-16 排障复盘：主进程硬崩溃靠"某条日志缺失"反推（见[FFI 字符串解码崩溃](../../implemented/bug-fix/2026-10-16-native-ffi-string-decode-crash.md)），候选窗宽度棘轮全程**没有任何日志**能直接回答"上报尺寸 vs 窗口尺寸"，Shift 锁死需要逐条读 guard 代码才能定位。三次故障都不是"缺抽象"，而是**缺唯一写入者**与**缺默认可见的因果链证据**。
 
 main/IPC 目标转移的自动化契约现已覆盖，但平台验证和资源交付仍未完成；不能据此放松现有 fail-closed 输入隔离：
 
@@ -199,3 +202,39 @@ main/IPC 目标转移的自动化契约现已覆盖，但平台验证和资源�
 - 共享模式跨输入目标保留会改变当前“每次 acquire 回到中文”的行为。必须确认目标切换时模式保留、组合取消的用户预期，并将测试及 UI 指示器统一到该策略。
 - 在 session manager 替换现有 hook/IPC 之前，需要兼容旧 candidate IPC 的 generation/target 约束，分阶段迁移，避免一次改动同时重写 native lifecycle、编辑器和窗口层级。
 - textarea、input 与 CodeMirror 的 composition 绘制和几何 API 不同；adapter 若只返回持久 selection 的矩形，候选会偏离临时 preedit 光标。必须以 mirror/decoration 中真实组合光标 marker 的矩形作为契约，并对多行、滚动容器、窗口缩放、DPI 映射及工作区边缘做自动化和平台验证。候选窗若在空间不足时翻到光标上方，会违背已确定的交互位置；应限制窗口高度并保留下方锚定。
+
+## 2026-10-16 修订：可判定性与单一写入者优先
+
+### 为什么先修这个
+
+2026-10-16 连续三个故障（Shift 后输入锁死、FFI 解码崩主进程、候选窗宽度棘轮）复盘后确认：架构迁移走到一半时，"找不到问题"并不是因为抽象不够，而是因为
+
+1. **状态有多个写入者**：焦点事实同时存在于 hook `focusedRef`、coordinator 模块级 `activeTarget`、DOM `activeElement`、main lease `owned/suspended` 四处；`asciiMode`/`generation`/`targetEngaged` 在 renderer 各有一份副本。日志只能记录结果，无法回答"这次是谁改的"。
+2. **默认日志没有因果链**：`renderer-input-focus`/`acquire`/`blur`/`key-routing` 默认被 suppress（`imeDiagnostics.ts`），必须 `ANSWRA_IME_DEBUG=1`；候选面尺寸、焦点与 lease 的变化都没有一条"输入 → 结果"的完整链路可读。
+3. **只能实机验证**：焦点/lease/候选时序没有确定性测试，改一次就要人工复现一轮。
+
+因此本修订把"可判定性"和"单一写入者"提到功能收口之前：**先让每个状态只有一个写入者、每个状态变化在默认日志里可读，再谈新能力。**
+
+### 硬性完成标准（不满足即不算解耦）
+
+- **单一写入者**：焦点/lease 事实只由 main 的 `ImeSessionManager` 与 renderer 的 `ImeInputCoordinator` 各自持有唯一一份；renderer 组件不得缓存 `asciiMode`、`generation`、`targetEngaged`，只能从 snapshot 派生；coordinator 只登记当前活动 target，不再做第二套焦点判断。
+- **因果链默认可见**：一次焦点变化在**不开** `ANSWRA_IME_DEBUG` 的默认输出里给出可读链路：`focus(target, window) → acquire(generation) → owned | suspended(reason) → release(reason)`，每条都回答"谁触发、什么原因、影响哪个 generation"。`lease-released` 必须带 `reason`，并覆盖 `releaseTarget`、`owner-destroyed`、renderer unmount、`unavailable` 四条来源。
+- **无 Electron 可测**：焦点/lease/候选/sizing 的判定逻辑必须能在 vitest（无 Electron、无原生窗口）里用假时钟与假 bridge 驱动；需要原生窗口的部分只作为平台验证列出，不再作为"逻辑正确性"的证据。
+- **契约受测试保护**：候选面"只上报未裁剪内容尺寸、上限只来自常量或 work area"一类不变量要有回归测试（候选窗棘轮已加一条）。
+- **不把拆文件当解耦**：把 `useEmbeddedIme.ts` 切成多个文件、或把 controller 拆成多个对象，只有在**同时**消除了状态副本或写入者时才计为进度。
+
+### 分阶段顺序
+
+- **S1 可判定性（先做）**：补齐默认可见的 IME 因果链日志；`lease-released` 带 reason 并覆盖四条来源；候选面记录"上报尺寸 vs 窗口尺寸 vs 锚点"。目标是"再看一次同样的故障，能从默认日志直接读出链路"。此阶段不改状态所有权，风险最低、收益最直接。
+- **S2 单一写入者**：按本提案的四个状态域收口。renderer 去掉状态副本与乐观 `targetEngaged`；焦点事实统一由 coordinator 订阅 snapshot 派生；组件只声明 targetId 与 adapter。完成判据是"全仓 grep 不到第二处 `asciiMode`/`generation` 本地 state"。
+- **S3 候选与窗口面解耦**：候选状态、锚点、窗口生命周期、层级和捕获保护分成独立写入者；候选展示不再与 suspend/hide/cancel/release 共用同一个 modify 批量变量。sizing 契约并入此阶段验收。
+- **S4 清理与契约固化**：删除迁移遗留（如已无消费者的策略字段、只服务旧路径的分支）；把 S1–S3 的判据写成测试，允许后续并行改动在这里回归。
+- **S5 平台验证与迁移**：Windows/macOS 实机矩阵、资源一致性、系统 IME 隔离决策；证据齐全后把本提案迁到 `implemented/` 并同步历史 Note。
+
+### 并行开发边界
+
+- `packages/shared` 的 snapshot/command/result 是本提案的冻结契约；任何阶段不得在 renderer 侧新增字段来解释 main 状态。
+- S1 只允许改 `imeDiagnostics.ts` 与各调用点的日志参数，不碰状态所有权，因此可以和 S2 的会话/焦点改造并行（但不要同时改 `imeIpc.ts` 与 `useEmbeddedIme.ts`）。
+- 编辑器 adapter、候选/窗口面、平台隔离分别由不同负责人维护；集成负责人只维护跨包契约测试。
+- 结论：**只做 S1 不做 S2，可以显著降低排障成本，但不能声称架构已解耦；只做 S2 不做 S1，会失去验证解耦是否真生效的证据。两者必须一起做才满足本提案的验收标准。**
+
