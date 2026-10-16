@@ -25,7 +25,11 @@ import {
   sendImeSessionCommand,
   subscribeImeSessionSnapshot,
 } from "../ime/imeSessionClient";
-import { resolveImeTextPolicy, shouldPreventImeBeforeInput } from "../ime/imeTextPolicy";
+import {
+  resolveImeTextFallback,
+  resolveImeTextPolicy,
+  shouldPreventImeBeforeInput,
+} from "../ime/imeTextPolicy";
 
 const EMPTY_STATE: ImeState = {
   enabled: false,
@@ -548,23 +552,16 @@ export function useEmbeddedIme(
             release: keyEvent.release,
           }),
         (result) => {
-          if (!keyEvent.text || result.engineHandled !== false) return;
-          const engine = result.snapshot.engine;
-          const chineseNumericFallback =
-            engine.inputMode === "chinese" &&
-            !engine.composing &&
-            /^[0-9]$/.test(keyEvent.key) &&
-            !keyEvent.shift &&
-            !keyEvent.ctrl &&
-            !keyEvent.alt &&
-            !keyEvent.meta;
-          const printableFallback =
-            engine.inputMode === "ascii" &&
-            keyEvent.text !== undefined &&
-            !keyEvent.ctrl &&
-            !keyEvent.alt &&
-            !keyEvent.meta;
-          if (printableFallback || chineseNumericFallback) onCommitRef.current?.(keyEvent.text);
+          const text = resolveImeTextFallback({
+            engine: result.snapshot.engine,
+            key: keyEvent.key,
+            text: keyEvent.text,
+            shift: keyEvent.shift,
+            ctrl: keyEvent.ctrl,
+            alt: keyEvent.alt,
+            meta: keyEvent.meta,
+          });
+          if (text !== undefined) onCommitRef.current?.(text);
         },
       );
       reportRouting(true);

@@ -48,3 +48,29 @@ export function shouldPreventImeBeforeInput(policy: ImeTextPolicy, inputType: st
     (policy.blockComposition && inputType.startsWith("insertComposition"))
   );
 }
+
+export interface ImeTextFallbackInput {
+  /** Engine state reported with an `engineHandled === false` command result. */
+  engine: { inputMode: "ascii" | "chinese"; composing: boolean };
+  key: string;
+  text: string | undefined;
+  shift: boolean;
+  ctrl: boolean;
+  alt: boolean;
+  meta: boolean;
+}
+
+/**
+ * Decides whether a key the engine refused (`engineHandled === false`) is committed
+ * verbatim to the editor. Covers printable ASCII mode and the single unshifted digit
+ * Rime leaves unhandled in Chinese mode while not composing; every other refused key
+ * falls back to editor routing (`resolveImeKeyRoute`). Pure: callers supply the engine
+ * state from the command result, no session or editor state is read here.
+ */
+export function resolveImeTextFallback(input: ImeTextFallbackInput): string | undefined {
+  if (input.text === undefined) return undefined;
+  if (input.ctrl || input.alt || input.meta) return undefined;
+  if (input.engine.inputMode === "ascii") return input.text;
+  const isDigitWithoutShift = /^[0-9]$/.test(input.key) && !input.shift;
+  return !input.engine.composing && isDigitWithoutShift ? input.text : undefined;
+}
