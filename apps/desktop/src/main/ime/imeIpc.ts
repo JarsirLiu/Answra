@@ -415,8 +415,6 @@ export function registerImeIpc(): {
       return response(state, manager.lease, state.enabled);
     }, expectedRevision);
 
-  handle(ImeChannels.Acquire, (event, request) => performAcquire(event, request));
-
   const performRelease = (
     event: Electron.IpcMainInvokeEvent,
     request: unknown,
@@ -454,43 +452,6 @@ export function registerImeIpc(): {
       };
     }, expectedRevision);
 
-  handle(ImeChannels.Release, (event, request) => performRelease(event, request));
-
-  const performConfirmFocus = (
-    event: Electron.IpcMainInvokeEvent,
-    request: unknown,
-    expectedRevision?: number,
-  ) =>
-    serialize(async () => {
-      if (
-        !isRecord(request) ||
-        !isTargetId(request.targetId) ||
-        !Number.isInteger(request.generation)
-      )
-        return rejectLease();
-      const current = matchesCurrent(event, request.generation as number, true);
-      if (!current || current.owner.targetId !== request.targetId) return rejectLease();
-      manager.transition({
-        type: "confirm-focus",
-        owner: current.owner,
-        generation: manager.lease.generation,
-      });
-      const state = await currentState();
-      logImeDiagnostic("focus-confirmed", {
-        windowId: current.window.id,
-        targetId: current.owner.targetId,
-        generation: manager.lease.generation,
-        sessionStatus: manager.lease.status,
-        accepted: manager.lease.status === "owned",
-        composing: state.composing,
-        preeditLength: state.preedit.length,
-        candidateCount: state.candidates.length,
-      });
-      return response(state, manager.lease, manager.lease.status === "owned");
-    }, expectedRevision);
-
-  handle(ImeChannels.ConfirmFocus, (event, request) => performConfirmFocus(event, request));
-
   const performKey = (
     event: Electron.IpcMainInvokeEvent,
     request: unknown,
@@ -522,7 +483,6 @@ export function registerImeIpc(): {
       return state;
     }, expectedRevision);
 
-  handle(ImeChannels.Key, (event, request) => performKey(event, request));
   const performSelect = (
     event: Electron.IpcMainInvokeEvent,
     request: unknown,
@@ -550,7 +510,6 @@ export function registerImeIpc(): {
       return state;
     }, expectedRevision);
 
-  handle(ImeChannels.Select, (event, request) => performSelect(event, request));
   const performReset = (
     event: Electron.IpcMainInvokeEvent,
     request: unknown,
@@ -564,7 +523,6 @@ export function registerImeIpc(): {
       return manager.resetComposition();
     }, expectedRevision);
 
-  handle(ImeChannels.Reset, (event, request) => performReset(event, request));
   handle(ImeChannels.SessionCommand, async (event, payload: unknown) => {
     if (!isImeSessionCommand(payload)) return rejectedSessionCommand("", "invalid-transition");
     const cacheKey = `${event.sender.id}:${payload.commandId}`;

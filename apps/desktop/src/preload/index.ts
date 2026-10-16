@@ -13,13 +13,11 @@ import {
   type ImeCandidateSnapshot,
   type ImeCandidateUpdate,
   ImeChannels,
-  type ImeKeyRequest,
   type ImeRendererDiagnostic,
   type ImeSessionCommand,
   type ImeSessionCommandResult,
   type ImeSessionSnapshot,
   type ImeSessionSnapshotUpdate,
-  type ImeState,
   type RegionCaptureOptions,
   type ReplyBarAction,
   type ReplyBarPlacement,
@@ -38,17 +36,9 @@ import { contextBridge, ipcRenderer } from "electron";
 const bridge: DesktopBridge = {
   // Set true only when the packaged librime bridge has been installed.
   imeAvailable: true,
-  imeAcquire: (targetId: string) => ipcRenderer.invoke(ImeChannels.Acquire, { targetId }),
-  imeRelease: (generation: number) => ipcRenderer.invoke(ImeChannels.Release, { generation }),
-  imeConfirmFocus: (targetId: string, generation: number) =>
-    ipcRenderer.invoke(ImeChannels.ConfirmFocus, { targetId, generation }),
-  imeKey: (request: ImeKeyRequest) => ipcRenderer.invoke(ImeChannels.Key, request),
   imeDiagnostic: (diagnostic: ImeRendererDiagnostic) => {
     ipcRenderer.send(ImeChannels.Diagnostic, diagnostic);
   },
-  imeSelect: (index: number, generation: number) =>
-    ipcRenderer.invoke(ImeChannels.Select, { index, generation }),
-  imeReset: (generation: number) => ipcRenderer.invoke(ImeChannels.Reset, { generation }),
   imeSessionCommand: (command: ImeSessionCommand): Promise<ImeSessionCommandResult> =>
     ipcRenderer.invoke(ImeChannels.SessionCommand, command),
   getImeSessionSnapshot: async (): Promise<ImeSessionSnapshot> => {
@@ -62,11 +52,6 @@ const bridge: DesktopBridge = {
       listener(update.snapshot);
     ipcRenderer.on(ImeChannels.SessionSnapshot, wrapped);
     return () => ipcRenderer.removeListener(ImeChannels.SessionSnapshot, wrapped);
-  },
-  onImeChange: (listener: (state: ImeState) => void) => {
-    const wrapped = (_event: Electron.IpcRendererEvent, state: ImeState) => listener(state);
-    ipcRenderer.on(ImeChannels.Change, wrapped);
-    return () => ipcRenderer.removeListener(ImeChannels.Change, wrapped);
   },
   setImeCandidate: (payload: ImeCandidateUpdate) => {
     ipcRenderer.send(ImeCandidateChannels.Update, payload);

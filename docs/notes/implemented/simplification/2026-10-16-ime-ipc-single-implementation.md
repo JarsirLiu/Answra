@@ -56,7 +56,7 @@
 
 - 两入口现共用唯一实现；领域 channel 的 `expectedRevision` 恒为 `undefined`（与合并前一致），`SessionCommand` 才传 revision。
 - 新增领域操作时，必须只写一个 `performX`，两处入口都调用它；不得为某一入口加特例分支。
-- 有意接受的代价：`preload` 仍暴露 `imeAcquire` 等 6 个方法、`shared/bridge.ts` 仍声明它们，因此**IPC 表面仍是双入口**——本 Note 只声明"实现已合并"，不声称表层已删除。
+- 有意接受的代价（2026-10-16 已消除）：当时 `preload` 仍暴露 `imeAcquire` 等 6 个方法、`shared/bridge.ts` 仍声明它们，因此**IPC 表面仍是双入口**——本 Note 只声明"实现已合并"，不声称表层已删除。后续已在[IME IPC 表层收敛为单一入口](./2026-10-16-ime-ipc-surface-single-entry.md) 中删除领域 channel 与 `preload`/`bridge` 方法。
 
 ## 验证
 

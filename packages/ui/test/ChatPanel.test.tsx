@@ -20,6 +20,12 @@ const enabledImeState: ImeState = {
   hasNextPage: false,
 };
 
+/** Test-only scaffolding for the removed IME domain methods the fixture configures. */
+type LegacyImeBridge = DesktopBridge & {
+  imeAcquire?: (targetId: string) => Promise<unknown>;
+  imeKey?: (request: ImeSessionCommand) => Promise<ImeState>;
+};
+
 describe("ChatPanel", () => {
   it("shows the response caret only on the active assistant answer", () => {
     const props = {
@@ -64,10 +70,9 @@ describe("ChatPanel", () => {
       imeRelease: vi.fn().mockResolvedValue({ state: enabledImeState, accepted: true }),
       imeKey: vi.fn().mockResolvedValue({ ...enabledImeState, committedText: "新" }),
       imeSelect: vi.fn().mockResolvedValue(enabledImeState),
-      onImeChange: vi.fn(() => () => undefined),
       onImeCandidateAction: vi.fn(() => () => undefined),
       setImeCandidate: vi.fn(),
-    } as unknown as DesktopBridge;
+    } as unknown as LegacyImeBridge;
     const bridge = { ...legacyBridge } as DesktopBridge;
     let state: ImeState = enabledImeState;
     let owner: ImeSessionSnapshot["owner"];

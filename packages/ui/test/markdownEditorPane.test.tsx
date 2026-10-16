@@ -15,7 +15,17 @@ import { ImeCandidateWindowApp } from "../src/app/ImeCandidateWindowApp";
 import { MarkdownEditorPane } from "../src/components/panels/workspace/MarkdownEditorPane";
 import { resetImeInputTargetCoordinatorForTests } from "../src/ime/imeInputTargetCoordinator";
 
-function createBridge(overrides: Partial<DesktopBridge> = {}): DesktopBridge {
+/** Test-only scaffolding for the removed IME domain methods the fixture configures. */
+type LegacyImeBridge = DesktopBridge & {
+  imeAcquire?: (targetId: string) => Promise<unknown>;
+  imeRelease?: (generation: number) => Promise<unknown>;
+  imeConfirmFocus?: (targetId: string, generation: number) => Promise<unknown>;
+  imeKey?: (request: ImeSessionCommand) => Promise<ImeState>;
+  imeSelect?: (index: number, generation: number) => Promise<unknown>;
+  imeReset?: (generation: number) => Promise<unknown>;
+};
+
+function createBridge(overrides: Partial<LegacyImeBridge> = {}): DesktopBridge {
   const bridge: DesktopBridge = {
     fitContent: vi.fn(),
     close: vi.fn(),
@@ -29,6 +39,7 @@ function createBridge(overrides: Partial<DesktopBridge> = {}): DesktopBridge {
     onWorkspaceChanged: vi.fn(() => () => undefined),
     ...overrides,
   };
+  const legacy = bridge as LegacyImeBridge;
   let state: ImeState = {
     enabled: false,
     inputMode: "chinese",
@@ -50,7 +61,7 @@ function createBridge(overrides: Partial<DesktopBridge> = {}): DesktopBridge {
   bridge.imeSessionCommand = async (command: ImeSessionCommand) => {
     let result: unknown;
     if (command.type === "acquireTarget") {
-      result = await bridge.imeAcquire?.(command.targetId);
+      result = await legacy.imeAcquire?.(command.targetId);
       const lease = result as {
         accepted?: boolean;
         generation?: number;
@@ -69,20 +80,20 @@ function createBridge(overrides: Partial<DesktopBridge> = {}): DesktopBridge {
     } else {
       switch (command.type) {
         case "releaseTarget":
-          result = await bridge.imeRelease?.(command.generation);
+          result = await legacy.imeRelease?.(command.generation);
           owner = undefined;
           break;
         case "processKey":
-          result = await bridge.imeKey?.(command);
+          result = await legacy.imeKey?.(command);
           break;
         case "selectCandidate":
-          result = await bridge.imeSelect?.(command.index, command.generation);
+          result = await legacy.imeSelect?.(command.index, command.generation);
           break;
         case "cancelComposition":
-          result = await bridge.imeReset?.(command.generation);
+          result = await legacy.imeReset?.(command.generation);
           break;
         case "resume":
-          result = await bridge.imeConfirmFocus?.(command.targetId, command.generation);
+          result = await legacy.imeConfirmFocus?.(command.targetId, command.generation);
           break;
         case "suspend":
           break;

@@ -31,7 +31,22 @@ const lease = (generation: number, state = enabledState): ImeLeaseResponse => ({
 
 const typedBridges = new WeakMap<DesktopBridge, DesktopBridge>();
 
+/**
+ * Test-only scaffolding: the suite still configures the engine through the removed
+ * `ime*` domain methods, and `withSessionApi` translates them onto the single
+ * `imeSessionCommand` entry point the renderer now uses.
+ */
+type LegacyImeBridge = DesktopBridge & {
+  imeAcquire?: (targetId: string) => Promise<ImeLeaseResponse>;
+  imeRelease?: (generation: number) => Promise<ImeLeaseResponse>;
+  imeConfirmFocus?: (targetId: string, generation: number) => Promise<ImeLeaseResponse>;
+  imeKey?: (request: ImeSessionCommand) => Promise<ImeState>;
+  imeSelect?: (index: number, generation: number) => Promise<ImeState>;
+  imeReset?: (generation: number) => Promise<ImeState>;
+};
+
 function withSessionApi(legacyBridge: DesktopBridge): DesktopBridge {
+  const legacy = legacyBridge as LegacyImeBridge;
   const existing = typedBridges.get(legacyBridge);
   if (existing) return existing;
   let state: ImeState = {
@@ -65,7 +80,7 @@ function withSessionApi(legacyBridge: DesktopBridge): DesktopBridge {
     imeSessionCommand: vi.fn(async (command: ImeSessionCommand) => {
       let response: unknown;
       if (command.type === "acquireTarget") {
-        response = await legacyBridge.imeAcquire?.(command.targetId);
+        response = await legacy.imeAcquire?.(command.targetId);
         const acquired = response as ImeLeaseResponse | undefined;
         if (acquired?.accepted && acquired.generation !== undefined) {
           state = acquired.state;
@@ -80,22 +95,22 @@ function withSessionApi(legacyBridge: DesktopBridge): DesktopBridge {
       } else {
         switch (command.type) {
           case "releaseTarget":
-            response = await legacyBridge.imeRelease?.(command.generation);
+            response = await legacy.imeRelease?.(command.generation);
             phase = "idle";
             owner = undefined;
             break;
           case "resume":
-            response = await legacyBridge.imeConfirmFocus?.(command.targetId, command.generation);
+            response = await legacy.imeConfirmFocus?.(command.targetId, command.generation);
             phase = "owned";
             break;
           case "processKey":
-            response = await legacyBridge.imeKey?.(command);
+            response = await legacy.imeKey?.(command);
             break;
           case "cancelComposition":
-            response = await legacyBridge.imeReset?.(command.generation);
+            response = await legacy.imeReset?.(command.generation);
             break;
           case "selectCandidate":
-            response = await legacyBridge.imeSelect?.(command.index, command.generation);
+            response = await legacy.imeSelect?.(command.index, command.generation);
             break;
           case "suspend":
             phase = "suspended";

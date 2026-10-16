@@ -229,16 +229,14 @@ export const WorkspaceChannels = {
   Changed: "answra:workspace:changed",
 } as const;
 
-/** 应用内输入法频道；引擎状态由 main 持有，候选 UI 由 renderer 绘制。 */
+/**
+ * 应用内输入法频道；引擎状态由 main 持有，候选 UI 由 renderer 绘制。
+ *
+ * 唯一的会话入口是 `SessionCommand`：所有租约/按键/候选操作都以类型化命令进入 main，
+ * 会话事实只经 `SessionSnapshot` 推送。诊断上报是单向旁路。
+ */
 export const ImeChannels = {
-  Acquire: "answra:ime:acquire",
-  Release: "answra:ime:release",
-  ConfirmFocus: "answra:ime:confirm-focus",
-  Key: "answra:ime:key",
   Diagnostic: "answra:ime:diagnostic",
-  Select: "answra:ime:select",
-  Reset: "answra:ime:reset",
-  Change: "answra:ime:change",
   SessionCommand: "answra:ime:session-command",
   SessionSnapshot: "answra:ime:session-snapshot",
 } as const;
@@ -482,20 +480,7 @@ export interface ImeRendererDiagnostic {
 }
 
 export interface ImeChannelMap {
-  [ImeChannels.Acquire]: { request: { targetId: string }; response: ImeLeaseResponse };
-  [ImeChannels.Release]: {
-    request: { generation: number; reason?: string };
-    response: ImeLeaseResponse;
-  };
-  [ImeChannels.ConfirmFocus]: {
-    request: { targetId: string; generation: number };
-    response: ImeLeaseResponse;
-  };
-  [ImeChannels.Key]: { request: ImeKeyRequest; response: ImeState };
   [ImeChannels.Diagnostic]: { request: ImeRendererDiagnostic; response: undefined };
-  [ImeChannels.Select]: { request: { index: number; generation: number }; response: ImeState };
-  [ImeChannels.Reset]: { request: { generation: number }; response: ImeState };
-  [ImeChannels.Change]: { request: undefined; response: ImeState };
   [ImeChannels.SessionCommand]: {
     request: ImeSessionCommand;
     response: ImeSessionCommandResult;

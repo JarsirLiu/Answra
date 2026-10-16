@@ -8,13 +8,10 @@ import type {
   ImeCandidateAction,
   ImeCandidateSnapshot,
   ImeCandidateUpdate,
-  ImeKeyRequest,
-  ImeLeaseResponse,
   ImeRendererDiagnostic,
   ImeSessionCommand,
   ImeSessionCommandResult,
   ImeSessionSnapshot,
-  ImeState,
   InterviewAudioFrame,
   InterviewChange,
   RegionCaptureOptions,
@@ -41,18 +38,11 @@ export type OverlayMode = "closed" | "chat" | "interview" | "notes" | "sources" 
 export interface DesktopBridge {
   /** 应用内输入法；隐身模式下未能启用时，文本输入保持阻断。 */
   imeAvailable?: boolean;
-  imeAcquire?: (targetId: string) => Promise<ImeLeaseResponse>;
-  imeRelease?: (generation: number) => Promise<ImeLeaseResponse>;
-  imeConfirmFocus?: (targetId: string, generation: number) => Promise<ImeLeaseResponse>;
-  imeKey?: (request: ImeKeyRequest) => Promise<ImeState>;
   imeDiagnostic?: (diagnostic: ImeRendererDiagnostic) => void;
-  imeSelect?: (index: number, generation: number) => Promise<ImeState>;
-  imeReset?: (generation: number) => Promise<ImeState>;
-  /** New authoritative session API; adopted incrementally by main and renderer. */
+  /** Authoritative IME session API: the only way the renderer mutates the engine session. */
   imeSessionCommand?: (command: ImeSessionCommand) => Promise<ImeSessionCommandResult>;
   getImeSessionSnapshot?: () => Promise<ImeSessionSnapshot>;
   onImeSessionSnapshot?: (listener: (snapshot: ImeSessionSnapshot) => void) => () => void;
-  onImeChange?: (listener: (state: ImeState) => void) => () => void;
   setImeCandidate?: (payload: ImeCandidateUpdate) => void;
   onImeCandidateAction?: (listener: (action: ImeCandidateAction) => void) => () => void;
   onImeCandidateState?: (listener: (snapshot: ImeCandidateSnapshot) => void) => () => void;

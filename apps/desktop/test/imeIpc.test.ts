@@ -165,7 +165,7 @@ vi.mock("../src/main/ime/imeDiagnostics", () => ({
   isImeDebugEnabled: () => false,
 }));
 
-import { ImeChannels } from "@answra/shared";
+import { ImeChannels, type ImeSessionCommandResult } from "@answra/shared";
 import { logImeDiagnostic } from "../src/main/ime/imeDiagnostics";
 import { registerImeIpc } from "../src/main/ime/imeIpc";
 
@@ -183,6 +183,28 @@ const emptyState = {
 
 function invoke(channel: string, senderId: number, payload?: unknown) {
   return shared.handlers[channel]({ sender: { id: senderId } }, payload);
+}
+
+let commandSequence = 0;
+function nextCommandId(prefix: string): string {
+  commandSequence += 1;
+  return `${prefix}-${commandSequence}`;
+}
+
+/** Acquires a lease through the single session entry point. */
+async function acquire(senderId: number, targetId: string): Promise<ImeSessionCommandResult> {
+  return (await invoke(ImeChannels.SessionCommand, senderId, {
+    type: "acquireTarget",
+    commandId: nextCommandId("acquire"),
+    targetId,
+  })) as ImeSessionCommandResult;
+}
+
+/** Reads the owning lease generation out of a session result. */
+function leaseGeneration(result: ImeSessionCommandResult): number {
+  const owner = result.snapshot.owner;
+  if (!owner) throw new Error("expected the session result to own the target");
+  return owner.generation;
 }
 
 /** Mirrors Electron: a destroyed window throws when `webContents` is read. */
@@ -319,16 +341,15 @@ describe("IME IPC session ownership", () => {
   });
 
   it("routes a shared Rime session only through its latest owning lease", async () => {
-    const mainLease = (await invoke(ImeChannels.Acquire, 11, { targetId: "main-composer" })) as {
-      generation: number;
-    };
-    const replyLease = (await invoke(ImeChannels.Acquire, 22, { targetId: "reply-composer" })) as {
-      generation: number;
-    };
+    const mainLease = leaseGeneration(await acquire(11, "main-composer"));
+    const replyLease = leaseGeneration(await acquire(22, "reply-composer"));
 
     await expect(
-      invoke(ImeChannels.Key, 11, {
-        generation: mainLease.generation,
+      invoke(ImeChannels.SessionCommand, 11, {
+        type: "processKey",
+        commandId: "stale-owner-key",
+        targetId: "main-composer",
+        generation: mainLease,
         key: "n",
         code: "KeyN",
         shift: false,
@@ -336,9 +357,12 @@ describe("IME IPC session ownership", () => {
         alt: false,
         meta: false,
       }),
-    ).resolves.toEqual(emptyState);
-    await invoke(ImeChannels.Key, 22, {
-      generation: replyLease.generation,
+    ).resolves.toMatchObject({ accepted: false, reason: "stale-owner" });
+    await invoke(ImeChannels.SessionCommand, 22, {
+      type: "processKey",
+      commandId: "owned-key",
+      targetId: "reply-composer",
+      generation: replyLease,
       key: "n",
       code: "KeyN",
       shift: false,
@@ -349,33 +373,47 @@ describe("IME IPC session ownership", () => {
 
     expect(shared.bridge.enable).toHaveBeenCalledOnce();
     expect(shared.bridge.key).toHaveBeenCalledOnce();
-    expect(shared.bridge.key).toHaveBeenCalledWith({
-      generation: replyLease.generation,
-      key: "n",
-      code: "KeyN",
-      shift: false,
-      ctrl: false,
-      alt: false,
-      meta: false,
-    });
+    expect(shared.bridge.key).toHaveBeenCalledWith(
+      expect.objectContaining({
+        generation: replyLease,
+        key: "n",
+        code: "KeyN",
+        shift: false,
+        ctrl: false,
+        alt: false,
+        meta: false,
+      }),
+    );
   });
 
   it("rejects stale and non-owner lease operations", async () => {
-    const lease = (await invoke(ImeChannels.Acquire, 11, { targetId: "main-composer" })) as {
-      generation: number;
-    };
-    const replyLease = (await invoke(ImeChannels.Acquire, 22, { targetId: "reply-composer" })) as {
-      generation: number;
-    };
+    const generation = leaseGeneration(await acquire(11, "main-composer"));
+    const replyGeneration = leaseGeneration(await acquire(22, "reply-composer"));
     await expect(
-      invoke(ImeChannels.Release, 11, { generation: lease.generation }),
+      invoke(ImeChannels.SessionCommand, 11, {
+        type: "releaseTarget",
+        commandId: "stale-release",
+        targetId: "main-composer",
+        generation,
+      }),
     ).resolves.toMatchObject({ accepted: false });
     await expect(
-      invoke(ImeChannels.Select, 11, { index: 0, generation: replyLease.generation }),
-    ).resolves.toEqual(emptyState);
+      invoke(ImeChannels.SessionCommand, 11, {
+        type: "selectCandidate",
+        commandId: "non-owner-select",
+        targetId: "reply-composer",
+        generation: replyGeneration,
+        index: 0,
+      }),
+    ).resolves.toMatchObject({ accepted: false, reason: "stale-owner" });
     await expect(
-      invoke(ImeChannels.Reset, 99, { generation: replyLease.generation }),
-    ).resolves.toEqual(emptyState);
+      invoke(ImeChannels.SessionCommand, 99, {
+        type: "cancelComposition",
+        commandId: "unknown-sender-reset",
+        targetId: "reply-composer",
+        generation: replyGeneration,
+      }),
+    ).resolves.toMatchObject({ accepted: false, reason: "stale-owner" });
 
     expect(shared.bridge.enable).toHaveBeenCalledOnce();
     expect(shared.bridge.select).not.toHaveBeenCalled();
@@ -383,9 +421,7 @@ describe("IME IPC session ownership", () => {
   });
 
   it("sends physical Shift edges to the engine and publishes its authoritative state", async () => {
-    const lease = (await invoke(ImeChannels.Acquire, 11, { targetId: "main-composer" })) as {
-      generation: number;
-    };
+    const generation = leaseGeneration(await acquire(11, "main-composer"));
     shared.bridge.reset.mockClear();
     shared.bridge.snapshot = {
       enabled: true,
@@ -402,7 +438,7 @@ describe("IME IPC session ownership", () => {
       type: "processKey",
       commandId: "shift-down",
       targetId: "main-composer",
-      generation: lease.generation,
+      generation,
       key: "Shift",
       code: "ShiftLeft",
       shift: true,
@@ -414,7 +450,7 @@ describe("IME IPC session ownership", () => {
       type: "processKey",
       commandId: "shift-up",
       targetId: "main-composer",
-      generation: lease.generation,
+      generation,
       key: "Shift",
       code: "ShiftLeft",
       shift: false,
@@ -443,16 +479,19 @@ describe("IME IPC session ownership", () => {
   });
 
   it("keeps the engine enabled and preserves its mode when a lease is released", async () => {
-    const lease = (await invoke(ImeChannels.Acquire, 11, { targetId: "main-composer" })) as {
-      generation: number;
-    };
+    const generation = leaseGeneration(await acquire(11, "main-composer"));
     shared.bridge.snapshot = { ...emptyState, enabled: true, inputMode: "ascii" };
 
-    const released = await invoke(ImeChannels.Release, 11, { generation: lease.generation });
+    const released = await invoke(ImeChannels.SessionCommand, 11, {
+      type: "releaseTarget",
+      commandId: "release-keeps-mode",
+      targetId: "main-composer",
+      generation,
+    });
 
     expect(released).toMatchObject({
       accepted: true,
-      state: { enabled: true, inputMode: "ascii" },
+      snapshot: { engine: { enabled: true, inputMode: "ascii" } },
     });
     expect(shared.bridge.enable).toHaveBeenCalledOnce();
     expect(shared.bridge.reset).not.toHaveBeenCalled();
@@ -460,19 +499,20 @@ describe("IME IPC session ownership", () => {
 
   it("records why the renderer released a lease", async () => {
     vi.mocked(logImeDiagnostic).mockClear();
-    const lease = (await invoke(ImeChannels.Acquire, 11, { targetId: "main-composer" })) as {
-      generation: number;
-    };
+    const generation = leaseGeneration(await acquire(11, "main-composer"));
 
-    await invoke(ImeChannels.Release, 11, {
-      generation: lease.generation,
+    await invoke(ImeChannels.SessionCommand, 11, {
+      type: "releaseTarget",
+      commandId: "release-reason",
+      targetId: "main-composer",
+      generation,
       reason: "target-switched",
     });
 
     expect(logImeDiagnostic).toHaveBeenCalledWith("lease-released", {
       windowId: 1,
       targetId: "main-composer",
-      generation: lease.generation,
+      generation,
       reason: "target-switched",
       composing: false,
     });
@@ -480,12 +520,13 @@ describe("IME IPC session ownership", () => {
 
   it("never echoes an unvalidated release reason into the log", async () => {
     vi.mocked(logImeDiagnostic).mockClear();
-    const lease = (await invoke(ImeChannels.Acquire, 11, { targetId: "main-composer" })) as {
-      generation: number;
-    };
+    const generation = leaseGeneration(await acquire(11, "main-composer"));
 
-    await invoke(ImeChannels.Release, 11, {
-      generation: lease.generation,
+    await invoke(ImeChannels.SessionCommand, 11, {
+      type: "releaseTarget",
+      commandId: "release-unvalidated-reason",
+      targetId: "main-composer",
+      generation,
       reason: "用户输入的内容",
     });
 
@@ -496,9 +537,7 @@ describe("IME IPC session ownership", () => {
   });
 
   it("records why an owned lease ended when the owner window closes", async () => {
-    const lease = (await invoke(ImeChannels.Acquire, 11, { targetId: "main-composer" })) as {
-      generation: number;
-    };
+    const generation = leaseGeneration(await acquire(11, "main-composer"));
     vi.mocked(logImeDiagnostic).mockClear();
 
     const onClosed = shared.main.once.mock.calls.find(([event]) => event === "closed")?.[1] as
@@ -509,16 +548,14 @@ describe("IME IPC session ownership", () => {
     expect(logImeDiagnostic).toHaveBeenCalledWith("lease-released", {
       windowId: 1,
       targetId: "main-composer",
-      generation: lease.generation,
+      generation,
       reason: "owner-window-closed",
       staleListener: false,
     });
   });
 
   it("survives detaching lease listeners after the owner window is destroyed", async () => {
-    const lease = (await invoke(ImeChannels.Acquire, 11, { targetId: "main-composer" })) as {
-      generation: number;
-    };
+    const generation = leaseGeneration(await acquire(11, "main-composer"));
     vi.mocked(logImeDiagnostic).mockClear();
     const onClosed = shared.main.once.mock.calls.find(([event]) => event === "closed")?.[1] as
       | (() => void)
@@ -534,14 +571,14 @@ describe("IME IPC session ownership", () => {
     expect(logImeDiagnostic).toHaveBeenCalledWith("lease-released", {
       windowId: 1,
       targetId: "main-composer",
-      generation: lease.generation,
+      generation,
       reason: "owner-window-closed",
       staleListener: false,
     });
   });
 
   it("disposes without touching a destroyed owner window", async () => {
-    await invoke(ImeChannels.Acquire, 11, { targetId: "main-composer" });
+    await acquire(11, "main-composer");
     const controller = registerImeIpc();
     const restore = destroyMainWindow();
 
@@ -553,19 +590,17 @@ describe("IME IPC session ownership", () => {
   });
 
   it("records the superseded lease when another window takes ownership", async () => {
-    const first = (await invoke(ImeChannels.Acquire, 11, { targetId: "main-composer" })) as {
-      generation: number;
-    };
+    const first = leaseGeneration(await acquire(11, "main-composer"));
     vi.mocked(logImeDiagnostic).mockClear();
 
-    await invoke(ImeChannels.Acquire, 22, { targetId: "reply-composer" });
+    await acquire(22, "reply-composer");
 
     expect(logImeDiagnostic).toHaveBeenCalledWith(
       "lease-released",
       expect.objectContaining({
         windowId: 1,
         targetId: "main-composer",
-        generation: first.generation,
+        generation: first,
         reason: "owner-replaced",
         nextTargetId: "reply-composer",
       }),
@@ -573,19 +608,17 @@ describe("IME IPC session ownership", () => {
   });
 
   it("records a native isolation failure as the reason a lease disappears", async () => {
-    const first = (await invoke(ImeChannels.Acquire, 11, { targetId: "main-composer" })) as {
-      generation: number;
-    };
+    const first = leaseGeneration(await acquire(11, "main-composer"));
     vi.mocked(logImeDiagnostic).mockClear();
     shared.isolateNativeIme.mockReturnValueOnce("failed");
 
-    await invoke(ImeChannels.Acquire, 22, { targetId: "reply-composer" });
+    await acquire(22, "reply-composer");
 
     expect(vi.mocked(logImeDiagnostic).mock.calls).toContainEqual([
       "lease-released",
       expect.objectContaining({
         targetId: "main-composer",
-        generation: first.generation,
+        generation: first,
         reason: "native-ime-isolation-failed",
       }),
     ]);
@@ -622,27 +655,24 @@ describe("IME IPC session ownership", () => {
   });
 
   it("cancels the previous target composition on transfer while retaining engine mode", async () => {
-    const first = (await invoke(ImeChannels.Acquire, 11, { targetId: "main-composer" })) as {
-      generation: number;
-    };
+    const generation = leaseGeneration(await acquire(11, "main-composer"));
     shared.bridge.snapshot = { ...emptyState, enabled: true, inputMode: "ascii", composing: true };
 
-    const second = await invoke(ImeChannels.Acquire, 22, { targetId: "reply-composer" });
+    const second = await acquire(22, "reply-composer");
 
     expect(shared.bridge.reset).toHaveBeenCalledOnce();
     expect(shared.bridge.enable).toHaveBeenCalledOnce();
     expect(second).toMatchObject({
       accepted: true,
-      targetId: "reply-composer",
-      generation: first.generation + 1,
-      state: { enabled: true, inputMode: "ascii" },
+      snapshot: {
+        owner: { targetId: "reply-composer", generation: generation + 1 },
+        engine: { enabled: true, inputMode: "ascii" },
+      },
     });
   });
 
   it("does not expose a new owner until the previous composition has been reset", async () => {
-    const first = (await invoke(ImeChannels.Acquire, 11, { targetId: "main-composer" })) as {
-      generation: number;
-    };
+    const first = leaseGeneration(await acquire(11, "main-composer"));
     shared.bridge.snapshot = {
       ...emptyState,
       enabled: true,
@@ -671,7 +701,7 @@ describe("IME IPC session ownership", () => {
       return shared.bridge.snapshot;
     });
 
-    const nextLease = invoke(ImeChannels.Acquire, 22, { targetId: "reply-composer" });
+    const nextLease = acquire(22, "reply-composer");
     await started;
     expect(shared.isolateNativeIme).not.toHaveBeenCalled();
 
@@ -679,7 +709,7 @@ describe("IME IPC session ownership", () => {
       type: "processKey",
       commandId: "old-target-key",
       targetId: "main-composer",
-      generation: first.generation,
+      generation: first,
       key: "n",
       code: "KeyN",
       shift: false,
@@ -691,7 +721,7 @@ describe("IME IPC session ownership", () => {
       type: "selectCandidate",
       commandId: "old-target-candidate",
       targetId: "main-composer",
-      generation: first.generation,
+      generation: first,
       index: 0,
     });
     let snapshotResolved = false;
@@ -703,14 +733,10 @@ describe("IME IPC session ownership", () => {
     expect(snapshotResolved).toBe(false);
 
     finishReset?.();
-    const acquired = (await nextLease) as {
-      accepted: boolean;
-      targetId: string;
-      commit?: unknown;
-    };
+    const acquired = await nextLease;
     expect(acquired).toMatchObject({
       accepted: true,
-      targetId: "reply-composer",
+      snapshot: { owner: { targetId: "reply-composer" } },
     });
     expect(acquired).not.toHaveProperty("commit");
     expect(shared.isolateNativeIme).toHaveBeenCalledOnce();
@@ -724,13 +750,11 @@ describe("IME IPC session ownership", () => {
         engine: { composing: false, preedit: "", candidates: [] },
       },
     });
-    expect(first.generation).toBe(1);
+    expect(first).toBe(1);
   });
 
   it("suspends the lease from the shared native focus stream after an app switch", async () => {
-    const lease = (await invoke(ImeChannels.Acquire, 11, { targetId: "main-composer" })) as {
-      generation: number;
-    };
+    const generation = leaseGeneration(await acquire(11, "main-composer"));
     vi.useFakeTimers();
     shared.focusedWindow = undefined;
     shared.appForeground = false;
@@ -741,19 +765,19 @@ describe("IME IPC session ownership", () => {
 
     expect(logImeDiagnostic).toHaveBeenCalledWith(
       "lease-suspended",
-      expect.objectContaining({ windowId: 1, generation: lease.generation }),
+      expect.objectContaining({ windowId: 1, generation }),
     );
     expect(shared.isolateNativeIme).toHaveBeenCalledWith(shared.main);
     expect(shared.setImeCandidateState).toHaveBeenCalledWith(shared.main, {
       type: "suspend",
       targetId: "main-composer",
-      generation: lease.generation,
+      generation,
     });
     vi.useRealTimers();
   });
 
   it("reapplies native IME isolation when the owning window regains focus", async () => {
-    await invoke(ImeChannels.Acquire, 11, { targetId: "main-composer" });
+    await acquire(11, "main-composer");
     shared.isolateNativeIme.mockClear();
 
     for (const listener of shared.focusSubscribers)
@@ -764,9 +788,7 @@ describe("IME IPC session ownership", () => {
   });
 
   it("suspends the lease if native IME isolation fails after focus returns", async () => {
-    const lease = (await invoke(ImeChannels.Acquire, 11, { targetId: "main-composer" })) as {
-      generation: number;
-    };
+    const generation = leaseGeneration(await acquire(11, "main-composer"));
     shared.isolateNativeIme.mockReturnValue("failed");
 
     for (const listener of shared.focusSubscribers)
@@ -775,11 +797,11 @@ describe("IME IPC session ownership", () => {
     expect(shared.setImeCandidateState).toHaveBeenCalledWith(shared.main, {
       type: "suspend",
       targetId: "main-composer",
-      generation: lease.generation,
+      generation,
     });
     expect(logImeDiagnostic).toHaveBeenCalledWith("native-ime-isolation-failed-on-focus", {
       windowId: shared.main.id,
-      generation: lease.generation,
+      generation,
     });
   });
 
