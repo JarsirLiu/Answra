@@ -6,6 +6,13 @@ import type {
 } from "@answra/shared";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ImeCandidatePopup } from "../components/panels/ImeCandidatePopup";
+import {
+  type ColorGroupOverrides,
+  loadAmbientFollow,
+  loadAppOpacity,
+  loadColorGroups,
+  useAppTheme,
+} from "../theme";
 import "./ImeCandidateWindowApp.css";
 
 interface ImeCandidateWindowAppProps {
@@ -31,6 +38,15 @@ export function ImeCandidateWindowApp({ bridge }: ImeCandidateWindowAppProps) {
   const { state } = snapshot;
   const rootRef = useRef<HTMLDivElement>(null);
   const lastRenderSignatureRef = useRef<string | undefined>(undefined);
+  // 候选窗是独立窗口，没有外观控制器：读同一份偏好 + 主进程广播的采样结果，
+  // 复用 useAppTheme 落到与主窗口相同的 data-theme 与感知令牌。
+  const [ambientFollow] = useState(loadAmbientFollow);
+  const [colorGroups] = useState<ColorGroupOverrides>(loadColorGroups);
+  useAppTheme(platform, { ambientFollow, colorGroups });
+
+  useEffect(() => {
+    document.documentElement.style.setProperty("--fade", String(loadAppOpacity()));
+  }, []);
 
   useEffect(() => {
     const unsubscribe = platform?.onImeCandidateState?.(setSnapshot);

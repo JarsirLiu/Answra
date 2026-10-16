@@ -21,6 +21,7 @@ vi.mock("electron", () => ({
   },
 }));
 
+import { AmbientChannels } from "@answra/shared";
 import { desktopCapturer, screen } from "electron";
 import {
   createAmbientThemeController,
@@ -145,6 +146,47 @@ describe("expandInner", () => {
 });
 
 describe("ambient sampling lifecycle", () => {
+  it("pushes every sample to the extra surfaces that follow the same background", async () => {
+    vi.useFakeTimers();
+    const window = {
+      isDestroyed: () => false,
+      isMinimized: () => false,
+      getBounds: () => ({ x: 300, y: 200, width: 100, height: 48 }),
+      webContents: { send: vi.fn() },
+      on: vi.fn(),
+      removeListener: vi.fn(),
+    };
+    const candidate = { isDestroyed: () => false, webContents: { send: vi.fn() } };
+    const thumbnail = {
+      isEmpty: () => false,
+      getSize: () => ({ width: 400, height: 300 }),
+      crop: () => ({
+        getSize: () => ({ width: 64, height: 64 }),
+        toBitmap: () => Buffer.alloc(64 * 64 * 4, 32),
+      }),
+    };
+    vi.mocked(desktopCapturer.getSources).mockResolvedValue([
+      { display_id: "1", thumbnail },
+    ] as never);
+    const controller = createAmbientThemeController(window as never, {
+      additionalTargets: () => [candidate as never],
+    });
+
+    controller.setEnabled(true);
+    await vi.waitFor(() => expect(candidate.webContents.send).toHaveBeenCalledOnce());
+    expect(candidate.webContents.send).toHaveBeenCalledWith(
+      AmbientChannels.AmbientColor,
+      expect.objectContaining({ ok: true, hex: "#202020" }),
+    );
+    expect(window.webContents.send).toHaveBeenCalledWith(
+      AmbientChannels.AmbientColor,
+      expect.objectContaining({ ok: true, hex: "#202020" }),
+    );
+
+    controller.dispose();
+    vi.useRealTimers();
+  });
+
   it("samples only while enabled", async () => {
     vi.useFakeTimers();
     const window = {

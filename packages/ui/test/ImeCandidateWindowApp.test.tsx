@@ -2,6 +2,8 @@ import type { DesktopBridge, ImeState } from "@answra/shared";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ImeCandidateWindowApp } from "../src/app/ImeCandidateWindowApp";
+import { deriveAmbientTokens } from "../src/hooks/useAmbientTheme";
+import { AMBIENT_FOLLOW_STORAGE_KEY, APP_OPACITY_STORAGE_KEY } from "../src/model";
 
 const state: ImeState = {
   enabled: true,
@@ -15,7 +17,46 @@ const state: ImeState = {
 };
 
 describe("ImeCandidateWindowApp", () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+    const root = document.documentElement;
+    delete root.dataset.theme;
+    root.style.removeProperty("--fade");
+    root.style.removeProperty("--ink-tint");
+    root.style.removeProperty("--panel-tint");
+  });
+
+  it("adopts the shared theme payload and opacity instead of stylesheet defaults", () => {
+    localStorage.setItem(AMBIENT_FOLLOW_STORAGE_KEY, "on");
+    localStorage.setItem(APP_OPACITY_STORAGE_KEY, "0.6");
+    let emitAmbient:
+      | ((payload: { ok: boolean; hex: string; luminance: number }) => void)
+      | undefined;
+    const bridge = {
+      onImeCandidateState: () => () => {},
+      requestImeCandidateState: vi.fn(),
+      onAmbientColor: (
+        listener: (payload: { ok: boolean; hex: string; luminance: number }) => void,
+      ) => {
+        emitAmbient = listener;
+        return () => {};
+      },
+    } satisfies Partial<DesktopBridge>;
+    render(<ImeCandidateWindowApp bridge={bridge as unknown as DesktopBridge} />);
+
+    act(() => emitAmbient?.({ ok: true, hex: "#101418", luminance: 0.05 }));
+
+    const derived = deriveAmbientTokens("#101418");
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(document.documentElement.style.getPropertyValue("--ink-tint")).toBe(
+      derived?.["--ink-tint"],
+    );
+    expect(document.documentElement.style.getPropertyValue("--panel-tint")).toBe(
+      derived?.["--panel-tint"],
+    );
+    expect(document.documentElement.style.getPropertyValue("--fade")).toBe("0.6");
+  });
 
   it("reports rendered candidate DOM and routes mouse selection to the input owner", () => {
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {

@@ -149,7 +149,11 @@ function median(values: number[]): number {
 }
 
 /** 采样一次并推送；任何失败都推送 ok=false，由渲染器回落默认主题。 */
-async function sampleAndPush(window: BrowserWindow, isCurrent: () => boolean): Promise<void> {
+async function sampleAndPush(
+  window: BrowserWindow,
+  isCurrent: () => boolean,
+  additionalTargets: () => (BrowserWindow | undefined)[],
+): Promise<void> {
   let payload: AmbientColorPayload;
   try {
     if (window.isDestroyed() || window.isMinimized()) return;
@@ -218,15 +222,30 @@ async function sampleAndPush(window: BrowserWindow, isCurrent: () => boolean): P
     payload = { ok: false, hex: "#ffffff", luminance: 1 };
   }
   if (isCurrent() && !window.isDestroyed()) {
-    window.webContents.send(AmbientChannels.AmbientColor, payload);
+    // 独立表面（候选窗）没有外观控制器，只能消费同一份采样结果自己推导令牌；
+    // 主窗口始终是采样来源，额外目标不存在时跳过。
+    for (const target of [window, ...additionalTargets()]) {
+      if (!target || target.isDestroyed()) continue;
+      target.webContents.send(AmbientChannels.AmbientColor, payload);
+    }
   }
 }
 
+/** 变色龙采样目标：主窗口 + 需要跟随同一背景色的独立窗口。 */
+export interface AmbientThemeControllerOptions {
+  /** 额外接收采样推送的窗口（如候选窗）；每次采样时求值，窗口可能尚未创建。 */
+  additionalTargets?: () => (BrowserWindow | undefined)[];
+}
+
 /** The persisted renderer preference controls whether native screen sampling exists at all. */
-export function createAmbientThemeController(window: BrowserWindow): {
+export function createAmbientThemeController(
+  window: BrowserWindow,
+  options: AmbientThemeControllerOptions = {},
+): {
   setEnabled: (enabled: boolean) => void;
   dispose: () => void;
 } {
+  const additionalTargets = options.additionalTargets ?? (() => []);
   let enabled = false;
   let disposed = false;
   let generation = 0;
@@ -242,7 +261,7 @@ export function createAmbientThemeController(window: BrowserWindow): {
     sampling = true;
     const runGeneration = generation;
     lastRun = Date.now();
-    void sampleAndPush(window, () => isCurrent(runGeneration)).finally(() => {
+    void sampleAndPush(window, () => isCurrent(runGeneration), additionalTargets).finally(() => {
       sampling = false;
     });
   };

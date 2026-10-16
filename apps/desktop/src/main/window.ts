@@ -132,6 +132,11 @@ export function sendImeCandidateAction(action: ImeCandidateAction): void {
   ensureControllers();
   imeCandidateController.routeAction(action);
 }
+/** Live candidate window (already created); consumers push shared surfaces like the theme payload. */
+export function getImeCandidateWindow(): BrowserWindow | undefined {
+  ensureControllers();
+  return imeCandidateController.getWindow();
+}
 export function disposeImeCandidateWindow(): void {
   if (!imeCandidateController) return;
   imeCandidateController.dispose();

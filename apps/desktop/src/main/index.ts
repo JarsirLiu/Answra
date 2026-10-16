@@ -8,7 +8,13 @@ import { registerImeCandidateIpc } from "./ime/imeCandidateIpc";
 import { registerImeIpc } from "./ime/imeIpc";
 import { registerAmbientIpc } from "./ipc/ambientIpc";
 import { registerWindowIpc } from "./ipc/windowIpc";
-import { createMainWindow, disposeImeCandidateWindow, getWindow, isStealthEnabled } from "./window";
+import {
+  createMainWindow,
+  disposeImeCandidateWindow,
+  getImeCandidateWindow,
+  getWindow,
+  isStealthEnabled,
+} from "./window";
 import {
   registerWorkspaceFileProtocol,
   registerWorkspaceSchemePrivileges,
@@ -57,7 +63,9 @@ app.on("window-all-closed", () => app.quit());
 
 function createManagedMainWindow(): void {
   const window = createMainWindow();
-  const controller = createAmbientThemeController(window);
+  const controller = createAmbientThemeController(window, {
+    additionalTargets: () => [getImeCandidateWindow()],
+  });
   ambientController = controller;
   window.once("closed", () => {
     controller.dispose();

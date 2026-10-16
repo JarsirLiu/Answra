@@ -241,3 +241,31 @@ main/IPC 目标转移的自动化契约现已覆盖，但平台验证和资源�
 - 编辑器 adapter、候选/窗口面、平台隔离分别由不同负责人维护；集成负责人只维护跨包契约测试。
 - 结论：**只做 S1 不做 S2，可以显著降低排障成本，但不能声称架构已解耦；只做 S2 不做 S1，会失去验证解耦是否真生效的证据。两者必须一起做才满足本提案的验收标准。**
 
+## 2026-10-16 修订：候选窗主题接入与剩余工作清单
+
+### 本次已交付（与解耦主线并行、属实机验证阻塞项）
+
+- 修掉深色下「AI 正文与候选词不可见」：`TextResponse.module.css` 的双冒号 `::global(...)` 被 lightningcss 丢弃导致 `--tr-*` 从未生效；候选窗没有 `--fade`/`data-theme`，且 `ImeCandidatePopup.css` 引用已不存在的 `--surface`/`--line`/`--accent`。详见[深色主题下 AI 正文与候选词不可见](../../implemented/bug-fix/2026-10-16-dark-theme-invisible-chat-and-candidates.md)。
+- 候选窗主题来源：`createAmbientThemeController(window, { additionalTargets })` 把同一份采样 payload 广播给候选窗，候选窗用 `useAppTheme` + localStorage 偏好落到与主窗口相同的 `data-theme` 与感知令牌。
+- 新增 `packages/ui/test/themeCss.test.ts` 守卫：生效 CSS 不得出现 `::global(`，`var(--x)` 必须已声明或在白名单内。
+
+### 候选窗主题遗留项（后续接手先看这段）
+
+1. **偏好只在挂载时读一次**：候选窗用 `useState(loadAmbientFollow)`/`loadColorGroups`/`loadAppOpacity` 各取一次值；用户在候选窗存活期间改设置，要等窗口重建才生效。若要实时，需要把偏好变化投影进候选窗（与第 2 条一起做）。
+2. **主题来源与视觉契约不同源**：回复条由主 renderer 投影最终变量（`ReplyBarState.theme`），候选窗却是「主进程广播采样 + 自行推导」。若要统一为「表面主题由主 renderer 单点投影」，需新增通道（renderer → main → 候选窗）并把候选窗纳入，同时移除 `additionalTargets` 广播；届时用户颜色分组与透明度也会自动实时同步。
+3. **`--fade` 未进广播**：候选窗直接读 localStorage，不在「表面共享令牌」的统一推送里；第 2 条落地时应一并收口。
+4. `readOnly` 双职责（阻止原生写入 + 阻止系统 IME 接管）仍未拆，属 S2b/S3 范围。
+
+### 剩余阶段（按此顺序继续）
+
+- **S2b 候选/锚点/窗口面副本收口**：`ImeCandidateAnchorReporter` 的本地 `windowFocused` 副本与 `!anchor.readOnly` 门控改为派生；连同 `imeEnabled` 之外的组件级派生一起审查。这是 S2 的最后一块。
+- **S3 候选与窗口面解耦**：候选状态、锚点、窗口生命周期、层级、捕获保护拆成独立写入者；候选展示不再与 suspend/hide/cancel/release 共用同一个 modify 批量变量；sizing 契约在此阶段验收。
+- **S4 清理与契约固化**：删除迁移遗留字段与只服务旧路径的分支；把 S1–S3 的判据写成测试。
+- **S5 平台验证与迁移**：Windows/macOS 实机矩阵、资源一致性、系统 IME 隔离决策；证据齐全后把本提案迁到 `implemented/`。
+
+### 交接约束（不要回退）
+
+- CSS 主题变量必须单冒号 `:global(...)`，组件 CSS 只引用 `tokens.css` 感知令牌；`themeCss.test.ts` 会拦住违反者。
+- 实底按钮的反色文字用 `--panel`（与 `--ink` 恒反色），不要写字面量白色或已不存在的 `--ink-deep`。
+- 候选窗必须复用 `useAppTheme`，不要新建第二套主题推导。
+

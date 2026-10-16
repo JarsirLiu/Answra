@@ -647,6 +647,8 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
     markRendererReady,
     sendState,
     update,
+    /** Live candidate window, if created and not destroyed; used to push shared theme payloads. */
+    getWindow: () => (windowRef && !windowRef.isDestroyed() ? windowRef : undefined),
   };
 }
 
