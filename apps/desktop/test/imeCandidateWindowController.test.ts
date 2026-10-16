@@ -474,4 +474,73 @@ describe("IME candidate window controller", () => {
     expect(candidate.visible).toBe(true);
     controller.dispose();
   });
+
+  it("suspends by clearing only the anchor, keeping content and the owner binding", () => {
+    const owner = new shared.MockWindow({ x: 100, y: 50, width: 800, height: 600 });
+    const controller = createImeCandidateWindowController({
+      isOwnerWindow: (candidate) => candidate === owner,
+      registerWindowSurface: vi.fn(),
+      prepareWindowToShow: () => true,
+      attachAbove: (child, owner) => child.setParentWindow(owner),
+    });
+    controller.update(owner as never, {
+      type: "show",
+      state,
+      anchor: { x: 240, lineTop: 120, lineBottom: 144 },
+      targetId: "composer",
+      generation: 3,
+    });
+    const candidate = shared.windows.at(-1);
+    if (!candidate) throw new Error("candidate window was not created");
+    controller.markRendererReady();
+    candidate.webContents.emit("did-finish-load");
+    vi.mocked(logImeDiagnostic).mockClear();
+
+    controller.update(owner as never, { type: "suspend", targetId: "composer", generation: 3 });
+
+    expect(candidate.visible).toBe(false);
+    expect(owner.listenerCount("move")).toBe(1);
+
+    controller.update(owner as never, { type: "clear", targetId: "composer", generation: 99 });
+    expect(logImeDiagnostic).not.toHaveBeenCalledWith("candidate-update-clear", expect.anything());
+
+    controller.update(owner as never, { type: "clear", targetId: "composer", generation: 3 });
+    expect(logImeDiagnostic).toHaveBeenCalledWith(
+      "candidate-update-clear",
+      expect.objectContaining({ targetId: "composer", generation: 3 }),
+    );
+    expect(owner.listenerCount("move")).toBe(0);
+    controller.dispose();
+  });
+
+  it("ignores a non-positive renderer size so the sizing contract stays with the last valid value", () => {
+    const owner = new shared.MockWindow({ x: 100, y: 50, width: 800, height: 600 });
+    const controller = createImeCandidateWindowController({
+      isOwnerWindow: (candidate) => candidate === owner,
+      registerWindowSurface: vi.fn(),
+      prepareWindowToShow: () => true,
+      attachAbove: (child, owner) => child.setParentWindow(owner),
+    });
+    controller.update(owner as never, {
+      type: "show",
+      state,
+      anchor: { x: 240, lineTop: 120, lineBottom: 144 },
+      targetId: "composer",
+      generation: 2,
+    });
+    const candidate = shared.windows.at(-1);
+    if (!candidate) throw new Error("candidate window was not created");
+    controller.markRendererReady();
+    candidate.webContents.emit("did-finish-load");
+    vi.mocked(logImeDiagnostic).mockClear();
+
+    controller.resize({ width: 0, height: -4 });
+
+    expect(logImeDiagnostic).not.toHaveBeenCalledWith(
+      "candidate-native-positioned",
+      expect.anything(),
+    );
+    expect(candidate.bounds).toMatchObject({ width: 640, height: 56 });
+    controller.dispose();
+  });
 });
