@@ -125,6 +125,7 @@ vi.mock("../src/main/windowStealthController", () => ({
 
 vi.mock("../src/main/windowForeground", () => ({
   isCurrentProcessForeground: () => shared.appForeground,
+  describeForegroundWindow: () => ({}),
 }));
 
 vi.mock("../src/main/ime/rimeBridge", () => ({
@@ -143,6 +144,7 @@ vi.mock("../src/main/ime/rimeBridge", () => ({
 
 vi.mock("../src/main/ime/imeDiagnostics", () => ({
   logImeDiagnostic: vi.fn(),
+  isImeDebugEnabled: () => false,
 }));
 
 import { ImeChannels } from "@answra/shared";
@@ -582,6 +584,30 @@ describe("IME IPC session ownership", () => {
       windowId: shared.main.id,
       generation: lease.generation,
     });
+  });
+
+  it("keeps an owned lease when the owner re-sends a focus confirmation", async () => {
+    shared.isolateNativeIme.mockReturnValue("not-required");
+    const lease = (await invoke(ImeChannels.SessionCommand, 11, {
+      type: "acquireTarget",
+      commandId: "acquire-owned",
+      targetId: "main-composer",
+    })) as { snapshot: { owner: { generation: number } } };
+    const generation = lease.snapshot.owner.generation;
+    shared.isolateNativeIme.mockClear();
+
+    await expect(
+      invoke(ImeChannels.SessionCommand, 11, {
+        type: "resume",
+        commandId: "resume-owned",
+        targetId: "main-composer",
+        generation,
+      }),
+    ).resolves.toMatchObject({
+      accepted: true,
+      snapshot: { phase: "owned", owner: { targetId: "main-composer", generation } },
+    });
+    expect(shared.isolateNativeIme).not.toHaveBeenCalled();
   });
 
   it("forwards whitelisted focus diagnostics while suppressing key-routing noise", () => {

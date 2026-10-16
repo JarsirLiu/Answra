@@ -249,7 +249,7 @@ describe("ImeCandidateAnchorReporter", () => {
     });
   });
 
-  it("preserves and restores the last IME textarea across window focus changes", () => {
+  it("does not restore editor focus when the window regains focus", () => {
     const onUpdate = vi.fn();
     const { host, textarea } = mountHost();
     render(
@@ -274,10 +274,9 @@ describe("ImeCandidateAnchorReporter", () => {
 
     fireEvent.focus(window);
 
-    expect(document.activeElement).toBe(textarea);
+    expect(document.activeElement).not.toBe(textarea);
     expect(onUpdate).toHaveBeenLastCalledWith({
-      type: "show",
-      anchor: { x: 0, lineTop: 0, lineBottom: 0 },
+      type: "clear",
       targetId: "composer",
       generation: 2,
     });

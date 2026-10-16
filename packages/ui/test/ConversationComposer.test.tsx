@@ -24,14 +24,12 @@ function imeProps(
     imeEnabled: true,
     textPolicy: resolveImeTextPolicy({
       targetOwned: true,
-      inputMode: "chinese",
       composing: false,
     }),
     shouldPreventBeforeInput: (inputType: string) =>
       shouldPreventImeBeforeInput(
         resolveImeTextPolicy({
           targetOwned: true,
-          inputMode: "chinese",
           composing: false,
         }),
         inputType,
@@ -43,6 +41,7 @@ function imeProps(
     onFocus: vi.fn(),
     onBlur: vi.fn(),
     targetId: "test-composer",
+    generation: 1,
     onToggle: vi.fn(),
     state: EMPTY_IME_STATE,
     ...overrides,
@@ -145,14 +144,12 @@ describe("ConversationComposer", () => {
           imeEnabled: false,
           textPolicy: resolveImeTextPolicy({
             targetOwned: false,
-            inputMode: "chinese",
             composing: false,
           }),
           shouldPreventBeforeInput: (inputType) =>
             shouldPreventImeBeforeInput(
               resolveImeTextPolicy({
                 targetOwned: false,
-                inputMode: "chinese",
                 composing: false,
               }),
               inputType,
@@ -171,19 +168,12 @@ describe("ConversationComposer", () => {
     expect(onValueChange).toHaveBeenCalledWith("hello");
   });
 
-  it("keeps ASCII text and Backspace native while blocking platform composition", () => {
+  it("keeps the owned target read-only in ASCII mode so the platform IME stays out", () => {
     const onValueChange = vi.fn();
     const onKeyDown = vi.fn(() => false);
     render(
       <ConversationComposer
-        ime={imeProps({
-          onKeyDown,
-          textPolicy: resolveImeTextPolicy({
-            targetOwned: true,
-            inputMode: "ascii",
-            composing: false,
-          }),
-        })}
+        ime={imeProps({ onKeyDown })}
         inputLabel="补充问题"
         onValueChange={onValueChange}
         placeholder="输入问题"
@@ -192,9 +182,9 @@ describe("ConversationComposer", () => {
     );
 
     const input = screen.getByRole("textbox", { name: "补充问题" });
-    expect(input).toHaveProperty("readOnly", false);
+    expect(input).toHaveProperty("readOnly", true);
     fireEvent.change(input, { target: { value: "text!" } });
-    expect(onValueChange).toHaveBeenCalledWith("text!");
+    expect(onValueChange).not.toHaveBeenCalled();
     fireEvent.keyDown(input, { key: "Backspace", code: "Backspace" });
     expect(onKeyDown).toHaveBeenCalledOnce();
     const compositionStart = new CompositionEvent("compositionstart", {

@@ -1,4 +1,5 @@
 import type { ImeSessionSnapshot } from "@answra/shared";
+import { getLatestImeSessionSnapshot, resetImeSessionClientForTests } from "./imeSessionClient";
 
 interface ActiveTarget {
   id: string;
@@ -6,7 +7,6 @@ interface ActiveTarget {
 }
 
 let activeTarget: ActiveTarget | undefined;
-let latestSnapshot: ImeSessionSnapshot | undefined;
 let inputQueue: Promise<void> = Promise.resolve();
 
 /** Keeps one focused IME target per renderer and invalidates its predecessor on switch. */
@@ -29,14 +29,6 @@ export function isActiveImeInputTarget(id: string): boolean {
   return activeTarget?.id === id;
 }
 
-export function publishImeSessionSnapshot(snapshot: ImeSessionSnapshot): void {
-  if (!latestSnapshot || snapshot.revision >= latestSnapshot.revision) latestSnapshot = snapshot;
-}
-
-export function getLatestImeSessionSnapshot(): ImeSessionSnapshot | undefined {
-  return latestSnapshot;
-}
-
 /** Serializes input work across hook instances in this renderer. */
 export function enqueueImeInput<T>(
   targetId: string,
@@ -44,7 +36,7 @@ export function enqueueImeInput<T>(
 ): Promise<T | undefined> {
   const result = inputQueue.then(async () => {
     if (!isActiveImeInputTarget(targetId)) return undefined;
-    return operation(latestSnapshot);
+    return operation(getLatestImeSessionSnapshot());
   });
   inputQueue = result.then(
     () => undefined,
@@ -55,6 +47,6 @@ export function enqueueImeInput<T>(
 
 export function resetImeInputTargetCoordinatorForTests(): void {
   activeTarget = undefined;
-  latestSnapshot = undefined;
   inputQueue = Promise.resolve();
+  resetImeSessionClientForTests();
 }

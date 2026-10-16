@@ -670,6 +670,88 @@ describe("useEmbeddedIme lease routing", () => {
     await waitFor(() => expect(imeRelease).toHaveBeenCalledWith(2));
   });
 
+  it("does not release on DOM blur before the native window blur event arrives", async () => {
+    const imeRelease = vi.fn();
+    const bridge = withSessionApi({
+      imeAvailable: true,
+      imeAcquire: vi.fn().mockResolvedValue(lease(13)),
+      imeRelease,
+    } as unknown as DesktopBridge);
+    const hasFocus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    const { result } = renderHook(() => useEmbeddedIme(bridge, undefined, true, "composer"));
+    const input = document.createElement("textarea");
+    input.dataset.imeTargetId = "composer";
+    document.body.appendChild(input);
+    input.focus();
+    await act(async () => result.current.acquire());
+
+    input.blur();
+    act(() => result.current.blur());
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 170)));
+
+    expect(imeRelease).not.toHaveBeenCalled();
+    expect(result.current.generation).toBe(13);
+    act(() => window.dispatchEvent(new Event("blur")));
+    hasFocus.mockRestore();
+    input.remove();
+  });
+
+  it("does not create an input target from window focus alone", async () => {
+    const imeAcquire = vi.fn();
+    const bridge = withSessionApi({
+      imeAvailable: true,
+      imeAcquire,
+    } as unknown as DesktopBridge);
+    const { result, unmount } = renderHook(() =>
+      useEmbeddedIme(bridge, undefined, true, "composer"),
+    );
+    const input = document.createElement("textarea");
+    input.dataset.imeTargetId = "composer";
+    document.body.appendChild(input);
+    input.focus();
+
+    act(() => window.dispatchEvent(new Event("focus")));
+
+    expect(imeAcquire).not.toHaveBeenCalled();
+    expect(result.current.generation).toBeUndefined();
+    unmount();
+    input.remove();
+  });
+
+  it("keeps the lease but stops routing keys after focus moves to a non-IME element", async () => {
+    const imeRelease = vi.fn();
+    const imeKey = vi.fn();
+    const bridge = withSessionApi({
+      imeAvailable: true,
+      imeAcquire: vi.fn().mockResolvedValue(lease(14)),
+      imeRelease,
+      imeKey,
+    } as unknown as DesktopBridge);
+    const hasFocus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    const { result } = renderHook(() => useEmbeddedIme(bridge, undefined, true, "composer"));
+    const input = document.createElement("textarea");
+    input.dataset.imeTargetId = "composer";
+    const button = document.createElement("button");
+    document.body.append(input, button);
+    input.focus();
+    await act(async () => result.current.acquire());
+
+    act(() => {
+      button.focus();
+      result.current.blur();
+    });
+    expect(result.current.generation).toBe(14);
+    expect(result.current.sendKey(new KeyboardEvent("keydown", { key: "n", code: "KeyN" }))).toBe(
+      false,
+    );
+    expect(imeRelease).not.toHaveBeenCalled();
+    expect(imeKey).not.toHaveBeenCalled();
+
+    hasFocus.mockRestore();
+    input.remove();
+    button.remove();
+  });
+
   it("ignores candidate actions from stale targets and generations", async () => {
     let receiveAction: ((action: ImeCandidateAction) => void) | undefined;
     const imeSelect = vi.fn().mockResolvedValue({ ...enabledState, committedText: "你" });

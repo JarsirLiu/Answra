@@ -1,3 +1,5 @@
+import { ANSWRA_IME_DEBUG, parseAnswraImeDebug } from "@answra/shared";
+
 const SUPPRESSED_EVENTS = new Set([
   "main-window-created",
   "main-window-always-on-top",
@@ -22,20 +24,32 @@ const SUPPRESSED_EVENTS = new Set([
   "renderer-document-keydown",
 ]);
 const compositionByLease = new Map<string, boolean>();
+let debugEnabled = parseAnswraImeDebug(process.env[ANSWRA_IME_DEBUG]);
+
+/** Toggles the verbose IME diagnostics (focus/acquire/key-routing) at runtime. */
+export function setImeDebugEnabled(value: boolean): void {
+  debugEnabled = value;
+}
+
+export function isImeDebugEnabled(): boolean {
+  return debugEnabled;
+}
 
 /** Emits compact, single-line IME diagnostics to the pnpm dev main-process terminal. */
 export function logImeDiagnostic(event: string, details: Record<string, unknown> = {}): void {
   if (event === "lease-released")
     compositionByLease.delete(`${details.windowId}:${details.generation}`);
-  if (SUPPRESSED_EVENTS.has(event)) return;
+  if (!debugEnabled && SUPPRESSED_EVENTS.has(event)) return;
   if (
+    !debugEnabled &&
     event === "candidate-position-status" &&
     ["already-visible", "show-request-visible"].includes(String(details.status))
   )
     return;
-  if (event === "candidate-native-hide-requested") return;
-  if (event === "candidate-native-hide-result" && details.wasVisible !== true) return;
-  if (event === "candidate-native-positioned" && details.visible !== true) return;
+  if (!debugEnabled && event === "candidate-native-hide-requested") return;
+  if (!debugEnabled && event === "candidate-native-hide-result" && details.wasVisible !== true)
+    return;
+  if (!debugEnabled && event === "candidate-native-positioned" && details.visible !== true) return;
 
   if (event === "key-processed") {
     const key = String(details.key ?? "");

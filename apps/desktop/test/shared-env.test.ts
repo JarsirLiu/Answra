@@ -1,4 +1,4 @@
-import { parseAnswraEnv } from "@answra/shared";
+import { parseAnswraEnv, parseAnswraImeDebug } from "@answra/shared";
 import { describe, expect, it } from "vitest";
 
 /**
@@ -17,5 +17,19 @@ describe("parseAnswraEnv", () => {
     expect(parseAnswraEnv("")).toBe("development");
     expect(parseAnswraEnv("Production")).toBe("development"); // 大小写敏感
     expect(parseAnswraEnv("staging")).toBe("development");
+  });
+});
+
+describe("parseAnswraImeDebug", () => {
+  it("enables only for the explicit truthy spellings", () => {
+    expect(parseAnswraImeDebug("1")).toBe(true);
+    expect(parseAnswraImeDebug("true")).toBe(true);
+  });
+
+  it("stays off for anything else", () => {
+    expect(parseAnswraImeDebug(undefined)).toBe(false);
+    expect(parseAnswraImeDebug("")).toBe(false);
+    expect(parseAnswraImeDebug("0")).toBe(false);
+    expect(parseAnswraImeDebug("yes")).toBe(false);
   });
 });

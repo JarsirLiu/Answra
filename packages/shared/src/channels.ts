@@ -418,7 +418,8 @@ export type ImeRendererDiagnosticEvent =
   | "document-keydown"
   | "selection-after-shortcut"
   | "key-routing"
-  | "candidate-rendered";
+  | "candidate-rendered"
+  | "release-called";
 
 export interface ImeDiagnosticRect {
   x: number;
@@ -442,6 +443,7 @@ export interface ImeRendererDiagnostic {
   targetId: string;
   ownerTargetId?: string;
   source?: "input-focus" | "window-focus";
+  reason?: string;
   generation?: number;
   activeElementTarget?: boolean;
   documentHasFocus?: boolean;

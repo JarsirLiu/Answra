@@ -18,9 +18,9 @@ import {
   setImeCandidateState,
   subscribeToWindowFocus,
 } from "../window";
-import { isCurrentProcessForeground } from "../windowForeground";
+import { describeForegroundWindow, isCurrentProcessForeground } from "../windowForeground";
 import { isolateNativeIme } from "../windowStealthController";
-import { logImeDiagnostic } from "./imeDiagnostics";
+import { isImeDebugEnabled, logImeDiagnostic } from "./imeDiagnostics";
 import { ImeSessionManager, isActiveImeLease } from "./imeSessionManager";
 import type { ImeOwnerIdentity, ImeSessionState } from "./imeSessionState";
 import { RimeBridge } from "./rimeBridge";
@@ -202,16 +202,17 @@ export function registerImeIpc(): {
       )
     )
       details.keyKind = payload.keyKind as string;
-    if (
-      payload.event === "key-routing" &&
-      (payload.ctrl || payload.alt || payload.meta || payload.keyKind === "backspace")
-    ) {
-      logImeDiagnostic("key-routing", details);
+    if (payload.event === "document-keydown" || payload.event === "input-mounted") {
+      if (isImeDebugEnabled()) logImeDiagnostic(`renderer-${payload.event}`, details);
     } else if (
-      payload.event !== "key-routing" &&
-      payload.event !== "document-keydown" &&
-      payload.event !== "input-mounted"
+      payload.event === "key-routing" &&
+      !isImeDebugEnabled() &&
+      !(payload.ctrl || payload.alt || payload.meta || payload.keyKind === "backspace")
     ) {
+      return;
+    } else if (payload.event === "key-routing") {
+      logImeDiagnostic("key-routing", details);
+    } else {
       logImeDiagnostic(`renderer-${payload.event}`, details);
     }
   };
@@ -254,6 +255,14 @@ export function registerImeIpc(): {
           return;
         const focused = BrowserWindow.getFocusedWindow();
         if (isCurrentProcessForeground() && (!focused || focused === window)) return;
+        logImeDiagnostic("owner-blur-settled", {
+          windowId: window.id,
+          generation,
+          focusedWindowId: focused?.id,
+          appForeground: isCurrentProcessForeground(),
+          ...describeForegroundWindow(),
+          processId: process.pid,
+        });
         suspendCurrent("owner-window-blur");
       }, BLUR_SETTLE_MS);
     };
@@ -577,6 +586,17 @@ export function registerImeIpc(): {
               manager.snapshot.revision !== payload.expectedRevision
             )
               return { staleRevision: true };
+            // Re-confirming focus while already owned is a no-op. The owner window
+            // keeps its lease across non-activating candidate surfaces, and the
+            // renderer re-sends `resume` on every window focus.
+            if (manager.lease.status === "owned") {
+              manager.transition({
+                type: "confirm-focus",
+                owner: current.owner,
+                generation: payload.generation,
+              });
+              return { enabled: manager.engineState.enabled };
+            }
             if (
               manager.lease.status !== "suspended" ||
               isolateNativeIme(current.window) === "failed"

@@ -67,10 +67,13 @@ describe("useStealthInputGuard", () => {
     expect(document.activeElement).toBe(input);
   });
 
-  it("blocks system composition even when stealth is disabled", () => {
+  it("stays inert while stealth is disabled", () => {
     const textarea = document.createElement("textarea");
     document.body.append(textarea);
     renderHook(() => useStealthInputGuard(false));
+
+    textarea.focus();
+    expect(document.activeElement).toBe(textarea);
 
     const composition = new CompositionEvent("compositionstart", {
       bubbles: true,
@@ -78,19 +81,38 @@ describe("useStealthInputGuard", () => {
       data: "ni",
     });
     textarea.dispatchEvent(composition);
-    const beforeInput = new InputEvent("beforeinput", {
-      bubbles: true,
-      cancelable: true,
-      inputType: "insertCompositionText",
-      data: "你",
-    });
-    textarea.dispatchEvent(beforeInput);
+    expect(composition.defaultPrevented).toBe(false);
+    expect(document.documentElement).not.toHaveAttribute("data-native-ime-isolation-failed");
+    expect(document.activeElement).toBe(textarea);
 
-    expect(composition.defaultPrevented).toBe(true);
-    expect(beforeInput.defaultPrevented).toBe(true);
-    expect(document.activeElement).not.toBe(textarea);
+    const keydown = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "a" });
+    textarea.dispatchEvent(keydown);
+    expect(keydown.defaultPrevented).toBe(false);
+    expect(document.activeElement).toBe(textarea);
+  });
+
+  it("cancels platform composition on the embedded IME target without locking it", () => {
+    const textarea = document.createElement("textarea");
+    textarea.dataset.embeddedImeTarget = "true";
+    document.body.append(textarea);
+    renderHook(() => useStealthInputGuard(true));
 
     textarea.focus();
-    expect(document.activeElement).not.toBe(textarea);
+    expect(document.activeElement).toBe(textarea);
+
+    const composition = new CompositionEvent("compositionstart", {
+      bubbles: true,
+      cancelable: true,
+      data: "ni",
+    });
+    textarea.dispatchEvent(composition);
+    expect(composition.defaultPrevented).toBe(true);
+    expect(document.documentElement).not.toHaveAttribute("data-native-ime-isolation-failed");
+    expect(document.activeElement).toBe(textarea);
+
+    const keydown = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "a" });
+    textarea.dispatchEvent(keydown);
+    expect(keydown.defaultPrevented).toBe(false);
+    expect(document.activeElement).toBe(textarea);
   });
 });

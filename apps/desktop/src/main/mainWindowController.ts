@@ -2,7 +2,7 @@ import path from "node:path";
 import type { ContentSize } from "@answra/shared";
 import { app, BrowserWindow, screen } from "electron";
 import { logImeDiagnostic } from "./ime/imeDiagnostics";
-import { isCurrentProcessForeground } from "./windowForeground";
+import { describeForegroundWindow, isCurrentProcessForeground } from "./windowForeground";
 import { clampContentSize } from "./windowLayout";
 import type { WindowSurfaceDescriptor } from "./windowSurfaceRegistry";
 
@@ -115,6 +115,8 @@ export function createMainWindowController(host: MainWindowControllerHost) {
         focusedWindowId: BrowserWindow.getFocusedWindow()?.id,
         visible: created.isVisible(),
         appForeground: isCurrentProcessForeground(),
+        ...describeForegroundWindow(),
+        processId: process.pid,
       });
     });
     created.on("focus", () => {

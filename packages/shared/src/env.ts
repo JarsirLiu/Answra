@@ -15,7 +15,15 @@ export type AnswraEnv = "development" | "production" | "test";
 /** 本地 AI 服务（Agent Runtime）的基础地址。 */
 export const AI_SERVICE_BASE_URL = "ANSWRA_AI_BASE_URL" as const;
 
+/** 打开后输出被静默的 IME 焦点/按键诊断日志（低频排查用，默认关闭）。 */
+export const ANSWRA_IME_DEBUG = "ANSWRA_IME_DEBUG" as const;
+
 /** 解析并校验运行环境，非法值回退为 development。 */
 export function parseAnswraEnv(value: string | undefined): AnswraEnv {
   return value === "production" || value === "test" ? value : "development";
+}
+
+/** 解析 IME 调试开关：仅 `1`/`true` 视为开启。 */
+export function parseAnswraImeDebug(value: string | undefined): boolean {
+  return value === "1" || value === "true";
 }

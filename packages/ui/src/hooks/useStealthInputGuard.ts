@@ -8,22 +8,30 @@ import { useEffect } from "react";
  * avoids exposing partially typed text on both Windows and macOS. File inputs
  * are blocked too: opening a native picker creates an unprotected system
  * surface while stealth is enabled. Buttons, sliders and selects remain usable.
+ *
+ * The guard is inert when stealth is disabled: registering the fail-closed
+ * listeners unconditionally used to lock the app's own editors until reload.
+ * Answra's embedded IME targets are never blurred, because they own the text
+ * lifecycle through Rime and only need the platform composition cancelled.
  */
 export function useStealthInputGuard(enabled: boolean): void {
   useEffect(() => {
+    if (!enabled) return;
+
     const reportedCompositionTargets = new WeakSet<HTMLElement>();
     const nativeCompositionFailureAttribute = "data-native-ime-isolation-failed";
     const hasNativeCompositionFailure = () =>
       document.documentElement.hasAttribute(nativeCompositionFailureAttribute);
     const onCompositionStart = (event: CompositionEvent) => {
       if (!isTextEntryTarget(event.target)) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (isEmbeddedImeTarget(event.target)) return;
       document.documentElement.setAttribute(nativeCompositionFailureAttribute, "true");
       if (!reportedCompositionTargets.has(event.target)) {
         reportedCompositionTargets.add(event.target);
         console.error("[ime-ui] unexpected system composition; text input locked until reload");
       }
-      event.preventDefault();
-      event.stopImmediatePropagation();
       event.target.blur();
     };
     const onBeforeInput = (event: InputEvent) => {
@@ -33,6 +41,7 @@ export function useStealthInputGuard(enabled: boolean): void {
     };
     const lockTextAfterCompositionFailure = (event: Event) => {
       if (!hasNativeCompositionFailure() || !isTextEntryTarget(event.target)) return;
+      if (isEmbeddedImeTarget(event.target)) return;
       event.preventDefault();
       event.stopImmediatePropagation();
       event.target.blur();
@@ -43,15 +52,6 @@ export function useStealthInputGuard(enabled: boolean): void {
     document.addEventListener("pointerdown", lockTextAfterCompositionFailure, true);
     document.addEventListener("focusin", lockTextAfterCompositionFailure, true);
     document.addEventListener("keydown", lockTextAfterCompositionFailure, true);
-    if (!enabled) {
-      return () => {
-        document.removeEventListener("compositionstart", onCompositionStart, true);
-        document.removeEventListener("beforeinput", onBeforeInput, true);
-        document.removeEventListener("pointerdown", lockTextAfterCompositionFailure, true);
-        document.removeEventListener("focusin", lockTextAfterCompositionFailure, true);
-        document.removeEventListener("keydown", lockTextAfterCompositionFailure, true);
-      };
-    }
 
     const blurActiveElement = () => {
       const active = document.activeElement;

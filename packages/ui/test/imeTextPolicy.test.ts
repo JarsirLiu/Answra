@@ -2,10 +2,8 @@ import { describe, expect, it } from "vitest";
 import { resolveImeTextPolicy } from "../src/ime/imeTextPolicy";
 
 describe("resolveImeTextPolicy", () => {
-  it("routes Chinese text and composition through the Rime-owned target", () => {
-    expect(
-      resolveImeTextPolicy({ targetOwned: true, inputMode: "chinese", composing: false }),
-    ).toEqual({
+  it("routes every owned target through the Rime pipeline regardless of input mode", () => {
+    expect(resolveImeTextPolicy({ targetOwned: true, composing: false })).toEqual({
       useNativeTextInput: false,
       blockNativeEditing: true,
       blockComposition: true,
@@ -13,27 +11,11 @@ describe("resolveImeTextPolicy", () => {
       captureCompositionStart: true,
     });
 
-    expect(
-      resolveImeTextPolicy({ targetOwned: true, inputMode: "chinese", composing: true }).backspace,
-    ).toBe("engine");
-  });
-
-  it("keeps ASCII editing native while blocking platform composition during the lease", () => {
-    expect(
-      resolveImeTextPolicy({ targetOwned: true, inputMode: "ascii", composing: false }),
-    ).toEqual({
-      useNativeTextInput: true,
-      blockNativeEditing: false,
-      blockComposition: true,
-      backspace: "native",
-      captureCompositionStart: false,
-    });
+    expect(resolveImeTextPolicy({ targetOwned: true, composing: true }).backspace).toBe("engine");
   });
 
   it("returns all text events to the editor after the lease is released", () => {
-    expect(
-      resolveImeTextPolicy({ targetOwned: false, inputMode: "chinese", composing: true }),
-    ).toEqual({
+    expect(resolveImeTextPolicy({ targetOwned: false, composing: true })).toEqual({
       useNativeTextInput: true,
       blockNativeEditing: false,
       blockComposition: false,

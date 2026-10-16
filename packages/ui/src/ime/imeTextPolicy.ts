@@ -1,14 +1,15 @@
-import type { ImeInputMode } from "@answra/shared";
-
 export interface ImeTextPolicyInput {
   /** Whether the current target has an accepted, focused IME lease. */
   targetOwned: boolean;
-  inputMode: ImeInputMode;
   composing: boolean;
 }
 
 export interface ImeTextPolicy {
-  /** Native input is allowed for ASCII mode or for a target outside the lease. */
+  /**
+   * Native input is allowed only for a target outside the lease. Keeping the
+   * editor read-only for every owned target stops Chromium from offering the
+   * focused element to the platform IME (Windows TSF) in ASCII mode too.
+   */
   useNativeTextInput: boolean;
   /** Block direct browser mutations; editor adapter commands remain writable. */
   blockNativeEditing: boolean;
@@ -30,16 +31,6 @@ export function resolveImeTextPolicy(input: ImeTextPolicyInput): ImeTextPolicy {
       useNativeTextInput: true,
       blockNativeEditing: false,
       blockComposition: false,
-      backspace: "native",
-      captureCompositionStart: false,
-    };
-  }
-
-  if (input.inputMode === "ascii") {
-    return {
-      useNativeTextInput: true,
-      blockNativeEditing: false,
-      blockComposition: true,
       backspace: "native",
       captureCompositionStart: false,
     };

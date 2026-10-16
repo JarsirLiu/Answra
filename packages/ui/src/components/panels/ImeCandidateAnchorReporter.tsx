@@ -40,7 +40,6 @@ export function ImeCandidateAnchorReporter({
   const [caretAnchor, setCaretAnchor] = useState<ImeCandidateAnchor | null>(null);
   const [windowFocused, setWindowFocused] = useState(true);
   const [tick, setTick] = useState(0);
-  const lastFocusedAnchor = useRef<HTMLElement | null>(null);
   const stateRef = useRef(state);
   stateRef.current = state;
   const bump = useCallback(() => setTick((current) => current + 1), []);
@@ -53,7 +52,6 @@ export function ImeCandidateAnchorReporter({
         return;
       }
       const next = resolveAnchor(event.target, targetId);
-      if (next) lastFocusedAnchor.current = next;
       setAnchor(next);
     },
     [targetId],
@@ -61,19 +59,7 @@ export function ImeCandidateAnchorReporter({
 
   const refreshFocusedAnchor = useCallback(() => {
     setWindowFocused(true);
-    let next = resolveAnchor(document.activeElement, targetId);
-    if (
-      !next &&
-      (document.activeElement === document.body ||
-        document.activeElement === document.documentElement)
-    ) {
-      const previous = lastFocusedAnchor.current;
-      if (previous?.isConnected && previous.dataset.imeTargetId === targetId) {
-        previous.focus({ preventScroll: true });
-        next = previous;
-      }
-    }
-    if (next) lastFocusedAnchor.current = next;
+    const next = resolveAnchor(document.activeElement, targetId);
     setAnchor(next);
     bump();
   }, [bump, targetId]);
@@ -118,9 +104,11 @@ export function ImeCandidateAnchorReporter({
   useLayoutEffect(() => {
     if (
       !windowFocused ||
+      generation === undefined ||
       !anchor ||
       anchor !== document.activeElement ||
       (!(anchor instanceof HTMLInputElement) && !(anchor instanceof HTMLTextAreaElement)) ||
+      anchor.disabled ||
       !anchor.readOnly
     ) {
       setCaretAnchor(null);
@@ -134,7 +122,7 @@ export function ImeCandidateAnchorReporter({
         ? current
         : (next ?? null),
     );
-  }, [anchor, tick, windowFocused]);
+  }, [anchor, generation, tick, windowFocused]);
 
   // Scroll and resize invalidate caret geometry without changing the focused element.
   // biome-ignore lint/correctness/useExhaustiveDependencies: tick is the explicit layout invalidation signal.

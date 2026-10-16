@@ -69,6 +69,8 @@ export {
 export {
   AI_SERVICE_BASE_URL,
   ANSWRA_ENV,
+  ANSWRA_IME_DEBUG,
   type AnswraEnv,
   parseAnswraEnv,
+  parseAnswraImeDebug,
 } from "./env";
