@@ -15,7 +15,13 @@ const shared = vi.hoisted(() => ({
     on: vi.fn(),
     once: vi.fn(),
     removeListener: vi.fn(),
-    webContents: { id: 11, on: vi.fn(), removeListener: vi.fn(), send: vi.fn() },
+    webContents: {
+      id: 11,
+      on: vi.fn(),
+      removeListener: vi.fn(),
+      send: vi.fn(),
+      isDestroyed: () => false,
+    },
   },
   reply: {
     id: 2,
@@ -23,12 +29,24 @@ const shared = vi.hoisted(() => ({
     on: vi.fn(),
     once: vi.fn(),
     removeListener: vi.fn(),
-    webContents: { id: 22, on: vi.fn(), removeListener: vi.fn(), send: vi.fn() },
+    webContents: {
+      id: 22,
+      on: vi.fn(),
+      removeListener: vi.fn(),
+      send: vi.fn(),
+      isDestroyed: () => false,
+    },
   },
   candidate: {
     id: 3,
     isDestroyed: () => false,
-    webContents: { id: 33, on: vi.fn(), removeListener: vi.fn(), send: vi.fn() },
+    webContents: {
+      id: 33,
+      on: vi.fn(),
+      removeListener: vi.fn(),
+      send: vi.fn(),
+      isDestroyed: () => false,
+    },
   },
   bridge: {
     available: true,
@@ -165,6 +183,22 @@ const emptyState = {
 
 function invoke(channel: string, senderId: number, payload?: unknown) {
   return shared.handlers[channel]({ sender: { id: senderId } }, payload);
+}
+
+/** Mirrors Electron: a destroyed window throws when `webContents` is read. */
+function destroyMainWindow(): () => void {
+  const contents = shared.main.webContents;
+  contents.isDestroyed = () => true;
+  Object.defineProperty(shared.main, "webContents", {
+    configurable: true,
+    get() {
+      throw new TypeError("Object has been destroyed");
+    },
+  });
+  return () => {
+    contents.isDestroyed = () => false;
+    Object.defineProperty(shared.main, "webContents", { configurable: true, value: contents });
+  };
 }
 
 describe("IME IPC session ownership", () => {
@@ -479,6 +513,43 @@ describe("IME IPC session ownership", () => {
       reason: "owner-window-closed",
       staleListener: false,
     });
+  });
+
+  it("survives detaching lease listeners after the owner window is destroyed", async () => {
+    const lease = (await invoke(ImeChannels.Acquire, 11, { targetId: "main-composer" })) as {
+      generation: number;
+    };
+    vi.mocked(logImeDiagnostic).mockClear();
+    const onClosed = shared.main.once.mock.calls.find(([event]) => event === "closed")?.[1] as
+      | (() => void)
+      | undefined;
+    const restore = destroyMainWindow();
+
+    try {
+      expect(() => onClosed?.()).not.toThrow();
+    } finally {
+      restore();
+    }
+
+    expect(logImeDiagnostic).toHaveBeenCalledWith("lease-released", {
+      windowId: 1,
+      targetId: "main-composer",
+      generation: lease.generation,
+      reason: "owner-window-closed",
+      staleListener: false,
+    });
+  });
+
+  it("disposes without touching a destroyed owner window", async () => {
+    await invoke(ImeChannels.Acquire, 11, { targetId: "main-composer" });
+    const controller = registerImeIpc();
+    const restore = destroyMainWindow();
+
+    try {
+      expect(() => controller.dispose()).not.toThrow();
+    } finally {
+      restore();
+    }
   });
 
   it("records the superseded lease when another window takes ownership", async () => {

@@ -226,7 +226,7 @@ main/IPC 目标转移的自动化契约现已覆盖，但平台验证和资源�
 
 ### 分阶段顺序
 
-- **S1 可判定性（先做，2026-10-16 已交付）**：补齐默认可见的 IME 因果链日志；`lease-released` 带 reason 并覆盖四条来源；候选面记录"上报尺寸 vs 窗口尺寸 vs 锚点"。目标是"再看一次同样的故障，能从默认日志直接读出链路"。此阶段不改状态所有权，风险最低、收益最直接。遗留：textarea/input 目标在组件卸载时仍不主动释放租约（只有 CodeMirror 面板显式 `editor-unmount`），这条来源留给 S2 的单一写入者收口。
+- **S1 可判定性（先做，2026-10-16 已交付）**：补齐默认可见的 IME 因果链日志；`lease-released` 带 reason 并覆盖四条来源（renderer `releaseTarget` 含 `target-switched`/`effect-inactive`/`unmount`/`editor-unmount`/`acquire-rejected`、`owner-window-closed`/`renderer-process-gone`/`window-navigation`、`owner-replaced`、`native-ime-isolation-failed`）；候选面记录"上报尺寸 vs 窗口尺寸 vs 锚点"。目标是"再看一次同样的故障，能从默认日志直接读出链路"。此阶段不改状态所有权，风险最低、收益最直接。
 - **S2 单一写入者**：按本提案的四个状态域收口。renderer 去掉状态副本与乐观 `targetEngaged`；焦点事实统一由 coordinator 订阅 snapshot 派生；组件只声明 targetId 与 adapter。完成判据是"全仓 grep 不到第二处 `asciiMode`/`generation` 本地 state"。
 - **S3 候选与窗口面解耦**：候选状态、锚点、窗口生命周期、层级和捕获保护分成独立写入者；候选展示不再与 suspend/hide/cancel/release 共用同一个 modify 批量变量。sizing 契约并入此阶段验收。
 - **S4 清理与契约固化**：删除迁移遗留（如已无消费者的策略字段、只服务旧路径的分支）；把 S1–S3 的判据写成测试，允许后续并行改动在这里回归。

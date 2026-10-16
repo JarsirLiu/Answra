@@ -247,6 +247,10 @@ export function registerImeIpc(): {
   ): void {
     detachLeaseListeners();
     leaseWindow = window;
+    // Capture the channels object: reading `window.webContents` after the window is
+    // destroyed throws "Object has been destroyed", and both `closed` and app quit
+    // detach the listeners while the owner may already be gone.
+    const contents = window.webContents;
     const onBlur = () => {
       if (blurTimer) clearTimeout(blurTimer);
       blurTimer = setTimeout(() => {
@@ -318,8 +322,8 @@ export function registerImeIpc(): {
       else onBlur();
     });
     window.once("closed", onClosed);
-    window.webContents.on("render-process-gone", onGone);
-    window.webContents.on("did-start-navigation", onNavigation);
+    contents.on("render-process-gone", onGone);
+    contents.on("did-start-navigation", onNavigation);
     function onNavigation(
       _event: Electron.Event,
       _url: string,
@@ -331,8 +335,12 @@ export function registerImeIpc(): {
     leaseListeners = [
       unsubscribeFocus,
       () => window.removeListener("closed", onClosed),
-      () => window.webContents.removeListener("render-process-gone", onGone),
-      () => window.webContents.removeListener("did-start-navigation", onNavigation),
+      () => {
+        if (!contents.isDestroyed()) contents.removeListener("render-process-gone", onGone);
+      },
+      () => {
+        if (!contents.isDestroyed()) contents.removeListener("did-start-navigation", onNavigation);
+      },
     ];
   }
 
@@ -836,7 +844,9 @@ function isImeSessionCommand(value: unknown): value is ImeSessionCommand {
 }
 
 function findWindow(id: number): BrowserWindow | undefined {
-  return [getWindow(), getReplyBarWindow()].find((window) => window?.id === id);
+  return [getWindow(), getReplyBarWindow()].find(
+    (window) => window && !window.isDestroyed() && window.id === id,
+  );
 }
 
 function isTargetId(value: unknown): value is string {

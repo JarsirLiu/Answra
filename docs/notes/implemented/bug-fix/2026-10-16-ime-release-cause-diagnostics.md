@@ -50,7 +50,7 @@
 - `IME_RENDERER_DIAGNOSTIC_EVENTS` 是 renderer 诊断事件名的唯一来源；main 白名单与候选窗口校验不得再各写一份数组。
 - 焦点链与 `candidate-native-positioned` 现在属于默认输出，新增同类事件时优先考虑合并到已有事件而非新增噪音。
 - `lease-released` 的 `reason` 是排障的第一入口：任何让租约消失的新路径都必须带 reason 记录，否则视为可判定性回退。
-- **已知缺口（留给 S2）**：textarea/input 目标在 React 卸载时不会主动释放租约，只有 CodeMirror 面板在销毁时 `release("editor-unmount")`；这类租约目前依赖 main 侧的窗口 blur/close 收尾。S1 只让它"可判定"，没有改变所有权，因此这条来源不能算已覆盖。
+- renderer unmount 由 `useEmbeddedIme` 的卸载 cleanup（`unmount`）与 CodeMirror 面板重建时的 `editor-unmount` 两条来源覆盖；两者都会先清掉本 renderer 的注册再发 `releaseTarget`，因此重复释放同一 generation 只会被 main 拒绝，不会误伤新租约。
 
 ## 验证
 
