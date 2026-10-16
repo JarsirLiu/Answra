@@ -4,6 +4,7 @@ import { useEmbeddedIme } from "../../hooks/useEmbeddedIme";
 import { ControlledTextCompositionMirror } from "../../ime/adapters/ControlledTextCompositionMirror";
 import { applyControlledTextCommand } from "../../ime/adapters/controlledTextAdapter";
 import { useControlledImeTextAdapter } from "../../ime/adapters/useControlledImeTextAdapter";
+import { handleImeEditorKeyDown, imeEditorAttributes } from "../../ime/imeEditorBinding";
 import { ImeCandidateAnchorReporter } from "../panels/ImeCandidateAnchorReporter";
 
 interface EmbeddedImeInputProps
@@ -65,12 +66,9 @@ export function EmbeddedImeInput({
       />
       <input
         {...props}
+        {...imeEditorAttributes({ targetId, composing: ime.state.composing })}
         className={`${props.className ?? ""} embedded-ime-input${ime.state.composing ? " ime-composition-active" : ""}`.trim()}
         aria-readonly={textPolicy.blockNativeEditing || props.readOnly || undefined}
-        data-embedded-ime-target="true"
-        data-ime-composition-active={ime.state.composing ? "true" : undefined}
-        data-ime-policy="text"
-        data-ime-target-id={targetId}
         onBeforeInput={(event) => {
           props.onBeforeInput?.(event);
           if (ime.shouldPreventBeforeInput(event.nativeEvent.inputType)) event.preventDefault();
@@ -82,22 +80,19 @@ export function EmbeddedImeInput({
         }}
         onFocus={() => void ime.acquire()}
         onKeyDown={(event) => {
-          if (
-            textPolicy.captureCompositionStart &&
-            (event.key.length === 1 || event.key === "Process") &&
-            !event.ctrlKey &&
-            !event.altKey &&
-            !event.metaKey
-          ) {
-            controlledText.captureCompositionStart(
-              {
-                start: event.currentTarget.selectionStart ?? value.length,
-                end: event.currentTarget.selectionEnd ?? value.length,
-              },
-              ime.state.composing,
-            );
-          }
-          if (ime.sendKey(event, false, applyEditorCommand)) {
+          const handled = handleImeEditorKeyDown({
+            event,
+            policy: textPolicy,
+            readSelection: () => ({
+              start: event.currentTarget.selectionStart ?? value.length,
+              end: event.currentTarget.selectionEnd ?? value.length,
+            }),
+            onCaptureCompositionStart: (range) =>
+              controlledText.captureCompositionStart(range, ime.state.composing),
+            sendKey: (keyEvent, apply) => ime.sendKey(keyEvent, false, apply),
+            applyEditorCommand,
+          });
+          if (handled) {
             event.preventDefault();
             return;
           }

@@ -7,6 +7,7 @@ import {
   createCodeMirrorTextAdapter,
   setCodeMirrorImeComposition,
 } from "../../../ime/adapters/codeMirrorTextAdapter";
+import { handleImeEditorKeyDown, imeEditorAttributes } from "../../../ime/imeEditorBinding";
 import { ImeCandidateAnchorReporter } from "../ImeCandidateAnchorReporter";
 import { pasteImageName, resolveRelative, toResourceUrl } from "./fileKind";
 import { ZoomablePreview } from "./ZoomablePreview";
@@ -134,11 +135,9 @@ export function MarkdownEditorPane({
               drawSelection(),
               highlightActiveLine(),
               EditorView.lineWrapping,
-              EditorView.contentAttributes.of({
-                "data-embedded-ime-target": "true",
-                "data-ime-policy": "text",
-                "data-ime-target-id": "workspace-markdown-editor",
-              }),
+              EditorView.contentAttributes.of(
+                imeEditorAttributes({ targetId: "workspace-markdown-editor" }),
+              ),
               markdown(),
               codeMirrorImeCompositionField,
               syntaxHighlighting(highlight),
@@ -151,19 +150,21 @@ export function MarkdownEditorPane({
               EditorView.domEventHandlers({
                 keydown: (event, editor) => {
                   if (
-                    imeRef.current.textPolicy.captureCompositionStart &&
-                    (event.key.length === 1 || event.key === "Process") &&
-                    !event.ctrlKey &&
-                    !event.altKey &&
-                    !event.metaKey
-                  ) {
-                    const selection = editor.state.selection.main;
-                    compositionRangeRef.current = { from: selection.from, to: selection.to };
-                  }
-                  if (
-                    imeRef.current.sendKey(event, false, (command) => {
-                      if (bundleRef.current.view === editor)
-                        applyCodeMirrorImeCommand(editor, command);
+                    handleImeEditorKeyDown({
+                      event,
+                      policy: imeRef.current.textPolicy,
+                      readSelection: () => {
+                        const selection = editor.state.selection.main;
+                        return { start: selection.from, end: selection.to };
+                      },
+                      onCaptureCompositionStart: (range) => {
+                        compositionRangeRef.current = { from: range.start, to: range.end };
+                      },
+                      sendKey: (keyEvent, apply) => imeRef.current.sendKey(keyEvent, false, apply),
+                      applyEditorCommand: (command) => {
+                        if (bundleRef.current.view === editor)
+                          applyCodeMirrorImeCommand(editor, command);
+                      },
                     })
                   )
                     return true;

@@ -4,6 +4,7 @@ import { type FormEvent, type ReactNode, type RefObject, useLayoutEffect, useRef
 import { ControlledTextCompositionMirror } from "../../ime/adapters/ControlledTextCompositionMirror";
 import type { TextSelectionRange } from "../../ime/adapters/controlledTextAdapter";
 import { applyControlledTextCommand } from "../../ime/adapters/controlledTextAdapter";
+import { handleImeEditorKeyDown, imeEditorAttributes } from "../../ime/imeEditorBinding";
 import type { ImeEditorCommand } from "../../ime/imeKeyRouter";
 import type { ImeTextPolicy } from "../../ime/imeTextPolicy";
 import { ICON_SM } from "../../tokens";
@@ -110,6 +111,14 @@ export function ConversationComposer({
     onValueChangeRef.current?.(edit.value);
   }
 
+  const imeAttributes = ime
+    ? imeEditorAttributes({
+        active: ime.active,
+        composing: ime.state.composing,
+        targetId: ime.targetId,
+      })
+    : { "data-ime-policy": "excluded" };
+
   return (
     <form
       className={`conversation-composer input-surface${compact ? " is-compact" : ""}${disabled ? " is-readonly" : ""}`}
@@ -127,13 +136,9 @@ export function ConversationComposer({
       )}
       <div className={`conversation-composer-editor${ime?.state.composing ? " is-composing" : ""}`}>
         <textarea
+          {...imeAttributes}
           aria-label={inputLabel}
           className={ime ? "embedded-ime-input" : undefined}
-          data-embedded-ime-target={ime ? "true" : undefined}
-          data-embedded-ime-active={ime?.active ? "true" : undefined}
-          data-ime-composition-active={ime?.state.composing ? "true" : undefined}
-          data-ime-policy={ime ? "text" : "excluded"}
-          data-ime-target-id={ime?.targetId}
           disabled={disabled}
           readOnly={disabled || Boolean(ime?.textPolicy.blockNativeEditing)}
           onChange={(event) => {
@@ -159,19 +164,19 @@ export function ConversationComposer({
           }}
           onKeyDown={(event) => {
             if (
-              ime?.textPolicy.captureCompositionStart &&
-              (event.key.length === 1 || event.key === "Process") &&
-              !event.ctrlKey &&
-              !event.altKey &&
-              !event.metaKey
+              ime &&
+              handleImeEditorKeyDown({
+                event,
+                policy: ime.textPolicy,
+                readSelection: () => ({
+                  start: event.currentTarget.selectionStart,
+                  end: event.currentTarget.selectionEnd,
+                }),
+                onCaptureCompositionStart: (range) => ime.onTextStart?.(range),
+                sendKey: (keyEvent, apply) => ime.onKeyDown(keyEvent, apply),
+                applyEditorCommand,
+              })
             ) {
-              const range = {
-                start: event.currentTarget.selectionStart,
-                end: event.currentTarget.selectionEnd,
-              };
-              ime.onTextStart?.(range);
-            }
-            if (ime?.onKeyDown(event, applyEditorCommand)) {
               event.preventDefault();
               return;
             }
