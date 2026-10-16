@@ -137,6 +137,7 @@ Ctrl/Alt/Meta 浏览器快捷键、编辑器导航和非文本命令须在契约
 - 2026-10-16 文本隔离收口为"受管目标恒只读"：`imeTextPolicy` 去掉 `inputMode` 分支，lease 持有期间 `readOnly`/`blockNativeEditing`/`blockComposition` 恒真，模式只影响按键路由；`useStealthInputGuard` 对 `[data-embedded-ime-target]` 只取消 composition、不再 blur 或写失败标记，隐身关闭时零副作用。这消除"ASCII 模式重新变成原生文本目标"的路径，但**没有**改变 `readOnly` 仍同时承担"阻止浏览器原生文本写入"和"阻止系统 IME 接管"两个职责的事实。
 - 2026-10-16 候选面尺寸契约：候选窗尺寸只能来自 renderer 上报的**未裁剪内容尺寸**（`scrollWidth/scrollHeight`），上限只能是常量或 main 的 work area；禁止测量依赖当前窗口尺寸（`100vw`/`vh`/`%`/`flex-shrink`）。见[候选窗宽度棘轮](../../implemented/bug-fix/2026-10-16-ime-candidate-window-width-ratchet.md)。
 - 2026-10-16 排障复盘：主进程硬崩溃靠"某条日志缺失"反推（见[FFI 字符串解码崩溃](../../implemented/bug-fix/2026-10-16-native-ffi-string-decode-crash.md)），候选窗宽度棘轮全程**没有任何日志**能直接回答"上报尺寸 vs 窗口尺寸"，Shift 锁死需要逐条读 guard 代码才能定位。三次故障都不是"缺抽象"，而是**缺唯一写入者**与**缺默认可见的因果链证据**。
+- 2026-10-16 **S1 可判定性已交付**：`lease-released` 一律带 `reason`，覆盖 renderer `releaseTarget`（含 `target-switched`/`effect-inactive`/`editor-unmount`/`acquire-rejected`）、`owner-window-closed`/`renderer-process-gone`/`window-navigation`、`owner-replaced` 与 `native-ime-isolation-failed`（另加 `lease-unavailable` 行），并补 `lease-resumed`/`lease-suspended`；焦点链 4 个 `renderer-*-focus/blur` 与 `candidate-native-positioned` 取消默认 suppress，后者新增 `requestedSize`/`candidateBounds` 对照；shared 新增运行时事件名列表 `IME_RENDERER_DIAGNOSTIC_EVENTS`，main 白名单从它派生（此前手写数组漏掉 `release-called`，正是"释放原因丢失"的根因）。详见[IME 租约释放原因与默认焦点链日志](../../implemented/bug-fix/2026-10-16-ime-release-cause-diagnostics.md)。状态所有权未动，因此仍**不能**据此声称已解耦。
 
 main/IPC 目标转移的自动化契约现已覆盖，但平台验证和资源交付仍未完成；不能据此放松现有 fail-closed 输入隔离：
 
@@ -225,7 +226,7 @@ main/IPC 目标转移的自动化契约现已覆盖，但平台验证和资源�
 
 ### 分阶段顺序
 
-- **S1 可判定性（先做）**：补齐默认可见的 IME 因果链日志；`lease-released` 带 reason 并覆盖四条来源；候选面记录"上报尺寸 vs 窗口尺寸 vs 锚点"。目标是"再看一次同样的故障，能从默认日志直接读出链路"。此阶段不改状态所有权，风险最低、收益最直接。
+- **S1 可判定性（先做，2026-10-16 已交付）**：补齐默认可见的 IME 因果链日志；`lease-released` 带 reason 并覆盖四条来源；候选面记录"上报尺寸 vs 窗口尺寸 vs 锚点"。目标是"再看一次同样的故障，能从默认日志直接读出链路"。此阶段不改状态所有权，风险最低、收益最直接。遗留：textarea/input 目标在组件卸载时仍不主动释放租约（只有 CodeMirror 面板显式 `editor-unmount`），这条来源留给 S2 的单一写入者收口。
 - **S2 单一写入者**：按本提案的四个状态域收口。renderer 去掉状态副本与乐观 `targetEngaged`；焦点事实统一由 coordinator 订阅 snapshot 派生；组件只声明 targetId 与 adapter。完成判据是"全仓 grep 不到第二处 `asciiMode`/`generation` 本地 state"。
 - **S3 候选与窗口面解耦**：候选状态、锚点、窗口生命周期、层级和捕获保护分成独立写入者；候选展示不再与 suspend/hide/cancel/release 共用同一个 modify 批量变量。sizing 契约并入此阶段验收。
 - **S4 清理与契约固化**：删除迁移遗留（如已无消费者的策略字段、只服务旧路径的分支）；把 S1–S3 的判据写成测试，允许后续并行改动在这里回归。

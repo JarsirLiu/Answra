@@ -335,6 +335,7 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
       generation,
       anchor: screenAnchor,
       ownerContentBounds: sourceBounds,
+      requestedSize: size,
       candidateBounds: bounds,
       rendererReady,
     });
@@ -532,6 +533,7 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
         targetId,
         generation,
         bounds,
+        requestedSize: size,
         visible: snapshot.visible,
         minimized: snapshot.minimized,
         focused: snapshot.focused,

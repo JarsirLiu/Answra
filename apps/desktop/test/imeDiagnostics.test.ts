@@ -1,5 +1,6 @@
+import { IME_RENDERER_DIAGNOSTIC_EVENTS } from "@answra/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { logImeDiagnostic } from "../src/main/ime/imeDiagnostics";
+import { logImeDiagnostic, SUPPRESSED_IME_DIAGNOSTIC_EVENTS } from "../src/main/ime/imeDiagnostics";
 
 describe("IME console diagnostics", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -62,6 +63,56 @@ describe("IME console diagnostics", () => {
     expect(String(info.mock.calls[0]?.[0])).toContain('"ownerWindowId":1');
     expect(String(info.mock.calls[0]?.[0])).toContain('"lineBottom":402');
     expect(String(info.mock.calls[0]?.[0])).not.toContain("\n");
+  });
+
+  it("keeps the focus chain visible without ANSWRA_IME_DEBUG", () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+
+    logImeDiagnostic("renderer-input-focus", {
+      windowId: 1,
+      targetId: "main-composer",
+      activeElementTarget: true,
+    });
+    logImeDiagnostic("renderer-input-blur", { windowId: 1, targetId: "main-composer" });
+    logImeDiagnostic("renderer-window-focus", { windowId: 1, targetId: "main-composer" });
+    logImeDiagnostic("renderer-window-blur", { windowId: 1, targetId: "main-composer" });
+    logImeDiagnostic("renderer-input-mounted", { windowId: 1, targetId: "main-composer" });
+
+    expect(info).toHaveBeenCalledTimes(4);
+    expect(String(info.mock.calls[0]?.[0])).toContain("renderer-input-focus");
+  });
+
+  it("only suppresses renderer events that really exist in the shared list", () => {
+    const suppressed: readonly string[] = SUPPRESSED_IME_DIAGNOSTIC_EVENTS;
+    const rendererEvents = suppressed.filter((event) => event.startsWith("renderer-"));
+
+    expect(rendererEvents.length).toBeGreaterThan(0);
+    for (const event of rendererEvents) {
+      const name = event.slice("renderer-".length);
+      expect(IME_RENDERER_DIAGNOSTIC_EVENTS).toContain(name as never);
+    }
+    for (const visible of ["renderer-input-focus", "renderer-input-blur"]) {
+      expect(suppressed).not.toContain(visible);
+    }
+  });
+
+  it("prints unclipped and requested candidate sizes before the window is visible", () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+
+    logImeDiagnostic("candidate-native-positioned", {
+      windowId: 2,
+      targetId: "chat-composer",
+      generation: 4,
+      bounds: { x: 500, y: 400, width: 160, height: 52 },
+      requestedSize: { width: 472, height: 72 },
+      candidateBounds: { x: 500, y: 400, width: 472, height: 72 },
+      visible: false,
+    });
+
+    expect(info).toHaveBeenCalledOnce();
+    const line = String(info.mock.calls[0]?.[0]);
+    expect(line).toContain('"requestedSize":{"width":472,"height":72}');
+    expect(line).toContain('"candidateBounds"');
   });
 
   it("suppresses redundant per-key routing and state-transfer events", () => {

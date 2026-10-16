@@ -284,6 +284,40 @@ describe("IME candidate window controller", () => {
     controller.dispose();
   });
 
+  it("reports the renderer-requested size next to the clamped window bounds", () => {
+    const owner = new shared.MockWindow({ x: 100, y: 50, width: 800, height: 600 });
+    const controller = createImeCandidateWindowController({
+      isOwnerWindow: (candidate) => candidate === owner,
+      registerWindowSurface: vi.fn(),
+      prepareWindowToShow: () => true,
+      attachAbove: (child, owner) => child.setParentWindow(owner),
+    });
+    controller.update(owner as never, {
+      type: "show",
+      state,
+      anchor: { x: 240, lineTop: 120, lineBottom: 144 },
+      targetId: "composer",
+      generation: 7,
+    });
+    const candidate = shared.windows.at(-1);
+    if (!candidate) throw new Error("candidate window was not created");
+    controller.markRendererReady();
+    candidate.webContents.emit("did-finish-load");
+    vi.mocked(logImeDiagnostic).mockClear();
+
+    controller.resize({ width: 472, height: 72 });
+
+    expect(logImeDiagnostic).toHaveBeenCalledWith(
+      "candidate-native-positioned",
+      expect.objectContaining({
+        requestedSize: { width: 472, height: 72 },
+        candidateBounds: expect.objectContaining({ width: 472, height: 72 }),
+      }),
+    );
+    expect(candidate.bounds).toMatchObject({ width: 472, height: 72 });
+    controller.dispose();
+  });
+
   it("logs anchor lifecycle and candidate state when the owner regains focus", () => {
     const owner = new shared.MockWindow({ x: 100, y: 50, width: 800, height: 600 });
     const controller = createImeCandidateWindowController({

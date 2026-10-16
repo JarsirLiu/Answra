@@ -120,7 +120,9 @@ export function useEmbeddedIme(
       setState(EMPTY_STATE);
       releaseImeInputTarget(targetId);
       if (generation !== undefined) {
-        await sendCommand({ type: "releaseTarget", targetId, generation }).catch(() => undefined);
+        await sendCommand({ type: "releaseTarget", targetId, generation, reason }).catch(
+          () => undefined,
+        );
       }
     },
     [available, bridge, imeEnabled, sendCommand, targetId],
@@ -197,6 +199,7 @@ export function useEmbeddedIme(
             type: "releaseTarget",
             targetId,
             generation: result.snapshot.owner.generation,
+            reason: "focus-lost-during-acquire",
           });
         bridge.imeDiagnostic?.({
           event: "acquire-result",
@@ -215,7 +218,12 @@ export function useEmbeddedIme(
       ) {
         setTargetEngaged(false);
         if (acquiredGeneration !== undefined)
-          await sendCommand({ type: "releaseTarget", targetId, generation: acquiredGeneration });
+          await sendCommand({
+            type: "releaseTarget",
+            targetId,
+            generation: acquiredGeneration,
+            reason: "acquire-rejected",
+          });
         setState(EMPTY_STATE);
         bridge.imeDiagnostic?.({
           event: "acquire-result",

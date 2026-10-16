@@ -1,6 +1,12 @@
 import { ANSWRA_IME_DEBUG, parseAnswraImeDebug } from "@answra/shared";
 
-const SUPPRESSED_EVENTS = new Set([
+/**
+ * Verbose events hidden unless `ANSWRA_IME_DEBUG` is set. Focus-chain events
+ * (`renderer-input-focus`/`-blur`, `renderer-window-focus`/`-blur`) stay in the
+ * default output: they are per-focus-change, not per-keystroke, and they are the
+ * only place that records *who* started a lease change.
+ */
+export const SUPPRESSED_IME_DIAGNOSTIC_EVENTS = [
   "main-window-created",
   "main-window-always-on-top",
   "main-window-ready-to-show",
@@ -8,19 +14,17 @@ const SUPPRESSED_EVENTS = new Set([
   "candidate-window-created",
   "candidate-renderer-page-loaded",
   "candidate-renderer-ready-request",
-  "renderer-input-focus",
+  "renderer-input-mounted",
   "renderer-acquire-start",
   "renderer-acquire-result",
-  "renderer-input-blur",
-  "renderer-window-focus",
-  "renderer-window-blur",
   "candidate-state-received",
   "candidate-state-sent",
   "candidate-update-show",
   "candidate-window-hidden",
   "renderer-key-routing",
   "renderer-document-keydown",
-]);
+] as const;
+const SUPPRESSED_EVENTS: ReadonlySet<string> = new Set(SUPPRESSED_IME_DIAGNOSTIC_EVENTS);
 const compositionByLease = new Map<string, boolean>();
 const debugEnabled = parseAnswraImeDebug(process.env[ANSWRA_IME_DEBUG]);
 
@@ -42,7 +46,6 @@ export function logImeDiagnostic(event: string, details: Record<string, unknown>
   if (!debugEnabled && event === "candidate-native-hide-requested") return;
   if (!debugEnabled && event === "candidate-native-hide-result" && details.wasVisible !== true)
     return;
-  if (!debugEnabled && event === "candidate-native-positioned" && details.visible !== true) return;
 
   if (event === "key-processed") {
     const key = String(details.key ?? "");
@@ -173,6 +176,9 @@ export function logImeDiagnostic(event: string, details: Record<string, unknown>
         generation: details.generation,
         nativeHandle: details.nativeHandle,
         bounds: details.bounds,
+        contentBounds: details.contentBounds,
+        requestedSize: details.requestedSize,
+        candidateBounds: details.candidateBounds,
         anchor: details.anchor,
         ownerContentBounds: details.ownerContentBounds,
         visible: details.visible,

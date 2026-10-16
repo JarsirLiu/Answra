@@ -343,6 +343,8 @@ export type ImeSessionCommand =
       expectedRevision?: number;
       targetId: string;
       generation: number;
+      /** Why the renderer drops the lease; logged with the main-side release. */
+      reason?: string;
     }
   | {
       type: "processKey";
@@ -405,21 +407,22 @@ export interface ImeKeyRequest {
   release?: boolean;
 }
 
-export type ImeRendererDiagnosticEvent =
-  | "input-mounted"
-  | "acquire-start"
-  | "acquire-result"
-  | "confirm-focus-start"
-  | "confirm-focus-result"
-  | "input-focus"
-  | "input-blur"
-  | "window-focus"
-  | "window-blur"
-  | "document-keydown"
-  | "selection-after-shortcut"
-  | "key-routing"
-  | "candidate-rendered"
-  | "release-called";
+export const IME_RENDERER_DIAGNOSTIC_EVENTS = [
+  "input-mounted",
+  "acquire-start",
+  "acquire-result",
+  "input-focus",
+  "input-blur",
+  "window-focus",
+  "window-blur",
+  "document-keydown",
+  "selection-after-shortcut",
+  "key-routing",
+  "candidate-rendered",
+  "release-called",
+] as const;
+
+export type ImeRendererDiagnosticEvent = (typeof IME_RENDERER_DIAGNOSTIC_EVENTS)[number];
 
 export interface ImeDiagnosticRect {
   x: number;
@@ -475,7 +478,10 @@ export interface ImeRendererDiagnostic {
 
 export interface ImeChannelMap {
   [ImeChannels.Acquire]: { request: { targetId: string }; response: ImeLeaseResponse };
-  [ImeChannels.Release]: { request: { generation: number }; response: ImeLeaseResponse };
+  [ImeChannels.Release]: {
+    request: { generation: number; reason?: string };
+    response: ImeLeaseResponse;
+  };
   [ImeChannels.ConfirmFocus]: {
     request: { targetId: string; generation: number };
     response: ImeLeaseResponse;

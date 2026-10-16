@@ -219,7 +219,7 @@ export function MarkdownEditorPane({
       if (view) lastTextRef.current = view.state.doc.toString();
       view?.contentDOM.removeEventListener("focus", onEditorFocus);
       view?.contentDOM.removeEventListener("blur", onEditorBlur);
-      void imeRef.current.release();
+      void imeRef.current.release("editor-unmount");
       view?.destroy();
       bundleRef.current.view = null;
     };

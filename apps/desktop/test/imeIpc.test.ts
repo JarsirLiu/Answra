@@ -424,6 +424,132 @@ describe("IME IPC session ownership", () => {
     expect(shared.bridge.reset).not.toHaveBeenCalled();
   });
 
+  it("records why the renderer released a lease", async () => {
+    vi.mocked(logImeDiagnostic).mockClear();
+    const lease = (await invoke(ImeChannels.Acquire, 11, { targetId: "main-composer" })) as {
+      generation: number;
+    };
+
+    await invoke(ImeChannels.Release, 11, {
+      generation: lease.generation,
+      reason: "target-switched",
+    });
+
+    expect(logImeDiagnostic).toHaveBeenCalledWith("lease-released", {
+      windowId: 1,
+      targetId: "main-composer",
+      generation: lease.generation,
+      reason: "target-switched",
+      composing: false,
+    });
+  });
+
+  it("never echoes an unvalidated release reason into the log", async () => {
+    vi.mocked(logImeDiagnostic).mockClear();
+    const lease = (await invoke(ImeChannels.Acquire, 11, { targetId: "main-composer" })) as {
+      generation: number;
+    };
+
+    await invoke(ImeChannels.Release, 11, {
+      generation: lease.generation,
+      reason: "用户输入的内容",
+    });
+
+    expect(logImeDiagnostic).toHaveBeenCalledWith(
+      "lease-released",
+      expect.objectContaining({ reason: "renderer-unspecified" }),
+    );
+  });
+
+  it("records why an owned lease ended when the owner window closes", async () => {
+    const lease = (await invoke(ImeChannels.Acquire, 11, { targetId: "main-composer" })) as {
+      generation: number;
+    };
+    vi.mocked(logImeDiagnostic).mockClear();
+
+    const onClosed = shared.main.once.mock.calls.find(([event]) => event === "closed")?.[1] as
+      | (() => void)
+      | undefined;
+    onClosed?.();
+
+    expect(logImeDiagnostic).toHaveBeenCalledWith("lease-released", {
+      windowId: 1,
+      targetId: "main-composer",
+      generation: lease.generation,
+      reason: "owner-window-closed",
+      staleListener: false,
+    });
+  });
+
+  it("records the superseded lease when another window takes ownership", async () => {
+    const first = (await invoke(ImeChannels.Acquire, 11, { targetId: "main-composer" })) as {
+      generation: number;
+    };
+    vi.mocked(logImeDiagnostic).mockClear();
+
+    await invoke(ImeChannels.Acquire, 22, { targetId: "reply-composer" });
+
+    expect(logImeDiagnostic).toHaveBeenCalledWith(
+      "lease-released",
+      expect.objectContaining({
+        windowId: 1,
+        targetId: "main-composer",
+        generation: first.generation,
+        reason: "owner-replaced",
+        nextTargetId: "reply-composer",
+      }),
+    );
+  });
+
+  it("records a native isolation failure as the reason a lease disappears", async () => {
+    const first = (await invoke(ImeChannels.Acquire, 11, { targetId: "main-composer" })) as {
+      generation: number;
+    };
+    vi.mocked(logImeDiagnostic).mockClear();
+    shared.isolateNativeIme.mockReturnValueOnce("failed");
+
+    await invoke(ImeChannels.Acquire, 22, { targetId: "reply-composer" });
+
+    expect(vi.mocked(logImeDiagnostic).mock.calls).toContainEqual([
+      "lease-released",
+      expect.objectContaining({
+        targetId: "main-composer",
+        generation: first.generation,
+        reason: "native-ime-isolation-failed",
+      }),
+    ]);
+    expect(vi.mocked(logImeDiagnostic).mock.calls).toContainEqual([
+      "lease-unavailable",
+      expect.objectContaining({
+        targetId: "reply-composer",
+        reason: "native-ime-isolation-failed",
+      }),
+    ]);
+  });
+
+  it("records the lease status a renderer resume came from", async () => {
+    const acquired = (await invoke(ImeChannels.SessionCommand, 11, {
+      type: "acquireTarget",
+      commandId: "acquire-resume",
+      targetId: "main-composer",
+    })) as { snapshot: { owner: { generation: number } } };
+    vi.mocked(logImeDiagnostic).mockClear();
+
+    await invoke(ImeChannels.SessionCommand, 11, {
+      type: "resume",
+      commandId: "resume-1",
+      targetId: "main-composer",
+      generation: acquired.snapshot.owner.generation,
+    });
+
+    expect(logImeDiagnostic).toHaveBeenCalledWith("lease-resumed", {
+      windowId: 1,
+      targetId: "main-composer",
+      generation: acquired.snapshot.owner.generation,
+      previousStatus: "owned",
+    });
+  });
+
   it("cancels the previous target composition on transfer while retaining engine mode", async () => {
     const first = (await invoke(ImeChannels.Acquire, 11, { targetId: "main-composer" })) as {
       generation: number;

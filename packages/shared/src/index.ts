@@ -41,6 +41,7 @@ export {
   type ConversationSendCommand,
   type ConversationSendRequest,
   type ConversationSnapshot,
+  IME_RENDERER_DIAGNOSTIC_EVENTS,
   type ImeCandidateChannelMap,
   ImeCandidateChannels,
   type ImeChannelMap,

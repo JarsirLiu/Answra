@@ -1,8 +1,10 @@
 import {
+  IME_RENDERER_DIAGNOSTIC_EVENTS,
   ImeChannels,
   type ImeKeyRequest,
   type ImeLeaseResponse,
   type ImeRendererDiagnostic,
+  type ImeRendererDiagnosticEvent,
   type ImeSessionCommand,
   type ImeSessionCommandResult,
   type ImeSessionSnapshot,
@@ -196,6 +198,8 @@ export function registerImeIpc(): {
     }
     if (typeof payload.keyCode === "string" && /^[a-z0-9]{1,24}$/i.test(payload.keyCode))
       details.keyCode = payload.keyCode;
+    if (typeof payload.reason === "string" && /^[a-z-]{1,40}$/.test(payload.reason))
+      details.reason = payload.reason;
     if (
       ["text", "process", "backspace", "enter", "navigation", "other"].includes(
         payload.keyKind ?? "",
@@ -277,7 +281,9 @@ export function registerImeIpc(): {
         });
       }
     };
-    const onClosed = () => {
+    const onClosed = () => releaseOwnedLease("owner-window-closed");
+    const onGone = () => releaseOwnedLease("renderer-process-gone");
+    const releaseOwnedLease = (reason: string) => {
       const currentWindow = findWindow(owner.windowId);
       if (currentWindow)
         setImeCandidateState(currentWindow, {
@@ -285,7 +291,15 @@ export function registerImeIpc(): {
           targetId: owner.targetId,
           generation,
         });
-      if (isActiveImeLease(manager.lease)) {
+      const active = manager.lease;
+      if (isActiveImeLease(active)) {
+        logImeDiagnostic("lease-released", {
+          windowId: owner.windowId,
+          targetId: active.owner.targetId,
+          generation: active.generation,
+          reason,
+          staleListener: active.generation !== generation,
+        });
         manager.transition({
           type: "owner-destroyed",
           windowId: owner.windowId,
@@ -298,7 +312,6 @@ export function registerImeIpc(): {
       });
       detachLeaseListeners();
     };
-    const onGone = () => onClosed();
     const unsubscribeFocus = subscribeToWindowFocus(({ window: eventWindow, focused }) => {
       if (eventWindow !== window) return;
       if (focused) onFocus();
@@ -313,7 +326,7 @@ export function registerImeIpc(): {
       isInPlace: boolean,
       isMainFrame: boolean,
     ) {
-      if (isMainFrame && !isInPlace) onClosed();
+      if (isMainFrame && !isInPlace) releaseOwnedLease("window-navigation");
     }
     leaseListeners = [
       unsubscribeFocus,
@@ -346,6 +359,15 @@ export function registerImeIpc(): {
         return rejectLease();
       const previous = manager.lease;
       detachLeaseListeners();
+      if (isActiveImeLease(previous)) {
+        logImeDiagnostic("lease-released", {
+          windowId: previous.owner.windowId,
+          targetId: previous.owner.targetId,
+          generation: previous.generation,
+          reason: "owner-replaced",
+          nextTargetId: owner.targetId,
+        });
+      }
       if (previous.status === "owned" || previous.status === "suspended") {
         const oldWindow = findWindow(previous.owner.windowId);
         if (oldWindow)
@@ -358,7 +380,19 @@ export function registerImeIpc(): {
       if (isActiveImeLease(previous) && bridge.snapshot.composing) await manager.resetComposition();
       const isolation = isolateNativeIme(window);
       if (isolation === "failed") {
+        if (isActiveImeLease(previous))
+          logImeDiagnostic("lease-released", {
+            windowId: previous.owner.windowId,
+            targetId: previous.owner.targetId,
+            generation: previous.generation,
+            reason: "native-ime-isolation-failed",
+          });
         manager.transition({ type: "unavailable" });
+        logImeDiagnostic("lease-unavailable", {
+          windowId: window.id,
+          targetId: owner.targetId,
+          reason: "native-ime-isolation-failed",
+        });
         return rejectLease();
       }
       manager.transition({ type: "acquire", owner });
@@ -401,6 +435,8 @@ export function registerImeIpc(): {
         windowId: current.window.id,
         targetId: current.owner.targetId,
         generation: request.generation as number,
+        reason: rendererReleaseReason(request.reason),
+        composing: bridge.snapshot.composing,
       });
       return {
         state,
@@ -531,7 +567,7 @@ export function registerImeIpc(): {
           result = await invokeLegacyHandler(
             ImeChannels.Release,
             event,
-            { generation: payload.generation },
+            { generation: payload.generation, reason: payload.reason },
             payload.expectedRevision,
           );
           break;
@@ -576,6 +612,12 @@ export function registerImeIpc(): {
               targetId: current.owner.targetId,
               generation: payload.generation,
             });
+            logImeDiagnostic("lease-suspended", {
+              windowId: current.window.id,
+              targetId: current.owner.targetId,
+              generation: payload.generation,
+              reason: rendererReleaseReason(payload.reason, "renderer-suspend"),
+            });
             return { enabled: manager.engineState.enabled };
           });
           break;
@@ -586,6 +628,7 @@ export function registerImeIpc(): {
               manager.snapshot.revision !== payload.expectedRevision
             )
               return { staleRevision: true };
+            const previousStatus = manager.lease.status;
             // Re-confirming focus while already owned is a no-op. The owner window
             // keeps its lease across non-activating candidate surfaces, and the
             // renderer re-sends `resume` on every window focus.
@@ -594,6 +637,12 @@ export function registerImeIpc(): {
                 type: "confirm-focus",
                 owner: current.owner,
                 generation: payload.generation,
+              });
+              logImeDiagnostic("lease-resumed", {
+                windowId: current.window.id,
+                targetId: current.owner.targetId,
+                generation: payload.generation,
+                previousStatus,
               });
               return { enabled: manager.engineState.enabled };
             }
@@ -606,6 +655,12 @@ export function registerImeIpc(): {
               type: "confirm-focus",
               owner: current.owner,
               generation: payload.generation,
+            });
+            logImeDiagnostic("lease-resumed", {
+              windowId: current.window.id,
+              targetId: current.owner.targetId,
+              generation: payload.generation,
+              previousStatus,
             });
             return { enabled: manager.engineState.enabled };
           });
@@ -795,20 +850,19 @@ function isImeRendererDiagnostic(value: unknown): value is ImeRendererDiagnostic
     !DIAGNOSTIC_TARGET_IDS.has(value.targetId)
   )
     return false;
-  return [
-    "acquire-start",
-    "acquire-result",
-    "confirm-focus-start",
-    "confirm-focus-result",
-    "input-focus",
-    "input-blur",
-    "window-focus",
-    "window-blur",
-    "document-keydown",
-    "selection-after-shortcut",
-    "key-routing",
-    "input-mounted",
-  ].includes(String(value.event));
+  // `candidate-rendered` is validated by `isCandidateRendererDiagnostic`; every
+  // other event name must exist in the shared runtime list so the renderer and
+  // this whitelist cannot drift apart silently.
+  return (
+    value.event !== "candidate-rendered" &&
+    IME_RENDERER_DIAGNOSTIC_EVENTS.includes(value.event as ImeRendererDiagnosticEvent)
+  );
+}
+
+const RELEASE_REASON_PATTERN = /^[a-z-]{1,40}$/;
+
+function rendererReleaseReason(value: unknown, fallback = "renderer-unspecified"): string {
+  return typeof value === "string" && RELEASE_REASON_PATTERN.test(value) ? value : fallback;
 }
 
 function isCandidateRendererDiagnostic(value: unknown): value is ImeRendererDiagnostic {
