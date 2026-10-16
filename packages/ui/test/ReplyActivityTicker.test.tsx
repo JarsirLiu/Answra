@@ -9,7 +9,7 @@ afterEach(() => {
 });
 
 describe("ReplyActivityTicker", () => {
-  it("replays the completed answer horizontally when ResizeObserver is unavailable", () => {
+  it("holds the completed answer at the start when ResizeObserver is unavailable", () => {
     let nextFrameId = 0;
     const frames = new Map<number, FrameRequestCallback>();
     vi.stubGlobal("ResizeObserver", undefined);
@@ -41,15 +41,7 @@ describe("ReplyActivityTicker", () => {
     const viewport = screen.getByRole("log", { name: "模型回复活动" });
     expect(viewport.scrollLeft).toBe(0);
 
-    view.rerender(
-      <ReplyActivityTicker
-        activities={activities}
-        pending={false}
-        replyText="一段足够长的最终答案"
-      />,
-    );
-    expect(viewport.scrollLeft).toBe(0);
-
+    // 流式期间：手动驱动 rAF，跑马灯跟随内容滚到尾部。
     act(() => {
       let time = 0;
       for (let frame = 0; frame < 12; frame += 1) {
@@ -61,6 +53,27 @@ describe("ReplyActivityTicker", () => {
       }
     });
     expect(viewport.scrollLeft).toBeGreaterThan(0);
+
+    // 完成：回到文本回复开头（答案在第一段）并挂起跟滚，即使没有 ResizeObserver 也不再前进。
+    view.rerender(
+      <ReplyActivityTicker
+        activities={activities}
+        pending={false}
+        replyText="一段足够长的最终答案"
+      />,
+    );
+    expect(viewport.scrollLeft).toBe(0);
+    act(() => {
+      let time = 0;
+      for (let frame = 0; frame < 12; frame += 1) {
+        const [id, callback] = frames.entries().next().value ?? [];
+        if (typeof id !== "number" || typeof callback !== "function") break;
+        frames.delete(id);
+        callback(time);
+        time += 50;
+      }
+    });
+    expect(viewport.scrollLeft).toBe(0);
     expect(viewport).toHaveAttribute("data-orientation", "horizontal");
     expect(screen.getByLabelText("当前事件：回答")).toBeInTheDocument();
     expect(screen.queryByText("回答")).not.toBeInTheDocument();

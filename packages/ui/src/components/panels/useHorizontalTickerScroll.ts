@@ -23,6 +23,7 @@ export function useHorizontalTickerScroll({
   pending,
 }: UseHorizontalTickerScrollOptions): void {
   const speedRef = useRef(SCROLL_SPEED.process);
+  const holdStartRef = useRef(false);
   const followLatestRef = useRef<() => void>(() => undefined);
   const previousPhaseRef = useRef<TickerScrollPhase | undefined>(undefined);
   const previousPendingRef = useRef(Boolean(pending));
@@ -35,6 +36,11 @@ export function useHorizontalTickerScroll({
     let frame: number | undefined;
     let lastTime: number | undefined;
     const step = (time: number) => {
+      if (holdStartRef.current) {
+        frame = undefined;
+        lastTime = undefined;
+        return;
+      }
       if (lastTime === undefined) lastTime = time;
       const elapsed = Math.min(time - lastTime, 50);
       lastTime = time;
@@ -51,6 +57,7 @@ export function useHorizontalTickerScroll({
       frame = requestAnimationFrame(step);
     };
     const followLatest = () => {
+      if (holdStartRef.current) return;
       if (frame === undefined) {
         lastTime = undefined;
         frame = requestAnimationFrame(step);
@@ -77,10 +84,13 @@ export function useHorizontalTickerScroll({
     const enteringText = phase === "text" && previousPhaseRef.current !== "text";
     const finishedText = phase === "text" && previousPendingRef.current && !pending;
     speedRef.current = SCROLL_SPEED[phase];
+    // 回复结束后停在文本回复开头：按契约答案是回复的第一段，停在最前让用户直接读答案，
+    // 并挂起自动跟滚，直到新一轮输出（pending 恢复）才继续。
+    holdStartRef.current = phase === "text" && !pending;
     if ((enteringText || finishedText) && viewportRef.current) {
       viewportRef.current.scrollLeft = 0;
     }
-    followLatestRef.current();
+    if (!holdStartRef.current) followLatestRef.current();
     previousPhaseRef.current = phase;
     previousPendingRef.current = Boolean(pending);
   }, [pending, phase, viewportRef]);
