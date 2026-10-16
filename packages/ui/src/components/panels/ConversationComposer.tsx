@@ -1,16 +1,47 @@
-import type { ImeCandidateUpdate, ImeState } from "@answra/shared";
 import { ArrowUp, Languages, Plus } from "lucide-react";
-import { type FormEvent, type ReactNode, type RefObject, useLayoutEffect, useRef } from "react";
+import {
+  type FormEvent,
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+} from "react";
+import type { useEmbeddedIme } from "../../hooks/useEmbeddedIme";
 import { ControlledTextCompositionMirror } from "../../ime/adapters/ControlledTextCompositionMirror";
-import type { TextSelectionRange } from "../../ime/adapters/controlledTextAdapter";
 import { applyControlledTextCommand } from "../../ime/adapters/controlledTextAdapter";
+import type { useControlledImeTextAdapter } from "../../ime/adapters/useControlledImeTextAdapter";
 import { handleImeEditorKeyDown, imeEditorAttributes } from "../../ime/imeEditorBinding";
 import type { ImeEditorCommand } from "../../ime/imeKeyRouter";
-import type { ImeTextPolicy } from "../../ime/imeTextPolicy";
 import { resolveImeEditorInputState } from "../../ime/imeTextPolicy";
 import { ICON_SM } from "../../tokens";
 import { ImeCandidateAnchorReporter } from "./ImeCandidateAnchorReporter";
 import "./ConversationComposer.css";
+
+/** The embedded-IME session and composition adapter, consumed as their single writers. */
+export interface ConversationComposerIme {
+  session: Pick<
+    ReturnType<typeof useEmbeddedIme>,
+    | "available"
+    | "active"
+    | "imeEnabled"
+    | "generation"
+    | "state"
+    | "textPolicy"
+    | "targetId"
+    | "shouldPreventBeforeInput"
+    | "sendKey"
+    | "sendKeyUp"
+    | "updateCandidate"
+    | "acquire"
+    | "blur"
+    | "toggle"
+  >;
+  composition: Pick<
+    ReturnType<typeof useControlledImeTextAdapter>,
+    "compositionRange" | "captureCompositionStart" | "cancelComposition"
+  >;
+}
 
 interface ConversationComposerProps {
   value: string;
@@ -32,29 +63,8 @@ interface ConversationComposerProps {
   onSubmit?: () => void;
   /** 停止当前回复（streaming 时替换发送按钮）。 */
   onStop?: () => void;
-  ime?: {
-    available: boolean;
-    active: boolean;
-    imeEnabled: boolean;
-    textPolicy: ImeTextPolicy;
-    shouldPreventBeforeInput: (inputType: string) => boolean;
-    state: ImeState;
-    onKeyDown: (
-      event: React.KeyboardEvent<HTMLTextAreaElement>,
-      applyEditorCommand: (command: ImeEditorCommand) => void,
-    ) => boolean;
-    onKeyUp?: (event: React.KeyboardEvent<HTMLTextAreaElement>) => boolean;
-    onSelect: (index: number) => void;
-    onNavigate: (key: string) => void;
-    onCandidateUpdate: (payload: ImeCandidateUpdate) => void;
-    onTextStart?: (range: TextSelectionRange) => void;
-    compositionRange?: TextSelectionRange | null;
-    onFocus: () => void;
-    onBlur: () => void;
-    targetId: string;
-    generation?: number;
-    onToggle: () => void;
-  };
+  /** 嵌入式输入法会话与 composition 适配器，直接传入 `useEmbeddedIme`/`useControlledImeTextAdapter` 的返回。 */
+  ime?: ConversationComposerIme;
 }
 
 export function ConversationComposer({
@@ -98,6 +108,14 @@ export function ConversationComposer({
     }
   });
 
+  // The preedit mirror only makes sense while the engine is composing: drop the captured
+  // range as soon as the session reports the composition ended.
+  const composing = ime?.session.state.composing ?? false;
+  const cancelComposition = ime?.composition.cancelComposition;
+  useEffect(() => {
+    if (!composing) cancelComposition?.();
+  }, [cancelComposition, composing]);
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!disabled && !submitDisabled) onSubmit?.();
@@ -114,13 +132,16 @@ export function ConversationComposer({
 
   const imeAttributes = ime
     ? imeEditorAttributes({
-        active: ime.active,
-        composing: ime.state.composing,
-        targetId: ime.targetId,
+        active: ime.session.active,
+        composing: ime.session.state.composing,
+        targetId: ime.session.targetId,
       })
     : { "data-ime-policy": "excluded" };
   const imeInputState = ime
-    ? resolveImeEditorInputState({ businessReadOnly: disabled, policy: ime.textPolicy })
+    ? resolveImeEditorInputState({
+        businessReadOnly: disabled,
+        policy: ime.session.textPolicy,
+      })
     : { readOnly: disabled, ariaReadOnly: disabled || undefined, nativeInputBlockedByIme: false };
 
   return (
@@ -131,14 +152,16 @@ export function ConversationComposer({
       {children}
       {ime && (
         <ImeCandidateAnchorReporter
-          blockNativeEditing={ime.textPolicy.blockNativeEditing}
-          generation={ime.generation}
-          onUpdate={ime.onCandidateUpdate}
-          state={ime.state}
-          targetId={ime.targetId}
+          blockNativeEditing={ime.session.textPolicy.blockNativeEditing}
+          generation={ime.session.generation}
+          onUpdate={ime.session.updateCandidate}
+          state={ime.session.state}
+          targetId={ime.session.targetId}
         />
       )}
-      <div className={`conversation-composer-editor${ime?.state.composing ? " is-composing" : ""}`}>
+      <div
+        className={`conversation-composer-editor${ime?.session.state.composing ? " is-composing" : ""}`}
+      >
         <textarea
           {...imeAttributes}
           aria-label={inputLabel}
@@ -148,15 +171,15 @@ export function ConversationComposer({
           disabled={disabled}
           readOnly={imeInputState.readOnly}
           onChange={(event) => {
-            if (ime && !ime.textPolicy.useNativeTextInput) return;
+            if (ime && !ime.session.textPolicy.useNativeTextInput) return;
             onValueChange?.(event.target.value);
           }}
           onCompositionStart={(event) => {
-            if (ime?.textPolicy.blockComposition) event.preventDefault();
+            if (ime?.session.textPolicy.blockComposition) event.preventDefault();
           }}
           onBeforeInput={(event) => {
             const inputType = event.nativeEvent.inputType;
-            if (ime?.shouldPreventBeforeInput(inputType)) event.preventDefault();
+            if (ime?.session.shouldPreventBeforeInput(inputType)) event.preventDefault();
           }}
           onPaste={(event) => {
             if (ime) return;
@@ -173,13 +196,14 @@ export function ConversationComposer({
               ime &&
               handleImeEditorKeyDown({
                 event,
-                policy: ime.textPolicy,
+                policy: ime.session.textPolicy,
                 readSelection: () => ({
                   start: event.currentTarget.selectionStart,
                   end: event.currentTarget.selectionEnd,
                 }),
-                onCaptureCompositionStart: (range) => ime.onTextStart?.(range),
-                sendKey: (keyEvent, apply) => ime.onKeyDown(keyEvent, apply),
+                onCaptureCompositionStart: (range) =>
+                  ime.composition.captureCompositionStart(range, ime.session.state.composing),
+                sendKey: (keyEvent, apply) => ime.session.sendKey(keyEvent, false, apply),
                 applyEditorCommand,
               })
             ) {
@@ -191,39 +215,41 @@ export function ConversationComposer({
             event.currentTarget.form?.requestSubmit();
           }}
           onKeyUp={(event) => {
-            if (ime?.onKeyUp?.(event)) event.preventDefault();
+            if (ime?.session.sendKeyUp(event)) event.preventDefault();
           }}
           onFocus={() => {
-            ime?.onFocus();
+            ime?.session.acquire();
           }}
           onBlur={() => {
-            ime?.onBlur();
+            ime?.session.blur();
           }}
           placeholder={placeholder}
           ref={textareaRef}
           rows={1}
           value={value}
         />
-        {ime?.state.composing && ime.state.preedit && ime.compositionRange && (
-          <ControlledTextCompositionMirror
-            inputRef={textareaRef}
-            preedit={ime.state.preedit}
-            range={ime.compositionRange}
-            targetId={ime.targetId}
-            value={value}
-          />
-        )}
+        {ime?.session.state.composing &&
+          ime.session.state.preedit &&
+          ime.composition.compositionRange && (
+            <ControlledTextCompositionMirror
+              inputRef={textareaRef}
+              preedit={ime.session.state.preedit}
+              range={ime.composition.compositionRange}
+              targetId={ime.session.targetId}
+              value={value}
+            />
+          )}
       </div>
       <div className="conversation-composer-footer">
         <div className="conversation-composer-leading">
           {ime && (
             <button
-              aria-label={ime.imeEnabled ? "关闭内置输入法" : "启用内置输入法"}
-              aria-pressed={ime.active}
-              className={`conversation-composer-icon-button conversation-composer-ime${ime.active ? " is-active" : ""}`}
-              disabled={!ime.available || disabled}
-              onClick={ime.onToggle}
-              title={ime.active ? "关闭内置输入法" : "启用内置输入法"}
+              aria-label={ime.session.imeEnabled ? "关闭内置输入法" : "启用内置输入法"}
+              aria-pressed={ime.session.active}
+              className={`conversation-composer-icon-button conversation-composer-ime${ime.session.active ? " is-active" : ""}`}
+              disabled={!ime.session.available || disabled}
+              onClick={ime.session.toggle}
+              title={ime.session.active ? "关闭内置输入法" : "启用内置输入法"}
               type="button"
             >
               <Languages aria-hidden="true" size={ICON_SM} />

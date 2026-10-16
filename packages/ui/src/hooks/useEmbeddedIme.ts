@@ -656,6 +656,7 @@ export function useEmbeddedIme(
     active: enabled && imeEnabled && available && state.enabled,
     state,
     generation,
+    targetId,
     acquire,
     release,
     blur,

@@ -1,7 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ConversationComposer } from "../src/components/panels/ConversationComposer";
-import type { ImeEditorCommand } from "../src/ime/imeKeyRouter";
 import { resolveImeTextPolicy, shouldPreventImeBeforeInput } from "../src/ime/imeTextPolicy";
 
 const EMPTY_IME_STATE = {
@@ -15,36 +14,41 @@ const EMPTY_IME_STATE = {
   hasNextPage: false,
 };
 
+type ComposerIme = NonNullable<React.ComponentProps<typeof ConversationComposer>["ime"]>;
+
 function imeProps(
-  overrides: Partial<NonNullable<React.ComponentProps<typeof ConversationComposer>["ime"]>> = {},
+  overrides: Partial<ComposerIme["session"]> & Partial<ComposerIme["composition"]> = {},
 ) {
+  const {
+    compositionRange = null,
+    captureCompositionStart = vi.fn(),
+    cancelComposition = vi.fn(),
+    ...sessionOverrides
+  } = overrides;
+  const textPolicy = resolveImeTextPolicy({
+    targetOwned: true,
+    composing: false,
+  });
   return {
-    active: true,
-    available: true,
-    imeEnabled: true,
-    textPolicy: resolveImeTextPolicy({
-      targetOwned: true,
-      composing: false,
-    }),
-    shouldPreventBeforeInput: (inputType: string) =>
-      shouldPreventImeBeforeInput(
-        resolveImeTextPolicy({
-          targetOwned: true,
-          composing: false,
-        }),
-        inputType,
-      ),
-    onKeyDown: vi.fn(() => true),
-    onSelect: vi.fn(),
-    onNavigate: vi.fn(),
-    onCandidateUpdate: vi.fn(),
-    onFocus: vi.fn(),
-    onBlur: vi.fn(),
-    targetId: "test-composer",
-    generation: 1,
-    onToggle: vi.fn(),
-    state: EMPTY_IME_STATE,
-    ...overrides,
+    session: {
+      active: true,
+      available: true,
+      imeEnabled: true,
+      generation: 1,
+      targetId: "test-composer",
+      state: EMPTY_IME_STATE,
+      textPolicy,
+      shouldPreventBeforeInput: (inputType: string) =>
+        shouldPreventImeBeforeInput(textPolicy, inputType),
+      sendKey: vi.fn(() => true),
+      sendKeyUp: vi.fn(() => false),
+      updateCandidate: vi.fn(),
+      acquire: vi.fn(),
+      blur: vi.fn(),
+      toggle: vi.fn(),
+      ...sessionOverrides,
+    },
+    composition: { compositionRange, captureCompositionStart, cancelComposition },
   };
 }
 
@@ -88,7 +92,7 @@ describe("ConversationComposer", () => {
     vi.spyOn(document, "hasFocus").mockReturnValue(true);
     render(
       <ConversationComposer
-        ime={imeProps({ onKeyDown, onToggle })}
+        ime={imeProps({ sendKey: onKeyDown, toggle: onToggle })}
         inputLabel="补充问题"
         onValueChange={vi.fn()}
         placeholder="输入问题"
@@ -145,18 +149,13 @@ describe("ConversationComposer", () => {
 
   it("lets editor adapter commands update draft while native textarea editing is blocked", () => {
     const onValueChange = vi.fn();
-    const onKeyDown = vi.fn(
-      (
-        _event: React.KeyboardEvent<HTMLTextAreaElement>,
-        applyEditorCommand: (command: ImeEditorCommand) => void,
-      ) => {
-        applyEditorCommand({ type: "deleteBackward" });
-        return true;
-      },
-    );
+    const onKeyDown: ComposerIme["session"]["sendKey"] = (_event, _release, applyEditorCommand) => {
+      applyEditorCommand?.({ type: "deleteBackward" });
+      return true;
+    };
     render(
       <ConversationComposer
-        ime={imeProps({ onKeyDown })}
+        ime={imeProps({ sendKey: onKeyDown })}
         inputLabel="补充问题"
         onValueChange={onValueChange}
         placeholder="输入问题"
@@ -210,7 +209,7 @@ describe("ConversationComposer", () => {
     const onKeyDown = vi.fn(() => false);
     render(
       <ConversationComposer
-        ime={imeProps({ onKeyDown })}
+        ime={imeProps({ sendKey: onKeyDown })}
         inputLabel="补充问题"
         onValueChange={onValueChange}
         placeholder="输入问题"
@@ -240,7 +239,12 @@ describe("ConversationComposer", () => {
     const onTextStart = vi.fn();
     const { rerender } = render(
       <ConversationComposer
-        ime={imeProps({ active: true, onKeyDown, onTextStart, compositionRange: null })}
+        ime={imeProps({
+          active: true,
+          sendKey: onKeyDown,
+          captureCompositionStart: onTextStart,
+          compositionRange: null,
+        })}
         inputLabel="补充问题"
         placeholder="输入问题"
         value="abcd"
@@ -253,7 +257,14 @@ describe("ConversationComposer", () => {
 
     rerender(
       <ConversationComposer
-        ime={{ ...props, onKeyDown, onTextStart, compositionRange: { start: 2, end: 2 } }}
+        ime={{
+          session: { ...props.session, sendKey: onKeyDown },
+          composition: {
+            ...props.composition,
+            captureCompositionStart: onTextStart,
+            compositionRange: { start: 2, end: 2 },
+          },
+        }}
         inputLabel="补充问题"
         placeholder="输入问题"
         value="abcd"
@@ -263,7 +274,7 @@ describe("ConversationComposer", () => {
     expect(input.selectionStart).toBe(2);
     expect(input.selectionEnd).toBe(2);
     expect(input).not.toHaveAttribute("data-ime-preedit-in-value");
-    expect(onTextStart).toHaveBeenCalledWith({ start: 2, end: 2 });
+    expect(onTextStart).toHaveBeenCalledWith({ start: 2, end: 2 }, false);
     const preedit = await screen.findByText("n");
     expect(preedit).toHaveAttribute("data-ime-composition-preedit", "true");
     expect(preedit.closest("[data-ime-composition-projection='true']")).toBeInTheDocument();

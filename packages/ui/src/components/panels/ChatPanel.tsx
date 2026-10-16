@@ -1,6 +1,6 @@
 import type { DesktopBridge } from "@answra/shared";
 import { X } from "lucide-react";
-import { type RefObject, useEffect, useRef } from "react";
+import { type RefObject, useRef } from "react";
 import { useControlledImeTextAdapter } from "../../ime/adapters/useControlledImeTextAdapter";
 import { ICON_SM } from "../../tokens";
 import { AssistantMessage, MessageStream } from "../chat";
@@ -71,9 +71,6 @@ export function ChatPanel({
     onChange: onDraftChange,
   });
   const ime = useEmbeddedIme(bridge, controlledImeText.commit, true, "chat-composer");
-  useEffect(() => {
-    if (!ime.state.composing) controlledImeText.cancelComposition();
-  }, [controlledImeText.cancelComposition, ime.state.composing]);
   // 内容指纹：消息增减/正文与思维链流式增长都会变化，驱动 MessageStream 自动跟随。
   const contentKey = messages
     .map((message) => `${message.id}:${message.content.length}:${message.reasoning?.length ?? 0}`)
@@ -131,34 +128,7 @@ export function ChatPanel({
         streaming={streaming}
         submitDisabled={!draft.trim() && attachments.length === 0}
         value={draft}
-        ime={
-          ime.available
-            ? {
-                available: ime.available,
-                active: ime.active,
-                imeEnabled: ime.imeEnabled,
-                textPolicy: ime.textPolicy,
-                shouldPreventBeforeInput: ime.shouldPreventBeforeInput,
-                state: ime.state,
-                onKeyDown: (event, applyEditorCommand) => {
-                  return ime.sendKey(event, false, applyEditorCommand);
-                },
-                onTextStart: (range) => {
-                  controlledImeText.captureCompositionStart(range, ime.state.composing);
-                },
-                compositionRange: controlledImeText.compositionRange,
-                onKeyUp: ime.sendKeyUp,
-                onNavigate: ime.sendNavigation,
-                onSelect: ime.select,
-                onCandidateUpdate: ime.updateCandidate,
-                onFocus: ime.acquire,
-                onBlur: ime.blur,
-                targetId: "chat-composer",
-                generation: ime.generation,
-                onToggle: ime.toggle,
-              }
-            : undefined
-        }
+        ime={ime.available ? { session: ime, composition: controlledImeText } : undefined}
       >
         <input
           accept="image/*"

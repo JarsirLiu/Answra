@@ -1,6 +1,6 @@
 import type { DesktopBridge, ReplyBarActivity } from "@answra/shared";
 import { AlertCircle, FileText, Wrench } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import type { ReplyConversationMessage } from "../../app/useReplyConversation";
 import { useEmbeddedIme } from "../../hooks/useEmbeddedIme";
 import { useControlledImeTextAdapter } from "../../ime/adapters/useControlledImeTextAdapter";
@@ -42,9 +42,6 @@ export function ReplyConversationPopover({
     onChange: setDraft,
   });
   const ime = useEmbeddedIme(bridge, controlledImeText.commit, true, "reply-composer");
-  useEffect(() => {
-    if (!ime.state.composing) controlledImeText.cancelComposition();
-  }, [controlledImeText.cancelComposition, ime.state.composing]);
   const send = async () => {
     const text = draftRef.current.trim();
     if (!text || !conversationId || !bridge?.sendConversationMessage) return;
@@ -136,34 +133,7 @@ export function ReplyConversationPopover({
         placeholder="继续输入消息…"
         submitDisabled={!draft.trim()}
         value={draft}
-        ime={
-          ime.available
-            ? {
-                available: ime.available,
-                active: ime.active,
-                imeEnabled: ime.imeEnabled,
-                textPolicy: ime.textPolicy,
-                shouldPreventBeforeInput: ime.shouldPreventBeforeInput,
-                state: ime.state,
-                onKeyDown: (event, applyEditorCommand) => {
-                  return ime.sendKey(event, false, applyEditorCommand);
-                },
-                onTextStart: (range) => {
-                  controlledImeText.captureCompositionStart(range, ime.state.composing);
-                },
-                compositionRange: controlledImeText.compositionRange,
-                onKeyUp: ime.sendKeyUp,
-                onNavigate: ime.sendNavigation,
-                onSelect: ime.select,
-                onCandidateUpdate: ime.updateCandidate,
-                onFocus: ime.acquire,
-                onBlur: ime.blur,
-                targetId: "reply-composer",
-                generation: ime.generation,
-                onToggle: ime.toggle,
-              }
-            : undefined
-        }
+        ime={ime.available ? { session: ime, composition: controlledImeText } : undefined}
       />
     </section>
   );
