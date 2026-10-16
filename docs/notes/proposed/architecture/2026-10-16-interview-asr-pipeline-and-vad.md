@@ -18,7 +18,7 @@
 
 按"计价单位跟随被计量模态"判断：Audio→Text 是 ASR（按音频秒计费）；Text→Audio 是 TTS（按字符计费）；双向实时对话（Omni/Realtime conversation）按 token 计费且音频 token 单价远高于文本 token。面试场景只需「听 + 文字建议」，因此**只使用 ASR + 既有文本 LLM，明确排除 TTS 与 Omni 对话模型**。
 
-- **主路径：`qwen3-asr-flash-realtime`（流式，直连）**。WebSocket 流式，服务端 `server_vad` 断句，按音频秒计费（官方文档价约 $0.000047–$0.00009/秒，量级约 ¥1/小时/路，以账单为准）。协议为 OpenAI Realtime 风格事件子集：连接 `wss://dashscope.aliyuncs.com/api-ws/v1/realtime?model=qwen3-asr-flash-realtime`，头 `Authorization: Bearer <DASHSCOPE key>` 与 `OpenAI-Beta: realtime=v1`；先发 `session.update`（`modalities:["text"]`、`input_audio_format:"pcm"`、`sample_rate:16000`、`input_audio_transcription.language`/`corpus`、`turn_detection:{type:"server_vad", threshold, silence_duration_ms}`），随后循环发送 base64 PCM 块 `input_audio_buffer.append`。选中原因：首字延迟数百 ms 量级（待实测口径）与对话节奏匹配，断句在云端且尾窗参数可直接调，不被客户端工程能力限死。使用模型别名而非日期快照（快照会退役，`qwen3-asr-flash-2026-02-10` 已于 2026-10-10 退役）。
+- **主路径：`qwen-audio-3.0-asr-flash-streaming`（流式，DashScope 原生 Recognition WS 协议）**。单工实时识别（只进语音、不输出合成音频；连接仍为双向消息：上行音频/控制帧、下行文本事件），服务端 VAD 断句，按音频秒计费（¥0.00033/秒 ≈ ¥1.2/小时/路，以账单为准；中转平台另有 36K 秒免费额度可试场）。协议：`wss://<base>/api-ws/v1/inference` + 头 `Authorization: bearer <key>`；上行 JSON 控制帧 `run-task`（`task_group:"audio"`、`task:"asr"`、`function:"recognition"`、`model`、`parameters{format:"pcm", sample_rate:16000, max_sentence_silence}`）→ 等待 `task-started` → 循环上行**二进制** PCM 帧正式音频（约 3200B/100ms 节流）→ `finish-task` 收尾；下行 `result-generated`（`payload.output.sentence{text, begin_time, end_time, sentence_end, words[]}` 句级+字级时间戳，`payload.usage.duration` 计费秒）、`task-finished`、`task-failed`（`header.error_code/error_message`）。选中原因：中转域 WSS 被官方文档直接采认（示例即 `base_websocket_api_url='wss://maas.qianwenaiapi.com/api-ws/v1/inference'`），BYOK 中转 key 可用，不依赖网关改造；服务端断句例程成熟（单工 ASR 形态正是需要的），比 `qwen3-asr-flash-realtime`（OpenAI Realtime 风格、`session.turn_detection`、无时间戳）多句级/字级时间戳与热词/上下文/敏感词可选项。使用模型别名而非日期快照（快照会退役）。
 - **降级路径：`qwen3-asr-flash`（批式，OpenAI 兼容）**。`POST {base}/compatible-mode/v1/chat/completions`，content part 使用 `{type:"input_audio", input_audio:{data:"data:audio/...;base64,..."}}`，`asr_options` 作为非标准字段透传，单段上限 5 分钟/10MB（输入接受 URL/Base64；仅 *filetrans* 系列才限制公网 URL），响应为标准 `chat.completion` 且携带 `usage.seconds`。仅在企业网络禁 WS 等场景启用；网关通用 chat 中转同样可承载此降级路径。
 - **两路音频复用同两套模型**：面试官（系统 loopback）与候选人（麦克风）各一条独立连接/请求，segment 带 source 标记，由总提案规定的「系统发言触发判断、麦克风仅作上下文」消费。
 
@@ -26,9 +26,9 @@
 
 主路径 realtime 的**断句由服务端 `server_vad` 完成，客户端 VAD 因此不再是正确性前提**，而是可开关的成本优化：Silero（MIT，约 2MB ONNX；JS 封装 `@ricky0123/vad-web` 跑在渲染进程 AudioWorklet）作为**发送门控**——仅当判定有人声时才把 PCM 块经主进程发送到云端，静默期不发送即可显著降低按秒计费的开销；服务端断句不受影响。门控必须**失败即放行**（fail-open）：模型加载失败、Worklet 异常或用户关闭门控时回退为全量流式发送，绝不能静音丢声。降级到批式时，同一 VAD 反过来承担切段职责（`speechStart`/`speechEnd` 切段拼 dataURI，段长按 5 分钟/10MB 约束收紧强切），成为批式路径的正确性前提。
 
-### 凭证与传输形态（直连首发 / 网关透传后切）
+### 凭证与传输形态（中转直连首发 / 网关透传后切）
 
-- **首发路径（v1）：DashScope realtime WS 直连**。runtime worker 出站直连 `wss://dashscope.aliyuncs.com/api-ws/v1/realtime`，DASHSCOPE key 走 main 进程 safeStorage 单独存储且与 Chat LLM 凭证隔离，renderer 不可见；未配置时面试启动显式失败，不回退本地模型或浏览器识别。**中转域（如 `maas.qianwenaiapi.com`）是否暴露 `/api-ws` 的 WSS 入口未验证**——实测通过才可使用中转域，否则首版必须用官方域，批式降级路径可另行使用中转域的 compatible-mode。
+- **首发路径（v1）：中转域 Recognition WS 直连**。runtime worker 出站直连 `wss://maas.qianwenaiapi.com/api-ws/v1/inference`（官方文档示例即此地址；本机端到端连通性仍须实测），key 走 main 进程 safeStorage 单独存储且与 Chat LLM 凭证隔离，renderer 不可见；未配置时面试启动显式失败，不回退本地模型或浏览器识别。官方域 `wss://dashscope.aliyuncs.com/api-ws/v1/inference` 与 OpenAI Realtime 风格的 `qwen3-asr-flash-realtime`（`/api-ws/v1/realtime`）作为协议族内的备选 base/adapter，仅配置差异。
 - **产品化路径：切换 AnswraSite 通用 realtime 透传**。客户端与网关之间以 [AVP v1 私有协议](2026-10-16-answra-voice-protocol-avp-v1.md)对话（网关按 AVP 做上游路由与短期 token，不借道 Grok 账号语义）；建成并验收后把 STT 连接指向网关，Answra 客户端仅改 provider（直连翻译器 → 纯转发器），批式降级与凭证形态不变。**透传端点未上线前不得**把主路径压到现行语音专用端点上；网关计费按音频秒/连接时长计量属网关侧后续课题。
 
 主流以 [AVP v1](2026-10-16-answra-voice-protocol-avp-v1.md) 为会话语言：`TranscriptionProvider` adapter 是 AVP 与上游协议之间的唯一翻译点（会话开/停 → `TranscriptSegment`（text、startMs、endMs、isFinal、source）事件流，错误与重连显式），adapter 持有连接生命周期；上层与 shared 协议类型对上游零知识。稳定性工程按 Natively 参考实现具备：指数退避重连（约 1.5s 基数 × 2^min(attempts,6) + jitter）、断线自动恢复遥测、句尾静音尾窗与会话级 turn 合并（服务端断句时保留打点以观察延迟）。
@@ -56,11 +56,11 @@
 
 正面权衡：realtime 首字延迟数百 ms 量级、断句在云端可调尾窗，匹配实时面试节奏；直连与网关部署解耦，AVP 协议保证后续切换零客户端改动（《AVP v1》Note）；批式降级仍有网关 chat 中转这条现成道路。
 
-风险与约束：主路径要求 DASHSCOPE(api) key（用户先前只有 OpenAI 兼容中转 key 的话，需要另行开通），并且中转域 WSS 支持未验证——v1 用官方域 `dashscope.aliyuncs.com`，中转域支持与否以实测为准；断句由服务端 VAD 决定，`silence_duration_ms`/`threshold` 是"说完 → 建议出现"延迟的主项，必须可调并实测口径；音频流式上行百炼（及网关产品化后），隐私文案须覆盖；误 VAD 可截短句首，参数可调且门控 fail-open；模型快照会退役必须用别名；批式降级经网关按 token 计费失真（少计），产品化/对外收费前网关须升级为按 `usage.seconds`/秒级计量；key 与中转凭证全程不进 renderer。实测前不宣称实时性与计费承诺；任何实机验证结果须记入本 Note 验证节。
+风险与约束：主路径已确认可经中转域（BYOK 中转 key + 官方采认的 WS 端点），不需另开 DASHSCOPE 官方 key；若中转连通失败再切官方域 + 官方 key 作为备选传输；本机端到端连通与按时计费口径仍须实机确认；断句由服务端 VAD 决定，`max_sentence_silence` 是"说完 → 建议出现"延迟的主项，必须可调并实测口径；音频流式上行百炼（及网关产品化后），隐私文案须覆盖；误 VAD 可截短句首，参数可调且门控 fail-open；模型快照会退役必须用别名；批式降级经网关按 token 计费失真（少计），产品化/对外收费前网关须升级为按 `usage.seconds`/秒级计量；key 与中转凭证全程不进 renderer。实测前不宣称实时性与计费承诺；任何实机验证结果须记入本 Note 验证节。
 
 ## 验收标准
 
-- `TranscriptionProvider` realtime 直连实现在 mock WS 下可自动测试：`session.update` 负载含 `server_vad`/格式与语言参数、`input_audio_buffer.append` 循环与分块、`server_vad` 断句 → `TranscriptSegment` 时序、重连指数退避、错误码与 stop 释放；批式降级实现补同类 mock HTTP 测试（`input_audio`/`asr_options`、dataURI 编码、段长上限强切、`usage.seconds` 解析），两实现须产出语义等价的 `TranscriptSegment`。
+- `TranscriptionProvider` realtime 直连实现在 mock WS 下可自动测试：`run-task` 负载含格式/采样率/VAD 参数、二进制音频帧上行节流、`result-generated` → `TranscriptSegment` 时序（`sentence_end` 闭合、句子/字级时间戳映射、`usage.duration` 解析）、`finish-task`/`task-failed` 与重连指数退避、错误码与 stop 释放；批式降级实现补同类 mock HTTP 测试（`input_audio`/`asr_options`、dataURI 编码、段长上限强切、`usage.seconds` 解析），两实现须产出语义等价的 `TranscriptSegment`。
 - VAD 门控测试：静默期不发送音频、检测异常或关闭门控时 fail-open 全量发送、批式降级时承担切段（纯静音不产生段、尾静音后闭合、超限强切有告警）。
 - 配置测试：STT 凭证（官方域直连 or 切网关）与 Chat 凭证隔离，形态仅 base_url/凭证差异。
 - 共享协议不含 DashScope/AVP 事件类型；key 永不出现在 renderer 可见表面；STT 凭证与 LLM 凭证分别为两个实体。AVP 协议相关验收见其 Note。
@@ -68,8 +68,9 @@
 
 ## 验证证据
 
-- 官方样例（user 提交，Qwen 官方 realtime sample）：`websocket-client` 连接 `wss://dashscope.aliyuncs.com/api-ws/v1/realtime?model=qwen3-asr-flash-realtime`，`session.update` 支持上述字段与 `server_vad`，音频 3200B/100ms base64 append；非 VAD 模式需 ≤60s 并 commit。
-- 千问AI平台文档（user 提供链接，`platform.qianwenai.com/docs/developer-guides/speech/speech-to-text-models`，2026-10-16 核对）：`qwen3-asr-flash` 列为"非实时 / HTTP（OpenAI 兼容）"，单段 5 分钟/10MB；非实时音频规格中 Qwen3-ASR-Flash 的输入方式为"URL / Base64 / 本地文件绝对路径"（仅 *filetrans* 系列为"公网可访问的文件 URL"，从而排除"OpenAI 兼容仅收公网 URL"的疑虑）；`qwen3-asr-flash-realtime` 列为"实时 / WebSocket"二进制流。
+- 官方文档（千问AI平台，user 提供链接与截图，`/docs/developer-guides/speech/asr-realtime`，2026-10-16 核对）：DashScope 原生 Recognition WS 协议最小实现（Python/Node/Java/C# 四语言示例），`wss://maas.qianwenaiapi.com/api-ws/v1/inference`（中转域）为官方示例 base 地址；`run-task`/`finish-task`/二进制帧上行、`task-started`/`result-generated`/`task-finished`/`task-failed` 事件、`payload.usage.duration`；`qwen-audio-3.0-asr-flash-streaming` 的 VAD 参数为 `max_sentence_silence`（ms），3.1 message 系列为 `vad_model`，Qwen3-ASR-Flash-Realtime 为 `session.turn_detection`；句级/字级时间戳结构样例；模型页（user 截图）标注"单工实时语音识别"、¥0.00033/秒、RPM 1K、免费额度 36K 秒。
+- 旧证据（保留为备选 adapter 参考）：`qwen3-asr-flash-realtime`（OpenAI Realtime 事件风格，`/api-ws/v1/realtime`，`session.update` + `input_audio_buffer.append` 3200B/100ms，非 VAD 模式需 ≤60s 并 commit）。
+- 千问AI平台文档（user 提供链接，`platform.qianwenai.com/docs/developer-guides/speech/speech-to-text-models`，2026-10-16 核对）：`qwen3-asr-flash` 列为"非实时 / HTTP（OpenAI 兼容）"，单段 5 分钟/10MB；非实时音频规格中 Qwen3-ASR-Flash 的输入方式为"URL / Base64 / 本地文件绝对路径"（仅 *filetrans* 系列为"公网可访问的文件 URL"）；`qwen3-asr-flash-realtime` 列为"实时 / WebSocket"。
 - 阿里云文档：`qwen3-asr-flash` OpenAI 兼容响应含 `usage.seconds` 与 `prompt_tokens_details.audio_tokens`；快照退役公告 `2026-02-10`（退役日期 2026-10-10）；`-filetrans` 仅异步。
 - AnswraSite 源码（`D:\learn\xx\AnswraSite\gateway`）：`server/routes/gateway.go:296` 只在 Grok 分组挂 `/stt`；`handler/grok_audio.go:30` 与 `service/grok_audio.go:38-40` 要求 `PlatformGrok`；`service/openai_gateway_grok_chat_bridge.go:451` 拒绝 `input_audio`（仅 Grok 桥；通用 chat raw 路径不触碰 content 块——user 网关侧验证，待实测复核）；`service/billing_service.go` 音频单价按小时/分钟/百万字符三种模式，未覆盖 token 型 ASR 请求。
 - 提案阶段无代码实现，"未做实时性/断句稳定性实测"视为默认，验收不由本 Note 解锁。

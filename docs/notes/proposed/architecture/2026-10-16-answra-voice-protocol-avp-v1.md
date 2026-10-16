@@ -50,8 +50,8 @@
 
 ### Adapter 分工演进
 
-- **v1 直连**：`DashScopeRealtimeProvider` 在 runtime 内把 AVP 事件翻译为 DashScope 原生事件（`session.update`/`input_audio_buffer.append` 与上游对应字段一一映射），`transcript.delta`/`segment` 从上游事件映射回收；批式 `qwen3-asr-flash` 在 adapter 内把缓存段与分段批识别合成为同样的 `transcript.segment`。
-- **产品化**：AnswraSite 网关按本协议实现服务端，负责向上游模型路由（DashScope/Grok/未来腾讯云）与短期凭证、用量计量计费；客户端 adapter 从直连翻译器切换为纯转发器，**主程序与上层零改动**。
+- **v1 直连**：`DashScopeRecognitionProvider` 在 runtime 内把 AVP 事件翻译为 DashScope 原生 Recognition WS 协议（`wss://<base>/api-ws/v1/inference`，头 `Authorization: bearer <key>`）：`session.update` → `run-task`（payload: task_group=audio、task=asr、function=recognition、model、parameters{format, sample_rate, vad/context 等}），等待 `task-started` 后将 `input_audio.append` 的 base64 PCM 还原为**二进制帧**上行（约 3200B/100ms 节流），`transcript.delta`/`segment` 从 `result-generated` 事件（`payload.output.sentence{text,begin_time,end_time,sentence_end,words[]}`）映射回收，`usage.update` 取 `payload.usage.duration`；客户端 `session.stop` → `finish-task`，错误映射 `task-failed`（`header.error_code/error_message`）。vad 参数映射 `max_sentence_silence`；OpenAI Realtime 风格的 `qwen3-asr-flash-realtime`（`/api-ws/v1/realtime`，`session.turn_detection`）是另一套原生协议，留作官方域备选 adapter，不改变 AVP 面。
+- **产品化**：AnswraSite 网关按本协议实现服务端，负责向上游模型路由（DashScope Recognition/Realtime、Grok、未来腾讯云）与短期凭证、用量计量计费；客户端 adapter 从直连翻译器切换为纯转发器，**主程序与上层零改动**。
 - 上游切换判据全部落在 provider/gateway 一处，renderer、runtime 会话层、UI 均无上游知识。
 
 ## 模块边界
@@ -87,6 +87,6 @@
 ## 验证证据
 
 - Natively `NativelyProSTT`（`D:\learn\xx\natively-cluely-ai-assistant\electron\audio\NativelyProSTT.ts`）：私有 WS 单协议 + 多级 fallback 链 + 短期 session token 的客户端零协议转换先例。
-- DashScope realtime 官方样例（user 提供并核查），事件词汇与 OpenAI Realtime 命名对齐。
+- DashScope 原生 Recognition WS 官方文档（千问AI平台 `/docs/developer-guides/speech/asr-realtime`，2026-10-16 核对）：`run-task`/`task-started`/二进制音频帧/`result-generated`/`finish-task`/`task-failed`、`payload.usage.duration`、`max_sentence_silence` VAD；OpenAI Realtime 事件词汇命名对齐参考 `qwen3-asr-flash-realtime`（`/api-ws/v1/realtime`）。
 - 提案阶段无实现；双 adapter 等价产出是设计目标，验收见验收标准。
 
