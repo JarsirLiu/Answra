@@ -65,6 +65,8 @@ interface ConversationComposerProps {
   onStop?: () => void;
   /** 嵌入式输入法会话与 composition 适配器，直接传入 `useEmbeddedIme`/`useControlledImeTextAdapter` 的返回。 */
   ime?: ConversationComposerIme;
+  /** 是否渲染内置输入法开关。窄面板（如回复条弹层）不需要，避免只开关内置 IME、却不反映中英模式的误导控件。 */
+  showImeToggle?: boolean;
 }
 
 export function ConversationComposer({
@@ -83,6 +85,7 @@ export function ConversationComposer({
   onSubmit,
   onStop,
   ime,
+  showImeToggle = true,
 }: ConversationComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const pendingCaret = useRef<number | null>(null);
@@ -242,7 +245,7 @@ export function ConversationComposer({
       </div>
       <div className="conversation-composer-footer">
         <div className="conversation-composer-leading">
-          {ime && (
+          {ime && showImeToggle && (
             <button
               aria-label={ime.session.imeEnabled ? "关闭内置输入法" : "启用内置输入法"}
               aria-pressed={ime.session.active}

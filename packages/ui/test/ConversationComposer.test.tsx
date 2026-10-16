@@ -114,6 +114,24 @@ describe("ConversationComposer", () => {
     expect(onToggle).toHaveBeenCalledOnce();
   });
 
+  it("omits the embedded-IME toggle where the host opts out", () => {
+    vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    render(
+      <ConversationComposer
+        ime={imeProps()}
+        inputLabel="补充问题"
+        onValueChange={vi.fn()}
+        placeholder="输入问题"
+        showImeToggle={false}
+        value=""
+      />,
+    );
+
+    expect(screen.getByRole("textbox", { name: "补充问题" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "关闭内置输入法" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "启用内置输入法" })).toBeNull();
+  });
+
   it("reports the IME pause separately from the business read-only state", () => {
     vi.spyOn(document, "hasFocus").mockReturnValue(true);
     const { rerender } = render(

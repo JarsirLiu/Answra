@@ -486,6 +486,8 @@ describe("ReplyBarWindowApp live conversation popover", () => {
 
     expect(await screen.findByRole("textbox", { name: "消息输入" })).not.toBeDisabled();
     expect(screen.getByRole("button", { name: "发送消息" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "关闭内置输入法" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "启用内置输入法" })).toBeNull();
     expect(document.querySelector(".conversation-composer")?.nextElementSibling).toBeNull();
   });
 

@@ -131,6 +131,7 @@ export function ReplyConversationPopover({
         onSubmit={() => void send()}
         onValueChange={setDraft}
         placeholder="继续输入消息…"
+        showImeToggle={false}
         submitDisabled={!draft.trim()}
         value={draft}
         ime={ime.available ? { session: ime, composition: controlledImeText } : undefined}
