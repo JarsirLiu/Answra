@@ -1,4 +1,5 @@
 import type { ReplyBarActivity } from "@answra/shared";
+import katex from "katex";
 import {
   AlertCircle,
   Brain,
@@ -7,7 +8,7 @@ import {
   MessageSquareText,
   Wrench,
 } from "lucide-react";
-import { useRef } from "react";
+import { type ReactNode, useRef } from "react";
 import { useHorizontalTickerScroll } from "./useHorizontalTickerScroll";
 
 interface ReplyActivityTickerProps {
@@ -100,13 +101,46 @@ export function ReplyActivityTicker({
               key={`${activity.id}-${activity.kind}`}
             >
               {activity.label ? <strong>{activity.label}</strong> : null}
-              {activity.text ? <span>{activity.text}</span> : null}
+              {activity.text ? <span>{renderInlineMath(activity.text)}</span> : null}
             </span>
           ))}
         </div>
       </div>
     </div>
   );
+}
+
+const INLINE_MATH = /\$\$([\s\S]+?)\$\$|\$([^$\n]+?)\$/g;
+
+/**
+ * 单行跑马灯里的公式渲染：只把 `$...$` / `$$...$$` 交给 KaTeX，其余保持纯文本，
+ * 以保住 nowrap 的单行布局。统一按行内模式渲染（display 公式在跑马灯里不换行），
+ * 未闭合的 `$` 在流式期间先显示原文，闭合后变为公式。
+ */
+function renderInlineMath(text: string): ReactNode {
+  const nodes: ReactNode[] = [];
+  let lastIndex = 0;
+  INLINE_MATH.lastIndex = 0;
+  let match = INLINE_MATH.exec(text);
+  while (match) {
+    if (match.index > lastIndex) nodes.push(text.slice(lastIndex, match.index));
+    const source = match[1] ?? match[2] ?? "";
+    nodes.push(
+      <span
+        className="reply-activity-math"
+        // biome-ignore lint/security/noDangerouslySetInnerHtml: KaTeX 输出由纯文本生成，不含用户 HTML，等价于受控内容。
+        dangerouslySetInnerHTML={{
+          __html: katex.renderToString(source, { throwOnError: false, strict: false }),
+        }}
+        key={`math-${match.index}`}
+      />,
+    );
+    lastIndex = match.index + match[0].length;
+    match = INLINE_MATH.exec(text);
+  }
+  if (!nodes.length) return text;
+  if (lastIndex < text.length) nodes.push(text.slice(lastIndex));
+  return nodes;
 }
 
 function getActivityIcon(kind: ReplyBarActivity["kind"]) {

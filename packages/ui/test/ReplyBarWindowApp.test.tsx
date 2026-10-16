@@ -120,6 +120,42 @@ describe("ReplyBarWindowApp live conversation popover", () => {
     expect(bridge.readConversationEvents).toHaveBeenCalledWith(conversationId, 0);
   });
 
+  it("renders KaTeX formulas in the ticker and the answer body", async () => {
+    const bridge = createBridge();
+    bridge.getConversationSnapshot.mockResolvedValue({
+      conversationId,
+      revision: 1,
+      activeRunId: runId,
+      messages: [
+        { id: "user-1", role: "user", text: "请回答", images: [], status: "complete" },
+        {
+          id: runId,
+          role: "assistant",
+          text: "水速 $v=\\frac{10}{3}$ m/s，即：\n\n$$\nv \\approx 3.33\n$$",
+          images: [],
+          status: "streaming",
+        },
+      ],
+    });
+    render(<ReplyBarWindowApp bridge={bridge as DesktopBridge} />);
+    act(() =>
+      stateListener?.({
+        ...replyState(),
+        replyActivities: [{ id: "text-1", kind: "text", label: "", text: "水速 $v=2$ m/s" }],
+      }),
+    );
+
+    await waitFor(() =>
+      expect(document.querySelector(".reply-activity-item .katex")).not.toBeNull(),
+    );
+    expect(screen.queryByText("$v=2$")).toBeNull();
+
+    fireEvent.mouseEnter(document.querySelector(".reply-activity-viewport") as HTMLElement);
+    const popover = await screen.findByRole("region", { name: "当前对话" });
+    await waitFor(() => expect(popover.querySelector(".katex")).not.toBeNull());
+    expect(popover.querySelector(".katex-display")).not.toBeNull();
+  });
+
   it("recovers a missing revision from the event journal", async () => {
     const bridge = createBridge();
     bridge.readConversationEvents.mockResolvedValueOnce([]).mockResolvedValueOnce([

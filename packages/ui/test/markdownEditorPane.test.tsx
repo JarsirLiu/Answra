@@ -379,8 +379,9 @@ describe("MarkdownEditorPane", () => {
     await waitFor(() => expect(view.state.doc.toString()).toBe(sampleContent.text));
   });
 
-  it("renders markdown in preview, including inline HTML via rehype-raw", async () => {
-    const text = "# 标题\n\n第一行<br/>第二行 [链接](https://example.com)";
+  it("renders markdown in preview, including inline HTML via rehype-raw and KaTeX formulas", async () => {
+    const text =
+      "# 标题\n\n第一行<br/>第二行 [链接](https://example.com)\n\n行内 $v=\\frac{10}{3}$ m/s\n\n$$\na^2+b^2=c^2\n$$";
     render(
       <MarkdownEditorPane
         path="错题.md"
@@ -408,6 +409,15 @@ describe("MarkdownEditorPane", () => {
     expect(document.querySelector(".workspace-preview-markdown a")?.getAttribute("href")).toBe(
       "https://example.com",
     );
+    // 公式：sanitize 保留 language-math 后由 rehype-katex 渲染，原文 `$` 不再出现。
+    await waitFor(
+      () => expect(document.querySelector(".workspace-preview-markdown .katex")).not.toBeNull(),
+      { timeout: 5000 },
+    );
+    expect(document.querySelector(".workspace-preview-markdown .katex-display")).not.toBeNull();
+    expect(document.querySelector(".workspace-preview-markdown")?.textContent).not.toContain("$");
+    // 未被 KaTeX 覆盖的内容仍按 markdown 渲染（normalize + sanitize 未误伤）。
+    expect(document.querySelector(".workspace-preview-markdown p")).not.toBeNull();
   });
 
   it("silently reloads on external change when there are no unsaved edits", async () => {

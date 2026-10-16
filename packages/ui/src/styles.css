@@ -13,6 +13,8 @@
 @import "./styles/tokens.css";
 @import "./styles/base.css";
 @import "./styles/shared.css";
+/* 公式（KaTeX）样式与字体；字体随包离线打包，不依赖 CDN。 */
+@import "katex/dist/katex.min.css";
 @import "./components/controls/SurfaceButton.css";
 @import "./components/floating-bar/FloatingBar.css";
 @import "./components/floating-bar/ModePicker.css";

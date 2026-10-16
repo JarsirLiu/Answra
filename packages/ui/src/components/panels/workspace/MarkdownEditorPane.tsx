@@ -17,8 +17,8 @@ import "./WorkspacePanel.css";
  * markdown 面板：两种模式。
  *
  * - 源码（默认）：CodeMirror 6 编辑原始 markdown。
- * - 预览：react-markdown + remark-gfm + rehype-raw 静态渲染
- *   （内嵌 HTML 如 br/a 经 rehype-raw 渲染，rehype-sanitize 兜底安全），
+ * - 预览：react-markdown + remark-gfm + remark-math + rehype-katex 静态渲染
+ *   （内嵌 HTML 如 br/a 经 rehype-raw 渲染，rehype-sanitize 兜底安全，KaTeX 渲染公式），
  *   图片走 answra-file 协议。
  *
  * 职责边界：本组件持有编辑器实例与脏状态；文件读写经 bridge 完成；
@@ -436,8 +436,11 @@ interface MarkdownRendererProps {
 }
 
 /**
- * 预览态：react-markdown + remark-gfm + rehype-raw（渲染内嵌 HTML，如 br/a），
- * rehype-sanitize 兜底白名单；图片走 answra-file 协议。
+ * 预览态：react-markdown + remark-gfm + remark-math + rehype-raw（渲染内嵌 HTML，如 br/a），
+ * rehype-sanitize 兜底白名单，rehype-katex 渲染公式；图片走 answra-file 协议。
+ * KaTeX 必须排在 sanitize 之后：白名单会剥掉 KaTeX 输出所需的 class/style，但会保留
+ * remark-math 生成的 `language-math`（匹配 code 的 `^language-` 规则），因此先净化用户
+ * 内嵌 HTML，再由 KaTeX 依据可信文本生成公式 HTML。
  */
 function MarkdownStaticPreview({ text, dir }: { text: string; dir: string }) {
   const [renderer, setRenderer] = useState<null | ((props: MarkdownRendererProps) => ReactNode)>(
@@ -449,14 +452,16 @@ function MarkdownStaticPreview({ text, dir }: { text: string; dir: string }) {
     void Promise.all([
       import("react-markdown"),
       import("remark-gfm"),
+      import("remark-math"),
       import("rehype-raw"),
       import("rehype-sanitize"),
-    ]).then(([markdownModule, gfmModule, rawModule, sanitizeModule]) => {
+      import("rehype-katex"),
+    ]).then(([markdownModule, gfmModule, mathModule, rawModule, sanitizeModule, katexModule]) => {
       if (cancelled) return;
       setRenderer(() => markdownModule.default as (props: MarkdownRendererProps) => ReactNode);
       setPlugins({
-        remark: [gfmModule.default],
-        rehype: [rawModule.default, sanitizeModule.default],
+        remark: [gfmModule.default, mathModule.default],
+        rehype: [rawModule.default, sanitizeModule.default, katexModule.default],
       });
     });
     return () => {

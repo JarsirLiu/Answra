@@ -1,6 +1,8 @@
 import type { ReactElement, ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
+import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
 import styles from "./TextResponse.module.css";
 
 const markdownComponents: Components = {
@@ -28,11 +30,18 @@ const markdownComponents: Components = {
   },
 };
 
-/** AI 正文：Markdown 渲染（GFM），流式期间随文本增长实时重排。 */
+/**
+ * AI 正文：Markdown（GFM）+ KaTeX 行内/块级公式渲染，
+ * 流式期间随文本增长实时重排；未闭合的 `$` 在闭合前保持原文。
+ */
 export function TextResponse({ text, caret = false }: { text: string; caret?: boolean }) {
   return (
     <div className={styles.prose} data-caret={caret || undefined}>
-      <ReactMarkdown components={markdownComponents} remarkPlugins={[remarkGfm]}>
+      <ReactMarkdown
+        components={markdownComponents}
+        rehypePlugins={[[rehypeKatex, { strict: false }]]}
+        remarkPlugins={[remarkGfm, remarkMath]}
+      >
         {text}
       </ReactMarkdown>
     </div>
