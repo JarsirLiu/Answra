@@ -74,3 +74,37 @@ export function resolveImeTextFallback(input: ImeTextFallbackInput): string | un
   const isDigitWithoutShift = /^[0-9]$/.test(input.key) && !input.shift;
   return !input.engine.composing && isDigitWithoutShift ? input.text : undefined;
 }
+
+export interface ImeEditorInputStateInput {
+  /** The host's own read-only/disabled intent (business state). */
+  businessReadOnly: boolean;
+  policy: ImeTextPolicy;
+}
+
+export interface ImeEditorInputState {
+  /**
+   * DOM `readOnly`: the native write path is paused, either for business reasons or
+   * because the IME owns the target. A single DOM attribute cannot carry two causes,
+   * so the union stays here by necessity; the two causes are separated below.
+   */
+  readOnly: boolean;
+  /** `aria-readonly`: business state only. The IME pause is a mechanism, not an accessible state. */
+  ariaReadOnly: true | undefined;
+  /** The native write path is paused solely because the embedded IME owns the target. */
+  nativeInputBlockedByIme: boolean;
+}
+
+/**
+ * Separates the two duties a text control's read-only flag used to conflate: the host's
+ * business read-only state and the embedded-IME pause on the native write path. Keeping
+ * them apart lets platform isolation (S5) replace the pause without disturbing the
+ * business state or the accessible state announced to assistive tech.
+ */
+export function resolveImeEditorInputState(input: ImeEditorInputStateInput): ImeEditorInputState {
+  const nativeInputBlockedByIme = input.policy.blockNativeEditing;
+  return {
+    readOnly: input.businessReadOnly || nativeInputBlockedByIme,
+    ariaReadOnly: input.businessReadOnly || undefined,
+    nativeInputBlockedByIme,
+  };
+}

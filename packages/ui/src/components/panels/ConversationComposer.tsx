@@ -7,6 +7,7 @@ import { applyControlledTextCommand } from "../../ime/adapters/controlledTextAda
 import { handleImeEditorKeyDown, imeEditorAttributes } from "../../ime/imeEditorBinding";
 import type { ImeEditorCommand } from "../../ime/imeKeyRouter";
 import type { ImeTextPolicy } from "../../ime/imeTextPolicy";
+import { resolveImeEditorInputState } from "../../ime/imeTextPolicy";
 import { ICON_SM } from "../../tokens";
 import { ImeCandidateAnchorReporter } from "./ImeCandidateAnchorReporter";
 import "./ConversationComposer.css";
@@ -118,6 +119,9 @@ export function ConversationComposer({
         targetId: ime.targetId,
       })
     : { "data-ime-policy": "excluded" };
+  const imeInputState = ime
+    ? resolveImeEditorInputState({ businessReadOnly: disabled, policy: ime.textPolicy })
+    : { readOnly: disabled, ariaReadOnly: disabled || undefined, nativeInputBlockedByIme: false };
 
   return (
     <form
@@ -138,9 +142,11 @@ export function ConversationComposer({
         <textarea
           {...imeAttributes}
           aria-label={inputLabel}
+          aria-readonly={imeInputState.ariaReadOnly}
           className={ime ? "embedded-ime-input" : undefined}
+          data-ime-native-input-blocked={imeInputState.nativeInputBlockedByIme ? "true" : undefined}
           disabled={disabled}
-          readOnly={disabled || Boolean(ime?.textPolicy.blockNativeEditing)}
+          readOnly={imeInputState.readOnly}
           onChange={(event) => {
             if (ime && !ime.textPolicy.useNativeTextInput) return;
             onValueChange?.(event.target.value);

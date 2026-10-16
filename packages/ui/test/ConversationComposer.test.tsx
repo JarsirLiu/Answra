@@ -110,6 +110,39 @@ describe("ConversationComposer", () => {
     expect(onToggle).toHaveBeenCalledOnce();
   });
 
+  it("reports the IME pause separately from the business read-only state", () => {
+    vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    const { rerender } = render(
+      <ConversationComposer
+        ime={imeProps()}
+        inputLabel="补充问题"
+        onValueChange={vi.fn()}
+        placeholder="输入问题"
+        value=""
+      />,
+    );
+
+    const input = screen.getByRole("textbox", { name: "补充问题" });
+    expect(input).toHaveProperty("readOnly", true);
+    expect(input).toHaveAttribute("data-ime-native-input-blocked", "true");
+    expect(input).not.toHaveAttribute("aria-readonly");
+
+    rerender(
+      <ConversationComposer
+        disabled
+        ime={imeProps()}
+        inputLabel="补充问题"
+        onValueChange={vi.fn()}
+        placeholder="输入问题"
+        value=""
+      />,
+    );
+    expect(screen.getByRole("textbox", { name: "补充问题" })).toHaveAttribute(
+      "aria-readonly",
+      "true",
+    );
+  });
+
   it("lets editor adapter commands update draft while native textarea editing is blocked", () => {
     const onValueChange = vi.fn();
     const onKeyDown = vi.fn(

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   type ImeTextFallbackInput,
+  resolveImeEditorInputState,
   resolveImeTextFallback,
   resolveImeTextPolicy,
 } from "../src/ime/imeTextPolicy";
@@ -96,5 +97,34 @@ describe("resolveImeTextFallback", () => {
         fallback({ engine: { inputMode: "ascii", composing: false }, key: "ArrowLeft" }),
       ),
     ).toBeUndefined();
+  });
+});
+
+describe("resolveImeEditorInputState", () => {
+  const owned = resolveImeTextPolicy({ targetOwned: true, composing: false });
+  const native = resolveImeTextPolicy({ targetOwned: false, composing: false });
+
+  it("pauses the native write path for the IME without claiming a business read-only state", () => {
+    expect(resolveImeEditorInputState({ businessReadOnly: false, policy: owned })).toEqual({
+      readOnly: true,
+      ariaReadOnly: undefined,
+      nativeInputBlockedByIme: true,
+    });
+  });
+
+  it("reports only the business state once the IME no longer owns the target", () => {
+    expect(resolveImeEditorInputState({ businessReadOnly: true, policy: native })).toEqual({
+      readOnly: true,
+      ariaReadOnly: true,
+      nativeInputBlockedByIme: false,
+    });
+  });
+
+  it("keeps a fully editable control fully editable", () => {
+    expect(resolveImeEditorInputState({ businessReadOnly: false, policy: native })).toEqual({
+      readOnly: false,
+      ariaReadOnly: undefined,
+      nativeInputBlockedByIme: false,
+    });
   });
 });

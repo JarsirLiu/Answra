@@ -5,6 +5,7 @@ import { ControlledTextCompositionMirror } from "../../ime/adapters/ControlledTe
 import { applyControlledTextCommand } from "../../ime/adapters/controlledTextAdapter";
 import { useControlledImeTextAdapter } from "../../ime/adapters/useControlledImeTextAdapter";
 import { handleImeEditorKeyDown, imeEditorAttributes } from "../../ime/imeEditorBinding";
+import { resolveImeEditorInputState } from "../../ime/imeTextPolicy";
 import { ImeCandidateAnchorReporter } from "../panels/ImeCandidateAnchorReporter";
 
 interface EmbeddedImeInputProps
@@ -34,6 +35,10 @@ export function EmbeddedImeInput({
   const pendingCaret = useRef<number | null>(null);
   const ime = useEmbeddedIme(bridge, controlledText.commit, true, targetId);
   const textPolicy = ime.textPolicy;
+  const inputState = resolveImeEditorInputState({
+    businessReadOnly: Boolean(props.readOnly),
+    policy: textPolicy,
+  });
   useEffect(() => {
     if (!ime.state.composing) controlledText.cancelComposition();
   }, [controlledText.cancelComposition, ime.state.composing]);
@@ -68,7 +73,8 @@ export function EmbeddedImeInput({
         {...props}
         {...imeEditorAttributes({ targetId, composing: ime.state.composing })}
         className={`${props.className ?? ""} embedded-ime-input${ime.state.composing ? " ime-composition-active" : ""}`.trim()}
-        aria-readonly={textPolicy.blockNativeEditing || props.readOnly || undefined}
+        aria-readonly={inputState.ariaReadOnly}
+        data-ime-native-input-blocked={inputState.nativeInputBlockedByIme ? "true" : undefined}
         onBeforeInput={(event) => {
           props.onBeforeInput?.(event);
           if (ime.shouldPreventBeforeInput(event.nativeEvent.inputType)) event.preventDefault();
@@ -105,7 +111,7 @@ export function EmbeddedImeInput({
           }
           props.onKeyUp?.(event);
         }}
-        readOnly={textPolicy.blockNativeEditing || props.readOnly}
+        readOnly={inputState.readOnly}
         ref={inputRef}
         type={type}
         value={value}
