@@ -46,7 +46,7 @@ pnpm dist:win            # Windows 发布包
 `BlindingDark/rime-easy-en` 的 `easy_en` schema/dict，并通过
 `luna_pinyin_simp.custom.yaml` 接入中英混输。
 
-资源更新只改清单中的固定版本、下载 URL 和 SHA-256，并同步检查对应许可证。项目 helper 由 `.github/workflows/rime-host-release.yml` 在 tag `answra-rime-host-v1.0.0` 上构建并发布为 Windows x64 与 macOS universal 资产及 `SHA256SUMS`；准备脚本只接受该固定 release tag，并按 sidecar 中的摘要校验 helper。不要运行 CMake，也不要手工修改用户目录下的 `rime/build`；首次启动会由 librime 按当前资源重新部署 schema。
+资源更新只改清单中的固定版本、下载 URL 和 SHA-256，并同步检查对应许可证。项目 helper 由 `.github/workflows/rime-host-release.yml` 在 `rime-resources.json` 声明的 tag（当前 `answra-rime-host-v2.0.0`）上构建并发布为 Windows x64 与 macOS universal 资产及 `SHA256SUMS`；准备脚本只接受该固定 release tag，并按 sidecar 中的摘要校验 helper。更新 helper 时必须先发布对应 tag 的 release，再改清单；release 缺失或摘要不符时 `ime:prepare` 会 fail-closed 失败，不会回退到系统输入法。不要运行 CMake，也不要手工修改用户目录下的 `rime/build`；首次启动会由 librime 按当前资源重新部署 schema。
 
 Windows/macOS 发布机分别执行 `pnpm bootstrap` 后再打包，准备脚本只下载当前目标平台的运行库和 helper。下载缓存位于 `apps/desktop/.cache-rime/`，运行时资源位于 `apps/desktop/resources/rime/`，二者都不提交 Git。
 

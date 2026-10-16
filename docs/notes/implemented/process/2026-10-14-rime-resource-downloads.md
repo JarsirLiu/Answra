@@ -16,7 +16,7 @@
 
 资源清单固定 librime `1.17.0` 官方平台包及 deps 包 URL/SHA-256，并固定 `rime-prelude`、`rime-luna-pinyin`、`rime-stroke`、`rime-essay`、`rime-easy-en` 的 Git commit、归档 URL/SHA-256。`ime:prepare` 自动下载当前平台需要的包，校验后解压官方 schema、词典、OpenCC 数据和许可证文件到被 Git 忽略的运行目录。Windows 7z 解压使用 workspace dev dependency `7zip-bin`；macOS universal 运行库保留官方 `dist/lib` 目录结构。
 
-项目 helper 与官方 librime 资产分开管理。tag `answra-rime-host-v1.0.0` 触发 GitHub Actions 在 Windows x64 与 macOS universal runner 构建预编译 helper 并发布固定名称资产及 `SHA256SUMS`；准备脚本从该 tag 下载并校验 sidecar SHA-256。开发和打包机器不编译 C++。
+项目 helper 与官方 librime 资产分开管理。清单 `rime-resources.json` 固定的 tag（当前 `answra-rime-host-v2.0.0`）触发 GitHub Actions 在 Windows x64 与 macOS universal runner 构建预编译 helper 并发布固定名称资产及 `SHA256SUMS`；准备脚本从该 tag 下载并校验 sidecar SHA-256。更新 helper 时必须先发布对应 tag 的 release，再改清单；release 缺失或摘要不符时准备流程 fail-closed 失败。开发和打包机器不编译 C++。
 
 ## 流程变化
 
@@ -43,4 +43,5 @@
 - Windows 慢速 Release 链路实测中，7.1 MiB runtime 与 3.5 MiB deps 均在延长超时后下载并通过既有 hash 校验。
 - Windows Node 22 环境下，修正目录递归搜索并改用 curl 后，`pnpm --filter @answra/desktop ime:prepare` 全流程通过；helper sidecar 和下载资产均完成 SHA-256 校验，运行库、OpenCC 和词库资源准备成功。
 - Windows 执行 `pnpm bootstrap` 时验证了移除 `shell: true` 后不再输出 DEP0190；后续一次运行在 helper sidecar 请求处遇到 GitHub 连接重置，属于外部网络失败。
-- 待完成：推送 workflow 后创建 tag `answra-rime-host-v1.0.0`；release 生成后才能在全新 Windows/macOS 环境完整执行 `ime:prepare` 并验证 helper 打包加载。
+- 已推送 tag `answra-rime-host-v2.0.0`（协议 v2）并生成 release 与 `SHA256SUMS`；Windows 本机重跑 `ime:prepare` 成功下载并校验官方 helper，握手输出 `protocolVersion: 2`、`available: true`。协议升级必须与 release 交付绑定的约束，以及此前 release 缺失导致内置 IME 回退系统输入法的复盘见 `../bug-fix/2026-10-16-ime-helper-protocol-v2-release-unpublished.md`。
+- 待完成：macOS 打包加载与实机输入法隔离验证。
