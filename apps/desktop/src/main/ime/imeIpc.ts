@@ -183,7 +183,7 @@ export function registerImeIpc(): {
     for (const key of [
       "activeElementTarget",
       "documentHasFocus",
-      "focusedRef",
+      "targetRegistered",
       "imeAvailable",
       "imeEnabled",
       "composing",

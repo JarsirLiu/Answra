@@ -105,7 +105,7 @@ export function logImeDiagnostic(event: string, details: Record<string, unknown>
         composing: details.composing,
         imeConsumed: details.accepted,
         activeElementTarget: details.activeElementTarget,
-        focusedRef: details.focusedRef,
+        targetRegistered: details.targetRegistered,
         selectionStart: details.selectionStart,
         selectionEnd: details.selectionEnd,
         selectionLength: details.selectionLength,

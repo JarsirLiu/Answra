@@ -10,6 +10,7 @@ import { act, fireEvent, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useEmbeddedIme } from "../src/hooks/useEmbeddedIme";
 import { resetImeInputTargetCoordinatorForTests } from "../src/ime/imeInputTargetCoordinator";
+import { publishImeSessionSnapshot } from "../src/ime/imeSessionClient";
 
 const enabledState: ImeState = {
   enabled: true,
@@ -71,7 +72,7 @@ function withSessionApi(legacyBridge: DesktopBridge): DesktopBridge {
           owner = {
             windowId: 1,
             webContentsId: 1,
-            targetId: acquired.targetId ?? command.targetId,
+            targetId: command.targetId,
             generation: acquired.generation,
           };
           phase = "owned";
@@ -666,8 +667,11 @@ describe("useEmbeddedIme lease routing", () => {
     } as unknown as DesktopBridge;
     const { result, unmount } = renderHook(() => useEmbeddedIme(withSessionApi(bridge)));
     await act(async () => result.current.acquire());
+    expect(result.current.generation).toBe(2);
+    expect(imeRelease).not.toHaveBeenCalled();
     unmount();
     await waitFor(() => expect(imeRelease).toHaveBeenCalledWith(2));
+    expect(imeRelease).toHaveBeenCalledTimes(1);
   });
 
   it("does not release on DOM blur before the native window blur event arrives", async () => {
@@ -902,5 +906,122 @@ describe("useEmbeddedIme lease routing", () => {
     });
     await waitFor(() => expect(imeKey).toHaveBeenCalledTimes(2));
     expect(imeKey.mock.calls.map(([request]) => request.key)).toEqual(["n", "i"]);
+  });
+
+  it("follows a main-initiated revocation instead of trusting a renderer copy", async () => {
+    const imeKey = vi.fn().mockResolvedValue(enabledState);
+    const bridge = withSessionApi({
+      imeAvailable: true,
+      imeAcquire: vi
+        .fn()
+        .mockResolvedValue(
+          lease(16, { ...enabledState, composing: false, preedit: "", candidates: [] }),
+        ),
+      imeRelease: vi.fn(),
+      imeKey,
+    } as unknown as DesktopBridge);
+    const { result, unmount } = renderHook(() =>
+      useEmbeddedIme(bridge, undefined, true, "composer"),
+    );
+    await act(async () => result.current.acquire());
+    expect(result.current.generation).toBe(16);
+    expect(result.current.targetEngaged).toBe(true);
+
+    act(() =>
+      publishImeSessionSnapshot({
+        phase: "idle",
+        engine: { ...enabledState, composing: false, preedit: "", candidates: [] },
+        revision: 99,
+      }),
+    );
+
+    expect(result.current.generation).toBeUndefined();
+    expect(result.current.targetEngaged).toBe(false);
+    expect(result.current.textPolicy.useNativeTextInput).toBe(true);
+    expect(
+      result.current.sendKey({
+        key: "n",
+        code: "KeyN",
+        ctrlKey: false,
+        altKey: false,
+        metaKey: false,
+        shiftKey: false,
+      } as never),
+    ).toBe(false);
+    expect(imeKey).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it("drops a queued key reply once the target is no longer registered", async () => {
+    let resolveFirst: ((state: ImeState) => void) | undefined;
+    const pending = new Promise<ImeState>((resolve) => {
+      resolveFirst = resolve;
+    });
+    const onCommit = vi.fn();
+    const imeKey = vi.fn().mockReturnValueOnce(pending);
+    const bridge = withSessionApi({
+      imeAvailable: true,
+      imeAcquire: vi
+        .fn()
+        .mockResolvedValue(
+          lease(17, { ...enabledState, composing: false, preedit: "", candidates: [] }),
+        ),
+      imeRelease: vi.fn(),
+      imeKey,
+    } as unknown as DesktopBridge);
+    const { result, unmount } = renderHook(() =>
+      useEmbeddedIme(bridge, onCommit, true, "composer"),
+    );
+    await act(async () => result.current.acquire());
+    act(() =>
+      result.current.sendKey({
+        key: "n",
+        code: "KeyN",
+        ctrlKey: false,
+        altKey: false,
+        metaKey: false,
+        shiftKey: false,
+      } as never),
+    );
+    await waitFor(() => expect(imeKey).toHaveBeenCalledTimes(1));
+
+    act(() => result.current.blur());
+    await act(async () => {
+      resolveFirst?.({ ...enabledState, committedText: "你" });
+      await pending;
+    });
+
+    expect(onCommit).not.toHaveBeenCalled();
+    expect(imeKey).toHaveBeenCalledTimes(1);
+    unmount();
+  });
+
+  it("keeps native input blocked for an owned lease after the editor loses DOM focus", async () => {
+    const bridge = withSessionApi({
+      imeAvailable: true,
+      imeAcquire: vi.fn().mockResolvedValue(lease(18)),
+      imeRelease: vi.fn(),
+    } as unknown as DesktopBridge);
+    const { result, unmount } = renderHook(() =>
+      useEmbeddedIme(bridge, undefined, true, "composer"),
+    );
+    const input = document.createElement("textarea");
+    input.dataset.imeTargetId = "composer";
+    document.body.appendChild(input);
+    input.focus();
+    await act(async () => result.current.acquire());
+    expect(result.current.textPolicy.useNativeTextInput).toBe(false);
+
+    act(() => {
+      input.blur();
+      result.current.blur();
+    });
+
+    expect(result.current.generation).toBe(18);
+    expect(result.current.targetEngaged).toBe(true);
+    expect(result.current.textPolicy.useNativeTextInput).toBe(false);
+    await act(async () => result.current.release("test"));
+    unmount();
+    input.remove();
   });
 });

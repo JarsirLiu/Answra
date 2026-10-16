@@ -450,7 +450,12 @@ export interface ImeRendererDiagnostic {
   generation?: number;
   activeElementTarget?: boolean;
   documentHasFocus?: boolean;
-  focusedRef?: boolean;
+  /**
+   * Whether this renderer still has the target registered as its active IME input
+   * (`imeInputTargetCoordinator`). Replaces the old renderer-local `focusedRef`
+   * copy of the focus fact.
+   */
+  targetRegistered?: boolean;
   imeAvailable?: boolean;
   imeEnabled?: boolean;
   composing?: boolean;

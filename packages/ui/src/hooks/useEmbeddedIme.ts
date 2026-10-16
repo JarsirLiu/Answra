@@ -6,19 +6,24 @@ import type {
   ImeSessionSnapshot,
   ImeState,
 } from "@answra/shared";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   activateImeInputTarget,
   enqueueImeInput,
+  getActiveImeInputTargetId,
   isActiveImeInputTarget,
   releaseImeInputTarget,
+  subscribeImeInputTargets,
 } from "../ime/imeInputTargetCoordinator";
 import { type ImeEditorCommand, resolveImeKeyRoute } from "../ime/imeKeyRouter";
 import {
-  getImeSessionRevision,
+  getImeComposing,
+  getImeInputMode,
+  getImeOwnedGeneration,
   getLatestImeSessionSnapshot,
   publishImeSessionSnapshot,
   sendImeSessionCommand,
+  subscribeImeSessionSnapshot,
 } from "../ime/imeSessionClient";
 import { resolveImeTextPolicy, shouldPreventImeBeforeInput } from "../ime/imeTextPolicy";
 
@@ -39,7 +44,14 @@ type ImeSessionCommandInput = ImeSessionCommand extends infer Command
     : never
   : never;
 
-/** Registers one input target with the main-owned session when its editor receives focus. */
+/**
+ * Registers one input target with the main-owned session when its editor receives focus.
+ *
+ * This hook reads every session/focus fact from its single writer instead of mirroring it:
+ * the engine snapshot and lease ownership come from `imeSessionClient` (published by main),
+ * "which target this renderer currently accepts input for" comes from
+ * `imeInputTargetCoordinator`. Local state is limited to user intent (`imeEnabled`).
+ */
 export function useEmbeddedIme(
   bridge: DesktopBridge | undefined,
   onCommit?: (text: string) => void,
@@ -48,175 +60,144 @@ export function useEmbeddedIme(
 ) {
   const available = Boolean(bridge?.imeAvailable && bridge.imeSessionCommand);
   const [imeEnabled, setImeEnabled] = useState(true);
-  const [state, setState] = useState<ImeState>(EMPTY_STATE);
-  const [asciiMode, setAsciiMode] = useState(false);
-  const asciiModeRef = useRef(false);
-  const [targetEngaged, setTargetEngaged] = useState(false);
-  const [generation, setGeneration] = useState<number | undefined>(undefined);
-  const generationRef = useRef<number | undefined>(undefined);
-  const focusedRef = useRef(false);
+  const session = useSyncExternalStore(subscribeImeSessionSnapshot, getLatestImeSessionSnapshot);
+  const registeredTargetId = useSyncExternalStore(
+    subscribeImeInputTargets,
+    getActiveImeInputTargetId,
+  );
   const onCommitRef = useRef(onCommit);
   const acquirePromiseRef = useRef<Promise<void> | undefined>(undefined);
   onCommitRef.current = onCommit;
 
-  const applySnapshot = useCallback(
-    (snapshot: ImeSessionSnapshot) => {
-      const previousRevision = getImeSessionRevision();
-      if (snapshot.revision < previousRevision) return;
-      publishImeSessionSnapshot(snapshot);
-      const isAscii = snapshot.engine.inputMode === "ascii";
-      asciiModeRef.current = isAscii;
-      setAsciiMode(isAscii);
-      const generation = generationRef.current;
-      if (
-        generation !== undefined &&
-        snapshot.owner?.generation === generation &&
-        snapshot.owner.targetId === targetId
-      ) {
-        setState(snapshot.engine);
-        setTargetEngaged(snapshot.phase === "owned");
-      } else if (generation !== undefined && snapshot.revision > previousRevision) {
-        generationRef.current = undefined;
-        setGeneration(undefined);
-        setState({ ...EMPTY_STATE, inputMode: snapshot.engine.inputMode });
-        setTargetEngaged(false);
-      }
-    },
-    [targetId],
+  const ownsLease = session?.owner?.targetId === targetId;
+  const state = useMemo<ImeState>(
+    () =>
+      ownsLease && session
+        ? session.engine
+        : { ...EMPTY_STATE, inputMode: session?.engine.inputMode ?? "chinese" },
+    [ownsLease, session],
   );
+  const generation = ownsLease ? session?.owner?.generation : undefined;
+  const targetRegistered = registeredTargetId === targetId;
+  // Native input stays blocked for a target this renderer just registered (acquire in
+  // flight) as well as for the lease owner, so Chromium never gets a free shot at the
+  // element in between; the lease itself is only what main can revoke.
+  const targetEngaged = targetRegistered || (ownsLease && session?.phase === "owned");
 
   const sendCommand = useCallback(
-    async (command: ImeSessionCommandInput): Promise<ImeSessionCommandResult | undefined> => {
-      const result = await sendImeSessionCommand(bridge, command);
-      if (result) applySnapshot(result.snapshot);
-      return result;
-    },
-    [applySnapshot, bridge],
+    async (command: ImeSessionCommandInput): Promise<ImeSessionCommandResult | undefined> =>
+      sendImeSessionCommand(bridge, command),
+    [bridge],
   );
 
   useEffect(() => {
-    const unsubscribe = bridge?.onImeSessionSnapshot?.(applySnapshot);
-    void bridge?.getImeSessionSnapshot?.().then(applySnapshot);
+    const unsubscribe = bridge?.onImeSessionSnapshot?.((snapshot: ImeSessionSnapshot) => {
+      publishImeSessionSnapshot(snapshot);
+    });
+    void bridge?.getImeSessionSnapshot?.().then((snapshot) => {
+      if (snapshot) publishImeSessionSnapshot(snapshot);
+    });
     return unsubscribe;
-  }, [applySnapshot, bridge]);
+  }, [bridge]);
 
   const release = useCallback(
     async (reason = "unspecified") => {
-      const generation = generationRef.current;
+      const releasedGeneration = getImeOwnedGeneration(targetId);
       bridge?.imeDiagnostic?.({
         event: "release-called",
         targetId,
         reason,
-        generation,
-        focusedRef: focusedRef.current,
-        activeElementTarget: isActiveImeInputTarget(targetId),
+        generation: releasedGeneration,
+        targetRegistered: isActiveImeInputTarget(targetId),
+        activeElementTarget: isDomActiveTarget(targetId),
         imeAvailable: available,
         imeEnabled,
       });
-      generationRef.current = undefined;
-      setGeneration(undefined);
-      focusedRef.current = false;
-      setTargetEngaged(false);
-      setState(EMPTY_STATE);
       releaseImeInputTarget(targetId);
-      if (generation !== undefined) {
-        await sendCommand({ type: "releaseTarget", targetId, generation, reason }).catch(
-          () => undefined,
-        );
-      }
+      if (releasedGeneration !== undefined)
+        await sendCommand({
+          type: "releaseTarget",
+          targetId,
+          generation: releasedGeneration,
+          reason,
+        }).catch(() => undefined);
     },
     [available, bridge, imeEnabled, sendCommand, targetId],
   );
 
   const blur = useCallback(() => {
-    focusedRef.current = false;
     bridge?.imeDiagnostic?.({
       event: "input-blur",
       targetId,
-      generation: generationRef.current,
-      activeElementTarget: isActiveImeInputTarget(targetId),
+      generation: getImeOwnedGeneration(targetId),
+      targetRegistered: isActiveImeInputTarget(targetId),
+      activeElementTarget: isDomActiveTarget(targetId),
       documentHasFocus: document.hasFocus(),
-      focusedRef: focusedRef.current,
       imeAvailable: available,
       imeEnabled,
     });
+    // Registration is the renderer's own fact: dropping it stops every queued and future
+    // key for this target, while the lease stays with main until focus returns or it closes.
+    releaseImeInputTarget(targetId);
   }, [available, bridge, imeEnabled, targetId]);
 
   const confirmFocus = useCallback(async () => {
-    const generation = generationRef.current;
-    const active = document.activeElement;
+    const currentGeneration = getImeOwnedGeneration(targetId);
+    if (currentGeneration === undefined || !isDomActiveTarget(targetId)) return;
+    const result = await sendCommand({ type: "resume", targetId, generation: currentGeneration });
     if (
-      generation === undefined ||
-      !(active instanceof HTMLElement) ||
-      active.dataset.imeTargetId !== targetId
+      !isActiveImeInputTarget(targetId) ||
+      !result?.accepted ||
+      result.snapshot.owner?.generation !== currentGeneration
     )
-      return;
-
-    focusedRef.current = true;
-    setTargetEngaged(true);
-    const result = await sendCommand({ type: "resume", targetId, generation });
-    if (focusedRef.current && result?.accepted && result.snapshot.owner?.generation === generation)
-      applySnapshot(result.snapshot);
-    else setTargetEngaged(false);
-  }, [applySnapshot, sendCommand, targetId]);
+      releaseImeInputTarget(targetId);
+  }, [sendCommand, targetId]);
 
   const acquire = useCallback(async () => {
-    const focusDetails = {
+    const focusDetails = () => ({
       targetId,
-      generation: generationRef.current,
-      activeElementTarget:
-        document.activeElement instanceof HTMLElement &&
-        document.activeElement.dataset.imeTargetId === targetId,
+      generation: getImeOwnedGeneration(targetId),
+      activeElementTarget: isDomActiveTarget(targetId),
       documentHasFocus: document.hasFocus(),
-      focusedRef: focusedRef.current,
+      targetRegistered: isActiveImeInputTarget(targetId),
       imeAvailable: available,
       imeEnabled,
-    };
-    bridge?.imeDiagnostic?.({ event: "input-focus", ...focusDetails });
-    bridge?.imeDiagnostic?.({ event: "acquire-start", ...focusDetails });
+    });
+    bridge?.imeDiagnostic?.({ event: "input-focus", ...focusDetails() });
+    bridge?.imeDiagnostic?.({ event: "acquire-start", ...focusDetails() });
     if (!available || !enabled || !imeEnabled || !bridge?.imeSessionCommand) {
-      bridge?.imeDiagnostic?.({ event: "acquire-result", ...focusDetails, accepted: false });
+      bridge?.imeDiagnostic?.({ event: "acquire-result", ...focusDetails(), accepted: false });
       return;
     }
-    focusedRef.current = true;
-    setTargetEngaged(true);
     activateImeInputTarget(targetId, () => void release("target-switched"));
-    if (generationRef.current !== undefined) {
-      return confirmFocus();
-    }
+    if (getImeOwnedGeneration(targetId) !== undefined) return confirmFocus();
     if (acquirePromiseRef.current) return acquirePromiseRef.current;
     const pendingAcquire = (async () => {
       const result = await sendCommand({ type: "acquireTarget", targetId });
       if (!result) {
-        setTargetEngaged(false);
-        bridge.imeDiagnostic?.({ event: "acquire-result", ...focusDetails, accepted: false });
+        bridge.imeDiagnostic?.({ event: "acquire-result", ...focusDetails(), accepted: false });
         return;
       }
-      if (!focusedRef.current) {
-        setTargetEngaged(false);
-        if (result.snapshot.owner?.generation !== undefined)
+      const acquiredGeneration = result.snapshot.owner?.generation;
+      const acquiredByTarget = result.snapshot.owner?.targetId === targetId;
+      if (!isActiveImeInputTarget(targetId)) {
+        if (acquiredGeneration !== undefined && acquiredByTarget)
           await sendCommand({
             type: "releaseTarget",
             targetId,
-            generation: result.snapshot.owner.generation,
+            generation: acquiredGeneration,
             reason: "focus-lost-during-acquire",
           });
         bridge.imeDiagnostic?.({
           event: "acquire-result",
-          ...focusDetails,
-          generation: result.snapshot.owner?.generation,
-          focusedRef: false,
+          ...focusDetails(),
+          generation: acquiredGeneration,
           accepted: false,
         });
         return;
       }
-      const acquiredGeneration = result.snapshot.owner?.generation;
-      if (
-        !result.accepted ||
-        result.snapshot.owner?.targetId !== targetId ||
-        acquiredGeneration === undefined
-      ) {
-        setTargetEngaged(false);
+      if (!result.accepted || !acquiredByTarget || acquiredGeneration === undefined) {
+        releaseImeInputTarget(targetId);
         if (acquiredGeneration !== undefined)
           await sendCommand({
             type: "releaseTarget",
@@ -224,23 +205,18 @@ export function useEmbeddedIme(
             generation: acquiredGeneration,
             reason: "acquire-rejected",
           });
-        setState(EMPTY_STATE);
         bridge.imeDiagnostic?.({
           event: "acquire-result",
-          ...focusDetails,
+          ...focusDetails(),
           generation: acquiredGeneration,
           accepted: false,
         });
         return;
       }
-      generationRef.current = acquiredGeneration;
-      setGeneration(acquiredGeneration);
-      applySnapshot(result.snapshot);
       bridge.imeDiagnostic?.({
         event: "acquire-result",
-        ...focusDetails,
+        ...focusDetails(),
         generation: acquiredGeneration,
-        focusedRef: focusedRef.current,
         accepted: true,
       });
     })();
@@ -250,30 +226,29 @@ export function useEmbeddedIme(
     } finally {
       if (acquirePromiseRef.current === pendingAcquire) acquirePromiseRef.current = undefined;
     }
-  }, [
-    applySnapshot,
-    available,
-    bridge,
-    confirmFocus,
-    enabled,
-    imeEnabled,
-    release,
-    sendCommand,
-    targetId,
-  ]);
+  }, [available, bridge, confirmFocus, enabled, imeEnabled, release, sendCommand, targetId]);
 
   useEffect(() => {
     if (!enabled || !imeEnabled || !available) void release("effect-inactive");
   }, [available, enabled, imeEnabled, release]);
 
+  // A registration must not outlive the lease it was opened for: if main reports the
+  // session as idle or owned elsewhere while this renderer still routes input here,
+  // drop the registration so keys fall back to the editor instead of being swallowed.
+  const sessionHoldsTarget = ownsLease || session?.owner?.targetId === targetId;
   useEffect(() => {
-    const active = document.activeElement;
+    if (!targetRegistered || sessionHoldsTarget) return;
+    if (acquirePromiseRef.current) return;
+    releaseImeInputTarget(targetId);
+  }, [sessionHoldsTarget, targetId, targetRegistered]);
+
+  useEffect(() => {
     bridge?.imeDiagnostic?.({
       event: "input-mounted",
       targetId,
-      activeElementTarget: active instanceof HTMLElement && active.dataset.imeTargetId === targetId,
+      activeElementTarget: isDomActiveTarget(targetId),
       documentHasFocus: document.hasFocus(),
-      focusedRef: focusedRef.current,
+      targetRegistered: isActiveImeInputTarget(targetId),
       imeAvailable: available,
       imeEnabled,
     });
@@ -287,15 +262,13 @@ export function useEmbeddedIme(
         eventTarget.closest(`[data-ime-target-id="${targetId}"]`)
       )
         return;
-      const active = document.activeElement;
       bridge?.imeDiagnostic?.({
         event: "document-keydown",
         targetId,
-        generation: generationRef.current,
-        activeElementTarget:
-          active instanceof HTMLElement && active.dataset.imeTargetId === targetId,
+        generation: getImeOwnedGeneration(targetId),
+        targetRegistered: isActiveImeInputTarget(targetId),
+        activeElementTarget: isDomActiveTarget(targetId),
         documentHasFocus: document.hasFocus(),
-        focusedRef: focusedRef.current,
         imeAvailable: available,
         imeEnabled,
         keyCode: event.code,
@@ -319,13 +292,13 @@ export function useEmbeddedIme(
       bridge?.imeDiagnostic?.({
         event: "selection-after-shortcut",
         targetId,
-        generation: generationRef.current,
+        generation: getImeOwnedGeneration(targetId),
         key: event.key,
         keyCode: event.code,
         ctrl: event.ctrlKey,
         alt: event.altKey,
         meta: event.metaKey,
-        composing: state.composing,
+        composing: getImeComposing(),
         documentHasFocus: document.hasFocus(),
         ...getSelectionSummary(event.target),
       });
@@ -335,35 +308,31 @@ export function useEmbeddedIme(
       document.removeEventListener("keydown", onDocumentKeyDown, true);
       document.removeEventListener("keyup", onDocumentKeyUp, true);
     };
-  }, [available, bridge, imeEnabled, state.composing, targetId]);
+  }, [available, bridge, imeEnabled, targetId]);
 
   useEffect(() => {
     const onWindowFocus = () => {
-      const active = document.activeElement;
-      const activeElementTarget =
-        active instanceof HTMLElement && active.dataset.imeTargetId === targetId;
+      const activeElementTarget = isDomActiveTarget(targetId);
       bridge?.imeDiagnostic?.({
         event: "window-focus",
         targetId,
-        generation: generationRef.current,
+        generation: getImeOwnedGeneration(targetId),
         activeElementTarget,
         documentHasFocus: document.hasFocus(),
-        focusedRef: focusedRef.current,
+        targetRegistered: isActiveImeInputTarget(targetId),
         imeAvailable: available,
         imeEnabled,
       });
       if (activeElementTarget) void confirmFocus();
     };
     const onWindowBlur = () => {
-      const active = document.activeElement;
       bridge?.imeDiagnostic?.({
         event: "window-blur",
         targetId,
-        generation: generationRef.current,
-        activeElementTarget:
-          active instanceof HTMLElement && active.dataset.imeTargetId === targetId,
+        generation: getImeOwnedGeneration(targetId),
+        activeElementTarget: isDomActiveTarget(targetId),
         documentHasFocus: document.hasFocus(),
-        focusedRef: focusedRef.current,
+        targetRegistered: isActiveImeInputTarget(targetId),
         imeAvailable: available,
         imeEnabled,
       });
@@ -400,14 +369,12 @@ export function useEmbeddedIme(
       ) => ImeEditorCommand | "ignored" | undefined,
       applyEditorCommand?: (command: ImeEditorCommand) => void,
     ) => {
-      if (!isActiveImeInputTarget(targetId) || !focusedRef.current) return;
-      void enqueueImeInput(targetId, async (latest) => {
-        if (latest) applySnapshot(latest);
-        if (generationRef.current === undefined) await acquirePromiseRef.current;
-        const generation = generationRef.current;
-        if (generation === undefined || !focusedRef.current) return;
-        const currentSnapshot = getLatestImeSessionSnapshot() ?? latest;
-        if (currentSnapshot) applySnapshot(currentSnapshot);
+      if (!isActiveImeInputTarget(targetId)) return;
+      void enqueueImeInput(targetId, async () => {
+        if (getImeOwnedGeneration(targetId) === undefined) await acquirePromiseRef.current;
+        const generation = getImeOwnedGeneration(targetId);
+        if (generation === undefined || !isActiveImeInputTarget(targetId)) return;
+        const currentSnapshot = getLatestImeSessionSnapshot();
         const editorCommand = routeLatest?.(currentSnapshot);
         if (editorCommand === "ignored") return;
         if (editorCommand) {
@@ -415,9 +382,12 @@ export function useEmbeddedIme(
           return;
         }
         const result = await request(generation, currentSnapshot);
-        if (!result?.accepted || generationRef.current !== generation || !focusedRef.current)
+        if (
+          !result?.accepted ||
+          getImeOwnedGeneration(targetId) !== generation ||
+          !isActiveImeInputTarget(targetId)
+        )
           return;
-        applySnapshot(result.snapshot);
         if (result.commit) onCommitRef.current?.(result.commit.text);
         else if (result.engineHandled === false) {
           applyFallback?.(result);
@@ -426,7 +396,7 @@ export function useEmbeddedIme(
         }
       }).catch((error: unknown) => console.error("[ime-ui] key processing failed", error));
     },
-    [applySnapshot, targetId],
+    [targetId],
   );
 
   const sendKey = useCallback(
@@ -435,7 +405,6 @@ export function useEmbeddedIme(
       release = false,
       applyEditorCommand?: (command: ImeEditorCommand) => void,
     ) => {
-      const activeElement = document.activeElement;
       const keyKind = getKeyKind(event.key);
       const reportRouting = (accepted: boolean) => {
         const modifierKey = ["Control", "Shift", "Alt", "Meta"].includes(event.key);
@@ -443,19 +412,18 @@ export function useEmbeddedIme(
         const hasModifier = event.ctrlKey || event.altKey || event.metaKey;
         const isEditingKey =
           (event.key === "Backspace" || event.key === "Delete") &&
-          (!state.composing || (selection.selectionLength ?? 0) > 0);
+          (!getImeComposing() || (selection.selectionLength ?? 0) > 0);
         if (modifierKey || (!hasModifier && !isEditingKey)) return;
         bridge?.imeDiagnostic?.({
           event: "key-routing",
           targetId,
-          generation: generationRef.current,
-          activeElementTarget:
-            activeElement instanceof HTMLElement && activeElement.dataset.imeTargetId === targetId,
+          generation: getImeOwnedGeneration(targetId),
+          activeElementTarget: isDomActiveTarget(targetId),
           documentHasFocus: document.hasFocus(),
-          focusedRef: focusedRef.current,
+          targetRegistered: isActiveImeInputTarget(targetId),
           imeAvailable: available,
           imeEnabled,
-          composing: state.composing,
+          composing: getImeComposing(),
           accepted,
           key: event.key,
           keyCode: event.code,
@@ -474,10 +442,6 @@ export function useEmbeddedIme(
         !bridge?.imeSessionCommand ||
         !isActiveImeInputTarget(targetId)
       ) {
-        reportRouting(false);
-        return false;
-      }
-      if (!focusedRef.current) {
         reportRouting(false);
         return false;
       }
@@ -544,7 +508,7 @@ export function useEmbeddedIme(
       }
       const route = resolveImeKeyRoute(
         event,
-        { inputMode: asciiModeRef.current ? "ascii" : "chinese", composing: state.composing },
+        { inputMode: getImeInputMode(), composing: getImeComposing() },
         release,
       );
       if (route.type === "consumed") {
@@ -606,7 +570,7 @@ export function useEmbeddedIme(
       reportRouting(true);
       return true;
     },
-    [available, bridge, enabled, enqueueInput, imeEnabled, sendCommand, state, targetId],
+    [available, bridge, enabled, enqueueInput, imeEnabled, sendCommand, targetId],
   );
 
   const sendKeyUp = useCallback(
@@ -645,10 +609,7 @@ export function useEmbeddedIme(
   );
 
   const cancelComposition = useCallback(() => {
-    if (!bridge?.imeSessionCommand) {
-      setState(EMPTY_STATE);
-      return;
-    }
+    if (!bridge?.imeSessionCommand) return;
     enqueueInput((generation) => sendCommand({ type: "cancelComposition", targetId, generation }));
   }, [bridge, enqueueInput, sendCommand, targetId]);
 
@@ -656,11 +617,9 @@ export function useEmbeddedIme(
     if (!available || !enabled) return;
     return bridge?.onImeCandidateAction?.((action) => {
       if (
-        generationRef.current === undefined ||
-        action.generation !== generationRef.current ||
+        action.generation !== getImeOwnedGeneration(targetId) ||
         action.targetId !== targetId ||
-        !isActiveImeInputTarget(targetId) ||
-        !focusedRef.current
+        !isActiveImeInputTarget(targetId)
       )
         return;
       if (action.type === "select") select(action.index);
@@ -670,7 +629,7 @@ export function useEmbeddedIme(
 
   const updateCandidate = useCallback(
     (payload: ImeCandidateUpdate) => {
-      const generation = generationRef.current;
+      const generation = getImeOwnedGeneration(targetId);
       if (payload.type === "show" && generation !== undefined)
         bridge?.setImeCandidate?.({ ...payload, targetId, generation });
       else if (payload.type !== "show")
@@ -692,7 +651,7 @@ export function useEmbeddedIme(
   return {
     available: enabled && available,
     imeEnabled,
-    asciiMode,
+    asciiMode: getImeInputMode() === "ascii",
     targetEngaged,
     textPolicy,
     shouldPreventBeforeInput: (inputType: string) =>
@@ -711,6 +670,11 @@ export function useEmbeddedIme(
     updateCandidate,
     toggle,
   };
+}
+
+function isDomActiveTarget(targetId: string): boolean {
+  const active = document.activeElement;
+  return active instanceof HTMLElement && active.dataset.imeTargetId === targetId;
 }
 
 function getKeyKind(
