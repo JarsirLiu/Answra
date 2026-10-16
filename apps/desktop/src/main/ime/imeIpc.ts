@@ -65,18 +65,10 @@ export function registerImeIpc(): {
     string,
     { fingerprint: string; result: ImeSessionCommandResult }
   >();
-  const expectedRevisionByEvent = new WeakMap<Electron.IpcMainInvokeEvent, number>();
-  const invokeHandlers = new Map<
-    string,
-    (event: Electron.IpcMainInvokeEvent, payload: unknown) => unknown
-  >();
-  const serialize = <T>(event: Electron.IpcMainInvokeEvent, operation: () => Promise<T>) =>
+  const serialize = <T>(operation: () => Promise<T>, expectedRevision?: number) =>
     manager.serialize(async () => {
-      const expectedRevision = expectedRevisionByEvent.get(event);
-      if (expectedRevision !== undefined) {
-        expectedRevisionByEvent.delete(event);
-        if (manager.snapshot.revision !== expectedRevision) throw new StaleImeRevisionError();
-      }
+      if (expectedRevision !== undefined && manager.snapshot.revision !== expectedRevision)
+        throw new StaleImeRevisionError();
       return operation();
     });
   const handle = (
@@ -88,7 +80,6 @@ export function registerImeIpc(): {
       publishSnapshot();
       return result;
     };
-    invokeHandlers.set(channel, listener);
     ipcMain.handle(channel, wrapped);
   };
   const publishSnapshot = () => {
@@ -344,8 +335,12 @@ export function registerImeIpc(): {
     ];
   }
 
-  handle(ImeChannels.Acquire, (event, request: unknown) =>
-    serialize(event, async () => {
+  const performAcquire = (
+    event: Electron.IpcMainInvokeEvent,
+    request: unknown,
+    expectedRevision?: number,
+  ) =>
+    serialize(async () => {
       if (!isRecord(request)) return rejectLease();
       const owner = ownerFor(event, String(request.targetId ?? ""));
       const window = windowFor(event);
@@ -418,11 +413,16 @@ export function registerImeIpc(): {
         stealth: isStealthEnabled(),
       });
       return response(state, manager.lease, state.enabled);
-    }),
-  );
+    }, expectedRevision);
 
-  handle(ImeChannels.Release, (event, request: unknown) =>
-    serialize(event, async () => {
+  handle(ImeChannels.Acquire, (event, request) => performAcquire(event, request));
+
+  const performRelease = (
+    event: Electron.IpcMainInvokeEvent,
+    request: unknown,
+    expectedRevision?: number,
+  ) =>
+    serialize(async () => {
       if (!isRecord(request) || !Number.isInteger(request.generation)) return rejectLease();
       const current = matchesCurrent(event, request.generation as number, true);
       if (!current) return rejectLease();
@@ -452,11 +452,16 @@ export function registerImeIpc(): {
         generation: request.generation as number,
         accepted: true,
       };
-    }),
-  );
+    }, expectedRevision);
 
-  handle(ImeChannels.ConfirmFocus, (event, request: unknown) =>
-    serialize(event, async () => {
+  handle(ImeChannels.Release, (event, request) => performRelease(event, request));
+
+  const performConfirmFocus = (
+    event: Electron.IpcMainInvokeEvent,
+    request: unknown,
+    expectedRevision?: number,
+  ) =>
+    serialize(async () => {
       if (
         !isRecord(request) ||
         !isTargetId(request.targetId) ||
@@ -482,11 +487,16 @@ export function registerImeIpc(): {
         candidateCount: state.candidates.length,
       });
       return response(state, manager.lease, manager.lease.status === "owned");
-    }),
-  );
+    }, expectedRevision);
 
-  handle(ImeChannels.Key, (event, request: unknown) =>
-    serialize(event, async () => {
+  handle(ImeChannels.ConfirmFocus, (event, request) => performConfirmFocus(event, request));
+
+  const performKey = (
+    event: Electron.IpcMainInvokeEvent,
+    request: unknown,
+    expectedRevision?: number,
+  ) =>
+    serialize(async () => {
       if (!isKeyRequest(request)) return { ...EMPTY_STATE, handled: false };
       const current = matchesCurrent(event, request.generation);
       if (!current) return { ...EMPTY_STATE, handled: false };
@@ -510,10 +520,15 @@ export function registerImeIpc(): {
         hasNextPage: state.hasNextPage,
       });
       return state;
-    }),
-  );
-  handle(ImeChannels.Select, (event, request: unknown) =>
-    serialize(event, async () => {
+    }, expectedRevision);
+
+  handle(ImeChannels.Key, (event, request) => performKey(event, request));
+  const performSelect = (
+    event: Electron.IpcMainInvokeEvent,
+    request: unknown,
+    expectedRevision?: number,
+  ) =>
+    serialize(async () => {
       if (
         !isRecord(request) ||
         !Number.isInteger(request.index) ||
@@ -533,17 +548,23 @@ export function registerImeIpc(): {
         candidates: state.candidates,
       });
       return state;
-    }),
-  );
-  handle(ImeChannels.Reset, (event, request: unknown) =>
-    serialize(event, async () => {
+    }, expectedRevision);
+
+  handle(ImeChannels.Select, (event, request) => performSelect(event, request));
+  const performReset = (
+    event: Electron.IpcMainInvokeEvent,
+    request: unknown,
+    expectedRevision?: number,
+  ) =>
+    serialize(async () => {
       if (!isRecord(request) || !Number.isInteger(request.generation))
         return { ...EMPTY_STATE, handled: false };
       if (!matchesCurrent(event, request.generation as number))
         return { ...EMPTY_STATE, handled: false };
       return manager.resetComposition();
-    }),
-  );
+    }, expectedRevision);
+
+  handle(ImeChannels.Reset, (event, request) => performReset(event, request));
   handle(ImeChannels.SessionCommand, async (event, payload: unknown) => {
     if (!isImeSessionCommand(payload)) return rejectedSessionCommand("", "invalid-transition");
     const cacheKey = `${event.sender.id}:${payload.commandId}`;
@@ -559,88 +580,98 @@ export function registerImeIpc(): {
       return rejectedSessionCommand(payload.commandId, "stale-revision", before);
 
     let result: unknown;
-    if (payload.type === "acquireTarget") {
-      result = await invokeLegacyHandler(
-        ImeChannels.Acquire,
-        event,
-        { targetId: payload.targetId },
-        payload.expectedRevision,
-      );
-    } else {
-      const current = matchesSessionCommand(event, payload);
-      if (!current)
-        return rejectedSessionCommand(payload.commandId, "stale-owner", manager.snapshot);
-      switch (payload.type) {
-        case "releaseTarget":
-          result = await invokeLegacyHandler(
-            ImeChannels.Release,
-            event,
-            { generation: payload.generation, reason: payload.reason },
-            payload.expectedRevision,
-          );
-          break;
-        case "processKey":
-          result = await invokeLegacyHandler(
-            ImeChannels.Key,
-            event,
-            payload,
-            payload.expectedRevision,
-          );
-          break;
-        case "cancelComposition":
-          result = await invokeLegacyHandler(
-            ImeChannels.Reset,
-            event,
-            { generation: payload.generation },
-            payload.expectedRevision,
-          );
-          break;
-        case "selectCandidate":
-          result = await invokeLegacyHandler(
-            ImeChannels.Select,
-            event,
-            { generation: payload.generation, index: payload.index },
-            payload.expectedRevision,
-          );
-          break;
-        case "suspend":
-          result = await manager.serialize(async () => {
-            if (
-              payload.expectedRevision !== undefined &&
-              manager.snapshot.revision !== payload.expectedRevision
-            )
-              return { staleRevision: true };
-            manager.transition({
-              type: "suspend",
-              owner: current.owner,
-              generation: payload.generation,
+    try {
+      if (payload.type === "acquireTarget") {
+        result = await performAcquire(
+          event,
+          { targetId: payload.targetId },
+          payload.expectedRevision,
+        );
+      } else {
+        const current = matchesSessionCommand(event, payload);
+        if (!current)
+          return rejectedSessionCommand(payload.commandId, "stale-owner", manager.snapshot);
+        switch (payload.type) {
+          case "releaseTarget":
+            result = await performRelease(
+              event,
+              { generation: payload.generation, reason: payload.reason },
+              payload.expectedRevision,
+            );
+            break;
+          case "processKey":
+            result = await performKey(event, payload, payload.expectedRevision);
+            break;
+          case "cancelComposition":
+            result = await performReset(
+              event,
+              { generation: payload.generation },
+              payload.expectedRevision,
+            );
+            break;
+          case "selectCandidate":
+            result = await performSelect(
+              event,
+              { generation: payload.generation, index: payload.index },
+              payload.expectedRevision,
+            );
+            break;
+          case "suspend":
+            result = await manager.serialize(async () => {
+              if (
+                payload.expectedRevision !== undefined &&
+                manager.snapshot.revision !== payload.expectedRevision
+              )
+                throw new StaleImeRevisionError();
+              manager.transition({
+                type: "suspend",
+                owner: current.owner,
+                generation: payload.generation,
+              });
+              setImeCandidateState(current.window, {
+                type: "suspend",
+                targetId: current.owner.targetId,
+                generation: payload.generation,
+              });
+              logImeDiagnostic("lease-suspended", {
+                windowId: current.window.id,
+                targetId: current.owner.targetId,
+                generation: payload.generation,
+                reason: rendererReleaseReason(payload.reason, "renderer-suspend"),
+              });
+              return { enabled: manager.engineState.enabled };
             });
-            setImeCandidateState(current.window, {
-              type: "suspend",
-              targetId: current.owner.targetId,
-              generation: payload.generation,
-            });
-            logImeDiagnostic("lease-suspended", {
-              windowId: current.window.id,
-              targetId: current.owner.targetId,
-              generation: payload.generation,
-              reason: rendererReleaseReason(payload.reason, "renderer-suspend"),
-            });
-            return { enabled: manager.engineState.enabled };
-          });
-          break;
-        case "resume":
-          result = await manager.serialize(async () => {
-            if (
-              payload.expectedRevision !== undefined &&
-              manager.snapshot.revision !== payload.expectedRevision
-            )
-              return { staleRevision: true };
-            const previousStatus = manager.lease.status;
-            // Re-confirming focus while already owned is a no-op. The owner window
-            // keeps its lease across non-activating candidate surfaces, and the
-            // renderer re-sends `resume` on every window focus.
-            if (manager.lease.status === "owned") {
+            break;
+          case "resume":
+            result = await manager.serialize(async () => {
+              if (
+                payload.expectedRevision !== undefined &&
+                manager.snapshot.revision !== payload.expectedRevision
+              )
+                throw new StaleImeRevisionError();
+              const previousStatus = manager.lease.status;
+              // Re-confirming focus while already owned is a no-op. The owner window
+              // keeps its lease across non-activating candidate surfaces, and the
+              // renderer re-sends `resume` on every window focus.
+              if (manager.lease.status === "owned") {
+                manager.transition({
+                  type: "confirm-focus",
+                  owner: current.owner,
+                  generation: payload.generation,
+                });
+                logImeDiagnostic("lease-resumed", {
+                  windowId: current.window.id,
+                  targetId: current.owner.targetId,
+                  generation: payload.generation,
+                  previousStatus,
+                });
+                return { enabled: manager.engineState.enabled };
+              }
+              if (
+                manager.lease.status !== "suspended" ||
+                isolateNativeIme(current.window) === "failed"
+              )
+                return { invalidTransition: true };
               manager.transition({
                 type: "confirm-focus",
                 owner: current.owner,
@@ -653,31 +684,16 @@ export function registerImeIpc(): {
                 previousStatus,
               });
               return { enabled: manager.engineState.enabled };
-            }
-            if (
-              manager.lease.status !== "suspended" ||
-              isolateNativeIme(current.window) === "failed"
-            )
-              return { invalidTransition: true };
-            manager.transition({
-              type: "confirm-focus",
-              owner: current.owner,
-              generation: payload.generation,
             });
-            logImeDiagnostic("lease-resumed", {
-              windowId: current.window.id,
-              targetId: current.owner.targetId,
-              generation: payload.generation,
-              previousStatus,
-            });
-            return { enabled: manager.engineState.enabled };
-          });
-          break;
+            break;
+        }
       }
+    } catch (error) {
+      if (error instanceof StaleImeRevisionError)
+        return rejectedSessionCommand(payload.commandId, "stale-revision", manager.snapshot);
+      throw error;
     }
 
-    if (isRecord(result) && result.staleRevision === true)
-      return rejectedSessionCommand(payload.commandId, "stale-revision", manager.snapshot);
     if (isRecord(result) && result.invalidTransition === true)
       return rejectedSessionCommand(payload.commandId, "invalid-transition", manager.snapshot);
     const state = isRecord(result) && isRecord(result.state) ? result.state : result;
@@ -703,7 +719,7 @@ export function registerImeIpc(): {
   });
 
   handle(ImeChannels.SessionSnapshot, (event) =>
-    serialize(event, async () => {
+    serialize(async () => {
       if (!windowFor(event)) return { snapshot: emptySessionSnapshot() };
       return { snapshot: manager.snapshot };
     }),
@@ -730,23 +746,6 @@ export function registerImeIpc(): {
     commandResults.set(key, { fingerprint, result });
     if (commandResults.size > 512)
       commandResults.delete(commandResults.keys().next().value as string);
-  }
-
-  async function invokeLegacyHandler(
-    channel: string,
-    event: Electron.IpcMainInvokeEvent,
-    payload: unknown,
-    expectedRevision?: number,
-  ): Promise<unknown> {
-    const handler = invokeHandlers.get(channel);
-    if (!handler) return undefined;
-    if (expectedRevision !== undefined) expectedRevisionByEvent.set(event, expectedRevision);
-    try {
-      return await handler(event, payload);
-    } catch (error) {
-      if (error instanceof StaleImeRevisionError) return { staleRevision: true };
-      throw error;
-    }
   }
 
   return {

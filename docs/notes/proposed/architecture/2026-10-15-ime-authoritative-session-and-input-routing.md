@@ -139,7 +139,9 @@ Ctrl/Alt/Meta 浏览器快捷键、编辑器导航和非文本命令须在契约
 - 2026-10-16 排障复盘：主进程硬崩溃靠"某条日志缺失"反推（见[FFI 字符串解码崩溃](../../implemented/bug-fix/2026-10-16-native-ffi-string-decode-crash.md)），候选窗宽度棘轮全程**没有任何日志**能直接回答"上报尺寸 vs 窗口尺寸"，Shift 锁死需要逐条读 guard 代码才能定位。三次故障都不是"缺抽象"，而是**缺唯一写入者**与**缺默认可见的因果链证据**。
 - 2026-10-16 **S1 可判定性已交付**：`lease-released` 一律带 `reason`，覆盖 renderer `releaseTarget`（含 `target-switched`/`effect-inactive`/`editor-unmount`/`acquire-rejected`）、`owner-window-closed`/`renderer-process-gone`/`window-navigation`、`owner-replaced` 与 `native-ime-isolation-failed`（另加 `lease-unavailable` 行），并补 `lease-resumed`/`lease-suspended`；焦点链 4 个 `renderer-*-focus/blur` 与 `candidate-native-positioned` 取消默认 suppress，后者新增 `requestedSize`/`candidateBounds` 对照；shared 新增运行时事件名列表 `IME_RENDERER_DIAGNOSTIC_EVENTS`，main 白名单从它派生（此前手写数组漏掉 `release-called`，正是"释放原因丢失"的根因）。详见[IME 租约释放原因与默认焦点链日志](../../implemented/bug-fix/2026-10-16-ime-release-cause-diagnostics.md)。状态所有权未动，因此仍**不能**据此声称已解耦。
 
-- 2026-10-16 **S2a renderer 单一写入者已交付**：`imeSessionClient` 成为唯一 session store（订阅 + `getImeOwnedGeneration`/`isImeTargetOwned`/`getImeInputMode`/`getImeComposing` 派生 getter，删除无消费者的 `getImeSessionRevision`）；`imeInputTargetCoordinator` 的活动 target 变为可订阅快照（`getActiveImeInputTargetId`/`subscribeImeInputTargets`）；`useEmbeddedIme` 删除 `asciiMode`/`asciiModeRef`/`generation`/`generationRef`/`focusedRef`/`targetEngaged` 六处副本，`state`/`generation`/`asciiMode`/`targetEngaged` 全部派生，`blur()` 改为注销注册，并新增"main 报告 session 空闲或归他人时注册自动失效"规则；wire 诊断字段 `focusedRef` → `targetRegistered`（与 `activeElementTarget`/`documentHasFocus` 三者语义分离）。`pnpm verify` 通过，UI 162、desktop 147、app 7 项测试通过。剩余：候选/锚点/窗口面副本（`ImeCandidateAnchorReporter` 的 `windowFocused` 与 `!anchor.readOnly` 门控）与 S3 一并收口。详见[renderer 侧状态副本收口](../../implemented/architecture/2026-10-16-ime-renderer-single-writer-facts.md)。
+- 2026-10-16 **S2a renderer 单一写入者已交付**：`imeSessionClient` 成为唯一 session store（订阅 + `getImeOwnedGeneration`/`isImeTargetOwned`/`getImeInputMode`/`getImeComposing` 派生 getter，删除无消费者的 `getImeSessionRevision`）；`imeInputTargetCoordinator` 的活动 target 变为可订阅快照（`getActiveImeInputTargetId`/`subscribeImeInputTargets`）；`useEmbeddedIme` 删除 `asciiMode`/`asciiModeRef`/`generation`/`generationRef`/`focusedRef`/`targetEngaged` 六处副本，`state`/`generation`/`asciiMode`/`targetEngaged` 全部派生，`blur()` 改为注销注册，并新增"main 报告 session 空闲或归他人时注册自动失效"规则；wire 诊断字段 `focusedRef` → `targetRegistered`（与 `activeElementTarget`/`documentHasFocus` 三者语义分离）。`pnpm verify` 通过，UI 162、desktop 147、app 7 项测试通过。详见[renderer 侧状态副本收口](../../implemented/architecture/2026-10-16-ime-renderer-single-writer-facts.md)。
+
+- 2026-10-16 **S2b 候选/锚点窗口面副本已交付，S2 收口**：`ImeCandidateAnchorReporter` 删除本地 `windowFocused` state，改为渲染时按需读 `document.hasFocus()`（`focus` 事件复用 `refreshFocusedAnchor` 重解析锚点，`blur` 只清 `caretAnchor`、**不** `bump()`，避免窗口失焦时重新断言候选锚点）；新增 `blockNativeEditing` prop，调用点从 `imeTextPolicy.blockNativeEditing` 传入，取代 `!anchor.readOnly` 的 DOM 反推。组件级派生审查结论：`ChatPanel`/`ReplyConversationPopover`/`ConversationComposer`/`EmbeddedImeInput`/`MarkdownEditorPane` 均直接消费 `useEmbeddedIme` 的派生值，无额外焦点/模式副本。`pnpm verify` 通过，UI 168、desktop、app 项测试与 lint、typecheck、Note、architecture check 均通过。剩余 S3–S5。详见[候选锚点/窗口面副本收口](../../implemented/architecture/2026-10-16-ime-candidate-anchor-single-writer.md)。
 
 main/IPC 目标转移的自动化契约现已覆盖，但平台验证和资源交付仍未完成；不能据此放松现有 fail-closed 输入隔离：
 
@@ -147,7 +149,7 @@ main/IPC 目标转移的自动化契约现已覆盖，但平台验证和资源�
 - renderer 的候选、anchor、commit/cancel selection 生命周期已分别由受控 textarea、HTML input 和 CodeMirror adapter 轨迹覆盖；不同 adapter 保留各自的 selection/history 实现，不强行统一内部接口。
 - 隔离 API 和 renderer DOM 输入路由已有独立类型语义，但 Windows/macOS 的原生隔离能力仍未分别验证；完成实测前保留当前 fail-closed 输入保护。
 - 并发 IPC 轨迹覆盖目标切换期间 reset 阻塞：新 owner/snapshot 在 reset 完成前不可见，转移结果不带 commit，输入模式保持全局 session 状态；旧 generation 的迟到按键和候选命令在新 lease 生效后被拒绝且不调用 Rime。
-- Windows 本机 helper 冒烟验证：现有资源启动握手返回 `protocolVersion: 2`、`available: true`；启用后输入 `nihao` 产生 Rime preedit/候选，Shift keydown/up 原样转发后权威状态变为 ASCII，活动 composition 由 schema 转换为 `nihao`。该验证只覆盖 helper/schema，不代表 Electron UI、原生 IME 隔离或完整平台矩阵验收。
+- Windows 本机 helper 冒烟验证：用本地编译的协议 v2 helper 启动握手返回 `protocolVersion: 2`、`available: true`；启用后输入 `nihao` 产生 Rime preedit/候选，Shift keydown/up 原样转发后权威状态变为 ASCII，活动 composition 由 schema 转换为 `nihao`。需注意仓库落盘的资源副本仍是协议 v1，且 `answra-rime-host-v2.0.0` release 尚未发布，因此 `pnpm dev` 会回退系统输入法，详见 `../../implemented/bug-fix/2026-10-16-ime-helper-protocol-v2-release-unpublished.md`。该验证只覆盖 helper/schema，不代表 Electron UI、原生 IME 隔离或完整平台矩阵验收。
 - 当前架构尚无 editor composition caret 的实机定位证据，也没有截图捕获前取消 composition 的集成轨迹；两项均列为 renderer 架构验收缺口。
 
 - Windows 11 与 macOS 的真实输入法、窗口焦点、失焦恢复、鼠标选区、主/回复窗口切换、候选窗定位和捕获保护实测。
@@ -229,7 +231,7 @@ main/IPC 目标转移的自动化契约现已覆盖，但平台验证和资源�
 ### 分阶段顺序
 
 - **S1 可判定性（先做，2026-10-16 已交付）**：补齐默认可见的 IME 因果链日志；`lease-released` 带 reason 并覆盖四条来源（renderer `releaseTarget` 含 `target-switched`/`effect-inactive`/`unmount`/`editor-unmount`/`acquire-rejected`、`owner-window-closed`/`renderer-process-gone`/`window-navigation`、`owner-replaced`、`native-ime-isolation-failed`）；候选面记录"上报尺寸 vs 窗口尺寸 vs 锚点"。目标是"再看一次同样的故障，能从默认日志直接读出链路"。此阶段不改状态所有权，风险最低、收益最直接。
-- **S2 单一写入者（S2a renderer 侧，2026-10-16 已交付）**：renderer 侧事实域收口完成——引擎/租约/模式/composition 只由 main 写，renderer 唯一 store 是 `imeSessionClient`（新增订阅与派生 getter）；"当前活动输入目标"只由 `imeInputTargetCoordinator` 写并作为可订阅快照暴露；DOM 焦点不再被缓存；`useEmbeddedIme` 删除 `asciiMode`/`asciiModeRef`/`generation`/`generationRef`/`focusedRef`/`targetEngaged` 六处副本，改为派生，并新增"main 撤销租约即注销注册"规则；wire 诊断字段 `focusedRef` → `targetRegistered`。详见[renderer 侧状态副本收口](../../implemented/architecture/2026-10-16-ime-renderer-single-writer-facts.md)。仍待完成：候选/锚点/窗口面（`ImeCandidateAnchorReporter` 的 `windowFocused` 与 `readOnly` 门控）的副本收口，以及 `imeEnabled` 以外的组件级派生审查。
+- **S2 单一写入者（S2a renderer 侧，2026-10-16 已交付）**：renderer 侧事实域收口完成——引擎/租约/模式/composition 只由 main 写，renderer 唯一 store 是 `imeSessionClient`（新增订阅与派生 getter）；"当前活动输入目标"只由 `imeInputTargetCoordinator` 写并作为可订阅快照暴露；DOM 焦点不再被缓存；`useEmbeddedIme` 删除 `asciiMode`/`asciiModeRef`/`generation`/`generationRef`/`focusedRef`/`targetEngaged` 六处副本，改为派生，并新增"main 撤销租约即注销注册"规则；wire 诊断字段 `focusedRef` → `targetRegistered`。详见[renderer 侧状态副本收口](../../implemented/architecture/2026-10-16-ime-renderer-single-writer-facts.md)。**S2b（候选/锚点/窗口面）2026-10-16 已交付**：`ImeCandidateAnchorReporter` 删除 `windowFocused` 副本（按需读 `document.hasFocus()`），`!anchor.readOnly` 门控改为由调用点传入的 `blockNativeEditing`；见[候选锚点/窗口面副本收口](../../implemented/architecture/2026-10-16-ime-candidate-anchor-single-writer.md)。
 - **S3 候选与窗口面解耦**：候选状态、锚点、窗口生命周期、层级和捕获保护分成独立写入者；候选展示不再与 suspend/hide/cancel/release 共用同一个 modify 批量变量。sizing 契约并入此阶段验收。
 - **S4 清理与契约固化**：删除迁移遗留（如已无消费者的策略字段、只服务旧路径的分支）；把 S1–S3 的判据写成测试，允许后续并行改动在这里回归。
 - **S5 平台验证与迁移**：Windows/macOS 实机矩阵、资源一致性、系统 IME 隔离决策；证据齐全后把本提案迁到 `implemented/` 并同步历史 Note。
@@ -256,12 +258,31 @@ main/IPC 目标转移的自动化契约现已覆盖，但平台验证和资源�
 3. **`--fade` 未进广播**：候选窗直接读 localStorage，不在「表面共享令牌」的统一推送里；第 2 条落地时应一并收口。
 4. `readOnly` 双职责（阻止原生写入 + 阻止系统 IME 接管）仍未拆，属 S2b/S3 范围。
 
+### S3 起点：剩余耦合点盘点（2026-10-16）
+
+S2 交付后重扫代码，确认仍未拆的耦合点，按优先级：
+
+1. **候选/窗口面在主进程仍是单一写入批次（S3 主线）**。`apps/desktop/src/main/ime/imeCandidateWindowController.ts:52-61` 用一组模块级变量同时持有引擎候选状态、锚点几何、owner/target/generation 与窗口引用；`hide()`（443-451）一次清空全部，`suspend()`（453-461）复用 `hideWindow()` 只清锚点。窗口生命周期、层级、捕获保护与展示互相夹带：`createWindow()`（176-212）同时注册窗口表面 + `captureProtection` + `attachAbove`；`positionAndShow()`（280-373）在算位置时顺带决定 show/层级/尺寸/可见性；`reportNativeWindow()`（490-552）把捕获保护诊断与几何混在同一 payload。sizing 只由 `resize()`（375-379）写，默认 `INITIAL_SIZE 640x56`（11）是占位常量，契约没有独立写入者或断言。
+2. **`readOnly` 双职责，调用点仍在混用（S3/S5）**。`packages/ui/src/ime/imeTextPolicy.ts:1-5,37-43` 用 `targetOwned` 单一开关同时产出"阻止原生写入"与"阻止系统 IME 接管"；`EmbeddedImeInput.tsx:113`、`ConversationComposer.tsx:138` 把它落到 DOM `readOnly`，其中 `readOnly={disabled || blockNativeEditing}` 仍把业务只读与 IME 门控 OR 在一起（S2b 只在 reporter 拆掉）。main 的 `isolateNativeIme` 已返回 `applied|not-required|failed`（`imeIpc.ts:280,389,659`），但未成为 renderer 门控的单一来源。
+3. **迁移遗留的双入口与第二判断路径（S4）**。`imeIpc.ts` 曾同时保留领域入口（Acquire/Release/Key/Select/Reset/ConfirmFocus）与 `SessionCommand`，后者经 `invokeLegacyHandler` 回调前者。**2026-10-16 已合并实现**：抽出 `performAcquire/performRelease/performConfirmFocus/performKey/performSelect/performReset`，两套入口共用同一实现，删除 `invokeLegacyHandler`/`invokeHandlers`/`expectedRevisionByEvent` 与 `{staleRevision}` 哨兵。领域 channel 与 `preload`/`bridge` 方法仍暴露（IPC 表面仍是双入口），删除表层列为后续；见[main IPC 双入口合并](../../implemented/simplification/2026-10-16-ime-ipc-single-implementation.md)。`useEmbeddedIme` 仍自算 `targetEngaged`（85）、合成 `state`（72-79），并在 hook 内保留 `engineHandled===false` fallback 与数字/ASCII 分支（550-568）；`resolveImeKeyRoute` 依赖调用方喂 `{inputMode, composing}`（494-497,511），不是自足的唯一策略来源。
+4. **第三个编辑器未进 adapter 体系**。`packages/ui/src/components/editor/RichTextComposer.tsx:136-147`（Tiptap/ProseMirror）用 `data-ime-policy="excluded"` + `handleTextInput: () => imeBlocked` + `aria-readonly` 自行实现"接管时禁写"，未走 `imeTextPolicy`/editor adapter 契约。
+5. **候选窗主题是第二套推导**。`apps/desktop/src/main/index.ts:66-67` 以 `additionalTargets: () => [getImeCandidateWindow()]` 广播采样，候选窗再自读 localStorage 偏好，与回复条的 renderer 单点投影不同源。
+6. **S5 平台验证与隔离决策未收口**：实机几何/DPI、捕获保护、`readOnly` 是否可被平台隔离替代、ProseMirror 在协议 v2 下的 composition 投影均无证据，阻塞本提案迁 `implemented/`。
+
+S3 只处理第 1 项：把候选窗 controller 的候选状态、锚点、窗口生命周期、层级、捕获保护拆成独立写入者，候选展示不再与 suspend/hide/cancel/release 共用同一批变量；sizing 契约并入本阶段验收。第 2–6 项留给 S3 之后 / S4 / S5。
+
+**2026-10-16 S3 第 1 项已交付**：`imeCandidateWindowController.ts` 把 `state`/`targetId`/`generation` 三份平行副本合并为单一不可变 `content`，并为候选内容、锚点、窗口生命周期（`resetWindowLifecycle`）、owner 绑定（`bindOwner`/`unbindOwner`）、sizing（`setSize`）各确立唯一写入者；`suspend` 只清锚点并保留 `content`/owner，`hide` 才清全部；捕获保护仍只在 `createWindow` 注册一次。`positionAndShow` 进一步拆为 `computeCandidateFrame`（只算几何）/`applyCandidateGeometry`（唯一 `setBounds`）/`presentCandidate`（唯一 show/`attachAbove` z 序），隐藏只由 `hideWindow` 写，几何、可见性与层级不再互相夹带。`resize` 对外 API 与 `ImeCandidatePresentationUpdate` 契约不变。新增「suspend 只清锚点」「非法尺寸被忽略」两项回归，`apps/desktop/test/imeCandidateWindowController.test.ts` 9 项通过、desktop typecheck 通过。详见[候选窗事实域拆分](../../implemented/architecture/2026-10-16-ime-candidate-window-single-writers.md)。`reportNativeWindow` 仍把几何与捕获保护诊断混在同一 payload，留待后续。
+
 ### 剩余阶段（按此顺序继续）
 
-- **S2b 候选/锚点/窗口面副本收口**：`ImeCandidateAnchorReporter` 的本地 `windowFocused` 副本与 `!anchor.readOnly` 门控改为派生；连同 `imeEnabled` 之外的组件级派生一起审查。这是 S2 的最后一块。
-- **S3 候选与窗口面解耦**：候选状态、锚点、窗口生命周期、层级、捕获保护拆成独立写入者；候选展示不再与 suspend/hide/cancel/release 共用同一个 modify 批量变量；sizing 契约在此阶段验收。
+- **S3 候选与窗口面解耦**：候选状态、锚点、窗口生命周期、层级、捕获保护拆成独立写入者；候选展示不再与 suspend/hide/cancel/release 共用同一个 modify 批量变量；sizing 契约在此阶段验收。**第 1 项（候选窗 controller 写入者拆分）2026-10-16 已交付**，见[候选窗事实域拆分](../../implemented/architecture/2026-10-16-ime-candidate-window-single-writers.md)；`reportNativeWindow` 的几何与捕获保护诊断仍混在同一 payload，第 2–6 项待续。
 - **S4 清理与契约固化**：删除迁移遗留字段与只服务旧路径的分支；把 S1–S3 的判据写成测试。
 - **S5 平台验证与迁移**：Windows/macOS 实机矩阵、资源一致性、系统 IME 隔离决策；证据齐全后把本提案迁到 `implemented/`。
+
+### S2b 收口说明
+
+- `windowFocused` 与 `!anchor.readOnly` 两处副本已按上文收口（S2 完成），剩余候选窗 controller 的写入者拆分属 S3。
+- `readOnly` 双职责（阻止原生写入 + 阻止系统 IME 接管）仍未拆，属 S3/S5。
 
 ### 交接约束（不要回退）
 
