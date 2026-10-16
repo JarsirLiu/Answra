@@ -10,15 +10,15 @@
 
 - 代码/模块：`packages/shared` 会话协议、`packages/ui` 面试入口/状态/建议视图、`apps/desktop` Windows 音频采集与权限、`apps/app` 实时云端 STT 与自动回答 runtime。
 - 进程/数据表面：renderer 获取系统 loopback 与麦克风；类型化 IPC 传输音频帧和状态；utility worker 管理云端 STT、转录上下文、回答判断和云端模型流。会话 transcript 仅驻留内存，不写入磁盘。
-- 相关 Note：[面试模式 AI 建议占位流程](../../implemented/feature/2026-10-11-floating-bar-surfaces-and-workflow.md)、[功能边界与本地运行时分层](../../implemented/architecture/2026-10-11-feature-boundaries-and-local-runtime.md)、[后端拥有会话与内存仓储](../../implemented/architecture/2026-10-12-conversation-memory-store-port.md)。
+- 相关 Note：[面试模式 AI 建议占位流程](../../implemented/feature/2026-10-11-floating-bar-surfaces-and-workflow.md)、[功能边界与本地运行时分层](../../implemented/architecture/2026-10-11-feature-boundaries-and-local-runtime.md)、[后端拥有会话与内存仓储](../../implemented/architecture/2026-10-12-conversation-memory-store-port.md)、[面试语音识别管线与客户端 VAD 选型](../architecture/2026-10-16-interview-asr-pipeline-and-vad.md)。
 
 ## 提案
 
 首版实现持续面试会话，而非会议录音上传：用户只在进入模式时点击一次「开始面试」并完成系统要求的音频授权；会话开始后直到用户停止或会议结束，全程自动采集、转录、判断和生成回答建议，不要求用户逐轮点击「AI 建议」、确认问题或触发生成。界面持续显示采集/转录/判断/生成状态。系统音频是识别面试官问题的主通道，麦克风仅提供候选人已回答内容作为上下文。每个最终转录片段进入短时上下文，系统通道的发言轮次自动触发判断；不需要回答时继续监听，需要回答时自动在 Answra 浮层展示文字建议。回答生成不停止音频采集；出现新的面试官发言时使旧判断/答案失效并重新判断。用户可显式停止会话，会议音频停止或会议结束时也应自动收尾。
 
-Windows 首版保持 Electron `29.4.6`，使用 Electron display-media handler 的系统 loopback 音频能力；Renderer 停止并丢弃视频轨，只发送音频 PCM。普通 Windows 设备不运行本地 STT 或本地 LLM：实时转录必须走云端流式服务，自动回答必须走云端模型。STT 凭证与模型凭证是两个能力和授权边界，不能因为当前模型配置是 OpenAI-compatible 就假定它提供 Realtime API，也不能假定 ChatGPT/Claude 消费者订阅能直接用于 API 调用。
+Windows 首版保持 Electron `29.4.6`，使用 Electron display-media handler 的系统 loopback 音频能力；Renderer 停止并丢弃视频轨，只发送音频 PCM。普通 Windows 设备不运行本地 STT 或本地 LLM：持续转录走云端服务（首版 realtime 流式识别、服务端 VAD 断句，批式仅作禁 WS 降级），自动回答走云端模型。STT 凭证与模型凭证是两个能力和授权边界，不能因为当前模型配置是 OpenAI-compatible 就假定它提供 Realtime API，也不能假定 ChatGPT/Claude 消费者订阅能直接用于 API 调用。
 
-云端供应商通过独立 adapter 接入，首个国内候选为腾讯云实时语音识别，后续可增加其他支持流式 PCM、稳定终态和明确商业授权的云 STT。STT 凭证可由用户 BYOK，或由 Answra 账户订阅服务端代持并签发短时会话凭证；两种授权不可混淆。用户要求面向普通 Windows 用户的云端体验，因此产品版目标采用 Answra 托管订阅路径，不能把本地 Whisper/Ollama 作为回退。当前仓库没有 Answra 账户/计费后端，托管订阅所需服务端是上线前置工作；在该后端建成前，功能只能在开发/内测配置云厂商凭证，不得宣称普通订阅用户可用。自动回答走独立的云端 LLM provider adapter；现有 OpenAI-compatible 配置可作为开发首发，产品托管订阅需要由 Answra 后端提供受控模型路由或短期凭证。消费者版 ChatGPT/Claude 订阅不视为 API 权限。
+云端供应商通过独立 adapter 接入；ASR 供应商/协议主路径、私有语音协议（AVP）与客户端 VAD 分工分别见 [面试语音识别管线与客户端 VAD 选型](../architecture/2026-10-16-interview-asr-pipeline-and-vad.md)（主路径 realtime `qwen3-asr-flash-realtime` 云端 `server_vad` 断句直连 DashScope，批式仅作禁 WS 降级；AnswraSite realtime 透传为产品化切换路径）与 [Answra 实时语音识别私有协议（AVP）v1](../architecture/2026-10-16-answra-voice-protocol-avp-v1.md)（客户端/网关双端冻结的中间协议，上游路由在 adapter/网关侧），后续可增加腾讯云等其他支持流式 PCM、稳定终态和明确商业授权的云 STT。STT 凭证可由用户 BYOK，或由 Answra 账户订阅服务端代持并签发短时会话凭证；两种授权不可混淆。用户要求面向普通 Windows 用户的云端体验，因此产品版目标采用 Answra 托管订阅路径，不能把本地 Whisper/Ollama 作为回退。当前仓库没有 Answra 账户/计费后端，托管订阅所需服务端是上线前置工作；在该后端建成前，功能只能在开发/内测配置云厂商凭证，不得宣称普通订阅用户可用。自动回答走独立的云端 LLM provider adapter；现有 OpenAI-compatible 配置可作为开发首发，产品托管订阅需要由 Answra 后端提供受控模型路由或短期凭证。消费者版 ChatGPT/Claude 订阅不视为 API 权限。
 
 面试回答首版不包含仓库/文件读取工具、资料选择、索引或检索。对话运行时与 IPC 需保持可扩展，但不能预先扫描或读取工作区。后续若加入工具调用，应作为独立功能设计，另行定义工具权限、文件范围、用户确认、云端数据发送和审计规则。
 
@@ -66,7 +66,7 @@ Windows 首版保持 Electron `29.4.6`，使用 Electron display-media handler �
 - 自动化测试覆盖协议/转录事件/触发门控/过期/资源关闭；Windows 实机使用目标输出设备和至少一种会议软件验证系统声音来源、实时性、停止和隐身不回退。未做实机验证时不得标记为已实施。
 - 隐私/授权测试确认云端 STT 或 LLM 未授权时不采集、不发送；断网、额度耗尽和服务商拒绝均有明确错误并可停止；停止/窗口关闭后释放音轨、socket 和临时 transcript。
 - 面试会话不会调用工作区读取 API，不扫描本地文件或仓库；后续工具调用功能需单独增加测试与 Note。
-- 产品发布前完成托管订阅服务端：账户 entitlement、腾讯云/其他供应商密钥保管、STT WebSocket 中继、LLM 路由、用量/并发限制、短时会话令牌、超额拒绝和无敏感内容日志。无该服务端时只允许受控 BYOK 内测，不得对外表述为订阅已接入。
+- 产品发布前完成托管订阅服务端：账户 entitlement、ASR 供应商密钥保管、STT WebSocket 中继、LLM 路由、用量/并发限制、短时会话令牌、超额拒绝和无敏感内容日志。无该服务端时只允许受控 BYOK 内测，不得对外表述为订阅已接入。
 
 ## 验证证据
 
