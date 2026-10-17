@@ -5,31 +5,12 @@ import type {
   ConversationModelConfig,
   ConversationSendRequest,
 } from "@answra/shared";
-import { streamText } from "ai";
+import { type ModelMessage, streamText } from "ai";
+import { ANSWER_PROFILE, CHAT_PROFILES, type ChatProfileId } from "./profiles";
 import { type ConversationStore, createUserMessage, MemoryConversationStore } from "./store";
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
-
-const ANSWER_SYSTEM_PROMPT = [
-  "你是笔试答题助手。用户发来一张或多张题目截图，你只输出答案本身，不输出分析过程。",
-  "",
-  "第一步，判断截图里有几道「完整可作答」的题：",
-  "- 只统计题干完整、能看清并作答的题。",
-  "- 图片边缘被截断一半的题、严重模糊或残缺的题，一律忽略，不要提及、不要编号。",
-  "- 一道完整题周围多余的水印、页眉页脚、其他无关文字不算题。",
-  "",
-  "第二步，按以下规范输出：",
-  "- 只有一道完整题：第一行以「答案：」开头直接给答案。",
-  "- 有多道完整题：每题一行，格式为「原题号：答案」，其中「原题号」用试卷上印的题号（如「12」或「第12题」），" +
-    "不要按图片中的顺序自己重新编号；试卷没印题号时，用题干前 10 个字代替题号（如「下列说法正确的是：答案：B」）。",
-  "- 选择题只写选项字母与选项内容；判断题写「正确」或「错误」；填空题只写空内内容；计算、编程题给最终结果，可另起一行列出最多 3 条关键步骤。",
-  "- 每题答案之后最多补一句必要理由；没有把握时明确写「不确定」。",
-  "- 完整可作答的题一道都没有时，才回复「未识别到题目」。",
-  "",
-  "禁止事项：不要复述题目、寒暄、总结收尾；不要输出「未识别到题目」「图片不完整」等针对个别题的说明；" +
-    "不要使用 Markdown 标题、加粗、列表符号；不要多段展开。",
-].join("\n");
 
 export class ConversationRuntime {
   private config?: ConversationModelConfig;
@@ -70,7 +51,41 @@ export class ConversationRuntime {
     this.config = { ...config };
   }
 
-  async send(conversationId: string, request: ConversationSendRequest): Promise<{ runId: string }> {
+  async sendChat(
+    profileId: ChatProfileId,
+    conversationId: string,
+    request: ConversationSendRequest,
+  ): Promise<{ runId: string }> {
+    const profile = CHAT_PROFILES[profileId];
+    if (!profile) throw new Error("未授权的对话能力配置");
+    return this.startRun(
+      conversationId,
+      request,
+      profile.systemPrompt,
+      profile.includeHistory,
+      false,
+      profile.injectTime ?? false,
+    );
+  }
+
+  async runAnswer(
+    conversationId: string,
+    request: ConversationSendRequest,
+  ): Promise<{ runId: string }> {
+    await this.store.create(conversationId);
+    if ((await this.store.load(conversationId)).activeRunId) throw new Error("当前回复尚未完成");
+    await this.store.clear(conversationId);
+    return this.startRun(conversationId, request, ANSWER_PROFILE.systemPrompt, false, true, false);
+  }
+
+  private async startRun(
+    conversationId: string,
+    request: ConversationSendRequest,
+    systemPrompt: string,
+    includeHistory: boolean,
+    ephemeral: boolean,
+    injectTime: boolean,
+  ): Promise<{ runId: string }> {
     if (!this.config) throw new Error("请先在设置中配置模型服务");
     validateRequest(request);
 
@@ -80,7 +95,17 @@ export class ConversationRuntime {
     await this.store.create(conversationId);
     await this.store.beginRun(conversationId, runId, createUserMessage(randomUUID(), request));
     this.runs.set(runId, controller);
-    void this.execute(conversationId, runId, config, request, controller);
+    void this.execute(
+      conversationId,
+      runId,
+      config,
+      request,
+      controller,
+      systemPrompt,
+      includeHistory,
+      ephemeral,
+      injectTime,
+    );
     return { runId };
   }
 
@@ -104,6 +129,10 @@ export class ConversationRuntime {
     config: ConversationModelConfig,
     request: ConversationSendRequest,
     controller: AbortController,
+    systemPrompt: string,
+    includeHistory: boolean,
+    ephemeral: boolean,
+    injectTime: boolean,
   ): Promise<void> {
     const startedAt = Date.now();
     const chunkCounts: Record<string, number> = {};
@@ -137,10 +166,49 @@ export class ConversationRuntime {
           return { type: "image" as const, image: parsed.bytes, mediaType: parsed.mediaType };
         }),
       ];
+      const messages: ModelMessage[] = includeHistory
+        ? (await this.store.load(conversationId)).messages
+            .filter((message) => message.status !== "streaming")
+            .map((message) =>
+              message.role === "assistant"
+                ? { role: "assistant", content: message.text }
+                : {
+                    role: "user",
+                    content: [
+                      ...(message.text ? [{ type: "text" as const, text: message.text }] : []),
+                      ...message.images.map((image) => {
+                        const parsed = parseDataUrl(image.dataUrl);
+                        return {
+                          type: "image" as const,
+                          image: parsed.bytes,
+                          mediaType: parsed.mediaType,
+                        };
+                      }),
+                    ],
+                  },
+            )
+        : [{ role: "user", content }];
+      if (injectTime) {
+        const last = messages[messages.length - 1];
+        const reminder = buildTimeReminder();
+        if (last && last.role === "user") {
+          const prev = last.content;
+          last.content = [
+            ...(typeof prev === "string"
+              ? [{ type: "text" as const, text: prev }]
+              : Array.isArray(prev)
+                ? prev
+                : []),
+            { type: "text" as const, text: reminder },
+          ];
+        } else {
+          messages.push({ role: "user", content: [{ type: "text" as const, text: reminder }] });
+        }
+      }
       const result = streamText({
         model: provider(config.model),
-        system: ANSWER_SYSTEM_PROMPT,
-        messages: [{ role: "user", content }],
+        system: systemPrompt,
+        messages,
         abortSignal: controller.signal,
         onError: ({ error }) => {
           console.error("[conversation][run] provider error", summarizeError(error));
@@ -173,6 +241,7 @@ export class ConversationRuntime {
         runId,
         controller.signal.aborted ? "interrupted" : "complete",
       );
+      if (ephemeral) await this.store.clear(conversationId);
       console.info("[conversation][run] finished", {
         runId,
         elapsedMs: Date.now() - startedAt,
@@ -219,4 +288,26 @@ function parseDataUrl(value: string): { mediaType: string; bytes: Uint8Array } {
   if (bytes.byteLength === 0 || bytes.byteLength > MAX_IMAGE_BYTES)
     throw new Error("单张图片不能超过 8 MB");
   return { mediaType: match[1].toLowerCase(), bytes: new Uint8Array(bytes) };
+}
+
+function formatLocalTime(): string {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZoneName: "short",
+  }).formatToParts(now);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  const tz = get("timeZoneName");
+  return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")}${
+    tz ? ` (${tz})` : ""
+  }`;
+}
+
+function buildTimeReminder(): string {
+  return `<system-reminder>\n# currentDate\nCurrent date and time is ${formatLocalTime()}.\n</system-reminder>`;
 }

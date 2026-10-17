@@ -1,5 +1,9 @@
 import { createServer, type Server } from "node:http";
-import type { ConversationChange } from "@answra/shared";
+import {
+  ActiveChatConversationId,
+  ActiveExamConversationId,
+  type ConversationChange,
+} from "@answra/shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ConversationRuntime } from "../../src/conversation/runtime";
 
@@ -47,12 +51,12 @@ describe("ephemeral conversation runtime", () => {
   });
 
   it("keeps every send independent and transmits the image as part of only that request", async () => {
-    const first = await runtime.send("test-conversation", {
+    const first = await runtime.runAnswer("test-conversation", {
       text: "解释截图 A",
       images: [{ name: "capture.png", dataUrl: "data:image/png;base64,QUJD" }],
     });
     await waitForTerminal(first.runId);
-    const second = await runtime.send("test-conversation", { text: "只看问题 B", images: [] });
+    const second = await runtime.runAnswer("test-conversation", { text: "只看问题 B", images: [] });
     await waitForTerminal(second.runId);
 
     expect(requests).toHaveLength(2);
@@ -71,13 +75,11 @@ describe("ephemeral conversation runtime", () => {
     );
     expect(revisions).toEqual([...revisions].sort((left, right) => left - right));
     const snapshot = await runtime.getSnapshot("test-conversation");
-    expect(snapshot.messages.map((message) => message.role)).toEqual([
-      "user",
-      "assistant",
-      "user",
-      "assistant",
+    expect(snapshot.messages).toEqual([]);
+    expect(snapshot.revision).toBeGreaterThan(0);
+    expect(await runtime.readEventsAfter("test-conversation", 0)).toEqual([
+      { type: "snapshot", snapshot },
     ]);
-    expect(snapshot.messages[1]).toMatchObject({ text: "收到", status: "complete" });
     expect(events.filter((event) => event.chunk.type === "finish")).toHaveLength(2);
     expect(
       events.some(
@@ -89,15 +91,74 @@ describe("ephemeral conversation runtime", () => {
     ).toBe(true);
   });
 
+  it("sends chat history only in the independent general chat conversation", async () => {
+    const first = await runtime.sendChat("general-chat", ActiveChatConversationId, {
+      text: "我叫小明",
+      images: [],
+    });
+    await waitForTerminal(first.runId);
+    const second = await runtime.sendChat("general-chat", ActiveChatConversationId, {
+      text: "我叫什么？",
+      images: [],
+    });
+    await waitForTerminal(second.runId);
+
+    const chatPayload = JSON.stringify(requests[1]?.messages);
+    expect(chatPayload).toContain("我叫小明");
+    expect(chatPayload).toContain("收到");
+    expect(chatPayload).toContain("我叫什么？");
+
+    const answer = await runtime.runAnswer(ActiveExamConversationId, {
+      text: "只回答当前截图问题",
+      images: [],
+    });
+    await waitForTerminal(answer.runId);
+
+    const answerPayload = JSON.stringify(requests[2]?.messages);
+    expect(answerPayload).toContain("只回答当前截图问题");
+    expect(answerPayload).not.toContain("我叫小明");
+  });
+
+  it("injects current date as a user-side system-reminder only for chat profiles", async () => {
+    const { runId } = await runtime.sendChat("general-chat", "time-inject-chat", {
+      text: "今天几号？",
+      images: [],
+    });
+    await waitForTerminal(runId);
+
+    const chatBody = JSON.stringify(requests.at(-1));
+    expect(chatBody).toContain("<system-reminder>");
+    expect(chatBody).toContain("currentDate");
+    expect(chatBody).toContain("Current date and time is");
+
+    const answer = await runtime.runAnswer("time-inject-exam", {
+      text: "答题",
+      images: [],
+    });
+    await waitForTerminal(answer.runId);
+    const answerBody = JSON.stringify(requests.at(-1));
+    expect(answerBody).not.toContain("currentDate");
+  });
+
+  it("rejects unregistered chat profiles", async () => {
+    await expect(
+      runtime.sendChat("future-tool-chat" as "general-chat", "other-chat", {
+        text: "hello",
+        images: [],
+      }),
+    ).rejects.toThrow("未授权");
+    expect(runtime.activeRunCount).toBe(0);
+  });
+
   it("rejects unsupported or oversized images without starting a run", async () => {
     await expect(
-      runtime.send("test-conversation", {
+      runtime.runAnswer("test-conversation", {
         text: "",
         images: [{ name: "bad.svg", dataUrl: "data:image/svg+xml;base64,QUJD" }],
       }),
     ).rejects.toThrow("图片格式");
     await expect(
-      runtime.send("test-conversation", {
+      runtime.runAnswer("test-conversation", {
         text: "",
         images: [{ name: "bad.png", dataUrl: `data:image/png;base64,${"A".repeat(11_200_000)}` }],
       }),
@@ -108,7 +169,7 @@ describe("ephemeral conversation runtime", () => {
 
   it("aborts an active request and releases its temporary run state", async () => {
     holdResponse = true;
-    const { runId } = await runtime.send("test-conversation", { text: "请取消", images: [] });
+    const { runId } = await runtime.runAnswer("test-conversation", { text: "请取消", images: [] });
     runtime.cancel(runId);
     await waitForTerminal(runId);
 
@@ -137,7 +198,7 @@ describe("ephemeral conversation runtime", () => {
     if (!address || typeof address === "string") throw new Error("test server did not bind");
     runtime.configure({ baseUrl: `http://127.0.0.1:${address.port}/v1`, model: "vision-test" });
 
-    const { runId } = await runtime.send("test-conversation", { text: "hello", images: [] });
+    const { runId } = await runtime.runAnswer("test-conversation", { text: "hello", images: [] });
     await waitForTerminal(runId);
 
     const events = changes.flatMap((change) => (change.type === "event" ? [change.event] : []));
