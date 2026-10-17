@@ -148,15 +148,20 @@ describe("ambient surface derivation", () => {
     applyTokens(undefined);
   });
 
-  it("drops every ambient surface override when chameleon turns off", () => {
+  it("drops every ambient override when chameleon turns off", () => {
     const bridge = createBridge();
     const { rerender } = render(<Harness ambientFollow bridge={bridge} colorGroups={{}} />);
     act(() => bridge.emit({ ok: true, hex: "#808080", luminance: 0.22 }));
     expect(document.documentElement.style.getPropertyValue("--glass-tint")).toBe("128 128 128");
+    expect(document.documentElement.style.getPropertyValue("--line-base")).toBe("0");
+    expect(document.documentElement.style.getPropertyValue("--shadow-base")).toBe("0");
 
     rerender(<Harness ambientFollow={false} bridge={bridge} colorGroups={{}} />);
     expect(document.documentElement.style.getPropertyValue("--glass-tint")).toBe("");
     expect(document.documentElement.style.getPropertyValue("--paper-tint")).toBe("");
+    // 结构轮廓与投影必须回落样式表默认，否则关掉变色龙后条与面板永久失去边界
+    expect(document.documentElement.style.getPropertyValue("--line-base")).toBe("");
+    expect(document.documentElement.style.getPropertyValue("--shadow-base")).toBe("");
   });
 
   it("ignores a repeated sample of the same background color", () => {

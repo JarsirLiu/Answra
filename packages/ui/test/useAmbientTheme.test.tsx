@@ -41,15 +41,15 @@ describe("ambient chameleon theme", () => {
     expect(channels(dark?.["--paper-tint"]).r).toBeGreaterThan(channels(dark?.["--glass-tint"]).r);
   });
 
-  it("never writes text, icon, outline, state or shadow tokens", () => {
-    // 文字/图标/描边/交互态/投影一律来自 [data-theme] 调色板实色：
-    // 变色龙只换表面固有色，避免出现按背景求解出来的低对比灰字
+  it("never writes text, icon, control outline or state tokens", () => {
+    // 文字/图标/控件描边/交互态/强调色一律来自 [data-theme] 调色板实色：
+    // 变色龙只换表面固有色 + 归零结构轮廓与投影，
+    // 避免出现按背景求解出来的低对比灰字与看不见的输入框边界
     const tokens = deriveAmbientTokens("#f5f2ec");
     for (const key of [
       "--ink-tint",
       "--icon-tint",
       "--line-tint",
-      "--line-base",
       "--edge-tint",
       "--edge-base",
       "--edge-strong-base",
@@ -63,10 +63,20 @@ describe("ambient chameleon theme", () => {
       "--mint-deep-tint",
       "--mint-text-tint",
       "--mint-wash-base",
-      "--shadow-base",
-      "--shadow-ctl-base",
     ]) {
       expect(tokens?.[key]).toBeUndefined();
+    }
+  });
+
+  it("zeroes structural outlines and shadows so the surface never reads as a rectangle", () => {
+    // 远距离/照片里最先暴露悬浮层的是"矩形感"（投影 + 结构轮廓），
+    // 归零它对近距离可读性零影响：文字/图标/控件描边仍是调色板实色
+    for (const hex of SAMPLE_BACKGROUNDS) {
+      const tokens = deriveAmbientTokens(hex);
+      expect(tokens?.["--shadow-base"]).toBe("0");
+      expect(tokens?.["--shadow-ctl-base"]).toBe("0");
+      expect(tokens?.["--line-base"]).toBe("0");
+      expect(tokens?.["--line-soft-base"]).toBe("0");
     }
   });
 

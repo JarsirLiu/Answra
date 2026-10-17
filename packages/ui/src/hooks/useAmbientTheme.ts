@@ -1,11 +1,17 @@
 /**
  * 变色龙主题（ambient variant）：订阅主进程的背景主色推送，
  * 只把**表面固有色**（胶囊/面板/纸面）换成背景主色，让悬浮层贴着桌面背景坐；
- * 文字、图标、描边、交互态、投影一律沿用 `[data-theme]` 调色板的实色。
+ * 文字、图标、控件描边、交互态、强调色一律沿用 `[data-theme]` 调色板的实色。
  *
  * 为什么不调文字对比度：早期版本按「隐蔽强度」把文字色往背景里混，结果是灰雾字——
  * 低对比的 12px 中文在浅底上看起来既糊又不舒服。真正暴露悬浮层的是深色投影和
  * 矩形轮廓，不是文字本身，所以现在表面融底、文字保持调色板实色。
+ *
+ * 因此变色龙的隐蔽手段只有两条，都不牺牲近距离可读性：
+ * 1. 表面固有色换成背景主色（不出现与背景不同的色块）；
+ * 2. 结构轮廓与投影归零（`--line-base`/`--line-soft-base`/`--shadow-*`）：
+ *    面板与胶囊不再有"矩形感"，但它们内部没有大字号内容，近看照样干净；
+ *    控件描边 `--edge-*` 不归零——输入框/开关/滑杆的边界必须看得见。
  * 感知令牌的 fade 公式只存在于 tokens.css；本 hook 只换参数不换公式。
  */
 
@@ -93,13 +99,16 @@ export function resolveAmbientSchemeHysteresis(
 const SCHEME_HYSTERESIS = 0.07;
 
 /**
- * 由背景主色派生 ambient variant 的「原始参数」：只写表面固有色。
+ * 由背景主色派生 ambient variant 的「原始参数」：表面固有色 + 结构轮廓/投影归零。
  *
  * - 胶囊与面板取背景主色原色：悬浮层贴着桌面背景坐，不靠调暗文字来伪装。
  * - 纸面（面板内的纸面容器）比背景稍向调色板纸色靠一档，保证层内层次。
- * - 文字 / 图标 / 描边 / 交互态 / 强调色 / 投影一概不写：它们来自 `[data-theme]`
+ * - 文字 / 图标 / 控件描边 / 交互态 / 强调色一概不写：它们来自 `[data-theme]`
  *   调色板的实色（`resolveAmbientScheme` 按背景亮度选择浅色或深色调色板），
  *   因此任何背景下文字都是干净的实色，不会出现灰雾字。
+ * - 结构轮廓（--line-base/--line-soft-base）与投影（--shadow-base/--shadow-ctl-base）
+ *   归零：这是"远距离/照片不易发现"的主要手段，对近距离可读性零影响。
+ *   控件描边 `--edge-*` 保持调色板值，输入框/开关/滑杆的边界永远可见。
  *
  * 硬约束：不写任何表面 alpha（表面恒不透明，背景零参与混色，颜色不随拖动抖动）。
  */
@@ -116,6 +125,11 @@ export function deriveAmbientTokens(hex: string): AmbientTokens | undefined {
     // 层级感交给描边与投影表达
     "--panel-tint": toChannels(bg),
     "--paper-tint": toChannels(paper),
+    // 结构轮廓与投影归零：悬浮层的"矩形感"是远距离最先被认出的信号
+    "--line-base": "0",
+    "--line-soft-base": "0",
+    "--shadow-base": "0",
+    "--shadow-ctl-base": "0",
   };
 }
 
@@ -128,6 +142,8 @@ export const FALLBACK_TOKEN_KEYS = [
   "--panel-tint",
   "--panel-base",
   "--line-tint",
+  "--line-base",
+  "--line-soft-base",
   "--edge-tint",
   "--edge-base",
   "--edge-strong-base",

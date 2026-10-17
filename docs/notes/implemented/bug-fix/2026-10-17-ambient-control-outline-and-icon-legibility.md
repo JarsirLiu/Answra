@@ -28,16 +28,16 @@
 - 描边拆成两组原始参数，语义分离：
   - `--line-tint` / `--line-base`(0.14) / `--line-soft-base`(0.08)：**结构轮廓**（悬浮条/面板/菜单外形、分隔线、内容气泡）。
   - `--edge-tint` / `--edge-base`(0.16) / `--edge-strong-base`(0.24)：**控件描边**（输入框、开关轨道、滑杆轨道、可点行、回到底部按钮），新增感知令牌 `--edge-line` / `--edge-line-strong`，比结构线重一档。
-- 两组描边都**不由变色龙改写**：变色龙只负责表面固有色（见 [变色龙只接管表面固有色](../feature/2026-10-17-ambient-surface-only-and-light-palette.md)）。边界任何时候都来自调色板实色。
-- 图标改用调色板 `--icon-tint`（比正文略柔但不低于正文档位的可用性），不再按背景派生、不再比正文更弱。
+- 两组描边的分工固定：变色龙只允许把**结构轮廓**的 alpha 基数归零（远距离伪装，见 [变色龙只接管表面固有色](../feature/2026-10-17-ambient-surface-only-and-light-palette.md)）；**控件描边 `--edge-*` 任何时候都不由变色龙改写**，边界只来自调色板实色。
+- 图标改用调色板 `--icon-tint`（浅色 `#6E7E8C` / 深色 `#96AEC2`，比正文再柔一档），不再按背景派生、不再比正文更弱。
 - `COLOR_GROUPS.line` 同时覆盖 `--line-tint` 与 `--edge-tint`，否则用户选「描边」颜色只改一半。
 
 ## 修复
 
 - `packages/ui/src/styles/tokens.css`：新增 `--edge-tint` / `--edge-base` / `--edge-strong-base` 与 `--edge-line` / `--edge-line-strong`；深色主题翻转 `--edge-tint` 为白；注释写明两类描边的分工。
-- `packages/ui/src/hooks/useAmbientTheme.ts`：不再写任何描边/图标/文字令牌（详见 feature Note）。
+- `packages/ui/src/hooks/useAmbientTheme.ts`：不再写图标/文字/控件描边令牌；结构轮廓与投影归零（详见 feature Note）。
 - 控件与输入区样式改引用 `--edge-line`（composer 焦点态用 `--edge-line-strong`）：`shared.css` 的 `.input-surface`、`ConversationComposer.css`、`SettingsPanel.css` 的 `.setting-field input`、`DirectoryTree.css` 的 `.workspace-tree__filter`、`WorkspacePanel.css` 的 `.workspace-panel__change-root`、`SourcesPanel.css` 的 `.source-list li`、`Switch.css` 的 `.switch-track`、`RangeSlider.css` 两条轨道、`MessageStream.module.css` 的 `.jumpButton`。结构轮廓、分隔线与内容卡片仍用 `--glass-line*`。
-- 测试：`packages/ui/test/useAmbientTheme.test.tsx` 断言变色龙不写 `--line-*` / `--edge-*` / `--icon-tint` / `--shadow-*`；`packages/ui/test/theme.test.tsx` 断言 `line` 分组同时展开两个 tint，且变色龙开启时用户选的描边色不被抹掉。
+- 测试：`packages/ui/test/useAmbientTheme.test.tsx` 断言变色龙不写 `--icon-tint` / `--edge-*`，只把 `--line-base` / `--line-soft-base` / `--shadow-*` 归零；`packages/ui/test/theme.test.tsx` 断言 `line` 分组同时展开两个 tint，且变色龙开启时用户选的描边色不被抹掉。
 
 ## 曾考虑的替代方案
 
