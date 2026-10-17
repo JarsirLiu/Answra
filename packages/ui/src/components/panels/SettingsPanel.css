@@ -41,26 +41,14 @@
   font-size: var(--font-sm);
   font-weight: var(--label-weight);
 }
-/* 行内动作（登录/退出登录/保存）：两字文案不需要全高全宽的大按钮，
-   与行内其它控件（开关、滑块、数值）保持同一视觉重量。 */
+/* 行内动作（登录/退出登录/保存）：品牌实底薄荷按用户要求保留，
+   只收尺寸——两字文案用小号按钮（22px 高、8px 横距），比全局 --ctl-h
+   再小一档，与行内开关/滑块/数值的视觉重量对齐。 */
 .setting-action {
-  min-width: 40px;
-  height: 26px;
-  padding: 0 10px;
+  min-width: 32px;
+  height: 22px;
+  padding: 0 8px;
   font-size: var(--font-xs);
-}
-/* 行内主操作改用淡绿底 + 深绿字 + 细描边，替代整块实底薄荷：
-   设置面板里的实底绿块视觉重量压过同行控件，实底强调留给悬浮条等主操作位。 */
-.setting-action.surface-control--primary {
-  color: var(--mint-text);
-  background: var(--mint-wash);
-  border: 1px solid var(--mint-line);
-  box-shadow: none;
-}
-.setting-action.surface-control--primary:hover {
-  color: var(--mint-text);
-  background: var(--mint-wash-strong);
-  filter: none;
 }
 .setting-control {
   display: flex;
