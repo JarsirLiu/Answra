@@ -21,7 +21,7 @@
     var(--mint) var(--slider-fill, 0%),
     var(--hover) var(--slider-fill, 0%)
   );
-  border: 1px solid var(--glass-line);
+  border: 1px solid var(--edge-line);
 }
 .range-slider::-moz-range-track {
   height: 6px;
@@ -31,7 +31,7 @@
     var(--mint) var(--slider-fill, 0%),
     var(--hover) var(--slider-fill, 0%)
   );
-  border: 1px solid var(--glass-line);
+  border: 1px solid var(--edge-line);
 }
 .range-slider::-webkit-slider-thumb {
   -webkit-appearance: none;

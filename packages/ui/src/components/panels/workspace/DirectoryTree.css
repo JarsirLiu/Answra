@@ -22,7 +22,7 @@
   gap: 6px;
   min-height: 26px;
   padding: 0 8px;
-  border: 1px solid var(--glass-line-soft);
+  border: 1px solid var(--edge-line);
   border-radius: 7px;
   color: var(--muted);
   background: transparent;

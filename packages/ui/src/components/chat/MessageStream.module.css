@@ -39,7 +39,7 @@
   align-items: center;
   gap: 5px;
   padding: 6px 12px;
-  border: 1px solid var(--glass-line);
+  border: 1px solid var(--edge-line);
   border-radius: 999px;
   background: var(--glass);
   color: var(--ink);

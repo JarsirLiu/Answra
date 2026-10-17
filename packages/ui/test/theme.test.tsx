@@ -2,14 +2,7 @@ import type { DesktopBridge } from "@answra/shared";
 import { act, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { applyTokens } from "../src/hooks/useAmbientTheme";
-import { AMBIENT_VEIL_STORAGE_KEY, type AmbientVeilLevel } from "../src/model";
-import {
-  type ColorGroupOverrides,
-  colorGroupTokens,
-  loadAmbientVeil,
-  saveAmbientVeil,
-  useAppTheme,
-} from "../src/theme";
+import { type ColorGroupOverrides, colorGroupTokens, useAppTheme } from "../src/theme";
 
 interface AmbientPayload {
   ok: boolean;
@@ -39,25 +32,26 @@ function Harness({
   bridge,
   ambientFollow,
   colorGroups,
-  ambientVeil,
 }: {
   bridge?: DesktopBridge;
   ambientFollow: boolean;
   colorGroups: ColorGroupOverrides;
-  ambientVeil?: AmbientVeilLevel;
 }) {
-  useAppTheme(bridge, {
-    ambientFollow,
-    colorGroups,
-    ...(ambientVeil ? { ambientVeil } : {}),
-  });
+  useAppTheme(bridge, { ambientFollow, colorGroups });
   return null;
 }
 
 describe("color group overrides", () => {
   afterEach(() => {
     const style = document.documentElement.style;
-    for (const key of ["--ink-tint", "--glass-tint", "--danger-tint", "--panel-tint"]) {
+    for (const key of [
+      "--ink-tint",
+      "--glass-tint",
+      "--danger-tint",
+      "--panel-tint",
+      "--line-tint",
+      "--edge-tint",
+    ]) {
       style.removeProperty(key);
     }
     delete document.documentElement.dataset.theme;
@@ -66,6 +60,10 @@ describe("color group overrides", () => {
   it("expands a group hex to all raw tokens of the group", () => {
     const tokens = colorGroupTokens({ danger: "#c0453e" });
     expect(tokens["--danger-tint"]).toBe("192 69 62");
+    // 「描边」组必须同时覆盖结构轮廓与控件描边，否则用户选色只改一半
+    const line = colorGroupTokens({ line: "#c0453e" });
+    expect(line["--line-tint"]).toBe("192 69 62");
+    expect(line["--edge-tint"]).toBe("192 69 62");
   });
 
   it("ignores invalid hex values", () => {
@@ -79,18 +77,39 @@ describe("color group overrides", () => {
       <Harness bridge={bridge} ambientFollow colorGroups={{ surface: "#aabbcc" }} />,
     );
     act(() => bridge.emit({ ok: true, hex: "#101018", luminance: 0.05 }));
-    // 变色龙开启：用户"背景"分组覆盖失效，一切颜色只由 ambient 决定
+    // 变色龙接管表面固有色：胶囊/面板取背景主色原色
     expect(document.documentElement.style.getPropertyValue("--glass-tint")).toBe("16 16 24");
-    expect(document.documentElement.style.getPropertyValue("--hover-base")).toBe("0.1");
+    expect(document.documentElement.style.getPropertyValue("--panel-tint")).toBe("16 16 24");
+    // 文字/描边/交互态不由变色龙改写，仍留给调色板与用户选色
+    expect(document.documentElement.style.getPropertyValue("--ink-tint")).toBe("");
+    expect(document.documentElement.style.getPropertyValue("--line-tint")).toBe("");
+    expect(document.documentElement.style.getPropertyValue("--hover-base")).toBe("");
 
     // 关闭变色龙：ambient 键清除，用户覆盖恢复生效
     rerender(
       <Harness bridge={bridge} ambientFollow={false} colorGroups={{ surface: "#aabbcc" }} />,
     );
-    expect(document.documentElement.style.getPropertyValue("--hover-base")).toBe("");
     expect(document.documentElement.style.getPropertyValue("--glass-tint")).toBe("170 187 204");
     // 背景组覆盖同时作用于面板
     expect(document.documentElement.style.getPropertyValue("--panel-tint")).toBe("170 187 204");
+  });
+
+  it("keeps user picks for non-surface groups while chameleon is on", () => {
+    // 变色龙只接管表面：用户选的字色/描边色不能被它抹掉
+    const bridge = createBridge();
+    render(
+      <Harness
+        bridge={bridge}
+        ambientFollow
+        colorGroups={{ text: "#112233", line: "#445566", surface: "#aabbcc" }}
+      />,
+    );
+    act(() => bridge.emit({ ok: true, hex: "#101018", luminance: 0.05 }));
+    expect(document.documentElement.style.getPropertyValue("--ink-tint")).toBe("17 34 51");
+    expect(document.documentElement.style.getPropertyValue("--line-tint")).toBe("68 85 102");
+    expect(document.documentElement.style.getPropertyValue("--edge-tint")).toBe("68 85 102");
+    // 同键冲突时表面以变色龙采样结果为准
+    expect(document.documentElement.style.getPropertyValue("--glass-tint")).toBe("16 16 24");
   });
 });
 
@@ -124,35 +143,30 @@ describe("color scheme resolution", () => {
   });
 });
 
-describe("chameleon veil preference", () => {
+describe("ambient surface derivation", () => {
   afterEach(() => {
     applyTokens(undefined);
-    localStorage.clear();
   });
 
-  it("defaults to the veiled level and ignores invalid stored values", () => {
-    expect(loadAmbientVeil()).toBe("veiled");
-    localStorage.setItem(AMBIENT_VEIL_STORAGE_KEY, "nonsense");
-    expect(loadAmbientVeil()).toBe("veiled");
-    saveAmbientVeil("blend");
-    expect(loadAmbientVeil()).toBe("blend");
-  });
-
-  it("re-derives tokens when the veil level changes without a new sample", () => {
+  it("drops every ambient surface override when chameleon turns off", () => {
     const bridge = createBridge();
-    const { rerender } = render(
-      <Harness ambientFollow ambientVeil="readable" bridge={bridge} colorGroups={{}} />,
-    );
+    const { rerender } = render(<Harness ambientFollow bridge={bridge} colorGroups={{}} />);
     act(() => bridge.emit({ ok: true, hex: "#808080", luminance: 0.22 }));
-    const readable = document.documentElement.style.getPropertyValue("--ink-tint");
+    expect(document.documentElement.style.getPropertyValue("--glass-tint")).toBe("128 128 128");
 
-    rerender(<Harness ambientFollow ambientVeil="blend" bridge={bridge} colorGroups={{}} />);
-    const blend = document.documentElement.style.getPropertyValue("--ink-tint");
+    rerender(<Harness ambientFollow={false} bridge={bridge} colorGroups={{}} />);
+    expect(document.documentElement.style.getPropertyValue("--glass-tint")).toBe("");
+    expect(document.documentElement.style.getPropertyValue("--paper-tint")).toBe("");
+  });
 
-    expect(blend).not.toBe("");
-    expect(blend).not.toBe(readable);
-    // 表面与描边取背景原色、投影关闭：悬浮层只靠固有色融入背景
-    expect(document.documentElement.style.getPropertyValue("--line-tint")).toBe("128 128 128");
-    expect(document.documentElement.style.getPropertyValue("--shadow-base")).toBe("0");
+  it("ignores a repeated sample of the same background color", () => {
+    // 主进程轮询不停推送：hex 未变时不再重写令牌，避免周期性样式重算
+    const bridge = createBridge();
+    render(<Harness ambientFollow bridge={bridge} colorGroups={{}} />);
+    act(() => bridge.emit({ ok: true, hex: "#808080", luminance: 0.22 }));
+    // 手动改动内联值，用重复采样验证不会被重新写入
+    document.documentElement.style.setProperty("--glass-tint", "1 1 1");
+    act(() => bridge.emit({ ok: true, hex: "#808080", luminance: 0.22 }));
+    expect(document.documentElement.style.getPropertyValue("--glass-tint")).toBe("1 1 1");
   });
 });

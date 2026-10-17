@@ -51,7 +51,7 @@
 }
 
 .workspace-panel__change-root {
-  border: 1px solid var(--glass-line-soft);
+  border: 1px solid var(--edge-line);
   background: transparent;
   color: inherit;
   font-size: 11px;

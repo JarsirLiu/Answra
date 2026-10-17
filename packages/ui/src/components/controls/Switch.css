@@ -19,7 +19,7 @@
   position: relative;
   width: 30px;
   height: 18px;
-  border: 1px solid var(--glass-line);
+  border: 1px solid var(--edge-line);
   border-radius: 9px;
   background: var(--field-strong);
   transition:

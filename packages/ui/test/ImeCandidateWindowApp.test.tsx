@@ -49,12 +49,11 @@ describe("ImeCandidateWindowApp", () => {
 
     const derived = deriveAmbientTokens("#101418");
     expect(document.documentElement.dataset.theme).toBe("dark");
-    expect(document.documentElement.style.getPropertyValue("--ink-tint")).toBe(
-      derived?.["--ink-tint"],
-    );
+    // 候选窗与主窗口同一套令牌：表面随背景固有色，文字/描边留给 dark 调色板
     expect(document.documentElement.style.getPropertyValue("--panel-tint")).toBe(
       derived?.["--panel-tint"],
     );
+    expect(document.documentElement.style.getPropertyValue("--ink-tint")).toBe("");
     expect(document.documentElement.style.getPropertyValue("--fade")).toBe("0.6");
   });
 

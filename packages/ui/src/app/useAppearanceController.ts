@@ -1,13 +1,11 @@
 import type { DesktopBridge } from "@answra/shared";
 import { useEffect, useState } from "react";
 import { useAmbientFollow } from "../hooks/useAmbientFollow";
-import { type AmbientVeilLevel, DEFAULT_AMBIENT_VEIL } from "../model";
+import { AMBIENT_VEIL_STORAGE_KEY } from "../model";
 import {
   type ColorGroupOverrides,
-  loadAmbientVeil,
   loadAppOpacity,
   loadColorGroups,
-  saveAmbientVeil,
   saveAppOpacity,
   useAppTheme,
 } from "../theme";
@@ -15,19 +13,19 @@ import {
 /** Owns renderer appearance preferences and applies one shared token set to every surface. */
 export function useAppearanceController(bridge: DesktopBridge | undefined) {
   const [ambientFollow, setAmbientFollow] = useAmbientFollow();
-  const [ambientVeil, setVeilState] = useState<AmbientVeilLevel>(loadAmbientVeil);
   const [opacity, setOpacityState] = useState(loadAppOpacity);
   const [colorGroups] = useState<ColorGroupOverrides>(loadColorGroups);
 
-  useAppTheme(bridge, {
-    ambientFollow,
-    colorGroups,
-    ambientVeil: ambientVeil ?? DEFAULT_AMBIENT_VEIL,
-  });
+  useAppTheme(bridge, { ambientFollow, colorGroups });
 
   useEffect(() => {
     bridge?.setAmbientFollow?.(ambientFollow);
   }, [bridge, ambientFollow]);
+
+  // 已移除的「隐蔽强度」档位：清掉旧版残留值，避免以后同名键读回过期偏好。
+  useEffect(() => {
+    localStorage.removeItem(AMBIENT_VEIL_STORAGE_KEY);
+  }, []);
 
   // All surfaces read the same root-level perception tokens, including floating layers.
   useEffect(() => {
@@ -42,16 +40,9 @@ export function useAppearanceController(bridge: DesktopBridge | undefined) {
     saveAppOpacity(value);
   }
 
-  function setAmbientVeil(level: AmbientVeilLevel) {
-    setVeilState(level);
-    saveAmbientVeil(level);
-  }
-
   return {
     ambientFollow,
     setAmbientFollow,
-    ambientVeil,
-    setAmbientVeil,
     opacity,
     setOpacity,
     colorGroups,

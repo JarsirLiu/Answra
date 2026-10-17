@@ -1,12 +1,6 @@
 import type { ConversationModelConfig, DesktopBridge } from "@answra/shared";
 import { Eye, EyeOff } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import {
-  AMBIENT_VEIL_HINTS,
-  AMBIENT_VEIL_LABELS,
-  AMBIENT_VEIL_LEVELS,
-  type AmbientVeilLevel,
-} from "../../model";
 import { EmbeddedImeInput } from "../controls/EmbeddedImeInput";
 import { RangeSlider } from "../controls/RangeSlider";
 import { SurfaceButton } from "../controls/SurfaceButton";
@@ -16,17 +10,14 @@ import "./SettingsPanel.css";
 
 interface SettingsPanelProps {
   bridge?: DesktopBridge;
-  /** 是否跟随屏幕背景自动变色（变色龙主题）；开启时深浅方案随背景亮度自动决定。 */
+  /** 是否跟随屏幕背景自动变色（变色龙主题）；开启时表面随背景、深浅方案随背景亮度自动决定。 */
   ambientFollow: boolean;
-  /** 变色龙隐蔽强度档位；仅变色龙开启时可用。 */
-  ambientVeil: AmbientVeilLevel;
   /** 前景透明度（0.5~1）；文字/图标/描边随之变化，表面恒不透明。 */
   opacity: number;
   stealth: boolean;
   /** 系统是否可靠支持隐身（内容保护）；不支持时开关禁用。 */
   stealthSupported: boolean;
   onAmbientFollowChange: (value: boolean) => void;
-  onAmbientVeilChange: (level: AmbientVeilLevel) => void;
   onOpacityChange: (value: number) => void;
   onStealthChange: (value: boolean) => void;
   onClose: () => void;
@@ -43,12 +34,10 @@ const OPACITY_MAX = 1;
 export function SettingsPanel({
   bridge,
   ambientFollow,
-  ambientVeil,
   opacity,
   stealth,
   stealthSupported,
   onAmbientFollowChange,
-  onAmbientVeilChange,
   onOpacityChange,
   onStealthChange,
   onClose,
@@ -126,25 +115,6 @@ export function SettingsPanel({
               checked={ambientFollow}
               onChange={onAmbientFollowChange}
             />
-          </div>
-          <div className="setting-row">
-            <span>
-              <strong>隐蔽强度</strong>
-            </span>
-            <span className="setting-control setting-veil">
-              {AMBIENT_VEIL_LEVELS.map((level) => (
-                <SurfaceButton
-                  aria-pressed={ambientVeil === level}
-                  className="setting-veil-option"
-                  disabled={!ambientFollow}
-                  key={level}
-                  onClick={() => onAmbientVeilChange(level)}
-                  title={AMBIENT_VEIL_HINTS[level]}
-                >
-                  {AMBIENT_VEIL_LABELS[level]}
-                </SurfaceButton>
-              ))}
-            </span>
           </div>
           <div className="setting-row">
             <span>

@@ -11,14 +11,16 @@
 }
 
 /* 输入区不做特殊背景色，仅保留边框与焦点态（覆盖 .input-surface 的背景）。
-   框线比全局 --glass-line 略重一档（alpha 基数 +0.04），沿令牌公式双主题自适应。 */
+   框线比全局 --glass-line 略重一档（走 --edge-line），沿令牌公式双主题自适应；
+   变色龙下结构轮廓会融进背景，输入框边界必须留可见下限，所以用的是
+   --edge-* 控件描边而不是 --line-* 结构轮廓。 */
 .conversation-composer.input-surface {
   background: transparent;
   box-shadow: none;
-  border-color: rgb(var(--line-tint) / calc((var(--line-base) + 0.04) * var(--fade)));
+  border-color: var(--edge-line);
 }
 .conversation-composer.input-surface:focus-within {
-  border-color: rgb(var(--line-tint) / calc((var(--line-base) + 0.1) * var(--fade)));
+  border-color: var(--edge-line-strong);
 }
 
 .conversation-composer-editor {

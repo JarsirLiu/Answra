@@ -9,7 +9,6 @@ import { ImeCandidatePopup } from "../components/panels/ImeCandidatePopup";
 import {
   type ColorGroupOverrides,
   loadAmbientFollow,
-  loadAmbientVeil,
   loadAppOpacity,
   loadColorGroups,
   useAppTheme,
@@ -42,10 +41,8 @@ export function ImeCandidateWindowApp({ bridge }: ImeCandidateWindowAppProps) {
   // 候选窗是独立窗口，没有外观控制器：读同一份偏好 + 主进程广播的采样结果，
   // 复用 useAppTheme 落到与主窗口相同的 data-theme 与感知令牌。
   const [ambientFollow] = useState(loadAmbientFollow);
-  // 隐蔽强度同样属于全局外观偏好：候选窗必须与主窗口用同一档位，否则同一背景两套对比度。
-  const [ambientVeil] = useState(loadAmbientVeil);
   const [colorGroups] = useState<ColorGroupOverrides>(loadColorGroups);
-  useAppTheme(platform, { ambientFollow, colorGroups, ambientVeil });
+  useAppTheme(platform, { ambientFollow, colorGroups });
 
   useEffect(() => {
     document.documentElement.style.setProperty("--fade", String(loadAppOpacity()));

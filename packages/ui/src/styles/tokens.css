@@ -4,12 +4,17 @@
 
    颜色分五层管理：
    层0  Electron 窗口透明（desktop 侧负责）
-   层1  variant 主题：默认苹果玻璃 / ambient 跟随背景。
+   层1  variant 主题：默认浅色（系统灰阶）/ dark（[data-theme]）。
         variant 只允许覆盖下方「原始参数」（-tint 通道 / -base alpha），
         禁止直接覆盖带 fade 公式的感知令牌。
-   层1.5  用户颜色分组覆盖（theme.ts）：按「文字/图标/背景/强调/描边/
-        交互态/警示」分组选色，优先级高于 ambient；与 ambient 同为
-        原始参数层，由 useAppTheme 合成单一写入方写 :root。
+   层1.5  变色龙与用户选色（theme.ts）：
+        - 变色龙（ambient）只接管「表面固有色」（胶囊/面板/纸面 = 背景主色），
+          并按背景亮度在浅色/深色调色板之间切换 data-theme；
+          文字、图标、描边、交互态、强调色、投影一律来自调色板实色，
+          不按对比度求解、不掺背景——避免出现低对比灰字。
+        - 用户颜色分组覆盖按「文字/图标/背景/强调/描边/交互态/警示」分组选色，
+          写的是同一层原始参数；同键冲突时变色龙的表面取值优先。
+        三者由 useAppTheme 合成单一写入方写 :root。
    层2  fade 合成：--fade 是唯一透明度自由度（用户可调 0.5~1，
         FloatingBarApp 写入 :root）。所有感知令牌是它的显式函数，
         因此文字/玻璃/分隔线同步变淡，相对对比恒定；
@@ -47,23 +52,25 @@
      颜色按组管理（组内色相统一，theme.ts 据此支持用户逐组选色） */
 
   /* 【文字】全应用唯一文字色相：层级靠字号/字重，状态靠元素透明度；
-     改文字颜色只动 --ink-tint 一个参数 */
-  --ink-tint: 35 40 43; /* #23282b */
+     改文字颜色只动 --ink-tint 一个参数。
+     实色近黑（#1D1D1F）：不透明、不掺背景，任何底色上都是干净的实字，
+     不出现"低对比灰字"的糊感 */
+  --ink-tint: 29 29 31; /* #1D1D1F */
 
-  /* 【图标】比正文略柔，保证玻璃上可辨 */
-  --icon-tint: 61 70 73;
+  /* 【图标】比正文略柔（#46464A），保证任何表面上都看得清、又不比正文抢眼 */
+  --icon-tint: 70 70 74;
 
   /* 【背景与表面】glass=胶囊条 panel=内容面板/菜单 paper=纸面
      全部表面完全不透明（base=1 且不乘 fade）：背景零参与混色，
      拖动/滚动/切换窗口都不会改变应用颜色——这是硬约束，任何表面
      不得引入半透明。透明度滑杆只作用于前景（文字/图标/描边/控件）。
-     三者同一固有色 #F7F9FB：近纸白，白底页面上靠描边与投影区分边界，
-    不再以色块存在感压过页面 */
-  --glass-tint: 247 249 251;
+     浅色调色板取系统灰阶：面板 #F2F2F7 与纸面 #FBFBFD 之间只差一档，
+     边界靠描边与投影区分，而不是靠色块存在感 */
+  --glass-tint: 242 242 247; /* #F2F2F7 */
   --glass-base: 1;
-  --panel-tint: 247 249 251;
+  --panel-tint: 242 242 247; /* #F2F2F7 */
   --panel-base: 1;
-  --paper-tint: 255 255 255;
+  --paper-tint: 251 251 253; /* #FBFBFD */
 
   /* 【强调】品牌薄荷绿系 */
   --mint-tint: 47 161 113; /* #2fa171 */
@@ -71,13 +78,21 @@
   --mint-text-tint: 31 122 83; /* #1f7a53 */
   --mint-wash-base: 0.2;
 
-  /* 【描边与交互态】 */
-  --line-tint: 16 28 36;
-  --line-base: 0.08;
-  --line-soft-base: 0.06;
-  --hover-tint: 16 28 36;
+  /* 【描边与交互态】
+     描边分两类，原始参数也分开：
+     - --line-* 结构轮廓：悬浮条/面板/菜单的外形与分隔线。
+     - --edge-* 控件描边：输入框/开关/滑杆等"要点、要输入"的边界，比结构线重一档。
+     两者都不由变色龙改写：表面可以随背景，边界必须看得见。
+     浅色取系统灰 #3C3C43（rgba 14% / 8%），与系统控件描边一致 */
+  --line-tint: 60 60 67;
+  --line-base: 0.14;
+  --line-soft-base: 0.08;
+  --edge-tint: 60 60 67;
+  --edge-base: 0.16;
+  --edge-strong-base: 0.24;
+  --hover-tint: 60 60 67;
   --hover-base: 0.2;
-  --field-tint: 0 0 0;
+  --field-tint: 60 60 67;
   --field-base: 0.05;
   --focus-tint: 0 0 0;
   --focus-base: 0.35;
@@ -88,8 +103,9 @@
   /* 【遮罩】图片缩略图上的浮层按钮底 */
   --scrim-base: 0.55;
 
-  /* 【投影】alpha 基数：投影是远距离最先暴露悬浮层的信号，
-     变色龙（ambient）把它打到 0，只留固有色与背景融为一体 */
+  /* 【投影】alpha 基数：轻投影只用来把悬浮层从页面上"抬起来"一格，
+     变色龙不改写它——表面固有色已经随了背景，投影再抹掉会让条与面板
+     完全糊在一起、失去边界感 */
   --shadow-base: 0.14;
   --shadow-ctl-base: 0.25;
 
@@ -116,6 +132,8 @@
   --panel: rgb(var(--panel-tint) / var(--panel-base));
   --glass-line: rgb(var(--line-tint) / calc(var(--line-base) * var(--fade)));
   --glass-line-soft: rgb(var(--line-tint) / calc(var(--line-soft-base) * var(--fade)));
+  --edge-line: rgb(var(--edge-tint) / calc(var(--edge-base) * var(--fade)));
+  --edge-line-strong: rgb(var(--edge-tint) / calc(var(--edge-strong-base) * var(--fade)));
   --hover: rgb(var(--hover-tint) / max(calc(var(--hover-base) * var(--fade)), 0.08));
   --field: rgb(var(--field-tint) / calc(var(--field-base) * var(--fade)));
   --field-strong: rgb(var(--field-tint) / calc((var(--field-base) + 0.07) * var(--fade)));
@@ -157,6 +175,7 @@
 
   /* 【描边与交互态】通道翻转为白，alpha 基数沿用浅色 */
   --line-tint: 255 255 255;
+  --edge-tint: 255 255 255;
   --hover-tint: 255 255 255;
   --field-tint: 255 255 255;
   --focus-tint: 255 255 255;

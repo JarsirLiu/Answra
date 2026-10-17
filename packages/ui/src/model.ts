@@ -78,34 +78,8 @@ export const NOTE_MIGRATED_FLAG = "answra-note-migrated";
 /** 变色龙主题开关的本地持久化键；缺省视为关闭。 */
 export const AMBIENT_FOLLOW_STORAGE_KEY = "answra-ambient-follow";
 
-/** 变色龙「隐蔽强度」的本地持久化键；缺省为「隐蔽」。 */
+/** 旧版变色龙「隐蔽强度」档位的本地持久化键；该功能已移除，仅用于清理残留值。 */
 export const AMBIENT_VEIL_STORAGE_KEY = "answra-ambient-veil";
-
-/**
- * 隐蔽强度档位（由贴得最紧到最清晰）。
- * 越靠前的档位前景对比度越低：静置的悬浮层更接近背景，远距离与拍照越难察觉，
- * 代价是近距离可读性下降；`readable` 回到 WCAG AA，作为无障碍兜底。
- */
-export const AMBIENT_VEIL_LEVELS = ["blend", "veiled", "balanced", "readable"] as const;
-
-export type AmbientVeilLevel = (typeof AMBIENT_VEIL_LEVELS)[number];
-
-/** 缺省档位：静置时基本融入背景，一臂距离内仍可读。 */
-export const DEFAULT_AMBIENT_VEIL: AmbientVeilLevel = "veiled";
-
-export const AMBIENT_VEIL_LABELS: Record<AmbientVeilLevel, string> = {
-  blend: "贴合",
-  veiled: "隐蔽",
-  balanced: "均衡",
-  readable: "清晰",
-};
-
-export const AMBIENT_VEIL_HINTS: Record<AmbientVeilLevel, string> = {
-  blend: "几乎完全贴背景：远距离与拍照最难察觉，近距离也最难读",
-  veiled: "静置时融入背景，一臂距离内可读（默认）",
-  balanced: "可读性与隐蔽性折中",
-  readable: "满足 WCAG AA 对比度，最清晰也最显眼",
-};
 
 /** 整体透明度（0.5~1）的本地持久化键；缺省为 1。 */
 export const APP_OPACITY_STORAGE_KEY = "answra-opacity";
