@@ -82,5 +82,6 @@ input:focus-visible {
 .overlay-root[data-stealth="true"] *,
 .reply-window-root[data-stealth="true"],
 .reply-window-root[data-stealth="true"] * {
+  /* biome-ignore lint/complexity/noImportantStyles: Stealth mode must override component cursor rules at every nesting level. */
   cursor: default !important;
 }
