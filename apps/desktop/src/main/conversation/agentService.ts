@@ -83,10 +83,13 @@ export class AgentService {
     return this.request("read-events", { conversationId, afterRevision });
   }
 
-  async send(conversationId: string, request: ConversationSendRequest): Promise<{ runId: string }> {
+  async send(
+    command: import("@answra/shared").ConversationSendCommand,
+  ): Promise<{ runId: string }> {
     if (!this.config) throw new Error("请先在设置中配置模型服务");
-    validateSendRequest(request);
-    return (await this.request("send", { conversationId, request })) as { runId: string };
+    validateSendRequest(command.request);
+    const type = command.operation === "chat.send" ? "chat-send" : "answer-run";
+    return (await this.request(type, { ...command })) as { runId: string };
   }
 
   cancel(runId: string): void {

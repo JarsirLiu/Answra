@@ -8,7 +8,7 @@ import {
   type ConversationChange,
   ConversationChannels,
   type ConversationModelConfig,
-  type ConversationSendRequest,
+  type ConversationSendCommand,
   type DesktopBridge,
   type ImeCandidateAction,
   ImeCandidateChannels,
@@ -141,8 +141,8 @@ const bridge: DesktopBridge = {
     ipcRenderer.invoke(ConversationChannels.Create, { conversationId }),
   readConversationEvents: (conversationId: string, afterRevision: number) =>
     ipcRenderer.invoke(ConversationChannels.ReadEvents, { conversationId, afterRevision }),
-  sendConversationMessage: (conversationId: string, request: ConversationSendRequest) =>
-    ipcRenderer.invoke(ConversationChannels.Send, { conversationId, request }),
+  sendConversationMessage: (command: ConversationSendCommand) =>
+    ipcRenderer.invoke(ConversationChannels.Send, command),
   cancelConversationRun: (runId: string) =>
     ipcRenderer.send(ConversationChannels.Cancel, { runId }),
   onConversationChange: (listener: (change: ConversationChange) => void) => {

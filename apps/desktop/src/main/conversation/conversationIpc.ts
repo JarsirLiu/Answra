@@ -28,7 +28,11 @@ export function registerConversationIpc(service: AgentService): void {
   });
   ipcMain.handle(ConversationChannels.Send, (event, payload: ConversationSendCommand) => {
     if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用方");
-    return service.send(payload.conversationId, payload.request);
+    if (payload?.operation === "chat.send" && payload.profileId !== "general-chat")
+      throw new Error("对话能力配置无效");
+    if (payload?.operation !== "chat.send" && payload?.operation !== "answer.run")
+      throw new Error("AI 操作类型无效");
+    return service.send(payload);
   });
   ipcMain.handle(ConversationChannels.GetSnapshot, (event, payload: { conversationId: string }) => {
     if (!isValidConversationId(payload?.conversationId)) throw new Error("会话请求无效");
