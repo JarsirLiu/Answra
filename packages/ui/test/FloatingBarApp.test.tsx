@@ -137,6 +137,30 @@ describe("three-segment floating navigation", () => {
     }
   });
 
+  it("uses a conversation icon for the chat entry and a voice icon for the interview mode", () => {
+    render(<FloatingBarApp />);
+
+    const chatEntry = screen.getByRole("button", { name: "AI 对话" });
+    expect(chatEntry.querySelector("svg")?.classList.contains("lucide-messages-square")).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "笔试" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "面试" }));
+    const modeTrigger = screen.getByRole("button", { name: "面试" });
+    expect(modeTrigger.querySelector("svg")?.classList.contains("lucide-audio-lines")).toBe(true);
+  });
+
+  it("renders every mode action as a plain icon button without a stuck tint", () => {
+    render(<FloatingBarApp />);
+
+    const classes = [...document.querySelectorAll(".feature-action")].map(
+      (action) => action.className,
+    );
+    expect(classes).toHaveLength(2);
+    expect(new Set(classes).size).toBe(1);
+    expect(classes.every((name) => name.includes("surface-control--default"))).toBe(true);
+    expect(classes.some((name) => name.includes("primary"))).toBe(false);
+  });
+
   it("shows the mode menu as a dismissible layer without replacing the open panel", () => {
     render(<FloatingBarApp />);
     fireEvent.click(screen.getByRole("button", { name: "打开笔记本" }));

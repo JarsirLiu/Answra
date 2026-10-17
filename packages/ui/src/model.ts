@@ -1,8 +1,8 @@
 import type { OverlayMode } from "@answra/shared";
 import type { LucideIcon } from "lucide-react";
 import {
+  AudioLines,
   ClipboardList,
-  MessageSquareText,
   MessagesSquare,
   NotebookPen,
   ScanLine,
@@ -38,13 +38,13 @@ export const MODES: readonly ModeDefinition[] = [
     icon: ClipboardList,
     actions: [
       { id: "screenshot", label: "截图提问", icon: ScanLine },
-      { id: "chat", label: "AI 对话", icon: MessageSquareText },
+      { id: "chat", label: "AI 对话", icon: MessagesSquare },
     ],
   },
   {
     id: "interview",
     label: "面试",
-    icon: MessagesSquare,
+    icon: AudioLines,
     actions: [
       {
         id: "suggest",
@@ -53,7 +53,7 @@ export const MODES: readonly ModeDefinition[] = [
         disabled: true,
         hint: "后续将区分系统声音（对方）与麦克风（用户），实时生成回答建议",
       },
-      { id: "chat", label: "AI 对话", icon: MessageSquareText },
+      { id: "chat", label: "AI 对话", icon: MessagesSquare },
     ],
   },
   {
@@ -62,7 +62,7 @@ export const MODES: readonly ModeDefinition[] = [
     icon: UsersRound,
     actions: [
       { id: "record", label: "会议记录", icon: NotebookPen },
-      { id: "chat", label: "AI 对话", icon: MessageSquareText },
+      { id: "chat", label: "AI 对话", icon: MessagesSquare },
     ],
   },
 ];

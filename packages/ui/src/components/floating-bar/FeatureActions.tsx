@@ -21,14 +21,13 @@ export function FeatureActions({ actions, panel, onAction }: FeatureActionsProps
           <SurfaceButton
             aria-label={action.label}
             aria-pressed={isChatEntry ? panel === "chat" : undefined}
-            className={`feature-action${action.id === "screenshot" ? " feature-action--primary" : ""}${
-              soon ? " feature-action--soon" : ""
-            }${isChatEntry && panel === "chat" ? " is-active" : ""}`}
+            className={`feature-action${soon ? " feature-action--soon" : ""}${
+              isChatEntry && panel === "chat" ? " is-active" : ""
+            }`}
             disabled={soon}
             key={action.id}
             onClick={() => onAction(action)}
             type="button"
-            variant={action.id === "screenshot" ? "primary" : "default"}
           >
             <action.icon aria-hidden="true" size={ICON} strokeWidth={ICON_STROKE} />
           </SurfaceButton>

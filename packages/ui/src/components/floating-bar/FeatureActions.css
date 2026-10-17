@@ -29,18 +29,6 @@
 .feature-action:active {
   transform: translateY(1px);
 }
-.feature-action--primary {
-  min-width: 52px;
-  gap: 4px;
-  /* 主操作只靠底色与描边区分，图标颜色与其余图标保持统一 */
-  color: var(--icon);
-  background: var(--mint-wash);
-  box-shadow: inset 0 0 0 1px var(--mint-line);
-}
-.feature-action--primary:hover {
-  color: var(--icon);
-  background: var(--mint-wash-strong);
-}
 .feature-action--soon {
   /* 禁用占位：图标颜色不弱化，靠底色表达禁用 */
   color: var(--icon);
