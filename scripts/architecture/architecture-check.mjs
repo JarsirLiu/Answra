@@ -9,6 +9,8 @@
  *    apps/desktop 的 src/main、src/preload 与 apps/agent（平台无关的
  *    Agent 运行时，在 utility process 里跑）中使用；
  *    渲染层（packages/ui、desktop renderer）必须通过 DesktopBridge。
+ * 4. forbidLocalListeners —— src 里不得 createServer/listen（测试除外）：
+ *    进程间通信只用 IPC / 管道 / utilityProcess。
  *
  * 用法：node scripts/architecture/architecture-check.mjs check
  */
@@ -72,6 +74,15 @@ function checkImports(pkg) {
       if (!code.includes("prepareWindowToShow")) {
         errors.push(`${rel}: BrowserWindow 显示前必须调用 prepareWindowToShow`);
       }
+    }
+
+    // 4. 禁止在 src 里开启本地监听：进程间通信走 IPC / 管道 / utilityProcess，
+    //    自建 server 会引入端口占用、被页面或其它进程探测、防火墙与签名负担，
+    //    与"隐身"定位冲突。引入前先在 Note 里给出触发条件（见 docs/notes）。
+    if (/\bcreateServer\s*\(|\.listen\s*\(/.test(code)) {
+      errors.push(
+        `${rel}: 禁止在 src 中开启本地监听（createServer/listen）；如需本地服务先补架构 Note`,
+      );
     }
 
     for (const match of code.matchAll(/(?:from|import)\s+["']([^"']+)["']/g)) {

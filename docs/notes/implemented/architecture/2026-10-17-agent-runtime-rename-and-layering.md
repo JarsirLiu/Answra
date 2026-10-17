@@ -56,6 +56,7 @@
 - `@answra/app`、`apps/app`、`AppService`、`AppCommand`/`AppFrame` 不再存在；新代码与文档不得再使用这些名字。历史 Note 里带日期的旧路径保留，不回改。
 - desktop 只从 `@answra/agent` 的 `.` 入口导入；`apps/agent` 不新增构建产物，也不允许被 desktop 之外（尤其 renderer / ui）导入。
 - 该包不得引入 Electron / React 依赖；平台能力只能通过端口注入，否则架构守护与"能跑在任何 Node 宿主"的前提一起失效。
+- 升格条件：出现**第二个消费者**（CLI、sidecar、云端 worker、另一个 app，或 `packages/ui` 需要在进程内复用）时，把 `apps/agent` 迁移为 `packages/agent` 并同步架构守护、本文件与 README；在那之前留在 `apps/`。
 - 新增领域目录时同步更新 `AGENTS.md` 的运行时表格与 README 结构表；`src/worker` 协议变化必须同时更新 desktop worker 与 `AgentService`。
 
 ## 验证
