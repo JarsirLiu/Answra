@@ -1,6 +1,6 @@
-import { BookOpen, FolderOpen, Settings, X } from "lucide-react";
+import { FolderOpen, Settings, X } from "lucide-react";
 import type { Panel } from "../../model";
-import { ICON, ICON_SM, ICON_STROKE } from "../../tokens";
+import { ICON, ICON_STROKE } from "../../tokens";
 import { SurfaceButton } from "../controls/SurfaceButton";
 import { ChevronDownGlyph } from "../icons";
 import "./WorkspaceControls.css";
@@ -11,7 +11,11 @@ interface WorkspaceControlsProps {
   onClose: () => void;
 }
 
-/** 第三段：跨模式通用的工作区入口与应用控制。 */
+/**
+ * 第三段：跨模式通用的工作区入口与应用控制。
+ * 笔记本入口只保留一个：笔记与资料共用同一块工作区面板，
+ * 不再为同一个目标提供两个并列入口。
+ */
 export function WorkspaceControls({ panel, onTogglePanel, onClose }: WorkspaceControlsProps) {
   return (
     <>
@@ -29,20 +33,12 @@ export function WorkspaceControls({ panel, onTogglePanel, onClose }: WorkspaceCo
         <ChevronDownGlyph className="destination-chevron" />
       </SurfaceButton>
       <SurfaceButton
-        aria-label="打开参考资料"
-        className={`utility-action utility-action--icon${panel === "sources" ? " is-active" : ""}`}
-        onClick={() => onTogglePanel("sources")}
-        type="button"
-      >
-        <BookOpen aria-hidden="true" size={ICON_SM} strokeWidth={ICON_STROKE} />
-      </SurfaceButton>
-      <SurfaceButton
         aria-label="打开设置"
-        className={`utility-action utility-action--icon${panel === "settings" ? " is-active" : ""}`}
+        className={`utility-action${panel === "settings" ? " is-active" : ""}`}
         onClick={() => onTogglePanel("settings")}
         type="button"
       >
-        <Settings aria-hidden="true" size={ICON_SM} strokeWidth={ICON_STROKE} />
+        <Settings aria-hidden="true" size={ICON} strokeWidth={ICON_STROKE} />
       </SurfaceButton>
       <SurfaceButton
         aria-label="关闭应用"
@@ -50,7 +46,7 @@ export function WorkspaceControls({ panel, onTogglePanel, onClose }: WorkspaceCo
         onClick={onClose}
         type="button"
       >
-        <X aria-hidden="true" size={ICON_SM} strokeWidth={ICON_STROKE} />
+        <X aria-hidden="true" size={ICON} strokeWidth={ICON_STROKE} />
       </SurfaceButton>
     </>
   );

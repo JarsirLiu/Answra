@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import type { UIMessageChunk } from "ai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FloatingBarApp } from "../src/app/FloatingBarApp";
+import { ICON } from "../src/tokens";
 
 let emitConversationEvent: ((event: { runId: string; chunk: UIMessageChunk }) => void) | undefined;
 const conversationId = "active-exam-conversation";
@@ -115,6 +116,25 @@ describe("three-segment floating navigation", () => {
     fireEvent.click(screen.getByRole("menuitemradio", { name: "会议" }));
     expect(screen.getByRole("button", { name: "会议记录" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "打开设置" })).toBeInTheDocument();
+  });
+
+  it("keeps a single notebook entry and one icon size across the nav bar", () => {
+    render(<FloatingBarApp />);
+
+    expect(screen.getAllByRole("button", { name: "打开笔记本" })).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "打开参考资料" })).not.toBeInTheDocument();
+
+    const bar = document.querySelector(".floating-bar") as HTMLElement;
+    const glyphs = [...bar.querySelectorAll("button svg")].filter(
+      (glyph) =>
+        !glyph.classList.contains("mode-picker-chevron") &&
+        !glyph.classList.contains("destination-chevron"),
+    );
+    expect(glyphs).toHaveLength(6);
+    for (const glyph of glyphs) {
+      expect(glyph.getAttribute("width")).toBe(String(ICON));
+      expect(glyph.getAttribute("height")).toBe(String(ICON));
+    }
   });
 
   it("shows the mode menu as a dismissible layer without replacing the open panel", () => {

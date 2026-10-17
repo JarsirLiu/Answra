@@ -21,7 +21,7 @@ interface WorkspacePanelProps {
 /**
  * 工作区面板（笔记本 + 资料合并表面）：
  * 左目录树、右内容区（md 编辑/预览、docx/pdf 预览、图片查看）。
- * notes/sources 两个入口共用本面板。
+ * 由悬浮条唯一的「笔记本」入口打开（笔记与资料共用本面板）。
  */
 export function WorkspacePanel({ bridge, onClose, stealth = false }: WorkspacePanelProps) {
   const workspace = useWorkspace(bridge, stealth);

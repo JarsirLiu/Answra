@@ -189,7 +189,7 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
         />
       )}
 
-      {(panel === "notes" || panel === "sources") && (
+      {panel === "notes" && (
         <WorkspacePanel
           bridge={platform}
           onClose={() => {

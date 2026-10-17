@@ -6,7 +6,7 @@ import "./PanelShell.css";
 interface PanelShellProps {
   title: string;
   /** 面板变体，对应 PanelShell.css 的 content-panel--<variant> 尺寸分支。 */
-  variant: "chat" | "notes" | "sources" | "settings";
+  variant: "chat" | "notes" | "settings";
   /** 头部右侧的上下文提示（如“截图已添加”）。 */
   context?: string;
   /** 附加到 section 的自定义类名（如回复条 layout 约束）。 */
