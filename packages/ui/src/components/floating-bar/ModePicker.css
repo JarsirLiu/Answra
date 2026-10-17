@@ -41,6 +41,10 @@
   background: var(--panel);
   box-shadow: var(--shadow-pop);
 }
+.floating-bar-stack.is-menu-in-flow .mode-menu {
+  position: static;
+  margin-top: 6px;
+}
 .mode-menu-item {
   height: var(--menu-item-h);
   display: flex;

@@ -23,9 +23,8 @@ interface FloatingBarProps {
 
 /**
  * 悬浮导航条：模式 | 模式功能 | 工作区 三段结构。
- * 模式菜单绝对定位锚定在胶囊下方：面板打开时它直接盖在面板上（不挤压面板，
- * 面板也不会因此移位——窗口高度由面板决定，菜单永远比面板矮）；
- * 只有面板关闭、窗口高度只剩胶囊时才为菜单预留高度，否则菜单会被窗口裁掉。
+ * 模式菜单锚定在胶囊下方：面板打开时绝对定位覆盖面板；面板关闭时菜单进入正常布局流，
+ * 让只有浮条的窗口按实际菜单高度扩展，避免菜单被窗口裁切。
  */
 export function FloatingBar({
   modes,
@@ -47,10 +46,11 @@ export function FloatingBar({
   const activeMode = modes.find((item) => item.id === mode) ?? modes[0];
   if (!activeMode) return null;
 
-  const reserveMenuSpace = modeMenuOpen && panel === "closed";
-
   return (
-    <div className={`floating-bar-stack${reserveMenuSpace ? " is-menu-open" : ""}`} ref={stackRef}>
+    <div
+      className={`floating-bar-stack${modeMenuOpen && panel === "closed" ? " is-menu-in-flow" : ""}`}
+      ref={stackRef}
+    >
       <section aria-label="悬浮导航" className="floating-bar floating-surface">
         <div className="nav-segment mode-segment">
           <ModePicker mode={mode} modes={modes} onToggle={onToggleModeMenu} open={modeMenuOpen} />
