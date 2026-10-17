@@ -67,6 +67,20 @@ describe("theme CSS integrity", () => {
     expect(unknown).toEqual([]);
   });
 
+  it("keeps the switch thumb off the ambient surface tokens", () => {
+    // 变色龙会把 --paper-tint 写成本地背景色、把 --shadow-ctl-* 归零：
+    // 关闭态拇指若用 --paper，就成了浅色轨道里的一颗白点，整颗开关只剩轨道轮廓。
+    // 拇指属于控件而非表面，必须取控件实色（--icon），并在开启态才切回白拇指。
+    const css = stripComments(
+      readFileSync(join(sourceRoot, "components", "controls", "Switch.css"), "utf8"),
+    );
+    const base = css.match(/\.switch-thumb\s*\{([^}]*)\}/)?.[1] ?? "";
+    const on = css.match(/\.switch\.is-on\s+\.switch-thumb\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(base).toContain("var(--icon)");
+    expect(base).not.toContain("var(--paper)");
+    expect(on).toContain("var(--paper)");
+  });
+
   it("keeps the stealth cursor override strong enough to beat component cursor rules", () => {
     // 隐身模式下指针必须恒为默认箭头，否则指针形状会暴露正在输入/选择。
     // 组件里的 cursor 规则会追平覆盖规则的 (0,2,0)（如 `.trHeader.isClickable`），

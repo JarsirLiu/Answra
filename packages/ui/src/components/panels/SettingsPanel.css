@@ -41,15 +41,26 @@
   font-size: var(--font-sm);
   font-weight: var(--label-weight);
 }
-/* 账户行：标题 + 一行状态说明（会员档/已解锁能力数），说明用次级墨色。 */
-.setting-label {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.setting-hint {
-  color: var(--ink-soft);
+/* 行内动作（登录/退出登录/保存）：两字文案不需要全高全宽的大按钮，
+   与行内其它控件（开关、滑块、数值）保持同一视觉重量。 */
+.setting-action {
+  min-width: 40px;
+  height: 26px;
+  padding: 0 10px;
   font-size: var(--font-xs);
+}
+/* 行内主操作改用淡绿底 + 深绿字 + 细描边，替代整块实底薄荷：
+   设置面板里的实底绿块视觉重量压过同行控件，实底强调留给悬浮条等主操作位。 */
+.setting-action.surface-control--primary {
+  color: var(--mint-text);
+  background: var(--mint-wash);
+  border: 1px solid var(--mint-line);
+  box-shadow: none;
+}
+.setting-action.surface-control--primary:hover {
+  color: var(--mint-text);
+  background: var(--mint-wash-strong);
+  filter: none;
 }
 .setting-control {
   display: flex;
@@ -69,6 +80,17 @@
 .setting-status {
   color: var(--ink-soft);
   font-size: var(--font-xs);
+}
+.setting-error {
+  color: #b42318;
+  font-size: var(--font-xs);
+}
+/* 分组内的状态/错误行（账户档位、已解锁能力数、保存失败）：贴住所属设置行，
+   不保留 <p> 的默认段间距，否则会和行之间出现一块空白。 */
+.settings-group > .setting-status,
+.settings-group > .setting-error {
+  margin: 0;
+  padding: 6px 0 8px;
 }
 .setting-status--saved {
   color: var(--mint-text);
@@ -120,15 +142,4 @@
   align-items: center;
   justify-content: space-between;
   padding: 8px 0;
-}
-.setting-model-footer .surface-control {
-  /* 保存键紧凑化：两字文案不需要全高全宽的大按钮 */
-  min-width: 44px;
-  height: 26px;
-  padding: 0 12px;
-  font-size: var(--font-xs);
-}
-.setting-error {
-  color: #b42318;
-  font-size: var(--font-xs);
 }

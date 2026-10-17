@@ -39,8 +39,9 @@ function accountTitle(status: AuthStatus | null): string {
   return PLAN_LABELS[status.plan] ?? status.plan;
 }
 
+/** 已登录时的能力摘要。未登录不写任何解释文案：按钮本身已表达意图。 */
 function accountHint(status: AuthStatus | null): string {
-  if (!status?.signedIn) return "登录后由服务端下发会员能力";
+  if (!status?.signedIn) return "";
   if (status.capabilities.length === 0) return "暂无可用云能力";
   return `已解锁 ${status.capabilities.length} 项云能力`;
 }
@@ -176,6 +177,8 @@ export function SettingsPanel({
     }
   }
 
+  const hint = accountHint(authStatus);
+
   return (
     <PanelShell onClose={onClose} title="设置" variant="settings">
       <div className="settings-panel">
@@ -183,12 +186,12 @@ export function SettingsPanel({
           <section className="settings-group">
             <h2>账户</h2>
             <div className="setting-row">
-              <span className="setting-label">
+              <span>
                 <strong>{accountTitle(authStatus)}</strong>
-                <span className="setting-hint">{accountHint(authStatus)}</span>
               </span>
               {authStatus?.signedIn ? (
                 <SurfaceButton
+                  className="setting-action"
                   disabled={authBusy}
                   onClick={() => void signOut()}
                   title="退出登录"
@@ -198,6 +201,7 @@ export function SettingsPanel({
                 </SurfaceButton>
               ) : (
                 <SurfaceButton
+                  className="setting-action"
                   disabled={authBusy}
                   onClick={() => void signIn()}
                   title="登录"
@@ -207,6 +211,7 @@ export function SettingsPanel({
                 </SurfaceButton>
               )}
             </div>
+            {hint && <p className="setting-status">{hint}</p>}
             {authNotice && (
               <p className="setting-status" role="status">
                 {authNotice}
@@ -320,6 +325,7 @@ export function SettingsPanel({
               {justSaved ? "已保存" : modelConfig.configured ? "已配置" : "尚未配置"}
             </span>
             <SurfaceButton
+              className="setting-action"
               disabled={saving || !baseUrl.trim() || !model.trim()}
               onClick={() => void saveModelConfig()}
               variant="primary"
