@@ -161,6 +161,25 @@ describe("three-segment floating navigation", () => {
     expect(classes.some((name) => name.includes("primary"))).toBe(false);
   });
 
+  it("overlays the mode menu on an open panel instead of pushing it down", () => {
+    render(<FloatingBarApp />);
+    fireEvent.click(screen.getByRole("button", { name: "打开笔记本" }));
+    fireEvent.click(screen.getByRole("button", { name: "笔试" }));
+
+    // 面板已打开：外壳不得为菜单预留高度，否则窗口变高、面板被下推
+    const stack = document.querySelector(".floating-bar-stack");
+    expect(stack).not.toHaveClass("is-menu-open");
+  });
+
+  it("still reserves window height for the mode menu while no panel is open", () => {
+    render(<FloatingBarApp />);
+    fireEvent.click(screen.getByRole("button", { name: "笔试" }));
+
+    // 面板关闭时窗口只有胶囊高：必须预留高度，否则菜单被窗口裁掉
+    const stack = document.querySelector(".floating-bar-stack");
+    expect(stack).toHaveClass("is-menu-open");
+  });
+
   it("shows the mode menu as a dismissible layer without replacing the open panel", () => {
     render(<FloatingBarApp />);
     fireEvent.click(screen.getByRole("button", { name: "打开笔记本" }));

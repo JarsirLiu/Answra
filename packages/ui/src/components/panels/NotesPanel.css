@@ -3,7 +3,7 @@
   margin-bottom: 7px;
   color: var(--ink);
   font-size: var(--font-sm);
-  font-weight: 600;
+  font-weight: var(--label-weight);
 }
 .notes-panel textarea {
   flex: 1;

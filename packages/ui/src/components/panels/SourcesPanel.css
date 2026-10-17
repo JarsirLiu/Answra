@@ -5,6 +5,7 @@
   gap: 8px;
   color: var(--ink);
   font-size: 12px;
+  font-weight: var(--label-weight);
 }
 .sources-title svg {
   color: var(--mint);
@@ -25,7 +26,7 @@
   color: white;
   background: var(--mint);
   font-size: var(--font-sm);
-  font-weight: 600;
+  font-weight: var(--label-weight);
   transition: background 140ms ease-out;
 }
 .file-picker:hover {

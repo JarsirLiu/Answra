@@ -42,7 +42,8 @@
 .surface-control--primary {
   color: var(--mint-contrast);
   background: var(--mint);
-  font-weight: 600;
+  /* 主操作靠实底强调，不再靠加粗：界面标签统一一档字重 */
+  font-weight: var(--label-weight);
   box-shadow: var(--shadow-ctl);
 }
 

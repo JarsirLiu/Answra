@@ -9,7 +9,8 @@
   flex-direction: column;
 }
 .floating-bar-stack.is-menu-open {
-  /* Reserve hit-test/window area while drawing the menu over the panel below it. */
+  /* 仅当面板关闭时为菜单预留窗口高度（否则菜单会被窗口裁掉）。
+     面板打开时不预留：菜单绝对定位盖在面板上，不把面板往下挤。 */
   padding-bottom: calc(var(--menu-item-h) * 3 + 18px);
 }
 .floating-bar {

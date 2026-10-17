@@ -33,7 +33,7 @@
   margin: 0;
   color: var(--ink);
   font-size: 12px;
-  font-weight: 650;
+  font-weight: var(--label-weight);
 }
 .panel-context {
   color: var(--muted);

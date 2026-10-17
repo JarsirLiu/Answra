@@ -15,7 +15,7 @@
   color: var(--ink);
   background: transparent;
   font-size: var(--font-sm);
-  font-weight: 600;
+  font-weight: var(--label-weight);
   transition: background 140ms ease-out;
 }
 .mode-picker-trigger:hover,
@@ -53,6 +53,7 @@
   background: transparent;
   text-align: left;
   font-size: var(--font-sm);
+  font-weight: var(--label-weight);
   transition: background 140ms ease-out;
 }
 .mode-menu-item:hover {

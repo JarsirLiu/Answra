@@ -42,7 +42,7 @@
 .destination-label strong {
   overflow: hidden;
   font-size: var(--font-sm);
-  font-weight: 600;
+  font-weight: var(--label-weight);
   line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
