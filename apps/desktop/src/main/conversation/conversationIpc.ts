@@ -11,9 +11,9 @@ import {
   isWindowFromSender,
   sendConversationChange,
 } from "../window";
-import type { AppService } from "./appService";
+import type { AgentService } from "./agentService";
 
-export function registerConversationIpc(service: AppService): void {
+export function registerConversationIpc(service: AgentService): void {
   ipcMain.handle(ConversationChannels.GetConfig, (event) => {
     if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用方");
     return service.getConfig();

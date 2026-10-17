@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MemoryConversationStore } from "../src/conversationStore";
+import { MemoryConversationStore } from "../../src/conversation/store";
 
 describe("memory conversation store", () => {
   it("assigns monotonic revisions and replays changes after a cursor", async () => {

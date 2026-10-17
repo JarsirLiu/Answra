@@ -1,18 +1,16 @@
 {
-  "name": "@answra/app",
+  "name": "@answra/agent",
   "version": "0.1.0",
   "private": true,
-  "description": "桌面端一次性 Agent 请求运行时。",
+  "description": "平台无关的 Agent 运行时：会话、模型调用与 worker 线协议。",
   "type": "module",
   "engines": {
     "node": ">=20.9.0"
   },
   "exports": {
-    ".": "./src/index.ts",
-    "./runtime": "./src/conversationRuntime.ts"
+    ".": "./src/index.ts"
   },
   "scripts": {
-    "build": "node ./scripts/build.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
@@ -25,7 +23,6 @@
   "devDependencies": {
     "@types/node": "^26.6.5",
     "@types/ws": "^8.18.2",
-    "esbuild": "^0.27.2",
     "typescript": "~5.9.3",
     "vitest": "^5.0.3"
   }

@@ -8,11 +8,13 @@
 @answra/shared  ←  @answra/ui  ←  @answra/desktop(renderer)
                                     ↑
 @answra/shared  ←  @answra/desktop(main / preload)
+@answra/shared  ←  @answra/agent  ←  @answra/desktop(main)
 ```
 
 - 依赖必须单向，禁止环（`pnpm architecture:check` 强制）。
 - 跨包导入只允许使用目标包 `package.json` `exports` 声明的入口；禁止深导入、禁止相对路径跨包（架构脚本强制）。
-- 新增共享能力时：类型/常量进 `shared`，纯 UI 进 `ui`，平台能力进 `desktop`。
+- 新增共享能力时：类型/常量进 `shared`，纯 UI 进 `ui`，平台能力进 `desktop`，与平台无关的 Agent 运行时进 `agent`。
+- `apps/` 只放可启动单元（`desktop` 是 Electron 壳，`agent` 由 utility process 拉起并保留独立为常驻 sidecar 的可能）；纯库放 `packages/`。
 
 ## 进程边界（apps/desktop）
 
@@ -21,6 +23,16 @@
 | `src/main` | 窗口管理、生命周期、按领域拆分的 IPC handler（`src/main/ipc/*Ipc.ts`） | 可用 electron / node 内置模块 |
 | `src/preload` | `contextBridge` 暴露唯一 `window.answra` API 面 | 只做转发，不放业务逻辑 |
 | `src/renderer` | 薄壳：挂载 `<FloatingBarApp/>` | 禁止 import electron / node 模块 |
+
+## Agent 运行时（apps/agent）
+
+| 目录 | 职责 | 约束 |
+| --- | --- | --- |
+| `src/worker` | 线协议 `AgentCommand` / `AgentFrame`，跨进程唯一契约 | 只放协议类型；命令/帧变更必须同步 desktop worker |
+| `src/conversation` | 会话运行时、会话存储端口与内存适配器 | 不依赖 Electron / React；新增领域平级加目录 |
+| 平台能力 | 采集、键鼠注入、窗口、密钥等实现留在 desktop | 运行时只持有端口，实现由 desktop 注入 |
+
+入口规则：desktop 只从 `@answra/agent`（`exports` 的 `.`）导入；本包不产出独立构建产物，由 desktop 的 `build:electron` 一并 bundle。
 
 ## IPC 约定（三层类型安全）
 

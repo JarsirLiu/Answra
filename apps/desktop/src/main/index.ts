@@ -2,7 +2,7 @@ import { app, BrowserWindow } from "electron";
 import { createAmbientThemeController } from "./ambient";
 import { registerCaptureIpc } from "./capture/captureIpc";
 import { configureChromiumCompatibility } from "./chromiumCompatibility";
-import { AppService } from "./conversation/appService";
+import { AgentService } from "./conversation/agentService";
 import { registerConversationIpc } from "./conversation/conversationIpc";
 import { registerImeCandidateIpc } from "./ime/imeCandidateIpc";
 import { registerImeIpc } from "./ime/imeIpc";
@@ -29,7 +29,7 @@ registerWorkspaceSchemePrivileges();
 
 let ambientController: ReturnType<typeof createAmbientThemeController> | undefined;
 let imeController: ReturnType<typeof registerImeIpc> | undefined;
-const appService = new AppService();
+const agentService = new AgentService();
 const workspaceService = new WorkspaceService({ configDir: app.getPath("userData") });
 
 app.whenReady().then(() => {
@@ -38,10 +38,12 @@ app.whenReady().then(() => {
   registerImeCandidateIpc(imeController.isCurrentLease, imeController.getSessionSnapshot);
   registerCaptureIpc();
   registerAmbientIpc((enabled) => ambientController?.setEnabled(enabled));
-  registerConversationIpc(appService);
+  registerConversationIpc(agentService);
   registerWorkspaceFileProtocol(workspaceService);
   registerWorkspaceIpc(workspaceService, getWindow, isStealthEnabled);
-  void appService.start().catch((error) => console.error("[app-service] failed to start", error));
+  void agentService
+    .start()
+    .catch((error) => console.error("[agent-service] failed to start", error));
   void workspaceService
     .restoreRoot()
     .catch((error) => console.warn("[workspace] 根目录恢复失败", error));
@@ -51,7 +53,7 @@ app.whenReady().then(() => {
 app.on("before-quit", () => {
   disposeImeCandidateWindow();
   imeController?.dispose();
-  void appService.stop();
+  void agentService.stop();
   void workspaceService.dispose();
 });
 

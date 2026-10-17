@@ -1,7 +1,7 @@
 import { createServer, type Server } from "node:http";
 import type { ConversationChange } from "@answra/shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ConversationRuntime } from "../src/conversationRuntime";
+import { ConversationRuntime } from "../../src/conversation/runtime";
 
 describe("ephemeral conversation runtime", () => {
   let server: Server;

@@ -70,6 +70,10 @@ apps/desktop           Electron 桌面壳
   src/main             主进程：窗口管理、按领域拆分的 IPC handler
   src/preload          contextBridge 桥（window.answra）
   src/renderer         薄渲染层：仅挂载 <FloatingBarApp/>
+apps/agent             平台无关的 Agent 运行时（不依赖 Electron/React），由 desktop 的 utility process 拉起
+  src/index.ts         公共入口：desktop worker 的唯一导入面
+  src/worker           worker 线协议（main ↔ agent 命令与帧）
+  src/conversation     会话运行时与存储端口；新增领域（转写、工具、触发）平级加目录
 scripts/architecture   架构守护脚本（深导入/依赖环/平台越界检查）
 scripts/docs           文档门禁
 .agents/skills         AI 开发流程指南

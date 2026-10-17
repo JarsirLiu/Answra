@@ -6,11 +6,7 @@ import type {
   ConversationSendRequest,
 } from "@answra/shared";
 import { streamText } from "ai";
-import {
-  type ConversationStore,
-  createUserMessage,
-  MemoryConversationStore,
-} from "./conversationStore";
+import { type ConversationStore, createUserMessage, MemoryConversationStore } from "./store";
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);

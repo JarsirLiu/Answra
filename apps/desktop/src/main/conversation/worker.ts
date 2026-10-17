@@ -1,20 +1,20 @@
-import type { AppCommand, AppFrame } from "@answra/app";
-import { ConversationRuntime } from "@answra/app/runtime";
+import type { AgentCommand, AgentFrame } from "@answra/agent";
+import { ConversationRuntime } from "@answra/agent";
 
 const parentPort = process.parentPort;
 if (!parentPort) throw new Error("Agent worker must run as an Electron utility process");
 
 const runtime = new ConversationRuntime((change) => write({ version: 1, type: "change", change }));
 
-function write(frame: AppFrame): void {
+function write(frame: AgentFrame): void {
   parentPort?.postMessage(frame);
 }
 
 parentPort.on("message", ({ data }: Electron.MessageEvent) => {
-  void handle(data as AppCommand);
+  void handle(data as AgentCommand);
 });
 
-async function handle(command: AppCommand): Promise<void> {
+async function handle(command: AgentCommand): Promise<void> {
   try {
     let value: unknown;
     switch (command.type) {

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { AppCommand, AppFrame } from "@answra/app";
+import type { AgentCommand, AgentFrame } from "@answra/agent";
 import type {
   ConversationChange,
   ConversationModelConfig,
@@ -12,7 +12,7 @@ import { app, safeStorage, type UtilityProcess, utilityProcess } from "electron"
 type Pending = { resolve: (value: unknown) => void; reject: (error: Error) => void };
 const CONFIG_FILE = "conversation-model.json";
 
-export class AppService {
+export class AgentService {
   private worker?: UtilityProcess;
   private readonly pending = new Map<string, Pending>();
   private config?: ConversationModelConfig;
@@ -27,14 +27,14 @@ export class AppService {
       stdio: "ignore",
     });
     this.worker = worker;
-    worker.on("message", (message) => this.onFrame(message as AppFrame));
+    worker.on("message", (message) => this.onFrame(message as AgentFrame));
     worker.on("exit", (code) => {
       if (this.worker !== worker) return;
       this.worker = undefined;
       this.failPending(new Error(`本地 AI 服务已退出 (${code})`));
     });
     if (this.config) await this.configure(this.config);
-    console.info("[app-service] started", { pid: worker.pid, packaged: app.isPackaged });
+    console.info("[agent-service] started", { pid: worker.pid, packaged: app.isPackaged });
   }
 
   onChange(listener: (change: ConversationChange) => void): () => void {
@@ -91,7 +91,7 @@ export class AppService {
 
   cancel(runId: string): void {
     void this.request("cancel", { runId }).catch((error: unknown) =>
-      console.warn("[app-service] cancel failed", error),
+      console.warn("[agent-service] cancel failed", error),
     );
   }
 
@@ -103,17 +103,17 @@ export class AppService {
     this.failPending(new Error("本地 AI 服务已关闭"));
   }
 
-  private request(type: AppCommand["type"], payload: Record<string, unknown>): Promise<unknown> {
+  private request(type: AgentCommand["type"], payload: Record<string, unknown>): Promise<unknown> {
     const worker = this.worker;
     if (!worker) return Promise.reject(new Error("本地 AI 服务尚未启动"));
     const id = randomUUID();
     return new Promise((resolve, reject) => {
       this.pending.set(id, { resolve, reject });
-      worker.postMessage({ id, type, ...payload } as AppCommand);
+      worker.postMessage({ id, type, ...payload } as AgentCommand);
     });
   }
 
-  private onFrame(frame: AppFrame): void {
+  private onFrame(frame: AgentFrame): void {
     if (frame.version !== 1) return;
     if (frame.type === "change") {
       for (const listener of this.listeners) listener(frame.change);

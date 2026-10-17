@@ -6,7 +6,8 @@
  *    不允许相对路径穿透到其它包内部。
  * 2. forbidCycles —— workspace 依赖图必须无环。
  * 3. rendererIsolation —— electron / node: 模块仅允许在
- *    apps/desktop 的 src/main、src/preload 与 apps/app（独立 Node 服务）中使用；
+ *    apps/desktop 的 src/main、src/preload 与 apps/agent（平台无关的
+ *    Agent 运行时，在 utility process 里跑）中使用；
  *    渲染层（packages/ui、desktop renderer）必须通过 DesktopBridge。
  *
  * 用法：node scripts/architecture/architecture-check.mjs check
@@ -113,7 +114,7 @@ function checkImports(pkg) {
         const allowed =
           normalized.startsWith("apps/desktop/src/main/") ||
           normalized.startsWith("apps/desktop/src/preload/") ||
-          normalized.startsWith("apps/app/src/");
+          normalized.startsWith("apps/agent/src/");
         if (!allowed) {
           errors.push(`${rel}: "${spec}" 仅允许在 apps/desktop 的 main/preload 中使用`);
         }
