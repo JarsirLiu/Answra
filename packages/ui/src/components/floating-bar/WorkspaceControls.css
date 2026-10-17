@@ -55,3 +55,21 @@
   color: var(--danger);
   background: var(--danger-wash);
 }
+.utility-action--announcements {
+  position: relative;
+}
+.announcement-count {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  min-width: 13px;
+  height: 13px;
+  padding: 0 3px;
+  border: 1px solid var(--glass);
+  border-radius: 7px;
+  color: white;
+  background: #c84337;
+  font-size: 9px;
+  line-height: 11px;
+  text-align: center;
+}

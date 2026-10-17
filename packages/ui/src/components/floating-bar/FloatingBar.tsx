@@ -17,6 +17,8 @@ interface FloatingBarProps {
   onModeAction: (action: ModeAction) => void;
   onTogglePanel: (panel: Exclude<Panel, "closed">) => void;
   onClose: () => void;
+  unreadAnnouncements: number;
+  showAnnouncements: boolean;
 }
 
 /**
@@ -36,6 +38,8 @@ export function FloatingBar({
   onModeAction,
   onTogglePanel,
   onClose,
+  unreadAnnouncements,
+  showAnnouncements,
 }: FloatingBarProps) {
   const stackRef = useRef<HTMLDivElement>(null);
   useDismissableOpen(stackRef, modeMenuOpen, onDismissModeMenu);
@@ -57,7 +61,13 @@ export function FloatingBar({
         </div>
         <span aria-hidden="true" className="segment-divider" />
         <div className="nav-segment utility-segment">
-          <WorkspaceControls onClose={onClose} onTogglePanel={onTogglePanel} panel={panel} />
+          <WorkspaceControls
+            onClose={onClose}
+            onTogglePanel={onTogglePanel}
+            panel={panel}
+            unreadAnnouncements={unreadAnnouncements}
+            showAnnouncements={showAnnouncements}
+          />
         </div>
       </section>
       {modeMenuOpen && (

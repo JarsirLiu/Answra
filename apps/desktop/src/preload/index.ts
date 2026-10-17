@@ -177,6 +177,8 @@ const bridge: DesktopBridge = {
     ipcRenderer.on(AuthChannels.Status, wrapped);
     return () => ipcRenderer.removeListener(AuthChannels.Status, wrapped);
   },
+  getAnnouncements: () => ipcRenderer.invoke(AuthChannels.ListAnnouncements),
+  markAnnouncementRead: (id: number) => ipcRenderer.invoke(AuthChannels.MarkAnnouncementRead, id),
 };
 
 contextBridge.exposeInMainWorld("answra", bridge);

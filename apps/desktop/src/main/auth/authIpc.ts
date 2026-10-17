@@ -17,4 +17,12 @@ export function registerAuthIpc(service: AuthService): void {
     if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用");
     return service.getStatus();
   });
+  ipcMain.handle(AuthChannels.ListAnnouncements, (event) => {
+    if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用");
+    return service.listAnnouncements();
+  });
+  ipcMain.handle(AuthChannels.MarkAnnouncementRead, (event, id: number) => {
+    if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用");
+    return service.markAnnouncementRead(id);
+  });
 }

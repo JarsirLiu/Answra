@@ -127,7 +127,20 @@ export const AuthChannels = {
   GetStatus: "answra:auth:get-status",
   /** 主进程推送账号状态变化（登录成功、登出、凭据失效）。 */
   Status: "answra:auth:status",
+  /** 读取当前账号可见的站点公告；token 只由 main 使用。 */
+  ListAnnouncements: "answra:auth:list-announcements",
+  /** 将当前账号可见公告标记为已读。 */
+  MarkAnnouncementRead: "answra:auth:mark-announcement-read",
 } as const;
+
+export interface DesktopAnnouncement {
+  id: number;
+  title: string;
+  content: string;
+  notifyMode: "silent" | "popup";
+  readAt: string | null;
+  createdAt: string;
+}
 
 /**
  * 账号与会员状态快照。
@@ -155,6 +168,8 @@ export interface AuthChannelMap {
   [AuthChannels.Logout]: { request: undefined; response: AuthStatus };
   [AuthChannels.GetStatus]: { request: undefined; response: AuthStatus };
   [AuthChannels.Status]: { request: undefined; response: undefined };
+  [AuthChannels.ListAnnouncements]: { request: undefined; response: DesktopAnnouncement[] };
+  [AuthChannels.MarkAnnouncementRead]: { request: number; response: undefined };
 }
 
 export const InterviewChannels = {

@@ -1,6 +1,12 @@
 import type { AuthStatus } from "@answra/shared";
 import { describe, expect, it, vi } from "vitest";
-import { AUTH_PATHS, AuthService, readProfile, readTokens } from "../src/main/auth/authService";
+import {
+  AUTH_PATHS,
+  AuthService,
+  readAnnouncements,
+  readProfile,
+  readTokens,
+} from "../src/main/auth/authService";
 import type { AuthCallbackChannel } from "../src/main/auth/callbackChannel";
 import type { AuthCredentialStore, AuthSessionRecord } from "../src/main/auth/credentialStore";
 import type { PendingAuth } from "../src/main/auth/pendingAuth";
@@ -486,5 +492,80 @@ describe("readProfile", () => {
   it("defaults to an empty capability set and null plan", () => {
     expect(readProfile(undefined)).toEqual({ plan: null, capabilities: [] });
     expect(readProfile({ capabilities: "nope" })).toEqual({ plan: null, capabilities: [] });
+  });
+});
+
+describe("AuthService announcements", () => {
+  it("lists the signed-in user's visible announcements with the main-owned access token", async () => {
+    const harness = createHarness(() =>
+      jsonResponse({
+        code: 0,
+        data: [
+          {
+            id: 7,
+            title: "版本更新",
+            content: "新增公告中心",
+            notify_mode: "popup",
+            read_at: null,
+            created_at: "2026-10-17T10:00:00Z",
+          },
+        ],
+      }),
+    );
+    await harness.credentials.store.save({
+      accessToken: "private-access",
+      refreshToken: "private-refresh",
+      expiresAt: TEST_NOW + 120_000,
+      plan: "pro",
+      capabilities: [],
+    });
+    await harness.service.restore();
+
+    await expect(harness.service.listAnnouncements()).resolves.toEqual([
+      {
+        id: 7,
+        title: "版本更新",
+        content: "新增公告中心",
+        notifyMode: "popup",
+        readAt: null,
+        createdAt: "2026-10-17T10:00:00Z",
+      },
+    ]);
+    expect(harness.calls[0]).toMatchObject({
+      url: "https://api.test/api/v1/announcements",
+      authorization: "Bearer private-access",
+    });
+  });
+
+  it("marks visible announcements read without exposing the token to the renderer contract", async () => {
+    const harness = createHarness(() => jsonResponse({ code: 0, data: { message: "ok" } }));
+    await harness.credentials.store.save({
+      accessToken: "private-access",
+      refreshToken: "private-refresh",
+      expiresAt: TEST_NOW + 120_000,
+      plan: null,
+      capabilities: [],
+    });
+    await harness.service.restore();
+
+    await harness.service.markAnnouncementRead(7);
+    expect(harness.calls[0]).toMatchObject({
+      url: "https://api.test/api/v1/announcements/7/read",
+      method: "POST",
+      authorization: "Bearer private-access",
+      body: {},
+    });
+    await expect(harness.service.markAnnouncementRead(0)).rejects.toThrow("公告 ID 无效");
+  });
+
+  it("returns no announcements when signed out and rejects malformed list entries", async () => {
+    const harness = createHarness(() => jsonResponse({ code: 0, data: [] }));
+    await expect(harness.service.listAnnouncements()).resolves.toEqual([]);
+    expect(harness.calls).toHaveLength(0);
+    expect(
+      readAnnouncements([null, { id: "bad" }, { id: 2, title: "ok", content: "body" }]),
+    ).toEqual([
+      { id: 2, title: "ok", content: "body", notifyMode: "silent", readAt: null, createdAt: "" },
+    ]);
   });
 });

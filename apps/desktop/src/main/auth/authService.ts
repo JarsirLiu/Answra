@@ -1,4 +1,4 @@
-import type { AuthLoginResult, AuthStatus } from "@answra/shared";
+import type { AuthLoginResult, AuthStatus, DesktopAnnouncement } from "@answra/shared";
 import type { AuthDeviceDescriptor } from "./authorizeUrl";
 import { buildAuthorizeUrl } from "./authorizeUrl";
 import { parseAuthCallback } from "./callback";
@@ -26,6 +26,7 @@ export const AUTH_PATHS = {
   refresh: "/api/v1/auth/desktop/refresh",
   revoke: "/api/v1/auth/desktop/revoke",
   capabilities: "/api/v1/auth/me",
+  announcements: "/api/v1/announcements",
 } as const;
 
 /** access token 提前视为过期的时间，避免边界上带一个即将失效的 token 发请求。 */
@@ -176,6 +177,21 @@ export class AuthService {
     return this.emitStatus(this.signedOutStatus());
   }
 
+  async listAnnouncements(): Promise<DesktopAnnouncement[]> {
+    const status = await this.getStatus();
+    if (!status.signedIn || !this.session) return [];
+    return readAnnouncements(
+      await this.request(AUTH_PATHS.announcements, undefined, this.session.accessToken),
+    );
+  }
+
+  async markAnnouncementRead(id: number): Promise<void> {
+    if (!Number.isSafeInteger(id) || id <= 0) throw new Error("公告 ID 无效");
+    const status = await this.getStatus();
+    if (!status.signedIn || !this.session) throw new Error("请先登录");
+    await this.request(`${AUTH_PATHS.announcements}/${id}/read`, {}, this.session.accessToken);
+  }
+
   dispose(): void {
     this.disposed = true;
     this.clearPending();
@@ -262,7 +278,9 @@ export class AuthService {
     if (typeof payload === "object" && payload !== null && "code" in payload && "data" in payload) {
       const envelope = payload as { code?: unknown; data?: unknown; message?: unknown };
       if (envelope.code !== 0) {
-        throw new Error(typeof envelope.message === "string" ? envelope.message : `${path} 请求失败`);
+        throw new Error(
+          typeof envelope.message === "string" ? envelope.message : `${path} 请求失败`,
+        );
       }
       return envelope.data;
     }
@@ -340,4 +358,30 @@ export function readProfile(body: unknown): { plan: string | null; capabilities:
     plan: typeof value?.plan === "string" ? value.plan : null,
     capabilities,
   };
+}
+
+export function readAnnouncements(body: unknown): DesktopAnnouncement[] {
+  if (!Array.isArray(body)) return [];
+  return body.flatMap((entry): DesktopAnnouncement[] => {
+    if (typeof entry !== "object" || entry === null) return [];
+    const value = entry as Record<string, unknown>;
+    if (
+      typeof value.id !== "number" ||
+      !Number.isSafeInteger(value.id) ||
+      value.id <= 0 ||
+      typeof value.title !== "string" ||
+      typeof value.content !== "string"
+    )
+      return [];
+    return [
+      {
+        id: value.id,
+        title: value.title,
+        content: value.content,
+        notifyMode: value.notify_mode === "popup" ? "popup" : "silent",
+        readAt: typeof value.read_at === "string" ? value.read_at : null,
+        createdAt: typeof value.created_at === "string" ? value.created_at : "",
+      },
+    ];
+  });
 }

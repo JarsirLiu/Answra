@@ -17,7 +17,8 @@
 }
 .content-panel--notes,
 .content-panel--sources,
-.content-panel--settings {
+.content-panel--settings,
+.content-panel--announcements {
   width: min(480px, calc(100vw - 16px));
   height: min(560px, calc(100vh - var(--bar-h) - 24px));
 }

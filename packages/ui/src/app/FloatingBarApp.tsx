@@ -1,7 +1,8 @@
-import type { DesktopBridge } from "@answra/shared";
+import type { DesktopAnnouncement, DesktopBridge } from "@answra/shared";
 import { useEffect, useState } from "react";
 import { FloatingBar } from "../components/floating-bar/FloatingBar";
 import { FloatingLayerHost } from "../components/floating-bar/FloatingLayerHost";
+import { AnnouncementPanel } from "../components/panels/AnnouncementPanel";
 import { ChatPanel } from "../components/panels/ChatPanel";
 import { ReplyBar } from "../components/panels/ReplyBar";
 import { SettingsPanel } from "../components/panels/SettingsPanel";
@@ -24,6 +25,8 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
   // 默认桥由 desktop preload 注入（window.answra），浏览器预览与测试可传入 mock
   const platform = bridge ?? (globalThis as { answra?: DesktopBridge }).answra;
   const [mode, setMode] = useState<Mode>("exam");
+  const [announcements, setAnnouncements] = useState<DesktopAnnouncement[]>([]);
+  const [authSignedIn, setAuthSignedIn] = useState(false);
   const surfaces = useSurfaceCoordinator();
   const { panel, workflow, floatingLayers } = surfaces;
   const replyPhase = workflow?.phase ?? "closed";
@@ -32,6 +35,55 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
   const stealthSetting = useMeetingStealth(platform);
   useStealthInputGuard(stealthSetting.enabled);
   const conversation = useConversationChat(platform);
+  useEffect(() => {
+    if (!platform?.getAuthStatus) return;
+    let cancelled = false;
+    let statusVersion = 0;
+    const sync = (signedIn: boolean) => {
+      const version = ++statusVersion;
+      setAuthSignedIn(signedIn);
+      if (!signedIn || !platform.getAnnouncements) {
+        setAnnouncements([]);
+        return;
+      }
+      void platform
+        .getAnnouncements()
+        .then((items) => {
+          if (!cancelled && version === statusVersion) setAnnouncements(items);
+        })
+        .catch(() => undefined);
+    };
+    void platform
+      .getAuthStatus()
+      .then((status) => {
+        if (!cancelled && statusVersion === 0) sync(status.signedIn);
+      })
+      .catch(() => undefined);
+    const unsubscribe = platform.onAuthStatus?.((status) => sync(status.signedIn));
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
+  }, [platform]);
+  useEffect(() => {
+    if (!authSignedIn || !platform?.getAnnouncements) return;
+    let cancelled = false;
+    const timer = setInterval(
+      () => {
+        void platform
+          .getAnnouncements?.()
+          .then((items) => {
+            if (!cancelled) setAnnouncements(items);
+          })
+          .catch(() => undefined);
+      },
+      5 * 60 * 1000,
+    );
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [authSignedIn, platform]);
   useEffect(() => {
     if (panel !== "chat" && replyPhase === "closed") conversation.clearMessages();
   }, [conversation.clearMessages, panel, replyPhase]);
@@ -113,6 +165,8 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
           onDismissModeMenu={surfaces.closeFloatingLayers}
           onToggleModeMenu={toggleModeMenu}
           onTogglePanel={surfaces.togglePanel}
+          unreadAnnouncements={announcements.filter((item) => !item.readAt).length}
+          showAnnouncements={authSignedIn}
           panel={panel}
         />
       )}
@@ -214,6 +268,21 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
           opacity={appearance.opacity}
           stealth={stealthSetting.enabled}
           stealthSupported={stealthSetting.supported}
+        />
+      )}
+
+      {panel === "announcements" && (
+        <AnnouncementPanel
+          announcements={announcements}
+          onClose={() => surfaces.openPanel("closed")}
+          onMarkRead={async (id) => {
+            if (!platform?.markAnnouncementRead) throw new Error("当前版本不支持公告操作");
+            await platform.markAnnouncementRead(id);
+            const readAt = new Date().toISOString();
+            setAnnouncements((items) =>
+              items.map((item) => (item.id === id ? { ...item, readAt } : item)),
+            );
+          }}
         />
       )}
     </main>

@@ -7,6 +7,7 @@ import type {
   ConversationModelConfig,
   ConversationSendRequest,
   ConversationSnapshot,
+  DesktopAnnouncement,
   ImeCandidateAction,
   ImeCandidateSnapshot,
   ImeCandidateUpdate,
@@ -34,7 +35,7 @@ import type {
  * 面板只决定渲染器画什么，窗口大小由渲染器测量后经
  * `fitContent` 上报（见 channels.ts 的 FitContent 频道）。
  */
-export type OverlayMode = "closed" | "chat" | "interview" | "notes" | "settings";
+export type OverlayMode = "closed" | "chat" | "interview" | "notes" | "settings" | "announcements";
 
 /** 渲染进程暴露给 UI 的桌面平台桥（由 preload 注入，测试可 mock）。 */
 export interface DesktopBridge {
@@ -145,4 +146,8 @@ export interface DesktopBridge {
   getAuthStatus?: () => Promise<AuthStatus>;
   /** 订阅账号状态变化；返回取消订阅函数。 */
   onAuthStatus?: (listener: (status: AuthStatus) => void) => () => void;
+  /** 读取当前账号可见的站点公告；未登录返回空列表。 */
+  getAnnouncements?: () => Promise<DesktopAnnouncement[]>;
+  /** 标记当前账号可见公告为已读。 */
+  markAnnouncementRead?: (id: number) => Promise<void>;
 }
