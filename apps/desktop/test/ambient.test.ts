@@ -21,6 +21,10 @@ vi.mock("electron", () => ({
   },
 }));
 
+vi.mock("../src/main/windowCaptureProtection", () => ({
+  isWindowCaptureProtected: vi.fn(() => false),
+}));
+
 import { AmbientChannels } from "@answra/shared";
 import { desktopCapturer, screen } from "electron";
 import {
@@ -30,6 +34,7 @@ import {
   luminanceOf,
   toHex,
 } from "../src/main/ambient";
+import { isWindowCaptureProtected } from "../src/main/windowCaptureProtection";
 
 type Bgra = [b: number, g: number, r: number];
 
@@ -120,6 +125,20 @@ describe("dominantColor", () => {
       b: 32,
     });
   });
+
+  it("reads the window rectangle itself when sampling behind the window", () => {
+    // 隐身时窗口不进入捕获画面：矩形内就是正后方背景（蓝色），
+    // 外圈是与悬浮条无关的内容（红色）——inside 模式必须只认矩形本身
+    const image = fakeImage(32, 32, (x, y) => {
+      const inWindow = x >= 8 && x < 24 && y >= 8 && y < 24;
+      return inWindow ? [255, 0, 0] : [0, 0, 255];
+    });
+    expect(dominantColor(image, 32, 32, { x: 8, y: 8, width: 16, height: 16 }, "inside")).toEqual({
+      r: 0,
+      g: 0,
+      b: 255,
+    });
+  });
 });
 
 describe("expandInner", () => {
@@ -184,6 +203,55 @@ describe("ambient sampling lifecycle", () => {
     );
 
     controller.dispose();
+    vi.useRealTimers();
+  });
+
+  it("samples the pixels behind the window while the window is capture-protected", async () => {
+    vi.useFakeTimers();
+    vi.mocked(isWindowCaptureProtected).mockReturnValue(true);
+    // 窗口矩形（缩略图坐标 24..74 × 24..48）内是正后方背景（蓝），
+    // 其余是无关内容（红）：结果必须是蓝色，不能混入环形近似色
+    const bitmap = Buffer.alloc(64 * 64 * 4);
+    for (let y = 0; y < 64; y += 1) {
+      for (let x = 0; x < 64; x += 1) {
+        const offset = (y * 64 + x) * 4;
+        const behind = x >= 24 && y >= 24 && y < 48;
+        bitmap[offset] = behind ? 255 : 0;
+        bitmap[offset + 2] = behind ? 0 : 255;
+        bitmap[offset + 3] = 255;
+      }
+    }
+    const window = {
+      isDestroyed: () => false,
+      isMinimized: () => false,
+      getBounds: () => ({ x: 300, y: 200, width: 100, height: 48 }),
+      webContents: { send: vi.fn() },
+      on: vi.fn(),
+      removeListener: vi.fn(),
+    };
+    const thumbnail = {
+      isEmpty: () => false,
+      getSize: () => ({ width: 400, height: 300 }),
+      crop: () => ({
+        getSize: () => ({ width: 64, height: 64 }),
+        toBitmap: () => bitmap,
+      }),
+    };
+    vi.mocked(desktopCapturer.getSources).mockResolvedValue([
+      { display_id: "1", thumbnail },
+    ] as never);
+
+    const controller = createAmbientThemeController(window as never);
+    controller.setEnabled(true);
+    await vi.waitFor(() =>
+      expect(window.webContents.send).toHaveBeenCalledWith(
+        AmbientChannels.AmbientColor,
+        expect.objectContaining({ ok: true, hex: "#0000ff" }),
+      ),
+    );
+
+    controller.dispose();
+    vi.mocked(isWindowCaptureProtected).mockReturnValue(false);
     vi.useRealTimers();
   });
 

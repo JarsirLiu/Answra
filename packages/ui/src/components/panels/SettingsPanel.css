@@ -51,6 +51,21 @@
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+/* 隐蔽强度：四档文字分段控件；选中态用淡薄荷底而非实底，
+   避免设置面板里出现第二个"主操作"按钮 */
+.setting-veil {
+  gap: 2px;
+}
+.setting-veil-option {
+  min-width: 0;
+  padding: 0 7px;
+  color: var(--ink-soft);
+  font-size: var(--font-xs);
+}
+.setting-veil-option[aria-pressed="true"] {
+  background: var(--mint-wash);
+  color: var(--mint-text);
+}
 .setting-row--static {
   border-top: 1px solid var(--glass-line-soft);
 }

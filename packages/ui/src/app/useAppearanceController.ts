@@ -1,10 +1,13 @@
 import type { DesktopBridge } from "@answra/shared";
 import { useEffect, useState } from "react";
 import { useAmbientFollow } from "../hooks/useAmbientFollow";
+import { type AmbientVeilLevel, DEFAULT_AMBIENT_VEIL } from "../model";
 import {
   type ColorGroupOverrides,
+  loadAmbientVeil,
   loadAppOpacity,
   loadColorGroups,
+  saveAmbientVeil,
   saveAppOpacity,
   useAppTheme,
 } from "../theme";
@@ -12,10 +15,15 @@ import {
 /** Owns renderer appearance preferences and applies one shared token set to every surface. */
 export function useAppearanceController(bridge: DesktopBridge | undefined) {
   const [ambientFollow, setAmbientFollow] = useAmbientFollow();
+  const [ambientVeil, setVeilState] = useState<AmbientVeilLevel>(loadAmbientVeil);
   const [opacity, setOpacityState] = useState(loadAppOpacity);
   const [colorGroups] = useState<ColorGroupOverrides>(loadColorGroups);
 
-  useAppTheme(bridge, { ambientFollow, colorGroups });
+  useAppTheme(bridge, {
+    ambientFollow,
+    colorGroups,
+    ambientVeil: ambientVeil ?? DEFAULT_AMBIENT_VEIL,
+  });
 
   useEffect(() => {
     bridge?.setAmbientFollow?.(ambientFollow);
@@ -34,5 +42,18 @@ export function useAppearanceController(bridge: DesktopBridge | undefined) {
     saveAppOpacity(value);
   }
 
-  return { ambientFollow, setAmbientFollow, opacity, setOpacity, colorGroups };
+  function setAmbientVeil(level: AmbientVeilLevel) {
+    setVeilState(level);
+    saveAmbientVeil(level);
+  }
+
+  return {
+    ambientFollow,
+    setAmbientFollow,
+    ambientVeil,
+    setAmbientVeil,
+    opacity,
+    setOpacity,
+    colorGroups,
+  };
 }

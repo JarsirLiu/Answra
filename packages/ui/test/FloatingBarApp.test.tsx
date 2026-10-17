@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import type { UIMessageChunk } from "ai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FloatingBarApp } from "../src/app/FloatingBarApp";
+import { AMBIENT_VEIL_STORAGE_KEY } from "../src/model";
 import { ICON } from "../src/tokens";
 
 let emitConversationEvent: ((event: { runId: string; chunk: UIMessageChunk }) => void) | undefined;
@@ -518,6 +519,25 @@ describe("three-segment floating navigation", () => {
 
     fireEvent.click(toggle);
     expect(localStorage.getItem("answra-ambient-follow")).toBe("off");
+  });
+
+  it("offers chameleon veil levels in settings and persists the choice", () => {
+    render(<FloatingBarApp />);
+    fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
+
+    // 变色龙关闭时没有背景采样，档位无从生效
+    const veiled = screen.getByRole("button", { name: "隐蔽" });
+    expect(veiled).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: /跟随背景色/ }));
+    expect(veiled).toBeEnabled();
+    expect(veiled).toHaveAttribute("aria-pressed", "true");
+
+    const blend = screen.getByRole("button", { name: "贴合" });
+    fireEvent.click(blend);
+    expect(localStorage.getItem(AMBIENT_VEIL_STORAGE_KEY)).toBe("blend");
+    expect(blend).toHaveAttribute("aria-pressed", "true");
+    expect(veiled).toHaveAttribute("aria-pressed", "false");
   });
 
   it("masks the API key with a closed eye and uses the shared primary save button", async () => {

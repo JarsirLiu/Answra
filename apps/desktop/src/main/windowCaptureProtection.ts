@@ -104,3 +104,12 @@ function readContentProtection(window: BrowserWindow): boolean | undefined {
     return undefined;
   }
 }
+
+/**
+ * 窗口是否已对系统捕获隐藏（隐身开启且平台可靠支持）。
+ * 变色龙据此决定能否采样"正后方"的背景：隐身时窗口不进入捕获画面，
+ * 窗口矩形内的像素就是它身后的真实背景。
+ */
+export function isWindowCaptureProtected(window: BrowserWindow): boolean {
+  return readContentProtection(window) === true && isWindowCaptureProtectionSupported();
+}

@@ -5,6 +5,8 @@
  * 保证「跟随背景」与「用户透明度」两个自由度互不干扰。
  */
 
+import { type AmbientVeilLevel, DEFAULT_AMBIENT_VEIL } from "../model";
+
 /** 背景亮度低于该阈值判定为深色背景，文字切浅色。 */
 const DARK_THRESHOLD = 0.5;
 
@@ -49,8 +51,25 @@ export type AmbientTokens = Record<string, string | null>;
 /** 品牌薄荷绿（与 styles/tokens.css 的 --mint 保持一致，仅取色相派生文字色）。 */
 const MINT: Rgb = { r: 47, g: 161, b: 113 };
 
-/** 文字/图标对背景的最低对比度（WCAG AA 正文级）。 */
-const TARGET_CONTRAST = 4.5;
+/**
+ * 隐蔽强度档位的对比度与柔化参数。
+ *
+ * 视觉原理：人眼的空间分辨率随距离下降，而对比敏感度在高空间频率处陡降，
+ * 因此「小字号 + 中低对比」在近距离可读、远距离直接掉出可见阈值；相机/缩略图
+ * 又把低亮度差的小字当作噪声抹平。所以档位调的是对比度目标，不是字号字重。
+ */
+const VEIL_PROFILES: Record<
+  AmbientVeilLevel,
+  { text: number; accent: number; accentMix: number; iconMix: number; wash: number }
+> = {
+  // 贴得最紧：只有近距离刻意去看才读得出
+  blend: { text: 1.4, accent: 1.25, accentMix: 0.7, iconMix: 0.22, wash: 0.1 },
+  // 默认：静置融进背景，一臂距离内可读
+  veiled: { text: 2, accent: 1.5, accentMix: 0.65, iconMix: 0.18, wash: 0.12 },
+  balanced: { text: 3, accent: 2, accentMix: 0.6, iconMix: 0.15, wash: 0.16 },
+  // 无障碍兜底：WCAG AA 正文级对比度
+  readable: { text: 4.5, accent: 3, accentMix: 0.55, iconMix: 0.12, wash: 0.22 },
+};
 
 /** 线性化 sRGB 通道亮度（WCAG 定义），用于对比度计算。 */
 function channelLuminance(channel: number): number {
@@ -69,32 +88,37 @@ function contrastRatio(a: Rgb, b: Rgb): number {
   return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
 }
 
-/**
- * 从背景向黑/白方向逐步加深文字色，取第一个满足对比度要求的值；
- * 保证任何背景色下功能入口、AI 回复都可读，不会"扎眼也看不清"。
- */
-function chooseInk(bg: Rgb, isDark: boolean): Rgb {
-  const extreme = isDark ? WHITE : BLACK;
-  for (let amount = isDark ? 0.55 : 0.5; amount <= 1; amount += 0.05) {
+/** 向 extreme 方向逐步混合，取第一个达到目标对比度的值；全程达不到则返回 undefined。 */
+function solveInk(bg: Rgb, extreme: Rgb, target: number): Rgb | undefined {
+  for (let amount = 0; amount <= 1; amount += 0.02) {
     const candidate = mix(bg, extreme, amount);
-    if (contrastRatio(candidate, bg) >= TARGET_CONTRAST) return candidate;
+    if (contrastRatio(candidate, bg) >= target) return candidate;
   }
-  return extreme;
+  return undefined;
 }
 
-/** 强调色对背景的最低对比度（WCAG UI 组件级），低于文字要求。 */
-const ACCENT_CONTRAST = 3;
+/**
+ * 求文字色：目标对比度来自隐蔽强度档位。
+ * 先按深浅方案的方向（深底提亮、浅底压暗）求解；该方向物理上够不到目标时
+ * （中亮度背景向亮端最多只能到 ~3:1）改用反方向——否则 readable 档会在
+ * 中亮度背景上悄悄失效，只剩形似 4.5:1 的名字。
+ */
+function chooseInk(bg: Rgb, isDark: boolean, target: number): Rgb {
+  const preferred = isDark ? WHITE : BLACK;
+  const alternate = isDark ? BLACK : WHITE;
+  return solveInk(bg, preferred, target) ?? solveInk(bg, alternate, target) ?? preferred;
+}
 
 /**
- * 品牌绿降饱和为"灰绿"强调色：先向背景色拉近抹掉高饱和，
- * 再按需向黑/白求解到 UI 组件级对比度；观感克制，不与页面抢眼。
+ * 品牌绿降饱和为"灰绿"强调色：先按档位把高饱和抹掉（档位越低越贴近背景），
+ * 再按需向黑/白求解到目标对比度；观感克制，不与页面抢眼。
  */
-function chooseAccent(bg: Rgb, isDark: boolean): Rgb {
-  const muted = mix(MINT, bg, 0.55);
+function chooseAccent(bg: Rgb, isDark: boolean, target: number, mixAmount: number): Rgb {
+  const muted = mix(MINT, bg, mixAmount);
   const extreme = isDark ? WHITE : BLACK;
   for (let amount = 0; amount <= 0.9; amount += 0.05) {
     const candidate = mix(muted, extreme, amount);
-    if (contrastRatio(candidate, bg) >= ACCENT_CONTRAST) return candidate;
+    if (contrastRatio(candidate, bg) >= target) return candidate;
   }
   return muted;
 }
@@ -132,22 +156,28 @@ export function resolveAmbientSchemeHysteresis(
 const SCHEME_HYSTERESIS = 0.07;
 
 /**
- * 由背景主色派生 ambient variant 的「原始参数」（仅 tint 通道与前景 alpha 基数）。
+ * 由背景主色派生 ambient variant 的「原始参数」（仅 tint 通道、前景 alpha 基数与投影基数）。
  * 感知令牌（--ink/--glass/...）的 fade 公式仍在 tokens.css，本函数只换参数不换公式。
  * 硬约束：不写任何表面 alpha（表面恒不透明，背景零参与混色，颜色不随拖动抖动）。
- * 低调原则：表面贴近背景色（深色背景轻微提亮而非压暗，避免"黑块"），
- * 强调色降饱和为灰绿，交互态 alpha 基数降档——浮层以低对比、低轮廓伴随页面，
- * 不以色块存在感压过页面；文字仍按 WCAG AA 对比度求解保证可读。
+ *
+ * 隐蔽原则：表面与描边都取背景原色、投影打到 0——远距离和拍照最先暴露悬浮层的
+ * 就是深色投影与矩形描边；前景对比度由 `veil` 档位决定，静置时贴近背景，
+ * 近距离仍可读，需要无障碍时可切到 readable 档。
+ * @param veil 隐蔽强度档位；缺省为 DEFAULT_AMBIENT_VEIL
  */
-export function deriveAmbientTokens(hex: string): AmbientTokens | undefined {
+export function deriveAmbientTokens(
+  hex: string,
+  veil: AmbientVeilLevel = DEFAULT_AMBIENT_VEIL,
+): AmbientTokens | undefined {
   const bg = parseHex(hex);
   if (!bg) return undefined;
+  const profile = VEIL_PROFILES[veil];
   const isDark = relativeLuminance(bg) < DARK_THRESHOLD;
   const extreme = isDark ? WHITE : BLACK;
-  const ink = chooseInk(bg, isDark);
-  const accent = chooseAccent(bg, isDark);
+  const ink = chooseInk(bg, isDark, profile.text);
+  const accent = chooseAccent(bg, isDark, profile.accent, profile.accentMix);
   const paper = mix(bg, extreme, isDark ? 0.06 : 0.1);
-  const inkSoft = mix(ink, bg, 0.12);
+  const inkSoft = mix(ink, bg, profile.iconMix);
 
   return {
     "--ink-tint": toChannels(ink),
@@ -156,7 +186,8 @@ export function deriveAmbientTokens(hex: string): AmbientTokens | undefined {
     // 胶囊与面板是同一悬浮组件的两层：固有色必须完全一致（不可有微层次差），
     // 层级感交给描边与投影表达
     "--panel-tint": toChannels(bg),
-    "--line-tint": toChannels(ink),
+    // 描边取背景色：变色龙下不画矩形轮廓，边界只由内容本身表达
+    "--line-tint": toChannels(bg),
     "--hover-tint": toChannels(ink),
     "--hover-base": "0.1",
     "--field-tint": toChannels(ink),
@@ -168,7 +199,10 @@ export function deriveAmbientTokens(hex: string): AmbientTokens | undefined {
     "--mint-tint": toChannels(accent),
     "--mint-deep-tint": toChannels(mix(accent, extreme, 0.2)),
     "--mint-text-tint": toChannels(accent),
-    "--mint-wash-base": "0.22",
+    "--mint-wash-base": String(profile.wash),
+    // 投影是远距离最先暴露悬浮条的信号：变色龙下彻底关掉
+    "--shadow-base": "0",
+    "--shadow-ctl-base": "0",
   };
 }
 
@@ -190,6 +224,8 @@ export const FALLBACK_TOKEN_KEYS = [
   "--paper-tint",
   "--danger-tint",
   "--scrim-base",
+  "--shadow-base",
+  "--shadow-ctl-base",
   "--mint-tint",
   "--mint-deep-tint",
   "--mint-text-tint",

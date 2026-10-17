@@ -5,11 +5,38 @@ import {
   resolveAmbientSchemeHysteresis,
 } from "../src/hooks/useAmbientTheme";
 
-/** "r g b" 通道串 → Rgb。 */
+/** "r g b" 通道值 → Rgb。 */
 function channels(value: string | null | undefined): { r: number; g: number; b: number } {
   const [r = 0, g = 0, b = 0] = (value ?? "").split(" ").map(Number);
   return { r, g, b };
 }
+
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
+  const value = Number.parseInt(hex.slice(1), 16);
+  return { r: (value >> 16) & 0xff, g: (value >> 8) & 0xff, b: value & 0xff };
+}
+
+/** WCAG 相对亮度（线性化 sRGB）；用例里独立实现，避免与被测代码共用同一份公式。 */
+function channelLuminance(channel: number): number {
+  const c = channel / 255;
+  return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+}
+
+function contrastRatio(a: { r: number; g: number; b: number }, hex: string): number {
+  const b = hexToRgb(hex);
+  const la =
+    0.2126 * channelLuminance(a.r) +
+    0.7152 * channelLuminance(a.g) +
+    0.0722 * channelLuminance(a.b);
+  const lb =
+    0.2126 * channelLuminance(b.r) +
+    0.7152 * channelLuminance(b.g) +
+    0.0722 * channelLuminance(b.b);
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+
+/** 代表性背景：深、浅、饱和色与中灰。 */
+const SAMPLE_BACKGROUNDS = ["#1a1a1a", "#f5f2ec", "#2b3a67", "#e07a5f", "#808080"];
 
 describe("ambient chameleon theme", () => {
   it("derives dark-theme tokens from a dark background color", () => {
@@ -21,7 +48,7 @@ describe("ambient chameleon theme", () => {
     expect(tokens?.["--icon-tint"]).toMatch(/^\d+ \d+ \d+$/);
     // 深色背景下强调色为降饱和灰绿且可读（非默认高饱和亮绿）
     expect(tokens?.["--mint-text-tint"]).toMatch(/^\d+ \d+ \d+$/);
-    expect(tokens?.["--mint-wash-base"]).toBe("0.22");
+    expect(tokens?.["--mint-wash-base"]).toBe("0.12");
   });
 
   it("derives a muted accent on light backgrounds too", () => {
@@ -81,12 +108,41 @@ describe("ambient chameleon theme", () => {
     expect(resolveAmbientScheme("not-a-color")).toBeUndefined();
   });
 
-  it("solves ink for at least 4.5:1 contrast on any background", () => {
-    for (const hex of ["#1a1a1a", "#f5f2ec", "#2b3a67", "#e07a5f", "#808080"]) {
-      const tokens = deriveAmbientTokens(hex);
-      expect(tokens).toBeDefined();
-      expect(tokens?.["--ink-tint"]).toMatch(/^\d+ \d+ \d+$/);
+  it("keeps the default veil readable up close and below distant legibility", () => {
+    // 默认「隐蔽」档：对比度停在 2:1 附近——一臂距离内可读，
+    // 远距离与拍照会掉出可见阈值（不需要靠加粗字号）
+    for (const hex of SAMPLE_BACKGROUNDS) {
+      const ratio = contrastRatio(channels(deriveAmbientTokens(hex)?.["--ink-tint"]), hex);
+      expect(ratio).toBeGreaterThanOrEqual(1.6);
+      expect(ratio).toBeLessThanOrEqual(2.6);
     }
+  });
+
+  it("restores WCAG AA contrast at the readable level", () => {
+    for (const hex of SAMPLE_BACKGROUNDS) {
+      const ratio = contrastRatio(
+        channels(deriveAmbientTokens(hex, "readable")?.["--ink-tint"]),
+        hex,
+      );
+      expect(ratio).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it("blends further as the veil level tightens", () => {
+    const ratios = (["blend", "veiled", "balanced", "readable"] as const).map((level) =>
+      contrastRatio(channels(deriveAmbientTokens("#808080", level)?.["--ink-tint"]), "#808080"),
+    );
+    for (let index = 1; index < ratios.length; index += 1) {
+      expect(ratios[index]).toBeGreaterThan(ratios[index - 1] ?? 0);
+    }
+  });
+
+  it("kills the drop shadow and the outline so the surface reads as background", () => {
+    // 深色投影与矩形描边是远距离/拍照最先暴露悬浮层的两个信号
+    const tokens = deriveAmbientTokens("#f5f2ec");
+    expect(tokens?.["--shadow-base"]).toBe("0");
+    expect(tokens?.["--shadow-ctl-base"]).toBe("0");
+    expect(tokens?.["--line-tint"]).toBe(tokens?.["--glass-tint"]);
   });
 
   it("returns undefined for invalid colors", () => {

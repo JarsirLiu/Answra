@@ -88,6 +88,11 @@
   /* 【遮罩】图片缩略图上的浮层按钮底 */
   --scrim-base: 0.55;
 
+  /* 【投影】alpha 基数：投影是远距离最先暴露悬浮层的信号，
+     变色龙（ambient）把它打到 0，只留固有色与背景融为一体 */
+  --shadow-base: 0.14;
+  --shadow-ctl-base: 0.25;
+
   /* ── 感知令牌：fade 的显式函数（组件只允许引用这一层） ── */
   /* --fade 默认值：FloatingBarApp 按用户透明度内联覆盖该值；
      没有外观控制器的独立窗口（如候选窗）靠这一行才能让下面全部
@@ -121,10 +126,10 @@
   --scrim: rgb(0 0 0 / max(calc(var(--scrim-base) * var(--fade)), 0.45));
   --scrim-strong: rgb(0 0 0 / max(calc((var(--scrim-base) + 0.2) * var(--fade)), 0.6));
   --shadow-bar:
-    0 8px 24px rgb(10 25 20 / calc(0.14 * var(--fade))),
-    0 1px 3px rgb(10 25 20 / calc(0.08 * var(--fade)));
-  --shadow-pop: 0 14px 34px rgb(10 25 20 / calc(0.2 * var(--fade)));
-  --shadow-ctl: 0 1px 3px rgb(10 25 20 / calc(0.25 * var(--fade)));
+    0 8px 24px rgb(10 25 20 / calc(var(--shadow-base) * var(--fade))),
+    0 1px 3px rgb(10 25 20 / calc(var(--shadow-base) * 0.57 * var(--fade)));
+  --shadow-pop: 0 14px 34px rgb(10 25 20 / calc((var(--shadow-base) + 0.06) * var(--fade)));
+  --shadow-ctl: 0 1px 3px rgb(10 25 20 / calc(var(--shadow-ctl-base) * var(--fade)));
 }
 
 /* ── 深色主题：只覆盖原始参数，fade 合成层与组件样式零改动 ──

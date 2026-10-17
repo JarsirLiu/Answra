@@ -10,8 +10,12 @@ import {
 } from "./hooks/useAmbientTheme";
 import {
   AMBIENT_FOLLOW_STORAGE_KEY,
+  AMBIENT_VEIL_LEVELS,
+  AMBIENT_VEIL_STORAGE_KEY,
+  type AmbientVeilLevel,
   APP_OPACITY_STORAGE_KEY,
   COLOR_GROUP_STORAGE_PREFIX,
+  DEFAULT_AMBIENT_VEIL,
 } from "./model";
 
 /**
@@ -111,6 +115,24 @@ export function loadAmbientFollow(): boolean {
   return localStorage.getItem(AMBIENT_FOLLOW_STORAGE_KEY) === "on";
 }
 
+/** 判断持久化值是否为合法的隐蔽强度档位。 */
+export function isAmbientVeilLevel(value: string | null): value is AmbientVeilLevel {
+  return AMBIENT_VEIL_LEVELS.some((level) => level === value);
+}
+
+/** 从 localStorage 读取隐蔽强度档位；缺失或非法值回落默认档。 */
+export function loadAmbientVeil(): AmbientVeilLevel {
+  if (typeof localStorage === "undefined") return DEFAULT_AMBIENT_VEIL;
+  const stored = localStorage.getItem(AMBIENT_VEIL_STORAGE_KEY);
+  return isAmbientVeilLevel(stored) ? stored : DEFAULT_AMBIENT_VEIL;
+}
+
+/** 持久化隐蔽强度档位。 */
+export function saveAmbientVeil(level: AmbientVeilLevel): void {
+  if (typeof localStorage === "undefined") return;
+  localStorage.setItem(AMBIENT_VEIL_STORAGE_KEY, level);
+}
+
 /** 从 localStorage 读取用户透明度（0.5~1）；缺失或非法回落 1。 */
 export function loadAppOpacity(): number {
   if (typeof localStorage === "undefined") return 1;
@@ -129,18 +151,26 @@ export function saveAppOpacity(value: number): void {
  * @param bridge 桌面桥（浏览器预览/测试可能没有 onAmbientColor）
  * @param options.ambientFollow 变色龙开关；开启时深浅方案随背景亮度，
  *   关闭或采样失败时回落跟随系统
- * @param options.colorGroups 用户分组覆盖；优先级高于 ambient
+ * @param options.colorGroups 用户分组覆盖；变色龙开启时失效
+ * @param options.ambientVeil 变色龙隐蔽强度档位；决定前景对比度目标
  */
 export function useAppTheme(
   bridge: DesktopBridge | undefined,
-  options: { ambientFollow: boolean; colorGroups: ColorGroupOverrides },
+  options: {
+    ambientFollow: boolean;
+    colorGroups: ColorGroupOverrides;
+    ambientVeil?: AmbientVeilLevel;
+  },
 ): void {
-  const { ambientFollow, colorGroups } = options;
+  const { ambientFollow, colorGroups, ambientVeil = DEFAULT_AMBIENT_VEIL } = options;
   const [ambient, setAmbient] = useState<AmbientTokens | undefined>(undefined);
   const [ambientScheme, setAmbientScheme] = useState<"light" | "dark" | undefined>(undefined);
   // 上一轮有效推送的 hex 与深浅判定；用于去重噪声采样与阈值滞回。
   const lastHexRef = useRef<string | undefined>(undefined);
   const lastSchemeRef = useRef<"light" | "dark" | undefined>(undefined);
+  // 档位经 ref 参与采样回调：订阅只依赖 bridge/开关，切档位不必重新订阅推送。
+  const veilRef = useRef(ambientVeil);
+  veilRef.current = ambientVeil;
 
   const applyPayload = useCallback((payload: AmbientColorPayload) => {
     // 主进程轮询不管颜色是否变化都会推送；hex 未变时跳过 setState，
@@ -150,7 +180,7 @@ export function useAppTheme(
     if (payload.ok) {
       const scheme = resolveAmbientSchemeHysteresis(payload.hex, lastSchemeRef.current);
       lastSchemeRef.current = scheme;
-      setAmbient(deriveAmbientTokens(payload.hex));
+      setAmbient(deriveAmbientTokens(payload.hex, veilRef.current));
       setAmbientScheme(scheme);
     } else {
       lastSchemeRef.current = undefined;
@@ -170,6 +200,13 @@ export function useAppTheme(
       applyPayload(payload);
     });
   }, [bridge, ambientFollow, applyPayload]);
+
+  // 切换隐蔽强度：用上一轮有效背景色立即重推导，不必等下一次采样推送。
+  useEffect(() => {
+    const hex = lastHexRef.current;
+    if (!ambientFollow || !hex) return;
+    setAmbient(deriveAmbientTokens(hex, ambientVeil));
+  }, [ambientFollow, ambientVeil]);
 
   useEffect(() => {
     // 变色龙开启时独占一切颜色（用户分组覆盖失效）；

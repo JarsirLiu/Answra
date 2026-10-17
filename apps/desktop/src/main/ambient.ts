@@ -1,5 +1,6 @@
 import { AmbientChannels, type AmbientColorPayload } from "@answra/shared";
 import { type BrowserWindow, desktopCapturer, screen } from "electron";
+import { isWindowCaptureProtected } from "./windowCaptureProtection";
 
 /**
  * 变色龙主题：主进程采样悬浮条周边的屏幕背景主色并推送（v1 路径）。
@@ -8,6 +9,9 @@ import { type BrowserWindow, desktopCapturer, screen } from "electron";
  * bounds 外扩一圈的区域，统计时排除窗口自身矩形再外扩一圈投影带
  * （悬浮条的 drop shadow 会压暗紧贴 bounds 的屏幕像素），只取更外侧
  * 的环形边缘带——这样不需要隐藏窗口即可拿到"身后"的背景色，无闪烁。
+ *
+ * 隐身例外：窗口处于内容保护（隐身）状态时它不进入捕获画面，裁剪图里
+ * 窗口矩形内就是它正后方的真实背景，此时直接统计该矩形，配色比环形近似更准。
  *
  * 采样时机：窗口移动（节流）、显示器变化、低频轮询（背景内容会变）。
  */
@@ -65,8 +69,13 @@ export function expandInner(
   };
 }
 
+/** 统计区域相对窗口矩形的取法：`outside` 取窗口外的环形带，`inside` 取窗口矩形本身。 */
+export type SampleRegionMode = "outside" | "inside";
+
 /**
- * 从裁剪位图的环形区域（排除窗口自身矩形）统计主色。
+ * 从裁剪位图统计主色。
+ * @param region 参照矩形：`outside` 时是排除矩形，`inside` 时是目标矩形
+ * @param mode 取环形带（默认）还是取窗口矩形本身（隐身时可读到正后方背景）
  * 颜色按 4bit/通道 量化分桶，取最大桶的中位数（均值会被桶内少量
  * 偏暗/偏亮的杂散像素拉偏，中位数更贴近桶的真实主色）。导出供测试。
  */
@@ -74,18 +83,23 @@ export function dominantColor(
   bitmap: Electron.NativeImage,
   width: number,
   height: number,
-  inner: { x: number; y: number; width: number; height: number },
+  region: { x: number; y: number; width: number; height: number },
+  mode: SampleRegionMode = "outside",
 ): AmbientColor | undefined {
   const buffer = bitmap.toBitmap();
   // Electron 位图默认为 BGRA 排列
   const buckets = new Map<number, { count: number; r: number; g: number; b: number }>();
   let total = 0;
+  const inside = mode === "inside";
 
   for (let y = 0; y < height; y += SAMPLE_STEP) {
     for (let x = 0; x < width; x += SAMPLE_STEP) {
-      const inWindow =
-        x >= inner.x && x < inner.x + inner.width && y >= inner.y && y < inner.y + inner.height;
-      if (inWindow) continue;
+      const inRegion =
+        x >= region.x &&
+        x < region.x + region.width &&
+        y >= region.y &&
+        y < region.y + region.height;
+      if (inRegion !== inside) continue;
       const offset = (y * width + x) * 4;
       const b = buffer[offset] ?? 0;
       const g = buffer[offset + 1] ?? 0;
@@ -122,9 +136,12 @@ export function dominantColor(
   const bs: number[] = [];
   for (let y = 0; y < height; y += SAMPLE_STEP) {
     for (let x = 0; x < width; x += SAMPLE_STEP) {
-      const inWindow =
-        x >= inner.x && x < inner.x + inner.width && y >= inner.y && y < inner.y + inner.height;
-      if (inWindow) continue;
+      const inRegion =
+        x >= region.x &&
+        x < region.x + region.width &&
+        y >= region.y &&
+        y < region.y + region.height;
+      if (inRegion !== inside) continue;
       const offset = (y * width + x) * 4;
       const b = buffer[offset] ?? 0;
       const g = buffer[offset + 1] ?? 0;
@@ -208,12 +225,16 @@ async function sampleAndPush(
       width: Math.round(bounds.width * thumbScale),
       height: Math.round(bounds.height * thumbScale),
     };
+    // 隐身（内容保护）时窗口不在捕获画面里：窗口矩形内就是它正后方的背景，
+    // 直接取这块才能让悬浮条与身后内容同色；未隐身时只能取窗口外的环形带
+    // （并把排除矩形外扩投影带，绕开悬浮条自身投影压暗的像素）。
+    const behindWindow = isWindowCaptureProtected(window);
     const color = dominantColor(
       cropped,
       width,
       height,
-      // 排除矩形外扩投影带：悬浮条自身的 drop shadow 会压暗紧贴 bounds 的像素
-      expandInner(inner, Math.round(SHADOW_PAD * thumbScale), width, height),
+      behindWindow ? inner : expandInner(inner, Math.round(SHADOW_PAD * thumbScale), width, height),
+      behindWindow ? "inside" : "outside",
     );
     payload = color
       ? { ok: true, hex: toHex(color), luminance: luminanceOf(color) }

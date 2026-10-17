@@ -204,10 +204,12 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
         <SettingsPanel
           bridge={platform}
           ambientFollow={appearance.ambientFollow}
+          ambientVeil={appearance.ambientVeil}
           modelConfig={conversation.config}
           onModelConfigSave={conversation.configure}
           onRevealApiKey={revealApiKey}
           onAmbientFollowChange={appearance.setAmbientFollow}
+          onAmbientVeilChange={appearance.setAmbientVeil}
           onClose={() => surfaces.openPanel("closed")}
           onOpacityChange={appearance.setOpacity}
           onStealthChange={stealthSetting.setEnabled}

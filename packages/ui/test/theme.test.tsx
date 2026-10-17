@@ -1,7 +1,15 @@
 import type { DesktopBridge } from "@answra/shared";
 import { act, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { type ColorGroupOverrides, colorGroupTokens, useAppTheme } from "../src/theme";
+import { applyTokens } from "../src/hooks/useAmbientTheme";
+import { AMBIENT_VEIL_STORAGE_KEY, type AmbientVeilLevel } from "../src/model";
+import {
+  type ColorGroupOverrides,
+  colorGroupTokens,
+  loadAmbientVeil,
+  saveAmbientVeil,
+  useAppTheme,
+} from "../src/theme";
 
 interface AmbientPayload {
   ok: boolean;
@@ -31,12 +39,18 @@ function Harness({
   bridge,
   ambientFollow,
   colorGroups,
+  ambientVeil,
 }: {
   bridge?: DesktopBridge;
   ambientFollow: boolean;
   colorGroups: ColorGroupOverrides;
+  ambientVeil?: AmbientVeilLevel;
 }) {
-  useAppTheme(bridge, { ambientFollow, colorGroups });
+  useAppTheme(bridge, {
+    ambientFollow,
+    colorGroups,
+    ...(ambientVeil ? { ambientVeil } : {}),
+  });
   return null;
 }
 
@@ -107,5 +121,38 @@ describe("color scheme resolution", () => {
     render(<Harness bridge={bridge} ambientFollow colorGroups={{}} />);
     act(() => bridge.emit({ ok: false, hex: "#101018", luminance: 0.05 }));
     expect(document.documentElement.dataset.theme).toBe("light");
+  });
+});
+
+describe("chameleon veil preference", () => {
+  afterEach(() => {
+    applyTokens(undefined);
+    localStorage.clear();
+  });
+
+  it("defaults to the veiled level and ignores invalid stored values", () => {
+    expect(loadAmbientVeil()).toBe("veiled");
+    localStorage.setItem(AMBIENT_VEIL_STORAGE_KEY, "nonsense");
+    expect(loadAmbientVeil()).toBe("veiled");
+    saveAmbientVeil("blend");
+    expect(loadAmbientVeil()).toBe("blend");
+  });
+
+  it("re-derives tokens when the veil level changes without a new sample", () => {
+    const bridge = createBridge();
+    const { rerender } = render(
+      <Harness ambientFollow ambientVeil="readable" bridge={bridge} colorGroups={{}} />,
+    );
+    act(() => bridge.emit({ ok: true, hex: "#808080", luminance: 0.22 }));
+    const readable = document.documentElement.style.getPropertyValue("--ink-tint");
+
+    rerender(<Harness ambientFollow ambientVeil="blend" bridge={bridge} colorGroups={{}} />);
+    const blend = document.documentElement.style.getPropertyValue("--ink-tint");
+
+    expect(blend).not.toBe("");
+    expect(blend).not.toBe(readable);
+    // 表面与描边取背景原色、投影关闭：悬浮层只靠固有色融入背景
+    expect(document.documentElement.style.getPropertyValue("--line-tint")).toBe("128 128 128");
+    expect(document.documentElement.style.getPropertyValue("--shadow-base")).toBe("0");
   });
 });
