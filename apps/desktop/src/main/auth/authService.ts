@@ -25,7 +25,7 @@ export const AUTH_PATHS = {
   exchange: "/api/v1/auth/desktop/exchange",
   refresh: "/api/v1/auth/desktop/refresh",
   revoke: "/api/v1/auth/desktop/revoke",
-  capabilities: "/api/v1/capabilities",
+  capabilities: "/api/v1/auth/me",
 } as const;
 
 /** access token 提前视为过期的时间，避免边界上带一个即将失效的 token 发请求。 */
@@ -258,7 +258,15 @@ export class AuthService {
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     if (!response.ok) throw new Error(`${path} 返回 ${response.status}`);
-    return (await response.json()) as unknown;
+    const payload = (await response.json()) as unknown;
+    if (typeof payload === "object" && payload !== null && "code" in payload && "data" in payload) {
+      const envelope = payload as { code?: unknown; data?: unknown; message?: unknown };
+      if (envelope.code !== 0) {
+        throw new Error(typeof envelope.message === "string" ? envelope.message : `${path} 请求失败`);
+      }
+      return envelope.data;
+    }
+    return payload;
   }
 
   private async dropSession(): Promise<AuthStatus> {

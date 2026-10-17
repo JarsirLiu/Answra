@@ -170,11 +170,16 @@ describe("AuthService.login", () => {
 describe("AuthService.handleCallbackUrl", () => {
   it("exchanges the code, stores credentials and pushes the signed-in status", async () => {
     const harness = createHarness((call) => {
-      if (call.url.endsWith(AUTH_PATHS.exchange)) return jsonResponse(tokenBody());
+      if (call.url.endsWith(AUTH_PATHS.exchange))
+        return jsonResponse({ code: 0, message: "ok", data: tokenBody() });
       if (call.url.endsWith(AUTH_PATHS.capabilities)) {
         return jsonResponse({
-          plan: "pro",
-          capabilities: [{ id: "text.chat" }, { id: "voice.interview" }, { noise: true }],
+          code: 0,
+          message: "ok",
+          data: {
+            plan: "pro",
+            capabilities: [{ id: "text.chat" }, { id: "voice.interview" }, { noise: true }],
+          },
         });
       }
       return jsonResponse({}, 404);

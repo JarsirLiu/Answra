@@ -4,8 +4,8 @@
  * 流程（Agents 提案 §4.1）：客户端在系统浏览器打开站点授权页 →
  * 用户登录/同意 → 站点 302 到 `answra://auth/callback?code=…&state=…`。
  *
- * 注意：站点授权页的查询参数名（`code_challenge`/`device_*` 等）尚未在网关契约中冻结，
- * 统一在此处生成，契约变更只需改这一个文件。
+ * 查询参数与 AnswraSite `/[locale]/desktop/authorize` 页面和
+ * `/api/v1/auth/desktop/authorize` 网关请求保持一致。
  */
 
 /** 应用自定义 scheme（深链回调与单实例转发共用）。 */
