@@ -1,4 +1,9 @@
-import type { DesktopAnnouncement, DesktopBridge } from "@answra/shared";
+import {
+  ActiveChatConversationId,
+  ActiveExamConversationId,
+  type DesktopAnnouncement,
+  type DesktopBridge,
+} from "@answra/shared";
 import { useEffect, useState } from "react";
 import { FloatingBar } from "../components/floating-bar/FloatingBar";
 import { FloatingLayerHost } from "../components/floating-bar/FloatingLayerHost";
@@ -12,7 +17,7 @@ import { useMeetingStealth } from "../hooks/useMeetingStealth";
 import { useStealthInputGuard } from "../hooks/useStealthInputGuard";
 import { MODES, type Mode, type ModeAction } from "../model";
 import { useAppearanceController } from "./useAppearanceController";
-import { useConversationChat } from "./useConversationChat";
+import { useGeneralChat, useScreenshotAnswer } from "./useConversationChat";
 import { useReplyWorkflow } from "./useReplyWorkflow";
 import { useSurfaceCoordinator } from "./useSurfaceCoordinator";
 
@@ -24,7 +29,7 @@ interface FloatingBarAppProps {
 export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
   // 默认桥由 desktop preload 注入（window.answra），浏览器预览与测试可传入 mock
   const platform = bridge ?? (globalThis as { answra?: DesktopBridge }).answra;
-  const [mode, setMode] = useState<Mode>("exam");
+  const [mode, setMode] = useState<Mode>("conversation");
   const [announcements, setAnnouncements] = useState<DesktopAnnouncement[]>([]);
   const [authSignedIn, setAuthSignedIn] = useState(false);
   const surfaces = useSurfaceCoordinator();
@@ -34,7 +39,8 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
   const appearance = useAppearanceController(platform);
   const stealthSetting = useMeetingStealth(platform);
   useStealthInputGuard(stealthSetting.enabled);
-  const conversation = useConversationChat(platform);
+  const conversation = useGeneralChat(platform, ActiveChatConversationId);
+  const answer = useScreenshotAnswer(platform, ActiveExamConversationId);
   useEffect(() => {
     if (!platform?.getAuthStatus) return;
     let cancelled = false;
@@ -85,25 +91,25 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
     };
   }, [authSignedIn, platform]);
   useEffect(() => {
-    if (panel !== "chat" && replyPhase === "closed") conversation.clearMessages();
-  }, [conversation.clearMessages, panel, replyPhase]);
+    if (panel !== "chat" && replyPhase === "closed") answer.clearMessages();
+  }, [answer.clearMessages, panel, replyPhase]);
   const reply = useReplyWorkflow({
-    cancelMessage: conversation.cancel,
+    cancelMessage: answer.cancel,
     onCaptureError: (message) =>
       surfaces.dispatch({ type: "layer/show-notice", id: "capture-error", message }),
     onWorkflowFinish: () => {
-      conversation.clearMessages();
+      answer.clearMessages();
       surfaces.finishWorkflow();
     },
     onWorkflowPhase: (phase) => surfaces.dispatch({ type: "workflow/phase", phase }),
     onWorkflowStart: surfaces.startWorkflow,
     phase: replyPhase,
     platform,
-    replyText: conversation.replyText,
-    replyActivities: conversation.replyActivities,
-    replyError: conversation.replyError,
-    replyPending: conversation.replyPending,
-    sendMessage: conversation.send,
+    replyText: answer.replyText,
+    replyActivities: answer.replyActivities,
+    replyError: answer.replyError,
+    replyPending: answer.replyPending,
+    sendMessage: answer.send,
     stealth: stealthSetting.enabled,
   });
   const {
@@ -136,11 +142,13 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
       triggerScreenshot();
       return;
     }
-    if (action.id === "record") {
-      surfaces.openPanel("notes");
-      return;
-    }
-    surfaces.openPanel("chat");
+    if (action.id === "chat") surfaces.openPanel("chat");
+  }
+
+  function handleModeChange(nextMode: Mode) {
+    setMode(nextMode);
+    if (nextMode === "conversation") surfaces.openPanel("chat");
+    else if (panel === "chat") surfaces.openPanel("closed");
   }
 
   /** 按需回显已保存的 API Key；桥未实现（浏览器预览/测试）时无此能力。 */
@@ -161,7 +169,7 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
           modes={MODES}
           onClose={() => platform?.close()}
           onModeAction={handleModeAction}
-          onModeChange={setMode}
+          onModeChange={handleModeChange}
           onDismissModeMenu={surfaces.closeFloatingLayers}
           onToggleModeMenu={toggleModeMenu}
           onTogglePanel={surfaces.togglePanel}
@@ -188,13 +196,8 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
           onAttachmentRemove={removeAttachment}
           onClose={() => {
             surfaces.openPanel("closed");
-            conversation.clearMessages();
           }}
           onDraftChange={setDraft}
-          onFork={() => {
-            conversation.clearMessages();
-            setDraft("");
-          }}
           onVote={(vote) =>
             surfaces.dispatch({
               type: "layer/show-notice",
@@ -233,7 +236,7 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
           replyText={replyText}
           replyActivities={replyActivities}
           replyError={replyError}
-          replyPending={conversation.replyPending}
+          replyPending={answer.replyPending}
           onAttachmentChange={handleAttachmentChange}
           onAttachmentRemove={removeAttachment}
           onClose={closeReplyBar}
@@ -248,7 +251,6 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
           bridge={platform}
           onClose={() => {
             surfaces.openPanel("closed");
-            conversation.clearMessages();
           }}
           stealth={stealthSetting.enabled}
         />

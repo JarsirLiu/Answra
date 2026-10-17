@@ -34,7 +34,7 @@ export type SurfaceAction =
   | { type: "layer/dismiss"; id: string };
 
 export const initialSurfaceState: SurfaceState = {
-  panel: "closed",
+  panel: "chat",
   layer: "closed",
   workflow: null,
   floatingLayers: [],

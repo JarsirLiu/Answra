@@ -4,13 +4,12 @@ import {
   AudioLines,
   ClipboardList,
   MessagesSquare,
-  NotebookPen,
   ScanLine,
   Sparkles,
   UsersRound,
 } from "lucide-react";
 
-export type Mode = "exam" | "interview" | "meeting";
+export type Mode = "conversation" | "exam" | "interview" | "meeting";
 
 /** 内容面板标识；`closed` 表示当前只显示悬浮条。 */
 export type Panel = Exclude<OverlayMode, "closed"> | "closed";
@@ -33,13 +32,16 @@ export interface ModeDefinition {
 
 export const MODES: readonly ModeDefinition[] = [
   {
+    id: "conversation",
+    label: "对话",
+    icon: MessagesSquare,
+    actions: [{ id: "chat", label: "打开对话", icon: MessagesSquare }],
+  },
+  {
     id: "exam",
-    label: "笔试",
+    label: "答题",
     icon: ClipboardList,
-    actions: [
-      { id: "screenshot", label: "截图提问", icon: ScanLine },
-      { id: "chat", label: "AI 对话", icon: MessagesSquare },
-    ],
+    actions: [{ id: "screenshot", label: "截图提问", icon: ScanLine }],
   },
   {
     id: "interview",
@@ -48,12 +50,11 @@ export const MODES: readonly ModeDefinition[] = [
     actions: [
       {
         id: "suggest",
-        label: "AI 建议（即将推出）",
+        label: "面试辅助（即将推出）",
         icon: Sparkles,
         disabled: true,
-        hint: "后续将区分系统声音（对方）与麦克风（用户），实时生成回答建议",
+        hint: "实时生成回答建议",
       },
-      { id: "chat", label: "AI 对话", icon: MessagesSquare },
     ],
   },
   {
@@ -61,14 +62,18 @@ export const MODES: readonly ModeDefinition[] = [
     label: "会议",
     icon: UsersRound,
     actions: [
-      { id: "record", label: "会议记录", icon: NotebookPen },
-      { id: "chat", label: "AI 对话", icon: MessagesSquare },
+      {
+        id: "meeting",
+        label: "会议助手（即将推出）",
+        icon: Sparkles,
+        disabled: true,
+        hint: "会议记录与总结功能即将推出",
+      },
     ],
   },
 ];
 
-export const WELCOME_MESSAGE =
-  "选择一个功能开始。笔试模式可以添加题目截图，再补充问题一起发送；会议模式可用会议记录记要点。";
+export const WELCOME_MESSAGE = "在对话模式中开始交流，或切换到答题模式发送题目截图。";
 
 export const NOTE_STORAGE_KEY = "answra-note";
 

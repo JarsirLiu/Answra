@@ -4,6 +4,7 @@ import type {
   ConversationMessage,
   ConversationSnapshot,
 } from "@answra/shared";
+import { ActiveChatConversationId } from "@answra/shared";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { UIMessageChunk } from "ai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -13,6 +14,7 @@ import { ICON } from "../src/tokens";
 let emitConversationEvent: ((event: { runId: string; chunk: UIMessageChunk }) => void) | undefined;
 const conversationId = "active-exam-conversation";
 let emittedConversationId = conversationId;
+const conversationListeners = new Set<(change: ConversationChange) => void>();
 
 function createConversationBridge() {
   return {
@@ -21,16 +23,24 @@ function createConversationBridge() {
     getConversationConfig: vi
       .fn()
       .mockResolvedValue({ baseUrl: "http://localhost/v1", model: "test", configured: true }),
-    getConversationSnapshot: vi.fn().mockResolvedValue(emptySnapshot()),
-    createConversation: vi.fn().mockResolvedValue(emptySnapshot()),
-    sendConversationMessage: vi.fn().mockImplementation(async (id: string) => {
-      emittedConversationId = id;
-      return { runId: "run-1" };
-    }),
+    getConversationSnapshot: vi.fn().mockImplementation(async (id: string) => emptySnapshot(id)),
+    createConversation: vi.fn().mockImplementation(async (id: string) => emptySnapshot(id)),
+    sendConversationMessage: vi
+      .fn()
+      .mockImplementation(async (command: { conversationId: string }) => {
+        emittedConversationId = command.conversationId;
+        return { runId: "run-1" };
+      }),
     cancelConversationRun: vi.fn(),
     onConversationChange: vi.fn((listener: (change: ConversationChange) => void) => {
       let revision = 0;
       const messages: ConversationMessage[] = [];
+      conversationListeners.add(listener);
+      const publish = (change: ConversationChange) => {
+        conversationListeners.forEach((subscriber) => {
+          subscriber(change);
+        });
+      };
       emitConversationEvent = ({ runId, chunk }) => {
         revision += 1;
         if (chunk.type === "text-delta") {
@@ -50,7 +60,7 @@ function createConversationBridge() {
           if (assistant) assistant.status = "complete";
         }
         const event = { conversationId: emittedConversationId, revision, runId, chunk };
-        listener({
+        publish({
           type: "event",
           event,
         });
@@ -67,7 +77,7 @@ function createConversationBridge() {
             };
             messages.push(assistant);
           }
-          listener({
+          publish({
             type: "run-finished",
             conversationId: emittedConversationId,
             revision,
@@ -80,7 +90,8 @@ function createConversationBridge() {
         }
       };
       return () => {
-        emitConversationEvent = undefined;
+        conversationListeners.delete(listener);
+        if (conversationListeners.size === 0) emitConversationEvent = undefined;
       };
     }),
     startRegionCapture: vi.fn().mockResolvedValue({
@@ -92,8 +103,16 @@ function createConversationBridge() {
   };
 }
 
-function emptySnapshot(): ConversationSnapshot {
-  return { conversationId, revision: 0, messages: [] };
+function emptySnapshot(id = conversationId): ConversationSnapshot {
+  return { conversationId: id, revision: 0, messages: [] };
+}
+
+function clickAnswerScreenshot() {
+  if (!screen.queryByRole("button", { name: "截图提问" })) {
+    fireEvent.click(screen.getByRole("button", { name: /^(对话|答题|面试|会议)$/ }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "答题" }));
+  }
+  fireEvent.click(screen.getByRole("button", { name: "截图提问" }));
 }
 
 describe("three-segment floating navigation", () => {
@@ -103,23 +122,26 @@ describe("three-segment floating navigation", () => {
     delete document.documentElement.dataset.theme;
     emitConversationEvent = undefined;
     emittedConversationId = conversationId;
+    conversationListeners.clear();
   });
 
   it("changes the middle feature group when the work mode changes", () => {
     render(<FloatingBarApp />);
 
-    expect(screen.getByRole("button", { name: "截图提问" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "笔试" }));
-    expect(screen.getByRole("menuitemradio", { name: "笔试" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "AI 对话" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "打开对话" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "对话" }));
+    expect(screen.getByRole("menuitemradio", { name: "对话" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitemradio", { name: "答题" })).toBeInTheDocument();
     expect(screen.getByRole("menuitemradio", { name: "面试" })).toBeInTheDocument();
     expect(screen.getByRole("menuitemradio", { name: "会议" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("menuitemradio", { name: "面试" }));
-    expect(screen.getByRole("button", { name: "AI 建议（即将推出）" })).toBeDisabled();
-    expect(screen.queryByRole("button", { name: "截图提问" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "答题" }));
+    expect(screen.getByRole("button", { name: "截图提问" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "打开对话" })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "面试" }));
+    fireEvent.click(screen.getByRole("button", { name: "答题" }));
     fireEvent.click(screen.getByRole("menuitemradio", { name: "会议" }));
-    expect(screen.getByRole("button", { name: "会议记录" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "会议助手（即将推出）" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "打开设置" })).toBeInTheDocument();
   });
 
@@ -135,7 +157,7 @@ describe("three-segment floating navigation", () => {
         !glyph.classList.contains("mode-picker-chevron") &&
         !glyph.classList.contains("destination-chevron"),
     );
-    expect(glyphs).toHaveLength(6);
+    expect(glyphs).toHaveLength(5);
     for (const glyph of glyphs) {
       expect(glyph.getAttribute("width")).toBe(String(ICON));
       expect(glyph.getAttribute("height")).toBe(String(ICON));
@@ -145,13 +167,57 @@ describe("three-segment floating navigation", () => {
   it("uses a conversation icon for the chat entry and a voice icon for the interview mode", () => {
     render(<FloatingBarApp />);
 
-    const chatEntry = screen.getByRole("button", { name: "AI 对话" });
+    const chatEntry = screen.getByRole("button", { name: "打开对话" });
     expect(chatEntry.querySelector("svg")?.classList.contains("lucide-messages-square")).toBe(true);
 
-    fireEvent.click(screen.getByRole("button", { name: "笔试" }));
+    fireEvent.click(screen.getByRole("button", { name: "对话" }));
     fireEvent.click(screen.getByRole("menuitemradio", { name: "面试" }));
     const modeTrigger = screen.getByRole("button", { name: "面试" });
     expect(modeTrigger.querySelector("svg")?.classList.contains("lucide-audio-lines")).toBe(true);
+  });
+
+  it("sends general chat on its independent conversation and keeps it when the panel closes", async () => {
+    const bridge = createConversationBridge();
+    render(<FloatingBarApp bridge={bridge} />);
+
+    const input = screen.getByRole("textbox", { name: "补充问题" });
+    fireEvent.change(input, { target: { value: "我叫小明" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
+    await waitFor(() =>
+      expect(bridge.sendConversationMessage).toHaveBeenCalledWith({
+        operation: "chat.send",
+        profileId: "general-chat",
+        conversationId: ActiveChatConversationId,
+        request: { text: "我叫小明", images: [] },
+      }),
+    );
+
+    act(() =>
+      emitConversationEvent?.({
+        runId: "run-1",
+        chunk: { type: "start", messageId: "run-1" },
+      }),
+    );
+    act(() =>
+      emitConversationEvent?.({
+        runId: "run-1",
+        chunk: { type: "text-start", id: "segment-1" },
+      }),
+    );
+    act(() =>
+      emitConversationEvent?.({
+        runId: "run-1",
+        chunk: { type: "text-delta", id: "segment-1", delta: "你好，小明。" },
+      }),
+    );
+    act(() => emitConversationEvent?.({ runId: "run-1", chunk: { type: "finish" } }));
+    await waitFor(() => expect(screen.getByText("你好，小明。")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "收起面板" }));
+    expect(screen.queryByRole("heading", { name: "AI 对话" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "打开对话" }));
+    expect(screen.getByText("我叫小明")).toBeInTheDocument();
+    expect(screen.getByText("你好，小明。")).toBeInTheDocument();
   });
 
   it("renders every mode action as a plain icon button without a stuck tint", () => {
@@ -160,7 +226,7 @@ describe("three-segment floating navigation", () => {
     const classes = [...document.querySelectorAll(".feature-action")].map(
       (action) => action.className,
     );
-    expect(classes).toHaveLength(2);
+    expect(classes).toHaveLength(1);
     expect(new Set(classes).size).toBe(1);
     expect(classes.every((name) => name.includes("surface-control--default"))).toBe(true);
     expect(classes.some((name) => name.includes("primary"))).toBe(false);
@@ -169,29 +235,34 @@ describe("three-segment floating navigation", () => {
   it("overlays the mode menu on an open panel instead of pushing it down", () => {
     render(<FloatingBarApp />);
     fireEvent.click(screen.getByRole("button", { name: "打开笔记本" }));
-    fireEvent.click(screen.getByRole("button", { name: "笔试" }));
+    fireEvent.click(screen.getByRole("button", { name: "对话" }));
 
     // 面板已打开：外壳不得为菜单预留高度，否则窗口变高、面板被下推
     const stack = document.querySelector(".floating-bar-stack");
     expect(stack).not.toHaveClass("is-menu-open");
   });
 
-  it("still reserves window height for the mode menu while no panel is open", () => {
+  it("includes the expanded mode menu in the measured window layout", () => {
     render(<FloatingBarApp />);
-    fireEvent.click(screen.getByRole("button", { name: "笔试" }));
+    fireEvent.click(screen.getByRole("button", { name: "收起面板" }));
+    fireEvent.click(screen.getByRole("button", { name: "对话" }));
 
-    // 面板关闭时窗口只有胶囊高：必须预留高度，否则菜单被窗口裁掉
-    const stack = document.querySelector(".floating-bar-stack");
-    expect(stack).toHaveClass("is-menu-open");
+    const menu = screen.getByRole("menu", { name: "工作模式" });
+    expect(menu.parentElement).toHaveClass("is-menu-in-flow");
+    expect(screen.getByRole("menuitemradio", { name: "会议" })).toBeInTheDocument();
   });
 
   it("shows the mode menu as a dismissible layer without replacing the open panel", () => {
     render(<FloatingBarApp />);
     fireEvent.click(screen.getByRole("button", { name: "打开笔记本" }));
-    fireEvent.click(screen.getByRole("button", { name: "笔试" }));
+    fireEvent.click(screen.getByRole("button", { name: "对话" }));
 
     expect(screen.getByRole("heading", { name: "笔记本 / 资料" })).toBeInTheDocument();
     expect(screen.getByRole("menu", { name: "工作模式" })).toBeInTheDocument();
+    expect(screen.getByRole("menu", { name: "工作模式" }).parentElement).not.toHaveClass(
+      "is-menu-in-flow",
+    );
+    expect(screen.getByRole("menuitemradio", { name: "会议" })).toBeInTheDocument();
 
     fireEvent.pointerDown(document.body);
     expect(screen.queryByRole("menu", { name: "工作模式" })).not.toBeInTheDocument();
@@ -201,7 +272,7 @@ describe("three-segment floating navigation", () => {
   it("attaches a screenshot, accepts a follow-up prompt, and streams the reply in the bar", async () => {
     const bridge = createConversationBridge();
     render(<FloatingBarApp bridge={bridge} />);
-    fireEvent.click(screen.getByRole("button", { name: "截图提问" }));
+    clickAnswerScreenshot();
     await waitFor(() =>
       expect(screen.getByRole("img", { name: /screenshot-.*\.png/ })).toBeInTheDocument(),
     );
@@ -210,12 +281,16 @@ describe("three-segment floating navigation", () => {
     fireEvent.click(screen.getByRole("button", { name: "确认发送" }));
 
     await waitFor(() => {
-      const [sentId, request] = bridge.sendConversationMessage.mock.calls[0] ?? [];
+      const [command] = bridge.sendConversationMessage.mock.calls[0] ?? [];
+      const sentId = command?.conversationId;
       expect(sentId).toMatch(/^screenshot-/);
       expect(sentId).not.toBe(conversationId);
-      expect(request).toEqual({
-        text: "",
-        images: [expect.objectContaining({ dataUrl: "data:image/png;base64,QUJD" })],
+      expect(command).toMatchObject({
+        operation: "answer.run",
+        request: {
+          text: "",
+          images: [expect.objectContaining({ dataUrl: "data:image/png;base64,QUJD" })],
+        },
       });
       expect(bridge.createConversation).toHaveBeenCalledWith(sentId);
       emittedConversationId = sentId as string;
@@ -290,7 +365,7 @@ describe("three-segment floating navigation", () => {
   it("shows model errors and keeps the screenshot available for retry", async () => {
     const bridge = createConversationBridge();
     render(<FloatingBarApp bridge={bridge} />);
-    fireEvent.click(screen.getByRole("button", { name: "截图提问" }));
+    clickAnswerScreenshot();
     await waitFor(() =>
       expect(screen.getByRole("img", { name: /screenshot-.*\.png/ })).toBeInTheDocument(),
     );
@@ -322,7 +397,7 @@ describe("three-segment floating navigation", () => {
   it("captures a region screenshot through the bridge and attaches it to the chat", async () => {
     const bridge = createConversationBridge();
     render(<FloatingBarApp bridge={bridge} />);
-    fireEvent.click(screen.getByRole("button", { name: "截图提问" }));
+    clickAnswerScreenshot();
 
     await waitFor(() =>
       expect(screen.getByRole("img", { name: /screenshot-.*\.png/ })).toBeInTheDocument(),
@@ -334,7 +409,7 @@ describe("three-segment floating navigation", () => {
   it("cancels an inline reply and returns to the same send bar", async () => {
     const bridge = createConversationBridge();
     render(<FloatingBarApp bridge={bridge} />);
-    fireEvent.click(screen.getByRole("button", { name: "截图提问" }));
+    clickAnswerScreenshot();
     await waitFor(() =>
       expect(screen.getByRole("img", { name: /screenshot-.*\.png/ })).toBeInTheDocument(),
     );
@@ -371,7 +446,7 @@ describe("three-segment floating navigation", () => {
     const view = render(<FloatingBarApp bridge={bridge} />);
     try {
       expect(bridge.fitContent).toHaveBeenCalledWith({ height: 48, width: 400 });
-      fireEvent.click(screen.getByRole("button", { name: "截图提问" }));
+      clickAnswerScreenshot();
 
       await waitFor(() => expect(bridge.setReplyBarState).toHaveBeenCalled());
       const state = bridge.setReplyBarState.mock.calls.at(-1)?.[0];
@@ -410,7 +485,7 @@ describe("three-segment floating navigation", () => {
       }),
     };
     render(<FloatingBarApp bridge={bridge} />);
-    fireEvent.click(screen.getByRole("button", { name: "截图提问" }));
+    clickAnswerScreenshot();
     await waitFor(() =>
       expect(screen.getByRole("img", { name: /screenshot-.*\.png/ })).toBeInTheDocument(),
     );
@@ -427,7 +502,7 @@ describe("three-segment floating navigation", () => {
       startRegionCapture: vi.fn().mockResolvedValue({ ok: false, reason: "cancelled" }),
     };
     render(<FloatingBarApp bridge={bridge} />);
-    fireEvent.click(screen.getByRole("button", { name: "截图提问" }));
+    clickAnswerScreenshot();
 
     await waitFor(() => expect(bridge.startRegionCapture).toHaveBeenCalledTimes(1));
     expect(screen.queryByRole("img", { name: /screenshot-.*\.png/ })).not.toBeInTheDocument();
@@ -444,7 +519,7 @@ describe("three-segment floating navigation", () => {
       }),
     };
     render(<FloatingBarApp bridge={bridge} />);
-    fireEvent.click(screen.getByRole("button", { name: "截图提问" }));
+    clickAnswerScreenshot();
 
     // 非取消的失败必须屏幕可见（role=alert），且回复条不出现
     await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
@@ -459,7 +534,7 @@ describe("three-segment floating navigation", () => {
       startRegionCapture: vi.fn().mockResolvedValue({ ok: false, reason: "cancelled" }),
     };
     render(<FloatingBarApp bridge={bridge} />);
-    fireEvent.click(screen.getByRole("button", { name: "截图提问" }));
+    clickAnswerScreenshot();
 
     await waitFor(() => expect(bridge.startRegionCapture).toHaveBeenCalledTimes(1));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
@@ -478,9 +553,9 @@ describe("three-segment floating navigation", () => {
       }),
     };
     render(<FloatingBarApp bridge={bridge} />);
-    expect(screen.getByRole("button", { name: "截图提问" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "截图提问" })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "截图提问" }));
+    clickAnswerScreenshot();
     await waitFor(() =>
       expect(screen.getByRole("img", { name: /screenshot-.*\.png/ })).toBeInTheDocument(),
     );
@@ -508,7 +583,7 @@ describe("three-segment floating navigation", () => {
     };
     render(<FloatingBarApp bridge={bridge} />);
     fireEvent.click(screen.getByRole("button", { name: "打开笔记本" }));
-    fireEvent.click(screen.getByRole("button", { name: "截图提问" }));
+    clickAnswerScreenshot();
 
     await waitFor(() =>
       expect(screen.getByRole("img", { name: /screenshot-.*\.png/ })).toBeInTheDocument(),

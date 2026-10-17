@@ -47,7 +47,11 @@ export function ReplyConversationPopover({
     if (!text || !conversationId || !bridge?.sendConversationMessage) return;
     setDraft("");
     try {
-      await bridge.sendConversationMessage(conversationId, { text, images: [] });
+      await bridge.sendConversationMessage({
+        operation: "answer.run",
+        conversationId,
+        request: { text, images: [] },
+      });
     } catch {
       setDraft(text);
     }

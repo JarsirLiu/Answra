@@ -1,12 +1,11 @@
 import { useChat } from "@ai-sdk/react";
-import {
-  ActiveExamConversationId,
-  type ConversationChange,
-  type ConversationEvent,
-  type ConversationMessage,
-  type ConversationModelConfig,
-  type DesktopBridge,
-  type ReplyBarActivity,
+import type {
+  ConversationChange,
+  ConversationEvent,
+  ConversationMessage,
+  ConversationModelConfig,
+  DesktopBridge,
+  ReplyBarActivity,
 } from "@answra/shared";
 import {
   type ChatTransport,
@@ -19,10 +18,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChatAttachment, ChatMessage } from "../components/panels/ChatPanel";
 import { projectReplyActivity } from "./replyActivity";
 
-export const ACTIVE_CONVERSATION_ID = ActiveExamConversationId;
 type TerminalWaiter = { resolve: () => void; reject: (error: Error) => void };
 
-export function useConversationChat(platform: DesktopBridge | undefined) {
+function useAiConversation(
+  platform: DesktopBridge | undefined,
+  conversationId: string,
+  operation: "chat.send" | "answer.run" = "chat.send",
+) {
   const [config, setConfig] = useState({ baseUrl: "", model: "", configured: false });
   const [activeRunId, setActiveRunId] = useState<string>();
   const [replyError, setReplyError] = useState<string>();
@@ -35,7 +37,7 @@ export function useConversationChat(platform: DesktopBridge | undefined) {
   const runCancelledRef = useRef(false);
   const runErrorRef = useRef<string | undefined>(undefined);
   const revisionRef = useRef(0);
-  const sendConversationIdRef = useRef(ACTIVE_CONVERSATION_ID);
+  const sendConversationIdRef = useRef(conversationId);
 
   useEffect(() => {
     let alive = true;
@@ -48,8 +50,8 @@ export function useConversationChat(platform: DesktopBridge | undefined) {
       if (!platform) return;
       try {
         const initial = platform.createConversation
-          ? await platform.createConversation(ACTIVE_CONVERSATION_ID)
-          : await platform.getConversationSnapshot?.(ACTIVE_CONVERSATION_ID);
+          ? await platform.createConversation(conversationId)
+          : await platform.getConversationSnapshot?.(conversationId);
         if (!initial) return;
         if (alive && initial.revision >= revisionRef.current) {
           revisionRef.current = initial.revision;
@@ -57,7 +59,7 @@ export function useConversationChat(platform: DesktopBridge | undefined) {
           setActiveRunId(initial.activeRunId);
           setMessagesRef.current(initial.messages.map(toUIMessage));
           if (initial.activeRunId && platform.readConversationEvents) {
-            const history = await platform.readConversationEvents(ACTIVE_CONVERSATION_ID, 0);
+            const history = await platform.readConversationEvents(conversationId, 0);
             for (const change of history) {
               if (
                 change.type === "event" &&
@@ -79,8 +81,7 @@ export function useConversationChat(platform: DesktopBridge | undefined) {
     const applyChange = (change: ConversationChange) => {
       if (change.type === "snapshot") {
         const next = change.snapshot;
-        if (next.conversationId !== ACTIVE_CONVERSATION_ID || next.revision <= revisionRef.current)
-          return;
+        if (next.conversationId !== conversationId || next.revision <= revisionRef.current) return;
         revisionRef.current = next.revision;
         runIdRef.current = next.activeRunId;
         setActiveRunId(next.activeRunId);
@@ -94,10 +95,7 @@ export function useConversationChat(platform: DesktopBridge | undefined) {
         return;
       }
       if (change.type === "messages-appended") {
-        if (
-          change.conversationId !== ACTIVE_CONVERSATION_ID ||
-          change.revision <= revisionRef.current
-        )
+        if (change.conversationId !== conversationId || change.revision <= revisionRef.current)
           return;
         revisionRef.current = change.revision;
         runIdRef.current = change.activeRunId;
@@ -105,10 +103,7 @@ export function useConversationChat(platform: DesktopBridge | undefined) {
         return;
       }
       if (change.type === "run-finished") {
-        if (
-          change.conversationId !== ACTIVE_CONVERSATION_ID ||
-          change.revision <= revisionRef.current
-        )
+        if (change.conversationId !== conversationId || change.revision <= revisionRef.current)
           return;
         revisionRef.current = change.revision;
         runIdRef.current = undefined;
@@ -121,8 +116,7 @@ export function useConversationChat(platform: DesktopBridge | undefined) {
         return;
       }
       const { event } = change;
-      if (event.conversationId !== ACTIVE_CONVERSATION_ID || event.revision <= revisionRef.current)
-        return;
+      if (event.conversationId !== conversationId || event.revision <= revisionRef.current) return;
       revisionRef.current = event.revision;
       if (event.chunk.type === "error") runErrorRef.current = event.chunk.errorText;
       if (event.chunk.type === "abort") runCancelledRef.current = true;
@@ -134,7 +128,7 @@ export function useConversationChat(platform: DesktopBridge | undefined) {
             changeRevision(change) > revisionRef.current + 1 &&
             platform?.getConversationSnapshot
           ) {
-            const recovered = await platform.getConversationSnapshot(ACTIVE_CONVERSATION_ID);
+            const recovered = await platform.getConversationSnapshot(conversationId);
             if (recovered.revision >= revisionRef.current) {
               revisionRef.current = recovered.revision;
               runIdRef.current = recovered.activeRunId;
@@ -151,7 +145,7 @@ export function useConversationChat(platform: DesktopBridge | undefined) {
       alive = false;
       unsubscribe?.();
     };
-  }, [platform]);
+  }, [conversationId, platform]);
 
   const transport = useMemo<ChatTransport<UIMessage>>(
     () => ({
@@ -233,10 +227,16 @@ export function useConversationChat(platform: DesktopBridge | undefined) {
         };
         abortSignal?.addEventListener("abort", abort, { once: true });
         try {
-          const result = await platform.sendConversationMessage(conversationId, {
-            text,
-            images,
-          });
+          const command =
+            operation === "chat.send"
+              ? {
+                  operation,
+                  profileId: "general-chat" as const,
+                  conversationId,
+                  request: { text, images },
+                }
+              : { operation, conversationId, request: { text, images } };
+          const result = await platform.sendConversationMessage(command);
           runId = result.runId;
           runIdRef.current = runId;
           setActiveRunId(runId);
@@ -263,9 +263,9 @@ export function useConversationChat(platform: DesktopBridge | undefined) {
       },
       reconnectToStream: async () => null,
     }),
-    [platform],
+    [platform, operation],
   );
-  const chat = useChat({ id: ACTIVE_CONVERSATION_ID, transport });
+  const chat = useChat({ id: conversationId, transport });
   setMessagesRef.current = chat.setMessages;
   // 思考耗时：从本轮发起计时，到助手正文出现第一个字为止。
   const [thinkingMs, setThinkingMs] = useState<number>();
@@ -311,11 +311,7 @@ export function useConversationChat(platform: DesktopBridge | undefined) {
   const lastAssistant = [...messages].reverse().find((message) => message.role === "assistant");
 
   const send = useCallback(
-    async (
-      text: string,
-      attachments: ChatAttachment[],
-      conversationId = ACTIVE_CONVERSATION_ID,
-    ) => {
+    async (text: string, attachments: ChatAttachment[], targetConversationId = conversationId) => {
       if (!platform?.sendConversationMessage)
         throw new Error("本地 AI 服务未连接，请重启应用后重试");
       if (activeRunId || runIdRef.current) throw new Error("当前回复尚未完成");
@@ -336,9 +332,9 @@ export function useConversationChat(platform: DesktopBridge | undefined) {
       });
       waiterRef.current = { resolve: resolveTerminal, reject: rejectTerminal };
       try {
-        sendConversationIdRef.current = conversationId;
-        if (conversationId !== ACTIVE_CONVERSATION_ID) {
-          await platform.createConversation?.(conversationId);
+        sendConversationIdRef.current = targetConversationId;
+        if (targetConversationId !== conversationId) {
+          await platform.createConversation?.(targetConversationId);
         }
         const files: FileUIPart[] = await Promise.all(
           attachments.map(async (attachment) => ({
@@ -360,7 +356,7 @@ export function useConversationChat(platform: DesktopBridge | undefined) {
         throw error;
       }
     },
-    [platform, activeRunId, chat.sendMessage],
+    [platform, activeRunId, chat.sendMessage, conversationId],
   );
 
   const configure = useCallback(
@@ -399,6 +395,14 @@ export function useConversationChat(platform: DesktopBridge | undefined) {
     send,
     thinkingMs,
   };
+}
+
+export function useGeneralChat(platform: DesktopBridge | undefined, conversationId: string) {
+  return useAiConversation(platform, conversationId, "chat.send");
+}
+
+export function useScreenshotAnswer(platform: DesktopBridge | undefined, conversationId: string) {
+  return useAiConversation(platform, conversationId, "answer.run");
 }
 
 function changeRevision(change: ConversationChange): number {
