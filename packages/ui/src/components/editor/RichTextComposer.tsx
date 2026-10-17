@@ -162,12 +162,21 @@ export function RichTextComposer({
         // Rime 接管时禁止 ProseMirror 写入文本（与 textarea readOnly 等价的双保险）。
         handleTextInput: () => imeBlocked,
         handlePaste: (_view, event) => {
-          if (imeBlocked) return true;
           const files = Array.from(event.clipboardData?.files ?? []).filter((file) =>
             file.type.startsWith("image/"),
           );
-          if (files.length === 0) return false;
-          onPasteImages?.(files);
+          if (files.length) {
+            onPasteImages?.(files);
+            return true;
+          }
+          if (!imeBlocked) return false;
+          if (!disabled) {
+            const text = event.clipboardData?.getData("text/plain") ?? "";
+            if (text) {
+              event.preventDefault();
+              _view.dispatch(_view.state.tr.insertText(text));
+            }
+          }
           return true;
         },
       },

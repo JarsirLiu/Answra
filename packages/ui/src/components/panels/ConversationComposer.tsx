@@ -9,7 +9,10 @@ import {
 } from "react";
 import type { useEmbeddedIme } from "../../hooks/useEmbeddedIme";
 import { ControlledTextCompositionMirror } from "../../ime/adapters/ControlledTextCompositionMirror";
-import { applyControlledTextCommand } from "../../ime/adapters/controlledTextAdapter";
+import {
+  applyControlledTextCommand,
+  replaceTextRange,
+} from "../../ime/adapters/controlledTextAdapter";
 import type { useControlledImeTextAdapter } from "../../ime/adapters/useControlledImeTextAdapter";
 import { handleImeEditorKeyDown, imeEditorAttributes } from "../../ime/imeEditorBinding";
 import type { ImeEditorCommand } from "../../ime/imeKeyRouter";
@@ -185,13 +188,27 @@ export function ConversationComposer({
             if (ime?.session.shouldPreventBeforeInput(inputType)) event.preventDefault();
           }}
           onPaste={(event) => {
-            if (ime) return;
             const files = Array.from(event.clipboardData.files).filter((file) =>
               file.type.startsWith("image/"),
             );
             if (files.length) {
               event.preventDefault();
               onPasteImages?.(files);
+              return;
+            }
+            if (ime?.session.textPolicy.blockNativeEditing) {
+              event.preventDefault();
+              if (disabled) return;
+              const text = event.clipboardData.getData("text/plain");
+              if (!text) return;
+              const input = event.currentTarget;
+              const edit = replaceTextRange(
+                valueRef.current,
+                { start: input.selectionStart, end: input.selectionEnd },
+                text,
+              );
+              pendingCaret.current = edit.caret;
+              onValueChangeRef.current?.(edit.value);
             }
           }}
           onKeyDown={(event) => {

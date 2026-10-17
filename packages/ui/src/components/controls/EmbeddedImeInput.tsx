@@ -2,7 +2,10 @@ import type { DesktopBridge } from "@answra/shared";
 import { type InputHTMLAttributes, useEffect, useLayoutEffect, useRef } from "react";
 import { useEmbeddedIme } from "../../hooks/useEmbeddedIme";
 import { ControlledTextCompositionMirror } from "../../ime/adapters/ControlledTextCompositionMirror";
-import { applyControlledTextCommand } from "../../ime/adapters/controlledTextAdapter";
+import {
+  applyControlledTextCommand,
+  replaceTextRange,
+} from "../../ime/adapters/controlledTextAdapter";
 import { useControlledImeTextAdapter } from "../../ime/adapters/useControlledImeTextAdapter";
 import { handleImeEditorKeyDown, imeEditorAttributes } from "../../ime/imeEditorBinding";
 import { resolveImeEditorInputState } from "../../ime/imeTextPolicy";
@@ -110,6 +113,25 @@ export function EmbeddedImeInput({
             return;
           }
           props.onKeyUp?.(event);
+        }}
+        onPaste={(event) => {
+          props.onPaste?.(event);
+          if (event.defaultPrevented || !textPolicy.blockNativeEditing) return;
+          event.preventDefault();
+          if (inputState.ariaReadOnly) return;
+          const text = event.clipboardData.getData("text/plain");
+          if (!text) return;
+          const input = event.currentTarget;
+          const edit = replaceTextRange(
+            value,
+            {
+              start: input.selectionStart ?? value.length,
+              end: input.selectionEnd ?? value.length,
+            },
+            text,
+          );
+          pendingCaret.current = edit.caret;
+          onValueChange(edit.value);
         }}
         readOnly={inputState.readOnly}
         ref={inputRef}

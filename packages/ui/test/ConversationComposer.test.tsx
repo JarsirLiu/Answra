@@ -114,6 +114,48 @@ describe("ConversationComposer", () => {
     expect(onToggle).toHaveBeenCalledOnce();
   });
 
+  it("inserts explicit plain-text paste through the controlled editor while IME owns input", () => {
+    const onValueChange = vi.fn();
+    render(
+      <ConversationComposer
+        ime={imeProps()}
+        inputLabel="补充问题"
+        onValueChange={onValueChange}
+        placeholder="输入问题"
+        value="abcd"
+      />,
+    );
+    const input = screen.getByRole("textbox", { name: "补充问题" }) as HTMLTextAreaElement;
+    input.setSelectionRange(1, 3);
+
+    fireEvent.paste(input, {
+      clipboardData: { files: [], getData: (type: string) => (type === "text/plain" ? "XY" : "") },
+    });
+
+    expect(onValueChange).toHaveBeenCalledExactlyOnceWith("aXYd");
+  });
+
+  it("does not apply text paste while the composer is disabled", () => {
+    const onValueChange = vi.fn();
+    render(
+      <ConversationComposer
+        disabled
+        ime={imeProps()}
+        inputLabel="补充问题"
+        onValueChange={onValueChange}
+        placeholder="输入问题"
+        value="abcd"
+      />,
+    );
+    const input = screen.getByRole("textbox", { name: "补充问题" });
+
+    fireEvent.paste(input, {
+      clipboardData: { files: [], getData: (type: string) => (type === "text/plain" ? "XY" : "") },
+    });
+
+    expect(onValueChange).not.toHaveBeenCalled();
+  });
+
   it("omits the embedded-IME toggle where the host opts out", () => {
     vi.spyOn(document, "hasFocus").mockReturnValue(true);
     render(

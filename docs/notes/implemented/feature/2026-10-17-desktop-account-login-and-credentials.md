@@ -65,4 +65,4 @@
 - `apps/desktop/test/authLifecycle.test.ts`（5 项）：开发态协议注册带 `execPath` + 入口脚本，打包版只注册 scheme；设备 ID 稳定且损坏时重新生成。
 - `packages/ui/test/FloatingBarApp.test.tsx`：无 auth API 时隐藏账户区块；点"登录"调用桥并提示浏览器授权；登录失败显示错误；推送 `plan: "pro"` + 两项能力时显示"会员 / 已解锁 2 项云能力"，推送登出后回到未登录；退出登录采用返回状态；面板关闭时取消订阅。
 - `pnpm verify`（lint + notes + typecheck + test + architecture:check）与 `pnpm build` 通过。
-- 待实机验证：登录握手和回调需在部署了 AnswraSite 授权页及新增网关路由的环境验证；另需验证冷启动深链（应用未运行时点链接）和打包版协议注册。桌面云端模型调用、会员能力目录与额度门禁仍未实现。
+- 待实机验证：登录握手和回调需在部署了 AnswraSite 授权页及网关路由的环境验证；另需验证冷启动深链（应用未运行时点链接）和打包版协议注册。会员能力目录已由独立 Note 记录；桌面云端模型调用与额度门禁仍未实现。

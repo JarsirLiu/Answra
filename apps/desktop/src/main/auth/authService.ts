@@ -23,9 +23,9 @@ import { createAuthState, createPkceChallenge } from "./pkce";
 
 export const AUTH_PATHS = {
   exchange: "/api/v1/auth/desktop/exchange",
-  refresh: "/api/v1/auth/desktop/refresh",
-  revoke: "/api/v1/auth/desktop/revoke",
-  capabilities: "/api/v1/auth/me",
+  refresh: "/api/v1/auth/refresh",
+  revoke: "/api/v1/auth/logout",
+  capabilities: "/api/v1/capabilities",
   announcements: "/api/v1/announcements",
 } as const;
 
@@ -71,7 +71,12 @@ export class AuthService {
   async restore(): Promise<AuthStatus> {
     this.pending.restore(await this.deps.pendingStore.load().catch(() => null));
     this.session = await this.deps.credentials.load();
-    return this.getStatus();
+    const needsRefresh = Boolean(this.session && this.session.expiresAt - this.now <= 0);
+    const status = await this.getStatus();
+    if (status.signedIn && this.session && !needsRefresh) {
+      return this.refreshDirectory(this.session.accessToken);
+    }
+    return status;
   }
 
   async getStatus(): Promise<AuthStatus> {
@@ -221,10 +226,13 @@ export class AuthService {
         device: await this.currentDevice(),
       });
       const tokens = readTokens(body, this.now);
+      const profile = await this.fetchProfile(tokens.accessToken).catch((error) => {
+        this.deps.log?.("[auth] 刷新后能力目录拉取失败", error);
+        return { plan: session.plan, capabilities: session.capabilities };
+      });
       const merged: AuthSessionRecord = {
         ...tokens,
-        plan: session.plan,
-        capabilities: session.capabilities,
+        ...profile,
       };
       this.session = merged;
       await this.deps.credentials.save(merged);
@@ -248,6 +256,21 @@ export class AuthService {
     accessToken: string,
   ): Promise<{ plan: string | null; capabilities: string[] }> {
     return readProfile(await this.request(AUTH_PATHS.capabilities, undefined, accessToken));
+  }
+
+  private async refreshDirectory(accessToken: string): Promise<AuthStatus> {
+    const session = this.session;
+    if (!session) return this.signedOutStatus();
+    try {
+      const profile = await this.fetchProfile(accessToken);
+      const updated = { ...session, ...profile };
+      this.session = updated;
+      await this.deps.credentials.save(updated);
+      return this.emitStatus(this.statusFrom(updated));
+    } catch (error) {
+      this.deps.log?.("[auth] 能力目录刷新失败", error);
+      return this.statusFrom(session);
+    }
   }
 
   private async revoke(refreshToken: string): Promise<void> {

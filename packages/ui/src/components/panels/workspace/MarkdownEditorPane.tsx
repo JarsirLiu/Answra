@@ -197,9 +197,19 @@ export function MarkdownEditorPane({
                   const files = Array.from(event.clipboardData?.files ?? []).filter((file) =>
                     file.type.startsWith("image/"),
                   );
-                  if (files.length === 0) return false;
+                  if (files.length) {
+                    event.preventDefault();
+                    for (const file of files) void handlePasteImage(file);
+                    return true;
+                  }
+                  if (!imeRef.current.textPolicy.blockNativeEditing) return false;
                   event.preventDefault();
-                  for (const file of files) void handlePasteImage(file);
+                  const text = event.clipboardData?.getData("text/plain") ?? "";
+                  const activeEditor = bundleRef.current.view;
+                  if (text && activeEditor) {
+                    activeEditor.dispatch(activeEditor.state.replaceSelection(text));
+                    setDirtyState(true);
+                  }
                   return true;
                 },
               }),

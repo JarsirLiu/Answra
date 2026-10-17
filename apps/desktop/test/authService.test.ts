@@ -301,6 +301,16 @@ describe("AuthService.handleCallbackUrl", () => {
 });
 
 describe("AuthService.restore / refresh", () => {
+  it("uses the gateway's stable desktop auth and capability endpoints", () => {
+    expect(AUTH_PATHS).toEqual({
+      exchange: "/api/v1/auth/desktop/exchange",
+      refresh: "/api/v1/auth/refresh",
+      revoke: "/api/v1/auth/logout",
+      capabilities: "/api/v1/capabilities",
+      announcements: "/api/v1/announcements",
+    });
+  });
+
   it("returns a signed-out status when nothing is stored", async () => {
     const harness = createHarness(() => jsonResponse({}, 500));
     await expect(harness.service.restore()).resolves.toEqual({
@@ -312,27 +322,42 @@ describe("AuthService.restore / refresh", () => {
     expect(harness.calls).toHaveLength(0);
   });
 
-  it("reuses a still-valid token without hitting the gateway", async () => {
-    const harness = createHarness(() => jsonResponse({}, 500));
+  it("refreshes the capability directory for a still-valid saved session", async () => {
+    const harness = createHarness(() =>
+      jsonResponse({
+        code: 0,
+        data: { plan: "starter", capabilities: [] },
+      }),
+    );
     await harness.credentials.store.save({
       accessToken: "access-old",
       refreshToken: "refresh-old",
       expiresAt: TEST_NOW + 60_000,
-      plan: "pro",
+      plan: "old-plan",
       capabilities: ["text.chat"],
     });
     await expect(harness.service.restore()).resolves.toEqual({
       signedIn: true,
-      plan: "pro",
-      capabilities: ["text.chat"],
+      plan: "starter",
+      capabilities: [],
       cloudBaseUrl: "https://api.test",
     });
-    expect(harness.calls).toHaveLength(0);
+    expect(harness.calls).toEqual([
+      {
+        url: `https://api.test${AUTH_PATHS.capabilities}`,
+        method: "GET",
+        body: undefined,
+        authorization: "Bearer access-old",
+      },
+    ]);
+    expect(harness.credentials.current()).toMatchObject({ plan: "starter", capabilities: [] });
   });
 
   it("refreshes an expired token and rotates the stored refresh token", async () => {
     const harness = createHarness((call) =>
-      jsonResponse(tokenBody("access-new", "refresh-new", 120)),
+      call.url.endsWith(AUTH_PATHS.refresh)
+        ? jsonResponse(tokenBody("access-new", "refresh-new", 120))
+        : jsonResponse({ code: 0, data: { plan: "pro", capabilities: ["text.chat"] } }),
     );
     await harness.credentials.store.save({
       accessToken: "access-old",
@@ -350,6 +375,12 @@ describe("AuthService.restore / refresh", () => {
         method: "POST",
         body: { refresh_token: "refresh-old", device: DEVICE },
         authorization: undefined,
+      },
+      {
+        url: `https://api.test${AUTH_PATHS.capabilities}`,
+        method: "GET",
+        body: undefined,
+        authorization: "Bearer access-new",
       },
     ]);
     expect(harness.credentials.current()).toEqual({
@@ -387,7 +418,9 @@ describe("AuthService.restore / refresh", () => {
     });
     const harness = createHarness(async (call) => {
       if (call.url.endsWith(AUTH_PATHS.refresh)) await gate;
-      return jsonResponse(tokenBody("access-new", "refresh-new"));
+      if (call.url.endsWith(AUTH_PATHS.refresh))
+        return jsonResponse(tokenBody("access-new", "refresh-new"));
+      return jsonResponse({ code: 0, data: { plan: null, capabilities: [] } });
     });
     await harness.credentials.store.save({
       accessToken: "access-old",
@@ -404,7 +437,7 @@ describe("AuthService.restore / refresh", () => {
     const [restored, raced] = await Promise.all([restoring, racing]);
     expect(restored.signedIn).toBe(true);
     expect(raced.signedIn).toBe(true);
-    expect(harness.calls).toHaveLength(1);
+    expect(harness.calls).toHaveLength(2);
   });
 });
 
