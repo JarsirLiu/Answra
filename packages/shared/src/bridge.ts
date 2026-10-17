@@ -1,5 +1,7 @@
 import type {
   AmbientColorPayload,
+  AuthLoginResult,
+  AuthStatus,
   ContentSize,
   ConversationChange,
   ConversationModelConfig,
@@ -134,4 +136,13 @@ export interface DesktopBridge {
   deleteWorkspaceEntry?: (path: string) => Promise<void>;
   /** 订阅根目录内变更推送（watcher 防抖合并）；返回取消订阅函数。 */
   onWorkspaceChanged?: (listener: (change: WorkspaceChangeSet) => void) => () => void;
+  // ---- 云端账号（登录解锁会员）；浏览器预览/测试环境可未实现，调用方需判空。----
+  /** 在系统浏览器打开站点授权页；登录结果经 `onAuthStatus` 推送，本调用不等待。 */
+  loginAccount?: () => Promise<AuthLoginResult>;
+  /** 退出登录并清除本地凭据；返回登出后的状态。 */
+  logoutAccount?: () => Promise<AuthStatus>;
+  /** 查询当前账号与会员状态（不含 token）。 */
+  getAuthStatus?: () => Promise<AuthStatus>;
+  /** 订阅账号状态变化；返回取消订阅函数。 */
+  onAuthStatus?: (listener: (status: AuthStatus) => void) => () => void;
 }

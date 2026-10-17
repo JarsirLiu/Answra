@@ -1,4 +1,9 @@
-import type { ConversationChange, ConversationMessage, ConversationSnapshot } from "@answra/shared";
+import type {
+  AuthStatus,
+  ConversationChange,
+  ConversationMessage,
+  ConversationSnapshot,
+} from "@answra/shared";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { UIMessageChunk } from "ai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -761,5 +766,130 @@ describe("three-segment floating navigation", () => {
     expect(screen.queryByRole("heading", { name: "笔记本 / 资料" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "关闭应用" }));
     expect(bridge.close).toHaveBeenCalled();
+  });
+
+  it("hides the account block when the bridge exposes no auth API", () => {
+    render(<FloatingBarApp bridge={{ fitContent: vi.fn(), close: vi.fn() }} />);
+    fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
+
+    expect(screen.queryByRole("heading", { name: "账户" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "登录" })).not.toBeInTheDocument();
+  });
+
+  it("starts sign-in from settings and tells the user to finish in the browser", async () => {
+    const loginAccount = vi.fn().mockResolvedValue({ opened: true });
+    const bridge = {
+      ...createConversationBridge(),
+      getAuthStatus: vi
+        .fn()
+        .mockResolvedValue({ signedIn: false, plan: null, capabilities: [], cloudBaseUrl: null }),
+      onAuthStatus: vi.fn(() => () => undefined),
+      loginAccount,
+    };
+    render(<FloatingBarApp bridge={bridge} />);
+    fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
+
+    await waitFor(() => expect(screen.getByText("未登录")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "登录" }));
+
+    expect(loginAccount).toHaveBeenCalledTimes(1);
+    await waitFor(() =>
+      expect(screen.getByText("已在浏览器中打开授权页，完成后会自动同步")).toBeInTheDocument(),
+    );
+  });
+
+  it("shows a login failure instead of the browser hint", async () => {
+    const bridge = {
+      close: vi.fn(),
+      fitContent: vi.fn(),
+      getAuthStatus: vi
+        .fn()
+        .mockResolvedValue({ signedIn: false, plan: null, capabilities: [], cloudBaseUrl: null }),
+      onAuthStatus: vi.fn(() => () => undefined),
+      loginAccount: vi.fn().mockResolvedValue({ opened: false, error: "无法打开授权页" }),
+    };
+    render(<FloatingBarApp bridge={bridge} />);
+    fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "登录" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("无法打开授权页");
+  });
+
+  it("renders the plan and capability count pushed by the main process", async () => {
+    let listener: ((status: AuthStatus) => void) | undefined;
+    const bridge = {
+      close: vi.fn(),
+      fitContent: vi.fn(),
+      getAuthStatus: vi.fn().mockResolvedValue({
+        signedIn: true,
+        plan: "pro",
+        capabilities: ["text.chat", "voice.interview"],
+        cloudBaseUrl: "https://api.answra.com",
+      }),
+      onAuthStatus: vi.fn((next: (status: AuthStatus) => void) => {
+        listener = next;
+        return () => {
+          listener = undefined;
+        };
+      }),
+      logoutAccount: vi.fn(),
+    };
+    render(<FloatingBarApp bridge={bridge} />);
+    fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
+
+    expect(await screen.findByText("会员")).toBeInTheDocument();
+    expect(screen.getByText("已解锁 2 项云能力")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "退出登录" })).toBeInTheDocument();
+
+    // 主进程推送登出（例如凭据失效）后，界面回到未登录。
+    act(() => {
+      listener?.({ signedIn: false, plan: null, capabilities: [], cloudBaseUrl: null });
+    });
+    expect(await screen.findByText("未登录")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "登录" })).toBeInTheDocument();
+  });
+
+  it("signs out from settings and adopts the returned status", async () => {
+    const logoutAccount = vi.fn().mockResolvedValue({
+      signedIn: false,
+      plan: null,
+      capabilities: [],
+      cloudBaseUrl: null,
+    });
+    const bridge = {
+      close: vi.fn(),
+      fitContent: vi.fn(),
+      getAuthStatus: vi.fn().mockResolvedValue({
+        signedIn: true,
+        plan: "pro",
+        capabilities: ["text.chat"],
+        cloudBaseUrl: "https://api.answra.com",
+      }),
+      onAuthStatus: vi.fn(() => () => undefined),
+      logoutAccount,
+    };
+    render(<FloatingBarApp bridge={bridge} />);
+    fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "退出登录" }));
+    expect(logoutAccount).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText("未登录")).toBeInTheDocument();
+  });
+
+  it("stops listening for auth pushes when the panel closes", async () => {
+    const unsubscribe = vi.fn();
+    const bridge = {
+      ...createConversationBridge(),
+      getAuthStatus: vi
+        .fn()
+        .mockResolvedValue({ signedIn: false, plan: null, capabilities: [], cloudBaseUrl: null }),
+      onAuthStatus: vi.fn(() => unsubscribe),
+    };
+    render(<FloatingBarApp bridge={bridge} />);
+    fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
+    const collapse = screen.getByRole("button", { name: "收起面板" });
+    fireEvent.click(collapse);
+
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
   });
 });

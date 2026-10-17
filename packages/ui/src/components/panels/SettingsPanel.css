@@ -41,6 +41,16 @@
   font-size: var(--font-sm);
   font-weight: var(--label-weight);
 }
+/* 账户行：标题 + 一行状态说明（会员档/已解锁能力数），说明用次级墨色。 */
+.setting-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.setting-hint {
+  color: var(--ink-soft);
+  font-size: var(--font-xs);
+}
 .setting-control {
   display: flex;
   align-items: center;

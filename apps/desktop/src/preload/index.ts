@@ -1,6 +1,8 @@
 import {
   AmbientChannels,
   type AmbientColorPayload,
+  AuthChannels,
+  type AuthStatus,
   CaptureChannels,
   type ContentSize,
   type ConversationChange,
@@ -166,6 +168,14 @@ const bridge: DesktopBridge = {
       listener(change);
     ipcRenderer.on(WorkspaceChannels.Changed, wrapped);
     return () => ipcRenderer.removeListener(WorkspaceChannels.Changed, wrapped);
+  },
+  loginAccount: () => ipcRenderer.invoke(AuthChannels.Login),
+  logoutAccount: () => ipcRenderer.invoke(AuthChannels.Logout),
+  getAuthStatus: () => ipcRenderer.invoke(AuthChannels.GetStatus),
+  onAuthStatus: (listener: (status: AuthStatus) => void) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, status: AuthStatus) => listener(status);
+    ipcRenderer.on(AuthChannels.Status, wrapped);
+    return () => ipcRenderer.removeListener(AuthChannels.Status, wrapped);
   },
 };
 

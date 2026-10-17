@@ -1,4 +1,6 @@
 import {
+  AuthChannels,
+  type AuthStatus,
   type ContentSize,
   type ConversationChange,
   ConversationChannels,
@@ -152,6 +154,12 @@ export function sendConversationChange(change: ConversationChange): void {
     !replyWindow.isDestroyed()
   )
     replyWindow.webContents.send(ConversationChannels.Change, change);
+}
+/** 把账号状态推给所有还活着的窗口（主悬浮条与独立回复窗口都要能刷门禁）。 */
+export function sendAuthStatus(status: AuthStatus): void {
+  for (const target of [getWindow(), getReplyBarWindow()]) {
+    if (target && !target.isDestroyed()) target.webContents.send(AuthChannels.Status, status);
+  }
 }
 function conversationIdOf(change: ConversationChange): string {
   if (change.type === "event") return change.event.conversationId;

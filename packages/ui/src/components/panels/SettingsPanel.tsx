@@ -1,4 +1,4 @@
-import type { ConversationModelConfig, DesktopBridge } from "@answra/shared";
+import type { AuthStatus, ConversationModelConfig, DesktopBridge } from "@answra/shared";
 import { Eye, EyeOff } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { EmbeddedImeInput } from "../controls/EmbeddedImeInput";
@@ -30,7 +30,22 @@ interface SettingsPanelProps {
 const OPACITY_MIN = 0.5;
 const OPACITY_MAX = 1;
 
-/** 设置面板：常规/模型两组；控件一律用统一令牌控件，不用原生样式。 */
+/** 档位标识由服务端下发；已知档位给中文名，未知档位原样展示，不猜语义。 */
+const PLAN_LABELS: Record<string, string> = { free: "免费档", pro: "会员" };
+
+function accountTitle(status: AuthStatus | null): string {
+  if (!status?.signedIn) return "未登录";
+  if (!status.plan) return "已登录";
+  return PLAN_LABELS[status.plan] ?? status.plan;
+}
+
+function accountHint(status: AuthStatus | null): string {
+  if (!status?.signedIn) return "登录后由服务端下发会员能力";
+  if (status.capabilities.length === 0) return "暂无可用云能力";
+  return `已解锁 ${status.capabilities.length} 项云能力`;
+}
+
+/** 设置面板：账户/常规/模型三组；控件一律用统一令牌控件，不用原生样式。 */
 export function SettingsPanel({
   bridge,
   ambientFollow,
@@ -55,6 +70,11 @@ export function SettingsPanel({
   const [saving, setSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
   const savedTimerRef = useRef<ReturnType<typeof setTimeout>>(null);
+  // 账号状态只在 main 进程成立；渲染层只拿到 {signedIn, plan, capabilities, cloudBaseUrl}。
+  const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authError, setAuthError] = useState("");
+  const [authNotice, setAuthNotice] = useState("");
 
   useEffect(() => {
     return () => clearTimeout(savedTimerRef.current ?? undefined);
@@ -78,6 +98,61 @@ export function SettingsPanel({
       cancelled = true;
     };
   }, []);
+
+  const getAuthStatus = bridge?.getAuthStatus;
+  const onAuthStatus = bridge?.onAuthStatus;
+
+  useEffect(() => {
+    if (!getAuthStatus) return;
+    let cancelled = false;
+    getAuthStatus()
+      .then((status) => {
+        if (!cancelled) setAuthStatus(status);
+      })
+      .catch(() => undefined);
+    // 登录结果由主进程推送（浏览器授权是异步的，登录调用本身不等待结果）。
+    const unsubscribe = onAuthStatus?.((status) => {
+      setAuthStatus(status);
+      if (status.signedIn) setAuthNotice("");
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
+  }, [getAuthStatus, onAuthStatus]);
+
+  async function signIn() {
+    if (!bridge?.loginAccount) return;
+    setAuthBusy(true);
+    setAuthError("");
+    setAuthNotice("");
+    try {
+      const result = await bridge.loginAccount();
+      if (!result.opened) {
+        setAuthError(result.error ?? "无法打开授权页");
+        return;
+      }
+      setAuthNotice("已在浏览器中打开授权页，完成后会自动同步");
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "登录失败");
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  async function signOut() {
+    if (!bridge?.logoutAccount) return;
+    setAuthBusy(true);
+    setAuthError("");
+    setAuthNotice("");
+    try {
+      setAuthStatus(await bridge.logoutAccount());
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "退出登录失败");
+    } finally {
+      setAuthBusy(false);
+    }
+  }
 
   async function saveModelConfig() {
     setSaving(true);
@@ -104,6 +179,47 @@ export function SettingsPanel({
   return (
     <PanelShell onClose={onClose} title="设置" variant="settings">
       <div className="settings-panel">
+        {bridge?.getAuthStatus && (
+          <section className="settings-group">
+            <h2>账户</h2>
+            <div className="setting-row">
+              <span className="setting-label">
+                <strong>{accountTitle(authStatus)}</strong>
+                <span className="setting-hint">{accountHint(authStatus)}</span>
+              </span>
+              {authStatus?.signedIn ? (
+                <SurfaceButton
+                  disabled={authBusy}
+                  onClick={() => void signOut()}
+                  title="退出登录"
+                  variant="quiet"
+                >
+                  退出登录
+                </SurfaceButton>
+              ) : (
+                <SurfaceButton
+                  disabled={authBusy}
+                  onClick={() => void signIn()}
+                  title="登录"
+                  variant="primary"
+                >
+                  登录
+                </SurfaceButton>
+              )}
+            </div>
+            {authNotice && (
+              <p className="setting-status" role="status">
+                {authNotice}
+              </p>
+            )}
+            {authError && (
+              <p className="setting-error" role="alert">
+                {authError}
+              </p>
+            )}
+          </section>
+        )}
+
         <section className="settings-group">
           <h2>常规</h2>
           <div className="setting-row">

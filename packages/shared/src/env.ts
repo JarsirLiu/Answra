@@ -18,6 +18,17 @@ export const AI_SERVICE_BASE_URL = "ANSWRA_AI_BASE_URL" as const;
 /** 打开后输出被静默的 IME 焦点/按键诊断日志（低频排查用，默认关闭）。 */
 export const ANSWRA_IME_DEBUG = "ANSWRA_IME_DEBUG" as const;
 
+/**
+ * 云端网关地址（云端模式的 API 根，如 `https://api.answra.com`）。
+ *
+ * 仅开发态可覆盖，且必须是 http 环回地址（见 `apps/desktop/src/main/auth/config.ts`
+ * 的 `resolveCloudEndpoints`）；打包版一律使用内置默认值。
+ */
+export const CLOUD_API_BASE_URL = "ANSWRA_CLOUD_API_BASE_URL" as const;
+
+/** 站点地址（浏览器授权页所在站点）；覆盖规则与 {@link CLOUD_API_BASE_URL} 相同。 */
+export const CLOUD_SITE_BASE_URL = "ANSWRA_CLOUD_SITE_BASE_URL" as const;
+
 /** 解析并校验运行环境，非法值回退为 development。 */
 export function parseAnswraEnv(value: string | undefined): AnswraEnv {
   return value === "production" || value === "test" ? value : "development";

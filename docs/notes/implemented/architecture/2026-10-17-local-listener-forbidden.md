@@ -20,7 +20,7 @@
 
 ## 决定
 
-- `src/` 下（测试文件除外）不得出现 `createServer(` 或 `.listen(`；架构守护在 `pnpm architecture:check` 中强制，违规即失败并提示"如需本地服务先补架构 Note"。
+- `src/` 下（测试文件除外）不得出现 `createServer(` 或 `.listen(`；架构守护在 `pnpm architecture:check` 中强制，违规即失败并提示"如需本地服务先补架构 Note"。唯一例外是开发态 OAuth 环回回调，见 [开发态 OAuth 环回回调的单一例外](2026-10-17-dev-loopback-callback-exception.md)（白名单 + 断言，打包版不可达）。
 - 进程间通信的既有形态按场景选用：main ↔ agent 用 `utilityProcess` 消息端口；本地辅助二进制用 `stdio` 管道；把本地文件给渲染层用自定义 scheme；渲染层 ↔ 平台能力走 preload/`DesktopBridge`。
 - 远端服务不受此约束：语音识别、模型调用、未来的 AnswraSite 网关都是**出站** WSS/HTTPS 客户端。产品侧的"服务"在远端，不在本仓。
 
@@ -41,7 +41,7 @@
 ## 后果与防回退
 
 - 需要本地服务时，必须先补一份架构 Note 说明触发条件、通信形态与安全边界，再改守护规则；不允许先合并服务、后补理由。
-- 新规则不得放宽成白名单目录；测试文件继续豁免（守护脚本本就跳过 `*.test.ts`）。
+- 新规则不得放宽成白名单目录；测试文件继续豁免（守护脚本本就跳过 `*.test.ts`）。唯一白名单条目必须自带断言（绑定地址 + 打包不可达），见 [开发态 OAuth 环回回调的单一例外](2026-10-17-dev-loopback-callback-exception.md)。
 - 引入任何监听前必须回答：谁能连、如何鉴权、如何避免被同机进程与页面发现。
 
 ## 验证

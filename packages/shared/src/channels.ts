@@ -113,6 +113,50 @@ export const ConversationChannels = {
   Change: "answra:conversation:change",
 } as const;
 
+/**
+ * 云端账号频道（登录解锁会员）。
+ *
+ * main 持有全部 token 与刷新逻辑；渲染层只能拿到不含 token 的 `AuthStatus`。
+ */
+export const AuthChannels = {
+  /** 在系统浏览器打开站点授权页完成登录；回跳由深链/环回回调驱动，本调用不等待结果。 */
+  Login: "answra:auth:login",
+  /** 退出登录：尽最大努力撤销本机 refresh token 并清除本地凭据。 */
+  Logout: "answra:auth:logout",
+  /** 查询当前账号与会员状态（不含任何 token）。 */
+  GetStatus: "answra:auth:get-status",
+  /** 主进程推送账号状态变化（登录成功、登出、凭据失效）。 */
+  Status: "answra:auth:status",
+} as const;
+
+/**
+ * 账号与会员状态快照。
+ *
+ * 故意不含 token：渲染层（以及未来可能的调试面板）只需要门禁与展示所需的事实。
+ */
+export interface AuthStatus {
+  signedIn: boolean;
+  /** 会员档位标识，由服务端下发；未登录为 null。 */
+  plan: string | null;
+  /** 当前账号可用的能力 ID 列表（如 `text.chat`）；未登录为空数组。 */
+  capabilities: string[];
+  /** 云端模式要使用的网关地址（本地只保存地址，不含模型配置）；未登录为 null。 */
+  cloudBaseUrl: string | null;
+}
+
+/** 登录启动结果：只表示浏览器是否被拉起，登录结果经 `AuthChannels.Status` 推送。 */
+export interface AuthLoginResult {
+  opened: boolean;
+  error?: string;
+}
+
+export interface AuthChannelMap {
+  [AuthChannels.Login]: { request: undefined; response: AuthLoginResult };
+  [AuthChannels.Logout]: { request: undefined; response: AuthStatus };
+  [AuthChannels.GetStatus]: { request: undefined; response: AuthStatus };
+  [AuthChannels.Status]: { request: undefined; response: undefined };
+}
+
 export const InterviewChannels = {
   Start: "answra:interview:start",
   Stop: "answra:interview:stop",

@@ -25,6 +25,21 @@ const errors = [];
 /** 包名 -> 该包源码里 import 的 workspace 包入口集合 */
 const depGraph = new Map();
 
+/**
+ * 本地监听的唯一白名单：开发态 OAuth 环回回调。
+ * 每个断言都必须出现在文件里，保证例外本身不会退化成生产监听
+ * （只绑 127.0.0.1、打包版直接拒绝）。
+ */
+const LOCAL_LISTENER_EXCEPTIONS = new Map([
+  [
+    "apps/desktop/src/main/auth/loopbackCallback.ts",
+    {
+      "只绑定 127.0.0.1": /LOOPBACK_HOST\s*=\s*"127\.0\.0\.1"/,
+      打包版禁用: /app\.isPackaged/,
+    },
+  ],
+]);
+
 function* walk(dir) {
   for (const entry of readdirSync(dir)) {
     const full = path.join(dir, entry);
@@ -79,10 +94,20 @@ function checkImports(pkg) {
     // 4. 禁止在 src 里开启本地监听：进程间通信走 IPC / 管道 / utilityProcess，
     //    自建 server 会引入端口占用、被页面或其它进程探测、防火墙与签名负担，
     //    与"隐身"定位冲突。引入前先在 Note 里给出触发条件（见 docs/notes）。
+    //    唯一例外：开发态 OAuth 环回回调（打包版必须关闭，见下方断言）。
     if (/\bcreateServer\s*\(|\.listen\s*\(/.test(code)) {
-      errors.push(
-        `${rel}: 禁止在 src 中开启本地监听（createServer/listen）；如需本地服务先补架构 Note`,
-      );
+      const exception = LOCAL_LISTENER_EXCEPTIONS.get(rel.replaceAll("\\", "/"));
+      if (!exception) {
+        errors.push(
+          `${rel}: 禁止在 src 中开启本地监听（createServer/listen）；如需本地服务先补架构 Note`,
+        );
+      } else {
+        for (const [_label, pattern] of Object.entries(exception)) {
+          if (!pattern.test(code)) {
+            errors.push(`${rel}: 本地监听例外缺少 ${_label} 断言（${pattern}）`);
+          }
+        }
+      }
     }
 
     for (const match of code.matchAll(/(?:from|import)\s+["']([^"']+)["']/g)) {
