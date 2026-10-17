@@ -1,4 +1,4 @@
-import type { ConversationModelConfig, ConversationSendRequest } from "@answra/shared";
+import type { AnswerRunCommand, ChatSendCommand, ConversationModelConfig } from "@answra/shared";
 
 /**
  * desktop main ↔ agent worker 的线协议：命令下行、帧上行。
@@ -6,7 +6,8 @@ import type { ConversationModelConfig, ConversationSendRequest } from "@answra/s
  */
 export type AgentCommand =
   | { id: string; type: "configure"; config: ConversationModelConfig }
-  | { id: string; type: "send"; conversationId: string; request: ConversationSendRequest }
+  | ({ id: string; type: "chat-send" } & ChatSendCommand)
+  | ({ id: string; type: "answer-run" } & AnswerRunCommand)
   | { id: string; type: "snapshot"; conversationId: string }
   | { id: string; type: "read-events"; conversationId: string; afterRevision: number }
   | { id: string; type: "create-conversation"; conversationId: string }

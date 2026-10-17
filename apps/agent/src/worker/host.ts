@@ -82,8 +82,10 @@ export function startAgentHost({
       case "configure":
         runtime.configure(command.config);
         return undefined;
-      case "send":
-        return runtime.send(command.conversationId, command.request);
+      case "chat-send":
+        return runtime.sendChat(command.profileId, command.conversationId, command.request);
+      case "answer-run":
+        return runtime.runAnswer(command.conversationId, command.request);
       case "snapshot":
         return runtime.getSnapshot(command.conversationId);
       case "read-events":

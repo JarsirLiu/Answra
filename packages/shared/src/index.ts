@@ -24,10 +24,12 @@ export type {
   InterviewState,
 } from "./channels";
 export {
+  ActiveChatConversationId,
   ActiveExamConversationId,
   type AmbientChannelMap,
   AmbientChannels,
   type AmbientColorPayload,
+  type AnswerRunCommand,
   type AuthChannelMap,
   AuthChannels,
   type AuthLoginResult,
@@ -36,6 +38,7 @@ export {
   CaptureChannels,
   type ChannelRequest,
   type ChannelResponse,
+  type ChatSendCommand,
   type ContentSize,
   type ConversationChange,
   type ConversationChannelMap,

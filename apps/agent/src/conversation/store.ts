@@ -8,6 +8,7 @@ import type {
 
 export interface ConversationStore {
   create(conversationId: string): Promise<ConversationSnapshot>;
+  clear(conversationId: string): Promise<void>;
   load(conversationId: string): Promise<ConversationSnapshot>;
   beginRun(conversationId: string, runId: string, userMessage: ConversationMessage): Promise<void>;
   appendEvent(event: Omit<ConversationEvent, "revision">): Promise<ConversationChange>;
@@ -44,6 +45,14 @@ export class MemoryConversationStore implements ConversationStore {
   async load(conversationId: string): Promise<ConversationSnapshot> {
     const session = this.requireSession(conversationId);
     return cloneSnapshot(session.snapshot);
+  }
+
+  async clear(conversationId: string): Promise<void> {
+    const session = this.sessions.get(conversationId);
+    if (!session) return;
+    session.snapshot.messages = [];
+    delete session.snapshot.activeRunId;
+    session.journal = [];
   }
 
   async beginRun(
@@ -121,6 +130,8 @@ export class MemoryConversationStore implements ConversationStore {
     if (revision > session.snapshot.revision)
       return [{ type: "snapshot", snapshot: cloneSnapshot(session.snapshot) }];
     const oldest = session.journal[0];
+    if (!oldest && revision < session.snapshot.revision)
+      return [{ type: "snapshot", snapshot: cloneSnapshot(session.snapshot) }];
     if (oldest && revision < oldestRevision(oldest) - 1)
       return [{ type: "snapshot", snapshot: cloneSnapshot(session.snapshot) }];
     return session.journal.filter((change) => changeRevision(change) > revision).map(cloneChange);

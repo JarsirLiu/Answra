@@ -49,7 +49,9 @@ describe("agent worker host", () => {
 
     harness.dispatch({
       id: "1",
-      type: "send",
+      type: "chat-send",
+      operation: "chat.send",
+      profileId: "general-chat",
       conversationId: "missing",
       request: { text: "hi", images: [] },
     });

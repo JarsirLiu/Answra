@@ -5,7 +5,7 @@ import type {
   ContentSize,
   ConversationChange,
   ConversationModelConfig,
-  ConversationSendRequest,
+  ConversationSendCommand,
   ConversationSnapshot,
   DesktopAnnouncement,
   ImeCandidateAction,
@@ -108,10 +108,7 @@ export interface DesktopBridge {
     conversationId: string,
     afterRevision: number,
   ) => Promise<ConversationChange[]>;
-  sendConversationMessage?: (
-    conversationId: string,
-    request: ConversationSendRequest,
-  ) => Promise<{ runId: string }>;
+  sendConversationMessage?: (command: ConversationSendCommand) => Promise<{ runId: string }>;
   cancelConversationRun?: (runId: string) => void;
   onConversationChange?: (listener: (change: ConversationChange) => void) => () => void;
   startInterview?: () => Promise<{ sessionId: string }>;

@@ -204,6 +204,7 @@ export interface InterviewAudioFrame {
 }
 
 export const ActiveExamConversationId = "active-exam-conversation";
+export const ActiveChatConversationId = "active-chat-conversation";
 
 export interface ConversationModelConfig {
   baseUrl: string;
@@ -216,10 +217,20 @@ export interface ConversationSendRequest {
   images: Array<{ name: string; dataUrl: string }>;
 }
 
-export interface ConversationSendCommand {
+export interface ChatSendCommand {
+  operation: "chat.send";
+  conversationId: string;
+  profileId: "general-chat";
+  request: ConversationSendRequest;
+}
+
+export interface AnswerRunCommand {
+  operation: "answer.run";
   conversationId: string;
   request: ConversationSendRequest;
 }
+
+export type ConversationSendCommand = ChatSendCommand | AnswerRunCommand;
 
 export type ConversationMessage = {
   id: string;

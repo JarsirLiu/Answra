@@ -4,6 +4,7 @@
  * 目录分层（按领域切分，新增领域平行加目录，减少并行开发的改动冲突）：
  *   worker/host.ts          组装点：传输 + 运行时 + 命令分发
  *   worker/protocol.ts      worker 线协议（与 desktop main 之间的唯一契约）
+ *   conversation/profiles.ts Agent 注册的提示词、上下文策略与工具授权
  *   conversation/runtime.ts 会话运行时：模型调用、运行生命周期、取消
  *   conversation/store.ts   会话存储端口与内存适配器
  *
