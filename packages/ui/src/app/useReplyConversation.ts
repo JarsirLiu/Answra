@@ -101,6 +101,8 @@ export function useReplyConversation(
             ...current.messages,
             ...change.messages.map((message) => ({ ...message, activities: [] })),
           ],
+          // 订阅早于会话创建时会先报“会话不存在”，拿到真实变更后清掉，避免残留错误提示。
+          error: undefined,
         }));
       } else if (change.type === "event") {
         const { event } = change;
@@ -111,6 +113,7 @@ export function useReplyConversation(
             messages: current.messages.map((message) =>
               message.id === event.runId ? { ...message, text: message.text + delta } : message,
             ),
+            error: undefined,
           }));
         }
         addActivity(event.runId, event);
@@ -124,6 +127,7 @@ export function useReplyConversation(
               ? { ...change.message, activities: priorActivities }
               : message,
           ),
+          error: undefined,
         }));
       }
       return true;

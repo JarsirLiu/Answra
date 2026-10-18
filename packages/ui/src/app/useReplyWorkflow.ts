@@ -148,7 +148,7 @@ export function useReplyWorkflow({
     [],
   );
 
-  const clearPending = useCallback(() => {
+  const resetRoundInput = useCallback(() => {
     setAttachments((current) => {
       current.forEach((candidate) => {
         if (candidate.previewUrl.startsWith("blob:")) URL.revokeObjectURL(candidate.previewUrl);
@@ -156,8 +156,12 @@ export function useReplyWorkflow({
       return [];
     });
     setDraft("");
-    setConversationId(undefined);
   }, []);
+
+  const clearPending = useCallback(() => {
+    resetRoundInput();
+    setConversationId(undefined);
+  }, [resetRoundInput]);
 
   const startRegionCapture = useCallback(
     async (startCapture: NonNullable<DesktopBridge["startRegionCapture"]>) => {
@@ -204,16 +208,15 @@ export function useReplyWorkflow({
       return;
     }
     // 回复条（streaming / done）：收起回复条回到发送条，而不是直接回退到对话。
-    // 结束流式运行并清空本轮截图与草稿，让发送条以空白状态重新开始。
+    // 只清空本轮的截图与草稿；本轮会话保留到退出 reply slot 为止，收起后仍可展开回看。
     if (phase === "streaming") cancelMessage();
-    clearPending();
+    resetRoundInput();
     onSetReplyPhase("composing");
-  }, [cancelMessage, clearPending, onExitReply, onSetReplyPhase, phase]);
+  }, [cancelMessage, clearPending, onExitReply, onSetReplyPhase, phase, resetRoundInput]);
 
   const cancelReply = useCallback(() => {
-    // 取消只退出当前回复态，保留 reply slot，让用户能继续截图发送。
+    // 取消只退出当前回复态，保留 reply slot 与本轮会话，让用户能继续截图发送或回看。
     cancelMessage();
-    setConversationId(undefined);
     onSetReplyPhase("composing");
   }, [cancelMessage, onSetReplyPhase]);
 

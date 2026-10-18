@@ -261,10 +261,12 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
         />
       )}
 
-      {featureSlot.kind === "reply" && replyDetail.expanded ? (
+      {featureSlot.kind === "reply" ? (
         <ReplyDetails
           bridge={platform}
           conversationId={conversationId}
+          enabled={Boolean(conversationId)}
+          expanded={replyDetail.expanded}
           stealth={stealthSetting.enabled}
         />
       ) : null}

@@ -26,7 +26,7 @@
 3. `useSurfaceCoordinator` 暴露 `enterReply(origin)` / `exitReply()` / `setReplyPhase(phase)`，reducer 规则集中维护，组件不得自管 phase 或直接调 `triggerScreenshot`。
 4. `useReplyWorkflow` 回调改为 `onEnterReply` / `onExitReply` / `onSetReplyPhase`，新增 `inline?: boolean` 并对外暴露 `conversationId`。`inline: true` 时 `detachedReplyBar` 恒为 false，不再向独立窗口推送状态。
 5. 悬浮导航条的功能区槽由 `FloatingBar` 新增的 `featureSlot?: ReactNode` 承载：提供该节点时，条体右侧（模式功能段 + 工作区段）整体替换为该内容，只保留左侧模式选择；未提供时保持三段结构。回复工作流期间，`FloatingBarApp` 把 `ReplyBar`（新增 `embedded` 形态：不再自带悬浮表面，边框/底色/投影由外层 `.floating-bar` 提供）作为 `featureSlot` 注入，实现「截图按钮那一格原地变成发送条/回复条」。
-6. `FloatingBarApp` 作为组装点：`featureSlot.kind === "reply"` 时把 `ReplyBar` 作为 `FloatingBar` 的 `featureSlot`；展开详情由 `useReplyDetail`（局部开合状态）驱动，展开时在导航条下方渲染 `ReplyDetails`（`useReplyConversation` + `ReplyConversationPopover`）。`panel === "chat" && featureSlot.kind === "chat"` 才渲染 `ChatPanel`。两套 hook（`useGeneralChat` / `useScreenshotAnswer`）仍在顶层实例化，slot 切换只切渲染、不重建、不丢对话历史与草稿。回复期间切换工作模式会先 `closeReplyBar()` 退出回复槽，避免功能槽与外壳 `panel` 状态打架。
+6. `FloatingBarApp` 作为组装点：`featureSlot.kind === "reply"` 时把 `ReplyBar` 作为 `FloatingBar` 的 `featureSlot`；展开详情由 `useReplyDetail`（局部开合状态）驱动，展开时在导航条下方渲染 `ReplyDetails`（`useReplyConversation` + `ReplyConversationPopover`）。`ReplyDetails` 在 reply slot 存活期间**始终挂载并订阅**（`enabled = Boolean(conversationId)`），`expanded` 只决定是否渲染面板——因为答题会话是 ephemeral 的，运行结束即被运行时清空，晚订阅只能拿到空快照（详见 [回复条展开详情为空](../bug-fix/2026-10-18-reply-details-empty-ephemeral-conversation.md)）。本轮 `conversationId` 跨「收起回发送条」保留，只在退出 reply slot 时清空。`panel === "chat" && featureSlot.kind === "chat"` 才渲染 `ChatPanel`。两套 hook（`useGeneralChat` / `useScreenshotAnswer`）仍在顶层实例化，slot 切换只切渲染、不重建、不丢对话历史与草稿。回复期间切换工作模式会先 `closeReplyBar()` 退出回复槽，避免功能槽与外壳 `panel` 状态打架。
 7. 独立回复窗口作为过渡形态保留代码但关闭入口：`apps/desktop/src/main/window.ts` 的 `setReplyBarWindowState` 增加单点开关 `DETACHED_REPLY_WINDOW_ENABLED: boolean = false`，非空状态直接忽略，仅放行 `null` 清理残留。
 8. 内嵌形态的流式/完成条改为**窄条自适应**：`.reply-bar--embedded.reply-bar--stream` 用 `width: max-content` + `max-width: min(320px, calc(100vw - 24px))`，短答案按内容收窄、超长才封顶交给跑马灯滚动；不再用固定 420 宽（短答案时会留一大片空白，视觉上比发送条长得多）。
 
@@ -36,8 +36,8 @@
 - **FloatingBar**（`packages/ui/src/components/floating-bar/FloatingBar.tsx`）：三段导航条的渲染容器，新增 `featureSlot?: ReactNode` 插槽；只负责「有插槽就接管右侧、没有就渲染默认三段」，不感知回复业务。
 - **ReplyBar**（`packages/ui/src/components/panels/ReplyBar.tsx`）：回复条三种形态的统一渲染单元；新增 `embedded` 形态用于嵌入导航条，不持有阶段的业务状态。独立回复窗口 `ReplyBarWindowApp` 代码保留但入口关闭，两者不共享容器代码。
 - **useReplyDetail**（`packages/ui/src/app/useReplyDetail.ts`）：回复详情开合状态的所有者（composing 自动折叠、Escape 收起），与 `featureSlot.phase` 解耦。
-- **ReplyDetails**（`packages/ui/src/components/panels/ReplyDetails.tsx`）：导航条下方详情面板，组合 `useReplyConversation` + `ReplyConversationPopover`，只在展开时挂载。
-- **useReplyWorkflow**（`packages/ui/src/app/useReplyWorkflow.ts`）：回复工作流阶段机与截图/发送/取消的所有者；阶段变更经 `onSetReplyPhase` 上抛给 coordinator，不自持 slot 状态。
+- **ReplyDetails**（`packages/ui/src/components/panels/ReplyDetails.tsx`）：导航条下方详情面板，组合 `useReplyConversation` + `ReplyConversationPopover`；`enabled`（会话订阅）与 `expanded`（面板渲染）分离，订阅覆盖整个 reply slot，`expanded` 只控制是否渲染界面。
+- **useReplyWorkflow**（`packages/ui/src/app/useReplyWorkflow.ts`）：回复工作流阶段机与截图/发送/取消的所有者；阶段变更经 `onSetReplyPhase` 上抛给 coordinator，不自持 slot 状态。`resetRoundInput()` 只滚本轮截图与草稿，`clearPending()` 额外结束本轮会话 id（仅退出 reply slot 时用）。
 - **useGeneralChat / useScreenshotAnswer**：数据源 hook，在 `FloatingBarApp` 顶层实例化；会话 ID 隔离（`ActiveChatConversationId` / 一次性 `screenshot-${uuid}`），互不污染。
 - **FloatingBarApp**：组装点，按 `featureSlot.kind` 决定注入 `ReplyBar` 还是渲染 `ChatPanel`，不新增业务状态机。
 - **跨进程契约**：`featureSlot` 是 `packages/ui` 内部状态，未进 `@answra/shared` 的 `OverlayMode`；IPC 的 `ChatSendCommand` / `AnswerRunCommand` 不变。
@@ -60,15 +60,16 @@
 - `feature/enter-reply` 会主动把 `panel` 归位到 `chat` 并记录 `restorePanel`；组件内不要私自改 `panel`，否则退出 reply 时无法恢复原面板。
 - 回复期间导航条右侧整体被功能槽接管：工作区入口（笔记本/公告/设置）暂时让位，属预期行为，不要为了「一直可见」把工作区段塞回功能槽内。
 - 截图取消（`reason === "cancelled"`）不进入 reply slot；只有截图成功才 `onEnterReply("screenshot")`，避免出现空发送条。
+- 详情订阅必须覆盖整个 reply slot，不能在展开时才挂载：答题会话（`answer.run`）是 ephemeral 的，运行结束即被 agent 清空，晚订阅只能拿到空快照。本轮 `conversationId` 也只在退出 reply slot 时清空，不要在收起回发送条时把它丢掉。
 - 内嵌回复条宽度用「max-content + 上限」而不是固定宽度；提高上限时要同时确认跑马灯视口仍够宽，不要把 `max-width` 去掉恢复撑满。
 - 独立窗口入口由 `window.ts` 单点开关关闭；若内联形态实机验证不通过，删除该开关即可恢复独立窗口；验证通过后连同 `replyBarController`、`ReplyBarWindowApp` 与 `detachedReplyBar` 分支一并移除。
 - 新增能力域应扩展 `FeatureSlotKind` 并向 `FloatingBar.featureSlot` 注入组件 + 注册 hook + reducer 规则，不改动现有 chat/reply slot。
 
 ## 验证
 
-- `packages/ui`：`surfaceState.test.ts` 覆盖 feature slot 进入/退出、`restoreSlot` 跨重复截图保留、非 chat 面板进入后恢复 `restorePanel`；`FloatingBarApp.test.tsx` 断言回复条渲染在 `.floating-bar` 内（`document.querySelector(".floating-bar .reply-bar")`）、回复期间工作区入口让位、截图不再推送独立窗口、`收起回复条` 逐级回退。`pnpm --filter @answra/ui test` 228 项通过。
+- `packages/ui`：`surfaceState.test.ts` 覆盖 feature slot 进入/退出、`restoreSlot` 跨重复截图保留、非 chat 面板进入后恢复 `restorePanel`；`FloatingBarApp.test.tsx` 断言回复条渲染在 `.floating-bar` 内（`document.querySelector(".floating-bar .reply-bar")`）、回复期间工作区入口让位、截图不再推送独立窗口、`收起回复条` 逐级回退、流式期间即订阅本轮会话且收起回发送条后仍能展开「当前对话」；`replyConversation.test.tsx` 覆盖 ephemeral 会话清空后详情仍保留、以及晚订阅为空的反例守卫。`pnpm --filter @answra/ui test` 231 项通过。
 - `apps/desktop`：新增 `replyBarEntrySwitch.test.ts`，断言入口开关忽略非空状态、仅放行 `null`。`pnpm --filter @answra/desktop exec vitest run test/replyBarEntrySwitch.test.ts` 通过。
 - 类型与格式：`pnpm --filter @answra/ui exec tsc --noEmit` 通过；biome 无错误。
 - 门禁：`pnpm notes:check`、`pnpm verify` 通过。
-- 需要的实机验证（待办）：Windows 实机确认点击截图后导航条功能槽就地变成发送条/回复条、缩略图与跑马灯在条内展示、短答案时条体收窄、回复详情在导航条下方展开、回复条回退发送条、退出回对话全流程，以及独立回复窗口入口不被触发。
+- 需要的实机验证（待办）：Windows 实机确认点击截图后导航条功能槽就地变成发送条/回复条、缩略图与跑马灯在条内展示、短答案时条体收窄、回复详情在导航条下方展开且能看到本轮题目与答案、回复条回退发送条后仍可展开回看、退出回对话全流程，以及独立回复窗口入口不被触发。
 - 需要的实机验证（待办）：Windows 实机确认点击截图后导航条功能槽就地变成发送条/回复条、缩略图与跑马灯在条内展示、回复详情在导航条下方展开、回复条回退发送条、退出回对话全流程，以及独立回复窗口入口不被触发。

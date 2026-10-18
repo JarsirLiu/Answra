@@ -24,6 +24,7 @@ function createConversationBridge() {
       .fn()
       .mockResolvedValue({ baseUrl: "http://localhost/v1", model: "test", configured: true }),
     getConversationSnapshot: vi.fn().mockImplementation(async (id: string) => emptySnapshot(id)),
+    readConversationEvents: vi.fn().mockResolvedValue([]),
     createConversation: vi.fn().mockImplementation(async (id: string) => emptySnapshot(id)),
     sendConversationMessage: vi
       .fn()
@@ -545,6 +546,48 @@ describe("three-segment floating navigation", () => {
     fireEvent.click(screen.getByRole("button", { name: "收起回复条" }));
     await waitFor(() =>
       expect(screen.queryByRole("img", { name: /screenshot-.*\.png/ })).not.toBeInTheDocument(),
+    );
+  });
+
+  it("keeps this round's conversation after collapsing the reply bar back to the send bar", async () => {
+    const bridge = createConversationBridge();
+    render(<FloatingBarApp bridge={bridge} />);
+    clickAnswerScreenshot();
+    await waitFor(() =>
+      expect(screen.getByRole("img", { name: /screenshot-.*\.png/ })).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "确认发送" }));
+    await waitFor(() => expect(bridge.sendConversationMessage).toHaveBeenCalled());
+    const sentCommand = bridge.sendConversationMessage.mock.calls[0]?.[0] as
+      | { conversationId: string }
+      | undefined;
+    if (!sentCommand) throw new Error("sendConversationMessage 未被调用");
+    const sentConversationId = sentCommand.conversationId;
+    // 全程订阅本轮会话：流式期间就按本轮 id 拉取，而不是等展开时再取（那时已被清空）。
+    await waitFor(() =>
+      expect(bridge.getConversationSnapshot).toHaveBeenCalledWith(sentConversationId),
+    );
+    await act(async () => {
+      emitConversationEvent?.({
+        runId: "run-1",
+        chunk: { type: "text-delta", id: "segment-1", delta: "答案" },
+      });
+      emitConversationEvent?.({ runId: "run-1", chunk: { type: "finish" } });
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "继续截图" })).toBeInTheDocument(),
+    );
+
+    // 收起回复条只清空本轮截图与草稿，本轮会话保留到退出回复槽为止。
+    fireEvent.click(screen.getByRole("button", { name: "收起回复条" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "确认发送" })).toBeInTheDocument(),
+    );
+
+    // 展开发送条里的对话面板：订阅自流式期间就一直在，无需重新拉取即可渲染本轮会话。
+    fireEvent.click(screen.getByRole("button", { name: "展开对话面板" }));
+    await waitFor(() =>
+      expect(screen.getByRole("region", { name: "当前对话" })).toBeInTheDocument(),
     );
   });
 
