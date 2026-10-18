@@ -4,7 +4,6 @@ import type {
   AuthStatus,
   ContentSize,
   ConversationChange,
-  ConversationModelConfig,
   ConversationSendCommand,
   ConversationSnapshot,
   DesktopAnnouncement,
@@ -93,15 +92,6 @@ export interface DesktopBridge {
   onAmbientColor?: (listener: (payload: AmbientColorPayload) => void) => () => void;
   /** 按用户设置启停主进程变色龙屏幕采样。 */
   setAmbientFollow?: (value: boolean) => void;
-  configureConversation?: (config: ConversationModelConfig) => Promise<void>;
-  getConversationConfig?: () => Promise<
-    Omit<ConversationModelConfig, "apiKey"> & { configured: boolean }
-  >;
-  /**
-   * 按需拉取已解密的 API Key（用户点显隐图标时回显）。
-   * 未保存 Key 时返回 null；不随配置查询自动下发，浏览器预览/测试环境可未实现。
-   */
-  getConversationApiKey?: () => Promise<{ apiKey: string | null }>;
   getConversationSnapshot?: (conversationId: string) => Promise<ConversationSnapshot>;
   createConversation?: (conversationId: string) => Promise<ConversationSnapshot>;
   readConversationEvents?: (

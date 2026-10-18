@@ -185,6 +185,15 @@ describe("AuthService.handleCallbackUrl", () => {
           data: {
             plan: "pro",
             capabilities: [{ id: "text.chat" }, { id: "voice.interview" }, { noise: true }],
+            endpoints: [
+              {
+                id: "text.chat",
+                kind: "text",
+                path: "/api/v1/desktop/chat/completions",
+                model: "text.chat",
+              },
+              { id: "voice.interview" },
+            ],
           },
         });
       }
@@ -219,6 +228,10 @@ describe("AuthService.handleCallbackUrl", () => {
       expiresAt: TEST_NOW + 3600_000 - 60_000,
       plan: "pro",
       capabilities: ["text.chat", "voice.interview"],
+      // 只有形状完整的端点声明会被保留：客户端据此取调用路径，残缺项直接丢弃。
+      endpoints: [
+        { id: "text.chat", path: "/api/v1/desktop/chat/completions", model: "text.chat" },
+      ],
     });
     expect(saved).toBeNull();
     expect(harness.calls[1]).toMatchObject({
@@ -365,6 +378,7 @@ describe("AuthService.restore / refresh", () => {
       expiresAt: TEST_NOW - 1,
       plan: "pro",
       capabilities: ["text.chat"],
+      endpoints: [],
     });
 
     const status = await harness.service.restore();
@@ -389,6 +403,7 @@ describe("AuthService.restore / refresh", () => {
       expiresAt: TEST_NOW + 120_000 - 60_000,
       plan: "pro",
       capabilities: ["text.chat"],
+      endpoints: [],
     });
   });
 
@@ -400,6 +415,7 @@ describe("AuthService.restore / refresh", () => {
       expiresAt: TEST_NOW - 1,
       plan: "pro",
       capabilities: ["text.chat"],
+      endpoints: [],
     });
 
     await expect(harness.service.restore()).resolves.toEqual({
@@ -438,6 +454,126 @@ describe("AuthService.restore / refresh", () => {
     expect(restored.signedIn).toBe(true);
     expect(raced.signedIn).toBe(true);
     expect(harness.calls).toHaveLength(2);
+  });
+});
+
+describe("AuthService.refresh failure classification", () => {
+  const expiredSession: AuthSessionRecord = {
+    accessToken: "access-old",
+    refreshToken: "refresh-old",
+    expiresAt: TEST_NOW - 1,
+    plan: "pro",
+    capabilities: ["text.chat"],
+  };
+  const refreshCalls = (calls: { url: string }[]) =>
+    calls.filter((call) => call.url.endsWith(AUTH_PATHS.refresh));
+
+  it("keeps the stored session when the refresh cannot reach the gateway", async () => {
+    const harness = createHarness((call) => {
+      if (call.url.endsWith(AUTH_PATHS.refresh)) throw new TypeError("fetch failed");
+      return jsonResponse({ code: 0, data: { plan: "pro", capabilities: ["text.chat"] } });
+    });
+    await harness.credentials.store.save(expiredSession);
+
+    await expect(harness.service.restore()).resolves.toEqual({
+      signedIn: true,
+      plan: "pro",
+      capabilities: ["text.chat"],
+      cloudBaseUrl: "https://api.test",
+    });
+    // 离线启动不得清掉 refresh token：否则用户只要断网启动一次就要重走浏览器登录。
+    expect(harness.credentials.current()).toMatchObject({ refreshToken: "refresh-old" });
+    expect(harness.statuses).toEqual([]);
+  });
+
+  it("keeps the stored session for transient gateway statuses", async () => {
+    for (const status of [500, 502, 503, 408, 429]) {
+      const harness = createHarness(() => jsonResponse({}, status));
+      await harness.credentials.store.save(expiredSession);
+
+      const status_ = await harness.service.restore();
+      expect(status_.signedIn, `HTTP ${status}`).toBe(true);
+      expect(harness.credentials.current(), `HTTP ${status}`).toMatchObject({
+        refreshToken: "refresh-old",
+      });
+      expect(harness.statuses, `HTTP ${status}`).toEqual([]);
+    }
+  });
+
+  it("drops the session only when the server rejects the refresh token", async () => {
+    for (const status of [400, 401, 403]) {
+      const harness = createHarness(() => jsonResponse({}, status));
+      await harness.credentials.store.save(expiredSession);
+
+      await expect(harness.service.restore()).resolves.toEqual({
+        signedIn: false,
+        plan: null,
+        capabilities: [],
+        cloudBaseUrl: null,
+      });
+      expect(harness.credentials.current(), `HTTP ${status}`).toBeNull();
+      expect(harness.statuses.at(-1)?.signedIn, `HTTP ${status}`).toBe(false);
+    }
+  });
+
+  it("stops retrying within the cooldown and retries once it expires", async () => {
+    let now = TEST_NOW;
+    let remainingFailures = 1;
+    const harness = createHarness(
+      (call) => {
+        if (call.url.endsWith(AUTH_PATHS.refresh)) {
+          if (remainingFailures > 0) {
+            remainingFailures -= 1;
+            throw new TypeError("fetch failed");
+          }
+          return jsonResponse(tokenBody("access-new", "refresh-new"));
+        }
+        return jsonResponse({ code: 0, data: { plan: "pro", capabilities: ["text.chat"] } });
+      },
+      { now: () => now },
+    );
+    await harness.credentials.store.save(expiredSession);
+
+    await harness.service.restore();
+    expect(refreshCalls(harness.calls)).toHaveLength(1);
+
+    // 冷却期内不再发刷新请求，直接返回缓存登录态（避免离线时每次查询都等一次超时）。
+    now += 30_000;
+    await expect(harness.service.getStatus()).resolves.toMatchObject({ signedIn: true });
+    expect(refreshCalls(harness.calls)).toHaveLength(1);
+
+    now += 60_000;
+    await expect(harness.service.getStatus()).resolves.toMatchObject({ signedIn: true });
+    expect(refreshCalls(harness.calls)).toHaveLength(2);
+    expect(harness.credentials.current()).toMatchObject({
+      accessToken: "access-new",
+      refreshToken: "refresh-new",
+    });
+  });
+});
+
+describe("AuthService.hasSession", () => {
+  it("treats an unfinished restore as signed in so a cold start never blocks a logged-in user", () => {
+    const harness = createHarness(() => jsonResponse({}, 500));
+
+    expect(harness.service.hasSession()).toBe(true);
+  });
+
+  it("reports the local session without touching the gateway", async () => {
+    const harness = createHarness(() => jsonResponse({}, 500));
+    await harness.service.restore();
+    expect(harness.service.hasSession()).toBe(false);
+
+    await harness.credentials.store.save({
+      accessToken: "access-1",
+      refreshToken: "refresh-1",
+      expiresAt: TEST_NOW + 60_000,
+      plan: null,
+      capabilities: [],
+    });
+    await harness.service.restore();
+
+    expect(harness.service.hasSession()).toBe(true);
   });
 });
 
@@ -500,11 +636,12 @@ describe("readTokens", () => {
     ).toMatchObject({ accessToken: "a", refreshToken: "r" });
   });
 
-  it("falls back to a short lifetime when expires_in is missing", () => {
+  it("falls back to a conservative lifetime when expires_in is missing", () => {
+    // 兜底值只影响刷新频率，不决定登录态寿命；不能小到变成频繁刷新。
     expect(readTokens({ device_access_token: "a", device_refresh_token: "r" }, TEST_NOW)).toEqual({
       accessToken: "a",
       refreshToken: "r",
-      expiresAt: TEST_NOW + 1800_000 - 60_000,
+      expiresAt: TEST_NOW + 3600_000 - 60_000,
     });
   });
 
@@ -515,16 +652,27 @@ describe("readTokens", () => {
 });
 
 describe("readProfile", () => {
-  it("accepts string and object capability entries", () => {
-    expect(readProfile({ plan: "pro", capabilities: ["a", { id: "b" }] })).toEqual({
+  it("accepts string and object capability entries and keeps well-formed endpoints", () => {
+    expect(
+      readProfile({
+        plan: "pro",
+        capabilities: ["a", { id: "b" }],
+        endpoints: [{ id: "a", path: "/api/v1/desktop/chat/completions", model: "a" }, { id: "b" }],
+      }),
+    ).toEqual({
       plan: "pro",
       capabilities: ["a", "b"],
+      endpoints: [{ id: "a", path: "/api/v1/desktop/chat/completions", model: "a" }],
     });
   });
 
-  it("defaults to an empty capability set and null plan", () => {
-    expect(readProfile(undefined)).toEqual({ plan: null, capabilities: [] });
-    expect(readProfile({ capabilities: "nope" })).toEqual({ plan: null, capabilities: [] });
+  it("defaults to an empty capability set, null plan and no endpoints", () => {
+    expect(readProfile(undefined)).toEqual({ plan: null, capabilities: [], endpoints: [] });
+    expect(readProfile({ capabilities: "nope" })).toEqual({
+      plan: null,
+      capabilities: [],
+      endpoints: [],
+    });
   });
 });
 

@@ -101,10 +101,6 @@ export const CaptureChannels = {
 } as const;
 
 export const ConversationChannels = {
-  Configure: "answra:conversation:configure",
-  GetConfig: "answra:conversation:get-config",
-  /** 按需拉取已解密 API Key（用户点显隐时回显）；无 Key 返回 null。 */
-  GetApiKey: "answra:conversation:get-api-key",
   Send: "answra:conversation:send",
   Cancel: "answra:conversation:cancel",
   GetSnapshot: "answra:conversation:get-snapshot",
@@ -112,6 +108,28 @@ export const ConversationChannels = {
   ReadEvents: "answra:conversation:read-events",
   Change: "answra:conversation:change",
 } as const;
+
+/**
+ * 「调用模型需要登录」的统一失败码。
+ *
+ * 两条来源都用同一个码：main 调用边界的前置门禁（未登录直接拒绝），以及云端返回 401
+ * （网关 `error.code=unauthorized`，由 agent 的 fetch 包装器转成这个码）。渲染层只按码
+ * 决定是否提示登录，不解析错误文案：同一类失败必须只有一个判定来源。
+ */
+export const AUTH_REQUIRED_CODE = "auth-required";
+
+/** 未登录调用模型时的用户可见文案；对话与截图答题共用同一句（同一失败同一提示）。 */
+export const AUTH_REQUIRED_NOTICE = "请先登录后再使用（设置 → 账户）";
+
+/** 识别任意层抛上来的错误（含 Electron IPC 重新包装后的 Error）是否表示「需要登录」。 */
+export function isAuthRequiredError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes(AUTH_REQUIRED_CODE);
+}
+
+/** 构造带失败码的「需要登录」错误，供 main 侧门禁抛出。 */
+export function authRequiredError(): Error {
+  return new Error(`${AUTH_REQUIRED_CODE}: ${AUTH_REQUIRED_NOTICE}`);
+}
 
 /**
  * 云端账号频道（登录解锁会员）。
@@ -206,10 +224,40 @@ export interface InterviewAudioFrame {
 export const ActiveExamConversationId = "active-exam-conversation";
 export const ActiveChatConversationId = "active-chat-conversation";
 
-export interface ConversationModelConfig {
+/**
+ * 云端能力 ID（跨仓库契约，与网关 `internal/domain/desktop_capability.go` 同值）。
+ *
+ * 客户端把能力 ID 作为占位 `model` 下发，网关再改写为自己的稳定上游别名：
+ * 因此模型改名、换供应商都不需要发布客户端，客户端也永远不感知真实模型名。
+ */
+export const DesktopCapability = {
+  /** 对话补全。 */
+  TextChat: "text.chat",
+  /** 截图答题。 */
+  ImageAnswer: "image.answer",
+} as const;
+
+/**
+ * 一项云端能力的调用信息，全部由服务端下发（`GET /api/v1/capabilities` 的 `endpoints[]`）：
+ * `baseUrl` 由云端 origin 与服务端声明的 path 拼出，`model` 是服务端声明的占位模型。
+ * 客户端不硬编码路径与模型名，只按能力 ID 取用。
+ */
+export interface ConversationCapabilityEndpoint {
   baseUrl: string;
   model: string;
-  apiKey?: string;
+}
+
+/**
+ * agent 运行时的模型配置：两项云端能力各自的端点。
+ *
+ * 不再包含任何用户凭据——访问令牌按次运行注入（见 `AgentCommand` 的 `accessToken`），
+ * 不落盘、不进 renderer，也不作为配置的一部分被保存。
+ */
+export interface ConversationModelConfig {
+  /** 对话能力（`DesktopCapability.TextChat`）。 */
+  chat: ConversationCapabilityEndpoint;
+  /** 截图答题能力（`DesktopCapability.ImageAnswer`）。 */
+  answer: ConversationCapabilityEndpoint;
 }
 
 export interface ConversationSendRequest {
@@ -617,12 +665,6 @@ export interface WorkspaceChannelMap {
 }
 
 export interface ConversationChannelMap {
-  [ConversationChannels.Configure]: { request: ConversationModelConfig; response: undefined };
-  [ConversationChannels.GetConfig]: {
-    request: undefined;
-    response: Omit<ConversationModelConfig, "apiKey"> & { configured: boolean };
-  };
-  [ConversationChannels.GetApiKey]: { request: undefined; response: { apiKey: string | null } };
   [ConversationChannels.Send]: {
     request: ConversationSendCommand;
     response: { runId: string };

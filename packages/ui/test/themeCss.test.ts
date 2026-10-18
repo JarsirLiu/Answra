@@ -81,6 +81,18 @@ describe("theme CSS integrity", () => {
     expect(on).toContain("var(--paper)");
   });
 
+  it("keeps the reply bar and its details panel on palette tokens, without hardcoded colors", () => {
+    // 写死的色值绕过 [data-theme] 与变色龙：主题切换或跟随背景时这些文字/图标不会
+    // 跟着变（浅色主题下配深底、深色主题下配近黑），跑马灯的活动色尤其明显。
+    // 发送条/回复条与展开详情里的颜色必须走调色板令牌。
+    for (const file of ["ReplyBar.css", "ReplyConversationPopover.css"]) {
+      const css = stripComments(
+        readFileSync(join(sourceRoot, "components", "panels", file), "utf8"),
+      );
+      expect(css, file).not.toMatch(/#[0-9a-f]{3,8}\b|(?:rgba?|hsla?)\(/i);
+    }
+  });
+
   it("keeps the stealth cursor override strong enough to beat component cursor rules", () => {
     // 隐身模式下指针必须恒为默认箭头，否则指针形状会暴露正在输入/选择。
     // 组件里的 cursor 规则会追平覆盖规则的 (0,2,0)（如 `.trHeader.isClickable`），

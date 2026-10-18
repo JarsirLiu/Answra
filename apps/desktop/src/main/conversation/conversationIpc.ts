@@ -1,6 +1,6 @@
 import {
+  authRequiredError,
   ConversationChannels,
-  type ConversationModelConfig,
   type ConversationSendCommand,
 } from "@answra/shared";
 import { ipcMain } from "electron";
@@ -13,25 +13,23 @@ import {
 } from "../window";
 import type { AgentService } from "./agentService";
 
-export function registerConversationIpc(service: AgentService): void {
-  ipcMain.handle(ConversationChannels.GetConfig, (event) => {
-    if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用方");
-    return service.getConfig();
-  });
-  ipcMain.handle(ConversationChannels.GetApiKey, (event) => {
-    if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用方");
-    return service.getApiKey();
-  });
-  ipcMain.handle(ConversationChannels.Configure, async (event, config: ConversationModelConfig) => {
-    if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用方");
-    await service.configure(config);
-  });
+/**
+ * @param isSignedIn 本机是否持有登录会话；模型调用是与云端能力绑定的入口，未登录直接
+ *   以统一的失败码拒绝，渲染层据此提示登录。
+ */
+export function registerConversationIpc(
+  service: AgentService,
+  isSignedIn: () => boolean = () => true,
+): void {
   ipcMain.handle(ConversationChannels.Send, (event, payload: ConversationSendCommand) => {
     if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用方");
     if (payload?.operation === "chat.send" && payload.profileId !== "general-chat")
       throw new Error("对话能力配置无效");
     if (payload?.operation !== "chat.send" && payload?.operation !== "answer.run")
       throw new Error("AI 操作类型无效");
+    // 调用模型是需要登录的能力：未登录返回统一失败码，由渲染层提示登录。
+    // 真实授权始终由服务端强制，这里只把「未登录」变成可识别的信号，不做预门禁。
+    if (!isSignedIn()) throw authRequiredError();
     return service.send(payload);
   });
   ipcMain.handle(ConversationChannels.GetSnapshot, (event, payload: { conversationId: string }) => {

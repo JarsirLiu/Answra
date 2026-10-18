@@ -9,6 +9,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { type ReactNode, useRef } from "react";
+import { ICON } from "../../tokens";
 import { useHorizontalTickerScroll } from "./useHorizontalTickerScroll";
 
 interface ReplyActivityTickerProps {
@@ -83,7 +84,7 @@ export function ReplyActivityTicker({
         <Icon
           aria-hidden="true"
           className={pending && current.kind === "status" ? "reply-activity-spinner" : undefined}
-          size={16}
+          size={ICON}
         />
       </span>
       <div

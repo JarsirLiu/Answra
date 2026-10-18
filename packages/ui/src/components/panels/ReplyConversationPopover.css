@@ -140,8 +140,8 @@
   flex: none;
 }
 .reply-conversation-activity--tool {
-  border-color: #176b68;
-  color: #176b68;
+  border-color: var(--mint-line);
+  color: var(--mint-text);
 }
 .reply-conversation-activity--error {
   border-color: var(--danger);

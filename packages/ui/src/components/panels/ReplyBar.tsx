@@ -108,13 +108,13 @@ export function ReplyBar({
               )}
             </SurfaceButton>
           )}
-          {/* 保持发送/停止键在关闭键左侧，流式内容不能挤压这组操作。 */}
+          {/* 保持发送/停止键在关闭键左侧，流式内容不能挤压这组操作。
+              与导航条图标同一中性语言（默认变体），不再用品牌薄荷实底。 */}
           <SurfaceButton
             aria-label="取消回复并返回发送"
             className="reply-stop"
             onClick={replyPending || replyError ? onCancel : onClose}
             type="button"
-            variant="primary"
           >
             {replyPending ? (
               <Square
@@ -246,7 +246,6 @@ export function ReplyBar({
           className="reply-send"
           disabled={!draft.trim() && attachments.length === 0}
           onClick={onSend}
-          variant="primary"
         >
           <Send aria-hidden="true" size={ICON} strokeWidth={ICON_STROKE} />
         </SurfaceButton>

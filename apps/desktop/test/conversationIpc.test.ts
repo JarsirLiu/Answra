@@ -4,6 +4,7 @@ const shared = vi.hoisted(() => ({
   handlers: {} as Record<string, (...args: unknown[]) => unknown>,
   onChange: vi.fn(),
   send: vi.fn(),
+  signedIn: true,
   mainWindow: { webContents: { id: "main" } },
   replyConversationId: "screenshot-01234567-89ab-4cde-8fab-0123456789ab",
 }));
@@ -31,7 +32,7 @@ vi.mock("../src/main/window", () => ({
   sendConversationChange: shared.send,
 }));
 
-import { ConversationChannels } from "@answra/shared";
+import { AUTH_REQUIRED_CODE, ConversationChannels } from "@answra/shared";
 import { registerConversationIpc } from "../src/main/conversation/conversationIpc";
 
 const service = {
@@ -58,9 +59,11 @@ describe("conversation IPC read access for reply renderer", () => {
     shared.handlers = {};
     shared.onChange.mockClear();
     shared.send.mockClear();
+    shared.signedIn = true;
     service.getSnapshot.mockClear();
     service.readEvents.mockClear();
-    registerConversationIpc(service as never);
+    service.send.mockClear();
+    registerConversationIpc(service as never, () => shared.signedIn);
   });
 
   it("allows the reply renderer to read only the active conversation", async () => {
@@ -106,5 +109,44 @@ describe("conversation IPC read access for reply renderer", () => {
 
   it("forwards the service change subscription to the window broadcaster", () => {
     expect(shared.onChange).toHaveBeenCalledWith(shared.send);
+  });
+
+  it("rejects model calls while signed out with the shared auth-required code", () => {
+    shared.signedIn = false;
+    const send = getHandler(ConversationChannels.Send);
+    const event = { sender: { id: "main" } };
+    const answerRun = {
+      operation: "answer.run",
+      conversationId: "c-1",
+      request: { text: "x", images: [] },
+    };
+
+    expect(() => send(event, answerRun)).toThrow(AUTH_REQUIRED_CODE);
+    expect(() =>
+      send(event, {
+        operation: "chat.send",
+        profileId: "general-chat",
+        conversationId: "c-1",
+        request: { text: "x", images: [] },
+      }),
+    ).toThrow(AUTH_REQUIRED_CODE);
+    // 未登录在门禁处就被拦下：不让请求落到本地模型服务。
+    expect(service.send).not.toHaveBeenCalled();
+  });
+
+  it("still sends model calls once the account is signed in", async () => {
+    service.send.mockResolvedValue({ runId: "run-1" });
+
+    await expect(
+      getHandler(ConversationChannels.Send)(
+        { sender: { id: "main" } },
+        {
+          operation: "answer.run",
+          conversationId: "c-1",
+          request: { text: "x", images: [] },
+        },
+      ),
+    ).resolves.toEqual({ runId: "run-1" });
+    expect(service.send).toHaveBeenCalledTimes(1);
   });
 });

@@ -7,7 +7,6 @@ import {
   type ContentSize,
   type ConversationChange,
   ConversationChannels,
-  type ConversationModelConfig,
   type ConversationSendCommand,
   type DesktopBridge,
   type ImeCandidateAction,
@@ -131,10 +130,6 @@ const bridge: DesktopBridge = {
   setAmbientFollow: (value: boolean) => {
     ipcRenderer.send(AmbientChannels.SetFollow, value);
   },
-  configureConversation: (config: ConversationModelConfig) =>
-    ipcRenderer.invoke(ConversationChannels.Configure, config),
-  getConversationConfig: () => ipcRenderer.invoke(ConversationChannels.GetConfig),
-  getConversationApiKey: () => ipcRenderer.invoke(ConversationChannels.GetApiKey),
   getConversationSnapshot: (conversationId: string) =>
     ipcRenderer.invoke(ConversationChannels.GetSnapshot, { conversationId }),
   createConversation: (conversationId: string) =>

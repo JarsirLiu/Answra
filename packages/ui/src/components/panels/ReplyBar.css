@@ -51,7 +51,8 @@
   background: var(--field);
 }
 
-/* 缩略图右上角删除键：深色小圆底盘 + 纸白 ×，常驻可见、点按区域够大，
+/* 缩略图右上角删除键：与悬浮导航条图标同一中性语言（主题色圆底盘 + 中性图标色），
+   不用品牌薄荷；底盘不透明，保证压在任意截图上都看得清。点按区域够大，
    点击只移除该张截图（onAttachmentRemove 按 id），其余保留、不会发往 AI。 */
 .attachment-thumb .attachment-remove {
   position: absolute;
@@ -62,17 +63,23 @@
   min-width: 18px;
   padding: 0;
   border-radius: 50%;
-  background: var(--scrim);
-  color: var(--paper);
-  transition: background 0.15s ease;
+  background: var(--glass);
+  color: var(--icon);
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    filter 0.15s ease;
 }
 
 .attachment-thumb .attachment-remove:hover {
-  background: var(--scrim-strong);
-  color: var(--paper);
+  color: var(--ink);
+  filter: brightness(0.94);
 }
 
-/* ── 操作组：固定不收缩；发送/停止键为方形纯图标键，不再带占位文字 ── */
+/* ── 操作组：固定不收缩。发送/停止、继续截图、展开对话都是普通图标按钮
+      （默认变体：透明底 + 中性图标色，仅 hover 出底色），与悬浮导航条的模式功能
+     按钮、旁边的相机键完全同规格，没有任何尺寸或底色特例；品牌薄荷实底只留给
+      面板里的确认类操作。 ── */
 .reply-actions {
   display: flex;
   align-items: center;
@@ -87,19 +94,11 @@
 .reply-error {
   max-width: 300px;
   overflow: hidden;
-  color: var(--danger, #b42318);
+  color: var(--danger);
   font-size: 11px;
   line-height: 16px;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.reply-send,
-.reply-stop {
-  width: var(--ctl-h);
-  min-width: var(--ctl-h);
-  height: var(--ctl-h);
-  padding: 0;
 }
 
 /* 收起按钮：小圆 ×，与缩略图删除键同源观感 */
@@ -170,17 +169,16 @@
   color: var(--muted);
 }
 
-.reply-activity-ticker--thinking .reply-activity-indicator {
-  color: #7652a3;
-}
+/* 活动指示图标：与条内其它图标同一中性语言（--muted），思考态不再单独染紫。
+   颜色一律走调色板令牌，受 [data-theme] 与变色龙主题管理，不写死色值。 */
 .reply-activity-ticker--text .reply-activity-indicator {
   color: var(--ink);
 }
 .reply-activity-ticker--tool .reply-activity-indicator {
-  color: #176b68;
+  color: var(--mint-text);
 }
 .reply-activity-ticker--error .reply-activity-indicator {
-  color: var(--danger, #b42318);
+  color: var(--danger);
 }
 
 .reply-activity-spinner {
@@ -241,25 +239,25 @@
   font-size: 1em;
 }
 
+/* 跑马灯文字：思考仅用斜体区分（不换颜色），其余按语义取调色板令牌。 */
 .reply-activity-item--thinking {
-  color: #7652a3;
   font-style: italic;
 }
 .reply-activity-item--thinking > span {
   font-style: italic;
 }
 .reply-activity-item--text {
-  color: #34618f;
+  color: var(--ink);
 }
 .reply-activity-item--tool {
-  color: #176b68;
+  color: var(--mint-text);
 }
 .reply-activity-item--status,
 .reply-activity-item--source {
   color: var(--muted);
 }
 .reply-activity-item--error {
-  color: var(--danger, #b42318);
+  color: var(--danger);
 }
 
 /* 防止活动文字换行参与窗口测宽，溢出内容由横向 viewport 跟随。 */

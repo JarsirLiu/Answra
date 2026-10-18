@@ -20,9 +20,6 @@ function createConversationBridge() {
   return {
     close: vi.fn(),
     fitContent: vi.fn(),
-    getConversationConfig: vi
-      .fn()
-      .mockResolvedValue({ baseUrl: "http://localhost/v1", model: "test", configured: true }),
     getConversationSnapshot: vi.fn().mockImplementation(async (id: string) => emptySnapshot(id)),
     readConversationEvents: vi.fn().mockResolvedValue([]),
     createConversation: vi.fn().mockImplementation(async (id: string) => emptySnapshot(id)),
@@ -235,6 +232,31 @@ describe("three-segment floating navigation", () => {
     expect(classes.some((name) => name.includes("primary"))).toBe(false);
   });
 
+  it("renders the in-place reply bar keys as plain icon buttons without a brand tint", async () => {
+    const bridge = createConversationBridge();
+    render(<FloatingBarApp bridge={bridge} />);
+    clickAnswerScreenshot();
+    await waitFor(() =>
+      expect(screen.getByRole("img", { name: /screenshot-.*\.png/ })).toBeInTheDocument(),
+    );
+
+    // 发送条：确认发送与缩略图删除键都走默认变体（中性图标色 + hover 底色），不带薄荷实底。
+    for (const button of [
+      screen.getByRole("button", { name: "确认发送" }),
+      screen.getByRole("button", { name: "移除截图" }),
+    ]) {
+      expect(button).toHaveClass("surface-control--default");
+      expect(button.className).not.toContain("primary");
+    }
+
+    // 回复条：流式态的取消/停止键同样不带薄荷实底。
+    fireEvent.click(screen.getByRole("button", { name: "确认发送" }));
+    await waitFor(() => expect(bridge.sendConversationMessage).toHaveBeenCalled());
+    const stop = await screen.findByRole("button", { name: "取消回复并返回发送" });
+    expect(stop).toHaveClass("surface-control--default");
+    expect(stop.className).not.toContain("primary");
+  });
+
   it("overlays the mode menu on an open panel instead of pushing it down", () => {
     render(<FloatingBarApp />);
     fireEvent.click(screen.getByRole("button", { name: "打开笔记本" }));
@@ -394,6 +416,47 @@ describe("three-segment floating navigation", () => {
       expect(screen.getByRole("img", { name: /screenshot-.*\.png/ })).toBeInTheDocument(),
     );
     expect(screen.getByRole("button", { name: "确认发送" })).toBeInTheDocument();
+  });
+
+  it("prompts sign-in when the main process rejects a chat send as unauthenticated", async () => {
+    const bridge = {
+      ...createConversationBridge(),
+      getAuthStatus: vi
+        .fn()
+        .mockResolvedValue({ signedIn: false, plan: null, capabilities: [], cloudBaseUrl: null }),
+      onAuthStatus: vi.fn(() => () => undefined),
+      loginAccount: vi.fn().mockResolvedValue({ opened: true }),
+      sendConversationMessage: vi
+        .fn()
+        .mockRejectedValue(new Error("auth-required: 请先登录后再使用（设置 → 账户）")),
+    };
+    render(<FloatingBarApp bridge={bridge} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "打开对话" }));
+    const input = screen.getByRole("textbox", { name: "补充问题" });
+    fireEvent.change(input, { target: { value: "你好" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
+
+    // 只看失败码：提示统一，且不把 IPC 包装后的原始文案展示给用户。
+    expect(await screen.findByRole("alert")).toHaveTextContent("请先登录后再使用（设置 → 账户）");
+    // 账户入口同时就位，由用户自己决定何时拉起浏览器授权。
+    expect(screen.getByRole("button", { name: "登录" })).toBeInTheDocument();
+  });
+
+  it("shows a rejected screenshot answer on screen instead of only logging it", async () => {
+    const bridge = createConversationBridge();
+    bridge.sendConversationMessage.mockRejectedValue(
+      new Error("auth-required: 请先登录后再使用（设置 → 账户）"),
+    );
+    render(<FloatingBarApp bridge={bridge} />);
+    clickAnswerScreenshot();
+    await waitFor(() =>
+      expect(screen.getByRole("img", { name: /screenshot-.*\.png/ })).toBeInTheDocument(),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "确认发送" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("请先登录后再使用（设置 → 账户）");
   });
 
   it("captures a region screenshot through the bridge and attaches it to the chat", async () => {
@@ -651,76 +714,16 @@ describe("three-segment floating navigation", () => {
     expect(screen.getByRole("slider", { name: "前景透明度" })).toBeInTheDocument();
   });
 
-  it("masks the API key with a closed eye and uses the shared primary save button", async () => {
-    const bridge = {
-      ...createConversationBridge(),
-      configureConversation: vi.fn().mockResolvedValue(undefined),
-    };
-    render(<FloatingBarApp bridge={bridge} />);
+  it("no longer offers any local model configuration in settings", () => {
+    render(<FloatingBarApp bridge={createConversationBridge()} />);
     fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
 
-    const keyInput = screen.getByPlaceholderText("必填");
-    expect(keyInput).toHaveAttribute("type", "password");
-    fireEvent.change(keyInput, { target: { value: "secret" } });
-    fireEvent.click(screen.getByRole("button", { name: "显示 API Key" }));
-    expect(keyInput).toHaveAttribute("type", "text");
-    expect(screen.getByRole("button", { name: "保存" })).toHaveClass("surface-control--primary");
-    fireEvent.click(screen.getByRole("button", { name: "隐藏 API Key" }));
-    expect(keyInput).toHaveAttribute("type", "password");
-  });
-
-  it("shows a saved confirmation and keeps the masked key after a successful save", async () => {
-    const bridge = {
-      ...createConversationBridge(),
-      configureConversation: vi.fn().mockResolvedValue(undefined),
-    };
-    render(<FloatingBarApp bridge={bridge} />);
-    fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
-
-    const baseUrlInput = screen.getByPlaceholderText("http://127.0.0.1:1234/v1");
-    const modelInput = screen.getByPlaceholderText("模型 ID");
-    fireEvent.change(baseUrlInput, { target: { value: "http://127.0.0.1:1234/v1" } });
-    fireEvent.change(modelInput, { target: { value: "test-model" } });
-
-    const keyInput = screen.getByPlaceholderText("必填");
-    fireEvent.change(keyInput, { target: { value: "secret" } });
-    fireEvent.click(screen.getByRole("button", { name: "保存" }));
-
-    await waitFor(() => expect(bridge.configureConversation).toHaveBeenCalledTimes(1));
-    expect(bridge.configureConversation).toHaveBeenCalledWith({
-      baseUrl: "http://127.0.0.1:1234/v1",
-      model: "test-model",
-      apiKey: "secret",
-    });
-    // Key 默认掩码回显，保存成功后保留掩码展示，"已保存"状态给出反馈
-    expect(keyInput).toHaveValue("secret");
-    expect(keyInput).toHaveAttribute("type", "password");
-    expect(screen.getByRole("status")).toHaveTextContent("已保存");
-  });
-
-  it("echoes the saved API key masked on open and toggles visibility with the eye icon", async () => {
-    const bridge = {
-      ...createConversationBridge(),
-      getConversationApiKey: vi.fn().mockResolvedValue({ apiKey: "saved-key" }),
-    };
-    render(<FloatingBarApp bridge={bridge} />);
-    fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
-
-    const keyInput = screen.getByPlaceholderText("必填");
-    // 打开面板即拉取已保存 Key，默认掩码展示
-    await waitFor(() => expect(bridge.getConversationApiKey).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(keyInput).toHaveValue("saved-key"));
-    expect(keyInput).toHaveAttribute("type", "password");
-
-    fireEvent.click(screen.getByRole("button", { name: "显示 API Key" }));
-    expect(keyInput).toHaveAttribute("type", "text");
-    expect(keyInput).toHaveValue("saved-key");
-
-    // 再次切换只改显隐，不重复拉取
-    fireEvent.click(screen.getByRole("button", { name: "隐藏 API Key" }));
-    fireEvent.click(screen.getByRole("button", { name: "显示 API Key" }));
-    expect(keyInput).toHaveValue("saved-key");
-    expect(bridge.getConversationApiKey).toHaveBeenCalledTimes(1);
+    // BYO 已移除：端点、模型与凭据全部由服务端决定，本地没有任何入口可以配置它们。
+    expect(screen.queryByPlaceholderText("http://127.0.0.1:1234/v1")).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("模型 ID")).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("必填")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "保存" })).not.toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "跟随背景色" })).toBeInTheDocument();
   });
 
   it("keeps ambient and stealth settings independent", async () => {
@@ -934,7 +937,9 @@ describe("three-segment floating navigation", () => {
     fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
 
     expect(await screen.findByText("会员")).toBeInTheDocument();
-    expect(screen.getByText("已解锁 2 项云能力")).toBeInTheDocument();
+    // 能力目录是「已实现的接口面」，不渲染成「已解锁 N 项能力」，避免把目录当额度。
+    expect(screen.queryByText(/已解锁/)).not.toBeInTheDocument();
+    expect(screen.getByText("模型调用由服务端额度控制，未开通时会提示原因")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "退出登录" })).toBeInTheDocument();
 
     // 主进程推送登出（例如凭据失效）后，界面回到未登录。

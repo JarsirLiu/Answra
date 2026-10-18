@@ -3,7 +3,6 @@ import type {
   ConversationChange,
   ConversationEvent,
   ConversationMessage,
-  ConversationModelConfig,
   DesktopBridge,
   ReplyBarActivity,
 } from "@answra/shared";
@@ -25,7 +24,6 @@ function useAiConversation(
   conversationId: string,
   operation: "chat.send" | "answer.run" = "chat.send",
 ) {
-  const [config, setConfig] = useState({ baseUrl: "", model: "", configured: false });
   const [activeRunId, setActiveRunId] = useState<string>();
   const [replyError, setReplyError] = useState<string>();
   const [sendPending, setSendPending] = useState(false);
@@ -42,10 +40,6 @@ function useAiConversation(
   useEffect(() => {
     let alive = true;
     let changeQueue = Promise.resolve();
-    void platform
-      ?.getConversationConfig?.()
-      .then(setConfig)
-      .catch(() => undefined);
     const initialize = async () => {
       if (!platform) return;
       try {
@@ -265,7 +259,20 @@ function useAiConversation(
     }),
     [platform, operation],
   );
-  const chat = useChat({ id: conversationId, transport });
+  const chat = useChat({
+    id: conversationId,
+    transport,
+    /**
+     * 传输层失败（模型服务未起、未登录被 main 拒绝）不会体现在流事件里，useChat 会
+     * 自行吞掉异常；这里把同一个错误交回发送方，让失败可见而不是停在「思考中」。
+     */
+    onError: (error) => {
+      setSendPending(false);
+      runErrorRef.current = error.message;
+      waiterRef.current?.reject(error);
+      waiterRef.current = undefined;
+    },
+  });
   setMessagesRef.current = chat.setMessages;
   // 思考耗时：从本轮发起计时，到助手正文出现第一个字为止。
   const [thinkingMs, setThinkingMs] = useState<number>();
@@ -359,15 +366,6 @@ function useAiConversation(
     [platform, activeRunId, chat.sendMessage, conversationId],
   );
 
-  const configure = useCallback(
-    async (next: ConversationModelConfig) => {
-      if (!platform?.configureConversation) throw new Error("本地 AI 服务未连接，请重启应用后重试");
-      await platform.configureConversation(next);
-      setConfig({ baseUrl: next.baseUrl, model: next.model, configured: true });
-    },
-    [platform],
-  );
-
   const cancel = useCallback(() => {
     cancelRequestedRef.current = true;
     if (runIdRef.current) platform?.cancelConversationRun?.(runIdRef.current);
@@ -385,8 +383,6 @@ function useAiConversation(
       chat.status === "streaming" || chat.status === "submitted" ? activeRunId : undefined,
     cancel,
     clearMessages,
-    config,
-    configure,
     messages,
     replyText: lastAssistant?.content ?? "",
     replyError,

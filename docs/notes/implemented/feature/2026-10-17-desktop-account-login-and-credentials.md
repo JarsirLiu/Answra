@@ -24,7 +24,7 @@
 - **main 是唯一持有 token 的层**：access/refresh token 与账号画像（`plan`、`capabilities`）一起经 `safeStorage` 加密落盘；`safeStorage` 不可用时**拒绝写入**（宁可不持久化，也不明文落盘）。渲染层只能拿到 `AuthStatus { signedIn, plan, capabilities, cloudBaseUrl }`。
 - **待处理登录必须落盘**：深链回跳经常由系统拉起一个新进程（应用未运行或 macOS 冷启动），只放内存会在最关键的路径上拒绝回调。落盘后由 `restore()` 载入，`state` 单次消费、2 分钟 TTL、`redirect_uri` 必须与发起时一致。
 - **单实例 + 平台路由**：`requestSingleInstanceLock()`；macOS `open-url` 在 app ready 前注册，Win/Linux 从 `second-instance` 的 argv 里捞 URL；开发态协议注册带 `process.execPath` + 入口脚本路径（`process.defaultApp` 判定）。
-- **登录成功与能力目录解耦**：交换成功即视为登录成功；能力目录拉取失败只让 `capabilities` 为空（下次刷新补回），不把已成功的登录丢掉。刷新失败则按未登录处理并清除本地凭据。
+- **登录成功与能力目录解耦**：交换成功即视为登录成功；能力目录拉取失败只让 `capabilities` 为空（下次刷新补回），不把已成功的登录丢掉。刷新失败必须分类：只有服务端明确拒绝（4xx，408/429 除外）才清凭据，网络/超时/5xx 保留登录态并冷却补刷，见[刷新失败不再等同登出](../bug-fix/2026-10-18-refresh-failure-keeps-session.md)。
 - **云端地址防篡改**：打包版忽略环境变量、只用内置默认地址；开发态允许覆盖但必须是环回 http（`127.0.0.1` / `localhost`）。
 - **网关契约集中在两处**：`AUTH_PATHS`（`exchange`/`refresh`/`revoke`/用户资料路径）与 `readTokens`/`readProfile`（响应解析）。主进程统一解包网关 `{ code, data }` envelope。
 - **真实网页登录已接通**：网站登录后由授权确认页调用网关 authorize，桌面端用 PKCE verifier 兑换一次性 code；开发回调限 `127.0.0.1`，打包版限 `answra://auth/callback`。网关沿用现有 pending auth 完成码和 refresh token 轮换机制。
@@ -52,6 +52,7 @@
 - 客户端的云能力请求只能带**能力 ID**；上游模型与端点必须由网关官方配置，客户端不可见、不可伪造。新增云能力时先加能力 ID，不要在客户端加模型名参数。
 - 单一登录尝试、`state` 单次消费、2 分钟 TTL、`redirect_uri` 与发起时一致 —— 这四条是安全线，任何"为了容错放宽校验"的改动都按缺陷处理。
 - 本地只有一份常驻登录态；并发回调、重放回调、过期回调都必须被拒绝且不影响既有登录。
+- **登录态是否有效只由服务端是否拒绝 refresh 决定**：网络错误、超时、5xx、网关重启都不得清凭据，也不得向渲染层推送"已登出"（见 `2026-10-18-refresh-failure-keeps-session.md`）。
 - 新增/变更网关路径或响应字段时，只改 `AUTH_PATHS` 与 `readTokens`/`readProfile`，并在同一个变更里更新本 Note 的验证记录。
 - `capabilities` 只用于展示与提前提示，**不构成授权**：真正的门禁与计费在服务端强制。
 
@@ -61,7 +62,7 @@
 - `apps/desktop/test/authCallback.test.ts`（12 项）：接受深链与 `127.0.0.1` 环回回调；拒绝其他 scheme/host/path、`localhost`、缺参、`error=access_denied`（带描述）、非 URL；`findAuthCallbackUrl` 能从 argv 里捞出回跳。
 - `apps/desktop/test/authPendingAuth.test.ts`（7 项）：命中后即消费（重放变 `no-pending`）、未知 state 拒绝、超 2 分钟 TTL 拒绝、`redirect_uri` 不一致拒绝、新登录作废旧登录、`restore()` 支持冷启动、登出清空。
 - `apps/desktop/test/authConfig.test.ts`（4 项）：打包版忽略环境变量；开发态接受 `127.0.0.1`/`localhost` 覆盖并去掉尾斜杠；远端/非法/host 非环回一律回落默认。
-- `apps/desktop/test/authService.test.ts`（22 项）：授权 URL 含 S256 challenge 且**不含** verifier；exchange 携带 `code`/`code_verifier`/`device`；网关 envelope 解包；用户资料请求带 `Bearer`；未知 state/超 TTL/交换失败均不落库且不推送；token 过期触发刷新并轮换 refresh token；刷新失败按未登录处理；并发状态查询只刷新一次；登出调用 `revoke` 并清空凭据（revoke 失败也保持本地登出）。
+- `apps/desktop/test/authService.test.ts`（30 项）：授权 URL 含 S256 challenge 且**不含** verifier；exchange 携带 `code`/`code_verifier`/`device`；网关 envelope 解包；用户资料请求带 `Bearer`；未知 state/超 TTL/交换失败均不落库且不推送；token 过期触发刷新并轮换 refresh token；被 4xx 拒绝的刷新才清凭据，网络/5xx/408/429 保留登录态并进入 60s 冷却；并发状态查询只刷新一次；登出调用 `revoke` 并清空凭据（revoke 失败也保持本地登出）；`hasSession()` 在 `restore()` 完成前按已登录处理。
 - `apps/desktop/test/authLifecycle.test.ts`（5 项）：开发态协议注册带 `execPath` + 入口脚本，打包版只注册 scheme；设备 ID 稳定且损坏时重新生成。
 - `packages/ui/test/FloatingBarApp.test.tsx`：无 auth API 时隐藏账户区块；点"登录"调用桥并提示浏览器授权；登录失败显示错误；推送 `plan: "pro"` + 两项能力时显示"会员 / 已解锁 2 项云能力"，推送登出后回到未登录；退出登录采用返回状态；面板关闭时取消订阅。
 - `pnpm verify`（lint + notes + typecheck + test + architecture:check）与 `pnpm build` 通过。

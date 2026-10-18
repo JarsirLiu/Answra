@@ -1,10 +1,23 @@
-import type { AuthLoginResult, AuthStatus, DesktopAnnouncement } from "@answra/shared";
+import {
+  type AuthLoginResult,
+  type AuthStatus,
+  authRequiredError,
+  type ConversationCapabilityEndpoint,
+  type ConversationModelConfig,
+  type DesktopAnnouncement,
+  DesktopCapability,
+} from "@answra/shared";
 import type { AuthDeviceDescriptor } from "./authorizeUrl";
 import { buildAuthorizeUrl } from "./authorizeUrl";
 import { parseAuthCallback } from "./callback";
 import type { AuthCallbackChannel } from "./callbackChannel";
 import type { CloudEndpoints } from "./config";
-import type { AuthCredentialStore, AuthSessionRecord, AuthTokens } from "./credentialStore";
+import type {
+  AuthCapabilityEndpoint,
+  AuthCredentialStore,
+  AuthSessionRecord,
+  AuthTokens,
+} from "./credentialStore";
 import { PendingAuthRegistry } from "./pendingAuth";
 import type { PendingAuthStore } from "./pendingAuthStore";
 import { createAuthState, createPkceChallenge } from "./pkce";
@@ -15,7 +28,8 @@ import { createAuthState, createPkceChallenge } from "./pkce";
  * 契约要点：
  * - 浏览器授权 → 深链/环回回调 → `exchange` 换 token → 拉能力目录 → 推送 `AuthStatus`；
  * - token 只存在 main（safeStorage 加密落盘），渲染层只能拿到 {@link AuthStatus}；
- * - 能力门禁是「服务端强制」的，客户端只做展示与提前提示，`capabilities` 不构成授权。
+ * - 能力门禁是「服务端强制」的，客户端只做展示与提前提示，`capabilities` 不构成授权；
+ * - 刷新失败要分类：只有服务端明确拒绝（4xx）才丢凭据，网络/超时/5xx 保留登录态并冷却重试。
  *
  * 网关路径与参数名以 AnswraSite `desktop-login-unlock-membership.md` 为草案来源，
  * 尚未冻结；全部集中在 {@link AUTH_PATHS} 与 `readTokens`/`readProfile`，冻结后只改这里。
@@ -32,7 +46,46 @@ export const AUTH_PATHS = {
 /** access token 提前视为过期的时间，避免边界上带一个即将失效的 token 发请求。 */
 const EXPIRY_SKEW_MS = 60_000;
 const REQUEST_TIMEOUT_MS = 15_000;
-const FALLBACK_EXPIRES_IN = 1800;
+/** 网关未回 `expires_in` 时的保守默认：网关默认 access token 为 24h，这里取 1h 只影响刷新频率。 */
+const FALLBACK_EXPIRES_IN = 3600;
+/** 临时性刷新失败后的冷却：冷却期内不再重试，避免离线时每次查询都等一次超时。 */
+const REFRESH_RETRY_COOLDOWN_MS = 60_000;
+/** 与「稍后重试」等价的 4xx：请求超时与限流，不代表凭据失效。 */
+const TRANSIENT_STATUS_CODES = new Set([408, 429]);
+/**
+ * 服务端声明的桌面端点后缀。
+ *
+ * 目录给出的是完整调用路径（如 `/api/v1/desktop/chat/completions`），而 OpenAI 兼容客户端
+ * 需要的是 base URL（自己会补 `/chat/completions`）；这里按后缀裁剪，路径本体仍由服务端决定。
+ */
+const CHAT_COMPLETIONS_SUFFIX = "/chat/completions";
+
+/**
+ * 网关请求失败。
+ *
+ * 保留 HTTP 状态码供调用方分类：只有服务端明确拒绝（4xx）才意味着凭据/账号不可用，
+ * 网络错误、超时与 5xx 都属于临时失败，不得据此丢弃本地登录态。
+ */
+export class CloudRequestError extends Error {
+  constructor(
+    readonly status: number,
+    readonly path: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "CloudRequestError";
+  }
+}
+
+/** 服务端是否明确拒绝（凭据或账号不可用）。非网关错误一律按临时失败处理。 */
+export function isRejectedByServer(error: unknown): boolean {
+  return (
+    error instanceof CloudRequestError &&
+    error.status >= 400 &&
+    error.status < 500 &&
+    !TRANSIENT_STATUS_CODES.has(error.status)
+  );
+}
 
 export interface AuthServiceDeps {
   endpoints: CloudEndpoints;
@@ -60,6 +113,10 @@ export class AuthService {
   private refreshInFlight: Promise<AuthStatus> | null = null;
   private devicePromise: Promise<AuthDeviceDescriptor> | null = null;
   private disposed = false;
+  /** 是否已完成一次 `restore()`：未完成时登录态未知，门禁不得按未登录处理。 */
+  private restored = false;
+  /** 上次临时性刷新失败后的冷却截止时间（epoch ms）。 */
+  private refreshRetryAt = 0;
 
   constructor(private readonly deps: AuthServiceDeps) {}
 
@@ -67,23 +124,101 @@ export class AuthService {
     return this.deps.now?.() ?? Date.now();
   }
 
-  /** 启动时恢复登录态：token 有效直接用，过期则尝试刷新，失败即视为未登录。 */
+  /** 启动时恢复登录态：token 有效直接用，过期则尝试刷新；仅在服务端明确拒绝时视为未登录。 */
   async restore(): Promise<AuthStatus> {
-    this.pending.restore(await this.deps.pendingStore.load().catch(() => null));
-    this.session = await this.deps.credentials.load();
-    const needsRefresh = Boolean(this.session && this.session.expiresAt - this.now <= 0);
-    const status = await this.getStatus();
-    if (status.signedIn && this.session && !needsRefresh) {
-      return this.refreshDirectory(this.session.accessToken);
+    try {
+      this.pending.restore(await this.deps.pendingStore.load().catch(() => null));
+      this.session = await this.deps.credentials.load();
+      const needsRefresh = Boolean(this.session && this.session.expiresAt - this.now <= 0);
+      const status = await this.getStatus();
+      if (status.signedIn && this.session && !needsRefresh) {
+        return this.refreshDirectory(this.session.accessToken);
+      }
+      return status;
+    } finally {
+      this.restored = true;
     }
-    return status;
   }
 
   async getStatus(): Promise<AuthStatus> {
     const session = this.session;
     if (!session) return this.signedOutStatus();
     if (session.expiresAt - this.now > 0) return this.statusFrom(session);
+    // 临时失败后的冷却期内不再重试：直接返回缓存登录态，避免离线/网关抖动时每次查询都等一次超时。
+    if (this.now < this.refreshRetryAt) return this.statusFrom(session);
     return this.refresh();
+  }
+
+  /**
+   * 本机是否持有登录会话（同步，不触发刷新或网络请求）。
+   *
+   * 登录态尚未从磁盘恢复完时按「有会话」处理：冷启动首屏不能因为还没读完本地凭据
+   * 就把已登录用户判成未登录。这里只决定要不要提前提示登录，真实授权始终由服务端强制。
+   */
+  hasSession(): boolean {
+    return this.session !== null || !this.restored;
+  }
+
+  /**
+   * 组装 agent 运行所需的云端模型配置。
+   *
+   * 端点全部来自服务端下发的能力目录（origin 用本地配置的 API 基地址），客户端不拼路径、
+   * 不猜模型名：目录缺任一能力即视为云端暂不可用，返回 null 让调用方给出可重试提示。
+   */
+  getDesktopModelConfig(): ConversationModelConfig | null {
+    const session = this.session;
+    if (!session) return null;
+    const chat = this.capabilityEndpoint(session, DesktopCapability.TextChat);
+    const answer = this.capabilityEndpoint(session, DesktopCapability.ImageAnswer);
+    if (!chat || !answer) {
+      this.deps.log?.("[auth] 能力目录缺少桌面端点", {
+        chat: Boolean(chat),
+        answer: Boolean(answer),
+      });
+      return null;
+    }
+    return { chat, answer };
+  }
+
+  /**
+   * 取一次用于云端模型调用的访问令牌。
+   *
+   * 未登录抛 {@link authRequiredError}（渲染层据此提示登录）；已过期先按 `getStatus` 的
+   * 同一冷却语义刷新一次，刷新后仍不可用则抛可重试错误——绝不把过期令牌发出去。
+   */
+  async getAccessToken(): Promise<string> {
+    const session = this.session;
+    if (!session) throw authRequiredError();
+    if (session.expiresAt - this.now > 0) return session.accessToken;
+    await this.getStatus();
+    return this.requireUsableToken();
+  }
+
+  /** 云端返回 401 后强制刷新一次令牌（模型调用的单次重试）。 */
+  async refreshAccessToken(): Promise<string> {
+    if (!this.session) throw authRequiredError();
+    await this.refresh();
+    return this.requireUsableToken();
+  }
+
+  private requireUsableToken(): string {
+    const session = this.session;
+    if (!session) throw authRequiredError();
+    if (session.expiresAt - this.now <= 0) throw new Error("云端凭据暂时不可用，请稍后重试");
+    return session.accessToken;
+  }
+
+  private capabilityEndpoint(
+    session: AuthSessionRecord,
+    capabilityId: string,
+  ): ConversationCapabilityEndpoint | null {
+    const declared = session.endpoints.find((endpoint) => endpoint.id === capabilityId);
+    if (!declared?.path.endsWith(CHAT_COMPLETIONS_SUFFIX)) return null;
+    const origin = this.deps.endpoints.apiBaseUrl.replace(/\/+$/, "");
+    return {
+      baseUrl: `${origin}${declared.path.slice(0, -CHAT_COMPLETIONS_SUFFIX.length)}`,
+      model: declared.model || capabilityId,
+    };
   }
 
   async login(): Promise<AuthLoginResult> {
@@ -154,10 +289,11 @@ export class AuthService {
       const profile = await this.fetchProfile(tokens.accessToken).catch((error) => {
         // 交换成功即视为登录成功；能力目录拉取失败只影响门禁展示，下次刷新补回。
         this.deps.log?.("[auth] 能力目录拉取失败", error);
-        return { plan: null, capabilities: [] as string[] };
+        return { plan: null, capabilities: [] as string[], endpoints: [] };
       });
       const session: AuthSessionRecord = { ...tokens, ...profile };
       this.session = session;
+      this.refreshRetryAt = 0;
       await this.deps.credentials.save(session);
       return this.emitStatus(this.statusFrom(session));
     } catch (error) {
@@ -228,18 +364,31 @@ export class AuthService {
       const tokens = readTokens(body, this.now);
       const profile = await this.fetchProfile(tokens.accessToken).catch((error) => {
         this.deps.log?.("[auth] 刷新后能力目录拉取失败", error);
-        return { plan: session.plan, capabilities: session.capabilities };
+        return {
+          plan: session.plan,
+          capabilities: session.capabilities,
+          endpoints: session.endpoints,
+        };
       });
       const merged: AuthSessionRecord = {
         ...tokens,
         ...profile,
       };
       this.session = merged;
+      this.refreshRetryAt = 0;
       await this.deps.credentials.save(merged);
       return this.emitStatus(this.statusFrom(merged));
     } catch (error) {
-      this.deps.log?.("[auth] 刷新失败，按未登录处理", error);
-      return this.dropSession();
+      if (isRejectedByServer(error)) {
+        // 服务端明确拒绝（401/403 等）：refresh token 确实失效，只能重新登录。
+        this.deps.log?.("[auth] 刷新被服务端拒绝，按未登录处理", error);
+        return this.dropSession();
+      }
+      // 网络错误、超时、5xx：保留本地凭据并进入冷却，等网络恢复后自动补刷。
+      // 直接清凭据会让用户离线启动一次就必须重走浏览器登录。
+      this.refreshRetryAt = this.now + REFRESH_RETRY_COOLDOWN_MS;
+      this.deps.log?.("[auth] 刷新暂时失败，保留本地登录态", error);
+      return this.statusFrom(session);
     }
   }
 
@@ -252,9 +401,11 @@ export class AuthService {
     return readTokens(body, this.now);
   }
 
-  private async fetchProfile(
-    accessToken: string,
-  ): Promise<{ plan: string | null; capabilities: string[] }> {
+  private async fetchProfile(accessToken: string): Promise<{
+    plan: string | null;
+    capabilities: string[];
+    endpoints: AuthCapabilityEndpoint[];
+  }> {
     return readProfile(await this.request(AUTH_PATHS.capabilities, undefined, accessToken));
   }
 
@@ -296,12 +447,15 @@ export class AuthService {
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
-    if (!response.ok) throw new Error(`${path} 返回 ${response.status}`);
+    if (!response.ok)
+      throw new CloudRequestError(response.status, path, `${path} 返回 ${response.status}`);
     const payload = (await response.json()) as unknown;
     if (typeof payload === "object" && payload !== null && "code" in payload && "data" in payload) {
       const envelope = payload as { code?: unknown; data?: unknown; message?: unknown };
       if (envelope.code !== 0) {
-        throw new Error(
+        throw new CloudRequestError(
+          response.status,
+          path,
           typeof envelope.message === "string" ? envelope.message : `${path} 请求失败`,
         );
       }
@@ -312,6 +466,7 @@ export class AuthService {
 
   private async dropSession(): Promise<AuthStatus> {
     this.session = null;
+    this.refreshRetryAt = 0;
     await this.deps.credentials.clear().catch(() => undefined);
     return this.emitStatus(this.signedOutStatus());
   }
@@ -362,8 +517,17 @@ export function readTokens(body: unknown, now: number): AuthTokens {
   };
 }
 
-/** 解析能力目录响应：只认能力 ID，其他字段一律忽略（客户端不解释模型/端点）。 */
-export function readProfile(body: unknown): { plan: string | null; capabilities: string[] } {
+/**
+ * 解析能力目录响应：能力 ID 用于展示与门禁提示，`endpoints[]` 用于取调用路径与占位模型。
+ *
+ * 两者都只做形状校验：客户端不解释模型含义，也不猜测缺失的端点（缺就当作云端不可用，
+ * 由服务端升级目录来恢复），因此旧网关只回 `capabilities` 时行为退化为「模型调用不可用」。
+ */
+export function readProfile(body: unknown): {
+  plan: string | null;
+  capabilities: string[];
+  endpoints: AuthCapabilityEndpoint[];
+} {
   const value = body as Record<string, unknown> | null;
   const rawCapabilities = value?.capabilities;
   const capabilities = Array.isArray(rawCapabilities)
@@ -380,7 +544,23 @@ export function readProfile(body: unknown): { plan: string | null; capabilities:
   return {
     plan: typeof value?.plan === "string" ? value.plan : null,
     capabilities,
+    endpoints: readProfileEndpoints(value?.endpoints),
   };
+}
+
+function readProfileEndpoints(value: unknown): AuthCapabilityEndpoint[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry): AuthCapabilityEndpoint[] => {
+    if (typeof entry !== "object" || entry === null) return [];
+    const endpoint = entry as Record<string, unknown>;
+    if (
+      typeof endpoint.id !== "string" ||
+      typeof endpoint.path !== "string" ||
+      typeof endpoint.model !== "string"
+    )
+      return [];
+    return [{ id: endpoint.id, path: endpoint.path, model: endpoint.model }];
+  });
 }
 
 export function readAnnouncements(body: unknown): DesktopAnnouncement[] {

@@ -39,7 +39,6 @@ registerWorkspaceSchemePrivileges();
 let ambientController: ReturnType<typeof createAmbientThemeController> | undefined;
 let imeController: ReturnType<typeof registerImeIpc> | undefined;
 const configDir = app.getPath("userData");
-const agentService = new AgentService();
 const workspaceService = new WorkspaceService({ configDir });
 
 const authService = new AuthService({
@@ -51,6 +50,14 @@ const authService = new AuthService({
   // 打包版只认深链；开发态用环回回调，避免 dev 进程的协议注册体验问题。
   callbackChannel: app.isPackaged ? deepLinkCallbackChannel : loopbackCallbackChannel,
   onStatus: sendAuthStatus,
+});
+
+// 模型调用的端点与令牌都来自登录态：这里传惰性闭包，登录/刷新后自动生效，无需重启。
+const agentService = new AgentService({
+  modelConfig: () => authService.getDesktopModelConfig(),
+  accessToken: (options) =>
+    options?.forceRefresh ? authService.refreshAccessToken() : authService.getAccessToken(),
+  log: (message, error) => console.warn(message, error),
 });
 
 // 授权回跳可能早于服务就绪（冷启动走深链）：先排队，等 restore 载入待处理登录后再消费。
@@ -83,7 +90,7 @@ if (!app.requestSingleInstanceLock()) {
     registerImeCandidateIpc(imeController.isCurrentLease, imeController.getSessionSnapshot);
     registerCaptureIpc();
     registerAmbientIpc((enabled) => ambientController?.setEnabled(enabled));
-    registerConversationIpc(agentService);
+    registerConversationIpc(agentService, () => authService.hasSession());
     registerAuthIpc(authService);
     registerWorkspaceFileProtocol(workspaceService);
     registerWorkspaceIpc(workspaceService, getWindow, isStealthEnabled);

@@ -3,7 +3,7 @@ import { readEncryptedJson, removeEncryptedFile, writeEncryptedJson } from "./se
 /**
  * 登录凭据持久化（`userData/desktop-auth.bin`，OS 级加密后的 JSON）。
  *
- * 与 `conversation-model.json` 里的模型 Key 同一模式：只在 `safeStorage` 可用时落盘，
+ * 与本地模型时代的 `conversation-model.json` 同一模式：只在 `safeStorage` 可用时落盘，
  * 不可用（如 Linux 无 keyring）时**拒绝**写入，绝不明文保存 token。
  * `safeStorage` 必须在 app ready 之后调用。
  */
@@ -17,10 +17,24 @@ export interface AuthTokens {
   expiresAt: number;
 }
 
+/**
+ * 服务端声明的一条云端能力端点（`GET /api/v1/capabilities` 的 `endpoints[]` 原样保存）。
+ *
+ * 客户端不解释 path/model 的含义，只按 `id` 取用：路径与占位模型由服务端决定，
+ * 服务端升级后重新拉一次目录即可生效，不需要发布客户端。
+ */
+export interface AuthCapabilityEndpoint {
+  id: string;
+  path: string;
+  model: string;
+}
+
 /** 凭据 + 服务端下发的账号画像（画像非 secret，但一并加密保存以免多一份明文文件）。 */
 export interface AuthSessionRecord extends AuthTokens {
   plan: string | null;
   capabilities: string[];
+  /** 云端能力端点；旧记录或目录拉取失败时为空数组，模型调用据此判定不可用。 */
+  endpoints: AuthCapabilityEndpoint[];
 }
 
 export interface AuthCredentialStore {
@@ -63,5 +77,21 @@ function parseRecord(value: unknown): AuthSessionRecord | null {
     capabilities: Array.isArray(record.capabilities)
       ? record.capabilities.filter((id): id is string => typeof id === "string")
       : [],
+    endpoints: parseEndpoints(record.endpoints),
   };
+}
+
+function parseEndpoints(value: unknown): AuthCapabilityEndpoint[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry): AuthCapabilityEndpoint[] => {
+    if (typeof entry !== "object" || entry === null) return [];
+    const endpoint = entry as Partial<AuthCapabilityEndpoint>;
+    if (
+      typeof endpoint.id !== "string" ||
+      typeof endpoint.path !== "string" ||
+      typeof endpoint.model !== "string"
+    )
+      return [];
+    return [{ id: endpoint.id, path: endpoint.path, model: endpoint.model }];
+  });
 }

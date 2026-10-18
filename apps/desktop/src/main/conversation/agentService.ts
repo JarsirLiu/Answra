@@ -1,25 +1,36 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { AgentCommand, AgentFrame } from "@answra/agent";
-import type {
-  ConversationChange,
-  ConversationModelConfig,
-  ConversationSendRequest,
+import {
+  authRequiredError,
+  type ConversationChange,
+  type ConversationModelConfig,
+  type ConversationSendCommand,
+  type ConversationSendRequest,
 } from "@answra/shared";
-import { app, safeStorage, type UtilityProcess, utilityProcess } from "electron";
+import { app, type UtilityProcess, utilityProcess } from "electron";
 
 type Pending = { resolve: (value: unknown) => void; reject: (error: Error) => void };
-const CONFIG_FILE = "conversation-model.json";
+
+/** 云端调用的凭据与端点全部来自主进程（token 只在 main 内存里），agent 不读盘、不落盘。 */
+export interface AgentServiceDeps {
+  /** 当前可用的云端模型配置；未登录或服务端目录缺端点时返回 null。 */
+  modelConfig: () => ConversationModelConfig | null;
+  /** 取一次可用访问令牌；未登录抛 `auth-required`，暂时不可用抛可重试错误。 */
+  accessToken: (options?: { forceRefresh?: boolean }) => Promise<string>;
+  log?: (message: string, error?: unknown) => void;
+}
 
 export class AgentService {
   private worker?: UtilityProcess;
   private readonly pending = new Map<string, Pending>();
-  private config?: ConversationModelConfig;
   private readonly listeners = new Set<(change: ConversationChange) => void>();
+  /** 已下发给 worker 的配置指纹；配置随登录态变化，按需重下发而不是外部驱动。 */
+  private configured?: string;
+
+  constructor(private readonly deps: AgentServiceDeps) {}
 
   async start(): Promise<void> {
-    this.config = await this.readConfig();
     const workerPath = path.join(app.getAppPath(), "out/main/conversation/worker.cjs");
     const worker = utilityProcess.fork(workerPath, [], {
       cwd: app.getPath("userData"),
@@ -31,9 +42,9 @@ export class AgentService {
     worker.on("exit", (code) => {
       if (this.worker !== worker) return;
       this.worker = undefined;
+      this.configured = undefined;
       this.failPending(new Error(`本地 AI 服务已退出 (${code})`));
     });
-    if (this.config) await this.configure(this.config);
     console.info("[agent-service] started", { pid: worker.pid, packaged: app.isPackaged });
   }
 
@@ -42,33 +53,22 @@ export class AgentService {
     return () => this.listeners.delete(listener);
   }
 
-  async getConfig(): Promise<Omit<ConversationModelConfig, "apiKey"> & { configured: boolean }> {
-    const config = this.config;
-    return {
-      baseUrl: config?.baseUrl ?? "",
-      model: config?.model ?? "",
-      configured: Boolean(config?.baseUrl && config?.model),
-    };
+  async send(command: ConversationSendCommand): Promise<{ runId: string }> {
+    validateSendRequest(command.request);
+    const config = this.deps.modelConfig();
+    // 未登录或服务端目录不可用：都以「需要登录」上报，渲染层给出统一提示；
+    // 真实授权始终由服务端强制，这里只把前置条件变成可识别的信号。
+    if (!config) throw authRequiredError();
+    await this.ensureConfigured(config);
+    const accessToken = await this.deps.accessToken();
+    const type = command.operation === "chat.send" ? "chat-send" : "answer-run";
+    return (await this.request(type, { ...command, accessToken })) as { runId: string };
   }
 
-  /** 按需返回已解密 API Key（设置面板显隐回显）；未保存时为 null。 */
-  async getApiKey(): Promise<{ apiKey: string | null }> {
-    return { apiKey: this.config?.apiKey ?? null };
-  }
-
-  async configure(config: ConversationModelConfig): Promise<void> {
-    validateConfig(config);
-    const previous = this.config;
-    const next = { ...config, apiKey: config.apiKey || previous?.apiKey };
-    await this.writeConfig(next);
-    try {
-      await this.request("configure", { config: next });
-      this.config = next;
-    } catch (error) {
-      this.config = previous;
-      await this.writeConfig(previous).catch(() => undefined);
-      throw error;
-    }
+  cancel(runId: string): void {
+    void this.request("cancel", { runId }).catch((error: unknown) =>
+      console.warn("[agent-service] cancel failed", error),
+    );
   }
 
   async getSnapshot(conversationId: string) {
@@ -83,27 +83,21 @@ export class AgentService {
     return this.request("read-events", { conversationId, afterRevision });
   }
 
-  async send(
-    command: import("@answra/shared").ConversationSendCommand,
-  ): Promise<{ runId: string }> {
-    if (!this.config) throw new Error("请先在设置中配置模型服务");
-    validateSendRequest(command.request);
-    const type = command.operation === "chat.send" ? "chat-send" : "answer-run";
-    return (await this.request(type, { ...command })) as { runId: string };
-  }
-
-  cancel(runId: string): void {
-    void this.request("cancel", { runId }).catch((error: unknown) =>
-      console.warn("[agent-service] cancel failed", error),
-    );
-  }
-
   async stop(): Promise<void> {
     const worker = this.worker;
     if (!worker) return;
     this.worker = undefined;
+    this.configured = undefined;
     worker.kill();
     this.failPending(new Error("本地 AI 服务已关闭"));
+  }
+
+  /** 配置只在真正变化时下发：登录/登出/服务端端点变更都会自然触发一次重下发。 */
+  private async ensureConfigured(config: ConversationModelConfig): Promise<void> {
+    const fingerprint = JSON.stringify(config);
+    if (this.configured === fingerprint) return;
+    await this.request("configure", { config });
+    this.configured = fingerprint;
   }
 
   private request(type: AgentCommand["type"], payload: Record<string, unknown>): Promise<unknown> {
@@ -122,6 +116,11 @@ export class AgentService {
       for (const listener of this.listeners) listener(frame.change);
       return;
     }
+    // worker 反向请求平台能力（当前只有令牌刷新）：平台实现留在 main，agent 只发请求。
+    if (frame.type === "token-request") {
+      void this.answerTokenRequest(frame);
+      return;
+    }
     const pending = this.pending.get(frame.id);
     if (!pending) return;
     this.pending.delete(frame.id);
@@ -129,56 +128,23 @@ export class AgentService {
     else pending.reject(new Error(frame.error));
   }
 
+  private async answerTokenRequest(frame: { id: string; forceRefresh: boolean }): Promise<void> {
+    const worker = this.worker;
+    if (!worker) return;
+    try {
+      const accessToken = await this.deps.accessToken({ forceRefresh: frame.forceRefresh });
+      worker.postMessage({ id: frame.id, type: "token", accessToken } as AgentCommand);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "令牌刷新失败";
+      this.deps.log?.("[agent-service] 令牌请求失败", error);
+      worker.postMessage({ id: frame.id, type: "token", error: message } as AgentCommand);
+    }
+  }
+
   private failPending(error: Error): void {
     for (const pending of this.pending.values()) pending.reject(error);
     this.pending.clear();
   }
-
-  private async readConfig(): Promise<ConversationModelConfig | undefined> {
-    try {
-      const stored = JSON.parse(
-        await readFile(path.join(app.getPath("userData"), CONFIG_FILE), "utf8"),
-      ) as { baseUrl: string; model: string; encryptedKey?: string };
-      const apiKey =
-        stored.encryptedKey && safeStorage.isEncryptionAvailable()
-          ? safeStorage.decryptString(Buffer.from(stored.encryptedKey, "base64"))
-          : undefined;
-      return { baseUrl: stored.baseUrl, model: stored.model, ...(apiKey ? { apiKey } : {}) };
-    } catch {
-      return undefined;
-    }
-  }
-
-  private async writeConfig(config: ConversationModelConfig | undefined): Promise<void> {
-    const file = path.join(app.getPath("userData"), CONFIG_FILE);
-    if (!config) {
-      await rm(file, { force: true });
-      return;
-    }
-    if (config.apiKey && !safeStorage.isEncryptionAvailable())
-      throw new Error("系统安全存储不可用，未保存 API Key");
-    const userData = app.getPath("userData");
-    await mkdir(userData, { recursive: true });
-    const stored = {
-      baseUrl: config.baseUrl,
-      model: config.model,
-      encryptedKey: config.apiKey
-        ? safeStorage.encryptString(config.apiKey).toString("base64")
-        : undefined,
-    };
-    await writeFile(file, JSON.stringify(stored), { mode: 0o600 });
-  }
-}
-
-function validateConfig(config: ConversationModelConfig): void {
-  const url = new URL(config.baseUrl);
-  if (
-    !(url.protocol === "http:" || url.protocol === "https:") ||
-    url.username ||
-    url.password ||
-    !config.model.trim()
-  )
-    throw new Error("模型服务配置无效");
 }
 
 function validateSendRequest(request: ConversationSendRequest): void {

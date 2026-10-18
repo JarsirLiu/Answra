@@ -31,6 +31,11 @@ interface UseReplyWorkflowOptions {
   onSetReplyPhase: (phase: ReplyPhase) => void;
   onCaptureError: (message: string) => void;
   /**
+   * 发送失败（含被 main 以「需要登录」拒绝）：由上层决定提示文案。
+   * 失败必须可见，不能只留在控制台。
+   */
+  onSendError: (error: unknown) => void;
+  /**
    * 主窗口内联形态：关闭独立回复窗口的状态推送，detachedReplyBar 恒为 false。
    * 独立回复窗口形态（已废弃入口）传 false 以保留旧行为。
    */
@@ -62,6 +67,7 @@ export function useReplyWorkflow({
   onExitReply,
   onSetReplyPhase,
   onCaptureError,
+  onSendError,
   inline = false,
 }: UseReplyWorkflowOptions) {
   const [draft, setDraft] = useState("");
@@ -231,6 +237,7 @@ export function useReplyWorkflow({
       if (outcome === "cancelled") return;
     } catch (error) {
       console.error("[reply] model run failed", error);
+      onSendError(error);
       onSetReplyPhase("composing");
       return;
     }
@@ -242,7 +249,7 @@ export function useReplyWorkflow({
     // 保留 conversationId 与已完成回复，让回复条进入完成态：用户可继续查看答案、
     // 展开详细面板看思考过程，或自行收起回退到发送条。
     onSetReplyPhase("done");
-  }, [attachments, draft, onSetReplyPhase, sendMessage]);
+  }, [attachments, draft, onSendError, onSetReplyPhase, sendMessage]);
 
   actionHandler.current = (action) => {
     switch (action.type) {

@@ -7,7 +7,7 @@ import type { AgentCommand, AgentFrame } from "./protocol";
  * process、独立 sidecar 还是测试里的假传输，对运行时都一样。
  */
 export interface AgentTransport {
-  /** 上行帧：响应与 change。 */
+  /** 上行帧：响应、change 与平台能力请求。 */
   send(frame: AgentFrame): void;
   /** 下行命令；同一 transport 只应注册一次。 */
   onCommand(listener: (command: AgentCommand) => void): void;
@@ -25,6 +25,9 @@ export interface AgentHost {
   dispose(): void;
 }
 
+/** 反向请求的等待上限：宿主不实现该能力时不能把一次运行挂死。 */
+const CAPABILITY_REQUEST_TIMEOUT_MS = 10_000;
+
 /**
  * 组装点：把传输、会话运行时与（将来接入的）工具/能力适配器装配在一起。
  * 这是唯一允许知道"命令怎么分发"的地方——领域模块只暴露方法，
@@ -35,16 +38,47 @@ export function startAgentHost({
   transport,
   store = new MemoryConversationStore(),
 }: AgentHostOptions): AgentHost {
-  const runtime = new ConversationRuntime(
-    (change) => transport.send({ version: 1, type: "change", change }),
+  /** 反向请求（agent → 宿主）的等待表：宿主用同 id 的命令帧回答。 */
+  const capabilityRequests = new Map<
+    string,
+    { resolve: (value: string) => void; reject: (error: Error) => void }
+  >();
+  let requestSeq = 0;
+
+  function requestToken(): Promise<string> {
+    const id = `token-request:${++requestSeq}`;
+    return new Promise<string>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        if (capabilityRequests.delete(id)) reject(new Error("令牌刷新超时"));
+      }, CAPABILITY_REQUEST_TIMEOUT_MS);
+      capabilityRequests.set(id, {
+        resolve: (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        reject: (error) => {
+          clearTimeout(timer);
+          reject(error);
+        },
+      });
+      transport.send({ version: 1, type: "token-request", id, forceRefresh: true });
+    });
+  }
+
+  const runtime = new ConversationRuntime({
+    emit: (change) => transport.send({ version: 1, type: "change", change }),
     store,
-  );
+    tokenProvider: requestToken,
+  });
 
   let disposed = false;
 
   function dispose(): void {
     if (disposed) return;
     disposed = true;
+    for (const pending of capabilityRequests.values())
+      pending.reject(new Error("本地 AI 服务已关闭"));
+    capabilityRequests.clear();
     runtime.dispose();
   }
 
@@ -56,6 +90,15 @@ export function startAgentHost({
     if (command.type === "shutdown") {
       dispose();
       transport.close?.();
+      return;
+    }
+    // 宿主对反向请求的回答：不经过 run()，也不回响应帧。
+    if (command.type === "token") {
+      const pending = capabilityRequests.get(command.id);
+      if (!pending) return;
+      capabilityRequests.delete(command.id);
+      if (command.accessToken) pending.resolve(command.accessToken);
+      else pending.reject(new Error(command.error ?? "令牌刷新失败"));
       return;
     }
     try {
@@ -83,9 +126,14 @@ export function startAgentHost({
         runtime.configure(command.config);
         return undefined;
       case "chat-send":
-        return runtime.sendChat(command.profileId, command.conversationId, command.request);
+        return runtime.sendChat(
+          command.profileId,
+          command.conversationId,
+          command.request,
+          command.accessToken,
+        );
       case "answer-run":
-        return runtime.runAnswer(command.conversationId, command.request);
+        return runtime.runAnswer(command.conversationId, command.request, command.accessToken);
       case "snapshot":
         return runtime.getSnapshot(command.conversationId);
       case "read-events":
@@ -95,8 +143,9 @@ export function startAgentHost({
       case "cancel":
         runtime.cancel(command.runId);
         return undefined;
-      // 实际在上面就被拦下：shutdown 不发送响应帧，直接 dispose + close。
+      // shutdown/token 在上面就被拦下：不发响应帧。
       case "shutdown":
+      case "token":
         return undefined;
     }
   }

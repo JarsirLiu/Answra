@@ -1,8 +1,10 @@
 import {
   ActiveChatConversationId,
   ActiveExamConversationId,
+  AUTH_REQUIRED_NOTICE,
   type DesktopAnnouncement,
   type DesktopBridge,
+  isAuthRequiredError,
 } from "@answra/shared";
 import { useEffect, useState } from "react";
 import { FloatingBar } from "../components/floating-bar/FloatingBar";
@@ -105,6 +107,7 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
       answer.clearMessages();
       surfaces.exitReply();
     },
+    onSendError: notifySendError,
     onSetReplyPhase: (phase) => surfaces.setReplyPhase(phase),
     phase: replyPhase,
     platform,
@@ -168,6 +171,29 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
     else surfaces.openModeMenu();
   }
 
+  /**
+   * 模型调用失败的统一提示：未登录走同一句「请先登录」，其余显示原始原因。
+   * 判定只看 main 给出的失败码，同一类失败在对话与截图答题里提示一致。
+   */
+  function notifySendError(error: unknown) {
+    if (isAuthRequiredError(error)) {
+      // 未登录：把账户入口摆到用户面前，而不是自动拉起系统浏览器——
+      // 截图/对话常发生在会议与面试场景，静默弹浏览器会打断当前场景。
+      surfaces.openPanel("settings");
+      surfaces.dispatch({
+        type: "layer/show-notice",
+        id: "send-error",
+        message: AUTH_REQUIRED_NOTICE,
+      });
+      return;
+    }
+    surfaces.dispatch({
+      type: "layer/show-notice",
+      id: "send-error",
+      message: error instanceof Error ? error.message : "发送失败",
+    });
+  }
+
   function handleModeAction(action: ModeAction) {
     if (action.id === "screenshot") {
       triggerScreenshot();
@@ -186,10 +212,6 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
     if (nextMode === "conversation") surfaces.openPanel("chat");
     else if (panel === "chat") surfaces.openPanel("closed");
   }
-
-  /** 按需回显已保存的 API Key；桥未实现（浏览器预览/测试）时无此能力。 */
-  const getConversationApiKey = platform?.getConversationApiKey?.bind(platform);
-  const revealApiKey = getConversationApiKey ? () => getConversationApiKey() : undefined;
 
   return (
     <main
@@ -251,11 +273,7 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
               .catch((error: unknown) => {
                 setDraft(sentDraft);
                 setAttachments(sentAttachments);
-                surfaces.dispatch({
-                  type: "layer/show-notice",
-                  id: "conversation-error",
-                  message: error instanceof Error ? error.message : "发送失败",
-                });
+                notifySendError(error);
               });
           }}
         />
@@ -285,9 +303,6 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
         <SettingsPanel
           bridge={platform}
           ambientFollow={appearance.ambientFollow}
-          modelConfig={conversation.config}
-          onModelConfigSave={conversation.configure}
-          onRevealApiKey={revealApiKey}
           onAmbientFollowChange={appearance.setAmbientFollow}
           onClose={() => surfaces.openPanel("closed")}
           onOpacityChange={appearance.setOpacity}
