@@ -9,7 +9,8 @@ import { FloatingBar } from "../components/floating-bar/FloatingBar";
 import { FloatingLayerHost } from "../components/floating-bar/FloatingLayerHost";
 import { AnnouncementPanel } from "../components/panels/AnnouncementPanel";
 import { ChatPanel } from "../components/panels/ChatPanel";
-import { ReplySlot } from "../components/panels/ReplySlot";
+import { ReplyBar } from "../components/panels/ReplyBar";
+import { ReplyDetails } from "../components/panels/ReplyDetails";
 import { SettingsPanel } from "../components/panels/SettingsPanel";
 import { WorkspacePanel } from "../components/panels/workspace/WorkspacePanel";
 import { useFitContent } from "../hooks/useFitContent";
@@ -19,6 +20,7 @@ import { useSurfaceWidth } from "../hooks/useSurfaceWidth";
 import { MODES, type Mode, type ModeAction } from "../model";
 import { useAppearanceController } from "./useAppearanceController";
 import { useGeneralChat, useScreenshotAnswer } from "./useConversationChat";
+import { useReplyDetail } from "./useReplyDetail";
 import { useReplyWorkflow } from "./useReplyWorkflow";
 import { useSurfaceCoordinator } from "./useSurfaceCoordinator";
 
@@ -130,6 +132,32 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
     setAttachments,
     triggerScreenshot,
   } = reply;
+  // 回复详情展开态：导航条下方弹出本轮对话流（composing 时自动折叠）。
+  const replyDetail = useReplyDetail(replyPhase);
+  // 功能槽占用态：回复工作流激活时，导航条右侧（功能段 + 工作区段）整段换成发送条/回复条。
+  const replyFeatureSlot =
+    featureSlot.kind === "reply" ? (
+      <ReplyBar
+        embedded
+        attachments={attachments}
+        draft={draft}
+        fileInputRef={fileInputRef}
+        phase={featureSlot.phase ?? "composing"}
+        replyText={replyText}
+        replyActivities={replyActivities}
+        replyError={replyError}
+        replyPending={answer.replyPending}
+        showConversationToggle
+        conversationExpanded={replyDetail.expanded}
+        onToggleConversation={replyDetail.toggle}
+        onAttachmentChange={handleAttachmentChange}
+        onAttachmentRemove={removeAttachment}
+        onClose={closeReplyBar}
+        onCancel={reply.cancelReply}
+        onScreenshot={triggerScreenshot}
+        onSend={performSend}
+      />
+    ) : undefined;
   // 主窗口内联形态（inline）下 detachedReplyBar 恒为 false，shell 始终需要测量。
   const { ref: shellRef } = useFitContent(platform, true);
   // 对话/回复面板宽度跟随悬浮导航栏，两者默认同宽。
@@ -152,6 +180,8 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
   }
 
   function handleModeChange(nextMode: Mode) {
+    // 回复工作流期间切换模式：先退出回复槽，避免功能槽与外壳 panel 状态打架。
+    if (featureSlot.kind === "reply") closeReplyBar();
     setMode(nextMode);
     if (nextMode === "conversation") surfaces.openPanel("chat");
     else if (panel === "chat") surfaces.openPanel("closed");
@@ -180,6 +210,7 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
         unreadAnnouncements={announcements.filter((item) => !item.readAt).length}
         showAnnouncements={authSignedIn}
         panel={panel}
+        featureSlot={replyFeatureSlot}
       />
 
       <FloatingLayerHost layers={floatingLayers} onDismiss={surfaces.dismissFloatingLayer} />
@@ -230,27 +261,13 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
         />
       )}
 
-      {panel === "chat" && featureSlot.kind === "reply" && (
-        <ReplySlot
-          phase={featureSlot.phase ?? "composing"}
-          attachments={attachments}
-          draft={draft}
-          replyText={replyText}
-          replyActivities={replyActivities}
-          replyError={replyError}
-          replyPending={answer.replyPending}
-          conversationId={conversationId}
+      {featureSlot.kind === "reply" && replyDetail.expanded ? (
+        <ReplyDetails
           bridge={platform}
+          conversationId={conversationId}
           stealth={stealthSetting.enabled}
-          fileInputRef={fileInputRef}
-          onAttachmentChange={handleAttachmentChange}
-          onAttachmentRemove={removeAttachment}
-          onScreenshot={triggerScreenshot}
-          onSend={performSend}
-          onClose={closeReplyBar}
-          onCancel={reply.cancelReply}
         />
-      )}
+      ) : null}
 
       {panel === "notes" && (
         <WorkspacePanel

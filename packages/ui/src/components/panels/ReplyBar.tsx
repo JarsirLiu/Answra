@@ -40,6 +40,11 @@ interface ReplyBarProps {
   onClose: () => void;
   /** 取消当前回复，回到同一条回复条的发送态。 */
   onCancel: () => void;
+  /**
+   * 内嵌形态：渲染进悬浮导航条第二段功能槽，不再自带悬浮表面
+   * （边框/底色/投影由外层 `.floating-bar` 提供）。默认为独立条。
+   */
+  embedded?: boolean;
 }
 
 /**
@@ -69,10 +74,12 @@ export function ReplyBar({
   onSend,
   onClose,
   onCancel,
+  embedded = false,
 }: ReplyBarProps) {
+  const surfaceClass = embedded ? "reply-bar--embedded" : "floating-surface";
   if (phase === "streaming") {
     return (
-      <section aria-live="polite" className="reply-bar reply-bar--stream floating-surface">
+      <section aria-live="polite" className={`reply-bar reply-bar--stream ${surfaceClass}`}>
         <ReplyActivityTicker
           activities={replyActivities}
           error={replyError}
@@ -130,7 +137,7 @@ export function ReplyBar({
 
   if (phase === "done") {
     return (
-      <section aria-live="polite" className="reply-bar reply-bar--stream floating-surface">
+      <section aria-live="polite" className={`reply-bar reply-bar--stream ${surfaceClass}`}>
         <ReplyActivityTicker
           activities={replyActivities}
           error={replyError}
@@ -171,7 +178,7 @@ export function ReplyBar({
   }
 
   return (
-    <section className="reply-bar reply-bar--compose floating-surface">
+    <section className={`reply-bar reply-bar--compose ${surfaceClass}`}>
       <input
         accept="image/*"
         aria-label="选择截图图片"

@@ -39,3 +39,9 @@
   margin: 0 var(--seg-gap);
   background: var(--glass-line-soft);
 }
+/* 功能槽占用态：右侧整段交给插入内容（如回复条），只在超宽时可收缩。 */
+.feature-slot {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}

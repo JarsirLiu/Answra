@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useRef } from "react";
 import { useDismissableOpen } from "../../hooks/useDismissableOpen";
 import type { Mode, ModeAction, ModeDefinition, Panel } from "../../model";
@@ -19,6 +20,11 @@ interface FloatingBarProps {
   onClose: () => void;
   unreadAnnouncements: number;
   showAnnouncements: boolean;
+  /**
+   * 功能槽占用态：提供时，导航条右侧（模式功能段 + 工作区段）整体替换为该内容，
+   * 只保留左侧模式选择。用于回复工作流等需要就地接管功能区的场景。
+   */
+  featureSlot?: ReactNode;
 }
 
 /**
@@ -39,6 +45,7 @@ export function FloatingBar({
   onClose,
   unreadAnnouncements,
   showAnnouncements,
+  featureSlot,
 }: FloatingBarProps) {
   const stackRef = useRef<HTMLDivElement>(null);
   useDismissableOpen(stackRef, modeMenuOpen, onDismissModeMenu);
@@ -56,19 +63,25 @@ export function FloatingBar({
           <ModePicker mode={mode} modes={modes} onToggle={onToggleModeMenu} open={modeMenuOpen} />
         </div>
         <span aria-hidden="true" className="segment-divider" />
-        <div className="nav-segment feature-segment">
-          <FeatureActions actions={activeMode.actions} onAction={onModeAction} panel={panel} />
-        </div>
-        <span aria-hidden="true" className="segment-divider" />
-        <div className="nav-segment utility-segment">
-          <WorkspaceControls
-            onClose={onClose}
-            onTogglePanel={onTogglePanel}
-            panel={panel}
-            unreadAnnouncements={unreadAnnouncements}
-            showAnnouncements={showAnnouncements}
-          />
-        </div>
+        {featureSlot ? (
+          <div className="nav-segment feature-slot">{featureSlot}</div>
+        ) : (
+          <>
+            <div className="nav-segment feature-segment">
+              <FeatureActions actions={activeMode.actions} onAction={onModeAction} panel={panel} />
+            </div>
+            <span aria-hidden="true" className="segment-divider" />
+            <div className="nav-segment utility-segment">
+              <WorkspaceControls
+                onClose={onClose}
+                onTogglePanel={onTogglePanel}
+                panel={panel}
+                unreadAnnouncements={unreadAnnouncements}
+                showAnnouncements={showAnnouncements}
+              />
+            </div>
+          </>
+        )}
       </section>
       {modeMenuOpen && (
         <ModeMenu

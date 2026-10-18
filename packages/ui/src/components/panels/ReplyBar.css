@@ -127,6 +127,24 @@
   -webkit-app-region: no-drag;
 }
 
+/* ── 内嵌形态：渲染进悬浮导航条第二段功能槽，去掉自带表面与拖拽，
+     由外层 `.floating-bar` 统一提供玻璃底、边框、圆角与拖拽区。 ── */
+.reply-bar--embedded {
+  min-height: 0;
+  padding: 0;
+  gap: var(--ctl-gap);
+  max-width: none;
+  -webkit-app-region: no-drag;
+}
+
+/* 内嵌流式/完成态：窄条自适应——短内容按实际宽度收窄，超长才封顶给跑马灯滚动，
+   避免固定 420 宽在短答案时留一大片空白。 */
+.reply-bar--embedded.reply-bar--stream {
+  width: max-content;
+  min-width: 200px;
+  max-width: min(320px, calc(100vw - 24px));
+}
+
 /* ── 流式态：活动内容在左侧滚动，右侧操作组保持固定宽度和顺序 ── */
 .reply-bar--stream {
   display: grid;

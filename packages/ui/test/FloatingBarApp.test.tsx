@@ -341,9 +341,9 @@ describe("three-segment floating navigation", () => {
       }),
     );
     act(() => emitConversationEvent?.({ runId: "run-1", chunk: { type: "finish" } }));
-    // 完成态：回复条保留答案，停在原地等用户收起，不回退到悬浮导航栏。
+    // 完成态：回复条就地停在导航条功能槽内，停在原地等用户收起。
     await waitFor(() => expect(screen.getByText("截图内容已识别")).toBeInTheDocument());
-    expect(screen.getByRole("button", { name: "截图提问" })).toBeInTheDocument();
+    expect(document.querySelector(".floating-bar .reply-bar")).not.toBeNull();
     expect(screen.queryByRole("button", { name: "取消回复并返回发送" })).not.toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: "补充问题" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "继续截图" })).toBeInTheDocument();
@@ -353,7 +353,6 @@ describe("three-segment floating navigation", () => {
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "确认发送" })).toBeInTheDocument(),
     );
-    expect(screen.getByRole("button", { name: "截图提问" })).toBeInTheDocument();
     expect(screen.queryByText("截图内容已识别")).not.toBeInTheDocument();
     expect(screen.queryByRole("img", { name: /screenshot-.*\.png/ })).not.toBeInTheDocument();
 
@@ -423,7 +422,8 @@ describe("three-segment floating navigation", () => {
 
     expect(screen.getByRole("button", { name: "继续截图" })).toBeInTheDocument();
     expect(screen.queryByText(/演示回复/)).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "截图提问" })).toBeInTheDocument();
+    // 取消只回到发送态：功能槽仍是回复条，没有退回悬浮导航条。
+    expect(screen.getByRole("button", { name: "确认发送" })).toBeInTheDocument();
   });
 
   it("renders the screenshot inline instead of syncing to a detached reply window", async () => {
@@ -440,10 +440,11 @@ describe("three-segment floating navigation", () => {
     render(<FloatingBarApp bridge={bridge} />);
     clickAnswerScreenshot();
 
-    // 主窗口内联形态：截图直接渲染在工具栏回复槽，不再推送到独立回复窗口。
+    // 主窗口内联形态：截图缩略图直接长在导航条功能槽里，不再推送独立回复窗口、也不另起一条。
     await waitFor(() =>
       expect(screen.getByRole("img", { name: /screenshot-.*\.png/ })).toBeInTheDocument(),
     );
+    expect(document.querySelector(".floating-bar .reply-bar")).not.toBeNull();
     expect((bridge as { setReplyBarState?: unknown }).setReplyBarState).toBeUndefined();
   });
 
@@ -535,8 +536,10 @@ describe("three-segment floating navigation", () => {
       expect(screen.getByRole("img", { name: /screenshot-.*\.png/ })).toBeInTheDocument(),
     );
 
-    // 就地内联：主导航条保留，答题模式"截图提问"入口仍可见。
-    expect(screen.getByRole("button", { name: "截图提问" })).toBeInTheDocument();
+    // 就地内联：功能槽接管导航条右侧，截图缩略图直接长在导航条里。
+    expect(document.querySelector(".floating-bar .reply-bar")).not.toBeNull();
+    // 整段右侧被接管：工作区入口（笔记本/设置）在回复期间让位。
+    expect(screen.queryByRole("button", { name: "打开笔记本" })).not.toBeInTheDocument();
 
     // 收起发送条退出回复槽：清空本轮截图，回到对话面板。
     fireEvent.click(screen.getByRole("button", { name: "收起回复条" }));
