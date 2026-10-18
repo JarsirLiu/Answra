@@ -174,8 +174,17 @@ export function setReplyBarAnchor(selection: RegionSelection): void {
   ensureControllers();
   replyBarController.setAnchor(selection);
 }
+/**
+ * 迁移期单点开关：独立回复窗口入口已关闭。
+ * 主窗口已统一改为内联 ReplySlot（useReplyWorkflow inline=true），此开关为防回退兜底：
+ * 即使有调用方误推非空状态也不会创建/激活独立窗口，只放行 null 以清理残留。
+ * 待内联形态实机验证通过后，连同 replyBarController 与 ReplyBarWindowApp 一并移除。
+ */
+const DETACHED_REPLY_WINDOW_ENABLED: boolean = false;
+
 export function setReplyBarWindowState(state: ReplyBarState | null): void {
   ensureControllers();
+  if (state !== null && !DETACHED_REPLY_WINDOW_ENABLED) return;
   replyBarController.setState(state);
 }
 export function isReplyBarWindowFromSender(event: IpcMainEvent | IpcMainInvokeEvent): boolean {

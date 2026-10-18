@@ -36,6 +36,64 @@ describe("surface coordinator", () => {
     });
   });
 
+  it("enters the reply slot from the collapsed bar and restores it on exit, preserving restoreSlot across re-captures", () => {
+    const entered = surfaceReducer(initialSurfaceState, {
+      type: "feature/enter-reply",
+      origin: "screenshot",
+    });
+    expect(entered.featureSlot).toEqual({
+      kind: "reply",
+      phase: "composing",
+      restoreSlot: "chat",
+      restorePanel: "closed",
+      origin: "screenshot",
+    });
+    expect(entered.panel).toBe("chat");
+
+    const recapture = surfaceReducer(entered, {
+      type: "feature/enter-reply",
+      origin: "screenshot",
+    });
+    expect(recapture.featureSlot.restoreSlot).toBe("chat");
+    expect(recapture.featureSlot.restorePanel).toBe("closed");
+
+    const streaming = surfaceReducer(recapture, { type: "feature/phase", phase: "streaming" });
+    expect(streaming.featureSlot.phase).toBe("streaming");
+
+    const exited = surfaceReducer(streaming, { type: "feature/exit-reply" });
+    expect(exited.panel).toBe("closed");
+    expect(exited.featureSlot).toEqual({
+      kind: "chat",
+      restoreSlot: "chat",
+      restorePanel: "closed",
+    });
+  });
+
+  it("restores the panel displaced when entering reply from a non-chat panel", () => {
+    const withNotes = surfaceReducer(initialSurfaceState, {
+      type: "panel/open",
+      panel: "notes",
+    });
+    const entered = surfaceReducer(withNotes, {
+      type: "feature/enter-reply",
+      origin: "screenshot",
+    });
+    expect(entered.panel).toBe("chat");
+    expect(entered.featureSlot.restorePanel).toBe("notes");
+
+    const exited = surfaceReducer(entered, { type: "feature/exit-reply" });
+    expect(exited.panel).toBe("notes");
+    expect(exited.featureSlot.kind).toBe("chat");
+  });
+
+  it("ignores feature/phase when not in the reply slot", () => {
+    const state = surfaceReducer(initialSurfaceState, {
+      type: "feature/phase",
+      phase: "streaming",
+    });
+    expect(state).toBe(initialSurfaceState);
+  });
+
   it("keeps permission prompts in the floating host until an explicit dismissal", () => {
     const prompt = {
       kind: "permission" as const,

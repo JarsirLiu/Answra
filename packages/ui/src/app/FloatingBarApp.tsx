@@ -9,12 +9,13 @@ import { FloatingBar } from "../components/floating-bar/FloatingBar";
 import { FloatingLayerHost } from "../components/floating-bar/FloatingLayerHost";
 import { AnnouncementPanel } from "../components/panels/AnnouncementPanel";
 import { ChatPanel } from "../components/panels/ChatPanel";
-import { ReplyBar } from "../components/panels/ReplyBar";
+import { ReplySlot } from "../components/panels/ReplySlot";
 import { SettingsPanel } from "../components/panels/SettingsPanel";
 import { WorkspacePanel } from "../components/panels/workspace/WorkspacePanel";
 import { useFitContent } from "../hooks/useFitContent";
 import { useMeetingStealth } from "../hooks/useMeetingStealth";
 import { useStealthInputGuard } from "../hooks/useStealthInputGuard";
+import { useSurfaceWidth } from "../hooks/useSurfaceWidth";
 import { MODES, type Mode, type ModeAction } from "../model";
 import { useAppearanceController } from "./useAppearanceController";
 import { useGeneralChat, useScreenshotAnswer } from "./useConversationChat";
@@ -33,8 +34,8 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
   const [announcements, setAnnouncements] = useState<DesktopAnnouncement[]>([]);
   const [authSignedIn, setAuthSignedIn] = useState(false);
   const surfaces = useSurfaceCoordinator();
-  const { panel, workflow, floatingLayers } = surfaces;
-  const replyPhase = workflow?.phase ?? "closed";
+  const { panel, floatingLayers, featureSlot } = surfaces;
+  const replyPhase = featureSlot.kind === "reply" ? (featureSlot.phase ?? "composing") : "closed";
   /** 截图失败原因：屏幕可见的错误提示，避免失败被静默吞掉、只看到胶囊。 */
   const appearance = useAppearanceController(platform);
   const stealthSetting = useMeetingStealth(platform);
@@ -97,12 +98,12 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
     cancelMessage: answer.cancel,
     onCaptureError: (message) =>
       surfaces.dispatch({ type: "layer/show-notice", id: "capture-error", message }),
-    onWorkflowFinish: () => {
+    onEnterReply: (origin) => surfaces.enterReply(origin),
+    onExitReply: () => {
       answer.clearMessages();
-      surfaces.finishWorkflow();
+      surfaces.exitReply();
     },
-    onWorkflowPhase: (phase) => surfaces.dispatch({ type: "workflow/phase", phase }),
-    onWorkflowStart: surfaces.startWorkflow,
+    onSetReplyPhase: (phase) => surfaces.setReplyPhase(phase),
     phase: replyPhase,
     platform,
     replyText: answer.replyText,
@@ -111,11 +112,12 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
     replyPending: answer.replyPending,
     sendMessage: answer.send,
     stealth: stealthSetting.enabled,
+    inline: true,
   });
   const {
     attachments,
     closeReplyBar,
-    detachedReplyBar,
+    conversationId,
     draft,
     fileInputRef,
     handleAttachmentChange,
@@ -128,9 +130,10 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
     setAttachments,
     triggerScreenshot,
   } = reply;
-  // The hidden toolbar keeps its last native bounds while the reply workflow
-  // owns a separate HWND; measuring its temporarily empty shell would shrink it.
-  const { ref: shellRef } = useFitContent(platform, !detachedReplyBar || replyPhase === "closed");
+  // 主窗口内联形态（inline）下 detachedReplyBar 恒为 false，shell 始终需要测量。
+  const { ref: shellRef } = useFitContent(platform, true);
+  // 对话/回复面板宽度跟随悬浮导航栏，两者默认同宽。
+  useSurfaceWidth(shellRef);
 
   function toggleModeMenu() {
     if (surfaces.layer === "mode-menu") surfaces.closeFloatingLayers();
@@ -142,7 +145,10 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
       triggerScreenshot();
       return;
     }
-    if (action.id === "chat") surfaces.openPanel("chat");
+    if (action.id === "chat") {
+      if (featureSlot.kind === "reply") surfaces.exitReply();
+      else surfaces.openPanel("chat");
+    }
   }
 
   function handleModeChange(nextMode: Mode) {
@@ -161,27 +167,24 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
       data-stealth={stealthSetting.enabled ? "true" : undefined}
       ref={shellRef}
     >
-      {/* 专注发送态：回复条激活期间胶囊退场，全屏只留一条发送条 */}
-      {replyPhase === "closed" && (
-        <FloatingBar
-          modeMenuOpen={surfaces.layer === "mode-menu"}
-          mode={mode}
-          modes={MODES}
-          onClose={() => platform?.close()}
-          onModeAction={handleModeAction}
-          onModeChange={handleModeChange}
-          onDismissModeMenu={surfaces.closeFloatingLayers}
-          onToggleModeMenu={toggleModeMenu}
-          onTogglePanel={surfaces.togglePanel}
-          unreadAnnouncements={announcements.filter((item) => !item.readAt).length}
-          showAnnouncements={authSignedIn}
-          panel={panel}
-        />
-      )}
+      <FloatingBar
+        modeMenuOpen={surfaces.layer === "mode-menu"}
+        mode={mode}
+        modes={MODES}
+        onClose={() => platform?.close()}
+        onModeAction={handleModeAction}
+        onModeChange={handleModeChange}
+        onDismissModeMenu={surfaces.closeFloatingLayers}
+        onToggleModeMenu={toggleModeMenu}
+        onTogglePanel={surfaces.togglePanel}
+        unreadAnnouncements={announcements.filter((item) => !item.readAt).length}
+        showAnnouncements={authSignedIn}
+        panel={panel}
+      />
 
       <FloatingLayerHost layers={floatingLayers} onDismiss={surfaces.dismissFloatingLayer} />
 
-      {panel === "chat" && (
+      {panel === "chat" && featureSlot.kind === "chat" && (
         <ChatPanel
           bridge={platform}
           stealth={stealthSetting.enabled}
@@ -227,22 +230,25 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
         />
       )}
 
-      {replyPhase !== "closed" && !detachedReplyBar && (
-        <ReplyBar
+      {panel === "chat" && featureSlot.kind === "reply" && (
+        <ReplySlot
+          phase={featureSlot.phase ?? "composing"}
           attachments={attachments}
           draft={draft}
-          fileInputRef={fileInputRef}
-          phase={replyPhase}
           replyText={replyText}
           replyActivities={replyActivities}
           replyError={replyError}
           replyPending={answer.replyPending}
+          conversationId={conversationId}
+          bridge={platform}
+          stealth={stealthSetting.enabled}
+          fileInputRef={fileInputRef}
           onAttachmentChange={handleAttachmentChange}
           onAttachmentRemove={removeAttachment}
-          onClose={closeReplyBar}
-          onCancel={reply.cancelReply}
           onScreenshot={triggerScreenshot}
           onSend={performSend}
+          onClose={closeReplyBar}
+          onCancel={reply.cancelReply}
         />
       )}
 

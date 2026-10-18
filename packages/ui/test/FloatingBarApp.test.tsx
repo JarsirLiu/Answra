@@ -128,7 +128,8 @@ describe("three-segment floating navigation", () => {
   it("changes the middle feature group when the work mode changes", () => {
     render(<FloatingBarApp />);
 
-    expect(screen.getByRole("heading", { name: "AI 对话" })).toBeInTheDocument();
+    // 启动默认收起：只显示悬浮导航条，对话面板需用户主动打开。
+    expect(screen.queryByRole("heading", { name: "AI 对话" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "打开对话" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "对话" }));
     expect(screen.getByRole("menuitemradio", { name: "对话" })).toBeInTheDocument();
@@ -180,6 +181,7 @@ describe("three-segment floating navigation", () => {
     const bridge = createConversationBridge();
     render(<FloatingBarApp bridge={bridge} />);
 
+    fireEvent.click(screen.getByRole("button", { name: "打开对话" }));
     const input = screen.getByRole("textbox", { name: "补充问题" });
     fireEvent.change(input, { target: { value: "我叫小明" } });
     fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
@@ -244,7 +246,7 @@ describe("three-segment floating navigation", () => {
 
   it("includes the expanded mode menu in the measured window layout", () => {
     render(<FloatingBarApp />);
-    fireEvent.click(screen.getByRole("button", { name: "收起面板" }));
+    // 启动即收起：菜单直接进入布局流，为窗口预留真实高度。
     fireEvent.click(screen.getByRole("button", { name: "对话" }));
 
     const menu = screen.getByRole("menu", { name: "工作模式" });
@@ -341,7 +343,7 @@ describe("three-segment floating navigation", () => {
     act(() => emitConversationEvent?.({ runId: "run-1", chunk: { type: "finish" } }));
     // 完成态：回复条保留答案，停在原地等用户收起，不回退到悬浮导航栏。
     await waitFor(() => expect(screen.getByText("截图内容已识别")).toBeInTheDocument());
-    expect(screen.queryByRole("button", { name: "截图提问" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "截图提问" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "取消回复并返回发送" })).not.toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: "补充问题" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "继续截图" })).toBeInTheDocument();
@@ -351,7 +353,7 @@ describe("three-segment floating navigation", () => {
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "确认发送" })).toBeInTheDocument(),
     );
-    expect(screen.queryByRole("button", { name: "截图提问" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "截图提问" })).toBeInTheDocument();
     expect(screen.queryByText("截图内容已识别")).not.toBeInTheDocument();
     expect(screen.queryByRole("img", { name: /screenshot-.*\.png/ })).not.toBeInTheDocument();
 
@@ -421,21 +423,13 @@ describe("three-segment floating navigation", () => {
 
     expect(screen.getByRole("button", { name: "继续截图" })).toBeInTheDocument();
     expect(screen.queryByText(/演示回复/)).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "截图提问" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "截图提问" })).toBeInTheDocument();
   });
 
-  it("syncs screenshot workflow to the detached reply window instead of rendering it in the toolbar", async () => {
-    const originalWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetWidth");
-    const originalHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetHeight");
-    Object.defineProperties(HTMLElement.prototype, {
-      offsetHeight: { configurable: true, get: () => 48 },
-      offsetWidth: { configurable: true, get: () => 400 },
-    });
+  it("renders the screenshot inline instead of syncing to a detached reply window", async () => {
     const bridge = {
       close: vi.fn(),
       fitContent: vi.fn(),
-      fitReplyBar: vi.fn(),
-      setReplyBarState: vi.fn(),
       startRegionCapture: vi.fn().mockResolvedValue({
         dataUrl: "data:image/png;base64,QUJD",
         height: 200,
@@ -443,34 +437,14 @@ describe("three-segment floating navigation", () => {
         width: 300,
       }),
     };
-    const view = render(<FloatingBarApp bridge={bridge} />);
-    try {
-      expect(bridge.fitContent).toHaveBeenCalledWith({ height: 48, width: 400 });
-      clickAnswerScreenshot();
+    render(<FloatingBarApp bridge={bridge} />);
+    clickAnswerScreenshot();
 
-      await waitFor(() => expect(bridge.setReplyBarState).toHaveBeenCalled());
-      const state = bridge.setReplyBarState.mock.calls.at(-1)?.[0];
-      expect(state).toMatchObject({
-        phase: "composing",
-        draft: "",
-      });
-      expect(state.attachments).toHaveLength(1);
-      expect(screen.queryByRole("img", { name: /screenshot-.*\.png/ })).not.toBeInTheDocument();
-      expect(screen.queryByRole("button", { name: "截图提问" })).not.toBeInTheDocument();
-      expect(bridge.fitContent).toHaveBeenCalledTimes(1);
-    } finally {
-      view.unmount();
-      if (originalWidth) {
-        Object.defineProperty(HTMLElement.prototype, "offsetWidth", originalWidth);
-      } else {
-        Reflect.deleteProperty(HTMLElement.prototype, "offsetWidth");
-      }
-      if (originalHeight) {
-        Object.defineProperty(HTMLElement.prototype, "offsetHeight", originalHeight);
-      } else {
-        Reflect.deleteProperty(HTMLElement.prototype, "offsetHeight");
-      }
-    }
+    // 主窗口内联形态：截图直接渲染在工具栏回复槽，不再推送到独立回复窗口。
+    await waitFor(() =>
+      expect(screen.getByRole("img", { name: /screenshot-.*\.png/ })).toBeInTheDocument(),
+    );
+    expect((bridge as { setReplyBarState?: unknown }).setReplyBarState).toBeUndefined();
   });
 
   it("appends another screenshot when 继续截图 is clicked inside the reply bar", async () => {
@@ -541,7 +515,7 @@ describe("three-segment floating navigation", () => {
     expect(screen.queryByRole("img", { name: /screenshot-.*\\.png/ })).not.toBeInTheDocument();
   });
 
-  it("hides the pill in focused send mode and restores it when the reply bar closes", async () => {
+  it("keeps the pill visible during the inline reply and clears the screenshot on close", async () => {
     const bridge = {
       close: vi.fn(),
       fitContent: vi.fn(),
@@ -553,20 +527,21 @@ describe("three-segment floating navigation", () => {
       }),
     };
     render(<FloatingBarApp bridge={bridge} />);
-    expect(screen.queryByRole("button", { name: "截图提问" })).not.toBeInTheDocument();
+    // 初始对话模式。
+    expect(screen.getByRole("button", { name: "打开对话" })).toBeInTheDocument();
 
     clickAnswerScreenshot();
     await waitFor(() =>
       expect(screen.getByRole("img", { name: /screenshot-.*\.png/ })).toBeInTheDocument(),
     );
 
-    // 专注发送态：胶囊退场，全屏只留回复条
-    expect(screen.queryByRole("button", { name: "截图提问" })).not.toBeInTheDocument();
+    // 就地内联：主导航条保留，答题模式"截图提问"入口仍可见。
+    expect(screen.getByRole("button", { name: "截图提问" })).toBeInTheDocument();
 
-    // 收起任务条后，主导航回归
+    // 收起发送条退出回复槽：清空本轮截图，回到对话面板。
     fireEvent.click(screen.getByRole("button", { name: "收起回复条" }));
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "截图提问" })).toBeInTheDocument(),
+      expect(screen.queryByRole("img", { name: /screenshot-.*\.png/ })).not.toBeInTheDocument(),
     );
   });
 

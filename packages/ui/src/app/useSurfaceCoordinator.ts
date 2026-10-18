@@ -1,4 +1,5 @@
 import { type Dispatch, useCallback, useReducer } from "react";
+import type { ReplyPhase } from "../components/panels/ReplyBar";
 import {
   initialSurfaceState,
   type SurfaceAction,
@@ -28,6 +29,16 @@ export function useSurfaceCoordinator() {
   );
   const startWorkflow = useCallback(() => dispatch({ type: "workflow/start" }), []);
   const finishWorkflow = useCallback(() => dispatch({ type: "workflow/finish" }), []);
+  const enterReply = useCallback(
+    (origin: "screenshot" | "manual" = "manual") =>
+      dispatch({ type: "feature/enter-reply", origin }),
+    [],
+  );
+  const exitReply = useCallback(() => dispatch({ type: "feature/exit-reply" }), []);
+  const setReplyPhase = useCallback(
+    (phase: ReplyPhase) => dispatch({ type: "feature/phase", phase }),
+    [],
+  );
 
   return {
     ...state,
@@ -39,6 +50,9 @@ export function useSurfaceCoordinator() {
     dismissFloatingLayer,
     startWorkflow,
     finishWorkflow,
+    enterReply,
+    exitReply,
+    setReplyPhase,
   } satisfies SurfaceState & {
     dispatch: Dispatch<SurfaceAction>;
     openPanel: (panel: SurfaceState["panel"]) => void;
@@ -48,5 +62,8 @@ export function useSurfaceCoordinator() {
     dismissFloatingLayer: (id: string) => void;
     startWorkflow: () => void;
     finishWorkflow: () => void;
+    enterReply: (origin?: "screenshot" | "manual") => void;
+    exitReply: () => void;
+    setReplyPhase: (phase: ReplyPhase) => void;
   };
 }

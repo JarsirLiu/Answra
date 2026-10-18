@@ -32,7 +32,7 @@
 ## 后果与防回退
 
 - 新增回复动作先扩展 `ReplyBarAction` 和 `useReplyWorkflow`，不得直接在 `FloatingBarApp` 增加回复状态。
-- 回复条仍是独立 `BrowserWindow`；不要把它重新渲染回主窗口以复用状态。
+- 「回复条不得拉回主窗口」已由 [对话面板就地回复槽与功能槽架构](2026-10-18-in-place-reply-slot-and-feature-slot.md) 细化为：主窗口内联回复条必须经 `SurfaceState.featureSlot` 接入、走 `useSurfaceCoordinator`，不得绕过 coordinator 直接挂载 `ReplyBar`；独立回复窗口作为过渡形态入口已关闭，待验证后移除。
 - 将来接入本地或云端模型时，服务调用应从 hook 进一步下沉到 runtime adapter，UI 只消费流式结果。
 
 ## 验证
