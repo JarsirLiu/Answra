@@ -564,8 +564,9 @@ describe("AuthService announcements", () => {
         createdAt: "2026-10-17T10:00:00Z",
       },
     ]);
-    expect(harness.calls[0]).toMatchObject({
-      url: "https://api.test/api/v1/announcements",
+    expect(
+      harness.calls.find((call) => call.url === "https://api.test/api/v1/announcements"),
+    ).toMatchObject({
       authorization: "Bearer private-access",
     });
   });
@@ -582,8 +583,9 @@ describe("AuthService announcements", () => {
     await harness.service.restore();
 
     await harness.service.markAnnouncementRead(7);
-    expect(harness.calls[0]).toMatchObject({
-      url: "https://api.test/api/v1/announcements/7/read",
+    expect(
+      harness.calls.find((call) => call.url === "https://api.test/api/v1/announcements/7/read"),
+    ).toMatchObject({
       method: "POST",
       authorization: "Bearer private-access",
       body: {},
