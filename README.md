@@ -53,7 +53,7 @@ Windows/macOS 发布机分别执行 `pnpm bootstrap` 后再打包，准备脚本
 ## 检查
 
 ```powershell
-pnpm verify   # lint + notes:check + typecheck + test + architecture:check
+pnpm verify   # lint + typecheck + test + architecture:check（Note 检查仅提示，不阻断）
 pnpm build
 ```
 
@@ -91,9 +91,10 @@ docs                   Note 索引
 | `pnpm build` | 全 workspace 构建（desktop: esbuild + vite） |
 | `pnpm typecheck` | 各包依次 `tsc --noEmit`（desktop 按进程分三个编译单元） |
 | `pnpm test` | 各包测试（ui 使用 vitest + jsdom） |
-| `pnpm notes:check` | 检查 Note 格式、本地链接和变更配对 |
+| `pnpm notes:hint` | Note 格式、本地链接和变更配对检查（仅提示，不阻断） |
+| `pnpm notes:check` | 同 `notes:hint` 但严格：缺失或格式错误即失败（CI/发布用） |
 | `pnpm architecture:check` | 架构守护检查 |
-| `pnpm verify` | lint + docs + typecheck + test + architecture（pre-push 同款） |
+| `pnpm verify` | lint + typecheck + test + architecture（Note 检查为提示；pre-push 同款） |
 
 ## 参与开发
 

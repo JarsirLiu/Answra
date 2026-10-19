@@ -28,6 +28,8 @@ const CATEGORY_REQUIRED = {
   simplification: ["移除内容", "重新引入条件"],
   testing: ["测试范围"],
 };
+// `--warn`：只提示不阻断（本地 `pnpm verify` 用），CI/发布前用默认严格模式。
+const warnOnly = process.argv.includes("--warn");
 const errors = [];
 
 function git(args) {
@@ -195,12 +197,24 @@ try {
   checkMarkdownLinks(path.join(docsRoot, "README.md"));
 
   if (errors.length) {
-    for (const error of errors) console.error(`✗ ${error}`);
-    process.exitCode = 1;
+    if (warnOnly) {
+      console.warn(
+        "⚠ Note 提示（不阻断）：本次变更涉及工程文件但没有配套 Note，建议补写 docs/notes/ 后再随提交更新。",
+      );
+      for (const error of errors) console.warn(`  · ${error}`);
+    } else {
+      for (const error of errors) console.error(`✗ ${error}`);
+      process.exitCode = 1;
+    }
   } else {
     console.log(`✓ Note 检查通过（${noteChanges.length} 份本次 Note，${changed.size} 个变更文件）`);
   }
 } catch (error) {
-  console.error(`✗ Note 检查无法完成：${error instanceof Error ? error.message : String(error)}`);
-  process.exitCode = 1;
+  const message = error instanceof Error ? error.message : String(error);
+  if (warnOnly) {
+    console.warn(`⚠ Note 检查未能完成（不阻断）：${message}`);
+  } else {
+    console.error(`✗ Note 检查无法完成：${message}`);
+    process.exitCode = 1;
+  }
 }
