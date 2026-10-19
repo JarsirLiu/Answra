@@ -1,13 +1,13 @@
-/* 工具调用卡片：与消息流风格一致的轻量卡片。 */
+/* 工具调用卡片：复用对话内容原语（卡片表面/描边/圆角），与消息流同语言。 */
 .tool {
   display: flex;
   flex-direction: column;
   gap: 4px;
   max-width: 100%;
-  padding: 6px 9px;
-  border: 1px solid var(--glass-line-soft);
-  border-radius: 8px;
-  background: var(--field);
+  padding: var(--chat-card-pad);
+  border: 1px solid var(--chat-card-line);
+  border-radius: var(--chat-card-radius);
+  background: var(--chat-card-bg);
   font-size: 12.5px;
 }
 
@@ -21,7 +21,7 @@
 }
 
 .tool[data-status="error"] .name {
-  color: #c0392b;
+  color: var(--danger);
 }
 
 .output {

@@ -1,60 +1,21 @@
+/* 操作条只引用外壳令牌：文字/图标/交互态/弹层/状态色全部走调色板，
+   深浅色由 documentElement 的 [data-theme] 统一切换（不再自带 --ma-* 明暗）。 */
 .root {
-  --ma-fg: #1d1d1d;
-  --ma-muted: #aeaeae;
-  --ma-hover: rgba(0, 0, 0, 0.05);
-  --ma-selected: rgba(0, 0, 0, 0.07);
-  --ma-pop: #ffffff;
-  --ma-line: #e0e0e0;
-  /* Hairline first so it stays an even 0.5px on every edge. */
-  --ma-elevated:
-    0 0 0 0.5px #e0e0e0,
-    0 4px 8px rgba(0, 0, 0, 0.02),
-    0 8px 12px rgba(0, 0, 0, 0.02),
-    0 2px 4px rgba(0, 0, 0, 0.02),
-    0 1px 2px rgba(0, 0, 0, 0.04);
-  --ma-good: #1f9d55;
-  --ma-bad: #e11d48;
+  --ma-fg: var(--ink);
+  --ma-muted: var(--icon);
+  --ma-hover: var(--hover);
+  --ma-selected: var(--field-strong);
+  --ma-pop: var(--paper);
+  --ma-line: var(--glass-line);
+  --ma-elevated: var(--shadow-pop);
+  --ma-good: var(--mint-text);
+  --ma-bad: var(--danger);
 
   position: relative;
   display: inline-flex;
   align-items: center;
   gap: 2px;
   font-family: inherit;
-}
-
-:global([data-theme="dark"]) .root,
-:global(.dark) .root {
-  --ma-fg: #f4f4f5;
-  --ma-muted: #5a5a5a;
-  --ma-hover: #2e2e2e;
-  --ma-selected: #333333;
-  --ma-pop: #1c1c1e;
-  --ma-line: #3a3a3a;
-  --ma-bad: #f87171;
-  --ma-elevated:
-    0 0 0 0.5px #3a3a3a,
-    0 4px 8px rgba(0, 0, 0, 0.28),
-    0 8px 12px rgba(0, 0, 0, 0.22),
-    0 2px 4px rgba(0, 0, 0, 0.24),
-    0 1px 2px rgba(0, 0, 0, 0.32);
-}
-
-@media (prefers-color-scheme: dark) {
-  :global(:root:not([data-theme])) .root {
-    --ma-fg: #f4f4f5;
-    --ma-muted: #5a5a5a;
-    --ma-hover: #2e2e2e;
-    --ma-selected: #333333;
-    --ma-pop: #1c1c1e;
-    --ma-line: #3a3a3a;
-    --ma-bad: #f87171;
-    --ma-elevated:
-      0 0 0 0.5px #3a3a3a,
-      0 4px 8px rgba(0, 0, 0, 0.28),
-      0 8px 12px rgba(0, 0, 0, 0.22),
-      0 2px 4px rgba(0, 0, 0, 0.24),
-      0 1px 2px rgba(0, 0, 0, 0.32);
-  }
 }
 
 .hit {
@@ -75,8 +36,10 @@
   translate: var(--cue-x, 0px) var(--cue-y, 0px);
   padding: 4px 5px;
   border-radius: 6px;
-  background: rgba(29, 29, 29, 0.6);
-  color: rgba(255, 255, 255, 0.9);
+  /* 反色提示片：底色取 --ink（浅色主题 → 深片，深色主题 → 浅片），
+     文字取 --paper，随主题自动反转，无需再挂 data-theme。 */
+  background: color-mix(in srgb, var(--ink) 62%, transparent);
+  color: var(--paper);
   font-size: 10px;
   font-weight: 500;
   line-height: 1;
@@ -92,10 +55,6 @@
     filter 50ms ease,
     translate 160ms cubic-bezier(0.22, 1, 0.36, 1),
     width 160ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.tip[data-theme="dark"] {
-  background: rgba(255, 255, 255, 0.12);
 }
 
 .tip[data-up="true"] {

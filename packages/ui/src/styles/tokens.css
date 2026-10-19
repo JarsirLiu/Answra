@@ -154,6 +154,17 @@
     0 1px 3px rgb(10 25 20 / calc(var(--shadow-base) * 0.57 * var(--fade)));
   --shadow-pop: 0 14px 34px rgb(10 25 20 / calc((var(--shadow-base) + 0.06) * var(--fade)));
   --shadow-ctl: 0 1px 3px rgb(10 25 20 / calc(var(--shadow-ctl-base) * var(--fade)));
+
+  /* ── 对话内容原语：思考 / 正文 / 工具调用 / 报错块共用的表面与状态 ──
+     对话区与外壳同属一套令牌：卡片底色、描边、圆角在此定义一次，
+     组件只引用，不再各自写一套私有调色板（tre/tr/ma）。
+     轻微差别的「次要文字」用 color-mix 在 --ink 上降透明度表达，
+     与「层级靠字号/字重、状态靠透明度」的既有约定一致。 */
+  --chat-card-bg: var(--field);
+  --chat-card-line: var(--glass-line-soft);
+  --chat-card-radius: 8px;
+  --chat-card-pad: 6px 9px;
+  --chat-meta: color-mix(in srgb, var(--ink) 72%, transparent);
 }
 
 /* ── 深色主题：只覆盖原始参数，fade 合成层与组件样式零改动 ──

@@ -93,6 +93,23 @@ describe("theme CSS integrity", () => {
     }
   });
 
+  it("keeps chat content parts on palette tokens, without hardcoded colors", () => {
+    // 对话区（思考 / 正文 / 工具调用 / 操作条 / 消息流）必须与外壳共用一套令牌：
+    // 写死色值会绕过 [data-theme] 与变色龙，深浅色下固定配色会与面板分叉。
+    for (const file of [
+      "AssistantMessage.module.css",
+      "MessageActions.module.css",
+      "MessageStream.module.css",
+      "ModelErrorNotice.module.css",
+      "TextResponse.module.css",
+      "ThinkingReasoning.module.css",
+      "ToolResponse.module.css",
+    ]) {
+      const css = stripComments(readFileSync(join(sourceRoot, "components", "chat", file), "utf8"));
+      expect(css, file).not.toMatch(/#[0-9a-f]{3,8}\b|(?:rgba?|hsla?)\(/i);
+    }
+  });
+
   it("keeps the stealth cursor override strong enough to beat component cursor rules", () => {
     // 隐身模式下指针必须恒为默认箭头，否则指针形状会暴露正在输入/选择。
     // 组件里的 cursor 规则会追平覆盖规则的 (0,2,0)（如 `.trHeader.isClickable`），

@@ -5,12 +5,6 @@
   flex-direction: column;
   width: 360px;
   max-width: 100%;
-  /* 主题变量：保留原设计的浅色取值。 */
-  --tre-label: color-mix(in srgb, #a1a1a1 68%, transparent);
-  --tre-verb: #a1a1a1;
-  --tre-chevron: #a1a1a1;
-  --tre-sentence: #a1a1a1;
-  --tre-hover: #a3a3a3;
   /* 挂载时轻微淡入。 */
   animation: tr-block-in 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
@@ -45,16 +39,16 @@
   font-size: 13px;
   line-height: 18px;
   font-weight: 500;
-  color: var(--tre-label);
+  color: var(--chat-meta);
   letter-spacing: -0.005em;
 }
 
 .trVerb {
-  color: var(--tre-verb);
+  color: var(--chat-meta);
 }
 
 .trChevron {
-  color: var(--tre-chevron);
+  color: var(--chat-meta);
   transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
   /* 基础路径是上箭头；折叠态旋转 180° 指向下。 */
   transform: rotate(180deg);
@@ -65,7 +59,7 @@
 }
 
 .trHeader.isClickable:hover .trChevron {
-  color: var(--tre-hover);
+  color: var(--ink);
 }
 
 /* 折叠动画：grid-template-rows 0fr↔1fr。 */
@@ -122,7 +116,7 @@
   line-height: 20px;
   font-size: 13px;
   font-weight: 425;
-  color: var(--tre-sentence);
+  color: var(--chat-meta);
   letter-spacing: -0.005em;
   overflow-wrap: anywhere;
   animation: tr-sentence-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
@@ -143,12 +137,12 @@
   -webkit-text-fill-color: transparent;
   background: linear-gradient(
     90deg,
-    #a1a1a1 0%,
-    #a1a1a1 30%,
-    rgb(161 161 161 / 45%) 45%,
-    rgb(161 161 161 / 45%) 55%,
-    #a1a1a1 70%,
-    #a1a1a1 100%
+    var(--chat-meta) 0%,
+    var(--chat-meta) 30%,
+    color-mix(in srgb, var(--ink) 32%, transparent) 45%,
+    color-mix(in srgb, var(--ink) 32%, transparent) 55%,
+    var(--chat-meta) 70%,
+    var(--chat-meta) 100%
   );
   background-size: 300% 100%;
   -webkit-background-clip: text;

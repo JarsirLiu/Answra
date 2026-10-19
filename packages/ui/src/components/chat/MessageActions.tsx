@@ -75,7 +75,6 @@ function RowCues({ children }: { children: ReactNode }) {
   const [mounted, setMounted] = useState(false);
   const [open, setOpen] = useState(false);
   const [label, setLabel] = useState("");
-  const [tipTheme, setTipTheme] = useState<"light" | "dark">("light");
 
   useEffect(() => setMounted(true), []);
 
@@ -123,8 +122,6 @@ function RowCues({ children }: { children: ReactNode }) {
       }
       spot.host.setAttribute("aria-describedby", tipId);
       describedRef.current = spot.host;
-      const from = anchor.closest("[data-theme]")?.getAttribute("data-theme");
-      setTipTheme(from === "dark" ? "dark" : "light");
       setLabel((current) => (current === next ? current : next));
     },
     [measure, tipId, write],
@@ -181,7 +178,6 @@ function RowCues({ children }: { children: ReactNode }) {
                 ref={bubbleRef}
                 id={tipId}
                 role="tooltip"
-                data-theme={tipTheme}
                 data-up={open ? "true" : undefined}
                 className={styles.tip}
                 aria-hidden={open ? undefined : true}

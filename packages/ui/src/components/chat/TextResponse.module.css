@@ -1,38 +1,11 @@
-/* Theme follows the nearest [data-theme] ancestor (preview switch),
-   then .dark, then the OS when no data-theme is set.
-   必须写单冒号 :global()：lightningcss 不识别 ::global()，会把整条规则
-   原样留在产物里成为无效选择器，--tr-* 静默失效（深色下正文变深字不可见）。 */
-:global(:root),
-:global([data-theme="light"]) {
-  --tr-fg: #1a1a1a;
-  --tr-muted: #6b6b6b;
-  --tr-border: #e4e4e7;
-  --tr-code-bg: #f4f5f7;
-  --tr-block-bg: #f8f8fa;
-}
-:global([data-theme="dark"]),
-:global(.dark) {
-  --tr-fg: #f5f5f5;
-  --tr-muted: #9d9da3;
-  --tr-border: #333338;
-  --tr-code-bg: #242424;
-  --tr-block-bg: #1c1c1f;
-}
-@media (prefers-color-scheme: dark) {
-  :global(:root:not([data-theme])) {
-    --tr-fg: #f5f5f5;
-    --tr-muted: #9d9da3;
-    --tr-border: #333338;
-    --tr-code-bg: #242424;
-    --tr-block-bg: #1c1c1f;
-  }
-}
-
+/* 正文排版直接消费外壳令牌（--ink / --muted / --glass-line-soft / --field）：
+   深浅色与变色龙由 documentElement 上的 [data-theme] 统一切换，
+   不再自带一套 --tr-* 明暗调色板（那会与外壳主题分叉）。 */
 .prose {
   max-width: 100%;
   font-size: 14px;
   line-height: 21px;
-  color: var(--tr-fg, #1a1a1a);
+  color: var(--ink);
   overflow-wrap: anywhere;
 }
 .prose > :first-child {
@@ -73,12 +46,12 @@
 .prose blockquote {
   margin: 0 0 10px;
   padding: 2px 12px;
-  border-left: 3px solid var(--tr-border, #e4e4e7);
-  color: var(--tr-muted, #6b6b6b);
+  border-left: 3px solid var(--glass-line-soft);
+  color: var(--muted);
 }
 .prose hr {
   border: none;
-  border-top: 1px solid var(--tr-border, #e4e4e7);
+  border-top: 1px solid var(--glass-line-soft);
   margin: 14px 0;
 }
 .prose a {
@@ -88,7 +61,7 @@
   font-family: ui-monospace, monospace;
   font-size: 12.5px;
   color: inherit;
-  background: var(--tr-code-bg, #f4f5f7);
+  background: var(--field);
   padding: 3px 5px 1px;
   border-radius: 5px;
 }
@@ -96,7 +69,7 @@
   font-family: ui-monospace, monospace;
   font-size: 12.5px;
   color: inherit;
-  background: var(--tr-code-bg, #f4f5f7);
+  background: var(--field);
   padding: 3px 5px 1px;
   border-radius: 5px;
 }
@@ -113,17 +86,17 @@
 }
 .codeBlock {
   margin: 0 0 10px;
-  border: 1px solid var(--tr-border, #e4e4e7);
+  border: 1px solid var(--glass-line-soft);
   border-radius: 8px;
-  background: var(--tr-block-bg, #f8f8fa);
+  background: var(--field);
   overflow: hidden;
 }
 .codeLang {
   display: block;
   padding: 5px 12px;
   font-size: 11px;
-  color: var(--tr-muted, #6b6b6b);
-  border-bottom: 1px solid var(--tr-border, #e4e4e7);
+  color: var(--muted);
+  border-bottom: 1px solid var(--glass-line-soft);
   text-transform: lowercase;
 }
 .tableScroll {
@@ -136,13 +109,13 @@
 }
 .prose th,
 .prose td {
-  border: 1px solid var(--tr-border, #e4e4e7);
+  border: 1px solid var(--glass-line-soft);
   padding: 5px 10px;
   text-align: left;
   vertical-align: top;
 }
 .prose th {
-  background: var(--tr-block-bg, #f8f8fa);
+  background: var(--field);
   font-weight: 600;
 }
 
@@ -153,7 +126,7 @@
   width: 8px;
   height: 1.05em;
   margin-left: 2px;
-  background: var(--tr-fg, currentColor);
+  background: var(--ink);
   vertical-align: text-bottom;
   animation: caret-blink 1s step-end infinite;
 }

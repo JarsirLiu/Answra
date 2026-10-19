@@ -12,7 +12,7 @@
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-width: thin;
-  scrollbar-color: var(--glass-line, #c9c9cf) transparent;
+  scrollbar-color: var(--glass-line) transparent;
 }
 .viewport::-webkit-scrollbar {
   width: 6px;
@@ -20,10 +20,10 @@
 }
 .viewport::-webkit-scrollbar-thumb {
   border-radius: 3px;
-  background: var(--glass-line, #c9c9cf);
+  background: var(--glass-line);
 }
 .viewport::-webkit-scrollbar-thumb:hover {
-  background: var(--muted, #8a8a90);
+  background: var(--muted);
 }
 .viewport::-webkit-scrollbar-track,
 .viewport::-webkit-scrollbar-corner {
