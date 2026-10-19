@@ -36,25 +36,37 @@ interview runtime composition
 ### Agent 模块
 
 - `interview/contracts.ts`：内部稳定值对象与端口，定义音频帧、VAD 边界、音频段、转录事件、turn 事件、错误和能力元数据。无 Electron、React、provider SDK 或网络协议字段。
-- `interview/vad/`：VAD 状态机、pre-roll/hangover、低能量强切和段缓存。输入规范 PCM 帧，输出 `SpeechActivity` 与带时间范围的 `AudioSegment`；不决定是否提交 ASR，也不决定是否回答。
+- `interview/audio/`：接收会话生命周期就绪后的 PCM 帧，验证格式、session、序号与音频区间，再交给下游音频端口；不做设备采集、VAD、ASR 或回复。首个端到端切片只接系统播放声，并标记为 `interviewer`；候选人麦克风作为后续独立 source 接入。
+- `interview/vad/`：VAD 检测器只消费规范 PCM 帧并输出语音开始/结束及置信度；segmenter 独立消费 PCM 帧与语音活动，负责 pre-roll/hangover、低能量强切、边界重叠和段缓存。二者都不决定是否提交 ASR，也不决定是否回答。
 - `interview/transcription/`：provider-neutral 会话接口、调度器及 provider adapter。当前 `qwen-http/` 仅接收完整 `AudioSegment`，编码 WAV、发 multipart `/transcribe` 并产出 chunk-final；未来 realtime adapter 可订阅连续 PCM 帧并产出 partial/final。选择输入形态由 coordinator 读取 provider capabilities 完成，不改变 VAD 或 reply 契约。
 - `interview/turns/`：按 source、utterance、chunk 序号合并转录，处理 continuation、乱序、重叠去重、turn settle 和 transcript gap；输出 `InterviewerTurnStarted`、`InterviewerTurnUpdated`、`InterviewerTurnCommitted`。模型 chunk final 不等于 turn committed。
-- `interview/reply/`：question policy 与 answer workflow 分开。policy 只判断 committed/updated turn 是否值得回答；workflow 负责 generation id、AbortSignal、过期结果丢弃与文本流映射，不持有音频或 ASR 状态。
+- `interview/reply/`：question policy 与 answer workflow 分开。policy 只判断 provisional/committed turn 是否值得回答；workflow 收到归一化的 interviewer `turn-started` 时立即 abort 当前 generation，之后负责过期结果丢弃与文本流映射，不持有音频或 ASR 状态。VAD 不直接调用 reply，也不停止音频采集。
 - `interview/runtime.ts`：生命周期与上述模块的组合根；停止时按逆序关闭 provider、队列、VAD 和采集端口，并使该 session 所有迟到结果失效。
 
-首轮批式 Qwen 路径使用 VAD 输出的 `AudioSegment`。达到最大段长时产出 continuation segment，仍立即送 ASR 并允许展示临时建议；只有 VAD 自然闭合且该 utterance 的 segment 全部按序完成，turn assembler 才提交完整 turn。实时 provider 直接消费 PCM 帧，client VAD 仍独立提供发言起止与回答打断信号，不要求 provider 复用 VAD 算法。
+### 名词与生命周期
+
+- `conversationId` 表示面试模式沿用的文本对话历史，例如现有 `ActiveExamConversationId`。一次面试期间保持不变；识别文本和 AI 回复继续写入同一对话，不因暂停或重启音频监听而新建对话。
+- `sessionId` 表示一次音频监听运行，从采集启动到资源清理完成。停止后重新启动采集时创建新的 `sessionId`，用于隔离新旧音频和迟到的异步结果。它不是对话 ID，也不负责保存历史。
+- `utteranceId` 表示 VAD 在某一路音频上识别的一段连续发言；VAD 只产生语音开始/结束边界，不管理对话或监听生命周期。
+- 每个 `InterviewSession` 固定关联一个 `conversationId`。轮次事件携带该 `conversationId`，回复 workflow 必须把建议写入该对话。捕获重启创建新的 session 时继续传入原 `conversationId`。
+
+监听状态转换为 `starting → listening → stopping → stopped`；启动或运行错误可从非终态进入 `failed`。只有采集和运行时都就绪才进入 `listening`；只有当前 `sessionId` 处于 `listening` 时才接收音频和异步结果；进入 `stopping` 后在途结果也失效。清理完成后进入 `stopped`。重复 stop 是幂等的。`stopped` 和 `failed` 是终态，重启创建新 `sessionId`，不能复活旧 session。任何携带非当前 `sessionId` 的生命周期事件或异步结果都被忽略。AI 思考/ASR 处理是并行活动，不构成监听状态，因此 UI 的 thinking 不能替代 listening。
+
+首轮批式 Qwen 路径使用 VAD 输出的 `AudioSegment`。达到最大段长时产出 continuation segment，仍立即送 ASR 并允许展示临时建议；只有 VAD 自然闭合且该 utterance 的 segment 全部按序完成，turn assembler 才提交完整 turn。实时 provider 直接消费 PCM 帧，client VAD 仍独立提供发言起止信号，不要求 provider 复用 VAD 算法。打断顺序固定为：可靠的 interviewer `speech-started` → turn assembler 立即发 `turn-started` → reply workflow abort 当前 LLM generation；音频帧采集与转录继续，不等待 ASR 文字，也不因回复取消而停流。candidate source 的 speech-started 不触发 interviewer reply 的打断策略；候选人转录结果可独立进入回答上下文。
 
 ### 稳定契约
 
-- `PcmFrame`：`sessionId`、`source`、单调 `sequence`、`capturedAtMs`、`sampleRate`、声道/格式和有界 PCM payload。首轮由 desktop 统一输出 16 kHz、mono、PCM16；每帧目标约 100 ms，避免高频 IPC 与超大消息。
+- `PcmFrame`：`sessionId`、`source`、每路独立从 0 开始的 `sequence`、每路音轨内单调的 `startSample`、`sampleRate`、声道/格式和有界 PCM payload。首轮由 desktop 统一输出 16 kHz、mono、PCM16；帧最长 100 ms（1600 个采样点、3200 字节），停止时最后一帧可以更短。时间位置用 sample frame 表示，不用系统墙上时钟；双路音频无需假定共享 `Date.now()` 基准。
+- `SpeechActivityEvent`：source、utterance、`started/ended`、`atSample` 和 0..1 置信度。该事件描述“检测到说话”，不表示 ASR 已经有文本。
 - `AudioSegment`：`sessionId`、`source`、`utteranceId`、`chunkIndex`、起止音频时间、PCM16 payload、`boundaryKind: "utterance-end" | "continuation"`。边界重叠长度由 segmenter 配置；去重依据稳定的音频时间范围，不由 provider 或回答模块猜测。
 - `TranscriptEvent`：`sessionId`、`source`、`utteranceId`、`chunkIndex`、`revision`、文本、音频起止时间，以及 `kind: "partial" | "chunk-final" | "error"`。错误携带稳定错误码和 retryability，不暴露 HTTP body、模型名或原始服务端错误。
-- `InterviewerTurn`：由 turn assembler 维护，包含有序 transcript、完成状态、缺失 chunk/gap 标记和 generation/version。回答模块仅依据其版本提交或丢弃结果。
+- provider 输入模式显式区分 `segment` 与 `stream`：当前 Qwen HTTP provider 接收完整 `AudioSegment`；未来流式 provider 接收 `PcmFrame` 并异步发出相同的 `TranscriptEvent`。两者共享转录语义，不共享供应商 wire 类型。
+- `InterviewerTurn`：由 turn assembler 维护，包含稳定的 `conversationId`、产生该轮的 `sessionId`、有序 transcript、完成状态、缺失 chunk/gap 标记和 generation/version。回答模块将回答写回该 conversation，并仅依据 turn 版本提交或丢弃结果。
 - 所有异步回调携带 `sessionId` 和 generation/version；stop、新 turn 或 provider 重建后旧回调只能被丢弃，不能跨模块自行重试或启动回答。
 
 `chunk-final` 只代表该 chunk 文本稳定。turn assembler 同时消费 VAD 的自然 utterance end、分段边界和 ASR chunk 状态，只有末段已识别、前序 chunk 已按序收齐且未发生 transcript gap 时才能发 `InterviewerTurnCommitted`。强切 continuation 不能冒充自然 utterance end。
 
-这些是 Agent 内部契约。desktop worker 命令帧只做面试 start/stop/PCM 输入及面试 UI event 输出；`InterviewChange` 是 renderer 所需的投影，可独立于内部事件演进。IPC ChannelMap 仍按仓库约定集中在 `packages/shared/src/channels.ts`，但不把 provider 事件或 AVP 事件塞入 shared。未来 AVP 网络协议有独立版本、认证和序列化责任，只有网关接入排期后再定稿。
+这些是 Agent 内部契约。worker 通过独立的 `interview-event` 上行帧传递 `InterviewWorkerEvent` DTO；Agent worker adapter 显式从领域事件投影到线协议，desktop main 再投影成 renderer 使用的 `InterviewChange`，各层可独立演进。start/stop/PCM 下行命令要在 Agent 面试运行时能实际消费时再加入，不能先发布无处理逻辑的空命令。IPC ChannelMap 仍按仓库约定集中在 `packages/shared/src/channels.ts`，但不把 provider 事件或 AVP 事件塞入 shared。未来 AVP 网络协议有独立版本、认证和序列化责任，只有网关接入排期后再定稿。
 
 ### 并行开发规则
 
@@ -66,12 +78,12 @@ interview runtime composition
 
 按以下阶段推进。每阶段先合并接口与测试，再并行开发已有契约覆盖的模块；阶段验收不过，不把问题推给下一层兜底。
 
-1. **冻结领域词汇与生命周期。** 统一 `source`、`sessionId`、`utteranceId`、`chunkIndex`、音频时间和 `generation` 的含义；画清 start、stop、error、restart 的状态转移。完成内部 contracts 与 IPC 投影测试，不写 VAD/ASR/LLM 实现。通过条件：类型不能把 chunk-final 与 turn-committed 混为一谈，stop 后旧 session 结果一律不可见。
-2. **打牢 PCM 与音频帧边界。** 为 PCM16、采样率、声道、每帧时长、序号、时间戳和最大 payload 定规格；desktop 负责两路设备格式归一化和有界 IPC 分帧，Agent 拒绝格式错误、重复/倒序序号和跨 session 帧。先用固定 PCM fixture 测格式与时间轴，不需要会议软件。通过条件：同一输入可被逐帧重放，丢帧/队列溢出能观测，内存与消息大小有硬上限。
+1. **冻结领域词汇与生命周期。** 统一 `conversationId`（持久对话历史）、`sessionId`（一次监听运行）、`utteranceId`（VAD 语音段）、`source`、`chunkIndex`、音频时间和 `generation` 的含义；画清 start、stop、error、restart 的状态转移。完成内部 contracts 与 worker 事件帧发布测试，不写 VAD/ASR/LLM 实现。renderer IPC projection 在桌面采集接线阶段单独测试。通过条件：监听重启保留 conversationId 并创建新 sessionId；类型不能把 chunk-final 与 turn-committed 混为一谈；停止后旧 session 结果一律不可见。
+2. **打牢 PCM 与音频帧边界。** 首个接入 source 为 Windows 系统播放 loopback，统一标记为 `interviewer`；候选人麦克风暂不接。为 PCM16、采样率、声道、每帧时长、序号、sample-frame 时间轴和最大 payload 定规格；desktop 负责系统音频格式归一化和有界分帧，Agent `audio/` ingress 在未监听、跨 session、格式错误、重复/倒序或重叠音频时拒绝帧。发现序号或 sample 时间有缺口时，接受后续帧并发布 gap 事件，同时推进游标，避免一次丢帧永久堵住该音轨。先用固定 PCM fixture 测格式与时间轴，不需要会议软件。通过条件：同一输入可被逐帧重放，丢帧/队列溢出能观测，内存与消息大小有硬上限。
 3. **独立实现并评估 VAD 与 segmenter。** VAD 检测器只输出 speech activity；segmenter 单独管理 pre-roll、hangover、最大段长、低能量切点、重叠区间、flush 和丢弃。先固定二者接口，再用有标注的静音、短词、停顿、连续长句和噪声样本评估算法；算法选型通过实测决定，不能以 demo 音频调参后宣称可靠。通过条件：边界指标、误触发/漏检、起始辅音保留、最长缓存和尾段行为均有测试及记录，调阈值不改 ASR/reply。
 4. **独立打牢 Qwen HTTP adapter。** 输入预制 `AudioSegment` fixture，测试 PCM→RIFF/WAV、multipart 字段、语言、20 MiB/60 秒限制、timeout、503/Retry-After、取消、队列上限与迟到响应。使用假的 HTTP server，不依赖实时采集。通过条件：错误归一化且不泄漏敏感响应，响应乱序能按 segment id 交付，队列饱和不会无限积压。
 5. **独立打牢转录聚合与 turn assembler。** 使用手写 transcript event 序列，不连真实 provider；验证乱序/重复/缺失 chunk、重叠去重、continuation、自然结束、turn-settle 超时和 transcript gap。通过条件：只有完整、无缺段的 interviewer turn 能提交最终回答输入；临时 turn 与 committed turn 类型和状态明确区分。
-6. **独立打牢 AI 回复 workflow。** 仅依赖 `InterviewerTurn`、question policy、`AnswerGenerator` 和取消端口；fake generator 验证静默问题不回答、更新 turn 取消旧 generation、旧流不覆盖新答案、候选人音频只补上下文、停止时释放 run。之后再接现有文本模型流，不能让其直接消费 PCM/VAD/provider 事件。通过条件：回复模块测试无需启动 VAD/HTTP，也不修改其测试即可替换 transcript 来源。
+6. **独立打牢 AI 回复 workflow。** 仅依赖 `InterviewerTurnEvent`、question policy、`AnswerGenerator` 和取消端口；fake generator 验证 interviewer `turn-started` 立即取消旧 generation、provisional/committed turn 更新后不采纳旧流、静默问题不回答、候选人音频只补上下文、停止时释放 run。之后再接现有文本模型流，不能让其直接消费 PCM/VAD/provider 事件。通过条件：回复模块测试无需启动 VAD/HTTP，也不修改其测试即可替换 transcript 来源。
 7. **由薄 composition root 做组合与故障演练。** 用 fake audio/VAD/provider/generator 测完整生命周期、两个 source 隔离、重启、worker 退出、队列溢出、多个并发回调及清理顺序。通过条件：runtime 只装配和转发明确事件，不出现算法分支或供应商字段。
 8. **最后接 Windows capture、IPC 与 UI。** 验证权限、实际输出设备、双路采集、窗口关闭和隐身行为；UI 只展示采集/分段识别/turn/回答状态及错误。通过条件：真实会议样本端到端记录识别准确率、speech-end→转录、speech-end→首条有用建议的 P50/P95、队列高水位和 gap；UI 文案准确标为批式分段识别。
 
@@ -93,7 +105,7 @@ interview runtime composition
 - **把所有状态放进单个 `InterviewRuntime`：** 初期文件少，但 VAD、ASR、turn 与 LLM 取消将互相调用，任何并行改动都会争用状态机；舍弃。保留一个薄 runtime 作为组合根。
 - **直接把 OpenAI Realtime/AVP 事件作为内部领域事件：** 当前 Qwen HTTP 无 WS，批式模式没有 partial；把网络协议用作内部类型会迫使 VAD、UI 和回答编造或理解 provider 事件；舍弃。内部事件先按面试领域定义，网络协议以后独立映射。
 - **ASR provider 自己实现 VAD 与回答触发：** 可快速跑出 demo，但更换 HTTP/WS provider 会改产品策略，VAD 算法也无法独立评估；舍弃。VAD 只产出音频边界，turn assembler 决定轮次完成，reply workflow 决定回答。
-- **让回答工作流监听 VAD speech-start 和 transcript delta：** 可更早取消旧回答，但让回答实现依赖低层噪声/partial 语义；舍弃。由 reply workflow 消费稳定的 `InterviewerTurnStarted/Updated/Committed` 事件，并以版本取消旧 run。
+- **让回答工作流直接监听 VAD speech-start 和 transcript delta：** 可以及时取消旧回答，但会让回复模块依赖低层噪声和 ASR partial 语义；舍弃。VAD onset 由 turn assembler 映射为稳定的 interviewer `turn-started` 事件，reply workflow 收到后立即取消旧 run。
 
 ## 验收标准
 

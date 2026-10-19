@@ -2,6 +2,7 @@ import { createServer, type Server } from "node:http";
 import type { AgentCommand, AgentFrame, AgentTransport } from "@answra/agent";
 import { startAgentHost } from "@answra/agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { conversationId, sessionId, utteranceId } from "../../src/interview/contracts";
 
 /** 假传输：记录上行帧、允许下行命令。证明命令分发不依赖 Electron。 */
 function createHarness() {
@@ -33,6 +34,64 @@ describe("agent worker host", () => {
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
+  });
+
+  it("publishes typed interview domain events over the worker transport", () => {
+    const harness = createHarness();
+    const host = startAgentHost({ transport: harness.transport });
+    const event = {
+      type: "session-started" as const,
+      sessionId: sessionId("capture-1"),
+      conversationId: conversationId("active-exam-conversation"),
+    };
+
+    host.emitInterviewEvent(event);
+
+    expect(harness.frames).toContainEqual({
+      version: 1,
+      type: "interview-event",
+      event,
+    });
+    host.dispose();
+    host.emitInterviewEvent(event);
+    expect(harness.frames).toHaveLength(1);
+  });
+
+  it("projects transcript events into serializable worker DTOs", () => {
+    const harness = createHarness();
+    const host = startAgentHost({ transport: harness.transport });
+    host.emitInterviewEvent({
+      type: "transcript-event",
+      event: {
+        kind: "partial",
+        sessionId: sessionId("capture-1"),
+        source: "interviewer",
+        utteranceId: utteranceId("utterance-1"),
+        chunkIndex: 0,
+        startSample: 0,
+        endSample: 1_600,
+        revision: 1,
+        text: "请介绍一下",
+      },
+    });
+
+    const frame = harness.frames[0];
+    expect(frame).toMatchObject({
+      version: 1,
+      type: "interview-event",
+      event: {
+        type: "transcript-event",
+        event: {
+          kind: "partial",
+          sessionId: "capture-1",
+          utteranceId: "utterance-1",
+          startSample: 0,
+          endSample: 1_600,
+          text: "请介绍一下",
+        },
+      },
+    });
+    expect(structuredClone(frame)).toEqual(frame);
   });
 
   async function startUnauthorizedServer(): Promise<string> {

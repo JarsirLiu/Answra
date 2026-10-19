@@ -5,6 +5,103 @@ import type {
   ConversationModelConfig,
 } from "@answra/shared";
 
+export interface InterviewWorkerTranscriptChunk {
+  utteranceId: string;
+  chunkIndex: number;
+  startSample: number;
+  endSample: number;
+  text: string;
+}
+
+export interface InterviewWorkerTurn {
+  sessionId: string;
+  conversationId: string;
+  turnId: string;
+  version: number;
+  status: "provisional" | "committed" | "incomplete";
+  chunks: readonly InterviewWorkerTranscriptChunk[];
+  missingChunkIndexes: readonly number[];
+}
+
+/** Serializable worker DTOs intentionally do not expose Agent domain types. */
+export type InterviewWorkerEvent =
+  | { type: "session-started"; sessionId: string; conversationId: string }
+  | {
+      type: "session-state-changed";
+      sessionId: string;
+      conversationId: string;
+      state: "starting" | "listening" | "stopping" | "stopped" | "failed";
+    }
+  | {
+      type: "session-failed";
+      sessionId: string;
+      conversationId: string;
+      code: "capture-failed" | "runtime-failed";
+    }
+  | { type: "session-stopped"; sessionId: string; conversationId: string }
+  | {
+      type: "transcript-event";
+      event:
+        | {
+            kind: "partial" | "chunk-final";
+            sessionId: string;
+            source: "interviewer" | "candidate";
+            utteranceId: string;
+            chunkIndex: number;
+            startSample: number;
+            endSample: number;
+            revision: number;
+            text: string;
+          }
+        | {
+            kind: "error";
+            sessionId: string;
+            source: "interviewer" | "candidate";
+            utteranceId: string;
+            chunkIndex: number;
+            startSample: number;
+            endSample: number;
+            revision: number;
+            code:
+              | "invalid-audio"
+              | "audio-too-long"
+              | "queue-full"
+              | "timeout"
+              | "unauthorized"
+              | "provider-unavailable"
+              | "provider-error"
+              | "cancelled";
+            retryable: boolean;
+          };
+    }
+  | {
+      type: "turn-started";
+      sessionId: string;
+      conversationId: string;
+      turnId: string;
+      version: number;
+      startedAtSample: number;
+    }
+  | { type: "turn-updated"; turn: InterviewWorkerTurn & { status: "provisional" } }
+  | { type: "turn-committed"; turn: InterviewWorkerTurn & { status: "committed" } }
+  | { type: "turn-incomplete"; turn: InterviewWorkerTurn & { status: "incomplete" } }
+  | {
+      type: "audio-gap";
+      sessionId: string;
+      source: "interviewer" | "candidate";
+      expectedSequence: number;
+      receivedSequence: number;
+      expectedStartSample: number;
+      receivedStartSample: number;
+    }
+  | {
+      type: "reply-invalidated";
+      sessionId: string;
+      turnId: string;
+      generation: number;
+      reason: "new-interviewer-speech" | "newer-turn" | "session-stopped";
+    };
+
 /**
  * desktop main ↔ agent worker 的线协议：命令下行、帧上行。
  * 只有这里出现在 utility process 边界上，会话与模型细节留在 src 内部。
@@ -28,5 +125,7 @@ export type AgentFrame =
   | { version: 1; type: "response"; id: string; ok: true; value?: unknown }
   | { version: 1; type: "response"; id: string; ok: false; error: string }
   | { version: 1; type: "change"; change: ConversationChange }
+  /** Worker DTOs cross to desktop-main for projection into renderer contracts. */
+  | { version: 1; type: "interview-event"; event: InterviewWorkerEvent }
   /** 反向请求：云端调用收到 401 时，请宿主换一次新的访问令牌。 */
   | { version: 1; type: "token-request"; id: string; forceRefresh: boolean };

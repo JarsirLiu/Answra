@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import type { AgentCommand, AgentFrame } from "@answra/agent";
+import type { AgentCommand, AgentFrame, InterviewWorkerEvent } from "@answra/agent";
 import type {
   ConversationChange,
   ConversationModelConfig,
@@ -26,6 +26,7 @@ export class AgentService {
   private worker?: UtilityProcess;
   private readonly pending = new Map<string, Pending>();
   private readonly listeners = new Set<(change: ConversationChange) => void>();
+  private readonly interviewListeners = new Set<(event: InterviewWorkerEvent) => void>();
   /** 已下发给 worker 的配置指纹；配置随登录态变化，按需重下发而不是外部驱动。 */
   private configured?: string;
 
@@ -52,6 +53,11 @@ export class AgentService {
   onChange(listener: (change: ConversationChange) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  onInterviewEvent(listener: (event: InterviewWorkerEvent) => void): () => void {
+    this.interviewListeners.add(listener);
+    return () => this.interviewListeners.delete(listener);
   }
 
   async send(command: ConversationSendCommand): Promise<{ runId: string }> {
@@ -112,6 +118,10 @@ export class AgentService {
     if (frame.version !== 1) return;
     if (frame.type === "change") {
       for (const listener of this.listeners) listener(frame.change);
+      return;
+    }
+    if (frame.type === "interview-event") {
+      for (const listener of this.interviewListeners) listener(frame.event);
       return;
     }
     // worker 反向请求平台能力（当前只有令牌刷新）：平台实现留在 main，agent 只发请求。

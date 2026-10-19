@@ -16,4 +16,4 @@ export type { ConversationStore } from "./conversation/store";
 export { MemoryConversationStore } from "./conversation/store";
 export type { AgentHost, AgentHostOptions, AgentTransport } from "./worker/host";
 export { startAgentHost } from "./worker/host";
-export type { AgentCommand, AgentFrame } from "./worker/protocol";
+export type { AgentCommand, AgentFrame, InterviewWorkerEvent } from "./worker/protocol";

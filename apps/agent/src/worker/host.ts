@@ -1,5 +1,7 @@
 import { ConversationRuntime } from "../conversation/runtime";
 import { type ConversationStore, MemoryConversationStore } from "../conversation/store";
+import type { InterviewDomainEvent } from "../interview/contracts";
+import { toInterviewWorkerEvent } from "./interviewProjection";
 import type { AgentCommand, AgentFrame } from "./protocol";
 
 /**
@@ -22,6 +24,8 @@ export interface AgentHostOptions {
 
 export interface AgentHost {
   runtime: ConversationRuntime;
+  /** Publishes a domain event for desktop-main projection into renderer DTOs. */
+  emitInterviewEvent(event: InterviewDomainEvent): void;
   dispose(): void;
 }
 
@@ -70,6 +74,11 @@ export function startAgentHost({
     store,
     tokenProvider: requestToken,
   });
+
+  function emitInterviewEvent(event: InterviewDomainEvent): void {
+    if (disposed) return;
+    transport.send({ version: 1, type: "interview-event", event: toInterviewWorkerEvent(event) });
+  }
 
   let disposed = false;
 
@@ -150,5 +159,5 @@ export function startAgentHost({
     }
   }
 
-  return { runtime, dispose };
+  return { runtime, emitInterviewEvent, dispose };
 }
