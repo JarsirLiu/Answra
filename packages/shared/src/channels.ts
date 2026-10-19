@@ -106,6 +106,14 @@ export const ConversationChannels = {
   GetSnapshot: "answra:conversation:get-snapshot",
   Create: "answra:conversation:create",
   ReadEvents: "answra:conversation:read-events",
+  /** 读取模型来源与本地端点摘要（不含 API Key）。 */
+  GetConfig: "answra:conversation:get-config",
+  /** 切换模型来源并保存本地端点；Key 留空表示沿用已保存的值。 */
+  Configure: "answra:conversation:configure",
+  /** 仅在用户点开明文时读取本机保存的 API Key。 */
+  GetApiKey: "answra:conversation:get-api-key",
+  /** 清除本地端点与 Key，恢复云端订阅。 */
+  ClearConfig: "answra:conversation:clear-config",
   Change: "answra:conversation:change",
 } as const;
 
@@ -250,6 +258,11 @@ export const DesktopCapability = {
 export interface ConversationCapabilityEndpoint {
   baseUrl: string;
   model: string;
+  /**
+   * 凭据来源：`cloud` 使用账号令牌并在 401 时刷新重试；`local` 使用本机保存的
+   * API Key，不触发登录、不刷新令牌。缺省按 `cloud` 处理。
+   */
+  auth?: "cloud" | "local";
 }
 
 /**
@@ -263,6 +276,39 @@ export interface ConversationModelConfig {
   chat: ConversationCapabilityEndpoint;
   /** 截图答题能力（`DesktopCapability.ImageAnswer`）。 */
   answer: ConversationCapabilityEndpoint;
+}
+
+/**
+ * 模型调用来源：`local` 走本机保存的自定义端点（OpenAI 兼容），`cloud` 走云端订阅。
+ *
+ * 这是显式切换，不是优先级兜底：选哪一路就只用哪一路。本地来源仅在开发态可选，
+ * 打包版固定云端，避免绕过订阅。
+ */
+export type ConversationModelSource = "local" | "cloud";
+
+/** 保存给主进程的模型设置；`apiKey` 留空表示沿用已保存的 Key。 */
+export interface ConversationModelSettings {
+  source: ConversationModelSource;
+  /** OpenAI 兼容地址，如 `http://127.0.0.1:1234/v1`。 */
+  baseUrl: string;
+  /** 对话模型 ID。 */
+  model: string;
+  /** 截图答题模型 ID；留空沿用 `model`。 */
+  answerModel?: string;
+  /** 本地端点的 API Key；留空表示沿用已保存的值。 */
+  apiKey?: string;
+}
+
+/** 渲染层可见的模型设置摘要（不含任何凭据）。 */
+export interface ConversationModelSettingsView {
+  source: ConversationModelSource;
+  /** 是否允许选择本地来源（仅开发态为 true）。 */
+  localAvailable: boolean;
+  baseUrl: string;
+  model: string;
+  answerModel: string;
+  /** 本地端点是否已配置可用。 */
+  configured: boolean;
 }
 
 export interface ConversationSendRequest {
@@ -686,6 +732,19 @@ export interface ConversationChannelMap {
   [ConversationChannels.ReadEvents]: {
     request: { conversationId: string; afterRevision: number };
     response: ConversationChange[];
+  };
+  [ConversationChannels.GetConfig]: {
+    request: undefined;
+    response: ConversationModelSettingsView;
+  };
+  [ConversationChannels.Configure]: {
+    request: ConversationModelSettings;
+    response: ConversationModelSettingsView;
+  };
+  [ConversationChannels.GetApiKey]: { request: undefined; response: { apiKey: string | null } };
+  [ConversationChannels.ClearConfig]: {
+    request: undefined;
+    response: ConversationModelSettingsView;
   };
   [ConversationChannels.Change]: { request: undefined; response: undefined };
 }

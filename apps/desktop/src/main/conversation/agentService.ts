@@ -1,23 +1,24 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import type { AgentCommand, AgentFrame } from "@answra/agent";
-import {
-  authRequiredError,
-  type ConversationChange,
-  type ConversationModelConfig,
-  type ConversationSendCommand,
-  type ConversationSendRequest,
+import type {
+  ConversationChange,
+  ConversationModelConfig,
+  ConversationSendCommand,
+  ConversationSendRequest,
 } from "@answra/shared";
 import { app, type UtilityProcess, utilityProcess } from "electron";
+import type { ResolvedModel } from "./modelRouter";
 
 type Pending = { resolve: (value: unknown) => void; reject: (error: Error) => void };
 
 /** 云端调用的凭据与端点全部来自主进程（token 只在 main 内存里），agent 不读盘、不落盘。 */
 export interface AgentServiceDeps {
-  /** 当前可用的云端模型配置；未登录或服务端目录缺端点时返回 null。 */
-  modelConfig: () => ConversationModelConfig | null;
-  /** 取一次可用访问令牌；未登录抛 `auth-required`，暂时不可用抛可重试错误。 */
-  accessToken: (options?: { forceRefresh?: boolean }) => Promise<string>;
+  /**
+   * 解析本次调用要用的端点与凭据（本地自定义端点或云端订阅，由设置显式选择）。
+   * 未登录/未配置时抛错：云端是 `auth-required`，本地是配置提示。
+   */
+  resolveModel: (options?: { forceRefresh?: boolean }) => Promise<ResolvedModel>;
   log?: (message: string, error?: unknown) => void;
 }
 
@@ -55,12 +56,9 @@ export class AgentService {
 
   async send(command: ConversationSendCommand): Promise<{ runId: string }> {
     validateSendRequest(command.request);
-    const config = this.deps.modelConfig();
-    // 未登录或服务端目录不可用：都以「需要登录」上报，渲染层给出统一提示；
-    // 真实授权始终由服务端强制，这里只把前置条件变成可识别的信号。
-    if (!config) throw authRequiredError();
+    // 来源由设置显式选择：本地端点不需要登录，云端订阅未登录时 resolveModel 抛统一失败码。
+    const { config, accessToken } = await this.deps.resolveModel();
     await this.ensureConfigured(config);
-    const accessToken = await this.deps.accessToken();
     const type = command.operation === "chat.send" ? "chat-send" : "answer-run";
     return (await this.request(type, { ...command, accessToken })) as { runId: string };
   }
@@ -132,7 +130,7 @@ export class AgentService {
     const worker = this.worker;
     if (!worker) return;
     try {
-      const accessToken = await this.deps.accessToken({ forceRefresh: frame.forceRefresh });
+      const { accessToken } = await this.deps.resolveModel({ forceRefresh: frame.forceRefresh });
       worker.postMessage({ id: frame.id, type: "token", accessToken } as AgentCommand);
     } catch (error) {
       const message = error instanceof Error ? error.message : "令牌刷新失败";

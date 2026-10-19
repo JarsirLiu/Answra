@@ -1,4 +1,10 @@
-import type { AuthStatus, DesktopBridge } from "@answra/shared";
+import type {
+  AuthStatus,
+  ConversationModelSettingsView,
+  ConversationModelSource,
+  DesktopBridge,
+} from "@answra/shared";
+import { Eye, EyeOff } from "lucide-react";
 import { useEffect, useState } from "react";
 import { RangeSlider } from "../controls/RangeSlider";
 import { SurfaceButton } from "../controls/SurfaceButton";
@@ -44,9 +50,10 @@ function accountHint(status: AuthStatus | null): string {
   return "模型调用由服务端额度控制，未开通时会提示原因";
 }
 
-/** 设置面板：账户/常规两组；控件一律用统一令牌控件，不用原生样式。
+/** 设置面板：账户/模型/常规三组；控件一律用统一令牌控件，不用原生样式。
  *
- * 没有「模型」分组：模型端点、上游模型与额度全部由服务端决定，客户端不再保存任何模型配置。
+ * 「模型」分组是显式二选一：本地自定义端点（开发态可用，免登录）或云端订阅（需登录）。
+ * 打包版不出现本地来源，固定云端。
  */
 export function SettingsPanel({
   bridge,
@@ -65,8 +72,20 @@ export function SettingsPanel({
   const [authError, setAuthError] = useState("");
   const [authNotice, setAuthNotice] = useState("");
 
+  const [modelView, setModelView] = useState<ConversationModelSettingsView | null>(null);
+  const [source, setSource] = useState<ConversationModelSource>("cloud");
+  const [baseUrl, setBaseUrl] = useState("");
+  const [model, setModel] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [revealKey, setRevealKey] = useState(false);
+  const [modelBusy, setModelBusy] = useState(false);
+  const [modelError, setModelError] = useState("");
+  const [modelNotice, setModelNotice] = useState("");
+
   const getAuthStatus = bridge?.getAuthStatus;
   const onAuthStatus = bridge?.onAuthStatus;
+  const getConversationConfig = bridge?.getConversationConfig;
+  const getConversationApiKey = bridge?.getConversationApiKey;
 
   useEffect(() => {
     if (!getAuthStatus) return;
@@ -106,6 +125,27 @@ export function SettingsPanel({
     }
   }
 
+  useEffect(() => {
+    if (!getConversationConfig) return;
+    let cancelled = false;
+    Promise.all([
+      getConversationConfig(),
+      getConversationApiKey?.() ?? Promise.resolve({ apiKey: null }),
+    ])
+      .then(([view, key]) => {
+        if (cancelled) return;
+        setModelView(view);
+        setSource(view.source);
+        setBaseUrl(view.baseUrl);
+        setModel(view.model);
+        setApiKey(key.apiKey ?? "");
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [getConversationConfig, getConversationApiKey]);
+
   async function signOut() {
     if (!bridge?.logoutAccount) return;
     setAuthBusy(true);
@@ -117,6 +157,48 @@ export function SettingsPanel({
       setAuthError(error instanceof Error ? error.message : "退出登录失败");
     } finally {
       setAuthBusy(false);
+    }
+  }
+
+  async function saveModelSettings() {
+    if (!bridge?.configureConversation) return;
+    setModelBusy(true);
+    setModelError("");
+    setModelNotice("");
+    try {
+      const view = await bridge.configureConversation({
+        source,
+        baseUrl,
+        model,
+        apiKey: apiKey || undefined,
+      });
+      setModelView(view);
+      setModelNotice("已保存");
+    } catch (error) {
+      setModelError(error instanceof Error ? error.message : "保存失败");
+    } finally {
+      setModelBusy(false);
+    }
+  }
+
+  async function clearModelSettings() {
+    if (!bridge?.clearConversationConfig) return;
+    setModelBusy(true);
+    setModelError("");
+    setModelNotice("");
+    try {
+      const view = await bridge.clearConversationConfig();
+      setModelView(view);
+      setSource(view.source);
+      setBaseUrl(view.baseUrl);
+      setModel(view.model);
+      setApiKey("");
+      setRevealKey(false);
+      setModelNotice("已清除本地配置");
+    } catch (error) {
+      setModelError(error instanceof Error ? error.message : "清除失败");
+    } finally {
+      setModelBusy(false);
     }
   }
 
@@ -163,6 +245,128 @@ export function SettingsPanel({
             {authError && (
               <p className="setting-error" role="alert">
                 {authError}
+              </p>
+            )}
+          </section>
+        )}
+
+        {/* 打包版 localAvailable=false：本地来源不可用，整块「模型」分组不渲染，避免留下空壳分组。 */}
+        {modelView?.localAvailable && (
+          <section className="settings-group">
+            <h2>模型</h2>
+            <div className="setting-row">
+              <span>
+                <strong>模型来源</strong>
+              </span>
+              <span className="setting-source-switch">
+                <SurfaceButton
+                  aria-pressed={source === "local"}
+                  className="setting-source-option"
+                  onClick={() => setSource("local")}
+                  title="使用本机保存的 OpenAI 兼容端点，不需要登录"
+                >
+                  本地模型
+                </SurfaceButton>
+                <SurfaceButton
+                  aria-pressed={source === "cloud"}
+                  className="setting-source-option"
+                  onClick={() => setSource("cloud")}
+                  title="使用云端订阅，需要登录"
+                >
+                  云端订阅
+                </SurfaceButton>
+              </span>
+            </div>
+            {source === "local" ? (
+              <>
+                <label className="setting-field">
+                  <span>OpenAI 兼容地址</span>
+                  <input
+                    autoComplete="off"
+                    onChange={(event) => setBaseUrl(event.target.value)}
+                    placeholder="http://127.0.0.1:1234/v1"
+                    spellCheck={false}
+                    value={baseUrl}
+                  />
+                </label>
+                <label className="setting-field">
+                  <span>模型 ID</span>
+                  <input
+                    autoComplete="off"
+                    onChange={(event) => setModel(event.target.value)}
+                    placeholder="必填"
+                    spellCheck={false}
+                    value={model}
+                  />
+                </label>
+                <label className="setting-field">
+                  <span>API Key（可选）</span>
+                  <span className="setting-secret-field">
+                    <input
+                      autoComplete="off"
+                      onChange={(event) => setApiKey(event.target.value)}
+                      placeholder="留空沿用已保存的 Key"
+                      spellCheck={false}
+                      type={revealKey ? "text" : "password"}
+                      value={apiKey}
+                    />
+                    <SurfaceButton
+                      aria-pressed={revealKey}
+                      className="setting-secret-toggle"
+                      onClick={() => setRevealKey((value) => !value)}
+                      title={revealKey ? "隐藏" : "显示"}
+                      variant="quiet"
+                    >
+                      {revealKey ? <EyeOff /> : <Eye />}
+                    </SurfaceButton>
+                  </span>
+                </label>
+                <div className="setting-model-footer">
+                  <span
+                    className={
+                      modelNotice ? "setting-status setting-status--saved" : "setting-status"
+                    }
+                  >
+                    {modelNotice === "已保存"
+                      ? "已保存"
+                      : modelView.configured
+                        ? "已配置"
+                        : "尚未配置"}
+                  </span>
+                  <span className="setting-model-actions">
+                    <SurfaceButton
+                      className="setting-action"
+                      disabled={modelBusy}
+                      onClick={() => void saveModelSettings()}
+                      variant="primary"
+                    >
+                      保存
+                    </SurfaceButton>
+                    {modelView.configured && (
+                      <SurfaceButton
+                        className="setting-action"
+                        disabled={modelBusy}
+                        onClick={() => void clearModelSettings()}
+                        variant="quiet"
+                      >
+                        清除
+                      </SurfaceButton>
+                    )}
+                  </span>
+                </div>
+                <p className="setting-status">本地模式不需要登录，密钥只保存在本机。</p>
+              </>
+            ) : (
+              <p className="setting-status">云端订阅：登录后按服务端额度调用</p>
+            )}
+            {modelError && (
+              <p className="setting-error" role="alert">
+                {modelError}
+              </p>
+            )}
+            {modelNotice && modelNotice !== "已保存" && (
+              <p className="setting-status" role="status">
+                {modelNotice}
               </p>
             )}
           </section>

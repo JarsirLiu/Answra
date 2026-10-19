@@ -403,3 +403,130 @@ describe("ephemeral conversation runtime", () => {
     throw new Error(`run timed out: ${runId}`);
   }
 });
+
+describe("local endpoint runtime", () => {
+  function localEndpoint(port: number) {
+    return { baseUrl: `http://127.0.0.1:${port}/v1`, model: "local-model", auth: "local" as const };
+  }
+
+  function createTrackedRuntime(changes: ConversationChange[], tokenProvider?: unknown) {
+    return new ConversationRuntime({
+      emit: (change) => changes.push(change),
+      tokenProvider: tokenProvider as
+        | ((options: { forceRefresh: boolean }) => Promise<string>)
+        | undefined,
+    });
+  }
+
+  async function waitForRun(changes: ConversationChange[], runId: string): Promise<void> {
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      if (
+        changes.some(
+          (event) =>
+            event.type === "event" &&
+            event.event.runId === runId &&
+            (event.event.chunk.type === "finish" || event.event.chunk.type === "abort"),
+        )
+      )
+        return;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error(`run timed out: ${runId}`);
+  }
+
+  async function startServer(
+    handler: (request: { authorization?: string }) => { status: number; body: string },
+  ): Promise<{ server: Server; port: number }> {
+    const server = createServer((request, response) => {
+      const outcome = handler({ authorization: request.headers.authorization });
+      response.writeHead(outcome.status, { "content-type": "text/event-stream" });
+      response.end(outcome.body);
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("test server did not bind");
+    return { server, port: address.port };
+  }
+
+  it("sends the saved api key as a bearer token", async () => {
+    const authorizations: Array<string | undefined> = [];
+    const changes: ConversationChange[] = [];
+    const { server, port } = await startServer((request) => {
+      authorizations.push(request.authorization);
+      return { status: 200, body: streamBody("本地回复") };
+    });
+    const runtime = createTrackedRuntime(changes);
+    try {
+      runtime.configure({ chat: localEndpoint(port), answer: localEndpoint(port) });
+      const { runId } = await runtime.runAnswer(
+        "local-conversation",
+        { text: "hello", images: [] },
+        "local-key",
+      );
+      await waitForRun(changes, runId);
+      expect(authorizations).toEqual(["Bearer local-key"]);
+    } finally {
+      runtime.dispose();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it("drops the authorization header when no api key is saved", async () => {
+    const authorizations: Array<string | undefined> = [];
+    const changes: ConversationChange[] = [];
+    const { server, port } = await startServer((request) => {
+      authorizations.push(request.authorization);
+      return { status: 200, body: streamBody("匿名回复") };
+    });
+    const runtime = createTrackedRuntime(changes);
+    try {
+      runtime.configure({ chat: localEndpoint(port), answer: localEndpoint(port) });
+      const { runId } = await runtime.runAnswer(
+        "local-conversation",
+        { text: "hello", images: [] },
+        "",
+      );
+      await waitForRun(changes, runId);
+      expect(authorizations).toEqual([undefined]);
+    } finally {
+      runtime.dispose();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it("surfaces a 401 from a local endpoint as a plain error without token refresh", async () => {
+    const authorizations: Array<string | undefined> = [];
+    const changes: ConversationChange[] = [];
+    const { server, port } = await startServer((request) => {
+      authorizations.push(request.authorization);
+      return {
+        status: 401,
+        body: JSON.stringify({
+          error: { message: "invalid api key", type: "authentication_error", code: "unauthorized" },
+        }),
+      };
+    });
+    const runtime = createTrackedRuntime(changes, async () => "refreshed-token");
+    try {
+      runtime.configure({ chat: localEndpoint(port), answer: localEndpoint(port) });
+      const { runId } = await runtime.runAnswer(
+        "local-conversation",
+        { text: "hello", images: [] },
+        "local-key",
+      );
+      await waitForRun(changes, runId);
+      // 本地 401 不触发令牌刷新，也不伪装成「需要登录」：服务端消息如实呈现。
+      expect(authorizations).toEqual(["Bearer local-key"]);
+      const events = changes.flatMap((change) => (change.type === "event" ? [change.event] : []));
+      const errorChunk = events.find(
+        (event) => event.runId === runId && event.chunk.type === "error",
+      );
+      expect(
+        errorChunk && errorChunk.chunk.type === "error" ? errorChunk.chunk.errorText : "",
+      ).not.toContain("auth-required");
+    } finally {
+      runtime.dispose();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+});

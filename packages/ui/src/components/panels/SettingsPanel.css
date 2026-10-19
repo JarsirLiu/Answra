@@ -131,3 +131,42 @@
   justify-content: space-between;
   padding: 8px 0;
 }
+.setting-model-actions {
+  display: flex;
+  gap: 6px;
+}
+/* 模型来源切换：分段控件——外框是浅色轨道，两段贴合，
+   选中段用薄荷实底，未选段在轨道上保持安静，避免退化成飘着的文字。 */
+.setting-source-switch {
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 9px;
+  background: var(--field);
+  box-shadow: inset 0 0 0 1px var(--edge-line);
+}
+.setting-source-switch .setting-source-option {
+  min-width: 0;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 6px;
+  font-size: var(--font-xs);
+  font-weight: var(--label-weight);
+  color: var(--muted);
+  background: transparent;
+  box-shadow: none;
+}
+.setting-source-switch .setting-source-option:hover {
+  color: var(--ink);
+  background: var(--hover);
+}
+.setting-source-switch .setting-source-option[aria-pressed="true"] {
+  color: var(--mint-contrast);
+  background: var(--mint);
+  box-shadow: var(--shadow-ctl);
+}
+.setting-source-switch .setting-source-option[aria-pressed="true"]:hover {
+  color: var(--mint-contrast);
+  background: var(--mint);
+  filter: brightness(1.06);
+}

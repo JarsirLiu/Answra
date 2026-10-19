@@ -4,6 +4,8 @@ import type {
   AuthStatus,
   ContentSize,
   ConversationChange,
+  ConversationModelSettings,
+  ConversationModelSettingsView,
   ConversationSendCommand,
   ConversationSnapshot,
   DesktopAnnouncement,
@@ -101,6 +103,17 @@ export interface DesktopBridge {
   sendConversationMessage?: (command: ConversationSendCommand) => Promise<{ runId: string }>;
   cancelConversationRun?: (runId: string) => void;
   onConversationChange?: (listener: (change: ConversationChange) => void) => () => void;
+  // ---- 模型来源（本地自定义端点 / 云端订阅；可选，实现由 preload 注入） ----
+  /** 读取当前模型来源与本地端点摘要（不含 API Key）。 */
+  getConversationConfig?: () => Promise<ConversationModelSettingsView>;
+  /** 切换模型来源并保存本地端点；`apiKey` 留空表示沿用已保存的值。 */
+  configureConversation?: (
+    settings: ConversationModelSettings,
+  ) => Promise<ConversationModelSettingsView>;
+  /** 仅在渲染层需要明文时读取本机保存的 API Key。 */
+  getConversationApiKey?: () => Promise<{ apiKey: string | null }>;
+  /** 清除本地端点与 Key，恢复云端订阅。 */
+  clearConversationConfig?: () => Promise<ConversationModelSettingsView>;
   startInterview?: () => Promise<{ sessionId: string }>;
   stopInterview?: (sessionId: string) => void;
   sendInterviewAudioFrame?: (frame: InterviewAudioFrame) => void;

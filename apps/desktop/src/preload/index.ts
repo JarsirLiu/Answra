@@ -7,6 +7,7 @@ import {
   type ContentSize,
   type ConversationChange,
   ConversationChannels,
+  type ConversationModelSettings,
   type ConversationSendCommand,
   type DesktopBridge,
   type ImeCandidateAction,
@@ -144,8 +145,15 @@ const bridge: DesktopBridge = {
     const wrapped = (_event: Electron.IpcRendererEvent, change: ConversationChange) =>
       listener(change);
     ipcRenderer.on(ConversationChannels.Change, wrapped);
-    return () => ipcRenderer.removeListener(ConversationChannels.Change, wrapped);
+    return () => {
+      ipcRenderer.removeListener(ConversationChannels.Change, wrapped);
+    };
   },
+  getConversationConfig: () => ipcRenderer.invoke(ConversationChannels.GetConfig),
+  configureConversation: (settings: ConversationModelSettings) =>
+    ipcRenderer.invoke(ConversationChannels.Configure, settings),
+  getConversationApiKey: () => ipcRenderer.invoke(ConversationChannels.GetApiKey),
+  clearConversationConfig: () => ipcRenderer.invoke(ConversationChannels.ClearConfig),
   getWorkspaceRoot: () => ipcRenderer.invoke(WorkspaceChannels.GetRoot),
   pickWorkspaceRoot: () => ipcRenderer.invoke(WorkspaceChannels.PickRoot),
   listWorkspaceTree: () => ipcRenderer.invoke(WorkspaceChannels.ListTree),

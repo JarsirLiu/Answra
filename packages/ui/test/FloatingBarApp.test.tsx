@@ -726,16 +726,73 @@ describe("three-segment floating navigation", () => {
     expect(screen.getByRole("slider", { name: "前景透明度" })).toBeInTheDocument();
   });
 
-  it("no longer offers any local model configuration in settings", () => {
-    render(<FloatingBarApp bridge={createConversationBridge()} />);
+  it("offers local model configuration in development and switches to cloud subscription", async () => {
+    const bridge = {
+      ...createConversationBridge(),
+      getConversationConfig: vi.fn().mockResolvedValue({
+        source: "local",
+        localAvailable: true,
+        baseUrl: "http://127.0.0.1:1234/v1",
+        model: "local-model",
+        answerModel: "",
+        configured: true,
+      }),
+      getConversationApiKey: vi.fn().mockResolvedValue({ apiKey: "secret-key" }),
+      configureConversation: vi.fn().mockImplementation(async (settings) => ({
+        source: settings.source,
+        localAvailable: true,
+        baseUrl: settings.baseUrl,
+        model: settings.model,
+        answerModel: settings.answerModel ?? "",
+        configured: Boolean(settings.baseUrl && settings.model),
+      })),
+    };
+    render(<FloatingBarApp bridge={bridge} />);
     fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
 
-    // BYO 已移除：端点、模型与凭据全部由服务端决定，本地没有任何入口可以配置它们。
+    expect(await screen.findByRole("heading", { name: "模型" })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("http://127.0.0.1:1234/v1")).toHaveValue(
+      "http://127.0.0.1:1234/v1",
+    );
+    expect(screen.getByPlaceholderText("必填")).toHaveValue("local-model");
+    expect(screen.getByRole("button", { name: "保存" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "云端订阅" }));
     expect(screen.queryByPlaceholderText("http://127.0.0.1:1234/v1")).not.toBeInTheDocument();
-    expect(screen.queryByPlaceholderText("模型 ID")).not.toBeInTheDocument();
-    expect(screen.queryByPlaceholderText("必填")).not.toBeInTheDocument();
+    expect(screen.getByText("云端订阅：登录后按服务端额度调用")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "本地模型" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() =>
+      expect(bridge.configureConversation).toHaveBeenCalledWith(
+        expect.objectContaining({ source: "local", model: "local-model" }),
+      ),
+    );
+  });
+
+  it("hides local model configuration in packaged builds", async () => {
+    const bridge = {
+      ...createConversationBridge(),
+      getConversationConfig: vi.fn().mockResolvedValue({
+        source: "cloud",
+        localAvailable: false,
+        baseUrl: "",
+        model: "",
+        answerModel: "",
+        configured: false,
+      }),
+    };
+    render(<FloatingBarApp bridge={bridge} />);
+    fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
+
+    // 打包版整块「模型」分组不渲染，不留空壳标题
+    await screen.findByRole("heading", { name: "常规" });
+    expect(screen.queryByRole("heading", { name: "模型" })).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("http://127.0.0.1:1234/v1")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "保存" })).not.toBeInTheDocument();
-    expect(screen.getByRole("checkbox", { name: "跟随背景色" })).toBeInTheDocument();
+    expect(
+      screen.queryByText("当前版本使用云端订阅，登录后按服务端额度调用"),
+    ).not.toBeInTheDocument();
   });
 
   it("keeps ambient and stealth settings independent", async () => {

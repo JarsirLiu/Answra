@@ -218,6 +218,7 @@ export class AuthService {
     return {
       baseUrl: `${origin}${declared.path.slice(0, -CHAT_COMPLETIONS_SUFFIX.length)}`,
       model: declared.model || capabilityId,
+      auth: "cloud",
     };
   }
 

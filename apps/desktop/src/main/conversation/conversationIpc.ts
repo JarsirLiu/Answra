@@ -1,6 +1,7 @@
 import {
   authRequiredError,
   ConversationChannels,
+  type ConversationModelSettingsView,
   type ConversationSendCommand,
 } from "@answra/shared";
 import { ipcMain } from "electron";
@@ -13,23 +14,34 @@ import {
 } from "../window";
 import type { AgentService } from "./agentService";
 
+/** 模型设置侧的只读/写入面，由 `ModelRouter` 实现。 */
+export interface ConversationModelSettingsPort {
+  getView(): ConversationModelSettingsView;
+  save(input: unknown): Promise<ConversationModelSettingsView>;
+  clear(): Promise<ConversationModelSettingsView>;
+  revealApiKey(): Promise<string | null>;
+}
+
+export interface ConversationIpcDeps {
+  /** 发送门禁：本地来源直接放行，云端来源需要登录态。 */
+  canSend: () => boolean;
+  modelSettings: ConversationModelSettingsPort;
+}
+
 /**
- * @param isSignedIn 本机是否持有登录会话；模型调用是与云端能力绑定的入口，未登录直接
- *   以统一的失败码拒绝，渲染层据此提示登录。
+ * @param canSend 是否允许发起模型调用（本地来源或已登录）。
+ * @param modelSettings 模型来源与本地端点的读写面。
  */
-export function registerConversationIpc(
-  service: AgentService,
-  isSignedIn: () => boolean = () => true,
-): void {
+export function registerConversationIpc(service: AgentService, deps: ConversationIpcDeps): void {
   ipcMain.handle(ConversationChannels.Send, (event, payload: ConversationSendCommand) => {
     if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用方");
     if (payload?.operation === "chat.send" && payload.profileId !== "general-chat")
       throw new Error("对话能力配置无效");
     if (payload?.operation !== "chat.send" && payload?.operation !== "answer.run")
       throw new Error("AI 操作类型无效");
-    // 调用模型是需要登录的能力：未登录返回统一失败码，由渲染层提示登录。
-    // 真实授权始终由服务端强制，这里只把「未登录」变成可识别的信号，不做预门禁。
-    if (!isSignedIn()) throw authRequiredError();
+    // 云端来源需要登录：未登录返回统一失败码，由渲染层提示登录。
+    // 本地来源不需要登录，未配置时由 service 给出配置提示。
+    if (!deps.canSend()) throw authRequiredError();
     return service.send(payload);
   });
   ipcMain.handle(ConversationChannels.GetSnapshot, (event, payload: { conversationId: string }) => {
@@ -57,6 +69,22 @@ export function registerConversationIpc(
   ipcMain.on(ConversationChannels.Cancel, (event, payload: { runId: string }) => {
     if (!isWindowFromSender(getWindow(), event) || typeof payload?.runId !== "string") return;
     service.cancel(payload.runId);
+  });
+  ipcMain.handle(ConversationChannels.GetConfig, async (event) => {
+    if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用方");
+    return deps.modelSettings.getView();
+  });
+  ipcMain.handle(ConversationChannels.Configure, (event, settings: unknown) => {
+    if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用方");
+    return deps.modelSettings.save(settings);
+  });
+  ipcMain.handle(ConversationChannels.GetApiKey, async (event) => {
+    if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用方");
+    return { apiKey: await deps.modelSettings.revealApiKey() };
+  });
+  ipcMain.handle(ConversationChannels.ClearConfig, (event) => {
+    if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用方");
+    return deps.modelSettings.clear();
   });
   service.onChange(sendConversationChange);
 }

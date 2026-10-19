@@ -12,6 +12,8 @@ import { registerCaptureIpc } from "./capture/captureIpc";
 import { configureChromiumCompatibility } from "./chromiumCompatibility";
 import { AgentService } from "./conversation/agentService";
 import { registerConversationIpc } from "./conversation/conversationIpc";
+import { ModelRouter } from "./conversation/modelRouter";
+import { ModelSettingsStore, modelSettingsFilePath } from "./conversation/modelSettings";
 import { registerImeCandidateIpc } from "./ime/imeCandidateIpc";
 import { registerImeIpc } from "./ime/imeIpc";
 import { registerAmbientIpc } from "./ipc/ambientIpc";
@@ -53,10 +55,19 @@ const authService = new AuthService({
 });
 
 // 模型调用的端点与令牌都来自登录态：这里传惰性闭包，登录/刷新后自动生效，无需重启。
+const modelSettings = new ModelSettingsStore(modelSettingsFilePath(configDir));
+const modelRouter = new ModelRouter({
+  store: modelSettings,
+  localAvailable: !app.isPackaged,
+  cloud: {
+    modelConfig: () => authService.getDesktopModelConfig(),
+    hasSession: () => authService.hasSession(),
+    accessToken: (options) =>
+      options?.forceRefresh ? authService.refreshAccessToken() : authService.getAccessToken(),
+  },
+});
 const agentService = new AgentService({
-  modelConfig: () => authService.getDesktopModelConfig(),
-  accessToken: (options) =>
-    options?.forceRefresh ? authService.refreshAccessToken() : authService.getAccessToken(),
+  resolveModel: (options) => modelRouter.resolve(options),
   log: (message, error) => console.warn(message, error),
 });
 
@@ -84,13 +95,18 @@ if (!app.requestSingleInstanceLock()) {
     onSecondInstance: () => getWindow()?.focus(),
   });
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
+    // 读盘依赖 safeStorage 就绪；放在注册会话 IPC 之前，避免首次拉取设置时回退到默认值。
+    await modelSettings.init();
     registerWindowIpc();
     imeController = registerImeIpc();
     registerImeCandidateIpc(imeController.isCurrentLease, imeController.getSessionSnapshot);
     registerCaptureIpc();
     registerAmbientIpc((enabled) => ambientController?.setEnabled(enabled));
-    registerConversationIpc(agentService, () => authService.hasSession());
+    registerConversationIpc(agentService, {
+      canSend: () => modelRouter.canSend(),
+      modelSettings: modelRouter,
+    });
     registerAuthIpc(authService);
     registerWorkspaceFileProtocol(workspaceService);
     registerWorkspaceIpc(workspaceService, getWindow, isStealthEnabled);

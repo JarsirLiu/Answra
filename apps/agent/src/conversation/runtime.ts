@@ -179,6 +179,21 @@ export class ConversationRuntime {
     };
   }
 
+  /**
+   * 本地端点的 fetch：只用本机保存的 API Key，不触发登录、不刷新令牌。
+   *
+   * Key 为空时显式删掉 Authorization 头（SDK 会按 apiKey 参数自动加），让「无 Key
+   * 也能连」的本地服务保持原样；401 等错误如实交回 SDK，由错误通道展示服务端消息。
+   */
+  private createLocalFetch(apiKey: string): typeof fetch {
+    return (input, init) => {
+      const headers = new Headers(init?.headers);
+      if (apiKey) headers.set("Authorization", `Bearer ${apiKey}`);
+      else headers.delete("Authorization");
+      return fetch(input, { ...init, headers });
+    };
+  }
+
   private async execute(
     conversationId: string,
     runId: string,
@@ -211,11 +226,12 @@ export class ConversationRuntime {
         imageCount: request.images.length,
         textLength: request.text.length,
       });
+      const local = endpoint.auth === "local";
       const provider = createOpenAICompatible({
         name: "answra",
         baseURL: endpoint.baseUrl,
-        apiKey: accessToken,
-        fetch: this.createAuthorizedFetch(accessToken),
+        apiKey: accessToken || "local",
+        fetch: local ? this.createLocalFetch(accessToken) : this.createAuthorizedFetch(accessToken),
       });
       const content = [
         ...(request.text.trim() ? [{ type: "text" as const, text: request.text }] : []),
