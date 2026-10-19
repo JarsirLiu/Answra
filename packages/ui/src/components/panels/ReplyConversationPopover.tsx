@@ -1,11 +1,12 @@
 import type { DesktopBridge, ReplyBarActivity } from "@answra/shared";
+import { isAuthRequiredError } from "@answra/shared";
 import { AlertCircle, FileText, Wrench } from "lucide-react";
 import { useRef, useState } from "react";
 import type { ReplyConversationMessage } from "../../app/useReplyConversation";
 import { useEmbeddedIme } from "../../hooks/useEmbeddedIme";
 import { useControlledImeTextAdapter } from "../../ime/adapters/useControlledImeTextAdapter";
 import { ICON_SM } from "../../tokens";
-import { AssistantMessage, MessageStream } from "../chat";
+import { AssistantMessage, MessageStream, ModelErrorNotice } from "../chat";
 import { ConversationComposer } from "./ConversationComposer";
 import "./ReplyConversationPopover.css";
 
@@ -33,6 +34,7 @@ export function ReplyConversationPopover({
   conversationId,
 }: ReplyConversationPopoverProps) {
   const [draft, setDraft] = useState("");
+  const [sendError, setSendError] = useState<string>();
   const composerInputRef = useRef<HTMLTextAreaElement>(null);
   const draftRef = useRef(draft);
   draftRef.current = draft;
@@ -46,16 +48,28 @@ export function ReplyConversationPopover({
     const text = draftRef.current.trim();
     if (!text || !conversationId || !bridge?.sendConversationMessage) return;
     setDraft("");
+    setSendError(undefined);
     try {
       await bridge.sendConversationMessage({
         operation: "answer.run",
         conversationId,
         request: { text, images: [] },
       });
-    } catch {
+    } catch (error) {
+      // 失败必须回到发送方：草稿还给用户，原因显示在同一处失败提示里。
       setDraft(text);
+      setSendError(error instanceof Error ? error.message : "发送失败");
     }
   };
+  const signIn = () => {
+    void bridge?.loginAccount?.();
+  };
+  // 同一表面只留一处失败：本轮已有流式 error 活动项时，本节不再重复提示。
+  const hasErrorActivity = messages.some((message) =>
+    message.activities.some((activity) => activity.kind === "error"),
+  );
+  const failure = sendError ?? error;
+  const failureNeedsSignIn = isAuthRequiredError(sendError ?? "");
   const contentKey = messages
     .map(
       (message) =>
@@ -114,16 +128,10 @@ export function ReplyConversationPopover({
             )}
           </article>
         ))}
-        {error &&
-          !messages.some((message) =>
-            message.activities.some((activity) => activity.kind === "error"),
-          ) && (
-            <div className="reply-conversation-error" role="alert">
-              <AlertCircle aria-hidden="true" size={ICON_SM} />
-              <span>{error}</span>
-            </div>
-          )}
-        {messages.length === 0 && !error && (
+        {failure && !hasErrorActivity && (
+          <ModelErrorNotice message={failure} onSignIn={failureNeedsSignIn ? signIn : undefined} />
+        )}
+        {messages.length === 0 && !failure && (
           <p className="reply-conversation-empty">发送后将在这里显示本轮对话</p>
         )}
       </MessageStream>

@@ -11,7 +11,7 @@
 ## 涉及范围
 
 - 代码/模块：`packages/shared/src/channels.ts`（`AUTH_REQUIRED_CODE` / `AUTH_REQUIRED_NOTICE` / `isAuthRequiredError` / `authRequiredError`）、`packages/shared/src/index.ts`、`apps/desktop/src/main/conversation/conversationIpc.ts`、`apps/desktop/src/main/auth/authService.ts`（`hasSession`、`restored`）、`apps/desktop/src/main/index.ts`、`packages/ui/src/app/useConversationChat.ts`、`packages/ui/src/app/useReplyWorkflow.ts`、`packages/ui/src/app/FloatingBarApp.tsx`。
-- UI/进程/协议/持久化表面：`answra:conversation:send` 新增一种可识别失败（错误文案内含 `auth-required`）；对话发送失败与截图答题失败都显示同一个可关闭提示（`send-error`），未登录时提示"请先登录后再使用（设置 → 账户）"并同时打开设置面板；不新增持久化，不改变 token 存放位置。
+- UI/进程/协议/持久化表面：`answra:conversation:send` 新增一种可识别失败（错误文案内含 `auth-required`）；对话与截图两条路径的失败都内联显示在发起它的表面（对话正文末尾 / 回复条），未登录时统一为"请先登录后再使用（设置 → 账户）"；不新增持久化，不改变 token 存放位置。
 - 相关 Note：[桌面端账号登录与凭据（Phase 0）](../feature/2026-10-17-desktop-account-login-and-credentials.md)、[刷新失败不再等同登出](../bug-fix/2026-10-18-refresh-failure-keeps-session.md)、[模型调用失败必须终结并显示](../bug-fix/2026-10-12-visible-model-failures.md)。
 
 ## 决定
@@ -19,21 +19,21 @@
 - **门禁放在 main 的 `ConversationChannels.Send` 处理里**，覆盖 `chat.send` 与 `answer.run` 两个模型调用操作：未登录时抛出统一失败码错误，不把请求交给本地 agent。
 - **失败码是唯一的判定来源**：`AUTH_REQUIRED_CODE = "auth-required"` 与用户可见文案 `AUTH_REQUIRED_NOTICE` 定义在 `packages/shared/src/channels.ts`，渲染层只用 `isAuthRequiredError(error)` 判断（消息包含该码即可，兼容 Electron IPC 重新包装后的错误文案），不解析任何错误自然语言。
 - **门禁只做体验层提示，不做授权**：本地模型调用是本机 BYO API Key 路径，客户端门禁天然可被绕过；真实授权永远由服务端在云端入口强制。因此判定采取"宁可漏报不可误报"——`AuthService.hasSession()` 在 `restore()` 尚未完成时返回 `true`（登录态未知不等于未登录），避免冷启动首屏把已登录用户挡在门外。
-- **未登录提示不自动拉起浏览器**：提示与账户入口一起给出（打开设置面板，"登录"按钮由用户自己点）。桌面端常在会议/面试场景使用，静默弹出系统浏览器会打断当前场景。
+- **未登录提示内联在发起表面，附一个「去登录」按钮**：失败显示在对话正文末尾 / 回复条（统一走 [模型调用失败提示统一到一处](./2026-10-19-unified-model-error-notice.md) 的 `ModelErrorNotice`），文案里写明账户入口；只有用户点「去登录」才 `loginAccount()` 打开浏览器授权页。自动打开浏览器或自动切换面板都会打断会议/面试场景，而且失败与提示不在同一处时用户常看不出提示对应哪次发送。
 - **传输层失败必须回到发送方**：`useAiConversation` 给 `useChat` 传 `onError`，把被 SDK 吞掉的异常重新 `reject` 给等待中的 `send()`，并清掉 pending。这与既有 Note「模型调用失败必须终结并显示」同一原则：失败要么有终态、要么有提示，不能停在中间态。
 - **本轮不做**：服务端 `capabilities` 目录下发免费档能力 ID、按 `plan` 的订阅档门禁、云端调用入口。免费/订阅分档的判定条件仍是 `signedIn`（本轮）与 `capabilities`（将来）。
 
 ## 影响表面
 
-- 未登录用户在对话面板或截图回复条发送 → 收到"请先登录后再使用（设置 → 账户）"，输入草稿/截图保留，设置面板同时打开，用户登录后可直接重发。
+- 未登录用户在对话面板或截图回复条发送 → 在发起表面内联显示"请先登录后再使用（设置 → 账户）"与「去登录」按钮，输入草稿/截图保留，用户登录后可直接重发（登录成功由 `onAuthStatus` 推送，提示自动消失）。
 - 已登录用户行为不变（门禁不产生额外请求，`hasSession()` 是同步内存判断，不触发网络）。
 - 截图答题发送失败不再静默：以前只在控制台留一行，现在显示提示并回到可重试的编辑态。
-- 通用发送失败提示的 layer id 统一为 `send-error`（原对话路径的 `conversation-error` 取消），同类失败在两条路径上互相覆盖而不是叠加。
+- 发送失败的呈现统一为内联：浮层 notice（原 `send-error`、更早的 `conversation-error`）取消，同类失败在两条路径上各自独立显示、互不覆盖。
 
 ## 曾考虑的替代方案
 
 - **渲染层预门禁（发送前先查 `getAuthStatus`，未登录直接拦住）：** 需要渲染层自己维护"登录态是否已知"，冷启动首屏必然误判；且对话与截图两条路径要各写一遍判断。改用 main 的调用边界 + 失败码，两处自动一致。
-- **渲染层直接调 `loginAccount()` 自动拉起授权页：** 最贴近"一键登录"，但会在用户开会/面试时突然弹出系统浏览器；改为提示 + 账户入口，把时机交给用户。
+- **渲染层在失败时直接调 `loginAccount()` 自动拉起授权页：** 会在用户开会/面试时突然弹出系统浏览器；改为提示里的「去登录」按钮，把时机交给用户（失败本身不触发任何登录动作）。
 - **只在 UI 层显示原始错误文案（不引入失败码）：** IPC 包装后的文案是 `Error invoking remote method 'answra:conversation:send': Error: …`，既难看又无法稳定判定（文案随网关/服务端变化）；必须有一个稳定的码。
 - **把门禁放在 agent 侧（`AgentService.send`）：** agent 运行时按约定与 Electron、凭据无关，不应知道登录态；`isSignedIn` 端口由 main 注入到 IPC 层更符合分层。
 - **未登录时直接禁用发送按钮：** 属于"入口预门禁"，未登录用户看不到原因就把功能判死刑，且与用户明确要求（发消息时才提示）相反。
@@ -49,7 +49,7 @@
 ## 验收标准
 
 - 未登录：`answra:conversation:send`（`chat.send` 与 `answer.run`）都被拒绝且不调用 `AgentService.send`，错误文案包含 `auth-required`。
-- 未登录：对话与截图两条路径都显示同一句提示，草稿/截图保留，账户入口可见。
+- 未登录：对话与截图两条路径都在发起表面显示同一句提示（对话正文末尾 / 回复条）与「去登录」按钮，草稿/截图保留；不自动打开设置面板、不另弹浮层横条。
 - 已登录：请求照常转发。
 - 传输层失败：`send()` 的 Promise 会 reject（不再永久挂起），截图回复条回到编辑态。
 
@@ -57,7 +57,7 @@
 
 - `apps/desktop/test/conversationIpc.test.ts`（5 项）：未登录时 `chat.send`/`answer.run` 都抛 `AUTH_REQUIRED_CODE` 且 `service.send` 未被调用；已登录时照常转发；回复窗口仍被拒（既有用例）。
 - `apps/desktop/test/authService.test.ts`：`hasSession` 在 `restore()` 完成前为真、无凭据时为假、有有效会话时为真。
-- `packages/ui/test/FloatingBarApp.test.tsx`（42 项）：对话发送被 `auth-required` 拒绝 → 提示"请先登录后再使用（设置 → 账户）"且设置面板打开、出现"登录"按钮；截图答题被拒绝 → 同一提示可见（原先是静默）；既有模型错误用例仍显示 `errorText`。
+- `packages/ui/test/FloatingBarApp.test.tsx`：对话发送被 `auth-required` 拒绝 → 提示出现在对话消息流（`role="log"`）内、草稿保留、不出现设置面板的「登录」按钮、点「去登录」调用 `loginAccount`；截图答题被拒绝 → 同一提示可见（原先是静默）且不自动切面板；既有模型错误用例仍显示 `errorText`。
 - `pnpm verify`（lint + notes:check + typecheck + test + architecture:check）通过。
 
 ## 风险

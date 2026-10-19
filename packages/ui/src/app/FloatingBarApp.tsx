@@ -31,6 +31,12 @@ interface FloatingBarAppProps {
   bridge?: DesktopBridge;
 }
 
+/** 一次模型调用失败：统一提示的文案，以及是否要给出「去登录」按钮。 */
+interface SendFailure {
+  message: string;
+  needsSignIn: boolean;
+}
+
 export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
   // 默认桥由 desktop preload 注入（window.answra），浏览器预览与测试可传入 mock
   const platform = bridge ?? (globalThis as { answra?: DesktopBridge }).answra;
@@ -46,6 +52,8 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
   useStealthInputGuard(stealthSetting.enabled);
   const conversation = useGeneralChat(platform, ActiveChatConversationId);
   const answer = useScreenshotAnswer(platform, ActiveExamConversationId);
+  const [chatFailure, setChatFailure] = useState<SendFailure>();
+  const [replyFailure, setReplyFailure] = useState<SendFailure>();
   useEffect(() => {
     if (!platform?.getAuthStatus) return;
     let cancelled = false;
@@ -53,6 +61,11 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
     const sync = (signedIn: boolean) => {
       const version = ++statusVersion;
       setAuthSignedIn(signedIn);
+      // 登录成功即清掉上一轮「请先登录」提示：原因已经不存在了。
+      if (signedIn) {
+        setChatFailure(undefined);
+        setReplyFailure(undefined);
+      }
       if (!signedIn || !platform.getAnnouncements) {
         setAnnouncements([]);
         return;
@@ -98,6 +111,10 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
   useEffect(() => {
     if (panel !== "chat" && replyPhase === "closed") answer.clearMessages();
   }, [answer.clearMessages, panel, replyPhase]);
+  // 失败提示属于本轮对话：离开对话面板即丢弃，重新打开不会压着上一轮的错误。
+  useEffect(() => {
+    if (panel !== "chat") setChatFailure(undefined);
+  }, [panel]);
   const reply = useReplyWorkflow({
     cancelMessage: answer.cancel,
     onCaptureError: (message) =>
@@ -107,13 +124,14 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
       answer.clearMessages();
       surfaces.exitReply();
     },
-    onSendError: notifySendError,
+    onSendError: (error) => notifySendError("reply", error),
     onSetReplyPhase: (phase) => surfaces.setReplyPhase(phase),
     phase: replyPhase,
     platform,
     replyText: answer.replyText,
     replyActivities: answer.replyActivities,
-    replyError: answer.replyError,
+    // 传输层失败也要进入回复条状态：内联回复条与独立回复窗共用同一份失败展示。
+    replyError: replyFailure?.message ?? answer.replyError,
     replyPending: answer.replyPending,
     sendMessage: answer.send,
     stealth: stealthSetting.enabled,
@@ -157,8 +175,13 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
         onAttachmentRemove={removeAttachment}
         onClose={closeReplyBar}
         onCancel={reply.cancelReply}
+        onSignIn={replyFailure?.needsSignIn ? () => signIn("reply") : undefined}
         onScreenshot={triggerScreenshot}
-        onSend={performSend}
+        onSend={() => {
+          // 重新发送即清掉上一轮的失败提示，避免旧错误压着新结果。
+          setReplyFailure(undefined);
+          performSend();
+        }}
       />
     ) : undefined;
   // 主窗口内联形态（inline）下 detachedReplyBar 恒为 false，shell 始终需要测量。
@@ -172,27 +195,45 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
   }
 
   /**
-   * 模型调用失败的统一提示：未登录走同一句「请先登录」，其余显示原始原因。
-   * 判定只看 main 给出的失败码，同一类失败在对话与截图答题里提示一致。
+   * 模型调用失败的统一呈现：把失败留在发起它的那个表面（对话正文末尾 / 回复条），
+   * 不再另弹浮层横条。未登录时收敛为同一句登录提示，并附一个「去登录」按钮——
+   * 失败本身不自动拉起浏览器，只有用户点按钮才去登录。
    */
-  function notifySendError(error: unknown) {
-    if (isAuthRequiredError(error)) {
-      // 未登录：把账户入口摆到用户面前，而不是自动拉起系统浏览器——
-      // 截图/对话常发生在会议与面试场景，静默弹浏览器会打断当前场景。
-      surfaces.openPanel("settings");
-      surfaces.dispatch({
-        type: "layer/show-notice",
-        id: "send-error",
-        message: AUTH_REQUIRED_NOTICE,
-      });
-      return;
-    }
-    surfaces.dispatch({
-      type: "layer/show-notice",
-      id: "send-error",
-      message: error instanceof Error ? error.message : "发送失败",
-    });
+  function toFailure(error: unknown): SendFailure {
+    return isAuthRequiredError(error)
+      ? { message: AUTH_REQUIRED_NOTICE, needsSignIn: true }
+      : { message: error instanceof Error ? error.message : "发送失败", needsSignIn: false };
   }
+
+  function notifySendError(target: "chat" | "reply", error: unknown) {
+    if (target === "chat") setChatFailure(toFailure(error));
+    else setReplyFailure(toFailure(error));
+  }
+
+  /** 「去登录」：原地换成打开结果，避免点了没反应。 */
+  function signIn(target: "chat" | "reply") {
+    const setFailure = target === "chat" ? setChatFailure : setReplyFailure;
+    const pending = platform?.loginAccount?.();
+    if (!pending) return;
+    void pending
+      .then((result) => {
+        if (!result.opened) {
+          setFailure({ message: result.error ?? "无法打开授权页", needsSignIn: true });
+        }
+      })
+      .catch((error: unknown) => {
+        setFailure({
+          message: error instanceof Error ? error.message : "登录失败",
+          needsSignIn: true,
+        });
+      });
+  }
+
+  // 对话面板的失败来源有两个：发送被拒（chatFailure）与本轮流式 error chunk（conversation.replyError）。
+  // 两者共用一个展示位，传输层失败优先。
+  const chatFailureMessage = chatFailure?.message ?? conversation.replyError;
+  const chatNeedsSignIn =
+    Boolean(chatFailure?.needsSignIn) || isAuthRequiredError(conversation.replyError);
 
   function handleModeAction(action: ModeAction) {
     if (action.id === "screenshot") {
@@ -243,6 +284,7 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
           stealth={stealthSetting.enabled}
           attachments={attachments}
           draft={draft}
+          error={chatFailureMessage}
           fileInputRef={fileInputRef}
           streaming={Boolean(conversation.activeRunId)}
           thinkingMs={conversation.thinkingMs}
@@ -254,6 +296,7 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
             surfaces.openPanel("closed");
           }}
           onDraftChange={setDraft}
+          onSignIn={chatNeedsSignIn ? () => signIn("chat") : undefined}
           onVote={(vote) =>
             surfaces.dispatch({
               type: "layer/show-notice",
@@ -267,13 +310,14 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
             const sentAttachments = attachments;
             setDraft("");
             setAttachments([]);
+            setChatFailure(undefined);
             void conversation
               .send(sentDraft, sentAttachments)
               .then(() => reply.clearPending())
               .catch((error: unknown) => {
                 setDraft(sentDraft);
                 setAttachments(sentAttachments);
-                notifySendError(error);
+                notifySendError("chat", error);
               });
           }}
         />

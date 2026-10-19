@@ -4,6 +4,7 @@ import type {
   ReplyBarPlacement,
   ReplyBarState,
 } from "@answra/shared";
+import { isAuthRequiredError } from "@answra/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ReplyBar } from "../components/panels/ReplyBar";
 import { ReplyConversationPopover } from "../components/panels/ReplyConversationPopover";
@@ -126,6 +127,9 @@ export function ReplyBarWindowApp({ bridge }: ReplyBarWindowAppProps) {
       onAttachmentRemove={(id) => send({ type: "attachment/remove", id })}
       onClose={() => send({ type: "close" })}
       onCancel={() => send({ type: "cancel" })}
+      onSignIn={
+        isAuthRequiredError(state.replyError) ? () => void platform?.loginAccount?.() : undefined
+      }
       onScreenshot={() => send({ type: "screenshot/start" })}
       onSend={() => send({ type: "send" })}
     />

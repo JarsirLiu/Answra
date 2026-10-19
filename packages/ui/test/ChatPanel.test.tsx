@@ -144,4 +144,31 @@ describe("ChatPanel", () => {
     fireEvent.keyDown(input, { key: "n", code: "KeyN" });
     await waitFor(() => expect(onDraftChange).toHaveBeenCalledWith("a新d"));
   });
+
+  it("keeps a failed send inside the message stream and offers sign-in when asked", () => {
+    const onSignIn = vi.fn();
+    render(
+      <ChatPanel
+        attachments={[]}
+        draft=""
+        error="请先登录后再使用（设置 → 账户）"
+        fileInputRef={createRef<HTMLInputElement>()}
+        messages={[{ id: "user-1", role: "user", content: "你好" }]}
+        onAttachmentChange={vi.fn()}
+        onAttachmentRemove={vi.fn()}
+        onCancel={vi.fn()}
+        onClose={vi.fn()}
+        onDraftChange={vi.fn()}
+        onSend={vi.fn()}
+        onSignIn={onSignIn}
+        stealth={false}
+        streaming={false}
+      />,
+    );
+
+    const stream = screen.getByRole("log", { name: "对话消息" });
+    expect(stream).toHaveTextContent("请先登录后再使用（设置 → 账户）");
+    fireEvent.click(screen.getByRole("button", { name: "去登录" }));
+    expect(onSignIn).toHaveBeenCalledTimes(1);
+  });
 });

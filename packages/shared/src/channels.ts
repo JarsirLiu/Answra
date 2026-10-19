@@ -121,9 +121,14 @@ export const AUTH_REQUIRED_CODE = "auth-required";
 /** 未登录调用模型时的用户可见文案；对话与截图答题共用同一句（同一失败同一提示）。 */
 export const AUTH_REQUIRED_NOTICE = "请先登录后再使用（设置 → 账户）";
 
-/** 识别任意层抛上来的错误（含 Electron IPC 重新包装后的 Error）是否表示「需要登录」。 */
+/**
+ * 识别任意层抛上来的错误（含 Electron IPC 重新包装后的 Error）是否表示「需要登录」。
+ * 也接受裸字符串：流式 error chunk 与状态里保存的都是错误文案本身。
+ */
 export function isAuthRequiredError(error: unknown): boolean {
-  return error instanceof Error && error.message.includes(AUTH_REQUIRED_CODE);
+  const message =
+    error instanceof Error ? error.message : typeof error === "string" ? error : String(error);
+  return message.includes(AUTH_REQUIRED_CODE);
 }
 
 /** 构造带失败码的「需要登录」错误，供 main 侧门禁抛出。 */

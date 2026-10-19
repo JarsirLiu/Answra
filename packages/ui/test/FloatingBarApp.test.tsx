@@ -5,7 +5,7 @@ import type {
   ConversationSnapshot,
 } from "@answra/shared";
 import { ActiveChatConversationId } from "@answra/shared";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { UIMessageChunk } from "ai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FloatingBarApp } from "../src/app/FloatingBarApp";
@@ -418,7 +418,7 @@ describe("three-segment floating navigation", () => {
     expect(screen.getByRole("button", { name: "确认发送" })).toBeInTheDocument();
   });
 
-  it("prompts sign-in when the main process rejects a chat send as unauthenticated", async () => {
+  it("prompts sign-in inside the conversation when the main process rejects a chat send", async () => {
     const bridge = {
       ...createConversationBridge(),
       getAuthStatus: vi
@@ -438,9 +438,18 @@ describe("three-segment floating navigation", () => {
     fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
 
     // 只看失败码：提示统一，且不把 IPC 包装后的原始文案展示给用户。
-    expect(await screen.findByRole("alert")).toHaveTextContent("请先登录后再使用（设置 → 账户）");
-    // 账户入口同时就位，由用户自己决定何时拉起浏览器授权。
-    expect(screen.getByRole("button", { name: "登录" })).toBeInTheDocument();
+    const stream = screen.getByRole("log", { name: "对话消息" });
+    expect(await within(stream).findByRole("alert")).toHaveTextContent(
+      "请先登录后再使用（设置 → 账户）",
+    );
+    // 失败留在对话正文里：不另弹浮层横条，也不自动把用户切到设置面板。
+    expect(screen.queryByRole("button", { name: "登录" })).not.toBeInTheDocument();
+    // 草稿保留，登录后可原样重发。
+    expect(screen.getByRole("textbox", { name: "补充问题" })).toHaveValue("你好");
+    // 登录入口就在提示里，点了才去拉起授权页（失败本身不自动开浏览器）。
+    fireEvent.click(within(stream).getByRole("button", { name: "去登录" }));
+    await waitFor(() => expect(bridge.loginAccount).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("button", { name: "登录" })).not.toBeInTheDocument();
   });
 
   it("shows a rejected screenshot answer on screen instead of only logging it", async () => {
@@ -456,7 +465,10 @@ describe("three-segment floating navigation", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "确认发送" }));
 
+    // 截图答题的失败同样留在回复条里，不再另弹浮层横条或自动切换面板。
     expect(await screen.findByRole("alert")).toHaveTextContent("请先登录后再使用（设置 → 账户）");
+    expect(screen.queryByRole("button", { name: "登录" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "去登录" })).toBeInTheDocument();
   });
 
   it("captures a region screenshot through the bridge and attaches it to the chat", async () => {

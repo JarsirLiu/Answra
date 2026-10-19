@@ -136,9 +136,6 @@
   margin: 2px 0 0;
   white-space: pre-wrap;
 }
-.reply-conversation-error svg {
-  flex: none;
-}
 .reply-conversation-activity--tool {
   border-color: var(--mint-line);
   color: var(--mint-text);
@@ -169,14 +166,6 @@
 .reply-conversation-empty {
   margin: auto;
   text-align: center;
-}
-.reply-conversation-error {
-  display: flex;
-  align-items: flex-start;
-  gap: 7px;
-  color: var(--danger);
-  font-size: 11px;
-  overflow-wrap: anywhere;
 }
 @media (prefers-reduced-motion: reduce) {
   .reply-conversation-popover {

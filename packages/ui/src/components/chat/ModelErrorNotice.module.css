@@ -1,0 +1,32 @@
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  color: var(--danger);
+  font-size: 11px;
+  line-height: 16px;
+}
+/* 图标与文案首行对齐，多行文案不会把图标推到中间。 */
+.notice svg {
+  flex: none;
+  margin-top: 1px;
+}
+.text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.action {
+  flex: none;
+  padding: 1px 7px;
+  border: 1px solid var(--mint-line);
+  border-radius: 6px;
+  color: var(--mint-text);
+  background: var(--mint-wash);
+  font-size: 11px;
+  line-height: 16px;
+  cursor: pointer;
+}
+.action:hover {
+  background: var(--hover);
+}

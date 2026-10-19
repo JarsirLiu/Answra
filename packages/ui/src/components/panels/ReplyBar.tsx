@@ -2,6 +2,7 @@ import type { ReplyBarActivity } from "@answra/shared";
 import { Camera, ChevronDown, ChevronUp, Send, Square, X } from "lucide-react";
 import type { RefObject } from "react";
 import { ICON, ICON_SM, ICON_STROKE } from "../../tokens";
+import { ModelErrorNotice } from "../chat";
 import { SurfaceButton } from "../controls/SurfaceButton";
 import type { ChatAttachment } from "./ChatPanel";
 import { ReplyActivityTicker } from "./ReplyActivityTicker";
@@ -20,6 +21,11 @@ interface ReplyBarProps {
   replyText: string;
   replyActivities: ReplyBarActivity[];
   replyError?: string;
+  /**
+   * 传了才在失败提示里出现「去登录」按钮：仅在 `replyError` 确定是「需要登录」时传入。
+   * 登录动作由调用方执行，回复条本身不认识账号体系。
+   */
+  onSignIn?: () => void;
   replyPending?: boolean;
   showConversationToggle?: boolean;
   conversationExpanded?: boolean;
@@ -61,6 +67,7 @@ export function ReplyBar({
   replyText,
   replyActivities,
   replyError,
+  onSignIn,
   replyPending,
   showConversationToggle = false,
   conversationExpanded = false,
@@ -212,11 +219,7 @@ export function ReplyBar({
           ))}
         </fieldset>
       )}
-      {replyError && (
-        <span className="reply-error" role="alert">
-          {replyError}
-        </span>
-      )}
+      {replyError && <ModelErrorNotice message={replyError} onSignIn={onSignIn} />}
       <div className="reply-actions">
         {showConversationToggle && (
           <SurfaceButton

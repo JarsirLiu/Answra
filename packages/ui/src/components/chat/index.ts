@@ -11,6 +11,7 @@
 export { AssistantMessage } from "./AssistantMessage";
 export { MessageActions } from "./MessageActions";
 export { MessageStream, useFollowLatest } from "./MessageStream";
+export { ModelErrorNotice } from "./ModelErrorNotice";
 export { TextResponse } from "./TextResponse";
 export { ThinkingReasoning } from "./ThinkingReasoning";
 export { ToolResponse } from "./ToolResponse";

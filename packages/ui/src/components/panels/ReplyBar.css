@@ -91,16 +91,6 @@
   flex: none;
 }
 
-.reply-error {
-  max-width: 300px;
-  overflow: hidden;
-  color: var(--danger);
-  font-size: 11px;
-  line-height: 16px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* 收起按钮：小圆 ×，与缩略图删除键同源观感 */
 .reply-close {
   width: 24px;

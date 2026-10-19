@@ -3,7 +3,7 @@ import { X } from "lucide-react";
 import { type RefObject, useRef } from "react";
 import { useControlledImeTextAdapter } from "../../ime/adapters/useControlledImeTextAdapter";
 import { ICON_SM } from "../../tokens";
-import { AssistantMessage, MessageStream } from "../chat";
+import { AssistantMessage, MessageStream, ModelErrorNotice } from "../chat";
 import { ConversationComposer } from "./ConversationComposer";
 import { PanelShell } from "./PanelShell";
 import "./ChatPanel.css";
@@ -37,6 +37,16 @@ interface ChatPanelProps {
   streaming: boolean;
   /** 本轮思考耗时（毫秒），回答开始输出后冻结。 */
   thinkingMs?: number;
+  /**
+   * 模型调用失败的提示，直接显示在对话正文末尾（未登录时是统一的登录提示）。
+   * 发送失败属于本轮对话的结果，不再另弹浮层横条。
+   */
+  error?: string;
+  /**
+   * 传了才在提示里出现「去登录」按钮：仅在 `error` 确定是「需要登录」时传入。
+   * 登录动作由调用方执行，面板本身不认识账号体系。
+   */
+  onSignIn?: () => void;
   /** 分叉对话：从当前消息开启新对话。 */
   onFork?: () => void;
   /** 点赞/点踩反馈。 */
@@ -59,6 +69,8 @@ export function ChatPanel({
   onCancel,
   streaming,
   thinkingMs,
+  error,
+  onSignIn,
   onFork,
   onVote,
   onClose,
@@ -71,10 +83,14 @@ export function ChatPanel({
     onChange: onDraftChange,
   });
   const ime = useEmbeddedIme(bridge, controlledImeText.commit, true, "chat-composer");
-  // 内容指纹：消息增减/正文与思维链流式增长都会变化，驱动 MessageStream 自动跟随。
-  const contentKey = messages
-    .map((message) => `${message.id}:${message.content.length}:${message.reasoning?.length ?? 0}`)
-    .join("|");
+  // 内容指纹：消息增减/正文与思维链流式增长都会变化，驱动 MessageStream 自动跟随；
+  // 失败提示也算本轮结果，出现时要能滚到可见位置。
+  const contentKey = [
+    ...messages.map(
+      (message) => `${message.id}:${message.content.length}:${message.reasoning?.length ?? 0}`,
+    ),
+    error ? `error:${error}` : "",
+  ].join("|");
   return (
     <PanelShell
       context={attachments.length ? "截图已添加，可补充问题" : undefined}
@@ -113,6 +129,7 @@ export function ChatPanel({
             )}
           </article>
         ))}
+        {error && <ModelErrorNotice message={error} onSignIn={onSignIn} />}
       </MessageStream>
       <ConversationComposer
         inputLabel="补充问题"
