@@ -39,15 +39,10 @@ function accountTitle(status: AuthStatus | null): string {
   return PLAN_LABELS[status.plan] ?? status.plan;
 }
 
-/**
- * 已登录时的账号摘要。
- *
- * 刻意不引用 `capabilities`：它是「服务端已实现的接口面」，不代表账号额度——把它渲染成
- * 「已解锁 N 项云能力」会把目录误当权益，而实际能否调用由服务端每次请求的额度校验决定。
- */
-function accountHint(status: AuthStatus | null): string {
+/** 账号标识优先用邮箱，其次用户名；两者都缺失时不渲染。 */
+function accountIdentity(status: AuthStatus | null): string {
   if (!status?.signedIn) return "";
-  return "模型调用由服务端额度控制，未开通时会提示原因";
+  return status.account?.email || status.account?.username || "";
 }
 
 /** 设置面板：账户/模型/常规三组；控件一律用统一令牌控件，不用原生样式。
@@ -202,7 +197,11 @@ export function SettingsPanel({
     }
   }
 
-  const hint = accountHint(authStatus);
+  const identity = accountIdentity(authStatus);
+  const quota = authStatus?.quota ?? null;
+  const quotaPercent = quota?.usedPercent ?? null;
+  const quotaDays = quota?.daysRemaining ?? null;
+  const hasQuota = quotaPercent !== null || quotaDays !== null;
 
   return (
     <PanelShell onClose={onClose} title="设置" variant="settings">
@@ -236,7 +235,34 @@ export function SettingsPanel({
                 </SurfaceButton>
               )}
             </div>
-            {hint && <p className="setting-status">{hint}</p>}
+            {identity && <p className="setting-account-identity">{identity}</p>}
+            {/* 额度只看服务端进度数据：`capabilities` 是接口面，不代表权益，不参与渲染。 */}
+            {authStatus?.signedIn && (
+              <div className="setting-quota">
+                <span className="setting-quota-head">
+                  <span>本月额度</span>
+                  <span className="setting-quota-value">
+                    {!hasQuota
+                      ? "未开通套餐"
+                      : `${quotaPercent !== null ? `已用 ${Math.round(quotaPercent)}%` : "套餐有效"}${
+                          quotaDays !== null ? ` · 剩余 ${quotaDays} 天` : ""
+                        }`}
+                  </span>
+                </span>
+                {quotaPercent !== null && (
+                  <span
+                    aria-label="本月额度用量"
+                    aria-valuemax={100}
+                    aria-valuemin={0}
+                    aria-valuenow={Math.round(quotaPercent)}
+                    className="setting-quota-track"
+                    role="progressbar"
+                  >
+                    <span className="setting-quota-fill" style={{ width: `${quotaPercent}%` }} />
+                  </span>
+                )}
+              </div>
+            )}
             {authNotice && (
               <p className="setting-status" role="status">
                 {authNotice}
@@ -277,7 +303,7 @@ export function SettingsPanel({
                 </SurfaceButton>
               </span>
             </div>
-            {source === "local" ? (
+            {source === "local" && (
               <>
                 <label className="setting-field">
                   <span>OpenAI 兼容地址</span>
@@ -356,8 +382,6 @@ export function SettingsPanel({
                 </div>
                 <p className="setting-status">本地模式不需要登录，密钥只保存在本机。</p>
               </>
-            ) : (
-              <p className="setting-status">云端订阅：登录后按服务端额度调用</p>
             )}
             {modelError && (
               <p className="setting-error" role="alert">

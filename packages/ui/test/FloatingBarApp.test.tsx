@@ -759,7 +759,6 @@ describe("three-segment floating navigation", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "云端订阅" }));
     expect(screen.queryByPlaceholderText("http://127.0.0.1:1234/v1")).not.toBeInTheDocument();
-    expect(screen.getByText("云端订阅：登录后按服务端额度调用")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "本地模型" }));
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
@@ -790,9 +789,6 @@ describe("three-segment floating navigation", () => {
     expect(screen.queryByRole("heading", { name: "模型" })).not.toBeInTheDocument();
     expect(screen.queryByPlaceholderText("http://127.0.0.1:1234/v1")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "保存" })).not.toBeInTheDocument();
-    expect(
-      screen.queryByText("当前版本使用云端订阅，登录后按服务端额度调用"),
-    ).not.toBeInTheDocument();
   });
 
   it("keeps ambient and stealth settings independent", async () => {
@@ -1008,7 +1004,9 @@ describe("three-segment floating navigation", () => {
     expect(await screen.findByText("会员")).toBeInTheDocument();
     // 能力目录是「已实现的接口面」，不渲染成「已解锁 N 项能力」，避免把目录当额度。
     expect(screen.queryByText(/已解锁/)).not.toBeInTheDocument();
-    expect(screen.getByText("模型调用由服务端额度控制，未开通时会提示原因")).toBeInTheDocument();
+    // 额度始终展示在账户分组下；没有有效订阅时给出「未开通套餐」而不是空白。
+    expect(screen.getByText("本月额度")).toBeInTheDocument();
+    expect(screen.getByText("未开通套餐")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "退出登录" })).toBeInTheDocument();
 
     // 主进程推送登出（例如凭据失效）后，界面回到未登录。
@@ -1017,6 +1015,32 @@ describe("three-segment floating navigation", () => {
     });
     expect(await screen.findByText("未登录")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "登录" })).toBeInTheDocument();
+  });
+
+  it("shows the signed-in account identity and monthly quota", async () => {
+    const bridge = {
+      close: vi.fn(),
+      fitContent: vi.fn(),
+      getAuthStatus: vi.fn().mockResolvedValue({
+        signedIn: true,
+        plan: "pro",
+        account: { email: "admin@answra.local", username: "admin" },
+        quota: { usedPercent: 37.5, expiresAt: "2026-12-01T00:00:00Z", daysRemaining: 42 },
+        capabilities: [],
+        cloudBaseUrl: "https://api.answra.com",
+      }),
+      onAuthStatus: vi.fn(() => () => undefined),
+      logoutAccount: vi.fn(),
+    };
+    render(<FloatingBarApp bridge={bridge} />);
+    fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
+
+    expect(await screen.findByText("admin@answra.local")).toBeInTheDocument();
+    expect(screen.getByText("已用 38% · 剩余 42 天")).toBeInTheDocument();
+    const meter = screen.getByRole("progressbar", { name: "本月额度用量" });
+    expect(meter).toHaveAttribute("aria-valuenow", "38");
+    // 有额度数据时不出现「未开通套餐」占位。
+    expect(screen.queryByText("未开通套餐")).not.toBeInTheDocument();
   });
 
   it("signs out from settings and adopts the returned status", async () => {

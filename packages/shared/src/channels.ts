@@ -174,6 +174,28 @@ export interface DesktopAnnouncement {
 }
 
 /**
+ * 已登录账号的展示信息（不含 token）。
+ * 字段均为服务端原样下发的可空值：站点允许用用户名或邮箱登录，缺哪个就为 null。
+ */
+export interface AuthAccountInfo {
+  email: string | null;
+  username: string | null;
+}
+
+/**
+ * 套餐额度快照（来自站点 `GET /api/v1/subscriptions/progress`）。
+ * 只表达用户可见的用量进度，不含金额或服务端内部配额。
+ */
+export interface AuthQuotaInfo {
+  /** 当前计费周期已用额度百分比（0-100）；服务端未提供为 null。 */
+  usedPercent: number | null;
+  /** 套餐到期时间（RFC3339）；无到期时间或无有效套餐为 null。 */
+  expiresAt: string | null;
+  /** 套餐剩余天数；无有效套餐为 null。 */
+  daysRemaining: number | null;
+}
+
+/**
  * 账号与会员状态快照。
  *
  * 故意不含 token：渲染层（以及未来可能的调试面板）只需要门禁与展示所需的事实。
@@ -182,6 +204,10 @@ export interface AuthStatus {
   signedIn: boolean;
   /** 会员档位标识，由服务端下发；未登录为 null。 */
   plan: string | null;
+  /** 账号展示信息；未登录、旧版本或拉取失败时为 null。 */
+  account?: AuthAccountInfo | null;
+  /** 套餐额度快照；无有效套餐或未登录时为 null。 */
+  quota?: AuthQuotaInfo | null;
   /** 当前账号可用的能力 ID 列表（如 `text.chat`）；未登录为空数组。 */
   capabilities: string[];
   /** 云端模式要使用的网关地址（本地只保存地址，不含模型配置）；未登录为 null。 */

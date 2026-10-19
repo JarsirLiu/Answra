@@ -4,12 +4,12 @@
  * 约束：
  * - 同时只允许一个待处理登录；再次发起登录会作废上一次（旧 `state` 回跳一律拒绝）。
  * - `state` 单次使用：命中后立即消费，重放同一回调无效。
- * - `state` 有 2 分钟 TTL，过期回调拒绝（防长时间挂起的标签页被劫持后回放）。
+ * - `state` 有 5 分钟 TTL，过期回调拒绝（防长时间挂起的标签页被劫持后回放）。
  * - `redirect_uri` 必须与发起时一致；登出会清空待处理登录（旧回调随即失效）。
  */
 import { normalizeCallbackTarget } from "./callback";
 
-export const PENDING_AUTH_TTL_MS = 2 * 60 * 1000;
+export const PENDING_AUTH_TTL_MS = 5 * 60 * 1000;
 
 export interface PendingAuth {
   state: string;

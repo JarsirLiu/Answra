@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import { app } from "electron";
+import { type LoopbackOutcome, renderLoopbackPage } from "./loopbackPage";
 
 /**
  * 仅开发态的环回回调（`http://127.0.0.1:<ephemeral>/auth/callback`）。
@@ -20,14 +21,6 @@ export interface LoopbackCallbackServer {
   close(): void;
 }
 
-const RESPONSE_BODY = [
-  '<!doctype html><html lang="zh"><meta charset="utf-8">',
-  "<title>Answra</title>",
-  '<body style="font-family:system-ui;padding:40px">',
-  "<h1>登录完成</h1><p>可以关闭这个标签页，回到 Answra 桌面端。</p>",
-  "</body></html>",
-].join("");
-
 export function startLoopbackCallback(
   onCallback: (url: string) => void,
 ): Promise<LoopbackCallbackServer> {
@@ -43,7 +36,9 @@ export function startLoopbackCallback(
         return;
       }
       response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-      response.end(RESPONSE_BODY);
+      // 拒绝授权会带 `error=`：结果页据此区分成功/取消，回调本身仍交给 AuthService 判定。
+      const outcome: LoopbackOutcome = /[?&]error=/.test(url) ? "cancelled" : "success";
+      response.end(renderLoopbackPage(request.headers["accept-language"], outcome));
       const address = server.address();
       const port = typeof address === "object" && address ? address.port : 0;
       onCallback(`http://${LOOPBACK_HOST}:${port}${url}`);

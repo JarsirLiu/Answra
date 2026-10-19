@@ -1,3 +1,4 @@
+import type { AuthAccountInfo, AuthQuotaInfo } from "@answra/shared";
 import { readEncryptedJson, removeEncryptedFile, writeEncryptedJson } from "./secureFile";
 
 /**
@@ -32,6 +33,10 @@ export interface AuthCapabilityEndpoint {
 /** 凭据 + 服务端下发的账号画像（画像非 secret，但一并加密保存以免多一份明文文件）。 */
 export interface AuthSessionRecord extends AuthTokens {
   plan: string | null;
+  /** 账号展示信息；老版本记录或拉取失败时为 null。 */
+  account?: AuthAccountInfo | null;
+  /** 套餐额度快照；无有效套餐或老版本记录时为 null。 */
+  quota?: AuthQuotaInfo | null;
   capabilities: string[];
   /** 云端能力端点；旧记录或目录拉取失败时为空数组，模型调用据此判定不可用。 */
   endpoints: AuthCapabilityEndpoint[];
@@ -74,10 +79,31 @@ function parseRecord(value: unknown): AuthSessionRecord | null {
     refreshToken: record.refreshToken,
     expiresAt: record.expiresAt,
     plan: typeof record.plan === "string" ? record.plan : null,
+    account: parseAccount(record.account),
+    quota: parseQuota(record.quota),
     capabilities: Array.isArray(record.capabilities)
       ? record.capabilities.filter((id): id is string => typeof id === "string")
       : [],
     endpoints: parseEndpoints(record.endpoints),
+  };
+}
+
+function parseAccount(value: unknown): AuthAccountInfo | null {
+  if (typeof value !== "object" || value === null) return null;
+  const account = value as Partial<AuthAccountInfo>;
+  const email = typeof account.email === "string" ? account.email : null;
+  const username = typeof account.username === "string" ? account.username : null;
+  if (!email && !username) return null;
+  return { email, username };
+}
+
+function parseQuota(value: unknown): AuthQuotaInfo | null {
+  if (typeof value !== "object" || value === null) return null;
+  const quota = value as Partial<AuthQuotaInfo>;
+  return {
+    usedPercent: typeof quota.usedPercent === "number" ? quota.usedPercent : null,
+    expiresAt: typeof quota.expiresAt === "string" ? quota.expiresAt : null,
+    daysRemaining: typeof quota.daysRemaining === "number" ? quota.daysRemaining : null,
   };
 }
 

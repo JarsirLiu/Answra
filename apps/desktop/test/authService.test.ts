@@ -3,8 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 import {
   AUTH_PATHS,
   AuthService,
+  readAccount,
   readAnnouncements,
   readProfile,
+  readQuota,
   readTokens,
 } from "../src/main/auth/authService";
 import type { AuthCallbackChannel } from "../src/main/auth/callbackChannel";
@@ -178,6 +180,26 @@ describe("AuthService.handleCallbackUrl", () => {
     const harness = createHarness((call) => {
       if (call.url.endsWith(AUTH_PATHS.exchange))
         return jsonResponse({ code: 0, message: "ok", data: tokenBody() });
+      if (call.url.endsWith(AUTH_PATHS.profile))
+        return jsonResponse({
+          code: 0,
+          message: "ok",
+          data: { id: 1, email: "admin@answra.local", username: "admin" },
+        });
+      if (call.url.endsWith(AUTH_PATHS.progress))
+        return jsonResponse({
+          code: 0,
+          message: "ok",
+          data: [
+            {
+              subscription_id: 11,
+              plan_name: "Pro",
+              expires_at: "2026-12-01T00:00:00Z",
+              days_remaining: 42,
+              monthly: { percentage: 37.5 },
+            },
+          ],
+        });
       if (call.url.endsWith(AUTH_PATHS.capabilities)) {
         return jsonResponse({
           code: 0,
@@ -209,6 +231,8 @@ describe("AuthService.handleCallbackUrl", () => {
     expect(status).toEqual({
       signedIn: true,
       plan: "pro",
+      account: { email: "admin@answra.local", username: "admin" },
+      quota: { usedPercent: 37.5, expiresAt: "2026-12-01T00:00:00Z", daysRemaining: 42 },
       capabilities: ["text.chat", "voice.interview"],
       cloudBaseUrl: "https://api.test",
     });
@@ -227,6 +251,8 @@ describe("AuthService.handleCallbackUrl", () => {
       refreshToken: "refresh-1",
       expiresAt: TEST_NOW + 3600_000 - 60_000,
       plan: "pro",
+      account: { email: "admin@answra.local", username: "admin" },
+      quota: { usedPercent: 37.5, expiresAt: "2026-12-01T00:00:00Z", daysRemaining: 42 },
       capabilities: ["text.chat", "voice.interview"],
       // 只有形状完整的端点声明会被保留：客户端据此取调用路径，残缺项直接丢弃。
       endpoints: [
@@ -236,6 +262,14 @@ describe("AuthService.handleCallbackUrl", () => {
     expect(saved).toBeNull();
     expect(harness.calls[1]).toMatchObject({
       url: `https://api.test${AUTH_PATHS.capabilities}`,
+      authorization: "Bearer access-1",
+    });
+    expect(harness.calls[2]).toMatchObject({
+      url: `https://api.test${AUTH_PATHS.profile}`,
+      authorization: "Bearer access-1",
+    });
+    expect(harness.calls[3]).toMatchObject({
+      url: `https://api.test${AUTH_PATHS.progress}`,
       authorization: "Bearer access-1",
     });
   });
@@ -261,6 +295,8 @@ describe("AuthService.handleCallbackUrl", () => {
     expect(status).toEqual({
       signedIn: true,
       plan: null,
+      account: null,
+      quota: null,
       capabilities: [],
       cloudBaseUrl: "https://api.test",
     });
@@ -319,7 +355,9 @@ describe("AuthService.restore / refresh", () => {
       exchange: "/api/v1/auth/desktop/exchange",
       refresh: "/api/v1/auth/refresh",
       revoke: "/api/v1/auth/logout",
+      profile: "/api/v1/auth/me",
       capabilities: "/api/v1/capabilities",
+      progress: "/api/v1/subscriptions/progress",
       announcements: "/api/v1/announcements",
     });
   });
@@ -329,6 +367,8 @@ describe("AuthService.restore / refresh", () => {
     await expect(harness.service.restore()).resolves.toEqual({
       signedIn: false,
       plan: null,
+      account: null,
+      quota: null,
       capabilities: [],
       cloudBaseUrl: null,
     });
@@ -352,12 +392,26 @@ describe("AuthService.restore / refresh", () => {
     await expect(harness.service.restore()).resolves.toEqual({
       signedIn: true,
       plan: "starter",
+      account: null,
+      quota: null,
       capabilities: [],
       cloudBaseUrl: "https://api.test",
     });
     expect(harness.calls).toEqual([
       {
         url: `https://api.test${AUTH_PATHS.capabilities}`,
+        method: "GET",
+        body: undefined,
+        authorization: "Bearer access-old",
+      },
+      {
+        url: `https://api.test${AUTH_PATHS.profile}`,
+        method: "GET",
+        body: undefined,
+        authorization: "Bearer access-old",
+      },
+      {
+        url: `https://api.test${AUTH_PATHS.progress}`,
         method: "GET",
         body: undefined,
         authorization: "Bearer access-old",
@@ -396,12 +450,26 @@ describe("AuthService.restore / refresh", () => {
         body: undefined,
         authorization: "Bearer access-new",
       },
+      {
+        url: `https://api.test${AUTH_PATHS.profile}`,
+        method: "GET",
+        body: undefined,
+        authorization: "Bearer access-new",
+      },
+      {
+        url: `https://api.test${AUTH_PATHS.progress}`,
+        method: "GET",
+        body: undefined,
+        authorization: "Bearer access-new",
+      },
     ]);
     expect(harness.credentials.current()).toEqual({
       accessToken: "access-new",
       refreshToken: "refresh-new",
       expiresAt: TEST_NOW + 120_000 - 60_000,
       plan: "pro",
+      account: null,
+      quota: null,
       capabilities: ["text.chat"],
       endpoints: [],
     });
@@ -421,6 +489,8 @@ describe("AuthService.restore / refresh", () => {
     await expect(harness.service.restore()).resolves.toEqual({
       signedIn: false,
       plan: null,
+      account: null,
+      quota: null,
       capabilities: [],
       cloudBaseUrl: null,
     });
@@ -453,7 +523,8 @@ describe("AuthService.restore / refresh", () => {
     const [restored, raced] = await Promise.all([restoring, racing]);
     expect(restored.signedIn).toBe(true);
     expect(raced.signedIn).toBe(true);
-    expect(harness.calls).toHaveLength(2);
+    // 一次刷新 + 能力目录 + 账号信息 + 套餐额度，各一次。
+    expect(harness.calls).toHaveLength(4);
   });
 });
 
@@ -478,6 +549,8 @@ describe("AuthService.refresh failure classification", () => {
     await expect(harness.service.restore()).resolves.toEqual({
       signedIn: true,
       plan: "pro",
+      account: null,
+      quota: null,
       capabilities: ["text.chat"],
       cloudBaseUrl: "https://api.test",
     });
@@ -508,6 +581,8 @@ describe("AuthService.refresh failure classification", () => {
       await expect(harness.service.restore()).resolves.toEqual({
         signedIn: false,
         plan: null,
+        account: null,
+        quota: null,
         capabilities: [],
         cloudBaseUrl: null,
       });
@@ -594,6 +669,8 @@ describe("AuthService.logout", () => {
     await expect(harness.service.logout()).resolves.toEqual({
       signedIn: false,
       plan: null,
+      account: null,
+      quota: null,
       capabilities: [],
       cloudBaseUrl: null,
     });
@@ -673,6 +750,57 @@ describe("readProfile", () => {
       capabilities: [],
       endpoints: [],
     });
+  });
+});
+
+describe("readAccount", () => {
+  it("keeps email and username independently", () => {
+    expect(readAccount({ email: "a@b.c", username: "admin" })).toEqual({
+      email: "a@b.c",
+      username: "admin",
+    });
+    expect(readAccount({ username: "admin" })).toEqual({ email: null, username: "admin" });
+    expect(readAccount({ email: "a@b.c" })).toEqual({ email: "a@b.c", username: null });
+  });
+
+  it("returns null when the profile has no displayable identity", () => {
+    expect(readAccount(null)).toBeNull();
+    expect(readAccount({})).toBeNull();
+    expect(readAccount({ email: "", username: "" })).toBeNull();
+  });
+});
+
+describe("readQuota", () => {
+  it("reads the first subscription with a monthly meter and clamps the percentage", () => {
+    expect(
+      readQuota([
+        { subscription_id: 1, days_remaining: 3 },
+        {
+          subscription_id: 2,
+          expires_at: "2026-12-01T00:00:00Z",
+          days_remaining: 42,
+          monthly: { percentage: 137.4 },
+        },
+      ]),
+    ).toEqual({ usedPercent: 100, expiresAt: "2026-12-01T00:00:00Z", daysRemaining: 42 });
+    expect(readQuota([{ monthly: { percentage: -8 } }])).toEqual({
+      usedPercent: 0,
+      expiresAt: null,
+      daysRemaining: null,
+    });
+  });
+
+  it("keeps expiry fields even when the plan has no monthly meter", () => {
+    expect(
+      readQuota([{ expires_at: "2026-12-01T00:00:00Z", days_remaining: 42, monthly: null }]),
+    ).toEqual({ usedPercent: null, expiresAt: "2026-12-01T00:00:00Z", daysRemaining: 42 });
+  });
+
+  it("returns null for empty or unrecognised payloads", () => {
+    expect(readQuota(undefined)).toBeNull();
+    expect(readQuota({})).toBeNull();
+    expect(readQuota([])).toBeNull();
+    expect(readQuota([{ plan_name: "Pro" }])).toBeNull();
   });
 });
 

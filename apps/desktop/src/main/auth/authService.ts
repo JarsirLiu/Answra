@@ -1,5 +1,7 @@
 import {
+  type AuthAccountInfo,
   type AuthLoginResult,
+  type AuthQuotaInfo,
   type AuthStatus,
   authRequiredError,
   type ConversationCapabilityEndpoint,
@@ -39,7 +41,9 @@ export const AUTH_PATHS = {
   exchange: "/api/v1/auth/desktop/exchange",
   refresh: "/api/v1/auth/refresh",
   revoke: "/api/v1/auth/logout",
+  profile: "/api/v1/auth/me",
   capabilities: "/api/v1/capabilities",
+  progress: "/api/v1/subscriptions/progress",
   announcements: "/api/v1/announcements",
 } as const;
 
@@ -288,9 +292,15 @@ export class AuthService {
     try {
       const tokens = await this.exchangeCode(parsed.code, consumed.pending.verifier);
       const profile = await this.fetchProfile(tokens.accessToken).catch((error) => {
-        // 交换成功即视为登录成功；能力目录拉取失败只影响门禁展示，下次刷新补回。
-        this.deps.log?.("[auth] 能力目录拉取失败", error);
-        return { plan: null, capabilities: [] as string[], endpoints: [] };
+        // 交换成功即视为登录成功；画像拉取失败只影响展示，下次刷新补回。
+        this.deps.log?.("[auth] 账号画像拉取失败", error);
+        return {
+          plan: null,
+          account: null,
+          quota: null,
+          capabilities: [] as string[],
+          endpoints: [],
+        };
       });
       const session: AuthSessionRecord = { ...tokens, ...profile };
       this.session = session;
@@ -363,10 +373,15 @@ export class AuthService {
         device: await this.currentDevice(),
       });
       const tokens = readTokens(body, this.now);
-      const profile = await this.fetchProfile(tokens.accessToken).catch((error) => {
-        this.deps.log?.("[auth] 刷新后能力目录拉取失败", error);
+      const profile = await this.fetchProfile(tokens.accessToken, {
+        account: session.account ?? null,
+        quota: session.quota ?? null,
+      }).catch((error) => {
+        this.deps.log?.("[auth] 刷新后账号画像拉取失败", error);
         return {
           plan: session.plan,
+          account: session.account ?? null,
+          quota: session.quota ?? null,
           capabilities: session.capabilities,
           endpoints: session.endpoints,
         };
@@ -402,25 +417,63 @@ export class AuthService {
     return readTokens(body, this.now);
   }
 
-  private async fetchProfile(accessToken: string): Promise<{
+  /**
+   * 拉取账号画像：能力目录 + 账号展示信息 + 套餐额度。
+   *
+   * 容错边界：能力目录是准入依据，请求失败时向上抛（调用方沿用旧画像）；
+   * 账号与额度只是展示信息，单项失败时回退到调用方给的旧值，不能因此把用户挡在登录态之外。
+   */
+  private async fetchProfile(
+    accessToken: string,
+    fallback: { account: AuthAccountInfo | null; quota: AuthQuotaInfo | null } = {
+      account: null,
+      quota: null,
+    },
+  ): Promise<{
     plan: string | null;
+    account: AuthAccountInfo | null;
+    quota: AuthQuotaInfo | null;
     capabilities: string[];
     endpoints: AuthCapabilityEndpoint[];
   }> {
-    return readProfile(await this.request(AUTH_PATHS.capabilities, undefined, accessToken));
+    const directory = readProfile(
+      await this.request(AUTH_PATHS.capabilities, undefined, accessToken),
+    );
+    const [account, quota] = await Promise.all([
+      this.fetchAccount(accessToken).catch((error) => {
+        this.deps.log?.("[auth] 账号信息拉取失败", error);
+        return fallback.account;
+      }),
+      this.fetchQuota(accessToken).catch((error) => {
+        this.deps.log?.("[auth] 套餐额度拉取失败", error);
+        return fallback.quota;
+      }),
+    ]);
+    return { ...directory, account, quota };
+  }
+
+  private async fetchAccount(accessToken: string): Promise<AuthAccountInfo | null> {
+    return readAccount(await this.request(AUTH_PATHS.profile, undefined, accessToken));
+  }
+
+  private async fetchQuota(accessToken: string): Promise<AuthQuotaInfo | null> {
+    return readQuota(await this.request(AUTH_PATHS.progress, undefined, accessToken));
   }
 
   private async refreshDirectory(accessToken: string): Promise<AuthStatus> {
     const session = this.session;
     if (!session) return this.signedOutStatus();
     try {
-      const profile = await this.fetchProfile(accessToken);
+      const profile = await this.fetchProfile(accessToken, {
+        account: session.account ?? null,
+        quota: session.quota ?? null,
+      });
       const updated = { ...session, ...profile };
       this.session = updated;
       await this.deps.credentials.save(updated);
       return this.emitStatus(this.statusFrom(updated));
     } catch (error) {
-      this.deps.log?.("[auth] 能力目录刷新失败", error);
+      this.deps.log?.("[auth] 账号画像刷新失败", error);
       return this.statusFrom(session);
     }
   }
@@ -442,6 +495,8 @@ export class AuthService {
     const headers: Record<string, string> = { accept: "application/json" };
     if (body !== undefined) headers["content-type"] = "application/json";
     if (accessToken) headers.authorization = `Bearer ${accessToken}`;
+    // 站点按 Accept-Language 本地化套餐名；不传时服务端回默认语言。
+    if (this.deps.locale) headers["accept-language"] = this.deps.locale;
     const response = await fetchImpl(`${this.deps.endpoints.apiBaseUrl}${path}`, {
       method: body === undefined ? "GET" : "POST",
       headers,
@@ -476,13 +531,22 @@ export class AuthService {
     return {
       signedIn: true,
       plan: session.plan,
+      account: session.account ?? null,
+      quota: session.quota ?? null,
       capabilities: [...session.capabilities],
       cloudBaseUrl: this.deps.endpoints.apiBaseUrl,
     };
   }
 
   private signedOutStatus(): AuthStatus {
-    return { signedIn: false, plan: null, capabilities: [], cloudBaseUrl: null };
+    return {
+      signedIn: false,
+      plan: null,
+      account: null,
+      quota: null,
+      capabilities: [],
+      cloudBaseUrl: null,
+    };
   }
 
   private emitStatus(status: AuthStatus): AuthStatus {
@@ -562,6 +626,54 @@ function readProfileEndpoints(value: unknown): AuthCapabilityEndpoint[] {
       return [];
     return [{ id: endpoint.id, path: endpoint.path, model: endpoint.model }];
   });
+}
+
+/**
+ * 解析账号展示信息（`GET /api/v1/auth/me` 的 data）。
+ * 只取可展示字段且一律可空：站点允许用户名/邮箱二选一登录，缺哪个都不算错误。
+ */
+export function readAccount(body: unknown): AuthAccountInfo | null {
+  if (typeof body !== "object" || body === null) return null;
+  const value = body as Record<string, unknown>;
+  const email = typeof value.email === "string" && value.email ? value.email : null;
+  const username = typeof value.username === "string" && value.username ? value.username : null;
+  if (!email && !username) return null;
+  return { email, username };
+}
+
+/**
+ * 解析套餐额度进度（`GET /api/v1/subscriptions/progress` 的 data）。
+ *
+ * 服务端返回数组（每份有效订阅一项）；桌面端只展示第一份带月度额度的订阅。
+ * 百分比按 0-100 夹取，缺失字段为 null——客户端不推导金额或配额。
+ */
+export function readQuota(body: unknown): AuthQuotaInfo | null {
+  if (!Array.isArray(body)) return null;
+  const entries = body.filter(
+    (entry): entry is Record<string, unknown> => typeof entry === "object" && entry !== null,
+  );
+  if (entries.length === 0) return null;
+  const monthlyOf = (entry: Record<string, unknown>): Record<string, unknown> | null =>
+    typeof entry.monthly === "object" && entry.monthly !== null
+      ? (entry.monthly as Record<string, unknown>)
+      : null;
+  const withMonthly = entries.find((item) => typeof monthlyOf(item)?.percentage === "number");
+  const entry = withMonthly ?? entries[0];
+  if (!entry) return null;
+  const monthly = monthlyOf(entry);
+  const rawPercent = monthly?.percentage;
+  const usedPercent =
+    typeof rawPercent === "number" ? Math.min(100, Math.max(0, rawPercent)) : null;
+  const expiresAt = typeof entry.expires_at === "string" ? entry.expires_at : null;
+  const daysRemaining =
+    typeof entry.days_remaining === "number" &&
+    Number.isFinite(entry.days_remaining) &&
+    entry.days_remaining >= 0
+      ? entry.days_remaining
+      : null;
+  // 三个字段都无法识别时不把空壳当成「有额度」，否则界面会误以为额度数据可用。
+  if (usedPercent === null && expiresAt === null && daysRemaining === null) return null;
+  return { usedPercent, expiresAt, daysRemaining };
 }
 
 export function readAnnouncements(body: unknown): DesktopAnnouncement[] {
