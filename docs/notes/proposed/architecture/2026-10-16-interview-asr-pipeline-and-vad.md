@@ -10,7 +10,7 @@
 
 - 代码/模块：`packages/shared/src/channels.ts`（既有面试音频 IPC 类型）、`apps/agent` 面试转录 runtime 与 provider adapter、`apps/desktop` 音频采集/帧转发/STT 凭证、`packages/ui` 会话状态。STT 凭证与 Chat LLM 凭证分离。
 - 进程/隐私表面：音频帧仍按总提案经 typed IPC 上行；Agent 经出站 HTTP 向内网 Qwen ASR 服务提交 WAV 分段；不在 Electron 中新增本地监听服务；音频和转录只在内存/请求期间存在，不落盘。
-- 相关 Note：[面试模式持续监听与回答建议](../feature/2026-10-12-live-interview-assistant.md)、[Answra 实时语音识别私有协议（AVP）v1](2026-10-16-answra-voice-protocol-avp-v1.md)、[功能边界与本地运行时分层](../../implemented/architecture/2026-10-11-feature-boundaries-and-local-runtime.md)。
+- 相关 Note：[面试模式持续监听与回答建议](../feature/2026-10-12-live-interview-assistant.md)、[面试语音运行时模块边界与并行开发契约](2026-10-19-interview-runtime-module-boundaries.md)、[Answra 实时语音识别私有协议（AVP）v1](2026-10-16-answra-voice-protocol-avp-v1.md)、[功能边界与本地运行时分层](../../implemented/architecture/2026-10-11-feature-boundaries-and-local-runtime.md)。
 
 ## 提案
 
@@ -49,7 +49,7 @@ Qwen HTTP 模式由客户端 VAD 持续接收 PCM，并按短暂停顿或最大�
 - **首轮路径：Agent 直连内网 Qwen HTTP**。独立于 Chat LLM 的模型设置，使用可配置的 ASR endpoint；不伪装成 OpenAI API，也不增加 desktop 本地代理。当前部署无鉴权且为内网 HTTP，仅作开发/内测；不得把地址或无鉴权方式当作面向公网/普通用户的产品配置。
 - **后续产品化：AnswraSite AVP 网关**。网关端点上线后再按 AVP 接入并处理凭证、路由、授权和用量；不能把当前内网地址硬编码进发布包。
 
-当前只定义 Agent 内部的 `TranscriptionProvider` 契约，不实现网络 AVP：adapter 将会话开/停和音频输入映射为 provider-neutral transcript 事件，事件含 `source`、`utteranceId`、`chunkIndex`、音频起止时间、`isFinal` 与 `utteranceEnded`。首个 HTTP adapter 管理有界请求队列、取消和迟到响应；未来 realtime adapter 再补充连接重试与断线状态。只有需要跨进程网关传输时，才评审并冻结 [AVP 网络协议](2026-10-16-answra-voice-protocol-avp-v1.md)。
+当前只定义 Agent 内部的 `TranscriptionProvider` 契约，不实现网络 AVP：adapter 将会话开/停和音频输入映射为 provider-neutral transcript 事件，事件含 `source`、`utteranceId`、`chunkIndex`、音频起止时间、`isFinal` 与 `utteranceEnded`。首个 HTTP adapter 管理有界请求队列、取消和迟到响应；未来 realtime adapter 再补充连接重试与断线状态。模块及契约边界见[面试语音运行时模块边界与并行开发契约](2026-10-19-interview-runtime-module-boundaries.md)。只有需要跨进程网关传输时，才评审并冻结 [AVP 网络协议](2026-10-16-answra-voice-protocol-avp-v1.md)。
 
 ## 模块边界
 

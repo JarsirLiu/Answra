@@ -10,7 +10,7 @@
 
 - 代码/模块：`packages/shared` 会话协议、`packages/ui` 面试入口/状态/建议视图、`apps/desktop` Windows 音频采集与权限、`apps/agent` 云端 STT 与自动回答 runtime。
 - 进程/数据表面：renderer 获取系统 loopback 与麦克风；类型化 IPC 传输音频帧和状态；utility worker 管理云端 STT、转录上下文、回答判断和云端模型流。会话 transcript 仅驻留内存，不写入磁盘。
-- 相关 Note：[面试模式 AI 建议占位流程](../../implemented/feature/2026-10-11-floating-bar-surfaces-and-workflow.md)、[功能边界与本地运行时分层](../../implemented/architecture/2026-10-11-feature-boundaries-and-local-runtime.md)、[后端拥有会话与内存仓储](../../implemented/architecture/2026-10-12-conversation-memory-store-port.md)、[面试语音识别管线与客户端 VAD 选型](../architecture/2026-10-16-interview-asr-pipeline-and-vad.md)。
+- 相关 Note：[面试模式 AI 建议占位流程](../../implemented/feature/2026-10-11-floating-bar-surfaces-and-workflow.md)、[功能边界与本地运行时分层](../../implemented/architecture/2026-10-11-feature-boundaries-and-local-runtime.md)、[后端拥有会话与内存仓储](../../implemented/architecture/2026-10-12-conversation-memory-store-port.md)、[面试语音识别管线与客户端 VAD 选型](../architecture/2026-10-16-interview-asr-pipeline-and-vad.md)、[面试语音运行时模块边界与并行开发契约](../architecture/2026-10-19-interview-runtime-module-boundaries.md)。
 
 ## 提案
 
