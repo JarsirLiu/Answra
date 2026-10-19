@@ -14,6 +14,7 @@ import { AgentService } from "./conversation/agentService";
 import { registerConversationIpc } from "./conversation/conversationIpc";
 import { ModelRouter } from "./conversation/modelRouter";
 import { ModelSettingsStore, modelSettingsFilePath } from "./conversation/modelSettings";
+import { loadDevDotEnv } from "./devEnv";
 import { registerImeCandidateIpc } from "./ime/imeCandidateIpc";
 import { registerImeIpc } from "./ime/imeIpc";
 import { registerAmbientIpc } from "./ipc/ambientIpc";
@@ -37,6 +38,14 @@ import { WorkspaceService } from "./workspace/workspaceService";
 configureChromiumCompatibility({ app });
 // 自定义 scheme 权限同样必须在 ready 前声明。
 registerWorkspaceSchemePrivileges();
+
+// 打包版不读 .env；开发态在解析云端地址前注入仓库根 .env（不覆盖已有环境变量）。
+if (!app.isPackaged) {
+  const loaded = loadDevDotEnv(process.env, { cwd: process.cwd() });
+  if (loaded.appliedKeys.length > 0) {
+    console.log("[dev-env] applied keys:", loaded.appliedKeys.join(", "));
+  }
+}
 
 let ambientController: ReturnType<typeof createAmbientThemeController> | undefined;
 let imeController: ReturnType<typeof registerImeIpc> | undefined;
