@@ -6,11 +6,13 @@ import type {
   ConversationModelConfig,
   ConversationSendCommand,
   ConversationSendRequest,
+  InterviewPcmFrame,
 } from "@answra/shared";
 import { app, type UtilityProcess, utilityProcess } from "electron";
 import type { ResolvedModel } from "./modelRouter";
 
 type Pending = { resolve: (value: unknown) => void; reject: (error: Error) => void };
+type RequestCommand = Exclude<AgentCommand, { type: "interview-audio-frame" }>;
 
 /** 云端调用的凭据与端点全部来自主进程（token 只在 main 内存里），agent 不读盘、不落盘。 */
 export interface AgentServiceDeps {
@@ -27,6 +29,9 @@ export class AgentService {
   private readonly pending = new Map<string, Pending>();
   private readonly listeners = new Set<(change: ConversationChange) => void>();
   private readonly interviewListeners = new Set<(event: InterviewWorkerEvent) => void>();
+  private readonly interviewAudioCreditListeners = new Set<
+    (credit: { sessionId: string; count: number }) => void
+  >();
   /** 已下发给 worker 的配置指纹；配置随登录态变化，按需重下发而不是外部驱动。 */
   private configured?: string;
 
@@ -60,6 +65,13 @@ export class AgentService {
     return () => this.interviewListeners.delete(listener);
   }
 
+  onInterviewAudioCredit(
+    listener: (credit: { sessionId: string; count: number }) => void,
+  ): () => void {
+    this.interviewAudioCreditListeners.add(listener);
+    return () => this.interviewAudioCreditListeners.delete(listener);
+  }
+
   async send(command: ConversationSendCommand): Promise<{ runId: string }> {
     validateSendRequest(command.request);
     // 来源由设置显式选择：本地端点不需要登录，云端订阅未登录时 resolveModel 抛统一失败码。
@@ -87,6 +99,28 @@ export class AgentService {
     return this.request("read-events", { conversationId, afterRevision });
   }
 
+  async startInterview(sessionId: string, conversationId: string): Promise<void> {
+    await this.request("interview-start", { sessionId, conversationId });
+  }
+
+  async markInterviewCaptureReady(sessionId: string): Promise<void> {
+    await this.request("interview-capture-ready", { sessionId });
+  }
+
+  async failInterviewCapture(sessionId: string): Promise<void> {
+    await this.request("interview-capture-failed", { sessionId });
+  }
+
+  async stopInterview(sessionId: string): Promise<void> {
+    await this.request("interview-stop", { sessionId });
+  }
+
+  sendInterviewPcmFrame(frame: InterviewPcmFrame): void {
+    const worker = this.worker;
+    if (!worker) return;
+    worker.postMessage({ type: "interview-audio-frame", frame } satisfies AgentCommand);
+  }
+
   async stop(): Promise<void> {
     const worker = this.worker;
     if (!worker) return;
@@ -104,7 +138,10 @@ export class AgentService {
     this.configured = fingerprint;
   }
 
-  private request(type: AgentCommand["type"], payload: Record<string, unknown>): Promise<unknown> {
+  private request(
+    type: RequestCommand["type"],
+    payload: Record<string, unknown>,
+  ): Promise<unknown> {
     const worker = this.worker;
     if (!worker) return Promise.reject(new Error("本地 AI 服务尚未启动"));
     const id = randomUUID();
@@ -122,6 +159,11 @@ export class AgentService {
     }
     if (frame.type === "interview-event") {
       for (const listener of this.interviewListeners) listener(frame.event);
+      return;
+    }
+    if (frame.type === "interview-audio-credit") {
+      for (const listener of this.interviewAudioCreditListeners)
+        listener({ sessionId: frame.sessionId, count: frame.count });
       return;
     }
     // worker 反向请求平台能力（当前只有令牌刷新）：平台实现留在 main，agent 只发请求。

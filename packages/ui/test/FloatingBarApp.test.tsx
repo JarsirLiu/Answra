@@ -173,6 +173,8 @@ describe("three-segment floating navigation", () => {
     fireEvent.click(screen.getByRole("menuitemradio", { name: "面试" }));
     const modeTrigger = screen.getByRole("button", { name: "面试" });
     expect(modeTrigger.querySelector("svg")?.classList.contains("lucide-audio-lines")).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "系统声音采集" }));
+    expect(screen.getByRole("region", { name: "系统声音采集" })).toBeInTheDocument();
   });
 
   it("sends general chat on its independent conversation and keeps it when the panel closes", async () => {

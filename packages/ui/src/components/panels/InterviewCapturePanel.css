@@ -1,0 +1,84 @@
+.interview-capture-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 18px;
+  padding: 18px 16px;
+}
+
+.interview-capture-status {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 22px;
+  color: var(--ink);
+  font-size: var(--font-sm);
+}
+
+.interview-capture-indicator {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 9px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.interview-capture-indicator--starting {
+  background: #d58b24;
+}
+
+.interview-capture-indicator--listening {
+  background: #25966f;
+}
+
+.interview-capture-indicator--error {
+  background: #d45555;
+}
+
+.interview-capture-actions {
+  display: flex;
+  align-items: center;
+}
+
+.interview-capture-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 130px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--glass-line);
+  border-radius: var(--ctl-radius);
+  color: var(--panel);
+  background: #278462;
+  font: inherit;
+  font-size: var(--font-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.interview-capture-button:hover:not(:disabled) {
+  background: #1e7053;
+}
+
+.interview-capture-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.interview-capture-button--stop {
+  color: var(--ink);
+  background: var(--panel);
+}
+
+.interview-capture-button--stop:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.interview-capture-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-xs);
+  line-height: 1.5;
+}

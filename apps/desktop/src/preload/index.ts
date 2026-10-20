@@ -20,6 +20,9 @@ import {
   type ImeSessionCommandResult,
   type ImeSessionSnapshot,
   type ImeSessionSnapshotUpdate,
+  type InterviewChange,
+  InterviewChannels,
+  type InterviewPcmFrame,
   type RegionCaptureOptions,
   type ReplyBarAction,
   type ReplyBarPlacement,
@@ -154,6 +157,30 @@ const bridge: DesktopBridge = {
     ipcRenderer.invoke(ConversationChannels.Configure, settings),
   getConversationApiKey: () => ipcRenderer.invoke(ConversationChannels.GetApiKey),
   clearConversationConfig: () => ipcRenderer.invoke(ConversationChannels.ClearConfig),
+  startInterview: (conversationId: string) =>
+    ipcRenderer.invoke(InterviewChannels.Start, { conversationId }),
+  stopInterview: (sessionId: string) => ipcRenderer.invoke(InterviewChannels.Stop, { sessionId }),
+  markInterviewCaptureReady: (sessionId: string) =>
+    ipcRenderer.invoke(InterviewChannels.CaptureReady, { sessionId }),
+  failInterviewCapture: (sessionId: string) =>
+    ipcRenderer.invoke(InterviewChannels.CaptureFailed, { sessionId }),
+  sendInterviewPcmFrame: (frame: InterviewPcmFrame) => {
+    ipcRenderer.send(InterviewChannels.AudioFrame, frame);
+  },
+  onInterviewAudioCredit: (listener: (credit: { sessionId: string; count: number }) => void) => {
+    const wrapped = (
+      _event: Electron.IpcRendererEvent,
+      credit: { sessionId: string; count: number },
+    ) => listener(credit);
+    ipcRenderer.on(InterviewChannels.AudioCredit, wrapped);
+    return () => ipcRenderer.removeListener(InterviewChannels.AudioCredit, wrapped);
+  },
+  onInterviewChange: (listener: (change: InterviewChange) => void) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, change: InterviewChange) =>
+      listener(change);
+    ipcRenderer.on(InterviewChannels.Change, wrapped);
+    return () => ipcRenderer.removeListener(InterviewChannels.Change, wrapped);
+  },
   getWorkspaceRoot: () => ipcRenderer.invoke(WorkspaceChannels.GetRoot),
   pickWorkspaceRoot: () => ipcRenderer.invoke(WorkspaceChannels.PickRoot),
   listWorkspaceTree: () => ipcRenderer.invoke(WorkspaceChannels.ListTree),

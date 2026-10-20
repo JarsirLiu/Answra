@@ -17,6 +17,7 @@ import { ModelSettingsStore, modelSettingsFilePath } from "./conversation/modelS
 import { loadDevDotEnv } from "./devEnv";
 import { registerImeCandidateIpc } from "./ime/imeCandidateIpc";
 import { registerImeIpc } from "./ime/imeIpc";
+import { registerInterviewIpc } from "./interview/interviewIpc";
 import { registerAmbientIpc } from "./ipc/ambientIpc";
 import { registerWindowIpc } from "./ipc/windowIpc";
 import {
@@ -49,6 +50,7 @@ if (!app.isPackaged) {
 
 let ambientController: ReturnType<typeof createAmbientThemeController> | undefined;
 let imeController: ReturnType<typeof registerImeIpc> | undefined;
+let interviewIpc: ReturnType<typeof registerInterviewIpc> | undefined;
 const configDir = app.getPath("userData");
 const workspaceService = new WorkspaceService({ configDir });
 
@@ -111,6 +113,7 @@ if (!app.requestSingleInstanceLock()) {
     imeController = registerImeIpc();
     registerImeCandidateIpc(imeController.isCurrentLease, imeController.getSessionSnapshot);
     registerCaptureIpc();
+    interviewIpc = registerInterviewIpc(agentService);
     registerAmbientIpc((enabled) => ambientController?.setEnabled(enabled));
     registerConversationIpc(agentService, {
       canSend: () => modelRouter.canSend(),
@@ -136,7 +139,9 @@ if (!app.requestSingleInstanceLock()) {
     disposeImeCandidateWindow();
     imeController?.dispose();
     authService.dispose();
-    void agentService.stop();
+    const interviewStop = interviewIpc?.stopActive() ?? Promise.resolve();
+    interviewIpc?.dispose();
+    void interviewStop.catch(() => undefined).finally(() => agentService.stop());
     void workspaceService.dispose();
   });
 
@@ -149,6 +154,7 @@ if (!app.requestSingleInstanceLock()) {
 
 function createManagedMainWindow(): void {
   const window = createMainWindow();
+  interviewIpc?.bindWindow(window);
   const controller = createAmbientThemeController(window, {
     additionalTargets: () => [getImeCandidateWindow()],
   });

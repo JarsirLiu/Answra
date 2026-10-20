@@ -1,5 +1,10 @@
 export { FloatingBarApp } from "./app/FloatingBarApp";
 export { ImeCandidateWindowApp } from "./app/ImeCandidateWindowApp";
+export type {
+  InterviewCapturePhase,
+  InterviewCapturePort,
+  InterviewCaptureState,
+} from "./app/interviewCapture";
 export { ReplyBarWindowApp } from "./app/ReplyBarWindowApp";
 export { RangeSlider } from "./components/controls/RangeSlider";
 export type { SurfaceButtonProps, SurfaceButtonVariant } from "./components/controls/SurfaceButton";
@@ -12,6 +17,7 @@ export { FloatingBar } from "./components/floating-bar/FloatingBar";
 export { ModeMenu, ModePicker } from "./components/floating-bar/ModePicker";
 export { WorkspaceControls } from "./components/floating-bar/WorkspaceControls";
 export type { ChatAttachment, ChatMessage } from "./components/panels/ChatPanel";
+export { InterviewCapturePanel } from "./components/panels/InterviewCapturePanel";
 export { PanelShell } from "./components/panels/PanelShell";
 export { useDismissableOpen } from "./hooks/useDismissableOpen";
 export type { Mode, ModeAction, ModeDefinition, Panel } from "./model";

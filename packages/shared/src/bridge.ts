@@ -16,8 +16,8 @@ import type {
   ImeSessionCommand,
   ImeSessionCommandResult,
   ImeSessionSnapshot,
-  InterviewAudioFrame,
   InterviewChange,
+  InterviewPcmFrame,
   RegionCaptureOptions,
   ReplyBarAction,
   ReplyBarPlacement,
@@ -114,9 +114,14 @@ export interface DesktopBridge {
   getConversationApiKey?: () => Promise<{ apiKey: string | null }>;
   /** 清除本地端点与 Key，恢复云端订阅。 */
   clearConversationConfig?: () => Promise<ConversationModelSettingsView>;
-  startInterview?: () => Promise<{ sessionId: string }>;
-  stopInterview?: (sessionId: string) => void;
-  sendInterviewAudioFrame?: (frame: InterviewAudioFrame) => void;
+  startInterview?: (conversationId: string) => Promise<{ sessionId: string }>;
+  stopInterview?: (sessionId: string) => Promise<void>;
+  markInterviewCaptureReady?: (sessionId: string) => Promise<void>;
+  failInterviewCapture?: (sessionId: string) => Promise<void>;
+  sendInterviewPcmFrame?: (frame: InterviewPcmFrame) => void;
+  onInterviewAudioCredit?: (
+    listener: (credit: { sessionId: string; count: number }) => void,
+  ) => () => void;
   onInterviewChange?: (listener: (change: InterviewChange) => void) => () => void;
   // ---- 本地工作区（合并笔记本与资料；浏览器预览/测试环境可未实现，调用方需判空） ----
   /** 读取缓存的上一工作区根目录；未选择过时 root 为 null。 */

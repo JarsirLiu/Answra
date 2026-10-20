@@ -3,6 +3,7 @@ import type {
   ChatSendCommand,
   ConversationChange,
   ConversationModelConfig,
+  InterviewPcmFrame,
 } from "@answra/shared";
 
 export interface InterviewWorkerTranscriptChunk {
@@ -110,6 +111,12 @@ export type InterviewWorkerEvent =
  * agent 不持有宿主 API，也不接触磁盘上的凭据。
  */
 export type AgentCommand =
+  | { id: string; type: "interview-start"; sessionId: string; conversationId: string }
+  | { id: string; type: "interview-capture-ready"; sessionId: string }
+  | { id: string; type: "interview-capture-failed"; sessionId: string }
+  | { id: string; type: "interview-stop"; sessionId: string }
+  /** High-frequency audio frames are one-way to avoid a worker response per frame. */
+  | { type: "interview-audio-frame"; frame: InterviewPcmFrame }
   | { id: string; type: "configure"; config: ConversationModelConfig }
   | ({ id: string; type: "chat-send"; accessToken: string } & ChatSendCommand)
   | ({ id: string; type: "answer-run"; accessToken: string } & AnswerRunCommand)
@@ -127,5 +134,7 @@ export type AgentFrame =
   | { version: 1; type: "change"; change: ConversationChange }
   /** Worker DTOs cross to desktop-main for projection into renderer contracts. */
   | { version: 1; type: "interview-event"; event: InterviewWorkerEvent }
+  /** A batch acknowledgment releases a bounded number of renderer audio frames. */
+  | { version: 1; type: "interview-audio-credit"; sessionId: string; count: number }
   /** 反向请求：云端调用收到 401 时，请宿主换一次新的访问令牌。 */
   | { version: 1; type: "token-request"; id: string; forceRefresh: boolean };

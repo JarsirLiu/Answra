@@ -79,13 +79,13 @@ interview runtime composition
 按以下阶段推进。每阶段先合并接口与测试，再并行开发已有契约覆盖的模块；阶段验收不过，不把问题推给下一层兜底。
 
 1. **冻结领域词汇与生命周期。** 统一 `conversationId`（持久对话历史）、`sessionId`（一次监听运行）、`utteranceId`（VAD 语音段）、`source`、`chunkIndex`、音频时间和 `generation` 的含义；画清 start、stop、error、restart 的状态转移。完成内部 contracts 与 worker 事件帧发布测试，不写 VAD/ASR/LLM 实现。renderer IPC projection 在桌面采集接线阶段单独测试。通过条件：监听重启保留 conversationId 并创建新 sessionId；类型不能把 chunk-final 与 turn-committed 混为一谈；停止后旧 session 结果一律不可见。
-2. **打牢 PCM 与音频帧边界。** 首个接入 source 为 Windows 系统播放 loopback，统一标记为 `interviewer`；候选人麦克风暂不接。为 PCM16、采样率、声道、每帧时长、序号、sample-frame 时间轴和最大 payload 定规格；desktop 负责系统音频格式归一化和有界分帧，Agent `audio/` ingress 在未监听、跨 session、格式错误、重复/倒序或重叠音频时拒绝帧。发现序号或 sample 时间有缺口时，接受后续帧并发布 gap 事件，同时推进游标，避免一次丢帧永久堵住该音轨。先用固定 PCM fixture 测格式与时间轴，不需要会议软件。通过条件：同一输入可被逐帧重放，丢帧/队列溢出能观测，内存与消息大小有硬上限。
+2. **打牢 PCM 与音频帧边界，并尽早验证采集风险。** 首个接入 source 为 Windows 系统播放 loopback，统一标记为 `interviewer`；候选人麦克风暂不接。为 PCM16、采样率、声道、每帧时长、序号、sample-frame 时间轴和最大 payload 定规格；desktop 负责系统音频格式归一化和固定帧长，Agent `audio/` ingress 在未监听、跨 session、格式错误、重复/倒序或重叠音频时拒绝帧。发现序号或 sample 时间有缺口时，接受后续帧并发布 gap 事件，同时推进游标，避免一次丢帧永久堵住该音轨。先完成 Windows loopback 到 Agent ingress 的最小纵向切片，用可见的开始/停止入口验证权限、音轨与 PCM 输出；随后用固定 PCM fixture 做可重复的帧边界测试。通过条件：同一输入可被逐帧重放，丢帧/队列溢出能观测，聚合缓存与消息大小有硬上限；实机采集与停止能清理所有轨道和音频节点。
 3. **独立实现并评估 VAD 与 segmenter。** VAD 检测器只输出 speech activity；segmenter 单独管理 pre-roll、hangover、最大段长、低能量切点、重叠区间、flush 和丢弃。先固定二者接口，再用有标注的静音、短词、停顿、连续长句和噪声样本评估算法；算法选型通过实测决定，不能以 demo 音频调参后宣称可靠。通过条件：边界指标、误触发/漏检、起始辅音保留、最长缓存和尾段行为均有测试及记录，调阈值不改 ASR/reply。
 4. **独立打牢 Qwen HTTP adapter。** 输入预制 `AudioSegment` fixture，测试 PCM→RIFF/WAV、multipart 字段、语言、20 MiB/60 秒限制、timeout、503/Retry-After、取消、队列上限与迟到响应。使用假的 HTTP server，不依赖实时采集。通过条件：错误归一化且不泄漏敏感响应，响应乱序能按 segment id 交付，队列饱和不会无限积压。
 5. **独立打牢转录聚合与 turn assembler。** 使用手写 transcript event 序列，不连真实 provider；验证乱序/重复/缺失 chunk、重叠去重、continuation、自然结束、turn-settle 超时和 transcript gap。通过条件：只有完整、无缺段的 interviewer turn 能提交最终回答输入；临时 turn 与 committed turn 类型和状态明确区分。
 6. **独立打牢 AI 回复 workflow。** 仅依赖 `InterviewerTurnEvent`、question policy、`AnswerGenerator` 和取消端口；fake generator 验证 interviewer `turn-started` 立即取消旧 generation、provisional/committed turn 更新后不采纳旧流、静默问题不回答、候选人音频只补上下文、停止时释放 run。之后再接现有文本模型流，不能让其直接消费 PCM/VAD/provider 事件。通过条件：回复模块测试无需启动 VAD/HTTP，也不修改其测试即可替换 transcript 来源。
 7. **由薄 composition root 做组合与故障演练。** 用 fake audio/VAD/provider/generator 测完整生命周期、两个 source 隔离、重启、worker 退出、队列溢出、多个并发回调及清理顺序。通过条件：runtime 只装配和转发明确事件，不出现算法分支或供应商字段。
-8. **最后接 Windows capture、IPC 与 UI。** 验证权限、实际输出设备、双路采集、窗口关闭和隐身行为；UI 只展示采集/分段识别/turn/回答状态及错误。通过条件：真实会议样本端到端记录识别准确率、speech-end→转录、speech-end→首条有用建议的 P50/P95、队列高水位和 gap；UI 文案准确标为批式分段识别。
+8. **完成 Windows 集成与产品 UI。** 扩展首轮 loopback 验证，覆盖目标输出设备、会议软件、窗口关闭和隐身行为；候选人麦克风作为独立 source 后续接入。UI 再接入分段识别、turn 与回答状态。通过条件：真实会议样本端到端记录识别准确率、speech-end→转录、speech-end→首条有用建议的 P50/P95、队列高水位和 gap；UI 文案准确标为批式分段识别。
 
 第 1 阶段后，VAD、HTTP adapter、turn assembler、reply workflow 可以由不同开发者并行，各自只依赖已合并 contracts 与 fake ports。desktop capture 和 UI 在 IPC projection 固定后并行。只有集成负责人修改 contracts、worker 命令/帧及 composition root；其余任务不得通过交叉修改模块来赶进度。
 
@@ -119,7 +119,14 @@ interview runtime composition
 
 ## 风险
 
-- 当前 `InterviewAudioFrame` 只有 base64 PCM 与 speaker，缺少序号、时间戳和音频格式；真实实现前须通过契约变更补齐，否则乱序、重采样和段边界无法可靠诊断。
+- Electron loopback 只在 Windows 首轮支持，且 renderer 需要在用户手势下请求 display media；必须保留主进程授权校验，并在采集失败、窗口销毁和显式停止时关闭所有 MediaStreamTrack、AudioWorklet 与 AudioContext。
 - UI 当前 `InterviewChange` 同时混合转录与回答状态，是 IPC 展示 DTO 而不是理想内部模型。实施时应由内部领域事件投影生成它，不让 ASR 或 reply 模块直接构造该 union。
 - 实时 provider 的服务端端点与客户端 VAD 边界可能不同；通过分别记录 provider segment 与本地 interviewer turn 解决，不能把二者强行合成单一“final”。
 - 该拆分会增加少量端口和装配代码；若早期引入通用插件系统、DI 容器或可配置策略框架，会超过当前单一 Qwen provider 的需要，因此暂不引入。
+
+## 当前实现与验证
+
+- 当前代码只完成 Windows loopback 到 desktop PCM 分帧、typed IPC、Agent ingress 校验和下游音频端口转交。UI 状态表示本机采集器状态，不代表 ASR 已工作；VAD、转录和回答尚未接入，因此本 Note 仍是提案。
+- 单帧上限为 100 ms / 3200 bytes。AudioWorklet 和 renderer 使用 10 帧 credit 窗口；Agent 每处理 5 帧返还一次额度，额度耗尽时采集端丢弃新帧，序号/采样位置保留缺口。连续 3 秒没有额度返还且仍有在途帧时，采集器报错并释放资源。各异步阶段因此有明确的有限上限，不能在实时处理落后时无限积压。
+- 自动化测试覆盖 PCM 格式/时间轴、session 生命周期、IPC 调用来源、启动取消和资源清理。Windows loopback 尚未在真实音频播放或会议软件下实测；自动化 mock 不能证明系统设备兼容性。
+- 进入 VAD 阶段前，须以集成测试证明 credit 往返、额度耗尽后的丢帧缺口可观测，以及停止后无迟到音频进入新 session。

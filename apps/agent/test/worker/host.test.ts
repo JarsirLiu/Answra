@@ -94,6 +94,91 @@ describe("agent worker host", () => {
     expect(structuredClone(frame)).toEqual(frame);
   });
 
+  it("routes PCM frames into ingress without a response per audio frame", async () => {
+    const harness = createHarness();
+    startAgentHost({ transport: harness.transport });
+
+    harness.dispatch({
+      id: "start-1",
+      type: "interview-start",
+      sessionId: "capture-1",
+      conversationId: "active-interview-conversation",
+    });
+    await vi.waitFor(() => expect(harness.responses()).toHaveLength(1));
+    harness.dispatch({ id: "ready-1", type: "interview-capture-ready", sessionId: "capture-1" });
+    await vi.waitFor(() => expect(harness.responses()).toHaveLength(2));
+
+    const pcm = new Uint8Array(3_200);
+    harness.dispatch({
+      type: "interview-audio-frame",
+      frame: {
+        sessionId: "capture-1",
+        source: "interviewer",
+        sequence: 0,
+        startSample: 0,
+        sampleRate: 16_000,
+        channels: 1,
+        encoding: "pcm_s16le",
+        pcm,
+      },
+    });
+    harness.dispatch({
+      type: "interview-audio-frame",
+      frame: {
+        sessionId: "capture-1",
+        source: "interviewer",
+        sequence: 2,
+        startSample: 3_200,
+        sampleRate: 16_000,
+        channels: 1,
+        encoding: "pcm_s16le",
+        pcm,
+      },
+    });
+
+    expect(harness.frames).toContainEqual({
+      version: 1,
+      type: "interview-event",
+      event: {
+        type: "audio-gap",
+        sessionId: "capture-1",
+        source: "interviewer",
+        expectedSequence: 1,
+        receivedSequence: 2,
+        expectedStartSample: 1_600,
+        receivedStartSample: 3_200,
+      },
+    });
+    expect(harness.responses()).toHaveLength(2);
+
+    for (const [sequence, startSample] of [
+      [3, 4_800],
+      [4, 6_400],
+      [5, 8_000],
+    ] as const) {
+      harness.dispatch({
+        type: "interview-audio-frame",
+        frame: {
+          sessionId: "capture-1",
+          source: "interviewer",
+          sequence,
+          startSample,
+          sampleRate: 16_000,
+          channels: 1,
+          encoding: "pcm_s16le",
+          pcm,
+        },
+      });
+    }
+    expect(harness.frames).toContainEqual({
+      version: 1,
+      type: "interview-audio-credit",
+      sessionId: "capture-1",
+      count: 5,
+    });
+    expect(harness.responses()).toHaveLength(2);
+  });
+
   async function startUnauthorizedServer(): Promise<string> {
     const server = createServer((_request, response) => {
       response.writeHead(401, { "content-type": "application/json" });

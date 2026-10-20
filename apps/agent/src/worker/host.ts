@@ -1,6 +1,12 @@
+import { INTERVIEW_AUDIO_CREDIT_BATCH } from "@answra/shared";
 import { ConversationRuntime } from "../conversation/runtime";
 import { type ConversationStore, MemoryConversationStore } from "../conversation/store";
-import type { InterviewDomainEvent } from "../interview/contracts";
+import { InterviewAudioIngress } from "../interview/audio/ingress";
+import {
+  conversationId as asConversationId,
+  sessionId as asSessionId,
+  type InterviewDomainEvent,
+} from "../interview/contracts";
 import { toInterviewWorkerEvent } from "./interviewProjection";
 import type { AgentCommand, AgentFrame } from "./protocol";
 
@@ -75,6 +81,13 @@ export function startAgentHost({
     tokenProvider: requestToken,
   });
 
+  const interviewAudio = new InterviewAudioIngress({
+    emit: (event) => emitInterviewEvent(event),
+    onFrame: () => undefined,
+  });
+  let audioCreditSessionId: string | undefined;
+  let uncreditedAudioFrames = 0;
+
   function emitInterviewEvent(event: InterviewDomainEvent): void {
     if (disposed) return;
     transport.send({ version: 1, type: "interview-event", event: toInterviewWorkerEvent(event) });
@@ -110,6 +123,23 @@ export function startAgentHost({
       else pending.reject(new Error(command.error ?? "令牌刷新失败"));
       return;
     }
+    if (command.type === "interview-audio-frame") {
+      const result = interviewAudio.acceptFrame(command.frame);
+      if (!result.accepted) console.warn("[interview-audio] frame rejected", result.code);
+      if (command.frame.sessionId === audioCreditSessionId) {
+        uncreditedAudioFrames += 1;
+        if (uncreditedAudioFrames >= INTERVIEW_AUDIO_CREDIT_BATCH) {
+          transport.send({
+            version: 1,
+            type: "interview-audio-credit",
+            sessionId: audioCreditSessionId,
+            count: uncreditedAudioFrames,
+          });
+          uncreditedAudioFrames = 0;
+        }
+      }
+      return;
+    }
     try {
       transport.send({
         version: 1,
@@ -131,6 +161,26 @@ export function startAgentHost({
 
   async function run(command: AgentCommand): Promise<unknown> {
     switch (command.type) {
+      case "interview-start":
+        interviewAudio.start(
+          asSessionId(command.sessionId),
+          asConversationId(command.conversationId),
+        );
+        audioCreditSessionId = command.sessionId;
+        uncreditedAudioFrames = 0;
+        return undefined;
+      case "interview-capture-ready":
+        if (!interviewAudio.captureReady(asSessionId(command.sessionId)))
+          throw new Error("面试音频会话已失效");
+        return undefined;
+      case "interview-capture-failed":
+        interviewAudio.fail(asSessionId(command.sessionId), "capture-failed");
+        clearAudioCredits(command.sessionId);
+        return undefined;
+      case "interview-stop":
+        interviewAudio.stop(asSessionId(command.sessionId));
+        clearAudioCredits(command.sessionId);
+        return undefined;
       case "configure":
         runtime.configure(command.config);
         return undefined;
@@ -155,8 +205,15 @@ export function startAgentHost({
       // shutdown/token 在上面就被拦下：不发响应帧。
       case "shutdown":
       case "token":
+      case "interview-audio-frame":
         return undefined;
     }
+  }
+
+  function clearAudioCredits(sessionId: string): void {
+    if (audioCreditSessionId !== sessionId) return;
+    audioCreditSessionId = undefined;
+    uncreditedAudioFrames = 0;
   }
 
   return { runtime, emitInterviewEvent, dispose };
