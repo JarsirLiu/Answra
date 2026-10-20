@@ -9,10 +9,9 @@ import {
 } from "@answra/shared";
 import { type ModelMessage, streamText } from "ai";
 import { ANSWER_PROFILE, CHAT_PROFILES, type ChatProfileId } from "./profiles";
+import { parseDataUrl, validateRequest } from "./requestContent";
 import { type ConversationStore, createUserMessage, MemoryConversationStore } from "./store";
-
-const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
-const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+import { buildTimeReminder } from "./timeReminder";
 
 export interface ConversationRuntimeOptions {
   emit: (change: ConversationChange) => void;
@@ -348,53 +347,4 @@ function summarizeError(error: unknown): { errorName: string; error: string; sta
     error: typeof value?.message === "string" ? value.message.slice(0, 300) : "模型请求失败",
     ...(statusCode === undefined ? {} : { statusCode }),
   };
-}
-
-function validateRequest(request: ConversationSendRequest): void {
-  if (typeof request.text !== "string" || request.text.length > 32_000)
-    throw new Error("消息内容无效或过长");
-  if (!Array.isArray(request.images) || request.images.length > 8)
-    throw new Error("单次最多发送 8 张图片");
-  for (const image of request.images) {
-    if (
-      typeof image.name !== "string" ||
-      image.name.length > 256 ||
-      typeof image.dataUrl !== "string"
-    )
-      throw new Error("图片附件无效");
-    const parsed = parseDataUrl(image.dataUrl);
-    if (parsed.bytes.byteLength > MAX_IMAGE_BYTES) throw new Error("单张图片不能超过 8 MB");
-  }
-}
-
-function parseDataUrl(value: string): { mediaType: string; bytes: Uint8Array } {
-  const match = /^data:(image\/[a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+/]+={0,2})$/.exec(value);
-  if (!match?.[1] || !match[2] || !ALLOWED_IMAGE_TYPES.has(match[1].toLowerCase()))
-    throw new Error("图片格式仅支持 PNG、JPEG、WebP 或 GIF");
-  const bytes = Buffer.from(match[2], "base64");
-  if (bytes.byteLength === 0 || bytes.byteLength > MAX_IMAGE_BYTES)
-    throw new Error("单张图片不能超过 8 MB");
-  return { mediaType: match[1].toLowerCase(), bytes: new Uint8Array(bytes) };
-}
-
-function formatLocalTime(): string {
-  const now = new Date();
-  const parts = new Intl.DateTimeFormat("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-    timeZoneName: "short",
-  }).formatToParts(now);
-  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
-  const tz = get("timeZoneName");
-  return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")}${
-    tz ? ` (${tz})` : ""
-  }`;
-}
-
-function buildTimeReminder(): string {
-  return `<system-reminder>\n# currentDate\nCurrent date and time is ${formatLocalTime()}.\n</system-reminder>`;
 }
