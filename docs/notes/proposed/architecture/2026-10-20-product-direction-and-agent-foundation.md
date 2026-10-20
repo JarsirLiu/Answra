@@ -57,6 +57,17 @@ src/
 4. **工具注册表**：Agent 静态注册，按 profile 授权；两类实现——worker 内纯工具、host bridge 平台工具。renderer 永远不能注入 prompt 或工具（10-18 红线）。
 5. **Agent loop**：先用 AI SDK 自带多步工具循环（`stopWhen`/maxSteps）+ AbortSignal，不自研；打断裂度或顺序控制实测不足再自研，期间以 (2) 兜底。
 
+### 触发纪律（2026-10-20 修订，依 answra-code"抽象等第二消费者"）
+
+五件套不是一步建齐的清单，而是逐件由真实第二消费者触发的抽取动作；第一个领域内不预留任何 core 能力：
+
+1. **模型执行器 + Run 生命周期**：触发器为 interview 阶段 6（reply workflow）实际到场。到场前唯一允许的动作是把 `conversation/runtime.ts`（已约 400 行、顶到规模预算）做域内垂直拆分：请求校验与图片解析、时间注入、错误摘要等纯函数分文件——类型不变、行为不变、测试不变，使后续抽取成为机械移动。
+2. **host bridge（`token-request` → `host-request`/`host-response`）**：触发器为第一个真实工具需求。只有 token 一个能力时不提前泛化；工具需求到来时以 token 与新工具为两个真实 capability 一次落地（白名单枚举、payload 类型化）。
+3. **工具注册表**：随第一个工具需求引入，静态注册 + profile 授权，不为"将来可能有"的工具预留。
+4. **agent loop**：随第一个工具需求引入，直接用 AI SDK `stopWhen`/maxSteps + AbortSignal；不自研 loop，打断裂度实测不足再重新提案。
+5. 抽取/泛化的共同形态：先在 `core/contracts.ts` 落端口类型（执行器、Run 凭据 runId/generation、过期丢弃），再机械上移实现；conversation 与新消费者双消费验证；`pnpm verify` 全绿 + 既有测试不改行为是唯一证据；`worker/` 协议零变化。
+6. core 只放机制、不放策略：每域并发上限、ephemeral 单活不变量、profile 配置留各自领域组合根；core 只提供 registry、abort、过期丢弃与流式执行原语。
+
 ### 各支柱落法
 
 - **面试**：继续按 10-19 Note 八阶段推进；`source` 维度天然支持 interviewer/candidate 双路，候选人麦克风是新增 source，不改产品决策层。
@@ -65,15 +76,15 @@ src/
 - **快捷键补全**：最薄的新域——独立 profile + 短超时 + 单发可抢占 run，不进历史存储；新增的主要是触发器（快捷键、目标应用光标位置）与最小 UI 表面，不是新底座。
 - **工具答问**：现有答题/通用对话 profile 增配授权工具清单（如当前窗口或文件上下文），走 (3)(4)(5) 即可，无需新领域。
 
-### 实施顺序
+### 实施顺序（2026-10-20 按触发纪律修订）
 
-1. 抽取 `core/`（模型执行器 + Run 生命周期），与 interview 阶段 6（回答工作流）共同消费，靠真实第二消费者验证抽取不抽歪。
-2. `token-request` → 通用 `host-request`/`host-response`，兼容现有 token 能力。
-3. 接第一个真工具（优先选有明确产品价值的：答题或面试的上下文文件工具）。
-4. meeting 启动时执行 `voice/` 提升（纯移动 + Note）。
-5. inline 作为最薄新域最后接入。
+1. **现在到 interview 阶段 6 之前：** 不建 `core/`。仅对 `conversation/runtime.ts` 做域内纯函数拆分（规模预算内职责切分，非架构抽取）；各阶段推进照原 10-19 Note。
+2. **interview 阶段 6 到场：** 先冻结 `core/contracts.ts` 端口（模型执行器、Run 凭据与取消语义，reply 的 `AnswerGenerator` 端口以 core 实现为后备），再机械上移实现；conversation 与 reply 双消费定型。
+3. **第一个真实工具需求到场：** `token-request` 泛化为通用 capability 帧 + 工具注册表 + AI SDK loop，一并最小落地；接的第一个工具优先选有明确产品价值的（答题或面试的上下文文件工具）。
+4. **meeting 启动时：** 执行 `voice/` 提升（纯移动 + Note）。
+5. **inline 作为最薄新域最后接入。**
 
-每步单独立 Note；已实施后本提案迁入 `implemented/` 并改写为决定。
+原顺序（先抽 core → 泛化 bridge → 接工具）在"第一消费者不预留"纪律下修正为以上事件驱动顺序；原条目保存在本节历史里以便对照。每步单独立 Note；已实施后本提案迁入 `implemented/` 并改写为决定。
 
 ## 模块边界
 
@@ -100,7 +111,7 @@ src/
 
 ## 风险
 
-- **core 抽取时机：** 过早抽取是为假想使用者抽象；以 interview 阶段 6 作为触发器（第二消费者到场才抽取），否则核心可能照着对话领域的形状抽歪。
+- **core 抽取时机：** 过早抽取是为假想使用者抽象；以 interview 阶段 6 作为触发器（第二消费者到场才抽取），否则核心可能照着对话领域的形状抽歪。触发纪律修订后，host bridge、工具注册表与 loop 同样挂在真实事件上，禁止按清单预建。
 - **host bridge 泛化成万能 RPC 隧道：** capability 必须白名单枚举并进协议类型；不允许 payload 里塞任意脚本或路径表达式。
 - **`voice/` 提升带来中断性迁移：** 纯机械移动 + 全量改名测试；错过时机（meeting 实现引用了 interview 内部符号）会造成真正跨域依赖，需在提升前守住。
 - **工具权限面扩大：** 静态白名单 + 每域授权清单 + 审计日志缺一不可；文档类工具尤其要求 desktop 侧执行与用户可见确认。
