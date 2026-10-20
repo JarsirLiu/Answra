@@ -18,4 +18,4 @@
 
 ## Pull Request 要求
 
-Pull Request 应说明用户可见的变化、已运行的检查和平台限制。涉及布局或交互时附上截图。合并前 CI 必须通过。
+Pull Request 应说明用户可见的变化、已运行的检查和平台限制。涉及布局或交互时附上截图。合并前 CI 必须通过。提交 PR 即表示同意该贡献按仓库 [LICENSE](LICENSE)（PolyForm Noncommercial 1.0.0）授权发布。

@@ -2,6 +2,7 @@
   "name": "answra-workspace",
   "version": "0.1.0",
   "private": true,
+  "license": "PolyForm-Noncommercial-1.0.0",
   "packageManager": "pnpm@11.9.0",
   "engines": {
     "node": ">=22.12.0"

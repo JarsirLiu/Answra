@@ -101,3 +101,8 @@ docs                   Note 索引
 - 包结构、依赖方向、IPC 约定见 [AGENTS.md](AGENTS.md)；改动须通过 `pnpm verify` 与架构守护脚本。
 - 重要交互变化需补充或更新测试（`packages/ui/test/`）。
 - 不要将凭据、本机数据或生成的安装包提交到 Git。
+- 向本仓库提交更改或 PR，即表示你同意该贡献按 [LICENSE](LICENSE) 授权发布。
+
+## 许可
+
+本项目源码按 [PolyForm Noncommercial License 1.0.0](LICENSE) 授权：个人学习、研究、非商业机构等任何非商业用途免费使用；**任何商业用途都需要另行获得授权**（通过 [Issues](https://github.com/JarsirLiu/Answra/issues) 联系）。仓库内的第三方输入法等资源遵循其上游声明的许可，见 `apps/desktop/native/rime-resources.json` 的来源与版本清单。
