@@ -9,7 +9,6 @@ import {
 import { useEffect, useState } from "react";
 import { FloatingBar } from "../components/floating-bar/FloatingBar";
 import { FloatingLayerHost } from "../components/floating-bar/FloatingLayerHost";
-import { AnnouncementPanel } from "../components/panels/AnnouncementPanel";
 import { ChatPanel } from "../components/panels/ChatPanel";
 import { InterviewCapturePanel } from "../components/panels/InterviewCapturePanel";
 import { ReplyBar } from "../components/panels/ReplyBar";
@@ -282,8 +281,6 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
         onDismissModeMenu={surfaces.closeFloatingLayers}
         onToggleModeMenu={toggleModeMenu}
         onTogglePanel={surfaces.togglePanel}
-        unreadAnnouncements={announcements.filter((item) => !item.readAt).length}
-        showAnnouncements={authSignedIn}
         panel={panel}
         featureSlot={replyFeatureSlot}
       />
@@ -374,14 +371,10 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
           opacity={appearance.opacity}
           stealth={stealthSetting.enabled}
           stealthSupported={stealthSetting.supported}
-        />
-      )}
-
-      {panel === "announcements" && (
-        <AnnouncementPanel
           announcements={announcements}
-          onClose={() => surfaces.openPanel("closed")}
-          onMarkRead={async (id) => {
+          unreadAnnouncements={announcements.filter((item) => !item.readAt).length}
+          signedIn={authSignedIn}
+          onMarkAnnouncementRead={async (id) => {
             if (!platform?.markAnnouncementRead) throw new Error("当前版本不支持公告操作");
             await platform.markAnnouncementRead(id);
             const readAt = new Date().toISOString();

@@ -21,8 +21,10 @@
   color: var(--icon);
   background: var(--hover);
 }
+/* 面板已打开的持续激活态：中性灰阶填充（比 hover 深一档），
+   不再用薄荷绿——强调色只留给主操作按钮，导航类激活态保持安静。 */
 .utility-action.is-active {
-  background: var(--mint-wash);
+  background: var(--field-strong);
 }
 .utility-action--destination {
   min-width: 0;
@@ -54,22 +56,4 @@
 .utility-action--close:hover {
   color: var(--danger);
   background: var(--danger-wash);
-}
-.utility-action--announcements {
-  position: relative;
-}
-.announcement-count {
-  position: absolute;
-  top: 1px;
-  right: 1px;
-  min-width: 13px;
-  height: 13px;
-  padding: 0 3px;
-  border: 1px solid var(--glass);
-  border-radius: 7px;
-  color: white;
-  background: #c84337;
-  font-size: 9px;
-  line-height: 11px;
-  text-align: center;
 }

@@ -18,9 +18,7 @@
   box-shadow: var(--shadow-pop);
 }
 .content-panel--notes,
-.content-panel--sources,
 .content-panel--settings,
-.content-panel--announcements,
 .content-panel--interview {
   width: min(480px, calc(100vw - 16px));
   height: min(560px, calc(100vh - var(--bar-h) - 24px));
@@ -33,10 +31,16 @@
   padding: 8px 12px;
   border-bottom: 1px solid var(--glass-line-soft);
 }
+/* 多入口面板：Tab 栏本身即头部，行高随内容收紧。 */
+.panel-header--tabs {
+  min-height: 0;
+  gap: 6px;
+  padding: 8px 10px;
+}
 .panel-title {
   margin: 0;
   color: var(--ink);
-  font-size: 12px;
+  font-size: var(--font-md);
   font-weight: var(--label-weight);
 }
 .panel-context {
@@ -60,6 +64,56 @@
 .panel-close:hover {
   color: var(--ink);
   background: var(--hover);
+}
+
+/* ── 多入口面板的 Tab 栏：即面板头部（右上角关闭钮） ──
+   选中段用中性灰阶填充，与悬浮条图标按钮的激活态同一语言
+   （薄荷绿只保留给主操作按钮），不再引入第二套强调色块。 */
+.panel-tabs {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  gap: 3px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.panel-tabs::-webkit-scrollbar {
+  display: none;
+}
+.panel-tab {
+  min-width: 0;
+  height: 26px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--muted);
+  background: transparent;
+  font-size: var(--font-sm);
+  font-weight: var(--label-weight);
+  transition: background 140ms ease-out;
+}
+.panel-tab:hover {
+  color: var(--ink);
+  background: var(--hover);
+}
+.panel-tab[aria-selected="true"],
+.panel-tab[aria-selected="true"]:hover {
+  color: var(--ink);
+  background: var(--field-strong);
+}
+.panel-tab-badge {
+  min-width: 13px;
+  padding: 0 3px;
+  border-radius: 7px;
+  color: var(--panel);
+  background: var(--ink);
+  font-size: var(--font-2xs);
+  line-height: 13px;
+  text-align: center;
 }
 
 /* 面板内容区基础布局：各面板（notes/sources/settings）共用。 */

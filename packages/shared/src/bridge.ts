@@ -36,7 +36,7 @@ import type {
  * 面板只决定渲染器画什么，窗口大小由渲染器测量后经
  * `fitContent` 上报（见 channels.ts 的 FitContent 频道）。
  */
-export type OverlayMode = "closed" | "chat" | "interview" | "notes" | "settings" | "announcements";
+export type OverlayMode = "closed" | "chat" | "interview" | "notes" | "settings";
 
 /** 渲染进程暴露给 UI 的桌面平台桥（由 preload 注入，测试可 mock）。 */
 export interface DesktopBridge {

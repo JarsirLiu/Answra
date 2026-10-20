@@ -14,7 +14,7 @@
 .settings-panel h2 {
   margin: 0;
   color: var(--ink);
-  font-size: 12px;
+  font-size: var(--font-md);
   /* h2 默认 bold：显式对齐界面标签字重，避免标题比正文更"糊" */
   font-weight: var(--label-weight);
 }
@@ -176,7 +176,8 @@
   gap: 6px;
 }
 /* 模型来源切换：分段控件——外框是浅色轨道，两段贴合，
-   选中段用薄荷实底，未选段在轨道上保持安静，避免退化成飘着的文字。 */
+   选中段用中性灰阶填充，与面板 Tab / 悬浮条激活态同一语言
+   （薄荷绿只保留给主操作按钮），避免强调色块到处开花。 */
 .setting-source-switch {
   display: inline-flex;
   gap: 3px;
@@ -200,13 +201,9 @@
   color: var(--ink);
   background: var(--hover);
 }
-.setting-source-switch .setting-source-option[aria-pressed="true"] {
-  color: var(--mint-contrast);
-  background: var(--mint);
-  box-shadow: var(--shadow-ctl);
-}
+.setting-source-switch .setting-source-option[aria-pressed="true"],
 .setting-source-switch .setting-source-option[aria-pressed="true"]:hover {
-  color: var(--mint-contrast);
-  background: var(--mint);
-  filter: brightness(1.06);
+  color: var(--ink);
+  background: var(--field-strong);
+  box-shadow: none;
 }

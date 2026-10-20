@@ -18,8 +18,6 @@ interface FloatingBarProps {
   onModeAction: (action: ModeAction) => void;
   onTogglePanel: (panel: Exclude<Panel, "closed">) => void;
   onClose: () => void;
-  unreadAnnouncements: number;
-  showAnnouncements: boolean;
   /**
    * 功能槽占用态：提供时，导航条右侧（模式功能段 + 工作区段）整体替换为该内容，
    * 只保留左侧模式选择。用于回复工作流等需要就地接管功能区的场景。
@@ -43,8 +41,6 @@ export function FloatingBar({
   onModeAction,
   onTogglePanel,
   onClose,
-  unreadAnnouncements,
-  showAnnouncements,
   featureSlot,
 }: FloatingBarProps) {
   const stackRef = useRef<HTMLDivElement>(null);
@@ -72,13 +68,7 @@ export function FloatingBar({
             </div>
             <span aria-hidden="true" className="segment-divider" />
             <div className="nav-segment utility-segment">
-              <WorkspaceControls
-                onClose={onClose}
-                onTogglePanel={onTogglePanel}
-                panel={panel}
-                unreadAnnouncements={unreadAnnouncements}
-                showAnnouncements={showAnnouncements}
-              />
+              <WorkspaceControls onClose={onClose} onTogglePanel={onTogglePanel} panel={panel} />
             </div>
           </>
         )}

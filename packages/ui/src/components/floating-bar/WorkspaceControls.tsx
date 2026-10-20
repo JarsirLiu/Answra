@@ -1,4 +1,4 @@
-import { Bell, FolderOpen, Settings, X } from "lucide-react";
+import { FolderOpen, Settings, X } from "lucide-react";
 import type { Panel } from "../../model";
 import { ICON, ICON_STROKE } from "../../tokens";
 import { SurfaceButton } from "../controls/SurfaceButton";
@@ -9,22 +9,15 @@ interface WorkspaceControlsProps {
   panel: Panel;
   onTogglePanel: (panel: Exclude<Panel, "closed">) => void;
   onClose: () => void;
-  unreadAnnouncements: number;
-  showAnnouncements: boolean;
 }
 
 /**
  * 第三段：跨模式通用的工作区入口与应用控制。
  * 笔记本入口只保留一个：笔记与资料共用同一块工作区面板，
  * 不再为同一个目标提供两个并列入口。
+ * 公告不在此处单独设入口：它收进设置面板的「公告」Tab，避免顶栏三段膨胀。
  */
-export function WorkspaceControls({
-  panel,
-  onTogglePanel,
-  onClose,
-  unreadAnnouncements,
-  showAnnouncements,
-}: WorkspaceControlsProps) {
+export function WorkspaceControls({ panel, onTogglePanel, onClose }: WorkspaceControlsProps) {
   return (
     <>
       <SurfaceButton
@@ -40,24 +33,6 @@ export function WorkspaceControls({
         </span>
         <ChevronDownGlyph className="destination-chevron" />
       </SurfaceButton>
-      {showAnnouncements && (
-        <SurfaceButton
-          aria-label={
-            unreadAnnouncements > 0 ? `打开公告，有 ${unreadAnnouncements} 条未读` : "打开公告"
-          }
-          className={`utility-action utility-action--announcements${panel === "announcements" ? " is-active" : ""}`}
-          onClick={() => onTogglePanel("announcements")}
-          title={unreadAnnouncements > 0 ? `公告，有 ${unreadAnnouncements} 条未读` : "公告"}
-          type="button"
-        >
-          <Bell aria-hidden="true" size={16} strokeWidth={1.8} />
-          {unreadAnnouncements > 0 && (
-            <span aria-hidden="true" className="announcement-count">
-              {unreadAnnouncements > 9 ? "9+" : unreadAnnouncements}
-            </span>
-          )}
-        </SurfaceButton>
-      )}
       <SurfaceButton
         aria-label="打开设置"
         className={`utility-action${panel === "settings" ? " is-active" : ""}`}

@@ -1,8 +1,12 @@
-.announcement-panel {
+.announcement-list {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   padding: 12px;
+  scrollbar-width: none;
+}
+.announcement-list::-webkit-scrollbar {
+  display: none;
 }
 .announcement-empty {
   margin: 20px 4px;
@@ -35,7 +39,7 @@
   flex: 0 0 auto;
   padding: 1px 5px;
   border-radius: 3px;
-  font-size: 10px;
+  font-size: var(--font-xs);
   line-height: 1.5;
 }
 .announcement-unread {

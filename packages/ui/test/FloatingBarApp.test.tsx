@@ -698,7 +698,9 @@ describe("three-segment floating navigation", () => {
     expect(screen.getByRole("button", { name: /选择目录/ })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
-    expect(screen.getByRole("heading", { name: "设置" })).toBeInTheDocument();
+    // Tab 栏即面板头部：无"设置"标题行
+    expect(screen.queryByRole("heading", { name: "设置" })).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "设置" })).toHaveAttribute("aria-selected", "true");
   });
 
   it("toggles ambient background following in settings and persists the choice", () => {
@@ -752,7 +754,12 @@ describe("three-segment floating navigation", () => {
     render(<FloatingBarApp bridge={bridge} />);
     fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
 
-    expect(await screen.findByRole("heading", { name: "模型" })).toBeInTheDocument();
+    // 「设置」页先常规后模型：高频开关在更易触达的上方
+    await screen.findByRole("heading", { name: "模型" });
+    expect(screen.getAllByRole("heading").map((heading) => heading.textContent)).toEqual([
+      "常规",
+      "模型",
+    ]);
     expect(screen.getByPlaceholderText("http://127.0.0.1:1234/v1")).toHaveValue(
       "http://127.0.0.1:1234/v1",
     );
@@ -938,6 +945,8 @@ describe("three-segment floating navigation", () => {
     render(<FloatingBarApp bridge={{ fitContent: vi.fn(), close: vi.fn() }} />);
     fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
 
+    // 无账户能力时连「账户」入口都不出现，避免留下空壳 Tab。
+    expect(screen.queryByRole("tab", { name: "账户" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "账户" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "登录" })).not.toBeInTheDocument();
   });
@@ -954,6 +963,7 @@ describe("three-segment floating navigation", () => {
     };
     render(<FloatingBarApp bridge={bridge} />);
     fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
+    fireEvent.click(screen.getByRole("tab", { name: "账户" }));
 
     await waitFor(() => expect(screen.getByText("未登录")).toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: "登录" }));
@@ -976,6 +986,7 @@ describe("three-segment floating navigation", () => {
     };
     render(<FloatingBarApp bridge={bridge} />);
     fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
+    fireEvent.click(screen.getByRole("tab", { name: "账户" }));
 
     fireEvent.click(await screen.findByRole("button", { name: "登录" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("无法打开授权页");
@@ -1002,6 +1013,7 @@ describe("three-segment floating navigation", () => {
     };
     render(<FloatingBarApp bridge={bridge} />);
     fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
+    fireEvent.click(screen.getByRole("tab", { name: "账户" }));
 
     expect(await screen.findByText("会员")).toBeInTheDocument();
     // 能力目录是「已实现的接口面」，不渲染成「已解锁 N 项能力」，避免把目录当额度。
@@ -1036,6 +1048,7 @@ describe("three-segment floating navigation", () => {
     };
     render(<FloatingBarApp bridge={bridge} />);
     fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
+    fireEvent.click(screen.getByRole("tab", { name: "账户" }));
 
     expect(await screen.findByText("admin@answra.local")).toBeInTheDocument();
     expect(screen.getByText("已用 38% · 剩余 42 天")).toBeInTheDocument();
@@ -1066,6 +1079,7 @@ describe("three-segment floating navigation", () => {
     };
     render(<FloatingBarApp bridge={bridge} />);
     fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
+    fireEvent.click(screen.getByRole("tab", { name: "账户" }));
 
     fireEvent.click(await screen.findByRole("button", { name: "退出登录" }));
     expect(logoutAccount).toHaveBeenCalledTimes(1);
