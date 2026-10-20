@@ -71,4 +71,5 @@
 - 每项独立功能或决策分别留痕。Note 必须写问题、影响范围、决定、真实替代方案及舍弃理由、后果，以及验证证据或防止重复踩坑的约束。
 - Note 按 `proposed`、`implemented`、`rejected`、`archived` 生命周期和功能类别归档；格式与转换规则见 `docs/README.md` 和模板。
 - AI 开发流程见 `.agents/skills/answra-change/SKILL.md`。本地 `pnpm verify` 只提示缺少配套 Note（`pnpm notes:hint`），不阻断提交；严格失败判定（缺少 Note、格式不完整、本地链接失效）由 `pnpm notes:check` 与 CI 执行。
+- 产品方向与 Agent 底座规划见 `.agents/skills/answra-vision/SKILL.md`（正文提案在 `docs/notes/proposed/architecture/2026-10-20-product-direction-and-agent-foundation.md`）。新增能力域、新功能规划或跨域能力（工具、打断、存储、媒体流）设计前先核对。
 - 结构性变更同时同步本文件、Note 和 README 仓库结构表。
