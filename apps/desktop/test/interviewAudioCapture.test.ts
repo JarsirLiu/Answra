@@ -122,11 +122,12 @@ describe("InterviewAudioCapture", () => {
     }
     expect(bridge.sendInterviewPcmFrame).toHaveBeenCalledTimes(10);
     deliverCredit?.({ sessionId: "capture-1", count: 5 });
+    expect(capture.getState()).toEqual({ phase: "listening", agentConfirmedFrames: 5 });
     FakeAudioWorkletNode.last.port.onmessage?.({
       data: { type: "frame", sequence: 10, startSample: 16_000, pcm: first },
     } as MessageEvent);
     expect(bridge.sendInterviewPcmFrame).toHaveBeenCalledTimes(11);
-    expect(capture.getState()).toEqual({ phase: "listening" });
+    expect(capture.getState()).toEqual({ phase: "listening", agentConfirmedFrames: 5 });
 
     await capture.stop();
     expect(audioTrack.stop).toHaveBeenCalledOnce();

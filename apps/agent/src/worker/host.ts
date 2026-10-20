@@ -125,8 +125,9 @@ export function startAgentHost({
     }
     if (command.type === "interview-audio-frame") {
       const result = interviewAudio.acceptFrame(command.frame);
-      if (!result.accepted) console.warn("[interview-audio] frame rejected", result.code);
-      if (command.frame.sessionId === audioCreditSessionId) {
+      if (!result.accepted) {
+        console.warn("[interview-audio] frame rejected", result.code);
+      } else if (command.frame.sessionId === audioCreditSessionId) {
         uncreditedAudioFrames += 1;
         if (uncreditedAudioFrames >= INTERVIEW_AUDIO_CREDIT_BATCH) {
           transport.send({

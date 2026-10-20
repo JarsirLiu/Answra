@@ -61,7 +61,11 @@ export function InterviewCapturePanel({ capture, state, onClose }: InterviewCapt
             </button>
           )}
         </div>
-        <p className="interview-capture-note">当前仅采集系统声音，转录和回答尚未接入。</p>
+        <p aria-live="polite" className="interview-capture-note">
+          {state.phase === "listening" && state.agentConfirmedFrames !== undefined
+            ? `Agent 已确认接收 ${state.agentConfirmedFrames} 帧 PCM 音频。`
+            : "当前仅采集系统声音，转录和回答尚未接入。"}
+        </p>
       </div>
     </PanelShell>
   );

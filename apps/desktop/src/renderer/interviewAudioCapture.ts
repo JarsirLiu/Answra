@@ -32,6 +32,7 @@ interface CaptureRun {
   cleanupPromise?: Promise<void>;
   stoppedTracks: Set<MediaStreamTrack>;
   availableCredits: number;
+  agentConfirmedFrames: number;
   lastCreditAt: number;
   creditWatchdog?: ReturnType<typeof setTimeout>;
   stopPromise?: Promise<void>;
@@ -77,6 +78,7 @@ export class InterviewAudioCapture implements InterviewCapturePort {
     const run: CaptureRun = {
       cancelled: false,
       availableCredits: INTERVIEW_AUDIO_CREDIT_WINDOW,
+      agentConfirmedFrames: 0,
       lastCreditAt: Date.now(),
       stoppedTracks: new Set(),
     };
@@ -146,7 +148,7 @@ export class InterviewAudioCapture implements InterviewCapturePort {
         credits: INTERVIEW_AUDIO_CREDIT_WINDOW,
         maxCredits: INTERVIEW_AUDIO_CREDIT_WINDOW,
       });
-      this.setState({ phase: "listening" });
+      this.setState({ phase: "listening", agentConfirmedFrames: 0 });
       this.scheduleCreditWatchdog(run);
     } catch (error) {
       await this.cleanupRun(run);
@@ -242,7 +244,9 @@ export class InterviewAudioCapture implements InterviewCapturePort {
     if (granted === 0) return;
     run.lastCreditAt = Date.now();
     run.availableCredits += granted;
+    run.agentConfirmedFrames += granted;
     run.worklet.port.postMessage({ type: "credit", count: granted });
+    this.setState({ phase: "listening", agentConfirmedFrames: run.agentConfirmedFrames });
     this.scheduleCreditWatchdog(run);
   }
 

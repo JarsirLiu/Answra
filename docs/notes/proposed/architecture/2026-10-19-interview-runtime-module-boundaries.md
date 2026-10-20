@@ -128,5 +128,6 @@ interview runtime composition
 
 - 当前代码只完成 Windows loopback 到 desktop PCM 分帧、typed IPC、Agent ingress 校验和下游音频端口转交。UI 状态表示本机采集器状态，不代表 ASR 已工作；VAD、转录和回答尚未接入，因此本 Note 仍是提案。
 - 单帧上限为 100 ms / 3200 bytes。AudioWorklet 和 renderer 使用 10 帧 credit 窗口；Agent 每处理 5 帧返还一次额度，额度耗尽时采集端丢弃新帧，序号/采样位置保留缺口。连续 3 秒没有额度返还且仍有在途帧时，采集器报错并释放资源。各异步阶段因此有明确的有限上限，不能在实时处理落后时无限积压。
-- 自动化测试覆盖 PCM 格式/时间轴、session 生命周期、IPC 调用来源、启动取消和资源清理。Windows loopback 尚未在真实音频播放或会议软件下实测；自动化 mock 不能证明系统设备兼容性。
-- 进入 VAD 阶段前，须以集成测试证明 credit 往返、额度耗尽后的丢帧缺口可观测，以及停止后无迟到音频进入新 session。
+- 自动化测试覆盖 PCM 格式/时间轴、session 生命周期、IPC 调用来源、启动取消和资源清理。Worker adapter 集成测试使用结构化克隆的 ParentPort 替身连接实际 worker 接线与 Agent host，验证 credit 按批往返、序号缺口可见、监听停止后旧 session 帧不污染重启 session。该测试不等同于 Electron 独立进程或 Windows 设备实测。
+- 采集面板将显示 Agent 通过 credit 回执确认处理的 PCM 帧数；worker 只为 ingress 接受的帧返还额度，拒绝帧不能增加确认数。实机验收时播放持续系统声音，确认该数字持续增长；若播放声音时仍为 0，不能判定音频链路通过。
+- Windows loopback 尚未在真实音频播放或会议软件下实测；自动化 mock 不能证明系统设备兼容性。进入 VAD 阶段前仍须完成 Windows 实机采集、持续传帧和停止清理验证，并确认真实队列拥塞时序号/采样位置能显示丢帧缺口。

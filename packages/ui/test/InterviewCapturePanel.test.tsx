@@ -34,4 +34,16 @@ describe("InterviewCapturePanel", () => {
     expect(capture.stop).toHaveBeenCalledOnce();
     expect(screen.getByText("当前仅采集系统声音，转录和回答尚未接入。")).toBeInTheDocument();
   });
+
+  it("shows Agent-confirmed audio frames as capture evidence", () => {
+    render(
+      <InterviewCapturePanel
+        capture={capturePort()}
+        state={{ phase: "listening", agentConfirmedFrames: 25 }}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Agent 已确认接收 25 帧 PCM 音频。")).toBeInTheDocument();
+  });
 });

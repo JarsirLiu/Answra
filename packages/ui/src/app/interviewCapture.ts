@@ -3,6 +3,8 @@ export type InterviewCapturePhase = "idle" | "starting" | "listening" | "stoppin
 export interface InterviewCaptureState {
   phase: InterviewCapturePhase;
   message?: string;
+  /** PCM frames confirmed by the Agent's audio-credit response. */
+  agentConfirmedFrames?: number;
 }
 
 /** Desktop injects the platform capture adapter; UI owns only controls and status. */
