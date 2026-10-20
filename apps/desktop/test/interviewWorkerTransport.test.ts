@@ -1,6 +1,18 @@
-import type { AgentCommand, AgentFrame } from "@answra/agent";
+import type { AgentCommand, AgentFrame, TenVadSource } from "@answra/agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { startAgentWorker } from "../src/main/conversation/workerTransport";
+
+/** 无语音假 VAD：所有 hop 判为非语音，证明传输接线不依赖真实推理。 */
+const silenceVadSource = (): TenVadSource => ({
+  load: async () => ({
+    hopSamples: 256,
+    createHop: () => ({
+      hopSamples: 256,
+      processHop: () => ({ probability: 0.02, voiced: false }),
+    }),
+    destroyHop: () => undefined,
+  }),
+});
 
 interface ParentMessage {
   data: AgentCommand;
@@ -48,7 +60,7 @@ describe("Agent worker interview audio transport", () => {
   it("returns batch credits, reports gaps, and rejects frames from a stopped session after restart", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const harness = createParentPort();
-    const host = startAgentWorker(harness.parentPort);
+    const host = startAgentWorker(harness.parentPort, { vad: silenceVadSource() });
 
     harness.dispatch({
       id: "start-1",

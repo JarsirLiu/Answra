@@ -1,0 +1,42 @@
+{
+  "tenVad": {
+    "repository": "TEN-framework/ten-vad",
+    "revision": "d68ab71c8d5fbd8f98e97ae7c9986af76b5d72b1",
+    "version": "2.1.2",
+    "license": "Apache-2.0 + Agora deployment additional terms (see lib/Web README & NOTICES)",
+    "files": [
+      {
+        "name": "ten_vad.js",
+        "path": "lib/Web/ten_vad.js",
+        "url": "https://raw.githubusercontent.com/TEN-framework/ten-vad/d68ab71c8d5fbd8f98e97ae7c9986af76b5d72b1/lib/Web/ten_vad.js",
+        "sha256": "6ad8404430c1fb33b5910032b971e1a4f1d4ca3c9bf76fe456f0b5dcd9e97c7e",
+        "size": 5609,
+        "dir": "."
+      },
+      {
+        "name": "ten_vad.wasm",
+        "path": "lib/Web/ten_vad.wasm",
+        "url": "https://raw.githubusercontent.com/TEN-framework/ten-vad/d68ab71c8d5fbd8f98e97ae7c9986af76b5d72b1/lib/Web/ten_vad.wasm",
+        "sha256": "1ec0b9640683987e15a4e54e4ce5642b2447c6e5d82b1be889b5099c75434fc3",
+        "size": 283349,
+        "dir": "."
+      },
+      {
+        "name": "LICENSE",
+        "path": "LICENSE",
+        "url": "https://raw.githubusercontent.com/TEN-framework/ten-vad/d68ab71c8d5fbd8f98e97ae7c9986af76b5d72b1/LICENSE",
+        "sha256": "03d862b922867b8c3406a0c17791e256ed3d76f197d88c1996c4aebfb79f688e",
+        "size": 2239,
+        "dir": "licenses"
+      },
+      {
+        "name": "NOTICES",
+        "path": "NOTICES",
+        "url": "https://raw.githubusercontent.com/TEN-framework/ten-vad/d68ab71c8d5fbd8f98e97ae7c9986af76b5d72b1/NOTICES",
+        "sha256": "83a1d666450e06c846be76efcdd311294c28d07417bed0cb119d6400ba3cdc3b",
+        "size": 3751,
+        "dir": "licenses"
+      }
+    ]
+  }
+}

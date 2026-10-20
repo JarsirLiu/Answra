@@ -14,6 +14,15 @@
 export { ConversationRuntime } from "./conversation/runtime";
 export type { ConversationStore } from "./conversation/store";
 export { MemoryConversationStore } from "./conversation/store";
+export type { InterviewVadPipelineOptions } from "./interview/vad/pipeline";
+export { InterviewVadPipeline } from "./interview/vad/pipeline";
+export type {
+  HopVerdict,
+  TenVadEngine,
+  TenVadHop,
+  TenVadSource,
+} from "./interview/vad/tenVadEngine";
+export { createTenVadEngine } from "./interview/vad/tenVadEngine";
 export type { AgentHost, AgentHostOptions, AgentTransport } from "./worker/host";
 export { startAgentHost } from "./worker/host";
 export type { AgentCommand, AgentFrame, InterviewWorkerEvent } from "./worker/protocol";

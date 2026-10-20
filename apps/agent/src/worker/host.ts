@@ -3,10 +3,13 @@ import { ConversationRuntime } from "../conversation/runtime";
 import { type ConversationStore, MemoryConversationStore } from "../conversation/store";
 import { InterviewAudioIngress } from "../interview/audio/ingress";
 import {
+  type AudioSegment,
   conversationId as asConversationId,
   sessionId as asSessionId,
   type InterviewDomainEvent,
 } from "../interview/contracts";
+import { InterviewVadPipeline } from "../interview/vad/pipeline";
+import type { TenVadSource } from "../interview/vad/tenVadEngine";
 import { toInterviewWorkerEvent } from "./interviewProjection";
 import type { AgentCommand, AgentFrame } from "./protocol";
 
@@ -26,12 +29,19 @@ export interface AgentTransport {
 export interface AgentHostOptions {
   transport: AgentTransport;
   store?: ConversationStore;
+  /**
+   * 面试 VAD 的资源来源（预编译 TEN VAD wasm 由 desktop 组合根读盘后注入）。
+   * 未注入时 interview-start 会显式失败：不静默降级为无 VAD 会话。
+   */
+  vad: TenVadSource;
 }
 
 export interface AgentHost {
   runtime: ConversationRuntime;
   /** Publishes a domain event for desktop-main projection into renderer DTOs. */
   emitInterviewEvent(event: InterviewDomainEvent): void;
+  /** 阶段 3：已产出的分段暂存视图（有界）；阶段 4 的转录消费者接管后删除。 */
+  stagedInterviewVadSegments(sessionId: string): readonly AudioSegment[];
   dispose(): void;
 }
 
@@ -47,6 +57,7 @@ const CAPABILITY_REQUEST_TIMEOUT_MS = 10_000;
 export function startAgentHost({
   transport,
   store = new MemoryConversationStore(),
+  vad,
 }: AgentHostOptions): AgentHost {
   /** 反向请求（agent → 宿主）的等待表：宿主用同 id 的命令帧回答。 */
   const capabilityRequests = new Map<
@@ -83,7 +94,11 @@ export function startAgentHost({
 
   const interviewAudio = new InterviewAudioIngress({
     emit: (event) => emitInterviewEvent(event),
-    onFrame: () => undefined,
+    onFrame: (frame) => interviewVad.handleFrame(frame),
+  });
+  const interviewVad = new InterviewVadPipeline({
+    vad,
+    failSession: (id, code) => interviewAudio.fail(id, code),
   });
   let audioCreditSessionId: string | undefined;
   let uncreditedAudioFrames = 0;
@@ -98,6 +113,7 @@ export function startAgentHost({
   function dispose(): void {
     if (disposed) return;
     disposed = true;
+    interviewVad.dispose();
     for (const pending of capabilityRequests.values())
       pending.reject(new Error("本地 AI 服务已关闭"));
     capabilityRequests.clear();
@@ -162,23 +178,34 @@ export function startAgentHost({
 
   async function run(command: AgentCommand): Promise<unknown> {
     switch (command.type) {
-      case "interview-start":
+      case "interview-start": {
         interviewAudio.start(
           asSessionId(command.sessionId),
           asConversationId(command.conversationId),
         );
         audioCreditSessionId = command.sessionId;
         uncreditedAudioFrames = 0;
+        try {
+          await interviewVad.start(asSessionId(command.sessionId));
+        } catch (error) {
+          // VAD 资源加载失败属于显式失败路径：先把会话打成 failed，再把错误冒给 desktop。
+          interviewAudio.fail(asSessionId(command.sessionId), "runtime-failed");
+          clearAudioCredits(command.sessionId);
+          throw error;
+        }
         return undefined;
+      }
       case "interview-capture-ready":
         if (!interviewAudio.captureReady(asSessionId(command.sessionId)))
           throw new Error("面试音频会话已失效");
         return undefined;
       case "interview-capture-failed":
+        interviewVad.fail(asSessionId(command.sessionId));
         interviewAudio.fail(asSessionId(command.sessionId), "capture-failed");
         clearAudioCredits(command.sessionId);
         return undefined;
       case "interview-stop":
+        interviewVad.stop(asSessionId(command.sessionId));
         interviewAudio.stop(asSessionId(command.sessionId));
         clearAudioCredits(command.sessionId);
         return undefined;
@@ -217,5 +244,10 @@ export function startAgentHost({
     uncreditedAudioFrames = 0;
   }
 
-  return { runtime, emitInterviewEvent, dispose };
+  return {
+    runtime,
+    emitInterviewEvent,
+    stagedInterviewVadSegments: (sessionId) => interviewVad.stagedSegments(sessionId),
+    dispose,
+  };
 }

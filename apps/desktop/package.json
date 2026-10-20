@@ -11,6 +11,7 @@
     "build": "pnpm build:electron && vite build",
     "build:electron": "node ./scripts/build-electron.mjs",
     "ime:prepare": "node ./scripts/prepare-rime.mjs",
+    "vad:prepare": "node ./scripts/prepare-ten-vad.mjs",
     "typecheck": "tsc -p tsconfig.main.json && tsc -p tsconfig.preload.json && tsc -p tsconfig.renderer.json",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -32,6 +33,13 @@
       {
         "from": "resources/rime",
         "to": "rime",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "resources/vad",
+        "to": "vad",
         "filter": [
           "**/*"
         ]

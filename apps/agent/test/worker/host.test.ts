@@ -1,8 +1,20 @@
 import { createServer, type Server } from "node:http";
-import type { AgentCommand, AgentFrame, AgentTransport } from "@answra/agent";
+import type { AgentCommand, AgentFrame, AgentTransport, TenVadSource } from "@answra/agent";
 import { startAgentHost } from "@answra/agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { conversationId, sessionId, utteranceId } from "../../src/interview/contracts";
+
+/** 无语音假 VAD：所有 hop 判为非语音，证明宿主接线不依赖真实推理。 */
+const silenceVadSource = (): TenVadSource => ({
+  load: async () => ({
+    hopSamples: 256,
+    createHop: () => ({
+      hopSamples: 256,
+      processHop: () => ({ probability: 0.02, voiced: false }),
+    }),
+    destroyHop: () => undefined,
+  }),
+});
 
 /** 假传输：记录上行帧、允许下行命令。证明命令分发不依赖 Electron。 */
 function createHarness() {
@@ -38,7 +50,7 @@ describe("agent worker host", () => {
 
   it("publishes typed interview domain events over the worker transport", () => {
     const harness = createHarness();
-    const host = startAgentHost({ transport: harness.transport });
+    const host = startAgentHost({ transport: harness.transport, vad: silenceVadSource() });
     const event = {
       type: "session-started" as const,
       sessionId: sessionId("capture-1"),
@@ -59,7 +71,7 @@ describe("agent worker host", () => {
 
   it("projects transcript events into serializable worker DTOs", () => {
     const harness = createHarness();
-    const host = startAgentHost({ transport: harness.transport });
+    const host = startAgentHost({ transport: harness.transport, vad: silenceVadSource() });
     host.emitInterviewEvent({
       type: "transcript-event",
       event: {
@@ -96,7 +108,7 @@ describe("agent worker host", () => {
 
   it("routes PCM frames into ingress without a response per audio frame", async () => {
     const harness = createHarness();
-    startAgentHost({ transport: harness.transport });
+    startAgentHost({ transport: harness.transport, vad: silenceVadSource() });
 
     harness.dispatch({
       id: "start-1",
@@ -179,6 +191,38 @@ describe("agent worker host", () => {
     expect(harness.responses()).toHaveLength(2);
   });
 
+  it("fails the interview session explicitly when VAD resources cannot load", async () => {
+    const harness = createHarness();
+    startAgentHost({
+      transport: harness.transport,
+      vad: { load: () => Promise.reject(new Error("VAD 资源缺失，请运行 vad:prepare")) },
+    });
+
+    harness.dispatch({
+      id: "start-9",
+      type: "interview-start",
+      sessionId: "capture-9",
+      conversationId: "active-interview-conversation",
+    });
+    await vi.waitFor(() => expect(harness.responses()).toHaveLength(1));
+
+    expect(harness.responses()[0]).toMatchObject({
+      id: "start-9",
+      ok: false,
+      error: expect.stringContaining("VAD 资源缺失"),
+    });
+    expect(harness.frames).toContainEqual({
+      version: 1,
+      type: "interview-event",
+      event: {
+        type: "session-failed",
+        sessionId: "capture-9",
+        conversationId: "active-interview-conversation",
+        code: "runtime-failed",
+      },
+    });
+  });
+
   async function startUnauthorizedServer(): Promise<string> {
     const server = createServer((_request, response) => {
       response.writeHead(401, { "content-type": "application/json" });
@@ -197,7 +241,7 @@ describe("agent worker host", () => {
 
   it("executes commands and answers with a response frame carrying the same id", async () => {
     const harness = createHarness();
-    startAgentHost({ transport: harness.transport });
+    startAgentHost({ transport: harness.transport, vad: silenceVadSource() });
 
     harness.dispatch({ id: "1", type: "create-conversation", conversationId: "c1" });
     await vi.waitFor(() => expect(harness.responses()).toHaveLength(1));
@@ -216,7 +260,7 @@ describe("agent worker host", () => {
 
   it("reports a command failure in the response frame instead of throwing", async () => {
     const harness = createHarness();
-    startAgentHost({ transport: harness.transport });
+    startAgentHost({ transport: harness.transport, vad: silenceVadSource() });
 
     harness.dispatch({
       id: "1",
@@ -239,7 +283,7 @@ describe("agent worker host", () => {
   it("asks the host for a fresh token on 401 and answers its own reverse request", async () => {
     const baseUrl = await startUnauthorizedServer();
     const harness = createHarness();
-    const host = startAgentHost({ transport: harness.transport });
+    const host = startAgentHost({ transport: harness.transport, vad: silenceVadSource() });
     host.runtime.configure({
       chat: { baseUrl, model: "text.chat" },
       answer: { baseUrl, model: "image.answer" },
@@ -272,7 +316,7 @@ describe("agent worker host", () => {
 
   it("ignores a token answer that no run is waiting for", () => {
     const harness = createHarness();
-    const host = startAgentHost({ transport: harness.transport });
+    const host = startAgentHost({ transport: harness.transport, vad: silenceVadSource() });
     const dispose = vi.spyOn(host.runtime, "dispose");
 
     harness.dispatch({ id: "token-request:999", type: "token", accessToken: "fresh-token" });
@@ -283,7 +327,7 @@ describe("agent worker host", () => {
 
   it("disposes the runtime and closes the transport on shutdown without a response", () => {
     const harness = createHarness();
-    const host = startAgentHost({ transport: harness.transport });
+    const host = startAgentHost({ transport: harness.transport, vad: silenceVadSource() });
     const dispose = vi.spyOn(host.runtime, "dispose");
 
     harness.dispatch({ id: "1", type: "shutdown" });

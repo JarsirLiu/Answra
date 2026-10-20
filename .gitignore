@@ -14,6 +14,9 @@ coverage/
 apps/desktop/.cache-rime/
 apps/desktop/resources/rime/**
 !apps/desktop/resources/rime/README.md
+# Prebuilt TEN VAD wasm/glue are prepared locally via `vad:prepare`; only the manifest source stays in Git.
+apps/desktop/.cache-vad/
+apps/desktop/resources/vad/**
 # Locally downloaded dictionary data and prebuilt helper binaries are not source files.
 apps/desktop/native/rime-data/easy_en.dict.yaml
 apps/desktop/native/rime-host/*.exe

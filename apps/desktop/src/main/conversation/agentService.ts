@@ -39,7 +39,8 @@ export class AgentService {
 
   async start(): Promise<void> {
     const workerPath = path.join(app.getAppPath(), "out/main/conversation/worker.cjs");
-    const worker = utilityProcess.fork(workerPath, [], {
+    // worker 无法访问 Electron app 路径 API，资源目录以启动参数传入（见 worker.ts）。
+    const worker = utilityProcess.fork(workerPath, [resolveVadResourceRoot()], {
       cwd: app.getPath("userData"),
       serviceName: "Answra Agent Runtime",
       stdio: "ignore",
@@ -195,6 +196,13 @@ export class AgentService {
     for (const pending of this.pending.values()) pending.reject(error);
     this.pending.clear();
   }
+}
+
+/** 预编译 VAD 资源目录：打包版经 extraResources 落在 resourcesPath/vad。 */
+function resolveVadResourceRoot(): string {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, "vad")
+    : path.join(app.getAppPath(), "resources", "vad");
 }
 
 function validateSendRequest(request: ConversationSendRequest): void {
