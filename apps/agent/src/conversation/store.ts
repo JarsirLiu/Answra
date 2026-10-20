@@ -8,9 +8,25 @@ import type {
 
 export interface ConversationStore {
   create(conversationId: string): Promise<ConversationSnapshot>;
+  /**
+   * 仅空闲清理：会话没有活动 run 时才清空消息与 journal；仍有活动 run 时 no-op。
+   * 运行中的残留清理由以下原子认领负责，任何调用方不得在活动 run 期间强制清空。
+   */
   clear(conversationId: string): Promise<void>;
   load(conversationId: string): Promise<ConversationSnapshot>;
   beginRun(conversationId: string, runId: string, userMessage: ConversationMessage): Promise<void>;
+  /**
+   * 一次性答题运行的认领原语：在同一步内完成「有活动 run 时抛
+   * 『当前回复尚未完成』→ 清空上一轮残留消息与 journal（revision 保持单调）→
+   * 安装本轮 user/assistant 消息对」。检查、清理与安装是不可拆分的状态迁移：
+   * 未来 SQLite 实现必须放在同一事务并按会话串行，绝不允许通过陈旧快照
+   * 抹除在途运行。
+   */
+  beginEphemeralRun(
+    conversationId: string,
+    runId: string,
+    userMessage: ConversationMessage,
+  ): Promise<void>;
   appendEvent(event: Omit<ConversationEvent, "revision">): Promise<ConversationChange>;
   finishRun(
     conversationId: string,
@@ -49,9 +65,8 @@ export class MemoryConversationStore implements ConversationStore {
 
   async clear(conversationId: string): Promise<void> {
     const session = this.sessions.get(conversationId);
-    if (!session) return;
+    if (!session || session.snapshot.activeRunId) return;
     session.snapshot.messages = [];
-    delete session.snapshot.activeRunId;
     session.journal = [];
   }
 
@@ -76,6 +91,43 @@ export class MemoryConversationStore implements ConversationStore {
     );
     session.snapshot.activeRunId = runId;
     session.snapshot.revision += 1;
+    this.publish(
+      {
+        type: "messages-appended",
+        conversationId,
+        revision: session.snapshot.revision,
+        messages: [userMessage, assistantMessage].map(cloneMessage),
+        activeRunId: runId,
+      },
+      session,
+    );
+  }
+
+  async beginEphemeralRun(
+    conversationId: string,
+    runId: string,
+    userMessage: ConversationMessage,
+  ): Promise<void> {
+    const session = this.requireSession(conversationId);
+    if (session.snapshot.activeRunId) throw new Error("当前回复尚未完成");
+    if (userMessage.role !== "user") throw new Error("run 必须从用户消息开始");
+    const assistantMessage: ConversationMessage = {
+      id: runId,
+      role: "assistant",
+      text: "",
+      images: [],
+      status: "streaming",
+    };
+    // 一次性答题：上一轮的消息与 journal 只属于上一轮运行，认领时一步清空；
+    // revision 单调递增，事件游标过旧时按既有规则回退到 snapshot。
+    session.snapshot.messages = [];
+    session.snapshot.messages.push(
+      { ...userMessage, images: [...userMessage.images] },
+      assistantMessage,
+    );
+    session.snapshot.activeRunId = runId;
+    session.snapshot.revision += 1;
+    session.journal = [];
     this.publish(
       {
         type: "messages-appended",

@@ -6,6 +6,8 @@ import {
 } from "@answra/shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ConversationRuntime } from "../../src/conversation/runtime";
+import type { ConversationStore } from "../../src/conversation/store";
+import { MemoryConversationStore } from "../../src/conversation/store";
 
 type RecordedRequest = {
   messages: Array<{ role: string; content: unknown }>;
@@ -32,6 +34,7 @@ describe("ephemeral conversation runtime", () => {
   let runtime: ConversationRuntime;
   let changes: ConversationChange[];
   let holdResponse: boolean;
+  let serverPort = 0;
 
   beforeEach(async () => {
     requests = [];
@@ -54,6 +57,7 @@ describe("ephemeral conversation runtime", () => {
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const address = server.address();
     if (!address || typeof address === "string") throw new Error("test server did not bind");
+    serverPort = address.port;
     runtime = new ConversationRuntime({ emit: (change) => changes.push(change) });
     runtime.configure({ chat: endpoint(address.port), answer: endpoint(address.port) });
   });
@@ -383,6 +387,124 @@ describe("ephemeral conversation runtime", () => {
     } finally {
       retrying.dispose();
       await new Promise<void>((resolve) => unauthorizedServer.close(() => resolve()));
+    }
+  });
+
+  it("rejects the second of two concurrent answer runs and keeps the survivor intact", async () => {
+    const settled = await Promise.allSettled([
+      runtime.runAnswer("race-conversation", { text: "并发第一题", images: [] }, ACCESS_TOKEN),
+      runtime.runAnswer("race-conversation", { text: "并发第二题", images: [] }, ACCESS_TOKEN),
+    ]);
+    const fulfilled = settled.filter(
+      (outcome): outcome is PromiseFulfilledResult<{ runId: string }> =>
+        outcome.status === "fulfilled",
+    );
+    const rejected = settled.filter(
+      (outcome): outcome is PromiseRejectedResult => outcome.status === "rejected",
+    );
+
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]?.reason).toBeInstanceOf(Error);
+    expect(rejected[0]?.reason.message).toBe("当前回复尚未完成");
+    expect(fulfilled).toHaveLength(1);
+
+    const survivorRunId = fulfilled[0]?.value.runId ?? "";
+    await waitForTerminal(survivorRunId);
+    const survivorEvents = changes
+      .flatMap((change) => (change.type === "event" ? [change.event] : []))
+      .filter((event) => event.runId === survivorRunId);
+    expect(survivorEvents.some((event) => event.chunk.type === "error")).toBe(false);
+    expect(survivorEvents.some((event) => event.chunk.type === "finish")).toBe(true);
+    expect(runtime.activeRunCount).toBe(0);
+  });
+
+  it("keeps the single-active-run invariant when every store await spans real time", async () => {
+    // SQLite 形态回归：每个端口方法真实挂起一个宏任务。旧实现（load 检查 → clear →
+    // beginRun 跨多个 await）在该形态下会破坏在途 run；原子认领必须保持不变量。
+    const inner = new MemoryConversationStore();
+    const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
+    const store: ConversationStore = {
+      create: async (conversationId) => {
+        await tick();
+        return inner.create(conversationId);
+      },
+      clear: async (conversationId) => {
+        await tick();
+        await inner.clear(conversationId);
+      },
+      load: async (conversationId) => {
+        await tick();
+        return inner.load(conversationId);
+      },
+      beginRun: async (conversationId, runId, userMessage) => {
+        await tick();
+        await inner.beginRun(conversationId, runId, userMessage);
+      },
+      beginEphemeralRun: async (conversationId, runId, userMessage) => {
+        await tick();
+        await inner.beginEphemeralRun(conversationId, runId, userMessage);
+      },
+      appendEvent: async (event) => {
+        await tick();
+        return inner.appendEvent(event);
+      },
+      finishRun: async (conversationId, runId, status) => {
+        await tick();
+        await inner.finishRun(conversationId, runId, status);
+      },
+      readAfter: async (conversationId, revision) => {
+        await tick();
+        return inner.readAfter(conversationId, revision);
+      },
+      subscribe: (listener) => inner.subscribe(listener),
+    };
+    const raceChanges: ConversationChange[] = [];
+    const racing = new ConversationRuntime({ emit: (change) => raceChanges.push(change), store });
+    racing.configure({ chat: endpoint(serverPort), answer: endpoint(serverPort) });
+    try {
+      const settled = await Promise.allSettled([
+        racing.runAnswer(
+          "race-async-conversation",
+          { text: "异步第一题", images: [] },
+          ACCESS_TOKEN,
+        ),
+        racing.runAnswer(
+          "race-async-conversation",
+          { text: "异步第二题", images: [] },
+          ACCESS_TOKEN,
+        ),
+      ]);
+      const fulfilled = settled.filter(
+        (outcome): outcome is PromiseFulfilledResult<{ runId: string }> =>
+          outcome.status === "fulfilled",
+      );
+      const rejected = settled.filter(
+        (outcome): outcome is PromiseRejectedResult => outcome.status === "rejected",
+      );
+
+      expect(rejected).toHaveLength(1);
+      expect(rejected[0]?.reason.message).toBe("当前回复尚未完成");
+      expect(fulfilled).toHaveLength(1);
+
+      const survivorRunId = fulfilled[0]?.value.runId ?? "";
+      for (let attempt = 0; attempt < 300; attempt += 1) {
+        const finished = raceChanges.some(
+          (change) =>
+            change.type === "event" &&
+            change.event.runId === survivorRunId &&
+            change.event.chunk.type === "finish",
+        );
+        if (finished) break;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      const survivorEvents = raceChanges
+        .flatMap((change) => (change.type === "event" ? [change.event] : []))
+        .filter((event) => event.runId === survivorRunId);
+      expect(survivorEvents.some((event) => event.chunk.type === "error")).toBe(false);
+      expect(survivorEvents.some((event) => event.chunk.type === "finish")).toBe(true);
+      expect((await racing.getSnapshot("race-async-conversation")).messages).toEqual([]);
+    } finally {
+      racing.dispose();
     }
   });
 

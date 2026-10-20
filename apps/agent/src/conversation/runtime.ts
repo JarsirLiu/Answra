@@ -82,9 +82,6 @@ export class ConversationRuntime {
     request: ConversationSendRequest,
     accessToken: string,
   ): Promise<{ runId: string }> {
-    await this.store.create(conversationId);
-    if ((await this.store.load(conversationId)).activeRunId) throw new Error("当前回复尚未完成");
-    await this.store.clear(conversationId);
     return this.startRun(
       conversationId,
       request,
@@ -113,7 +110,11 @@ export class ConversationRuntime {
     // 截图答题与对话是两项能力，端点与占位模型都可能不同：按运行所属的能力取。
     const endpoint = ephemeral ? this.config.answer : this.config.chat;
     await this.store.create(conversationId);
-    await this.store.beginRun(conversationId, runId, createUserMessage(randomUUID(), request));
+    const userMessage = createUserMessage(randomUUID(), request);
+    // 一次性答题的认领（并发拒绝 + 清残留 + 占位）是仓储内的原子状态迁移；
+    // 多轮对话沿用 beginRun 的原子守卫。
+    if (ephemeral) await this.store.beginEphemeralRun(conversationId, runId, userMessage);
+    else await this.store.beginRun(conversationId, runId, userMessage);
     this.runs.set(runId, controller);
     void this.execute(
       conversationId,
