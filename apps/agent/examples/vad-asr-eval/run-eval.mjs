@@ -12,14 +12,18 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 const evalDir = path.dirname(fileURLToPath(import.meta.url));
-const alias = { small: "paraformer-zh-small-int8", large: "paraformer-zh-large-int8" };
+const alias = {
+  small: "paraformer-zh-small-int8",
+  large: "paraformer-zh-large-int8",
+  sense: "sensevoice-small-int8",
+};
 const args = process.argv.slice(2);
 // pnpm 可能吃掉逗号或 --models flag；alias 词（small/large）无论带不带 flag 都接受。
 const picked = args
   .flatMap((token) => token.split(/[,\s]+/))
   .filter((k) => alias[k])
   .map((k) => alias[k]);
-const models = (picked.length ? picked : ["small", "large"]).join(",");
+const models = (picked.length ? picked : ["small", "sense"]).map((k) => alias[k] ?? k).join(",");
 const modelsDir = path.join(evalDir, "models");
 const dataDir = path.join(evalDir, "data");
 

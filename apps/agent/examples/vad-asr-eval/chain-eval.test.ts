@@ -30,7 +30,7 @@ const evalDir = process.env.ANSWRA_ASR_EVAL_DIR
   ? path.resolve(String(process.env.ANSWRA_ASR_EVAL_DIR))
   : path.resolve(path.dirname(fileURLToPath(import.meta.url)));
 const agentRoot = path.resolve(evalDir, "..", "..");
-const repoRoot = path.resolve(agentRoot, "..");
+const repoRoot = path.resolve(agentRoot, "..", "..");
 
 interface ManifestFile {
   url: string;
@@ -38,7 +38,7 @@ interface ManifestFile {
   sha256: string;
 }
 interface Manifest {
-  models: Record<string, { runs: { files: Record<string, ManifestFile> }[] }>;
+  models: Record<string, { asr: string; runs: { files: Record<string, ManifestFile> }[] }>;
 }
 
 const manifest = JSON.parse(
@@ -48,14 +48,16 @@ const manifest = JSON.parse(
 const aliasToId = {
   small: "paraformer-zh-small-int8",
   large: "paraformer-zh-large-int8",
+  sense: "sensevoice-small-int8",
 } as const;
 type ModelAlias = keyof typeof aliasToId;
 const requestedModels = (() => {
-  const raw = String(process.env.ANSWRA_ASR_EVAL_MODELS ?? "small,large");
+  const raw = String(process.env.ANSWRA_ASR_EVAL_MODELS ?? "small,sense");
   const out: string[] = [];
-  for (const piece of raw.split(",")) {
-    const id = aliasToId[piece.trim() as ModelAlias];
-    if (!id) throw new Error(`ANSWRA_ASR_EVAL_MODELS 无效别名 ${piece}`);
+  for (const piece of raw.split(/[,\s]+/).filter(Boolean)) {
+    // 词条既允许别名（small/sense/large）也允许 manifest 全 id，统一收敛成 manifest id。
+    const id = aliasToId[piece.trim() as ModelAlias] ?? piece.trim();
+    if (!manifest.models[id]) throw new Error(`ANSWRA_ASR_EVAL_MODELS 无词条目 ${piece}`);
     out.push(id);
   }
   return out;
@@ -271,17 +273,20 @@ describe.skipIf(!evalRun)("VAD+ASR 端到端评测", () => {
       const modelPath = path.join(evalDir, "models", id, "model.int8.onnx");
       if (sha256File(modelPath) !== expected)
         throw new Error(`模型 ${id} SHA 不匹配：重跑 fetch-assets.mjs`);
+      const asrType = manifest.models[id]?.asr;
+      if (!asrType) throw new Error(`manifest 缺少模型 ${id} 的 asr 类型`);
+      const tokensPath = path.join(evalDir, "models", id, "tokens.txt");
+      const base = { tokens: tokensPath, numThreads: 4, debug: 0, provider: "cpu" };
+      const modelConfig =
+        asrType === "sensevoice"
+          ? {
+              ...base,
+              senseVoice: { model: modelPath, language: "zh", useInverseTextNormalization: 1 },
+            }
+          : { ...base, paraformer: { model: modelPath } };
       return {
         id,
-        recognizer: new sherpa.OfflineRecognizer({
-          modelConfig: {
-            paraformer: { model: modelPath },
-            tokens: path.join(evalDir, "models", id, "tokens.txt"),
-            numThreads: 4,
-            debug: 0,
-            provider: "cpu",
-          },
-        }),
+        recognizer: new sherpa.OfflineRecognizer({ modelConfig }),
       };
     });
 
@@ -291,6 +296,7 @@ describe.skipIf(!evalRun)("VAD+ASR 端到端评测", () => {
       ref: string;
       hyp: string;
       boundary: string;
+      segStartS: number;
       segDurS: number;
       decodeMs: number;
     };
@@ -328,6 +334,7 @@ describe.skipIf(!evalRun)("VAD+ASR 端到端评测", () => {
           hyp: item.recognizer.getResult(stream).text,
           boundary: segment.boundary,
           segDurS,
+          segStartS: segStart,
           decodeMs,
         });
       }
@@ -335,8 +342,12 @@ describe.skipIf(!evalRun)("VAD+ASR 端到端评测", () => {
 
     const resultHeader = "model_id,clip_id,boundary,seg_dur_s,decode_ms,cer_pct,ref_text,hyp_text";
     const resultLines: string[] = [resultHeader];
-    const summary = new Map<string, { rows: Row[]; totalChars: number; totalErrors: number }>();
-    for (const id of requestedModels) summary.set(id, { rows: [], totalChars: 0, totalErrors: 0 });
+    const summary = new Map<
+      string,
+      { rows: Row[]; totalChars: number; totalErrors: number; skippedShort: number }
+    >();
+    for (const id of requestedModels)
+      summary.set(id, { rows: [], totalChars: 0, totalErrors: 0, skippedShort: 0 });
     for (const row of rows) {
       const entry = summary.get(row.modelId);
       if (!entry) continue;
@@ -361,17 +372,42 @@ describe.skipIf(!evalRun)("VAD+ASR 端到端评测", () => {
           .map(csvField)
           .join(","),
       );
-      if (row.ref) {
-        entry.totalChars += Array.from(row.ref).length;
-        entry.totalErrors += editDistance(row.ref, hyp);
-      }
     }
 
+    // sherpa 对 <0.3s 超短段会 Reshape 异常并返回空文本（实测结论），此类强切尾巴
+    // 属于噪声：results.csv 保留原样，summary 只统计有效段。
+    // 另一关键口径：强切段逐段 vs 整句参考天然高错（切损首尾字按错字计），对话场景
+    // 更真实的口径是把同一句话的所有切片按时间序合并再对照整句参考（utter_*）。
+    const MIN_SEG_S = 0.3;
     const summaryLines: string[] = [
-      "model_id,segments,chars,errs,cer_pct,mean_decode_ms,p95_decode_ms,max_decode_ms,close_ms,max_ready_ms,stream_s,vad_ms,vad_rtf",
+      "model_id,segments,short_skipped,chars,errs,seg_cer_pct,utter_clips,utter_chars,utter_errs,utter_cer_pct,mean_decode_ms,p95_decode_ms,max_decode_ms,max_seg_s,close_ms,max_ready_ms,stream_s,vad_ms,vad_rtf",
     ];
+    type UtterStat = { clips: number; chars: number; errs: number };
+    const utterStats = new Map<string, UtterStat>();
     for (const [id, entry] of summary) {
-      const decode = entry.rows.map((r) => Math.round(r.decodeMs)).sort((a, b) => a - b);
+      const used = entry.rows.filter((r) => r.segDurS >= MIN_SEG_S);
+      for (const row of entry.rows) {
+        if (row.segDurS < MIN_SEG_S) entry.skippedShort += 1;
+        if (row.ref && row.segDurS >= MIN_SEG_S) {
+          entry.totalChars += Array.from(row.ref).length;
+          entry.totalErrors += editDistance(row.ref, normalize(row.hyp));
+        }
+      }
+      // utterance 合并口径：同 clip 有效段按 segStart 排序拼接 hyp 后对照整句。
+      const stat: UtterStat = { clips: 0, chars: 0, errs: 0 };
+      for (const clip of clips) {
+        const parts = entry.rows
+          .filter((r) => r.clipId === clip.id && r.segDurS >= MIN_SEG_S)
+          .sort((a, b) => a.segStartS - b.segStartS)
+          .map((r) => normalize(r.hyp))
+          .filter(Boolean);
+        if (parts.length === 0) continue;
+        stat.clips += 1;
+        stat.chars += Array.from(clip.ref).length;
+        stat.errs += editDistance(clip.ref, parts.join(""));
+      }
+      utterStats.set(id, stat);
+      const decode = used.map((r) => Math.round(r.decodeMs)).sort((a, b) => a - b);
       const mean = decode.length
         ? Math.round(decode.reduce((a, b) => a + b, 0) / decode.length)
         : 0;
@@ -379,16 +415,24 @@ describe.skipIf(!evalRun)("VAD+ASR 端到端评测", () => {
         ? decode[Math.min(decode.length - 1, Math.floor(decode.length * 0.95))]
         : 0;
       const max = decode.length ? decode[decode.length - 1] : 0;
+      const maxSegS = used.length ? Math.max(...used.map((r) => r.segDurS)) : 0;
+      const utter = utterStats.get(id) as UtterStat;
       summaryLines.push(
         [
           id,
           entry.rows.length,
+          entry.skippedShort,
           entry.totalChars,
           entry.totalErrors,
           entry.totalChars ? ((entry.totalErrors / entry.totalChars) * 100).toFixed(2) : "",
+          utter.clips,
+          utter.chars,
+          utter.errs,
+          utter.chars ? ((utter.errs / utter.chars) * 100).toFixed(2) : "",
           mean,
           p95,
           max,
+          maxSegS.toFixed(2),
           VAD_CLOSE_SILENCE_MS,
           Math.round(VAD_CLOSE_SILENCE_MS + max),
           streamSec.toFixed(1),

@@ -3,8 +3,8 @@ import { spawnSync } from "node:child_process";
 // 评测资产一键下载：模型（sherpa-onnx 转换 channel）+ AISHELL-1 S0002 对照集。
 // 来源与 SHA-256 唯一事实来源为 assets.manifest.json；SHA 不匹配必须重下。
 // 用法：
-//   node fetch-assets.mjs                      # 默认下载 paraformer-zh-small-int8
-//   node fetch-assets.mjs --models small,large
+//   node fetch-assets.mjs                      # 默认下载 small + sense
+//   node fetch-assets.mjs --models small large
 import { createHash } from "node:crypto";
 import {
   createReadStream,
@@ -23,11 +23,15 @@ const manifest = JSON.parse(readFileSync(path.join(evalDir, "assets.manifest.jso
 const modelsRoot = path.join(evalDir, "models");
 const dataRoot = path.join(evalDir, "data");
 
-const alias = { small: "paraformer-zh-small-int8", large: "paraformer-zh-large-int8" };
+const alias = {
+  small: "paraformer-zh-small-int8",
+  large: "paraformer-zh-large-int8",
+  sense: "sensevoice-small-int8",
+};
 const args = process.argv.slice(2);
 // pnpm 可能吃掉逗号或 --models flag；alias 词（small/large）无论带不带 flag 都接受。
 const requested = args.flatMap((token) => token.split(/[,\s]+/)).filter((k) => alias[k]);
-const modelIds = (requested.length ? requested : ["small"]).map((k) => alias[k]);
+const modelIds = (requested.length ? requested : ["small", "sense"]).map((k) => alias[k]);
 
 function sha256(file) {
   return new Promise((resolve, reject) => {

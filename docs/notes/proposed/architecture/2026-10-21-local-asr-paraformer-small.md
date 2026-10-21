@@ -42,7 +42,7 @@
 
 ## 曾考虑的替代方案
 
-- **SenseVoice-Small int8（~228MB）**：第三方实测强（clean CER 2.27%、短音频 P95 163ms @ Ryzen 7 5800H、峰值内存 355MB），五语种且自带 ITN；但安装包增量约为 Paraformer-small 的 3 倍。同类 offline recognizer API 一致，列为第二候选——Paraformer-small 通链路后可无痛升级，届时再评体积取舍。
+- **SenseVoice-Small int8（~228MB）**：第三方实测强（clean CER 2.27%、短音频 P95 163ms @ Ryzen 7 5800H、峰值内存 355MB），五语种且自带 ITN；但安装包增量约为 Paraformer-small 的 3 倍。同类 offline recognizer API 一致，列为第二候选——Paraformer-small 通链路后可无痛升级，届时再评体积取舍。2026-10-21 本仓库链路复测（`examples/vad-asr-eval/harness`，对话口径）：SenseVoice CER 8.02%、max 解码 275ms，均劣于 paraformer-zh-small int8（3.09%、85ms）——官方口径之外的第三方实测未在本机复现，第二候选地位进一步降级，保持 paraformer-zh-small int8 为默认。
 - **Transformers.js + onnxruntime-node（natively-cluely 路线，worker_threads）**：模型目录/类型生态最丰富，但 ESM-only 包需动态 import 绕走、依赖 HF Hub 移动目标（revision 未锁）、模型管理面复杂（15+ 模型清单、下载/删除/预加载 IPC 全套）；natively 在 Windows 上的公开实跑证据也仅覆盖 macOS。作为打包/版本/资源管理的确定性成本高于 sherpa-onnx-node；舍弃。
 - **真流式模型（streaming zipformer/paraformer）**：能出 partial，但双语 zipformer 2023 版精度低于离线大模型，且当前 `TranscriptEvent` 没有真实 partial 消费者（turn assembler/reply 契约在批式语义上已冻结）；留作未来 realtime 门控候选，不作为首批。
 - **GGUF FunASR 二进制（llama-funasr-sensevoice/paraformer）**：CLI 二进制意味着第三种进程形态与 per-platform 产物审查，且许可以 funasr.com 发行版为准未经核对；舍弃。
