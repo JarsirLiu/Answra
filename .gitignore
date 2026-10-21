@@ -23,3 +23,8 @@ apps/desktop/native/rime-host/*.exe
 # Temporary upstream IME source archives used while preparing bundled resources.
 apps/desktop/native/rime-data/*_upstream/
 apps/desktop/native/rime-data/rime-deps.7z
+
+# VAD+ASR 评测（examples/vad-asr-eval）的模型、数据与 CSV 产物不入库
+apps/agent/examples/vad-asr-eval/models/
+apps/agent/examples/vad-asr-eval/data/
+apps/agent/examples/vad-asr-eval/out/

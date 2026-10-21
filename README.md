@@ -74,6 +74,7 @@ apps/agent             平台无关的 Agent 运行时（不依赖 Electron/Reac
   src/index.ts         公共入口：desktop worker 的唯一导入面
   src/worker           worker 线协议（main ↔ agent 命令与帧）
   src/conversation     会话运行时与存储端口；新增领域（转写、工具、触发）平级加目录
+  examples             面试链路评测脚手架（vad-asr-eval）：资产清单/一键下载/端到端延迟与 CER 的 CSV 产物；默认 skip 不进门禁
 scripts/architecture   架构守护脚本（深导入/依赖环/平台越界检查）
 scripts/docs           文档门禁
 .agents/skills         AI 开发流程指南

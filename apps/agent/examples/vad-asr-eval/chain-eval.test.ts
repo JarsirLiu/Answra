@@ -1,0 +1,406 @@
+// VAD+ASR 端到端评测：真实 TEN VAD 预编译件 → repo 真实
+// SpeechActivityDetector/VadSegmenter（经 InterviewVadPipeline 组合）→
+// manifest 固定的 paraformer int8 模型族逐段离线解码，输出 CSV。
+// 由 ANSWRA_ASR_EVAL_RUN=1 门控（run-eval.mjs 拉起），其余场景恒 skip。
+// 资产由 fetch-assets.mjs 预先下载并做 SHA 校验。
+
+import { createHash } from "node:crypto";
+import {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  readSync,
+  writeFileSync,
+} from "node:fs";
+import { createRequire } from "node:module";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it } from "vitest";
+import { type AudioSegment, type PcmFrame, sessionId } from "../../src/interview/contracts";
+import { VAD_CLOSE_SILENCE_MS } from "../../src/interview/vad/config";
+import { InterviewVadPipeline } from "../../src/interview/vad/pipeline";
+import { createTenVadEngine } from "../../src/interview/vad/tenVadEngine";
+import { TEST_FRAME_SAMPLES } from "../../test/interview/vad/fixtures";
+
+const evalRun = String(process.env.ANSWRA_ASR_EVAL_RUN ?? "") === "1";
+const evalDir = process.env.ANSWRA_ASR_EVAL_DIR
+  ? path.resolve(String(process.env.ANSWRA_ASR_EVAL_DIR))
+  : path.resolve(path.dirname(fileURLToPath(import.meta.url)));
+const agentRoot = path.resolve(evalDir, "..", "..");
+const repoRoot = path.resolve(agentRoot, "..");
+
+interface ManifestFile {
+  url: string;
+  bytes: number;
+  sha256: string;
+}
+interface Manifest {
+  models: Record<string, { runs: { files: Record<string, ManifestFile> }[] }>;
+}
+
+const manifest = JSON.parse(
+  readFileSync(path.join(evalDir, "assets.manifest.json"), "utf8"),
+) as Manifest;
+
+const aliasToId = {
+  small: "paraformer-zh-small-int8",
+  large: "paraformer-zh-large-int8",
+} as const;
+type ModelAlias = keyof typeof aliasToId;
+const requestedModels = (() => {
+  const raw = String(process.env.ANSWRA_ASR_EVAL_MODELS ?? "small,large");
+  const out: string[] = [];
+  for (const piece of raw.split(",")) {
+    const id = aliasToId[piece.trim() as ModelAlias];
+    if (!id) throw new Error(`ANSWRA_ASR_EVAL_MODELS 无效别名 ${piece}`);
+    out.push(id);
+  }
+  return out;
+})();
+
+function normalize(text: string): string {
+  return text.replace(/<\|[^>]*\|>/g, "").replace(/[^\p{L}\p{N}]/gu, "");
+}
+
+function editDistance(ref: string, hyp: string): number {
+  const refChars = Array.from(ref);
+  const hypChars = Array.from(hyp);
+  let prev = hypChars.map((_, i) => i);
+  prev.push(hypChars.length);
+  let curr = new Array(hypChars.length + 1).fill(0);
+  for (let r = 1; r <= refChars.length; r += 1) {
+    curr = new Array(hypChars.length + 1).fill(0);
+    curr[0] = r;
+    for (let h = 1; h <= hypChars.length; h += 1) {
+      const substitution = prev[h - 1] + (refChars[r - 1] === hypChars[h - 1] ? 0 : 1);
+      curr[h] = Math.min(prev[h] + 1, curr[h - 1] + 1, substitution);
+    }
+    prev = curr;
+  }
+  return prev[hypChars.length];
+}
+
+type ClipRef = { id: string; ref: string; samples: Float32Array };
+
+function readWav16(file: string): { samples: Float32Array; sampleRate: number } {
+  const buf = readFileSync(file);
+  if (buf.toString("ascii", 0, 4) !== "RIFF" || buf.toString("ascii", 8, 12) !== "WAVE")
+    throw new Error(`非 RIFF/WAVE: ${file}`);
+  let offset = 12;
+  let fmt:
+    | { sampleRate: number; numChannels: number; audioFormat: number; bitsPerSample: number }
+    | undefined;
+  let data: Uint8Array | undefined;
+  while (offset + 8 <= buf.length) {
+    const chunkId = buf.toString("ascii", offset, offset + 4);
+    const chunkSize = buf.readUInt32LE(offset + 4);
+    if (chunkId === "fmt ")
+      fmt = {
+        sampleRate: buf.readUInt32LE(offset + 12),
+        numChannels: buf.readUInt16LE(offset + 10),
+        audioFormat: buf.readUInt16LE(offset + 8),
+        bitsPerSample: buf.readUInt16LE(offset + 22),
+      };
+    else if (chunkId === "data") data = buf.subarray(offset + 8, offset + 8 + chunkSize);
+    offset += 8 + chunkSize + (chunkSize % 2);
+  }
+  if (!fmt || !data || fmt.audioFormat !== 1 || fmt.bitsPerSample !== 16)
+    throw new Error(`音频格式不支持: ${file}`);
+  const samples = new Float32Array(Math.floor(data.length / 2 / fmt.numChannels));
+  const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+  for (let i = 0; i < samples.length; i += 1) {
+    let acc = 0;
+    for (let c = 0; c < fmt.numChannels; c += 1) {
+      acc += view.getInt16((i * fmt.numChannels + c) * 2, true);
+    }
+    samples[i] = acc / fmt.numChannels / 32768;
+  }
+  return { samples, sampleRate: fmt.sampleRate };
+}
+
+function pickClips(dataRoot: string, count: number): ClipRef[] {
+  const refs = new Map<string, string>();
+  for (const line of readFileSync(path.join(dataRoot, "aishell_transcript_v0.8.txt"), "utf8").split(
+    /\r?\n/,
+  )) {
+    const idx = line.indexOf(" ");
+    if (idx <= 0) continue;
+    refs.set(line.slice(0, idx).trim(), normalize(line.slice(idx + 1)));
+  }
+  const dir = path.join(dataRoot, "train", "S0002");
+  const clips: ClipRef[] = [];
+  for (const file of readdirSync(dir).sort()) {
+    if (clips.length >= count) break;
+    if (!file.endsWith(".wav")) continue;
+    const id = file.slice(0, -4);
+    const ref = refs.get(id);
+    if (!ref || ref.includes("unk") || ref.length < 8 || ref.length > 40) continue;
+    const { samples, sampleRate } = readWav16(path.join(dir, file));
+    const seconds = samples.length / sampleRate;
+    if (seconds < 4 || seconds > 8) continue;
+    clips.push({ id, ref, samples });
+  }
+  return clips;
+}
+
+function csvField(value: string | number): string {
+  const text = String(value);
+  return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+}
+
+// 文件级流式 SHA-256（模型文件大，不能整读内存）。
+function sha256File(file: string): string {
+  const SIZE = 4 * 1024 * 1024;
+  const buf = Buffer.alloc(SIZE);
+  const fd = openSync(file, "r");
+  try {
+    const hash = createHash("sha256");
+    for (;;) {
+      const read = readSync(fd, buf, 0, SIZE, null);
+      if (read <= 0) break;
+      hash.update(read === SIZE ? buf : buf.subarray(0, read));
+    }
+    return hash.digest("hex");
+  } finally {
+    closeSync(fd);
+  }
+}
+
+type SherpaStream = { acceptWaveform(input: { samples: Float32Array; sampleRate: number }): void };
+type SherpaRecognizer = {
+  createStream: () => SherpaStream;
+  decode: (stream: SherpaStream) => void;
+  getResult: (stream: SherpaStream) => { text: string };
+};
+type SherpaModule = {
+  OfflineRecognizer: new (config: unknown) => SherpaRecognizer;
+};
+
+// 文件级流式 SHA-256（模型文件大，不能整读内存）。
+
+describe.skipIf(!evalRun)("VAD+ASR 端到端评测", () => {
+  it("真实链路：TEN VAD → segmenter → 固定模型族，输出 out/results.csv + out/summary.csv", {
+    timeout: 900_000,
+  }, async () => {
+    const requireSherpa = createRequire(import.meta.url);
+    const sherpa = requireSherpa("sherpa-onnx-node") as SherpaModule;
+    const dataRoot = path.join(evalDir, "data");
+    const outRoot = path.join(evalDir, "out");
+    const vadDir = path.join(repoRoot, "apps", "desktop", "resources", "vad");
+    for (const file of ["ten_vad.js", "ten_vad.wasm"])
+      expect(existsSync(path.join(vadDir, file))).toBe(true);
+
+    const clips = pickClips(dataRoot, 10);
+    expect(clips.length).toBeGreaterThanOrEqual(8);
+
+    const glueSource = readFileSync(path.join(vadDir, "ten_vad.js"), "utf8");
+    const wasmBinary = readFileSync(path.join(vadDir, "ten_vad.wasm"));
+    const engine = await createTenVadEngine({ glueSource, wasmBinary });
+    let failureCode = "";
+    const pipeline = new InterviewVadPipeline({
+      vad: { load: async () => engine },
+      failSession: (_id, code) => {
+        failureCode = code;
+      },
+    });
+    const session = sessionId("asr-eval");
+    const source = "interviewer" as const;
+    await pipeline.start(session);
+
+    const silenceSec = 0.85;
+    const spans: { startSec: number; endSec: number; clipIndex: number }[] = [];
+    let cursor = 0;
+    for (const [index, clip] of clips.entries()) {
+      spans.push({
+        startSec: cursor,
+        endSec: cursor + clip.samples.length / 16_000,
+        clipIndex: index,
+      });
+      cursor += clip.samples.length / 16_000 + silenceSec;
+    }
+    const totalSamples = Math.floor(cursor * 16_000);
+    const pcmBytes = new Uint8Array(totalSamples * 2);
+    const dataView = new DataView(pcmBytes.buffer);
+    for (const span of spans) {
+      const clip = clips[span.clipIndex];
+      const base = Math.floor(span.startSec * 16_000);
+      for (let i = 0; i < clip.samples.length; i += 1) {
+        dataView.setInt16(
+          (base + i) * 2,
+          Math.max(-32768, Math.min(32767, Math.round(clip.samples[i] * 32768))),
+          true,
+        );
+      }
+    }
+
+    let vadMsTotal = 0;
+    let frameCount = 0;
+    let sampleCursor = 0;
+    while (sampleCursor < totalSamples) {
+      const take = Math.min(TEST_FRAME_SAMPLES, totalSamples - sampleCursor);
+      const frame: PcmFrame = {
+        sessionId: session,
+        source,
+        sequence: frameCount,
+        startSample: sampleCursor,
+        sampleRate: 16_000,
+        channels: 1,
+        encoding: "pcm_s16le",
+        pcm: pcmBytes.subarray(sampleCursor * 2, (sampleCursor + take) * 2),
+      };
+      const t0 = performance.now();
+      pipeline.handleFrame(frame);
+      vadMsTotal += performance.now() - t0;
+      sampleCursor += take;
+      frameCount += 1;
+    }
+    const streamSec = sampleCursor / 16_000;
+    const segments: readonly AudioSegment[] = pipeline.stagedSegments("asr-eval");
+    pipeline.stop(session);
+    expect(failureCode).toBe("");
+    expect(segments.length).toBeGreaterThanOrEqual(clips.length);
+
+    const recognizers = requestedModels.map((id) => {
+      const runFiles = manifest.models[id]?.runs[0]?.files;
+      if (!runFiles?.["model.int8.onnx"] || !runFiles?.["tokens.txt"])
+        throw new Error(`manifest 缺少模型 ${id}；先跑 fetch-assets.mjs`);
+      const expected = runFiles["model.int8.onnx"].sha256;
+      const modelPath = path.join(evalDir, "models", id, "model.int8.onnx");
+      if (sha256File(modelPath) !== expected)
+        throw new Error(`模型 ${id} SHA 不匹配：重跑 fetch-assets.mjs`);
+      return {
+        id,
+        recognizer: new sherpa.OfflineRecognizer({
+          modelConfig: {
+            paraformer: { model: modelPath },
+            tokens: path.join(evalDir, "models", id, "tokens.txt"),
+            numThreads: 4,
+            debug: 0,
+            provider: "cpu",
+          },
+        }),
+      };
+    });
+
+    type Row = {
+      modelId: string;
+      clipId: string;
+      ref: string;
+      hyp: string;
+      boundary: string;
+      segDurS: number;
+      decodeMs: number;
+    };
+    const rows: Row[] = [];
+    for (const segment of segments) {
+      const pcm = new Float32Array(Math.floor(segment.pcm.byteLength / 2));
+      const view = new DataView(segment.pcm.buffer, segment.pcm.byteOffset, segment.pcm.byteLength);
+      for (let i = 0; i < pcm.length; i += 1) {
+        pcm[i] = view.getInt16(i * 2, true) / 32768;
+      }
+      const segStart = segment.startSample / segment.sampleRate;
+      const segEnd = segment.endSample / segment.sampleRate;
+      let bestSpan: (typeof spans)[number] | undefined;
+      let bestOverlap = 0;
+      for (const span of spans) {
+        const overlap = Math.min(segEnd, span.endSec) - Math.max(segStart, span.startSec);
+        if (overlap > bestOverlap) {
+          bestOverlap = overlap;
+          bestSpan = span;
+        }
+      }
+      const clipRef = bestSpan ? clips[bestSpan.clipIndex].ref : "";
+      const clipId = bestSpan ? clips[bestSpan.clipIndex].id : "";
+      const segDurS = (segment.endSample - segment.startSample) / segment.sampleRate;
+      for (const item of recognizers) {
+        const t0 = performance.now();
+        const stream = item.recognizer.createStream();
+        stream.acceptWaveform({ samples: pcm, sampleRate: segment.sampleRate });
+        item.recognizer.decode(stream);
+        const decodeMs = performance.now() - t0;
+        rows.push({
+          modelId: item.id,
+          clipId,
+          ref: clipRef,
+          hyp: item.recognizer.getResult(stream).text,
+          boundary: segment.boundary,
+          segDurS,
+          decodeMs,
+        });
+      }
+    }
+
+    const resultHeader = "model_id,clip_id,boundary,seg_dur_s,decode_ms,cer_pct,ref_text,hyp_text";
+    const resultLines: string[] = [resultHeader];
+    const summary = new Map<string, { rows: Row[]; totalChars: number; totalErrors: number }>();
+    for (const id of requestedModels) summary.set(id, { rows: [], totalChars: 0, totalErrors: 0 });
+    for (const row of rows) {
+      const entry = summary.get(row.modelId);
+      if (!entry) continue;
+      entry.rows.push(row);
+      const hyp = normalize(row.hyp);
+      resultLines.push(
+        [
+          row.modelId,
+          row.clipId,
+          row.boundary,
+          row.segDurS.toFixed(3),
+          Math.round(row.decodeMs),
+          row.ref
+            ? (
+                (editDistance(row.ref, hyp) / Math.max(1, Array.from(row.ref).length)) *
+                100
+              ).toFixed(2)
+            : "",
+          row.ref,
+          hyp,
+        ]
+          .map(csvField)
+          .join(","),
+      );
+      if (row.ref) {
+        entry.totalChars += Array.from(row.ref).length;
+        entry.totalErrors += editDistance(row.ref, hyp);
+      }
+    }
+
+    const summaryLines: string[] = [
+      "model_id,segments,chars,errs,cer_pct,mean_decode_ms,p95_decode_ms,max_decode_ms,close_ms,max_ready_ms,stream_s,vad_ms,vad_rtf",
+    ];
+    for (const [id, entry] of summary) {
+      const decode = entry.rows.map((r) => Math.round(r.decodeMs)).sort((a, b) => a - b);
+      const mean = decode.length
+        ? Math.round(decode.reduce((a, b) => a + b, 0) / decode.length)
+        : 0;
+      const p95 = decode.length
+        ? decode[Math.min(decode.length - 1, Math.floor(decode.length * 0.95))]
+        : 0;
+      const max = decode.length ? decode[decode.length - 1] : 0;
+      summaryLines.push(
+        [
+          id,
+          entry.rows.length,
+          entry.totalChars,
+          entry.totalErrors,
+          entry.totalChars ? ((entry.totalErrors / entry.totalChars) * 100).toFixed(2) : "",
+          mean,
+          p95,
+          max,
+          VAD_CLOSE_SILENCE_MS,
+          Math.round(VAD_CLOSE_SILENCE_MS + max),
+          streamSec.toFixed(1),
+          Math.round(vadMsTotal),
+          (vadMsTotal / (streamSec * 1000)).toFixed(5),
+        ]
+          .map(csvField)
+          .join(","),
+      );
+    }
+    mkdirSync(outRoot, { recursive: true });
+    writeFileSync(path.join(outRoot, "results.csv"), `${resultLines.join("\n")}\n`, "utf8");
+    writeFileSync(path.join(outRoot, "summary.csv"), `${summaryLines.join("\n")}\n`, "utf8");
+  });
+});

@@ -1,0 +1,58 @@
+{
+  "$comment": "评测资产固定来源：URL + 字节 + SHA-256 均为唯一事实来源；更新前必须本地重新下载并复算 SHA。",
+  "models": {
+    "paraformer-zh-small-int8": {
+      "runs": [
+        {
+          "files": {
+            "model.int8.onnx": {
+              "url": "https://hf-mirror.com/csukuangfj/sherpa-onnx-paraformer-zh-small-2024-03-09/resolve/main/model.int8.onnx",
+              "bytes": 81828675,
+              "sha256": "3ef6c19369b912f7caf3cef8e545c5ccd1a33d9d7ec792a46668dc41c4b229ec"
+            },
+            "tokens.txt": {
+              "url": "https://hf-mirror.com/csukuangfj/sherpa-onnx-paraformer-zh-small-2024-03-09/resolve/main/tokens.txt",
+              "bytes": 75352,
+              "sha256": "4b2d964e18b9cf139b473003b6698fb2ed9a2a5ec55b93daa677b28f578897aa"
+            }
+          }
+        }
+      ]
+    },
+    "paraformer-zh-large-int8": {
+      "runs": [
+        {
+          "files": {
+            "model.int8.onnx": {
+              "url": "https://hf-mirror.com/csukuangfj/sherpa-onnx-paraformer-zh-2024-03-09/resolve/main/model.int8.onnx",
+              "bytes": 227330205,
+              "sha256": "90bc03034ae1bef9575f8cc798cd1519c8be8aa9e8b458a033e32017ff4d584c"
+            },
+            "tokens.txt": {
+              "url": "https://hf-mirror.com/csukuangfj/sherpa-onnx-paraformer-zh-2024-03-09/resolve/main/tokens.txt",
+              "bytes": 75354,
+              "sha256": "6c0e3b35cece259829e6cb5b8d90d13db88f61ea3a2953d11898e4b2bfd7a2e2"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "datasets": {
+    "aishell-s0002": {
+      "files": {
+        "aishell_transcript_v0.8.txt": {
+          "url": "https://hf-mirror.com/datasets/AISHELL/AISHELL-1/resolve/main/data_aishell/transcript/aishell_transcript_v0.8.txt",
+          "bytes": 10091431,
+          "sha256": "b5f33b9e0b47548e20a5ea4e504297f80df41d559133924c4e5b7b544c15b5c4"
+        },
+        "S0002.tar.gz": {
+          "url": "https://hf-mirror.com/datasets/AISHELL/AISHELL-1/resolve/main/data_aishell/wav/S0002.tar.gz",
+          "bytes": 36455331,
+          "sha256": "5700ffa081f42c5a1be701147e680490fa494db959ca3c10ae205c3658af159f",
+          "extract": true
+        }
+      }
+    }
+  }
+}
