@@ -65,7 +65,7 @@ function makeEngine(programs: HopVerdict[][]): FakeEngine {
   return { engine, destroyed };
 }
 
-/** 一个完整 utterance 周期的判决程序：16 voiced（≥250ms）+ 44 静默（≥700ms 闭合）。 */
+/** 一个完整 utterance 周期的判决程序：16 voiced（≥250ms）+ 44 静默（超过当前闭合窗）。 */
 function oneUtteranceCycle(): HopVerdict[] {
   return hopProgram(60, [{ fromHop: 0, untilHop: 16, probability: 0.9 }]);
 }

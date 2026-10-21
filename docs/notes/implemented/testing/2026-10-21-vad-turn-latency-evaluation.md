@@ -53,6 +53,6 @@
 ## 验证
 
 - `pnpm --filter @answra/vad-asr-eval exec vitest run eot-bench-metrics.test.ts`：3 项指标测试通过；`pnpm --filter @answra/vad-asr-eval eval:eot`：真实链路 1 项评测通过，生成 38 轮逐轮 CSV。
-- 最新真实样本基线（38 轮）：EOT 精确率 66.67%、召回率 63.16%、F1 64.86%；检测延迟 P50/P95 为 688/1196ms；实际 ASR 解码 P50/P95 为 92/159ms；端点 + 末段解码估算覆盖 22 轮（57.89%），P50/P95 为 777/1246ms；VAD RTF 0.02295。CER 30.36% 仅作诊断。
+- 初始 700ms 真实样本基线（38 轮）：EOT 精确率 66.67%、召回率 63.16%、F1 64.86%；检测延迟 P50/P95 为 688/1196ms；实际 ASR 解码 P50/P95 为 92/159ms；端点 + 末段解码估算覆盖 22 轮（57.89%），P50/P95 为 777/1246ms；VAD RTF 0.02295。CER 30.36% 仅作诊断。后续 500ms 阈值结果和取舍见 [VAD 自然 turn-end 闭合过慢](../bug-fix/2026-10-21-vad-turn-end-close-window.md)。
 - 人工抽查：`zh__2258`、`zh__2260` 的主要问题和约束基本完整，可作为回复上下文；`zh__2256` 人名被错识；`zh__2257` 末尾“来午饭我试一下”语义不可靠；`zh__2262` 电话号码与标注不符且 EOT 漏检；`zh__2270`、`zh__2272` 没有识别文本。因此这批样本不能整体判为可输入，逐轮 CSV 保留空白人工审阅列供进一步标注。
 - `pnpm typecheck`、`pnpm test`、`pnpm notes:check`、`pnpm architecture:check` 通过；本次评测目录 targeted Biome 检查通过。`pnpm verify` 在 lint 阶段被工作区已有的 `apps/agent/src/interview/vad/segmenter.ts` 格式差异阻断，该文件未纳入本次提交。

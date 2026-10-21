@@ -19,7 +19,7 @@ function runFrames(detector: SpeechActivityDetector, frameCount: number): Speech
 
 describe("speech activity detector", () => {
   it("produces no utterance when voiced blips never reach 250ms of speech", () => {
-    // 两段短噪声 blip，随后静音耗尽 700ms 判决窗：onset 被丢弃，状态回到 idle。
+    // 两段短噪声 blip，随后静音耗尽闭合判决窗：onset 被丢弃，状态回到 idle。
     const detector = detectorFor(
       hopProgram(102, [
         { fromHop: 0, untilHop: 2 },
@@ -44,8 +44,8 @@ describe("speech activity detector", () => {
     ]);
   });
 
-  it("keeps a short pause inside one utterance and closes only after 700ms of silence", () => {
-    // 静音 10 hop（<700ms）后恢复语音：不得再发 started；ended 回溯到最后语音样本。
+  it("keeps a short pause inside one utterance and closes after 500ms of silence", () => {
+    // 静音 10 hop（160ms）后恢复语音：不得再发 started；ended 回溯到最后语音样本。
     const detector = detectorFor(
       hopProgram(102, [
         { fromHop: 4, untilHop: 20 },
@@ -65,6 +65,17 @@ describe("speech activity detector", () => {
     expect(ended.confidence).toBe(0.99);
   });
 
+  it("waits through 496ms of silence and closes after the next 16ms VAD hop", () => {
+    const detector = detectorFor(hopProgram(54, [{ fromHop: 0, untilHop: 16 }]));
+    const events: SpeechActivityEvent[] = [];
+    for (let hop = 0; hop < 47; hop += 1) {
+      events.push(...detector.process(makeFrame(SOURCE, hop, 256, () => 0, hop * 256)));
+    }
+    expect(events.map((event) => event.type)).toEqual(["speech-started"]);
+    events.push(...detector.process(makeFrame(SOURCE, 47, 256, () => 0, 47 * 256)));
+    expect(events.map((event) => event.type)).toEqual(["speech-started", "speech-ended"]);
+  });
+
   it("starts a fresh utterance after a closed one with a strictly increasing id", () => {
     // 两条独立语句：utteranceId 单调递增，ended 回溯到最后语音、started 回溯到 onset。
     const detector = detectorFor(
@@ -73,7 +84,7 @@ describe("speech activity detector", () => {
         { fromHop: 68, untilHop: 84 },
       ]),
     );
-    const events = runFrames(detector, 20);
+    const events = runFrames(detector, 14);
     expect(events).toHaveLength(3);
     const [, ended, started] = events as [
       Extract<SpeechActivityEvent, { type: "speech-started" }>,

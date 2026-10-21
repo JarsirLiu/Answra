@@ -18,12 +18,20 @@
 - **后备：Silero VAD v6 系列（MIT），ONNX 导出 + `onnxruntime-web` WASM 后端**。约 1.2MB / 309K 参数、流式 LSTM 状态、32ms 窗。`VadDetector` 端口不变可无损替换。若 Windows 下 TEN WASM 接入受阻或实测不达标，切此路径。
 - **运行时不依赖 ricky0123 生态**：`@ricky0123/vad-node` 0.0.3 停更约两年、仅 `NonRealTimeVAD`、锁 ORT 1.14；`@ricky0123/vad` 老且仅浏览器；实时 API 走自适配。
 - **适配器形态**：新增 `apps/agent/src/interview/vad/`——`tenVadDetector.ts`（`VadDetector` 实现：帧内样本进 hop 缓冲 → 同步 `_ten_vad_process` → 按 flag/概率迟滞产出 `SpeechActivityEvent`）、`segmenter.ts`（`AudioSegmenter` 实现）、`config.ts`（默认阈值常量）、`vadModuleLoader` 端口（注入 wasm glue 模块与 wasmBinary，不硬编码资源路径）。检测器内部聚合 hop 级概率（hop 256 样本=16ms，一帧 1600 样本≈6.25 hop，尾窗留到下一帧）。
-- **分段器行为（阈值默认值为占位，阶段 8 实测校准）**：静音 < 700ms 不拆分；静音 ≥ 700ms 闭合 `utterance-end`；段长 ≥ 4.5s 在最低 RMS 处强切 `continuation` 并保留 1 帧重叠；stop 时 flush 尾段。speech-started 事件携带 300ms pre-roll 环形缓冲，保证字头不丢。
+- **分段器行为（阈值默认值待实机校准）**：本地静音闭合窗当前为 500ms（原占位 700ms，离线 38 轮 turn-end 评测后调整；接受较高轮内误切以换取更高 EOT 召回和更低延迟，详见 [VAD 自然 turn-end 闭合过慢](../../implemented/bug-fix/2026-10-21-vad-turn-end-close-window.md)）；静音达到闭合窗后闭合 `utterance-end`；段长 ≥ 4.5s 在最低 RMS 处强切 `continuation` 并保留 1 帧重叠；stop 时 flush 尾段。speech-started 事件携带 300ms pre-roll 环形缓冲，保证字头不丢。
 - **失败语义（沿用 10-16 Note 硬约束）**：VAD 加载失败（资源缺失/校验不过）或推理失败（NaN、非法返回）必须显式置 `runtime-failed`，不得装作静音或静默丢帧。
 - **资源治理**：`ten_vad.wasm` 为二进制，不提交 Git；来源（固定 release tag/commit）、URL 与 SHA-256 固定在清单文件（沿用 `apps/desktop/native/rime-resources.json` 的模式），准备脚本负责落盘校验；检测器只经 `vadModuleLoader` 注入消费，不感知下载与路径。
 - **许可边界（防回退）**：TEN VAD 采用 Apache-2.0 + Agora 附加条款——不得以与 Agora 产品竞争的方式部署，也不得使第三方能借此开发/部署应用；Answra 只为自身与直接终端用户部署，当前兼容。**产品若演化为向第三方开发者开放的接入平台，或与 Agora RTC/语音服务同业，必须重新评审许可，否则不得升级分发。**NOTICES 中 LPCNet 派生代码（BSD-2/3-Clause）已在二进制内携带，保持随包声明不删除。
 - **串声防线继承既有设计**：候选人（麦克风）通道的转录仅作上下文、不触发回答；窗外串声（speaker bleed）声学上是真语音，任何 VAD 都会放行（参考项目实测记录），因此 onset 判定的额外防线仍是后续阶段的连续帧/迟滞与 turn-settle，不在 VAD 层解决。
 - **不做什么**：ASR 请求队列/HTTP adapter（阶段 4）、turn 聚合（阶段 5）、回答生成（阶段 6）、组合根与实机验证（阶段 7–8）、realtime 门控、UI 展示。
+
+## 当前状态、目标与下一步
+
+- **当前状态**：TEN VAD → `SpeechActivityDetector` → `VadSegmenter` → 本地 ASR 的离线评测链路已可运行。自然端点静音窗已从 700ms 调至 500ms；同一 38 轮样本的 EOT 召回为 89.47%、F1 为 73.91%、检测延迟 P50/P95 为 508/992ms，但轮内误切为 17/86（19.77%）。500ms 是偏实时响应的暂定值，尚未用 Windows loopback 真实面试/会议音频校准。完整取舍与结果见 [VAD turn-end 修复记录](../../implemented/bug-fix/2026-10-21-vad-turn-end-close-window.md) 和 [真实样本评测记录](../../implemented/testing/2026-10-21-vad-turn-latency-evaluation.md)。
+- **当前缺口**：`speech-ended` 会关闭 utterance 段并触发转录，但它不是可靠的业务 turn 结束信号；短停顿会让一句回答拆成多个段。当前尚无 turn 聚合/settle 层决定何时把转录文本作为完整输入交给模型，也没有将候选人音频排除在触发源之外的 turn 级策略。
+- **目标**：保持端点快速发现，同时把短暂停顿期间可能继续到达的转录段合并为可用文本；只有 turn 决策层确认文本可交付后，才交给后续 Agent 消费。端点事件应是候选边界，不能直接触发模型回复。
+- **下一步**：阶段 5 单独定义并实现 turn 聚合层。先基于现有 `SpeechActivityEvent`、`AudioSegment` 与 `chunk-final` 的真实来源定义状态、失效边界和可观察输出；覆盖连续短停顿续说、多个 utterance 合并、迟到转录、长时间无续语音及 stop flush 的测试；用真实样本人工审查最终聚合文本是否语义完整、是否达到可输入模型的标准，并测量从自然端点到 turn-ready 的延迟。随后以 Windows loopback 复核短停顿误切和墙钟延迟，再决定 500ms 是否保留或调整。
+- **暂不决策**：主 Agent 是否即时通知子 Agent、暂存多段后批量发送，以及是否生成回答，不属于本次端点修复；应在 turn 聚合结果与真实延迟/文本审查可用后另行确定。
 
 ## 模块边界
 

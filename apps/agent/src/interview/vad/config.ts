@@ -17,8 +17,8 @@ export const TEN_VAD_ONSET_THRESHOLD = 0.5;
 /** 真语音最短时长：低于该值的短噪声 blip 不产出任何 utterance。 */
 export const VAD_MIN_SPEECH_MS = 250;
 
-/** 短停顿语义（10-16 Note）：静音 < 700ms 不拆分，≥ 700ms 闭合 utterance。 */
-export const VAD_CLOSE_SILENCE_MS = 700;
+/** 本地 turn-end 静音闭合窗；TEN semantic VAD 的 500ms 仅作延迟参考。 */
+export const VAD_CLOSE_SILENCE_MS = 500;
 
 /** speech-started 事件回溯携带的最长 pre-roll 时长。 */
 export const VAD_PRE_ROLL_MS = 300;

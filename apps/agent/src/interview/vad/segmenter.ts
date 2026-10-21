@@ -185,18 +185,19 @@ export class VadSegmenter implements AudioSegmenter {
     const open = this.open;
     if (!open || open.pcm.length / 2 < this.maxChunkSamples) return;
     const chunkSamples = open.pcm.length / 2;
-    const cutOffset = Math.min(
-      chunkSamples - 1,
-      Math.max(VAD_CHUNK_OVERLAP_SAMPLES, lowestRmsCenterOffset(open.pcm, open.rmsScanStart)),
-    );
+    const cut = lowestRmsCenterOffset(open.pcm, open.rmsScanStart);
+    // 扫描窗口放不下（rmsScanStart 之后凑不满一个 10ms 窗）时本轮不切：
+    // 等下一帧继续积累音频，避免钳到块尾产出只剩 overlap 的 100ms 微块。
+    if (cut === undefined) return;
+    const cutOffset = Math.min(chunkSamples - 1, Math.max(VAD_CHUNK_OVERLAP_SAMPLES, cut));
     const cutSample = open.chunkStartSample + cutOffset;
     const startSample = cutSample - VAD_CHUNK_OVERLAP_SAMPLES;
     // 后继 chunk 以重叠窗为头、保留切点后的全部已积累音频，保证采样范围
     // 连续；直接丢掉 [cut, tail) 会让这段语音既不在旧段也不在新段。
     const pcm = open.pcm.subarray((cutOffset - VAD_CHUNK_OVERLAP_SAMPLES) * 2).slice();
     this.closeChunk(cutSample, "continuation", segments);
-    // 上一刀中心相对新 chunk 恰好落在 VAD_CHUNK_OVERLAP_SAMPLES；从该处收紧
-    // 扫描窗口起点，下一刀必然严格晚于上一刀所在窗口。
+    // 上一刀中心相对新 chunk 恰好落在 VAD_CHUNK_OVERLAP_SAMPLES；把扫描窗口
+    // 起点收紧到该中心之后一个整窗，下一刀必然严格晚于上一刀所在窗口。
     this.open = {
       utteranceId: open.utteranceId,
       chunkIndex: open.chunkIndex + 1,
@@ -207,10 +208,11 @@ export class VadSegmenter implements AudioSegmenter {
   }
 }
 
-/** 10ms 窗扫描最低 RMS，返回窗中心相对 chunk 的采样偏移；扫描窗口起点 ≥ scanStart。 */
-function lowestRmsCenterOffset(pcm: Uint8Array, scanStart: number): number {
+/** 10ms 窗扫描最低 RMS，返回窗中心相对 chunk 的采样偏移；窗口放不下时返回 undefined。 */
+function lowestRmsCenterOffset(pcm: Uint8Array, scanStart: number): number | undefined {
   const samples = new Int16Array(pcm.buffer, pcm.byteOffset, pcm.byteLength >> 1);
   const firstWindow = Math.ceil(scanStart / RMS_WINDOW_SAMPLES) * RMS_WINDOW_SAMPLES;
+  if (firstWindow + RMS_WINDOW_SAMPLES > samples.length) return undefined;
   let minOffset = firstWindow;
   let minSumSquares = Number.POSITIVE_INFINITY;
   for (
