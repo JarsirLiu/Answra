@@ -58,7 +58,8 @@
 ## 风险
 
 - **精度风险（最高）**：paraformer-zh-small 是 vocab 15k 内的小模型，实际中英文面试场景准确率未实证（第三方对比数据来自同架构大模型）；必须以阶段 4 spike + 阶段 8 实机校准为准，未达标候选迁移至 SenseVoice int8 或云端路径。
-- **Electron utility process 加载 native addon 未实证**：N-API 理论跨 ABI，但 esbuild external、asarUnpack、macOS dylib 定位都要 spike 验证；失败路径明确（rejected 或改打包方式），不静默降级。
+- **Electron utility process 加载 native addon 未实证（Node 直载已通过）**：2026-10-21 spike 已证实 Node 环境 `npm i` 即装即用、模型加载与批量转写全通；剩余风险收窄到 Electron utility process 内的 N-API 加载、esbuild external、asarUnpack、macOS dylib 定位四项，仍须实机验证后才可进入实施阶段第 2 步。
+- **模型文件最小集收窄**：spike 证实 `am.mvn` 缺失不影响识别——发布资源清单只需 `model.int8.onnx` + `tokens.txt` 两个文件，资源准备脚本按此最小集校验。
 - **第三方转换模型来源**：paraformer-zh-small 的 ONNX 由社区转换（modelscope crazyant），非 FunASR 官方发布物；必须锁定具体 release URL + SHA-256，且在产品关于页保留出处。
 - **许可约束**：FunASR v1.1 允许商用并要求注明出处、保留模型名；修订协议会"自动生效"，需定期复核（风险与 Agora 附加条款同等级记录）。
 - **内存常驻**：模型 session 装载策略（会话期间常驻 vs 按需加载）影响内存与首段延迟；spike 数据出来后单独决定，不在本 Note 预定。
@@ -74,6 +75,7 @@
 
 ## 验证证据
 
+- 2026-10-21 尖刀 spike 本机实测（临时目录，Node v24.16.0，win32，未触碰仓库；脚本仅 100 行 CJS）：`sherpa-onnx-node` 1.13.8 `npm i` 即装即用（含 Windows x64 DLL 自动定位）；同时下载 HF `model.int8.onnx`（81,828,675 bytes）+ `tokens.txt`（75,352 bytes），`am.mvn` 下载失败但模型仍可加载转写——Paraformer offline 配置只需 model + tokens 两文件。`OfflineRecognizer` 模型加载 1.6s（冷启动一次性）；批量转写官方 test_wavs 四段：5.6s 中文段 80ms、5.2s 中文段 67ms、8.1s 中英混段 98ms、7.9s 方言段 97ms，**RTF = 0.0128（约 78 倍速）**；转写文本中文/中英混合全对，方言样本可出文本；进程 RSS 约 208MB。该数据落在 Note"验收标准"spike 条的达标区间，验证目标（批式识别测试 WAV → 中文文本 + RTF/首段延迟/峰值内存）已满足；Electron utility process 加载与 esbuild 打包形态仍是独立验证项。
 - 2026-10-21 模型与运行时核对：`csukuangfj/sherpa-onnx-paraformer-zh-small-2024-03-09`（HF）含 `model.int8.onnx` 81.8MB、`tokens.txt` 75.4KB、`am.mvn` 11.2KB，来源为 modelscope `crazyant/speech_paraformer_asr_nat-zh-cn-16k-common-vocab8358-onnx`；sherpa 官方 docs 提供下载命令与 8k/16k 输入解码范例。
 - 2026-10-21 `sherpa-onnx-node` npm 页与 k2-fsa 安装文档核对：node-addon-api prebuilt（Node ≥16），支持 Linux x64/arm64、macOS x64/arm64、Windows x64；Windows 无需库路径环境变量，macOS/Linux 需 `DYLD_/LD_LIBRARY_PATH`；版本 1.13.8，Apache-2.0，周下载约 64 万。
 - 2026-10-21 FunASR Model Open Source License v1.1 原文（modelscope/FunASR `MODEL_LICENSE`）核对：2.1 允许自由使用/复制/修改/分享；2.2 要求注明出处与作者信息并保留模型名称；无竞争限制条款（对比 TEN VAD 的 Agora 附加条款更为宽松）。
