@@ -136,6 +136,9 @@ function createNativeHop(module: TenVadModuleBinding, threshold: number): TenVad
     processHop(samples) {
       if (samples.byteLength !== TEN_VAD_HOP_SAMPLES * 2)
         throw new TypeError("TEN VAD 检测窗长度必须等于 hopSamples×2 字节");
+      // 上游 _ten_vad_process 的唯一输入通道是 audioPtr 指向的 wasm 缓冲；
+      // 不拷贝样本就会拿未初始化内存参与推理（此前任何非静音输入都被判错）。
+      module.HEAP16.set(samples, native.audioPtr >> 1);
       const result = module._ten_vad_process(
         native.handle,
         native.audioPtr,

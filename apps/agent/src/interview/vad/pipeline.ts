@@ -156,11 +156,15 @@ export class InterviewVadPipeline {
   }
 
   private teardown(runtime: SessionRuntime): void {
+    // 先落袋再清 map：engine 恢复是异步的，若先清空 sources，后续回调将
+    // 永远遍历到空集合，hop 资源泄漏。
+    const sources = [...runtime.sources.values()];
+    for (const runtimeSource of sources) runtime.sources.delete(runtimeSource.source);
+    // this.engine 是共享 load promise；两处入口的 hop 都来自该实例的 createHop。
     const engine = this.engine;
-    if (!engine) return;
+    if (!engine || sources.length === 0) return;
     void engine.then((loaded) => {
-      for (const source of runtime.sources.values()) loaded.destroyHop(source.hop);
+      for (const source of sources) loaded.destroyHop(source.hop);
     });
-    for (const source of runtime.sources.keys()) runtime.sources.delete(source);
   }
 }

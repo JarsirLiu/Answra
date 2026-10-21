@@ -22,8 +22,10 @@ import {
  * 一个实例服务一个 (会话, 通道)；边界与去重语义见 10-16 Note：
  * - speech-started：以 ≤ VAD_PRE_ROLL_MS 的预滚打开 chunk（事件回溯说明此刻
  *   部分样本已进入环形缓冲，预滚由 ring 提供）。
- * - 长语音达到 VAD_MAX_CHUNK_MS 时按最低 RMS 强切；后继 chunk 从切点前
- *   VAD_CHUNK_OVERLAP_SAMPLES 处开始，以 continuation 标记衔接。
+ * - 长语音达到 VAD_MAX_CHUNK_MS 时按最低 RMS 强切；后继 chunk 以切点前
+ *   VAD_CHUNK_OVERLAP_SAMPLES 为头，并保留切点后的全部已积累音频续播，
+ *   保证采样范围连续无断档；逐刀只允许落在上一刀之后的窗口，防止
+ *   同一低谷被无限重复切割。
  * - speech-ended / flush 闭合 chunk，boundary=utterance-end。
  * - 帧序空洞按静默补零（≤ VAD_MAX_GAP_FRAMES 帧），更长的撕裂由 pipeline 显式失败。
  */
@@ -36,6 +38,11 @@ interface OpenChunk {
   chunkStartSample: number;
   /** 与 chunkStartSample 对齐并随流增长的 PCM 字节。 */
   pcm: Uint8Array;
+  /**
+   * 最低 RMS 选点的窗口起点下限（相对 chunk）。切过一刀的新 chunk 必须超过
+   * 上一刀窗口，否则同一低谷会被每刀重复选中，chunk 永不推进。
+   */
+  rmsScanStart: number;
 }
 
 export class VadSegmenter implements AudioSegmenter {
@@ -134,6 +141,7 @@ export class VadSegmenter implements AudioSegmenter {
       chunkIndex: 0,
       chunkStartSample,
       pcm: this.ringWindow(chunkStartSample),
+      rmsScanStart: 0,
     };
   }
 
@@ -179,29 +187,37 @@ export class VadSegmenter implements AudioSegmenter {
     const chunkSamples = open.pcm.length / 2;
     const cutOffset = Math.min(
       chunkSamples - 1,
-      Math.max(VAD_CHUNK_OVERLAP_SAMPLES, lowestRmsSampleOffset(open.pcm)),
+      Math.max(VAD_CHUNK_OVERLAP_SAMPLES, lowestRmsCenterOffset(open.pcm, open.rmsScanStart)),
     );
     const cutSample = open.chunkStartSample + cutOffset;
     const startSample = cutSample - VAD_CHUNK_OVERLAP_SAMPLES;
-    const pcm = open.pcm
-      .subarray((cutOffset - VAD_CHUNK_OVERLAP_SAMPLES) * 2, cutOffset * 2)
-      .slice();
+    // 后继 chunk 以重叠窗为头、保留切点后的全部已积累音频，保证采样范围
+    // 连续；直接丢掉 [cut, tail) 会让这段语音既不在旧段也不在新段。
+    const pcm = open.pcm.subarray((cutOffset - VAD_CHUNK_OVERLAP_SAMPLES) * 2).slice();
     this.closeChunk(cutSample, "continuation", segments);
+    // 上一刀中心相对新 chunk 恰好落在 VAD_CHUNK_OVERLAP_SAMPLES；从该处收紧
+    // 扫描窗口起点，下一刀必然严格晚于上一刀所在窗口。
     this.open = {
       utteranceId: open.utteranceId,
       chunkIndex: open.chunkIndex + 1,
       chunkStartSample: startSample,
       pcm,
+      rmsScanStart: VAD_CHUNK_OVERLAP_SAMPLES,
     };
   }
 }
 
-/** 10ms 窗扫描最低 RMS，返回窗中心相对 chunk 的采样偏移。 */
-function lowestRmsSampleOffset(pcm: Uint8Array): number {
+/** 10ms 窗扫描最低 RMS，返回窗中心相对 chunk 的采样偏移；扫描窗口起点 ≥ scanStart。 */
+function lowestRmsCenterOffset(pcm: Uint8Array, scanStart: number): number {
   const samples = new Int16Array(pcm.buffer, pcm.byteOffset, pcm.byteLength >> 1);
-  let minOffset = 0;
+  const firstWindow = Math.ceil(scanStart / RMS_WINDOW_SAMPLES) * RMS_WINDOW_SAMPLES;
+  let minOffset = firstWindow;
   let minSumSquares = Number.POSITIVE_INFINITY;
-  for (let start = 0; start + RMS_WINDOW_SAMPLES <= samples.length; start += RMS_WINDOW_SAMPLES) {
+  for (
+    let start = firstWindow;
+    start + RMS_WINDOW_SAMPLES <= samples.length;
+    start += RMS_WINDOW_SAMPLES
+  ) {
     let sumSquares = 0;
     for (const value of samples.subarray(start, start + RMS_WINDOW_SAMPLES))
       sumSquares += value ** 2;

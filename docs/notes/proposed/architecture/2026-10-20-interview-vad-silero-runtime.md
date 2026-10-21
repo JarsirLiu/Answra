@@ -58,11 +58,13 @@
 - Agora 附加许可条款是长期边界：商业化/开放接入形态变化时必须先重评许可（见提案节）。
 - VAD 层错误边界只有两类路径：显式失败（正确）与兜底假装静音（不允许）——沿用 10-16 Note 的硬约束，不新增例外。
 - `ten_vad.wasm` 属预编译资源：不进 Git、来源锁 tag、SHA-256 校验、准备脚本校验；若准备脚本不跑，适配器加载失败需给出可排查的明确报错。
+- 强切修复后单 chunk 可携带至多 `VAD_MAX_CHUNK_MS + VAD_CHUNK_OVERLAP_SAMPLES` 的音频（切点偏早时旧尾巴随新 chunk 续传）；阶段 4 的 ASR 请求队列/计费上限须按该结果上界核对（见 [2026-10-21 VAD segmenter continuation hole](../../implemented/bug-fix/2026-10-21-vad-segmenter-continuation-hole.md)）。
 
 ## 验证证据
 
 - 2026-10-20 在线核对：`pnpm view onnxruntime-node dist.unpackedSize` → 301,068,136 字节（约 301MB）；`pnpm view onnxruntime-web dist.unpackedSize` → 144,618,540 字节（约 145MB，仅开发机 node_modules，分发只需选用 wasm）；`silero_vad_v5.onnx` 官方仓库 2.22MB；`@ricky0123/vad-node` 0.0.3 最近发布约两年前且 README 标注"Non-realtime voice activity detection for node"，`@ricky0123/vad` npm 页标注已 deprecated。
 - 2026-10-21 打包侧回归成立：本机补跑 `pnpm --filter @answra/desktop vad:prepare`（TEN VAD 2.1.2 / d68ab71c 落盘 `resources/vad`），新增常驻回归 `apps/desktop/test/tenVadBundle.test.ts` 以与 worker 产物相同的 esbuild 选项（CJS / node20.9）打包探针并执行"清单校验 → SHA-256 校验 → data: URL 导入 glue → WASM 实例化 → 静音 hop 判非语音"全链路通过；其间发现并修复 data: URL 崩溃缺陷（复盘见 [2026-10-21 TEN VAD glue data: URL defect](../../implemented/bug-fix/2026-10-21-ten-vad-data-url-glue.md)），CI 自此在 Test 前固定执行 `vad:prepare`。Electron utility process 实机运行仍归阶段 7–8。
+- 2026-10-21 领域单测收口（阶段 3 遗留项第 2 项完成）：`apps/agent/test/interview/vad/` 新增 `tenVadEngine.test.ts`（7 条，假 glue 从原生侧视角锁 glue 注入选项/句柄生命周期/样本窗传输契约）、`segmenter.test.ts`（10 条：ring 预滚封顶、4.5s 最低 RMS 强切 + 1 帧 overlap 重放、可补裂口补零、超限撕裂 fail-closed、flush/reset、事件契约与非法事件序拒绝）、`pipeline.test.ts`（6 条：推理失败升级 `runtime-failed` 且 hop 恰好释放一次、暖机缓冲 16 帧上限、按序补发、共享引擎单次加载、暂存 32 条有界丢弃、逐源路由）。`@answra/agent` vitest 72/72 全绿。其间暴露并修复三个真缺陷：hop 样本从未写入 wasm 内存（[2026-10-21 TEN VAD hop sample copy](../../implemented/bug-fix/2026-10-21-ten-vad-hop-sample-copy.md)）、强切 chunk 挖洞丢音频（[2026-10-21 VAD segmenter continuation hole](../../implemented/bug-fix/2026-10-21-vad-segmenter-continuation-hole.md)）、teardown 先清空后挂回调导致 hop 泄漏（[2026-10-21 VAD pipeline teardown hop leak](../../implemented/bug-fix/2026-10-21-vad-pipeline-teardown-hop-leak.md)）。外部佐证：natively-cluely `vadProcessor.ts` 的 softCommit 尾部保留注释独立踩过"切段无连续性→转录丢首词"。
 - Silero VAD v6 实况（后备路径依据，2026-10-20 搜索核证：soniqo.audio/vad 指南、paean-ai/silero-vad-swift README、github vadimatmurphy/vad-comparison）：约 1.2MB / 309K 参数、STFT+LSTM 流式、32ms 窗、CPU <1ms/窗、LSTM 状态显式可控、官方 MIT 模型。
 - 提案阶段无 TEN 适配器成品与打包侧实测；既有证据只证明引擎可在 Node ESM 载入并达到实时充足速度、许可与体积边界清楚，不证明产品质量/实机可用性（归阶段 8）。
 - WebRTC/Silero/Cobra 对比（picovoice.ai 2025-11 blog）：WebRTC VAD 常见 cutoff 显著高于 Silero；Silero 优势在噪声环境与持续维护。
