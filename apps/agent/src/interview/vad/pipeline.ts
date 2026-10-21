@@ -16,14 +16,19 @@ import type { TenVadEngine, TenVadHop, TenVadSource } from "./tenVadEngine";
 
 /**
  * 面试 VAD 的会话装配层：一个会话一条流水线，帧按源路由到 检测器 → 分段器。
- * 检测结果是「先入内存暂存（有界）」的阶段 3 形态；阶段 4 的转录消费者接管后
- * 把暂存升级为直接投递。任何推理/数据错误都转换为会话级 runtime-failed，
+ * 分段同时投递给注入的消费者（`onSegment`，宿主接转录泵）与内存暂存（有界，
+ * 测试与评测观察点）。任何推理/数据错误都转换为会话级 runtime-failed，
  * 绝不降级成「假装没有语音」继续处理。
  */
 
 export interface InterviewVadPipelineOptions {
   vad: TenVadSource;
   failSession(sessionId: SessionId, code: "runtime-failed"): void;
+  /**
+   * 阶段 4：分段消费者（转录宿主接线）。按产出顺序投递；
+   * 未注入时分段仅入内存暂存（有界），评测据此观察。
+   */
+  onSegment?(segment: AudioSegment): void;
 }
 
 interface SourceRuntime {
@@ -140,12 +145,13 @@ export class InterviewVadPipeline {
     return created;
   }
 
-  /** 有界暂存：溢出丢弃最旧段（阶段 4 接管前不产生任何外部副作用）。 */
+  /** 有界暂存；注入消费者时同时投递（暂存保留为测试/评测观察点）。 */
   private stage(runtime: SessionRuntime, segments: readonly AudioSegment[]): void {
     if (segments.length === 0) return;
     runtime.staged.push(...segments);
     const overflow = runtime.staged.length - VAD_STAGING_SEGMENT_LIMIT;
     if (overflow > 0) runtime.staged.splice(0, overflow);
+    for (const segment of segments) this.options.onSegment?.(segment);
   }
 
   private failSession(runtime: SessionRuntime, error: unknown): void {

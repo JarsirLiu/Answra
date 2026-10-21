@@ -1,4 +1,4 @@
-import type { AgentCommand, AgentFrame, TenVadSource } from "@answra/agent";
+import type { AgentCommand, AgentFrame, RecognizerSource, TenVadSource } from "@answra/agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { startAgentWorker } from "../src/main/conversation/workerTransport";
 
@@ -11,6 +11,18 @@ const silenceVadSource = (): TenVadSource => ({
       processHop: () => ({ probability: 0.02, voiced: false }),
     }),
     destroyHop: () => undefined,
+  }),
+});
+
+/** 假转录装配：返回伪文本的引擎，证明 utility process 传输接线不依赖真实模型。 */
+const scriptedRecognizer = (): RecognizerSource => ({
+  load: async () => ({
+    module: {
+      create: () => ({
+        transcribeOnce: () => "识别文本",
+      }),
+    },
+    recipe: { modelPath: "model.int8.onnx", tokensPath: "tokens.txt", numThreads: 1 },
   }),
 });
 
@@ -60,7 +72,10 @@ describe("Agent worker interview audio transport", () => {
   it("returns batch credits, reports gaps, and rejects frames from a stopped session after restart", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const harness = createParentPort();
-    const host = startAgentWorker(harness.parentPort, { vad: silenceVadSource() });
+    const host = startAgentWorker(harness.parentPort, {
+      vad: silenceVadSource(),
+      recognizer: scriptedRecognizer(),
+    });
 
     harness.dispatch({
       id: "start-1",

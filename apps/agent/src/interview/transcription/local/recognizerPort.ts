@@ -23,3 +23,15 @@ export interface OfflineRecognizerModule {
   /** 加载失败（缺文件/SHA 不符/addon 不可用）直接抛错：composition root fail-closed。 */
   create(recipe: OfflineRecognizerRecipe): OfflineRecognizerSession;
 }
+
+/** 装配完成后的引擎件：module + recipe，正好是 LocalParaformerAdapter 的注入形状。 */
+export interface RecognizerAssembly {
+  readonly module: OfflineRecognizerModule;
+  readonly recipe: OfflineRecognizerRecipe;
+}
+
+/** 引擎装配来源（与 TenVadSource 同形态）：desktop 组合根读盘/校验/构造 addon，agent 只持端口。 */
+export interface RecognizerSource {
+  /** 资源缺失或校验失败直接抛错（fail-closed），不回落其它实现。 */
+  load(): Promise<RecognizerAssembly>;
+}

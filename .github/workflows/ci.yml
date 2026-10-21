@@ -40,6 +40,9 @@ jobs:
       - name: Prepare TEN VAD resources
         run: pnpm --filter @answra/desktop vad:prepare
 
+      - name: Prepare local ASR resources
+        run: pnpm --filter @answra/desktop asr:prepare
+
       - name: Test
         run: pnpm test
 

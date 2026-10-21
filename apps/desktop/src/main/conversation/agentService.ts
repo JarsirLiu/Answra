@@ -40,11 +40,15 @@ export class AgentService {
   async start(): Promise<void> {
     const workerPath = path.join(app.getAppPath(), "out/main/conversation/worker.cjs");
     // worker 无法访问 Electron app 路径 API，资源目录以启动参数传入（见 worker.ts）。
-    const worker = utilityProcess.fork(workerPath, [resolveVadResourceRoot()], {
-      cwd: app.getPath("userData"),
-      serviceName: "Answra Agent Runtime",
-      stdio: "ignore",
-    });
+    const worker = utilityProcess.fork(
+      workerPath,
+      [resolveVadResourceRoot(), resolveAsrResourceRoot()],
+      {
+        cwd: app.getPath("userData"),
+        serviceName: "Answra Agent Runtime",
+        stdio: "ignore",
+      },
+    );
     this.worker = worker;
     worker.on("message", (message) => this.onFrame(message as AgentFrame));
     worker.on("exit", (code) => {
@@ -203,6 +207,13 @@ function resolveVadResourceRoot(): string {
   return app.isPackaged
     ? path.join(process.resourcesPath, "vad")
     : path.join(app.getAppPath(), "resources", "vad");
+}
+
+/** 本地 ASR 模型资源目录：打包版经 extraResources 落在 resourcesPath/asr。 */
+function resolveAsrResourceRoot(): string {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, "asr")
+    : path.join(app.getAppPath(), "resources", "asr");
 }
 
 function validateSendRequest(request: ConversationSendRequest): void {

@@ -3,6 +3,24 @@ import type { AgentCommand, AgentFrame, AgentTransport, TenVadSource } from "@an
 import { startAgentHost } from "@answra/agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { conversationId, sessionId, utteranceId } from "../../src/interview/contracts";
+import {
+  hopProgram,
+  makeFrame,
+  scriptedVadEngine,
+  TEST_FRAME_SAMPLES,
+} from "../interview/vad/fixtures";
+
+/** 假转录引擎：返回固定文本，证明宿主接线不依赖真实模型。 */
+const scriptedRecognizer = (text: string) => ({
+  load: async () => ({
+    module: {
+      create: (_recipe: unknown) => ({
+        transcribeOnce: () => text,
+      }),
+    },
+    recipe: { modelPath: "model.int8.onnx", tokensPath: "tokens.txt", numThreads: 1 },
+  }),
+});
 
 /** 无语音假 VAD：所有 hop 判为非语音，证明宿主接线不依赖真实推理。 */
 const silenceVadSource = (): TenVadSource => ({
@@ -50,7 +68,11 @@ describe("agent worker host", () => {
 
   it("publishes typed interview domain events over the worker transport", () => {
     const harness = createHarness();
-    const host = startAgentHost({ transport: harness.transport, vad: silenceVadSource() });
+    const host = startAgentHost({
+      transport: harness.transport,
+      vad: silenceVadSource(),
+      recognizer: scriptedRecognizer("识别文本"),
+    });
     const event = {
       type: "session-started" as const,
       sessionId: sessionId("capture-1"),
@@ -71,7 +93,11 @@ describe("agent worker host", () => {
 
   it("projects transcript events into serializable worker DTOs", () => {
     const harness = createHarness();
-    const host = startAgentHost({ transport: harness.transport, vad: silenceVadSource() });
+    const host = startAgentHost({
+      transport: harness.transport,
+      vad: silenceVadSource(),
+      recognizer: scriptedRecognizer("识别文本"),
+    });
     host.emitInterviewEvent({
       type: "transcript-event",
       event: {
@@ -108,7 +134,11 @@ describe("agent worker host", () => {
 
   it("routes PCM frames into ingress without a response per audio frame", async () => {
     const harness = createHarness();
-    startAgentHost({ transport: harness.transport, vad: silenceVadSource() });
+    startAgentHost({
+      transport: harness.transport,
+      vad: silenceVadSource(),
+      recognizer: scriptedRecognizer("识别文本"),
+    });
 
     harness.dispatch({
       id: "start-1",
@@ -196,6 +226,7 @@ describe("agent worker host", () => {
     startAgentHost({
       transport: harness.transport,
       vad: { load: () => Promise.reject(new Error("VAD 资源缺失，请运行 vad:prepare")) },
+      recognizer: scriptedRecognizer("识别文本"),
     });
 
     harness.dispatch({
@@ -223,6 +254,92 @@ describe("agent worker host", () => {
     });
   });
 
+  it("fails the interview session explicitly when local transcription resources cannot load", async () => {
+    const harness = createHarness();
+    startAgentHost({
+      transport: harness.transport,
+      vad: silenceVadSource(),
+      recognizer: {
+        load: () => Promise.reject(new Error("ASR 资源缺失，请运行 asr:prepare")),
+      },
+    });
+
+    harness.dispatch({
+      id: "start-8",
+      type: "interview-start",
+      sessionId: "capture-8",
+      conversationId: "active-interview-conversation",
+    });
+    await vi.waitFor(() => expect(harness.responses()).toHaveLength(1));
+
+    expect(harness.responses()[0]).toMatchObject({
+      id: "start-8",
+      ok: false,
+      error: expect.stringContaining("ASR 资源缺失"),
+    });
+    expect(harness.frames).toContainEqual({
+      version: 1,
+      type: "interview-event",
+      event: {
+        type: "session-failed",
+        sessionId: "capture-8",
+        conversationId: "active-interview-conversation",
+        code: "runtime-failed",
+      },
+    });
+  });
+
+  it("transcripts decoded interviewer segments into transcript events", async () => {
+    // 7 个 voiced 帧（42 hop）+ 结尾静音闭合：真实 VAD 分段后由假转录引擎产出文本。
+    // 帧夹具固定 sessionId "capture-1"：与 ingress 的会话校验必须一致。
+    const harness = createHarness();
+    startAgentHost({
+      transport: harness.transport,
+      vad: scriptedVadEngine(hopProgram(138, [{ fromHop: 0, untilHop: 42 }])),
+      recognizer: scriptedRecognizer("介绍项目"),
+    });
+
+    harness.dispatch({
+      id: "start-2",
+      type: "interview-start",
+      sessionId: "capture-1",
+      conversationId: "active-interview-conversation",
+    });
+    await vi.waitFor(() => expect(harness.responses()).toHaveLength(1));
+    harness.dispatch({ id: "ready-2", type: "interview-capture-ready", sessionId: "capture-1" });
+    await vi.waitFor(() => expect(harness.responses()).toHaveLength(2));
+
+    for (let index = 0; index < 23; index += 1) {
+      harness.dispatch({
+        type: "interview-audio-frame",
+        frame: {
+          // 夹具产出 branded 领域帧（sessionId/source 为品牌类型）；worker 协议
+          // 载荷是 plain DTO，展开时显式退包装。
+          ...makeFrame("interviewer", index, TEST_FRAME_SAMPLES),
+          sessionId: "capture-1",
+          source: "interviewer",
+        },
+      });
+    }
+
+    await vi.waitFor(() => {
+      expect(harness.frames).toContainEqual(
+        expect.objectContaining({
+          type: "interview-event",
+          event: expect.objectContaining({
+            type: "transcript-event",
+            event: expect.objectContaining({
+              kind: "chunk-final",
+              sessionId: "capture-1",
+              source: "interviewer",
+              text: "介绍项目",
+            }),
+          }),
+        }),
+      );
+    });
+  });
+
   async function startUnauthorizedServer(): Promise<string> {
     const server = createServer((_request, response) => {
       response.writeHead(401, { "content-type": "application/json" });
@@ -241,7 +358,11 @@ describe("agent worker host", () => {
 
   it("executes commands and answers with a response frame carrying the same id", async () => {
     const harness = createHarness();
-    startAgentHost({ transport: harness.transport, vad: silenceVadSource() });
+    startAgentHost({
+      transport: harness.transport,
+      vad: silenceVadSource(),
+      recognizer: scriptedRecognizer("识别文本"),
+    });
 
     harness.dispatch({ id: "1", type: "create-conversation", conversationId: "c1" });
     await vi.waitFor(() => expect(harness.responses()).toHaveLength(1));
@@ -260,7 +381,11 @@ describe("agent worker host", () => {
 
   it("reports a command failure in the response frame instead of throwing", async () => {
     const harness = createHarness();
-    startAgentHost({ transport: harness.transport, vad: silenceVadSource() });
+    startAgentHost({
+      transport: harness.transport,
+      vad: silenceVadSource(),
+      recognizer: scriptedRecognizer("识别文本"),
+    });
 
     harness.dispatch({
       id: "1",
@@ -283,7 +408,11 @@ describe("agent worker host", () => {
   it("asks the host for a fresh token on 401 and answers its own reverse request", async () => {
     const baseUrl = await startUnauthorizedServer();
     const harness = createHarness();
-    const host = startAgentHost({ transport: harness.transport, vad: silenceVadSource() });
+    const host = startAgentHost({
+      transport: harness.transport,
+      vad: silenceVadSource(),
+      recognizer: scriptedRecognizer("识别文本"),
+    });
     host.runtime.configure({
       chat: { baseUrl, model: "text.chat" },
       answer: { baseUrl, model: "image.answer" },
@@ -316,7 +445,11 @@ describe("agent worker host", () => {
 
   it("ignores a token answer that no run is waiting for", () => {
     const harness = createHarness();
-    const host = startAgentHost({ transport: harness.transport, vad: silenceVadSource() });
+    const host = startAgentHost({
+      transport: harness.transport,
+      vad: silenceVadSource(),
+      recognizer: scriptedRecognizer("识别文本"),
+    });
     const dispose = vi.spyOn(host.runtime, "dispose");
 
     harness.dispatch({ id: "token-request:999", type: "token", accessToken: "fresh-token" });
@@ -327,7 +460,11 @@ describe("agent worker host", () => {
 
   it("disposes the runtime and closes the transport on shutdown without a response", () => {
     const harness = createHarness();
-    const host = startAgentHost({ transport: harness.transport, vad: silenceVadSource() });
+    const host = startAgentHost({
+      transport: harness.transport,
+      vad: silenceVadSource(),
+      recognizer: scriptedRecognizer("识别文本"),
+    });
     const dispose = vi.spyOn(host.runtime, "dispose");
 
     harness.dispatch({ id: "1", type: "shutdown" });

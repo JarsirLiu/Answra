@@ -3,11 +3,13 @@ import { ConversationRuntime } from "../conversation/runtime";
 import { type ConversationStore, MemoryConversationStore } from "../conversation/store";
 import { InterviewAudioIngress } from "../interview/audio/ingress";
 import {
-  type AudioSegment,
   conversationId as asConversationId,
   sessionId as asSessionId,
   type InterviewDomainEvent,
 } from "../interview/contracts";
+import { LocalParaformerAdapter } from "../interview/transcription/local/adapter";
+import type { RecognizerSource } from "../interview/transcription/local/recognizerPort";
+import { TranscriptionPump } from "../interview/transcription/pump";
 import { InterviewVadPipeline } from "../interview/vad/pipeline";
 import type { TenVadSource } from "../interview/vad/tenVadEngine";
 import { toInterviewWorkerEvent } from "./interviewProjection";
@@ -34,14 +36,17 @@ export interface AgentHostOptions {
    * 未注入时 interview-start 会显式失败：不静默降级为无 VAD 会话。
    */
   vad: TenVadSource;
+  /**
+   * 本地转录引擎的装配来源（manifest 校验 + addon 构造由 desktop 组合根注入）。
+   * 未注入时 interview-start 会显式失败：不静默降级为无转录会话。
+   */
+  recognizer: RecognizerSource;
 }
 
 export interface AgentHost {
   runtime: ConversationRuntime;
   /** Publishes a domain event for desktop-main projection into renderer DTOs. */
   emitInterviewEvent(event: InterviewDomainEvent): void;
-  /** 阶段 3：已产出的分段暂存视图（有界）；阶段 4 的转录消费者接管后删除。 */
-  stagedInterviewVadSegments(sessionId: string): readonly AudioSegment[];
   dispose(): void;
 }
 
@@ -58,7 +63,24 @@ export function startAgentHost({
   transport,
   store = new MemoryConversationStore(),
   vad,
+  recognizer,
 }: AgentHostOptions): AgentHost {
+  /**
+   * 本地转录引擎共享装配（worker 生命周期只装一次）：失败过的装配 promise
+   * 会保留同一个 rejection，与 VAD 引擎共享加载的既有语义一致——修好资源后
+   * 重启 worker 才能恢复，而不是每个会话重复付出装配成本。
+   */
+  let recognizerAssembly: Promise<LocalParaformerAdapter> | undefined;
+
+  function loadTranscriptionProvider(): Promise<LocalParaformerAdapter> {
+    recognizerAssembly ??= optionsRecognizerLoad();
+    return recognizerAssembly;
+  }
+
+  function optionsRecognizerLoad(): Promise<LocalParaformerAdapter> {
+    return recognizer.load().then((assembly) => new LocalParaformerAdapter(assembly));
+  }
+
   /** 反向请求（agent → 宿主）的等待表：宿主用同 id 的命令帧回答。 */
   const capabilityRequests = new Map<
     string,
@@ -96,9 +118,16 @@ export function startAgentHost({
     emit: (event) => emitInterviewEvent(event),
     onFrame: (frame) => interviewVad.handleFrame(frame),
   });
+  const transcription = new TranscriptionPump({
+    emit: (event) => emitInterviewEvent({ type: "transcript-event", event }),
+  });
   const interviewVad = new InterviewVadPipeline({
     vad,
-    failSession: (id, code) => interviewAudio.fail(id, code),
+    failSession: (id, code) => {
+      transcription.fail(id);
+      interviewAudio.fail(id, code);
+    },
+    onSegment: (segment) => transcription.handleSegment(segment),
   });
   let audioCreditSessionId: string | undefined;
   let uncreditedAudioFrames = 0;
@@ -114,6 +143,7 @@ export function startAgentHost({
     if (disposed) return;
     disposed = true;
     interviewVad.dispose();
+    transcription.dispose();
     for (const pending of capabilityRequests.values())
       pending.reject(new Error("本地 AI 服务已关闭"));
     capabilityRequests.clear();
@@ -187,8 +217,12 @@ export function startAgentHost({
         uncreditedAudioFrames = 0;
         try {
           await interviewVad.start(asSessionId(command.sessionId));
+          // 转录引擎装配与 VAD 同一批显式失败：82MB 模型校验失败时整个会话
+          // 打成 failed 而不是采集一段无人消费的音频。
+          transcription.start(asSessionId(command.sessionId), await loadTranscriptionProvider());
         } catch (error) {
-          // VAD 资源加载失败属于显式失败路径：先把会话打成 failed，再把错误冒给 desktop。
+          // 资源加载失败属于显式失败路径：先把会话打成 failed，再把错误冒给 desktop。
+          interviewVad.fail(asSessionId(command.sessionId));
           interviewAudio.fail(asSessionId(command.sessionId), "runtime-failed");
           clearAudioCredits(command.sessionId);
           throw error;
@@ -201,11 +235,13 @@ export function startAgentHost({
         return undefined;
       case "interview-capture-failed":
         interviewVad.fail(asSessionId(command.sessionId));
+        transcription.fail(asSessionId(command.sessionId));
         interviewAudio.fail(asSessionId(command.sessionId), "capture-failed");
         clearAudioCredits(command.sessionId);
         return undefined;
       case "interview-stop":
         interviewVad.stop(asSessionId(command.sessionId));
+        transcription.stop(asSessionId(command.sessionId));
         interviewAudio.stop(asSessionId(command.sessionId));
         clearAudioCredits(command.sessionId);
         return undefined;
@@ -247,7 +283,6 @@ export function startAgentHost({
   return {
     runtime,
     emitInterviewEvent,
-    stagedInterviewVadSegments: (sessionId) => interviewVad.stagedSegments(sessionId),
     dispose,
   };
 }
