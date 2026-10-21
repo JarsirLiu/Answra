@@ -14,6 +14,7 @@
 export { ConversationRuntime } from "./conversation/runtime";
 export type { ConversationStore } from "./conversation/store";
 export { MemoryConversationStore } from "./conversation/store";
+export { TEN_VAD_ONSET_THRESHOLD } from "./interview/vad/config";
 export type { InterviewVadPipelineOptions } from "./interview/vad/pipeline";
 export { InterviewVadPipeline } from "./interview/vad/pipeline";
 export type {

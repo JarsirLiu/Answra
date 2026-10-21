@@ -53,7 +53,7 @@
 ## 风险
 
 - 默认阈值为占位值，未经真实音频校准前不准宣称可靠分割；错误分段会直接让临时建议的时机与整体质量变差。
-- TEN WASM 在 esbuild bundle 到 Electron utility process 后的加载与时序需打包侧回归确认（尖刀测试已验证 Node ESM 直载）；失败按硬约束显式报错，不静默降级；若 TEN 路径被阻断，后备 Silero + ORT-WASM 路径需重建推理连接（一次性成本已在"曾考虑"记录）。
+- ~~TEN WASM 在 esbuild bundle 到 Electron utility process 后的加载与时序需打包侧回归确认（尖刀测试已验证 Node ESM 直载）~~——已完成（2026-10-21）：尖刀测试只覆盖过 `file://` 导入形态，bundle 探针在 data: URL 导入下暴露 glue 顶层 `new URL(..., import.meta.url)` 崩溃，已修复并固化回归（见 [TEN VAD glue 经 data: URL 导入时的 wasm 路径解析崩溃](../../implemented/bug-fix/2026-10-21-ten-vad-data-url-glue.md)）；Electron utility process 内的实机链路仍归阶段 7–8。失败按硬约束显式报错，不静默降级；若 TEN 路径被阻断，后备 Silero + ORT-WASM 路径需重建推理连接（一次性成本已在"曾考虑"记录）。
 - TEN VAD 与 Silero 的输出签名不同（同步 flag/概率 vs 异步窗口概率）：适配器只面向 `VadDetector` 契约，替换实现时不得把任一引擎的窗假设硬编码为常量。
 - Agora 附加许可条款是长期边界：商业化/开放接入形态变化时必须先重评许可（见提案节）。
 - VAD 层错误边界只有两类路径：显式失败（正确）与兜底假装静音（不允许）——沿用 10-16 Note 的硬约束，不新增例外。
@@ -62,6 +62,7 @@
 ## 验证证据
 
 - 2026-10-20 在线核对：`pnpm view onnxruntime-node dist.unpackedSize` → 301,068,136 字节（约 301MB）；`pnpm view onnxruntime-web dist.unpackedSize` → 144,618,540 字节（约 145MB，仅开发机 node_modules，分发只需选用 wasm）；`silero_vad_v5.onnx` 官方仓库 2.22MB；`@ricky0123/vad-node` 0.0.3 最近发布约两年前且 README 标注"Non-realtime voice activity detection for node"，`@ricky0123/vad` npm 页标注已 deprecated。
+- 2026-10-21 打包侧回归成立：本机补跑 `pnpm --filter @answra/desktop vad:prepare`（TEN VAD 2.1.2 / d68ab71c 落盘 `resources/vad`），新增常驻回归 `apps/desktop/test/tenVadBundle.test.ts` 以与 worker 产物相同的 esbuild 选项（CJS / node20.9）打包探针并执行"清单校验 → SHA-256 校验 → data: URL 导入 glue → WASM 实例化 → 静音 hop 判非语音"全链路通过；其间发现并修复 data: URL 崩溃缺陷（复盘见 [2026-10-21 TEN VAD glue data: URL defect](../../implemented/bug-fix/2026-10-21-ten-vad-data-url-glue.md)），CI 自此在 Test 前固定执行 `vad:prepare`。Electron utility process 实机运行仍归阶段 7–8。
 - Silero VAD v6 实况（后备路径依据，2026-10-20 搜索核证：soniqo.audio/vad 指南、paean-ai/silero-vad-swift README、github vadimatmurphy/vad-comparison）：约 1.2MB / 309K 参数、STFT+LSTM 流式、32ms 窗、CPU <1ms/窗、LSTM 状态显式可控、官方 MIT 模型。
 - 提案阶段无 TEN 适配器成品与打包侧实测；既有证据只证明引擎可在 Node ESM 载入并达到实时充足速度、许可与体积边界清楚，不证明产品质量/实机可用性（归阶段 8）。
 - WebRTC/Silero/Cobra 对比（picovoice.ai 2025-11 blog）：WebRTC VAD 常见 cutoff 显著高于 Silero；Silero 优势在噪声环境与持续维护。

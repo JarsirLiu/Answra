@@ -1,5 +1,8 @@
 import { TEN_VAD_HOP_SAMPLES } from "./config";
 
+/** glue 内引用的 wasm 文件名；仅在 locateFile 分支充当占位路径。 */
+const TEN_VAD_WASM_NAME = "ten_vad.wasm";
+
 /**
  * TEN VAD 的 emscripten WASM 运行时边界。
  * 资源（glue 源码 + wasm 字节）以内存注入；本模块不接触磁盘路径。
@@ -49,6 +52,7 @@ type TenVadModuleFactory = (options: {
   wasmBinary: Uint8Array;
   noInitialRun: boolean;
   noExitRuntime: boolean;
+  locateFile: (path: string) => string;
 }) => Promise<TenVadModuleBinding>;
 
 interface NativeHopResources {
@@ -94,6 +98,10 @@ async function loadModule(
     // 预编译资源由调用方注入字节；emscripten 构建关闭文件系统（NO_FILESYSTEM=1）。
     noInitialRun: true,
     noExitRuntime: true,
+    // glue 顶层会按 import.meta.url 相对解析 wasm 路径，而 glue 经 data: URL 导入时
+    // import.meta.url 不可作解析 base，会直接抛 Invalid URL。显式给出 locateFile
+    // 走 emscripten 的注入分支：wasmBinary 已就位，该路径不会被真实读取。
+    locateFile: () => TEN_VAD_WASM_NAME,
   });
 }
 

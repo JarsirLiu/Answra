@@ -37,6 +37,9 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      - name: Prepare TEN VAD resources
+        run: pnpm --filter @answra/desktop vad:prepare
+
       - name: Test
         run: pnpm test
 
