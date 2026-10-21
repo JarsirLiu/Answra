@@ -1,6 +1,7 @@
 packages:
   - packages/*
   - apps/*
+  - examples/*
 allowBuilds:
   '@parcel/watcher': set this to true or false
   electron: true

@@ -19,27 +19,26 @@ import {
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
-import { InterviewAudioIngress } from "../../src/interview/audio/ingress";
 import {
   type AudioSegment,
   conversationId,
+  createTenVadEngine,
+  InterviewAudioIngress,
+  InterviewVadPipeline,
+  LocalParaformerAdapter,
+  type OfflineRecognizerModule,
   type PcmFrame,
   sessionId,
-} from "../../src/interview/contracts";
-import { LocalParaformerAdapter } from "../../src/interview/transcription/local/adapter";
-import type { OfflineRecognizerModule } from "../../src/interview/transcription/local/recognizerPort";
-import { VAD_CLOSE_SILENCE_MS } from "../../src/interview/vad/config";
-import { InterviewVadPipeline } from "../../src/interview/vad/pipeline";
-import { createTenVadEngine } from "../../src/interview/vad/tenVadEngine";
-import { TEST_FRAME_SAMPLES } from "../../test/interview/vad/fixtures";
+  VAD_CLOSE_SILENCE_MS,
+} from "@answra/agent/evaluation";
+import { describe, expect, it } from "vitest";
 
 const evalRun = String(process.env.ANSWRA_ASR_EVAL_RUN ?? "") === "1";
 const evalDir = process.env.ANSWRA_ASR_EVAL_DIR
   ? path.resolve(String(process.env.ANSWRA_ASR_EVAL_DIR))
   : path.resolve(path.dirname(fileURLToPath(import.meta.url)));
-const agentRoot = path.resolve(evalDir, "..", "..");
-const repoRoot = path.resolve(agentRoot, "..", "..");
+const repoRoot = path.resolve(evalDir, "..", "..");
+const EVAL_FRAME_SAMPLES = 1_536;
 
 interface ManifestFile {
   url: string;
@@ -259,7 +258,7 @@ describe.skipIf(!evalRun)("VAD+ASR 端到端评测", () => {
     let frameCount = 0;
     let sampleCursor = 0;
     while (sampleCursor < totalSamples) {
-      const take = Math.min(TEST_FRAME_SAMPLES, totalSamples - sampleCursor);
+      const take = Math.min(EVAL_FRAME_SAMPLES, totalSamples - sampleCursor);
       const frame: PcmFrame = {
         sessionId: session,
         source,

@@ -32,12 +32,14 @@ const missing = models
   .filter((id) => !existsSync(path.join(modelsDir, id, "model.int8.onnx")));
 for (const id of missing) {
   if (!existsSync(path.join(modelsDir, id, "model.int8.onnx"))) {
-    console.error(`缺少模型 ${id}：先运行 pnpm --filter @answra/agent eval:asr:fetch`);
+    console.error(`缺少模型 ${id}：先运行 pnpm --filter @answra/vad-asr-eval eval:asr:fetch`);
     process.exit(1);
   }
 }
 if (!existsSync(path.join(dataDir, "train", "S0002"))) {
-  console.error("缺少 AISHELL-1 S0002 对照集：先运行 pnpm --filter @answra/agent eval:asr:fetch");
+  console.error(
+    "缺少 AISHELL-1 S0002 对照集：先运行 pnpm --filter @answra/vad-asr-eval eval:asr:fetch",
+  );
   process.exit(1);
 }
 
@@ -47,11 +49,15 @@ const env = {
   ANSWRA_ASR_EVAL_DIR: evalDir,
   ANSWRA_ASR_EVAL_MODELS: models,
 };
-const res = spawnSync("pnpm", ["--filter", "@answra/agent", "test", "--", "vad-asr-eval"], {
-  stdio: "inherit",
-  shell: process.platform === "win32",
-  env,
-});
+const res = spawnSync(
+  "pnpm",
+  ["--filter", "@answra/vad-asr-eval", "exec", "vitest", "run", "chain-eval.test.ts"],
+  {
+    stdio: "inherit",
+    shell: process.platform === "win32",
+    env,
+  },
+);
 if (res.status !== 0) {
   console.error("评测运行失败（见上方 vitest 输出）");
   process.exit(res.status ?? 1);

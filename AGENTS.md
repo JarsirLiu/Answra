@@ -30,10 +30,11 @@
 | --- | --- | --- |
 | `src/worker` | 线协议 `AgentCommand` / `AgentFrame`，跨进程唯一契约 | 只放协议类型；命令/帧变更必须同步 desktop worker |
 | `src/conversation` | 会话运行时、会话存储端口与内存适配器 | 不依赖 Electron / React；新增领域平级加目录 |
-| `examples/` | 评测脚手架（vad-asr-eval）：TEN VAD + segmenter + int8 模型族端到端延迟/CER 评测，产出 CSV | 资产经 manifest 固定来源+SHA 校验，不入 Git；`ANSWRA_ASR_EVAL_RUN=1` 门控，不进门禁 |
 | 平台能力 | 采集、键鼠注入、窗口、密钥等实现留在 desktop | 运行时只持有端口，实现由 desktop 注入 |
 
 入口规则：desktop 只从 `@answra/agent`（`exports` 的 `.`）导入；本包不产出独立构建产物，由 desktop 的 `build:electron` 一并 bundle。
+
+仓库根目录 `examples/vad-asr-eval/` 是可选真实样本 VAD/ASR 评测 workspace：原句与链路转录并排供人工审阅，不生成回答；经 `@answra/agent/evaluation` 公开入口调用，不进入常规门禁，下载资产和 CSV 产物不入 Git。
 
 ## IPC 约定（三层类型安全）
 

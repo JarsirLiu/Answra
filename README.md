@@ -74,7 +74,7 @@ apps/agent             平台无关的 Agent 运行时（不依赖 Electron/Reac
   src/index.ts         公共入口：desktop worker 的唯一导入面
   src/worker           worker 线协议（main ↔ agent 命令与帧）
   src/conversation     会话运行时与存储端口；新增领域（转写、工具、触发）平级加目录
-  examples             面试链路评测脚手架（vad-asr-eval）：资产清单/一键下载/端到端延迟与 CER 的 CSV 产物；默认 skip 不进门禁
+examples/vad-asr-eval  可选真实样本 VAD/ASR 评测：原句与链路转录并排、人工审阅及 turn 延迟；不生成回答、不进常规门禁
 scripts/architecture   架构守护脚本（深导入/依赖环/平台越界检查）
 scripts/docs           文档门禁
 .agents/skills         AI 开发流程指南
@@ -95,6 +95,7 @@ docs                   Note 索引
 | `pnpm notes:hint` | Note 格式、本地链接和变更配对检查（仅提示，不阻断） |
 | `pnpm notes:check` | 同 `notes:hint` 但严格：缺失或格式错误即失败（CI/发布用） |
 | `pnpm architecture:check` | 架构守护检查 |
+| `pnpm --filter @answra/vad-asr-eval eval:eot` | 可选运行真实中文轮次 VAD/ASR 评测，结果在 `examples/vad-asr-eval/out/` |
 | `pnpm verify` | lint + typecheck + test + architecture（Note 检查为提示；pre-push 同款） |
 
 ## 参与开发

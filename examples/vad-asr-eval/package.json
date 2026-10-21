@@ -1,0 +1,19 @@
+{
+  "name": "@answra/vad-asr-eval",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "eval:asr:fetch": "node fetch-assets.mjs",
+    "eval:asr": "node run-eval.mjs",
+    "eval:asr:one": "node fetch-assets.mjs && node run-eval.mjs",
+    "eval:eot:fetch": "node fetch-eot-bench.mjs",
+    "eval:eot": "node run-eot-bench.mjs"
+  },
+  "dependencies": {
+    "@answra/agent": "workspace:*"
+  },
+  "devDependencies": {
+    "sherpa-onnx-node": "1.13.8",
+    "vitest": "^5.0.3"
+  }
+}

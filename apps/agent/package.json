@@ -8,14 +8,12 @@
     "node": ">=20.9.0"
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./evaluation": "./src/interview/evaluation.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "eval:asr:fetch": "node examples/vad-asr-eval/fetch-assets.mjs",
-    "eval:asr": "node examples/vad-asr-eval/run-eval.mjs",
-    "eval:asr:one": "node examples/vad-asr-eval/fetch-assets.mjs && node examples/vad-asr-eval/run-eval.mjs"
+    "test": "vitest run"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "2.0.81",

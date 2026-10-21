@@ -116,4 +116,4 @@ if (!existsSync(path.join(dataRoot, "train", "S0002"))) {
 console.log("\n资产就绪：");
 console.log(`  models: ${path.relative(process.cwd(), modelsRoot)}`);
 console.log(`  data:   ${path.relative(process.cwd(), dataRoot)}`);
-console.log("运行评测：pnpm --filter @answra/agent eval:asr");
+console.log("运行评测：pnpm --filter @answra/vad-asr-eval eval:asr");
