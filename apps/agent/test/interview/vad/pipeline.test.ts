@@ -156,7 +156,8 @@ describe("interview vad pipeline", () => {
 
     const staged = pipeline.stagedSegments("capture-1");
     expect(staged).toHaveLength(1);
-    const segment = staged[0]!;
+    const [segment] = staged;
+    if (!segment) throw new Error("分段器应暂存至少一段");
     expect(segment).toMatchObject({
       startSample: 0,
       endSample: 18 * TEN_VAD_HOP_SAMPLES,

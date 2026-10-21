@@ -1,8 +1,9 @@
-// VAD+ASR 端到端评测：真实 TEN VAD 预编译件 → repo 真实
-// SpeechActivityDetector/VadSegmenter（经 InterviewVadPipeline 组合）→
-// manifest 固定的 paraformer int8 模型族逐段离线解码，输出 CSV。
+// VAD+ASR 端到端评测：真实 InterviewAudioIngress（含 PcmFrameValidator）→ 真实 TEN
+// VAD 预编译件 → repo 真实 SpeechActivityDetector/VadSegmenter（经
+// InterviewVadPipeline 组合）→ LocalParaformerAdapter（生产 adapter，引擎经端口注入
+// 为真实 sherpa-onnx addon + manifest 固定的 int8 模型）逐段解码，输出 CSV。
 // 由 ANSWRA_ASR_EVAL_RUN=1 门控（run-eval.mjs 拉起），其余场景恒 skip。
-// 资产由 fetch-assets.mjs 预先下载并做 SHA 校验。
+// 资产由 fetch-assets.mjs 预先下载并做 SHA 校验；只支持 manifest asr=paraformer 的模型。
 
 import { createHash } from "node:crypto";
 import {
@@ -19,7 +20,15 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { type AudioSegment, type PcmFrame, sessionId } from "../../src/interview/contracts";
+import { InterviewAudioIngress } from "../../src/interview/audio/ingress";
+import {
+  type AudioSegment,
+  conversationId,
+  type PcmFrame,
+  sessionId,
+} from "../../src/interview/contracts";
+import { LocalParaformerAdapter } from "../../src/interview/transcription/local/adapter";
+import type { OfflineRecognizerModule } from "../../src/interview/transcription/local/recognizerPort";
 import { VAD_CLOSE_SILENCE_MS } from "../../src/interview/vad/config";
 import { InterviewVadPipeline } from "../../src/interview/vad/pipeline";
 import { createTenVadEngine } from "../../src/interview/vad/tenVadEngine";
@@ -184,7 +193,7 @@ type SherpaModule = {
 // 文件级流式 SHA-256（模型文件大，不能整读内存）。
 
 describe.skipIf(!evalRun)("VAD+ASR 端到端评测", () => {
-  it("真实链路：TEN VAD → segmenter → 固定模型族，输出 out/results.csv + out/summary.csv", {
+  it("真实链路：ingress 校验 → TEN VAD → segmenter → LocalParaformerAdapter，输出 out/results.csv + out/summary.csv", {
     timeout: 900_000,
   }, async () => {
     const requireSherpa = createRequire(import.meta.url);
@@ -210,7 +219,15 @@ describe.skipIf(!evalRun)("VAD+ASR 端到端评测", () => {
     });
     const session = sessionId("asr-eval");
     const source = "interviewer" as const;
+    const conversation = conversationId("asr-eval-conv");
+    // 真实采集入口链：帧先过 ingress（未信任输入校验 + 连续性/gap 追踪）再进 VAD。
+    const ingress = new InterviewAudioIngress({
+      emit: () => {},
+      onFrame: (frame) => pipeline.handleFrame(frame),
+    });
     await pipeline.start(session);
+    ingress.start(session, conversation);
+    expect(ingress.captureReady(session)).toBe(true);
 
     const silenceSec = 0.85;
     const spans: { startSec: number; endSec: number; clipIndex: number }[] = [];
@@ -254,40 +271,65 @@ describe.skipIf(!evalRun)("VAD+ASR 端到端评测", () => {
         pcm: pcmBytes.subarray(sampleCursor * 2, (sampleCursor + take) * 2),
       };
       const t0 = performance.now();
-      pipeline.handleFrame(frame);
+      const ingestResult = ingress.acceptFrame(frame);
       vadMsTotal += performance.now() - t0;
+      expect(ingestResult.accepted).toBe(true);
       sampleCursor += take;
       frameCount += 1;
     }
     const streamSec = sampleCursor / 16_000;
     const segments: readonly AudioSegment[] = pipeline.stagedSegments("asr-eval");
     pipeline.stop(session);
+    expect(ingress.stop(session)).toBe(true);
     expect(failureCode).toBe("");
     expect(segments.length).toBeGreaterThanOrEqual(clips.length);
 
-    const recognizers = requestedModels.map((id) => {
-      const runFiles = manifest.models[id]?.runs[0]?.files;
+    // 真实 adapter 路径：评测用的"desktop 注入站"——把评测进程里的 sherpa addon
+    // 适配成 OfflineRecognizerModule（未来 desktop 侧组合根提供同形实现）。
+    function sherpaModule(): OfflineRecognizerModule {
+      return {
+        create: (recipe) => {
+          const recognizer = new sherpa.OfflineRecognizer({
+            modelConfig: {
+              paraformer: { model: recipe.modelPath },
+              tokens: recipe.tokensPath,
+              numThreads: recipe.numThreads,
+              debug: 0,
+              provider: "cpu",
+            },
+          });
+          return {
+            // stream 生命周期由注入侧闭合：一次整段 create→accept→decode→getResult。
+            transcribeOnce: ({ samples, sampleRate }) => {
+              const stream = recognizer.createStream();
+              stream.acceptWaveform({ samples, sampleRate });
+              recognizer.decode(stream);
+              return recognizer.getResult(stream).text;
+            },
+          };
+        },
+      };
+    }
+    const providers = requestedModels.map((id) => {
+      const model = manifest.models[id];
+      if (model?.asr !== "paraformer")
+        throw new Error(`模型 ${id} 不是 paraformer 型；adapter 链路评测只支持 paraformer 族`);
+      const runFiles = model.runs[0]?.files;
       if (!runFiles?.["model.int8.onnx"] || !runFiles?.["tokens.txt"])
         throw new Error(`manifest 缺少模型 ${id}；先跑 fetch-assets.mjs`);
       const expected = runFiles["model.int8.onnx"].sha256;
       const modelPath = path.join(evalDir, "models", id, "model.int8.onnx");
       if (sha256File(modelPath) !== expected)
         throw new Error(`模型 ${id} SHA 不匹配：重跑 fetch-assets.mjs`);
-      const asrType = manifest.models[id]?.asr;
-      if (!asrType) throw new Error(`manifest 缺少模型 ${id} 的 asr 类型`);
-      const tokensPath = path.join(evalDir, "models", id, "tokens.txt");
-      const base = { tokens: tokensPath, numThreads: 4, debug: 0, provider: "cpu" };
-      const modelConfig =
-        asrType === "sensevoice"
-          ? {
-              ...base,
-              senseVoice: { model: modelPath, language: "zh", useInverseTextNormalization: 1 },
-            }
-          : { ...base, paraformer: { model: modelPath } };
-      return {
-        id,
-        recognizer: new sherpa.OfflineRecognizer({ modelConfig }),
-      };
+      const adapter = new LocalParaformerAdapter({
+        module: sherpaModule(),
+        recipe: {
+          modelPath,
+          tokensPath: path.join(evalDir, "models", id, "tokens.txt"),
+          numThreads: 4,
+        },
+      });
+      return { id, adapter };
     });
 
     type Row = {
@@ -302,11 +344,6 @@ describe.skipIf(!evalRun)("VAD+ASR 端到端评测", () => {
     };
     const rows: Row[] = [];
     for (const segment of segments) {
-      const pcm = new Float32Array(Math.floor(segment.pcm.byteLength / 2));
-      const view = new DataView(segment.pcm.buffer, segment.pcm.byteOffset, segment.pcm.byteLength);
-      for (let i = 0; i < pcm.length; i += 1) {
-        pcm[i] = view.getInt16(i * 2, true) / 32768;
-      }
       const segStart = segment.startSample / segment.sampleRate;
       const segEnd = segment.endSample / segment.sampleRate;
       let bestSpan: (typeof spans)[number] | undefined;
@@ -321,17 +358,18 @@ describe.skipIf(!evalRun)("VAD+ASR 端到端评测", () => {
       const clipRef = bestSpan ? clips[bestSpan.clipIndex].ref : "";
       const clipId = bestSpan ? clips[bestSpan.clipIndex].id : "";
       const segDurS = (segment.endSample - segment.startSample) / segment.sampleRate;
-      for (const item of recognizers) {
+      for (const item of providers) {
         const t0 = performance.now();
-        const stream = item.recognizer.createStream();
-        stream.acceptWaveform({ samples: pcm, sampleRate: segment.sampleRate });
-        item.recognizer.decode(stream);
+        const events = await item.adapter.transcribe(segment, new AbortController().signal);
         const decodeMs = performance.now() - t0;
+        const finalEvent = events.find((e) => e.kind === "chunk-final");
+        const errorEvent = events.find((e) => e.kind === "error");
+        if (errorEvent) throw new Error(`engine error ${errorEvent.code}: ${segDurS.toFixed(3)}s`);
         rows.push({
           modelId: item.id,
           clipId,
           ref: clipRef,
-          hyp: item.recognizer.getResult(stream).text,
+          hyp: finalEvent?.text ?? "",
           boundary: segment.boundary,
           segDurS,
           segStartS: segStart,

@@ -12,6 +12,11 @@
       "!!apps/desktop/dist",
       "!!apps/desktop/out",
       "!!apps/desktop/release",
+      "!!apps/desktop/native",
+      "!!apps/desktop/.cache-rime",
+      "!!apps/desktop/.cache-vad",
+      "!!apps/desktop/resources/rime",
+      "!!apps/desktop/resources/vad",
       "!!pnpm-lock.yaml"
     ]
   },

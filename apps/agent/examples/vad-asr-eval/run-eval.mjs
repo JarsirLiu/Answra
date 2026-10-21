@@ -2,8 +2,8 @@
 // 一键评测：校验资产 → 设环境变量 → 经 pnpm 拉起 vitest 跑 chain-eval.test.ts
 // → 产物固定为 examples/vad-asr-eval/out/results.csv + out/summary.csv。
 // 用法：
-//   node run-eval.mjs                        # small + large
-//   node run-eval.mjs --models small        # 只跑 small
+//   node run-eval.mjs                        # 默认只跑 small（单模型顺序解码，避免并发负载）
+//   node run-eval.mjs --models small large  # 仍单进程顺序解码；sense 直调口径已记档、不再走 adapter 评测
 // 前置：先跑 fetch-assets.mjs 下载模型与 AISHELL 对照集。
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -23,7 +23,7 @@ const picked = args
   .flatMap((token) => token.split(/[,\s]+/))
   .filter((k) => alias[k])
   .map((k) => alias[k]);
-const models = (picked.length ? picked : ["small", "sense"]).map((k) => alias[k] ?? k).join(",");
+const models = (picked.length ? picked : ["small"]).map((k) => alias[k] ?? k).join(",");
 const modelsDir = path.join(evalDir, "models");
 const dataDir = path.join(evalDir, "data");
 

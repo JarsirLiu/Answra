@@ -20,6 +20,12 @@ interface FrameSpec {
   startSample?: number;
 }
 
+function firstSegment(segments: readonly AudioSegment[]): AudioSegment {
+  const [segment] = segments;
+  if (!segment) throw new Error("分段器应至少产出一段");
+  return segment;
+}
+
 /** 预卷一段带低谷的波形：样本 [40_000, 41_600) 幅值 10，其余为标准响度语音。 */
 function softDipValue(sample: number): number {
   if (sample >= 40_000 && sample < 41_600) return 10;
@@ -79,7 +85,7 @@ describe("vad segmenter folding frames and activity into segments", () => {
     ]);
 
     expect(segments).toHaveLength(1);
-    const segment = segments[0]!;
+    const segment = firstSegment(segments);
     expect(segment).toMatchObject({
       sessionId: "capture-1",
       source: "interviewer",
@@ -104,7 +110,7 @@ describe("vad segmenter folding frames and activity into segments", () => {
     ]);
 
     expect(segments).toHaveLength(1);
-    const segment = segments[0]!;
+    const segment = firstSegment(segments);
     expect(segment).toMatchObject({ startSample: 5_952, endSample: 10_752 });
     expect(segment.pcm).toEqual(makePcmBytes(4_800, loudSpeechValue, 5_952));
   });
@@ -194,7 +200,7 @@ describe("vad segmenter folding frames and activity into segments", () => {
     ]);
 
     expect(segments).toHaveLength(1);
-    const segment = segments[0]!;
+    const segment = firstSegment(segments);
     expect(segment).toMatchObject({ startSample: 0, endSample: 3_840 });
     expect(segment.pcm).toEqual(makePcmBytes(3_840, gapValueAt, 0));
   });
@@ -231,7 +237,7 @@ describe("vad segmenter folding frames and activity into segments", () => {
 
     const flushed = segmenter.flush(TEST_SESSION, "interviewer");
     expect(flushed).toHaveLength(1);
-    const segment = flushed[0]!;
+    const segment = firstSegment(flushed);
     expect(segment).toMatchObject({
       boundary: "utterance-end",
       startSample: 0,

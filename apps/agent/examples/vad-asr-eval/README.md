@@ -1,8 +1,8 @@
 # VAD + ASR 评测脚手架
 
-针对 `proposed/architecture/2026-10-21-local-asr-paraformer-small.md` 的本地 ASR 候选做端到端评测：真实 TEN VAD 预编译件 → repo 真实检测器/分段器（`InterviewVadPipeline`）→ manifest 固定的 sherpa-onnx int8 模型族逐段离线解码。产出逐段 CSV 与逐模型汇总 CSV。由 `ANSWRA_ASR_EVAL_RUN=1` 门控，不进常规 CI（`pnpm verify` 下恒 skip）。
+针对 `proposed/architecture/2026-10-21-local-asr-paraformer-small.md` 的本地 ASR 候选做端到端评测：真实 `InterviewAudioIngress`（未信任输入校验 + 连续性追踪）→ 真实 TEN VAD 预编译件 → repo 真实检测器/分段器（`InterviewVadPipeline`）→ 生产 `LocalParaformerAdapter`（引擎经端口注入为真实 sherpa-onnx addon + manifest 固定的 int8 模型，与产品同一条代码路径）逐段离线解码。产出逐段 CSV 与逐模型汇总 CSV。由 `ANSWRA_ASR_EVAL_RUN=1` 门控，不进常规 CI（`pnpm verify` 下恒 skip）。
 
-候选模型族（`asr` 类型由 manifest 声明，spec 据此构建 sherpa 配置）：`paraformer-zh-small/large-int8`（paraformer）、`sensevoice-small-int8`（sensevoice，自带 ITN 与标点）。
+评测只支持 manifest `asr=paraformer` 的模型（small/large）。sensevoice 的直调对比数据已记档于 Note，不再走 adapter 评测。默认只跑 small：单进程、模型顺序加载、逐段同步解码，工具自身不做任何并发，避免占用整机。
 
 ## 用法
 

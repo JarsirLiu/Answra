@@ -35,7 +35,7 @@
 ### 实施顺序
 
 1. **尖刀 spike（未触碰仓库、临时目录）**：临时目录 `npm i sherpa-onnx-node`，下载 paraformer-zh-small int8，Node 版现有跑批式识别测试 WAV；测首段延迟/RTF/内存；随后按 TEN VAD 尖刀 precedent 在 Electron utility process 验证 native addon 加载与 esbuild 打包形态。spike 未达成则本 Note 转 rejected。
-2. **`LocalParaformerAdapter`**：input WAV 编码、内存策略、超时/取消、错误归一化；contract tests 用 fixture AudioSegment、假模块注入（真模型不进单测）。
+2. **`LocalParaformerAdapter`**：input WAV 编码、内存策略、超时/取消、错误归一化；contract tests 用 fixture AudioSegment、假模块注入（真模型不进单测）。——2026-10-21 已实施并记档：[LocalParaformerAdapter（阶段 2）](../../implemented/feature/2026-10-21-local-paraformer-adapter.md)；评测 harness 已切至生产 adapter 路径（真实 ingress 校验链直通），实测对话口径 CER 3.09% 与直调一致、解码开销差异可忽略；短段跳过与取消/错误语义按该 Note 落定。
 3. **desktop 资源准备**：`asr:prepare`、SHA-256 清单（仿 `rime-resources.json`）、打包 external/unpack 配置、macOS 动态库定位处理。
 4. **精度与延迟校准**（对应 10-20 Note 阶段 8 的实机环节）：Windows + macOS 真实面试样本测 CER、短音频 P95、内存；未达标不迁 implemented。
 5. HTTP adapter（内网 Qwen）与云端订阅路径仍保留为产品方向，排序后移，不弃用。
