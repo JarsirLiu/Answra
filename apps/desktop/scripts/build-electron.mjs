@@ -38,7 +38,8 @@ await Promise.all([
     platform: "node",
     format: "cjs",
     target: "node20.9",
-    external: ["electron", "koffi"],
+    // sherpa-onnx-node 留给 utility process 运行时 require：native addon 不可打包。
+    external: ["electron", "koffi", "sherpa-onnx-node"],
     outfile: "out/main/conversation/worker.cjs",
   }),
   mkdir("out/capture", { recursive: true }).then(() =>

@@ -17,6 +17,9 @@ apps/desktop/resources/rime/**
 # Prebuilt TEN VAD wasm/glue are prepared locally via `vad:prepare`; only the manifest source stays in Git.
 apps/desktop/.cache-vad/
 apps/desktop/resources/vad/**
+# Local ASR model resources are prepared via `asr:prepare`; only the manifest source stays in Git.
+apps/desktop/.cache-asr/
+apps/desktop/resources/asr/**
 # Locally downloaded dictionary data and prebuilt helper binaries are not source files.
 apps/desktop/native/rime-data/easy_en.dict.yaml
 apps/desktop/native/rime-host/*.exe
@@ -24,7 +27,7 @@ apps/desktop/native/rime-host/*.exe
 apps/desktop/native/rime-data/*_upstream/
 apps/desktop/native/rime-data/rime-deps.7z
 
-# VAD+ASR ÆÀ²â£¨examples/vad-asr-eval£©µÄÄ£ÐÍ¡¢Êý¾ÝÓë CSV ²úÎï²»Èë¿â
+# VAD+ASR ï¿½ï¿½ï¿½â£¨examples/vad-asr-evalï¿½ï¿½ï¿½ï¿½Ä£ï¿½Í¡ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ CSV ï¿½ï¿½ï¿½ï²»ï¿½ï¿½ï¿½
 apps/agent/examples/vad-asr-eval/models/
 apps/agent/examples/vad-asr-eval/data/
 apps/agent/examples/vad-asr-eval/out/

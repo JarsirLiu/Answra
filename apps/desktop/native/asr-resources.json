@@ -1,0 +1,35 @@
+{
+  "asr": {
+    "repository": "csukuangfj/sherpa-onnx-paraformer-zh-small-2024-03-09",
+    "revision": "63ddc3cd0f2810b68289a7b3876e62ef5d53d6df",
+    "version": "2024-03-09",
+    "license": "FunASR Open Source Model License v1.1（原文见 licenses/MODEL_LICENSE；商用须注明出处并保留模型名）",
+    "conversionSource": "modelscope crazyant/speech_paraformer_asr_nat-zh-cn-16k-common-vocab8358-onnx（社区 ONNX 转换，非 FunASR 官方发布物；更新时必须同步复核 conversionSource 与许可原文）",
+    "files": [
+      {
+        "name": "model.int8.onnx",
+        "path": "model.int8.onnx",
+        "url": "https://hf-mirror.com/csukuangfj/sherpa-onnx-paraformer-zh-small-2024-03-09/resolve/63ddc3cd0f2810b68289a7b3876e62ef5d53d6df/model.int8.onnx",
+        "sha256": "3ef6c19369b912f7caf3cef8e545c5ccd1a33d9d7ec792a46668dc41c4b229ec",
+        "size": 81828675,
+        "dir": "."
+      },
+      {
+        "name": "tokens.txt",
+        "path": "tokens.txt",
+        "url": "https://hf-mirror.com/csukuangfj/sherpa-onnx-paraformer-zh-small-2024-03-09/resolve/63ddc3cd0f2810b68289a7b3876e62ef5d53d6df/tokens.txt",
+        "sha256": "4b2d964e18b9cf139b473003b6698fb2ed9a2a5ec55b93daa677b28f578897aa",
+        "size": 75352,
+        "dir": "."
+      },
+      {
+        "name": "MODEL_LICENSE",
+        "path": "MODEL_LICENSE",
+        "url": "https://raw.githubusercontent.com/alibaba-damo-academy/FunASR/main/MODEL_LICENSE",
+        "sha256": "7dba975a2069691db4992b0592d70828b330d2f8a30a71450f4e152a554e84f8",
+        "size": 5306,
+        "dir": "licenses"
+      }
+    ]
+  }
+}

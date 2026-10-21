@@ -12,6 +12,7 @@
     "build:electron": "node ./scripts/build-electron.mjs",
     "ime:prepare": "node ./scripts/prepare-rime.mjs",
     "vad:prepare": "node ./scripts/prepare-ten-vad.mjs",
+    "asr:prepare": "node ./scripts/prepare-asr.mjs",
     "typecheck": "tsc -p tsconfig.main.json && tsc -p tsconfig.preload.json && tsc -p tsconfig.renderer.json",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -21,6 +22,12 @@
     "appId": "dev.answra.desktop",
     "productName": "Exam Assistant",
     "asar": true,
+    "asarUnpack": [
+      "**/node_modules/sherpa-onnx-node/**",
+      "**/node_modules/sherpa-onnx-win-*/**",
+      "**/node_modules/sherpa-onnx-darwin-*/**",
+      "**/node_modules/sherpa-onnx-linux-*/**"
+    ],
     "directories": {
       "output": "release"
     },
@@ -40,6 +47,13 @@
       {
         "from": "resources/vad",
         "to": "vad",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "resources/asr",
+        "to": "asr",
         "filter": [
           "**/*"
         ]
@@ -68,6 +82,7 @@
     "@answra/shared": "workspace:*",
     "@answra/ui": "workspace:*",
     "koffi": "^3.3.3",
+    "sherpa-onnx-node": "1.13.8",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },

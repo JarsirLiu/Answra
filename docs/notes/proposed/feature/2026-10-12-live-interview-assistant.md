@@ -20,6 +20,8 @@ Windows 首轮保持 Electron `29.4.6`，使用 Electron display-media handler �
 
 ASR provider 通过独立 adapter 接入。首轮连接当前内网 Qwen HTTP 服务；adapter 把完整分段请求映射成统一转录事件，chunk final 不等于面试官 turn final。分段策略与 provider 能力见 [面试语音识别管线与客户端 VAD 选型](../architecture/2026-10-16-interview-asr-pipeline-and-vad.md)；provider-neutral 事件和未来网关 wire 见 [Answra 实时语音识别私有协议（AVP）v1](../architecture/2026-10-16-answra-voice-protocol-avp-v1.md)。当前内网 endpoint 只用于受控开发验证，不硬编码进发布包。后续可增加实时 WS adapter 和 Answra 托管订阅路径；产品上线需要账户授权、凭证保护、用量限制和服务端路由。当前不以本地 Whisper/Ollama 作为设备上的静默回退。自动回答走独立文本模型 provider；云端订阅和消费者版 ChatGPT/Claude 订阅都不自动授予 ASR/LLM API 权限。
 
+> 2026-10-21 边界修订（不改写上文原句）："不以本地 Whisper/Ollama 作为静默回退"仍然成立。变化的是产品方向增加了**随安装包分发的轻量内置模型**这一档位（sherpa-onnx paraformer-zh-small int8，约 82MB，非 Whisper/Ollama 路线），它是显式 provider 选型而非静默降级，且云端订阅 ASR 仍是终态主线。依据与实施顺序见 [本地内置 ASR 路线与 Paraformer-zh-small int8 首选](../architecture/2026-10-21-local-asr-paraformer-small.md) 及其阶段记录（adapter、资源准备与 utility process 加载验证）。本修订只放宽"本地模型"这一对象，不放宽"不得静默回退、不得成为运行前提"这两条约束。
+
 面试回答首版不包含仓库/文件读取工具、资料选择、索引或检索。对话运行时与 IPC 需保持可扩展，但不能预先扫描或读取工作区。后续若加入工具调用，应作为独立功能设计，另行定义工具权限、文件范围、用户确认、云端数据发送和审计规则。
 
 面试消息和转录不得进入笔试 `ActiveExamConversationId` 或一次性截图消息；会话独立、有界、内存驻留。关闭应用/停止面试时关闭音频轨、WebSocket 和活动 LLM 请求。日志只记录长度、阶段和错误码，不记录音频、转录正文、API Key。
@@ -38,6 +40,7 @@ ASR provider 通过独立 adapter 接入。首轮连接当前内网 Qwen HTTP �
 - **用固定时长切片上传代替 VAD 分段：** 可能在词中切断音频、无法确认发言结束，并把 chunk 完成误当成问题完成；因此批式模式也必须定义 VAD 断句和 continuation 语义，且标记为较高延迟模式。
 - **先用浏览器 SpeechRecognition：** 提供商、权限和延迟行为不可控，无法作为稳定云端 provider；因此不纳入首发。
 - **让普通用户本机运行 Whisper/Ollama：** Windows 设备性能、安装体积、显存和启动可用性不可控，且用户明确要求云端订阅服务；因此它们不得成为运行前提或静默回退路径。
+  - 2026-10-21 修订：本条否决对象是"让用户本机跑 Whisper/Ollama 大模型"，对"随安装包分发的轻量内置模型"不适用（体积、启动可用性、许可与隐私面都不同，且该内置模型作为显式 provider 档位交付）。原否决结论保留有效，不因本修订失效。
 - **把消费者版 ChatGPT/Claude 订阅等同于 API 权限：** 消费者订阅和厂商 API 计费/授权是不同产品；现有配置仅表示 OpenAI-compatible API 凭证，不代表能读取用户网页订阅。Answra 若要提供开箱即用的订阅 STT，需自建账户授权、服务端凭证保护、额度计量和流式中继。
 - **直接指定 OpenAI Realtime：** 当前 Answra 只接受通用 Chat `baseUrl/model/apiKey`，并未验证用户 endpoint 支持 Realtime transcription；故 STT 必须有独立、可验证的云端能力配置或 Answra 托管服务。
 - **首版内置仓库/文件工具：** 读取范围、确认交互和云端传输边界尚未设计，直接加入会扩大本次功能与隐私面；因此留作独立后续功能，不扫描或读取文件。

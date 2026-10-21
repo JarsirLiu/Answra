@@ -60,6 +60,9 @@ importers:
       react-dom:
         specifier: ^19.3.0
         version: 19.3.0(react@19.3.0)
+      sherpa-onnx-node:
+        specifier: 1.13.8
+        version: 1.13.8
     devDependencies:
       7zip-bin:
         specifier: 5.2.0
