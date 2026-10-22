@@ -81,6 +81,7 @@ function event(
     startSample: segment.startSample,
     endSample: segment.endSample,
     revision: FIRST_TRANSCRIPT_REVISION,
+    boundary: segment.boundary,
   };
   return { ...base, ...extra };
 }

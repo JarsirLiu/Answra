@@ -244,6 +244,7 @@ export const INTERVIEW_AUDIO_CREDIT_WINDOW = 10;
 export const INTERVIEW_AUDIO_CREDIT_BATCH = 5;
 
 export type InterviewSpeaker = "interviewer" | "user";
+export type InterviewAudioSource = "interviewer" | "candidate";
 export type InterviewState = "connecting" | "listening" | "thinking" | "stopped" | "error";
 
 export type InterviewChange =
@@ -252,8 +253,11 @@ export type InterviewChange =
       sessionId: string;
       type: "transcript";
       speaker: InterviewSpeaker;
+      utteranceId: string;
+      chunkIndex: number;
       text: string;
       final: boolean;
+      turnEnd: boolean;
       timestamp: number;
     }
   | { sessionId: string; type: "answer-start"; questionId: string; question: string }
@@ -264,7 +268,7 @@ export type InterviewChange =
 /** Binary PCM IPC DTO. Provider and Agent domain types do not cross into shared. */
 export interface InterviewPcmFrame {
   sessionId: string;
-  source: "interviewer";
+  source: InterviewAudioSource;
   sequence: number;
   startSample: number;
   sampleRate: 16_000;

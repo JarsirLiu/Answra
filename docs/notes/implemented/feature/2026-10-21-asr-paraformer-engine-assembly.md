@@ -44,6 +44,12 @@
 
 `asrRecognizer.ts` 与 `tenVadResources.ts` 各自持有形状相近的 manifest 读取/校验逻辑（约 40 行），**刻意不抽公共 helper**：二者清单结构与读取形态不同（ASR 是 82MB 流式哈希、TEN VAD 是小文件整块读入喂 wasm），且资源领域如今只有这两个实现；强行抽公共层会把两个独立资源域耦在同一个工具文件上，并行改动时互相牵连。收敛条件：出现第三处同型校验（如云端网关资源的 SHA 校验），再抽 `resourceManifest` 公共层落地。
 
+## 影响表面
+
+- Desktop 依赖与 Windows/macOS 发布产物：本地 Paraformer addon、模型资源目录和 native DLL 解包规则。
+- Agent utility process：由 Desktop 组合根装配本地 recognizer，并通过 worker bundle external 解析 addon。
+- CI 与开发验证：ASR 模型资源准备及真实模型 bundle 探针解码。
+
 ## 曾考虑的替代方案
 
 - **引擎装配与宿主接线同批推进（先前方案）**：用户驳回——先在桌面侧把引擎立起来；胶水改由打包回归先消费的先例形态，避免无消费者的死代码。

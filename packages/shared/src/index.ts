@@ -18,6 +18,7 @@ export type {
   ImeSessionSnapshot,
   ImeSessionSnapshotUpdate,
   ImeState,
+  InterviewAudioSource,
   InterviewChange,
   InterviewPcmFrame,
   InterviewSpeaker,

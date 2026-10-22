@@ -114,6 +114,7 @@ describe("interview domain contracts", () => {
       startSample: 0,
       endSample: 16_000,
       revision: 0,
+      boundary: "continuation",
       text: "问题前半段",
     };
     const event: InterviewDomainEvent = { type: "transcript-event", event: chunk };

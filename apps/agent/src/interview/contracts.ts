@@ -134,6 +134,7 @@ export interface TranscriptBase {
   startSample: number;
   endSample: number;
   revision: number;
+  boundary: SegmentBoundary;
 }
 
 export type TranscriptionErrorCode =

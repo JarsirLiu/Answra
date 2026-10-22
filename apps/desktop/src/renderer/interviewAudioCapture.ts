@@ -1,12 +1,15 @@
 import {
   ActiveInterviewConversationId,
   INTERVIEW_AUDIO_CREDIT_WINDOW,
+  type InterviewAudioSource,
+  type InterviewChange,
   type InterviewPcmFrame,
 } from "@answra/shared";
 import type { InterviewCapturePort, InterviewCaptureState } from "@answra/ui";
 
 interface WorkletFrameMessage {
   type: "frame";
+  source: InterviewAudioSource;
   sequence: number;
   startSample: number;
   pcm: ArrayBuffer;
@@ -22,23 +25,31 @@ interface CaptureRun {
   cancelled: boolean;
   sessionId?: string;
   sessionPromise?: Promise<{ sessionId: string }>;
-  capturePromise?: Promise<MediaStream>;
-  stream?: MediaStream;
+  capturePromises: Map<InterviewAudioSource, Promise<MediaStream>>;
+  inputs: Map<InterviewAudioSource, CaptureInput>;
   context?: AudioContext;
-  source?: MediaStreamAudioSourceNode;
-  worklet?: AudioWorkletNode;
-  silentGain?: GainNode;
-  stoppedWaiter?: () => void;
   cleanupPromise?: Promise<void>;
   stoppedTracks: Set<MediaStreamTrack>;
   availableCredits: number;
   agentConfirmedFrames: number;
+  nextCreditSource: InterviewAudioSource;
+  transcripts: InterviewTranscriptChange[];
   lastCreditAt: number;
   creditWatchdog?: ReturnType<typeof setTimeout>;
   stopPromise?: Promise<void>;
 }
 
+type InterviewTranscriptChange = Extract<InterviewChange, { type: "transcript" }>;
+
+interface CaptureInput {
+  stream: MediaStream;
+  source?: MediaStreamAudioSourceNode;
+  worklet?: AudioWorkletNode;
+  silentGain?: GainNode;
+}
+
 const AUDIO_CREDIT_TIMEOUT_MS = 3_000;
+const TRANSCRIPT_HISTORY_LIMIT = 60;
 
 /** Renderer-only adapter: user gesture, MediaStream, Web Audio and PCM framing. */
 export class InterviewAudioCapture implements InterviewCapturePort {
@@ -48,6 +59,7 @@ export class InterviewAudioCapture implements InterviewCapturePort {
 
   constructor(private readonly bridge = window.answra) {
     bridge?.onInterviewAudioCredit?.((credit) => this.receiveAudioCredit(credit));
+    bridge?.onInterviewChange?.((change) => this.receiveInterviewChange(change));
   }
 
   getState(): InterviewCaptureState {
@@ -67,75 +79,94 @@ export class InterviewAudioCapture implements InterviewCapturePort {
       !bridge.markInterviewCaptureReady ||
       !bridge.sendInterviewPcmFrame
     ) {
-      this.setState({ phase: "error", message: "当前环境不支持系统声音采集" });
+      this.setState({ phase: "error", message: "当前环境不支持面试音频采集" });
       return;
     }
-    if (!navigator.mediaDevices?.getDisplayMedia) {
-      this.setState({ phase: "error", message: "当前系统不支持系统声音采集" });
+    if (!navigator.mediaDevices?.getDisplayMedia || !navigator.mediaDevices?.getUserMedia) {
+      this.setState({ phase: "error", message: "当前系统不支持面试音频采集" });
       return;
     }
 
     const run: CaptureRun = {
       cancelled: false,
+      capturePromises: new Map(),
+      inputs: new Map(),
       availableCredits: INTERVIEW_AUDIO_CREDIT_WINDOW,
       agentConfirmedFrames: 0,
+      nextCreditSource: "interviewer",
       lastCreditAt: Date.now(),
       stoppedTracks: new Set(),
+      transcripts: [],
     };
     this.run = run;
-    this.setState({ phase: "starting" });
+    this.setState({ phase: "starting", transcripts: [] });
     try {
       // Start the main session and display-media request in the same click stack.
       run.sessionPromise = bridge.startInterview(ActiveInterviewConversationId);
       run.context = new AudioContext({ sampleRate: 16_000 });
-      run.capturePromise = navigator.mediaDevices.getDisplayMedia({ audio: true, video: true });
+      run.capturePromises.set(
+        "interviewer",
+        navigator.mediaDevices.getDisplayMedia({ audio: true, video: true }),
+      );
+      run.capturePromises.set(
+        "candidate",
+        navigator.mediaDevices.getUserMedia({ audio: true, video: false }),
+      );
     } catch (error) {
       await this.finishFailedStart(run, error);
       return;
     }
 
     try {
-      const [sessionResult, streamResult] = await Promise.allSettled([
+      const [sessionResult, ...streamResults] = await Promise.allSettled([
         run.sessionPromise,
-        run.capturePromise,
+        ...run.capturePromises.values(),
       ]);
       if (sessionResult.status === "fulfilled") run.sessionId = sessionResult.value.sessionId;
-      if (streamResult.status === "fulfilled") run.stream = streamResult.value;
       if (sessionResult.status === "rejected") throw sessionResult.reason;
-      if (streamResult.status === "rejected") throw streamResult.reason;
+      const sources = [...run.capturePromises.keys()];
+      for (const [index, result] of streamResults.entries()) {
+        const source = sources[index];
+        if (!source) throw new Error("音频来源顺序无效");
+        if (result.status === "rejected") {
+          throw new Error(captureErrorMessage(result.reason, source));
+        }
+        run.inputs.set(source, { stream: result.value });
+      }
       if (run.cancelled || this.run !== run) {
         await this.cleanupRun(run);
         return;
       }
 
       const context = run.context;
-      const stream = run.stream;
       if (context?.sampleRate !== 16_000) throw new Error("无法将音频转换为 16 kHz");
-      if (!stream || stream.getAudioTracks().length === 0) throw new Error("没有获得系统声音音轨");
-      for (const track of stream.getVideoTracks()) {
-        track.stop();
-        run.stoppedTracks.add(track);
-      }
-      const audioTrack = stream.getAudioTracks()[0];
-      if (!audioTrack) throw new Error("没有获得系统声音音轨");
-      audioTrack.addEventListener("ended", () => void this.failRun(run));
-
       await context.audioWorklet.addModule(
         new URL("pcmFrameProcessor.js", window.location.href).href,
       );
       if (run.cancelled || this.run !== run) return;
-      run.source = context.createMediaStreamSource(stream);
-      run.worklet = new AudioWorkletNode(context, "answra-pcm16-capture", {
-        numberOfInputs: 1,
-        numberOfOutputs: 1,
-        outputChannelCount: [1],
-      });
-      run.silentGain = context.createGain();
-      run.silentGain.gain.value = 0;
-      run.worklet.port.onmessage = (event: MessageEvent<WorkletMessage>) =>
-        this.onWorkletMessage(run, event.data);
-      run.worklet.addEventListener("processorerror", () => void this.failRun(run));
-      run.source.connect(run.worklet).connect(run.silentGain).connect(context.destination);
+      for (const [source, input] of run.inputs) {
+        if (input.stream.getAudioTracks().length === 0)
+          throw new Error(source === "interviewer" ? "没有获得系统声音音轨" : "没有获得麦克风音轨");
+        if (source === "interviewer") {
+          for (const track of input.stream.getVideoTracks()) {
+            track.stop();
+            run.stoppedTracks.add(track);
+          }
+        }
+        input.stream.getAudioTracks()[0]?.addEventListener("ended", () => void this.failRun(run));
+        input.source = context.createMediaStreamSource(input.stream);
+        input.worklet = new AudioWorkletNode(context, "answra-pcm16-capture", {
+          numberOfInputs: 1,
+          numberOfOutputs: 1,
+          outputChannelCount: [1],
+        });
+        input.silentGain = context.createGain();
+        input.silentGain.gain.value = 0;
+        input.worklet.port.onmessage = (event: MessageEvent<WorkletMessage>) =>
+          this.onWorkletMessage(run, event.data);
+        input.worklet.addEventListener("processorerror", () => void this.failRun(run));
+        input.source.connect(input.worklet).connect(input.silentGain).connect(context.destination);
+      }
       await context.resume();
       if (run.cancelled || this.run !== run) return;
 
@@ -143,12 +174,18 @@ export class InterviewAudioCapture implements InterviewCapturePort {
       if (!sessionId) throw new Error("面试采集会话未建立");
       await bridge.markInterviewCaptureReady(sessionId);
       if (run.cancelled || this.run !== run) return;
-      run.worklet.port.postMessage({
-        type: "start",
-        credits: INTERVIEW_AUDIO_CREDIT_WINDOW,
-        maxCredits: INTERVIEW_AUDIO_CREDIT_WINDOW,
-      });
-      this.setState({ phase: "listening", agentConfirmedFrames: 0 });
+      const initialCredits = Math.floor(INTERVIEW_AUDIO_CREDIT_WINDOW / run.inputs.size);
+      for (const [source, input] of run.inputs) {
+        input.worklet?.port.postMessage({
+          type: "start",
+          source,
+          credits:
+            initialCredits +
+            (source === "interviewer" ? INTERVIEW_AUDIO_CREDIT_WINDOW % run.inputs.size : 0),
+          maxCredits: INTERVIEW_AUDIO_CREDIT_WINDOW,
+        });
+      }
+      this.setState({ phase: "listening", agentConfirmedFrames: 0, transcripts: [] });
       this.scheduleCreditWatchdog(run);
     } catch (error) {
       await this.cleanupRun(run);
@@ -173,32 +210,32 @@ export class InterviewAudioCapture implements InterviewCapturePort {
   }
 
   private async finishStop(run: CaptureRun): Promise<void> {
-    const [sessionResult, captureResult] = await Promise.allSettled([
+    const [sessionResult, ...streamResults] = await Promise.allSettled([
       run.sessionPromise,
-      run.capturePromise,
+      ...run.capturePromises.values(),
     ]);
     if (sessionResult?.status === "fulfilled" && sessionResult.value)
       run.sessionId = sessionResult.value.sessionId;
-    if (captureResult?.status === "fulfilled") run.stream = captureResult.value;
-    if (run.worklet) {
-      const stopped = new Promise<void>((resolve) => {
-        run.stoppedWaiter = resolve;
-      });
-      run.worklet.port.postMessage({ type: "stop" });
-      await Promise.race([stopped, new Promise<void>((resolve) => setTimeout(resolve, 250))]);
+    const sources = [...run.capturePromises.keys()];
+    for (const [index, result] of streamResults.entries()) {
+      const source = sources[index];
+      if (result.status === "fulfilled" && source && !run.inputs.has(source))
+        run.inputs.set(source, { stream: result.value });
     }
+    const stoppingWorklets = [...run.inputs.values()].flatMap((input) =>
+      input.worklet ? [stopWorklet(input.worklet)] : [],
+    );
+    await Promise.all(stoppingWorklets);
     await this.cleanupRun(run);
     await this.stopAgentRun(run);
     if (this.run === run) {
       this.run = undefined;
-      this.setState({ phase: "idle" });
+      this.setState({ phase: "idle", transcripts: run.transcripts.map(toTranscriptLine) });
     }
   }
 
   private onWorkletMessage(run: CaptureRun, message: WorkletMessage): void {
     if (message.type === "stopped") {
-      run.stoppedWaiter?.();
-      run.stoppedWaiter = undefined;
       return;
     }
     if (run.cancelled || this.run !== run) return;
@@ -219,7 +256,7 @@ export class InterviewAudioCapture implements InterviewCapturePort {
     }
     const frame: InterviewPcmFrame = {
       sessionId: run.sessionId,
-      source: "interviewer",
+      source: message.source,
       sequence: message.sequence,
       startSample: message.startSample,
       sampleRate: 16_000,
@@ -233,7 +270,7 @@ export class InterviewAudioCapture implements InterviewCapturePort {
   private receiveAudioCredit(credit: { sessionId: string; count: number }): void {
     const run = this.run;
     if (
-      !run?.worklet ||
+      !run ||
       run.cancelled ||
       run.sessionId !== credit.sessionId ||
       !Number.isSafeInteger(credit.count) ||
@@ -245,8 +282,18 @@ export class InterviewAudioCapture implements InterviewCapturePort {
     run.lastCreditAt = Date.now();
     run.availableCredits += granted;
     run.agentConfirmedFrames += granted;
-    run.worklet.port.postMessage({ type: "credit", count: granted });
-    this.setState({ phase: "listening", agentConfirmedFrames: run.agentConfirmedFrames });
+    let source = run.nextCreditSource;
+    for (let count = 0; count < granted; count += 1) {
+      const input = run.inputs.get(source);
+      input?.worklet?.port.postMessage({ type: "credit", count: 1 });
+      source = source === "interviewer" ? "candidate" : "interviewer";
+    }
+    run.nextCreditSource = source;
+    this.setState({
+      phase: "listening",
+      agentConfirmedFrames: run.agentConfirmedFrames,
+      transcripts: run.transcripts.map(toTranscriptLine),
+    });
     this.scheduleCreditWatchdog(run);
   }
 
@@ -273,15 +320,20 @@ export class InterviewAudioCapture implements InterviewCapturePort {
     await this.failAgentRun(run);
     if (this.run === run) {
       this.run = undefined;
-      this.setState({ phase: "error", message: "系统声音采集已中断" });
+      this.setState({ phase: "error", message: "面试音频采集已中断" });
     }
   }
 
   private async finishFailedStart(run: CaptureRun, error: unknown): Promise<void> {
     const session = await run.sessionPromise?.catch(() => undefined);
-    const stream = await run.capturePromise?.catch(() => undefined);
+    const streams = await Promise.all(
+      [...run.capturePromises].map(
+        async ([source, promise]) => [source, await promise.catch(() => undefined)] as const,
+      ),
+    );
     if (session) run.sessionId = session.sessionId;
-    if (stream) run.stream = stream;
+    for (const [source, stream] of streams)
+      if (stream && !run.inputs.has(source)) run.inputs.set(source, { stream });
     await this.cleanupRun(run);
     await this.failAgentRun(run);
     if (this.run === run) {
@@ -308,19 +360,18 @@ export class InterviewAudioCapture implements InterviewCapturePort {
   private async releaseRunResources(run: CaptureRun): Promise<void> {
     if (run.creditWatchdog) clearTimeout(run.creditWatchdog);
     run.creditWatchdog = undefined;
-    run.worklet?.port.postMessage({ type: "stop" });
-    run.worklet?.disconnect();
-    run.source?.disconnect();
-    run.silentGain?.disconnect();
-    run.worklet = undefined;
-    run.source = undefined;
-    run.silentGain = undefined;
-    for (const track of run.stream?.getTracks() ?? []) {
-      if (run.stoppedTracks.has(track)) continue;
-      track.stop();
-      run.stoppedTracks.add(track);
+    for (const input of run.inputs.values()) {
+      input.worklet?.port.postMessage({ type: "stop" });
+      input.worklet?.disconnect();
+      input.source?.disconnect();
+      input.silentGain?.disconnect();
+      for (const track of input.stream.getTracks()) {
+        if (run.stoppedTracks.has(track)) continue;
+        track.stop();
+        run.stoppedTracks.add(track);
+      }
     }
-    run.stream = undefined;
+    run.inputs.clear();
     const context = run.context;
     run.context = undefined;
     if (context && context.state !== "closed") await context.close().catch(() => undefined);
@@ -330,14 +381,66 @@ export class InterviewAudioCapture implements InterviewCapturePort {
     this.state = state;
     for (const listener of this.listeners) listener(state);
   }
+
+  private receiveInterviewChange(change: InterviewChange): void {
+    const run = this.run;
+    if (!run || run.cancelled || change.type !== "transcript" || change.sessionId !== run.sessionId)
+      return;
+    run.transcripts.push(change);
+    if (run.transcripts.length > TRANSCRIPT_HISTORY_LIMIT) run.transcripts.shift();
+    this.setState({
+      phase: this.state.phase,
+      agentConfirmedFrames: run.agentConfirmedFrames,
+      transcripts: run.transcripts.map(toTranscriptLine),
+    });
+  }
 }
 
-function captureErrorMessage(error: unknown): string {
+function toTranscriptLine(change: InterviewTranscriptChange) {
+  return {
+    id: `${change.utteranceId}:${change.chunkIndex}`,
+    speaker: change.speaker,
+    text: change.text,
+    turnEnd: change.turnEnd,
+    timestamp: change.timestamp,
+  };
+}
+
+async function stopWorklet(worklet: AudioWorkletNode): Promise<void> {
+  await new Promise<void>((resolve) => {
+    const timeout = setTimeout(resolve, 250);
+    const onStopped = (event: MessageEvent<WorkletMessage>) => {
+      if (event.data.type !== "stopped") return;
+      clearTimeout(timeout);
+      worklet.port.removeEventListener("message", onStopped);
+      resolve();
+    };
+    worklet.port.addEventListener("message", onStopped);
+    worklet.port.postMessage({ type: "stop" });
+  });
+}
+
+function captureErrorMessage(error: unknown, source?: InterviewAudioSource): string {
   if (error instanceof Error) {
-    if (error.name === "NotAllowedError") return "系统声音采集权限已取消";
-    if (error.name === "NotFoundError") return "未找到可采集的系统声音";
-    if (error.name === "NotReadableError") return "系统声音暂时无法读取";
-    return error.message || "系统声音采集失败";
+    if (error.name === "NotAllowedError")
+      return source === "candidate"
+        ? "麦克风权限被拒绝或已取消，请检查 Windows 麦克风隐私设置"
+        : source === "interviewer"
+          ? "系统声音捕获被拒绝或已取消，请重试系统音频捕获"
+          : "音频权限被拒绝或已取消";
+    if (error.name === "NotFoundError")
+      return source === "candidate"
+        ? "未找到麦克风设备"
+        : source === "interviewer"
+          ? "未找到系统声音来源"
+          : "未找到音频设备";
+    if (error.name === "NotReadableError")
+      return source === "candidate"
+        ? "麦克风暂时无法读取，可能正被其它程序占用"
+        : source === "interviewer"
+          ? "系统声音暂时无法读取"
+          : "音频设备暂时无法读取";
+    return error.message || "面试音频采集失败";
   }
-  return "系统声音采集失败";
+  return "面试音频采集失败";
 }

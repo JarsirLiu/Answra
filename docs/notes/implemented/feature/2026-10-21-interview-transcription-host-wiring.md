@@ -43,6 +43,12 @@
 - `interview-capture-failed` / `interview-stop` / runtime `failSession`（VAD 段错误）均同步通知泵 stop；`dispose` 泵全停。
 - `AgentHost.stagedInterviewVadSegments` 删除：阶段 3 的观察通道在阶段 4 接管后没有剩余消费者（grep 全仓无引用）。
 
+## 影响表面
+
+- Agent worker 会话：VAD segment 经本地 Paraformer 串行解码后产生 `transcript-event`。
+- Desktop main/utility process：host 装配本地 recognizer，停止或失败时取消对应转录泵。
+- renderer 在本阶段尚未订阅显示；真实采集与上屏在后续语音试用闭环实现中补齐。
+
 ## 曾考虑的替代方案
 
 - **`recognizer` 设为可选（未注入则只采集不转录）**：把"没有引擎"藏进运行时静默状态，违反显式失败纪律；必填让 desktop transport 显式给出装配源。

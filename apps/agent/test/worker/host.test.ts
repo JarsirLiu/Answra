@@ -109,6 +109,7 @@ describe("agent worker host", () => {
         startSample: 0,
         endSample: 1_600,
         revision: 1,
+        boundary: "continuation",
         text: "请介绍一下",
       },
     });

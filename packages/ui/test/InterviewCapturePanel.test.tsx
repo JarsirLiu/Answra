@@ -32,10 +32,40 @@ describe("InterviewCapturePanel", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "停止采集" }));
     expect(capture.stop).toHaveBeenCalledOnce();
-    expect(screen.getByText("当前仅采集系统声音，转录和回答尚未接入。")).toBeInTheDocument();
+    expect(
+      screen.getByText("音频已送达识别链路；转写文字会在语音片段结束后显示。"),
+    ).toBeInTheDocument();
   });
 
-  it("shows Agent-confirmed audio frames as capture evidence", () => {
+  it("shows transcripts with speaker and interviewer turn-end status", () => {
+    render(
+      <InterviewCapturePanel
+        capture={capturePort()}
+        state={{
+          phase: "listening",
+          transcripts: [
+            {
+              id: "question:0",
+              speaker: "interviewer",
+              text: "请介绍一下自己",
+              turnEnd: true,
+              timestamp: 1000,
+            },
+            { id: "answer:0", speaker: "user", text: "我叫小王", turnEnd: true, timestamp: 2000 },
+          ],
+        }}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("请介绍一下自己")).toBeInTheDocument();
+    expect(screen.getByText("我叫小王")).toBeInTheDocument();
+    expect(screen.getByText("对方")).toBeInTheDocument();
+    expect(screen.getByText("我")).toBeInTheDocument();
+    expect(screen.getByText("检测到对方停顿")).toBeInTheDocument();
+  });
+
+  it("explains that listening status confirms audio delivery, not completed transcription", () => {
     render(
       <InterviewCapturePanel
         capture={capturePort()}
@@ -44,6 +74,9 @@ describe("InterviewCapturePanel", () => {
       />,
     );
 
-    expect(screen.getByText("Agent 已确认接收 25 帧 PCM 音频。")).toBeInTheDocument();
+    expect(
+      screen.getByText("音频已送达识别链路；转写文字会在语音片段结束后显示。"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/帧 PCM 音频/)).not.toBeInTheDocument();
   });
 });

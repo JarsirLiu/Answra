@@ -6,10 +6,12 @@ class AnswraPcmFrameProcessor extends AudioWorkletProcessor {
     this.maxCredits = 0;
     this.sequence = 0;
     this.startSample = 0;
+    this.source = "interviewer";
     this.samples = new Int16Array(1600);
     this.offset = 0;
     this.port.onmessage = ({ data }) => {
       if (data?.type === "start") {
+        this.source = data.source === "candidate" ? "candidate" : "interviewer";
         this.maxCredits = Math.max(0, data.maxCredits | 0);
         this.credits = Math.max(0, Math.min(this.maxCredits, data.credits | 0));
         this.active = true;
@@ -53,7 +55,9 @@ class AnswraPcmFrameProcessor extends AudioWorkletProcessor {
     this.startSample += this.offset;
     if (this.credits > 0) {
       this.credits -= 1;
-      this.port.postMessage({ type: "frame", sequence, startSample, pcm }, [pcm]);
+      this.port.postMessage({ type: "frame", source: this.source, sequence, startSample, pcm }, [
+        pcm,
+      ]);
     }
     this.samples = new Int16Array(1600);
     this.offset = 0;

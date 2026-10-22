@@ -52,6 +52,7 @@ export type InterviewWorkerEvent =
             startSample: number;
             endSample: number;
             revision: number;
+            boundary: "utterance-end" | "continuation";
             text: string;
           }
         | {
@@ -63,6 +64,7 @@ export type InterviewWorkerEvent =
             startSample: number;
             endSample: number;
             revision: number;
+            boundary: "utterance-end" | "continuation";
             code:
               | "invalid-audio"
               | "audio-too-long"

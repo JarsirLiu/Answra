@@ -45,11 +45,15 @@ describe("InterviewCaptureService", () => {
     const service = new InterviewCaptureService(createAgent() as never);
     const { sessionId } = await service.start("active-interview-conversation");
 
+    expect(service.claimDisplayMediaPermission()).toBe(true);
+    expect(service.claimDisplayMediaPermission()).toBe(false);
     expect(service.claimDisplayRequest()).toBe(sessionId);
     expect(service.claimDisplayRequest()).toBeUndefined();
     service.releaseDisplayRequest(sessionId);
     expect(service.claimDisplayRequest()).toBe(sessionId);
     expect(service.isStartingSession(sessionId)).toBe(true);
+    expect(await service.captureReady(sessionId)).toBe(true);
+    expect(service.claimDisplayMediaPermission()).toBe(false);
   });
 
   it("rejects frames for a different session before crossing into the Agent process", async () => {

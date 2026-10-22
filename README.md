@@ -8,8 +8,8 @@
 - 按需展开的对话、笔记、参考资料和设置面板。
 - 支持应用内区域截图、添加本地图片、填写补充问题并作为同一条消息发送。
 - 对话回复为演示内容，尚未连接后端或 AI 模型。
+- Windows 面试语音试用接入会议系统声音与候选人麦克风，经本地 VAD/ASR 后在面板按说话方显示识别文本和 VAD 端点；当前不生成回答。
 - 隐身模式通过 Electron 窗口捕获保护请求系统排除应用表面；实际效果需按 Electron 和 Windows 版本验证。
-- 当前不采集麦克风、摄像头或系统音频。
 
 工程决策、功能方案、缺陷复盘和架构边界统一记录在[工程 Note](docs/README.md)。
 
@@ -24,10 +24,14 @@
 ```powershell
 corepack enable
 pnpm bootstrap
+pnpm --filter @answra/desktop vad:prepare
+pnpm --filter @answra/desktop asr:prepare
 pnpm dev
 ```
 
 `pnpm bootstrap` 是统一的环境初始化入口：安装 workspace 依赖，并校验/通过 npmmirror 镜像补齐 Electron 二进制，避免 `pnpm dev` 启动时才临时下载卡住。`pnpm dev` 会同时启动 Vite 和 Electron。使用 `pnpm dev:web` 可只启动浏览器预览。桌面开发窗口使用 5180 端口；端口被占用时命令会报错退出，不会静默换端口。
+
+面试语音运行还需要 TEN VAD 与 Paraformer 模型。上面两条 prepare 命令会下载并校验资源；ASR 模型约 82 MB，支持断点续传。`bootstrap` 不包含这两类语音资源。国内网络下 Rime/VAD 的 GitHub 源可能较慢或失败，ASR 使用 hf-mirror；网络恢复后可重跑对应命令。
 
 ### 内置输入法资源
 
@@ -89,6 +93,8 @@ docs                   Note 索引
 | `pnpm bootstrap` | 环境初始化：安装依赖 + 补齐 Electron 二进制 + 下载并校验内置输入法资源 |
 | `pnpm dev` | 启动 Vite + Electron（先构建 main/preload bundle） |
 | `pnpm --filter @answra/desktop ime:prepare` | 下载、SHA-256 校验并整理当前平台的 librime/helper 与词库资源 |
+| `pnpm --filter @answra/desktop vad:prepare` | 下载并校验 TEN VAD 运行资源 |
+| `pnpm --filter @answra/desktop asr:prepare` | 下载并校验本地 Paraformer ASR 模型 |
 | `pnpm build` | 全 workspace 构建（desktop: esbuild + vite） |
 | `pnpm typecheck` | 各包依次 `tsc --noEmit`（desktop 按进程分三个编译单元） |
 | `pnpm test` | 各包测试（ui 使用 vitest + jsdom） |

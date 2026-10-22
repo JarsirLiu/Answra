@@ -2,8 +2,50 @@
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 18px;
+  gap: 12px;
   padding: 18px 16px;
+}
+
+.interview-transcript-list {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 96px;
+  max-height: 360px;
+  margin: 0;
+  padding: 0 4px 0 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.interview-transcript-line {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--glass-line);
+}
+
+.interview-transcript-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+
+.interview-transcript-meta time {
+  font-variant-numeric: tabular-nums;
+}
+
+.interview-turn-end {
+  color: var(--muted);
+}
+
+.interview-transcript-line p {
+  margin: 4px 0 0;
+  color: var(--ink);
+  font-size: var(--font-sm);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .interview-capture-status {
@@ -15,24 +57,9 @@
   font-size: var(--font-sm);
 }
 
-.interview-capture-indicator {
-  width: 9px;
-  height: 9px;
-  flex: 0 0 9px;
-  border-radius: 50%;
-  background: var(--muted);
-}
-
-.interview-capture-indicator--starting {
-  background: #d58b24;
-}
-
-.interview-capture-indicator--listening {
-  background: #25966f;
-}
-
-.interview-capture-indicator--error {
-  background: #d45555;
+.interview-capture-status-icon {
+  flex: 0 0 auto;
+  color: var(--icon);
 }
 
 .interview-capture-actions {
@@ -41,39 +68,9 @@
 }
 
 .interview-capture-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
   min-width: 130px;
-  min-height: 36px;
-  padding: 0 12px;
-  border: 1px solid var(--glass-line);
-  border-radius: var(--ctl-radius);
-  color: var(--panel);
-  background: #278462;
-  font: inherit;
+  height: 36px;
   font-size: var(--font-sm);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.interview-capture-button:hover:not(:disabled) {
-  background: #1e7053;
-}
-
-.interview-capture-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-
-.interview-capture-button--stop {
-  color: var(--ink);
-  background: var(--panel);
-}
-
-.interview-capture-button--stop:hover:not(:disabled) {
-  background: var(--hover);
 }
 
 .interview-capture-note {

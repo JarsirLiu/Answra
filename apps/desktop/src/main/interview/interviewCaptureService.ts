@@ -6,6 +6,7 @@ interface ActiveCapture {
   sessionId: string;
   conversationId: string;
   state: "starting" | "listening";
+  displayMediaPermissionClaimed: boolean;
   displayRequestClaimed: boolean;
 }
 
@@ -23,6 +24,7 @@ export class InterviewCaptureService {
       sessionId: randomUUID(),
       conversationId,
       state: "starting",
+      displayMediaPermissionClaimed: false,
       displayRequestClaimed: false,
     };
     this.active = active;
@@ -78,6 +80,17 @@ export class InterviewCaptureService {
   isStartingSession(sessionId: string): boolean {
     const active = this.getActive(sessionId);
     return active?.state === "starting";
+  }
+
+  allowsMicrophonePermission(): boolean {
+    return this.active?.state === "starting";
+  }
+
+  claimDisplayMediaPermission(): boolean {
+    const active = this.active;
+    if (active?.state !== "starting" || active.displayMediaPermissionClaimed) return false;
+    active.displayMediaPermissionClaimed = true;
+    return true;
   }
 
   releaseDisplayRequest(sessionId: string): void {

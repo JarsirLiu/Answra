@@ -21,21 +21,31 @@ class FakeAudioContext {
 
 class FakeAudioWorkletNode {
   static last: FakeAudioWorkletNode;
+  static all: FakeAudioWorkletNode[] = [];
   port: {
     onmessage: ((event: MessageEvent) => void) | null;
     postMessage: ReturnType<typeof vi.fn>;
+    addEventListener: ReturnType<typeof vi.fn>;
+    removeEventListener: ReturnType<typeof vi.fn>;
   };
   private listeners = new Map<string, () => void>();
 
   constructor() {
     FakeAudioWorkletNode.last = this;
+    FakeAudioWorkletNode.all.push(this);
     this.port = {
       onmessage: null,
+      addEventListener: vi.fn((type: string, listener: (event: MessageEvent) => void) => {
+        if (type === "message") this.listeners.set(type, listener);
+      }),
+      removeEventListener: vi.fn((type: string) => this.listeners.delete(type)),
       postMessage: vi.fn((message: { type?: string }) => {
-        if (message.type === "stop")
-          queueMicrotask(() =>
-            this.port.onmessage?.({ data: { type: "stopped" } } as MessageEvent),
-          );
+        if (message.type !== "stop") return;
+        queueMicrotask(() => {
+          const event = { data: { type: "stopped" } } as MessageEvent;
+          this.port.onmessage?.(event);
+          this.listeners.get("message")?.(event);
+        });
       }),
     };
   }
@@ -52,7 +62,10 @@ class FakeAudioWorkletNode {
 }
 
 describe("InterviewAudioCapture", () => {
-  beforeEach(() => vi.stubGlobal("window", { location: { href: "http://localhost/" } }));
+  beforeEach(() => {
+    FakeAudioWorkletNode.all = [];
+    vi.stubGlobal("window", { location: { href: "http://localhost/" } });
+  });
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
@@ -61,13 +74,20 @@ describe("InterviewAudioCapture", () => {
   it("converts worklet packets into ordered binary PCM frames and releases capture on stop", async () => {
     const videoTrack = { stop: vi.fn(), addEventListener: vi.fn() };
     const audioTrack = { stop: vi.fn(), addEventListener: vi.fn() };
-    const stream = {
+    const interviewerStream = {
       getAudioTracks: () => [audioTrack],
       getVideoTracks: () => [videoTrack],
       getTracks: () => [audioTrack, videoTrack],
     };
-    const getDisplayMedia = vi.fn(async () => stream);
-    vi.stubGlobal("navigator", { mediaDevices: { getDisplayMedia } });
+    const microphoneTrack = { stop: vi.fn(), addEventListener: vi.fn() };
+    const microphoneStream = {
+      getAudioTracks: () => [microphoneTrack],
+      getVideoTracks: () => [],
+      getTracks: () => [microphoneTrack],
+    };
+    const getDisplayMedia = vi.fn(async () => interviewerStream);
+    const getUserMedia = vi.fn(async () => microphoneStream);
+    vi.stubGlobal("navigator", { mediaDevices: { getDisplayMedia, getUserMedia } });
     vi.stubGlobal("AudioContext", FakeAudioContext);
     vi.stubGlobal("AudioWorkletNode", FakeAudioWorkletNode);
 
@@ -90,30 +110,40 @@ describe("InterviewAudioCapture", () => {
     await capture.start();
     expect(bridge.startInterview).toHaveBeenCalledWith(ActiveInterviewConversationId);
     expect(getDisplayMedia).toHaveBeenCalledWith({ audio: true, video: true });
+    expect(getUserMedia).toHaveBeenCalledWith({ audio: true, video: false });
+    expect(FakeAudioWorkletNode.all).toHaveLength(2);
     expect(videoTrack.stop).toHaveBeenCalledOnce();
     expect(bridge.markInterviewCaptureReady).toHaveBeenCalledWith("capture-1");
 
     const first = new Int16Array(1_600).buffer;
-    FakeAudioWorkletNode.last.port.onmessage?.({
-      data: { type: "frame", sequence: 0, startSample: 0, pcm: first },
+    const interviewerWorklet = FakeAudioWorkletNode.all[0];
+    const candidateWorklet = FakeAudioWorkletNode.all[1];
+    interviewerWorklet?.port.onmessage?.({
+      data: { type: "frame", source: "interviewer", sequence: 0, startSample: 0, pcm: first },
     } as MessageEvent);
     const final = new Int16Array(800).buffer;
-    FakeAudioWorkletNode.last.port.onmessage?.({
-      data: { type: "frame", sequence: 1, startSample: 1_600, pcm: final },
+    candidateWorklet?.port.onmessage?.({
+      data: { type: "frame", source: "candidate", sequence: 0, startSample: 0, pcm: final },
     } as MessageEvent);
 
     expect(bridge.sendInterviewPcmFrame).toHaveBeenNthCalledWith(
       1,
-      expect.objectContaining({ sequence: 0, startSample: 0, pcm: expect.any(Uint8Array) }),
+      expect.objectContaining({
+        source: "interviewer",
+        sequence: 0,
+        startSample: 0,
+        pcm: expect.any(Uint8Array),
+      }),
     );
     expect(bridge.sendInterviewPcmFrame).toHaveBeenNthCalledWith(
       2,
-      expect.objectContaining({ sequence: 1, startSample: 1_600 }),
+      expect.objectContaining({ source: "candidate", sequence: 0, startSample: 0 }),
     );
     for (let sequence = 2; sequence < 10; sequence += 1) {
-      FakeAudioWorkletNode.last.port.onmessage?.({
+      interviewerWorklet?.port.onmessage?.({
         data: {
           type: "frame",
+          source: "interviewer",
           sequence,
           startSample: sequence * 1_600,
           pcm: first,
@@ -122,23 +152,35 @@ describe("InterviewAudioCapture", () => {
     }
     expect(bridge.sendInterviewPcmFrame).toHaveBeenCalledTimes(10);
     deliverCredit?.({ sessionId: "capture-1", count: 5 });
-    expect(capture.getState()).toEqual({ phase: "listening", agentConfirmedFrames: 5 });
-    FakeAudioWorkletNode.last.port.onmessage?.({
-      data: { type: "frame", sequence: 10, startSample: 16_000, pcm: first },
+    expect(capture.getState()).toEqual({
+      phase: "listening",
+      agentConfirmedFrames: 5,
+      transcripts: [],
+    });
+    interviewerWorklet?.port.onmessage?.({
+      data: { type: "frame", source: "interviewer", sequence: 10, startSample: 16_000, pcm: first },
     } as MessageEvent);
     expect(bridge.sendInterviewPcmFrame).toHaveBeenCalledTimes(11);
-    expect(capture.getState()).toEqual({ phase: "listening", agentConfirmedFrames: 5 });
+    expect(capture.getState()).toEqual({
+      phase: "listening",
+      agentConfirmedFrames: 5,
+      transcripts: [],
+    });
 
     await capture.stop();
     expect(audioTrack.stop).toHaveBeenCalledOnce();
+    expect(microphoneTrack.stop).toHaveBeenCalledOnce();
     expect(bridge.stopInterview).toHaveBeenCalledWith("capture-1");
-    expect(capture.getState()).toEqual({ phase: "idle" });
+    expect(capture.getState()).toEqual({ phase: "idle", transcripts: [] });
   });
 
   it("fails the Agent session and releases Web Audio when display capture is denied", async () => {
     const denied = Object.assign(new Error("denied"), { name: "NotAllowedError" });
     vi.stubGlobal("navigator", {
-      mediaDevices: { getDisplayMedia: vi.fn(() => Promise.reject(denied)) },
+      mediaDevices: {
+        getDisplayMedia: vi.fn(() => Promise.reject(denied)),
+        getUserMedia: vi.fn(async () => ({ getTracks: () => [], getAudioTracks: () => [] })),
+      },
     });
     vi.stubGlobal("AudioContext", FakeAudioContext);
     vi.stubGlobal("AudioWorkletNode", FakeAudioWorkletNode);
@@ -153,7 +195,44 @@ describe("InterviewAudioCapture", () => {
     await capture.start();
 
     expect(bridge.failInterviewCapture).toHaveBeenCalledWith("capture-2");
-    expect(capture.getState()).toEqual({ phase: "error", message: "系统声音采集权限已取消" });
+    expect(capture.getState()).toEqual({
+      phase: "error",
+      message: "系统声音捕获被拒绝或已取消，请重试系统音频捕获",
+    });
+  });
+
+  it("identifies microphone permission denial separately from system audio denial", async () => {
+    const denied = Object.assign(new Error("denied"), { name: "NotAllowedError" });
+    const interviewerTrack = { stop: vi.fn(), addEventListener: vi.fn() };
+    const interviewerStream = {
+      getAudioTracks: () => [interviewerTrack],
+      getVideoTracks: () => [],
+      getTracks: () => [interviewerTrack],
+    };
+    vi.stubGlobal("navigator", {
+      mediaDevices: {
+        getDisplayMedia: vi.fn(async () => interviewerStream),
+        getUserMedia: vi.fn(() => Promise.reject(denied)),
+      },
+    });
+    vi.stubGlobal("AudioContext", FakeAudioContext);
+    vi.stubGlobal("AudioWorkletNode", FakeAudioWorkletNode);
+    const bridge = {
+      startInterview: vi.fn(async () => ({ sessionId: "capture-mic-denied" })),
+      markInterviewCaptureReady: vi.fn(async () => undefined),
+      failInterviewCapture: vi.fn(async () => undefined),
+      sendInterviewPcmFrame: vi.fn(),
+    };
+    const capture = new InterviewAudioCapture(bridge as never);
+
+    await capture.start();
+
+    expect(capture.getState()).toEqual({
+      phase: "error",
+      message: "麦克风权限被拒绝或已取消，请检查 Windows 麦克风隐私设置",
+    });
+    expect(interviewerTrack.stop).toHaveBeenCalledOnce();
+    expect(bridge.failInterviewCapture).toHaveBeenCalledWith("capture-mic-denied");
   });
 
   it("stops tracks if a display stream resolves after the user stopped during startup", async () => {
@@ -164,7 +243,8 @@ describe("InterviewAudioCapture", () => {
           resolveDisplay = resolve;
         }),
     );
-    vi.stubGlobal("navigator", { mediaDevices: { getDisplayMedia } });
+    const getUserMedia = vi.fn(async () => ({ getTracks: () => [], getAudioTracks: () => [] }));
+    vi.stubGlobal("navigator", { mediaDevices: { getDisplayMedia, getUserMedia } });
     vi.stubGlobal("AudioContext", FakeAudioContext);
     vi.stubGlobal("AudioWorkletNode", FakeAudioWorkletNode);
     const bridge = {
@@ -201,13 +281,22 @@ describe("InterviewAudioCapture", () => {
   it("fails and releases capture when the Agent stops returning credits", async () => {
     vi.useFakeTimers();
     const audioTrack = { stop: vi.fn(), addEventListener: vi.fn() };
-    const stream = {
+    const microphoneTrack = { stop: vi.fn(), addEventListener: vi.fn() };
+    const interviewerStream = {
       getAudioTracks: () => [audioTrack],
       getVideoTracks: () => [],
       getTracks: () => [audioTrack],
     };
+    const microphoneStream = {
+      getAudioTracks: () => [microphoneTrack],
+      getVideoTracks: () => [],
+      getTracks: () => [microphoneTrack],
+    };
     vi.stubGlobal("navigator", {
-      mediaDevices: { getDisplayMedia: vi.fn(async () => stream) },
+      mediaDevices: {
+        getDisplayMedia: vi.fn(async () => interviewerStream),
+        getUserMedia: vi.fn(async () => microphoneStream),
+      },
     });
     vi.stubGlobal("AudioContext", FakeAudioContext);
     vi.stubGlobal("AudioWorkletNode", FakeAudioWorkletNode);
@@ -223,14 +312,21 @@ describe("InterviewAudioCapture", () => {
     await capture.start();
     const pcm = new Int16Array(1_600).buffer;
     for (let sequence = 0; sequence < 10; sequence += 1) {
-      FakeAudioWorkletNode.last.port.onmessage?.({
-        data: { type: "frame", sequence, startSample: sequence * 1_600, pcm },
+      FakeAudioWorkletNode.all[0]?.port.onmessage?.({
+        data: {
+          type: "frame",
+          source: "interviewer",
+          sequence,
+          startSample: sequence * 1_600,
+          pcm,
+        },
       } as MessageEvent);
     }
     await vi.advanceTimersByTimeAsync(3_000);
 
-    expect(capture.getState()).toEqual({ phase: "error", message: "系统声音采集已中断" });
+    expect(capture.getState()).toEqual({ phase: "error", message: "面试音频采集已中断" });
     expect(audioTrack.stop).toHaveBeenCalledOnce();
+    expect(microphoneTrack.stop).toHaveBeenCalledOnce();
     expect(bridge.failInterviewCapture).toHaveBeenCalledWith("capture-4");
   });
 });

@@ -35,6 +35,28 @@ function feedSamples(processor: ProcessorInstance, sampleCount: number): void {
 }
 
 describe("PCM AudioWorklet processor", () => {
+  it("keeps each stream's source label on PCM frames", () => {
+    const processor = createProcessor() as ProcessorInstance;
+    processor.port.onmessage({
+      data: { type: "start", source: "candidate", credits: 1, maxCredits: 1 },
+    });
+
+    feedSamples(processor, 1_600);
+
+    const [frame, transferList] = processor.port.postMessage.mock.calls[0] as [
+      { type: string; source: string; sequence: number; startSample: number; pcm: ArrayBuffer },
+      ArrayBuffer[],
+    ];
+    expect(frame).toMatchObject({
+      type: "frame",
+      source: "candidate",
+      sequence: 0,
+      startSample: 0,
+    });
+    expect(frame.pcm.byteLength).toBe(3_200);
+    expect(transferList[0]).toBe(frame.pcm);
+  });
+
   it("bounds queued frames by credits and preserves gaps after dropping audio", () => {
     const processor = createProcessor() as ProcessorInstance;
     processor.port.onmessage({ data: { type: "start", credits: 1, maxCredits: 1 } });

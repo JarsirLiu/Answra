@@ -14,12 +14,24 @@ const harness = vi.hoisted(() => {
     displayHandler: undefined as
       | ((request: unknown, callback: (streams: unknown) => void) => void)
       | undefined,
+    permissionHandler: undefined as
+      | ((
+          webContents: unknown,
+          permission: string,
+          callback: (granted: boolean) => void,
+          details: unknown,
+        ) => void)
+      | undefined,
+    permissionCheckHandler: undefined as
+      | ((webContents: unknown, permission: string, origin: string, details: unknown) => boolean)
+      | undefined,
     getSources: vi.fn(async () => [{ id: "screen:1:0", display_id: "1" }]),
     getPrimaryDisplay: vi.fn(() => ({ id: 1 })),
     sendInterviewPcmFrame: vi.fn(),
     audioCreditListener: undefined as
       | ((credit: { sessionId: string; count: number }) => void)
       | undefined,
+    interviewEventListener: undefined as ((event: unknown) => void) | undefined,
     startInterview: vi.fn(async () => undefined),
     markInterviewCaptureReady: vi.fn(async () => undefined),
     failInterviewCapture: vi.fn(async () => undefined),
@@ -43,6 +55,12 @@ vi.mock("electron", () => ({
       setDisplayMediaRequestHandler: (handler: unknown) => {
         harness.displayHandler = handler as typeof harness.displayHandler;
       },
+      setPermissionRequestHandler: (handler: unknown) => {
+        harness.permissionHandler = handler as typeof harness.permissionHandler;
+      },
+      setPermissionCheckHandler: (handler: unknown) => {
+        harness.permissionCheckHandler = handler as typeof harness.permissionCheckHandler;
+      },
     },
   },
 }));
@@ -61,7 +79,10 @@ describe("interview IPC", () => {
     harness.handlers.clear();
     harness.listeners.clear();
     harness.displayHandler = undefined;
+    harness.permissionHandler = undefined;
+    harness.permissionCheckHandler = undefined;
     harness.audioCreditListener = undefined;
+    harness.interviewEventListener = undefined;
     vi.clearAllMocks();
   });
 
@@ -78,6 +99,10 @@ describe("interview IPC", () => {
         harness.audioCreditListener = listener;
         return vi.fn();
       },
+      onInterviewEvent: (listener: (event: never) => void) => {
+        harness.interviewEventListener = listener as (event: unknown) => void;
+        return vi.fn();
+      },
     } as unknown as AgentService;
     const ipc = registerInterviewIpc(agent);
     const senderEvent = { sender: harness.window.webContents };
@@ -90,6 +115,46 @@ describe("interview IPC", () => {
       result.sessionId,
       ActiveInterviewConversationId,
     );
+
+    const permissionHandler = harness.permissionHandler;
+    if (!permissionHandler) throw new Error("microphone permission handler not registered");
+    const permissionCheckHandler = harness.permissionCheckHandler;
+    if (!permissionCheckHandler) throw new Error("media permission check handler not registered");
+    expect(
+      permissionCheckHandler(harness.window.webContents, "media", "app://local", {
+        isMainFrame: true,
+        mediaType: "audio",
+      }),
+    ).toBe(true);
+    expect(
+      permissionCheckHandler(harness.window.webContents, "media", "app://local", {
+        isMainFrame: true,
+        mediaType: "video",
+      }),
+    ).toBe(false);
+    const microphonePermission = vi.fn();
+    permissionHandler(harness.window.webContents, "media", microphonePermission, {
+      isMainFrame: true,
+      mediaTypes: ["audio"],
+    });
+    expect(microphonePermission).toHaveBeenCalledWith(true);
+    const displayPermission = vi.fn();
+    permissionHandler(harness.window.webContents, "display-capture", displayPermission, {
+      isMainFrame: true,
+    });
+    expect(displayPermission).toHaveBeenCalledWith(true);
+    const displayMediaPermission = vi.fn();
+    permissionHandler(harness.window.webContents, "media", displayMediaPermission, {
+      isMainFrame: true,
+      mediaTypes: [],
+    });
+    expect(displayMediaPermission).toHaveBeenCalledWith(true);
+    const secondDisplayMediaPermission = vi.fn();
+    permissionHandler(harness.window.webContents, "media", secondDisplayMediaPermission, {
+      isMainFrame: true,
+      mediaTypes: [],
+    });
+    expect(secondDisplayMediaPermission).toHaveBeenCalledWith(false);
 
     const displayHandler = harness.displayHandler;
     if (!displayHandler) throw new Error("display media handler not registered");
@@ -125,6 +190,12 @@ describe("interview IPC", () => {
 
     const ready = harness.handlers.get(InterviewChannels.CaptureReady);
     await ready?.(senderEvent, { sessionId: result.sessionId });
+    const lateMicrophonePermission = vi.fn();
+    permissionHandler(harness.window.webContents, "media", lateMicrophonePermission, {
+      isMainFrame: true,
+      mediaTypes: ["audio"],
+    });
+    expect(lateMicrophonePermission).toHaveBeenCalledWith(false);
     const receiveFrame = harness.listeners.get(InterviewChannels.AudioFrame);
     receiveFrame?.(senderEvent, {
       sessionId: result.sessionId,
@@ -137,6 +208,41 @@ describe("interview IPC", () => {
       pcm: new Uint8Array(3_200),
     });
     expect(agent.sendInterviewPcmFrame).toHaveBeenCalledOnce();
+    receiveFrame?.(senderEvent, {
+      sessionId: result.sessionId,
+      source: "candidate",
+      sequence: 0,
+      startSample: 0,
+      sampleRate: 16_000,
+      channels: 1,
+      encoding: "pcm_s16le",
+      pcm: new Uint8Array(3_200),
+    });
+    expect(agent.sendInterviewPcmFrame).toHaveBeenCalledTimes(2);
+    harness.interviewEventListener?.({
+      type: "transcript-event",
+      event: {
+        kind: "chunk-final",
+        sessionId: result.sessionId,
+        source: "interviewer",
+        utteranceId: "utterance-1",
+        chunkIndex: 0,
+        startSample: 0,
+        endSample: 12_800,
+        revision: 0,
+        boundary: "utterance-end",
+        text: "你好，请介绍一下自己。",
+      },
+    });
+    expect(harness.window.webContents.send).toHaveBeenCalledWith(
+      InterviewChannels.Change,
+      expect.objectContaining({
+        type: "transcript",
+        speaker: "interviewer",
+        turnEnd: true,
+        text: "你好，请介绍一下自己。",
+      }),
+    );
     harness.audioCreditListener?.({ sessionId: result.sessionId, count: 5 });
     expect(harness.window.webContents.send).toHaveBeenCalledWith(InterviewChannels.AudioCredit, {
       sessionId: result.sessionId,
@@ -152,7 +258,7 @@ describe("interview IPC", () => {
       encoding: "pcm_s16le",
       pcm: new Uint8Array(3_202),
     });
-    expect(agent.sendInterviewPcmFrame).toHaveBeenCalledOnce();
+    expect(agent.sendInterviewPcmFrame).toHaveBeenCalledTimes(2);
 
     await ipc.stopActive();
     ipc.dispose();
