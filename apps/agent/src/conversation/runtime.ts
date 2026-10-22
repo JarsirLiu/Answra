@@ -52,6 +52,15 @@ export class ConversationRuntime {
     return this.store.create(conversationId);
   }
 
+  async appendUserMessage(conversationId: string, text: string): Promise<void> {
+    if (typeof text !== "string" || !text.trim() || text.length > 32_000)
+      throw new Error("消息内容无效或过长");
+    await this.store.appendUserMessage(
+      conversationId,
+      createUserMessage(randomUUID(), { text: text.trim(), images: [] }),
+    );
+  }
+
   configure(config: ConversationModelConfig): void {
     for (const endpoint of [config.chat, config.answer]) validateEndpoint(endpoint);
     this.config = { chat: { ...config.chat }, answer: { ...config.answer } };

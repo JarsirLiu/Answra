@@ -2,6 +2,28 @@ import { describe, expect, it } from "vitest";
 import { MemoryConversationStore } from "../../src/conversation/store";
 
 describe("memory conversation store", () => {
+  it("appends a completed user message without creating an Agent run", async () => {
+    const store = new MemoryConversationStore();
+    await store.create("interview");
+    const changes: import("@answra/shared").ConversationChange[] = [];
+    store.subscribe((change) => changes.push(change));
+
+    await store.appendUserMessage("interview", {
+      id: "user-1",
+      role: "user",
+      text: "我正在测试麦克风输入",
+      images: [],
+      status: "complete",
+    });
+
+    const snapshot = await store.load("interview");
+    expect(snapshot.messages.map((message) => message.text)).toEqual(["我正在测试麦克风输入"]);
+    expect(snapshot.activeRunId).toBeUndefined();
+    expect(changes).toHaveLength(1);
+    expect(changes[0]).toMatchObject({ type: "messages-appended" });
+    expect(changes[0]).not.toHaveProperty("activeRunId");
+  });
+
   it("assigns monotonic revisions and replays changes after a cursor", async () => {
     const store = new MemoryConversationStore();
     await store.create("session-a");

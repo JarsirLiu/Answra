@@ -1,100 +1,135 @@
-import { AudioLines, CircleAlert, LoaderCircle, Mic, Square } from "lucide-react";
+import { AudioLines, CircleAlert, LoaderCircle, Mic } from "lucide-react";
+import { useState } from "react";
 import type { InterviewCapturePort, InterviewCaptureState } from "../../app/interviewCapture";
-import { ICON, ICON_STROKE } from "../../tokens";
-import { SurfaceButton } from "../controls/SurfaceButton";
+import { ICON, ICON_SM, ICON_STROKE } from "../../tokens";
+import { MessageStream, ModelErrorNotice } from "../chat";
+import "../chat/conversation.css";
+import { ConversationComposer } from "./ConversationComposer";
 import { PanelShell } from "./PanelShell";
 import "./InterviewCapturePanel.css";
 
 interface InterviewCapturePanelProps {
   capture?: InterviewCapturePort;
   state: InterviewCaptureState;
+  messages: readonly { id: string; content: string }[];
+  onSendText: (text: string) => void;
+  error?: string;
   onClose: () => void;
 }
 
-export function InterviewCapturePanel({ capture, state, onClose }: InterviewCapturePanelProps) {
+export function InterviewCapturePanel({
+  capture,
+  state,
+  messages,
+  onSendText,
+  error,
+  onClose,
+}: InterviewCapturePanelProps) {
+  const [draft, setDraft] = useState("");
   const running =
     state.phase === "starting" || state.phase === "listening" || state.phase === "stopping";
+  // 采集状态行只在有状态可看时出现；空闲时说明收敛到消息区空态，不占常驻两行。
   const status =
     state.phase === "starting"
-      ? "正在连接系统声音和麦克风"
+      ? "正在连接麦克风"
       : state.phase === "listening"
-        ? "正在采集系统声音和麦克风"
+        ? "正在监听麦克风"
         : state.phase === "stopping"
           ? "正在停止采集"
           : state.phase === "error"
             ? (state.message ?? "采集失败")
-            : "未开始";
+            : null;
   const StatusIcon =
     state.phase === "starting" || state.phase === "stopping"
       ? LoaderCircle
       : state.phase === "listening"
         ? AudioLines
-        : state.phase === "error"
-          ? CircleAlert
-          : Mic;
+        : CircleAlert;
+  // 内容指纹与 ChatPanel 同构：error 出现或更新也要能滚到可见位置。
+  const contentKey = [
+    ...messages.map((message) => `${message.id}:${message.content.length}`),
+    error ?? "",
+  ].join("|");
+  const emptyHint =
+    state.phase === "idle" ? "点击下方麦克风开始语音输入。" : "识别完成后会作为你的消息加入对话。";
 
   return (
-    <PanelShell
-      title="面试语音测试"
-      variant="interview"
-      context={state.phase === "listening" ? "Windows" : undefined}
-      onClose={onClose}
-    >
+    <PanelShell title="面试对话" variant="interview" onClose={onClose}>
       <div className="interview-capture-content">
-        <div aria-live="polite" className="interview-capture-status">
-          <StatusIcon
-            aria-hidden="true"
-            className="interview-capture-status-icon"
-            size={ICON}
-            strokeWidth={ICON_STROKE}
-          />
-          <span>{status}</span>
-        </div>
-        <div className="interview-capture-actions">
-          {running ? (
-            <SurfaceButton
-              className="interview-capture-button"
-              disabled={state.phase === "stopping" || !capture}
-              onClick={() => void capture?.stop()}
-              type="button"
-            >
-              <Square aria-hidden="true" size={ICON} strokeWidth={ICON_STROKE} />
-              停止采集
-            </SurfaceButton>
-          ) : (
-            <SurfaceButton
-              className="interview-capture-button"
+        {status && (
+          <div aria-live="polite" className="interview-capture-status">
+            <StatusIcon
+              aria-hidden="true"
+              className="interview-capture-status-icon"
+              size={ICON}
+              strokeWidth={ICON_STROKE}
+            />
+            <span>{status}</span>
+          </div>
+        )}
+        <MessageStream
+          ariaLabel="面试对话消息"
+          contentKey={contentKey}
+          viewportClassName="conversation"
+        >
+          {messages.map((message) => (
+            <article className="chat-message chat-message--user" key={message.id}>
+              <div className="message-content">{message.content}</div>
+            </article>
+          ))}
+          {error && <ModelErrorNotice message={error} />}
+          {messages.length === 0 && !error && (
+            <p className="interview-capture-empty">{emptyHint}</p>
+          )}
+        </MessageStream>
+      </div>
+      <ConversationComposer
+        inputLabel="面试消息"
+        placeholder="输入消息…"
+        value={draft}
+        onValueChange={setDraft}
+        onSubmit={() => {
+          const text = draft.trim();
+          if (!text) return;
+          onSendText(text);
+          setDraft("");
+        }}
+        submitDisabled={!draft.trim()}
+        showAttachmentButton={false}
+        showImeToggle={false}
+        liveContent={
+          running ? (
+            <div aria-label="麦克风实时音量" className="interview-audio-wave" role="img">
+              {(state.inputLevels?.length ? state.inputLevels : [0]).map((level, index) => (
+                <span
+                  aria-hidden="true"
+                  className="interview-audio-wave-bar"
+                  // biome-ignore lint/suspicious/noArrayIndexKey: 滑动电平窗口按位置渲染，槽位本身就是元素身份
+                  key={`wave-${index}`}
+                  style={{ height: `${Math.round(level * 100)}%` }}
+                />
+              ))}
+            </div>
+          ) : undefined
+        }
+        leadingAction={
+          running ? undefined : (
+            <button
+              aria-label="开始麦克风监听"
+              className="conversation-composer-icon-button"
               disabled={!capture}
               onClick={() => void capture?.start()}
+              title="开始麦克风监听"
               type="button"
             >
-              <Mic aria-hidden="true" size={ICON} strokeWidth={ICON_STROKE} />
-              开始采集
-            </SurfaceButton>
-          )}
-        </div>
-        <p aria-live="polite" className="interview-capture-note">
-          {state.phase === "listening"
-            ? "音频已送达识别链路；转写文字会在语音片段结束后显示。"
-            : "同时识别会议声音和麦克风。"}
-        </p>
-        <ol aria-label="实时转录" className="interview-transcript-list" aria-live="polite">
-          {(state.transcripts ?? []).map((line) => (
-            <li className="interview-transcript-line" key={line.id}>
-              <div className="interview-transcript-meta">
-                <span>{line.speaker === "interviewer" ? "对方" : "我"}</span>
-                <time dateTime={new Date(line.timestamp).toISOString()}>
-                  {new Date(line.timestamp).toLocaleTimeString()}
-                </time>
-                {line.turnEnd && line.speaker === "interviewer" && (
-                  <span className="interview-turn-end">检测到对方停顿</span>
-                )}
-              </div>
-              <p>{line.text || "（未识别出文字）"}</p>
-            </li>
-          ))}
-        </ol>
-      </div>
+              <Mic aria-hidden="true" size={ICON_SM} />
+            </button>
+          )
+        }
+        streaming={running}
+        streamingStopLabel="停止语音输入"
+        onStop={() => void capture?.stop()}
+      />
     </PanelShell>
   );
 }

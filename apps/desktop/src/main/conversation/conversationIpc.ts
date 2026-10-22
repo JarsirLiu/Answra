@@ -44,6 +44,20 @@ export function registerConversationIpc(service: AgentService, deps: Conversatio
     if (!deps.canSend()) throw authRequiredError();
     return service.send(payload);
   });
+  ipcMain.handle(
+    ConversationChannels.AppendUserMessage,
+    (event, payload: { conversationId: string; text: string }) => {
+      if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用方");
+      if (
+        payload?.conversationId !== "active-interview-conversation" ||
+        typeof payload.text !== "string" ||
+        !payload.text.trim() ||
+        payload.text.length > 32_000
+      )
+        throw new Error("面试消息无效");
+      return service.appendUserMessage(payload.conversationId, payload.text);
+    },
+  );
   ipcMain.handle(ConversationChannels.GetSnapshot, (event, payload: { conversationId: string }) => {
     if (!isValidConversationId(payload?.conversationId)) throw new Error("会话请求无效");
     if (!isConversationReadSender(event, payload.conversationId)) throw new Error("非法调用方");

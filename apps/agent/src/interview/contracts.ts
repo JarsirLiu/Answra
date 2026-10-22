@@ -194,6 +194,8 @@ export type InterviewTurnEvent =
   | { type: "turn-committed"; turn: InterviewerTurn & { status: "committed" } }
   | { type: "turn-incomplete"; turn: InterviewerTurn & { status: "incomplete" } };
 
+export type CommittedInterviewTurn = InterviewerTurn & { status: "committed" };
+
 export type InterviewSessionState = "starting" | "listening" | "stopping" | "stopped" | "failed";
 
 /** One audio runtime is attached to a persistent conversation history. */

@@ -104,6 +104,7 @@ describe("theme CSS integrity", () => {
       "TextResponse.module.css",
       "ThinkingReasoning.module.css",
       "ToolResponse.module.css",
+      "conversation.css",
     ]) {
       const css = stripComments(readFileSync(join(sourceRoot, "components", "chat", file), "utf8"));
       expect(css, file).not.toMatch(/#[0-9a-f]{3,8}\b|(?:rgba?|hsla?)\(/i);

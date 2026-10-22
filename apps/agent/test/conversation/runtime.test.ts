@@ -440,6 +440,10 @@ describe("ephemeral conversation runtime", () => {
         await tick();
         await inner.beginRun(conversationId, runId, userMessage);
       },
+      appendUserMessage: async (conversationId, userMessage) => {
+        await tick();
+        await inner.appendUserMessage(conversationId, userMessage);
+      },
       beginEphemeralRun: async (conversationId, runId, userMessage) => {
         await tick();
         await inner.beginEphemeralRun(conversationId, runId, userMessage);
@@ -502,6 +506,9 @@ describe("ephemeral conversation runtime", () => {
         .filter((event) => event.runId === survivorRunId);
       expect(survivorEvents.some((event) => event.chunk.type === "error")).toBe(false);
       expect(survivorEvents.some((event) => event.chunk.type === "finish")).toBe(true);
+      // finish 事件先于验收清理（finishRun → clear）到达：activeRunCount 归零即清理
+      // 完成，此时才允许读快照，否则读到的是清理前的占位消息对。
+      await expect.poll(() => racing.activeRunCount, { timeout: 5_000, interval: 10 }).toBe(0);
       expect((await racing.getSnapshot("race-async-conversation")).messages).toEqual([]);
     } finally {
       racing.dispose();

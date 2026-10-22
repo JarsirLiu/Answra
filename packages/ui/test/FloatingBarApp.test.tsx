@@ -4,7 +4,7 @@ import type {
   ConversationMessage,
   ConversationSnapshot,
 } from "@answra/shared";
-import { ActiveChatConversationId } from "@answra/shared";
+import { ActiveChatConversationId, ActiveInterviewConversationId } from "@answra/shared";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { UIMessageChunk } from "ai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -29,6 +29,18 @@ function createConversationBridge() {
         emittedConversationId = command.conversationId;
         return { runId: "run-1" };
       }),
+    appendConversationUserMessage: vi.fn(async (id: string, text: string) => {
+      conversationListeners.forEach((listener) => {
+        listener({
+          type: "messages-appended",
+          conversationId: id,
+          revision: 1,
+          messages: [
+            { id: "interview-user-1", role: "user", text, images: [], status: "complete" },
+          ],
+        });
+      });
+    }),
     cancelConversationRun: vi.fn(),
     onConversationChange: vi.fn((listener: (change: ConversationChange) => void) => {
       let revision = 0;
@@ -173,8 +185,35 @@ describe("three-segment floating navigation", () => {
     fireEvent.click(screen.getByRole("menuitemradio", { name: "面试" }));
     const modeTrigger = screen.getByRole("button", { name: "面试" });
     expect(modeTrigger.querySelector("svg")?.classList.contains("lucide-audio-lines")).toBe(true);
-    fireEvent.click(screen.getByRole("button", { name: "面试语音测试" }));
-    expect(screen.getByRole("region", { name: "面试语音测试" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "面试对话" }));
+    expect(screen.getByRole("region", { name: "面试对话" })).toBeInTheDocument();
+  });
+
+  it("appends interview text as a user message without starting a model run", async () => {
+    const bridge = createConversationBridge();
+    const capture = {
+      getState: () => ({ phase: "idle" as const }),
+      subscribe: () => () => undefined,
+      start: vi.fn(async () => undefined),
+      stop: vi.fn(async () => undefined),
+    };
+    render(<FloatingBarApp bridge={bridge} interviewCapture={capture} />);
+    fireEvent.click(screen.getByRole("button", { name: "对话" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "面试" }));
+    fireEvent.click(screen.getByRole("button", { name: "面试对话" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "面试消息" }), {
+      target: { value: "只追加用户消息" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+
+    await waitFor(() =>
+      expect(bridge.appendConversationUserMessage).toHaveBeenCalledWith(
+        ActiveInterviewConversationId,
+        "只追加用户消息",
+      ),
+    );
+    expect(bridge.sendConversationMessage).not.toHaveBeenCalled();
+    expect(await screen.findByText("只追加用户消息")).toHaveClass("message-content");
   });
 
   it("sends general chat on its independent conversation and keeps it when the panel closes", async () => {

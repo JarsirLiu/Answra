@@ -86,6 +86,11 @@ export class AgentService {
     return (await this.request(type, { ...command, accessToken })) as { runId: string };
   }
 
+  async appendUserMessage(conversationId: string, text: string): Promise<void> {
+    if (!text.trim() || text.length > 32_000) throw new Error("消息内容无效或过长");
+    await this.request("append-user-message", { conversationId, text });
+  }
+
   cancel(runId: string): void {
     void this.request("cancel", { runId }).catch((error: unknown) =>
       console.warn("[agent-service] cancel failed", error),

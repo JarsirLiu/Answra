@@ -6,26 +6,22 @@ interface ActiveCapture {
   sessionId: string;
   conversationId: string;
   state: "starting" | "listening";
-  displayMediaPermissionClaimed: boolean;
-  displayRequestClaimed: boolean;
 }
 
-/** Main-process owner for the single active loopback capture run. */
+/** Main-process owner for the single active microphone capture run. */
 export class InterviewCaptureService {
   private active?: ActiveCapture;
 
   constructor(private readonly agent: AgentService) {}
 
   async start(conversationId: string): Promise<{ sessionId: string }> {
-    if (process.platform !== "win32") throw new Error("系统声音采集当前仅支持 Windows");
-    if (this.active) throw new Error("系统声音采集已经启动");
+    if (process.platform !== "win32") throw new Error("面试语音采集当前仅支持 Windows");
+    if (this.active) throw new Error("面试语音采集已经启动");
 
     const active: ActiveCapture = {
       sessionId: randomUUID(),
       conversationId,
       state: "starting",
-      displayMediaPermissionClaimed: false,
-      displayRequestClaimed: false,
     };
     this.active = active;
     try {
@@ -69,39 +65,14 @@ export class InterviewCaptureService {
     await this.agent.stopInterview(active.sessionId);
   }
 
-  claimDisplayRequest(): string | undefined {
-    const active = this.active;
-    if (active?.state !== "starting") return undefined;
-    if (active.displayRequestClaimed) return undefined;
-    active.displayRequestClaimed = true;
-    return active.sessionId;
-  }
-
-  isStartingSession(sessionId: string): boolean {
-    const active = this.getActive(sessionId);
-    return active?.state === "starting";
-  }
-
   allowsMicrophonePermission(): boolean {
     return this.active?.state === "starting";
-  }
-
-  claimDisplayMediaPermission(): boolean {
-    const active = this.active;
-    if (active?.state !== "starting" || active.displayMediaPermissionClaimed) return false;
-    active.displayMediaPermissionClaimed = true;
-    return true;
-  }
-
-  releaseDisplayRequest(sessionId: string): void {
-    const active = this.getActive(sessionId);
-    if (active?.state === "starting") active.displayRequestClaimed = false;
   }
 
   /** Receives a DTO already validated by the IPC boundary; session ownership is checked here. */
   acceptFrame(frame: InterviewPcmFrame): boolean {
     const active = this.getActive(frame.sessionId);
-    if (active?.state !== "listening") return false;
+    if (active?.state !== "listening" || frame.source !== "candidate") return false;
     this.agent.sendInterviewPcmFrame(frame);
     return true;
   }

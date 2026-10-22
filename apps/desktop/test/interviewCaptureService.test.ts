@@ -15,7 +15,7 @@ function createAgent() {
 function pcmFrame(sessionId: string): InterviewPcmFrame {
   return {
     sessionId,
-    source: "interviewer",
+    source: "candidate",
     sequence: 0,
     startSample: 0,
     sampleRate: 16_000,
@@ -41,19 +41,13 @@ describe("InterviewCaptureService", () => {
     expect(agent.stopInterview).toHaveBeenCalledWith(sessionId);
   });
 
-  it("allows only one display-media request for the starting capture", async () => {
+  it("allows microphone permission only while capture is starting", async () => {
     const service = new InterviewCaptureService(createAgent() as never);
     const { sessionId } = await service.start("active-interview-conversation");
 
-    expect(service.claimDisplayMediaPermission()).toBe(true);
-    expect(service.claimDisplayMediaPermission()).toBe(false);
-    expect(service.claimDisplayRequest()).toBe(sessionId);
-    expect(service.claimDisplayRequest()).toBeUndefined();
-    service.releaseDisplayRequest(sessionId);
-    expect(service.claimDisplayRequest()).toBe(sessionId);
-    expect(service.isStartingSession(sessionId)).toBe(true);
+    expect(service.allowsMicrophonePermission()).toBe(true);
     expect(await service.captureReady(sessionId)).toBe(true);
-    expect(service.claimDisplayMediaPermission()).toBe(false);
+    expect(service.allowsMicrophonePermission()).toBe(false);
   });
 
   it("rejects frames for a different session before crossing into the Agent process", async () => {

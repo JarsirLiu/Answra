@@ -1,6 +1,7 @@
 import {
   ActiveChatConversationId,
   ActiveExamConversationId,
+  ActiveInterviewConversationId,
   AUTH_REQUIRED_NOTICE,
   type DesktopAnnouncement,
   type DesktopBridge,
@@ -48,6 +49,8 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
   const [interviewCaptureState, setInterviewCaptureState] = useState<InterviewCaptureState>(
     interviewCapture?.getState() ?? { phase: "idle" },
   );
+  const [interviewMessages, setInterviewMessages] = useState<{ id: string; content: string }[]>([]);
+  const [interviewError, setInterviewError] = useState<string>();
   const surfaces = useSurfaceCoordinator();
   const { panel, floatingLayers, featureSlot } = surfaces;
   const replyPhase = featureSlot.kind === "reply" ? (featureSlot.phase ?? "composing") : "closed";
@@ -99,6 +102,46 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
     setInterviewCaptureState(interviewCapture.getState());
     return interviewCapture.subscribe(setInterviewCaptureState);
   }, [interviewCapture]);
+  useEffect(() => {
+    if (!platform?.createConversation || !platform.getConversationSnapshot) return;
+    let alive = true;
+    let revision = -1;
+    const apply = (change: import("@answra/shared").ConversationChange) => {
+      if (change.type === "snapshot") {
+        if (
+          change.snapshot.conversationId !== ActiveInterviewConversationId ||
+          change.snapshot.revision < revision
+        )
+          return;
+        revision = change.snapshot.revision;
+        setInterviewMessages(
+          change.snapshot.messages
+            .filter((message) => message.role === "user")
+            .map((message) => ({ id: message.id, content: message.text })),
+        );
+      } else if (change.type === "messages-appended") {
+        if (change.conversationId !== ActiveInterviewConversationId || change.revision <= revision)
+          return;
+        revision = change.revision;
+        setInterviewMessages((current) => [
+          ...current,
+          ...change.messages
+            .filter((message) => message.role === "user")
+            .map((message) => ({ id: message.id, content: message.text })),
+        ]);
+      }
+    };
+    const unsubscribe = platform.onConversationChange?.((change) => {
+      if (alive) apply(change);
+    });
+    void platform.createConversation(ActiveInterviewConversationId).then((snapshot) => {
+      if (alive) apply({ type: "snapshot", snapshot });
+    });
+    return () => {
+      alive = false;
+      unsubscribe?.();
+    };
+  }, [platform]);
   useEffect(() => {
     if (!authSignedIn || !platform?.getAnnouncements) return;
     let cancelled = false;
@@ -336,6 +379,16 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
         <InterviewCapturePanel
           capture={interviewCapture}
           state={interviewCaptureState}
+          messages={interviewMessages}
+          error={interviewError}
+          onSendText={(text) => {
+            setInterviewError(undefined);
+            void platform
+              ?.appendConversationUserMessage?.(ActiveInterviewConversationId, text)
+              .catch((error: unknown) =>
+                setInterviewError(error instanceof Error ? error.message : "消息发送失败"),
+              );
+          }}
           onClose={() => surfaces.openPanel("closed")}
         />
       )}

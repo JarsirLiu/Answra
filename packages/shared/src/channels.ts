@@ -102,6 +102,7 @@ export const CaptureChannels = {
 
 export const ConversationChannels = {
   Send: "answra:conversation:send",
+  AppendUserMessage: "answra:conversation:append-user-message",
   Cancel: "answra:conversation:cancel",
   GetSnapshot: "answra:conversation:get-snapshot",
   Create: "answra:conversation:create",
@@ -420,7 +421,7 @@ export type ConversationChange =
       conversationId: string;
       revision: number;
       messages: ConversationMessage[];
-      activeRunId: string;
+      activeRunId?: string;
     }
   | { type: "event"; event: ConversationEvent }
   | {
@@ -779,6 +780,10 @@ export interface ConversationChannelMap {
   [ConversationChannels.Send]: {
     request: ConversationSendCommand;
     response: { runId: string };
+  };
+  [ConversationChannels.AppendUserMessage]: {
+    request: { conversationId: string; text: string };
+    response: undefined;
   };
   [ConversationChannels.Cancel]: { request: { runId: string }; response: undefined };
   [ConversationChannels.GetSnapshot]: {

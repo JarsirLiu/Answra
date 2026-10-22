@@ -1,0 +1,73 @@
+/* ── 对话消息区（ChatPanel / InterviewCapturePanel 共用） ────────── */
+/* 视口滚动样式 + 消息气泡家族只在这里定义；面板各自补充专有块。 */
+.conversation {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: auto;
+  overflow-x: hidden;
+  padding: 14px 14px 10px;
+}
+.chat-message {
+  max-width: 94%;
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+}
+.chat-message--user {
+  align-self: flex-end;
+  max-width: 76%;
+}
+/* 助手消息不套气泡：思考 + 正文通栏排布，自然衔接。 */
+.chat-message--assistant {
+  max-width: 100%;
+  display: block;
+}
+.message-content {
+  padding: 7px 9px;
+  border: 1px solid var(--glass-line-soft);
+  border-radius: 4px 11px 11px;
+  color: var(--ink-soft);
+  background: var(--field);
+  font-size: 12px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.chat-message--user .message-content {
+  border-color: var(--mint-line);
+  border-radius: 11px 4px 11px 11px;
+  color: var(--mint-text);
+  background: var(--mint-wash);
+}
+/* 对话区自定义滚动条：细圆条，避免原生粗灰条。 */
+.conversation,
+.conversation-composer textarea {
+  scrollbar-width: thin;
+  scrollbar-color: var(--glass-line) transparent;
+}
+
+.conversation::-webkit-scrollbar,
+.conversation-composer textarea::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.conversation::-webkit-scrollbar-thumb,
+.conversation-composer textarea::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: var(--glass-line);
+}
+
+.conversation::-webkit-scrollbar-thumb:hover,
+.conversation-composer textarea::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+
+.conversation::-webkit-scrollbar-track,
+.conversation::-webkit-scrollbar-corner,
+.conversation-composer textarea::-webkit-scrollbar-track,
+.conversation-composer textarea::-webkit-scrollbar-corner {
+  background: transparent;
+}

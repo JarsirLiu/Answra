@@ -15,6 +15,7 @@ export interface ConversationStore {
   clear(conversationId: string): Promise<void>;
   load(conversationId: string): Promise<ConversationSnapshot>;
   beginRun(conversationId: string, runId: string, userMessage: ConversationMessage): Promise<void>;
+  appendUserMessage(conversationId: string, userMessage: ConversationMessage): Promise<void>;
   /**
    * 一次性答题运行的认领原语：在同一步内完成「有活动 run 时抛
    * 『当前回复尚未完成』→ 清空上一轮残留消息与 journal（revision 保持单调）→
@@ -98,6 +99,25 @@ export class MemoryConversationStore implements ConversationStore {
         revision: session.snapshot.revision,
         messages: [userMessage, assistantMessage].map(cloneMessage),
         activeRunId: runId,
+      },
+      session,
+    );
+  }
+
+  async appendUserMessage(conversationId: string, userMessage: ConversationMessage): Promise<void> {
+    const session = this.requireSession(conversationId);
+    if (session.snapshot.activeRunId) throw new Error("当前回复尚未完成");
+    if (userMessage.role !== "user" || userMessage.status !== "complete")
+      throw new Error("仅可追加已完成的用户消息");
+    const message = cloneMessage(userMessage);
+    session.snapshot.messages.push(message);
+    session.snapshot.revision += 1;
+    this.publish(
+      {
+        type: "messages-appended",
+        conversationId,
+        revision: session.snapshot.revision,
+        messages: [message],
       },
       session,
     );

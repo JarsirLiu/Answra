@@ -10,6 +10,7 @@ import {
 import { LocalParaformerAdapter } from "../interview/transcription/local/adapter";
 import type { RecognizerSource } from "../interview/transcription/local/recognizerPort";
 import { TranscriptionPump } from "../interview/transcription/pump";
+import { InterviewTurnAssembler } from "../interview/turns/assembler";
 import { InterviewVadPipeline } from "../interview/vad/pipeline";
 import type { TenVadSource } from "../interview/vad/tenVadEngine";
 import { toInterviewWorkerEvent } from "./interviewProjection";
@@ -71,6 +72,8 @@ export function startAgentHost({
    * 重启 worker 才能恢复，而不是每个会话重复付出装配成本。
    */
   let recognizerAssembly: Promise<LocalParaformerAdapter> | undefined;
+  const turnAssembler = new InterviewTurnAssembler();
+  const interviewConversations = new Map<string, string>();
 
   function loadTranscriptionProvider(): Promise<LocalParaformerAdapter> {
     recognizerAssembly ??= optionsRecognizerLoad();
@@ -119,15 +122,43 @@ export function startAgentHost({
     onFrame: (frame) => interviewVad.handleFrame(frame),
   });
   const transcription = new TranscriptionPump({
-    emit: (event) => emitInterviewEvent({ type: "transcript-event", event }),
+    emit: (event) => {
+      emitInterviewEvent({ type: "transcript-event", event });
+      const turn = turnAssembler.accept(event);
+      if (!turn) return;
+      const text = turn.chunks
+        .map((chunk) => chunk.text)
+        .join("")
+        .trim();
+      if (!text) return;
+      void runtime
+        .appendUserMessage(turn.conversationId, text)
+        .then(() => emitInterviewEvent({ type: "turn-committed", turn }))
+        .catch((error: unknown) => {
+          console.warn("[interview-turn] user message append failed", {
+            sessionId: turn.sessionId,
+            turnId: turn.turnId,
+            error: error instanceof Error ? error.message : "unknown",
+          });
+        });
+      return;
+    },
   });
   const interviewVad = new InterviewVadPipeline({
     vad,
     failSession: (id, code) => {
+      turnAssembler.reset(id);
+      interviewConversations.delete(id);
       transcription.fail(id);
       interviewAudio.fail(id, code);
     },
-    onSegment: (segment) => transcription.handleSegment(segment),
+    onSegment: (segment) => {
+      const conversationId = interviewConversations.get(segment.sessionId);
+      if (conversationId) {
+        turnAssembler.registerSegment(segment, asConversationId(conversationId));
+        transcription.handleSegment(segment);
+      }
+    },
   });
   let audioCreditSessionId: string | undefined;
   let uncreditedAudioFrames = 0;
@@ -209,6 +240,8 @@ export function startAgentHost({
   async function run(command: AgentCommand): Promise<unknown> {
     switch (command.type) {
       case "interview-start": {
+        await runtime.createConversation(command.conversationId);
+        interviewConversations.set(command.sessionId, command.conversationId);
         interviewAudio.start(
           asSessionId(command.sessionId),
           asConversationId(command.conversationId),
@@ -224,6 +257,7 @@ export function startAgentHost({
           // 资源加载失败属于显式失败路径：先把会话打成 failed，再把错误冒给 desktop。
           interviewVad.fail(asSessionId(command.sessionId));
           interviewAudio.fail(asSessionId(command.sessionId), "runtime-failed");
+          interviewConversations.delete(command.sessionId);
           clearAudioCredits(command.sessionId);
           throw error;
         }
@@ -234,12 +268,16 @@ export function startAgentHost({
           throw new Error("面试音频会话已失效");
         return undefined;
       case "interview-capture-failed":
+        turnAssembler.reset(asSessionId(command.sessionId));
+        interviewConversations.delete(command.sessionId);
         interviewVad.fail(asSessionId(command.sessionId));
         transcription.fail(asSessionId(command.sessionId));
         interviewAudio.fail(asSessionId(command.sessionId), "capture-failed");
         clearAudioCredits(command.sessionId);
         return undefined;
       case "interview-stop":
+        turnAssembler.reset(asSessionId(command.sessionId));
+        interviewConversations.delete(command.sessionId);
         interviewVad.stop(asSessionId(command.sessionId));
         transcription.stop(asSessionId(command.sessionId));
         interviewAudio.stop(asSessionId(command.sessionId));
@@ -263,6 +301,9 @@ export function startAgentHost({
         return runtime.readEventsAfter(command.conversationId, command.afterRevision);
       case "create-conversation":
         return runtime.createConversation(command.conversationId);
+      case "append-user-message":
+        await runtime.appendUserMessage(command.conversationId, command.text);
+        return undefined;
       case "cancel":
         runtime.cancel(command.runId);
         return undefined;

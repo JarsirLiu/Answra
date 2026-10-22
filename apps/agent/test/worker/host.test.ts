@@ -341,6 +341,58 @@ describe("agent worker host", () => {
     });
   });
 
+  it("appends a naturally ended microphone turn as one user message without starting a run", async () => {
+    const harness = createHarness();
+    const host = startAgentHost({
+      transport: harness.transport,
+      vad: scriptedVadEngine(hopProgram(138, [{ fromHop: 0, untilHop: 42 }])),
+      recognizer: scriptedRecognizer("请介绍一下你负责的项目"),
+    });
+
+    harness.dispatch({
+      id: "start-mic-turn",
+      type: "interview-start",
+      sessionId: "capture-1",
+      conversationId: "active-interview-conversation",
+    });
+    await vi.waitFor(() => expect(harness.responses()).toHaveLength(1));
+    harness.dispatch({
+      id: "ready-mic-turn",
+      type: "interview-capture-ready",
+      sessionId: "capture-1",
+    });
+    await vi.waitFor(() => expect(harness.responses()).toHaveLength(2));
+
+    for (let index = 0; index < 23; index += 1) {
+      harness.dispatch({
+        type: "interview-audio-frame",
+        frame: {
+          ...makeFrame("candidate", index, TEST_FRAME_SAMPLES),
+          sessionId: "capture-1",
+        },
+      });
+    }
+
+    await vi.waitFor(async () => {
+      const snapshot = await host.runtime.getSnapshot("active-interview-conversation");
+      expect(snapshot.messages).toEqual([
+        expect.objectContaining({
+          role: "user",
+          text: "请介绍一下你负责的项目",
+          status: "complete",
+        }),
+      ]);
+    });
+    expect(host.runtime.activeRunCount).toBe(0);
+    expect(harness.frames).not.toContainEqual(
+      expect.objectContaining({
+        type: "change",
+        change: expect.objectContaining({ type: "assistant-delta" }),
+      }),
+    );
+    host.dispose();
+  });
+
   async function startUnauthorizedServer(): Promise<string> {
     const server = createServer((_request, response) => {
       response.writeHead(401, { "content-type": "application/json" });

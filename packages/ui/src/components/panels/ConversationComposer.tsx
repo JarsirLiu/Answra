@@ -56,7 +56,11 @@ interface ConversationComposerProps {
   compact?: boolean;
   /** 流式进行中：发送按钮切换为停止按钮。 */
   streaming?: boolean;
+  streamingStopLabel?: string;
   children?: ReactNode;
+  leadingAction?: ReactNode;
+  liveContent?: ReactNode;
+  showAttachmentButton?: boolean;
   /** 外部持有输入框引用（如消息操作条的"引用回复"聚焦）。 */
   inputRef?: RefObject<HTMLTextAreaElement | null>;
   onValueChange?: (value: string) => void;
@@ -80,7 +84,11 @@ export function ConversationComposer({
   disabled = false,
   compact = false,
   streaming = false,
+  streamingStopLabel = "停止回复",
   children,
+  leadingAction,
+  liveContent,
+  showAttachmentButton = true,
   inputRef,
   onValueChange,
   onPasteImages,
@@ -168,86 +176,90 @@ export function ConversationComposer({
       <div
         className={`conversation-composer-editor${ime?.session.state.composing ? " is-composing" : ""}`}
       >
-        <textarea
-          {...imeAttributes}
-          aria-label={inputLabel}
-          aria-readonly={imeInputState.ariaReadOnly}
-          className={ime ? "embedded-ime-input" : undefined}
-          data-ime-native-input-blocked={imeInputState.nativeInputBlockedByIme ? "true" : undefined}
-          disabled={disabled}
-          readOnly={imeInputState.readOnly}
-          onChange={(event) => {
-            if (ime && !ime.session.textPolicy.useNativeTextInput) return;
-            onValueChange?.(event.target.value);
-          }}
-          onCompositionStart={(event) => {
-            if (ime?.session.textPolicy.blockComposition) event.preventDefault();
-          }}
-          onBeforeInput={(event) => {
-            const inputType = event.nativeEvent.inputType;
-            if (ime?.session.shouldPreventBeforeInput(inputType)) event.preventDefault();
-          }}
-          onPaste={(event) => {
-            const files = Array.from(event.clipboardData.files).filter((file) =>
-              file.type.startsWith("image/"),
-            );
-            if (files.length) {
-              event.preventDefault();
-              onPasteImages?.(files);
-              return;
+        {liveContent ?? (
+          <textarea
+            {...imeAttributes}
+            aria-label={inputLabel}
+            aria-readonly={imeInputState.ariaReadOnly}
+            className={ime ? "embedded-ime-input" : undefined}
+            data-ime-native-input-blocked={
+              imeInputState.nativeInputBlockedByIme ? "true" : undefined
             }
-            if (ime?.session.textPolicy.blockNativeEditing) {
-              event.preventDefault();
-              if (disabled) return;
-              const text = event.clipboardData.getData("text/plain");
-              if (!text) return;
-              const input = event.currentTarget;
-              const edit = replaceTextRange(
-                valueRef.current,
-                { start: input.selectionStart, end: input.selectionEnd },
-                text,
+            disabled={disabled}
+            readOnly={imeInputState.readOnly}
+            onChange={(event) => {
+              if (ime && !ime.session.textPolicy.useNativeTextInput) return;
+              onValueChange?.(event.target.value);
+            }}
+            onCompositionStart={(event) => {
+              if (ime?.session.textPolicy.blockComposition) event.preventDefault();
+            }}
+            onBeforeInput={(event) => {
+              const inputType = event.nativeEvent.inputType;
+              if (ime?.session.shouldPreventBeforeInput(inputType)) event.preventDefault();
+            }}
+            onPaste={(event) => {
+              const files = Array.from(event.clipboardData.files).filter((file) =>
+                file.type.startsWith("image/"),
               );
-              pendingCaret.current = edit.caret;
-              onValueChangeRef.current?.(edit.value);
-            }
-          }}
-          onKeyDown={(event) => {
-            if (
-              ime &&
-              handleImeEditorKeyDown({
-                event,
-                policy: ime.session.textPolicy,
-                readSelection: () => ({
-                  start: event.currentTarget.selectionStart,
-                  end: event.currentTarget.selectionEnd,
-                }),
-                onCaptureCompositionStart: (range) =>
-                  ime.composition.captureCompositionStart(range, ime.session.state.composing),
-                sendKey: (keyEvent, apply) => ime.session.sendKey(keyEvent, false, apply),
-                applyEditorCommand,
-              })
-            ) {
+              if (files.length) {
+                event.preventDefault();
+                onPasteImages?.(files);
+                return;
+              }
+              if (ime?.session.textPolicy.blockNativeEditing) {
+                event.preventDefault();
+                if (disabled) return;
+                const text = event.clipboardData.getData("text/plain");
+                if (!text) return;
+                const input = event.currentTarget;
+                const edit = replaceTextRange(
+                  valueRef.current,
+                  { start: input.selectionStart, end: input.selectionEnd },
+                  text,
+                );
+                pendingCaret.current = edit.caret;
+                onValueChangeRef.current?.(edit.value);
+              }
+            }}
+            onKeyDown={(event) => {
+              if (
+                ime &&
+                handleImeEditorKeyDown({
+                  event,
+                  policy: ime.session.textPolicy,
+                  readSelection: () => ({
+                    start: event.currentTarget.selectionStart,
+                    end: event.currentTarget.selectionEnd,
+                  }),
+                  onCaptureCompositionStart: (range) =>
+                    ime.composition.captureCompositionStart(range, ime.session.state.composing),
+                  sendKey: (keyEvent, apply) => ime.session.sendKey(keyEvent, false, apply),
+                  applyEditorCommand,
+                })
+              ) {
+                event.preventDefault();
+                return;
+              }
+              if (disabled || event.key !== "Enter" || event.shiftKey) return;
               event.preventDefault();
-              return;
-            }
-            if (disabled || event.key !== "Enter" || event.shiftKey) return;
-            event.preventDefault();
-            event.currentTarget.form?.requestSubmit();
-          }}
-          onKeyUp={(event) => {
-            if (ime?.session.sendKeyUp(event)) event.preventDefault();
-          }}
-          onFocus={() => {
-            ime?.session.acquire();
-          }}
-          onBlur={() => {
-            ime?.session.blur();
-          }}
-          placeholder={placeholder}
-          ref={textareaRef}
-          rows={1}
-          value={value}
-        />
+              event.currentTarget.form?.requestSubmit();
+            }}
+            onKeyUp={(event) => {
+              if (ime?.session.sendKeyUp(event)) event.preventDefault();
+            }}
+            onFocus={() => {
+              ime?.session.acquire();
+            }}
+            onBlur={() => {
+              ime?.session.blur();
+            }}
+            placeholder={placeholder}
+            ref={textareaRef}
+            rows={1}
+            value={value}
+          />
+        )}
         {ime?.session.state.composing &&
           ime.session.state.preedit &&
           ime.composition.compositionRange && (
@@ -262,6 +274,7 @@ export function ConversationComposer({
       </div>
       <div className="conversation-composer-footer">
         <div className="conversation-composer-leading">
+          {leadingAction}
           {ime && showImeToggle && (
             <button
               aria-label={ime.session.imeEnabled ? "关闭内置输入法" : "启用内置输入法"}
@@ -275,24 +288,26 @@ export function ConversationComposer({
               <Languages aria-hidden="true" size={ICON_SM} />
             </button>
           )}
-          <button
-            aria-label="添加附件"
-            className="conversation-composer-icon-button conversation-composer-add"
-            disabled={disabled || !onAddAttachment}
-            onClick={onAddAttachment}
-            title="添加附件"
-            type="button"
-          >
-            <Plus aria-hidden="true" size={ICON_SM} />
-          </button>
+          {showAttachmentButton && (
+            <button
+              aria-label="添加附件"
+              className="conversation-composer-icon-button conversation-composer-add"
+              disabled={disabled || !onAddAttachment}
+              onClick={onAddAttachment}
+              title="添加附件"
+              type="button"
+            >
+              <Plus aria-hidden="true" size={ICON_SM} />
+            </button>
+          )}
         </div>
         <div className="conversation-composer-actions">
           {streaming ? (
             <button
-              aria-label="停止回复"
+              aria-label={streamingStopLabel}
               className="conversation-composer-icon-button conversation-composer-stop"
               onClick={onStop}
-              title="停止回复"
+              title={streamingStopLabel}
               type="button"
             >
               <span aria-hidden="true" className="conversation-composer-stop-glyph" />

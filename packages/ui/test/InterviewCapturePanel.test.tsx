@@ -13,70 +13,92 @@ function capturePort(): InterviewCapturePort {
 }
 
 describe("InterviewCapturePanel", () => {
-  it("allows cancelling startup and stops a ready capture", () => {
-    const capture = capturePort();
-    const { rerender } = render(
-      <InterviewCapturePanel capture={capture} state={{ phase: "idle" }} onClose={vi.fn()} />,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "开始采集" }));
-    expect(capture.start).toHaveBeenCalledOnce();
-
-    rerender(
-      <InterviewCapturePanel capture={capture} state={{ phase: "starting" }} onClose={vi.fn()} />,
-    );
-    expect(screen.getByRole("button", { name: "停止采集" })).toBeEnabled();
-
-    rerender(
-      <InterviewCapturePanel capture={capture} state={{ phase: "listening" }} onClose={vi.fn()} />,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "停止采集" }));
-    expect(capture.stop).toHaveBeenCalledOnce();
-    expect(
-      screen.getByText("音频已送达识别链路；转写文字会在语音片段结束后显示。"),
-    ).toBeInTheDocument();
-  });
-
-  it("shows transcripts with speaker and interviewer turn-end status", () => {
+  it("keeps one entry point and one explainer, with no header context while idle", () => {
     render(
       <InterviewCapturePanel
         capture={capturePort()}
-        state={{
-          phase: "listening",
-          transcripts: [
-            {
-              id: "question:0",
-              speaker: "interviewer",
-              text: "请介绍一下自己",
-              turnEnd: true,
-              timestamp: 1000,
-            },
-            { id: "answer:0", speaker: "user", text: "我叫小王", turnEnd: true, timestamp: 2000 },
-          ],
-        }}
-        onClose={vi.fn()}
-      />,
-    );
-
-    expect(screen.getByText("请介绍一下自己")).toBeInTheDocument();
-    expect(screen.getByText("我叫小王")).toBeInTheDocument();
-    expect(screen.getByText("对方")).toBeInTheDocument();
-    expect(screen.getByText("我")).toBeInTheDocument();
-    expect(screen.getByText("检测到对方停顿")).toBeInTheDocument();
-  });
-
-  it("explains that listening status confirms audio delivery, not completed transcription", () => {
-    render(
-      <InterviewCapturePanel
-        capture={capturePort()}
-        state={{ phase: "listening", agentConfirmedFrames: 25 }}
+        state={{ phase: "idle" }}
+        messages={[]}
+        onSendText={vi.fn()}
         onClose={vi.fn()}
       />,
     );
 
     expect(
-      screen.getByText("音频已送达识别链路；转写文字会在语音片段结束后显示。"),
-    ).toBeInTheDocument();
-    expect(screen.queryByText(/帧 PCM 音频/)).not.toBeInTheDocument();
+      screen.getByRole("region", { name: "面试对话" }).querySelector(".panel-context"),
+    ).toBeNull();
+    expect(screen.queryAllByText("正在监听麦克风")).toHaveLength(0);
+    expect(screen.getByText("点击下方麦克风开始语音输入。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "开始麦克风监听" })).toBeInTheDocument();
+  });
+
+  it("appends manual input as a user message", () => {
+    const onSendText = vi.fn();
+    render(
+      <InterviewCapturePanel
+        capture={capturePort()}
+        state={{ phase: "idle" }}
+        messages={[]}
+        onSendText={onSendText}
+        onClose={vi.fn()}
+      />,
+    );
+
+    fireEvent.change(screen.getByRole("textbox", { name: "面试消息" }), {
+      target: { value: "手动补充内容" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+
+    expect(onSendText).toHaveBeenCalledWith("手动补充内容");
+  });
+
+  it("replaces the editor with mic levels and a single status row while listening", () => {
+    render(
+      <InterviewCapturePanel
+        capture={capturePort()}
+        state={{ phase: "listening", inputLevels: [0.05, 0.8, 0.2] }}
+        messages={[{ id: "message-1", content: "语音转成的用户消息" }]}
+        onSendText={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.getAllByText("正在监听麦克风")).toHaveLength(1);
+    expect(screen.queryByRole("textbox", { name: "面试消息" })).not.toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "麦克风实时音量" }).children).toHaveLength(3);
+    expect(screen.getByText("语音转成的用户消息").closest("article")).toHaveClass(
+      "chat-message--user",
+    );
+    expect(screen.getByRole("button", { name: "停止语音输入" })).toBeInTheDocument();
+  });
+
+  it("maps the capture failure phase to a status alert", () => {
+    render(
+      <InterviewCapturePanel
+        capture={capturePort()}
+        state={{ phase: "error", message: "麦克风权限被拒绝" }}
+        messages={[]}
+        onSendText={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.getAllByText("麦克风权限被拒绝")).toHaveLength(1);
+  });
+
+  it("shows the append failure through the shared alert notice", () => {
+    render(
+      <InterviewCapturePanel
+        capture={capturePort()}
+        state={{ phase: "idle" }}
+        messages={[{ id: "message-1", content: "已保存的一条" }]}
+        error="消息发送失败"
+        onSendText={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("alert")).toHaveTextContent("消息发送失败");
+    expect(screen.queryByText("点击下方麦克风开始语音输入。")).not.toBeInTheDocument();
   });
 });

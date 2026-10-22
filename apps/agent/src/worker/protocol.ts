@@ -127,6 +127,7 @@ export type AgentCommand =
   | { id: string; type: "snapshot"; conversationId: string }
   | { id: string; type: "read-events"; conversationId: string; afterRevision: number }
   | { id: string; type: "create-conversation"; conversationId: string }
+  | { id: string; type: "append-user-message"; conversationId: string; text: string }
   | { id: string; type: "cancel"; runId: string }
   | { id: string; type: "shutdown" };
 

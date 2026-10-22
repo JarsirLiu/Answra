@@ -101,6 +101,7 @@ export interface DesktopBridge {
     afterRevision: number,
   ) => Promise<ConversationChange[]>;
   sendConversationMessage?: (command: ConversationSendCommand) => Promise<{ runId: string }>;
+  appendConversationUserMessage?: (conversationId: string, text: string) => Promise<void>;
   cancelConversationRun?: (runId: string) => void;
   onConversationChange?: (listener: (change: ConversationChange) => void) => () => void;
   // ---- 模型来源（本地自定义端点 / 云端订阅；可选，实现由 preload 注入） ----

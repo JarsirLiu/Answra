@@ -6,6 +6,7 @@ import { ICON_SM } from "../../tokens";
 import { AssistantMessage, MessageStream, ModelErrorNotice } from "../chat";
 import { ConversationComposer } from "./ConversationComposer";
 import { PanelShell } from "./PanelShell";
+import "../chat/conversation.css";
 import "./ChatPanel.css";
 import { useEmbeddedIme } from "../../hooks/useEmbeddedIme";
 
