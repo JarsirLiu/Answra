@@ -11,6 +11,12 @@ import { LocalParaformerAdapter } from "../interview/transcription/local/adapter
 import type { RecognizerSource } from "../interview/transcription/local/recognizerPort";
 import { TranscriptionPump } from "../interview/transcription/pump";
 import { InterviewTurnAssembler } from "../interview/turns/assembler";
+import {
+  CandidateTurnSettler,
+  type CandidateTurnSettlerOptions,
+  DEFAULT_CANDIDATE_TURN_SETTLE_MS,
+  MIN_CANDIDATE_TURN_CHARS,
+} from "../interview/turns/settler";
 import { InterviewVadPipeline } from "../interview/vad/pipeline";
 import type { TenVadSource } from "../interview/vad/tenVadEngine";
 import { toInterviewWorkerEvent } from "./interviewProjection";
@@ -42,6 +48,11 @@ export interface AgentHostOptions {
    * 未注入时 interview-start 会显式失败：不静默降级为无转录会话。
    */
   recognizer: RecognizerSource;
+  /**
+   * candidate turn settle 合并参数（测试注入 settleMs:0 以获得同步结算）。
+   * 缺省用默认窗口：真实面试延迟特征待校准后再收敛默认值。
+   */
+  turnSettler?: CandidateTurnSettlerOptions;
 }
 
 export interface AgentHost {
@@ -65,6 +76,7 @@ export function startAgentHost({
   store = new MemoryConversationStore(),
   vad,
   recognizer,
+  turnSettler,
 }: AgentHostOptions): AgentHost {
   /**
    * 本地转录引擎共享装配（worker 生命周期只装一次）：失败过的装配 promise
@@ -73,6 +85,31 @@ export function startAgentHost({
    */
   let recognizerAssembly: Promise<LocalParaformerAdapter> | undefined;
   const turnAssembler = new InterviewTurnAssembler();
+  const turnSettlerInstance = new CandidateTurnSettler(
+    turnSettler ?? {
+      settleMs: DEFAULT_CANDIDATE_TURN_SETTLE_MS,
+      minTurnChars: MIN_CANDIDATE_TURN_CHARS,
+    },
+    {
+      // 窗口结算才进入对话：合并后的多条 committed turns 共享一条用户消息，
+      // 事件投影仍逐 turn 发出，保留真实 utterance 证据。
+      onSettled: (turns, text) => {
+        const first = turns[0];
+        if (!first) return;
+        void runtime
+          .appendUserMessage(first.conversationId, text)
+          .then(() => {
+            for (const turn of turns) emitInterviewEvent({ type: "turn-committed", turn });
+          })
+          .catch((error: unknown) => {
+            console.warn("[interview-turn] user message append failed", {
+              sessionId: first.sessionId,
+              error: error instanceof Error ? error.message : "unknown",
+            });
+          });
+      },
+    },
+  );
   const interviewConversations = new Map<string, string>();
 
   function loadTranscriptionProvider(): Promise<LocalParaformerAdapter> {
@@ -131,16 +168,8 @@ export function startAgentHost({
         .join("")
         .trim();
       if (!text) return;
-      void runtime
-        .appendUserMessage(turn.conversationId, text)
-        .then(() => emitInterviewEvent({ type: "turn-committed", turn }))
-        .catch((error: unknown) => {
-          console.warn("[interview-turn] user message append failed", {
-            sessionId: turn.sessionId,
-            turnId: turn.turnId,
-            error: error instanceof Error ? error.message : "unknown",
-          });
-        });
+      // settle 窗口内暂存：紧邻续句合并后再进入对话，碎句不再逐条上屏。
+      turnSettlerInstance.receive(turn);
       return;
     },
   });
@@ -148,6 +177,7 @@ export function startAgentHost({
     vad,
     failSession: (id, code) => {
       turnAssembler.reset(id);
+      turnSettlerInstance.discard(id);
       interviewConversations.delete(id);
       transcription.fail(id);
       interviewAudio.fail(id, code);
@@ -173,6 +203,8 @@ export function startAgentHost({
   function dispose(): void {
     if (disposed) return;
     disposed = true;
+    // 运行时马上关闭：挂起内容不做异步结算，显式丢弃而非冒险 race。
+    turnSettlerInstance.discardAll();
     interviewVad.dispose();
     transcription.dispose();
     for (const pending of capabilityRequests.values())
@@ -269,6 +301,7 @@ export function startAgentHost({
         return undefined;
       case "interview-capture-failed":
         turnAssembler.reset(asSessionId(command.sessionId));
+        turnSettlerInstance.discard(asSessionId(command.sessionId));
         interviewConversations.delete(command.sessionId);
         interviewVad.fail(asSessionId(command.sessionId));
         transcription.fail(asSessionId(command.sessionId));
@@ -276,6 +309,8 @@ export function startAgentHost({
         clearAudioCredits(command.sessionId);
         return undefined;
       case "interview-stop":
+        // 停止即结算：用户刚说完就按停，不再等 settle 窗口，内容不丢。
+        turnSettlerInstance.flush(asSessionId(command.sessionId));
         turnAssembler.reset(asSessionId(command.sessionId));
         interviewConversations.delete(command.sessionId);
         interviewVad.stop(asSessionId(command.sessionId));

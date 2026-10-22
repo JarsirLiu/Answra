@@ -10,17 +10,24 @@ import {
   TEST_FRAME_SAMPLES,
 } from "../interview/vad/fixtures";
 
-/** 假转录引擎：返回固定文本，证明宿主接线不依赖真实模型。 */
-const scriptedRecognizer = (text: string) => ({
-  load: async () => ({
-    module: {
-      create: (_recipe: unknown) => ({
-        transcribeOnce: () => text,
-      }),
-    },
-    recipe: { modelPath: "model.int8.onnx", tokensPath: "tokens.txt", numThreads: 1 },
-  }),
-});
+/** 假转录引擎：按调用次序返回固定文本序列，证明宿主接线不依赖真实模型。 */
+const scriptedRecognizer = (...texts: string[]) => {
+  let next = 0;
+  return {
+    load: async () => ({
+      module: {
+        create: (_recipe: unknown) => ({
+          transcribeOnce: () => {
+            const text = texts[Math.min(next, texts.length - 1)];
+            next += 1;
+            return text ?? "";
+          },
+        }),
+      },
+      recipe: { modelPath: "model.int8.onnx", tokensPath: "tokens.txt", numThreads: 1 },
+    }),
+  };
+};
 
 /** 无语音假 VAD：所有 hop 判为非语音，证明宿主接线不依赖真实推理。 */
 const silenceVadSource = (): TenVadSource => ({
@@ -347,6 +354,8 @@ describe("agent worker host", () => {
       transport: harness.transport,
       vad: scriptedVadEngine(hopProgram(138, [{ fromHop: 0, untilHop: 42 }])),
       recognizer: scriptedRecognizer("请介绍一下你负责的项目"),
+      // 窗口 0：单段对话立即结算，测试不依赖真实墙钟窗口
+      turnSettler: { settleMs: 0, minTurnChars: 2 },
     });
 
     harness.dispatch({
@@ -390,6 +399,162 @@ describe("agent worker host", () => {
         change: expect.objectContaining({ type: "assistant-delta" }),
       }),
     );
+    host.dispose();
+  });
+
+  it("merges two closely spaced candidate segments into one user message", async () => {
+    // 两段 voiced 语音间隔 3s 静音：VAD 各自闭合两个 utterance；宿主 settle
+    // 合并把两次转录并成一条消息，验证碎句不再逐条上屏。
+    const harness = createHarness();
+    const host = startAgentHost({
+      transport: harness.transport,
+      vad: scriptedVadEngine(
+        hopProgram(324, [
+          { fromHop: 0, untilHop: 42 },
+          { fromHop: 231, untilHop: 273 },
+        ]),
+      ),
+      recognizer: scriptedRecognizer("请介绍", "你的项目"),
+      turnSettler: { settleMs: 1_000, minTurnChars: 2 },
+    });
+
+    harness.dispatch({
+      id: "start-merge",
+      type: "interview-start",
+      sessionId: "capture-1",
+      conversationId: "active-interview-conversation",
+    });
+    await vi.waitFor(() => expect(harness.responses()).toHaveLength(1));
+    harness.dispatch({
+      id: "ready-merge",
+      type: "interview-capture-ready",
+      sessionId: "capture-1",
+    });
+    await vi.waitFor(() => expect(harness.responses()).toHaveLength(2));
+
+    for (let index = 0; index < 54; index += 1) {
+      harness.dispatch({
+        type: "interview-audio-frame",
+        frame: {
+          ...makeFrame("candidate", index, TEST_FRAME_SAMPLES),
+          sessionId: "capture-1",
+        },
+      });
+    }
+
+    await vi.waitFor(
+      async () => {
+        const snapshot = await host.runtime.getSnapshot("active-interview-conversation");
+        expect(snapshot.messages).toEqual([
+          expect.objectContaining({ role: "user", text: "请介绍你的项目", status: "complete" }),
+        ]);
+      },
+      { timeout: 5_000 },
+    );
+    host.dispose();
+  });
+
+  it("flushes the pending settle on interview-stop instead of waiting for the window", async () => {
+    const harness = createHarness();
+    const host = startAgentHost({
+      transport: harness.transport,
+      vad: scriptedVadEngine(hopProgram(138, [{ fromHop: 0, untilHop: 42 }])),
+      recognizer: scriptedRecognizer("请介绍一下你负责的项目"),
+      // 窗口远大于测试时长：只有 stop 的显式结算能把内容送进对话
+      turnSettler: { settleMs: 60_000, minTurnChars: 2 },
+    });
+
+    harness.dispatch({
+      id: "start-stop-flush",
+      type: "interview-start",
+      sessionId: "capture-1",
+      conversationId: "active-interview-conversation",
+    });
+    await vi.waitFor(() => expect(harness.responses()).toHaveLength(1));
+    harness.dispatch({
+      id: "ready-stop-flush",
+      type: "interview-capture-ready",
+      sessionId: "capture-1",
+    });
+    await vi.waitFor(() => expect(harness.responses()).toHaveLength(2));
+
+    for (let index = 0; index < 23; index += 1) {
+      harness.dispatch({
+        type: "interview-audio-frame",
+        frame: {
+          ...makeFrame("candidate", index, TEST_FRAME_SAMPLES),
+          sessionId: "capture-1",
+        },
+      });
+    }
+    await vi.waitFor(() => {
+      expect(harness.frames).toContainEqual(
+        expect.objectContaining({
+          type: "interview-event",
+          event: expect.objectContaining({
+            type: "transcript-event",
+            event: expect.objectContaining({ kind: "chunk-final", text: "请介绍一下你负责的项目" }),
+          }),
+        }),
+      );
+    });
+
+    harness.dispatch({ id: "stop-1", type: "interview-stop", sessionId: "capture-1" });
+    await vi.waitFor(async () => {
+      const snapshot = await host.runtime.getSnapshot("active-interview-conversation");
+      expect(snapshot.messages).toEqual([
+        expect.objectContaining({ role: "user", text: "请介绍一下你负责的项目" }),
+      ]);
+    });
+    host.dispose();
+  });
+
+  it("keeps sub-threshold short utterances out of the conversation", async () => {
+    const harness = createHarness();
+    const host = startAgentHost({
+      transport: harness.transport,
+      vad: scriptedVadEngine(hopProgram(138, [{ fromHop: 0, untilHop: 42 }])),
+      recognizer: scriptedRecognizer("嗯"),
+      turnSettler: { settleMs: 0, minTurnChars: 2 },
+    });
+
+    harness.dispatch({
+      id: "start-short",
+      type: "interview-start",
+      sessionId: "capture-1",
+      conversationId: "active-interview-conversation",
+    });
+    await vi.waitFor(() => expect(harness.responses()).toHaveLength(1));
+    harness.dispatch({
+      id: "ready-short",
+      type: "interview-capture-ready",
+      sessionId: "capture-1",
+    });
+    await vi.waitFor(() => expect(harness.responses()).toHaveLength(2));
+
+    for (let index = 0; index < 23; index += 1) {
+      harness.dispatch({
+        type: "interview-audio-frame",
+        frame: {
+          ...makeFrame("candidate", index, TEST_FRAME_SAMPLES),
+          sessionId: "capture-1",
+        },
+      });
+    }
+    await vi.waitFor(() => {
+      expect(harness.frames).toContainEqual(
+        expect.objectContaining({
+          type: "interview-event",
+          event: expect.objectContaining({
+            type: "transcript-event",
+            event: expect.objectContaining({ kind: "chunk-final", text: "嗯" }),
+          }),
+        }),
+      );
+    });
+
+    const snapshot = await host.runtime.getSnapshot("active-interview-conversation");
+    expect(snapshot.messages).toEqual([]);
     host.dispose();
   });
 
