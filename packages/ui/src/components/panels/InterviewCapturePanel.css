@@ -32,10 +32,12 @@
 }
 
 /* 波形：数值只来自麦克风电平（渲染高度交给百分比），CSS 管最小/最大物理范围。 */
+/* 实时音量波形：铺满输入区全宽，槽位由 INTERVIEW_INPUT_LEVEL_WINDOW 决定，
+   不足时左侧补静默槽位，条幅随剩余宽度自然伸展 */
 .interview-audio-wave {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 3px;
   width: 100%;
   height: 44px;
   color: var(--icon);
@@ -44,10 +46,8 @@
 
 .interview-audio-wave-bar {
   flex: 1 1 0;
-  width: 2px;
-  min-width: 1px;
-  max-width: 5px;
+  min-width: 2px;
   min-height: 2px;
-  border-radius: 1px;
+  border-radius: 2px;
   background: currentColor;
 }

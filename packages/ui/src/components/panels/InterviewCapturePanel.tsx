@@ -1,6 +1,7 @@
 import { AudioLines, CircleAlert, LoaderCircle, Mic } from "lucide-react";
 import { useState } from "react";
 import type { InterviewCapturePort, InterviewCaptureState } from "../../app/interviewCapture";
+import { INTERVIEW_INPUT_LEVEL_WINDOW } from "../../app/interviewCapture";
 import { ICON, ICON_SM, ICON_STROKE } from "../../tokens";
 import { MessageStream, ModelErrorNotice } from "../chat";
 import "../chat/conversation.css";
@@ -52,6 +53,16 @@ export function InterviewCapturePanel({
   ].join("|");
   const emptyHint =
     state.phase === "idle" ? "点击下方麦克风开始语音输入。" : "识别完成后会作为你的消息加入对话。";
+  // 波形铺满输入区：窗口不足时不收缩宽度，以静默槽位补齐左侧历史。
+  const levelBars = state.inputLevels?.length
+    ? [
+        ...Array.from(
+          { length: Math.max(0, INTERVIEW_INPUT_LEVEL_WINDOW - state.inputLevels.length) },
+          () => 0,
+        ),
+        ...state.inputLevels,
+      ]
+    : Array.from({ length: INTERVIEW_INPUT_LEVEL_WINDOW }, () => 0);
 
   return (
     <PanelShell title="面试对话" variant="interview" onClose={onClose}>
@@ -100,7 +111,7 @@ export function InterviewCapturePanel({
         liveContent={
           running ? (
             <div aria-label="麦克风实时音量" className="interview-audio-wave" role="img">
-              {(state.inputLevels?.length ? state.inputLevels : [0]).map((level, index) => (
+              {levelBars.map((level, index) => (
                 <span
                   aria-hidden="true"
                   className="interview-audio-wave-bar"

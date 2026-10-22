@@ -5,6 +5,7 @@ import {
   type InterviewPcmFrame,
 } from "@answra/shared";
 import type { InterviewCapturePort, InterviewCaptureState } from "@answra/ui";
+import { INTERVIEW_INPUT_LEVEL_WINDOW } from "@answra/ui";
 
 interface WorkletFrameMessage {
   type: "frame";
@@ -47,6 +48,8 @@ interface CaptureInput {
 }
 
 const AUDIO_CREDIT_TIMEOUT_MS = 3_000;
+/** 电平采样节拍：与 `INTERVIEW_INPUT_LEVEL_WINDOW` 共同决定滚动窗口时长。 */
+export const INTERVIEW_INPUT_LEVEL_SAMPLE_MS = 40;
 
 /** Renderer-only adapter: user gesture, MediaStream, Web Audio and PCM framing. */
 export class InterviewAudioCapture implements InterviewCapturePort {
@@ -177,7 +180,10 @@ export class InterviewAudioCapture implements InterviewCapturePort {
         agentConfirmedFrames: 0,
         inputLevels: [],
       });
-      run.levelTimer = setInterval(() => this.sampleInputLevel(run), 40);
+      run.levelTimer = setInterval(
+        () => this.sampleInputLevel(run),
+        INTERVIEW_INPUT_LEVEL_SAMPLE_MS,
+      );
       this.scheduleCreditWatchdog(run);
     } catch (error) {
       await this.cleanupRun(run);
@@ -380,7 +386,7 @@ export class InterviewAudioCapture implements InterviewCapturePort {
     for (const sample of samples) sumSquares += sample * sample;
     const level = Math.min(1, Math.sqrt(sumSquares / samples.length) * 12);
     run.inputLevels.push(level);
-    if (run.inputLevels.length > 20) run.inputLevels.shift();
+    if (run.inputLevels.length > INTERVIEW_INPUT_LEVEL_WINDOW) run.inputLevels.shift();
     this.setState({
       phase: this.state.phase,
       agentConfirmedFrames: run.agentConfirmedFrames,

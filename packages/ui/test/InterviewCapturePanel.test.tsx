@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { InterviewCapturePort } from "../src/app/interviewCapture";
+import { INTERVIEW_INPUT_LEVEL_WINDOW } from "../src/app/interviewCapture";
 import { InterviewCapturePanel } from "../src/components/panels/InterviewCapturePanel";
 
 function capturePort(): InterviewCapturePort {
@@ -65,7 +66,12 @@ describe("InterviewCapturePanel", () => {
 
     expect(screen.getAllByText("正在监听麦克风")).toHaveLength(1);
     expect(screen.queryByRole("textbox", { name: "面试消息" })).not.toBeInTheDocument();
-    expect(screen.getByRole("img", { name: "麦克风实时音量" }).children).toHaveLength(3);
+    const wave = screen.getByRole("img", { name: "麦克风实时音量" });
+    // 窗口不足时以静默槽位补齐，波形槽位恒定并铺满输入区
+    expect(wave.children).toHaveLength(INTERVIEW_INPUT_LEVEL_WINDOW);
+    const bars = [...wave.children] as HTMLElement[];
+    expect(bars.at(0)?.style.height).toBe("0%");
+    expect(bars.at(-1)?.style.height).toBe("20%");
     expect(screen.getByText("语音转成的用户消息").closest("article")).toHaveClass(
       "chat-message--user",
     );

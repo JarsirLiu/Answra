@@ -5,6 +5,7 @@ export type {
   InterviewCapturePort,
   InterviewCaptureState,
 } from "./app/interviewCapture";
+export { INTERVIEW_INPUT_LEVEL_WINDOW } from "./app/interviewCapture";
 export { ReplyBarWindowApp } from "./app/ReplyBarWindowApp";
 export { RangeSlider } from "./components/controls/RangeSlider";
 export type { SurfaceButtonProps, SurfaceButtonVariant } from "./components/controls/SurfaceButton";

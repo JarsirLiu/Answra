@@ -1,5 +1,11 @@
 export type InterviewCapturePhase = "idle" | "starting" | "listening" | "stopping" | "error";
 
+/**
+ * 电平窗口槽位数：适配器按它保留最近样本，波形按同样槽位铺满输入区；
+ * 显示侧不足时以静默槽位补齐，两侧共用同一常量，不允许各自维护数量。
+ */
+export const INTERVIEW_INPUT_LEVEL_WINDOW = 48;
+
 export interface InterviewCaptureState {
   phase: InterviewCapturePhase;
   message?: string;

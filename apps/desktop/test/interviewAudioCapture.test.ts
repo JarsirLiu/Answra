@@ -1,6 +1,10 @@
 import { ActiveInterviewConversationId } from "@answra/shared";
+import { INTERVIEW_INPUT_LEVEL_WINDOW } from "@answra/ui";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { InterviewAudioCapture } from "../src/renderer/interviewAudioCapture";
+import {
+  INTERVIEW_INPUT_LEVEL_SAMPLE_MS,
+  InterviewAudioCapture,
+} from "../src/renderer/interviewAudioCapture";
 
 class FakeAudioContext {
   state = "running";
@@ -103,6 +107,12 @@ describe("InterviewAudioCapture", () => {
     expect(FakeAudioWorkletNode.all).toHaveLength(1);
     await vi.advanceTimersByTimeAsync(40);
     expect(capture.getState().inputLevels?.at(-1)).toBeGreaterThan(0);
+
+    // 电平窗口滚动到上限后丢弃最旧样本，保持与 INTERVIEW_INPUT_LEVEL_WINDOW 一致
+    await vi.advanceTimersByTimeAsync(
+      INTERVIEW_INPUT_LEVEL_SAMPLE_MS * INTERVIEW_INPUT_LEVEL_WINDOW,
+    );
+    expect(capture.getState().inputLevels).toHaveLength(INTERVIEW_INPUT_LEVEL_WINDOW);
 
     FakeAudioWorkletNode.all[0]?.port.onmessage?.({
       data: {
