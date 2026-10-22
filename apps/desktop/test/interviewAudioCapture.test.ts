@@ -103,7 +103,10 @@ describe("InterviewAudioCapture", () => {
 
     await capture.start();
     expect(bridge.startInterview).toHaveBeenCalledWith(ActiveInterviewConversationId);
-    expect(getUserMedia).toHaveBeenCalledWith({ audio: true, video: false });
+    expect(getUserMedia).toHaveBeenCalledWith({
+      audio: { autoGainControl: true, echoCancellation: true, noiseSuppression: true },
+      video: false,
+    });
     expect(FakeAudioWorkletNode.all).toHaveLength(1);
     await vi.advanceTimersByTimeAsync(40);
     expect(capture.getState().inputLevels?.at(-1)).toBeGreaterThan(0);

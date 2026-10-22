@@ -104,7 +104,13 @@ export class InterviewAudioCapture implements InterviewCapturePort {
       run.context = new AudioContext({ sampleRate: 16_000 });
       run.capturePromises.set(
         "candidate",
-        navigator.mediaDevices.getUserMedia({ audio: true, video: false }),
+        // Chromium 对 audio:true 默认即启用 AEC/NS/AGC；这里显式钉死同一组值，
+        // 防止设备或版本默认值漂移，也让采集意图可审计。注意 NS 的目标是
+        // 平稳噪声，不覆盖远处人声——后者属通道归属与轮次判定的职责。
+        navigator.mediaDevices.getUserMedia({
+          audio: { autoGainControl: true, echoCancellation: true, noiseSuppression: true },
+          video: false,
+        }),
       );
     } catch (error) {
       await this.finishFailedStart(run, error);
