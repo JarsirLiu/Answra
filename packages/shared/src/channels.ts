@@ -188,6 +188,8 @@ export interface AuthAccountInfo {
  * 只表达用户可见的用量进度，不含金额或服务端内部配额。
  */
 export interface AuthQuotaInfo {
+  /** Active subscription plan name, if one exists. */
+  planName?: string | null;
   /** 当前计费周期已用额度百分比（0-100）；服务端未提供为 null。 */
   usedPercent: number | null;
   /** 套餐到期时间（RFC3339）；无到期时间或无有效套餐为 null。 */

@@ -672,8 +672,9 @@ export function readQuota(body: unknown): AuthQuotaInfo | null {
       ? entry.days_remaining
       : null;
   // 三个字段都无法识别时不把空壳当成「有额度」，否则界面会误以为额度数据可用。
-  if (usedPercent === null && expiresAt === null && daysRemaining === null) return null;
-  return { usedPercent, expiresAt, daysRemaining };
+  const planName = typeof entry.plan_name === "string" && entry.plan_name ? entry.plan_name : null;
+  if (usedPercent === null && expiresAt === null && daysRemaining === null && planName === null) return null;
+  return { planName, usedPercent, expiresAt, daysRemaining };
 }
 
 export function readAnnouncements(body: unknown): DesktopAnnouncement[] {

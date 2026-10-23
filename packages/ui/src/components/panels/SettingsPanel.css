@@ -77,6 +77,14 @@
   font-size: var(--font-xs);
   overflow-wrap: anywhere;
 }
+.setting-membership {
+  margin-top: 6px;
+}
+.setting-membership-plan {
+  color: var(--ink);
+  font-size: var(--font-xs);
+  font-weight: var(--label-weight);
+}
 /* 本月额度：标题与百分比同排，下面一条细进度轨 */
 .setting-quota {
   display: grid;

@@ -232,7 +232,7 @@ describe("AuthService.handleCallbackUrl", () => {
       signedIn: true,
       plan: "pro",
       account: { email: "admin@answra.local", username: "admin" },
-      quota: { usedPercent: 37.5, expiresAt: "2026-12-01T00:00:00Z", daysRemaining: 42 },
+      quota: { planName: "Pro", usedPercent: 37.5, expiresAt: "2026-12-01T00:00:00Z", daysRemaining: 42 },
       capabilities: ["text.chat", "voice.interview"],
       cloudBaseUrl: "https://api.test",
     });
@@ -252,7 +252,7 @@ describe("AuthService.handleCallbackUrl", () => {
       expiresAt: TEST_NOW + 3600_000 - 60_000,
       plan: "pro",
       account: { email: "admin@answra.local", username: "admin" },
-      quota: { usedPercent: 37.5, expiresAt: "2026-12-01T00:00:00Z", daysRemaining: 42 },
+      quota: { planName: "Pro", usedPercent: 37.5, expiresAt: "2026-12-01T00:00:00Z", daysRemaining: 42 },
       capabilities: ["text.chat", "voice.interview"],
       // 只有形状完整的端点声明会被保留：客户端据此取调用路径，残缺项直接丢弃。
       endpoints: [
@@ -782,9 +782,10 @@ describe("readQuota", () => {
           monthly: { percentage: 137.4 },
         },
       ]),
-    ).toEqual({ usedPercent: 100, expiresAt: "2026-12-01T00:00:00Z", daysRemaining: 42 });
+    ).toEqual({ planName: null, usedPercent: 100, expiresAt: "2026-12-01T00:00:00Z", daysRemaining: 42 });
     expect(readQuota([{ monthly: { percentage: -8 } }])).toEqual({
       usedPercent: 0,
+      planName: null,
       expiresAt: null,
       daysRemaining: null,
     });
@@ -792,15 +793,15 @@ describe("readQuota", () => {
 
   it("keeps expiry fields even when the plan has no monthly meter", () => {
     expect(
-      readQuota([{ expires_at: "2026-12-01T00:00:00Z", days_remaining: 42, monthly: null }]),
-    ).toEqual({ usedPercent: null, expiresAt: "2026-12-01T00:00:00Z", daysRemaining: 42 });
+      readQuota([{ plan_name: "标准版", expires_at: "2026-12-01T00:00:00Z", days_remaining: 42, monthly: null }]),
+    ).toEqual({ planName: "标准版", usedPercent: null, expiresAt: "2026-12-01T00:00:00Z", daysRemaining: 42 });
   });
 
   it("returns null for empty or unrecognised payloads", () => {
     expect(readQuota(undefined)).toBeNull();
     expect(readQuota({})).toBeNull();
     expect(readQuota([])).toBeNull();
-    expect(readQuota([{ plan_name: "Pro" }])).toBeNull();
+    expect(readQuota([{ plan_name: "标准版" }])).toEqual({ planName: "标准版", usedPercent: null, expiresAt: null, daysRemaining: null });
   });
 });
 

@@ -50,7 +50,7 @@ const PLAN_LABELS: Record<string, string> = { free: "免费档", pro: "会员" }
 
 function accountTitle(status: AuthStatus | null): string {
   if (!status?.signedIn) return "未登录";
-  if (!status.plan) return "已登录";
+  if (!status.plan || status.plan === "free") return "已登录";
   return PLAN_LABELS[status.plan] ?? status.plan;
 }
 
@@ -230,6 +230,7 @@ export function SettingsPanel({
   const quota = authStatus?.quota ?? null;
   const quotaPercent = quota?.usedPercent ?? null;
   const quotaDays = quota?.daysRemaining ?? null;
+  const planName = quota?.planName ?? null;
   const hasQuota = quotaPercent !== null || quotaDays !== null;
 
   return (
@@ -271,30 +272,35 @@ export function SettingsPanel({
               )}
             </div>
             {identity && <p className="setting-account-identity">{identity}</p>}
-            {/* 额度只看服务端进度数据：`capabilities` 是接口面，不代表权益，不参与渲染。 */}
-            {authStatus?.signedIn && (
-              <div className="setting-quota">
-                <span className="setting-quota-head">
-                  <span>本月额度</span>
-                  <span className="setting-quota-value">
-                    {!hasQuota
-                      ? "未开通套餐"
-                      : `${quotaPercent !== null ? `已用 ${Math.round(quotaPercent)}%` : "套餐有效"}${
-                          quotaDays !== null ? ` · 剩余 ${quotaDays} 天` : ""
-                        }`}
-                  </span>
-                </span>
-                {quotaPercent !== null && (
-                  <span
-                    aria-label="本月额度用量"
-                    aria-valuemax={100}
-                    aria-valuemin={0}
-                    aria-valuenow={Math.round(quotaPercent)}
-                    className="setting-quota-track"
-                    role="progressbar"
-                  >
-                    <span className="setting-quota-fill" style={{ width: `${quotaPercent}%` }} />
-                  </span>
+            {/* Subscription progress comes from the server; capability availability is not entitlement. */}
+            {authStatus?.signedIn && planName && (
+              <div className="setting-membership">
+                <div className="setting-row setting-row--static">
+                  <span>套餐</span>
+                  <strong className="setting-membership-plan">{planName}</strong>
+                </div>
+                {hasQuota && (
+                  <div className="setting-quota">
+                    <span className="setting-quota-head">
+                      <span>本月额度</span>
+                      <span className="setting-quota-value">
+                        {quotaPercent !== null ? `已用 ${Math.round(quotaPercent)}%` : "套餐有效"}
+                        {quotaDays !== null ? ` · 剩余 ${quotaDays} 天` : ""}
+                      </span>
+                    </span>
+                    {quotaPercent !== null && (
+                      <span
+                        aria-label="本月额度用量"
+                        aria-valuemax={100}
+                        aria-valuemin={0}
+                        aria-valuenow={Math.round(quotaPercent)}
+                        className="setting-quota-track"
+                        role="progressbar"
+                      >
+                        <span className="setting-quota-fill" style={{ width: `${quotaPercent}%` }} />
+                      </span>
+                    )}
+                  </div>
                 )}
               </div>
             )}
