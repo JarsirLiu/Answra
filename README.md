@@ -15,7 +15,7 @@
 
 ## 环境要求
 
-- Node.js 22.12 或更新版本
+- Node.js 22.13 或更新版本（pnpm 11.9 的最低要求）
 - pnpm 11.9.0，建议通过 Corepack 管理
 - Windows 可运行原生 Electron 桌面窗口；其他平台可通过 `pnpm dev:web` 预览 renderer
 
