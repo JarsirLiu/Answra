@@ -42,6 +42,12 @@ export type OverlayMode = "closed" | "chat" | "interview" | "notes" | "settings"
 export interface DesktopBridge {
   /** 应用内输入法；隐身模式下未能启用时，文本输入保持阻断。 */
   imeAvailable?: boolean;
+  /**
+   * 面试对话功能是否可用。安装版尚未内置本地 ASR 模型且面试流程未开发完，
+   * 主进程按打包态下发 false，UI 把面试模式渲染成「暂不支持」入口；开发态为 true。
+   * 浏览器预览/测试环境可未实现，调用方需按缺省可用处理。
+   */
+  interviewAvailable?: boolean;
   imeDiagnostic?: (diagnostic: ImeRendererDiagnostic) => void;
   /** Authoritative IME session API: the only way the renderer mutates the engine session. */
   imeSessionCommand?: (command: ImeSessionCommand) => Promise<ImeSessionCommandResult>;

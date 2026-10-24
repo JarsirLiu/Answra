@@ -65,6 +65,39 @@ export const MODES: readonly ModeDefinition[] = [
   },
 ];
 
+/** 各功能的运行时可用性；未给出的键视为可用。 */
+export interface ModeAvailability {
+  /** 安装版未内置面试能力（本地 ASR 模型 + 面试流程未开发完）时为 false。 */
+  interview?: boolean;
+}
+
+/**
+ * 按可用性改写模式动作：不可用的功能替换成「暂不支持」禁用入口，
+ * 与会议模式「即将推出」同一范式；入口保留，避免用户找不到功能去向。
+ */
+export function applyModeAvailability(
+  modes: readonly ModeDefinition[],
+  availability: ModeAvailability,
+): readonly ModeDefinition[] {
+  return modes.map((mode) => {
+    if (mode.id === "interview" && availability.interview === false) {
+      return {
+        ...mode,
+        actions: [
+          {
+            id: "capture",
+            label: "面试助手（暂不支持）",
+            icon: AudioLines,
+            disabled: true,
+            hint: "面试对话助手尚未开放，敬请期待",
+          },
+        ],
+      } satisfies ModeDefinition;
+    }
+    return mode;
+  });
+}
+
 export const WELCOME_MESSAGE = "在对话模式中开始交流，或切换到答题模式发送题目截图。";
 
 export const NOTE_STORAGE_KEY = "answra-note";

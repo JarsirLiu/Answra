@@ -78,6 +78,8 @@ export function createMainWindowController(host: MainWindowControllerHost) {
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
+        // 沙箱 preload 读不到 app.isPackaged，经 argv 下发打包态（preload 据此设置 interviewAvailable）。
+        additionalArguments: [`--answra-packaged=${app.isPackaged}`],
       },
     });
     windowRef = created;

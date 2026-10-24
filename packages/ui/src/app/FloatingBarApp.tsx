@@ -20,7 +20,7 @@ import { useFitContent } from "../hooks/useFitContent";
 import { useMeetingStealth } from "../hooks/useMeetingStealth";
 import { useStealthInputGuard } from "../hooks/useStealthInputGuard";
 import { useSurfaceWidth } from "../hooks/useSurfaceWidth";
-import { MODES, type Mode, type ModeAction } from "../model";
+import { applyModeAvailability, MODES, type Mode, type ModeAction } from "../model";
 import type { InterviewCapturePort, InterviewCaptureState } from "./interviewCapture";
 import { useAppearanceController } from "./useAppearanceController";
 import { useGeneralChat, useScreenshotAnswer } from "./useConversationChat";
@@ -58,6 +58,10 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
   const appearance = useAppearanceController(platform);
   const stealthSetting = useMeetingStealth(platform);
   useStealthInputGuard(stealthSetting.enabled);
+  // 安装版暂不带面试能力（见 DesktopBridge.interviewAvailable）：入口降级为「暂不支持」。
+  const modes = applyModeAvailability(MODES, {
+    interview: platform?.interviewAvailable !== false,
+  });
   const conversation = useGeneralChat(platform, ActiveChatConversationId);
   const answer = useScreenshotAnswer(platform, ActiveExamConversationId);
   const [chatFailure, setChatFailure] = useState<SendFailure>();
@@ -317,7 +321,7 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
       <FloatingBar
         modeMenuOpen={surfaces.layer === "mode-menu"}
         mode={mode}
-        modes={MODES}
+        modes={modes}
         onClose={() => platform?.close()}
         onModeAction={handleModeAction}
         onModeChange={handleModeChange}

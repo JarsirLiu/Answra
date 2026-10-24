@@ -41,6 +41,8 @@ import { contextBridge, ipcRenderer } from "electron";
 const bridge: DesktopBridge = {
   // Set true only when the packaged librime bridge has been installed.
   imeAvailable: true,
+  // 面试对话尚未开发完且安装版不带本地 ASR 模型：打包态置 false，UI 渲染「暂不支持」入口。
+  interviewAvailable: !process.argv.includes("--answra-packaged=true"),
   imeDiagnostic: (diagnostic: ImeRendererDiagnostic) => {
     ipcRenderer.send(ImeChannels.Diagnostic, diagnostic);
   },
