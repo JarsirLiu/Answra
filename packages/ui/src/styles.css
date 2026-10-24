@@ -25,4 +25,5 @@
 @import "./components/panels/NotesPanel.css";
 @import "./components/panels/SourcesPanel.css";
 @import "./components/panels/SettingsPanel.css";
+@import "./components/panels/AccountPanel.css";
 @import "./components/controls/RangeSlider.css";

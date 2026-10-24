@@ -186,19 +186,28 @@ describe("AuthService.handleCallbackUrl", () => {
           message: "ok",
           data: { id: 1, email: "admin@answra.local", username: "admin" },
         });
-      if (call.url.endsWith(AUTH_PATHS.progress))
+      if (call.url.endsWith(AUTH_PATHS.quota))
         return jsonResponse({
           code: 0,
           message: "ok",
-          data: [
-            {
-              subscription_id: 11,
-              plan_name: "Pro",
-              expires_at: "2026-12-01T00:00:00Z",
-              days_remaining: 42,
-              monthly: { percentage: 37.5 },
-            },
-          ],
+          data: {
+            kind: "subscription",
+            plan_name: "Pro",
+            expires_at: "2026-12-01T00:00:00Z",
+            days_remaining: 42,
+            available_credits: 50,
+            welfare_credits: 0,
+            account_credits: 0,
+            periods: [
+              {
+                name: "monthly",
+                used_credits: 30,
+                total_credits: 80,
+                remaining_credits: 50,
+                resets_at: "2026-12-01T00:00:00Z",
+              },
+            ],
+          },
         });
       if (call.url.endsWith(AUTH_PATHS.capabilities)) {
         return jsonResponse({
@@ -232,7 +241,19 @@ describe("AuthService.handleCallbackUrl", () => {
       signedIn: true,
       plan: "pro",
       account: { email: "admin@answra.local", username: "admin" },
-      quota: { planName: "Pro", usedPercent: 37.5, expiresAt: "2026-12-01T00:00:00Z", daysRemaining: 42 },
+      quota: {
+        kind: "subscription",
+        planName: "Pro",
+        availableCredits: 50,
+        usedCredits: 30,
+        totalCredits: 80,
+        welfareCredits: 0,
+        accountCredits: 0,
+        welfareExpiresAt: null,
+        usedPercent: 37.5,
+        expiresAt: "2026-12-01T00:00:00Z",
+        daysRemaining: 42,
+      },
       capabilities: ["text.chat", "voice.interview"],
       cloudBaseUrl: "https://api.test",
     });
@@ -252,7 +273,19 @@ describe("AuthService.handleCallbackUrl", () => {
       expiresAt: TEST_NOW + 3600_000 - 60_000,
       plan: "pro",
       account: { email: "admin@answra.local", username: "admin" },
-      quota: { planName: "Pro", usedPercent: 37.5, expiresAt: "2026-12-01T00:00:00Z", daysRemaining: 42 },
+      quota: {
+        kind: "subscription",
+        planName: "Pro",
+        availableCredits: 50,
+        usedCredits: 30,
+        totalCredits: 80,
+        welfareCredits: 0,
+        accountCredits: 0,
+        welfareExpiresAt: null,
+        usedPercent: 37.5,
+        expiresAt: "2026-12-01T00:00:00Z",
+        daysRemaining: 42,
+      },
       capabilities: ["text.chat", "voice.interview"],
       // 只有形状完整的端点声明会被保留：客户端据此取调用路径，残缺项直接丢弃。
       endpoints: [
@@ -269,7 +302,7 @@ describe("AuthService.handleCallbackUrl", () => {
       authorization: "Bearer access-1",
     });
     expect(harness.calls[3]).toMatchObject({
-      url: `https://api.test${AUTH_PATHS.progress}`,
+      url: `https://api.test${AUTH_PATHS.quota}`,
       authorization: "Bearer access-1",
     });
   });
@@ -357,7 +390,7 @@ describe("AuthService.restore / refresh", () => {
       revoke: "/api/v1/auth/logout",
       profile: "/api/v1/auth/me",
       capabilities: "/api/v1/capabilities",
-      progress: "/api/v1/subscriptions/progress",
+      quota: "/api/v1/user/quota",
       announcements: "/api/v1/announcements",
     });
   });
@@ -411,7 +444,7 @@ describe("AuthService.restore / refresh", () => {
         authorization: "Bearer access-old",
       },
       {
-        url: `https://api.test${AUTH_PATHS.progress}`,
+        url: `https://api.test${AUTH_PATHS.quota}`,
         method: "GET",
         body: undefined,
         authorization: "Bearer access-old",
@@ -457,7 +490,7 @@ describe("AuthService.restore / refresh", () => {
         authorization: "Bearer access-new",
       },
       {
-        url: `https://api.test${AUTH_PATHS.progress}`,
+        url: `https://api.test${AUTH_PATHS.quota}`,
         method: "GET",
         body: undefined,
         authorization: "Bearer access-new",
@@ -771,37 +804,64 @@ describe("readAccount", () => {
 });
 
 describe("readQuota", () => {
-  it("reads the first subscription with a monthly meter and clamps the percentage", () => {
+  it("reads subscription credits from the server summary", () => {
     expect(
-      readQuota([
-        { subscription_id: 1, days_remaining: 3 },
-        {
-          subscription_id: 2,
-          expires_at: "2026-12-01T00:00:00Z",
-          days_remaining: 42,
-          monthly: { percentage: 137.4 },
-        },
-      ]),
-    ).toEqual({ planName: null, usedPercent: 100, expiresAt: "2026-12-01T00:00:00Z", daysRemaining: 42 });
-    expect(readQuota([{ monthly: { percentage: -8 } }])).toEqual({
-      usedPercent: 0,
-      planName: null,
-      expiresAt: null,
-      daysRemaining: null,
+      readQuota({
+        kind: "subscription",
+        plan_name: "标准版",
+        available_credits: 50,
+        welfare_credits: 0,
+        account_credits: 0,
+        expires_at: "2026-12-01T00:00:00Z",
+        days_remaining: 42,
+        periods: [{ name: "monthly", used_credits: 30, total_credits: 80, remaining_credits: 50 }],
+      }),
+    ).toEqual({
+      kind: "subscription",
+      planName: "标准版",
+      availableCredits: 50,
+      usedCredits: 30,
+      totalCredits: 80,
+      welfareCredits: 0,
+      accountCredits: 0,
+      welfareExpiresAt: null,
+      usedPercent: 37.5,
+      expiresAt: "2026-12-01T00:00:00Z",
+      daysRemaining: 42,
     });
   });
 
-  it("keeps expiry fields even when the plan has no monthly meter", () => {
+  it("reads free quota and its welfare source without a subscription meter", () => {
     expect(
-      readQuota([{ plan_name: "标准版", expires_at: "2026-12-01T00:00:00Z", days_remaining: 42, monthly: null }]),
-    ).toEqual({ planName: "标准版", usedPercent: null, expiresAt: "2026-12-01T00:00:00Z", daysRemaining: 42 });
+      readQuota({
+        kind: "default",
+        plan_name: "免费版",
+        available_credits: 20,
+        welfare_credits: 12,
+        account_credits: 8,
+        welfare_expires_at: "2026-11-01T00:00:00Z",
+        periods: [],
+      }),
+    ).toEqual({
+      kind: "default",
+      planName: "免费版",
+      availableCredits: 20,
+      usedCredits: null,
+      totalCredits: null,
+      welfareCredits: 12,
+      accountCredits: 8,
+      welfareExpiresAt: "2026-11-01T00:00:00Z",
+      usedPercent: null,
+      expiresAt: null,
+      daysRemaining: null,
+    });
   });
 
   it("returns null for empty or unrecognised payloads", () => {
     expect(readQuota(undefined)).toBeNull();
     expect(readQuota({})).toBeNull();
     expect(readQuota([])).toBeNull();
-    expect(readQuota([{ plan_name: "标准版" }])).toEqual({ planName: "标准版", usedPercent: null, expiresAt: null, daysRemaining: null });
+    expect(readQuota({ plan_name: "标准版" })).toBeNull();
   });
 });
 

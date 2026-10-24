@@ -1,0 +1,199 @@
+/* ── 账户页：分组标题 + 圆角分组卡 ───────────────────────────────
+   版式语言：分组标题放在卡片外（弱色小字），信息行装进无填充的圆角
+   描边卡（10px 圆角），发丝线只出现在卡内行与行之间；动作行是最后
+   一张卡片收尾。面板高度随内容收紧（见 PanelShell.css 的
+   content-panel--account）。
+
+   文字层级：全局 --ink-soft/--muted 与 --ink 同色，卡片内需要更弱的次级
+   文字才拉得开层次，故本页用 color-mix 从 --ink 派生两级（与 --chat-meta 同法）。 */
+.account-page {
+  --account-ink-soft: color-mix(in srgb, var(--ink) 75%, transparent);
+  --account-ink-faint: color-mix(in srgb, var(--ink) 55%, transparent);
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.account-page::-webkit-scrollbar {
+  display: none;
+}
+
+/* 卡片：无填充的描边分组卡——大面积卡面的灰底、纸面、半档白底都被实机
+   否决，层次只靠 1px 轮廓与行间发丝线。描边用 --edge-line 而非结构线：
+   变色龙只把结构线归零、控件描边保留，无填充后分组轮廓必须活下来 */
+.account-card {
+  border-radius: 10px;
+  border: 1px solid var(--edge-line);
+}
+
+/* 分组：标题行在卡外，标题在左、补充信息在右 */
+.account-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.account-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 4px;
+}
+.account-section-title {
+  color: var(--account-ink-faint);
+  font-size: var(--font-xs);
+  font-weight: var(--label-weight);
+}
+.account-section-note {
+  color: var(--account-ink-faint);
+  font-size: var(--font-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 资料卡：头像圆标 + 身份主行 + 行尾档位徽章 ─────────────────── */
+.account-profile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+}
+/* 头像：卡面上一枚更深的圆标，靠色差立起来 */
+.account-avatar {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  color: var(--ink);
+  background: var(--field-strong);
+}
+.account-profile-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+/* 身份主行（邮箱/用户名）：超出截断，档位徽章贴卡片行尾，
+   邮箱再长也不把徽章顶走 */
+.account-identity {
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink);
+  font-size: var(--font-md);
+  font-weight: var(--label-weight);
+}
+.account-profile-text .badge-control {
+  flex: none;
+  margin-left: auto;
+}
+
+/* ── 额度卡：可用积分主行、用量轨、明细行 ───────────────────── */
+.account-quota-main {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px 8px;
+}
+.account-quota-label {
+  color: var(--account-ink-soft);
+  font-size: var(--font-sm);
+  font-weight: var(--label-weight);
+}
+/* 可用积分：与身份主行同档字号，不放大数字（历史约束），层级靠位置与色阶 */
+.account-quota-amount {
+  color: var(--ink);
+  font-size: var(--font-md);
+  font-weight: var(--label-weight);
+  font-variant-numeric: tabular-nums;
+}
+/* 用量轨：嵌在卡内，深一档的槽 + 品牌色填充，不加描边 */
+.account-quota-track {
+  display: block;
+  height: 6px;
+  margin: 0 12px 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--field-strong);
+}
+.account-quota-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--mint);
+  transition: width 160ms ease;
+}
+.account-quota-rows {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* 明细行：标签在左、数值在右，行间发丝线；数字列对齐 */
+.account-quota-row {
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 12px;
+  border-top: 1px solid var(--glass-line-soft);
+  font-size: var(--font-sm);
+}
+.account-quota-row dt {
+  color: var(--account-ink-soft);
+}
+.account-quota-row dd {
+  margin: 0;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 动作行 ───────────────────────────────────────────────────────
+   退出登录是破坏性操作：独立卡片里居中警示色一行 + hover 淡警示底
+   （iOS 设置页同款语义）；登录保持品牌实底薄荷（主操作约束见既有 Note）。 */
+.account-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.account-notice {
+  margin: 0;
+  color: var(--mint-text);
+  font-size: var(--font-xs);
+}
+.account-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--font-xs);
+}
+/* 动作卡：按钮铺满卡片，hover 淡警示底由卡片裁出圆角 */
+.account-actions .account-card {
+  overflow: hidden;
+}
+.account-actions .account-signout {
+  width: 100%;
+  height: 36px;
+  justify-content: center;
+  gap: 7px;
+  border-radius: inherit;
+  color: var(--danger);
+  font-size: var(--font-sm);
+  font-weight: var(--label-weight);
+}
+.account-actions .account-signout:hover {
+  color: var(--danger);
+  background: var(--danger-wash);
+}
+.account-actions .account-signin {
+  width: 100%;
+  height: 36px;
+  font-size: var(--font-sm);
+}

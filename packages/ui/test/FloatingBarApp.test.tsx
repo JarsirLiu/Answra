@@ -1031,7 +1031,7 @@ describe("three-segment floating navigation", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("无法打开授权页");
   });
 
-  it("renders the plan and capability count pushed by the main process", async () => {
+  it("stays signed-in without quota data and returns to signed-out after a logout push", async () => {
     let listener: ((status: AuthStatus) => void) | undefined;
     const bridge = {
       close: vi.fn(),
@@ -1054,10 +1054,11 @@ describe("three-segment floating navigation", () => {
     fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
     fireEvent.click(screen.getByRole("tab", { name: "账户" }));
 
-    expect(await screen.findByText("会员")).toBeInTheDocument();
+    expect(await screen.findByText("已登录")).toBeInTheDocument();
     // 能力目录是「已实现的接口面」，不渲染成「已解锁 N 项能力」，避免把目录当额度。
     expect(screen.queryByText(/已解锁/)).not.toBeInTheDocument();
-    // Free users retain their account identity without an empty subscription placeholder.
+    // 档位徽章只由服务端额度摘要（quota）承载；旧快照无额度数据时不猜档位语义。
+    expect(screen.queryByText("会员")).not.toBeInTheDocument();
     expect(screen.queryByText("本月额度")).not.toBeInTheDocument();
     expect(screen.queryByText("套餐")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "退出登录" })).toBeInTheDocument();
@@ -1070,7 +1071,7 @@ describe("three-segment floating navigation", () => {
     expect(screen.getByRole("button", { name: "登录" })).toBeInTheDocument();
   });
 
-  it("shows the signed-in account identity and monthly quota", async () => {
+  it("shows the signed-in account identity and available subscription credits", async () => {
     const bridge = {
       close: vi.fn(),
       fitContent: vi.fn(),
@@ -1078,7 +1079,16 @@ describe("three-segment floating navigation", () => {
         signedIn: true,
         plan: "pro",
         account: { email: "admin@answra.local", username: "admin" },
-        quota: { planName: "标准版", usedPercent: 37.5, expiresAt: "2026-12-01T00:00:00Z", daysRemaining: 42 },
+        quota: {
+          kind: "subscription",
+          planName: "标准版",
+          availableCredits: 50,
+          usedCredits: 30,
+          totalCredits: 80,
+          usedPercent: 37.5,
+          expiresAt: "2026-12-01T00:00:00Z",
+          daysRemaining: 42,
+        },
         capabilities: [],
         cloudBaseUrl: "https://api.answra.com",
       }),
@@ -1091,12 +1101,57 @@ describe("three-segment floating navigation", () => {
 
     expect(await screen.findByText("admin@answra.local")).toBeInTheDocument();
     expect(screen.getByText("标准版")).toBeInTheDocument();
-    expect(screen.getByText("套餐")).toBeInTheDocument();
-    expect(screen.getByText("已用 38% · 剩余 42 天")).toBeInTheDocument();
+    // 档位由徽章表达，「套餐」行不再重复出现。
+    expect(screen.queryByText("套餐")).not.toBeInTheDocument();
+    expect(screen.getByText("50 积分")).toBeInTheDocument();
+    // 可用积分是额度卡主行：标签在左、数值在右。
+    expect(screen.getByText("可用积分")).toBeInTheDocument();
+    expect(screen.getByText("剩余 42 天")).toBeInTheDocument();
+    expect(screen.getByText("本周期已用")).toBeInTheDocument();
+    expect(screen.getByText("30 / 80 积分")).toBeInTheDocument();
     const meter = screen.getByRole("progressbar", { name: "本月额度用量" });
     expect(meter).toHaveAttribute("aria-valuenow", "38");
     // 有额度数据时不出现「未开通套餐」占位。
     expect(screen.queryByText("未开通套餐")).not.toBeInTheDocument();
+  });
+
+  it("shows free users' available credits and welfare expiry without exposing balance", async () => {
+    const bridge = {
+      close: vi.fn(),
+      fitContent: vi.fn(),
+      getAuthStatus: vi.fn().mockResolvedValue({
+        signedIn: true,
+        plan: "default",
+        account: { email: "free@answra.local", username: "free" },
+        quota: {
+          kind: "default",
+          planName: "免费版",
+          availableCredits: 18,
+          welfareCredits: 10,
+          accountCredits: 8,
+          welfareExpiresAt: "2026-11-01T00:00:00Z",
+          usedPercent: null,
+          expiresAt: null,
+          daysRemaining: null,
+        },
+        capabilities: ["text.chat"],
+        cloudBaseUrl: "https://api.answra.com",
+      }),
+      onAuthStatus: vi.fn(() => () => undefined),
+      logoutAccount: vi.fn(),
+    };
+    render(<FloatingBarApp bridge={bridge} />);
+    fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
+    fireEvent.click(screen.getByRole("tab", { name: "账户" }));
+
+    expect(await screen.findByText("免费版")).toBeInTheDocument();
+    expect(screen.getByText("18 积分")).toBeInTheDocument();
+    expect(screen.getByText("福利积分")).toBeInTheDocument();
+    expect(screen.getByText("10")).toBeInTheDocument();
+    expect(screen.getByText("账户额度")).toBeInTheDocument();
+    expect(screen.getByText("8")).toBeInTheDocument();
+    expect(screen.getByText("福利到期")).toBeInTheDocument();
+    expect(screen.queryByText(/¥|余额/)).not.toBeInTheDocument();
   });
 
   it("signs out from settings and adopts the returned status", async () => {

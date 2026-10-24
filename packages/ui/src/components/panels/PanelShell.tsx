@@ -13,7 +13,7 @@ export interface PanelTab {
 interface PanelShellProps {
   title: string;
   /** 面板变体，对应 PanelShell.css 的 content-panel--<variant> 尺寸分支。 */
-  variant: "chat" | "notes" | "settings" | "interview";
+  variant: "chat" | "notes" | "settings" | "account" | "interview";
   /** 头部右侧的上下文提示（如“截图已添加”）。 */
   context?: string;
   /** 附加到 section 的自定义类名（如回复条 layout 约束）。 */

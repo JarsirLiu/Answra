@@ -101,6 +101,13 @@ function parseQuota(value: unknown): AuthQuotaInfo | null {
   if (typeof value !== "object" || value === null) return null;
   const quota = value as Partial<AuthQuotaInfo>;
   return {
+    kind: quota.kind === "subscription" || quota.kind === "default" ? quota.kind : undefined,
+    availableCredits: typeof quota.availableCredits === "number" ? quota.availableCredits : null,
+    usedCredits: typeof quota.usedCredits === "number" ? quota.usedCredits : null,
+    totalCredits: typeof quota.totalCredits === "number" ? quota.totalCredits : null,
+    welfareCredits: typeof quota.welfareCredits === "number" ? quota.welfareCredits : null,
+    accountCredits: typeof quota.accountCredits === "number" ? quota.accountCredits : null,
+    welfareExpiresAt: typeof quota.welfareExpiresAt === "string" ? quota.welfareExpiresAt : null,
     usedPercent: typeof quota.usedPercent === "number" ? quota.usedPercent : null,
     expiresAt: typeof quota.expiresAt === "string" ? quota.expiresAt : null,
     daysRemaining: typeof quota.daysRemaining === "number" ? quota.daysRemaining : null,

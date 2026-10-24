@@ -184,12 +184,26 @@ export interface AuthAccountInfo {
 }
 
 /**
- * 套餐额度快照（来自站点 `GET /api/v1/subscriptions/progress`）。
- * 只表达用户可见的用量进度，不含金额或服务端内部配额。
+ * 用户可用额度快照（来自站点 `GET /api/v1/user/quota`）。
+ * 只包含积分与周期信息，不含余额金额或服务端内部计价。
  */
 export interface AuthQuotaInfo {
-  /** Active subscription plan name, if one exists. */
+  /** 服务端解析的权益名称：付费套餐名或免费版。 */
   planName?: string | null;
+  /** 额度形态，来自服务端 entitlement。 */
+  kind?: "subscription" | "default";
+  /** 当前可用积分；订阅模式取最严格周期剩余，免费模式为福利与账户积分之和。 */
+  availableCredits?: number | null;
+  /** 订阅当前周期的已用积分。 */
+  usedCredits?: number | null;
+  /** 订阅当前周期的总积分。 */
+  totalCredits?: number | null;
+  /** 无付费订阅时有效福利积分的剩余量。 */
+  welfareCredits?: number | null;
+  /** 无付费订阅时账户可用额折算的积分。 */
+  accountCredits?: number | null;
+  /** 最近一笔有效福利的到期时间。 */
+  welfareExpiresAt?: string | null;
   /** 当前计费周期已用额度百分比（0-100）；服务端未提供为 null。 */
   usedPercent: number | null;
   /** 套餐到期时间（RFC3339）；无到期时间或无有效套餐为 null。 */

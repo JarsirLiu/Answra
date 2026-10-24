@@ -43,7 +43,7 @@ export const AUTH_PATHS = {
   revoke: "/api/v1/auth/logout",
   profile: "/api/v1/auth/me",
   capabilities: "/api/v1/capabilities",
-  progress: "/api/v1/subscriptions/progress",
+  quota: "/api/v1/user/quota",
   announcements: "/api/v1/announcements",
 } as const;
 
@@ -457,7 +457,7 @@ export class AuthService {
   }
 
   private async fetchQuota(accessToken: string): Promise<AuthQuotaInfo | null> {
-    return readQuota(await this.request(AUTH_PATHS.progress, undefined, accessToken));
+    return readQuota(await this.request(AUTH_PATHS.quota, undefined, accessToken));
   }
 
   private async refreshDirectory(accessToken: string): Promise<AuthStatus> {
@@ -642,39 +642,67 @@ export function readAccount(body: unknown): AuthAccountInfo | null {
 }
 
 /**
- * 解析套餐额度进度（`GET /api/v1/subscriptions/progress` 的 data）。
- *
- * 服务端返回数组（每份有效订阅一项）；桌面端只展示第一份带月度额度的订阅。
- * 百分比按 0-100 夹取，缺失字段为 null——客户端不推导金额或配额。
+ * 解析网关的积分额度摘要；额度与周期状态由服务端计算，客户端不读取余额金额。
  */
 export function readQuota(body: unknown): AuthQuotaInfo | null {
-  if (!Array.isArray(body)) return null;
-  const entries = body.filter(
-    (entry): entry is Record<string, unknown> => typeof entry === "object" && entry !== null,
-  );
-  if (entries.length === 0) return null;
-  const monthlyOf = (entry: Record<string, unknown>): Record<string, unknown> | null =>
-    typeof entry.monthly === "object" && entry.monthly !== null
-      ? (entry.monthly as Record<string, unknown>)
+  if (typeof body !== "object" || body === null) return null;
+  const value = body as Record<string, unknown>;
+  const periods = Array.isArray(value.periods)
+    ? value.periods.filter(
+        (period): period is Record<string, unknown> =>
+          typeof period === "object" && period !== null,
+      )
+    : [];
+  const period = periods.find((item) => item.name === "monthly") ?? periods[0];
+  const usedCredits =
+    typeof period?.used_credits === "number" && Number.isFinite(period.used_credits)
+      ? period.used_credits
       : null;
-  const withMonthly = entries.find((item) => typeof monthlyOf(item)?.percentage === "number");
-  const entry = withMonthly ?? entries[0];
-  if (!entry) return null;
-  const monthly = monthlyOf(entry);
-  const rawPercent = monthly?.percentage;
+  const totalCredits =
+    typeof period?.total_credits === "number" && Number.isFinite(period.total_credits)
+      ? period.total_credits
+      : null;
   const usedPercent =
-    typeof rawPercent === "number" ? Math.min(100, Math.max(0, rawPercent)) : null;
-  const expiresAt = typeof entry.expires_at === "string" ? entry.expires_at : null;
-  const daysRemaining =
-    typeof entry.days_remaining === "number" &&
-    Number.isFinite(entry.days_remaining) &&
-    entry.days_remaining >= 0
-      ? entry.days_remaining
+    usedCredits !== null && totalCredits !== null && totalCredits > 0
+      ? Math.min(100, Math.max(0, (usedCredits / totalCredits) * 100))
       : null;
-  // 三个字段都无法识别时不把空壳当成「有额度」，否则界面会误以为额度数据可用。
-  const planName = typeof entry.plan_name === "string" && entry.plan_name ? entry.plan_name : null;
-  if (usedPercent === null && expiresAt === null && daysRemaining === null && planName === null) return null;
-  return { planName, usedPercent, expiresAt, daysRemaining };
+  const expiresAt = typeof value.expires_at === "string" ? value.expires_at : null;
+  const daysRemaining =
+    typeof value.days_remaining === "number" &&
+    Number.isFinite(value.days_remaining) &&
+    value.days_remaining >= 0
+      ? value.days_remaining
+      : null;
+  const kind = value.kind === "subscription" || value.kind === "default" ? value.kind : undefined;
+  const planName = typeof value.plan_name === "string" && value.plan_name ? value.plan_name : null;
+  const availableCredits =
+    typeof value.available_credits === "number" && Number.isFinite(value.available_credits)
+      ? Math.max(0, value.available_credits)
+      : null;
+  const welfareCredits =
+    typeof value.welfare_credits === "number" && Number.isFinite(value.welfare_credits)
+      ? Math.max(0, value.welfare_credits)
+      : null;
+  const accountCredits =
+    typeof value.account_credits === "number" && Number.isFinite(value.account_credits)
+      ? Math.max(0, value.account_credits)
+      : null;
+  const welfareExpiresAt =
+    typeof value.welfare_expires_at === "string" ? value.welfare_expires_at : null;
+  if (kind === undefined || availableCredits === null) return null;
+  return {
+    kind,
+    planName,
+    usedPercent,
+    usedCredits,
+    totalCredits,
+    availableCredits,
+    welfareCredits,
+    accountCredits,
+    welfareExpiresAt,
+    expiresAt,
+    daysRemaining,
+  };
 }
 
 export function readAnnouncements(body: unknown): DesktopAnnouncement[] {

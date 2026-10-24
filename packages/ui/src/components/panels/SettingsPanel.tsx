@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 import { RangeSlider } from "../controls/RangeSlider";
 import { SurfaceButton } from "../controls/SurfaceButton";
 import { Switch } from "../controls/Switch";
+import { AccountPanel } from "./AccountPanel";
 import { AnnouncementList } from "./AnnouncementList";
 import { PanelShell, type PanelTab } from "./PanelShell";
 import "./SettingsPanel.css";
@@ -44,21 +45,6 @@ interface SettingsPanelProps {
 
 const OPACITY_MIN = 0.5;
 const OPACITY_MAX = 1;
-
-/** 档位标识由服务端下发；已知档位给中文名，未知档位原样展示，不猜语义。 */
-const PLAN_LABELS: Record<string, string> = { free: "免费档", pro: "会员" };
-
-function accountTitle(status: AuthStatus | null): string {
-  if (!status?.signedIn) return "未登录";
-  if (!status.plan || status.plan === "free") return "已登录";
-  return PLAN_LABELS[status.plan] ?? status.plan;
-}
-
-/** 账号标识优先用邮箱，其次用户名；两者都缺失时不渲染。 */
-function accountIdentity(status: AuthStatus | null): string {
-  if (!status?.signedIn) return "";
-  return status.account?.email || status.account?.username || "";
-}
 
 /** 设置面板：面板头部即 账户/设置/公告 三个入口 Tab（右上角关闭钮）。
  *
@@ -226,13 +212,6 @@ export function SettingsPanel({
     { id: "announcements", label: "公告", badge: unreadAnnouncements },
   ];
 
-  const identity = accountIdentity(authStatus);
-  const quota = authStatus?.quota ?? null;
-  const quotaPercent = quota?.usedPercent ?? null;
-  const quotaDays = quota?.daysRemaining ?? null;
-  const planName = quota?.planName ?? null;
-  const hasQuota = quotaPercent !== null || quotaDays !== null;
-
   return (
     <PanelShell
       activeTab={tab}
@@ -240,82 +219,17 @@ export function SettingsPanel({
       onTabChange={(id) => setTab(id as SettingsTab)}
       tabs={tabs}
       title={TAB_TITLES[tab]}
-      variant="settings"
+      variant={tab === "account" ? "account" : "settings"}
     >
       {tab === "account" && getAuthStatus && (
-        <div className="settings-panel">
-          <section className="settings-group">
-            <div className="setting-row">
-              <span>
-                <strong>{accountTitle(authStatus)}</strong>
-              </span>
-              {authStatus?.signedIn ? (
-                <SurfaceButton
-                  className="setting-action"
-                  disabled={authBusy}
-                  onClick={() => void signOut()}
-                  title="退出登录"
-                  variant="quiet"
-                >
-                  退出登录
-                </SurfaceButton>
-              ) : (
-                <SurfaceButton
-                  className="setting-action"
-                  disabled={authBusy}
-                  onClick={() => void signIn()}
-                  title="登录"
-                  variant="primary"
-                >
-                  登录
-                </SurfaceButton>
-              )}
-            </div>
-            {identity && <p className="setting-account-identity">{identity}</p>}
-            {/* Subscription progress comes from the server; capability availability is not entitlement. */}
-            {authStatus?.signedIn && planName && (
-              <div className="setting-membership">
-                <div className="setting-row setting-row--static">
-                  <span>套餐</span>
-                  <strong className="setting-membership-plan">{planName}</strong>
-                </div>
-                {hasQuota && (
-                  <div className="setting-quota">
-                    <span className="setting-quota-head">
-                      <span>本月额度</span>
-                      <span className="setting-quota-value">
-                        {quotaPercent !== null ? `已用 ${Math.round(quotaPercent)}%` : "套餐有效"}
-                        {quotaDays !== null ? ` · 剩余 ${quotaDays} 天` : ""}
-                      </span>
-                    </span>
-                    {quotaPercent !== null && (
-                      <span
-                        aria-label="本月额度用量"
-                        aria-valuemax={100}
-                        aria-valuemin={0}
-                        aria-valuenow={Math.round(quotaPercent)}
-                        className="setting-quota-track"
-                        role="progressbar"
-                      >
-                        <span className="setting-quota-fill" style={{ width: `${quotaPercent}%` }} />
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-            {authNotice && (
-              <p className="setting-status" role="status">
-                {authNotice}
-              </p>
-            )}
-            {authError && (
-              <p className="setting-error" role="alert">
-                {authError}
-              </p>
-            )}
-          </section>
-        </div>
+        <AccountPanel
+          busy={authBusy}
+          error={authError}
+          notice={authNotice}
+          onSignIn={() => void signIn()}
+          onSignOut={() => void signOut()}
+          status={authStatus}
+        />
       )}
 
       {tab === "settings" && (

@@ -23,6 +23,18 @@
   width: min(480px, calc(100vw - 16px));
   height: min(560px, calc(100vh - var(--bar-h) - 24px));
 }
+/* 账户页只有资料卡 + 额度卡 + 动作行，面板高度随内容收紧，
+   不在 560px 高的面板里留半屏空白；窗口由 useFitContent 跟随内容伸缩。
+   禁止给这里挂 vh 基准的 max-height：fit-content 窗口的 100vh 就是窗口
+   高度，而窗口高度又由本页内容上报决定——上限随窗口收缩而收缩，把面板
+   越夹越瘪（切到账户页整块塌掉，复盘见 2026-10-24 bug-fix Note）。
+   其它变体不塌是因为基类 min-height: 400px 提供了循环地板；
+   这里靠去掉上限自洽，超高保护交给主进程的工作区钳制。 */
+.content-panel--account {
+  width: min(480px, calc(100vw - 16px));
+  height: auto;
+  min-height: 0;
+}
 .panel-header {
   min-height: 46px;
   display: flex;
