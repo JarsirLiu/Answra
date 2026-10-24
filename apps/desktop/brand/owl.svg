@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <title>Answra 猫头鹰图标</title>
+  <!-- Answra 品牌图标：几何猫头鹰。配色取自 packages/ui tokens（mint/mint-deep/paper）。 -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2FA171" />
+      <stop offset="1" stop-color="#18704A" />
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="228" fill="url(#bg)" />
+  <!-- 耳羽：大三角，画在身体之前，被头部压住底部 -->
+  <path d="M200 470 L296 64 L560 320 Z" fill="#FBFBFD" />
+  <path d="M824 470 L728 64 L464 320 Z" fill="#FBFBFD" />
+  <!-- 头身一体的圆胖轮廓，几乎撑满画布 -->
+  <path
+    d="M512 140 C 726 140 846 314 846 544 C 846 786 706 912 512 912 C 318 912 178 786 178 544 C 178 314 298 140 512 140 Z"
+    fill="#FBFBFD"
+  />
+  <!-- 面盘：占头部大半 -->
+  <ellipse cx="512" cy="548" rx="316" ry="306" fill="#EAF3EE" />
+  <!-- 眼睛：大而紧挨 -->
+  <circle cx="382" cy="516" r="140" fill="#FFFFFF" />
+  <circle cx="642" cy="516" r="140" fill="#FFFFFF" />
+  <circle cx="382" cy="516" r="64" fill="#17323F" />
+  <circle cx="642" cy="516" r="64" fill="#17323F" />
+  <circle cx="405" cy="492" r="20" fill="#FFFFFF" />
+  <circle cx="665" cy="492" r="20" fill="#FFFFFF" />
+  <!-- 喙：从两眼之间开始 -->
+  <path d="M512 600 L578 692 L512 784 L446 692 Z" fill="#18704A" />
+</svg>

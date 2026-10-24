@@ -22,6 +22,7 @@
     "docs:check": "pnpm notes:check",
     "verify": "pnpm lint && pnpm notes:hint && pnpm typecheck && pnpm test && pnpm architecture:check",
     "dist:win": "pnpm --filter @answra/desktop dist:win",
+    "release:win": "pnpm dist:win && node apps/desktop/scripts/upload-to-cos.mjs",
     "prepare": "husky"
   },
   "lint-staged": {

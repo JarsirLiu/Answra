@@ -16,11 +16,12 @@
     "typecheck": "tsc -p tsconfig.main.json && tsc -p tsconfig.preload.json && tsc -p tsconfig.renderer.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "dist:win": "pnpm build && electron-builder --win nsis"
+    "dist:win": "pnpm build && electron-builder --win nsis",
+    "icons": "node ./scripts/generate-icons.mjs"
   },
   "build": {
     "appId": "dev.answra.desktop",
-    "productName": "Exam Assistant",
+    "productName": "Answra",
     "asar": true,
     "asarUnpack": [
       "**/node_modules/sherpa-onnx-node/**",
@@ -50,19 +51,25 @@
         "filter": [
           "**/*"
         ]
-      },
-      {
-        "from": "resources/asr",
-        "to": "asr",
-        "filter": [
-          "**/*"
-        ]
       }
     ],
     "win": {
       "target": [
         "nsis"
       ]
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "build/icon.icns",
+      "category": "public.app-category.productivity",
+      "artifactName": "Answra-${arch}.${ext}"
+    },
+    "publish": {
+      "provider": "generic",
+      "url": "https://answra-1307496114.cos.ap-chengdu.myqcloud.com/download/latest/"
     },
     "protocols": [
       {
@@ -75,28 +82,33 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true
+      "createDesktopShortcut": true,
+      "artifactName": "Answra-Setup-${arch}.${ext}"
     }
   },
   "dependencies": {
     "@answra/shared": "workspace:*",
     "@answra/ui": "workspace:*",
+    "electron-updater": "^6.6.4",
     "koffi": "^3.3.3",
-    "sherpa-onnx-node": "1.13.8",
     "react": "^19.3.0",
-    "react-dom": "^19.3.0"
+    "react-dom": "^19.3.0",
+    "sherpa-onnx-node": "1.13.8"
   },
   "devDependencies": {
     "7zip-bin": "5.2.0",
     "@answra/agent": "workspace:*",
+    "@resvg/resvg-js": "^2.6.2",
     "@types/node": "^26.6.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
     "concurrently": "^10.0.6",
+    "cos-nodejs-sdk-v5": "^2.14.5",
     "electron": "29.4.6",
-    "electron-builder": "^26.15.3",
+    "electron-builder": "^26.18.0",
     "esbuild": "^0.27.2",
+    "png2icons": "^2.0.1",
     "typescript": "~5.9.3",
     "vite": "^8.3.4",
     "vitest": "^5.0.3",

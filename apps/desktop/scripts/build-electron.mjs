@@ -13,7 +13,8 @@ await Promise.all([
     bundle: true,
     platform: "node",
     format: "cjs",
-    external: ["electron", "koffi"],
+    // electron-updater 保持外部依赖：它内部按 Electron 运行时解析路径，不可打包。
+    external: ["electron", "koffi", "electron-updater"],
     outfile: "out/main/index.cjs",
   }),
   build({

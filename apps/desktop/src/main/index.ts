@@ -20,6 +20,7 @@ import { registerImeIpc } from "./ime/imeIpc";
 import { registerInterviewIpc } from "./interview/interviewIpc";
 import { registerAmbientIpc } from "./ipc/ambientIpc";
 import { registerWindowIpc } from "./ipc/windowIpc";
+import { createUpdateController } from "./updater/updateController";
 import {
   createMainWindow,
   disposeImeCandidateWindow,
@@ -51,6 +52,7 @@ if (!app.isPackaged) {
 let ambientController: ReturnType<typeof createAmbientThemeController> | undefined;
 let imeController: ReturnType<typeof registerImeIpc> | undefined;
 let interviewIpc: ReturnType<typeof registerInterviewIpc> | undefined;
+let updateController: ReturnType<typeof createUpdateController> | undefined;
 const configDir = app.getPath("userData");
 const workspaceService = new WorkspaceService({ configDir });
 
@@ -98,6 +100,8 @@ function flushAuthUrls(): void {
 }
 
 // 单实例锁：第二个实例只负责把深链 argv 转发给已运行的实例。
+// Windows 任务栏分组/通知按 AppUserModelID 识别，须与 electron-builder 的 appId 一致。
+app.setAppUserModelId("dev.answra.desktop");
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
@@ -129,6 +133,7 @@ if (!app.requestSingleInstanceLock()) {
       .restoreRoot()
       .catch((error) => console.warn("[workspace] 根目录恢复失败", error));
     createManagedMainWindow();
+    updateController = createUpdateController({ isPackaged: app.isPackaged });
     void authService
       .restore()
       .catch((error) => console.warn("[auth] 登录态恢复失败", error))
@@ -138,6 +143,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on("before-quit", () => {
     disposeImeCandidateWindow();
     imeController?.dispose();
+    updateController?.dispose();
     authService.dispose();
     const interviewStop = interviewIpc?.stopActive() ?? Promise.resolve();
     interviewIpc?.dispose();

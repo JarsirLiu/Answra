@@ -63,6 +63,21 @@ pnpm build
 
 Windows 安装包通过 `pnpm dist:win` 构建，当前为未签名的 NSIS 安装包，不需要代码签名证书。
 
+## 发版与分发
+
+打包产物（安装包、blockmap 差量文件、`latest.yml` 清单）由 electron-builder 的 `publish` 配置指向腾讯云 COS 的 `download/latest/` 目录；桌面端 `electron-updater` 启动后按该清单静默检查更新、退出时自动安装，官网下载按钮也指向同一地址。
+
+```powershell
+# 1. 改 apps/desktop/package.json 的 version（electron-updater 按 semver 判断新版本）
+# 2. 品牌图标变更时重新生成 build/ 下图标
+pnpm --filter @answra/desktop icons
+# 3. 打包并上传（密钥走环境变量，不入库）
+$env:COS_SECRET_ID="..."; $env:COS_SECRET_KEY="..."
+pnpm release:win
+```
+
+`release:win` = `dist:win` + `apps/desktop/scripts/upload-to-cos.mjs`（同时归档到 `download/v{版本}/` 便于回滚）；加 `--dry-run` 参数可只列出待上传产物。macOS 安装包配置已就绪（dmg + zip），但必须在 macOS 机器或 CI runner 上执行打包。
+
 ## 仓库结构
 
 pnpm workspace monorepo，按 ZCode 的团队协作标准组织：包间依赖只走 `workspace:*` 与各包 `exports` 声明的公开入口；IPC 频道与载荷类型集中在 `@answra/shared`；渲染层 UI 与平台能力（DesktopBridge）解耦，`packages/ui` 不允许直接接触 Electron。
