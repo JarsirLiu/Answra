@@ -19,7 +19,7 @@ export const AI_SERVICE_BASE_URL = "ANSWRA_AI_BASE_URL" as const;
 export const ANSWRA_IME_DEBUG = "ANSWRA_IME_DEBUG" as const;
 
 /**
- * 云端网关地址（云端模式的 API 根，如 `https://api.answra.com`）。
+ * 云端网关地址（云端模式的 API 根，如 `https://colorect.cloud`）。
  *
  * 仅开发态可覆盖，且必须是 http 环回地址（见 `apps/desktop/src/main/auth/config.ts`
  * 的 `resolveCloudEndpoints`）；打包版一律使用内置默认值。

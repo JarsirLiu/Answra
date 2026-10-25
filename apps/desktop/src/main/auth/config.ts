@@ -9,8 +9,8 @@ import { CLOUD_API_BASE_URL, CLOUD_SITE_BASE_URL } from "@answra/shared";
  *   避免把开发构建指向任意远端。
  */
 
-export const DEFAULT_CLOUD_API_BASE_URL = "https://api.answra.com";
-export const DEFAULT_CLOUD_SITE_BASE_URL = "https://answra.com";
+export const DEFAULT_CLOUD_API_BASE_URL = "https://colorect.cloud";
+export const DEFAULT_CLOUD_SITE_BASE_URL = "https://colorect.cloud";
 
 export interface CloudEndpoints {
   apiBaseUrl: string;
