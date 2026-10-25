@@ -75,6 +75,18 @@ describe("resolveImeKeyRoute", () => {
     );
   });
 
+  it("hands vertical navigation back to the browser outside composition", () => {
+    // 纵向移动依赖折行渲染，受控编辑器只算字符串偏移，必须交还原生。
+    for (const vertical of ["ArrowUp", "ArrowDown", "PageUp", "PageDown"]) {
+      expect(resolveImeKeyRoute(key(vertical), { inputMode: "chinese", composing: false })).toEqual(
+        { type: "browser" },
+      );
+    }
+    expect(resolveImeKeyRoute(key("ArrowDown"), { inputMode: "chinese", composing: true })).toEqual(
+      { type: "engine", key: "ArrowDown", release: false },
+    );
+  });
+
   it("normalizes Windows Process key codes for engine routing", () => {
     expect(
       resolveImeKeyRoute(key("Process", { code: "KeyA" }), {

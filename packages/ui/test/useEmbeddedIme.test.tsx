@@ -355,6 +355,75 @@ describe("useEmbeddedIme lease routing", () => {
     input.remove();
   });
 
+  it("lets the browser own vertical navigation while not composing", async () => {
+    const imeKey = vi.fn();
+    const bridge = withSessionApi({
+      imeAvailable: true,
+      imeKey,
+      imeAcquire: vi
+        .fn()
+        .mockResolvedValue(
+          lease(7, { ...enabledState, composing: false, preedit: "", candidates: [] }),
+        ),
+      imeRelease: vi.fn(),
+    } as unknown as DesktopBridge);
+    const { result } = renderHook(() => useEmbeddedIme(bridge, undefined, true, "composer"));
+    const input = document.createElement("textarea");
+    input.dataset.imeTargetId = "composer";
+    document.body.appendChild(input);
+    input.focus();
+    await act(async () => result.current.acquire());
+
+    // handled=false：调用方不 preventDefault，浏览器原生上下移动（感知折行）接管。
+    act(() => {
+      expect(
+        result.current.sendKey({
+          key: "ArrowDown",
+          code: "ArrowDown",
+          ctrlKey: false,
+          altKey: false,
+          metaKey: false,
+          shiftKey: false,
+          repeat: false,
+        } as never),
+      ).toBe(false);
+    });
+    expect(imeKey).not.toHaveBeenCalled();
+    input.remove();
+  });
+
+  it("keeps vertical navigation on the engine while composing", async () => {
+    const imeKey = vi.fn(async () => ({ ...enabledState }));
+    const bridge = withSessionApi({
+      imeAvailable: true,
+      imeKey,
+      imeAcquire: vi.fn().mockResolvedValue(lease(9)),
+      imeRelease: vi.fn(),
+    } as unknown as DesktopBridge);
+    const { result } = renderHook(() => useEmbeddedIme(bridge, undefined, true, "composer"));
+    const input = document.createElement("textarea");
+    input.dataset.imeTargetId = "composer";
+    document.body.appendChild(input);
+    input.focus();
+    await act(async () => result.current.acquire());
+
+    act(() => {
+      expect(
+        result.current.sendKey({
+          key: "ArrowDown",
+          code: "ArrowDown",
+          ctrlKey: false,
+          altKey: false,
+          metaKey: false,
+          shiftKey: false,
+          repeat: false,
+        } as never),
+      ).toBe(true);
+    });
+    await waitFor(() => expect(imeKey).toHaveBeenCalled());
+    input.remove();
+  });
+
   it("synchronizes the engine-reported Shift mode across input targets", async () => {
     const bridge = withSessionApi({
       imeAvailable: true,

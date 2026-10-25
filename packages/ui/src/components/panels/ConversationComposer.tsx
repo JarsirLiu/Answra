@@ -76,6 +76,15 @@ interface ConversationComposerProps {
   showImeToggle?: boolean;
 }
 
+// textarea 不会随内容自动长高：高度锁在 CSS min-height 时第二行会被裁掉。
+// 先复位到 auto 再按 scrollHeight 撑开（可缩可放），上限交给 CSS max-height。
+// 高度不变时不写回，避免 ResizeObserver 观察自身高度造成反复触发。
+function syncComposerHeight(textarea: HTMLTextAreaElement) {
+  textarea.style.height = "auto";
+  const desired = `${textarea.scrollHeight}px`;
+  if (textarea.style.height !== desired) textarea.style.height = desired;
+}
+
 export function ConversationComposer({
   value,
   placeholder,
@@ -121,6 +130,21 @@ export function ConversationComposer({
       pendingCaret.current = null;
     }
   });
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies(value): 高度跟随内容增长，value 变化即重算
+  useLayoutEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    syncComposerHeight(textarea);
+  }, [value]);
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    const observer = new ResizeObserver(() => syncComposerHeight(textarea));
+    observer.observe(textarea);
+    return () => observer.disconnect();
+  }, []);
 
   // The preedit mirror only makes sense while the engine is composing: drop the captured
   // range as soon as the session reports the composition ended.

@@ -450,6 +450,9 @@ export function useEmbeddedIme(
         reportRouting(false);
         return false;
       }
+      const verticalNavigationKey = ["ArrowUp", "ArrowDown", "PageUp", "PageDown"].includes(
+        event.key,
+      );
       const queuedEditorKey =
         !release &&
         !event.ctrlKey &&
@@ -464,7 +467,11 @@ export function useEmbeddedIme(
           "ArrowDown",
           "PageUp",
           "PageDown",
-        ].includes(event.key);
+        ].includes(event.key) &&
+        // 非组词的纵向移动由 imeKeyRouter 路由成 browser（折行渲染只有原生懂），
+        // 必须走下方直连路由返回 handled=false；queuedEditorKey 路径无条件返回
+        // handled=true，会 preventDefault 吞掉方向键，折行后光标下不去。
+        !(verticalNavigationKey && !getImeComposing());
       if (queuedEditorKey) {
         const routingEvent = Object.freeze({
           key: event.key,

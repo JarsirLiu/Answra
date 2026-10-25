@@ -61,9 +61,13 @@ export function resolveImeKeyRoute(
   if (!key) return { type: "ignored" };
   const direction = navigationDirection(key);
   if (direction) {
-    return engine.composing
-      ? { type: "engine", key, release: false }
-      : { type: "editor", command: { type: "moveCaret", direction, extend: event.shiftKey } };
+    if (engine.composing) return { type: "engine", key, release: false };
+    // 纵向移动（上下翻页）是折行渲染的函数：受控编辑器只按字符串偏移计算，
+    // 看不见软换行（一段长文字折成多行时 indexOf("\n") 找不到「下一行」，
+    // 光标会卡死不动）。非组词时交还浏览器原生处理——textarea/input 的
+    // 原生上下移动天然感知视觉行；组词时仍由引擎接管（候选窗翻页等）。
+    if (direction !== "left" && direction !== "right") return { type: "browser" };
+    return { type: "editor", command: { type: "moveCaret", direction, extend: event.shiftKey } };
   }
   if (key.length !== 1 && !engine.composing) return { type: "ignored" };
   return { type: "engine", key, release: false };
