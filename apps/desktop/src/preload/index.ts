@@ -140,6 +140,8 @@ const bridge: DesktopBridge = {
     ipcRenderer.invoke(ConversationChannels.GetSnapshot, { conversationId }),
   createConversation: (conversationId: string) =>
     ipcRenderer.invoke(ConversationChannels.Create, { conversationId }),
+  clearConversationMessages: (conversationId: string) =>
+    ipcRenderer.invoke(ConversationChannels.ClearMessages, { conversationId }),
   readConversationEvents: (conversationId: string, afterRevision: number) =>
     ipcRenderer.invoke(ConversationChannels.ReadEvents, { conversationId, afterRevision }),
   sendConversationMessage: (command: ConversationSendCommand) =>

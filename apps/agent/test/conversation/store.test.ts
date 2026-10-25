@@ -187,9 +187,44 @@ describe("memory conversation store", () => {
     expect(snapshot.messages.map((message) => message.id)).toEqual(["user-1", "run-1"]);
 
     await store.finishRun("session-g", "run-1", "complete");
+    const changes: import("@answra/shared").ConversationChange[] = [];
+    store.subscribe((change) => changes.push(change));
     await store.clear("session-g");
     snapshot = await store.load("session-g");
     expect(snapshot.activeRunId).toBeUndefined();
     expect(snapshot.messages).toEqual([]);
+    // 清空是显式状态迁移：递增 revision 并以 snapshot change 通知订阅方。
+    expect(snapshot.revision).toBeGreaterThan(0);
+    expect(changes).toHaveLength(1);
+    const cleared = changes.at(0);
+    if (cleared?.type === "snapshot") {
+      expect(cleared.snapshot.revision).toBe(snapshot.revision);
+      expect(cleared.snapshot.messages).toEqual([]);
+    } else {
+      throw new Error(`期望 snapshot change，实际是 ${String(cleared?.type)}`);
+    }
+  });
+
+  it("replays a clear to a stale cursor as the emptied snapshot", async () => {
+    const store = new MemoryConversationStore();
+    await store.create("session-h");
+    await store.beginRun("session-h", "run-1", {
+      id: "user-1",
+      role: "user",
+      text: "first",
+      images: [],
+      status: "complete",
+    });
+    await store.finishRun("session-h", "run-1", "complete");
+    await store.clear("session-h");
+
+    const snapshot = await store.load("session-h");
+    const replayed = await store.readAfter("session-h", 1);
+    expect(replayed.map((change) => change.type)).toEqual(["snapshot"]);
+    const last = replayed.at(-1);
+    if (last?.type === "snapshot") {
+      expect(last.snapshot.revision).toBe(snapshot.revision);
+      expect(last.snapshot.messages).toEqual([]);
+    }
   });
 });

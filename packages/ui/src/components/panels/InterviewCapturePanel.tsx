@@ -14,6 +14,10 @@ interface InterviewCapturePanelProps {
   state: InterviewCaptureState;
   messages: readonly { id: string; content: string }[];
   onSendText: (text: string) => void;
+  /** 清空当前面试对话历史；缺省不显示入口。 */
+  onClear?: () => void;
+  /** 清空不可用的原因（没有历史）；设置即禁用按钮并以 title 提示。 */
+  clearDisabledReason?: string;
   error?: string;
   onClose: () => void;
 }
@@ -23,6 +27,8 @@ export function InterviewCapturePanel({
   state,
   messages,
   onSendText,
+  onClear,
+  clearDisabledReason,
   error,
   onClose,
 }: InterviewCapturePanelProps) {
@@ -65,7 +71,25 @@ export function InterviewCapturePanel({
     : Array.from({ length: INTERVIEW_INPUT_LEVEL_WINDOW }, () => 0);
 
   return (
-    <PanelShell title="面试对话" variant="interview" onClose={onClose}>
+    <PanelShell
+      headerAction={
+        onClear ? (
+          <button
+            aria-label="清空对话"
+            className="panel-header-action surface-control surface-control--quiet"
+            disabled={Boolean(clearDisabledReason)}
+            onClick={onClear}
+            title={clearDisabledReason ?? "清空对话历史"}
+            type="button"
+          >
+            清空
+          </button>
+        ) : undefined
+      }
+      title="面试对话"
+      variant="interview"
+      onClose={onClose}
+    >
       <div className="interview-capture-content">
         {status && (
           <div aria-live="polite" className="interview-capture-status">

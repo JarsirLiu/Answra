@@ -312,6 +312,17 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
     else if (panel === "chat" || panel === "interview") surfaces.openPanel("closed");
   }
 
+  /** 清空常驻会话：归零由 worker 的 snapshot change 推回，这里只负责失败提示。 */
+  function clearConversation(conversationId: string) {
+    void platform?.clearConversationMessages?.(conversationId).catch((error: unknown) =>
+      surfaces.dispatch({
+        type: "layer/show-notice",
+        id: "conversation-clear",
+        message: error instanceof Error ? error.message : "清空失败，请稍后再试",
+      }),
+    );
+  }
+
   return (
     <main
       className="overlay-root"
@@ -376,6 +387,18 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
                 notifySendError("chat", error);
               });
           }}
+          onClear={
+            platform?.clearConversationMessages
+              ? () => clearConversation(ActiveChatConversationId)
+              : undefined
+          }
+          clearDisabledReason={
+            conversation.activeRunId
+              ? "回复完成后才能清空"
+              : conversation.messages.length === 0
+                ? "暂无可清空的对话"
+                : undefined
+          }
         />
       )}
 
@@ -393,6 +416,12 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
                 setInterviewError(error instanceof Error ? error.message : "消息发送失败"),
               );
           }}
+          onClear={
+            platform?.clearConversationMessages
+              ? () => clearConversation(ActiveInterviewConversationId)
+              : undefined
+          }
+          clearDisabledReason={interviewMessages.length === 0 ? "本场还没有对话" : undefined}
           onClose={() => surfaces.openPanel("closed")}
         />
       )}

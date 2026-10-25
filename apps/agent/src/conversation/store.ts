@@ -11,6 +11,9 @@ export interface ConversationStore {
   /**
    * 仅空闲清理：会话没有活动 run 时才清空消息与 journal；仍有活动 run 时 no-op。
    * 运行中的残留清理由以下原子认领负责，任何调用方不得在活动 run 期间强制清空。
+   * 清空本身是一次状态迁移：递增 revision 并发布 snapshot change（同时入 journal），
+   * 迟到/重连的订阅者按既有游标规则即可回放到清空后的状态；
+   * 未来 SQLite 实现须在同一事务内完成删除与版本推进，并按会话串行。
    */
   clear(conversationId: string): Promise<void>;
   load(conversationId: string): Promise<ConversationSnapshot>;
@@ -69,6 +72,8 @@ export class MemoryConversationStore implements ConversationStore {
     if (!session || session.snapshot.activeRunId) return;
     session.snapshot.messages = [];
     session.journal = [];
+    session.snapshot.revision += 1;
+    this.publish({ type: "snapshot", snapshot: cloneSnapshot(session.snapshot) }, session);
   }
 
   async beginRun(

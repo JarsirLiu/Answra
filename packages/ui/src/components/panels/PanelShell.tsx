@@ -16,6 +16,8 @@ interface PanelShellProps {
   variant: "chat" | "notes" | "settings" | "account" | "interview";
   /** 头部右侧的上下文提示（如“截图已添加”）。 */
   context?: string;
+  /** 头部关闭钮左侧的动作位（如「清空对话」）；缺省不渲染。 */
+  headerAction?: ReactNode;
   /** 附加到 section 的自定义类名（如回复条 layout 约束）。 */
   className?: string;
   /** 多入口面板的 Tab 栏（账户/设置/公告这类）；提供时 Tab 栏即面板头部（右侧关闭钮），不再渲染标题。 */
@@ -31,6 +33,7 @@ export function PanelShell({
   title,
   variant,
   context,
+  headerAction,
   className,
   tabs,
   activeTab,
@@ -75,6 +78,7 @@ export function PanelShell({
         <header className="panel-header">
           <h1 className="panel-title">{title}</h1>
           {context && <div className="panel-context">{context}</div>}
+          {headerAction}
           <button aria-label="收起面板" className="panel-close" onClick={onClose} type="button">
             <X aria-hidden="true" size={ICON_SM} />
           </button>

@@ -115,6 +115,8 @@ export const ConversationChannels = {
   GetApiKey: "answra:conversation:get-api-key",
   /** 清除本地端点与 Key，恢复云端订阅。 */
   ClearConfig: "answra:conversation:clear-config",
+  /** 清空会话消息（仅空闲会话生效；发布 snapshot change 通知所有订阅方）。 */
+  ClearMessages: "answra:conversation:clear-messages",
   Change: "answra:conversation:change",
 } as const;
 
@@ -826,6 +828,10 @@ export interface ConversationChannelMap {
   [ConversationChannels.ClearConfig]: {
     request: undefined;
     response: ConversationModelSettingsView;
+  };
+  [ConversationChannels.ClearMessages]: {
+    request: { conversationId: string };
+    response: undefined;
   };
   [ConversationChannels.Change]: { request: undefined; response: undefined };
 }

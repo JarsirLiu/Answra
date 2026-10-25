@@ -52,6 +52,14 @@ export class ConversationRuntime {
     return this.store.create(conversationId);
   }
 
+  /**
+   * 用户显式清空会话消息。仅空闲会话生效（store 内守卫）；无此会话时视为无事可清。
+   * 发布的 snapshot change 是唯一归零信号：订阅方与 readEvents 游标都依赖它。
+   */
+  async clearConversation(conversationId: string): Promise<void> {
+    await this.store.clear(conversationId);
+  }
+
   async appendUserMessage(conversationId: string, text: string): Promise<void> {
     if (typeof text !== "string" || !text.trim() || text.length > 32_000)
       throw new Error("消息内容无效或过长");

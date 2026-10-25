@@ -77,6 +77,20 @@
   color: var(--ink);
   background: var(--hover);
 }
+/* 头部动作位（如「清空对话」）：外观全部交给标准控件
+   （调用方叠加 .surface-control--quiet），这里只负责头部内的对齐——
+   auto 外边距由动作位接管（把整组推到最右），关闭钮紧随其后不再分配空隙。
+   字体必须与面板标题同档：.surface-control 的 font: inherit 在头部
+   会落到渲染器默认 16px，比 --font-md 大一整圈，因此在这里显式钉回标题令牌。 */
+.panel-header-action {
+  margin-left: auto;
+  color: var(--ink);
+  font-size: var(--font-md);
+  font-weight: var(--label-weight);
+}
+.panel-header .panel-header-action + .panel-close {
+  margin-left: 0;
+}
 
 /* ── 多入口面板的 Tab 栏：即面板头部（右上角关闭钮） ──
    选中段用中性灰阶填充，与悬浮条图标按钮的激活态同一语言

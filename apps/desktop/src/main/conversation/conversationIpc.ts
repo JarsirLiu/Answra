@@ -1,4 +1,6 @@
 import {
+  ActiveChatConversationId,
+  ActiveInterviewConversationId,
   authRequiredError,
   ConversationChannels,
   type ConversationModelSettingsView,
@@ -68,6 +70,19 @@ export function registerConversationIpc(service: AgentService, deps: Conversatio
     return service.createConversation(payload.conversationId);
   });
   ipcMain.handle(
+    ConversationChannels.ClearMessages,
+    (event, payload: { conversationId: string }) => {
+      if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用方");
+      // 清空是破坏性操作：只开放给主窗口的常驻会话；答题等瞬时会话由 ephemeral 流程自清。
+      if (
+        !isValidConversationId(payload?.conversationId) ||
+        !CLEARABLE_CONVERSATION_IDS.has(payload.conversationId)
+      )
+        throw new Error("会话请求无效");
+      return service.clearConversation(payload.conversationId);
+    },
+  );
+  ipcMain.handle(
     ConversationChannels.ReadEvents,
     (event, payload: { conversationId: string; afterRevision: number }) => {
       if (
@@ -108,6 +123,12 @@ function isValidConversationId(conversationId: unknown): conversationId is strin
     typeof conversationId === "string" && conversationId.length > 0 && conversationId.length <= 128
   );
 }
+
+/** 允许用户清空的常驻会话：多轮对话与面试；答题会话由 ephemeral 流程自动清理。 */
+const CLEARABLE_CONVERSATION_IDS = new Set<string>([
+  ActiveChatConversationId,
+  ActiveInterviewConversationId,
+]);
 
 function isConversationReadSender(
   event: Parameters<typeof isWindowFromSender>[1],

@@ -336,6 +336,9 @@ export function startAgentHost({
         return runtime.readEventsAfter(command.conversationId, command.afterRevision);
       case "create-conversation":
         return runtime.createConversation(command.conversationId);
+      case "clear-conversation":
+        await runtime.clearConversation(command.conversationId);
+        return undefined;
       case "append-user-message":
         await runtime.appendUserMessage(command.conversationId, command.text);
         return undefined;

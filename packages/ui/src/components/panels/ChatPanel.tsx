@@ -52,6 +52,10 @@ interface ChatPanelProps {
   onFork?: () => void;
   /** 点赞/点踩反馈。 */
   onVote?: (vote: "up" | "down" | null) => void;
+  /** 清空对话历史（经网关链路归零，所有订阅方同步）；缺省不显示清空入口。 */
+  onClear?: () => void;
+  /** 清空不可用的原因（活动回复进行中/没有消息）；设置即禁用按钮并以 title 提示。 */
+  clearDisabledReason?: string;
   onClose: () => void;
   bridge?: DesktopBridge;
   stealth: boolean;
@@ -74,6 +78,8 @@ export function ChatPanel({
   onSignIn,
   onFork,
   onVote,
+  onClear,
+  clearDisabledReason,
   onClose,
   bridge,
 }: ChatPanelProps) {
@@ -95,6 +101,20 @@ export function ChatPanel({
   return (
     <PanelShell
       context={attachments.length ? "截图已添加，可补充问题" : undefined}
+      headerAction={
+        onClear ? (
+          <button
+            aria-label="清空对话"
+            className="panel-header-action surface-control surface-control--quiet"
+            disabled={Boolean(clearDisabledReason)}
+            onClick={onClear}
+            title={clearDisabledReason ?? "清空对话历史"}
+            type="button"
+          >
+            清空
+          </button>
+        ) : undefined
+      }
       onClose={onClose}
       title="AI 对话"
       variant="chat"

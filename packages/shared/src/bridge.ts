@@ -102,6 +102,8 @@ export interface DesktopBridge {
   setAmbientFollow?: (value: boolean) => void;
   getConversationSnapshot?: (conversationId: string) => Promise<ConversationSnapshot>;
   createConversation?: (conversationId: string) => Promise<ConversationSnapshot>;
+  /** 清空会话消息（仅空闲会话生效）；清空通过 snapshot change 推回给所有订阅方。 */
+  clearConversationMessages?: (conversationId: string) => Promise<void>;
   readConversationEvents?: (
     conversationId: string,
     afterRevision: number,
