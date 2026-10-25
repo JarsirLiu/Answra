@@ -57,6 +57,26 @@ if (!secretId || !secretKey) {
 
 const cos = new COS({ SecretId: secretId, SecretKey: secretKey });
 const uploadObject = util.promisify(cos.putObject.bind(cos));
+const putBucketCORS = util.promisify(cos.putBucketCORS.bind(cos));
+
+// 官网按钮用 fetch 拉包触发下载，需要桶对 download/ 前缀放行跨域 GET（幂等，重复执行无害）。
+await putBucketCORS({
+  Bucket: bucket,
+  Region: region,
+  CORSRules: [
+    {
+      AllowedOrigin: ["*"],
+      AllowedMethod: ["GET", "HEAD"],
+      AllowedHeader: ["*"],
+      MaxAgeSeconds: 3600,
+    },
+  ],
+});
+console.log(`[upload] 已确保 cos://${bucket} 对 download/ 前缀放行跨域 GET/HEAD`);
+
+// 安装包挂 attachment，直链访问也是浏览器下载而非渲染二进制（yml/blockmap 由 electron-updater 拉取，无需）。
+const contentDisposition = (name) =>
+  /\.(exe|dmg|zip|AppImage)$/i.test(name) ? `attachment; filename="${name}"` : undefined;
 
 // 先归档版本目录，再覆盖 latest：即使中途失败，latest 也只在版本目录完整后更新。
 for (const prefix of [`download/v${version}`, "download/latest"]) {
@@ -67,6 +87,7 @@ for (const prefix of [`download/v${version}`, "download/latest"]) {
       Region: region,
       Key: key,
       FilePath: path.join(releaseDir, name),
+      ...(contentDisposition(name) ? { ContentDisposition: contentDisposition(name) } : {}),
     });
     console.log(`[upload] cos://${bucket}/${key}`);
   }
