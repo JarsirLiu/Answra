@@ -11,15 +11,13 @@
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  scrollbar-width: thin;
-  scrollbar-color: var(--glass-line) transparent;
 }
 .viewport::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 4px;
+  height: 4px;
 }
 .viewport::-webkit-scrollbar-thumb {
-  border-radius: 3px;
+  border-radius: 999px;
   background: var(--glass-line);
 }
 .viewport::-webkit-scrollbar-thumb:hover {

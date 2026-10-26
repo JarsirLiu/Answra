@@ -41,22 +41,16 @@
   color: var(--mint-text);
   background: var(--mint-wash);
 }
-/* 对话区自定义滚动条：细圆条，避免原生粗灰条。 */
-.conversation,
-.conversation-composer textarea {
-  scrollbar-width: thin;
-  scrollbar-color: var(--glass-line) transparent;
-}
-
+/* 对话区自定义滚动条：极细圆条，避免原生粗灰条。 */
 .conversation::-webkit-scrollbar,
 .conversation-composer textarea::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 4px;
+  height: 4px;
 }
 
 .conversation::-webkit-scrollbar-thumb,
 .conversation-composer textarea::-webkit-scrollbar-thumb {
-  border-radius: 3px;
+  border-radius: 999px;
   background: var(--glass-line);
 }
 
