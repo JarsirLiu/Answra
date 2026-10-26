@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Window Focus Probe</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font: 14px/1.5 system-ui, sans-serif;
+      }
+
+      body {
+        margin: 24px auto;
+        max-width: 900px;
+        padding: 0 16px;
+      }
+
+      header,
+      .summary,
+      .controls {
+        align-items: center;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+
+      .summary {
+        border-block: 1px solid currentColor;
+        justify-content: space-between;
+        margin-block: 16px;
+        padding-block: 12px;
+      }
+
+      .counts {
+        display: grid;
+        gap: 8px 20px;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      }
+
+      output {
+        font-variant-numeric: tabular-nums;
+        font-weight: 650;
+      }
+
+      table {
+        border-collapse: collapse;
+        margin-block-start: 20px;
+        width: 100%;
+      }
+
+      th,
+      td {
+        border-bottom: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+        padding: 6px 8px;
+        text-align: left;
+      }
+
+      tbody {
+        font-family: ui-monospace, monospace;
+      }
+
+      button {
+        font: inherit;
+        padding: 4px 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Window Focus Probe</h1>
+      <span id="state"></span>
+    </header>
+    <div class="controls">
+      <button id="reset" type="button">Reset counts</button>
+      <button id="copy" type="button">Copy report</button>
+    </div>
+    <section class="summary" aria-label="Current document state">
+      <span>visibilityState: <output id="visibility"></output></span>
+      <span>document.hasFocus(): <output id="has-focus"></output></span>
+      <span>last sampled: <output id="sampled-at"></output></span>
+    </section>
+    <section class="counts" id="counts" aria-label="Event counts"></section>
+    <table>
+      <thead>
+        <tr><th>Time</th><th>Event</th><th>Visible</th><th>Has focus</th></tr>
+      </thead>
+      <tbody id="events"></tbody>
+    </table>
+    <script>
+      const EVENT_NAMES = ["blur", "focus", "visibilitychange", "pagehide", "pageshow"];
+      const SAMPLE_INTERVAL_MS = 500;
+      const MAX_EVENT_ROWS = 300;
+      const counts = Object.fromEntries(EVENT_NAMES.map((name) => [name, 0]));
+      const rows = [];
+      const countRoot = document.querySelector("#counts");
+      const eventRoot = document.querySelector("#events");
+      const visibilityOutput = document.querySelector("#visibility");
+      const focusOutput = document.querySelector("#has-focus");
+      const sampledOutput = document.querySelector("#sampled-at");
+      const stateOutput = document.querySelector("#state");
+
+      function snapshot(event) {
+        return {
+          time: new Date().toISOString(),
+          event,
+          visibilityState: document.visibilityState,
+          hasFocus: document.hasFocus(),
+        };
+      }
+
+      function render() {
+        visibilityOutput.value = document.visibilityState;
+        focusOutput.value = String(document.hasFocus());
+        stateOutput.textContent = document.hasFocus() ? "Focused" : "Not focused";
+        countRoot.replaceChildren(
+          ...EVENT_NAMES.map((name) => {
+            const item = document.createElement("div");
+            item.textContent = `${name}: ${counts[name]}`;
+            return item;
+          }),
+        );
+        eventRoot.replaceChildren(
+          ...rows.map((row) => {
+            const tr = document.createElement("tr");
+            for (const value of [row.time, row.event, row.visibilityState, String(row.hasFocus)]) {
+              const cell = document.createElement("td");
+              cell.textContent = value;
+              tr.append(cell);
+            }
+            return tr;
+          }),
+        );
+      }
+
+      function record(name) {
+        if (Object.hasOwn(counts, name)) counts[name] += 1;
+        rows.unshift(snapshot(name));
+        if (rows.length > MAX_EVENT_ROWS) rows.length = MAX_EVENT_ROWS;
+        render();
+      }
+
+      for (const name of EVENT_NAMES) {
+        const target = name === "blur" || name === "focus" ? window : document;
+        target.addEventListener(name, () => record(name));
+      }
+
+      document.querySelector("#reset").addEventListener("click", () => {
+        for (const name of EVENT_NAMES) counts[name] = 0;
+        rows.length = 0;
+        record("counts-reset");
+      });
+
+      document.querySelector("#copy").addEventListener("click", async () => {
+        const report = JSON.stringify({ counts, current: snapshot("report"), events: rows }, null, 2);
+        await navigator.clipboard.writeText(report);
+      });
+
+      setInterval(() => {
+        sampledOutput.value = new Date().toISOString();
+        record("focus-sample");
+      }, SAMPLE_INTERVAL_MS);
+
+      render();
+      record("probe-ready");
+    </script>
+  </body>
+</html>

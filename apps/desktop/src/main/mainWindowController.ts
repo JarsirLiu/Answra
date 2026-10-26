@@ -93,7 +93,7 @@ export function createMainWindowController(host: MainWindowControllerHost) {
     created.once("ready-to-show", () => {
       const allowed = host.prepareWindowToShow(created);
       logImeDiagnostic("main-window-ready-to-show", { windowId: created.id, allowed });
-      if (allowed) created.show();
+      if (allowed) created.showInactive();
     });
     created.on("show", () => {
       logImeDiagnostic("main-window-shown", {
