@@ -8,8 +8,8 @@
  *   conversation/runtime.ts 会话运行时：模型调用、运行生命周期、取消
  *   conversation/store.ts   会话存储端口与内存适配器
  *
- * 平台能力（读屏/音频/DOM 采集、键鼠注入、窗口与密钥）不在这里实现：
- * 运行时只持有端口，实现由 desktop 注入，因此本包不依赖 Electron 与 React。
+ * Agent 工具在本进程实现；桌面平台能力（读屏/音频采集、键鼠注入、窗口）由 desktop
+ * 适配。该包不依赖 Electron 与 React，worker transport 由宿主单独装配。
  */
 export { ConversationRuntime } from "./conversation/runtime";
 export type { ConversationStore } from "./conversation/store";

@@ -109,8 +109,8 @@ export type InterviewWorkerEvent =
  * desktop main ↔ agent worker 的线协议：命令下行、帧上行。
  * 只有这里出现在 utility process 边界上，会话与模型细节留在 src 内部。
  *
- * 平台能力（如刷新云端访问令牌）由宿主实现：agent 只上行「请求帧」，宿主用命令帧回答。
- * agent 不持有宿主 API，也不接触磁盘上的凭据。
+ * Agent 通过下行命令接收运行输入和授权上下文；Agent 工具在 Agent 进程内执行。
+ * 仅云端访问令牌刷新使用专用反向请求帧。
  */
 export type AgentCommand =
   | { id: string; type: "interview-start"; sessionId: string; conversationId: string }
@@ -120,6 +120,7 @@ export type AgentCommand =
   /** High-frequency audio frames are one-way to avoid a worker response per frame. */
   | { type: "interview-audio-frame"; frame: InterviewPcmFrame }
   | { id: string; type: "configure"; config: ConversationModelConfig }
+  | { id: string; type: "workspace-context"; root: string | null }
   | ({ id: string; type: "chat-send"; accessToken: string } & ChatSendCommand)
   | ({ id: string; type: "answer-run"; accessToken: string } & AnswerRunCommand)
   /** 宿主对 `token-request` 的回答：`accessToken` 与 `error` 二者必居其一。 */

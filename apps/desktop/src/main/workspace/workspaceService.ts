@@ -130,7 +130,7 @@ export class WorkspaceService {
   }
 
   /** 枚举目录树（目录优先、名称排序；跳过隐藏/依赖目录）。 */
-  async listTree(): Promise<ReturnType<WorkspaceService["buildTree"]>> {
+  async listTree(): Promise<Awaited<ReturnType<WorkspaceService["buildTree"]>>> {
     if (!this.root) throw new WorkspaceNotFoundError();
     return this.buildTree(this.root, "", 0);
   }

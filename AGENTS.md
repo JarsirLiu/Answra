@@ -30,7 +30,7 @@
 | --- | --- | --- |
 | `src/worker` | 线协议 `AgentCommand` / `AgentFrame`，跨进程唯一契约 | 只放协议类型；命令/帧变更必须同步 desktop worker |
 | `src/conversation` | 会话运行时、会话存储端口与内存适配器 | 不依赖 Electron / React；新增领域平级加目录 |
-| 平台能力 | 采集、键鼠注入、窗口、密钥等实现留在 desktop | 运行时只持有端口，实现由 desktop 注入 |
+| 平台能力与工具 | 采集、键鼠注入、窗口、密钥等桌面平台实现留在 desktop；Agent 工具由 Agent 注册并在 Agent 进程执行 | desktop 可注入工作区根目录等授权上下文，不得代执行 Agent 工具或通过反向 RPC 提供工具能力 |
 
 入口规则：desktop 只从 `@answra/agent`（`exports` 的 `.`）导入；本包不产出独立构建产物，由 desktop 的 `build:electron` 一并 bundle。
 

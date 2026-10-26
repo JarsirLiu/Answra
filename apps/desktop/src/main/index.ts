@@ -81,6 +81,7 @@ const modelRouter = new ModelRouter({
 });
 const agentService = new AgentService({
   resolveModel: (options) => modelRouter.resolve(options),
+  getWorkspaceRoot: () => workspaceService.getRoot(),
   log: (message, error) => console.warn(message, error),
 });
 
@@ -126,12 +127,14 @@ if (!app.requestSingleInstanceLock()) {
     registerAuthIpc(authService);
     registerWorkspaceFileProtocol(workspaceService);
     registerWorkspaceIpc(workspaceService, getWindow, isStealthEnabled);
-    void agentService
-      .start()
-      .catch((error) => console.error("[agent-service] failed to start", error));
     void workspaceService
       .restoreRoot()
-      .catch((error) => console.warn("[workspace] 根目录恢复失败", error));
+      .catch((error) => console.warn("[workspace] 根目录恢复失败", error))
+      .finally(() => {
+        void agentService
+          .start()
+          .catch((error) => console.error("[agent-service] failed to start", error));
+      });
     createManagedMainWindow();
     updateController = createUpdateController({ isPackaged: app.isPackaged });
     void authService

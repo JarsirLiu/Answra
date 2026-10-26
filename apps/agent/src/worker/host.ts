@@ -62,14 +62,13 @@ export interface AgentHost {
   dispose(): void;
 }
 
-/** 反向请求的等待上限：宿主不实现该能力时不能把一次运行挂死。 */
-const CAPABILITY_REQUEST_TIMEOUT_MS = 10_000;
+/** 云端令牌刷新请求的等待上限。 */
+const TOKEN_REQUEST_TIMEOUT_MS = 10_000;
 
 /**
- * 组装点：把传输、会话运行时与（将来接入的）工具/能力适配器装配在一起。
- * 这是唯一允许知道"命令怎么分发"的地方——领域模块只暴露方法，
- * 平台能力实现留在 desktop，通过 transport 上的帧交互（agent 是独立进程，
- * 不能靠注入对象拿到宿主的平台 API）。
+ * 组装点：把传输、会话运行时与领域运行时装配在一起。
+ * 这是唯一允许知道"命令怎么分发"的地方——领域模块只暴露方法。
+ * 桌面 adapter 通过 transport 下发上下文和用户输入；Agent 工具不经 transport 调用 desktop。
  */
 export function startAgentHost({
   transport,
@@ -121,10 +120,14 @@ export function startAgentHost({
     return recognizer.load().then((assembly) => new LocalParaformerAdapter(assembly));
   }
 
-  /** 反向请求（agent → 宿主）的等待表：宿主用同 id 的命令帧回答。 */
-  const capabilityRequests = new Map<
+  /** 专用于云端令牌刷新的等待表。Agent 工具不通过宿主请求执行。 */
+  const tokenRequests = new Map<
     string,
-    { resolve: (value: string) => void; reject: (error: Error) => void }
+    {
+      resolve: (value: string) => void;
+      reject: (error: Error) => void;
+      cleanup: () => void;
+    }
   >();
   let requestSeq = 0;
 
@@ -132,17 +135,16 @@ export function startAgentHost({
     const id = `token-request:${++requestSeq}`;
     return new Promise<string>((resolve, reject) => {
       const timer = setTimeout(() => {
-        if (capabilityRequests.delete(id)) reject(new Error("令牌刷新超时"));
-      }, CAPABILITY_REQUEST_TIMEOUT_MS);
-      capabilityRequests.set(id, {
-        resolve: (value) => {
-          clearTimeout(timer);
-          resolve(value);
-        },
-        reject: (error) => {
-          clearTimeout(timer);
-          reject(error);
-        },
+        const pending = tokenRequests.get(id);
+        if (!pending) return;
+        tokenRequests.delete(id);
+        pending.cleanup();
+        pending.reject(new Error("令牌刷新超时"));
+      }, TOKEN_REQUEST_TIMEOUT_MS);
+      tokenRequests.set(id, {
+        resolve,
+        reject,
+        cleanup: () => clearTimeout(timer),
       });
       transport.send({ version: 1, type: "token-request", id, forceRefresh: true });
     });
@@ -207,9 +209,11 @@ export function startAgentHost({
     turnSettlerInstance.discardAll();
     interviewVad.dispose();
     transcription.dispose();
-    for (const pending of capabilityRequests.values())
+    for (const pending of tokenRequests.values()) {
+      pending.cleanup();
       pending.reject(new Error("本地 AI 服务已关闭"));
-    capabilityRequests.clear();
+    }
+    tokenRequests.clear();
     runtime.dispose();
   }
 
@@ -223,11 +227,12 @@ export function startAgentHost({
       transport.close?.();
       return;
     }
-    // 宿主对反向请求的回答：不经过 run()，也不回响应帧。
+    // 宿主对令牌刷新的回答：不经过 run()，也不回响应帧。
     if (command.type === "token") {
-      const pending = capabilityRequests.get(command.id);
+      const pending = tokenRequests.get(command.id);
       if (!pending) return;
-      capabilityRequests.delete(command.id);
+      tokenRequests.delete(command.id);
+      pending.cleanup();
       if (command.accessToken) pending.resolve(command.accessToken);
       else pending.reject(new Error(command.error ?? "令牌刷新失败"));
       return;
@@ -320,6 +325,9 @@ export function startAgentHost({
         return undefined;
       case "configure":
         runtime.configure(command.config);
+        return undefined;
+      case "workspace-context":
+        runtime.setWorkspaceRoot(command.root);
         return undefined;
       case "chat-send":
         return runtime.sendChat(

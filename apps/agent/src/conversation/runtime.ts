@@ -7,11 +7,17 @@ import {
   type ConversationModelConfig,
   type ConversationSendRequest,
 } from "@answra/shared";
-import { type ModelMessage, streamText } from "ai";
-import { ANSWER_PROFILE, CHAT_PROFILES, type ChatProfileId } from "./profiles";
+import { type ModelMessage, stepCountIs, streamText } from "ai";
+import {
+  ANSWER_PROFILE,
+  CHAT_PROFILES,
+  type ChatProfileId,
+  type ConversationToolId,
+} from "./profiles";
 import { parseDataUrl, validateRequest } from "./requestContent";
 import { type ConversationStore, createUserMessage, MemoryConversationStore } from "./store";
 import { buildTimeReminder } from "./timeReminder";
+import { createAuthorizedConversationTools } from "./tools/registry";
 
 export interface ConversationRuntimeOptions {
   emit: (change: ConversationChange) => void;
@@ -29,6 +35,7 @@ export class ConversationRuntime {
   private readonly store: ConversationStore;
   private readonly unsubscribeStore: () => void;
   private readonly tokenProvider?: (options: { forceRefresh: boolean }) => Promise<string>;
+  private workspaceRoot: string | null = null;
 
   constructor({
     emit,
@@ -38,6 +45,10 @@ export class ConversationRuntime {
     this.store = store;
     this.tokenProvider = tokenProvider;
     this.unsubscribeStore = store.subscribe(emit);
+  }
+
+  setWorkspaceRoot(root: string | null): void {
+    this.workspaceRoot = root;
   }
 
   getSnapshot(conversationId: string) {
@@ -90,6 +101,7 @@ export class ConversationRuntime {
       profile.includeHistory,
       false,
       profile.injectTime ?? false,
+      profile.tools,
     );
   }
 
@@ -106,6 +118,7 @@ export class ConversationRuntime {
       false,
       true,
       false,
+      [],
     );
   }
 
@@ -117,12 +130,14 @@ export class ConversationRuntime {
     includeHistory: boolean,
     ephemeral: boolean,
     injectTime: boolean,
+    authorizedTools: readonly ConversationToolId[],
   ): Promise<{ runId: string }> {
     if (!this.config) throw new Error("云端模型服务尚未就绪");
     validateRequest(request);
 
     const runId = randomUUID();
     const controller = new AbortController();
+    const workspaceRoot = this.workspaceRoot;
     // 截图答题与对话是两项能力，端点与占位模型都可能不同：按运行所属的能力取。
     const endpoint = ephemeral ? this.config.answer : this.config.chat;
     await this.store.create(conversationId);
@@ -143,6 +158,8 @@ export class ConversationRuntime {
       includeHistory,
       ephemeral,
       injectTime,
+      authorizedTools,
+      workspaceRoot,
     );
     return { runId };
   }
@@ -222,6 +239,8 @@ export class ConversationRuntime {
     includeHistory: boolean,
     ephemeral: boolean,
     injectTime: boolean,
+    authorizedTools: readonly ConversationToolId[],
+    workspaceRoot: string | null,
   ): Promise<void> {
     const startedAt = Date.now();
     const chunkCounts: Record<string, number> = {};
@@ -296,11 +315,18 @@ export class ConversationRuntime {
           messages.push({ role: "user", content: [{ type: "text" as const, text: reminder }] });
         }
       }
+      const tools = authorizedTools.length
+        ? createAuthorizedConversationTools(authorizedTools, {
+            workspaceRoot,
+            signal: controller.signal,
+          })
+        : undefined;
       const result = streamText({
         model: provider(endpoint.model),
         system: systemPrompt,
         messages,
         abortSignal: controller.signal,
+        ...(tools ? { tools, stopWhen: stepCountIs(6) } : {}),
         onError: ({ error }) => {
           console.error("[conversation][run] provider error", summarizeError(error));
         },

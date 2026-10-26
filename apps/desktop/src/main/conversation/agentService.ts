@@ -21,6 +21,7 @@ export interface AgentServiceDeps {
    * 未登录/未配置时抛错：云端是 `auth-required`，本地是配置提示。
    */
   resolveModel: (options?: { forceRefresh?: boolean }) => Promise<ResolvedModel>;
+  getWorkspaceRoot: () => string | null;
   log?: (message: string, error?: unknown) => void;
 }
 
@@ -79,6 +80,7 @@ export class AgentService {
 
   async send(command: ConversationSendCommand): Promise<{ runId: string }> {
     validateSendRequest(command.request);
+    await this.request("workspace-context", { root: this.deps.getWorkspaceRoot() });
     // 来源由设置显式选择：本地端点不需要登录，云端订阅未登录时 resolveModel 抛统一失败码。
     const { config, accessToken } = await this.deps.resolveModel();
     await this.ensureConfigured(config);

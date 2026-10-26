@@ -11,6 +11,7 @@ import { MemoryConversationStore } from "../../src/conversation/store";
 
 type RecordedRequest = {
   messages: Array<{ role: string; content: unknown }>;
+  tools?: unknown;
   authorization?: string;
 };
 
@@ -45,9 +46,11 @@ describe("ephemeral conversation runtime", () => {
       for await (const chunk of request) chunks.push(Buffer.from(chunk));
       const parsed = JSON.parse(Buffer.concat(chunks).toString("utf8")) as {
         messages?: Array<{ role: string; content: unknown }>;
+        tools?: unknown;
       };
       requests.push({
         messages: parsed.messages ?? [],
+        tools: parsed.tools,
         authorization: request.headers.authorization,
       });
       if (holdResponse) return;
@@ -158,6 +161,30 @@ describe("ephemeral conversation runtime", () => {
     const answerPayload = JSON.stringify(requests[2]?.messages);
     expect(answerPayload).toContain("只回答当前截图问题");
     expect(answerPayload).not.toContain("我叫小明");
+  });
+
+  it("sends only profile-authorized Read and Grep schemas to the model", async () => {
+    const chat = await runtime.sendChat(
+      "general-chat",
+      "tools-authorized-chat",
+      { text: "读取工作区", images: [] },
+      ACCESS_TOKEN,
+    );
+    await waitForTerminal(chat.runId);
+    const chatTools = JSON.stringify(requests.at(-1)?.tools);
+    expect(chatTools).toContain("Read");
+    expect(chatTools).toContain("Grep");
+    expect(chatTools).toContain("file_path");
+    expect(chatTools).toContain("pattern");
+    expect(chatTools).not.toContain("list_workspace_files");
+
+    const answer = await runtime.runAnswer(
+      "tools-unauthorized-answer",
+      { text: "只回答当前截图问题", images: [] },
+      ACCESS_TOKEN,
+    );
+    await waitForTerminal(answer.runId);
+    expect(requests.at(-1)?.tools).toBeUndefined();
   });
 
   it("injects current date as a user-side system-reminder only for chat profiles", async () => {

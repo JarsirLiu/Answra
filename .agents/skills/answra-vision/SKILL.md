@@ -28,20 +28,20 @@ Windows 桌面屏幕 AI 助手：围绕"屏幕上看到的、正在听的、正�
 ```text
 src/
   worker/        线协议 + 命令分发 + 各域投影（唯一跨进程边界）
-  core/          跨领域底座：模型执行器、Run 生命周期、host bridge、
+  core/          跨领域底座：模型执行器、Run 生命周期、
                  工具注册表、agent loop
   conversation/  多轮对话 + 一次性答题（已有）
   interview/     采集→VAD→ASR→turn→可打断回答（在途，按 10-19 Note 分阶段）
   voice/ meeting/ inline/ document/   领域平级加入；voice 未来从 interview 提升
 ```
 
-依赖铁律：`domains → core`；core 不导入领域；领域之间禁止互导（`voice` 例外但只暴露端口）；平台能力（采集、键鼠、窗口、密钥、文档执行）只在 desktop，agent 运行时只持有端口。
+依赖铁律：`domains → core`；core 不导入领域；领域之间禁止互导（`voice` 例外但只暴露端口）。Agent 工具由 Agent 静态注册并在 Agent 进程执行；desktop 可注入获准上下文（如工作区根目录），不得代执行 Agent 工具。采集、键鼠、窗口、密钥等桌面平台能力留在 desktop。
 
 ## 新需求落位判断（改代码前先过一遍）
 
 1. **属于已有领域的行为变化？** → 在该域内改，先查该域 Note 的边界与防回退条款。
 2. **全新场景？** → 平级加领域目录 + 组合根 + 投影 + Note；问自己能否通过"新 profile + 新命令 + 新投影"接入，而不是改 core 或别的域。
-3. **需要 AI 执行工具？** → Agent 静态注册 + profile 授权；worker 内纯工具或经 host bridge（反向请求帧）调平台工具；renderer 永不注入。
+3. **需要 AI 执行工具？** → Agent 静态注册 + profile 授权，工具实现在 Agent 进程执行。desktop 只注入上下文或凭据；renderer 永不注入。
 4. **需要打断/取消？** → 统一用 Run 生命周期：runId + AbortController + 过期结果丢弃，不新造取消机制。
 5. **高频媒体流？** → 沿用 bounded queue + credit 窗口的 ingress 模式与 PcmFrame 约定。
 6. **需要新存储？** → 每域独立 store 端口；实现必须保持原子认领语义（见 answer-run-claim-race Note）。
