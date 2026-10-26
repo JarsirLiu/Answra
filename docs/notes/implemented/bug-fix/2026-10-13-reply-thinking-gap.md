@@ -10,6 +10,7 @@
 
 - 代码/模块：`packages/ui/src/components/chat/ThinkingReasoning.tsx`、`packages/ui/test/ReplyBarWindowApp.test.tsx`
 - UI 表面：回复条展开对话面板的流式思考、外层滚动跟随和定位按钮。
+- 相关 Note：[思考块默认折叠为单行摘要](../feature/2026-10-26-thinking-collapsed-summary.md)。
 
 ## 根因
 
@@ -17,7 +18,9 @@
 
 ## 决定
 
-流式思考使用自然内容高度，不创建内部滚动和位移；思考增量由外层消息流统一滚动。完成后的思考块仍可折叠，展开时保留封顶滚动以控制历史内容高度。
+流式思考使用自然内容高度，不创建内部滚动和位移；思考增量由外层消息流统一滚动。完成后的思考块仍可折叠。
+
+后续由 [思考块默认折叠为单行摘要](../feature/2026-10-26-thinking-collapsed-summary.md) 调整：思考块默认折叠，展开也不再保留 180px 封顶滚动，改为自然高度并使用外层滚动。
 
 ## 修复
 

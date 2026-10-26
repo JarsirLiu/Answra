@@ -1,5 +1,5 @@
 /* 复刻 AICSS ThinkingReasoning：数值与动效曲线保持原设计。
-   与演示版的差异：内容高度实测（句子长度不定）、思考中视口自动跟读到底部。 */
+   交互对齐 DeepSeek：默认折叠为单行摘要，点开才渲染完整思考正文。 */
 .tr {
   display: flex;
   flex-direction: column;
@@ -19,14 +19,17 @@
 }
 
 .trHeader {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 6px;
-  align-self: flex-start;
+  width: 100%;
+  min-width: 0;
   min-height: 20px;
   padding: 0;
+  overflow: hidden;
   border: 0;
   background: transparent;
+  text-align: left;
   cursor: default;
   font: inherit;
 }
@@ -36,6 +39,8 @@
 }
 
 .trLabel {
+  flex: none;
+  white-space: nowrap;
   font-size: 13px;
   line-height: 18px;
   font-weight: 500;
@@ -47,15 +52,40 @@
   color: var(--chat-meta);
 }
 
+.trSeparator {
+  flex: none;
+  width: 2px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--muted);
+}
+
+.trSummary {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 18px;
+  letter-spacing: -0.005em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trSummary[data-follow-end] {
+  text-overflow: clip;
+}
+
 .trChevron {
+  flex: none;
   color: var(--chat-meta);
   transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
-  /* 基础路径是上箭头；折叠态旋转 180° 指向下。 */
-  transform: rotate(180deg);
+  /* 折叠态右箭头，展开后顺时针转向下，方向统一。 */
+  transform: rotate(0deg);
 }
 
 .trHeader[aria-expanded="true"] .trChevron {
-  transform: rotate(0deg);
+  transform: rotate(90deg);
 }
 
 .trHeader.isClickable:hover .trChevron {
@@ -83,32 +113,12 @@
   overflow: hidden;
 }
 
-/* 视口：流式思考随内容自然长高，由外层消息流统一跟随；
-   完成后的历史思考块封顶并支持原生滚动，遮罩跟随滚动位置。
-   折叠时高度与外边距由内联样式归零，避免残留空隙。 */
-.trViewport {
-  margin-top: 6px;
-  overflow: hidden;
-  transition:
-    height 360ms cubic-bezier(0.22, 1, 0.36, 1),
-    margin-top 320ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.trViewport.isScroll {
-  overflow-y: auto;
-  scrollbar-width: none;
-}
-
-.trViewport.isScroll::-webkit-scrollbar {
-  display: none;
-}
-
-.trStream {
+/* 展开后的思考正文：自然高度，由外层消息流统一滚动，不再嵌套内部滚动层。 */
+.trBody {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  transition: transform 560ms cubic-bezier(0.22, 1, 0.36, 1);
-  will-change: transform;
+  margin-top: 6px;
 }
 
 .trSentence {
@@ -165,8 +175,7 @@
   .tr,
   .trSentence,
   .trShimmer,
-  .trViewport,
-  .trStream,
+  .trBody,
   .trCollapsible {
     animation: none;
     transition: none;

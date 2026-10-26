@@ -188,7 +188,10 @@ describe("ReplyBarWindowApp live conversation popover", () => {
       });
     });
     fireEvent.mouseEnter(document.querySelector(".reply-activity-viewport") as HTMLElement);
-    expect(await screen.findByText("先检查条件")).toBeInTheDocument();
+    const toggle = await screen.findByRole("button", { name: "切换思考过程" });
+    expect(screen.queryByText("先检查条件")).not.toBeInTheDocument();
+    fireEvent.click(toggle);
+    expect(screen.getByText("先检查条件")).toBeInTheDocument();
     expect(bridge.readConversationEvents).toHaveBeenCalledWith(conversationId, 1);
   });
 
@@ -227,17 +230,17 @@ describe("ReplyBarWindowApp live conversation popover", () => {
     act(() => stateListener?.(replyState()));
     fireEvent.mouseEnter(document.querySelector(".reply-activity-viewport") as HTMLElement);
 
-    expect(await screen.findByText("先检查题目条件")).toBeInTheDocument();
     expect(await screen.findByText("最终答案")).toBeInTheDocument();
     const toggle = screen.getByRole("button", { name: "切换思考过程" });
     expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("先检查题目条件")).not.toBeInTheDocument();
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByText("先检查题目条件")).toBeInTheDocument();
     expect(screen.getByText("最终答案")).toBeInTheDocument();
   });
 
-  it("uses one thinking state and collapses reasoning when the answer block starts", async () => {
+  it("uses one thinking state and keeps reasoning collapsed when the answer block starts", async () => {
     const bridge = createBridge();
     bridge.getConversationSnapshot.mockResolvedValue({
       ...snapshot,
@@ -268,7 +271,7 @@ describe("ReplyBarWindowApp live conversation popover", () => {
     expect(screen.getAllByText("思考中…")).toHaveLength(1);
     expect(screen.getByRole("button", { name: "切换思考过程" })).toHaveAttribute(
       "aria-expanded",
-      "true",
+      "false",
     );
 
     act(() => {
@@ -289,7 +292,7 @@ describe("ReplyBarWindowApp live conversation popover", () => {
     expect(screen.queryByText("思考中…")).not.toBeInTheDocument();
   });
 
-  it("keeps growing reasoning in the outer conversation flow while thinking", async () => {
+  it("keeps reasoning collapsed while its summary follows the latest stream", async () => {
     const bridge = createBridge();
     bridge.getConversationSnapshot.mockResolvedValue({
       ...snapshot,
@@ -316,7 +319,9 @@ describe("ReplyBarWindowApp live conversation popover", () => {
       });
     });
     expect(await screen.findByText("先检查题目条件。")).toBeInTheDocument();
-    expect(document.querySelector('[class*="trViewport"]')?.className).not.toContain("isScroll");
+    const toggle = screen.getByRole("button", { name: "切换思考过程" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(document.querySelector('[class*="trBody"]')).toBeNull();
 
     act(() => {
       changeListener?.({
@@ -334,7 +339,8 @@ describe("ReplyBarWindowApp live conversation popover", () => {
       });
     });
     expect(await screen.findByText(/继续逐步核对每个条件/)).toBeInTheDocument();
-    expect(document.querySelector('[class*="trViewport"]')?.className).not.toContain("isScroll");
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(document.querySelector('[class*="trBody"]')).toBeNull();
   });
 
   it("shows message actions only after a completed assistant reply", async () => {
