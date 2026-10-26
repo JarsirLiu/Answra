@@ -38,7 +38,7 @@ interface ManagedWindow {
 }
 
 const SURFACE_POLICIES: Record<WindowRole, SurfacePolicy> = {
-  main: { alwaysOnTopLevel: "floating", nonActivating: false },
+  main: { alwaysOnTopLevel: "floating", nonActivating: true },
   "reply-bar": { alwaysOnTopLevel: "floating", nonActivating: false },
   "ime-candidate": { alwaysOnTopLevel: "pop-up-menu", nonActivating: true },
   "selection-overlay": { alwaysOnTopLevel: "screen-saver", nonActivating: true },
@@ -65,7 +65,13 @@ export function createWindowSurfaceRegistry(
 
     const entry: ManagedWindow = {
       descriptor,
-      onShow: () => apply(window, "show", true),
+      // The Windows selection overlay applies capture protection after its
+      // non-activating show + moveTop sequence. Reapplying HWND styles from the
+      // synchronous show event would insert another native window operation
+      // between those steps.
+      onShow: () => {
+        if (descriptor.role !== "selection-overlay") apply(window, "show", true);
+      },
       onResize: () => apply(window, "resize"),
       onRestore: () => apply(window, "restore", true),
       onFocus: () => {
@@ -96,6 +102,12 @@ export function createWindowSurfaceRegistry(
     const entry = managed.get(window);
     if (!entry || window.isDestroyed()) return false;
     return apply(window, "before-show", true);
+  }
+
+  function prepareCaptureProtection(window: BrowserWindow): boolean {
+    const entry = managed.get(window);
+    if (!entry || window.isDestroyed()) return false;
+    return applyCapturePolicy(window, entry.descriptor, "capture-protection");
   }
 
   function attachAbove(child: BrowserWindow, owner: BrowserWindow): void {
@@ -240,6 +252,7 @@ export function createWindowSurfaceRegistry(
     get size() {
       return managed.size;
     },
+    prepareCaptureProtection,
     prepareToShow,
     refresh,
     register,

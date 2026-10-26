@@ -41,6 +41,10 @@ export function prepareWindowToShow(window: BrowserWindow): boolean {
   return windowSurfaceRegistry.prepareToShow(window);
 }
 
+export function prepareWindowCaptureProtection(window: BrowserWindow): boolean {
+  return windowSurfaceRegistry.prepareCaptureProtection(window);
+}
+
 export function attachWindowAbove(child: BrowserWindow, owner: BrowserWindow): void {
   windowSurfaceRegistry.attachAbove(child, owner);
 }

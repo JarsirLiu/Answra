@@ -63,6 +63,7 @@ describe("window surface registry", () => {
     });
 
     expect(main.setAlwaysOnTop).toHaveBeenCalledWith(true, "floating");
+    expect(main.setFocusable).toHaveBeenCalledWith(false);
     expect(candidate.setAlwaysOnTop).toHaveBeenCalledWith(true, "pop-up-menu");
     expect(candidate.setFocusable).toHaveBeenCalledWith(false);
     expect(applyCaptureProtection).toHaveBeenLastCalledWith(candidate, false);
@@ -77,6 +78,18 @@ describe("window surface registry", () => {
 
     registry.setStealthEnabled(true);
     expect(applyCaptureProtection).toHaveBeenLastCalledWith(candidate, true);
+  });
+
+  it("keeps the main surface focusable on platforms without the non-activating policy", () => {
+    const registry = createWindowSurfaceRegistry({
+      applyCaptureProtection: () => true,
+      platform: "darwin",
+    });
+    const main = new MockWindow();
+
+    registry.register(main as never, { role: "main", captureProtection: "never" });
+
+    expect(main.setFocusable).not.toHaveBeenCalled();
   });
 
   it("reconciles the candidate owner relationship on owner focus and cleans it up", () => {
@@ -137,6 +150,54 @@ describe("window surface registry", () => {
     expect(window.listeners.get("focus")?.size).toBe(0);
     expect(window.listeners.get("blur")?.size).toBe(0);
     expect(window.listeners.get("show")?.size).toBe(0);
+  });
+
+  it("applies capture protection without changing z-order during an opacity-shield show", () => {
+    const applyCaptureProtection = vi.fn(() => true);
+    const registry = createWindowSurfaceRegistry({
+      applyCaptureProtection,
+      platform: "win32",
+    });
+    const window = new MockWindow();
+    registry.setStealthEnabled(true);
+    registry.register(window as never, {
+      role: "selection-overlay",
+      captureProtection: "stealth-only",
+      failClosed: true,
+    });
+    window.setAlwaysOnTop.mockClear();
+    applyCaptureProtection.mockClear();
+
+    expect(registry.prepareCaptureProtection(window as never)).toBe(true);
+
+    expect(window.setAlwaysOnTop).not.toHaveBeenCalled();
+    expect(applyCaptureProtection).toHaveBeenCalledWith(window, true);
+  });
+
+  it("does not reapply selection overlay HWND policy from the show event", () => {
+    const applyCaptureProtection = vi.fn(() => true);
+    const registry = createWindowSurfaceRegistry({
+      applyCaptureProtection,
+      platform: "win32",
+    });
+    const window = new MockWindow();
+    registry.setStealthEnabled(true);
+    registry.register(window as never, {
+      role: "selection-overlay",
+      captureProtection: "stealth-only",
+      failClosed: true,
+    });
+    window.setAlwaysOnTop.mockClear();
+    window.setFocusable.mockClear();
+    applyCaptureProtection.mockClear();
+
+    window.emit("show");
+
+    expect(window.setAlwaysOnTop).not.toHaveBeenCalled();
+    expect(window.setFocusable).not.toHaveBeenCalled();
+    expect(applyCaptureProtection).not.toHaveBeenCalled();
+    expect(registry.prepareCaptureProtection(window as never)).toBe(true);
+    expect(applyCaptureProtection).toHaveBeenCalledWith(window, true);
   });
 
   it("rejects duplicate registration for the same native window", () => {

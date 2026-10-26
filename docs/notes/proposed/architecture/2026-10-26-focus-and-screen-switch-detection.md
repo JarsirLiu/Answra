@@ -11,12 +11,12 @@
 - 定时轮询 `document.hasFocus()`；
 - 少数实现还会叠加 `fullscreenchange`、鼠标离开、剪贴板与窗口尺寸变化。
 
-Answra 当前的浮窗是**普通可聚焦窗口**：创建时未指定 `focusable`，`SURFACE_POLICIES.main.nonActivating` 为 `false`（`apps/desktop/src/main/windowSurfaceRegistry.ts`）。首次显示已改为 `showInactive()`（`apps/desktop/src/main/mainWindowController.ts`），但窗口仍可在用户点击时激活。现有输入由聚焦编辑器的 DOM `keydown` 进入 `useEmbeddedIme.sendKey` → IPC → Rime；非激活窗口收不到这条 DOM 键盘事件路径。
+Answra 当前浮窗首次显示使用 `showInactive()`（`apps/desktop/src/main/mainWindowController.ts`）。Windows 主浮窗已按用户确认的分阶段方案设置为非激活窗口，鼠标按钮和截图流程先单独验证；macOS 仍保持原行为。现有输入由聚焦编辑器的 DOM `keydown` 进入 `useEmbeddedIme.sendKey` → IPC → Rime；非激活主窗口暂时不能通过这条路径输入文字。
 
 由此产生三类暴露：
 
 1. **启动即失焦。** `show()` 会夺取前台焦点，用户即使不操作，也会让下层浏览器 `blur` 一次。该行为与输入无关，属于可独立修复的缺陷。
-2. **每次“切回浮窗”失焦一次。** 截图、发送、再次截图这些操作本身不依赖焦点（`captureIpc.ts:87` 隐藏、`selectionWindow.ts:55` 与 `captureIpc.ts:168` 均用 `showInactive()`，发送是纯 IPC），但用户必须点击浮窗上的按钮或输入框；点击一个可聚焦窗口就会把前台从浏览器切走。一轮操作只计一次，多次点击浏览器再点回来会再计。
+2. **每次“切回浮窗”可能失焦。** 截图、发送、再次截图这些操作本身不依赖焦点（`captureIpc.ts:87` 隐藏、`selectionWindow.ts:55` 与 `captureIpc.ts:168` 均用 `showInactive()`，发送是纯 IPC），但用户必须点击浮窗上的按钮或输入框；点击一个可聚焦窗口会把前台从浏览器切走。Windows 主浮窗正在验证非激活鼠标交互，以避免这类焦点切换；macOS 尚未改变。
 3. **与焦点无关的页面状态变化。** 主窗口浮窗放大到盖住整个浏览器时，Chrome 在 Windows 上的原生遮挡检测（native window occlusion）可能把页面判为 hidden，从而触发 `visibilitychange`。任务栏显示和第二实例唤起也会影响用户看到的窗口行为，但不属于键盘输入焦点问题，应作为独立窗口体验决定处理。
 
 需要强调的口径：`visibilitychange` 与小尺寸置顶窗口没有必然关系。一个 340×60 的浮窗抢焦点只会让页面 `blur`，页面通常仍是 `visible`。因此需要分别评估两类用户可观察的状态变化：**焦点变化**（由窗口激活与输入方式决定）和**页面可见性/遮挡变化**（受布局和尺寸影响）。不能把消除其中一种变化描述成整体不可见或不可发现。
@@ -27,8 +27,10 @@ Answra 当前的浮窗是**普通可聚焦窗口**：创建时未指定 `focusab
 
 - 代码/模块：
   - `apps/desktop/src/main/mainWindowController.ts`（主窗口创建与首次显示）
+  - `apps/desktop/src/main/capture/selectionWindow.ts`、`capture/captureIpc.ts`（选区窗及截图恢复阶段的焦点诊断）
   - `apps/desktop/src/main/ime/*`（现有会话、租约、候选窗行为）
   - `apps/desktop/test/fixtures/focus-probe.html`（仅供人工实测的静态探针，不进入产品构建）
+  - `packages/ui/test/fixtures/focus-editor-harness.html` 与同名 TSX（只用于浏览器实测，不进入产品构建）
 - UI/进程/协议/持久化表面：主窗口首次显示行为和人工诊断方式；不改变任务栏行为、IME 会话/候选窗契约、对话协议、会话存储或截图产物语义。
 - 相关 Note：
   - [会议场景隐身模式的窗口与捕获边界](2026-10-13-comprehensive-stealth-mode.md)
@@ -64,11 +66,28 @@ Answra 当前的浮窗是**普通可聚焦窗口**：创建时未指定 `focusab
 ### 2. P1（已具备观测工具）：把焦点事实纳入诊断
 
 - 使用现有 `logImeDiagnostic` 窗口事件以及焦点探针确认真实焦点轨迹；主窗口已记录 show/hide/focus/blur/minimize/restore 和可见/聚焦状态。
+- 每轮截图结束时只输出一条 `[capture][focus]` JSON 汇总，包含选区窗口 show/focus/blur/hide/close 快照、主窗恢复后的 Electron 与 Windows 前台状态，以及截图结果；中间进度不重复输出。
+- Windows 选区窗创建时在构造参数中启用 `alwaysOnTop` 与 `focusable: false`，显示使用 `showInactive()` 后调用 `moveTop()`。原先选区完成后销毁非激活置顶窗口；Windows 实测日志显示销毁时前台短暂变成 `Shell_TrayWnd`，因此改为隐藏并复用窗口，应用退出时销毁。该生命周期参考 Natively 的 Windows cropper；焦点保留仍需用户在目标 Windows 上复测。
+- **Windows 日志复测（2026-10-26）：** “捕获后先恢复主窗，再隐藏 overlay”版本的日志显示，overlay 没有 hide 事件，但收尾后前台仍变为 Answra 进程自己的 `Chrome_WidgetWin_1` HWND；用户观察到网页短暂失焦。更细看流程，主窗在截图开始时隐藏，截图结束后以 `showInactive()` 恢复；后者之后前台为 Answra 进程。该顺序没有解决问题，且把前台切到了 Answra；不保留为修复。
+- **Windows overlay 停放实验（待实机验证）：** 截图确认后，让 overlay 透明、鼠标事件穿透并保留 HWND 与置顶状态；下一次截图复用时恢复不透明并接收鼠标。此前尝试停放时同时调用 `setAlwaysOnTop(false)`；最新日志显示 show 时前台为 Chrome，截图结束后前台为 `Shell_TrayWnd`。因此移除置顶层切换，避免在不隐藏窗口的前提下仍改变 Windows 前台回退关系。最新一次实机尚未验证此调整。
+- **Windows 选区窗显示顺序（实机验证通过）：** 对照 Natively `CropperWindowHelper.applyOpacityShield()`，选区 HWND 在 opacity 0 时 `showInactive()`、`moveTop()`，之后应用 capture protection，并等待 60ms 再设 opacity 1。选区窗显示事件不再重复设置 HWND 策略。Windows 实机复测确认点击截图不再使目标页面失焦；自动化测试锁定显示顺序和策略不重入。此结论限定于用户实际验证的 Windows 环境和截图路径。
+- **Windows 选区显示策略重入（待实机验证）：** Natively 在创建 cropper 时设定非激活/置顶策略，显示阶段只执行 `showInactive()`、`moveTop()`、捕获保护与延迟显现。Answra 的 `windowSurfaceRegistry` 原先还会同步响应 `show` 事件，再次调用 `setAlwaysOnTop`、`setFocusable` 和捕获保护；这与参考项目的 HWND 调用顺序不同。现改为 selection-overlay 的显示事件不重放策略，保留注册时设置的窗口样式，并由 opacity-shield 在 `moveTop()` 后应用捕获保护。最新实机日志在 overlay `show` 时前台仍是外部 Chrome，最终取消时前台为 `Shell_TrayWnd`；现有日志没有采到中间窗口消息，不能判断该切换是否由此造成。自动化测试只证明策略不重入，需重启后复测；未获 Windows 实测前不宣称焦点已修复。
+- **Windows 受保护主窗保持显示（实机验证通过）：** Windows 隐身开启且捕获保护预检成功时，截图期间不隐藏或重新显示主窗；预检失败或隐身关闭时继续隐藏原可见主窗。选区窗仍按 opacity-shield 顺序显示；用户已确认截图可正常操作且目标页面不再因该流程失焦。`reportedProtected: undefined` 表示 Electron 未提供状态读回值；可依赖的是注册策略预检返回成功，不把它写成独立的系统捕获排除证明。
+- **Windows 焦点复测（2026-10-26）：** 最新调整去掉 selection-overlay 的 `show` 事件策略重放后，用户实机确认点击截图不再导致目标页面失焦。之前日志在 overlay 显示时记录到外部 Chrome，取消收尾时记录到 `Shell_TrayWnd`；这不足以单独确定根因。回归测试覆盖策略不重入，后续若焦点问题复现，再按具体日志重新定位；不默认增加窗口操作或改动其他面板。
+- 选区 overlay 改为一个覆盖全部显示器联合边界的窗口，Windows 保留非激活显示与临时全局 Esc 取消，macOS 使用 panel 和 `enableLargerThanScreen`，Linux 使用 toolbar 类型。选区提示 HUD 已移除。
+- IPC 选区仍使用“显示器 ID + 该显示器内逻辑坐标”，拖拽限制在按下鼠标的显示器内；跨显示器拼接截图不在本次范围，因为当前捕获服务与回复条锚点都按单个显示器定义。联合窗口允许跨显示器移动鼠标，但不会把多个显示器的像素拼成一张截图。
 - 诊断**不记录按键内容、坐标、截图、前台应用名称或对话内容**。
 - 探针将 `blur`/`focus`、`visibilitychange`、`pagehide`/`pageshow` 事件和每 500ms 的 `document.hasFocus()` 采样分开呈现，可清零计数并复制有界事件报告。
 - 工具已加入；Windows/macOS 的实际轨迹采集仍待在目标机器上执行。观测结果用于判断 Answra 自身窗口操作的影响，不把第三方页面信号降为零作为目标。
 
-### 3. P2：验证内置 Rime 的非聚焦输入可行性；暂不进入生产实现
+### 3. Windows 非激活鼠标操作（用户已确认；输入暂不可用）
+
+- 只对 `main` 主浮窗应用现有 Windows `setFocusable(false)` 策略；不改 reply bar、IME lease、候选窗、键盘路由或截图实现。macOS 维持当前可聚焦行为。
+- 用户确认当前阶段优先保证点击主浮窗按钮和截图操作，暂时不能在主浮窗输入文字可以接受。主浮窗鼠标点击应触发正常按钮动作，但不应把浏览器/原前台应用的焦点切换到 Answra。
+- 必须在 Windows + 当前 Electron 版本验证：主浮窗按钮响应；启动截图、选区确认、截图结果回到应用的完整流程可用；操作前台页面只收到由实际窗口状态产生的事件，不对事件原因作推断。自动化策略测试不能替代此实测。
+- 若非激活窗口不能可靠接收鼠标点击，或截图/发送链路受影响，停止并报告，不要通过恢复焦点或隐式切换回聚焦模式掩盖失败。用户已接受文字输入暂不可用；后续恢复输入需单独设计非 DOM 输入来源和退出/恢复行为。
+
+### 4. P2：验证内置 Rime 的非聚焦输入可行性；暂不进入生产实现
 
 对照检查了 Natively 项目的 stealth typing 实现。它的核心不是让普通聚焦窗口“隐藏失焦”，而是按平台建立非激活窗口和独立键盘输入通道：Windows 使用 `setFocusable(false)` / `WS_EX_NOACTIVATE`，并通过 `WH_KEYBOARD_LL` 捕获按键后送入 renderer；macOS 将浮窗配置为非激活 `NSPanel`，同时使用 `CGEventTap` 获取输入。该项目还检测活动键盘布局；CJK IME 活跃时禁用 stealth typing 并退回普通聚焦输入，因为低级钩子拿到的按键不能替代 IMM32/TSF 或 macOS 输入法的组合与候选流程。macOS 路径还需要 Accessibility 授权。此参考说明独立输入通道在特定平台上可实现，但不是对现有 Rime 链路的直接修补，也不构成所有第三方页面信号都不可观察的保证。
 
@@ -77,16 +96,16 @@ Answra 当前的浮窗是**普通可聚焦窗口**：创建时未指定 `focusab
 本阶段按以下门槛做隔离原型，不改变生产输入行为，也不将“第三方页面没有记录事件”作为成功条件：
 
 - **P2-A（已验证，范围有限）：验证 Rime 引擎与 DOM 按键来源可分离。** 在 Windows 11 专业版 build 26200 上，直接驱动仓库内 protocol v2 的 `answra-rime-host.exe` 与 librime 1.17.0，使用临时 user data，不经过 Electron、DOM、`ImeSessionManager` lease 或系统键盘钩子。启用后发送 `n/i/h/a/o` 的 keydown/key-up 序列，preedit 到达 `ni hao`，候选包含“你好”，空格提交得到 `committedText="你好"`；`rimeKeyMapping.test.ts` 3 项通过。这证明现有 helper/librime 可以处理脱离 DOM 事件的结构化按键并完成中文组合，不证明 `RimeBridge` IPC、非聚焦 editor adapter、物理键盘采集或原生窗口焦点行为已经可用。下一步验证 P2-B；仍需覆盖退格、方向键、候选翻页/选择等完整编辑命令。
-- **P2-B：验证逻辑输入目标与 DOM focus 可分离。** 使用隔离的 textarea 和 CodeMirror harness，显式登记目标并保留 selection snapshot；通过现有 adapter 应用 Rime commit/编辑命令，检查焦点离开后 selection、caret 镜像、候选锚点、粘贴和撤销行为。不得在生产控件上移除 focus/lease 守卫。若任一编辑器模型不能可靠恢复 selection，则缩小支持范围或停止该路线。
+- **P2-B（adapter 自动化已完成；浏览器验证部分完成）：** jsdom 测试覆盖 textarea composition selection snapshot commit、CodeMirror blur 后 commit/编辑命令与撤销。隔离浏览器夹具在 Windows Edge `156.0.4314.42`（Headless Chromium，非 Electron）实测：窗口获焦时 textarea 候选锚点报告 `show { x: 56, lineTop: 114.875, lineBottom: 138.875 }`；DOM blur 后 composition commit 得到 `alpha 你好 gamma`、selection `[8,8]`，reporter 发出 `clear`。CodeMirror DOM blur 后 commit 得到 `alpha 你好 gamma`、caret 8，撤销恢复 `alpha beta gamma`。切到第二浏览器页后，原页先收到 `blur (hasFocus=false, visibility=visible)`，再收到 `visibilitychange (hasFocus=false, visibility=hidden)`；视觉 caret 消失，但 renderer reporter 保留最后一次 `show`，不单独发送 window-blur `clear`。代码检查显示 main 的 `owner-window-blur` 会 suspend lease，候选 controller suspend 会隐藏原生候选窗并清 anchor，但此 Electron main → lease → native window 链路尚未在 harness 中端到端实测。夹具的“重新聚焦插入”只测试 selection 文本插入，不是真实剪贴板粘贴；真实剪贴板、浏览器窗口切换下 IME lease 恢复及 Windows/macOS Electron 候选窗体验仍未验证。隔离浏览器结果本身不能作为修改生产 focus/lease 的依据；另行批准的 Windows 鼠标操作阶段见下文。若端到端行为与现有 lease 规则不符，应先停下报告体验影响。
 - **P2-C：原生按键来源原型（仅在 A、B 通过后）。** 分 Windows 与 macOS 评估接收按键事件并映射到现有 `processKey` 的最小原生实验；明确用户显式启用、限定到已登记输入目标、可见退出方式、超时停止、窗口/renderer 销毁时停止、异常 fail-open/fail-closed 决策及不误路由前台按键的验证。Windows 与 macOS 的权限、事件语义和非激活窗口行为分别记录；不假定一端结果适用于另一端。
 - **实机基线：** Windows 11 / Electron 29.4.6 先测现有普通聚焦输入和 `showInactive()` 启动；macOS 单列。焦点探针记录 `blur`、`focus`、visibility 和 `hasFocus`，并记录 Answra 自身输入是否完整；探针不是“计数清零”验收器。
 - **决策门：** A 失败则停止非聚焦 Rime 路线并保留当前聚焦输入；A 通过但 B 失败则只保留安全的非文本窗口操作评估；A、B 通过后才写独立输入架构 Note，评审是否值得做 C。C 必须证明中文 Rime、编辑器操作与退出恢复完整，再决定是否提出生产改动。
 
 ### 当前下一步
 
-P2-A 已证明 librime/helper 能脱离 DOM `keydown` 处理结构化按键并提交中文。下一项是 **P2-B 的隔离编辑器验证**：分别验证 textarea 与 CodeMirror 在 DOM 焦点移出后，是否能用保存的 selection snapshot 正确应用 Rime commit 和编辑命令，并保持 caret、候选锚点与撤销行为。先从 textarea 做最小 harness；通过后再测 CodeMirror。任何一项无法可靠恢复 selection，就记录为限制并缩小可行范围，不修改生产控件的 focus/lease 守卫。
+P2-A 已证明 librime/helper 能脱离 DOM `keydown` 处理结构化按键并提交中文。P2-B 的 adapter 自动化和隔离浏览器验证已完成所记录的范围，但完整 P2-B 仍未通过。当前新增的 Windows 非激活鼠标阶段只覆盖非文本操作，不能视为非聚焦输入可用；下一步实测其按钮和截图链路。后续再验证 Electron lease、真实剪贴板与候选窗；不得据浏览器 fixture 推断原生窗口行为。
 
-P2-B 不需要用户启动会议应用，也不需要系统级按键钩子。只有 P2-A/B 通过、并另立输入架构 Note 后，才讨论 P2-C 原生物理键盘原型；届时才需要用户在目标 Windows/macOS 环境配合实测。无论阶段如何推进，第三方页面焦点/可见性计数归零都不是验收目标。
+P2-B 的 jsdom 适配器测试和 Windows Edge 隔离浏览器检查已完成上述范围；完整 P2-B 仍未通过。Windows 主浮窗现在按用户确认先尝试非激活鼠标操作，键盘输入暂时关闭；此改动必须经过 Electron 按钮和截图端到端实测，未实测前不视为已通过。之后再验证 blur-settle/lease suspend/native candidate hide、真实剪贴板和 lease 恢复。后续若实现非聚焦文字输入，仍需另立输入架构决策并验证按键目标、退出恢复和编辑器体验。无论阶段如何推进，第三方页面焦点/可见性计数归零都不是验收目标。
 
 参考实现带来的额外约束：
 
@@ -118,7 +137,7 @@ P2-B 不需要用户启动会议应用，也不需要系统级按键钩子。只
 ## 曾考虑的替代方案
 
 - **只把 `show()` 改成 `showInactive()`：** 采纳为 P0，用于避免应用主动首次显示时请求激活窗口；它不改变点击输入区时的正常激活语义，也不承诺消除其他页面信号。
-- **主窗口永久 `focusable: false` + 全局按键转交内置 Rime：** 不在当前生产范围内，作为 P2-C 的待验证路线保留。Answra 的 Rime 引擎本身可接收结构化按键，因此不能仅凭系统 CJK IME 不可用就否决；但系统级事件源、按键路由、目标授权、selection/caret、候选定位及故障恢复都尚未验证。是否继续由 P2-A/B 的结果决定，不以第三方焦点事件归零为立项理由。
+- **非激活主窗口 + 全局按键转交内置 Rime：** 鼠标阶段已单独获准并在 Windows 主浮窗试行 `focusable: false`；键盘输入来源与转交仍不在当前范围内，作为后续待验证路线保留。Answra 的 Rime 引擎本身可接收结构化按键，但系统级事件源、按键路由、目标授权、selection/caret、候选定位及故障恢复都尚未验证，不以第三方焦点事件归零为立项理由。
 - **照搬 Natively 的 stealth typing：** 作为技术对照保留，不纳入当前决定。该实现依赖平台原生窗口策略和系统级键盘事件通道，并在 CJK IME 活跃时降级；Answra 的 Rime/DOM 输入契约不同，直接移植会改变按键路由并产生新的输入与恢复风险。只有在独立产品需求明确、取得用户授权并完成平台原型后，才重新评估其适用部分。
 - **只用 `ToUnicodeEx` 还原字符并写入输入框：** 舍弃。它绕开系统输入法组合，不满足中文输入与编辑器契约。
 - **让用户“尽量不要点浮窗”，靠操作习惯规避：** 舍弃。这不是产品行为，截图、发送、再截图本身就要求频繁点击。
@@ -127,7 +146,7 @@ P2-B 不需要用户启动会议应用，也不需要系统级按键钩子。只
 
 ## 验收标准
 
-- 可观察结果：首次显示调用非激活显示 API；用户点击输入区后，中英文输入、候选选择、退格、回车和粘贴按现有语义工作；按钮及截图/发送流程的焦点效果通过系统实测记录。当前自动化覆盖策略调用和输入链路未改，首次显示后的 OS 焦点轨迹待实机验证。
+- 可观察结果：首次显示调用非激活显示 API；Windows 当前阶段主浮窗鼠标按钮与截图/发送流程继续工作且不激活 Answra，文字输入暂时不可用；macOS 保持现状。后续输入恢复需另行实现并验证完整编辑行为。Windows 主浮窗和截图流程的系统实测尚待完成。
 - 可观察结果：探针如实分别记录 `blur`/`focus`、`visibilitychange`、`visibilityState` 和 `document.hasFocus()`；结果不被解释为绕过第三方检测或保证事件归零。
 - 自动化验证：窗口 controller 单测断言首次显示调用 `showInactive()` 且策略预检失败时不显示；当前生产代码不得增加全局键盘吞键/转发实现。若未来另行批准原生原型，原型测试与正式产品门禁分开记录。运行 `pnpm typecheck`、`pnpm test`、`pnpm architecture:check`、`pnpm notes:check`。
 - 已完成的原生引擎验证仅证明 Windows helper/librime 处理合成键值；不可将其表述为已完成非聚焦输入或真实系统焦点验证。

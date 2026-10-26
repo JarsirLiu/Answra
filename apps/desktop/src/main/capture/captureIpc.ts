@@ -2,29 +2,33 @@ import { randomUUID } from "node:crypto";
 import type { RegionCaptureOptions, RegionSelection, ScreenshotResult } from "@answra/shared";
 import { CaptureChannels } from "@answra/shared";
 import type { IpcMainEvent } from "electron";
-import { globalShortcut, ipcMain } from "electron";
+import { BrowserWindow, globalShortcut, ipcMain } from "electron";
 import {
   getWindow,
   hideReplyBarWindowForCapture,
   isStealthEnabled,
   isWindowFromSender,
+  prepareWindowCaptureProtection,
   prepareWindowToShow,
   registerWindowSurface,
   restoreReplyBarWindowAfterCapture,
   setReplyBarAnchor,
 } from "../window";
 import { getWindowCaptureDiagnostics } from "../windowCaptureProtection";
+import { describeForegroundWindow } from "../windowForeground";
 import { captureDisplay, cropToDataUrl, ScreenCaptureError } from "./captureService";
 import {
-  closeSelectionWindows,
   createSelectionWindows,
   getActiveSelectionWindows,
+  hideSelectionWindows,
+  parkSelectionWindowsForReuse,
+  type SelectionWindowFocusSnapshot,
 } from "./selectionWindow";
 
 /**
  * 区域截图 IPC 编排：
- * 1. 渲染进程 invoke StartRegionCapture → 隐藏主窗口（避免入镜）→ 弹出框选 overlay；
- * 2. overlay 上报选区/取消 → 关闭 overlay → 恢复主窗口；
+ * 1. 渲染进程 invoke StartRegionCapture → 按捕获保护状态处理主窗口 → 弹出框选 overlay；
+ * 2. overlay 上报选区/取消 → 停放或隐藏 overlay → 必要时恢复主窗口；
  * 3. 捕获所选显示器整屏 → 逻辑选区换算物理像素 → 裁剪编码 PNG data URL 返回。
  */
 export function registerCaptureIpc(): void {
@@ -32,7 +36,6 @@ export function registerCaptureIpc(): void {
     CaptureChannels.StartRegionCapture,
     async (event, options: unknown): Promise<ScreenshotResult> => {
       const fromSender = isWindowFromSender(getWindow(), event);
-      console.log("[capture] StartRegionCapture 调用, 合法调用方:", fromSender);
       if (!fromSender) {
         console.error("[capture] 拒绝：非法调用方");
         return { message: "非法调用方", ok: false, reason: "error" };
@@ -75,32 +78,29 @@ async function runRegionCapture(
 ): Promise<ScreenshotResult> {
   const mainWindow = getWindow();
   const wasVisible = mainWindow?.isVisible() ?? false;
+  const canKeepProtectedMainWindowVisible = Boolean(
+    process.platform === "win32" &&
+      isStealthEnabled() &&
+      wasVisible &&
+      mainWindow &&
+      !mainWindow.isDestroyed() &&
+      prepareWindowToShow(mainWindow),
+  );
+  const mainWindowHiddenForCapture = wasVisible && !canKeepProtectedMainWindowVisible;
   const replyBarWasVisible = hideReplyBarWindowForCapture();
-  console.info("[capture][diagnostic] started", {
-    captureId,
-    windowId: mainWindow?.id,
-    wasVisible,
-    stealth: isStealthEnabled(),
-    bounds: mainWindow?.getBounds?.(),
-  });
+  const focusSnapshots: SelectionWindowFocusSnapshot[] = [];
+  let outcome: "selected" | "cancelled" | "unavailable" | "error" = "error";
   try {
-    mainWindow?.hide();
-    console.info("[capture][diagnostic] main window hidden", {
-      captureId,
-      visible: mainWindow?.isVisible(),
-    });
+    if (mainWindowHiddenForCapture) mainWindow?.hide();
     const overlays = createSelectionWindows(line, isStealthEnabled(), {
       registerWindowSurface,
       prepareWindowToShow,
-    });
-    console.info("[capture][diagnostic] selection overlays created", {
-      captureId,
-      count: overlays.length,
-      windowIds: overlays.map((window) => window.id),
-      protected: isStealthEnabled(),
+      prepareCaptureProtection: prepareWindowCaptureProtection,
+      onFocusSnapshot: (snapshot) => focusSnapshots.push(snapshot),
     });
     if (overlays.length === 0) {
       console.error("[capture] 无可用显示器");
+      outcome = "unavailable";
       return { message: "没有可用的显示器", ok: false, reason: "unavailable" };
     }
     const selectionPromise = new Promise<RegionSelection | null>((resolve) => {
@@ -123,31 +123,27 @@ async function runRegionCapture(
       }
     }
     const selection = await selectionPromise;
-    console.info("[capture][diagnostic] selection settled", { captureId, selection });
     if (!selection) {
-      console.log("[capture] 用户取消截图");
+      outcome = "cancelled";
       return { ok: false, reason: "cancelled" };
     }
     // The detached reply surface is positioned near the selection. Keep the
     // toolbar HWND and its bounds independent from the screenshot workflow.
     setReplyBarAnchor(selection);
     pendingCapture = undefined;
-    closeSelectionWindows();
-    console.info("[capture][diagnostic] display capture started", {
-      captureId,
-      displayId: selection.displayId,
-      windowVisible: mainWindow?.isVisible(),
-    });
+    if (process.platform === "win32") {
+      // Keep the HWND alive but transparent and click-through; hiding it has
+      // repeatedly changed the foreground window during the capture workflow.
+      parkSelectionWindowsForReuse();
+    } else {
+      hideSelectionWindows();
+    }
     const capture = await captureDisplay(selection.displayId);
     const result = cropToDataUrl(capture, selection.rect);
-    console.info("[capture][diagnostic] display capture completed", {
-      captureId,
-      width: result.width,
-      height: result.height,
-    });
+    outcome = "selected";
     return result;
   } catch (error) {
-    console.error("[capture][diagnostic] failed", { captureId, error });
+    console.error("[capture] 区域截图失败", { captureId, error });
     if (error instanceof ScreenCaptureError) {
       return { message: error.message, ok: false, reason: error.reason };
     }
@@ -162,30 +158,43 @@ async function runRegionCapture(
       globalShortcut.unregister("Escape");
       escapeShortcutRegistered = false;
     }
-    closeSelectionWindows();
-    // showInactive 恢复可见但不抢焦点；之后重申捕获排除，覆盖窗口隐藏/恢复周期。
-    if (wasVisible && mainWindow && !mainWindow.isDestroyed()) {
-      if (prepareWindowToShow(mainWindow)) mainWindow.showInactive();
-      if (isStealthEnabled() && process.platform === "win32") {
-        // Electron applies display affinity on the next desktop composition; give DWM time
-        // before the renderer receives the result and the user can start another capture.
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      }
-      console.info("[capture][diagnostic] main window restored", {
-        captureId,
-        windowId: mainWindow.id,
-        visible: mainWindow.isVisible(),
-        stealth: isStealthEnabled(),
-        ...getWindowCaptureDiagnostics(mainWindow),
-      });
-    } else {
-      console.info("[capture][diagnostic] main window restore skipped", {
-        captureId,
-        wasVisible,
-        destroyed: mainWindow?.isDestroyed(),
-      });
+    const restoreMainWindow = () => {
+      if (!mainWindowHiddenForCapture || !mainWindow || mainWindow.isDestroyed()) return false;
+      if (!prepareWindowToShow(mainWindow)) return false;
+      mainWindow.showInactive();
+      return true;
+    };
+    if (process.platform === "win32") parkSelectionWindowsForReuse();
+    else hideSelectionWindows();
+    const mainWindowRestored = restoreMainWindow();
+    if (mainWindowRestored && isStealthEnabled() && process.platform === "win32") {
+      // Electron applies display affinity on the next desktop composition; give DWM time
+      // before the renderer receives the result and the user can start another capture.
+      await new Promise((resolve) => setTimeout(resolve, 100));
     }
     restoreReplyBarWindowAfterCapture(replyBarWasVisible);
+    console.info(
+      "[capture][focus]",
+      JSON.stringify({
+        captureId,
+        outcome,
+        overlays: focusSnapshots,
+        mainWindow:
+          mainWindow && !mainWindow.isDestroyed()
+            ? {
+                visible: mainWindow.isVisible(),
+                focused: mainWindow.isFocused(),
+                focusable: mainWindow.isFocusable(),
+              }
+            : { wasVisible, destroyed: mainWindow?.isDestroyed() },
+        electronFocusedWindowId: BrowserWindow.getFocusedWindow()?.id,
+        foreground: describeForegroundWindow(),
+        captureProtection:
+          mainWindow && !mainWindow.isDestroyed()
+            ? getWindowCaptureDiagnostics(mainWindow)
+            : undefined,
+      }),
+    );
   }
 }
 

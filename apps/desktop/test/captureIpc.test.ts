@@ -14,6 +14,8 @@ const shared = vi.hoisted(() => ({
       shared.visible = false;
     }),
     isDestroyed: () => false,
+    isFocused: vi.fn(() => false),
+    isFocusable: vi.fn(() => false),
     isVisible: vi.fn(() => shared.visible),
     showInactive: vi.fn(() => {
       shared.visible = true;
@@ -28,6 +30,7 @@ const shared = vi.hoisted(() => ({
 }));
 
 vi.mock("electron", () => ({
+  BrowserWindow: { getFocusedWindow: () => undefined },
   desktopCapturer: { getSources: vi.fn() },
   ipcMain: {
     handle: (channel: string, fn: (...args: unknown[]) => unknown) => {
@@ -71,11 +74,13 @@ vi.mock("../src/main/window", () => ({
   setReplyBarAnchor: vi.fn(),
   refreshStealthCaptureProtection: vi.fn(),
   registerWindowSurface: vi.fn(),
+  prepareWindowCaptureProtection: vi.fn(() => true),
   prepareWindowToShow: vi.fn(() => true),
 }));
 
 vi.mock("../src/main/capture/selectionWindow", () => ({
-  closeSelectionWindows: vi.fn(),
+  hideSelectionWindows: vi.fn(),
+  parkSelectionWindowsForReuse: vi.fn(),
   createSelectionWindows: vi.fn(() => [shared.fakeOverlay]),
   getActiveSelectionWindows: vi.fn(() => [shared.fakeOverlay]),
 }));
@@ -103,7 +108,11 @@ import {
   cropToDataUrl,
   ScreenCaptureError,
 } from "../src/main/capture/captureService";
-import { createSelectionWindows } from "../src/main/capture/selectionWindow";
+import {
+  createSelectionWindows,
+  hideSelectionWindows,
+  parkSelectionWindowsForReuse,
+} from "../src/main/capture/selectionWindow";
 import { isWindowFromSender, prepareWindowToShow, setReplyBarAnchor } from "../src/main/window";
 
 const VALID_SELECTION = {
@@ -177,10 +186,10 @@ describe("captureIpc 区域截图编排", () => {
     },
   );
 
-  it("keeps the main window hidden during capture and reapplies stealth after restoring it", async () => {
+  it("keeps the protected Windows main window visible during capture", async () => {
     shared.stealthEnabled = true;
     vi.mocked(captureDisplay).mockImplementation(async () => {
-      expect(shared.fakeWindow.isVisible()).toBe(false);
+      expect(shared.fakeWindow.isVisible()).toBe(process.platform === "win32");
       return { image: {}, scaleFactor: 1 };
     });
     vi.mocked(cropToDataUrl).mockReturnValue({
@@ -199,10 +208,45 @@ describe("captureIpc 区域截图编排", () => {
 
     expect(shared.fakeWindow.isVisible()).toBe(true);
     expect(prepareWindowToShow).toHaveBeenCalledWith(shared.fakeWindow);
-    expect(prepareWindowToShow.mock.invocationCallOrder[0]).toBeLessThan(
-      shared.fakeWindow.showInactive.mock.invocationCallOrder.at(-1) ?? Infinity,
-    );
+    if (process.platform === "win32") {
+      expect(shared.fakeWindow.showInactive).not.toHaveBeenCalled();
+    } else {
+      expect(prepareWindowToShow.mock.invocationCallOrder[0]).toBeLessThan(
+        shared.fakeWindow.showInactive.mock.invocationCallOrder.at(-1) ?? Infinity,
+      );
+    }
   });
+
+  it.skipIf(process.platform !== "win32")(
+    "parks the selection overlay without hiding it during the Windows capture workflow",
+    async () => {
+      vi.mocked(captureDisplay).mockImplementation(async () => {
+        expect(parkSelectionWindowsForReuse).toHaveBeenCalledOnce();
+        expect(hideSelectionWindows).not.toHaveBeenCalled();
+        return { image: {}, scaleFactor: 1 };
+      });
+      vi.mocked(cropToDataUrl).mockReturnValue({
+        dataUrl: "data:image/png;base64,QUJD",
+        height: 10,
+        ok: true,
+        width: 10,
+      });
+
+      const start = shared.handlers[CaptureChannels.StartRegionCapture]({}, {});
+      shared.handlers[CaptureChannels.RegionSelected](
+        { sender: shared.fakeOverlay.webContents },
+        VALID_SELECTION,
+      );
+      await start;
+
+      expect(vi.mocked(parkSelectionWindowsForReuse).mock.invocationCallOrder[0]).toBeLessThan(
+        vi.mocked(captureDisplay).mock.invocationCallOrder[0],
+      );
+      expect(vi.mocked(captureDisplay).mock.invocationCallOrder[0]).toBeLessThan(
+        shared.fakeWindow.showInactive.mock.invocationCallOrder.at(-1) ?? Infinity,
+      );
+    },
+  );
 
   it("returns ok:false reason cancelled when the user cancels the selection", async () => {
     const start = shared.handlers[CaptureChannels.StartRegionCapture]({}, {});

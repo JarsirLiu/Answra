@@ -35,6 +35,35 @@ describe("CodeMirror text adapter", () => {
     expect(view.state.doc.toString()).toBe("hello world");
   });
 
+  it("applies a commit and editor command after CodeMirror loses DOM focus", () => {
+    view = new EditorView({
+      parent: document.body,
+      state: EditorState.create({
+        doc: "hello world",
+        selection: { anchor: 6, head: 11 },
+        extensions: [history(), codeMirrorImeCompositionField],
+      }),
+    });
+
+    view.contentDOM.focus();
+    expect(view.hasFocus).toBe(true);
+    view.contentDOM.blur();
+    expect(view.hasFocus).toBe(false);
+
+    createCodeMirrorTextAdapter(view).insertText("你好");
+    expect(view.state.doc.toString()).toBe("hello 你好");
+    expect(view.state.selection.main.head).toBe(8);
+
+    applyCodeMirrorImeCommand(view, {
+      type: "moveCaret",
+      direction: "left",
+      extend: false,
+    });
+    expect(view.state.selection.main.head).toBe(7);
+    expect(undo(view)).toBe(true);
+    expect(view.state.doc.toString()).toBe("hello world");
+  });
+
   it("applies editor fallback commands without routing them back through the browser", () => {
     view = new EditorView({
       parent: document.body,
