@@ -21,9 +21,10 @@ import {
   createSelectionWindows,
   getActiveSelectionWindows,
   hideSelectionWindows,
-  parkSelectionWindowsForReuse,
   type SelectionWindowFocusSnapshot,
 } from "./selectionWindow";
+
+const CAPTURE_COMPOSITION_DELAY_MS = process.platform === "darwin" ? 80 : 40;
 
 /**
  * 区域截图 IPC 编排：
@@ -76,6 +77,7 @@ async function runRegionCapture(
   line: string | undefined,
   captureId: string,
 ): Promise<ScreenshotResult> {
+  const captureStartedAt = Date.now();
   const mainWindow = getWindow();
   const wasVisible = mainWindow?.isVisible() ?? false;
   const canKeepProtectedMainWindowVisible = Boolean(
@@ -84,21 +86,24 @@ async function runRegionCapture(
       wasVisible &&
       mainWindow &&
       !mainWindow.isDestroyed() &&
-      prepareWindowToShow(mainWindow),
+      prepareWindowCaptureProtection(mainWindow),
   );
   const mainWindowHiddenForCapture = wasVisible && !canKeepProtectedMainWindowVisible;
   const replyBarWasVisible = hideReplyBarWindowForCapture();
   const focusSnapshots: SelectionWindowFocusSnapshot[] = [];
+  let selectionWindows: BrowserWindow[] = [];
+  let selectedDisplayId: number | undefined;
+  let capturedSourceDisplayId: string | undefined;
   let outcome: "selected" | "cancelled" | "unavailable" | "error" = "error";
   try {
     if (mainWindowHiddenForCapture) mainWindow?.hide();
-    const overlays = createSelectionWindows(line, isStealthEnabled(), {
+    selectionWindows = createSelectionWindows(line, isStealthEnabled(), {
       registerWindowSurface,
       prepareWindowToShow,
       prepareCaptureProtection: prepareWindowCaptureProtection,
       onFocusSnapshot: (snapshot) => focusSnapshots.push(snapshot),
     });
-    if (overlays.length === 0) {
+    if (selectionWindows.length === 0) {
       console.error("[capture] 无可用显示器");
       outcome = "unavailable";
       return { message: "没有可用的显示器", ok: false, reason: "unavailable" };
@@ -106,7 +111,7 @@ async function runRegionCapture(
     const selectionPromise = new Promise<RegionSelection | null>((resolve) => {
       pendingCapture = resolve;
     });
-    for (const overlay of overlays) {
+    for (const overlay of selectionWindows) {
       overlay.once("closed", () => {
         if (pendingCapture && getActiveSelectionWindows().length === 0) pendingCapture(null);
       });
@@ -127,18 +132,30 @@ async function runRegionCapture(
       outcome = "cancelled";
       return { ok: false, reason: "cancelled" };
     }
+    selectedDisplayId = selection.displayId;
+    recordCaptureFocusPhase("selection-received", selectionWindows, mainWindow, focusSnapshots);
     // The detached reply surface is positioned near the selection. Keep the
     // toolbar HWND and its bounds independent from the screenshot workflow.
     setReplyBarAnchor(selection);
     pendingCapture = undefined;
-    if (process.platform === "win32") {
-      // Keep the HWND alive but transparent and click-through; hiding it has
-      // repeatedly changed the foreground window during the capture workflow.
-      parkSelectionWindowsForReuse();
-    } else {
-      hideSelectionWindows();
-    }
+    hideSelectionWindows();
+    recordCaptureFocusPhase("overlay-hidden", selectionWindows, mainWindow, focusSnapshots);
+    await new Promise((resolve) => setTimeout(resolve, CAPTURE_COMPOSITION_DELAY_MS));
+    recordCaptureFocusPhase("composition-settled", selectionWindows, mainWindow, focusSnapshots);
+    recordCaptureFocusPhase(
+      "display-capture-started",
+      selectionWindows,
+      mainWindow,
+      focusSnapshots,
+    );
     const capture = await captureDisplay(selection.displayId);
+    capturedSourceDisplayId = capture.sourceDisplayId;
+    recordCaptureFocusPhase(
+      "display-capture-completed",
+      selectionWindows,
+      mainWindow,
+      focusSnapshots,
+    );
     const result = cropToDataUrl(capture, selection.rect);
     outcome = "selected";
     return result;
@@ -164,21 +181,50 @@ async function runRegionCapture(
       mainWindow.showInactive();
       return true;
     };
-    if (process.platform === "win32") parkSelectionWindowsForReuse();
-    else hideSelectionWindows();
+    recordCaptureFocusPhase("restore-started", selectionWindows, mainWindow, focusSnapshots);
+    hideSelectionWindows();
     const mainWindowRestored = restoreMainWindow();
+    recordCaptureFocusPhase("main-window-restored", selectionWindows, mainWindow, focusSnapshots);
     if (mainWindowRestored && isStealthEnabled() && process.platform === "win32") {
       // Electron applies display affinity on the next desktop composition; give DWM time
       // before the renderer receives the result and the user can start another capture.
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
     restoreReplyBarWindowAfterCapture(replyBarWasVisible);
+    recordCaptureFocusPhase("reply-bar-restored", selectionWindows, mainWindow, focusSnapshots);
     console.info(
       "[capture][focus]",
       JSON.stringify({
         captureId,
+        startedAt: new Date(captureStartedAt).toISOString(),
         outcome,
-        overlays: focusSnapshots,
+        selectedDisplayId,
+        capturedSourceDisplayId,
+        timeline: focusSnapshots
+          .filter((snapshot) => snapshot.event === "phase")
+          .map(
+            ({ phase, timestamp, visible, mainWindowVisible, mainWindowFocused, foreground }) => ({
+              phase,
+              elapsedMs: timestamp - captureStartedAt,
+              overlayVisible: visible,
+              mainWindowVisible,
+              mainWindowFocused,
+              foreground: foreground.className,
+            }),
+          ),
+        overlayEvents: focusSnapshots
+          .filter(
+            (snapshot) =>
+              snapshot.event === "show" ||
+              snapshot.event === "hide" ||
+              snapshot.event === "focus" ||
+              snapshot.event === "blur",
+          )
+          .map(({ event, timestamp, foreground }) => ({
+            event,
+            elapsedMs: timestamp - captureStartedAt,
+            foreground: foreground.className,
+          })),
         mainWindow:
           mainWindow && !mainWindow.isDestroyed()
             ? {
@@ -195,6 +241,35 @@ async function runRegionCapture(
             : undefined,
       }),
     );
+  }
+}
+
+function recordCaptureFocusPhase(
+  phase: NonNullable<SelectionWindowFocusSnapshot["phase"]>,
+  selectionWindows: BrowserWindow[],
+  mainWindow: BrowserWindow | null | undefined,
+  snapshots: SelectionWindowFocusSnapshot[],
+): void {
+  const windows: Array<BrowserWindow | undefined> = selectionWindows.length
+    ? selectionWindows
+    : [undefined];
+  for (const selectionWindow of windows) {
+    const isSelectionWindowAvailable =
+      selectionWindow !== undefined && !selectionWindow.isDestroyed();
+    const isMainWindowAvailable = mainWindow != null && !mainWindow.isDestroyed();
+    snapshots.push({
+      event: "phase",
+      phase,
+      timestamp: Date.now(),
+      windowId: isSelectionWindowAvailable ? selectionWindow.id : undefined,
+      focusable: isSelectionWindowAvailable ? selectionWindow.isFocusable() : undefined,
+      focused: isSelectionWindowAvailable ? selectionWindow.isFocused() : undefined,
+      visible: isSelectionWindowAvailable ? selectionWindow.isVisible() : undefined,
+      electronFocusedWindowId: BrowserWindow.getFocusedWindow()?.id,
+      mainWindowVisible: isMainWindowAvailable ? mainWindow.isVisible() : undefined,
+      mainWindowFocused: isMainWindowAvailable ? mainWindow.isFocused() : undefined,
+      foreground: describeForegroundWindow(),
+    });
   }
 }
 

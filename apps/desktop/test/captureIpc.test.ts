@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * 区域截图 IPC 编排测试：mock electron/ipcMain 与 window、selectionWindow、
@@ -7,7 +7,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  */
 
 const shared = vi.hoisted(() => ({
-  fakeOverlay: { once: vi.fn(), webContents: { id: "overlay" } },
+  fakeOverlay: {
+    id: 3,
+    isDestroyed: () => false,
+    isFocused: () => false,
+    isFocusable: () => false,
+    isVisible: () => true,
+    once: vi.fn(),
+    webContents: { id: "overlay" },
+  },
   fakeWindow: {
     id: 2,
     hide: vi.fn(() => {
@@ -80,7 +88,6 @@ vi.mock("../src/main/window", () => ({
 
 vi.mock("../src/main/capture/selectionWindow", () => ({
   hideSelectionWindows: vi.fn(),
-  parkSelectionWindowsForReuse: vi.fn(),
   createSelectionWindows: vi.fn(() => [shared.fakeOverlay]),
   getActiveSelectionWindows: vi.fn(() => [shared.fakeOverlay]),
 }));
@@ -108,12 +115,13 @@ import {
   cropToDataUrl,
   ScreenCaptureError,
 } from "../src/main/capture/captureService";
+import { createSelectionWindows, hideSelectionWindows } from "../src/main/capture/selectionWindow";
 import {
-  createSelectionWindows,
-  hideSelectionWindows,
-  parkSelectionWindowsForReuse,
-} from "../src/main/capture/selectionWindow";
-import { isWindowFromSender, prepareWindowToShow, setReplyBarAnchor } from "../src/main/window";
+  isWindowFromSender,
+  prepareWindowCaptureProtection,
+  prepareWindowToShow,
+  setReplyBarAnchor,
+} from "../src/main/window";
 
 const VALID_SELECTION = {
   displayId: 1,
@@ -122,6 +130,11 @@ const VALID_SELECTION = {
 };
 
 describe("captureIpc 区域截图编排", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     for (const key of Object.keys(shared.handlers)) delete shared.handlers[key];
@@ -132,7 +145,12 @@ describe("captureIpc 区域截图编排", () => {
   });
 
   it("returns ok:true when a region is selected and capture succeeds", async () => {
-    vi.mocked(captureDisplay).mockResolvedValue({ image: {}, scaleFactor: 1 });
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    vi.mocked(captureDisplay).mockResolvedValue({
+      image: {},
+      scaleFactor: 1,
+      sourceDisplayId: "1",
+    });
     vi.mocked(cropToDataUrl).mockReturnValue({
       dataUrl: "data:image/png;base64,QUJD",
       height: 10,
@@ -158,6 +176,14 @@ describe("captureIpc 区域截图编排", () => {
     );
     expect(shared.fakeWindow.isVisible()).toBe(true);
     expect(cropToDataUrl).toHaveBeenCalled();
+    const focusLog = info.mock.calls.find(([message]) => message === "[capture][focus]")?.[1];
+    expect(focusLog).toEqual(expect.stringContaining('"phase":"selection-received"'));
+    expect(focusLog).toEqual(expect.stringContaining('"phase":"overlay-hidden"'));
+    expect(focusLog).toEqual(expect.stringContaining('"phase":"display-capture-started"'));
+    expect(focusLog).toEqual(expect.stringContaining('"phase":"display-capture-completed"'));
+    expect(focusLog).toEqual(expect.stringContaining('"selectedDisplayId":1'));
+    expect(focusLog).toEqual(expect.stringContaining('"capturedSourceDisplayId":"1"'));
+    info.mockRestore();
     // 专注发送态：选区落定后窗口挪到选区旁（原位已记录，收起时恢复）
     expect(setReplyBarAnchor).toHaveBeenCalledWith(VALID_SELECTION);
   });
@@ -207,22 +233,48 @@ describe("captureIpc 区域截图编排", () => {
     await start;
 
     expect(shared.fakeWindow.isVisible()).toBe(true);
-    expect(prepareWindowToShow).toHaveBeenCalledWith(shared.fakeWindow);
     if (process.platform === "win32") {
+      expect(prepareWindowCaptureProtection).toHaveBeenCalledWith(shared.fakeWindow);
+      expect(prepareWindowToShow).not.toHaveBeenCalledWith(shared.fakeWindow);
       expect(shared.fakeWindow.showInactive).not.toHaveBeenCalled();
     } else {
+      expect(prepareWindowToShow).not.toHaveBeenCalledWith(shared.fakeWindow);
       expect(prepareWindowToShow.mock.invocationCallOrder[0]).toBeLessThan(
         shared.fakeWindow.showInactive.mock.invocationCallOrder.at(-1) ?? Infinity,
       );
     }
   });
 
+  it("waits for desktop composition after hiding the overlay before capture", async () => {
+    vi.useFakeTimers();
+    vi.mocked(captureDisplay).mockResolvedValue({ image: {}, scaleFactor: 1 });
+    vi.mocked(cropToDataUrl).mockReturnValue({
+      dataUrl: "data:image/png;base64,QUJD",
+      height: 10,
+      ok: true,
+      width: 10,
+    });
+
+    const start = shared.handlers[CaptureChannels.StartRegionCapture]({}, {});
+    shared.handlers[CaptureChannels.RegionSelected](
+      { sender: shared.fakeOverlay.webContents },
+      VALID_SELECTION,
+    );
+    await Promise.resolve();
+
+    expect(hideSelectionWindows).toHaveBeenCalledOnce();
+    expect(captureDisplay).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(process.platform === "darwin" ? 80 : 40);
+    await start;
+
+    expect(captureDisplay).toHaveBeenCalledOnce();
+  });
+
   it.skipIf(process.platform !== "win32")(
-    "parks the selection overlay without hiding it during the Windows capture workflow",
+    "hides the selection overlay before Windows capture and keeps it hidden afterward",
     async () => {
       vi.mocked(captureDisplay).mockImplementation(async () => {
-        expect(parkSelectionWindowsForReuse).toHaveBeenCalledOnce();
-        expect(hideSelectionWindows).not.toHaveBeenCalled();
+        expect(hideSelectionWindows).toHaveBeenCalledOnce();
         return { image: {}, scaleFactor: 1 };
       });
       vi.mocked(cropToDataUrl).mockReturnValue({
@@ -239,7 +291,10 @@ describe("captureIpc 区域截图编排", () => {
       );
       await start;
 
-      expect(vi.mocked(parkSelectionWindowsForReuse).mock.invocationCallOrder[0]).toBeLessThan(
+      expect(vi.mocked(hideSelectionWindows).mock.invocationCallOrder[0]).toBeLessThan(
+        vi.mocked(captureDisplay).mock.invocationCallOrder[0],
+      );
+      expect(vi.mocked(hideSelectionWindows).mock.invocationCallOrder[1]).toBeGreaterThan(
         vi.mocked(captureDisplay).mock.invocationCallOrder[0],
       );
       expect(vi.mocked(captureDisplay).mock.invocationCallOrder[0]).toBeLessThan(

@@ -7,12 +7,15 @@ class MockWindow {
   readonly listeners = new Map<string, Set<(...args: unknown[]) => void>>();
   destroyed = false;
   visible = false;
+  focusable = false;
   parent: MockWindow | null = null;
   hide = vi.fn(() => {
     this.visible = false;
   });
   setAlwaysOnTop = vi.fn();
-  setFocusable = vi.fn();
+  setFocusable = vi.fn((focusable: boolean) => {
+    this.focusable = focusable;
+  });
   setParentWindow = vi.fn((parent: MockWindow | null) => {
     this.parent = parent;
   });
@@ -20,6 +23,7 @@ class MockWindow {
   moveAbove = vi.fn();
   isDestroyed = () => this.destroyed;
   isVisible = () => this.visible;
+  isFocusable = () => this.focusable;
 
   on(event: string, listener: (...args: unknown[]) => void) {
     const listeners = this.listeners.get(event) ?? new Set();
@@ -92,6 +96,29 @@ describe("window surface registry", () => {
     expect(main.setFocusable).not.toHaveBeenCalled();
   });
 
+  it("reasserts the Windows non-activating policy after blur or hide only when it drifted", () => {
+    const registry = createWindowSurfaceRegistry({
+      applyCaptureProtection: () => true,
+      platform: "win32",
+    });
+    const main = new MockWindow();
+    registry.register(main as never, { role: "main", captureProtection: "never" });
+    main.setFocusable.mockClear();
+
+    main.focusable = true;
+    main.emit("blur");
+    expect(main.setFocusable).toHaveBeenCalledOnce();
+    expect(main.focusable).toBe(false);
+
+    main.emit("hide");
+    expect(main.setFocusable).toHaveBeenCalledOnce();
+
+    main.focusable = true;
+    main.emit("hide");
+    expect(main.setFocusable).toHaveBeenCalledTimes(2);
+    expect(main.focusable).toBe(false);
+  });
+
   it("reconciles the candidate owner relationship on owner focus and cleans it up", () => {
     const registry = createWindowSurfaceRegistry({
       applyCaptureProtection: () => true,
@@ -149,6 +176,7 @@ describe("window surface registry", () => {
     expect(registry.size).toBe(0);
     expect(window.listeners.get("focus")?.size).toBe(0);
     expect(window.listeners.get("blur")?.size).toBe(0);
+    expect(window.listeners.get("hide")?.size).toBe(0);
     expect(window.listeners.get("show")?.size).toBe(0);
   });
 

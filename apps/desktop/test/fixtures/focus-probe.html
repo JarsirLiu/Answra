@@ -73,6 +73,7 @@
     </header>
     <div class="controls">
       <button id="reset" type="button">Reset counts</button>
+      <button id="observe" type="button">Start capture observation</button>
       <button id="copy" type="button">Copy report</button>
     </div>
     <section class="summary" aria-label="Current document state">
@@ -99,6 +100,9 @@
       const focusOutput = document.querySelector("#has-focus");
       const sampledOutput = document.querySelector("#sampled-at");
       const stateOutput = document.querySelector("#state");
+      const observeButton = document.querySelector("#observe");
+      let observing = false;
+      let observationEvents = [];
 
       function snapshot(event) {
         return {
@@ -112,7 +116,11 @@
       function render() {
         visibilityOutput.value = document.visibilityState;
         focusOutput.value = String(document.hasFocus());
-        stateOutput.textContent = document.hasFocus() ? "Focused" : "Not focused";
+        stateOutput.textContent = observing
+          ? "Observing capture"
+          : document.hasFocus()
+            ? "Focused"
+            : "Not focused";
         countRoot.replaceChildren(
           ...EVENT_NAMES.map((name) => {
             const item = document.createElement("div");
@@ -133,10 +141,14 @@
         );
       }
 
-      function record(name) {
+      function record(name, { includeInHistory = true } = {}) {
         if (Object.hasOwn(counts, name)) counts[name] += 1;
-        rows.unshift(snapshot(name));
-        if (rows.length > MAX_EVENT_ROWS) rows.length = MAX_EVENT_ROWS;
+        const event = snapshot(name);
+        if (includeInHistory && observing) {
+          rows.unshift(event);
+          if (rows.length > MAX_EVENT_ROWS) rows.length = MAX_EVENT_ROWS;
+        }
+        if (observing && name !== "focus-sample") observationEvents.push(event);
         render();
       }
 
@@ -148,7 +160,36 @@
       document.querySelector("#reset").addEventListener("click", () => {
         for (const name of EVENT_NAMES) counts[name] = 0;
         rows.length = 0;
-        record("counts-reset");
+        observationEvents = [];
+        render();
+      });
+
+      observeButton.addEventListener("click", () => {
+        if (!observing) {
+          for (const name of EVENT_NAMES) counts[name] = 0;
+          observationEvents = [];
+          rows.length = 0;
+          observing = true;
+          observeButton.textContent = "Finish capture observation";
+          stateOutput.textContent = "Observing capture";
+          return;
+        }
+
+        observing = false;
+        observeButton.textContent = "Start capture observation";
+        const issues = observationEvents.filter(
+          (event) =>
+            event.event === "blur" ||
+            (event.event === "visibilitychange" && event.visibilityState === "hidden") ||
+            event.event === "pagehide",
+        );
+        if (issues.length > 0) {
+          console.warn(
+            "[focus-probe] capture observation found focus/visibility changes",
+            JSON.stringify({ issues, events: observationEvents }),
+          );
+        }
+        render();
       });
 
       document.querySelector("#copy").addEventListener("click", async () => {
@@ -158,7 +199,7 @@
 
       setInterval(() => {
         sampledOutput.value = new Date().toISOString();
-        record("focus-sample");
+        record("focus-sample", { includeInHistory: false });
       }, SAMPLE_INTERVAL_MS);
 
       render();

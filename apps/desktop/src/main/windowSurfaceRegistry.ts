@@ -34,6 +34,7 @@ interface ManagedWindow {
   onRestore: () => void;
   onFocus: () => void;
   onBlur: () => void;
+  onHide: () => void;
   onClosed: () => void;
 }
 
@@ -82,8 +83,11 @@ export function createWindowSurfaceRegistry(
       },
       onBlur: () => {
         if (focusedWindow === window) focusedWindow = undefined;
+        reassertNonActivating(window, descriptor.role);
         publishFocus(window, false);
       },
+      // Mirror Natively's Windows guard: native lifecycle changes can restore focusability.
+      onHide: () => reassertNonActivating(window, descriptor.role),
       onClosed: () => unregister(window),
     };
     managed.set(window, entry);
@@ -92,6 +96,7 @@ export function createWindowSurfaceRegistry(
     window.on("restore", entry.onRestore);
     window.on("focus", entry.onFocus);
     window.on("blur", entry.onBlur);
+    window.on("hide", entry.onHide);
     window.once("closed", entry.onClosed);
     apply(window, "register", true);
 
@@ -168,6 +173,7 @@ export function createWindowSurfaceRegistry(
     window.removeListener("restore", entry.onRestore);
     window.removeListener("focus", entry.onFocus);
     window.removeListener("blur", entry.onBlur);
+    window.removeListener("hide", entry.onHide);
     window.removeListener("closed", entry.onClosed);
     if (focusedWindow === window) focusedWindow = undefined;
   }
@@ -199,6 +205,17 @@ export function createWindowSurfaceRegistry(
     window.setAlwaysOnTop(true, policy.alwaysOnTopLevel);
     if (policy.nonActivating && isNonActivatingPlatform(options.platform ?? process.platform))
       window.setFocusable(false);
+  }
+
+  function reassertNonActivating(window: BrowserWindow, role: WindowRole): void {
+    const policy = SURFACE_POLICIES[role];
+    if (
+      policy.nonActivating &&
+      isNonActivatingPlatform(options.platform ?? process.platform) &&
+      window.isFocusable()
+    ) {
+      window.setFocusable(false);
+    }
   }
 
   function applyCapturePolicy(

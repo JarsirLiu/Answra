@@ -22,6 +22,8 @@ interface DisplayCapture {
   image: Electron.NativeImage;
   /** 显示器缩放比，裁剪时把逻辑选区换算为物理像素。 */
   scaleFactor: number;
+  /** 实际 desktopCapturer 来源；只用于确认系统返回了请求的显示器。 */
+  sourceDisplayId?: string;
 }
 
 /**
@@ -47,7 +49,9 @@ export async function captureDisplay(displayId: number): Promise<DisplayCapture>
       sources.find((candidate) => String(candidate.display_id ?? "") === String(displayId)) ??
       sources[0];
     const image = source?.thumbnail;
-    if (image && !image.isEmpty()) return { image, scaleFactor };
+    if (image && !image.isEmpty()) {
+      return { image, scaleFactor, sourceDisplayId: source.display_id || undefined };
+    }
 
     if (attempt < MAX_ATTEMPTS) await delay(Math.min(750, attempt * 250));
   }

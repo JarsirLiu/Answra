@@ -81,6 +81,7 @@ describe("captureDisplay", () => {
     });
     expect(capture.image.getSize()).toEqual({ height: 2160, width: 3840 });
     expect(capture.scaleFactor).toBe(2);
+    expect(capture.sourceDisplayId).toBe("7");
   });
 
   it("retries empty frames before succeeding", async () => {

@@ -23,11 +23,24 @@ export interface SelectionWindowPolicyHost {
 }
 
 export interface SelectionWindowFocusSnapshot {
-  event: "show" | "hide" | "focus" | "blur" | "overlay-closed";
-  windowId: number;
+  event: "show" | "hide" | "focus" | "blur" | "overlay-closed" | "phase";
+  phase?:
+    | "selection-received"
+    | "overlay-hidden"
+    | "composition-settled"
+    | "display-capture-started"
+    | "display-capture-completed"
+    | "restore-started"
+    | "main-window-restored"
+    | "reply-bar-restored";
+  timestamp: number;
+  windowId?: number;
   focusable?: boolean;
   focused?: boolean;
+  visible?: boolean;
   electronFocusedWindowId?: number;
+  mainWindowVisible?: boolean;
+  mainWindowFocused?: boolean;
   foreground: ForegroundWindowInfo;
 }
 
@@ -140,6 +153,7 @@ function installWindowLifecycle(
   const recordFocusState = (event: "show" | "hide" | "focus" | "blur") => {
     currentFocusSnapshot({
       event,
+      timestamp: Date.now(),
       windowId: selectionWindow.id,
       focusable: selectionWindow.isFocusable(),
       focused: selectionWindow.isFocused(),
@@ -159,6 +173,7 @@ function installWindowLifecycle(
   selectionWindow.once("closed", () => {
     currentFocusSnapshot({
       event: "overlay-closed",
+      timestamp: Date.now(),
       windowId: selectionWindow.id,
       electronFocusedWindowId: BrowserWindow.getFocusedWindow()?.id,
       foreground: describeForegroundWindow(),
@@ -176,20 +191,12 @@ function getCombinedDisplayBounds(displays: Electron.Display[]): Electron.Rectan
   return { x: left, y: top, width: right - left, height: bottom - top };
 }
 
-/** 隐藏选区窗以保留 Windows 前台状态，并供后续截图复用。 */
+/** 将选区窗透明化并隐藏，保留原生窗口供后续截图复用。 */
 export function hideSelectionWindows(): void {
   for (const selectionWindow of activeWindows) {
-    if (!selectionWindow.isDestroyed()) selectionWindow.hide();
-  }
-  activeWindows.clear();
-}
-
-/** Parks the Windows overlay without hiding its HWND or changing its z-order. */
-export function parkSelectionWindowsForReuse(): void {
-  for (const selectionWindow of activeWindows) {
     if (selectionWindow.isDestroyed()) continue;
-    selectionWindow.setOpacity(0);
-    selectionWindow.setIgnoreMouseEvents(true);
+    if (process.platform === "win32") selectionWindow.setOpacity(0);
+    selectionWindow.hide();
   }
   activeWindows.clear();
 }

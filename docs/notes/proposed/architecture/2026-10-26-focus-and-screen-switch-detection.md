@@ -51,8 +51,8 @@ Answra 当前浮窗首次显示使用 `showInactive()`（`apps/desktop/src/main/
 
 - `visibilitychange` 与 `visibilityState` 变化；
 - `window` 的 `blur` / `focus`；
-- 每 500ms 的 `document.hasFocus()` 采样；
-- 页面报告当前计数到控制台，便于人工与自动化验证焦点体验。
+- 页面状态每 500ms 刷新一次，但采样不作为事件写入历史；
+- 只在手动开启的截图观察区间内收集事件，结束时若出现 `blur`、转为 `visibilityState=hidden` 或 `pagehide`，才向控制台输出一条包含问题事件与上下文的摘要。
 
 探针用于区分焦点变化和页面可见性变化，并验证应用交互是否打断用户当前工作；它只用于测试，不进入产品构建。
 
@@ -66,10 +66,14 @@ Answra 当前浮窗首次显示使用 `showInactive()`（`apps/desktop/src/main/
 ### 2. P1（已具备观测工具）：把焦点事实纳入诊断
 
 - 使用现有 `logImeDiagnostic` 窗口事件以及焦点探针确认真实焦点轨迹；主窗口已记录 show/hide/focus/blur/minimize/restore 和可见/聚焦状态。
-- 每轮截图结束时只输出一条 `[capture][focus]` JSON 汇总，包含选区窗口 show/focus/blur/hide/close 快照、主窗恢复后的 Electron 与 Windows 前台状态，以及截图结果；中间进度不重复输出。
+- 每轮截图结束时只输出一条 `[capture][focus]` JSON 汇总，包含选区窗口 show/focus/blur/hide/close 快照、主窗恢复后的 Electron 与 Windows 前台状态，以及截图结果；中间进度不重复输出。摘要包含 `startedAt`（ISO 时间），可用 `startedAt + elapsedMs` 将截图时间线与焦点探针的 `event.time` 对齐。
+- 成功选区后，汇总日志记录“收到选区、overlay 隐藏、桌面合成等待完成、系统截图开始/完成、主窗和回复条恢复”阶段的相对耗时、overlay 可见性、主窗可见/聚焦状态及前台窗口类名；同一行仅列 overlay 的 show/hide/focus/blur 事件，以及请求/实际捕获显示器 ID。日志用于对齐阶段，不从时间相邻直接推断因果，也不采集坐标、页面内容或图像。
+- **Windows 实测（2026-10-27，旧版停放行为）：** 隐身关闭时，前台在选区确认和 `captureDisplay` 完成阶段仍是 Chrome；主窗恢复阶段前台为 `XamlExplorerHostIsland_WASDK`。隐身开启时，主窗截图期间保持可见，记录前台类名稳定为 `SOUIHOST`。用户之后报告隐身开启截图仍出现浏览器 `visibilityState` 变化和一次 `blur`；旧日志没有页面事件时间戳，不能据前台类名稳定宣称浏览器没有收到事件，也不能认定具体根因。
 - Windows 选区窗创建时在构造参数中启用 `alwaysOnTop` 与 `focusable: false`，显示使用 `showInactive()` 后调用 `moveTop()`。原先选区完成后销毁非激活置顶窗口；Windows 实测日志显示销毁时前台短暂变成 `Shell_TrayWnd`，因此改为隐藏并复用窗口，应用退出时销毁。该生命周期参考 Natively 的 Windows cropper；焦点保留仍需用户在目标 Windows 上复测。
 - **Windows 日志复测（2026-10-26）：** “捕获后先恢复主窗，再隐藏 overlay”版本的日志显示，overlay 没有 hide 事件，但收尾后前台仍变为 Answra 进程自己的 `Chrome_WidgetWin_1` HWND；用户观察到网页短暂失焦。更细看流程，主窗在截图开始时隐藏，截图结束后以 `showInactive()` 恢复；后者之后前台为 Answra 进程。该顺序没有解决问题，且把前台切到了 Answra；不保留为修复。
-- **Windows overlay 停放实验（待实机验证）：** 截图确认后，让 overlay 透明、鼠标事件穿透并保留 HWND 与置顶状态；下一次截图复用时恢复不透明并接收鼠标。此前尝试停放时同时调用 `setAlwaysOnTop(false)`；最新日志显示 show 时前台为 Chrome，截图结束后前台为 `Shell_TrayWnd`。因此移除置顶层切换，避免在不隐藏窗口的前提下仍改变 Windows 前台回退关系。最新一次实机尚未验证此调整。
+- **Windows overlay 收尾（2026-10-27，按 Natively 截图路径调整）：** Natively 在屏幕捕获前隐藏窗口；Answra 此前把全屏 overlay 设为透明和鼠标穿透后仍保持原生窗口可见、置顶。现改为选区确认后 Windows 先设 opacity 0 再 hide，所有平台在截图前隐藏 overlay，截图结束仍复用隐藏的 HWND。它不改变主窗的现有隐身/捕获保护策略。替代方案是继续停放透明全屏 HWND；舍弃原因是它仍留在窗口遮挡/可见性评估路径中。隐藏可能改变系统前台回退关系，因此日志保留 hide 与 blur/focus 时间；自动化测试只证明调用顺序，Windows 浏览器事件与前台结果仍需实机复测。
+- **Windows 合成器收敛等待（2026-10-27，参照 Natively）：** Natively 在隐藏截图窗口后等待桌面合成器刷新再调用屏幕捕获。Answra 原先 hide overlay 后立即抓屏，复用 HWND 时可能读到上一帧的窗口阴影/桌面残影。现按平台在抓屏前等待 40ms（Windows/Linux）或 80ms（macOS），并在单条截图摘要中记录 composition-settled 阶段。代价是截图增加一个有界等待；自动化测试验证等待未完成时不会调用捕获服务，实际阴影是否消失仍需 Windows 实测。
+- **焦点探针观察报告（2026-10-27）：** 开始截图观察时重置事件计数；结束时保留最近一轮有界事件，复制报告仍可包含本轮事件。控制台仍只在观察区间发现 blur、转为 hidden 或 pagehide 时打印一条摘要。
 - **Windows 选区窗显示顺序（实机验证通过）：** 对照 Natively `CropperWindowHelper.applyOpacityShield()`，选区 HWND 在 opacity 0 时 `showInactive()`、`moveTop()`，之后应用 capture protection，并等待 60ms 再设 opacity 1。选区窗显示事件不再重复设置 HWND 策略。Windows 实机复测确认点击截图不再使目标页面失焦；自动化测试锁定显示顺序和策略不重入。此结论限定于用户实际验证的 Windows 环境和截图路径。
 - **Windows 选区显示策略重入（待实机验证）：** Natively 在创建 cropper 时设定非激活/置顶策略，显示阶段只执行 `showInactive()`、`moveTop()`、捕获保护与延迟显现。Answra 的 `windowSurfaceRegistry` 原先还会同步响应 `show` 事件，再次调用 `setAlwaysOnTop`、`setFocusable` 和捕获保护；这与参考项目的 HWND 调用顺序不同。现改为 selection-overlay 的显示事件不重放策略，保留注册时设置的窗口样式，并由 opacity-shield 在 `moveTop()` 后应用捕获保护。最新实机日志在 overlay `show` 时前台仍是外部 Chrome，最终取消时前台为 `Shell_TrayWnd`；现有日志没有采到中间窗口消息，不能判断该切换是否由此造成。自动化测试只证明策略不重入，需重启后复测；未获 Windows 实测前不宣称焦点已修复。
 - **Windows 受保护主窗保持显示（实机验证通过）：** Windows 隐身开启且捕获保护预检成功时，截图期间不隐藏或重新显示主窗；预检失败或隐身关闭时继续隐藏原可见主窗。选区窗仍按 opacity-shield 顺序显示；用户已确认截图可正常操作且目标页面不再因该流程失焦。`reportedProtected: undefined` 表示 Electron 未提供状态读回值；可依赖的是注册策略预检返回成功，不把它写成独立的系统捕获排除证明。
@@ -77,15 +81,18 @@ Answra 当前浮窗首次显示使用 `showInactive()`（`apps/desktop/src/main/
 - 选区 overlay 改为一个覆盖全部显示器联合边界的窗口，Windows 保留非激活显示与临时全局 Esc 取消，macOS 使用 panel 和 `enableLargerThanScreen`，Linux 使用 toolbar 类型。选区提示 HUD 已移除。
 - IPC 选区仍使用“显示器 ID + 该显示器内逻辑坐标”，拖拽限制在按下鼠标的显示器内；跨显示器拼接截图不在本次范围，因为当前捕获服务与回复条锚点都按单个显示器定义。联合窗口允许跨显示器移动鼠标，但不会把多个显示器的像素拼成一张截图。
 - 诊断**不记录按键内容、坐标、截图、前台应用名称或对话内容**。
-- 探针将 `blur`/`focus`、`visibilitychange`、`pagehide`/`pageshow` 事件和每 500ms 的 `document.hasFocus()` 采样分开呈现，可清零计数并复制有界事件报告。
+- 探针将事件计数与状态采样分开；普通状态采样不写入历史。截图观察区间外不累积事件，区间内的事件只在页面历史和复制报告中保留；控制台只在发现 `blur`、隐藏或 `pagehide` 时输出单条摘要，正常 `focus` 等事件不会逐条打印。
 - 工具已加入；Windows/macOS 的实际轨迹采集仍待在目标机器上执行。观测结果用于判断 Answra 自身窗口操作的影响，不把第三方页面信号降为零作为目标。
 
 ### 3. Windows 非激活鼠标操作（用户已确认；输入暂不可用）
 
 - 只对 `main` 主浮窗应用现有 Windows `setFocusable(false)` 策略；不改 reply bar、IME lease、候选窗、键盘路由或截图实现。macOS 维持当前可聚焦行为。
+- Windows 主窗在 BrowserWindow 创建参数中设 `focusable: false`；创建后立即注册到 `windowSurfaceRegistry`，由唯一窗口策略所有者在显示前应用 `setFocusable(false)`，并在 `blur`/`hide` 时仅于 `isFocusable()` 返回 true 时重申，仿 Natively 的 no-activate 生命周期策略。注册、漂移恢复和监听清理由注册器测试覆盖。**Windows 实测（2026-10-27，用户报告）：** Win11 build 26200 下点击 Answra 截图成功，焦点探针未输出问题摘要；之后将等价的直接监听整理为 `windowSurfaceRegistry` 唯一写入者，整理后的代码由注册器测试覆盖，尚未再次实机复核。
+- Windows 隐身截图保留已显示的主窗时，只重试 `setContentProtection`，不在每次按钮点击时重放主窗的置顶与非激活 HWND 样式。此前 `prepareWindowToShow` 同时执行两类策略；新日志显示截图请求后 9ms 页面 `blur`，早于选区窗显示 143ms，故移除截图入口上的样式重放作为可验证修正。该时间相关性指向截图启动阶段，Windows 实机复测用于确认行为结果；保护预检失败仍按原逻辑隐藏主窗。
 - 用户确认当前阶段优先保证点击主浮窗按钮和截图操作，暂时不能在主浮窗输入文字可以接受。主浮窗鼠标点击应触发正常按钮动作，但不应把浏览器/原前台应用的焦点切换到 Answra。
 - 必须在 Windows + 当前 Electron 版本验证：主浮窗按钮响应；启动截图、选区确认、截图结果回到应用的完整流程可用；操作前台页面只收到由实际窗口状态产生的事件，不对事件原因作推断。自动化策略测试不能替代此实测。
 - 若非激活窗口不能可靠接收鼠标点击，或截图/发送链路受影响，停止并报告，不要通过恢复焦点或隐式切换回聚焦模式掩盖失败。用户已接受文字输入暂不可用；后续恢复输入需单独设计非 DOM 输入来源和退出/恢复行为。
+- 非激活样式的生命周期写入集中在 `windowSurfaceRegistry`；窗口控制器只声明构造时初始属性。不要在截图 IPC、窗口控制器或 UI 回调中额外重放 `setFocusable`/置顶策略；若新增窗口角色，需同时更新 `SURFACE_POLICIES` 与注册器行为测试，避免并行维护者引入第二个样式写入者。
 
 ### 4. P2：验证内置 Rime 的非聚焦输入可行性；暂不进入生产实现
 

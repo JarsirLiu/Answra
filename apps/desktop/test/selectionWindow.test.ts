@@ -63,7 +63,6 @@ import {
   disposeSelectionWindow,
   getActiveSelectionWindows,
   hideSelectionWindows,
-  parkSelectionWindowsForReuse,
 } from "../src/main/capture/selectionWindow";
 import { createWindowSurfaceRegistry } from "../src/main/windowSurfaceRegistry";
 
@@ -142,6 +141,12 @@ describe("selectionWindow capture protection", () => {
 
     hideSelectionWindows();
     expect(window.hide).toHaveBeenCalledOnce();
+    if (process.platform === "win32") {
+      expect(window.setOpacity).toHaveBeenLastCalledWith(0);
+      expect(window.setOpacity.mock.invocationCallOrder.at(-1)).toBeLessThan(
+        window.hide.mock.invocationCallOrder[0],
+      );
+    }
     expect(window.close).not.toHaveBeenCalled();
     expect(getActiveSelectionWindows()).toEqual([]);
 
@@ -154,28 +159,6 @@ describe("selectionWindow capture protection", () => {
     expect(window.loadFile).toHaveBeenCalledTimes(2);
     expect(window.showInactive).toHaveBeenCalledTimes(2);
     expect(window.setBounds).toHaveBeenCalledOnce();
-  });
-
-  it("parks the Windows overlay click-through and restores it for the next selection", async () => {
-    const host = createPolicyHost(false);
-    createSelectionWindows(undefined, false, host, "win32");
-    const window = state.windows[0];
-    await Promise.resolve();
-
-    parkSelectionWindowsForReuse();
-
-    expect(window.setOpacity).toHaveBeenLastCalledWith(0);
-    expect(window.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true);
-    expect(window.setAlwaysOnTop).not.toHaveBeenCalledWith(false);
-    expect(window.hide).not.toHaveBeenCalled();
-    expect(getActiveSelectionWindows()).toEqual([]);
-
-    createSelectionWindows(undefined, false, host, "win32");
-    await Promise.resolve();
-
-    expect(window.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false);
-    expect(window.setOpacity).toHaveBeenLastCalledWith(0);
-    expect(getActiveSelectionWindows()).toEqual([window]);
   });
 
   it("creates one overlay spanning the virtual desktop including negative display origins", () => {

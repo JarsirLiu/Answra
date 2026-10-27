@@ -73,6 +73,8 @@ export function createMainWindowController(host: MainWindowControllerHost) {
       hasShadow: false,
       roundedCorners: true,
       show: false,
+      // Create the Windows HWND non-activating; windowSurfaceRegistry owns later reassertions.
+      ...(process.platform === "win32" ? { focusable: false } : {}),
       webPreferences: {
         preload: path.join(__dirname, "../preload/index.cjs"),
         contextIsolation: true,

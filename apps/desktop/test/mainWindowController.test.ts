@@ -5,6 +5,9 @@ const electronState = vi.hoisted(() => ({
     emit: (event: string) => boolean;
     show: ReturnType<typeof vi.fn>;
     showInactive: ReturnType<typeof vi.fn>;
+    options: Record<string, unknown>;
+    isFocusable: ReturnType<typeof vi.fn>;
+    setFocusable: ReturnType<typeof vi.fn>;
   }>,
 }));
 
@@ -18,16 +21,20 @@ vi.mock("electron", async () => {
     });
     show = vi.fn();
     showInactive = vi.fn();
+    options: Record<string, unknown>;
     loadFile = vi.fn();
     loadURL = vi.fn();
     getBounds = vi.fn(() => ({ x: 0, y: 0, width: 340, height: 60 }));
     isDestroyed = vi.fn(() => false);
     isVisible = vi.fn(() => true);
     isFocused = vi.fn(() => false);
+    isFocusable = vi.fn(() => false);
     setBounds = vi.fn();
+    setFocusable = vi.fn();
 
-    constructor() {
+    constructor(options: Record<string, unknown>) {
       super();
+      this.options = options;
       electronState.windows.push(this);
     }
   }
@@ -67,6 +74,9 @@ describe("main window initial display", () => {
 
     expect(window.showInactive).toHaveBeenCalledOnce();
     expect(window.show).not.toHaveBeenCalled();
+    expect(electronState.windows[0].options.focusable).toBe(
+      process.platform === "win32" ? false : undefined,
+    );
   });
 
   it("keeps the window hidden when its registered surface is not ready", () => {
