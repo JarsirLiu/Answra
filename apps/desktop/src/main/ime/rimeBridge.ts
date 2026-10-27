@@ -20,6 +20,27 @@ const EMPTY: ImeState = {
 
 type Pending = { resolve: (state: ImeState) => void; reject: (error: Error) => void };
 
+export type RimeKeyboardCaptureEvent =
+  | {
+      type: "key";
+      generation: number;
+      eventId: number;
+      key: string;
+      code: string;
+      shift: boolean;
+      ctrl: boolean;
+      alt: boolean;
+      meta: boolean;
+      release: boolean;
+      repeat: boolean;
+    }
+  | { type: "stopped"; reason: string };
+
+type RimeCommandState = ImeState & {
+  keyboardCaptureActive?: boolean;
+  keyboardEventAcknowledged?: boolean;
+};
+
 function runtimePaths():
   | {
       helper: string;
@@ -58,8 +79,13 @@ export class RimeBridge {
   private startup?: Promise<void>;
   private availableValue = false;
   private helperProtocolVersion = 0;
+  private keyboardCaptureAvailableValue = false;
+  private keyboardCaptureActiveValue = false;
+  private keyboardCaptureGeneration?: number;
+  private keyboardCaptureStopRevision = 0;
   private nextId = 1;
   private readonly pending = new Map<number, Pending>();
+  private readonly keyboardCaptureListeners = new Set<(event: RimeKeyboardCaptureEvent) => void>();
 
   constructor() {
     this.startup = this.start();
@@ -71,6 +97,73 @@ export class RimeBridge {
 
   get snapshot(): ImeState {
     return this.state;
+  }
+
+  get keyboardCaptureAvailable(): boolean {
+    return this.keyboardCaptureAvailableValue;
+  }
+
+  get keyboardCaptureActive(): boolean {
+    return this.keyboardCaptureActiveValue;
+  }
+
+  onKeyboardCaptureEvent(listener: (event: RimeKeyboardCaptureEvent) => void): () => void {
+    this.keyboardCaptureListeners.add(listener);
+    return () => this.keyboardCaptureListeners.delete(listener);
+  }
+
+  async startKeyboardCapture(generation: number): Promise<boolean> {
+    await this.startup;
+    if (
+      !this.available ||
+      !this.keyboardCaptureAvailableValue ||
+      !Number.isInteger(generation) ||
+      generation <= 0
+    )
+      return false;
+    if (this.keyboardCaptureActiveValue && this.keyboardCaptureGeneration === generation)
+      return true;
+    if (this.keyboardCaptureActiveValue) await this.stopKeyboardCapture();
+    const stopRevision = this.keyboardCaptureStopRevision;
+    const state = (await this.command(
+      "capture-start",
+      String(generation),
+      String(process.pid),
+    )) as RimeCommandState;
+    this.keyboardCaptureActiveValue =
+      state.keyboardCaptureActive === true && stopRevision === this.keyboardCaptureStopRevision;
+    this.keyboardCaptureGeneration = this.keyboardCaptureActiveValue ? generation : undefined;
+    return this.keyboardCaptureActiveValue;
+  }
+
+  async stopKeyboardCapture(): Promise<void> {
+    await this.startup;
+    if (!this.available || !this.keyboardCaptureActiveValue) return;
+    this.keyboardCaptureActiveValue = false;
+    this.keyboardCaptureGeneration = undefined;
+    await this.command("capture-stop");
+  }
+
+  async acknowledgeKeyboardInput(
+    generation: number,
+    eventId: number,
+    delivered: boolean,
+  ): Promise<boolean> {
+    if (
+      !this.available ||
+      !this.keyboardCaptureActiveValue ||
+      this.keyboardCaptureGeneration !== generation ||
+      !Number.isSafeInteger(eventId) ||
+      eventId <= 0
+    )
+      return false;
+    const state = (await this.command(
+      "capture-ack",
+      String(generation),
+      String(eventId),
+      delivered ? "1" : "0",
+    )) as RimeCommandState;
+    return state.keyboardEventAcknowledged === true;
   }
 
   async enable(enabled: boolean): Promise<ImeState> {
@@ -195,11 +288,13 @@ export class RimeBridge {
             const result = JSON.parse(payload ?? "{}") as {
               available?: boolean;
               protocolVersion?: number;
+              keyboardCaptureAvailable?: boolean;
             };
             if (id !== "0" || result.available !== true || result.protocolVersion !== 2)
               throw new Error("librime helper protocol v2 is required");
             this.helperProtocolVersion = result.protocolVersion;
             this.availableValue = true;
+            this.keyboardCaptureAvailableValue = result.keyboardCaptureAvailable === true;
             lines.on("line", (message) => this.receive(message));
             resolve();
           } catch (error) {
@@ -229,6 +324,21 @@ export class RimeBridge {
   }
 
   private receive(line: string): void {
+    if (line.startsWith("@keyboard\t")) {
+      const event = parseKeyboardCaptureEvent(line.slice("@keyboard\t".length));
+      if (event) this.publishKeyboardCaptureEvent(event);
+      else console.warn("[ime] invalid native keyboard event");
+      return;
+    }
+    if (line.startsWith("@capture-stopped\t")) {
+      this.keyboardCaptureStopRevision += 1;
+      this.keyboardCaptureActiveValue = false;
+      this.keyboardCaptureGeneration = undefined;
+      const event = parseKeyboardCaptureStopped(line.slice("@capture-stopped\t".length));
+      if (event) this.publishKeyboardCaptureEvent(event);
+      else console.warn("[ime] invalid native keyboard capture status");
+      return;
+    }
     const [rawId, payload] = line.split("\t", 2);
     const id = Number(rawId);
     const pending = this.pending.get(id);
@@ -245,7 +355,64 @@ export class RimeBridge {
 
   private fail(error: Error): void {
     this.availableValue = false;
+    this.keyboardCaptureActiveValue = false;
+    this.keyboardCaptureGeneration = undefined;
     for (const entry of this.pending.values()) entry.reject(error);
     this.pending.clear();
+  }
+
+  private publishKeyboardCaptureEvent(event: RimeKeyboardCaptureEvent): void {
+    for (const listener of this.keyboardCaptureListeners) listener(event);
+  }
+}
+
+export function parseKeyboardCaptureEvent(payload: string): RimeKeyboardCaptureEvent | undefined {
+  try {
+    const value: unknown = JSON.parse(payload);
+    if (typeof value !== "object" || value === null) return undefined;
+    const event = value as Record<string, unknown>;
+    if (
+      !Number.isInteger(event.generation) ||
+      (event.generation as number) <= 0 ||
+      !Number.isSafeInteger(event.eventId) ||
+      (event.eventId as number) <= 0 ||
+      typeof event.key !== "string" ||
+      event.key.length === 0 ||
+      event.key.length > 32 ||
+      typeof event.code !== "string" ||
+      event.code.length === 0 ||
+      event.code.length > 32 ||
+      !["shift", "ctrl", "alt", "meta", "release", "repeat"].every(
+        (key) => typeof event[key] === "boolean",
+      )
+    )
+      return undefined;
+    return {
+      type: "key",
+      generation: event.generation as number,
+      eventId: event.eventId as number,
+      key: event.key,
+      code: event.code,
+      shift: event.shift as boolean,
+      ctrl: event.ctrl as boolean,
+      alt: event.alt as boolean,
+      meta: event.meta as boolean,
+      release: event.release as boolean,
+      repeat: event.repeat as boolean,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function parseKeyboardCaptureStopped(payload: string): RimeKeyboardCaptureEvent | undefined {
+  try {
+    const value: unknown = JSON.parse(payload);
+    if (typeof value !== "object" || value === null) return undefined;
+    const reason = (value as Record<string, unknown>).reason;
+    if (typeof reason !== "string" || !/^[a-z-]{1,40}$/.test(reason)) return undefined;
+    return { type: "stopped", reason };
+  } catch {
+    return undefined;
   }
 }

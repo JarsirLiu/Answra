@@ -8,6 +8,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createRef } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { ChatPanel } from "../src/components/panels/ChatPanel";
+import { publishImeSessionSnapshot } from "../src/ime/imeSessionClient";
 
 const enabledImeState: ImeState = {
   enabled: true,
@@ -129,7 +130,7 @@ describe("ChatPanel", () => {
         onClose={vi.fn()}
         onDraftChange={onDraftChange}
         onSend={vi.fn()}
-        stealth={false}
+        stealth
         streaming={false}
       />,
     );
@@ -143,6 +144,48 @@ describe("ChatPanel", () => {
     input.setSelectionRange(1, 3);
     fireEvent.keyDown(input, { key: "n", code: "KeyN" });
     await waitFor(() => expect(onDraftChange).toHaveBeenCalledWith("a新d"));
+  });
+
+  it("keeps the composer on the native input path outside stealth", () => {
+    publishImeSessionSnapshot({
+      phase: "idle",
+      engine: { ...enabledImeState, enabled: false },
+      revision: 0,
+    });
+    const onDraftChange = vi.fn();
+    const imeSessionCommand = vi.fn();
+    const bridge = {
+      imeAvailable: true,
+      imeSessionCommand,
+      getImeSessionSnapshot: vi.fn(async () => null),
+      onImeSessionSnapshot: vi.fn(() => () => undefined),
+    } as unknown as DesktopBridge;
+    render(
+      <ChatPanel
+        attachments={[]}
+        bridge={bridge}
+        draft=""
+        fileInputRef={createRef<HTMLInputElement>()}
+        messages={[]}
+        onAttachmentChange={vi.fn()}
+        onAttachmentRemove={vi.fn()}
+        onCancel={vi.fn()}
+        onClose={vi.fn()}
+        onDraftChange={onDraftChange}
+        onSend={vi.fn()}
+        stealth={false}
+        streaming={false}
+      />,
+    );
+    const input = screen.getByRole("textbox", { name: "补充问题" }) as HTMLTextAreaElement;
+
+    expect(input).toHaveProperty("readOnly", false);
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "abc" } });
+    expect(onDraftChange).toHaveBeenCalledWith("abc");
+    expect(imeSessionCommand).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "acquireTarget" }),
+    );
   });
 
   it("keeps a failed send inside the message stream and offers sign-in when asked", () => {

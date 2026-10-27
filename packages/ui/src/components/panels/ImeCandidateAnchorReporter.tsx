@@ -14,6 +14,11 @@ interface ImeCandidateAnchorReporterProps {
    * read-only/disabled intent and is not the single writer of this fact.
    */
   blockNativeEditing?: boolean;
+  /**
+   * Stealth是 non-activating 窗口，`document.hasFocus()` 始终为 false，但用户仍在
+   * 该窗口内编辑。此时必须按 DOM active element 绘制逻辑光标，而不是等原生焦点。
+   */
+  showCaretWithoutFocus?: boolean;
   onUpdate: (payload: ImeCandidateUpdate) => void;
 }
 
@@ -43,6 +48,7 @@ export function ImeCandidateAnchorReporter({
   targetId,
   generation,
   blockNativeEditing = false,
+  showCaretWithoutFocus = false,
   onUpdate,
 }: ImeCandidateAnchorReporterProps) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
@@ -53,11 +59,14 @@ export function ImeCandidateAnchorReporter({
   const bump = useCallback(() => setTick((current) => current + 1), []);
   // Window focus is a DOM fact with a single owner (the browser). Read it on demand
   // instead of caching a copy; a render is scheduled by the focus/blur listeners below.
-  const windowFocused = document.hasFocus();
+  // Stealth windows are intentionally non-activating, so their DOM active element is
+  // still an editing target even when the native window never receives focus.
+  const caretActive = showCaretWithoutFocus || document.hasFocus();
 
   const handleFocus = useCallback(
     (event: FocusEvent) => {
       if (event.type === "focusout") {
+        if (showCaretWithoutFocus) return;
         if (!document.hasFocus() || stateRef.current.composing) return;
         setAnchor(null);
         return;
@@ -65,22 +74,28 @@ export function ImeCandidateAnchorReporter({
       const next = resolveAnchor(event.target, targetId);
       setAnchor(next);
     },
-    [targetId],
+    [showCaretWithoutFocus, targetId],
   );
 
   const refreshFocusedAnchor = useCallback(() => {
-    const next = resolveAnchor(document.activeElement, targetId);
+    const next = showCaretWithoutFocus
+      ? findTargetAnchor(targetId)
+      : resolveAnchor(document.activeElement, targetId);
     setAnchor(next);
     bump();
-  }, [bump, targetId]);
+  }, [bump, showCaretWithoutFocus, targetId]);
 
-  // Window blur invalidates the visual caret; the derived `windowFocused` read then
+  // Window blur invalidates the visual caret; the derived `caretActive` read then
   // hides it. This must not `bump()`: `tick` also invalidates candidate publishing,
   // and a blurred window must not re-assert a candidate anchor.
   const handleWindowBlur = useCallback(() => setCaretAnchor(null), []);
 
   useEffect(() => {
-    setAnchor(resolveAnchor(document.activeElement, targetId));
+    setAnchor(
+      showCaretWithoutFocus
+        ? findTargetAnchor(targetId)
+        : resolveAnchor(document.activeElement, targetId),
+    );
     document.addEventListener("focusin", handleFocus, true);
     document.addEventListener("focusout", handleFocus, true);
     window.addEventListener("resize", bump);
@@ -99,32 +114,40 @@ export function ImeCandidateAnchorReporter({
       document.removeEventListener("keyup", bump, true);
       document.removeEventListener("pointerup", bump, true);
     };
-  }, [bump, handleFocus, handleWindowBlur, refreshFocusedAnchor, targetId]);
+  }, [bump, handleFocus, handleWindowBlur, refreshFocusedAnchor, showCaretWithoutFocus, targetId]);
+
+  const currentAnchor =
+    anchor ??
+    (showCaretWithoutFocus
+      ? findTargetAnchor(targetId)
+      : resolveAnchor(document.activeElement, targetId));
+  const visible = Boolean(
+    currentAnchor && (state.candidates.length > 0 || state.preedit.length > 0),
+  );
 
   useEffect(() => {
-    if (!anchor) return;
+    if (!currentAnchor) return;
     window.addEventListener("scroll", bump, true);
     return () => window.removeEventListener("scroll", bump, true);
-  }, [anchor, bump]);
-
-  const visible = Boolean(state.enabled && anchor && state.candidates.length > 0);
+  }, [bump, currentAnchor]);
 
   // Selection, scroll, and resize changes invalidate the measured caret geometry.
   // biome-ignore lint/correctness/useExhaustiveDependencies: tick is the explicit layout invalidation signal.
   useLayoutEffect(() => {
     if (
-      !windowFocused ||
+      !caretActive ||
       generation === undefined ||
-      !anchor ||
-      anchor !== document.activeElement ||
-      (!(anchor instanceof HTMLInputElement) && !(anchor instanceof HTMLTextAreaElement)) ||
-      anchor.disabled ||
+      !currentAnchor ||
+      (!showCaretWithoutFocus && currentAnchor !== document.activeElement) ||
+      (!(currentAnchor instanceof HTMLInputElement) &&
+        !(currentAnchor instanceof HTMLTextAreaElement)) ||
+      currentAnchor.disabled ||
       !blockNativeEditing
     ) {
       setCaretAnchor(null);
       return;
     }
-    const next = measureAnchor(anchor);
+    const next = measureAnchor(currentAnchor);
     setCaretAnchor((current) =>
       current?.x === next?.x &&
       current?.lineTop === next?.lineTop &&
@@ -132,12 +155,16 @@ export function ImeCandidateAnchorReporter({
         ? current
         : (next ?? null),
     );
-  }, [anchor, blockNativeEditing, generation, tick, windowFocused]);
+  }, [blockNativeEditing, caretActive, currentAnchor, generation, showCaretWithoutFocus, tick]);
 
   // Scroll and resize invalidate caret geometry without changing the focused element.
   // biome-ignore lint/correctness/useExhaustiveDependencies: tick is the explicit layout invalidation signal.
   useLayoutEffect(() => {
-    if (!anchor || anchor.dataset.imeTargetId !== targetId || generation === undefined) {
+    if (
+      !currentAnchor ||
+      currentAnchor.dataset.imeTargetId !== targetId ||
+      generation === undefined
+    ) {
       onUpdate({
         type: "clear",
         targetId,
@@ -149,17 +176,17 @@ export function ImeCandidateAnchorReporter({
       onUpdate({ type: "clear", targetId, generation });
       return;
     }
-    const position = measureAnchor(anchor);
+    const position = measureAnchor(currentAnchor);
     if (!position) return;
     onUpdate({ type: "show", anchor: position, targetId, generation });
-  }, [anchor, generation, onUpdate, state, targetId, tick, visible]);
+  }, [currentAnchor, generation, onUpdate, state, targetId, tick, visible]);
 
   useEffect(
     () => () =>
       onUpdate({ type: "clear", targetId, ...(generation !== undefined ? { generation } : {}) }),
     [generation, onUpdate, targetId],
   );
-  if (!caretAnchor || !windowFocused || state.composing) return null;
+  if (!caretAnchor || !caretActive || state.composing) return null;
   return createPortal(
     <span
       aria-hidden="true"
@@ -189,6 +216,13 @@ function resolveAnchor(target: EventTarget | null, targetId: string): HTMLElemen
   )
     return null;
   return element;
+}
+
+function findTargetAnchor(targetId: string): HTMLElement | null {
+  for (const element of document.querySelectorAll<HTMLElement>("[data-ime-target-id]")) {
+    if (element.dataset.imeTargetId === targetId) return element;
+  }
+  return null;
 }
 
 function measureAnchor(element: HTMLElement): ImeCandidateAnchor | undefined {

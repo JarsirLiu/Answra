@@ -57,6 +57,7 @@ describe("window surface registry", () => {
       applyCaptureProtection,
       platform: "win32",
     });
+    registry.setStealthEnabled(false);
     const main = new MockWindow();
     const candidate = new MockWindow();
     const focusEvents: unknown[] = [];
@@ -67,7 +68,8 @@ describe("window surface registry", () => {
     });
 
     expect(main.setAlwaysOnTop).toHaveBeenCalledWith(true, "floating");
-    expect(main.setFocusable).toHaveBeenCalledWith(false);
+    // Normal mode keeps the main surface focusable so the system IME can type.
+    expect(main.setFocusable).toHaveBeenLastCalledWith(true);
     expect(candidate.setAlwaysOnTop).toHaveBeenCalledWith(true, "pop-up-menu");
     expect(candidate.setFocusable).toHaveBeenCalledWith(false);
     expect(applyCaptureProtection).toHaveBeenLastCalledWith(candidate, false);
@@ -81,7 +83,37 @@ describe("window surface registry", () => {
     expect(focusEvents).toHaveLength(1);
 
     registry.setStealthEnabled(true);
+    expect(main.setFocusable).toHaveBeenLastCalledWith(false);
     expect(applyCaptureProtection).toHaveBeenLastCalledWith(candidate, true);
+  });
+
+  it("makes the main surface non-activating only while stealth is enabled", () => {
+    const registry = createWindowSurfaceRegistry({
+      applyCaptureProtection: () => true,
+      platform: "win32",
+    });
+    registry.setStealthEnabled(false);
+    const main = new MockWindow();
+    registry.register(main as never, { role: "main", captureProtection: "stealth-only" });
+
+    expect(main.focusable).toBe(true);
+    registry.setStealthEnabled(true);
+    expect(main.focusable).toBe(false);
+    registry.setStealthEnabled(false);
+    expect(main.focusable).toBe(true);
+  });
+
+  it("stays non-activating until the renderer reports the persisted stealth setting", () => {
+    const registry = createWindowSurfaceRegistry({
+      applyCaptureProtection: () => true,
+      platform: "win32",
+    });
+    const main = new MockWindow();
+    registry.register(main as never, { role: "main", captureProtection: "stealth-only" });
+
+    expect(main.focusable).toBe(false);
+    registry.setStealthEnabled(false);
+    expect(main.focusable).toBe(true);
   });
 
   it("keeps the main surface focusable on platforms without the non-activating policy", () => {
@@ -96,6 +128,22 @@ describe("window surface registry", () => {
     expect(main.setFocusable).not.toHaveBeenCalled();
   });
 
+  it("keeps the reply surface focusable normally and non-activating while stealth is enabled", () => {
+    const registry = createWindowSurfaceRegistry({
+      applyCaptureProtection: () => true,
+      platform: "win32",
+    });
+    registry.setStealthEnabled(false);
+    const reply = new MockWindow();
+    registry.register(reply as never, { role: "reply-bar", captureProtection: "stealth-only" });
+
+    expect(reply.setFocusable).toHaveBeenLastCalledWith(true);
+    registry.setStealthEnabled(true);
+    expect(reply.setFocusable).toHaveBeenLastCalledWith(false);
+    registry.setStealthEnabled(false);
+    expect(reply.setFocusable).toHaveBeenLastCalledWith(true);
+  });
+
   it("reasserts the Windows non-activating policy after blur or hide only when it drifted", () => {
     const registry = createWindowSurfaceRegistry({
       applyCaptureProtection: () => true,
@@ -103,6 +151,7 @@ describe("window surface registry", () => {
     });
     const main = new MockWindow();
     registry.register(main as never, { role: "main", captureProtection: "never" });
+    registry.setStealthEnabled(true);
     main.setFocusable.mockClear();
 
     main.focusable = true;

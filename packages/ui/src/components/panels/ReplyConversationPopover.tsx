@@ -30,6 +30,7 @@ export function ReplyConversationPopover({
   activeRunId,
   error,
   placement,
+  stealth,
   bridge,
   conversationId,
 }: ReplyConversationPopoverProps) {
@@ -43,7 +44,7 @@ export function ReplyConversationPopover({
     value: draft,
     onChange: setDraft,
   });
-  const ime = useEmbeddedIme(bridge, controlledImeText.commit, true, "reply-composer");
+  const ime = useEmbeddedIme(bridge, controlledImeText.commit, stealth, "reply-composer");
   const send = async () => {
     const text = draftRef.current.trim();
     if (!text || !conversationId || !bridge?.sendConversationMessage) return;
@@ -140,6 +141,7 @@ export function ReplyConversationPopover({
         disabled={false}
         inputLabel="消息输入"
         inputRef={composerInputRef}
+        nonActivating={stealth}
         onSubmit={() => void send()}
         onValueChange={setDraft}
         placeholder="继续输入消息…"

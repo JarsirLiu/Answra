@@ -1,6 +1,7 @@
 import {
   IME_RENDERER_DIAGNOSTIC_EVENTS,
   ImeChannels,
+  type ImeKeyboardAck,
   type ImeKeyRequest,
   type ImeLeaseResponse,
   type ImeRendererDiagnostic,
@@ -57,8 +58,44 @@ export function registerImeIpc(): {
 } {
   const bridge = new RimeBridge();
   const manager = new ImeSessionManager(bridge);
-  let blurTimer: ReturnType<typeof setTimeout> | undefined;
   let leaseWindow: BrowserWindow | undefined;
+  const unsubscribeKeyboardCapture = bridge.onKeyboardCaptureEvent((captured) => {
+    if (captured.type === "stopped") {
+      if (captured.reason !== "released" && captured.reason !== "shutdown")
+        logImeDiagnostic("keyboard-capture-stopped", {
+          reason: captured.reason,
+          generation: manager.lease.generation,
+          targetId: manager.lease.status === "owned" ? manager.lease.owner.targetId : undefined,
+        });
+      return;
+    }
+    const lease = manager.lease;
+    const window = leaseWindow;
+    if (
+      lease.status !== "owned" ||
+      captured.generation !== lease.generation ||
+      !window ||
+      window.isDestroyed() ||
+      window.webContents.isDestroyed() ||
+      lease.owner.windowId !== window.id ||
+      lease.owner.webContentsId !== window.webContents.id
+    )
+      return;
+    window.webContents.send(ImeChannels.KeyboardInput, {
+      targetId: lease.owner.targetId,
+      generation: lease.generation,
+      type: captured.release ? "keyup" : "keydown",
+      eventId: captured.eventId,
+      key: captured.key,
+      code: captured.code,
+      shift: captured.shift,
+      ctrl: captured.ctrl,
+      alt: captured.alt,
+      meta: captured.meta,
+      repeat: captured.repeat,
+    });
+  });
+  let blurTimer: ReturnType<typeof setTimeout> | undefined;
   let leaseListeners: Array<() => void> = [];
   let lastPublishedRevision = -1;
   const commandResults = new Map<
@@ -219,6 +256,18 @@ export function registerImeIpc(): {
     leaseWindow = undefined;
     if (blurTimer) clearTimeout(blurTimer);
     blurTimer = undefined;
+    void bridge.stopKeyboardCapture().catch((error: unknown) => {
+      console.warn("[ime] keyboard capture stop failed", error);
+    });
+  }
+
+  async function ensureKeyboardCapture(): Promise<boolean> {
+    if (process.platform !== "win32") return true;
+    const generation = manager.lease.status === "owned" ? manager.lease.generation : undefined;
+    if (generation === undefined) return false;
+    const started = await bridge.startKeyboardCapture(generation);
+    if (!started) logImeDiagnostic("keyboard-capture-unavailable", { platform: process.platform });
+    return started;
   }
 
   function suspendCurrent(reason: string): void {
@@ -268,6 +317,9 @@ export function registerImeIpc(): {
     const onFocus = () => {
       if (blurTimer) clearTimeout(blurTimer);
       blurTimer = undefined;
+      // Stealth owns native IME isolation. After leaving stealth the window is
+      // focusable again and regaining focus must not detach the system IME.
+      if (!isStealthEnabled()) return;
       if (isolateNativeIme(window) === "failed") {
         suspendCurrent("native-ime-isolation-failed-on-focus");
         logImeDiagnostic("native-ime-isolation-failed-on-focus", {
@@ -345,9 +397,14 @@ export function registerImeIpc(): {
       const owner = ownerFor(event, String(request.targetId ?? ""));
       const window = windowFor(event);
       if (!owner || !window) return rejectLease();
+      // Main owns the stealth state; never let a stale renderer lease detach the
+      // system IME while the window is meant to stay normally editable.
+      if (!isStealthEnabled()) return rejectLease();
 
       if (isActiveImeLease(manager.lease) && sameOwner(manager.lease.owner, owner)) {
         const state = await currentState();
+        if (manager.lease.status === "owned" && !(await ensureKeyboardCapture()))
+          return rejectLease();
         logImeDiagnostic("lease-reused", {
           windowId: owner.windowId,
           targetId: owner.targetId,
@@ -361,6 +418,7 @@ export function registerImeIpc(): {
       if (manager.lease.status === "disposed" || manager.lease.status === "unavailable")
         return rejectLease();
       const previous = manager.lease;
+      await bridge.stopKeyboardCapture();
       detachLeaseListeners();
       if (isActiveImeLease(previous)) {
         logImeDiagnostic("lease-released", {
@@ -381,6 +439,9 @@ export function registerImeIpc(): {
           });
       }
       if (isActiveImeLease(previous) && bridge.snapshot.composing) await manager.resetComposition();
+      // Stealth may have been turned off while the previous awaits ran. Re-check
+      // before detaching so a late acquire cannot undo the restore on the main window.
+      if (!isStealthEnabled()) return rejectLease();
       const isolation = isolateNativeIme(window);
       if (isolation === "failed") {
         if (isActiveImeLease(previous))
@@ -404,6 +465,11 @@ export function registerImeIpc(): {
       const state = await manager.enableEngine();
       if (manager.lease.status !== "owned" || manager.lease.generation !== generation)
         return rejectLease();
+      if (!(await ensureKeyboardCapture())) {
+        manager.transition({ type: "release", owner, generation });
+        detachLeaseListeners();
+        return rejectLease();
+      }
       logImeDiagnostic("lease-acquired", {
         windowId: owner.windowId,
         webContentsId: owner.webContentsId,
@@ -424,6 +490,7 @@ export function registerImeIpc(): {
       if (!isRecord(request) || !Number.isInteger(request.generation)) return rejectLease();
       const current = matchesCurrent(event, request.generation as number, true);
       if (!current) return rejectLease();
+      await bridge.stopKeyboardCapture();
       manager.transition({
         type: "release",
         owner: current.owner,
@@ -607,6 +674,9 @@ export function registerImeIpc(): {
                 manager.snapshot.revision !== payload.expectedRevision
               )
                 throw new StaleImeRevisionError();
+              // Embedded Rime only owns input while stealth is on. A stale resume
+              // in normal mode must not re-isolate the system IME.
+              if (!isStealthEnabled()) return { invalidTransition: true };
               const previousStatus = manager.lease.status;
               // Re-confirming focus while already owned is a no-op. The owner window
               // keeps its lease across non-activating candidate surfaces, and the
@@ -617,6 +687,19 @@ export function registerImeIpc(): {
                   owner: current.owner,
                   generation: payload.generation,
                 });
+                if (!(await ensureKeyboardCapture())) {
+                  manager.transition({
+                    type: "suspend",
+                    owner: current.owner,
+                    generation: payload.generation,
+                  });
+                  setImeCandidateState(current.window, {
+                    type: "suspend",
+                    targetId: current.owner.targetId,
+                    generation: payload.generation,
+                  });
+                  return { invalidTransition: true };
+                }
                 logImeDiagnostic("lease-resumed", {
                   windowId: current.window.id,
                   targetId: current.owner.targetId,
@@ -635,6 +718,19 @@ export function registerImeIpc(): {
                 owner: current.owner,
                 generation: payload.generation,
               });
+              if (!(await ensureKeyboardCapture())) {
+                manager.transition({
+                  type: "suspend",
+                  owner: current.owner,
+                  generation: payload.generation,
+                });
+                setImeCandidateState(current.window, {
+                  type: "suspend",
+                  targetId: current.owner.targetId,
+                  generation: payload.generation,
+                });
+                return { invalidTransition: true };
+              }
               logImeDiagnostic("lease-resumed", {
                 windowId: current.window.id,
                 targetId: current.owner.targetId,
@@ -683,6 +779,13 @@ export function registerImeIpc(): {
     }),
   );
 
+  handle(ImeChannels.KeyboardAck, async (event, payload) => {
+    if (!isImeKeyboardAck(payload)) return false;
+    const current = matchesCurrent(event, payload.generation);
+    if (!current || current.owner.targetId !== payload.targetId) return false;
+    return bridge.acknowledgeKeyboardInput(payload.generation, payload.eventId, payload.delivered);
+  });
+
   function matchesSessionCommand(
     event: Electron.IpcMainInvokeEvent,
     command: Exclude<ImeSessionCommand, { type: "acquireTarget" }>,
@@ -717,6 +820,7 @@ export function registerImeIpc(): {
     getSessionSnapshot: () => manager.snapshot,
     dispose: () => {
       ipcMain.removeListener(ImeChannels.Diagnostic, onRendererDiagnostic);
+      unsubscribeKeyboardCapture();
       detachLeaseListeners();
       manager.dispose();
     },
@@ -866,6 +970,17 @@ function isKeyRequest(value: unknown): value is ImeKeyRequest {
     ["key", "code"].every((key) => typeof value[key] === "string") &&
     ["shift", "ctrl", "alt", "meta"].every((key) => typeof value[key] === "boolean") &&
     (value.release === undefined || typeof value.release === "boolean")
+  );
+}
+
+function isImeKeyboardAck(value: unknown): value is ImeKeyboardAck {
+  return (
+    isRecord(value) &&
+    isTargetId(value.targetId) &&
+    Number.isInteger(value.generation) &&
+    Number.isSafeInteger(value.eventId) &&
+    (value.eventId as number) > 0 &&
+    typeof value.delivered === "boolean"
   );
 }
 

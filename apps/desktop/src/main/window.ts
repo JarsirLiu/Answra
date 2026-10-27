@@ -21,7 +21,7 @@ import {
 import { createMainWindowController } from "./mainWindowController";
 import { createReplyBarWindowController } from "./replyBarWindowController";
 import { getWindowCaptureDiagnostics } from "./windowCaptureProtection";
-import { createWindowStealthController, isolateNativeIme } from "./windowStealthController";
+import { createWindowStealthController } from "./windowStealthController";
 import { createWindowSurfaceRegistry, type WindowSurfaceDescriptor } from "./windowSurfaceRegistry";
 
 let windowController: ReturnType<typeof createMainWindowController>;
@@ -81,10 +81,6 @@ function ensureControllers(): void {
     getMainWindow: () => windowController.getWindow(),
     applyWindowPolicies: (enabled) => windowSurfaceRegistry.setStealthEnabled(enabled),
     refreshWindowPolicies: (reason) => windowSurfaceRegistry.refresh(reason),
-    setReplyBarInputMethod: () => {
-      const replyBar = replyBarController.getWindow();
-      if (replyBar) isolateNativeIme(replyBar);
-    },
   });
 }
 
@@ -247,7 +243,6 @@ function logCaptureSurfaceState(reason: string, window: BrowserWindow): void {
 export function createMainWindow(): BrowserWindow {
   ensureControllers();
   const window = windowController.create();
-  isolateNativeIme(window);
   imeCandidateController.warmup();
   return window;
 }

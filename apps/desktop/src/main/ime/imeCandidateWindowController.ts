@@ -10,7 +10,7 @@ import {
   type ImeCandidateWindowBounds,
   positionImeCandidate,
 } from "./imeCandidateLayout";
-import { logImeDiagnostic } from "./imeDiagnostics";
+import { isImeDebugEnabled, logImeDiagnostic } from "./imeDiagnostics";
 
 const INITIAL_SIZE = { width: 640, height: 56 };
 const DEFAULT_SIZE = INITIAL_SIZE;
@@ -83,6 +83,21 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
   let anchorReportedAvailable = false;
 
   function update(owner: BrowserWindow, payload: ImeCandidatePresentationUpdate) {
+    if (isImeDebugEnabled())
+      logImeDiagnostic("candidate-update-received", {
+        ownerWindowId: owner.id,
+        ownerMatches: host.isOwnerWindow(owner),
+        ownerDestroyed: owner.isDestroyed(),
+        type: payload.type,
+        targetId: payload.targetId,
+        generation: payload.generation,
+        preedit: payload.type === "show" ? payload.state.preedit : undefined,
+        candidates: payload.type === "show" ? payload.state.candidates.length : undefined,
+        anchor: payload.type === "show" ? payload.anchor : undefined,
+        boundOwnerWindowId: ownerWindow?.id,
+        candidateWindowId: windowRef?.id,
+        rendererReady,
+      });
     if (!host.isOwnerWindow(owner) || owner.isDestroyed()) return;
     if (payload.type === "suspend") {
       if (!matchesCandidate(owner, payload.targetId, payload.generation)) return;
@@ -435,6 +450,9 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
       return;
     }
     window.showInactive();
+    // A first show can place an owned window below its non-activating owner on
+    // Windows. Re-assert the z-order after the native window is visible.
+    host.attachAbove(window, owner);
     reportPositionStatus(window.isVisible() ? "show-request-visible" : "show-request-not-visible", {
       windowId: window.id,
       bounds: JSON.stringify(bounds),

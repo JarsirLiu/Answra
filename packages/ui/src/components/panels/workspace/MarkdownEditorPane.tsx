@@ -41,6 +41,8 @@ interface MarkdownEditorPaneProps {
   onDirtyChange?: (dirty: boolean) => void;
   /** 子资源（图片）相对路径解析基准：文档所在目录。 */
   dir: string;
+  /** 仅隐身模式由内置 Rime 接管编辑器输入。 */
+  stealth: boolean;
 }
 
 interface CodeMirrorBundle {
@@ -56,6 +58,7 @@ export function MarkdownEditorPane({
   externalVersion,
   onDirtyChange,
   dir,
+  stealth,
 }: MarkdownEditorPaneProps) {
   const ime = useEmbeddedIme(
     bridge,
@@ -65,7 +68,7 @@ export function MarkdownEditorPane({
       createCodeMirrorTextAdapter(view).insertText(text);
       setDirtyState(true);
     },
-    true,
+    stealth,
     "workspace-markdown-editor",
   );
   const imeRef = useRef(ime);
@@ -219,6 +222,7 @@ export function MarkdownEditorPane({
         bundleRef.current.view = view;
         view.contentDOM.addEventListener("focus", onEditorFocus);
         view.contentDOM.addEventListener("blur", onEditorBlur);
+        view.contentDOM.addEventListener("pointerdown", onEditorFocus);
         if (document.activeElement === view.contentDOM) void imeRef.current.acquire();
       } catch (cause) {
         if (!disposed) setError(cause instanceof Error ? cause.message : "编辑器加载失败");
@@ -230,6 +234,7 @@ export function MarkdownEditorPane({
       if (view) lastTextRef.current = view.state.doc.toString();
       view?.contentDOM.removeEventListener("focus", onEditorFocus);
       view?.contentDOM.removeEventListener("blur", onEditorBlur);
+      view?.contentDOM.removeEventListener("pointerdown", onEditorFocus);
       void imeRef.current.release("editor-unmount");
       view?.destroy();
       bundleRef.current.view = null;
@@ -366,6 +371,7 @@ export function MarkdownEditorPane({
           blockNativeEditing={ime.textPolicy.blockNativeEditing}
           generation={ime.generation}
           onUpdate={ime.updateCandidate}
+          showCaretWithoutFocus={stealth}
           state={ime.state}
           targetId="workspace-markdown-editor"
         />

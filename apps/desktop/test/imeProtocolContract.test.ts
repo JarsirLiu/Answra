@@ -42,6 +42,8 @@ describe("IME protocol surface contract", () => {
       Diagnostic: "answra:ime:diagnostic",
       SessionCommand: "answra:ime:session-command",
       SessionSnapshot: "answra:ime:session-snapshot",
+      KeyboardInput: "answra:ime:keyboard-input",
+      KeyboardAck: "answra:ime:keyboard-ack",
     });
   });
 
@@ -62,6 +64,7 @@ describe("IME protocol surface contract", () => {
 
     expect(typeof api.getImeSessionSnapshot).toBe("function");
     expect(typeof api.onImeSessionSnapshot).toBe("function");
+    expect(typeof api.ackImeKeyboardInput).toBe("function");
   });
 
   it("routes the single session entry point through the typed session channel", async () => {

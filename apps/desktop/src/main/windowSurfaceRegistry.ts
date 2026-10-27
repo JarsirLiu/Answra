@@ -24,7 +24,8 @@ export interface WindowSurfaceRegistryOptions {
 
 interface SurfacePolicy {
   alwaysOnTopLevel: "floating" | "pop-up-menu" | "screen-saver";
-  nonActivating: boolean;
+  /** `stealth` surfaces are non-activating while stealth is on, or unknown at startup. */
+  nonActivating: "always" | "stealth";
 }
 
 interface ManagedWindow {
@@ -39,10 +40,10 @@ interface ManagedWindow {
 }
 
 const SURFACE_POLICIES: Record<WindowRole, SurfacePolicy> = {
-  main: { alwaysOnTopLevel: "floating", nonActivating: true },
-  "reply-bar": { alwaysOnTopLevel: "floating", nonActivating: false },
-  "ime-candidate": { alwaysOnTopLevel: "pop-up-menu", nonActivating: true },
-  "selection-overlay": { alwaysOnTopLevel: "screen-saver", nonActivating: true },
+  main: { alwaysOnTopLevel: "floating", nonActivating: "stealth" },
+  "reply-bar": { alwaysOnTopLevel: "floating", nonActivating: "stealth" },
+  "ime-candidate": { alwaysOnTopLevel: "pop-up-menu", nonActivating: "always" },
+  "selection-overlay": { alwaysOnTopLevel: "screen-saver", nonActivating: "always" },
 };
 
 const DEFAULT_OPTIONS: WindowSurfaceRegistryOptions = {
@@ -58,6 +59,10 @@ export function createWindowSurfaceRegistry(
   const childByOwner = new Map<BrowserWindow, BrowserWindow>();
   const focusSubscribers = new Set<(event: WindowFocusEvent) => void>();
   let stealthEnabled = false;
+  // The renderer reports the persisted stealth setting asynchronously. Until it
+  // arrives, stealth-capable surfaces stay non-activating (the pre-existing
+  // fail-closed behavior) instead of briefly becoming focusable during startup.
+  let stealthConfigured = false;
   let focusedWindow: BrowserWindow | undefined;
 
   function register(window: BrowserWindow, descriptor: WindowSurfaceDescriptor): () => void {
@@ -154,7 +159,8 @@ export function createWindowSurfaceRegistry(
 
   function setStealthEnabled(enabled: boolean): boolean {
     stealthEnabled = enabled;
-    return applyAll("stealth-change");
+    stealthConfigured = true;
+    return applyAll("stealth-change", true);
   }
 
   function refresh(reason = "refresh"): boolean {
@@ -186,9 +192,10 @@ export function createWindowSurfaceRegistry(
     if (!child.isDestroyed()) child.setParentWindow(null);
   }
 
-  function applyAll(reason: string): boolean {
+  function applyAll(reason: string, reconcileSurface = false): boolean {
     let succeeded = true;
-    for (const window of managed.keys()) succeeded = apply(window, reason) && succeeded;
+    for (const window of managed.keys())
+      succeeded = apply(window, reason, reconcileSurface) && succeeded;
     return succeeded;
   }
 
@@ -203,19 +210,30 @@ export function createWindowSurfaceRegistry(
     if (window.isDestroyed()) return;
     const policy = SURFACE_POLICIES[role];
     window.setAlwaysOnTop(true, policy.alwaysOnTopLevel);
-    if (policy.nonActivating && isNonActivatingPlatform(options.platform ?? process.platform))
-      window.setFocusable(false);
+    if (!isNonActivatingPlatform(options.platform ?? process.platform)) return;
+    const nonActivating = isNonActivatingPolicy(policy);
+    // Main and reply surfaces return to a normal focusable window as soon as
+    // stealth is off, so their text editors can use the system IME again.
+    if (role === "main" || role === "reply-bar") window.setFocusable(!nonActivating);
+    else if (nonActivating) window.setFocusable(false);
   }
 
   function reassertNonActivating(window: BrowserWindow, role: WindowRole): void {
     const policy = SURFACE_POLICIES[role];
     if (
-      policy.nonActivating &&
+      isNonActivatingPolicy(policy) &&
       isNonActivatingPlatform(options.platform ?? process.platform) &&
       window.isFocusable()
     ) {
       window.setFocusable(false);
     }
+  }
+
+  function isNonActivatingPolicy(policy: SurfacePolicy): boolean {
+    return (
+      policy.nonActivating === "always" ||
+      (policy.nonActivating === "stealth" && (stealthEnabled || !stealthConfigured))
+    );
   }
 
   function applyCapturePolicy(

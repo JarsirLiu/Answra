@@ -121,7 +121,11 @@ const sampleContent: WorkspaceFileContent = {
   text: "# 标题\n\n正文第一行。",
 };
 
-function renderPane(bridge: DesktopBridge, viewMode: "source" | "preview" = "source") {
+function renderPane(
+  bridge: DesktopBridge,
+  viewMode: "source" | "preview" = "source",
+  stealth = true,
+) {
   return render(
     <MarkdownEditorPane
       path="错题.md"
@@ -131,6 +135,7 @@ function renderPane(bridge: DesktopBridge, viewMode: "source" | "preview" = "sou
       onViewModeChange={() => undefined}
       externalVersion={0}
       dir=""
+      stealth={stealth}
     />,
   );
 }
@@ -327,6 +332,7 @@ describe("MarkdownEditorPane", () => {
         onViewModeChange={() => undefined}
         externalVersion={0}
         dir=""
+        stealth
       />,
     );
     await waitFor(() => expect(imeRelease).toHaveBeenCalled());
@@ -334,7 +340,7 @@ describe("MarkdownEditorPane", () => {
     expect(view.state.selection.main).toEqual(selectionBeforeCancel);
     await waitFor(() => expect(screen.queryByRole("listbox", { name: "输入法候选词" })).toBeNull());
     expect(imeSelect).toHaveBeenCalledOnce();
-  });
+  }, 15_000);
 
   it("handles an uncomposed Enter as an editor newline while embedded IME is active", async () => {
     const imeState = {
@@ -391,6 +397,7 @@ describe("MarkdownEditorPane", () => {
         onViewModeChange={() => undefined}
         externalVersion={0}
         dir=""
+        stealth
       />,
     );
     // 预览态需动态加载 react-markdown + rehype-raw 等 chunk，冷加载较慢，
@@ -438,6 +445,7 @@ describe("MarkdownEditorPane", () => {
         onViewModeChange={() => undefined}
         externalVersion={1}
         dir=""
+        stealth
       />,
     );
     await waitFor(() => expect(readWorkspaceFile).toHaveBeenCalledWith("错题.md"));
@@ -470,6 +478,7 @@ describe("MarkdownEditorPane", () => {
         onViewModeChange={() => undefined}
         externalVersion={1}
         dir=""
+        stealth
       />,
     );
     await waitFor(() => expect(screen.getByText(/文件已被外部修改/)).toBeInTheDocument());

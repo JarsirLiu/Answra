@@ -23,8 +23,16 @@ function imeProps(
     compositionRange = null,
     captureCompositionStart = vi.fn(),
     cancelComposition = vi.fn(),
+    selection: initialSelection = { start: 0, end: 0 },
+    setSelection: providedSetSelection,
     ...sessionOverrides
   } = overrides;
+  let selection = initialSelection;
+  const setSelection =
+    providedSetSelection ??
+    vi.fn((next: { start: number; end: number }) => {
+      selection = next;
+    });
   const textPolicy = resolveImeTextPolicy({
     targetOwned: true,
     composing: false,
@@ -48,7 +56,15 @@ function imeProps(
       toggle: vi.fn(),
       ...sessionOverrides,
     },
-    composition: { compositionRange, captureCompositionStart, cancelComposition },
+    composition: {
+      compositionRange,
+      captureCompositionStart,
+      cancelComposition,
+      get selection() {
+        return selection;
+      },
+      setSelection,
+    },
   };
 }
 
@@ -127,6 +143,7 @@ describe("ConversationComposer", () => {
     );
     const input = screen.getByRole("textbox", { name: "补充问题" }) as HTMLTextAreaElement;
     input.setSelectionRange(1, 3);
+    fireEvent.select(input);
 
     fireEvent.paste(input, {
       clipboardData: { files: [], getData: (type: string) => (type === "text/plain" ? "XY" : "") },
@@ -225,6 +242,7 @@ describe("ConversationComposer", () => {
 
     const input = screen.getByRole("textbox", { name: "补充问题" }) as HTMLTextAreaElement;
     input.setSelectionRange(1, 1);
+    fireEvent.select(input);
     expect(input.readOnly).toBe(true);
     fireEvent.keyDown(input, { key: "Backspace", code: "Backspace" });
 
@@ -312,6 +330,7 @@ describe("ConversationComposer", () => {
     );
     const input = screen.getByRole("textbox", { name: "补充问题" }) as HTMLTextAreaElement;
     input.setSelectionRange(2, 2);
+    fireEvent.select(input);
     input.focus();
     fireEvent.keyDown(input, { key: "n", code: "KeyN" });
 

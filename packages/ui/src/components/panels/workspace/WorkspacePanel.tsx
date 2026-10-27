@@ -155,6 +155,7 @@ export function WorkspacePanel({ bridge, onClose, stealth = false }: WorkspacePa
                     onSelect={openNode}
                     collapsed={false}
                     onToggleCollapse={() => setSidebarCollapsed(true)}
+                    stealth={stealth}
                     onDelete={(path) => {
                       if (selectedPathRef.current === path) setSelected(null);
                       void workspace.deleteEntry(path).catch(() => undefined);
@@ -173,6 +174,7 @@ export function WorkspacePanel({ bridge, onClose, stealth = false }: WorkspacePa
                     externalVersion={externalVersion}
                     path={selected.path}
                     viewMode={viewMode}
+                    stealth={stealth}
                     onDirtyChange={(value) => {
                       dirtyRef.current = value;
                     }}

@@ -487,7 +487,32 @@ export const ImeChannels = {
   Diagnostic: "answra:ime:diagnostic",
   SessionCommand: "answra:ime:session-command",
   SessionSnapshot: "answra:ime:session-snapshot",
+  KeyboardInput: "answra:ime:keyboard-input",
+  KeyboardAck: "answra:ime:keyboard-ack",
 } as const;
+
+/** Native keyboard hook event forwarded only to the current IME lease owner. */
+export interface ImeKeyboardInput {
+  targetId: string;
+  generation: number;
+  eventId: number;
+  type: "keydown" | "keyup";
+  key: string;
+  code: string;
+  shift: boolean;
+  ctrl: boolean;
+  alt: boolean;
+  meta: boolean;
+  repeat: boolean;
+}
+
+/** Renderer confirmation that a native key event reached the active editor. */
+export interface ImeKeyboardAck {
+  targetId: string;
+  generation: number;
+  eventId: number;
+  delivered: boolean;
+}
 
 /** 候选条独立窗口协议：输入窗口推送状态，候选窗口只回传用户操作。 */
 export const ImeCandidateChannels = {
@@ -664,6 +689,7 @@ export const IME_RENDERER_DIAGNOSTIC_EVENTS = [
   "document-keydown",
   "selection-after-shortcut",
   "key-routing",
+  "candidate-update",
   "candidate-rendered",
   "release-called",
 ] as const;
@@ -706,6 +732,7 @@ export interface ImeRendererDiagnostic {
   imeEnabled?: boolean;
   composing?: boolean;
   accepted?: boolean;
+  engineEnabled?: boolean;
   key?: string;
   keyCode?: string;
   keyKind?: "text" | "process" | "backspace" | "enter" | "navigation" | "other";
@@ -736,6 +763,14 @@ export interface ImeChannelMap {
   [ImeChannels.SessionSnapshot]: {
     request: undefined;
     response: ImeSessionSnapshotUpdate;
+  };
+  [ImeChannels.KeyboardInput]: {
+    request: ImeKeyboardInput;
+    response: undefined;
+  };
+  [ImeChannels.KeyboardAck]: {
+    request: ImeKeyboardAck;
+    response: boolean;
   };
 }
 

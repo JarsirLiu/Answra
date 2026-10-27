@@ -15,6 +15,7 @@ import {
   sendImeCandidateState,
   setImeCandidateState,
 } from "../window";
+import { logImeDiagnostic } from "./imeDiagnostics";
 
 export function registerImeCandidateIpc(
   isCurrentLease: (owner: BrowserWindow, targetId: string, generation: number) => boolean,
@@ -22,14 +23,22 @@ export function registerImeCandidateIpc(
 ): void {
   ipcMain.on(ImeCandidateChannels.Update, (event, payload: unknown) => {
     const owner = BrowserWindow.fromWebContents(event.sender);
-    if (!owner || !isOwnerWindow(owner, event)) return;
-    if (
-      !isCandidateUpdate(payload) ||
-      !payload.targetId ||
-      payload.generation === undefined ||
-      !isCurrentLease(owner, payload.targetId, payload.generation)
-    )
+    if (!owner || !isOwnerWindow(owner, event)) {
+      logImeDiagnostic("candidate-update-rejected", { reason: "owner-mismatch" });
       return;
+    }
+    if (!isCandidateUpdate(payload) || !payload.targetId || payload.generation === undefined) {
+      logImeDiagnostic("candidate-update-rejected", { reason: "invalid-payload" });
+      return;
+    }
+    if (!isCurrentLease(owner, payload.targetId, payload.generation)) {
+      logImeDiagnostic("candidate-update-rejected", {
+        reason: "stale-lease",
+        targetId: payload.targetId,
+        generation: payload.generation,
+      });
+      return;
+    }
     if (payload.type === "suspend") {
       setImeCandidateState(owner, payload);
       return;
@@ -39,8 +48,17 @@ export function registerImeCandidateIpc(
       snapshot.phase !== "owned" ||
       snapshot.owner?.targetId !== payload.targetId ||
       snapshot.owner.generation !== payload.generation
-    )
+    ) {
+      logImeDiagnostic("candidate-update-rejected", {
+        reason: "session-mismatch",
+        targetId: payload.targetId,
+        generation: payload.generation,
+        phase: snapshot.phase,
+        ownerTargetId: snapshot.owner?.targetId,
+        ownerGeneration: snapshot.owner?.generation,
+      });
       return;
+    }
     setImeCandidateState(owner, payload, snapshot.engine);
   });
 

@@ -18,6 +18,8 @@ interface EmbeddedImeInputProps
   value: string;
   onValueChange: (value: string) => void;
   type?: "text" | "search" | "url";
+  /** Only stealth may hand keys to embedded Rime; normal mode uses the system IME. */
+  enabled: boolean;
 }
 
 /** Controlled free-text input backed by the shared Rime session. */
@@ -27,6 +29,7 @@ export function EmbeddedImeInput({
   value,
   onValueChange,
   type = "text",
+  enabled,
   ...props
 }: EmbeddedImeInputProps) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -36,7 +39,7 @@ export function EmbeddedImeInput({
     onChange: onValueChange,
   });
   const pendingCaret = useRef<number | null>(null);
-  const ime = useEmbeddedIme(bridge, controlledText.commit, true, targetId);
+  const ime = useEmbeddedIme(bridge, controlledText.commit, enabled, targetId);
   const textPolicy = ime.textPolicy;
   const inputState = resolveImeEditorInputState({
     businessReadOnly: Boolean(props.readOnly),
@@ -69,6 +72,7 @@ export function EmbeddedImeInput({
         blockNativeEditing={textPolicy.blockNativeEditing}
         generation={ime.generation}
         onUpdate={ime.updateCandidate}
+        showCaretWithoutFocus={enabled}
         state={ime.state}
         targetId={targetId}
       />
@@ -88,6 +92,7 @@ export function EmbeddedImeInput({
           if (textPolicy.blockComposition) event.preventDefault();
         }}
         onFocus={() => void ime.acquire()}
+        onPointerDown={() => void ime.acquire()}
         onKeyDown={(event) => {
           const handled = handleImeEditorKeyDown({
             event,

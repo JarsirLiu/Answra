@@ -35,6 +35,8 @@ interface DirectoryTreeProps {
   /** 侧栏收起状态与切换（按钮并入树头部动作行，不独占竖条）。 */
   collapsed?: boolean;
   onToggleCollapse?: () => void;
+  /** 仅隐身模式由内置 Rime 接管筛选框输入。 */
+  stealth?: boolean;
 }
 
 interface TreeNodeProps extends DirectoryTreeProps {
@@ -74,6 +76,7 @@ export function DirectoryTree(props: DirectoryTreeProps) {
         <Search aria-hidden="true" size={12} />
         <EmbeddedImeInput
           bridge={props.bridge}
+          enabled={props.stealth === true}
           targetId="workspace-directory-filter"
           value={filter}
           onValueChange={setFilter}

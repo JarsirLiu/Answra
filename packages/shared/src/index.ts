@@ -7,6 +7,8 @@ export type {
   ImeCandidateSnapshot,
   ImeCandidateUpdate,
   ImeInputMode,
+  ImeKeyboardAck,
+  ImeKeyboardInput,
   ImeKeyRequest,
   ImeLeaseResponse,
   ImeRendererDiagnostic,

@@ -1,8 +1,11 @@
 #include "rime_api.h"
+#include "keyboard_capture.h"
 
 #include <algorithm>
 #include <cstdint>
 #include <iostream>
+#include <mutex>
+#include <stdexcept>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -234,23 +237,107 @@ static std::string utf8(const std::wstring& value) {
 #endif
 }
 
+static std::mutex output_mutex;
+
+static bool write_line(const std::string& line) {
+  std::lock_guard<std::mutex> lock(output_mutex);
+  std::cout << line << '\n' << std::flush;
+  return std::cout.good();
+}
+
+static std::string keyboard_event_json(const CapturedKeyboardEvent& event) {
+  std::ostringstream output;
+  output << "{\"generation\":" << event.generation << ",\"eventId\":" << event.event_id
+         << ",\"key\":\""
+         << json_escape(event.key.c_str()) << "\",\"code\":\""
+         << json_escape(event.code.c_str()) << "\",\"shift\":"
+         << (event.shift ? "true" : "false") << ",\"ctrl\":"
+         << (event.ctrl ? "true" : "false") << ",\"alt\":"
+         << (event.alt ? "true" : "false") << ",\"meta\":"
+         << (event.meta ? "true" : "false") << ",\"release\":"
+         << (event.release ? "true" : "false") << ",\"repeat\":"
+         << (event.repeat ? "true" : "false") << '}';
+  return output.str();
+}
+
+static std::string capture_state_json(const std::string& state, bool active) {
+  std::string result = state;
+  if (!result.empty() && result.back() == '}') result.pop_back();
+  result += std::string(",\"keyboardCaptureActive\":") + (active ? "true}" : "false}");
+  return result;
+}
+
 static int run(const std::vector<std::string>& args) {
   if (args.size() != 5) return 2;
   RimeHost host;
   const bool available = host.initialize(args[1], args[2], args[3], args[4]);
-  std::cout << "0\t{\"protocolVersion\":2,\"available\":"
-            << (available ? "true" : "false") << "}\n" << std::flush;
+  KeyboardCapture keyboard_capture;
+  write_line(std::string("0\t{\"protocolVersion\":2,\"available\":") +
+             (available ? "true" : "false") + ",\"keyboardCaptureAvailable\":" +
+             (KeyboardCapture::available() ? "true}" : "false}"));
   if (!available) return 3;
   std::string line;
   while (std::getline(std::cin, line)) {
     const std::vector<std::string> fields = split_tabs(line);
     if (fields.size() < 2) continue;
-    if (fields[1] == "quit") break;
+    if (fields[1] == "quit") {
+      keyboard_capture.stop("shutdown");
+      break;
+    }
     try {
       std::vector<std::string> command(fields.begin() + 1, fields.end());
-      std::cout << fields[0] << '\t' << host.execute(command) << '\n' << std::flush;
+      std::string response;
+      if (command[0] == "capture-start") {
+        if (command.size() != 3) throw std::runtime_error("capture owner identity is required");
+        std::size_t parsed_length = 0;
+        const unsigned long generation = std::stoul(command[1], &parsed_length);
+        if (parsed_length != command[1].size() || generation == 0 || generation > UINT32_MAX)
+          throw std::runtime_error("capture generation is invalid");
+        parsed_length = 0;
+        const unsigned long owner_process_id = std::stoul(command[2], &parsed_length);
+        if (parsed_length != command[2].size() || owner_process_id == 0 ||
+            owner_process_id > UINT32_MAX)
+          throw std::runtime_error("capture owner process is invalid");
+        const bool started = keyboard_capture.start(
+            static_cast<std::uint32_t>(generation),
+            owner_process_id,
+            [](const CapturedKeyboardEvent& event) {
+              return write_line("@keyboard\t" + keyboard_event_json(event));
+            },
+            [](const std::string& reason) {
+              write_line("@capture-stopped\t{\"reason\":\"" + json_escape(reason.c_str()) +
+                         "\"}");
+            });
+        response = capture_state_json(host.state(false), started);
+      } else if (command[0] == "capture-ack") {
+        if (command.size() != 4) throw std::runtime_error("capture acknowledgement is invalid");
+        std::size_t parsed_length = 0;
+        const unsigned long generation = std::stoul(command[1], &parsed_length);
+        if (parsed_length != command[1].size() || generation == 0 || generation > UINT32_MAX)
+          throw std::runtime_error("capture acknowledgement generation is invalid");
+        parsed_length = 0;
+        const unsigned long long event_id = std::stoull(command[2], &parsed_length);
+        if (parsed_length != command[2].size() || event_id == 0)
+          throw std::runtime_error("capture acknowledgement event is invalid");
+        if (command[3] != "0" && command[3] != "1")
+          throw std::runtime_error("capture acknowledgement result is invalid");
+        const bool delivered = command[3] == "1";
+        const bool acknowledged = keyboard_capture.acknowledge(
+            static_cast<std::uint32_t>(generation), static_cast<std::uint64_t>(event_id),
+            delivered);
+        response = host.state(false);
+        response.pop_back();
+        response += std::string(",\"keyboardEventAcknowledged\":") +
+                    (acknowledged ? "true}" : "false}");
+      } else if (command[0] == "capture-stop") {
+        keyboard_capture.stop("released");
+        response = capture_state_json(host.state(false), keyboard_capture.active());
+      } else {
+        response = host.execute(command);
+      }
+      write_line(fields[0] + '\t' + response);
     } catch (const std::exception&) {
-      std::cout << fields[0] << '\t' << host.state(false) << '\n' << std::flush;
+      write_line(fields[0] + '\t' + host.state(false));
     }
   }
   return 0;
@@ -258,6 +345,10 @@ static int run(const std::vector<std::string>& args) {
 
 #ifdef _WIN32
 int wmain(int argc, wchar_t** argv) {
+  // The low-level mouse hook reports physical coordinates. Without per-monitor DPI
+  // awareness, WindowFromPhysicalPoint's callers can still virtualize points on a
+  // scaled display and misclassify clicks inside the stealth window as outside.
+  SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
   std::vector<std::string> args;
   for (int index = 0; index < argc; ++index) args.push_back(utf8(argv[index]));
   return run(args);

@@ -10,11 +10,14 @@ export interface WindowStealthControllerHost {
   getMainWindow: () => BrowserWindow | undefined;
   applyWindowPolicies: (enabled: boolean) => boolean;
   refreshWindowPolicies: (reason: string) => boolean;
-  setReplyBarInputMethod?: (enabled: boolean) => void;
 }
 
 export type NativeImeIsolationResult = "applied" | "not-required" | "failed";
 
+/** `ImmAssociateContextEx` flag that restores a window's default IME context. */
+const IACE_DEFAULT = 0x0010;
+/** `ImmAssociateContextEx` flag that targets the window's child HWNDs. */
+const IACE_CHILDREN = 0x0001;
 const nativePointer = koffi.pointer("void");
 const immAssociateContext =
   process.platform === "win32"
@@ -28,42 +31,54 @@ const immAssociateContextEx =
         .load("imm32.dll")
         .func("ImmAssociateContextEx", "int", [nativePointer, nativePointer, "uint"])
     : undefined;
-const immDisableIme =
-  process.platform === "win32"
-    ? koffi.load("imm32.dll").func("ImmDisableIME", "int", ["uint32"])
-    : undefined;
-let electronThreadImeDisabled: boolean | undefined;
 let lastImeIsolationResult: boolean | undefined;
 
+function nativeWindowHandle(window: BrowserWindow): unknown {
+  // Electron returns a Buffer containing the HWND value, not a pointer to the Buffer.
+  return koffi.decode(window.getNativeWindowHandle(), "void *");
+}
+
+function reportImeIsolation(result: boolean, window: BrowserWindow, action: string): void {
+  if (!result && lastImeIsolationResult !== false) {
+    console.warn(`[ime] Windows system IME ${action} failed`, { windowId: window.id });
+  }
+  lastImeIsolationResult = result;
+}
+
+/**
+ * Detaches the window from its platform IME context while stealth is on. This is
+ * reversible through `restoreNativeIme`, unlike `ImmDisableIME`, which would also
+ * kill system IME input for normal mode after the user leaves stealth.
+ */
 export function isolateNativeIme(window: BrowserWindow): NativeImeIsolationResult {
   if (window.isDestroyed()) return "failed";
-  if (!immAssociateContext || !immAssociateContextEx || !immDisableIme)
+  if (!immAssociateContext || !immAssociateContextEx)
     return process.platform !== "win32" ? "not-required" : "failed";
   try {
-    // Every Electron BrowserWindow belongs to the main UI thread. Disable that
-    // thread's TSF/IMM input path; HWND association alone did not stop Chromium
-    // from receiving system composition on Windows 11.
-    electronThreadImeDisabled ??= Boolean(immDisableIme(0));
-    // Electron returns a Buffer containing the HWND value, not a pointer to the Buffer.
-    const handle = koffi.decode(window.getNativeWindowHandle(), "void *");
-    // Detach the top-level Chromium host first, then all child HWNDs. The
-    // previous child-only call left an existing top-level composition alive.
+    const handle = nativeWindowHandle(window);
     immAssociateContext(handle, null);
-    const applied = immAssociateContextEx(handle, null, 0x01);
-    const disabled = process.platform !== "win32" || electronThreadImeDisabled;
-    const result = Boolean(applied) && Boolean(disabled);
-    if (!result && lastImeIsolationResult !== false) {
-      console.warn("[ime] Windows system IME isolation failed", {
-        threadDisabled: disabled,
-        windowContextDetached: Boolean(applied),
-        windowId: window.id,
-      });
-    }
-    lastImeIsolationResult = result;
-    return result ? "applied" : "failed";
+    const applied = Boolean(immAssociateContextEx(handle, null, IACE_CHILDREN));
+    reportImeIsolation(applied, window, "isolation");
+    return applied ? "applied" : "failed";
   } catch (error) {
     if (lastImeIsolationResult !== false)
       console.warn("[ime] Windows system IME isolation failed", error);
+    lastImeIsolationResult = false;
+    return "failed";
+  }
+}
+
+/** Re-associates the default IME context so normal mode can type with the system IME. */
+export function restoreNativeIme(window: BrowserWindow): NativeImeIsolationResult {
+  if (window.isDestroyed()) return "failed";
+  if (!immAssociateContextEx) return process.platform !== "win32" ? "not-required" : "failed";
+  try {
+    const restored = Boolean(immAssociateContextEx(nativeWindowHandle(window), null, IACE_DEFAULT));
+    reportImeIsolation(restored, window, "restore");
+    return restored ? "applied" : "failed";
+  } catch (error) {
+    if (lastImeIsolationResult !== false)
+      console.warn("[ime] Windows system IME restore failed", error);
     lastImeIsolationResult = false;
     return "failed";
   }
@@ -90,10 +105,14 @@ export function createWindowStealthController(host: WindowStealthControllerHost)
     }
     enabled = value;
     const applied = host.applyWindowPolicies(value);
-    // The embedded Rime editor owns all text input in this application. Stealth
-    // changes capture policy only; leaving stealth must not re-enable Windows IME.
-    isolateNativeIme(window);
-    host.setReplyBarInputMethod?.(false);
+    // Stealth keeps text input on the embedded Rime path via a non-activating
+    // window; normal mode must hand text input back to the system IME.
+    if (value) {
+      isolateNativeIme(window);
+      window.blur();
+    } else {
+      restoreNativeIme(window);
+    }
     window.setSkipTaskbar(value);
     if (process.platform === "darwin") value ? app.dock?.hide() : app.dock?.show();
     console.info("[settings][stealth] application result", {

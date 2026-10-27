@@ -20,7 +20,13 @@ vi.mock("../src/main/windowCaptureProtection", () => ({
   setWindowCaptureProtection: vi.fn(() => true),
 }));
 
+vi.mock("../src/main/windowStealthController", () => ({
+  isolateNativeIme: vi.fn(() => "applied"),
+  restoreNativeIme: vi.fn(() => "applied"),
+}));
+
 import { createReplyBarWindowController } from "../src/main/replyBarWindowController";
+import { isolateNativeIme, restoreNativeIme } from "../src/main/windowStealthController";
 
 function createReplyWindow(): Record<string, unknown> {
   let bounds = { x: 100, y: 200, width: 480, height: 76 };
@@ -55,6 +61,8 @@ describe("reply bar window lifecycle", () => {
   beforeEach(() => {
     mocks.replyWindow = createReplyWindow();
     mocks.moveListener = undefined;
+    vi.mocked(isolateNativeIme).mockClear();
+    vi.mocked(restoreNativeIme).mockClear();
   });
 
   it("syncs every streamed state but only logs actual main-window visibility changes", () => {
@@ -98,6 +106,32 @@ describe("reply bar window lifecycle", () => {
     expect(mainWindow.showInactive).toHaveBeenCalledOnce();
     expect(logCaptureSurfaceState).toHaveBeenCalledTimes(2);
     expect(logCaptureSurfaceState).toHaveBeenLastCalledWith("reply-bar-closed", mainWindow);
+  });
+
+  it("switches the reply surface between embedded and system input with stealth", () => {
+    const mainWindow = {
+      getBounds: () => ({ x: 0, y: 0, width: 400, height: 48 }),
+      hide: vi.fn(),
+      isDestroyed: vi.fn(() => false),
+      isVisible: vi.fn(() => true),
+      showInactive: vi.fn(),
+    };
+    const controller = createReplyBarWindowController({
+      getMainWindow: () => mainWindow as never,
+      registerWindowSurface: vi.fn(),
+      prepareWindowToShow: () => true,
+      logCaptureSurfaceState: vi.fn(),
+      sendReplyBarAction: vi.fn(),
+    });
+
+    controller.setState({ phase: "composing", stealth: true } as never);
+    expect(isolateNativeIme).toHaveBeenCalledWith(mocks.replyWindow);
+    expect(restoreNativeIme).not.toHaveBeenCalled();
+
+    vi.mocked(isolateNativeIme).mockClear();
+    controller.setState({ phase: "composing", stealth: false } as never);
+    expect(restoreNativeIme).toHaveBeenCalledWith(mocks.replyWindow);
+    expect(isolateNativeIme).not.toHaveBeenCalled();
   });
 
   it("tracks dragged position and clamps the window before a later resize", () => {

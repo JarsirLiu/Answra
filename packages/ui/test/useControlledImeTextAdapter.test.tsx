@@ -27,7 +27,7 @@ describe("useControlledImeTextAdapter", () => {
 
     act(() => result.current.captureCompositionStart({ start: 0, end: 1 }, false));
     act(() => result.current.cancelComposition());
-    input.setSelectionRange(2, 2);
+    act(() => result.current.setSelection({ start: 2, end: 2 }));
     act(() => result.current.commit("x"));
     expect(onChange).toHaveBeenLastCalledWith("a问xd");
   });
@@ -43,13 +43,10 @@ describe("useControlledImeTextAdapter", () => {
       { initialProps: { value: "abcd" } },
     );
 
-    input.focus();
-    input.setSelectionRange(1, 3);
     act(() => result.current.captureCompositionStart({ start: 1, end: 3 }, false));
-    input.blur();
     expect(document.activeElement).not.toBe(input);
 
-    input.setSelectionRange(4, 4);
+    act(() => result.current.setSelection({ start: 4, end: 4 }));
     act(() => result.current.commit("问"));
     expect(onChange).toHaveBeenLastCalledWith("a问d");
     rerender({ value: "a问d" });

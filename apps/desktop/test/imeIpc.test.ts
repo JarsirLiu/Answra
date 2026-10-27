@@ -8,6 +8,22 @@ const shared = vi.hoisted(() => ({
   >(),
   focusedWindow: undefined as unknown,
   appForeground: true,
+  stealthEnabled: true,
+  keyboardCaptureListener: undefined as
+    | ((event: {
+        type: "key";
+        generation: number;
+        eventId: number;
+        key: string;
+        code: string;
+        shift: boolean;
+        ctrl: boolean;
+        alt: boolean;
+        meta: boolean;
+        release: boolean;
+        repeat: boolean;
+      }) => void)
+    | undefined,
   setImeCandidateState: vi.fn(),
   main: {
     id: 1,
@@ -50,6 +66,33 @@ const shared = vi.hoisted(() => ({
   },
   bridge: {
     available: true,
+    keyboardCaptureActive: false,
+    startKeyboardCapture: vi.fn(async () => {
+      shared.bridge.keyboardCaptureActive = true;
+      return true;
+    }),
+    stopKeyboardCapture: vi.fn(async () => {
+      shared.bridge.keyboardCaptureActive = false;
+    }),
+    acknowledgeKeyboardInput: vi.fn(async () => true),
+    onKeyboardCaptureEvent: vi.fn((listener: (event: never) => void) => {
+      shared.keyboardCaptureListener = listener as (event: {
+        type: "key";
+        generation: number;
+        eventId: number;
+        key: string;
+        code: string;
+        shift: boolean;
+        ctrl: boolean;
+        alt: boolean;
+        meta: boolean;
+        release: boolean;
+        repeat: boolean;
+      }) => void;
+      return () => {
+        shared.keyboardCaptureListener = undefined;
+      };
+    }),
     snapshot: {
       enabled: false,
       inputMode: "chinese" as const,
@@ -122,7 +165,7 @@ vi.mock("electron", () => ({
 vi.mock("../src/main/window", () => ({
   getWindow: () => shared.main,
   getReplyBarWindow: () => shared.reply,
-  isStealthEnabled: () => false,
+  isStealthEnabled: () => shared.stealthEnabled,
   isImeCandidateWindowFromSender: (event: { sender: { id: number } }) => event.sender.id === 33,
   setImeCandidateState: shared.setImeCandidateState,
   subscribeToWindowFocus: (
@@ -149,6 +192,7 @@ vi.mock("../src/main/windowForeground", () => ({
 vi.mock("../src/main/ime/rimeBridge", () => ({
   RimeBridge: class {
     available = shared.bridge.available;
+    keyboardCaptureActive = shared.bridge.keyboardCaptureActive;
     get snapshot() {
       return shared.bridge.snapshot;
     }
@@ -157,6 +201,10 @@ vi.mock("../src/main/ime/rimeBridge", () => ({
     select = shared.bridge.select;
     reset = shared.bridge.reset;
     dispose = shared.bridge.dispose;
+    startKeyboardCapture = shared.bridge.startKeyboardCapture;
+    stopKeyboardCapture = shared.bridge.stopKeyboardCapture;
+    acknowledgeKeyboardInput = shared.bridge.acknowledgeKeyboardInput;
+    onKeyboardCaptureEvent = shared.bridge.onKeyboardCaptureEvent;
   },
 }));
 
@@ -228,14 +276,20 @@ describe("IME IPC session ownership", () => {
     shared.handlers = {};
     shared.listeners = {};
     shared.focusSubscribers.clear();
+    shared.keyboardCaptureListener = undefined;
     shared.focusedWindow = shared.main;
     shared.appForeground = true;
+    shared.stealthEnabled = true;
     shared.bridge.snapshot = { ...emptyState };
+    shared.bridge.keyboardCaptureActive = false;
     shared.bridge.enable.mockClear();
     shared.bridge.key.mockClear();
     shared.bridge.select.mockClear();
     shared.bridge.reset.mockClear();
     shared.bridge.dispose.mockClear();
+    shared.bridge.startKeyboardCapture.mockClear();
+    shared.bridge.stopKeyboardCapture.mockClear();
+    shared.bridge.acknowledgeKeyboardInput.mockClear();
     shared.isolateNativeIme.mockClear();
     shared.setImeCandidateState.mockClear();
     shared.main.webContents.send.mockClear();
@@ -266,6 +320,127 @@ describe("IME IPC session ownership", () => {
     };
     expect(unauthorized.snapshot.phase).toBe("idle");
     expect(unauthorized.snapshot).not.toHaveProperty("owner");
+  });
+
+  it("starts non-activating keyboard capture for an owned Windows input lease", async () => {
+    const result = await acquire(11, "main-composer");
+
+    expect(result.accepted).toBe(true);
+    if (process.platform === "win32") {
+      expect(shared.bridge.startKeyboardCapture).toHaveBeenCalledWith(
+        result.snapshot.owner?.generation,
+      );
+    }
+  });
+
+  it("rejects an embedded IME lease after stealth is turned off", async () => {
+    shared.stealthEnabled = false;
+
+    const result = await acquire(11, "main-composer");
+
+    expect(result.accepted).toBe(false);
+    expect(shared.isolateNativeIme).not.toHaveBeenCalled();
+  });
+
+  it("does not re-isolate the system IME when the window regains focus after stealth", async () => {
+    const result = await acquire(11, "main-composer");
+    expect(result.accepted).toBe(true);
+    shared.stealthEnabled = false;
+    shared.isolateNativeIme.mockClear();
+
+    for (const listener of shared.focusSubscribers)
+      listener({ window: shared.main, focused: true, visible: true });
+
+    expect(shared.isolateNativeIme).not.toHaveBeenCalled();
+  });
+
+  it("forwards a captured key only to the currently leased renderer target", async () => {
+    const result = await acquire(11, "main-composer");
+    const generation = result.snapshot.owner?.generation;
+    if (generation === undefined) throw new Error("expected an owned IME generation");
+
+    shared.keyboardCaptureListener?.({
+      type: "key",
+      generation,
+      eventId: 1,
+      key: "a",
+      code: "KeyA",
+      shift: false,
+      ctrl: false,
+      alt: false,
+      meta: false,
+      release: false,
+      repeat: false,
+    });
+
+    expect(
+      shared.main.webContents.send.mock.calls.filter(
+        ([channel]) => channel === ImeChannels.KeyboardInput,
+      ),
+    ).toEqual([
+      [
+        ImeChannels.KeyboardInput,
+        {
+          targetId: "main-composer",
+          generation,
+          eventId: 1,
+          type: "keydown",
+          key: "a",
+          code: "KeyA",
+          shift: false,
+          ctrl: false,
+          alt: false,
+          meta: false,
+          repeat: false,
+        },
+      ],
+    ]);
+    expect(shared.reply.webContents.send).not.toHaveBeenCalledWith(
+      ImeChannels.KeyboardInput,
+      expect.anything(),
+    );
+    shared.keyboardCaptureListener?.({
+      type: "key",
+      generation: generation - 1,
+      eventId: 2,
+      key: "x",
+      code: "KeyX",
+      shift: false,
+      ctrl: false,
+      alt: false,
+      meta: false,
+      release: false,
+      repeat: false,
+    });
+    expect(
+      shared.main.webContents.send.mock.calls.filter(
+        ([channel]) => channel === ImeChannels.KeyboardInput,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("accepts key delivery acknowledgements only from the current lease owner", async () => {
+    const result = await acquire(11, "main-composer");
+    const generation = result.snapshot.owner?.generation;
+    if (generation === undefined) throw new Error("expected an owned IME generation");
+
+    await expect(
+      invoke(ImeChannels.KeyboardAck, 11, {
+        targetId: "main-composer",
+        generation,
+        eventId: 1,
+        delivered: true,
+      }),
+    ).resolves.toBe(true);
+    await expect(
+      invoke(ImeChannels.KeyboardAck, 22, {
+        targetId: "main-composer",
+        generation,
+        eventId: 1,
+        delivered: true,
+      }),
+    ).resolves.toBe(false);
+    expect(shared.bridge.acknowledgeKeyboardInput).toHaveBeenCalledWith(generation, 1, true);
   });
 
   it("keeps the existing lease path when no native isolation API applies", async () => {

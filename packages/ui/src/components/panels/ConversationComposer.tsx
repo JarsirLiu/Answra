@@ -10,7 +10,7 @@ import {
 import type { useEmbeddedIme } from "../../hooks/useEmbeddedIme";
 import { ControlledTextCompositionMirror } from "../../ime/adapters/ControlledTextCompositionMirror";
 import {
-  applyControlledTextCommand,
+  applyControlledTextCommandAtSelection,
   replaceTextRange,
 } from "../../ime/adapters/controlledTextAdapter";
 import type { useControlledImeTextAdapter } from "../../ime/adapters/useControlledImeTextAdapter";
@@ -42,7 +42,11 @@ export interface ConversationComposerIme {
   >;
   composition: Pick<
     ReturnType<typeof useControlledImeTextAdapter>,
-    "compositionRange" | "captureCompositionStart" | "cancelComposition"
+    | "compositionRange"
+    | "captureCompositionStart"
+    | "cancelComposition"
+    | "selection"
+    | "setSelection"
   >;
 }
 
@@ -74,6 +78,8 @@ interface ConversationComposerProps {
   ime?: ConversationComposerIme;
   /** 是否渲染内置输入法开关。窄面板（如回复条弹层）不需要，避免只开关内置 IME、却不反映中英模式的误导控件。 */
   showImeToggle?: boolean;
+  /** 隐身窗口不可激活，但 DOM 编辑器仍需要绘制逻辑光标。 */
+  nonActivating?: boolean;
 }
 
 // textarea 不会随内容自动长高：高度锁在 CSS min-height 时第二行会被裁掉。
@@ -106,9 +112,9 @@ export function ConversationComposer({
   onStop,
   ime,
   showImeToggle = true,
+  nonActivating = false,
 }: ConversationComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const pendingCaret = useRef<number | null>(null);
   const valueRef = useRef(value);
   const onValueChangeRef = useRef(onValueChange);
   valueRef.current = value;
@@ -120,16 +126,6 @@ export function ConversationComposer({
       if (inputRef?.current === textareaRef.current) inputRef.current = null;
     };
   }, [inputRef]);
-
-  useLayoutEffect(() => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-    const caret = pendingCaret.current;
-    if (caret !== null) {
-      textarea.setSelectionRange(caret, caret);
-      pendingCaret.current = null;
-    }
-  });
 
   // biome-ignore lint/correctness/useExhaustiveDependencies(value): 高度跟随内容增长，value 变化即重算
   useLayoutEffect(() => {
@@ -160,11 +156,14 @@ export function ConversationComposer({
   }
 
   function applyEditorCommand(command: ImeEditorCommand) {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-    const edit = applyControlledTextCommand(textarea, valueRef.current, command);
-    if (!edit) return;
-    pendingCaret.current = edit.caret;
+    if (!ime) return;
+    const edit = applyControlledTextCommandAtSelection(
+      valueRef.current,
+      ime.composition.selection,
+      command,
+      true,
+    );
+    ime.composition.setSelection(edit.selection);
     onValueChangeRef.current?.(edit.value);
   }
 
@@ -193,6 +192,7 @@ export function ConversationComposer({
           blockNativeEditing={ime.session.textPolicy.blockNativeEditing}
           generation={ime.session.generation}
           onUpdate={ime.session.updateCandidate}
+          showCaretWithoutFocus={nonActivating}
           state={ime.session.state}
           targetId={ime.session.targetId}
         />
@@ -236,13 +236,12 @@ export function ConversationComposer({
                 if (disabled) return;
                 const text = event.clipboardData.getData("text/plain");
                 if (!text) return;
-                const input = event.currentTarget;
                 const edit = replaceTextRange(
                   valueRef.current,
-                  { start: input.selectionStart, end: input.selectionEnd },
+                  ime?.composition.selection ?? { start: 0, end: 0 },
                   text,
                 );
-                pendingCaret.current = edit.caret;
+                ime?.composition.setSelection(edit.selection);
                 onValueChangeRef.current?.(edit.value);
               }
             }}
@@ -252,10 +251,7 @@ export function ConversationComposer({
                 handleImeEditorKeyDown({
                   event,
                   policy: ime.session.textPolicy,
-                  readSelection: () => ({
-                    start: event.currentTarget.selectionStart,
-                    end: event.currentTarget.selectionEnd,
-                  }),
+                  readSelection: () => ime.composition.selection,
                   onCaptureCompositionStart: (range) =>
                     ime.composition.captureCompositionStart(range, ime.session.state.composing),
                   sendKey: (keyEvent, apply) => ime.session.sendKey(keyEvent, false, apply),
@@ -272,12 +268,19 @@ export function ConversationComposer({
             onKeyUp={(event) => {
               if (ime?.session.sendKeyUp(event)) event.preventDefault();
             }}
-            onFocus={() => {
+            onSelect={(event) => {
+              ime?.composition.setSelection({
+                start: event.currentTarget.selectionStart,
+                end: event.currentTarget.selectionEnd,
+              });
+            }}
+            onFocus={nonActivating ? undefined : () => ime?.session.acquire()}
+            onPointerDown={(event) => {
+              if (nonActivating) event.preventDefault();
               ime?.session.acquire();
             }}
-            onBlur={() => {
-              ime?.session.blur();
-            }}
+            onBlur={nonActivating ? undefined : () => ime?.session.blur()}
+            tabIndex={nonActivating ? -1 : undefined}
             placeholder={placeholder}
             ref={textareaRef}
             rows={1}

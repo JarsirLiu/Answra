@@ -1,6 +1,7 @@
 import type {
   DesktopBridge,
   ImeCandidateUpdate,
+  ImeKeyboardInput,
   ImeSessionCommand,
   ImeSessionCommandResult,
   ImeSessionSnapshot,
@@ -258,6 +259,46 @@ export function useEmbeddedIme(
       imeEnabled,
     });
   }, [available, bridge, imeEnabled, targetId]);
+
+  useEffect(() => {
+    const unsubscribe = bridge?.onImeKeyboardInput?.((input: ImeKeyboardInput) => {
+      if (
+        input.targetId !== targetId ||
+        input.generation !== getImeOwnedGeneration(targetId) ||
+        !isActiveImeInputTarget(targetId)
+      )
+        return;
+      const target = findImeTargetElement(targetId);
+      if (!target) return;
+
+      // Reuse the editor's normal key handlers so composition, caret movement and
+      // controlled-text selection follow the same path without activating the HWND.
+      const keyboardEvent = new KeyboardEvent(input.type, {
+        key: input.key,
+        code: input.code,
+        shiftKey: input.shift,
+        ctrlKey: input.ctrl,
+        altKey: input.alt,
+        metaKey: input.meta,
+        repeat: input.repeat,
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+      });
+      const dispatchAccepted = target.dispatchEvent(keyboardEvent);
+      const acknowledgement = bridge?.ackImeKeyboardInput?.({
+        targetId,
+        generation: input.generation,
+        eventId: input.eventId,
+        delivered: input.type === "keyup" || !dispatchAccepted,
+      });
+      if (acknowledgement)
+        void acknowledgement.catch((error: unknown) =>
+          console.error("[ime-ui] native key acknowledgement failed", error),
+        );
+    });
+    return unsubscribe;
+  }, [bridge, targetId]);
 
   useEffect(() => {
     const onDocumentKeyDown = (event: KeyboardEvent) => {
@@ -631,14 +672,21 @@ export function useEmbeddedIme(
   const updateCandidate = useCallback(
     (payload: ImeCandidateUpdate) => {
       const generation = getImeOwnedGeneration(targetId);
-      if (payload.type === "show" && generation !== undefined)
-        bridge?.setImeCandidate?.({ ...payload, targetId, generation });
-      else if (payload.type !== "show")
-        bridge?.setImeCandidate?.({
-          ...payload,
-          targetId,
-          ...(generation !== undefined ? { generation } : {}),
-        });
+      const snapshot = getLatestImeSessionSnapshot();
+      bridge?.imeDiagnostic?.({
+        event: "candidate-update",
+        targetId,
+        ...(generation !== undefined ? { generation } : {}),
+        reason:
+          payload.type === "show" && generation === undefined
+            ? "show-without-generation"
+            : payload.type,
+        composing: snapshot?.engine.composing,
+        engineEnabled: snapshot?.engine.enabled,
+        preedit: snapshot?.engine.preedit,
+        candidates: snapshot?.engine.candidates,
+      });
+      if (generation !== undefined) bridge?.setImeCandidate?.({ ...payload, targetId, generation });
     },
     [bridge, targetId],
   );
@@ -677,6 +725,13 @@ export function useEmbeddedIme(
 function isDomActiveTarget(targetId: string): boolean {
   const active = document.activeElement;
   return active instanceof HTMLElement && active.dataset.imeTargetId === targetId;
+}
+
+function findImeTargetElement(targetId: string): HTMLElement | null {
+  for (const element of document.querySelectorAll<HTMLElement>("[data-ime-target-id]")) {
+    if (element.dataset.imeTargetId === targetId) return element;
+  }
+  return null;
 }
 
 function getKeyKind(

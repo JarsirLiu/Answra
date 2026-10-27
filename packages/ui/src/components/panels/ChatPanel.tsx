@@ -82,6 +82,7 @@ export function ChatPanel({
   clearDisabledReason,
   onClose,
   bridge,
+  stealth,
 }: ChatPanelProps) {
   const composerInputRef = useRef<HTMLTextAreaElement>(null);
   const controlledImeText = useControlledImeTextAdapter({
@@ -89,7 +90,9 @@ export function ChatPanel({
     value: draft,
     onChange: onDraftChange,
   });
-  const ime = useEmbeddedIme(bridge, controlledImeText.commit, true, "chat-composer");
+  // Stealth is the only mode that owns text input through the embedded Rime
+  // session; normal mode leaves the editor to the system IME.
+  const ime = useEmbeddedIme(bridge, controlledImeText.commit, stealth, "chat-composer");
   // 内容指纹：消息增减/正文与思维链流式增长都会变化，驱动 MessageStream 自动跟随；
   // 失败提示也算本轮结果，出现时要能滚到可见位置。
   const contentKey = [
@@ -155,6 +158,7 @@ export function ChatPanel({
       <ConversationComposer
         inputLabel="补充问题"
         inputRef={composerInputRef}
+        nonActivating={stealth}
         onAddAttachment={() => fileInputRef.current?.click()}
         onPasteImages={(files) => {
           if (files[0]) onAttachmentChange(files[0]);

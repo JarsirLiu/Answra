@@ -64,6 +64,7 @@ vi.mock("../src/main/windowStealthController", () => ({
     refresh: vi.fn(),
   }),
   isolateNativeIme: vi.fn(),
+  restoreNativeIme: vi.fn(),
 }));
 
 vi.mock("../src/main/windowSurfaceRegistry", () => ({

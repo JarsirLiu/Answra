@@ -86,6 +86,8 @@ Answra 当前浮窗首次显示使用 `showInactive()`（`apps/desktop/src/main/
 
 ### 3. Windows 非激活鼠标操作（用户已确认；输入暂不可用）
 
+> 2026-10-27 更新：该阶段的“主浮窗始终非激活”已被收窄。Windows 主浮窗和回复条只在会议隐身开启时不可激活；非隐身模式恢复可聚焦窗口并使用系统输入法，见[非隐身模式交还系统输入法](../../implemented/feature/2026-10-27-non-stealth-system-ime.md)。本节其余内容保留为当时的验证记录。
+
 - 只对 `main` 主浮窗应用现有 Windows `setFocusable(false)` 策略；不改 reply bar、IME lease、候选窗、键盘路由或截图实现。macOS 维持当前可聚焦行为。
 - Windows 主窗在 BrowserWindow 创建参数中设 `focusable: false`；创建后立即注册到 `windowSurfaceRegistry`，由唯一窗口策略所有者在显示前应用 `setFocusable(false)`，并在 `blur`/`hide` 时仅于 `isFocusable()` 返回 true 时重申，仿 Natively 的 no-activate 生命周期策略。注册、漂移恢复和监听清理由注册器测试覆盖。**Windows 实测（2026-10-27，用户报告）：** Win11 build 26200 下点击 Answra 截图成功，焦点探针未输出问题摘要；之后将等价的直接监听整理为 `windowSurfaceRegistry` 唯一写入者，整理后的代码由注册器测试覆盖，尚未再次实机复核。
 - Windows 隐身截图保留已显示的主窗时，只重试 `setContentProtection`，不在每次按钮点击时重放主窗的置顶与非激活 HWND 样式。此前 `prepareWindowToShow` 同时执行两类策略；新日志显示截图请求后 9ms 页面 `blur`，早于选区窗显示 143ms，故移除截图入口上的样式重放作为可验证修正。该时间相关性指向截图启动阶段，Windows 实机复测用于确认行为结果；保护预检失败仍按原逻辑隐藏主窗。
@@ -105,14 +107,36 @@ Answra 当前浮窗首次显示使用 `showInactive()`（`apps/desktop/src/main/
 - **P2-A（已验证，范围有限）：验证 Rime 引擎与 DOM 按键来源可分离。** 在 Windows 11 专业版 build 26200 上，直接驱动仓库内 protocol v2 的 `answra-rime-host.exe` 与 librime 1.17.0，使用临时 user data，不经过 Electron、DOM、`ImeSessionManager` lease 或系统键盘钩子。启用后发送 `n/i/h/a/o` 的 keydown/key-up 序列，preedit 到达 `ni hao`，候选包含“你好”，空格提交得到 `committedText="你好"`；`rimeKeyMapping.test.ts` 3 项通过。这证明现有 helper/librime 可以处理脱离 DOM 事件的结构化按键并完成中文组合，不证明 `RimeBridge` IPC、非聚焦 editor adapter、物理键盘采集或原生窗口焦点行为已经可用。下一步验证 P2-B；仍需覆盖退格、方向键、候选翻页/选择等完整编辑命令。
 - **P2-B（adapter 自动化已完成；浏览器验证部分完成）：** jsdom 测试覆盖 textarea composition selection snapshot commit、CodeMirror blur 后 commit/编辑命令与撤销。隔离浏览器夹具在 Windows Edge `156.0.4314.42`（Headless Chromium，非 Electron）实测：窗口获焦时 textarea 候选锚点报告 `show { x: 56, lineTop: 114.875, lineBottom: 138.875 }`；DOM blur 后 composition commit 得到 `alpha 你好 gamma`、selection `[8,8]`，reporter 发出 `clear`。CodeMirror DOM blur 后 commit 得到 `alpha 你好 gamma`、caret 8，撤销恢复 `alpha beta gamma`。切到第二浏览器页后，原页先收到 `blur (hasFocus=false, visibility=visible)`，再收到 `visibilitychange (hasFocus=false, visibility=hidden)`；视觉 caret 消失，但 renderer reporter 保留最后一次 `show`，不单独发送 window-blur `clear`。代码检查显示 main 的 `owner-window-blur` 会 suspend lease，候选 controller suspend 会隐藏原生候选窗并清 anchor，但此 Electron main → lease → native window 链路尚未在 harness 中端到端实测。夹具的“重新聚焦插入”只测试 selection 文本插入，不是真实剪贴板粘贴；真实剪贴板、浏览器窗口切换下 IME lease 恢复及 Windows/macOS Electron 候选窗体验仍未验证。隔离浏览器结果本身不能作为修改生产 focus/lease 的依据；另行批准的 Windows 鼠标操作阶段见下文。若端到端行为与现有 lease 规则不符，应先停下报告体验影响。
 - **P2-C：原生按键来源原型（仅在 A、B 通过后）。** 分 Windows 与 macOS 评估接收按键事件并映射到现有 `processKey` 的最小原生实验；明确用户显式启用、限定到已登记输入目标、可见退出方式、超时停止、窗口/renderer 销毁时停止、异常 fail-open/fail-closed 决策及不误路由前台按键的验证。Windows 与 macOS 的权限、事件语义和非激活窗口行为分别记录；不假定一端结果适用于另一端。
+- **P2-D：DOM 零焦点输入架构。** 用户明确要求编辑控件从不获得焦点、不触发该控件的 `focus`/`blur`。`tabIndex=-1`、`readOnly`、阻止鼠标默认行为都不能禁止脚本或其他组件调用 `focus()`，因此不能作为零焦点保证。隐身编辑表面应使用不可聚焦、非 `contenteditable` 的显示节点（例如 `div[role=textbox]`），不挂载可聚焦的 `input`/`textarea`；键盘事件直接转为应用编辑命令，不向 DOM 派发合成 `KeyboardEvent`。显示节点接收鼠标坐标后，由 editor adapter 根据文本布局更新逻辑 caret/selection；拖选、换行、滚动、缩放和候选锚点必须共用该逻辑 selection 与布局测量来源。文本值、选区、composition range 和撤销历史由 adapter/上层受控草稿单一写入，Rime commit 以编辑事务替换逻辑选区。现有逻辑 selection adapter 是必要原型部件，但 textarea 仍在 DOM、仍可被程序聚焦，不能视为 P2-D 通过。
+
+  若只要求 DOM 编辑表面不聚焦且允许 Answra 窗口激活，可先验证 Electron `webContents` 原生键盘事件入口。隐身模式还要求窗口不激活，因此 Windows 需要系统级按键入口；首选用户态 `WH_KEYBOARD_LL`，由原生回调快速接收按键，再由用户态 worker/main 路由到 Rime。内核键盘过滤驱动不作为首选：它仍需用户态 lease 决定按键是否属于 Answra，不能自行识别逻辑编辑目标或候选状态。
 - **实机基线：** Windows 11 / Electron 29.4.6 先测现有普通聚焦输入和 `showInactive()` 启动；macOS 单列。焦点探针记录 `blur`、`focus`、visibility 和 `hasFocus`，并记录 Answra 自身输入是否完整；探针不是“计数清零”验收器。
-- **决策门：** A 失败则停止非聚焦 Rime 路线并保留当前聚焦输入；A 通过但 B 失败则只保留安全的非文本窗口操作评估；A、B 通过后才写独立输入架构 Note，评审是否值得做 C。C 必须证明中文 Rime、编辑器操作与退出恢复完整，再决定是否提出生产改动。
+- **决策门：** A 失败则停止非 DOM Rime 路线；A 通过但 B 失败则不进入生产输入实现。P2-D 先完成不可聚焦显示节点与逻辑编辑 adapter：自动化测试监听 DOM `focus`/`blur` 并断言计数为零、`document.activeElement` 始终不是编辑表面，同时验证逻辑光标点击定位、选区拖动、退格/方向键、撤销/重做、Rime composition 和候选提交。再用 Electron 原型确认真实 Chromium 下该节点没有可触发焦点的路径。P2-D 通过只证明 DOM 零焦点编辑，不证明非激活窗口可收键。随后 P2-C 在 Windows 非激活窗口下接入用户态 hook，验证按键归属、前台应用按键不误收/不丢失和退出恢复。两步都通过后才进入生产实现。
+
+### 5. 输入架构目标：DOM 控件不参与焦点与编辑状态
+
+目标不是让 DOM 输入框“看起来没有焦点”，而是让输入系统完全不依赖控件的 DOM 焦点。现有 `EmbeddedImeInput` 的 `onFocus`/`onBlur` 租约管理、`document.activeElement` 按键校验、DOM `selectionStart/selectionEnd` 和合成 `KeyboardEvent` 路由都不符合此目标；仅修候选窗显隐或延长 lease 不能满足要求。
+
+建议的状态与写入边界：
+
+- **逻辑输入目标与 lease：** main 持有唯一 owner（window、webContents、target、generation）。用户点击编辑区域时，renderer 报告经过校验的 target 身份；DOM active element 不参与获取、续租、挂起或释放。目标切换、点击应用外、owner 销毁、显式退出和捕获错误是 lease 失效来源。候选窗显示、隐藏、移动及其自身窗口事件不得修改 lease。
+- **编辑文本与 selection：** 每个编辑目标维护文本值和 `{ start, end }` 逻辑选区，由 editor adapter 单一写入。键入、退格、方向键、Home/End、删除、粘贴、撤销/重做和 Rime commit 都转成同一组编辑命令；输入路径不得读取 DOM selection 作为权威状态。点击坐标映射为字符偏移、鼠标拖选、滚动和换行几何是实现前置，必须按现有 input、textarea 和 Markdown editor 分别验证。
+- **物理按键入口：** 非隐身模式可验证 Electron 窗口获系统焦点、DOM 控件不获焦时的 `webContents` 原生键盘入口。隐身模式下主窗保持非激活，Windows 使用用户态 `WH_KEYBOARD_LL`；只有有效 Answra 输入 lease 存在时才把支持的普通输入键送入有界队列并抑制原事件。系统快捷键、Alt+Tab、Windows 键和未支持按键继续传给系统。hook 回调不得等待 Electron IPC、Rime 响应或 renderer ACK；当前实验代码在回调内等待最多 700ms，必须移除同步往返。队列接收、顺序、队列满策略，以及已抑制但处理失败的按键反馈须单独定义并实测。非激活模式下前台进程通常是其他应用，不能用“前台 PID 不等于 Answra”作为停止条件；lease 由 Answra 编辑区点击建立，由应用外点击、显式退出、Alt+Tab/目标切换、owner 销毁和错误路径结束。鼠标外点检测需排除候选窗及 Answra 所有者窗口。
+- **Rime composition：** main 的 Rime session 是 preedit、候选、页码和选中项的唯一 writer。每个输入事件按 generation 与递增 event id 校验；renderer 只接收 session snapshot/commit，不从 DOM composition 事件推演 Rime 状态。
+- **候选窗：** 候选内容来自当前 Rime snapshot；锚点来自逻辑选区的几何报告，二者分别更新。锚点暂时不可用时可以保留最后有效锚点或明确隐藏候选展示，但不得以“空候选”清除仍在组词的 session，也不得因此释放 lease。候选窗口保持 `focusable: false` 并以非激活方式显示；show、resize、z-order 和 hide 不能改变按键目标或捕获生命周期。
+- **提交与恢复：** Rime commit 通过目标 adapter 写入文本和新的逻辑选区；不向 input 派发合成 DOM 键盘事件，也不调用其 `focus()`。取消、提交、超时、切换目标、窗口失焦和 renderer 销毁分别定义状态迁移；迟到事件按 generation 丢弃，未确认按键不得无限缓存。
+
+窗口焦点是独立产品决策：允许 Electron 主窗口激活，可以用窗口级键盘入口避开 input 的 DOM focus，但底层浏览器仍可能收到 `blur`；要求主窗口也不激活，则只能依赖系统级按键捕获，且存在从真实前台应用截走按键的风险。不能同时承诺“Answra 与底层应用都不接收焦点变化”和“像普通聚焦控件一样安全收键”，除非平台原型证明具体输入通道能满足两者。
+
+**关于内核驱动：** Windows keyboard filter driver 位于全局键盘设备栈，收到的仍是系统范围输入，不携带“用户刚点击 Answra 编辑区”的产品语义。它仍需用户态服务传入当前 target/lease、解析编辑命令、驱动 Rime 并显示候选，因此不会替代本架构中的用户态路由。驱动还引入管理员安装、签名与发布、Secure Boot/HVCI 兼容、系统崩溃影响和卸载恢复等门槛。除非用户态 hook 经实测存在不可绕过的系统限制，且具备签名和部署渠道，否则不开发内核驱动。Rust/C++ 语言选择不改变这些边界；内核实现也不会自动提高按键归属判断能力。
+
+**最新故障证据（Windows，用户日志）：** 首个 `n` 已被 Rime 处理并产生候选，候选窗也完成 show/render；之后记录到 `keyboard-capture-stopped: foreground-change`，renderer 再上报 composition 仍活动但候选为空，候选窗隐藏，随后输入组件卸载并释放 lease。候选窗报告 `focused: false`、`focusable: false`，所以日志不能证明候选窗获得焦点。现有证据支持“捕获停止与候选/owner 状态清理导致输入卡住”，不能仅凭时间顺序断定候选窗触发了前台切换。日志也没有证明运行中的 helper 是新编译版本。端到端诊断需把捕获停止、候选更新、owner mount/unmount、lease generation 和原因放到同一时间线上。
 
 ### 当前下一步
 
-P2-A 已证明 librime/helper 能脱离 DOM `keydown` 处理结构化按键并提交中文。P2-B 的 adapter 自动化和隔离浏览器验证已完成所记录的范围，但完整 P2-B 仍未通过。当前新增的 Windows 非激活鼠标阶段只覆盖非文本操作，不能视为非聚焦输入可用；下一步实测其按钮和截图链路。后续再验证 Electron lease、真实剪贴板与候选窗；不得据浏览器 fixture 推断原生窗口行为。
+P2-A 已证明 librime/helper 能脱离 DOM `keydown` 处理结构化按键并提交中文。P2-B 的 adapter 自动化和隔离浏览器验证已完成所记录的范围，但完整 P2-B 仍未通过。当前 Windows keyboard hook 与 DOM `activeElement`/selection 路由存在架构冲突，不能作为 DOM 零焦点输入的完成方案。先做 P2-D：用编辑器 adapter 和可聚焦 Electron 原型验证目标控件 DOM `focus/blur` 计数为零、`document.activeElement` 始终不是该控件，同时 Rime 完成 `nihao`、候选选择和中文提交；这只证明 DOM 零焦点编辑，不证明非激活窗口可收键。再做 P2-C：将新输入模型接入 Windows 非激活窗口的用户态 hook，验证前台应用按键不误收/不丢失及退出恢复。当前候选窗日志不作为可行性证明。
 
-P2-B 的 jsdom 适配器测试和 Windows Edge 隔离浏览器检查已完成上述范围；完整 P2-B 仍未通过。Windows 主浮窗现在按用户确认先尝试非激活鼠标操作，键盘输入暂时关闭；此改动必须经过 Electron 按钮和截图端到端实测，未实测前不视为已通过。之后再验证 blur-settle/lease suspend/native candidate hide、真实剪贴板和 lease 恢复。后续若实现非聚焦文字输入，仍需另立输入架构决策并验证按键目标、退出恢复和编辑器体验。无论阶段如何推进，第三方页面焦点/可见性计数归零都不是验收目标。
+P2-B 的 jsdom 适配器测试和 Windows Edge 隔离浏览器检查已完成所记录范围，完整 P2-B 仍未通过。现有逻辑 selection adapter 已开始摆脱 commit 与编辑命令对 DOM selection 的依赖；然而 `ConversationComposer` 仍渲染真实 `textarea`，`tabIndex=-1` 不能阻止程序调用 `.focus()`，Rime 路由仍向 DOM 节点派发合成 `KeyboardEvent`，候选定位也仍测量 textarea。故 P2-D 尚未通过，当前实现不能承诺目标控件 `focus`/`blur` 计数必为零。下一步先将隐身编辑表面改为不可聚焦显示节点，并把点击定位、selection 和候选锚点统一到 editor adapter 的布局模型；完成零焦点自动化与 Electron 验证后，才接入 P2-C 的 Windows 用户态 hook。当前候选窗日志不作为可行性证明。无论阶段如何推进，第三方页面焦点/可见性计数归零都不是验收目标。
 
 参考实现带来的额外约束：
 
@@ -129,22 +153,23 @@ P2-B 的 jsdom 适配器测试和 Windows Edge 隔离浏览器检查已完成上
 ### 明确不做
 
 - 不注入、篡改或 hook 第三方页面，不修改浏览器行为，不屏蔽或伪造页面事件；探针只测量并报告真实状态。
-- 本提案不交付全局键盘钩子、按键吞噬/转发或按键留存；P2-C 如获准进入，只能是隔离原型，用于评估 Answra 自身输入可用性与故障恢复，不以规避第三方事件为目标。
+- 本提案不开发内核键盘驱动。Windows 全局输入原型限定为用户态 hook，并先验证 Answra 自身输入可用性、前台按键不误收和故障恢复，不以改变第三方事件为目标。
 - 不把“页面失焦/可见性计数为 0”作为产品标准；事件由操作系统、浏览器和页面共同决定，Answra 只承诺自身窗口策略的实际行为。
 
 ## 模块边界
 
 - `windowSurfaceRegistry` / `windowInteractionPolicy`：只声明和落实“是否可激活”的平台策略，保持纯函数、可注入、可单测；不感知 IME。
 - `mainWindowController`：窗口生命周期与显示方式；不实现输入。
-- 当前不新增生产级 `main/input/*` 全局键盘捕获模块。P2-C 原型若通过 A/B 决策门，必须另立输入架构 Note，明确输入授权、作用范围、退出路径和故障时的按键恢复，并独立评审。
-- `imeIpc` / `ImeSessionManager`：继续以当前获焦 renderer 输入目标及其 lease 作为键事件来源和权威；本提案不改变 IME 契约。
-- `renderer`：只消费 IME 状态与已提交文本；不访问平台 API，不自行实现钩子或焦点伪装。
+- Windows 隐身输入入口位于 desktop native/main 用户态；内核驱动不进入当前方案。native hook 只捕获和有界投递，不保存 renderer/editor 状态；main 持有 lease/Rime，renderer adapter 持有文本与逻辑 selection。hook 回调不得等待 renderer 或 Rime 的异步 ACK。
+- `imeIpc` / `ImeSessionManager`：生产目标由 main 持有 owner lease 与 Rime session；输入目标有效性不由 renderer 聚焦状态或 `document.activeElement` 决定。协议变化须在 shared channel contract 中表达 generation、target 和事件确认语义。
+- `renderer`：editor adapter 维护文本与逻辑 selection，并报告点击产生的目标/偏移和候选锚点几何；不得以 DOM focus、DOM selection 或合成键盘事件作为输入契约。平台键盘入口只在 desktop main/native 层实现。
 - `preload`：仅转发现有类型化事件；本提案不增加输入事件通道。
 
 ## 曾考虑的替代方案
 
 - **只把 `show()` 改成 `showInactive()`：** 采纳为 P0，用于避免应用主动首次显示时请求激活窗口；它不改变点击输入区时的正常激活语义，也不承诺消除其他页面信号。
-- **非激活主窗口 + 全局按键转交内置 Rime：** 鼠标阶段已单独获准并在 Windows 主浮窗试行 `focusable: false`；键盘输入来源与转交仍不在当前范围内，作为后续待验证路线保留。Answra 的 Rime 引擎本身可接收结构化按键，但系统级事件源、按键路由、目标授权、selection/caret、候选定位及故障恢复都尚未验证，不以第三方焦点事件归零为立项理由。
+- **内核键盘 filter driver：** 暂不采用。相对用户态 hook，它不能更准确地识别 Answra 的逻辑输入 target，也不能维护 Rime/editor 状态，却增加管理员权限、签名发布、系统稳定性和卸载风险。只有用户态 hook 有可复现且不可绕过的限制，并有正式签名和部署能力时才重新评估。
+- **非激活主窗口 + 用户态全局按键转交内置 Rime：** 这是隐身模式的候选方向，但当前实现不合格：日志出现 `foreground-change` 停止，按键路由尚依赖 DOM 节点和合成事件，native hook 回调还等待异步 ACK。进入生产实现前须完成不可聚焦显示节点、逻辑 target/editor model、有界非阻塞事件队列和明确输入 lease，并通过前台应用无误收、无静默丢键的实测。
 - **照搬 Natively 的 stealth typing：** 作为技术对照保留，不纳入当前决定。该实现依赖平台原生窗口策略和系统级键盘事件通道，并在 CJK IME 活跃时降级；Answra 的 Rime/DOM 输入契约不同，直接移植会改变按键路由并产生新的输入与恢复风险。只有在独立产品需求明确、取得用户授权并完成平台原型后，才重新评估其适用部分。
 - **只用 `ToUnicodeEx` 还原字符并写入输入框：** 舍弃。它绕开系统输入法组合，不满足中文输入与编辑器契约。
 - **让用户“尽量不要点浮窗”，靠操作习惯规避：** 舍弃。这不是产品行为，截图、发送、再截图本身就要求频繁点击。
@@ -153,16 +178,18 @@ P2-B 的 jsdom 适配器测试和 Windows Edge 隔离浏览器检查已完成上
 
 ## 验收标准
 
-- 可观察结果：首次显示调用非激活显示 API；Windows 当前阶段主浮窗鼠标按钮与截图/发送流程继续工作且不激活 Answra，文字输入暂时不可用；macOS 保持现状。后续输入恢复需另行实现并验证完整编辑行为。Windows 主浮窗和截图流程的系统实测尚待完成。
+- 可观察结果：首次显示调用非激活显示 API；Windows 主浮窗鼠标按钮与截图/发送流程按已验证范围工作。隐身输入在新架构通过验收前标记为未完成；helper 编译成功不代表输入可用。
+- 输入验收：目标控件 DOM `focus/blur` 计数为零，`document.activeElement` 不等于该控件；有效逻辑 target 可连续输入 `nihao`、显示和导航候选并提交中文；文本、逻辑 selection 与 caret 一致；退格、方向键、选区替换、粘贴、撤销/重做有 adapter 测试覆盖。候选窗出现/隐藏不得停止捕获、清除活动 composition 或释放 lease；显式切到外部应用后不得继续吞按键。
+- 窗口焦点验收：分别记录 Electron BrowserWindow 的 focused 状态和 DOM 控件焦点。若允许 Electron 窗口激活，明确底层页面可能收到 `blur`；若主窗保持非激活，必须在真实前台应用中验证按键无误收、无丢失及异常恢复。
 - 可观察结果：探针如实分别记录 `blur`/`focus`、`visibilitychange`、`visibilityState` 和 `document.hasFocus()`；结果不被解释为绕过第三方检测或保证事件归零。
-- 自动化验证：窗口 controller 单测断言首次显示调用 `showInactive()` 且策略预检失败时不显示；当前生产代码不得增加全局键盘吞键/转发实现。若未来另行批准原生原型，原型测试与正式产品门禁分开记录。运行 `pnpm typecheck`、`pnpm test`、`pnpm architecture:check`、`pnpm notes:check`。
+- 自动化验证：除窗口 controller 测试外，为逻辑 selection/文本编辑命令、过期 generation 丢弃、锚点暂缺时保留 composition/lease、候选窗生命周期不改变 lease、hook 队列有界和顺序、hook 停止后的物理按键恢复新增行为测试。运行 `pnpm typecheck`、`pnpm test`、`pnpm architecture:check`、`pnpm notes:check`。
 - 已完成的原生引擎验证仅证明 Windows helper/librime 处理合成键值；不可将其表述为已完成非聚焦输入或真实系统焦点验证。
 - 需要的实机验证：Windows 11 + Chromium/Edge 探针页，记录启动、文本输入、按钮操作、截图/发送四段的真实事件；macOS 单列验证，不把 Windows 结论外推到 macOS；同时验证任务栏项、第二实例、全屏浏览器（F11）。
 
 ## 风险
 
 - `showInactive()` 仅影响显示调用，不承诺鼠标交互永远不激活窗口；行为必须按 Electron/操作系统版本实测。
-- 非激活窗口不能直接沿用当前基于 DOM/native focus 的按键接收和 IME lease 恢复语义；Rime 引擎本身可能可复用，但 editor selection/caret、候选锚点和物理按键来源需分别验证。未完成 P2-A/B/C 前，不得宣称非聚焦文本编辑已可用或必然不可行。
+- DOM 零焦点不等同于 Electron 窗口不激活。前者要求编辑器模型独立维护 target、文本和 selection；后者要求另建系统级按键入口，并承担全局按键归属和恢复风险。Rime 引擎已证明可接收结构化按键，编辑器 selection/caret 与原生焦点链路仍需逐层验证。
 - 隐藏本进程窗口会让浏览器重新获得焦点（`focus` 而非 `blur`）；探针应分别记录两者，确认用户工作窗口的完整焦点轨迹。
 - 不同 Chromium 的原生遮挡检测会让页面可见性变化；窗口尺寸建议只能降低遮挡范围，不能保证消除事件。
 - 不得把 Answra 自身的窗口策略描述成对第三方前端信号、会议软件捕获或平台全局状态的控制能力。

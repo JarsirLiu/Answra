@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   applyControlledTextCommand,
+  applyControlledTextCommandAtSelection,
   backwardDeletionRange,
   replaceTextRange,
 } from "../src/ime/adapters/controlledTextAdapter";
@@ -10,6 +11,7 @@ describe("controlled text adapter", () => {
     expect(replaceTextRange("hello world", { start: 6, end: 11 }, "Answra")).toEqual({
       value: "hello Answra",
       caret: 12,
+      selection: { start: 12, end: 12 },
     });
   });
 
@@ -17,6 +19,7 @@ describe("controlled text adapter", () => {
     expect(replaceTextRange("abc", { start: 20, end: 1 }, "x")).toEqual({
       value: "ax",
       caret: 2,
+      selection: { start: 2, end: 2 },
     });
   });
 
@@ -33,6 +36,7 @@ describe("controlled text adapter", () => {
     expect(applyControlledTextCommand(input, input.value, { type: "deleteBackward" })).toEqual({
       value: "ad",
       caret: 1,
+      selection: { start: 1, end: 1 },
     });
 
     input.setSelectionRange(2, 2);
@@ -55,9 +59,36 @@ describe("controlled text adapter", () => {
     expect(applyControlledTextCommand(input, input.value, { type: "deleteBackward" })).toEqual({
       value: "ad",
       caret: 1,
+      selection: { start: 1, end: 1 },
     });
     input.value = "ad";
     input.setSelectionRange(1, 1);
     expect([input.selectionStart, input.selectionEnd]).toEqual([1, 1]);
+  });
+
+  it("applies editing commands from a logical selection without reading the DOM", () => {
+    const result = applyControlledTextCommandAtSelection(
+      "abcd",
+      { start: 1, end: 3 },
+      { type: "deleteBackward" },
+      false,
+    );
+    expect(result).toEqual({
+      value: "ad",
+      caret: 1,
+      selection: { start: 1, end: 1 },
+    });
+
+    const extended = applyControlledTextCommandAtSelection(
+      "abcd",
+      { start: 2, end: 2 },
+      { type: "moveCaret", direction: "right", extend: true },
+      false,
+    );
+    expect(extended).toEqual({
+      value: "abcd",
+      caret: 3,
+      selection: { start: 2, end: 3 },
+    });
   });
 });

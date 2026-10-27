@@ -174,6 +174,7 @@ vi.mock("../src/main/windowForeground", () => ({
 }));
 
 vi.mock("../src/main/ime/imeDiagnostics", () => ({
+  isImeDebugEnabled: () => false,
   logImeDiagnostic: vi.fn(),
 }));
 

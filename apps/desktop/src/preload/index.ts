@@ -15,6 +15,8 @@ import {
   type ImeCandidateSnapshot,
   type ImeCandidateUpdate,
   ImeChannels,
+  type ImeKeyboardAck,
+  type ImeKeyboardInput,
   type ImeRendererDiagnostic,
   type ImeSessionCommand,
   type ImeSessionCommandResult,
@@ -60,6 +62,13 @@ const bridge: DesktopBridge = {
     ipcRenderer.on(ImeChannels.SessionSnapshot, wrapped);
     return () => ipcRenderer.removeListener(ImeChannels.SessionSnapshot, wrapped);
   },
+  onImeKeyboardInput: (listener: (event: ImeKeyboardInput) => void) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, input: ImeKeyboardInput) => listener(input);
+    ipcRenderer.on(ImeChannels.KeyboardInput, wrapped);
+    return () => ipcRenderer.removeListener(ImeChannels.KeyboardInput, wrapped);
+  },
+  ackImeKeyboardInput: (ack: ImeKeyboardAck): Promise<boolean> =>
+    ipcRenderer.invoke(ImeChannels.KeyboardAck, ack),
   setImeCandidate: (payload: ImeCandidateUpdate) => {
     ipcRenderer.send(ImeCandidateChannels.Update, payload);
   },

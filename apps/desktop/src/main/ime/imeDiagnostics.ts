@@ -115,6 +115,28 @@ export function logImeDiagnostic(event: string, details: Record<string, unknown>
     return;
   }
 
+  if (event === "candidate-update") {
+    if (
+      !debugEnabled &&
+      details.reason !== "show" &&
+      details.reason !== "show-without-generation" &&
+      !(details.reason === "clear" && details.composing === true)
+    )
+      return;
+    console.info(
+      `[ime] candidate-ui update ${json({
+        targetId: details.targetId,
+        generation: details.generation,
+        reason: details.reason,
+        composing: details.composing,
+        engineEnabled: details.engineEnabled,
+        preedit: details.preedit,
+        candidates: Array.isArray(details.candidates) ? details.candidates.length : undefined,
+      })}`,
+    );
+    return;
+  }
+
   if (event === "candidate-rendered") {
     const root = record(details.candidateRoot);
     const popup = record(details.candidatePopup);

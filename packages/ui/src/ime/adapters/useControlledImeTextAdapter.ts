@@ -18,48 +18,76 @@ export function useControlledImeTextAdapter({
   const onChangeRef = useRef(onChange);
   const compositionSelectionRef = useRef<TextSelectionRange | null>(null);
   const [compositionRange, setCompositionRange] = useState<TextSelectionRange | null>(null);
-  const pendingCaretRef = useRef<number | null>(null);
+  const selectionRef = useRef<TextSelectionRange>({ start: value.length, end: value.length });
+  const [selection, setSelectionState] = useState(selectionRef.current);
+  // The DOM selection is only a rendering projection. Seed it once so the first
+  // non-activating candidate measurement uses the app-owned caret too.
+  const pendingSelectionRef = useRef<TextSelectionRange | null>(selectionRef.current);
   valueRef.current = value;
   onChangeRef.current = onChange;
 
   useLayoutEffect(() => {
-    const caret = pendingCaretRef.current;
+    const pendingSelection = pendingSelectionRef.current;
     const input = inputRef.current;
-    if (caret === null || !input) return;
-    input.setSelectionRange(caret, caret);
-    pendingCaretRef.current = null;
+    if (!pendingSelection || !input) return;
+    input.setSelectionRange(pendingSelection.start, pendingSelection.end);
+    pendingSelectionRef.current = null;
   });
+
+  const setSelection = useCallback((range: TextSelectionRange) => {
+    const next = {
+      start: clampOffset(valueRef.current, Math.min(range.start, range.end)),
+      end: clampOffset(valueRef.current, Math.max(range.start, range.end)),
+    };
+    selectionRef.current = next;
+    pendingSelectionRef.current = next;
+    setSelectionState(next);
+  }, []);
 
   const captureCompositionStart = useCallback(
     (range: TextSelectionRange, compositionActive: boolean) => {
       if (!compositionActive) {
-        compositionSelectionRef.current = range;
-        setCompositionRange(range);
+        const captured = {
+          start: clampOffset(valueRef.current, Math.min(range.start, range.end)),
+          end: clampOffset(valueRef.current, Math.max(range.start, range.end)),
+        };
+        selectionRef.current = captured;
+        setSelectionState(captured);
+        compositionSelectionRef.current = captured;
+        setCompositionRange(captured);
       }
     },
     [],
   );
 
-  const commit = useCallback(
-    (text: string) => {
-      const input = inputRef.current;
-      const range = compositionSelectionRef.current;
-      const start = range?.start ?? input?.selectionStart ?? valueRef.current.length;
-      const end = range?.end ?? input?.selectionEnd ?? start;
+  const commit = useCallback((text: string) => {
+      const range = compositionSelectionRef.current ?? selectionRef.current;
       compositionSelectionRef.current = null;
       setCompositionRange(null);
-      const edit = replaceTextRange(valueRef.current, { start, end }, text);
-      pendingCaretRef.current = edit.caret;
+      const edit = replaceTextRange(valueRef.current, range, text);
+      const nextSelection = { start: edit.caret, end: edit.caret };
+      selectionRef.current = nextSelection;
+      pendingSelectionRef.current = nextSelection;
+      setSelectionState(nextSelection);
       valueRef.current = edit.value;
       onChangeRef.current(edit.value);
-    },
-    [inputRef],
-  );
+  }, []);
 
   const cancelComposition = useCallback(() => {
     compositionSelectionRef.current = null;
     setCompositionRange(null);
   }, []);
 
-  return { captureCompositionStart, commit, cancelComposition, compositionRange };
+  return {
+    captureCompositionStart,
+    commit,
+    cancelComposition,
+    compositionRange,
+    selection,
+    setSelection,
+  };
+}
+
+function clampOffset(value: string, offset: number): number {
+  return Math.max(0, Math.min(value.length, offset));
 }

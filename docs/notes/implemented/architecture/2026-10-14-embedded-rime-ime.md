@@ -25,7 +25,7 @@ Answra 的隐身模式需要在应用内提供中文物理键盘输入，同时�
 
 `packages/shared` 定义 `ImeChannels`、`ImeState` 和按键/候选请求类型。main 侧按平台加载 librime：Windows 使用 MSVC x64 DLL，macOS 使用 universal dylib；二进制放在 ASAR 外并由运行时路径解析。renderer 不导入 Electron、Node 或原生模块，只通过 `DesktopBridge` 接收预编辑状态和提交文本。
 
-第一阶段只支持 Answra 自己的文本编辑器，不注册为系统级 Windows TSF 或 macOS Input Source。普通模式和隐身模式都使用同一套引擎；隐身模式必须在确认键盘通道可用后才启用非激活窗口策略。
+第一阶段只支持 Answra 自己的文本编辑器，不注册为系统级 Windows TSF 或 macOS Input Source。内置 Rime 只在隐身模式接管输入；非隐身模式使用系统输入法，见[非隐身模式交还系统输入法](../feature/2026-10-27-non-stealth-system-ime.md)。隐身模式必须在确认键盘通道可用后才启用非激活窗口策略。
 
 配置和资源采用简体 `luna_pinyin_simp` 方案：预置官方 `luna_pinyin` 拼音词典与 `essay` 常用词/语言模型，并叠加 Answra 项目补充词条；用户词典写入应用数据目录。Windows 和 macOS 安装包只携带各自平台的运行库，不交叉打包。
 
@@ -60,19 +60,19 @@ helper 作为按平台准备好的预编译二进制随资源提供；`ime:prepa
 - **直接嵌入 Weasel：** 舍弃。Weasel 是 Windows 系统输入法前端，不能提供 macOS 实现，也不适合嵌入 Electron 的 renderer；其 GPL-3.0 许可证会扩大复用约束。
 - **直接嵌入 Squirrel：** 舍弃。Squirrel 是 macOS 系统输入法前端，必须遵循 Input Source 生命周期，不能作为跨平台应用内组件；其 GPL-3.0 许可证也不适合作为 Answra 的通用桥接层。
 - **renderer 自绘拼音算法：** 舍弃。与已有拒绝 Note 一致，不能满足完整物理键盘组合、候选确认和平台焦点验收。
-- **继续使用系统 IME：** 舍弃。系统候选窗口是独立捕获表面；helper 或 librime 缺失时普通模式和隐身模式都 fail-closed。
+- **继续使用系统 IME：** 隐身模式舍弃，系统候选窗口是独立捕获表面；helper 或 librime 缺失时隐身模式 fail-closed。非隐身模式自 2026-10-27 起恢复系统输入法，见[非隐身模式交还系统输入法](../feature/2026-10-27-non-stealth-system-ime.md)。
 - **Node/koffi 直接映射 C 结构体：** 舍弃。它要求在 Node 中重建平台 ABI 的嵌套结构和指针数组，已经导致候选读取触发 Electron 进程退出；官方 C API 应在原生编译单元中调用。
 
 ## 影响表面
 
 - 编辑器需要区分已提交文本、预编辑文本和候选状态，不能把 preedit 直接持久化或发送给模型。
-- 输入法桥接不可用时，文本输入保持禁用，不能静默回退系统 IME。
+- 输入法桥接不可用时，隐身模式的文本输入保持禁用，不能静默回退系统 IME；非隐身模式不受此限。
 - 用户词典和配置升级需要版本化，避免应用更新覆盖用户数据。
 
 ## 验收标准
 
 - 可观察结果：Windows 11 x64 和 macOS arm64/x64 上，物理键盘输入 `nihao` 能显示预编辑文本、候选列表，按数字/空格确认后正确上屏；退格、左右移动、Esc、Enter、翻页均可用。
-- 可观察结果：普通模式和隐身模式都使用 Answra 窗口内的候选 UI，系统 IME 候选窗口不出现。
+- 可观察结果：隐身模式使用 Answra 窗口内的候选 UI，系统 IME 候选窗口不出现；非隐身模式使用系统输入法并提供系统候选窗。
 - 自动化验证：shared channel 类型、main session 状态机、候选选择/翻页、初始化失败和资源路径解析有单元测试；UI 覆盖 preedit/candidate/commit 状态。
 - 打包验证：Windows 与 macOS 的最终安装包分别测量 librime、依赖和词库增量；原生文件位于 ASAR 外且可加载。
 - 实机验证：Windows 11 22631 + Electron 29.4.6，macOS 当前支持的 x64/arm64 版本；覆盖普通窗口、隐身窗口、窗口重建和会议软件共享屏幕/窗口。
@@ -107,13 +107,13 @@ helper 作为按平台准备好的预编译二进制随资源提供；`ime:prepa
 
 `luna_pinyin_simp` 的简体输出还依赖官方 librime `deps` 包中的 `share/opencc` 数据；缺少 `opencc/t2s.json` 时会退化为繁体候选并记录 `opencc config not found`。英文联想采用上游 `BlindingDark/rime-easy-en` 的 `easy_en` schema/dict，通过 schema patch 接入；关闭其造句模式，避免把未完成的中文拼音组合生成带 `☯` 标记的伪英文候选，不启用可选的 Lua 分词扩展。
 
-Windows 仅解除顶层与 Chromium 子 HWND 的 IME context 不足以阻止系统组合文本进入 Electron。创建窗口和启用内置输入前，还需通过 `ImmDisableIME(0)` 禁用 Electron UI 线程的系统 IME，再执行窗口 context detach；两个步骤任一失败都必须阻止输入。内置 IME 输入框设为只读，按键通过 librime 转换，已提交文本由应用写入；其他编辑器继续被隐身 guard 阻止焦点。librime `RimeProcessKey` 使用 X11 keysym，不能传 Windows 虚拟键码；Backspace 对应 `0xff08`。没有预编辑内容时，Backspace 由应用从已上屏文本中删除；组合中交给 librime。若 librime 不可用，输入仍保持阻断，不回退系统 IME。
+Windows 的 IME 隔离只在隐身模式执行：解除顶层与 Chromium 子 HWND 的 IME context，关闭隐身时用 `ImmAssociateContextEx(..., IACE_DEFAULT)` 恢复默认上下文。早期实现使用 `ImmDisableIME(0)` 禁用 Electron UI 线程的系统 IME，但该 API 无法重新启用，会阻止非隐身模式恢复系统输入法，已于 2026-10-27 移除，见[非隐身模式交还系统输入法](../feature/2026-10-27-non-stealth-system-ime.md)。隐身模式下内置 IME 输入框设为只读，按键通过 librime 转换，已提交文本由应用写入；其他编辑器继续被隐身 guard 阻止焦点。librime `RimeProcessKey` 使用 X11 keysym，不能传 Windows 虚拟键码；Backspace 对应 `0xff08`。没有预编辑内容时，Backspace 由应用从已上屏文本中删除；组合中交给 librime。若 librime 不可用，隐身输入仍保持阻断，不回退系统 IME。
 
 候选窗的预编辑串独立显示在工具栏上方，候选项和操作集中在单个 Windows 风格横向圆角栏中；选中候选使用浅底和主题色侧边标记。renderer 不输出逐键、逐状态或 composition 日志，保留主进程资源初始化与隔离失败日志。
 
 候选项区域单独滚动，翻页和左右选择控件固定在候选条右侧，窄窗口下不得被候选项横向滚动带出可视区域。
 
-编辑器焦点与内置 IME 是两个独立能力：textarea 始终可聚焦和编辑；IME 开关只控制 Rime 按键拦截、预编辑和候选 UI。IME 不可用或关闭时不启用系统 IME，普通文本编辑仍可用于隔离问题。
+编辑器焦点与内置 IME 是两个独立能力：textarea 始终可聚焦和编辑；IME 开关只控制 Rime 按键拦截、预编辑和候选 UI。隐身模式下内置 IME 不可用或关闭时不启用系统 IME，普通文本编辑仍可用于隔离问题；非隐身模式直接使用系统输入法。
 
 Electron 的 `getNativeWindowHandle()` 返回的是包含 HWND 数值的 Buffer，调用 Win32 API 前必须先按 `void *` 解码；直接传 Buffer 会把 Buffer 自身地址误当成 HWND，导致禁用调用失败并按安全策略阻断内置输入。
 
@@ -121,13 +121,13 @@ Electron 的 `getNativeWindowHandle()` 返回的是包含 HWND 数值的 Buffer�
 
 回复条展开的多轮对话输入框也复用该 composer、librime session 和 conversation IPC；隐身模式下 session 不可用时该输入框保持禁用，不能退回系统输入法。
 
-输入法 hook 覆盖普通模式和隐身模式，统一通过 librime 处理按键。textarea 在 librime 异步启用期间保持可聚焦但只读，避免 disabled 控件阻断激活焦点；session 无法启用时保持输入阻断。
+输入法 hook 只在隐身模式启用，统一通过 librime 处理按键。textarea 在 librime 异步启用期间保持可聚焦但只读，避免 disabled 控件阻断激活焦点；session 无法启用时保持输入阻断。
 
-textarea 仅在原生 session 成功、`imeEnable(true)` 返回 `enabled=true` 后接受按键。初始化失败时输入保持阻断，不得回退到系统 IME。
+textarea 仅在原生 session 成功、`imeEnable(true)` 返回 `enabled=true` 后接受按键。隐身模式下初始化失败时输入保持阻断，不得回退到系统 IME。
 
 内置 IME 激活时，textarea 必须保持可聚焦但设为 `readOnly`：Chromium 的 `beforeinput`/`compositionstart.preventDefault()` 不能可靠阻止 Windows 原生 IME 向可编辑控件提交组合文本。物理按键仍通过 `keydown` 交给 Rime；IME 关闭时 textarea 恢复普通编辑。回归测试应同时确认激活态可聚焦且不可被普通文本 change 写入，关闭态仍可编辑。
 
-系统 IME 在应用所有模式和所有文本控件中都禁止作为输入后端。基础样式对输入框、textarea 与 contenteditable 设置 `ime-mode: disabled`；renderer 在捕获阶段拒绝 `compositionstart` 和 `insertComposition*`，避免系统组合文本提交到编辑器。内置 Rime 不可用时不得允许系统组合事件回退；普通直接输入仍可用于诊断，但只接收非组合键盘输入。Windows 原生 HWND context 隔离继续作为平台层防线，不能以 renderer 防线取代。
+隐身模式下系统 IME 禁止作为输入后端：renderer 在捕获阶段拒绝 `compositionstart` 和 `insertComposition*`，避免系统组合文本提交到编辑器；内置 Rime 不可用时不得允许系统组合事件回退。非隐身模式关闭内置 Rime 接管，由浏览器和系统输入法处理文本。Windows 原生 HWND context 隔离继续作为隐身模式的平台层防线，不能以 renderer 防线取代。
 
 IME lease owner 的 BrowserWindow 每次重新获得原生焦点时，必须重新对该窗口执行 Windows IME context detach；Electron/Windows 的激活切换可能让先前的窗口级隔离不再足以保证输入路径。若重新隔离失败，lease 立即进入 suspended 并隐藏候选，不继续接受内置输入请求；renderer 仍保持只读和 composition guard，不能退回系统 IME。此路径由 `windowSurfaceRegistry` 分发原生焦点事实，`imeIpc` lease manager 执行隔离和 fail-closed 状态迁移。
 

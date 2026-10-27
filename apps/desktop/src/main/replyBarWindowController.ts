@@ -15,7 +15,7 @@ import {
   positionWindowNearPoint,
   replyBarAnchorFromBounds,
 } from "./windowLayout";
-import { isolateNativeIme } from "./windowStealthController";
+import { isolateNativeIme, restoreNativeIme } from "./windowStealthController";
 import type { WindowSurfaceDescriptor } from "./windowSurfaceRegistry";
 
 const WORK_AREA_MARGIN = 24;
@@ -53,6 +53,7 @@ export function createReplyBarWindowController(host: ReplyBarWindowHost) {
 
   function setState(next: ReplyBarState | null): void {
     const mainWindow = host.getMainWindow();
+    const previousStealth = state?.stealth;
     state = next;
     if (!next) {
       if (windowRef && !windowRef.isDestroyed()) windowRef.close();
@@ -79,8 +80,15 @@ export function createReplyBarWindowController(host: ReplyBarWindowHost) {
       createWindow(mainWindow);
       return;
     }
+    if (next.stealth !== previousStealth) syncInputIsolation(windowRef, next.stealth);
     windowRef.webContents.send(WindowChannels.ReplyBarState, next);
     if (!windowRef.isVisible() && host.prepareWindowToShow(windowRef)) windowRef.showInactive();
+  }
+
+  /** Stealth owns the embedded Rime editor; normal mode must keep the system IME usable. */
+  function syncInputIsolation(window: BrowserWindow, stealth: boolean): void {
+    if (stealth) isolateNativeIme(window);
+    else restoreNativeIme(window);
   }
 
   function createWindow(mainWindow: BrowserWindow): void {
@@ -117,9 +125,9 @@ export function createReplyBarWindowController(host: ReplyBarWindowHost) {
     created.setSkipTaskbar(true);
     created.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
     created.webContents.on("will-navigate", (event) => event.preventDefault());
-    isolateNativeIme(created);
+    syncInputIsolation(created, state?.stealth === true);
     created.on("show", () => {
-      isolateNativeIme(created);
+      if (!created.isDestroyed()) syncInputIsolation(created, state?.stealth === true);
     });
     created.on("move", () => {
       if (created.isDestroyed()) return;

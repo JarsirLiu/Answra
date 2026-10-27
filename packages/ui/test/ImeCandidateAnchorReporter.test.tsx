@@ -55,6 +55,31 @@ describe("ImeCandidateAnchorReporter", () => {
     });
   });
 
+  it("falls back to the DOM active element when no focus event reached the reporter", () => {
+    const onUpdate = vi.fn();
+    const { host, textarea } = mountHost();
+    host.appendChild(textarea);
+    vi.spyOn(document, "activeElement", "get").mockReturnValue(textarea);
+    render(
+      <ImeCandidateAnchorReporter
+        generation={2}
+        onUpdate={onUpdate}
+        state={state}
+        targetId="composer"
+      />,
+      {
+        container: host,
+      },
+    );
+
+    expect(onUpdate).toHaveBeenCalledWith({
+      type: "show",
+      anchor: { x: 0, lineTop: 0, lineBottom: 0 },
+      targetId: "composer",
+      generation: 2,
+    });
+  });
+
   it("anchors candidates at the editor selection without preedit offset correction", () => {
     const onUpdate = vi.fn();
     const { host, textarea } = mountHost();
@@ -306,6 +331,29 @@ describe("ImeCandidateAnchorReporter", () => {
     expect(document.querySelector('[data-ime-visual-caret="true"]')?.parentElement).toBe(
       document.body,
     );
+  });
+
+  it("draws the visual caret in a non-activating window without native focus", () => {
+    const onUpdate = vi.fn();
+    const { host, textarea } = mountHost();
+    const hasFocus = vi.spyOn(document, "hasFocus").mockReturnValue(false);
+    render(
+      <ImeCandidateAnchorReporter
+        blockNativeEditing
+        generation={2}
+        onUpdate={onUpdate}
+        showCaretWithoutFocus
+        state={{ ...state, candidates: [], composing: false, preedit: "" }}
+        targetId="composer"
+      />,
+      { container: host },
+    );
+    host.appendChild(textarea);
+    act(() => textarea.focus());
+    fireEvent.focusIn(textarea);
+
+    expect(document.querySelector('[data-ime-visual-caret="true"]')).not.toBeNull();
+    hasFocus.mockRestore();
   });
 
   it("does not sniff the DOM readOnly attribute to decide the visual caret", () => {

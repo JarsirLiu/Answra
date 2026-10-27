@@ -1,6 +1,7 @@
 import type {
   DesktopBridge,
   ImeCandidateAction,
+  ImeKeyboardInput,
   ImeLeaseResponse,
   ImeSessionCommand,
   ImeSessionSnapshot,
@@ -614,6 +615,75 @@ describe("useEmbeddedIme lease routing", () => {
     input.focus();
     act(() => window.dispatchEvent(new Event("focus")));
     await waitFor(() => expect(imeConfirmFocus).toHaveBeenCalledWith("composer", 4));
+    input.remove();
+  });
+
+  it("delivers only current-lease native keys to the active DOM editor without focusing the window", async () => {
+    let receiveKeyboardInput: ((input: ImeKeyboardInput) => void) | undefined;
+    const bridge = withSessionApi({
+      imeAvailable: true,
+      imeAcquire: vi.fn().mockResolvedValue(lease(45)),
+      ackImeKeyboardInput: vi.fn(async () => true),
+      onImeKeyboardInput: (listener: (input: ImeKeyboardInput) => void) => {
+        receiveKeyboardInput = listener;
+        return () => {
+          receiveKeyboardInput = undefined;
+        };
+      },
+    } as unknown as DesktopBridge);
+    const { result, unmount } = renderHook(() =>
+      useEmbeddedIme(bridge, undefined, true, "composer"),
+    );
+    const input = document.createElement("textarea");
+    input.dataset.imeTargetId = "composer";
+    const receivedKeys: KeyboardEvent[] = [];
+    input.addEventListener("keydown", (event) => {
+      receivedKeys.push(event);
+      event.preventDefault();
+    });
+    document.body.appendChild(input);
+    input.focus();
+    await act(async () => result.current.acquire());
+
+    act(() => {
+      receiveKeyboardInput?.({
+        targetId: "composer",
+        generation: 45,
+        eventId: 17,
+        type: "keydown",
+        key: "n",
+        code: "KeyN",
+        shift: false,
+        ctrl: false,
+        alt: false,
+        meta: false,
+        repeat: false,
+      });
+      receiveKeyboardInput?.({
+        targetId: "composer",
+        generation: 44,
+        eventId: 18,
+        type: "keydown",
+        key: "x",
+        code: "KeyX",
+        shift: false,
+        ctrl: false,
+        alt: false,
+        meta: false,
+        repeat: false,
+      });
+    });
+
+    expect(receivedKeys.map((event) => event.key)).toEqual(["n"]);
+    expect(bridge.ackImeKeyboardInput).toHaveBeenCalledWith({
+      targetId: "composer",
+      generation: 45,
+      eventId: 17,
+      delivered: true,
+    });
+    expect(bridge.ackImeKeyboardInput).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).toBe(input);
+    unmount();
     input.remove();
   });
 

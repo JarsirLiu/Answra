@@ -57,6 +57,7 @@ function StealthSettingsInput() {
   return (
     <EmbeddedImeInput
       aria-label="模型名称"
+      enabled
       onValueChange={() => undefined}
       targetId="settings-model"
       value=""
@@ -66,13 +67,16 @@ function StealthSettingsInput() {
 
 describe("EmbeddedImeInput", () => {
   beforeEach(() => resetImeInputTargetCoordinatorForTests());
-  it("remains focusable under stealth because input is handled by the embedded IME", () => {
+  it("remains focusable under stealth because input is handled by the embedded IME", async () => {
     render(<StealthSettingsInput />);
+    await act(async () => {});
     const input = screen.getByRole("textbox", { name: "模型名称" });
 
     expect(input).toHaveAttribute("data-embedded-ime-target", "true");
-    fireEvent.pointerDown(input);
-    input.focus();
+    await act(async () => {
+      fireEvent.pointerDown(input);
+      input.focus();
+    });
 
     expect(document.activeElement).toBe(input);
   });
@@ -84,6 +88,7 @@ describe("EmbeddedImeInput", () => {
       <EmbeddedImeInput
         aria-label="模型名称"
         bridge={bridge}
+        enabled
         onValueChange={onValueChange}
         targetId="settings-model"
         value="abcd"
@@ -100,6 +105,26 @@ describe("EmbeddedImeInput", () => {
 
     expect(input).toHaveProperty("readOnly", true);
     expect(onValueChange).toHaveBeenCalledExactlyOnceWith("aXYd");
+  });
+
+  it("leaves the native input path open when the embedded IME is disabled", async () => {
+    const onValueChange = vi.fn();
+    render(
+      <EmbeddedImeInput
+        aria-label="模型名称"
+        bridge={createImeBridge()}
+        enabled={false}
+        onValueChange={onValueChange}
+        targetId="settings-model"
+        value=""
+      />,
+    );
+    await act(async () => {});
+    const input = screen.getByRole("textbox", { name: "模型名称" }) as HTMLInputElement;
+
+    expect(input).toHaveProperty("readOnly", false);
+    fireEvent.change(input, { target: { value: "abc" } });
+    expect(onValueChange).toHaveBeenCalledWith("abc");
   });
 
   it("projects temporary composition text without changing the controlled input value", () => {
