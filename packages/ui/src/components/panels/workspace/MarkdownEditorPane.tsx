@@ -68,7 +68,7 @@ export function MarkdownEditorPane({
       createCodeMirrorTextAdapter(view).insertText(text);
       setDirtyState(true);
     },
-    stealth,
+    false,
     "workspace-markdown-editor",
   );
   const imeRef = useRef(ime);
@@ -152,7 +152,6 @@ export function MarkdownEditorPane({
               EditorView.lineWrapping,
               EditorView.contentAttributes.of({
                 ...imeEditorAttributes({ targetId: "workspace-markdown-editor" }),
-                ...(stealth ? { tabindex: "-1" } : {}),
               }),
               markdown(),
               codeMirrorImeCompositionField,
@@ -203,13 +202,8 @@ export function MarkdownEditorPane({
                   if (position !== null) {
                     editor.dispatch({ selection: { anchor: position } });
                   }
-                  if (!stealth) {
-                    void imeRef.current.acquire();
-                    return false;
-                  }
-                  event.preventDefault();
                   void imeRef.current.acquire();
-                  return true;
+                  return false;
                 },
                 beforeinput: (event) => {
                   if (imeRef.current.shouldPreventBeforeInput(event.inputType)) {
@@ -247,11 +241,9 @@ export function MarkdownEditorPane({
           }),
         });
         bundleRef.current.view = view;
-        if (!stealth) {
-          view.contentDOM.addEventListener("focus", onEditorFocus);
-          view.contentDOM.addEventListener("blur", onEditorBlur);
-          if (document.activeElement === view.contentDOM) void imeRef.current.acquire();
-        }
+        view.contentDOM.addEventListener("focus", onEditorFocus);
+        view.contentDOM.addEventListener("blur", onEditorBlur);
+        if (document.activeElement === view.contentDOM) void imeRef.current.acquire();
       } catch (cause) {
         if (!disposed) setError(cause instanceof Error ? cause.message : "编辑器加载失败");
       }
@@ -260,10 +252,8 @@ export function MarkdownEditorPane({
       disposed = true;
       // 销毁前捕获最终文本：预览态没有编辑器实例，挂起的自动保存依赖它。
       if (view) lastTextRef.current = view.state.doc.toString();
-      if (!stealth) {
-        view?.contentDOM.removeEventListener("focus", onEditorFocus);
-        view?.contentDOM.removeEventListener("blur", onEditorBlur);
-      }
+      view?.contentDOM.removeEventListener("focus", onEditorFocus);
+      view?.contentDOM.removeEventListener("blur", onEditorBlur);
       void imeRef.current.release("editor-unmount");
       view?.destroy();
       bundleRef.current.view = null;

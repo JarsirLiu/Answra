@@ -25,7 +25,7 @@ export interface WindowSurfaceRegistryOptions {
 interface SurfacePolicy {
   alwaysOnTopLevel: "floating" | "pop-up-menu" | "screen-saver";
   /** `stealth` surfaces are non-activating while stealth is on, or unknown at startup. */
-  nonActivating: "always" | "stealth";
+  nonActivating: "always" | "stealth" | "never";
 }
 
 interface ManagedWindow {
@@ -40,8 +40,8 @@ interface ManagedWindow {
 }
 
 const SURFACE_POLICIES: Record<WindowRole, SurfacePolicy> = {
-  main: { alwaysOnTopLevel: "floating", nonActivating: "stealth" },
-  "reply-bar": { alwaysOnTopLevel: "floating", nonActivating: "stealth" },
+  main: { alwaysOnTopLevel: "floating", nonActivating: "never" },
+  "reply-bar": { alwaysOnTopLevel: "floating", nonActivating: "never" },
   "ime-candidate": { alwaysOnTopLevel: "pop-up-menu", nonActivating: "always" },
   "selection-overlay": { alwaysOnTopLevel: "screen-saver", nonActivating: "always" },
 };

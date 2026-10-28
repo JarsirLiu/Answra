@@ -79,7 +79,7 @@ export function EmbeddedImeInput({
         blockNativeEditing={textPolicy.blockNativeEditing}
         generation={ime.generation}
         onUpdate={ime.updateCandidate}
-        showCaretWithoutFocus={enabled}
+        showCaretWithoutFocus={false}
         state={ime.state}
         targetId={targetId}
       />
@@ -93,17 +93,16 @@ export function EmbeddedImeInput({
           props.onBeforeInput?.(event);
           if (ime.shouldPreventBeforeInput(event.nativeEvent.inputType)) event.preventDefault();
         }}
-        onBlur={enabled ? undefined : () => ime.blur()}
+        onBlur={() => ime.blur()}
         onCompositionStart={(event) => {
           props.onCompositionStart?.(event);
           if (textPolicy.blockComposition) event.preventDefault();
         }}
-        onFocus={enabled ? undefined : () => void ime.acquire()}
-        onPointerDown={(event) => {
-          if (enabled) event.preventDefault();
+        onFocus={() => void ime.acquire()}
+        onPointerDown={() => {
           void ime.acquire();
         }}
-        tabIndex={enabled ? -1 : props.tabIndex}
+        tabIndex={props.tabIndex}
         onKeyDown={(event) => {
           const handled = handleImeEditorKeyDown({
             event,

@@ -1,14 +1,12 @@
 import type { DesktopBridge } from "@answra/shared";
 import { X } from "lucide-react";
 import { type RefObject, useRef } from "react";
-import { useControlledImeTextAdapter } from "../../ime/adapters/useControlledImeTextAdapter";
 import { ICON_SM } from "../../tokens";
 import { AssistantMessage, MessageStream, ModelErrorNotice } from "../chat";
 import { ConversationComposer } from "./ConversationComposer";
 import { PanelShell } from "./PanelShell";
 import "../chat/conversation.css";
 import "./ChatPanel.css";
-import { useEmbeddedIme } from "../../hooks/useEmbeddedIme";
 
 export interface ChatAttachment {
   id: string;
@@ -81,18 +79,10 @@ export function ChatPanel({
   onClear,
   clearDisabledReason,
   onClose,
-  bridge,
-  stealth,
+  bridge: _bridge,
+  stealth: _stealth,
 }: ChatPanelProps) {
   const composerInputRef = useRef<HTMLTextAreaElement>(null);
-  const controlledImeText = useControlledImeTextAdapter({
-    inputRef: composerInputRef,
-    value: draft,
-    onChange: onDraftChange,
-  });
-  // Stealth is the only mode that owns text input through the embedded Rime
-  // session; normal mode leaves the editor to the system IME.
-  const ime = useEmbeddedIme(bridge, controlledImeText.commit, stealth, "chat-composer");
   // 内容指纹：消息增减/正文与思维链流式增长都会变化，驱动 MessageStream 自动跟随；
   // 失败提示也算本轮结果，出现时要能滚到可见位置。
   const contentKey = [
@@ -144,8 +134,7 @@ export function ChatPanel({
                 content={message.content}
                 onFork={onFork}
                 onReply={() => {
-                  if (stealth) void ime.acquire();
-                  else composerInputRef.current?.focus();
+                  composerInputRef.current?.focus();
                 }}
                 onVote={onVote}
                 reasoning={message.reasoning}
@@ -161,7 +150,7 @@ export function ChatPanel({
       <ConversationComposer
         inputLabel="补充问题"
         inputRef={composerInputRef}
-        nonActivating={stealth}
+        nonActivating={false}
         onAddAttachment={() => fileInputRef.current?.click()}
         onPasteImages={(files) => {
           if (files[0]) onAttachmentChange(files[0]);
@@ -173,7 +162,6 @@ export function ChatPanel({
         streaming={streaming}
         submitDisabled={!draft.trim() && attachments.length === 0}
         value={draft}
-        ime={ime.available ? { session: ime, composition: controlledImeText } : undefined}
       >
         <input
           accept="image/*"

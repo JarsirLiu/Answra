@@ -3,8 +3,6 @@ import { isAuthRequiredError } from "@answra/shared";
 import { AlertCircle, FileText, Wrench } from "lucide-react";
 import { useRef, useState } from "react";
 import type { ReplyConversationMessage } from "../../app/useReplyConversation";
-import { useEmbeddedIme } from "../../hooks/useEmbeddedIme";
-import { useControlledImeTextAdapter } from "../../ime/adapters/useControlledImeTextAdapter";
 import { ICON_SM } from "../../tokens";
 import { AssistantMessage, MessageStream, ModelErrorNotice } from "../chat";
 import { ConversationComposer } from "./ConversationComposer";
@@ -30,7 +28,7 @@ export function ReplyConversationPopover({
   activeRunId,
   error,
   placement,
-  stealth,
+  stealth: _stealth,
   bridge,
   conversationId,
 }: ReplyConversationPopoverProps) {
@@ -39,12 +37,6 @@ export function ReplyConversationPopover({
   const composerInputRef = useRef<HTMLTextAreaElement>(null);
   const draftRef = useRef(draft);
   draftRef.current = draft;
-  const controlledImeText = useControlledImeTextAdapter({
-    inputRef: composerInputRef,
-    value: draft,
-    onChange: setDraft,
-  });
-  const ime = useEmbeddedIme(bridge, controlledImeText.commit, stealth, "reply-composer");
   const send = async () => {
     const text = draftRef.current.trim();
     if (!text || !conversationId || !bridge?.sendConversationMessage) return;
@@ -141,14 +133,13 @@ export function ReplyConversationPopover({
         disabled={false}
         inputLabel="消息输入"
         inputRef={composerInputRef}
-        nonActivating={stealth}
+        nonActivating={false}
         onSubmit={() => void send()}
         onValueChange={setDraft}
         placeholder="继续输入消息…"
         showImeToggle={false}
         submitDisabled={!draft.trim()}
         value={draft}
-        ime={ime.available ? { session: ime, composition: controlledImeText } : undefined}
       />
     </section>
   );

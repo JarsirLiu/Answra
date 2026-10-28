@@ -59,7 +59,7 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
   const appearance = useAppearanceController(platform);
   const stealthSetting = useMeetingStealth(platform);
   useStealthDocumentFlag(stealthSetting.enabled);
-  useStealthInputGuard(stealthSetting.enabled);
+  useStealthInputGuard(false);
   // 安装版暂不带面试能力（见 DesktopBridge.interviewAvailable）：入口降级为「暂不支持」。
   const modes = applyModeAvailability(MODES, {
     interview: platform?.interviewAvailable !== false,

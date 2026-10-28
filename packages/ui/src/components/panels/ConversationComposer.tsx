@@ -117,7 +117,7 @@ export function ConversationComposer({
   onStop,
   ime,
   showImeToggle = true,
-  nonActivating = false,
+  nonActivating: _nonActivating = false,
 }: ConversationComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const valueRef = useRef(value);
@@ -225,7 +225,7 @@ export function ConversationComposer({
           blockNativeEditing={ime.session.textPolicy.blockNativeEditing}
           generation={ime.session.generation}
           onUpdate={ime.session.updateCandidate}
-          showCaretWithoutFocus={nonActivating}
+          showCaretWithoutFocus={false}
           state={ime.session.state}
           targetId={ime.session.targetId}
         />
@@ -307,13 +307,9 @@ export function ConversationComposer({
                 end: event.currentTarget.selectionEnd,
               });
             }}
-            onFocus={nonActivating ? undefined : () => ime?.session.acquire()}
-            onPointerDown={(event) => {
-              if (nonActivating) event.preventDefault();
-              ime?.session.acquire();
-            }}
-            onBlur={nonActivating ? undefined : () => ime?.session.blur()}
-            tabIndex={nonActivating ? -1 : undefined}
+            onFocus={() => ime?.session.acquire()}
+            onPointerDown={() => ime?.session.acquire()}
+            onBlur={() => ime?.session.blur()}
             placeholder={placeholder}
             ref={textareaRef}
             rows={1}
