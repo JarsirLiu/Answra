@@ -19,4 +19,3 @@ describe("parseAnswraEnv", () => {
     expect(parseAnswraEnv("staging")).toBe("development");
   });
 });
-
