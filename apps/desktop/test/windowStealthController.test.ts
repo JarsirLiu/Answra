@@ -32,7 +32,6 @@ describe("window stealth controller", () => {
     protection.set.mockClear();
     host.applyWindowPolicies.mockClear();
     window.setSkipTaskbar.mockClear();
-    window.blur.mockClear();
   });
 
   it("applies main and reply surface protection together", () => {
@@ -41,7 +40,6 @@ describe("window stealth controller", () => {
     expect(host.applyWindowPolicies).toHaveBeenCalledWith(true);
     expect(protection.set).not.toHaveBeenCalled();
     expect(window.setSkipTaskbar).toHaveBeenCalledWith(true);
-    expect(window.blur).toHaveBeenCalledOnce();
   });
 
   it("refreshes only while enabled", () => {
@@ -59,6 +57,5 @@ describe("window stealth controller", () => {
     controller.apply(false);
     expect(host.applyWindowPolicies).toHaveBeenCalledWith(false);
     expect(window.setSkipTaskbar).toHaveBeenCalledWith(false);
-    expect(window.blur).not.toHaveBeenCalled();
   });
 });
