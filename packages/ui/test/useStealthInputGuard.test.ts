@@ -41,7 +41,7 @@ describe("useStealthInputGuard", () => {
     expect(fileClick.defaultPrevented).toBe(true);
   });
 
-  it("allows focus on the embedded IME target", () => {
+  it("blocks focus on legacy embedded IME targets", () => {
     const textarea = document.createElement("textarea");
     textarea.dataset.embeddedImeTarget = "true";
     document.body.append(textarea);
@@ -49,10 +49,10 @@ describe("useStealthInputGuard", () => {
 
     const pointer = new PointerEvent("pointerdown", { bubbles: true, cancelable: true });
     textarea.dispatchEvent(pointer);
-    expect(pointer.defaultPrevented).toBe(false);
+    expect(pointer.defaultPrevented).toBe(true);
 
     textarea.focus();
-    expect(document.activeElement).toBe(textarea);
+    expect(document.activeElement).not.toBe(textarea);
   });
 
   it("restores text input when stealth is disabled", () => {
@@ -91,14 +91,14 @@ describe("useStealthInputGuard", () => {
     expect(document.activeElement).toBe(textarea);
   });
 
-  it("cancels platform composition on the embedded IME target without locking it", () => {
+  it("locks composition on legacy embedded IME targets", () => {
     const textarea = document.createElement("textarea");
     textarea.dataset.embeddedImeTarget = "true";
     document.body.append(textarea);
     renderHook(() => useStealthInputGuard(true));
 
     textarea.focus();
-    expect(document.activeElement).toBe(textarea);
+    expect(document.activeElement).not.toBe(textarea);
 
     const composition = new CompositionEvent("compositionstart", {
       bubbles: true,
@@ -107,12 +107,12 @@ describe("useStealthInputGuard", () => {
     });
     textarea.dispatchEvent(composition);
     expect(composition.defaultPrevented).toBe(true);
-    expect(document.documentElement).not.toHaveAttribute("data-native-ime-isolation-failed");
-    expect(document.activeElement).toBe(textarea);
+    expect(document.documentElement).toHaveAttribute("data-native-ime-isolation-failed");
+    expect(document.activeElement).not.toBe(textarea);
 
     const keydown = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "a" });
     textarea.dispatchEvent(keydown);
-    expect(keydown.defaultPrevented).toBe(false);
-    expect(document.activeElement).toBe(textarea);
+    expect(keydown.defaultPrevented).toBe(true);
+    expect(document.activeElement).not.toBe(textarea);
   });
 });

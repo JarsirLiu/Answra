@@ -11,8 +11,8 @@ import { useEffect } from "react";
  *
  * The guard is inert when stealth is disabled: registering the fail-closed
  * listeners unconditionally used to lock the app's own editors until reload.
- * Answra's embedded IME targets are never blurred, because they own the text
- * lifecycle through Rime and only need the platform composition cancelled.
+ * Every text target is blocked, including legacy embedded-IME targets. The
+ * main branch does not expose a focusable text surface in stealth mode.
  */
 export function useStealthInputGuard(enabled: boolean): void {
   useEffect(() => {
@@ -26,7 +26,6 @@ export function useStealthInputGuard(enabled: boolean): void {
       if (!isTextEntryTarget(event.target)) return;
       event.preventDefault();
       event.stopImmediatePropagation();
-      if (isEmbeddedImeTarget(event.target)) return;
       document.documentElement.setAttribute(nativeCompositionFailureAttribute, "true");
       if (!reportedCompositionTargets.has(event.target)) {
         reportedCompositionTargets.add(event.target);
@@ -41,7 +40,6 @@ export function useStealthInputGuard(enabled: boolean): void {
     };
     const lockTextAfterCompositionFailure = (event: Event) => {
       if (!hasNativeCompositionFailure() || !isTextEntryTarget(event.target)) return;
-      if (isEmbeddedImeTarget(event.target)) return;
       event.preventDefault();
       event.stopImmediatePropagation();
       event.target.blur();
@@ -61,7 +59,6 @@ export function useStealthInputGuard(enabled: boolean): void {
     blurActiveElement();
 
     const onPointerDown = (event: PointerEvent) => {
-      if (isEmbeddedImeTarget(event.target)) return;
       if (isEmbeddedImeCandidateTarget(event.target)) {
         event.preventDefault();
         (event.target as HTMLElement).dataset.imeFocusPending = "true";
@@ -72,7 +69,6 @@ export function useStealthInputGuard(enabled: boolean): void {
       (event.target as HTMLElement).blur();
     };
     const onFocusIn = (event: FocusEvent) => {
-      if (isEmbeddedImeTarget(event.target)) return;
       if (isEmbeddedImeCandidateTarget(event.target)) {
         (event.target as HTMLElement).dataset.imeFocusPending = "true";
         (event.target as HTMLElement).blur();
@@ -83,7 +79,6 @@ export function useStealthInputGuard(enabled: boolean): void {
       (event.target as HTMLElement).blur();
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (isEmbeddedImeTarget(event.target)) return;
       if (isTextEntryTarget(event.target)) event.preventDefault();
     };
     const onClick = (event: MouseEvent) => {
@@ -108,13 +103,8 @@ export function useStealthInputGuard(enabled: boolean): void {
   }, [enabled]);
 }
 
-function isEmbeddedImeTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof Element)) return false;
-  return target.closest("[data-embedded-ime-target]") !== null;
-}
-
 function isEmbeddedImeCandidateTarget(target: EventTarget | null): boolean {
-  return isEmbeddedImeTarget(target);
+  return target instanceof Element && target.closest("[data-embedded-ime-target]") !== null;
 }
 
 function isTextEntryTarget(target: EventTarget | null): target is HTMLElement {

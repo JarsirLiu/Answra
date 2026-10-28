@@ -28,7 +28,7 @@ export function ReplyBarWindowApp({ bridge }: ReplyBarWindowAppProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const expanded = !dismissed && (hovered || pinned);
   useStealthDocumentFlag(Boolean(state?.stealth));
-  useStealthInputGuard(false);
+  useStealthInputGuard(Boolean(state?.stealth));
   const measureBridge = platform?.fitReplyBar ? { fitContent: platform.fitReplyBar } : undefined;
   const { ref } = useFitContent(measureBridge);
   const conversation = useReplyConversation(

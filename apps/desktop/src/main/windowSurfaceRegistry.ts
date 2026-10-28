@@ -40,8 +40,8 @@ interface ManagedWindow {
 }
 
 const SURFACE_POLICIES: Record<WindowRole, SurfacePolicy> = {
-  main: { alwaysOnTopLevel: "floating", nonActivating: "never" },
-  "reply-bar": { alwaysOnTopLevel: "floating", nonActivating: "never" },
+  main: { alwaysOnTopLevel: "floating", nonActivating: "stealth" },
+  "reply-bar": { alwaysOnTopLevel: "floating", nonActivating: "stealth" },
   "ime-candidate": { alwaysOnTopLevel: "pop-up-menu", nonActivating: "always" },
   "selection-overlay": { alwaysOnTopLevel: "screen-saver", nonActivating: "always" },
 };
@@ -212,8 +212,8 @@ export function createWindowSurfaceRegistry(
     window.setAlwaysOnTop(true, policy.alwaysOnTopLevel);
     if (!isNonActivatingPlatform(options.platform ?? process.platform)) return;
     const nonActivating = isNonActivatingPolicy(policy);
-    // Main and reply surfaces return to a normal focusable window as soon as
-    // stealth is off, so their text editors can use the system IME again.
+    // Main and reply surfaces are unfocusable for the entire stealth lifetime;
+    // this is the native backstop for the renderer text-input guard.
     if (role === "main" || role === "reply-bar") window.setFocusable(!nonActivating);
     else if (nonActivating) window.setFocusable(false);
   }
