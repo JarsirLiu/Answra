@@ -112,7 +112,6 @@
   background: var(--hover);
 }
 
-
 .conversation-composer-icon-button:disabled {
   cursor: default;
 }

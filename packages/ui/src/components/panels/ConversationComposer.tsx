@@ -1,5 +1,5 @@
 import { ArrowUp, Plus } from "lucide-react";
-import { type FormEvent, type ReactNode, type RefObject } from "react";
+import type { FormEvent, ReactNode, RefObject } from "react";
 import { ICON_SM } from "../../tokens";
 import "./ConversationComposer.css";
 

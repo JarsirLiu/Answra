@@ -90,18 +90,12 @@ export function createMainWindowController(host: MainWindowControllerHost) {
       const allowed = host.prepareWindowToShow(created);
       if (allowed) created.showInactive();
     });
-    created.on("show", () => {
-    });
-    created.on("hide", () => {
-    });
-    created.on("blur", () => {
-    });
-    created.on("focus", () => {
-    });
-    created.on("minimize", () => {
-    });
-    created.on("restore", () => {
-    });
+    created.on("show", () => {});
+    created.on("hide", () => {});
+    created.on("blur", () => {});
+    created.on("focus", () => {});
+    created.on("minimize", () => {});
+    created.on("restore", () => {});
     created.webContents.on("render-process-gone", (_event, details) =>
       console.error("[window] 渲染进程消失:", details),
     );

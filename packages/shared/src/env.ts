@@ -15,7 +15,6 @@ export type AnswraEnv = "development" | "production" | "test";
 /** 本地 AI 服务（Agent Runtime）的基础地址。 */
 export const AI_SERVICE_BASE_URL = "ANSWRA_AI_BASE_URL" as const;
 
-
 /**
  * 云端网关地址（云端模式的 API 根，如 `https://colorect.cloud`）。
  *
@@ -31,4 +30,3 @@ export const CLOUD_SITE_BASE_URL = "ANSWRA_CLOUD_SITE_BASE_URL" as const;
 export function parseAnswraEnv(value: string | undefined): AnswraEnv {
   return value === "production" || value === "test" ? value : "development";
 }
-

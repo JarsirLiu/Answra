@@ -19,12 +19,7 @@ import { registerInterviewIpc } from "./interview/interviewIpc";
 import { registerAmbientIpc } from "./ipc/ambientIpc";
 import { registerWindowIpc } from "./ipc/windowIpc";
 import { createUpdateController } from "./updater/updateController";
-import {
-  createMainWindow,
-  getWindow,
-  isStealthEnabled,
-  sendAuthStatus,
-} from "./window";
+import { createMainWindow, getWindow, isStealthEnabled, sendAuthStatus } from "./window";
 import {
   registerWorkspaceFileProtocol,
   registerWorkspaceSchemePrivileges,
@@ -155,8 +150,7 @@ if (!app.requestSingleInstanceLock()) {
 function createManagedMainWindow(): void {
   const window = createMainWindow();
   interviewIpc?.bindWindow(window);
-  const controller = createAmbientThemeController(window, {
-  });
+  const controller = createAmbientThemeController(window, {});
   ambientController = controller;
   window.once("closed", () => {
     controller.dispose();
