@@ -18,6 +18,7 @@ import { SettingsPanel } from "../components/panels/SettingsPanel";
 import { WorkspacePanel } from "../components/panels/workspace/WorkspacePanel";
 import { useFitContent } from "../hooks/useFitContent";
 import { useMeetingStealth } from "../hooks/useMeetingStealth";
+import { useStealthDocumentFlag } from "../hooks/useStealthDocumentFlag";
 import { useStealthInputGuard } from "../hooks/useStealthInputGuard";
 import { useSurfaceWidth } from "../hooks/useSurfaceWidth";
 import { applyModeAvailability, MODES, type Mode, type ModeAction } from "../model";
@@ -57,6 +58,7 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
   /** 截图失败原因：屏幕可见的错误提示，避免失败被静默吞掉、只看到胶囊。 */
   const appearance = useAppearanceController(platform);
   const stealthSetting = useMeetingStealth(platform);
+  useStealthDocumentFlag(stealthSetting.enabled);
   useStealthInputGuard(stealthSetting.enabled);
   // 安装版暂不带面试能力（见 DesktopBridge.interviewAvailable）：入口降级为「暂不支持」。
   const modes = applyModeAvailability(MODES, {

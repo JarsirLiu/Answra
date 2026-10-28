@@ -80,6 +80,7 @@ function replyState(stealth = false): ReplyBarState {
 
 describe("ReplyBarWindowApp live conversation popover", () => {
   afterEach(() => {
+    delete document.documentElement.dataset.stealth;
     if (!clipboardOverridden) return;
     if (previousClipboard) Object.defineProperty(navigator, "clipboard", previousClipboard);
     else Reflect.deleteProperty(navigator, "clipboard");
@@ -118,6 +119,17 @@ describe("ReplyBarWindowApp live conversation popover", () => {
     });
     await waitFor(() => expect(screen.getByText(/实时/)).toBeInTheDocument());
     expect(bridge.readConversationEvents).toHaveBeenCalledWith(conversationId, 0);
+  });
+
+  it("mirrors stealth state to the document root for body portals", async () => {
+    const bridge = createBridge();
+    render(<ReplyBarWindowApp bridge={bridge as DesktopBridge} />);
+
+    await act(async () => stateListener?.(replyState(true)));
+    expect(document.documentElement).toHaveAttribute("data-stealth", "true");
+
+    await act(async () => stateListener?.(replyState(false)));
+    expect(document.documentElement).not.toHaveAttribute("data-stealth");
   });
 
   it("renders KaTeX formulas in the ticker and the answer body", async () => {

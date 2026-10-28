@@ -43,12 +43,12 @@
   line-height: 1.5;
 }
 .announcement-unread {
-  color: #a33a30;
-  background: #f8e8e5;
+  color: var(--danger);
+  background: var(--danger-wash);
 }
 .announcement-priority {
-  color: #815510;
-  background: #f6efd9;
+  color: var(--warning);
+  background: var(--warning-wash);
 }
 .announcement-item__content {
   margin: 8px 0 10px;

@@ -37,9 +37,9 @@
   padding: 4px 5px;
   border-radius: 6px;
   /* 反色提示片：底色取 --ink（浅色主题 → 深片，深色主题 → 浅片），
-     文字取 --paper，随主题自动反转，无需再挂 data-theme。 */
+     文字取 --on-ink，随主题自动反转，无需再挂 data-theme。 */
   background: color-mix(in srgb, var(--ink) 62%, transparent);
-  color: var(--paper);
+  color: var(--on-ink);
   font-size: 10px;
   font-weight: 500;
   line-height: 1;

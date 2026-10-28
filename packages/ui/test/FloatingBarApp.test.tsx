@@ -130,6 +130,7 @@ describe("three-segment floating navigation", () => {
     localStorage.clear();
     vi.clearAllMocks();
     delete document.documentElement.dataset.theme;
+    delete document.documentElement.dataset.stealth;
     emitConversationEvent = undefined;
     emittedConversationId = conversationId;
     conversationListeners.clear();
@@ -902,16 +903,19 @@ describe("three-segment floating navigation", () => {
     await waitFor(() => expect(toggle).not.toBeDisabled());
     expect(toggle).not.toBeChecked();
     expect(document.querySelector(".overlay-root")).not.toHaveAttribute("data-stealth");
+    expect(document.documentElement).not.toHaveAttribute("data-stealth");
 
     fireEvent.click(toggle);
     expect(toggle).toBeChecked();
     expect(document.querySelector(".overlay-root")).toHaveAttribute("data-stealth", "true");
+    expect(document.documentElement).toHaveAttribute("data-stealth", "true");
     expect(localStorage.getItem("answra-stealth")).toBe("on");
     await waitFor(() => expect(bridge.setStealth).toHaveBeenCalledWith(true));
 
     fireEvent.click(toggle);
     expect(toggle).not.toBeChecked();
     expect(document.querySelector(".overlay-root")).not.toHaveAttribute("data-stealth");
+    expect(document.documentElement).not.toHaveAttribute("data-stealth");
     expect(localStorage.getItem("answra-stealth")).toBe("off");
     await waitFor(() => expect(bridge.setStealth).toHaveBeenCalledWith(false));
   });

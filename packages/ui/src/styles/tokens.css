@@ -16,9 +16,9 @@
           写的是同一层原始参数；同键冲突时变色龙的表面取值优先。
         三者由 useAppTheme 合成单一写入方写 :root。
    层2  fade 合成：--fade 是唯一透明度自由度（用户可调 0.5~1，
-        FloatingBarApp 写入 :root）。所有感知令牌是它的显式函数，
-        因此文字/玻璃/分隔线同步变淡，相对对比恒定；
-        hover/focus/面板表面用 max() 地板值保证低透明度下仍可读。
+        FloatingBarApp 写入 :root）。文字/图标/描边/控件/投影/状态文字
+        是它的显式函数，因此同步变淡且相对对比恒定；
+        表面令牌（--glass/--panel/--paper）不乘 --fade，始终不透明。
         注意：感知令牌声明在 :root，--fade 也必须写在 :root
         （自定义属性在声明元素处求值，写到子元素不会触发重算）。
    层3  组件 css 只消费感知令牌，不出现字面量颜色。
@@ -78,6 +78,7 @@
   --panel-tint: 242 242 247; /* #F2F2F7 */
   --panel-base: 1;
   --paper-tint: 251 251 253; /* #FBFBFD */
+  --paper-base: 1;
 
   /* 【强调】品牌薄荷绿系 */
   --mint-tint: 47 161 113; /* #2fa171 */
@@ -106,8 +107,12 @@
   --focus-tint: 0 0 0;
   --focus-base: 0.35;
 
-  /* 【警示】关闭按钮等破坏性操作 */
+  /* 【状态】警示、警告、成功；状态色不参与变色龙采样 */
   --danger-tint: 192 69 62; /* #c0453e */
+  --warning-tint: 129 85 16; /* #815510 */
+  --warning-wash-tint: 246 239 217; /* #f6efd9 */
+  --success-tint: 31 122 83; /* #1f7a53 */
+  --success-wash-tint: 237 247 242;
 
   /* 【遮罩】图片缩略图上的浮层按钮底 */
   --scrim-base: 0.55;
@@ -147,9 +152,14 @@
   --field: rgb(var(--field-tint) / calc(var(--field-base) * var(--fade)));
   --field-strong: rgb(var(--field-tint) / calc((var(--field-base) + 0.07) * var(--fade)));
   --focus-ring: rgb(var(--focus-tint) / max(calc(var(--focus-base) * var(--fade)), 0.15));
-  --paper: rgb(var(--paper-tint) / var(--fade));
+  --paper: rgb(var(--paper-tint) / var(--paper-base)); /* 表面：不透明 */
+  --on-ink: rgb(var(--paper-tint) / var(--fade)); /* 反色前景：随 fade */
   --danger: rgb(var(--danger-tint) / var(--fade));
   --danger-wash: rgb(var(--danger-tint) / calc(0.1 * var(--fade)));
+  --warning: rgb(var(--warning-tint) / var(--fade));
+  --warning-wash: rgb(var(--warning-wash-tint) / var(--fade));
+  --success: rgb(var(--success-tint) / var(--fade));
+  --success-wash: rgb(var(--success-wash-tint) / var(--fade));
   --scrim: rgb(0 0 0 / max(calc(var(--scrim-base) * var(--fade)), 0.45));
   --scrim-strong: rgb(0 0 0 / max(calc((var(--scrim-base) + 0.2) * var(--fade)), 0.6));
   --shadow-bar:
@@ -202,6 +212,10 @@
   --field-tint: 255 255 255;
   --focus-tint: 255 255 255;
 
-  /* 【警示】红提亮，深底上不闷 */
+  /* 【状态】深底上提亮，保持文字对比 */
   --danger-tint: 242 122 114;
+  --warning-tint: 232 183 92;
+  --warning-wash-tint: 63 51 28;
+  --success-tint: 122 230 184;
+  --success-wash-tint: 24 52 41;
 }

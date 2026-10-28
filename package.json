@@ -17,6 +17,7 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "architecture:check": "node scripts/architecture/architecture-check.mjs check",
+    "tokens:check": "node scripts/design/check-tokens.mjs",
     "notes:check": "node scripts/docs/check-notes.mjs",
     "notes:hint": "node scripts/docs/check-notes.mjs --warn",
     "docs:check": "pnpm notes:check",

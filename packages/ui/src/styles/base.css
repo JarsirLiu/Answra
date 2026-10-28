@@ -78,6 +78,9 @@ input:focus-visible {
    `.trHeader.isClickable` 就是 (0,2,0)，同特异性下由源顺序决定，排在 base.css 之后
    就会胜出；`.x button:hover:not(:disabled)` 这类更是 (0,3,1)。逐个给组件补
    [data-stealth] 子选择器会在每次新增控件时重新漏掉，故用 !important 让它恒胜出。 */
+/* 隐身标记同时写到 <html>：Portal 到 body 的提示片、Popover、Dialog 仍在作用域内。 */
+html[data-stealth="true"],
+html[data-stealth="true"] *,
 .overlay-root[data-stealth="true"],
 .overlay-root[data-stealth="true"] *,
 .reply-window-root[data-stealth="true"],

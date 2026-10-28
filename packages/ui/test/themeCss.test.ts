@@ -68,9 +68,9 @@ describe("theme CSS integrity", () => {
   });
 
   it("keeps the switch thumb off the ambient surface tokens", () => {
-    // 变色龙会把 --paper-tint 写成本地背景色、把 --shadow-ctl-* 归零：
-    // 关闭态拇指若用 --paper，就成了浅色轨道里的一颗白点，整颗开关只剩轨道轮廓。
-    // 拇指属于控件而非表面，必须取控件实色（--icon），并在开启态才切回白拇指。
+    // 变色龙会替换 --paper-tint、把 --shadow-ctl-* 归零；关闭态拇指若取表面色，
+    // 就会在浅色轨道里变成一颗背景色圆点。拇指属于控件而非表面，必须取控件实色
+    // （--icon），并在开启态才切回反色前景（--on-ink）。
     const css = stripComments(
       readFileSync(join(sourceRoot, "components", "controls", "Switch.css"), "utf8"),
     );
@@ -78,7 +78,42 @@ describe("theme CSS integrity", () => {
     const on = css.match(/\.switch\.is-on\s+\.switch-thumb\s*\{([^}]*)\}/)?.[1] ?? "";
     expect(base).toContain("var(--icon)");
     expect(base).not.toContain("var(--paper)");
-    expect(on).toContain("var(--paper)");
+    expect(on).toContain("var(--on-ink)");
+  });
+
+  it("keeps surfaces opaque and gives inverse foreground its own token", () => {
+    const css = stripComments(readFileSync(join(sourceRoot, "styles", "tokens.css"), "utf8"));
+    const paper = css.match(/--paper:\s*([^;]+);/)?.[1] ?? "";
+    const onInk = css.match(/--on-ink:\s*([^;]+);/)?.[1] ?? "";
+    expect(css).toContain("--paper-base: 1;");
+    expect(paper).toContain("var(--paper-base)");
+    expect(paper).not.toContain("--fade");
+    // 反色前景仍受透明度控制；否则纸面文字在低透明度下反而不变。
+    expect(onInk).toContain("--fade");
+    expect(css).toContain("--warning:");
+    expect(css).toContain("--warning-wash:");
+    expect(css).toContain("--success:");
+    expect(css).toContain("--success-wash:");
+  });
+
+  it("keeps panel status colors on semantic tokens", () => {
+    for (const file of ["AnnouncementList.css", "SettingsPanel.css"]) {
+      const css = stripComments(
+        readFileSync(join(sourceRoot, "components", "panels", file), "utf8"),
+      );
+      expect(css, file).not.toMatch(/#[0-9a-f]{3,8}\b|(?:rgba?|hsla?)\(/i);
+    }
+    const announcements = stripComments(
+      readFileSync(join(sourceRoot, "components", "panels", "AnnouncementList.css"), "utf8"),
+    );
+    expect(announcements).toContain("var(--danger-wash)");
+    expect(announcements).toContain("var(--warning)");
+    expect(announcements).toContain("var(--warning-wash)");
+    const settings = stripComments(
+      readFileSync(join(sourceRoot, "components", "panels", "SettingsPanel.css"), "utf8"),
+    );
+    expect(settings).toContain("var(--danger)");
+    expect(settings).toContain("var(--success)");
   });
 
   it("keeps the reply bar and its details panel on palette tokens, without hardcoded colors", () => {
@@ -117,11 +152,10 @@ describe("theme CSS integrity", () => {
     // 同特异性由源顺序决定；`.x button:hover:not(:disabled)` 更是 (0,3,1)。
     // 因此覆盖必须带 !important，去掉后这些元素在隐身模式下会重新露出非默认指针。
     const base = stripComments(readFileSync(join(sourceRoot, "styles", "base.css"), "utf8"));
+    expect(base).toContain('html[data-stealth="true"] *');
     expect(base).toContain('.overlay-root[data-stealth="true"] *');
     expect(base).toContain('.reply-window-root[data-stealth="true"] *');
-    expect(base).toMatch(
-      /\.overlay-root\[data-stealth="true"\][^{}]*\{[^}]*cursor:\s*default\s*!important/,
-    );
+    expect(base).toMatch(/html\[data-stealth="true"\][^{}]*\{[^}]*cursor:\s*default\s*!important/);
   });
 
   it("keeps panel chrome typography on the token scale, without px literals", () => {

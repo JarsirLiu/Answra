@@ -154,6 +154,7 @@ export const FALLBACK_TOKEN_KEYS = [
   "--focus-tint",
   "--focus-base",
   "--paper-tint",
+  "--paper-base",
   "--danger-tint",
   "--scrim-base",
   "--shadow-base",

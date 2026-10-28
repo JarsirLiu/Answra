@@ -50,9 +50,9 @@
     transform 140ms ease-out,
     background 140ms ease-out;
 }
-/* 开启态铺在薄荷色轨道上，白拇指对比度足够，保持 iOS 观感 */
+/* 开启态铺在薄荷色轨道上，纸色拇指对比度足够，保持 iOS 观感 */
 .switch.is-on .switch-thumb {
-  background: var(--paper);
+  background: var(--on-ink);
   transform: translateX(12px);
 }
 /* 禁用态：保持完整轮廓与拇指可见、只降低内部对比，放在基础规则之后。

@@ -68,7 +68,7 @@
 }
 /* 账户页样式随账户页组件迁到 AccountPanel.css，本文件只留设置页规则。 */
 .setting-error {
-  color: #b42318;
+  color: var(--danger);
   font-size: var(--font-xs);
 }
 /* 分组内的状态/错误行（账户档位、已解锁能力数、保存失败）：贴住所属设置行，
@@ -79,7 +79,7 @@
   padding: 6px 0 8px;
 }
 .setting-status--saved {
-  color: var(--mint-text);
+  color: var(--success);
 }
 .setting-field {
   display: grid;

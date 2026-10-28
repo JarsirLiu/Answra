@@ -51,6 +51,8 @@ describe("color group overrides", () => {
       "--panel-tint",
       "--line-tint",
       "--edge-tint",
+      "--warning-tint",
+      "--success-tint",
     ]) {
       style.removeProperty(key);
     }
@@ -84,6 +86,8 @@ describe("color group overrides", () => {
     expect(document.documentElement.style.getPropertyValue("--ink-tint")).toBe("");
     expect(document.documentElement.style.getPropertyValue("--line-tint")).toBe("");
     expect(document.documentElement.style.getPropertyValue("--hover-base")).toBe("");
+    expect(document.documentElement.style.getPropertyValue("--warning-tint")).toBe("");
+    expect(document.documentElement.style.getPropertyValue("--success-tint")).toBe("");
 
     // 关闭变色龙：ambient 键清除，用户覆盖恢复生效
     rerender(
