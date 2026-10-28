@@ -3,6 +3,7 @@ import {
   type FormEvent,
   type ReactNode,
   type RefObject,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -20,6 +21,7 @@ import { resolveImeEditorInputState } from "../../ime/imeTextPolicy";
 import { ICON_SM } from "../../tokens";
 import { ImeCandidateAnchorReporter } from "./ImeCandidateAnchorReporter";
 import "./ConversationComposer.css";
+import type { ImeKeyboardInput } from "@answra/shared";
 
 /** The embedded-IME session and composition adapter, consumed as their single writers. */
 export interface ConversationComposerIme {
@@ -39,7 +41,10 @@ export interface ConversationComposerIme {
     | "acquire"
     | "blur"
     | "toggle"
-  >;
+  > &
+    Partial<
+      Pick<ReturnType<typeof useEmbeddedIme>, "sendNativeKey" | "setNativeKeyHandler">
+    >;
   composition: Pick<
     ReturnType<typeof useControlledImeTextAdapter>,
     | "compositionRange"
@@ -155,7 +160,7 @@ export function ConversationComposer({
     if (!disabled && !submitDisabled) onSubmit?.();
   }
 
-  function applyEditorCommand(command: ImeEditorCommand) {
+  const applyEditorCommand = useCallback((command: ImeEditorCommand) => {
     if (!ime) return;
     const edit = applyControlledTextCommandAtSelection(
       valueRef.current,
@@ -165,7 +170,35 @@ export function ConversationComposer({
     );
     ime.composition.setSelection(edit.selection);
     onValueChangeRef.current?.(edit.value);
-  }
+  }, [ime]);
+
+  useEffect(() => {
+    if (!ime?.session.sendNativeKey || !ime.session.setNativeKeyHandler) return;
+    const handleNativeKey = (input: ImeKeyboardInput) => {
+      const handled = ime.session.sendNativeKey?.(
+        input,
+        applyEditorCommand,
+        () =>
+          ime.composition.captureCompositionStart(
+            ime.composition.selection,
+            ime.session.state.composing,
+          ),
+      );
+      if (
+        !handled &&
+        input.type === "keydown" &&
+        input.key === "Enter" &&
+        !input.shift &&
+        !input.ctrl &&
+        !input.alt &&
+        !input.meta
+      ) {
+        onSubmit?.();
+      }
+    };
+    ime.session.setNativeKeyHandler(handleNativeKey);
+    return () => ime.session.setNativeKeyHandler?.(undefined);
+  }, [applyEditorCommand, ime, onSubmit]);
 
   const imeAttributes = ime
     ? imeEditorAttributes({

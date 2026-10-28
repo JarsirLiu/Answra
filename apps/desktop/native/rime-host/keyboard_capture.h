@@ -31,9 +31,8 @@ class KeyboardCapture {
 
   static bool available();
   bool active() const;
-  bool start(std::uint32_t generation, unsigned long owner_process_id, EventSink event_sink,
-             StopSink stop_sink);
-  bool acknowledge(std::uint32_t generation, std::uint64_t event_id, bool handled);
+  bool start(std::uint32_t generation, unsigned long owner_process_id,
+             std::uintptr_t owner_window_handle, EventSink event_sink, StopSink stop_sink);
   void stop(const std::string& reason = "released");
 
  private:

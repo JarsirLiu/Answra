@@ -18,7 +18,6 @@ import "./ImeCandidateWindowApp.css";
 interface ImeCandidateWindowAppProps {
   bridge?: DesktopBridge;
 }
-
 const EMPTY_STATE: ImeState = {
   enabled: false,
   inputMode: "chinese",
@@ -29,13 +28,17 @@ const EMPTY_STATE: ImeState = {
   page: 0,
   hasNextPage: false,
 };
-const EMPTY_SNAPSHOT: ImeCandidateSnapshot = { state: EMPTY_STATE };
+const EMPTY_SNAPSHOT: ImeCandidateSnapshot = {
+  phase: "empty",
+  state: EMPTY_STATE,
+  revision: 0,
+};
 
 /** Renderer for the independent, non-activating native candidate window. */
 export function ImeCandidateWindowApp({ bridge }: ImeCandidateWindowAppProps) {
   const platform = bridge ?? (globalThis as { answra?: DesktopBridge }).answra;
   const [snapshot, setSnapshot] = useState(EMPTY_SNAPSHOT);
-  const { state } = snapshot;
+  const state = snapshot.phase === "visible" ? snapshot.state : EMPTY_STATE;
   const rootRef = useRef<HTMLDivElement>(null);
   const lastRenderSignatureRef = useRef<string | undefined>(undefined);
   // 候选窗是独立窗口，没有外观控制器：读同一份偏好 + 主进程广播的采样结果，
@@ -49,12 +52,15 @@ export function ImeCandidateWindowApp({ bridge }: ImeCandidateWindowAppProps) {
   }, []);
 
   useEffect(() => {
-    const unsubscribe = platform?.onImeCandidateState?.(setSnapshot);
+    const unsubscribe = platform?.onImeCandidateState?.((next) => {
+      setSnapshot((current) => (next.revision <= current.revision ? current : next));
+    });
     platform?.requestImeCandidateState?.();
     return () => unsubscribe?.();
   }, [platform]);
 
   useLayoutEffect(() => {
+    if (snapshot.phase !== "visible") return;
     if (!snapshot.targetId || snapshot.generation === undefined) return;
     let secondFrame = 0;
     const firstFrame = requestAnimationFrame(() => {
@@ -80,6 +86,7 @@ export function ImeCandidateWindowApp({ bridge }: ImeCandidateWindowAppProps) {
           targetId: "ime-candidate-window",
           ownerTargetId: snapshot.targetId,
           generation: snapshot.generation,
+          revision: snapshot.revision,
           preedit: state.preedit,
           candidates: state.candidates,
           selectedIndex: state.selectedIndex,
@@ -103,6 +110,7 @@ export function ImeCandidateWindowApp({ bridge }: ImeCandidateWindowAppProps) {
     platform,
     snapshot.generation,
     snapshot.targetId,
+    snapshot.revision,
     state.candidates,
     state.page,
     state.preedit,

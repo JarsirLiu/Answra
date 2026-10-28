@@ -55,6 +55,18 @@
      正文内容（答案、笔记）不受此令牌约束。 */
   --label-weight: 500;
 
+  /* 间距栅格（4px 基数）与密集列表行高：面板内边距/间隙/树行的唯一尺寸来源，
+     对齐 VS Code/Fluent 密度惯例（树行 22px）。组件 CSS 禁止出现间距字面量；
+     2px 半步写 calc(var(--space-1) / 2)，内容字号沿用各内容尺度不在此列。 */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --row-h: 22px;
+  /* 小号圆角：目录行/迷你按钮的 4px 档，与 --ctl-radius（7px）成对。 */
+  --ctl-radius-sm: 4px;
+
   /* ── 原始参数：-tint 为空格分隔 RGB 通道，-base 为 alpha 基数 ──
      颜色按组管理（组内色相统一，theme.ts 据此支持用户逐组选色） */
 
@@ -101,7 +113,9 @@
   --edge-base: 0.16;
   --edge-strong-base: 0.24;
   --hover-tint: 60 60 67;
-  --hover-base: 0.2;
+  /* 10% 灰：对齐 VS Code 浅色 hover（约 #e8e8e8）。20% 会糊成一块重灰底，
+     是整页"廉价感"的主源；hover 只做轻扫，选中态才允许更重一档。 */
+  --hover-base: 0.1;
   --field-tint: 60 60 67;
   --field-base: 0.05;
   --focus-tint: 0 0 0;

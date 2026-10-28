@@ -163,14 +163,13 @@ describe("theme CSS integrity", () => {
     // px 字面量会绕过字号令牌（历史上正是面板标题硬编码 12px 绕开了令牌管制）。
     // 对话等内容文件保留自己的内容字号尺度，不在本守卫范围。
     for (const file of [
-      "PanelShell.css",
-      "SettingsPanel.css",
-      "AccountPanel.css",
-      "AnnouncementList.css",
+      join("components", "panels", "PanelShell.css"),
+      join("components", "panels", "SettingsPanel.css"),
+      join("components", "panels", "AccountPanel.css"),
+      join("components", "panels", "AnnouncementList.css"),
+      join("components", "panels", "workspace", "DirectoryTree.css"),
     ]) {
-      const css = stripComments(
-        readFileSync(join(sourceRoot, "components", "panels", file), "utf8"),
-      );
+      const css = stripComments(readFileSync(join(sourceRoot, file), "utf8"));
       expect(css, file).not.toMatch(/font-size:\s*[\d.]+px/);
     }
   });

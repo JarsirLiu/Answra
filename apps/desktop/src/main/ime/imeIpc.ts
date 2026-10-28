@@ -1,11 +1,7 @@
 import {
-  IME_RENDERER_DIAGNOSTIC_EVENTS,
   ImeChannels,
-  type ImeKeyboardAck,
   type ImeKeyRequest,
   type ImeLeaseResponse,
-  type ImeRendererDiagnostic,
-  type ImeRendererDiagnosticEvent,
   type ImeSessionCommand,
   type ImeSessionCommandResult,
   type ImeSessionSnapshot,
@@ -24,6 +20,7 @@ import {
 import { describeForegroundWindow, isCurrentProcessForeground } from "../windowForeground";
 import { isolateNativeIme } from "../windowStealthController";
 import { isImeDebugEnabled, logImeDiagnostic } from "./imeDiagnostics";
+import { createImeRendererDiagnosticHandler } from "./imeRendererDiagnostics";
 import { ImeSessionManager, isActiveImeLease } from "./imeSessionManager";
 import type { ImeOwnerIdentity, ImeSessionState } from "./imeSessionState";
 import { RimeBridge } from "./rimeBridge";
@@ -40,15 +37,6 @@ const EMPTY_STATE: ImeState = {
 };
 
 const BLUR_SETTLE_MS = 120;
-const DIAGNOSTIC_TARGET_IDS = new Set([
-  "chat-composer",
-  "reply-composer",
-  "settings-base-url",
-  "settings-model",
-  "workspace-directory-filter",
-  "workspace-markdown-editor",
-  "main-composer",
-]);
 
 export function registerImeIpc(): {
   dispose: () => void;
@@ -59,14 +47,52 @@ export function registerImeIpc(): {
   const bridge = new RimeBridge();
   const manager = new ImeSessionManager(bridge);
   let leaseWindow: BrowserWindow | undefined;
+  const releaseLeaseAfterCaptureStop = (reason: string): void => {
+    const lease = manager.lease;
+    const window = leaseWindow;
+    if (
+      (lease.status !== "owned" && lease.status !== "suspended") ||
+      !window ||
+      window.isDestroyed() ||
+      window.webContents.isDestroyed()
+    )
+      return;
+    const owner = lease.owner;
+    const generation = lease.generation;
+    void manager.serialize(async () => {
+      const current = manager.lease;
+      if (
+        (current.status !== "owned" && current.status !== "suspended") ||
+        current.generation !== generation ||
+        current.owner.windowId !== owner.windowId ||
+        current.owner.webContentsId !== owner.webContentsId ||
+        current.owner.targetId !== owner.targetId
+      )
+        return;
+      manager.transition({ type: "release", owner, generation });
+      setImeCandidateState(window, { type: "clear", targetId: owner.targetId, generation });
+      detachLeaseListeners();
+      if (bridge.snapshot.composing) await manager.resetComposition();
+      logImeDiagnostic("lease-released", {
+        windowId: owner.windowId,
+        targetId: owner.targetId,
+        generation,
+        reason,
+        composing: bridge.snapshot.composing,
+      });
+      publishSnapshot();
+    });
+  };
   const unsubscribeKeyboardCapture = bridge.onKeyboardCaptureEvent((captured) => {
     if (captured.type === "stopped") {
-      if (captured.reason !== "released" && captured.reason !== "shutdown")
+      if (captured.reason !== "released" && captured.reason !== "shutdown") {
         logImeDiagnostic("keyboard-capture-stopped", {
           reason: captured.reason,
           generation: manager.lease.generation,
           targetId: manager.lease.status === "owned" ? manager.lease.owner.targetId : undefined,
         });
+        releaseLeaseAfterCaptureStop(`keyboard-capture-${captured.reason}`);
+      }
       return;
     }
     const lease = manager.lease;
@@ -163,91 +189,13 @@ export function registerImeIpc(): {
     return { window, owner: manager.lease.owner };
   };
 
-  const onRendererDiagnostic = (event: Electron.IpcMainEvent, payload: unknown): void => {
-    if (isImeCandidateWindowFromSender(event)) {
-      const candidateWindow = BrowserWindow.fromWebContents(event.sender);
-      if (!candidateWindow || !isCandidateRendererDiagnostic(payload)) return;
-      if (payload.event === "candidate-rendered")
-        logImeDiagnostic(payload.event, {
-          windowId: candidateWindow.id,
-          webContentsId: event.sender.id,
-          targetId: payload.targetId,
-          ownerTargetId: payload.ownerTargetId,
-          generation: payload.generation,
-          preedit: payload.preedit,
-          candidates: payload.candidates,
-          selectedIndex: payload.selectedIndex,
-          page: payload.page,
-          documentVisibility: payload.documentVisibility,
-          documentHasFocus: payload.documentHasFocus,
-          candidateRoot: payload.candidateRoot,
-          candidatePopup: payload.candidatePopup,
-        });
-      return;
-    }
-    const window = windowFor(event);
-    if (!window || !isImeRendererDiagnostic(payload)) return;
-    const details: Record<string, unknown> = {
-      windowId: window.id,
-      webContentsId: event.sender.id,
-      targetId: payload.targetId,
-    };
-    if (payload.source === "input-focus" || payload.source === "window-focus")
-      details.source = payload.source;
-    if (Number.isInteger(payload.generation)) details.generation = payload.generation as number;
-    if (typeof payload.key === "string") details.key = payload.key;
-    if (typeof payload.preedit === "string") details.preedit = payload.preedit;
-    if (typeof payload.committedText === "string") details.committedText = payload.committedText;
-    if (Array.isArray(payload.candidates)) details.candidates = payload.candidates;
-    for (const key of [
-      "selectionStart",
-      "selectionEnd",
-      "selectionLength",
-      "valueLength",
-    ] as const) {
-      const value = payload[key];
-      if (Number.isInteger(value)) details[key] = value;
-    }
-    for (const key of [
-      "activeElementTarget",
-      "documentHasFocus",
-      "targetRegistered",
-      "imeAvailable",
-      "imeEnabled",
-      "composing",
-      "accepted",
-      "repeat",
-      "ctrl",
-      "alt",
-      "meta",
-    ] as const) {
-      const value = payload[key];
-      if (typeof value === "boolean") details[key] = value;
-    }
-    if (typeof payload.keyCode === "string" && /^[a-z0-9]{1,24}$/i.test(payload.keyCode))
-      details.keyCode = payload.keyCode;
-    if (typeof payload.reason === "string" && /^[a-z-]{1,40}$/.test(payload.reason))
-      details.reason = payload.reason;
-    if (
-      ["text", "process", "backspace", "enter", "navigation", "other"].includes(
-        payload.keyKind ?? "",
-      )
-    )
-      details.keyKind = payload.keyKind as string;
-    if (payload.event === "document-keydown" || payload.event === "input-mounted") {
-      if (isImeDebugEnabled()) logImeDiagnostic(`renderer-${payload.event}`, details);
-    } else if (
-      payload.event === "key-routing" &&
-      !isImeDebugEnabled() &&
-      !(payload.ctrl || payload.alt || payload.meta || payload.keyKind === "backspace")
-    ) {
-      return;
-    } else if (payload.event === "key-routing") {
-      logImeDiagnostic("key-routing", details);
-    } else {
-      logImeDiagnostic(`renderer-${payload.event}`, details);
-    }
-  };
+  const onRendererDiagnostic = createImeRendererDiagnosticHandler({
+    isCandidateWindowFromSender: isImeCandidateWindowFromSender,
+    getCandidateWindow: (event) => BrowserWindow.fromWebContents(event.sender) ?? undefined,
+    getOwnerWindow: windowFor,
+    isDebugEnabled: isImeDebugEnabled,
+    log: logImeDiagnostic,
+  });
   ipcMain.on(ImeChannels.Diagnostic, onRendererDiagnostic);
 
   function detachLeaseListeners(): void {
@@ -265,7 +213,7 @@ export function registerImeIpc(): {
     if (process.platform !== "win32") return true;
     const generation = manager.lease.status === "owned" ? manager.lease.generation : undefined;
     if (generation === undefined) return false;
-    const started = await bridge.startKeyboardCapture(generation);
+    const started = await bridge.startKeyboardCapture(generation, nativeWindowHandle(leaseWindow));
     if (!started) logImeDiagnostic("keyboard-capture-unavailable", { platform: process.platform });
     return started;
   }
@@ -292,6 +240,10 @@ export function registerImeIpc(): {
     // detach the listeners while the owner may already be gone.
     const contents = window.webContents;
     const onBlur = () => {
+      // A stealth lease is deliberately owned while another application remains
+      // foreground. BrowserWindow blur is therefore expected and must not revoke
+      // the native keyboard route.
+      if (isStealthEnabled()) return;
       if (blurTimer) clearTimeout(blurTimer);
       blurTimer = setTimeout(() => {
         if (
@@ -779,13 +731,6 @@ export function registerImeIpc(): {
     }),
   );
 
-  handle(ImeChannels.KeyboardAck, async (event, payload) => {
-    if (!isImeKeyboardAck(payload)) return false;
-    const current = matchesCurrent(event, payload.generation);
-    if (!current || current.owner.targetId !== payload.targetId) return false;
-    return bridge.acknowledgeKeyboardInput(payload.generation, payload.eventId, payload.delivered);
-  });
-
   function matchesSessionCommand(
     event: Electron.IpcMainInvokeEvent,
     command: Exclude<ImeSessionCommand, { type: "acquireTarget" }>,
@@ -828,6 +773,15 @@ export function registerImeIpc(): {
   async function currentState(): Promise<ImeState> {
     return manager.engineState;
   }
+}
+
+function nativeWindowHandle(window: BrowserWindow | undefined): number {
+  if (!window || window.isDestroyed()) return 0;
+  const getNativeWindowHandle = window.getNativeWindowHandle;
+  if (typeof getNativeWindowHandle !== "function") return 0;
+  const handle = getNativeWindowHandle.call(window);
+  if (handle.length < 4) return 0;
+  return handle.readUInt32LE(0);
 }
 
 function response(state: ImeState, current: ImeSessionState, accepted: boolean): ImeLeaseResponse {
@@ -914,45 +868,10 @@ function isTargetId(value: unknown): value is string {
   return typeof value === "string" && /^[a-z0-9][a-z0-9._:-]{0,79}$/i.test(value);
 }
 
-function isImeRendererDiagnostic(value: unknown): value is ImeRendererDiagnostic {
-  if (
-    !isRecord(value) ||
-    typeof value.targetId !== "string" ||
-    !DIAGNOSTIC_TARGET_IDS.has(value.targetId)
-  )
-    return false;
-  // `candidate-rendered` is validated by `isCandidateRendererDiagnostic`; every
-  // other event name must exist in the shared runtime list so the renderer and
-  // this whitelist cannot drift apart silently.
-  return (
-    value.event !== "candidate-rendered" &&
-    IME_RENDERER_DIAGNOSTIC_EVENTS.includes(value.event as ImeRendererDiagnosticEvent)
-  );
-}
-
 const RELEASE_REASON_PATTERN = /^[a-z-]{1,40}$/;
 
 function rendererReleaseReason(value: unknown, fallback = "renderer-unspecified"): string {
   return typeof value === "string" && RELEASE_REASON_PATTERN.test(value) ? value : fallback;
-}
-
-function isCandidateRendererDiagnostic(value: unknown): value is ImeRendererDiagnostic {
-  if (!isRecord(value) || value.targetId !== "ime-candidate-window") return false;
-  if (!Number.isInteger(value.generation) || typeof value.ownerTargetId !== "string") return false;
-  if (value.event !== "candidate-rendered") return false;
-  if (value.preedit !== undefined && typeof value.preedit !== "string") return false;
-  if (
-    value.candidates !== undefined &&
-    (!Array.isArray(value.candidates) ||
-      !value.candidates.every(
-        (candidate) =>
-          isRecord(candidate) &&
-          typeof candidate.text === "string" &&
-          (candidate.comment === undefined || typeof candidate.comment === "string"),
-      ))
-  )
-    return false;
-  return true;
 }
 
 function sameOwner(left: ImeOwnerIdentity, right: ImeOwnerIdentity): boolean {
@@ -970,17 +889,6 @@ function isKeyRequest(value: unknown): value is ImeKeyRequest {
     ["key", "code"].every((key) => typeof value[key] === "string") &&
     ["shift", "ctrl", "alt", "meta"].every((key) => typeof value[key] === "boolean") &&
     (value.release === undefined || typeof value.release === "boolean")
-  );
-}
-
-function isImeKeyboardAck(value: unknown): value is ImeKeyboardAck {
-  return (
-    isRecord(value) &&
-    isTargetId(value.targetId) &&
-    Number.isInteger(value.generation) &&
-    Number.isSafeInteger(value.eventId) &&
-    (value.eventId as number) > 0 &&
-    typeof value.delivered === "boolean"
   );
 }
 

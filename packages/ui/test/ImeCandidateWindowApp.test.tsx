@@ -25,8 +25,7 @@ describe("ImeCandidateWindowApp", () => {
     root.style.removeProperty("--fade");
     root.style.removeProperty("--ink-tint");
     root.style.removeProperty("--panel-tint");
-  });
-
+});
   it("adopts the shared theme payload and opacity instead of stylesheet defaults", () => {
     localStorage.setItem(AMBIENT_FOLLOW_STORAGE_KEY, "on");
     localStorage.setItem(APP_OPACITY_STORAGE_KEY, "0.6");
@@ -64,7 +63,7 @@ describe("ImeCandidateWindowApp", () => {
     });
     vi.stubGlobal("cancelAnimationFrame", vi.fn());
     let receiveState:
-      | ((next: { state: ImeState; targetId: string; generation: number }) => void)
+      | ((next: { phase: "empty" | "visible" | "suspended" | "disposed"; state: ImeState; targetId?: string; generation?: number; revision: number }) => void)
       | undefined;
     const sendImeCandidateAction = vi.fn();
     const imeDiagnostic = vi.fn();
@@ -80,7 +79,7 @@ describe("ImeCandidateWindowApp", () => {
     render(<ImeCandidateWindowApp bridge={bridge as unknown as DesktopBridge} />);
 
     expect(bridge.requestImeCandidateState).toHaveBeenCalledOnce();
-    act(() => receiveState?.({ state, targetId: "composer", generation: 3 }));
+    act(() => receiveState?.({ phase: "visible", state, targetId: "composer", generation: 3, revision: 1 }));
     expect(imeDiagnostic).toHaveBeenCalledWith(
       expect.objectContaining({
         event: "candidate-rendered",
@@ -91,11 +90,18 @@ describe("ImeCandidateWindowApp", () => {
         candidates: state.candidates,
       }),
     );
-    act(() => receiveState?.({ state, targetId: "composer", generation: 3 }));
+    const newerState = { ...state, preedit: "shi", candidates: [{ text: "是" }, { text: "时" }] };
+    act(() =>
+      receiveState?.({ phase: "visible", state: newerState, targetId: "composer", generation: 3, revision: 2 }),
+    );
+    expect(screen.getByRole("option", { name: /是/ })).toBeInTheDocument();
+    act(() => receiveState?.({ phase: "visible", state, targetId: "composer", generation: 3, revision: 1 }));
+    expect(screen.queryByRole("option", { name: /你/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /是/ })).toBeInTheDocument();
     expect(
       imeDiagnostic.mock.calls.filter(([value]) => value.event === "candidate-rendered"),
-    ).toHaveLength(1);
-    fireEvent.click(screen.getByRole("option", { name: /尼/ }));
+    ).toHaveLength(2);
+    fireEvent.click(screen.getByRole("option", { name: /时/ }));
 
     expect(sendImeCandidateAction).toHaveBeenCalledWith({
       type: "select",
@@ -112,7 +118,7 @@ describe("ImeCandidateWindowApp", () => {
     });
     vi.stubGlobal("cancelAnimationFrame", vi.fn());
     let receiveState:
-      | ((next: { state: ImeState; targetId: string; generation: number }) => void)
+      | ((next: { phase: "empty" | "visible" | "suspended" | "disposed"; state: ImeState; targetId?: string; generation?: number; revision: number }) => void)
       | undefined;
     const fitImeCandidate = vi.fn();
     const bridge = {
@@ -141,8 +147,47 @@ describe("ImeCandidateWindowApp", () => {
     Object.defineProperty(root, "scrollWidth", { configurable: true, value: 472 });
     Object.defineProperty(root, "scrollHeight", { configurable: true, value: 72 });
 
-    act(() => receiveState?.({ state, targetId: "composer", generation: 1 }));
+    act(() => receiveState?.({ phase: "visible", state, targetId: "composer", generation: 1, revision: 1 }));
 
     expect(fitImeCandidate).toHaveBeenCalledWith({ width: 472, height: 72 });
+  });
+
+  it("does not render old candidates while the main presentation is suspended or empty", () => {
+    let receiveState:
+      | ((next: {
+          phase: "empty" | "visible" | "suspended" | "disposed";
+          state: ImeState;
+          targetId?: string;
+          generation?: number;
+          revision: number;
+        }) => void)
+      | undefined;
+    const bridge = {
+      onImeCandidateState: (listener) => {
+        receiveState = listener;
+        return vi.fn();
+      },
+      requestImeCandidateState: vi.fn(),
+    } satisfies Partial<DesktopBridge>;
+    render(<ImeCandidateWindowApp bridge={bridge as unknown as DesktopBridge} />);
+
+    act(() =>
+      receiveState?.({ phase: "visible", state, targetId: "composer", generation: 1, revision: 1 }),
+    );
+    expect(screen.getByRole("option", { name: /你/ })).toBeInTheDocument();
+
+    act(() =>
+      receiveState?.({
+        phase: "suspended",
+        state,
+        targetId: "composer",
+        generation: 1,
+        revision: 2,
+      }),
+    );
+    expect(screen.queryByRole("option", { name: /你/ })).not.toBeInTheDocument();
+
+    act(() => receiveState?.({ phase: "empty", state, revision: 3 }));
+    expect(screen.queryByRole("option", { name: /你/ })).not.toBeInTheDocument();
   });
 });

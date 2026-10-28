@@ -38,7 +38,6 @@ export type RimeKeyboardCaptureEvent =
 
 type RimeCommandState = ImeState & {
   keyboardCaptureActive?: boolean;
-  keyboardEventAcknowledged?: boolean;
 };
 
 function runtimePaths():
@@ -92,7 +91,7 @@ export class RimeBridge {
   }
 
   get available(): boolean {
-    return this.availableValue && this.helperProtocolVersion === 2;
+    return this.availableValue && this.helperProtocolVersion === 3;
   }
 
   get snapshot(): ImeState {
@@ -112,7 +111,7 @@ export class RimeBridge {
     return () => this.keyboardCaptureListeners.delete(listener);
   }
 
-  async startKeyboardCapture(generation: number): Promise<boolean> {
+  async startKeyboardCapture(generation: number, ownerWindowHandle: number): Promise<boolean> {
     await this.startup;
     if (
       !this.available ||
@@ -129,6 +128,7 @@ export class RimeBridge {
       "capture-start",
       String(generation),
       String(process.pid),
+      String(ownerWindowHandle),
     )) as RimeCommandState;
     this.keyboardCaptureActiveValue =
       state.keyboardCaptureActive === true && stopRevision === this.keyboardCaptureStopRevision;
@@ -142,28 +142,6 @@ export class RimeBridge {
     this.keyboardCaptureActiveValue = false;
     this.keyboardCaptureGeneration = undefined;
     await this.command("capture-stop");
-  }
-
-  async acknowledgeKeyboardInput(
-    generation: number,
-    eventId: number,
-    delivered: boolean,
-  ): Promise<boolean> {
-    if (
-      !this.available ||
-      !this.keyboardCaptureActiveValue ||
-      this.keyboardCaptureGeneration !== generation ||
-      !Number.isSafeInteger(eventId) ||
-      eventId <= 0
-    )
-      return false;
-    const state = (await this.command(
-      "capture-ack",
-      String(generation),
-      String(eventId),
-      delivered ? "1" : "0",
-    )) as RimeCommandState;
-    return state.keyboardEventAcknowledged === true;
   }
 
   async enable(enabled: boolean): Promise<ImeState> {
@@ -290,8 +268,8 @@ export class RimeBridge {
               protocolVersion?: number;
               keyboardCaptureAvailable?: boolean;
             };
-            if (id !== "0" || result.available !== true || result.protocolVersion !== 2)
-              throw new Error("librime helper protocol v2 is required");
+            if (id !== "0" || result.available !== true || result.protocolVersion !== 3)
+              throw new Error("librime helper protocol v3 is required");
             this.helperProtocolVersion = result.protocolVersion;
             this.availableValue = true;
             this.keyboardCaptureAvailableValue = result.keyboardCaptureAvailable === true;

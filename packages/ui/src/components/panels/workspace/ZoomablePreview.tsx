@@ -12,10 +12,17 @@ interface ZoomablePreviewProps {
   initialZoom?: number;
   /** 该值变化时自动适应宽度（用于内容异步就绪后重新适应，如 docx/pdf 渲染完成）。 */
   fitSignal?: unknown;
+  /**
+   * 内容自然宽度（CSS px），由调用方提供权威值（pdf.js 页面宽度、图片原始宽度、
+   * docx 页面宽度）。适配必须用它：渲染尺寸随 zoom 变化，量取会漂移，
+   * 反复适应会让页面越缩越小、四周缝隙越来越大。
+   */
+  fitWidthPx?: number;
 }
 
 function clampZoom(value: number): number {
-  return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round(value * 100) / 100));
+  // 向下取整到 1%：适配时页面宽度不会因四舍五入超出可用宽度而引出横向滚动条。
+  return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.floor(value * 100) / 100));
 }
 
 /**
@@ -29,26 +36,60 @@ export function ZoomablePreview({
   className,
   initialZoom = 1,
   fitSignal,
+  fitWidthPx,
 }: ZoomablePreviewProps) {
   const [zoom, setZoom] = useState(initialZoom);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
+  // 适应模式：视口尺寸变化时自动重适应；任何手动缩放都退出该模式，
+  // 直到再次点「适应宽度」（或换文件触发 fitSignal）才恢复跟随。
+  const autoFitRef = useRef(true);
 
   const fitWidth = useCallback(() => {
     const viewport = viewportRef.current;
-    const content = contentRef.current;
-    if (!viewport || !content) return;
-    const contentWidth = content.scrollWidth;
+    if (!viewport) return;
     const available = viewport.clientWidth;
-    if (contentWidth <= 0 || available <= 0) return;
-    setZoom(clampZoom(available / contentWidth));
-  }, []);
+    if (available <= 0) return;
+    // 没有权威自然宽度（文本/markdown 等自动折行内容）：适应宽度即 100%。
+    if (!fitWidthPx || fitWidthPx <= 0) {
+      setZoom(clampZoom(initialZoom));
+      return;
+    }
+    setZoom(clampZoom(available / fitWidthPx));
+  }, [fitWidthPx, initialZoom]);
 
-  // 内容就绪（fitSignal 变化）后自动适应一次宽度。
+  // 内容就绪（fitSignal 变化）后回到适应模式并适应一次宽度。
   useEffect(() => {
     if (fitSignal === undefined) return;
+    autoFitRef.current = true;
     fitWidth();
   }, [fitSignal, fitWidth]);
+
+  // 视口宽度变化（收起/展开目录、面板宽度变化）时跟随重适应，把空间让给正文。
+  // 只看宽度：缩放会改变内容高度并引发高度变化，跟随高度会形成自激循环（闪烁）。
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    let lastWidth = viewport.clientWidth;
+    const observer = new ResizeObserver(() => {
+      const width = viewport.clientWidth;
+      if (Math.abs(width - lastWidth) < 1) return;
+      lastWidth = width;
+      if (autoFitRef.current) fitWidth();
+    });
+    observer.observe(viewport);
+    return () => observer.disconnect();
+  }, [fitWidth]);
+
+  const zoomManually = useCallback((next: number) => {
+    autoFitRef.current = false;
+    setZoom(next);
+  }, []);
+
+  const refit = useCallback(() => {
+    autoFitRef.current = true;
+    fitWidth();
+  }, [fitWidth]);
 
   return (
     <div className={`zoomable-preview${className ? ` ${className}` : ""}`}>
@@ -58,7 +99,7 @@ export function ZoomablePreview({
           aria-label="缩小"
           title="缩小"
           disabled={zoom <= MIN_ZOOM}
-          onClick={() => setZoom((value) => clampZoom(value - ZOOM_STEP))}
+          onClick={() => zoomManually(clampZoom(zoom - ZOOM_STEP))}
         >
           <Minus aria-hidden="true" size={14} />
         </button>
@@ -66,7 +107,7 @@ export function ZoomablePreview({
           type="button"
           className="zoomable-preview__value"
           title="重置为 100%"
-          onClick={() => setZoom(initialZoom)}
+          onClick={() => zoomManually(initialZoom)}
         >
           {Math.round(zoom * 100)}%
         </button>
@@ -75,11 +116,11 @@ export function ZoomablePreview({
           aria-label="放大"
           title="放大"
           disabled={zoom >= MAX_ZOOM}
-          onClick={() => setZoom((value) => clampZoom(value + ZOOM_STEP))}
+          onClick={() => zoomManually(clampZoom(zoom + ZOOM_STEP))}
         >
           <Plus aria-hidden="true" size={14} />
         </button>
-        <button type="button" aria-label="适应宽度" title="适应宽度" onClick={fitWidth}>
+        <button type="button" aria-label="适应宽度" title="适应宽度" onClick={refit}>
           <Maximize aria-hidden="true" size={13} />
         </button>
         <button
@@ -87,7 +128,7 @@ export function ZoomablePreview({
           aria-label="重置缩放"
           title="重置缩放"
           disabled={zoom === initialZoom}
-          onClick={() => setZoom(initialZoom)}
+          onClick={() => zoomManually(initialZoom)}
         >
           <RotateCcw aria-hidden="true" size={13} />
         </button>

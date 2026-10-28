@@ -100,14 +100,6 @@ class RimeHost {
       api_->join_maintenance_thread();
     }
     const std::string schema_file = shared_dir + "/" + schema + ".schema.yaml";
-    // Deploy dependencies explicitly: easy_en is referenced by the simplified
-    // Chinese schema and librime does not always build dependency prisms when
-    // only the top-level schema is deployed.
-    const std::string easy_schema = shared_dir + "/easy_en.schema.yaml";
-    if (schema == "luna_pinyin_simp" && api_->deploy_schema(easy_schema.c_str()) == False) {
-      std::cerr << "rime dependency deployment failed: " << easy_schema << std::endl;
-      return false;
-    }
     if (api_->deploy_schema(schema_file.c_str()) == False) {
       std::cerr << "rime schema deployment failed: " << schema_file << std::endl;
       return false;
@@ -272,7 +264,7 @@ static int run(const std::vector<std::string>& args) {
   RimeHost host;
   const bool available = host.initialize(args[1], args[2], args[3], args[4]);
   KeyboardCapture keyboard_capture;
-  write_line(std::string("0\t{\"protocolVersion\":2,\"available\":") +
+  write_line(std::string("0\t{\"protocolVersion\":3,\"available\":") +
              (available ? "true" : "false") + ",\"keyboardCaptureAvailable\":" +
              (KeyboardCapture::available() ? "true}" : "false}"));
   if (!available) return 3;
@@ -288,7 +280,7 @@ static int run(const std::vector<std::string>& args) {
       std::vector<std::string> command(fields.begin() + 1, fields.end());
       std::string response;
       if (command[0] == "capture-start") {
-        if (command.size() != 3) throw std::runtime_error("capture owner identity is required");
+        if (command.size() != 4) throw std::runtime_error("capture owner identity is required");
         std::size_t parsed_length = 0;
         const unsigned long generation = std::stoul(command[1], &parsed_length);
         if (parsed_length != command[1].size() || generation == 0 || generation > UINT32_MAX)
@@ -298,9 +290,15 @@ static int run(const std::vector<std::string>& args) {
         if (parsed_length != command[2].size() || owner_process_id == 0 ||
             owner_process_id > UINT32_MAX)
           throw std::runtime_error("capture owner process is invalid");
+        parsed_length = 0;
+        const unsigned long long owner_window_handle =
+            std::stoull(command[3], &parsed_length);
+        if (parsed_length != command[3].size() || owner_window_handle == 0)
+          throw std::runtime_error("capture owner window is invalid");
         const bool started = keyboard_capture.start(
             static_cast<std::uint32_t>(generation),
             owner_process_id,
+            static_cast<std::uintptr_t>(owner_window_handle),
             [](const CapturedKeyboardEvent& event) {
               return write_line("@keyboard\t" + keyboard_event_json(event));
             },
@@ -309,26 +307,6 @@ static int run(const std::vector<std::string>& args) {
                          "\"}");
             });
         response = capture_state_json(host.state(false), started);
-      } else if (command[0] == "capture-ack") {
-        if (command.size() != 4) throw std::runtime_error("capture acknowledgement is invalid");
-        std::size_t parsed_length = 0;
-        const unsigned long generation = std::stoul(command[1], &parsed_length);
-        if (parsed_length != command[1].size() || generation == 0 || generation > UINT32_MAX)
-          throw std::runtime_error("capture acknowledgement generation is invalid");
-        parsed_length = 0;
-        const unsigned long long event_id = std::stoull(command[2], &parsed_length);
-        if (parsed_length != command[2].size() || event_id == 0)
-          throw std::runtime_error("capture acknowledgement event is invalid");
-        if (command[3] != "0" && command[3] != "1")
-          throw std::runtime_error("capture acknowledgement result is invalid");
-        const bool delivered = command[3] == "1";
-        const bool acknowledged = keyboard_capture.acknowledge(
-            static_cast<std::uint32_t>(generation), static_cast<std::uint64_t>(event_id),
-            delivered);
-        response = host.state(false);
-        response.pop_back();
-        response += std::string(",\"keyboardEventAcknowledged\":") +
-                    (acknowledged ? "true}" : "false}");
       } else if (command[0] == "capture-stop") {
         keyboard_capture.stop("released");
         response = capture_state_json(host.state(false), keyboard_capture.active());

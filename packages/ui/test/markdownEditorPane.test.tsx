@@ -191,7 +191,7 @@ describe("MarkdownEditorPane", () => {
     const content = document.querySelector(".cm-content") as HTMLElement;
     expect(content).toHaveAttribute("data-embedded-ime-target", "true");
     expect(content).toHaveAttribute("data-ime-policy", "text");
-    fireEvent.focus(content);
+    fireEvent.pointerDown(content, { clientX: 1, clientY: 1 });
     await waitFor(() => expect(imeAcquire).toHaveBeenCalledWith("workspace-markdown-editor"));
     const view = EditorView.findFromDOM(document.querySelector(".cm-editor") as HTMLElement);
     expect(view).not.toBeNull();
@@ -249,18 +249,24 @@ describe("MarkdownEditorPane", () => {
       engineState = idleState;
       return { accepted: true, state: idleState };
     });
+    let candidateRevision = 0;
     const setImeCandidate = vi.fn((update: ImeCandidateUpdate) => {
+      candidateRevision += 1;
       if (update.type === "show") {
         receiveCandidateState?.({
           state: engineState,
           targetId: update.targetId,
           generation: update.generation,
+          phase: "visible",
+          revision: candidateRevision,
         });
       } else if (update.type === "clear") {
         receiveCandidateState?.({
           state: idleState,
           ...(update.targetId ? { targetId: update.targetId } : {}),
           ...(update.generation !== undefined ? { generation: update.generation } : {}),
+          phase: "visible",
+          revision: candidateRevision,
         });
       }
     });
@@ -292,8 +298,7 @@ describe("MarkdownEditorPane", () => {
       timeout: 5000,
     });
     const content = document.querySelector(".cm-content") as HTMLElement;
-    fireEvent.focus(content);
-    fireEvent.focusIn(content);
+    fireEvent.pointerDown(content, { clientX: 1, clientY: 1 });
     await waitFor(() => expect(imeAcquire).toHaveBeenCalledOnce());
     const view = EditorView.findFromDOM(document.querySelector(".cm-editor") as HTMLElement);
     expect(view).not.toBeNull();
@@ -369,7 +374,7 @@ describe("MarkdownEditorPane", () => {
     renderPane(bridge);
     await waitFor(() => expect(document.querySelector(".cm-content")).not.toBeNull());
     const content = document.querySelector(".cm-content") as HTMLElement;
-    fireEvent.focus(content);
+    fireEvent.pointerDown(content, { clientX: 1, clientY: 1 });
     await waitFor(() => expect(imeAcquire).toHaveBeenCalled());
 
     const view = EditorView.findFromDOM(document.querySelector(".cm-editor") as HTMLElement);

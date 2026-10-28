@@ -1,9 +1,25 @@
+/* 笔记本：左栏（搜索 + 路径行 + 目录树）贴面板边缘，右侧一张纸面承载正文。
+   纸面是稿件里的「内容卡片」：圆角、细描边、比面板更白的底色，
+   与左栏的灰底形成层次；尺寸为组件局部常量，不进全局栅格。 */
 .workspace-panel {
+  --workspace-sheet-radius: 12px;
   display: flex;
-  flex-direction: column;
-  gap: 10px;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
+}
+
+/* 面板头部已让位给侧栏与纸面；标题只服务读屏与用例定位。 */
+.workspace-panel__sr-title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .workspace-panel__empty {
@@ -11,17 +27,17 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 14px;
+  gap: var(--space-4);
   flex: 1;
   min-height: 0;
-  padding: 24px;
+  padding: var(--space-6);
   color: var(--muted);
 }
 
 .workspace-panel__empty-copy {
   max-width: 300px;
   margin: 0;
-  font-size: 12px;
+  font-size: var(--font-md);
   line-height: 1.65;
   text-align: center;
 }
@@ -29,71 +45,77 @@
 .workspace-panel__pick {
   min-width: 112px;
   height: 32px;
-  padding: 0 14px;
-  font-size: 12px;
-}
-
-.workspace-panel__rootbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 11px;
-  color: var(--muted);
-  min-width: 0;
-}
-
-.workspace-panel__rootbar span {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.workspace-panel__change-root {
-  border: 1px solid var(--edge-line);
-  background: transparent;
-  color: inherit;
-  font-size: 11px;
-  border-radius: var(--ctl-radius);
-  padding: 2px 8px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.workspace-panel__body {
-  display: flex;
-  flex: 1;
-  min-height: 0;
-  gap: 0;
-  border-top: 1px solid var(--glass-line-soft);
+  padding: 0 var(--space-3);
+  font-size: var(--font-md);
 }
 
 .workspace-panel__sidebar {
-  /* 复刻 VS Code 资源管理器：侧栏足够放下文件名，硬裁切不让内容撑开。 */
-  flex: 0 0 clamp(150px, 21%, 230px);
+  /* 侧栏约面板四成半宽，保证长文件名可读；硬裁切不让内容撑开。
+     宽度三段是侧栏的一次性尺寸（可拖拽前不做令牌化）。 */
+  flex: 0 0 clamp(196px, 46%, 250px);
   min-width: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  gap: 8px;
-  padding: 8px 6px 8px 8px;
   border-right: 1px solid var(--glass-line-soft);
 }
 
-/* 收起态：只留一个展开按钮的窄条。 */
-.workspace-panel__body--collapsed .workspace-panel__sidebar {
-  flex-basis: 26px;
+/* 收起态：极细竖条（16px），只留一个可点的展开窄钮。 */
+.workspace-panel--collapsed .workspace-panel__sidebar {
+  flex-basis: 16px;
   align-items: center;
-  padding: 6px 2px;
+  padding: var(--space-1) 0;
 }
 
 .workspace-panel__sidebar-toggle {
-  width: 22px;
-  height: 22px;
-  flex: 0 0 22px;
+  width: 16px;
+  height: var(--row-h);
+  flex: 0 0 var(--row-h);
   display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--ctl-radius-sm);
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.workspace-panel__sidebar-toggle:hover {
+  color: var(--ink);
+  background: var(--hover);
+}
+
+/* 内容纸面：右栏独立卡片，四边留 8px 与面板/侧栏分开。 */
+.workspace-panel__sheet {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  margin: var(--space-2);
+  border: 1px solid var(--glass-line);
+  border-radius: var(--workspace-sheet-radius);
+  background: var(--paper);
+}
+
+/* 纸面工具条：更换目录（文件夹）与关闭面板，右对齐，一行收口。 */
+.workspace-panel__sheet-bar {
+  display: flex;
+  flex: 0 0 44px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  height: 44px;
+  padding: 0 var(--space-3);
+  border-bottom: 1px solid var(--glass-line-soft);
+}
+
+.workspace-panel__icon-button {
+  display: grid;
+  width: var(--ctl-h);
+  height: var(--ctl-h);
   place-items: center;
   border: 0;
   border-radius: var(--ctl-radius);
@@ -102,13 +124,7 @@
   cursor: pointer;
 }
 
-.workspace-panel__body--collapsed .workspace-panel__sidebar-toggle {
-  width: 16px;
-  flex-basis: 16px;
-  padding: 0;
-}
-
-.workspace-panel__sidebar-toggle:hover {
+.workspace-panel__icon-button:hover {
   color: var(--ink);
   background: var(--hover);
 }
@@ -119,12 +135,18 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  padding: 12px;
+  /* 正文直接贴纸面内沿：预览与内容各自管内边距，内容区不再外留一圈空白。 */
+  padding: 0;
 }
 
 .workspace-panel__error {
   color: var(--danger);
-  font-size: 12px;
+  font-size: var(--font-md);
+}
+
+/* 内容区直接承载的错误提示需要自己的内缩。 */
+.workspace-panel__content > .workspace-panel__error {
+  padding: var(--space-2) var(--space-3);
 }
 
 .workspace-editor {
@@ -137,24 +159,24 @@
 .workspace-editor__toolbar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 11px;
+  gap: var(--space-2);
+  font-size: var(--font-sm);
   color: var(--muted);
-  padding-bottom: 4px;
+  padding-bottom: var(--space-1);
 }
 
 .workspace-editor__modes {
   display: flex;
-  gap: 2px;
+  gap: calc(var(--space-1) / 2);
 }
 
 .workspace-editor__mode {
   border: 0;
   background: transparent;
   color: var(--muted);
-  font-size: 11px;
-  border-radius: 6px;
-  padding: 2px 8px;
+  font-size: var(--font-sm);
+  border-radius: var(--ctl-radius);
+  padding: calc(var(--space-1) / 2) var(--space-2);
   cursor: pointer;
 }
 
@@ -185,7 +207,7 @@
 /* 源码模式（CodeMirror）。 */
 .workspace-editor__host .cm-editor {
   height: 100%;
-  font-size: 12px;
+  font-size: var(--font-md);
   background: transparent;
   color: var(--ink);
 }
@@ -201,19 +223,19 @@
 }
 
 .workspace-editor__conflict {
-  font-size: 11px;
+  font-size: var(--font-sm);
   color: var(--danger);
   display: flex;
-  gap: 6px;
+  gap: var(--space-1);
   align-items: center;
-  padding-bottom: 4px;
+  padding-bottom: var(--space-1);
 }
 
+/* markdown 预览：正文尺度（13.5px/行高 1.7）按内容排版，不走界面四档字号；
+   滚动交给外层视口，避免框内再套一层滚动条。 */
 .workspace-preview-markdown {
-  overflow: auto;
-  flex: 1;
-  min-height: 0;
-  padding: 4px 8px;
+  overflow: visible;
+  padding: var(--space-1) var(--space-2);
   font-size: 13.5px;
   line-height: 1.7;
   color: var(--ink);
@@ -254,7 +276,7 @@
   font-family: Consolas, "Courier New", monospace;
   font-size: 0.92em;
   background: var(--hover);
-  border-radius: 4px;
+  border-radius: var(--ctl-radius-sm);
   padding: 0.1em 0.35em;
 }
 
@@ -271,7 +293,7 @@
 .workspace-preview-markdown th,
 .workspace-preview-markdown td {
   border: 1px solid var(--glass-line-soft);
-  padding: 4px 10px;
+  padding: var(--space-1) var(--space-2);
 }
 
 .workspace-preview-markdown hr {
@@ -282,26 +304,21 @@
 
 .workspace-preview-markdown img {
   max-width: 100%;
-  border-radius: 6px;
+  border-radius: var(--ctl-radius-sm);
 }
 
 .workspace-preview-markdown pre {
   overflow: auto;
-  padding: 8px 10px;
-  border-radius: 6px;
+  padding: var(--space-2);
+  border-radius: var(--ctl-radius-sm);
   font-size: 11.5px;
 }
 
 .workspace-preview-docx,
 .workspace-preview-pdf {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
+  width: fit-content;
   color: var(--ink);
-  padding: 8px;
+  padding: var(--space-2) 0;
 }
 
 .workspace-preview-docx-state {
@@ -323,15 +340,15 @@
   flex: 0 0 30px;
   align-items: center;
   justify-content: flex-end;
-  gap: 4px;
+  gap: var(--space-1);
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-sm);
 }
 
 .workspace-pdf-toolbar button {
   display: grid;
-  width: 26px;
-  height: 26px;
+  width: var(--ctl-h);
+  height: var(--ctl-h);
   place-items: center;
   border: 0;
   border-radius: var(--ctl-radius);
@@ -351,9 +368,9 @@
 }
 
 .workspace-preview-docx {
-  overflow: auto;
-  width: 100%;
-  padding: 8px 0;
+  overflow: visible;
+  width: fit-content;
+  padding: var(--space-2) 0;
 }
 
 .workspace-preview-docx > .docx-wrapper {
@@ -362,7 +379,7 @@
 }
 
 .workspace-preview-docx > .docx-wrapper > .docx {
-  margin: 0 auto 12px;
+  margin: 0 auto var(--space-3);
 }
 
 .workspace-preview-docx[hidden] {
@@ -374,17 +391,19 @@
 }
 
 .workspace-preview-pdf {
-  width: 100%;
-  min-height: 0;
+  overflow: visible;
+  width: fit-content;
 }
 
 .workspace-preview-docx .docx-wrapper {
   background: transparent;
 }
 
+/* PDF 纸张：页边由视口框线承担，画布自身只保留纸面色与页间距。 */
 .workspace-preview-pdf canvas {
   display: block;
-  margin: 8px auto 16px;
+  margin: 0 auto var(--space-2);
+  background: var(--paper);
 }
 
 .workspace-preview-placeholder,
@@ -394,7 +413,13 @@
   align-items: center;
   justify-content: center;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-md);
+}
+
+/* 空态提示与文件树同一字号档，比状态文字更实（稿件里是正文黑）。 */
+.workspace-preview-placeholder {
+  color: var(--ink);
+  font-size: var(--font-lg);
 }
 
 /* 统一预览缩放容器：工具栏 + 可滚动视口，内容以 CSS zoom 缩放（不重渲染）。 */
@@ -408,19 +433,20 @@
 
 .zoomable-preview__toolbar {
   display: flex;
-  flex: 0 0 30px;
+  flex: 0 0 auto;
   align-items: center;
-  justify-content: flex-end;
-  gap: 4px;
+  justify-content: center;
+  gap: var(--space-1);
   color: var(--muted);
-  font-size: 11px;
-  padding-bottom: 4px;
+  font-size: var(--font-sm);
+  /* 紧凑一行：按钮高 = --ctl-h，上下只留 --space-1，不再产生大段空档。 */
+  padding: var(--space-1) var(--space-2);
 }
 
 .zoomable-preview__toolbar button {
   display: grid;
-  width: 26px;
-  height: 26px;
+  width: var(--ctl-h);
+  height: var(--ctl-h);
   place-items: center;
   border: 0;
   border-radius: var(--ctl-radius);
@@ -448,19 +474,26 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  display: flex;
+  /* 滚动条槽位恒定预留：滚动条出现/消失不改变可用宽度，
+     避免"适配→滚动条→宽度变化→再适配"的自激闪烁。 */
+  scrollbar-gutter: stable;
+  /* 正文区域边界常驻：框线画在视口上，不随缩放与滚动移动，
+     适配后文档正好贴满框内，不需要左右滚动才能看到页边。
+     画布底色衬出白纸，边界在任何缩放下都能一眼辨认。 */
+  background: var(--field);
+  border: 1px solid var(--glass-line);
+  border-radius: var(--ctl-radius-sm);
 }
 
 .zoomable-preview__content {
-  transform-origin: top center;
-  margin: auto;
+  /* 顶左起排：宽度随视口铺满，不再居中留出对称空白。 */
+  min-height: 100%;
 }
 
-/* 纯文本预览 */
+/* 纯文本预览：等宽正文尺度，间距仍走栅格；边框由视口统一提供。 */
 .workspace-preview-text {
   margin: 0;
-  padding: 10px 12px;
-  align-self: stretch;
+  padding: var(--space-2) var(--space-3);
   width: 100%;
   white-space: pre-wrap;
   word-break: break-word;
@@ -469,8 +502,6 @@
   line-height: 1.6;
   color: var(--ink);
   background: transparent;
-  border: 1px solid var(--glass-line-soft);
-  border-radius: var(--ctl-radius);
 }
 
 /* 图片预览 */
@@ -478,12 +509,12 @@
   display: block;
   margin: 0 auto;
   max-width: none;
-  border-radius: 6px;
+  border-radius: var(--ctl-radius-sm);
 }
 
 .workspace-preview-pdf-state > .workspace-preview-status {
   min-height: 0;
-  padding: 12px;
+  padding: var(--space-3);
   text-align: center;
 }
 

@@ -135,13 +135,14 @@ describe("ChatPanel", () => {
       />,
     );
     const input = screen.getByRole("textbox", { name: "补充问题" }) as HTMLTextAreaElement;
-    fireEvent.focus(input);
+    fireEvent.pointerDown(input, { clientX: 1, clientY: 1 });
     await waitFor(() =>
       expect(bridge.imeSessionCommand).toHaveBeenCalledWith(
         expect.objectContaining({ type: "acquireTarget", targetId: "chat-composer" }),
       ),
     );
     input.setSelectionRange(1, 3);
+    fireEvent.select(input);
     fireEvent.keyDown(input, { key: "n", code: "KeyN" });
     await waitFor(() => expect(onDraftChange).toHaveBeenCalledWith("a新d"));
   });

@@ -488,7 +488,6 @@ export const ImeChannels = {
   SessionCommand: "answra:ime:session-command",
   SessionSnapshot: "answra:ime:session-snapshot",
   KeyboardInput: "answra:ime:keyboard-input",
-  KeyboardAck: "answra:ime:keyboard-ack",
 } as const;
 
 /** Native keyboard hook event forwarded only to the current IME lease owner. */
@@ -504,14 +503,6 @@ export interface ImeKeyboardInput {
   alt: boolean;
   meta: boolean;
   repeat: boolean;
-}
-
-/** Renderer confirmation that a native key event reached the active editor. */
-export interface ImeKeyboardAck {
-  targetId: string;
-  generation: number;
-  eventId: number;
-  delivered: boolean;
 }
 
 /** 候选条独立窗口协议：输入窗口推送状态，候选窗口只回传用户操作。 */
@@ -546,9 +537,13 @@ export type ImeCandidateAction =
   | { type: "navigate"; key: "PageUp" | "PageDown"; targetId: string; generation: number };
 
 export interface ImeCandidateSnapshot {
+  /** Complete lifecycle state of the main-owned candidate presentation. */
+  phase: "empty" | "visible" | "suspended" | "disposed";
   state: ImeState;
   targetId?: string;
   generation?: number;
+  /** Monotonic revision assigned by the main-owned candidate presentation controller. */
+  revision: number;
 }
 
 export interface ImeCandidateChannelMap {
@@ -570,7 +565,7 @@ export interface ImeCandidate {
 
 export interface ImeState {
   enabled: boolean;
-  /** Native Rime mode reported by helper protocol v2. */
+  /** Native Rime mode reported by helper protocol v3. */
   inputMode: ImeInputMode;
   composing: boolean;
   preedit: string;
@@ -720,6 +715,8 @@ export interface ImeRendererDiagnostic {
   source?: "input-focus" | "window-focus";
   reason?: string;
   generation?: number;
+  /** Candidate snapshot version observed by the independent candidate renderer. */
+  revision?: number;
   activeElementTarget?: boolean;
   documentHasFocus?: boolean;
   /**
@@ -768,16 +765,14 @@ export interface ImeChannelMap {
     request: ImeKeyboardInput;
     response: undefined;
   };
-  [ImeChannels.KeyboardAck]: {
-    request: ImeKeyboardAck;
-    response: boolean;
-  };
 }
 
 export interface ImeLeaseResponse {
   state: ImeState;
   targetId?: string;
   generation?: number;
+  /** Candidate snapshot version observed by the independent candidate renderer. */
+  revision?: number;
   accepted: boolean;
 }
 

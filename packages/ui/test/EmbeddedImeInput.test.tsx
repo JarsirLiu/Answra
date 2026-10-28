@@ -67,18 +67,23 @@ function StealthSettingsInput() {
 
 describe("EmbeddedImeInput", () => {
   beforeEach(() => resetImeInputTargetCoordinatorForTests());
-  it("remains focusable under stealth because input is handled by the embedded IME", async () => {
+  it("keeps the stealth input unfocused while a pointer establishes the logical target", async () => {
     render(<StealthSettingsInput />);
     await act(async () => {});
     const input = screen.getByRole("textbox", { name: "模型名称" });
+    const focus = vi.fn();
+    const blur = vi.fn();
+    input.addEventListener("focus", focus);
+    input.addEventListener("blur", blur);
 
     expect(input).toHaveAttribute("data-embedded-ime-target", "true");
     await act(async () => {
       fireEvent.pointerDown(input);
-      input.focus();
     });
 
-    expect(document.activeElement).toBe(input);
+    expect(document.activeElement).not.toBe(input);
+    expect(focus).not.toHaveBeenCalled();
+    expect(blur).not.toHaveBeenCalled();
   });
 
   it("inserts pasted text at the selected range while keeping the input read-only", async () => {
@@ -95,9 +100,10 @@ describe("EmbeddedImeInput", () => {
       />,
     );
     const input = screen.getByRole("textbox", { name: "模型名称" }) as HTMLInputElement;
-    await act(async () => input.focus());
+    await act(async () => fireEvent.pointerDown(input));
     await waitFor(() => expect(input).toHaveProperty("readOnly", true));
     input.setSelectionRange(1, 3);
+    fireEvent.select(input);
 
     fireEvent.paste(input, {
       clipboardData: { getData: (type: string) => (type === "text/plain" ? "XY" : "") },

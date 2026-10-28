@@ -1,114 +1,66 @@
 .workspace-tree {
   display: flex;
   flex-direction: column;
-  gap: 6px;
   min-width: 0;
-  /* 纵向可滚动，横向一律裁切：长文件名绝不把目录推宽。 */
-  overflow-y: auto;
-  overflow-x: hidden;
   height: 100%;
-}
-
-.workspace-tree__empty {
-  color: var(--muted);
-  font-size: 12px;
-  padding: 8px;
-}
-
-/* 筛选框：圆角浅底，与 Codex "Filter files…" 一致。 */
-.workspace-tree__filter {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 26px;
-  padding: 0 8px;
-  border: 1px solid var(--edge-line);
-  border-radius: 7px;
-  color: var(--muted);
-  background: transparent;
-}
-
-.workspace-tree__filter:focus-within {
-  border-color: var(--mint-text);
-}
-
-.workspace-tree__filter input {
-  flex: 1;
-  min-width: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font-size: 12px;
-  padding: 0;
-}
-
-.workspace-tree__filter input:focus {
-  outline: none;
-}
-
-.workspace-tree__filter input::placeholder {
-  color: var(--muted);
-}
-
-.workspace-tree__filter-clear {
-  display: grid;
-  place-items: center;
-  width: 16px;
-  height: 16px;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  padding: 0;
-}
-
-.workspace-tree__filter-clear:hover {
-  color: var(--ink);
-  background: var(--hover);
+  overflow: hidden;
 }
 
 .workspace-tree__actions {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
-  gap: 2px;
-  min-height: 22px;
-}
-
-.workspace-tree__actions-spacer {
-  flex: 1;
+  justify-content: flex-end;
+  min-height: var(--row-h);
+  padding: 0 calc(var(--space-1) / 2);
 }
 
 .workspace-tree__action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 22px;
+  display: grid;
+  flex: 0 0 var(--row-h);
+  width: var(--row-h);
+  height: var(--row-h);
+  place-items: center;
+  padding: 0;
   border: 0;
+  border-radius: var(--ctl-radius-sm);
   background: transparent;
   color: var(--muted);
-  border-radius: 4px;
-  padding: 0;
   cursor: pointer;
-  white-space: nowrap;
 }
 
 .workspace-tree__action:hover {
+  color: var(--ink);
   background: var(--hover);
 }
 
+/* 目录树本体独立滚动。 */
+.workspace-tree__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.workspace-tree__empty {
+  margin: 0;
+  padding: var(--space-2) var(--space-2);
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+
 .workspace-tree__list,
-.workspace-tree ul {
+.workspace-tree__children {
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
-/* VS Code 式缩进：每级 16px，子级始终比父级文件名更靠右。 */
-.workspace-tree ul {
-  margin-left: 0;
-  padding-left: 16px;
+/* 子级缩进只挂在 .workspace-tree__children 上：竖向引导线对准父级箭头中心，每级缩进 16px。 */
+.workspace-tree__children {
+  margin-left: var(--space-2);
+  padding-left: var(--space-2);
+  border-left: 1px solid var(--glass-line-soft);
 }
 
 .workspace-tree__row {
@@ -116,13 +68,14 @@
   align-items: center;
   min-width: 0;
   overflow: hidden;
-  min-height: 22px;
-  border-radius: 4px;
+  min-height: var(--row-h);
+  border-radius: var(--ctl-radius-sm);
   box-sizing: border-box;
 }
 
+/* 树行三态梯度：hover 轻扫（--field 5%），选中高一档（--hover 10%）。 */
 .workspace-tree__row:hover {
-  background: var(--hover);
+  background: var(--field);
 }
 
 .workspace-tree__row--selected,
@@ -134,22 +87,17 @@
   flex: 1;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
   min-width: 0;
   overflow: hidden;
   border: 0;
   background: transparent;
-  color: inherit;
-  font-size: 12.5px;
-  line-height: 20px;
+  color: var(--ink);
+  font-size: var(--font-md);
+  line-height: var(--row-h);
   text-align: left;
-  padding: 1px 6px 1px 2px;
+  padding: 0 var(--space-1);
   cursor: pointer;
-}
-
-.workspace-tree__item svg {
-  flex: 0 0 15px;
-  color: var(--muted);
 }
 
 .workspace-tree__chevron {
@@ -157,24 +105,18 @@
   flex: 0 0 12px;
   width: 12px;
   place-items: center;
-}
-
-/* VS Code 图标（@iconify/react 渲染）与加载占位。 */
-.workspace-tree__icon-placeholder {
-  flex: 0 0 16px;
-  width: 16px;
-  height: 16px;
+  color: var(--muted);
 }
 
 .workspace-tree__icon-vscode {
-  flex: 0 0 16px;
-  font-size: 16px;
+  flex: 0 0 var(--space-4);
+  font-size: var(--space-4);
 }
 
 .workspace-tree__item:focus-visible {
   outline: 1px solid var(--mint-text);
   outline-offset: -1px;
-  border-radius: 4px;
+  border-radius: var(--ctl-radius-sm);
 }
 
 .workspace-tree__name {
@@ -191,8 +133,8 @@
   color: inherit;
   opacity: 0;
   cursor: pointer;
-  padding: 3px;
-  border-radius: 4px;
+  padding: calc(var(--space-1) / 2);
+  border-radius: var(--ctl-radius-sm);
 }
 
 .workspace-tree__row:hover .workspace-tree__delete {

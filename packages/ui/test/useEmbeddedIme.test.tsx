@@ -618,12 +618,11 @@ describe("useEmbeddedIme lease routing", () => {
     input.remove();
   });
 
-  it("delivers only current-lease native keys to the active DOM editor without focusing the window", async () => {
+  it("delivers only current-lease native keys to the logical editor without focusing the window", async () => {
     let receiveKeyboardInput: ((input: ImeKeyboardInput) => void) | undefined;
     const bridge = withSessionApi({
       imeAvailable: true,
       imeAcquire: vi.fn().mockResolvedValue(lease(45)),
-      ackImeKeyboardInput: vi.fn(async () => true),
       onImeKeyboardInput: (listener: (input: ImeKeyboardInput) => void) => {
         receiveKeyboardInput = listener;
         return () => {
@@ -634,15 +633,8 @@ describe("useEmbeddedIme lease routing", () => {
     const { result, unmount } = renderHook(() =>
       useEmbeddedIme(bridge, undefined, true, "composer"),
     );
-    const input = document.createElement("textarea");
-    input.dataset.imeTargetId = "composer";
-    const receivedKeys: KeyboardEvent[] = [];
-    input.addEventListener("keydown", (event) => {
-      receivedKeys.push(event);
-      event.preventDefault();
-    });
-    document.body.appendChild(input);
-    input.focus();
+    const receivedKeys: ImeKeyboardInput[] = [];
+    act(() => result.current.setNativeKeyHandler((input) => receivedKeys.push(input)));
     await act(async () => result.current.acquire());
 
     act(() => {
@@ -675,16 +667,8 @@ describe("useEmbeddedIme lease routing", () => {
     });
 
     expect(receivedKeys.map((event) => event.key)).toEqual(["n"]);
-    expect(bridge.ackImeKeyboardInput).toHaveBeenCalledWith({
-      targetId: "composer",
-      generation: 45,
-      eventId: 17,
-      delivered: true,
-    });
-    expect(bridge.ackImeKeyboardInput).toHaveBeenCalledTimes(1);
-    expect(document.activeElement).toBe(input);
+    expect(document.activeElement).toBe(document.body);
     unmount();
-    input.remove();
   });
 
   it("reports renderer focus and key routing with the typed key for local diagnostics", async () => {

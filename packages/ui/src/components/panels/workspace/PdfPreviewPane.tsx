@@ -24,6 +24,8 @@ export function PdfPreviewPane({
   const pagesRef = useRef<Array<{ canvas: HTMLCanvasElement; width: number; height: number }>>([]);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState<string | null>(null);
+  // 页面自然宽度（CSS px）：适配宽度的权威值，避免量取随 zoom 变化的渲染尺寸。
+  const [pageWidth, setPageWidth] = useState<number | undefined>(undefined);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -35,6 +37,7 @@ export function PdfPreviewPane({
     let disposePromise: Promise<void> | null = null;
     let stage = "loading pdfjs";
     pagesRef.current = [];
+    setPageWidth(undefined);
     const timeout = window.setTimeout(() => {
       if (!cancelled) {
         timedOut = true;
@@ -77,6 +80,7 @@ export function PdfPreviewPane({
           canvas.style.height = `${Math.round(viewport.height)}px`;
           host.append(canvas);
           pagesRef.current.push({ canvas, width: viewport.width, height: viewport.height });
+          setPageWidth(Math.round(viewport.width));
           const context = canvas.getContext("2d");
           if (!context) throw new Error("浏览器无法创建 PDF 画布，请检查 renderer 控制台");
           await page.render({
@@ -120,7 +124,11 @@ export function PdfPreviewPane({
   }, [content, path]);
 
   return (
-    <ZoomablePreview className="workspace-preview-pdf-zoom" fitSignal={status === "ready" ? 1 : 0}>
+    <ZoomablePreview
+      className="workspace-preview-pdf-zoom"
+      fitSignal={status === "ready" ? 1 : 0}
+      fitWidthPx={pageWidth}
+    >
       {status === "loading" && <div className="workspace-preview-status">PDF 解析中…</div>}
       {status === "error" && <div className="workspace-preview-status">{error}</div>}
       <div ref={hostRef} className="workspace-preview-pdf" hidden={status !== "ready"} />

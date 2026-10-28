@@ -85,6 +85,18 @@ export function MarkdownEditorPane({
   const [conflict, setConflict] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    const handleNativeKey = (input: import("@answra/shared").ImeKeyboardInput) => {
+      const view = bundleRef.current.view;
+      if (!view) return;
+      ime.sendNativeKey(input, (command) => {
+        if (bundleRef.current.view === view) applyCodeMirrorImeCommand(view, command);
+      });
+    };
+    ime.setNativeKeyHandler(handleNativeKey);
+    return () => ime.setNativeKeyHandler(undefined);
+  }, [ime]);
+
   const setDirtyState = useCallback(
     (value: boolean) => {
       dirtyRef.current = value;
@@ -138,9 +150,10 @@ export function MarkdownEditorPane({
               drawSelection(),
               highlightActiveLine(),
               EditorView.lineWrapping,
-              EditorView.contentAttributes.of(
-                imeEditorAttributes({ targetId: "workspace-markdown-editor" }),
-              ),
+              EditorView.contentAttributes.of({
+                ...imeEditorAttributes({ targetId: "workspace-markdown-editor" }),
+                ...(stealth ? { tabindex: "-1" } : {}),
+              }),
               markdown(),
               codeMirrorImeCompositionField,
               syntaxHighlighting(highlight),
@@ -184,6 +197,20 @@ export function MarkdownEditorPane({
                   }
                   return false;
                 },
+                pointerdown: (event, editor) => {
+                  const point = { x: event.clientX, y: event.clientY };
+                  const position = editor.posAtCoords(point);
+                  if (position !== null) {
+                    editor.dispatch({ selection: { anchor: position } });
+                  }
+                  if (!stealth) {
+                    void imeRef.current.acquire();
+                    return false;
+                  }
+                  event.preventDefault();
+                  void imeRef.current.acquire();
+                  return true;
+                },
                 beforeinput: (event) => {
                   if (imeRef.current.shouldPreventBeforeInput(event.inputType)) {
                     event.preventDefault();
@@ -220,10 +247,11 @@ export function MarkdownEditorPane({
           }),
         });
         bundleRef.current.view = view;
-        view.contentDOM.addEventListener("focus", onEditorFocus);
-        view.contentDOM.addEventListener("blur", onEditorBlur);
-        view.contentDOM.addEventListener("pointerdown", onEditorFocus);
-        if (document.activeElement === view.contentDOM) void imeRef.current.acquire();
+        if (!stealth) {
+          view.contentDOM.addEventListener("focus", onEditorFocus);
+          view.contentDOM.addEventListener("blur", onEditorBlur);
+          if (document.activeElement === view.contentDOM) void imeRef.current.acquire();
+        }
       } catch (cause) {
         if (!disposed) setError(cause instanceof Error ? cause.message : "编辑器加载失败");
       }
@@ -232,9 +260,10 @@ export function MarkdownEditorPane({
       disposed = true;
       // 销毁前捕获最终文本：预览态没有编辑器实例，挂起的自动保存依赖它。
       if (view) lastTextRef.current = view.state.doc.toString();
-      view?.contentDOM.removeEventListener("focus", onEditorFocus);
-      view?.contentDOM.removeEventListener("blur", onEditorBlur);
-      view?.contentDOM.removeEventListener("pointerdown", onEditorFocus);
+      if (!stealth) {
+        view?.contentDOM.removeEventListener("focus", onEditorFocus);
+        view?.contentDOM.removeEventListener("blur", onEditorBlur);
+      }
       void imeRef.current.release("editor-unmount");
       view?.destroy();
       bundleRef.current.view = null;

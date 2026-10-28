@@ -148,8 +148,22 @@ export function logImeDiagnostic(event: string, details: Record<string, unknown>
     const popupStyle = popup
       ? { display: popup.display, visibility: popup.visibility, opacity: popup.opacity }
       : undefined;
+    const candidates = Array.isArray(details.candidates)
+      ? details.candidates
+          .map((candidate) =>
+            typeof candidate === "object" && candidate !== null && "text" in candidate
+              ? String(candidate.text)
+              : "",
+          )
+          .filter(Boolean)
+      : [];
     const presentation = json({
+      targetId: details.targetId,
       generation: details.generation,
+      preedit: details.preedit,
+      candidates,
+      selectedIndex: details.selectedIndex,
+      page: details.page,
       visibility: details.documentVisibility,
       documentHasFocus: details.documentHasFocus,
       root: rootRect,
@@ -159,21 +173,12 @@ export function logImeDiagnostic(event: string, details: Record<string, unknown>
     });
     if (presentation === lastCandidatePresentation) return;
     lastCandidatePresentation = presentation;
-    const candidates = Array.isArray(details.candidates)
-      ? details.candidates
-          .map((candidate) =>
-            typeof candidate === "object" && candidate !== null && "text" in candidate
-              ? String(candidate.text)
-              : "",
-          )
-          .filter(Boolean)
-          .join(" | ")
-      : "";
+    const candidateText = candidates.join(" | ");
     console.info(
       `[ime] candidate-ui rendered ${json({
         generation: details.generation,
         preedit: details.preedit,
-        candidates,
+        candidates: candidateText,
         selectedIndex: details.selectedIndex,
         page: details.page,
         visibility: details.documentVisibility,

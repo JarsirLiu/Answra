@@ -49,8 +49,13 @@
   gap: 6px;
   padding: 8px 10px;
 }
+/* 标题可能承载长路径（工作区根目录）：单行省略，完整值走 title 提示。 */
 .panel-title {
   margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--ink);
   font-size: var(--font-md);
   font-weight: var(--label-weight);

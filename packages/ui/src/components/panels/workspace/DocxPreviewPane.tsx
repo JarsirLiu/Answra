@@ -19,6 +19,8 @@ export function DocxPreviewPane({
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState<string | null>(null);
+  // 页面自然宽度：docx-preview 把页面尺寸写成 `.docx` 的内联 width，直接取用。
+  const [pageWidth, setPageWidth] = useState<number | undefined>(undefined);
 
   const isLegacyDoc =
     !!name && name.toLowerCase().endsWith(".doc") && !name.toLowerCase().endsWith(".docx");
@@ -34,12 +36,16 @@ export function DocxPreviewPane({
         if (cancelled) return;
         const bytes = base64ToBytes(content.dataBase64);
         host.replaceChildren();
+        setPageWidth(undefined);
         await renderAsync(bytes, host, host, {
           inWrapper: true,
           ignoreWidth: false,
           experimental: true,
           useBase64URL: true,
         });
+        const page = host.querySelector<HTMLElement>(".docx");
+        const width = page ? Number.parseFloat(page.style.width) : Number.NaN;
+        if (!cancelled) setPageWidth(Number.isFinite(width) ? width : undefined);
         if (!cancelled) setStatus("ready");
       } catch (cause) {
         if (!cancelled) {
@@ -62,7 +68,11 @@ export function DocxPreviewPane({
   }
 
   return (
-    <ZoomablePreview className="workspace-preview-docx-zoom" fitSignal={status === "ready" ? 1 : 0}>
+    <ZoomablePreview
+      className="workspace-preview-docx-zoom"
+      fitSignal={status === "ready" ? 1 : 0}
+      fitWidthPx={pageWidth}
+    >
       {status === "loading" && <div className="workspace-preview-status">docx 解析中…</div>}
       {status === "error" && <div className="workspace-preview-status">{error}</div>}
       <div ref={hostRef} className="workspace-preview-docx" hidden={status !== "ready"} />

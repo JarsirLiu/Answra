@@ -85,16 +85,25 @@ describe("WorkspacePanel", () => {
       { name: "错题.md", path: "数学/错题.md", kind: "file" },
       { name: "阅读.md", path: "阅读.md", kind: "file" },
     ];
+    const pickWorkspaceRoot = vi.fn().mockResolvedValue({ root: "D:/notes" });
     render(
       <WorkspacePanel
         bridge={createBridge({
           getWorkspaceRoot: vi.fn().mockResolvedValue({ root: "D:/notes" }),
+          pickWorkspaceRoot,
           listWorkspaceTree: vi.fn().mockResolvedValue(tree),
         })}
         onClose={() => undefined}
       />,
     );
-    expect(await screen.findByText("D:/notes")).toBeInTheDocument();
+    // 目录路径成为侧栏顶部路径行；更换目录收成纸面工具条上的文件夹图标钮。
+    expect(await screen.findByRole("heading", { name: "D:/notes" })).toHaveClass(
+      "workspace-tree__root-path",
+    );
+    const pickRootButton = screen.getByRole("button", { name: "更换目录" });
+    expect(pickRootButton).toHaveClass("workspace-panel__pick-root");
+    fireEvent.click(pickRootButton);
+    await waitFor(() => expect(pickWorkspaceRoot).toHaveBeenCalledTimes(1));
     expect((await screen.findAllByText("错题.md")).length).toBeGreaterThan(0);
     expect(screen.getAllByText("阅读.md").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "数学" })).toHaveAttribute("aria-expanded", "true");

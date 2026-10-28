@@ -1,6 +1,10 @@
 import { type RefObject, useCallback, useLayoutEffect, useRef, useState } from "react";
-import type { TextSelectionRange } from "./controlledTextAdapter";
-import { replaceTextRange } from "./controlledTextAdapter";
+import {
+  applyControlledTextCommandAtSelection,
+  replaceTextRange,
+  type ControlledTextEdit,
+  type TextSelectionRange,
+} from "./controlledTextAdapter";
 
 interface UseControlledImeTextAdapterOptions {
   inputRef: RefObject<HTMLInputElement | HTMLTextAreaElement | null>;
@@ -20,11 +24,32 @@ export function useControlledImeTextAdapter({
   const [compositionRange, setCompositionRange] = useState<TextSelectionRange | null>(null);
   const selectionRef = useRef<TextSelectionRange>({ start: value.length, end: value.length });
   const [selection, setSelectionState] = useState(selectionRef.current);
+  const lastObservedValueRef = useRef(value);
+  const lastLocallyWrittenValueRef = useRef(value);
   // The DOM selection is only a rendering projection. Seed it once so the first
   // non-activating candidate measurement uses the app-owned caret too.
   const pendingSelectionRef = useRef<TextSelectionRange | null>(selectionRef.current);
   valueRef.current = value;
   onChangeRef.current = onChange;
+
+  // A controlled parent can replace the value without a DOM focus event (for
+  // example after submit, restore, or an external reset). In that case there is
+  // no trustworthy browser caret to preserve; place the logical caret at the end.
+  // Local IME commits mark their value before notifying the parent and therefore
+  // keep the caret computed by the edit operation.
+  useLayoutEffect(() => {
+    if (
+      value !== lastObservedValueRef.current &&
+      value !== lastLocallyWrittenValueRef.current &&
+      compositionSelectionRef.current === null
+    ) {
+      const next = { start: value.length, end: value.length };
+      selectionRef.current = next;
+      pendingSelectionRef.current = next;
+      setSelectionState(next);
+    }
+    lastObservedValueRef.current = value;
+  }, [value]);
 
   useLayoutEffect(() => {
     const pendingSelection = pendingSelectionRef.current;
@@ -61,17 +86,40 @@ export function useControlledImeTextAdapter({
   );
 
   const commit = useCallback((text: string) => {
-      const range = compositionSelectionRef.current ?? selectionRef.current;
-      compositionSelectionRef.current = null;
-      setCompositionRange(null);
-      const edit = replaceTextRange(valueRef.current, range, text);
-      const nextSelection = { start: edit.caret, end: edit.caret };
-      selectionRef.current = nextSelection;
-      pendingSelectionRef.current = nextSelection;
-      setSelectionState(nextSelection);
-      valueRef.current = edit.value;
-      onChangeRef.current(edit.value);
+    const range = compositionSelectionRef.current ?? selectionRef.current;
+    compositionSelectionRef.current = null;
+    setCompositionRange(null);
+    const edit = replaceTextRange(valueRef.current, range, text);
+    applyEdit(edit);
   }, []);
+
+  const insertText = useCallback((text: string) => {
+    const edit = replaceTextRange(valueRef.current, selectionRef.current, text);
+    applyEdit(edit);
+  }, []);
+
+  const applyCommand = useCallback(
+    (command: Parameters<typeof applyControlledTextCommandAtSelection>[2], multiline: boolean) => {
+      const edit = applyControlledTextCommandAtSelection(
+        valueRef.current,
+        selectionRef.current,
+        command,
+        multiline,
+      );
+      applyEdit(edit);
+    },
+    [],
+  );
+
+  function applyEdit(edit: ControlledTextEdit): void {
+    const nextSelection = edit.selection;
+    selectionRef.current = nextSelection;
+    pendingSelectionRef.current = nextSelection;
+    setSelectionState(nextSelection);
+    valueRef.current = edit.value;
+    lastLocallyWrittenValueRef.current = edit.value;
+    onChangeRef.current(edit.value);
+  }
 
   const cancelComposition = useCallback(() => {
     compositionSelectionRef.current = null;
@@ -81,6 +129,8 @@ export function useControlledImeTextAdapter({
   return {
     captureCompositionStart,
     commit,
+    insertText,
+    applyCommand,
     cancelComposition,
     compositionRange,
     selection,

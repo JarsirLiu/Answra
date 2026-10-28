@@ -51,6 +51,7 @@ const shared = vi.hoisted(() => {
     visible = false;
     destroyed = false;
     alwaysOnTopCalls: unknown[][] = [];
+    moveTopCalls = 0;
 
     constructor(options: Partial<Electron.Rectangle>) {
       super();
@@ -120,6 +121,9 @@ const shared = vi.hoisted(() => {
 
     setAlwaysOnTop(...args: unknown[]) {
       this.alwaysOnTopCalls.push(args);
+    }
+    moveTop() {
+      this.moveTopCalls += 1;
     }
     setSkipTaskbar() {}
     loadURL() {
@@ -244,6 +248,8 @@ describe("IME candidate window controller", () => {
     candidate.webContents.emit("did-finish-load");
     expect(candidate.visible).toBe(true);
     expect(candidate.parent).toBe(owner);
+    expect(candidate.moveTopCalls).toBeGreaterThan(0);
+    expect(candidate.alwaysOnTopCalls).toContainEqual([true, "pop-up-menu"]);
     expect(logImeDiagnostic).toHaveBeenCalledWith(
       "candidate-native-positioned",
       expect.objectContaining({
@@ -266,7 +272,7 @@ describe("IME candidate window controller", () => {
     expect(candidate.bounds).toMatchObject({ x: 332, y: 192 });
     expect(candidate.sent).toContainEqual([
       ImeCandidateChannels.State,
-      { state, targetId: "composer", generation: 1 },
+      { phase: "visible", state, targetId: "composer", generation: 1, revision: 1 },
     ]);
     const action = { type: "select", index: 0, targetId: "composer", generation: 1 } as const;
     controller.routeAction(action);
@@ -276,6 +282,10 @@ describe("IME candidate window controller", () => {
     expect(candidate.visible).toBe(true);
     controller.update(owner as never, { type: "clear", targetId: "composer", generation: 1 });
     expect(candidate.visible).toBe(false);
+    expect(candidate.sent).toContainEqual([
+      ImeCandidateChannels.State,
+      expect.objectContaining({ revision: 2, targetId: undefined, generation: undefined }),
+    ]);
     expect(logImeDiagnostic).toHaveBeenCalledWith(
       "candidate-native-hide-result",
       expect.objectContaining({ visible: false, reason: "owner-reported-no-candidates" }),

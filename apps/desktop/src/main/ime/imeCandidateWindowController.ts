@@ -11,7 +11,23 @@ import {
   positionImeCandidate,
 } from "./imeCandidateLayout";
 import { isImeDebugEnabled, logImeDiagnostic } from "./imeDiagnostics";
+import {
+  createInitialCandidatePresentationState,
+  matchesCandidatePresentation,
+  reduceCandidatePresentationState,
+  type CandidatePresentationEvent,
+} from "./imeCandidatePresentationState";
 
+const EMPTY_CANDIDATE_STATE: ImeState = {
+  enabled: false,
+  inputMode: "chinese",
+  composing: false,
+  preedit: "",
+  candidates: [],
+  selectedIndex: 0,
+  page: 0,
+  hasNextPage: false,
+};
 const INITIAL_SIZE = { width: 640, height: 56 };
 const DEFAULT_SIZE = INITIAL_SIZE;
 
@@ -61,7 +77,10 @@ export interface ImeCandidateWindowHost {
 export function createImeCandidateWindowController(host: ImeCandidateWindowHost) {
   // Candidate content: the engine snapshot plus the lease identity it belongs to.
   // Kept in one value so identity (targetId/generation) and state cannot diverge.
+  let presentation = createInitialCandidatePresentationState();
+  // These are projections of the state-machine state for window side effects.
   let content: CandidateContent | undefined;
+  let contentRevision = 0;
   // Composition caret geometry reported by the owning editor adapter.
   let anchor: ImeCandidateAnchor | undefined;
   // Native window lifecycle.
@@ -123,7 +142,8 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
       return;
     }
     if (!hasCandidates(payload.state)) {
-      if (ownerWindow === owner) hide("owner-reported-no-candidates");
+      if (matchesCandidate(owner, payload.targetId, payload.generation))
+        hide("owner-reported-no-candidates");
       logImeDiagnostic("candidate-update-empty", {
         windowId: owner.id,
         targetId: payload.targetId,
@@ -166,17 +186,19 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
       nextTargetId !== undefined &&
       nextGeneration !== undefined &&
       ownerWindow === owner &&
-      content?.targetId === nextTargetId &&
-      content.generation === nextGeneration
+      matchesCandidatePresentation(presentation, nextTargetId, nextGeneration)
     );
   }
 
   // --- content writer ---
   function setContent(next: CandidateContent): void {
-    content = next;
+    transitionPresentation({ type: "show", content: next });
   }
-  function clearContent(): void {
-    content = undefined;
+  function transitionPresentation(event: CandidatePresentationEvent): void {
+    const next = reduceCandidatePresentationState(presentation, event);
+    presentation = next;
+    content = next.content;
+    contentRevision = next.revision;
   }
 
   // --- anchor writer ---
@@ -210,7 +232,7 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
     ownerClosedListener = () => {
       if (content)
         reportAnchorUnavailable(nextOwner, content.targetId, content.generation, "owner-closed");
-      hide("owner-closed");
+      hide("owner-closed", { type: "owner-closed" });
     };
     ownerFocusUnsubscribe = host.subscribeFocus?.(({ window, focused }) => {
       if (window !== nextOwner || !focused) return;
@@ -429,6 +451,7 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
       // 已可见时也要重新断言 z 序：owner 被 setBounds/激活后，
       // Windows 不会自动保持 owned 候选窗口在 owner 之上。
       host.attachAbove(window, owner);
+      window.moveTop();
       reportPositionStatus("already-visible", {
         windowId: window.id,
         bounds: JSON.stringify(bounds),
@@ -453,6 +476,8 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
     // A first show can place an owned window below its non-activating owner on
     // Windows. Re-assert the z-order after the native window is visible.
     host.attachAbove(window, owner);
+    window.setAlwaysOnTop(true, "pop-up-menu");
+    window.moveTop();
     reportPositionStatus(window.isVisible() ? "show-request-visible" : "show-request-not-visible", {
       windowId: window.id,
       bounds: JSON.stringify(bounds),
@@ -484,12 +509,14 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
 
   function sendState(): void {
     if (!pageLoaded || !rendererReady || !windowRef || windowRef.isDestroyed()) return;
+    windowRef.webContents.send(ImeCandidateChannels.State, {
+      phase: presentation.phase,
+      state: content?.state ?? EMPTY_CANDIDATE_STATE,
+      targetId: content?.targetId,
+      generation: content?.generation,
+      revision: contentRevision,
+    });
     if (content) {
-      windowRef.webContents.send(ImeCandidateChannels.State, {
-        state: content.state,
-        targetId: content.targetId,
-        generation: content.generation,
-      });
       logImeDiagnostic("candidate-state-sent", {
         windowId: windowRef.id,
         targetId: content.targetId,
@@ -499,6 +526,7 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
         candidates: content.state.candidates,
         selectedIndex: content.state.selectedIndex,
         page: content.state.page,
+        revision: contentRevision,
       });
     }
   }
@@ -548,11 +576,17 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
     return !!windowRef && !windowRef.isDestroyed() && contents === windowRef.webContents;
   }
 
-  function hide(reason: string): void {
+  function hide(
+    reason: string,
+    transition: CandidatePresentationEvent = content
+      ? { type: "clear", targetId: content.targetId, generation: content.generation }
+      : { type: "owner-closed" },
+  ): void {
     hideWindow(reason);
     unbindOwner();
-    clearContent();
+    transitionPresentation(transition);
     clearAnchor();
+    sendState();
   }
 
   function suspend(owner: BrowserWindow, reason: string): void {
@@ -561,7 +595,9 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
       return;
     if (content) reportAnchorUnavailable(owner, content.targetId, content.generation, reason);
     hideWindow(reason);
+    transitionPresentation({ type: "suspend", targetId: content?.targetId ?? "", generation: content?.generation ?? -1 });
     clearAnchor();
+    sendState();
   }
 
   function hideWindow(reason: string): void {
@@ -705,7 +741,7 @@ export function createImeCandidateWindowController(host: ImeCandidateWindowHost)
 
   function dispose(): void {
     detachDisplayListeners();
-    hide("controller-disposed");
+    hide("controller-disposed", { type: "dispose" });
     if (windowRef && !windowRef.isDestroyed()) windowRef.close();
     windowRef = undefined;
     resetWindowLifecycle();

@@ -11,21 +11,21 @@ Windows 隐身模式的主窗口使用 `BrowserWindow.setFocusable(false)` 保�
 - `apps/desktop/native/rime-host/`：Windows helper 的短生命周期键盘捕获与协议事件。
 - `apps/desktop/src/main/ime/`：helper 事件解析、会话 lease 校验、按键定向发送与捕获生命周期。
 - `packages/shared/src/channels.ts`、`bridge.ts`、`apps/desktop/src/preload/`：typed keyboard event bridge。
-- `packages/ui/src/hooks/useEmbeddedIme.ts` 与编辑器适配器：点击后维持 DOM 输入目标和 selection，分发受验证的合成键事件到原有 Rime 路由。
+- `packages/ui/src/hooks/useEmbeddedIme.ts` 与编辑器适配器：点击后维持应用自己的逻辑输入目标和 selection，分发原生 hook 按键到原有 Rime 路由。
 - `apps/desktop/src/main/windowSurfaceRegistry.ts`：隐身窗口（含启动期隐身设置未知时）保持非激活；helper 能力缺失时由 IME lease 拒绝输入，捕获失败不得吞键。
 
 ## 模块边界
 
 - helper 只负责 Windows 低级键盘 hook、事件编号和有界交付确认，不访问 Electron 或 renderer 状态。
 - main 持有唯一 IME lease；它是 helper 与 owner renderer 之间的路由和校验边界。
-- renderer 只在 target 与 generation 匹配且 active element 正确时派发 DOM 键盘事件，并回执是否由编辑器处理。
+- renderer 只在 target 与 generation 匹配且逻辑 target 仍注册时处理 hook 按键；隐身编辑器不依赖 DOM active element，也不派发伪造的 DOM 键盘事件。
 - `shared` 只定义 IPC DTO 与频道；preload 只转发。
 
 ## 决定
 
-Windows 使用 Answra 自带 librime，而不是依赖系统 CJK IME。隐身模式下原生主窗口和回复窗口保持 `focusable: false`；非隐身模式恢复可聚焦窗口并把文字输入交还系统输入法。点击编辑器只设置 renderer 的逻辑输入目标和 DOM selection，不调用 BrowserWindow/native focus。helper 在有效输入租约期间安装低级键盘 hook，按键事件带 lease generation；main 校验 generation 后只发送给当前 owner renderer，renderer 校验 active element 后把 DOM 键盘事件交给现有 Rime/editor 路由。
+Windows 使用 Answra 自带 librime，而不是依赖系统 CJK IME。隐身模式下原生主窗口和回复窗口保持 `focusable: false`；非隐身模式恢复可聚焦窗口并把文字输入交还系统输入法。点击编辑器只设置 renderer 的逻辑输入目标和逻辑 selection，不调用 BrowserWindow/native focus。helper 在有效输入租约期间安装低级键盘 hook，按键事件带 lease generation；main 校验 generation 后只发送给当前 owner renderer，renderer 直接把逻辑按键交给现有 Rime/editor 路由。
 
-捕获只在有效输入目标与 owned lease 存在时运行。Esc、应用外鼠标点击、原生前台窗口切换、目标释放/销毁、helper 错误和有界空闲超时都必须停止捕获。Esc 即使没有正在组词也会结束捕获；renderer 未处理时仍把 Esc 交给 Windows。鼠标命中窗口通过 `WindowFromPhysicalPoint` + `GA_ROOT` 检查 Electron 顶层 HWND 所属 PID，不能比较 helper 自身 PID，因为 Chromium 内容 HWND 可能属于 renderer 子进程；helper 必须声明 per-monitor DPI awareness，低级鼠标 hook 提供的是物理像素，DPI-unaware 进程做命中测试会在缩放屏幕上把应用内点击误判为应用外。hook 安装失败或捕获能力缺失时拒绝输入租约，不能假装可用。
+捕获只在有效输入目标与 owned lease 存在时运行。Esc、应用外鼠标点击、目标释放/销毁、helper 错误和有界空闲超时都必须停止捕获。隐身窗口可以在外部应用处于前台时建立租约，也可以在保持非激活时继续输入；helper 不把 foreground 变化作为停止条件，因为外部窗口保持前台正是隐身输入的预期状态。Esc 即使没有正在组词也会结束捕获；renderer 未处理时仍把 Esc 交给 Windows。鼠标命中窗口通过 `WindowFromPhysicalPoint` 检查 owner BrowserWindow 的原生 HWND 及其祖先关系，进程 PID 只作为同进程窗口的兼容兜底，不能用 helper 自身 PID；Chromium 内容 HWND 可能属于 renderer 子进程。helper 必须声明 per-monitor DPI awareness，低级鼠标 hook 提供的是物理像素，DPI-unaware 进程做命中测试会在缩放屏幕上把应用内点击误判为应用外。hook 安装失败或捕获能力缺失时拒绝输入租约，不能假装可用。
 
 本次先限定 Windows。macOS `CGEventTap`、辅助功能授权、系统键盘布局差异和打包发布另行验证，不把 Windows 结果外推。焦点探针继续如实记录第三方页面事件；页面事件是否变化不是本功能的成功条件。
 
@@ -37,17 +37,18 @@ Windows 使用 Answra 自带 librime，而不是依赖系统 CJK IME。隐身模
 
 ## 后果与防回退
 
-- 全局 hook 是系统级按键入口，敏感范围必须严格限于输入 lease 生命周期；不得广播按键、在目标缺失时缓存按键或在 renderer 回执前吞键。回执最多等待 700 ms，超时会停止捕获并让按键继续传给操作系统。协议解析拒绝命名键（如 `Backspace`、`ArrowLeft`）等同于未回执，同样会超时停止捕获，因此按键名校验不能用过短的长度上限。
+- 全局 hook 是系统级按键入口，敏感范围必须严格限于输入 lease 生命周期；不得广播按键、在目标缺失时缓存按键或等待 renderer 回执。当前 helper 在成功写入 IPC 管道后直接交付事件；交付失败停止 hook，并把未交付的物理键交还 Windows。命名键（如 `Backspace`、`ArrowLeft`）是合法协议值，解析不能用过短的长度上限。
 - 每个 lease generation 只允许其 owner renderer 收到按键。迟到事件按 window、webContents、target 和 generation 校验后丢弃。
-- helper 协议能力必须显式报告；旧 helper 或资源缺失时不能假装支持非激活输入。原生 helper 版本、release tag、SHA-256 manifest 与资源准备文档必须同步。
+- helper 协议能力必须显式报告；旧 helper 或资源缺失时不能假装支持非激活输入。取消按键回执后，握手协议已提升为 v3，v2 helper 会被拒绝。原生 helper 版本、release tag、SHA-256 manifest 与资源准备文档必须同步。
 - 编辑器的 DOM active element 和 selection 是 renderer 的逻辑状态，不代表 Electron BrowserWindow 获得原生焦点。测试必须分别断言两者。
-- 保护 Esc、系统快捷键、modifier、外部点击、Alt+Tab、hook 安装失败、pipe 关闭、renderer 销毁与 timeout；不得留下仍吞键的孤儿 hook。
+- 保护 Esc、系统快捷键、modifier、外部点击、hook 安装失败、pipe 关闭、renderer 销毁与 timeout；不得留下仍吞键的孤儿 hook。foreground 变化不是隐身 lease 的生命周期信号，外部点击和显式 release 才负责结束捕获。
+- 候选 renderer 的 `candidate-ui rendered` 只证明 DOM 已绘制，不证明窗口合成层可见。每次 show 与已显示刷新都要在 `showInactive()` 后重新设置 popup-menu topmost 层级、恢复 owner 关系并 moveTop；自动化只证明调用顺序，Windows 肉眼显示仍需实机验收。
 - IME lease 只在隐身开启时成立：主进程在 acquire、resume 和焦点重新隔离前校验隐身状态，避免关闭隐身后残留 lease 再次 detach 系统 IME。
 
 ## 验证
 
-- 自动化：覆盖主进程 lease 定向与 generation 拒绝、renderer active element 校验与 DOM 事件路由、隐身回复窗口非激活策略。
-- 本机 Windows：`answra-rime-host` 使用 MSVC 19.44 / Windows SDK 10.0.26100 Release 编译成功；独立协议冒烟确认 helper 报告 `keyboardCaptureAvailable: true`，捕获 hook 成功启动并按 `released` 正常停止。完整键盘输入和应用原生焦点状态仍需在加载新 helper 的开发版实测。
+- 自动化：覆盖主进程 lease 定向与 generation 拒绝、renderer 逻辑 target 校验与无 DOM 焦点按键路由、隐身回复窗口非激活策略。
+- 本机 Windows：`answra-rime-host` 使用 MSVC 19.44 / Windows SDK 10.0.26100 Release 编译成功；独立协议冒烟确认 helper 报告 `keyboardCaptureAvailable: true`，捕获 hook 成功启动并按 `released` 正常停止。完整中文键盘输入、候选选择、鼠标命中后的逻辑选区和应用原生焦点状态仍需在加载新 helper 的开发版实测；当前不能声称中文输入已实机通过。
 - 发布边界：已准备资源中的 helper 是旧版且不声明 `keyboardCaptureAvailable`，因此 `ime:prepare` 下载的发布 helper 不会启用该功能。发布前必须构建并发布新 helper release，随后同步 `native/rime-resources.json` 的固定 tag 与 SHA-256；开发测试可把本地编译 helper 放入被忽略的 `resources/rime/win32/`。
 
 ## 2026-10-27 范围修正

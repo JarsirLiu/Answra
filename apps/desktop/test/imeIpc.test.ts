@@ -10,19 +10,23 @@ const shared = vi.hoisted(() => ({
   appForeground: true,
   stealthEnabled: true,
   keyboardCaptureListener: undefined as
-    | ((event: {
-        type: "key";
-        generation: number;
-        eventId: number;
-        key: string;
-        code: string;
-        shift: boolean;
-        ctrl: boolean;
-        alt: boolean;
-        meta: boolean;
-        release: boolean;
-        repeat: boolean;
-      }) => void)
+    | ((
+        event:
+          | {
+              type: "key";
+              generation: number;
+              eventId: number;
+              key: string;
+              code: string;
+              shift: boolean;
+              ctrl: boolean;
+              alt: boolean;
+              meta: boolean;
+              release: boolean;
+              repeat: boolean;
+            }
+          | { type: "stopped"; reason: string },
+      ) => void)
     | undefined,
   setImeCandidateState: vi.fn(),
   main: {
@@ -74,7 +78,6 @@ const shared = vi.hoisted(() => ({
     stopKeyboardCapture: vi.fn(async () => {
       shared.bridge.keyboardCaptureActive = false;
     }),
-    acknowledgeKeyboardInput: vi.fn(async () => true),
     onKeyboardCaptureEvent: vi.fn((listener: (event: never) => void) => {
       shared.keyboardCaptureListener = listener as (event: {
         type: "key";
@@ -203,7 +206,6 @@ vi.mock("../src/main/ime/rimeBridge", () => ({
     dispose = shared.bridge.dispose;
     startKeyboardCapture = shared.bridge.startKeyboardCapture;
     stopKeyboardCapture = shared.bridge.stopKeyboardCapture;
-    acknowledgeKeyboardInput = shared.bridge.acknowledgeKeyboardInput;
     onKeyboardCaptureEvent = shared.bridge.onKeyboardCaptureEvent;
   },
 }));
@@ -289,7 +291,6 @@ describe("IME IPC session ownership", () => {
     shared.bridge.dispose.mockClear();
     shared.bridge.startKeyboardCapture.mockClear();
     shared.bridge.stopKeyboardCapture.mockClear();
-    shared.bridge.acknowledgeKeyboardInput.mockClear();
     shared.isolateNativeIme.mockClear();
     shared.setImeCandidateState.mockClear();
     shared.main.webContents.send.mockClear();
@@ -329,6 +330,7 @@ describe("IME IPC session ownership", () => {
     if (process.platform === "win32") {
       expect(shared.bridge.startKeyboardCapture).toHaveBeenCalledWith(
         result.snapshot.owner?.generation,
+        expect.any(Number),
       );
     }
   });
@@ -419,28 +421,22 @@ describe("IME IPC session ownership", () => {
     ).toHaveLength(1);
   });
 
-  it("accepts key delivery acknowledgements only from the current lease owner", async () => {
+  it("releases the renderer target when native capture stops unexpectedly", async () => {
     const result = await acquire(11, "main-composer");
-    const generation = result.snapshot.owner?.generation;
-    if (generation === undefined) throw new Error("expected an owned IME generation");
+    expect(result.snapshot.phase).toBe("owned");
 
-    await expect(
-      invoke(ImeChannels.KeyboardAck, 11, {
-        targetId: "main-composer",
-        generation,
-        eventId: 1,
-        delivered: true,
-      }),
-    ).resolves.toBe(true);
-    await expect(
-      invoke(ImeChannels.KeyboardAck, 22, {
-        targetId: "main-composer",
-        generation,
-        eventId: 1,
-        delivered: true,
-      }),
-    ).resolves.toBe(false);
-    expect(shared.bridge.acknowledgeKeyboardInput).toHaveBeenCalledWith(generation, 1, true);
+    shared.keyboardCaptureListener?.({ type: "stopped", reason: "outside-click" });
+
+    await vi.waitFor(() => expect(shared.bridge.stopKeyboardCapture).toHaveBeenCalled());
+    await vi.waitFor(async () => {
+      await expect(invoke(ImeChannels.SessionSnapshot, 11)).resolves.toMatchObject({
+        snapshot: { phase: "idle" },
+      });
+    });
+    expect(shared.setImeCandidateState).toHaveBeenCalledWith(
+      shared.main,
+      expect.objectContaining({ type: "clear", targetId: "main-composer" }),
+    );
   });
 
   it("keeps the existing lease path when no native isolation API applies", async () => {
@@ -928,7 +924,7 @@ describe("IME IPC session ownership", () => {
     expect(first).toBe(1);
   });
 
-  it("suspends the lease from the shared native focus stream after an app switch", async () => {
+  it("keeps the stealth lease active while another application is foreground", async () => {
     const generation = leaseGeneration(await acquire(11, "main-composer"));
     vi.useFakeTimers();
     shared.focusedWindow = undefined;
@@ -938,16 +934,17 @@ describe("IME IPC session ownership", () => {
 
     await vi.advanceTimersByTimeAsync(120);
 
-    expect(logImeDiagnostic).toHaveBeenCalledWith(
+    expect(logImeDiagnostic).not.toHaveBeenCalledWith(
       "lease-suspended",
       expect.objectContaining({ windowId: 1, generation }),
     );
     expect(shared.isolateNativeIme).toHaveBeenCalledWith(shared.main);
-    expect(shared.setImeCandidateState).toHaveBeenCalledWith(shared.main, {
+    expect(shared.setImeCandidateState).not.toHaveBeenCalledWith(shared.main, {
       type: "suspend",
       targetId: "main-composer",
       generation,
     });
+    expect(leaseGeneration(await invoke(ImeChannels.SessionSnapshot, 11))).toBe(generation);
     vi.useRealTimers();
   });
 

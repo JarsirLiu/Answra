@@ -7,7 +7,6 @@
 #include <array>
 #include <atomic>
 #include <chrono>
-#include <condition_variable>
 #include <future>
 #include <mutex>
 #include <thread>
@@ -19,12 +18,11 @@ namespace {
 constexpr UINT WM_CAPTURE_STOP = WM_APP + 41;
 constexpr UINT_PTR CAPTURE_IDLE_TIMER = 1;
 constexpr UINT CAPTURE_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
-constexpr auto CAPTURE_ACK_TIMEOUT = std::chrono::milliseconds(700);
-
 struct HookState {
   std::atomic<bool> active{false};
   std::uint32_t generation{};
   DWORD owner_process_id{};
+  HWND owner_window{};
   std::atomic<DWORD> thread_id{0};
   HWND original_foreground{};
   std::chrono::steady_clock::time_point last_input{};
@@ -33,22 +31,15 @@ struct HookState {
   KeyboardCapture::EventSink event_sink;
   KeyboardCapture::StopSink stop_sink;
   std::unordered_set<DWORD> pressed_keys;
-  std::mutex acknowledgement_mutex;
-  std::condition_variable acknowledgement_ready;
   std::uint64_t next_event_id{};
-  std::uint64_t waiting_event_id{};
-  bool waiting_event_handled{};
-  bool acknowledgement_received{};
   HHOOK keyboard_hook{};
   HHOOK mouse_hook{};
-  HWINEVENTHOOK foreground_hook{};
 };
 
 std::atomic<HookState*> current_hook_state{};
 
 LRESULT CALLBACK keyboard_hook_proc(int code, WPARAM message, LPARAM data);
 LRESULT CALLBACK mouse_hook_proc(int code, WPARAM message, LPARAM data);
-void CALLBACK foreground_event_proc(HWINEVENTHOOK, DWORD, HWND window, LONG, LONG, DWORD, DWORD);
 
 void request_stop(HookState* state, const char* reason) {
   if (!state || !state->active.exchange(false, std::memory_order_acq_rel)) return;
@@ -57,7 +48,6 @@ void request_stop(HookState* state, const char* reason) {
     state->stop_reason = reason;
   }
   const DWORD thread_id = state->thread_id.load(std::memory_order_acquire);
-  state->acknowledgement_ready.notify_all();
   if (thread_id != 0) PostThreadMessageW(thread_id, WM_CAPTURE_STOP, 0, 0);
 }
 
@@ -154,7 +144,9 @@ LRESULT CALLBACK keyboard_hook_proc(int code, WPARAM message, LPARAM data) {
   const DWORD vk = key_data->vkCode;
   const bool release = message == WM_KEYUP || message == WM_SYSKEYUP;
   if (!state->active.load(std::memory_order_acquire)) {
-    if (release && state->pressed_keys.erase(vk) > 0) return 1;
+    // Once capture has stopped, every physical key edge must reach Windows.
+    // Swallowing a pending key-up leaves modifiers or Backspace logically stuck
+    // in the next foreground application.
     return next();
   }
   const bool previously_captured = state->pressed_keys.find(vk) != state->pressed_keys.end();
@@ -184,35 +176,15 @@ LRESULT CALLBACK keyboard_hook_proc(int code, WPARAM message, LPARAM data) {
     state->pressed_keys.erase(vk);
   }
 
-  {
-    std::lock_guard<std::mutex> lock(state->acknowledgement_mutex);
-    state->waiting_event_id = captured.event_id;
-    state->acknowledgement_received = false;
-  }
   if (!state->event_sink || !state->event_sink(captured)) {
     request_stop(state, "event-delivery-failed");
     return next();
   }
-  bool handled = false;
-  {
-    std::unique_lock<std::mutex> lock(state->acknowledgement_mutex);
-    const bool acknowledged = state->acknowledgement_ready.wait_for(
-        lock, CAPTURE_ACK_TIMEOUT, [state] {
-          return state->acknowledgement_received ||
-                 !state->active.load(std::memory_order_acquire);
-        });
-    if (acknowledged && state->acknowledgement_received &&
-        state->waiting_event_id == captured.event_id) {
-      handled = state->waiting_event_handled;
-    } else {
-      request_stop(state, "event-delivery-timeout");
-    }
-  }
   // Escape ends the lease even when the editor has no composition to consume it.
   // Keep the physical Escape behavior by letting an unhandled key continue to Windows.
-  if (!release && vk == VK_ESCAPE) request_stop(state, "escape");
-  if (!handled) {
-    if (!release) state->pressed_keys.erase(vk);
+  if (!release && vk == VK_ESCAPE) {
+    request_stop(state, "escape");
+    state->pressed_keys.erase(vk);
     return next();
   }
   state->last_input = std::chrono::steady_clock::now();
@@ -234,24 +206,16 @@ LRESULT CALLBACK mouse_hook_proc(int code, WPARAM message, LPARAM data) {
   const HWND root = target ? GetAncestor(target, GA_ROOT) : nullptr;
   DWORD target_process = 0;
   if (root) GetWindowThreadProcessId(root, &target_process);
-  if (target_process != state->owner_process_id) request_stop(state, "outside-click");
+  const bool inside_owner_window =
+      state->owner_window && target &&
+      (target == state->owner_window || IsChild(state->owner_window, target) ||
+       GetAncestor(target, GA_ROOTOWNER) == state->owner_window);
+  const bool inside_owner_process = target_process == state->owner_process_id;
+  // Electron/Chromium can expose a transient top-level HWND for a renderer or
+  // popup. The lease owns the exact BrowserWindow, so HWND ancestry is the
+  // authority; PID is retained only for diagnostics and compatibility.
+  if (!inside_owner_window && !inside_owner_process) request_stop(state, "outside-click");
   return next();
-}
-
-void CALLBACK foreground_event_proc(HWINEVENTHOOK, DWORD, HWND window, LONG, LONG, DWORD, DWORD) {
-  HookState* state = current_hook_state.load(std::memory_order_acquire);
-  if (!state || !state->active.load(std::memory_order_acquire) || !window) return;
-
-  // A non-activating candidate window can still produce a foreground event when it
-  // is shown or moved above its owner. The foreground fact we need here is whether
-  // input left Answra, so compare the top-level window's process rather than the
-  // exact HWND captured at lease start. The owner and candidate surfaces are both
-  // created by Electron's browser process; an external app still has a different PID.
-  const HWND root = GetAncestor(window, GA_ROOT);
-  DWORD foreground_process_id = 0;
-  if (root) GetWindowThreadProcessId(root, &foreground_process_id);
-  if (foreground_process_id != state->owner_process_id)
-    request_stop(state, "foreground-change");
 }
 
 }  // namespace
@@ -271,29 +235,16 @@ bool KeyboardCapture::active() const {
   return state_ && state_->active.load(std::memory_order_acquire);
 }
 
-bool KeyboardCapture::acknowledge(std::uint32_t generation, std::uint64_t event_id,
-                                  bool handled) {
-  if (!state_ || !state_->active.load(std::memory_order_acquire) ||
-      state_->generation != generation)
-    return false;
-  {
-    std::lock_guard<std::mutex> lock(state_->acknowledgement_mutex);
-    if (state_->waiting_event_id != event_id || state_->acknowledgement_received) return false;
-    state_->waiting_event_handled = handled;
-    state_->acknowledgement_received = true;
-  }
-  state_->acknowledgement_ready.notify_one();
-  return true;
-}
-
 bool KeyboardCapture::start(std::uint32_t generation, unsigned long owner_process_id,
-                            EventSink event_sink, StopSink stop_sink) {
+                            std::uintptr_t owner_window_handle, EventSink event_sink,
+                            StopSink stop_sink) {
   if (!state_ || state_->active.load(std::memory_order_acquire)) return active();
   if (state_->worker.joinable()) state_->worker.join();
   state_->event_sink = std::move(event_sink);
   state_->stop_sink = std::move(stop_sink);
   state_->generation = generation;
   state_->owner_process_id = static_cast<DWORD>(owner_process_id);
+  state_->owner_window = reinterpret_cast<HWND>(owner_window_handle);
   state_->started = std::make_unique<std::promise<bool>>();
   state_->original_foreground = GetForegroundWindow();
   if (!state_->original_foreground) return false;
@@ -314,10 +265,10 @@ bool KeyboardCapture::start(std::uint32_t generation, unsigned long owner_proces
                                              GetModuleHandleW(nullptr), 0);
     state->mouse_hook = SetWindowsHookExW(WH_MOUSE_LL, mouse_hook_proc,
                                           GetModuleHandleW(nullptr), 0);
-    state->foreground_hook = SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND,
-                                               nullptr, foreground_event_proc, 0, 0,
-                                               WINEVENT_OUTOFCONTEXT);
-    const bool installed = state->keyboard_hook && state->mouse_hook && state->foreground_hook;
+    // The owner window is deliberately non-activating. A foreground transition is
+    // therefore expected while the lease is active and must not stop capture.
+    // Outside clicks, explicit release, Escape, and idle timeout end the lease.
+    const bool installed = state->keyboard_hook && state->mouse_hook;
     state->started->set_value(installed);
     if (!installed) request_stop(state, "hook-install-failed");
     if (installed) SetTimer(nullptr, CAPTURE_IDLE_TIMER, CAPTURE_IDLE_TIMEOUT_MS, nullptr);
@@ -338,10 +289,8 @@ bool KeyboardCapture::start(std::uint32_t generation, unsigned long owner_proces
     KillTimer(nullptr, CAPTURE_IDLE_TIMER);
     if (state->keyboard_hook) UnhookWindowsHookEx(state->keyboard_hook);
     if (state->mouse_hook) UnhookWindowsHookEx(state->mouse_hook);
-    if (state->foreground_hook) UnhookWinEvent(state->foreground_hook);
     state->keyboard_hook = nullptr;
     state->mouse_hook = nullptr;
-    state->foreground_hook = nullptr;
     state->active.store(false, std::memory_order_release);
     current_hook_state.store(nullptr, std::memory_order_release);
     if (state->stop_sink) {
@@ -374,8 +323,9 @@ KeyboardCapture::KeyboardCapture() : state_(std::make_unique<State>()) {}
 KeyboardCapture::~KeyboardCapture() = default;
 bool KeyboardCapture::available() { return false; }
 bool KeyboardCapture::active() const { return false; }
-bool KeyboardCapture::start(std::uint32_t, unsigned long, EventSink, StopSink) { return false; }
-bool KeyboardCapture::acknowledge(std::uint32_t, std::uint64_t, bool) { return false; }
+bool KeyboardCapture::start(std::uint32_t, unsigned long, std::uintptr_t, EventSink, StopSink) {
+  return false;
+}
 void KeyboardCapture::stop(const std::string&) {}
 
 #endif

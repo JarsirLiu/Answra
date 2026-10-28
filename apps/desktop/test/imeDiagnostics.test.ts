@@ -44,6 +44,69 @@ describe("IME console diagnostics", () => {
     expect(String(info.mock.calls[0]?.[0])).not.toContain("\n");
   });
 
+  it("logs candidate changes even when the rendered geometry is unchanged", () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const layout = {
+      generation: 28028,
+      documentVisibility: "visible",
+      documentHasFocus: false,
+      candidateRoot: { rect: { x: 0, y: 0, width: 392, height: 60 } },
+      candidatePopup: {
+        rect: { x: 8, y: 8, width: 376, height: 44 },
+        display: "flex",
+        visibility: "visible",
+        opacity: "1",
+      },
+    };
+
+    logImeDiagnostic("candidate-rendered", {
+      ...layout,
+      targetId: "ime-candidate-window",
+      preedit: "ni",
+      candidates: [{ text: "你" }],
+      selectedIndex: 0,
+      page: 0,
+    });
+    logImeDiagnostic("candidate-rendered", {
+      ...layout,
+      targetId: "ime-candidate-window",
+      preedit: "hao",
+      candidates: [{ text: "好" }],
+      selectedIndex: 0,
+      page: 0,
+    });
+
+    expect(info).toHaveBeenCalledTimes(2);
+    expect(String(info.mock.calls[0]?.[0])).toContain('"candidates":"你"');
+    expect(String(info.mock.calls[1]?.[0])).toContain('"preedit":"hao"');
+    expect(String(info.mock.calls[1]?.[0])).toContain('"candidates":"好"');
+  });
+
+  it("suppresses an unchanged candidate presentation", () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const presentation = {
+      targetId: "ime-candidate-window",
+      generation: 28029,
+      preedit: "ni",
+      candidates: [{ text: "你" }],
+      selectedIndex: 0,
+      page: 0,
+      documentVisibility: "visible",
+      candidateRoot: { rect: { x: 0, y: 0, width: 392, height: 60 } },
+      candidatePopup: {
+        rect: { x: 8, y: 8, width: 376, height: 44 },
+        display: "flex",
+        visibility: "visible",
+        opacity: "1",
+      },
+    };
+
+    logImeDiagnostic("candidate-rendered", presentation);
+    logImeDiagnostic("candidate-rendered", presentation);
+
+    expect(info).toHaveBeenCalledOnce();
+  });
+
   it("prints native candidate placement with owner and anchor geometry", () => {
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
 

@@ -12,7 +12,6 @@ import type {
   ImeCandidateAction,
   ImeCandidateSnapshot,
   ImeCandidateUpdate,
-  ImeKeyboardAck,
   ImeKeyboardInput,
   ImeRendererDiagnostic,
   ImeSessionCommand,
@@ -57,7 +56,6 @@ export interface DesktopBridge {
   onImeSessionSnapshot?: (listener: (snapshot: ImeSessionSnapshot) => void) => () => void;
   /** Receives native keyboard events scoped to the currently owned IME target. */
   onImeKeyboardInput?: (listener: (event: ImeKeyboardInput) => void) => () => void;
-  ackImeKeyboardInput?: (ack: ImeKeyboardAck) => Promise<boolean>;
   setImeCandidate?: (payload: ImeCandidateUpdate) => void;
   onImeCandidateAction?: (listener: (action: ImeCandidateAction) => void) => () => void;
   onImeCandidateState?: (listener: (snapshot: ImeCandidateSnapshot) => void) => () => void;

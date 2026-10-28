@@ -13,6 +13,7 @@ import {
   enqueueImeInput,
   getActiveImeInputTargetId,
   isActiveImeInputTarget,
+  isCurrentImeInputEvent,
   releaseImeInputTarget,
   subscribeImeInputTargets,
 } from "../ime/imeInputTargetCoordinator";
@@ -51,6 +52,8 @@ type ImeSessionCommandInput = ImeSessionCommand extends infer Command
     : never
   : never;
 
+export type ImeNativeKeyHandler = (input: ImeKeyboardInput) => void;
+
 /**
  * Registers one input target with the main-owned session when its editor receives focus.
  *
@@ -74,6 +77,7 @@ export function useEmbeddedIme(
   );
   const onCommitRef = useRef(onCommit);
   const acquirePromiseRef = useRef<Promise<void> | undefined>(undefined);
+  const nativeKeyHandlerRef = useRef<ImeNativeKeyHandler | undefined>(undefined);
   onCommitRef.current = onCommit;
 
   const generation = selectImeOwnedGeneration(session, targetId);
@@ -261,46 +265,6 @@ export function useEmbeddedIme(
   }, [available, bridge, imeEnabled, targetId]);
 
   useEffect(() => {
-    const unsubscribe = bridge?.onImeKeyboardInput?.((input: ImeKeyboardInput) => {
-      if (
-        input.targetId !== targetId ||
-        input.generation !== getImeOwnedGeneration(targetId) ||
-        !isActiveImeInputTarget(targetId)
-      )
-        return;
-      const target = findImeTargetElement(targetId);
-      if (!target) return;
-
-      // Reuse the editor's normal key handlers so composition, caret movement and
-      // controlled-text selection follow the same path without activating the HWND.
-      const keyboardEvent = new KeyboardEvent(input.type, {
-        key: input.key,
-        code: input.code,
-        shiftKey: input.shift,
-        ctrlKey: input.ctrl,
-        altKey: input.alt,
-        metaKey: input.meta,
-        repeat: input.repeat,
-        bubbles: true,
-        cancelable: true,
-        composed: true,
-      });
-      const dispatchAccepted = target.dispatchEvent(keyboardEvent);
-      const acknowledgement = bridge?.ackImeKeyboardInput?.({
-        targetId,
-        generation: input.generation,
-        eventId: input.eventId,
-        delivered: input.type === "keyup" || !dispatchAccepted,
-      });
-      if (acknowledgement)
-        void acknowledgement.catch((error: unknown) =>
-          console.error("[ime-ui] native key acknowledgement failed", error),
-        );
-    });
-    return unsubscribe;
-  }, [bridge, targetId]);
-
-  useEffect(() => {
     const onDocumentKeyDown = (event: KeyboardEvent) => {
       const eventTarget = event.target;
       if (
@@ -416,7 +380,7 @@ export function useEmbeddedIme(
       applyEditorCommand?: (command: ImeEditorCommand) => void,
     ) => {
       if (!isActiveImeInputTarget(targetId)) return;
-      void enqueueImeInput(targetId, async () => {
+      void enqueueImeInput(targetId, async (_queuedSnapshot, inputContext) => {
         if (getImeOwnedGeneration(targetId) === undefined) await acquirePromiseRef.current;
         const generation = getImeOwnedGeneration(targetId);
         if (generation === undefined || !isActiveImeInputTarget(targetId)) return;
@@ -431,7 +395,7 @@ export function useEmbeddedIme(
         if (
           !result?.accepted ||
           getImeOwnedGeneration(targetId) !== generation ||
-          !isActiveImeInputTarget(targetId)
+          !isCurrentImeInputEvent(targetId, inputContext.targetEpoch)
         )
           return;
         if (result.commit) onCommitRef.current?.(result.commit.text);
@@ -615,6 +579,52 @@ export function useEmbeddedIme(
     [available, bridge, enabled, enqueueInput, imeEnabled, sendCommand, targetId],
   );
 
+  const sendNativeKey = useCallback(
+    (
+      input: ImeKeyboardInput,
+      applyEditorCommand?: (command: ImeEditorCommand) => void,
+      captureCompositionStart?: () => void,
+    ) => {
+      if (
+        input.type === "keydown" &&
+        (input.key.length === 1 || input.key === "Process") &&
+        !input.ctrl &&
+        !input.alt &&
+        !input.meta
+      )
+        captureCompositionStart?.();
+      const event = {
+        key: input.key,
+        code: input.code,
+        shiftKey: input.shift,
+        ctrlKey: input.ctrl,
+        altKey: input.alt,
+        metaKey: input.meta,
+        repeat: input.repeat,
+        target: null,
+      } as unknown as KeyboardEvent;
+      return sendKey(event, input.type === "keyup", applyEditorCommand);
+    },
+    [sendKey],
+  );
+
+  const setNativeKeyHandler = useCallback((handler: ImeNativeKeyHandler | undefined) => {
+    nativeKeyHandlerRef.current = handler;
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = bridge?.onImeKeyboardInput?.((input: ImeKeyboardInput) => {
+      if (
+        input.targetId !== targetId ||
+        input.generation !== getImeOwnedGeneration(targetId) ||
+        !isActiveImeInputTarget(targetId)
+      )
+        return;
+      nativeKeyHandlerRef.current?.(input);
+    });
+    return unsubscribe;
+  }, [bridge, targetId]);
+
   const sendKeyUp = useCallback(
     (event: KeyboardEvent | React.KeyboardEvent<HTMLElement>) => sendKey(event, true),
     [sendKey],
@@ -714,6 +724,8 @@ export function useEmbeddedIme(
     blur,
     sendKey,
     sendKeyUp,
+    sendNativeKey,
+    setNativeKeyHandler,
     sendNavigation,
     select,
     cancelComposition,
@@ -725,13 +737,6 @@ export function useEmbeddedIme(
 function isDomActiveTarget(targetId: string): boolean {
   const active = document.activeElement;
   return active instanceof HTMLElement && active.dataset.imeTargetId === targetId;
-}
-
-function findImeTargetElement(targetId: string): HTMLElement | null {
-  for (const element of document.querySelectorAll<HTMLElement>("[data-ime-target-id]")) {
-    if (element.dataset.imeTargetId === targetId) return element;
-  }
-  return null;
 }
 
 function getKeyKind(

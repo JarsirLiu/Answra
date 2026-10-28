@@ -1,9 +1,9 @@
-import type { DesktopBridge } from "@answra/shared";
-import { type InputHTMLAttributes, useEffect, useLayoutEffect, useRef } from "react";
+import type { DesktopBridge, ImeKeyboardInput } from "@answra/shared";
+import { type InputHTMLAttributes, useCallback, useEffect, useRef } from "react";
 import { useEmbeddedIme } from "../../hooks/useEmbeddedIme";
 import { ControlledTextCompositionMirror } from "../../ime/adapters/ControlledTextCompositionMirror";
 import {
-  applyControlledTextCommand,
+  applyControlledTextCommandAtSelection,
   replaceTextRange,
 } from "../../ime/adapters/controlledTextAdapter";
 import { useControlledImeTextAdapter } from "../../ime/adapters/useControlledImeTextAdapter";
@@ -38,7 +38,6 @@ export function EmbeddedImeInput({
     value,
     onChange: onValueChange,
   });
-  const pendingCaret = useRef<number | null>(null);
   const ime = useEmbeddedIme(bridge, controlledText.commit, enabled, targetId);
   const textPolicy = ime.textPolicy;
   const inputState = resolveImeEditorInputState({
@@ -49,22 +48,30 @@ export function EmbeddedImeInput({
     if (!ime.state.composing) controlledText.cancelComposition();
   }, [controlledText.cancelComposition, ime.state.composing]);
 
-  useLayoutEffect(() => {
-    const caret = pendingCaret.current;
-    const input = inputRef.current;
-    if (caret === null || !input) return;
-    input.setSelectionRange(caret, caret);
-    pendingCaret.current = null;
-  });
-
-  const applyEditorCommand = (command: Parameters<typeof applyControlledTextCommand>[2]) => {
-    const input = inputRef.current;
-    if (!input) return;
-    const edit = applyControlledTextCommand(input, value, command);
-    if (!edit) return;
-    pendingCaret.current = edit.caret;
+  const applyEditorCommand = useCallback(
+    (command: Parameters<typeof applyControlledTextCommandAtSelection>[2]) => {
+    const edit = applyControlledTextCommandAtSelection(
+      value,
+      controlledText.selection,
+      command,
+      false,
+    );
+    controlledText.setSelection(edit.selection);
     onValueChange(edit.value);
-  };
+    },
+    [controlledText, value, onValueChange],
+  );
+
+  useEffect(() => {
+    if (!enabled) return;
+    const handleNativeKey = (input: ImeKeyboardInput) => {
+      ime.sendNativeKey(input, applyEditorCommand, () =>
+        controlledText.captureCompositionStart(controlledText.selection, ime.state.composing),
+      );
+    };
+    ime.setNativeKeyHandler(handleNativeKey);
+    return () => ime.setNativeKeyHandler(undefined);
+  }, [applyEditorCommand, enabled, ime]);
 
   return (
     <>
@@ -86,13 +93,17 @@ export function EmbeddedImeInput({
           props.onBeforeInput?.(event);
           if (ime.shouldPreventBeforeInput(event.nativeEvent.inputType)) event.preventDefault();
         }}
-        onBlur={() => ime.blur()}
+        onBlur={enabled ? undefined : () => ime.blur()}
         onCompositionStart={(event) => {
           props.onCompositionStart?.(event);
           if (textPolicy.blockComposition) event.preventDefault();
         }}
-        onFocus={() => void ime.acquire()}
-        onPointerDown={() => void ime.acquire()}
+        onFocus={enabled ? undefined : () => void ime.acquire()}
+        onPointerDown={(event) => {
+          if (enabled) event.preventDefault();
+          void ime.acquire();
+        }}
+        tabIndex={enabled ? -1 : props.tabIndex}
         onKeyDown={(event) => {
           const handled = handleImeEditorKeyDown({
             event,
@@ -126,17 +137,22 @@ export function EmbeddedImeInput({
           if (inputState.ariaReadOnly) return;
           const text = event.clipboardData.getData("text/plain");
           if (!text) return;
-          const input = event.currentTarget;
           const edit = replaceTextRange(
             value,
             {
-              start: input.selectionStart ?? value.length,
-              end: input.selectionEnd ?? value.length,
+              start: controlledText.selection.start,
+              end: controlledText.selection.end,
             },
             text,
           );
-          pendingCaret.current = edit.caret;
+          controlledText.setSelection(edit.selection);
           onValueChange(edit.value);
+        }}
+        onSelect={(event) => {
+          controlledText.setSelection({
+            start: event.currentTarget.selectionStart ?? value.length,
+            end: event.currentTarget.selectionEnd ?? value.length,
+          });
         }}
         readOnly={inputState.readOnly}
         ref={inputRef}

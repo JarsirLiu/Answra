@@ -143,7 +143,10 @@ export function ChatPanel({
                 }
                 content={message.content}
                 onFork={onFork}
-                onReply={() => composerInputRef.current?.focus()}
+                onReply={() => {
+                  if (stealth) void ime.acquire();
+                  else composerInputRef.current?.focus();
+                }}
                 onVote={onVote}
                 reasoning={message.reasoning}
                 streaming={Boolean(streaming) && message.id === messages.at(-1)?.id}

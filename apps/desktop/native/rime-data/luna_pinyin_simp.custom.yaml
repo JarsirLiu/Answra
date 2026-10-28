@@ -1,10 +1,7 @@
 patch:
-  __include: easy_en:/patch
   # Keep the official luna_pinyin table as the primary translator. The
   # previous answra import table lost upstream ordering and sentence scoring.
   translator/dictionary: luna_pinyin
   translator/enable_sentence: true
   translator/enable_completion: true
-  easy_en/initial_quality: 0
-  easy_en/enable_sentence: false
   ascii_composer/good_old_caps_lock: true
