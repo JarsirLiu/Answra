@@ -4,7 +4,7 @@ import { useStealthInputGuard } from "../src/hooks/useStealthInputGuard";
 
 describe("useStealthInputGuard", () => {
   beforeEach(() => {
-    document.documentElement.removeAttribute("data-native-ime-isolation-failed");
+    document.documentElement.removeAttribute("data-stealth-composition-failed");
   });
 
   it("blurs and blocks text controls while stealth is enabled", () => {
@@ -41,7 +41,7 @@ describe("useStealthInputGuard", () => {
     expect(fileClick.defaultPrevented).toBe(true);
   });
 
-  it("blocks focus on legacy embedded IME targets", () => {
+  it("blocks focus on text targets", () => {
     const textarea = document.createElement("textarea");
     textarea.dataset.embeddedImeTarget = "true";
     document.body.append(textarea);
@@ -82,7 +82,7 @@ describe("useStealthInputGuard", () => {
     });
     textarea.dispatchEvent(composition);
     expect(composition.defaultPrevented).toBe(false);
-    expect(document.documentElement).not.toHaveAttribute("data-native-ime-isolation-failed");
+    expect(document.documentElement).not.toHaveAttribute("data-stealth-composition-failed");
     expect(document.activeElement).toBe(textarea);
 
     const keydown = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "a" });
@@ -91,7 +91,7 @@ describe("useStealthInputGuard", () => {
     expect(document.activeElement).toBe(textarea);
   });
 
-  it("locks composition on legacy embedded IME targets", () => {
+  it("locks composition after an unexpected text composition", () => {
     const textarea = document.createElement("textarea");
     textarea.dataset.embeddedImeTarget = "true";
     document.body.append(textarea);
@@ -107,7 +107,7 @@ describe("useStealthInputGuard", () => {
     });
     textarea.dispatchEvent(composition);
     expect(composition.defaultPrevented).toBe(true);
-    expect(document.documentElement).toHaveAttribute("data-native-ime-isolation-failed");
+    expect(document.documentElement).toHaveAttribute("data-stealth-composition-failed");
     expect(document.activeElement).not.toBe(textarea);
 
     const keydown = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "a" });

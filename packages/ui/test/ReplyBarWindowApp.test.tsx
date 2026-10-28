@@ -496,7 +496,7 @@ describe("ReplyBarWindowApp live conversation popover", () => {
     expect(image.closest("figure")).toHaveClass("reply-conversation-image");
   });
 
-  it("keeps the composer focusable when the embedded IME is unavailable", async () => {
+  it("keeps the composer focusable when stealth mode is disabled", async () => {
     const bridge = createBridge();
     render(<ReplyBarWindowApp bridge={bridge as DesktopBridge} />);
     act(() => stateListener?.(replyState(true)));

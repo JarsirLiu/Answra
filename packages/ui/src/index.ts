@@ -1,5 +1,4 @@
 export { FloatingBarApp } from "./app/FloatingBarApp";
-export { ImeCandidateWindowApp } from "./app/ImeCandidateWindowApp";
 export type {
   InterviewCapturePhase,
   InterviewCapturePort,

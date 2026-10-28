@@ -728,7 +728,6 @@ export function MessageActions({
                 <label className={styles.search}>
                   <Search size={16} />
                   <input
-                    data-ime-policy="excluded"
                     ref={searchRef}
                     value={query}
                     placeholder="Search emoji"

@@ -38,7 +38,7 @@ export interface ForegroundWindowInfo {
   isOwnProcess?: boolean;
 }
 
-/** Best-effort identification of the OS foreground window, used by IME diagnostics. */
+/** Best-effort identification of the OS foreground window for capture diagnostics. */
 export function describeForegroundWindow(): ForegroundWindowInfo {
   if (!getForegroundWindow || !getWindowThreadProcessId) return {};
   try {

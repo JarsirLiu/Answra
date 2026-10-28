@@ -49,7 +49,6 @@ vi.mock("electron", async () => {
   };
 });
 
-vi.mock("../src/main/ime/imeDiagnostics", () => ({ logImeDiagnostic: vi.fn() }));
 vi.mock("../src/main/windowForeground", () => ({
   describeForegroundWindow: vi.fn(() => ({})),
   isCurrentProcessForeground: vi.fn(() => false),

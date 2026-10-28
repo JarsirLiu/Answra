@@ -131,7 +131,6 @@ export function InterviewCapturePanel({
         }}
         submitDisabled={!draft.trim()}
         showAttachmentButton={false}
-        showImeToggle={false}
         liveContent={
           running ? (
             <div aria-label="麦克风实时音量" className="interview-audio-wave" role="img">

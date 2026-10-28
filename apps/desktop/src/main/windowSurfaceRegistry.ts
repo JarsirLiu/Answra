@@ -2,7 +2,7 @@ import type { BrowserWindow } from "electron";
 import { setWindowCaptureProtection } from "./windowCaptureProtection";
 import { isNonActivatingPlatform } from "./windowInteractionPolicy";
 
-export type WindowRole = "main" | "reply-bar" | "ime-candidate" | "selection-overlay";
+export type WindowRole = "main" | "reply-bar" | "selection-overlay";
 export type CaptureProtectionPolicy = "stealth-only" | "always" | "never";
 export type WindowFocusEvent = {
   window: BrowserWindow;
@@ -42,7 +42,6 @@ interface ManagedWindow {
 const SURFACE_POLICIES: Record<WindowRole, SurfacePolicy> = {
   main: { alwaysOnTopLevel: "floating", nonActivating: "stealth" },
   "reply-bar": { alwaysOnTopLevel: "floating", nonActivating: "stealth" },
-  "ime-candidate": { alwaysOnTopLevel: "pop-up-menu", nonActivating: "always" },
   "selection-overlay": { alwaysOnTopLevel: "screen-saver", nonActivating: "always" },
 };
 
@@ -123,14 +122,7 @@ export function createWindowSurfaceRegistry(
   function attachAbove(child: BrowserWindow, owner: BrowserWindow): void {
     const childEntry = managed.get(child);
     const ownerEntry = managed.get(owner);
-    if (
-      !childEntry ||
-      !ownerEntry ||
-      childEntry.descriptor.role !== "ime-candidate" ||
-      (ownerEntry.descriptor.role !== "main" && ownerEntry.descriptor.role !== "reply-bar")
-    ) {
-      throw new Error("Only an IME candidate surface can attach above a main or reply-bar surface");
-    }
+    if (!childEntry || !ownerEntry) throw new Error("Both windows must be registered");
     if (child.isDestroyed() || owner.isDestroyed()) return;
 
     const previousOwner = ownerByChild.get(child);
@@ -267,7 +259,7 @@ export function createWindowSurfaceRegistry(
   function reconcileAbove(child: BrowserWindow, owner: BrowserWindow): void {
     if (child.isDestroyed() || owner.isDestroyed() || ownerByChild.get(child) !== owner) return;
     child.setParentWindow(owner);
-    applySurfacePolicy(child, "ime-candidate");
+    applySurfacePolicy(child, "selection-overlay");
     // Windows 上 floating/pop-up-menu 两个 alwaysOnTop 层级都映射到同一
     // HWND_TOPMOST 带，setAlwaysOnTop 不会保证 owned 窗口排在 owner 之上；
     // 必须显式 moveAbove，否则候选窗口会被 owner 内的 DOM（发送按钮等）盖住。

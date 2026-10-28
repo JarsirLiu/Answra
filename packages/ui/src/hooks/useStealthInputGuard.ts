@@ -3,33 +3,33 @@ import { useEffect } from "react";
 /**
  * Prevents system text-input surfaces while meeting stealth is enabled.
  *
- * IME candidate and suggestion windows are owned by the operating system, not
- * by Answra's protected BrowserWindow. Blocking focus before composition starts
- * avoids exposing partially typed text on both Windows and macOS. File inputs
+ * System composition and picker surfaces are outside Answra's protected
+ * BrowserWindow. Blocking focus before composition starts avoids exposing
+ * partially typed text on both Windows and macOS. File inputs
  * are blocked too: opening a native picker creates an unprotected system
  * surface while stealth is enabled. Buttons, sliders and selects remain usable.
  *
  * The guard is inert when stealth is disabled: registering the fail-closed
  * listeners unconditionally used to lock the app's own editors until reload.
- * Every text target is blocked, including legacy embedded-IME targets. The
- * main branch does not expose a focusable text surface in stealth mode.
+ * Every text target is blocked. The main branch does not expose a focusable
+ * text surface in stealth mode.
  */
 export function useStealthInputGuard(enabled: boolean): void {
   useEffect(() => {
     if (!enabled) return;
 
     const reportedCompositionTargets = new WeakSet<HTMLElement>();
-    const nativeCompositionFailureAttribute = "data-native-ime-isolation-failed";
+    const compositionFailureAttribute = "data-stealth-composition-failed";
     const hasNativeCompositionFailure = () =>
-      document.documentElement.hasAttribute(nativeCompositionFailureAttribute);
+      document.documentElement.hasAttribute(compositionFailureAttribute);
     const onCompositionStart = (event: CompositionEvent) => {
       if (!isTextEntryTarget(event.target)) return;
       event.preventDefault();
       event.stopImmediatePropagation();
-      document.documentElement.setAttribute(nativeCompositionFailureAttribute, "true");
+      document.documentElement.setAttribute(compositionFailureAttribute, "true");
       if (!reportedCompositionTargets.has(event.target)) {
         reportedCompositionTargets.add(event.target);
-        console.error("[ime-ui] unexpected system composition; text input locked until reload");
+        console.error("[stealth-ui] unexpected system composition; text input locked until reload");
       }
       event.target.blur();
     };
@@ -59,21 +59,11 @@ export function useStealthInputGuard(enabled: boolean): void {
     blurActiveElement();
 
     const onPointerDown = (event: PointerEvent) => {
-      if (isEmbeddedImeCandidateTarget(event.target)) {
-        event.preventDefault();
-        (event.target as HTMLElement).dataset.imeFocusPending = "true";
-        return;
-      }
       if (!isTextEntryTarget(event.target)) return;
       event.preventDefault();
       (event.target as HTMLElement).blur();
     };
     const onFocusIn = (event: FocusEvent) => {
-      if (isEmbeddedImeCandidateTarget(event.target)) {
-        (event.target as HTMLElement).dataset.imeFocusPending = "true";
-        (event.target as HTMLElement).blur();
-        return;
-      }
       if (!isTextEntryTarget(event.target)) return;
       event.preventDefault();
       (event.target as HTMLElement).blur();
@@ -101,10 +91,6 @@ export function useStealthInputGuard(enabled: boolean): void {
       document.removeEventListener("click", onClick, true);
     };
   }, [enabled]);
-}
-
-function isEmbeddedImeCandidateTarget(target: EventTarget | null): boolean {
-  return target instanceof Element && target.closest("[data-embedded-ime-target]") !== null;
 }
 
 function isTextEntryTarget(target: EventTarget | null): target is HTMLElement {

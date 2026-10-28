@@ -10,17 +10,6 @@ import {
   type ConversationModelSettings,
   type ConversationSendCommand,
   type DesktopBridge,
-  type ImeCandidateAction,
-  ImeCandidateChannels,
-  type ImeCandidateSnapshot,
-  type ImeCandidateUpdate,
-  ImeChannels,
-  type ImeKeyboardInput,
-  type ImeRendererDiagnostic,
-  type ImeSessionCommand,
-  type ImeSessionCommandResult,
-  type ImeSessionSnapshot,
-  type ImeSessionSnapshotUpdate,
   type InterviewChange,
   InterviewChannels,
   type InterviewPcmFrame,
@@ -40,56 +29,8 @@ import { contextBridge, ipcRenderer } from "electron";
  * 频道名与载荷类型来自 shared 契约，禁止在此之外新增 IPC 通道。
  */
 const bridge: DesktopBridge = {
-  // Set true only when the packaged librime bridge has been installed.
-  imeAvailable: true,
   // 面试对话尚未开发完且安装版不带本地 ASR 模型：打包态置 false，UI 渲染「暂不支持」入口。
   interviewAvailable: !process.argv.includes("--answra-packaged=true"),
-  imeDiagnostic: (diagnostic: ImeRendererDiagnostic) => {
-    ipcRenderer.send(ImeChannels.Diagnostic, diagnostic);
-  },
-  imeSessionCommand: (command: ImeSessionCommand): Promise<ImeSessionCommandResult> =>
-    ipcRenderer.invoke(ImeChannels.SessionCommand, command),
-  getImeSessionSnapshot: async (): Promise<ImeSessionSnapshot> => {
-    const update = (await ipcRenderer.invoke(
-      ImeChannels.SessionSnapshot,
-    )) as ImeSessionSnapshotUpdate;
-    return update.snapshot;
-  },
-  onImeSessionSnapshot: (listener: (snapshot: ImeSessionSnapshot) => void) => {
-    const wrapped = (_event: Electron.IpcRendererEvent, update: ImeSessionSnapshotUpdate) =>
-      listener(update.snapshot);
-    ipcRenderer.on(ImeChannels.SessionSnapshot, wrapped);
-    return () => ipcRenderer.removeListener(ImeChannels.SessionSnapshot, wrapped);
-  },
-  onImeKeyboardInput: (listener: (event: ImeKeyboardInput) => void) => {
-    const wrapped = (_event: Electron.IpcRendererEvent, input: ImeKeyboardInput) => listener(input);
-    ipcRenderer.on(ImeChannels.KeyboardInput, wrapped);
-    return () => ipcRenderer.removeListener(ImeChannels.KeyboardInput, wrapped);
-  },
-  setImeCandidate: (payload: ImeCandidateUpdate) => {
-    ipcRenderer.send(ImeCandidateChannels.Update, payload);
-  },
-  onImeCandidateAction: (listener: (action: ImeCandidateAction) => void) => {
-    const wrapped = (_event: Electron.IpcRendererEvent, action: ImeCandidateAction) =>
-      listener(action);
-    ipcRenderer.on(ImeCandidateChannels.OwnerAction, wrapped);
-    return () => ipcRenderer.removeListener(ImeCandidateChannels.OwnerAction, wrapped);
-  },
-  onImeCandidateState: (listener: (snapshot: ImeCandidateSnapshot) => void) => {
-    const wrapped = (_event: Electron.IpcRendererEvent, snapshot: ImeCandidateSnapshot) =>
-      listener(snapshot);
-    ipcRenderer.on(ImeCandidateChannels.State, wrapped);
-    return () => ipcRenderer.removeListener(ImeCandidateChannels.State, wrapped);
-  },
-  requestImeCandidateState: () => {
-    ipcRenderer.send(ImeCandidateChannels.Ready);
-  },
-  fitImeCandidate: (size: ContentSize) => {
-    ipcRenderer.send(ImeCandidateChannels.Fit, size);
-  },
-  sendImeCandidateAction: (action: ImeCandidateAction) => {
-    ipcRenderer.send(ImeCandidateChannels.Action, action);
-  },
   fitContent: (size: ContentSize) => {
     ipcRenderer.send(WindowChannels.FitContent, size);
   },

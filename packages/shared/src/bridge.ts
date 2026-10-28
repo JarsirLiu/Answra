@@ -9,14 +9,6 @@ import type {
   ConversationSendCommand,
   ConversationSnapshot,
   DesktopAnnouncement,
-  ImeCandidateAction,
-  ImeCandidateSnapshot,
-  ImeCandidateUpdate,
-  ImeKeyboardInput,
-  ImeRendererDiagnostic,
-  ImeSessionCommand,
-  ImeSessionCommandResult,
-  ImeSessionSnapshot,
   InterviewChange,
   InterviewPcmFrame,
   RegionCaptureOptions,
@@ -41,27 +33,12 @@ export type OverlayMode = "closed" | "chat" | "interview" | "notes" | "settings"
 
 /** 渲染进程暴露给 UI 的桌面平台桥（由 preload 注入，测试可 mock）。 */
 export interface DesktopBridge {
-  /** 应用内输入法；隐身模式下未能启用时，文本输入保持阻断。 */
-  imeAvailable?: boolean;
   /**
    * 面试对话功能是否可用。安装版尚未内置本地 ASR 模型且面试流程未开发完，
    * 主进程按打包态下发 false，UI 把面试模式渲染成「暂不支持」入口；开发态为 true。
    * 浏览器预览/测试环境可未实现，调用方需按缺省可用处理。
    */
   interviewAvailable?: boolean;
-  imeDiagnostic?: (diagnostic: ImeRendererDiagnostic) => void;
-  /** Authoritative IME session API: the only way the renderer mutates the engine session. */
-  imeSessionCommand?: (command: ImeSessionCommand) => Promise<ImeSessionCommandResult>;
-  getImeSessionSnapshot?: () => Promise<ImeSessionSnapshot>;
-  onImeSessionSnapshot?: (listener: (snapshot: ImeSessionSnapshot) => void) => () => void;
-  /** Receives native keyboard events scoped to the currently owned IME target. */
-  onImeKeyboardInput?: (listener: (event: ImeKeyboardInput) => void) => () => void;
-  setImeCandidate?: (payload: ImeCandidateUpdate) => void;
-  onImeCandidateAction?: (listener: (action: ImeCandidateAction) => void) => () => void;
-  onImeCandidateState?: (listener: (snapshot: ImeCandidateSnapshot) => void) => () => void;
-  requestImeCandidateState?: () => void;
-  fitImeCandidate?: (size: ContentSize) => void;
-  sendImeCandidateAction?: (action: ImeCandidateAction) => void;
   /** 上报外壳内容尺寸，主进程据此调整窗口大小。 */
   fitContent: (size: ContentSize) => void;
   /** 关闭应用窗口。 */

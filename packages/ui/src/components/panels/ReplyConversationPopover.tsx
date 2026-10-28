@@ -133,11 +133,9 @@ export function ReplyConversationPopover({
         disabled={false}
         inputLabel="消息输入"
         inputRef={composerInputRef}
-        nonActivating={false}
         onSubmit={() => void send()}
         onValueChange={setDraft}
         placeholder="继续输入消息…"
-        showImeToggle={false}
         submitDisabled={!draft.trim()}
         value={draft}
       />

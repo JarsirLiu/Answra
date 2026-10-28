@@ -46,7 +46,6 @@
 }
 
 .conversation-composer-editor.is-composing textarea {
-  --ime-composition-text-color: var(--ime-input-text-color, var(--ink));
   color: transparent;
   caret-color: transparent;
   -webkit-text-fill-color: transparent;
@@ -113,10 +112,6 @@
   background: var(--hover);
 }
 
-.conversation-composer-ime.is-active {
-  color: var(--ink);
-  background: var(--mint-wash);
-}
 
 .conversation-composer-icon-button:disabled {
   cursor: default;
@@ -179,7 +174,4 @@
 .conversation-composer.is-compact .conversation-composer-stop-glyph {
   width: 8px;
   height: 8px;
-}
-.embedded-ime-input {
-  ime-mode: disabled;
 }

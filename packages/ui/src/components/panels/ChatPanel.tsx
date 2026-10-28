@@ -150,7 +150,6 @@ export function ChatPanel({
       <ConversationComposer
         inputLabel="补充问题"
         inputRef={composerInputRef}
-        nonActivating={false}
         onAddAttachment={() => fileInputRef.current?.click()}
         onPasteImages={(files) => {
           if (files[0]) onAttachmentChange(files[0]);
@@ -167,7 +166,6 @@ export function ChatPanel({
           accept="image/*"
           aria-label="选择截图图片"
           className="file-input-hidden"
-          data-ime-policy="excluded"
           onChange={(event) => {
             onAttachmentChange(event.target.files?.[0] ?? null);
             event.target.value = "";

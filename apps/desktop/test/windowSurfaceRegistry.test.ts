@@ -59,20 +59,12 @@ describe("window surface registry", () => {
     });
     registry.setStealthEnabled(false);
     const main = new MockWindow();
-    const candidate = new MockWindow();
     const focusEvents: unknown[] = [];
     registry.register(main as never, { role: "main", captureProtection: "stealth-only" });
-    registry.register(candidate as never, {
-      role: "ime-candidate",
-      captureProtection: "stealth-only",
-    });
 
     expect(main.setAlwaysOnTop).toHaveBeenCalledWith(true, "floating");
-    // Normal mode keeps the main surface focusable so the system IME can type.
+    // Normal mode keeps the main surface focusable for text entry.
     expect(main.setFocusable).toHaveBeenLastCalledWith(true);
-    expect(candidate.setAlwaysOnTop).toHaveBeenCalledWith(true, "pop-up-menu");
-    expect(candidate.setFocusable).toHaveBeenCalledWith(false);
-    expect(applyCaptureProtection).toHaveBeenLastCalledWith(candidate, false);
 
     const unsubscribe = registry.subscribeFocus((event) => focusEvents.push(event));
     main.emit("focus");
@@ -84,7 +76,6 @@ describe("window surface registry", () => {
 
     registry.setStealthEnabled(true);
     expect(main.setFocusable).toHaveBeenLastCalledWith(false);
-    expect(applyCaptureProtection).toHaveBeenLastCalledWith(candidate, true);
   });
 
   it("makes the main surface non-activating only while stealth is enabled", () => {
@@ -168,38 +159,6 @@ describe("window surface registry", () => {
     expect(main.focusable).toBe(false);
   });
 
-  it("reconciles the candidate owner relationship on owner focus and cleans it up", () => {
-    const registry = createWindowSurfaceRegistry({
-      applyCaptureProtection: () => true,
-      platform: "win32",
-    });
-    const main = new MockWindow();
-    const reply = new MockWindow();
-    const candidate = new MockWindow();
-    registry.register(main as never, { role: "main", captureProtection: "never" });
-    registry.register(reply as never, { role: "reply-bar", captureProtection: "never" });
-    registry.register(candidate as never, {
-      role: "ime-candidate",
-      captureProtection: "never",
-    });
-
-    registry.attachAbove(candidate as never, reply as never);
-    expect(candidate.parent).toBe(reply);
-    expect(candidate.moveAbove).toHaveBeenCalledWith(`window:${reply.id}`);
-    const callsBeforeFocus = candidate.setParentWindow.mock.calls.length;
-    reply.emit("focus");
-    expect(candidate.setParentWindow).toHaveBeenCalledTimes(callsBeforeFocus + 1);
-    expect(candidate.setAlwaysOnTop).toHaveBeenLastCalledWith(true, "pop-up-menu");
-
-    registry.attachAbove(candidate as never, main as never);
-    expect(candidate.parent).toBe(main);
-    expect(() => registry.attachAbove(main as never, candidate as never)).toThrow(
-      /Only an IME candidate surface/,
-    );
-    registry.unregister(main as never);
-    expect(candidate.parent).toBeNull();
-  });
-
   it("fails closed before showing a protected surface and unregisters listeners", () => {
     const window = new MockWindow();
     const onPolicyFailure = vi.fn();
@@ -210,14 +169,14 @@ describe("window surface registry", () => {
     });
     registry.setStealthEnabled(true);
     registry.register(window as never, {
-      role: "ime-candidate",
+      role: "main",
       captureProtection: "stealth-only",
       failClosed: true,
     });
 
     expect(registry.prepareToShow(window as never)).toBe(false);
     expect(window.hide).toHaveBeenCalled();
-    expect(onPolicyFailure).toHaveBeenCalledWith(window, "ime-candidate");
+    expect(onPolicyFailure).toHaveBeenCalledWith(window, "main");
     expect(registry.size).toBe(1);
 
     window.destroyed = true;

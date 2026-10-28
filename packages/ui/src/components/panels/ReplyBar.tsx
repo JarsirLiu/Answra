@@ -190,7 +190,6 @@ export function ReplyBar({
         accept="image/*"
         aria-label="选择截图图片"
         className="file-input-hidden"
-        data-ime-policy="excluded"
         onChange={(event) => {
           onAttachmentChange(event.target.files?.[0] ?? null);
           event.target.value = "";

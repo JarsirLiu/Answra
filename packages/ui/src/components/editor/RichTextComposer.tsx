@@ -7,16 +7,8 @@ import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { EditorContent, useEditor } from "@tiptap/react";
 import { type RefObject, useEffect, useMemo, useRef } from "react";
-import {
-  type ImeTextPolicy,
-  resolveImeEditorInputState,
-  resolveImeTextPolicy,
-} from "../../ime/imeTextPolicy";
 
 const OVERLAY_KEY = new PluginKey("composer-overlay");
-
-/** Hosts that do not run the embedded IME keep the target out of the lease. */
-const EXCLUDED_TEXT_POLICY = resolveImeTextPolicy({ targetOwned: false, composing: false });
 
 interface OverlayState {
   preedit: string;
@@ -90,11 +82,6 @@ export interface RichTextComposerProps {
   placeholder?: string;
   ariaLabel?: string;
   disabled?: boolean;
-  /** 嵌入式输入法文本路由策略（由宿主从会话派生）；缺省为“不接管”。 */
-  textPolicy?: ImeTextPolicy;
-  imeActive?: boolean;
-  /** 拼音 preedit，纯展示，追加在输入内容末尾。 */
-  preedit?: string;
   className?: string;
   /** 外部持有编辑器 DOM（具备 focus()），如"引用回复"聚焦。 */
   editorRef?: RefObject<HTMLElement | null>;
@@ -108,16 +95,13 @@ export interface RichTextComposerProps {
 /**
  * TipTap（ProseMirror）封装的可复用纯文本编辑器：
  * 值模型是纯文本 string（段落以 \n 分隔），支持粘贴图片回调、
- * 嵌入式输入法接管（由 `textPolicy` 派生只读/禁写 + 装饰 preedit）。
+ * 纯文本编辑器，不承担平台输入法或候选词生命周期。
  */
 export function RichTextComposer({
   value,
   placeholder = "",
   ariaLabel,
   disabled = false,
-  textPolicy,
-  imeActive = false,
-  preedit = "",
   className,
   editorRef,
   onEditorReady,
@@ -130,14 +114,9 @@ export function RichTextComposer({
   }, [onValueChange]);
 
   const overlayExtension = useMemo(createOverlayExtension, []);
-  // Keep contenteditable enabled so Chromium renders a real caret; IME input
+  // Keep contenteditable enabled so Chromium renders a real caret; text input
   // is still intercepted by handleTextInput and the outer key handler.
   const editable = !disabled;
-  const inputState = resolveImeEditorInputState({
-    businessReadOnly: disabled,
-    policy: textPolicy ?? EXCLUDED_TEXT_POLICY,
-  });
-  const imeBlocked = inputState.nativeInputBlockedByIme;
 
   const editor = useEditor(
     {
@@ -146,21 +125,12 @@ export function RichTextComposer({
       editable,
       editorProps: {
         attributes: {
-          class: imeBlocked ? "composer-editor embedded-ime-input" : "composer-editor",
+          class: "composer-editor",
           role: "textbox",
           "aria-multiline": "true",
           "aria-label": ariaLabel ?? "",
-          "data-ime-policy": "excluded",
-          ...(inputState.ariaReadOnly ? { "aria-readonly": "true" } : {}),
-          ...(imeBlocked
-            ? { "data-embedded-ime-target": "true", "data-ime-native-input-blocked": "true" }
-            : {}),
-          ...(imeActive ? { "data-embedded-ime-active": "true" } : {}),
-          // 输入法接管期间保持可聚焦，keydown 才能送达 Rime 处理。
           tabindex: "0",
         },
-        // Rime 接管时禁止 ProseMirror 写入文本（与 textarea readOnly 等价的双保险）。
-        handleTextInput: () => imeBlocked,
         handlePaste: (_view, event) => {
           const files = Array.from(event.clipboardData?.files ?? []).filter((file) =>
             file.type.startsWith("image/"),
@@ -169,15 +139,7 @@ export function RichTextComposer({
             onPasteImages?.(files);
             return true;
           }
-          if (!imeBlocked) return false;
-          if (!disabled) {
-            const text = event.clipboardData?.getData("text/plain") ?? "";
-            if (text) {
-              event.preventDefault();
-              _view.dispatch(_view.state.tr.insertText(text));
-            }
-          }
-          return true;
+          return false;
         },
       },
       onUpdate: ({ editor: current }) => {
@@ -207,10 +169,8 @@ export function RichTextComposer({
   // preedit/placeholder 走纯装饰更新，不触碰文档。
   useEffect(() => {
     if (!editor) return;
-    editor.view.dispatch(
-      editor.state.tr.setMeta(OVERLAY_KEY, { preedit, placeholder } satisfies OverlayState),
-    );
-  }, [editor, preedit, placeholder]);
+    editor.view.dispatch(editor.state.tr.setMeta(OVERLAY_KEY, { preedit: "", placeholder }));
+  }, [editor, placeholder]);
 
   useEffect(() => editor?.setEditable(!disabled), [editor, disabled]);
 

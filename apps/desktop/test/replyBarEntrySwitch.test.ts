@@ -43,19 +43,6 @@ vi.mock("../src/main/replyBarWindowController", () => ({
   }),
 }));
 
-vi.mock("../src/main/ime/imeCandidateWindowController", () => ({
-  createImeCandidateWindowController: () => ({
-    dispose: vi.fn(),
-    getWindow: () => undefined,
-    isCandidateContents: () => false,
-    markRendererReady: vi.fn(),
-    resize: vi.fn(),
-    routeAction: vi.fn(),
-    update: vi.fn(),
-    warmup: vi.fn(),
-  }),
-}));
-
 vi.mock("../src/main/windowStealthController", () => ({
   createWindowStealthController: () => ({
     apply: vi.fn(),
@@ -63,8 +50,6 @@ vi.mock("../src/main/windowStealthController", () => ({
     isSupported: () => false,
     refresh: vi.fn(),
   }),
-  isolateNativeIme: vi.fn(),
-  restoreNativeIme: vi.fn(),
 }));
 
 vi.mock("../src/main/windowSurfaceRegistry", () => ({

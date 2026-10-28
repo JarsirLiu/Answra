@@ -24,7 +24,6 @@ export function Switch({ ariaLabel, checked, disabled = false, onChange }: Switc
         aria-label={ariaLabel}
         checked={checked}
         className="switch-input"
-        data-ime-policy="excluded"
         disabled={disabled}
         onChange={(event) => onChange(event.target.checked)}
         type="checkbox"

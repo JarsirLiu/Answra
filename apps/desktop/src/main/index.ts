@@ -15,16 +15,12 @@ import { registerConversationIpc } from "./conversation/conversationIpc";
 import { ModelRouter } from "./conversation/modelRouter";
 import { ModelSettingsStore, modelSettingsFilePath } from "./conversation/modelSettings";
 import { loadDevDotEnv } from "./devEnv";
-import { registerImeCandidateIpc } from "./ime/imeCandidateIpc";
-import { registerImeIpc } from "./ime/imeIpc";
 import { registerInterviewIpc } from "./interview/interviewIpc";
 import { registerAmbientIpc } from "./ipc/ambientIpc";
 import { registerWindowIpc } from "./ipc/windowIpc";
 import { createUpdateController } from "./updater/updateController";
 import {
   createMainWindow,
-  disposeImeCandidateWindow,
-  getImeCandidateWindow,
   getWindow,
   isStealthEnabled,
   sendAuthStatus,
@@ -50,7 +46,6 @@ if (!app.isPackaged) {
 }
 
 let ambientController: ReturnType<typeof createAmbientThemeController> | undefined;
-let imeController: ReturnType<typeof registerImeIpc> | undefined;
 let interviewIpc: ReturnType<typeof registerInterviewIpc> | undefined;
 let updateController: ReturnType<typeof createUpdateController> | undefined;
 const configDir = app.getPath("userData");
@@ -115,8 +110,6 @@ if (!app.requestSingleInstanceLock()) {
     // 读盘依赖 safeStorage 就绪；放在注册会话 IPC 之前，避免首次拉取设置时回退到默认值。
     await modelSettings.init();
     registerWindowIpc();
-    imeController = registerImeIpc();
-    registerImeCandidateIpc(imeController.isCurrentLease, imeController.getSessionSnapshot);
     registerCaptureIpc();
     interviewIpc = registerInterviewIpc(agentService);
     registerAmbientIpc((enabled) => ambientController?.setEnabled(enabled));
@@ -144,8 +137,6 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.on("before-quit", () => {
-    disposeImeCandidateWindow();
-    imeController?.dispose();
     updateController?.dispose();
     authService.dispose();
     const interviewStop = interviewIpc?.stopActive() ?? Promise.resolve();
@@ -165,7 +156,6 @@ function createManagedMainWindow(): void {
   const window = createMainWindow();
   interviewIpc?.bindWindow(window);
   const controller = createAmbientThemeController(window, {
-    additionalTargets: () => [getImeCandidateWindow()],
   });
   ambientController = controller;
   window.once("closed", () => {

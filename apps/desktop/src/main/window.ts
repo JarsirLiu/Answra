@@ -4,9 +4,6 @@ import {
   type ContentSize,
   type ConversationChange,
   ConversationChannels,
-  type ImeCandidateAction,
-  type ImeCandidateUpdate,
-  type ImeState,
   type RegionSelection,
   type ReplyBarAction,
   type ReplyBarState,
@@ -14,10 +11,6 @@ import {
 } from "@answra/shared";
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron";
 import { app, type BrowserWindow } from "electron";
-import {
-  createImeCandidateWindowController,
-  type ImeCandidatePresentationUpdate,
-} from "./ime/imeCandidateWindowController";
 import { createMainWindowController } from "./mainWindowController";
 import { createReplyBarWindowController } from "./replyBarWindowController";
 import { getWindowCaptureDiagnostics } from "./windowCaptureProtection";
@@ -27,7 +20,6 @@ import { createWindowSurfaceRegistry, type WindowSurfaceDescriptor } from "./win
 let windowController: ReturnType<typeof createMainWindowController>;
 let stealthController: ReturnType<typeof createWindowStealthController>;
 let replyBarController: ReturnType<typeof createReplyBarWindowController>;
-let imeCandidateController: ReturnType<typeof createImeCandidateWindowController>;
 const windowSurfaceRegistry = createWindowSurfaceRegistry();
 
 export function registerWindowSurface(
@@ -45,16 +37,6 @@ export function prepareWindowCaptureProtection(window: BrowserWindow): boolean {
   return windowSurfaceRegistry.prepareCaptureProtection(window);
 }
 
-export function attachWindowAbove(child: BrowserWindow, owner: BrowserWindow): void {
-  windowSurfaceRegistry.attachAbove(child, owner);
-}
-
-export function subscribeToWindowFocus(
-  listener: Parameters<typeof windowSurfaceRegistry.subscribeFocus>[0],
-): () => void {
-  return windowSurfaceRegistry.subscribeFocus(listener);
-}
-
 function ensureControllers(): void {
   if (windowController) return;
   windowController = createMainWindowController({
@@ -68,14 +50,6 @@ function ensureControllers(): void {
     prepareWindowToShow,
     logCaptureSurfaceState,
     sendReplyBarAction,
-  });
-  imeCandidateController = createImeCandidateWindowController({
-    isOwnerWindow: (window) =>
-      window === windowController.getWindow() || window === replyBarController.getWindow(),
-    registerWindowSurface,
-    prepareWindowToShow,
-    attachAbove: attachWindowAbove,
-    subscribeFocus: windowSurfaceRegistry.subscribeFocus,
   });
   stealthController = createWindowStealthController({
     getMainWindow: () => windowController.getWindow(),
@@ -99,49 +73,6 @@ export function getWindow(): BrowserWindow | undefined {
 export function getReplyBarWindow(): BrowserWindow | undefined {
   ensureControllers();
   return replyBarController.getWindow();
-}
-export function setImeCandidateState(
-  owner: BrowserWindow,
-  payload: ImeCandidateUpdate,
-  state?: ImeState,
-): void {
-  ensureControllers();
-  const presentation = toCandidatePresentationUpdate(payload, state);
-  if (presentation) imeCandidateController.update(owner, presentation);
-}
-
-function toCandidatePresentationUpdate(
-  payload: ImeCandidateUpdate,
-  state?: ImeState,
-): ImeCandidatePresentationUpdate | undefined {
-  if (payload.type === "show") return state ? { ...payload, state } : undefined;
-  if (payload.type === "clear") return { ...payload, ...(state ? { state } : {}) };
-  return payload;
-}
-export function resizeImeCandidateWindow(size: ContentSize): void {
-  ensureControllers();
-  imeCandidateController.resize(size);
-}
-export function isImeCandidateWindowFromSender(event: IpcMainEvent | IpcMainInvokeEvent): boolean {
-  ensureControllers();
-  return imeCandidateController.isCandidateContents(event.sender);
-}
-export function sendImeCandidateState(): void {
-  ensureControllers();
-  imeCandidateController.markRendererReady();
-}
-export function sendImeCandidateAction(action: ImeCandidateAction): void {
-  ensureControllers();
-  imeCandidateController.routeAction(action);
-}
-/** Live candidate window (already created); consumers push shared surfaces like the theme payload. */
-export function getImeCandidateWindow(): BrowserWindow | undefined {
-  ensureControllers();
-  return imeCandidateController.getWindow();
-}
-export function disposeImeCandidateWindow(): void {
-  if (!imeCandidateController) return;
-  imeCandidateController.dispose();
 }
 export function sendConversationChange(change: ConversationChange): void {
   const mainWindow = getWindow();
@@ -243,7 +174,6 @@ function logCaptureSurfaceState(reason: string, window: BrowserWindow): void {
 export function createMainWindow(): BrowserWindow {
   ensureControllers();
   const window = windowController.create();
-  imeCandidateController.warmup();
   return window;
 }
 export { app };

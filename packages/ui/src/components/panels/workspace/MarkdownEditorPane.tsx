@@ -1,14 +1,5 @@
 import type { DesktopBridge, WorkspaceFileContent } from "@answra/shared";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
-import { useEmbeddedIme } from "../../../hooks/useEmbeddedIme";
-import {
-  applyCodeMirrorImeCommand,
-  codeMirrorImeCompositionField,
-  createCodeMirrorTextAdapter,
-  setCodeMirrorImeComposition,
-} from "../../../ime/adapters/codeMirrorTextAdapter";
-import { handleImeEditorKeyDown, imeEditorAttributes } from "../../../ime/imeEditorBinding";
-import { ImeCandidateAnchorReporter } from "../ImeCandidateAnchorReporter";
 import { pasteImageName, resolveRelative, toResourceUrl } from "./fileKind";
 import { ZoomablePreview } from "./ZoomablePreview";
 import "./WorkspacePanel.css";
@@ -41,7 +32,7 @@ interface MarkdownEditorPaneProps {
   onDirtyChange?: (dirty: boolean) => void;
   /** 子资源（图片）相对路径解析基准：文档所在目录。 */
   dir: string;
-  /** 仅隐身模式由内置 Rime 接管编辑器输入。 */
+  /** 隐身状态由父层传入，用于统一禁止文本焦点。 */
   stealth: boolean;
 }
 
@@ -58,22 +49,8 @@ export function MarkdownEditorPane({
   externalVersion,
   onDirtyChange,
   dir,
-  stealth,
+  stealth: _stealth,
 }: MarkdownEditorPaneProps) {
-  const ime = useEmbeddedIme(
-    bridge,
-    (text) => {
-      const view = bundleRef.current.view;
-      if (!view) return;
-      createCodeMirrorTextAdapter(view).insertText(text);
-      setDirtyState(true);
-    },
-    false,
-    "workspace-markdown-editor",
-  );
-  const imeRef = useRef(ime);
-  imeRef.current = ime;
-  const compositionRangeRef = useRef<{ from: number; to: number } | null>(null);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const bundleRef = useRef<CodeMirrorBundle>({ view: null });
   const baselineRef = useRef<string>(content.text ?? "");
@@ -84,18 +61,6 @@ export function MarkdownEditorPane({
   const [dirty, setDirty] = useState(false);
   const [conflict, setConflict] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const handleNativeKey = (input: import("@answra/shared").ImeKeyboardInput) => {
-      const view = bundleRef.current.view;
-      if (!view) return;
-      ime.sendNativeKey(input, (command) => {
-        if (bundleRef.current.view === view) applyCodeMirrorImeCommand(view, command);
-      });
-    };
-    ime.setNativeKeyHandler(handleNativeKey);
-    return () => ime.setNativeKeyHandler(undefined);
-  }, [ime]);
 
   const setDirtyState = useCallback(
     (value: boolean) => {
@@ -150,11 +115,7 @@ export function MarkdownEditorPane({
               drawSelection(),
               highlightActiveLine(),
               EditorView.lineWrapping,
-              EditorView.contentAttributes.of({
-                ...imeEditorAttributes({ targetId: "workspace-markdown-editor" }),
-              }),
               markdown(),
-              codeMirrorImeCompositionField,
               syntaxHighlighting(highlight),
               keymap.of([...defaultKeymap, ...historyKeymap]),
               EditorView.updateListener.of((update) => {
@@ -163,37 +124,7 @@ export function MarkdownEditorPane({
               }),
               // 粘贴图片：拦截剪贴板图片文件，落盘 assets/ 并插入相对链接。
               EditorView.domEventHandlers({
-                keydown: (event, editor) => {
-                  if (
-                    handleImeEditorKeyDown({
-                      event,
-                      policy: imeRef.current.textPolicy,
-                      readSelection: () => {
-                        const selection = editor.state.selection.main;
-                        return { start: selection.from, end: selection.to };
-                      },
-                      onCaptureCompositionStart: (range) => {
-                        compositionRangeRef.current = { from: range.start, to: range.end };
-                      },
-                      sendKey: (keyEvent, apply) => imeRef.current.sendKey(keyEvent, false, apply),
-                      applyEditorCommand: (command) => {
-                        if (bundleRef.current.view === editor)
-                          applyCodeMirrorImeCommand(editor, command);
-                      },
-                    })
-                  )
-                    return true;
-                  if (
-                    imeRef.current.targetEngaged &&
-                    !imeRef.current.state.composing &&
-                    event.key === "Enter" &&
-                    !event.ctrlKey &&
-                    !event.altKey &&
-                    !event.metaKey
-                  ) {
-                    createCodeMirrorTextAdapter(editor).insertText("\n");
-                    return true;
-                  }
+                keydown: () => {
                   return false;
                 },
                 pointerdown: (event, editor) => {
@@ -202,20 +133,7 @@ export function MarkdownEditorPane({
                   if (position !== null) {
                     editor.dispatch({ selection: { anchor: position } });
                   }
-                  void imeRef.current.acquire();
                   return false;
-                },
-                beforeinput: (event) => {
-                  if (imeRef.current.shouldPreventBeforeInput(event.inputType)) {
-                    event.preventDefault();
-                    return true;
-                  }
-                  return false;
-                },
-                compositionstart: (event) => {
-                  if (!imeRef.current.textPolicy.blockComposition) return false;
-                  event.preventDefault();
-                  return true;
                 },
                 paste: (event) => {
                   const files = Array.from(event.clipboardData?.files ?? []).filter((file) =>
@@ -226,24 +144,13 @@ export function MarkdownEditorPane({
                     for (const file of files) void handlePasteImage(file);
                     return true;
                   }
-                  if (!imeRef.current.textPolicy.blockNativeEditing) return false;
-                  event.preventDefault();
-                  const text = event.clipboardData?.getData("text/plain") ?? "";
-                  const activeEditor = bundleRef.current.view;
-                  if (text && activeEditor) {
-                    activeEditor.dispatch(activeEditor.state.replaceSelection(text));
-                    setDirtyState(true);
-                  }
-                  return true;
+                  return false;
                 },
               }),
             ],
           }),
         });
         bundleRef.current.view = view;
-        view.contentDOM.addEventListener("focus", onEditorFocus);
-        view.contentDOM.addEventListener("blur", onEditorBlur);
-        if (document.activeElement === view.contentDOM) void imeRef.current.acquire();
       } catch (cause) {
         if (!disposed) setError(cause instanceof Error ? cause.message : "编辑器加载失败");
       }
@@ -252,38 +159,11 @@ export function MarkdownEditorPane({
       disposed = true;
       // 销毁前捕获最终文本：预览态没有编辑器实例，挂起的自动保存依赖它。
       if (view) lastTextRef.current = view.state.doc.toString();
-      view?.contentDOM.removeEventListener("focus", onEditorFocus);
-      view?.contentDOM.removeEventListener("blur", onEditorBlur);
-      void imeRef.current.release("editor-unmount");
       view?.destroy();
       bundleRef.current.view = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path, viewMode, setDirtyState]);
-
-  useEffect(() => {
-    const view = bundleRef.current.view;
-    const range = compositionRangeRef.current;
-    if (!view) return;
-    if (!ime.state.composing || !ime.state.preedit || !range) {
-      setCodeMirrorImeComposition(view, null);
-      if (!ime.state.composing) compositionRangeRef.current = null;
-      return;
-    }
-    setCodeMirrorImeComposition(view, {
-      ...range,
-      preedit: ime.state.preedit,
-      targetId: "workspace-markdown-editor",
-    });
-  }, [ime.state.composing, ime.state.preedit]);
-
-  function onEditorFocus() {
-    void imeRef.current.acquire();
-  }
-
-  function onEditorBlur() {
-    imeRef.current.blur();
-  }
 
   async function handlePasteImage(file: File) {
     if (!bridge?.writeWorkspaceBytes || !bundleRef.current.view) return;
@@ -295,7 +175,7 @@ export function MarkdownEditorPane({
       const target = dir.length > 0 ? `${dir}/assets/${name}` : `assets/${name}`;
       await bridge.writeWorkspaceBytes(target, base64);
       const editor = bundleRef.current.view;
-      createCodeMirrorTextAdapter(editor).insertText(`![](assets/${name})\n`);
+      editor.dispatch(editor.state.replaceSelection(`![](assets/${name})\n`));
       setDirtyState(true);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "图片保存失败");
@@ -385,16 +265,6 @@ export function MarkdownEditorPane({
 
   return (
     <div className="workspace-editor">
-      {viewMode === "source" && (
-        <ImeCandidateAnchorReporter
-          blockNativeEditing={ime.textPolicy.blockNativeEditing}
-          generation={ime.generation}
-          onUpdate={ime.updateCandidate}
-          showCaretWithoutFocus={stealth}
-          state={ime.state}
-          targetId="workspace-markdown-editor"
-        />
-      )}
       <div className="workspace-editor__toolbar">
         <div className="workspace-editor__modes" role="tablist" aria-label="视图模式">
           <button
