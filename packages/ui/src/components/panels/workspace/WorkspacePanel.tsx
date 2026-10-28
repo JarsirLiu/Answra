@@ -1,5 +1,5 @@
 import type { DesktopBridge, WorkspaceFileContent, WorkspaceNode } from "@answra/shared";
-import { FolderOpen, PanelLeftOpen, X } from "lucide-react";
+import { FolderOpen, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { ICON_SM } from "../../../tokens";
 import { PanelShell } from "../PanelShell";
@@ -21,6 +21,7 @@ interface WorkspacePanelProps {
 
 /**
  * 工作区面板（笔记本 + 资料合并表面）：
+ * 标准面板头部（标题 = 根目录路径，动作 = 收起目录 / 更换目录 / 关闭），
  * 左目录树、右内容区（md 编辑/预览、docx/pdf 预览、图片查看）。
  * 由悬浮条唯一的「笔记本」入口打开（笔记与资料共用本面板）。
  */
@@ -98,115 +99,104 @@ export function WorkspacePanel({ bridge, onClose, stealth = false }: WorkspacePa
   const kind = selected ? classifyFile(selected.name) : null;
 
   return (
-    <PanelShell headerless onClose={onClose} title="笔记本 / 资料" variant="notes">
-      <div className={`workspace-panel${sidebarCollapsed ? " workspace-panel--collapsed" : ""}`}>
-        {/* 面板头部让位给「侧栏 + 纸面」，标题只保留给读屏与用例定位。 */}
-        <h1 className="workspace-panel__sr-title">笔记本 / 资料</h1>
-        {workspace.root && (
-          <aside aria-label="工作区目录" className="workspace-panel__sidebar">
-            {sidebarCollapsed ? (
-              // 收起态：只留一个展开按钮的窄条。
-              <button
-                type="button"
-                className="workspace-panel__sidebar-toggle"
-                aria-label="展开目录"
-                title="展开目录"
-                onClick={() => setSidebarCollapsed(false)}
-              >
-                <PanelLeftOpen aria-hidden="true" size={ICON_SM - 1} />
-              </button>
-            ) : (
-              <DirectoryTree
-                bridge={bridge}
-                nodes={workspace.tree}
-                root={workspace.root}
-                selectedPath={selected?.path ?? null}
-                onSelect={openNode}
-                collapsed={false}
-                onToggleCollapse={() => setSidebarCollapsed(true)}
-                stealth={stealth}
-                onDelete={(path) => {
-                  if (selectedPathRef.current === path) setSelected(null);
-                  void workspace.deleteEntry(path).catch(() => undefined);
-                }}
-              />
-            )}
-          </aside>
-        )}
-        <div className="workspace-panel__sheet">
-          <div className="workspace-panel__sheet-bar">
-            {workspace.root && (
-              <button
-                type="button"
-                className="workspace-panel__icon-button workspace-panel__pick-root"
-                aria-label="更换目录"
-                title="更换目录"
-                onClick={() => void workspace.pickRoot()}
-              >
-                <FolderOpen aria-hidden="true" size={ICON_SM + 2} />
-              </button>
-            )}
+    <PanelShell
+      context={workspace.root ? undefined : "未选择目录"}
+      headerAction={
+        workspace.root ? (
+          <div className="panel-header-action workspace-panel__header-actions">
             <button
               type="button"
               className="workspace-panel__icon-button"
-              aria-label="收起面板"
-              title="收起面板"
-              onClick={onClose}
+              aria-label={sidebarCollapsed ? "展开目录" : "收起目录"}
+              title={sidebarCollapsed ? "展开目录" : "收起目录"}
+              onClick={() => setSidebarCollapsed((value) => !value)}
             >
-              <X aria-hidden="true" size={ICON_SM + 2} />
+              {sidebarCollapsed ? (
+                <PanelLeftOpen aria-hidden="true" size={ICON_SM + 2} />
+              ) : (
+                <PanelLeftClose aria-hidden="true" size={ICON_SM + 2} />
+              )}
+            </button>
+            <button
+              type="button"
+              className="workspace-panel__icon-button workspace-panel__pick-root"
+              aria-label="更换目录"
+              title="更换目录"
+              onClick={() => void workspace.pickRoot()}
+            >
+              <FolderOpen aria-hidden="true" size={ICON_SM + 2} />
             </button>
           </div>
-          <div className="workspace-panel__content">
-            {!workspace.root ? (
-              <div className="workspace-panel__empty">
-                <p className="workspace-panel__empty-copy">
-                  选择一个本地目录作为工作区，目录下的 md 文档可编辑，docx/pdf 可预览。
-                </p>
-                <button
-                  type="button"
-                  className="surface-control surface-control--primary workspace-panel__pick"
-                  onClick={() => void workspace.pickRoot()}
-                >
-                  <FolderOpen aria-hidden="true" size={14} /> 选择目录
-                </button>
-                {workspace.error && <div className="workspace-panel__error">{workspace.error}</div>}
-              </div>
-            ) : (
-              <>
-                {workspace.error && <div className="workspace-panel__error">{workspace.error}</div>}
-                {loadError && <div className="workspace-panel__error">{loadError}</div>}
-                {!selected && <div className="workspace-preview-placeholder">左侧选择文件打开</div>}
-                {selected && kind === "markdown" && content && (
-                  <MarkdownEditorPane
-                    bridge={bridge}
-                    content={content}
-                    dir={dir}
-                    externalVersion={externalVersion}
-                    path={selected.path}
-                    viewMode={viewMode}
-                    stealth={stealth}
-                    onDirtyChange={(value) => {
-                      dirtyRef.current = value;
-                    }}
-                    onViewModeChange={setViewMode}
-                  />
-                )}
-                {selected && kind === "docx" && content && (
-                  <DocxPreviewPane content={content} name={selected.name} />
-                )}
-                {selected && kind === "pdf" && content && (
-                  <PdfPreviewPane content={content} path={selected.path} />
-                )}
-                {selected && kind === "image" && content && (
-                  <ImagePreviewPane path={selected.path} name={selected.name} />
-                )}
-                {selected && kind === "text" && content && <TextPreviewPane content={content} />}
-                {selected && kind === "other" && (
-                  <div className="workspace-preview-placeholder">该文件类型暂不支持应用内预览</div>
-                )}
-              </>
-            )}
-          </div>
+        ) : undefined
+      }
+      onClose={onClose}
+      title={workspace.root ?? "笔记本 / 资料"}
+      variant="notes"
+    >
+      <div className="workspace-panel">
+        {workspace.root && !sidebarCollapsed && (
+          <aside aria-label="工作区目录" className="workspace-panel__sidebar">
+            <DirectoryTree
+              nodes={workspace.tree}
+              selectedPath={selected?.path ?? null}
+              onSelect={openNode}
+              onDelete={(path) => {
+                if (selectedPathRef.current === path) setSelected(null);
+                void workspace.deleteEntry(path).catch(() => undefined);
+              }}
+            />
+          </aside>
+        )}
+        <div className="workspace-panel__content">
+          {!workspace.root ? (
+            <div className="workspace-panel__empty">
+              <p className="workspace-panel__empty-copy">
+                选择一个本地目录作为工作区，目录下的 md 文档可编辑，docx/pdf 可预览。
+              </p>
+              <button
+                type="button"
+                className="surface-control surface-control--primary workspace-panel__pick"
+                onClick={() => void workspace.pickRoot()}
+              >
+                <FolderOpen aria-hidden="true" size={14} /> 选择目录
+              </button>
+              {workspace.error && <div className="workspace-panel__error">{workspace.error}</div>}
+            </div>
+          ) : (
+            <>
+              {workspace.error && <div className="workspace-panel__error">{workspace.error}</div>}
+              {loadError && <div className="workspace-panel__error">{loadError}</div>}
+              {!selected && <div className="workspace-preview-placeholder">左侧选择文件打开</div>}
+              {selected && kind === "markdown" && content && (
+                <MarkdownEditorPane
+                  bridge={bridge}
+                  content={content}
+                  dir={dir}
+                  externalVersion={externalVersion}
+                  path={selected.path}
+                  viewMode={viewMode}
+                  stealth={stealth}
+                  onDirtyChange={(value) => {
+                    dirtyRef.current = value;
+                  }}
+                  onViewModeChange={setViewMode}
+                />
+              )}
+              {selected && kind === "docx" && content && (
+                <DocxPreviewPane content={content} name={selected.name} />
+              )}
+              {selected && kind === "pdf" && content && (
+                <PdfPreviewPane content={content} path={selected.path} />
+              )}
+              {selected && kind === "image" && content && (
+                <ImagePreviewPane path={selected.path} name={selected.name} />
+              )}
+              {selected && kind === "text" && content && <TextPreviewPane content={content} />}
+              {selected && kind === "other" && (
+                <div className="workspace-preview-placeholder">该文件类型暂不支持应用内预览</div>
+              )}
+            </>
+          )}
         </div>
       </div>
     </PanelShell>

@@ -1,9 +1,8 @@
-/** 工作区目录树纯展示组件：按层级展示目录与文件并支持展开/收起侧栏，不持有文件读写逻辑。 */
 import type { WorkspaceNode } from "@answra/shared";
 import { addCollection, Icon } from "@iconify/react";
 // VS Code 图标集离线注册（Iconify 官方离线用法：导入一次，全应用可用）。
 import vscodeIconsCollection from "@iconify-json/vscode-icons/icons.json";
-import { ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { getIconForFile } from "vscode-icons-js";
 import { ICON_SM } from "../../../tokens";
@@ -27,46 +26,32 @@ interface DirectoryTreeProps {
   selectedPath: string | null;
   onSelect: (node: WorkspaceNode) => void;
   onDelete: (path: string) => void;
-  /** 侧栏收起状态与切换（按钮位于树顶部工具行，不独占整列）。 */
-  collapsed?: boolean;
-  onToggleCollapse?: () => void;
 }
 
-interface TreeNodeProps extends DirectoryTreeProps {
-  node: WorkspaceNode;
-  depth: number;
-}
-
-export function DirectoryTree(props: DirectoryTreeProps) {
-  const { nodes } = props;
+/**
+ * 目录树纯展示组件：根目录路径与收起入口都在面板头部，本组件只渲染树本身。
+ * 数据是扁平先序列表（目录优先、父在子前），层级由路径推导。
+ */
+export function DirectoryTree({ nodes, selectedPath, onSelect, onDelete }: DirectoryTreeProps) {
+  // 顶层节点 = 路径不含「/」；嵌套节点只在展开的父目录内渲染，避免整表重放成重复行。
   const rootNodes = nodes.filter((node) => !node.path.includes("/"));
-
   return (
     <div className="workspace-tree">
-      {props.onToggleCollapse && (
-        <div className="workspace-tree__actions">
-          <button
-            type="button"
-            className="workspace-tree__action"
-            aria-label={props.collapsed ? "展开目录" : "收起目录"}
-            title={props.collapsed ? "展开目录" : "收起目录"}
-            onClick={props.onToggleCollapse}
-          >
-            {props.collapsed ? (
-              <PanelLeftOpen aria-hidden="true" size={ICON_SM} />
-            ) : (
-              <PanelLeftClose aria-hidden="true" size={ICON_SM} />
-            )}
-          </button>
-        </div>
-      )}
       <div className="workspace-tree__body">
-        {rootNodes.length === 0 ? (
+        {nodes.length === 0 ? (
           <p className="workspace-tree__empty">目录为空。</p>
         ) : (
           <ul className="workspace-tree__list">
             {rootNodes.map((node) => (
-              <TreeNodeView key={node.path} {...props} node={node} depth={0} />
+              <TreeNodeView
+                key={node.path}
+                depth={0}
+                node={node}
+                nodes={nodes}
+                onDelete={onDelete}
+                onSelect={onSelect}
+                selectedPath={selectedPath}
+              />
             ))}
           </ul>
         )}
@@ -75,15 +60,23 @@ export function DirectoryTree(props: DirectoryTreeProps) {
   );
 }
 
-function TreeNodeView({ node, depth, ...treeProps }: TreeNodeProps) {
-  const { selectedPath, onSelect, nodes, onDelete } = treeProps;
-  const [expanded, setExpanded] = useState(depth === 0 && node.kind === "dir");
+interface TreeNodeProps {
+  nodes: WorkspaceNode[];
+  selectedPath: string | null;
+  onSelect: (node: WorkspaceNode) => void;
+  onDelete: (path: string) => void;
+  node: WorkspaceNode;
+  depth: number;
+}
+
+function TreeNodeView({ node, depth, nodes, selectedPath, onSelect, onDelete }: TreeNodeProps) {
+  // 顶层目录默认展开；嵌套目录默认收起，由用户点击开合。
+  const [expandedByUser, setExpandedByUser] = useState(depth === 0 && node.kind === "dir");
   const isDir = node.kind === "dir";
   const directChildren = isDir
     ? nodes.filter((child) => {
         if (!child.path.startsWith(`${node.path}/`)) return false;
-        const rest = child.path.slice(node.path.length + 1);
-        return !rest.includes("/");
+        return !child.path.slice(node.path.length + 1).includes("/");
       })
     : [];
   const selected = selectedPath === node.path;
@@ -93,33 +86,30 @@ function TreeNodeView({ node, depth, ...treeProps }: TreeNodeProps) {
         <button
           type="button"
           className="workspace-tree__item"
-          aria-expanded={isDir ? expanded : undefined}
+          aria-expanded={isDir ? expandedByUser : undefined}
           onClick={() => {
-            if (isDir) setExpanded((value) => !value);
+            if (isDir) setExpandedByUser((value) => !value);
             else onSelect(node);
           }}
         >
+          {/* 文件也保留 chevron 空槽：图标与文件名全树同列对齐。 */}
+          <span className="workspace-tree__chevron">
+            {isDir &&
+              (expandedByUser ? (
+                <ChevronDown aria-hidden="true" size={ICON_SM} />
+              ) : (
+                <ChevronRight aria-hidden="true" size={ICON_SM} />
+              ))}
+          </span>
           {isDir ? (
-            <>
-              <span className="workspace-tree__chevron">
-                {expanded ? (
-                  <ChevronDown aria-hidden="true" size={ICON_SM} />
-                ) : (
-                  <ChevronRight aria-hidden="true" size={ICON_SM} />
-                )}
-              </span>
-              <Icon
-                aria-hidden="true"
-                className="workspace-tree__icon-vscode"
-                fontSize={16}
-                icon={expanded ? FOLDER_OPEN_ICON : FOLDER_ICON}
-              />
-            </>
+            <Icon
+              aria-hidden="true"
+              className="workspace-tree__icon-vscode"
+              fontSize={16}
+              icon={expandedByUser ? FOLDER_OPEN_ICON : FOLDER_ICON}
+            />
           ) : (
-            <>
-              <span aria-hidden="true" className="workspace-tree__chevron" />
-              <TreeFileIcon name={node.name} />
-            </>
+            <TreeFileIcon name={node.name} />
           )}
           <span className="workspace-tree__name">{node.name}</span>
         </button>
@@ -129,13 +119,21 @@ function TreeNodeView({ node, depth, ...treeProps }: TreeNodeProps) {
           aria-label={`删除 ${node.name}`}
           onClick={() => onDelete(node.path)}
         >
-          <Trash2 aria-hidden="true" size={ICON_SM - 2} />
+          <Trash2 aria-hidden="true" size={ICON_SM} />
         </button>
       </div>
-      {isDir && expanded && directChildren.length > 0 && (
+      {isDir && expandedByUser && (
         <ul className="workspace-tree__children">
           {directChildren.map((child) => (
-            <TreeNodeView key={child.path} {...treeProps} node={child} depth={depth + 1} />
+            <TreeNodeView
+              key={child.path}
+              depth={depth + 1}
+              node={child}
+              nodes={nodes}
+              onDelete={onDelete}
+              onSelect={onSelect}
+              selectedPath={selectedPath}
+            />
           ))}
         </ul>
       )}

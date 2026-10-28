@@ -23,6 +23,7 @@ apps/desktop/resources/asr/**
 # Locally downloaded dictionary data and prebuilt helper binaries are not source files.
 apps/desktop/native/rime-data/easy_en.dict.yaml
 apps/desktop/native/rime-host/*.exe
+apps/desktop/native/rime-host/.build/
 # Temporary upstream IME source archives used while preparing bundled resources.
 apps/desktop/native/rime-data/*_upstream/
 apps/desktop/native/rime-data/rime-deps.7z

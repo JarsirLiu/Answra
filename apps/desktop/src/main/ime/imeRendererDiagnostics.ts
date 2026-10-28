@@ -11,7 +11,6 @@ const DIAGNOSTIC_TARGET_IDS = new Set([
   "reply-composer",
   "settings-base-url",
   "settings-model",
-  "workspace-directory-filter",
   "workspace-markdown-editor",
   "main-composer",
 ]);

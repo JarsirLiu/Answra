@@ -1,40 +1,15 @@
+/* 工作区目录树：纯树行列表（搜索/路径行/根节点行都在面板头部或已删除）。
+   行高走全局 --row-h（22px 密集档），子级缩进 + 竖向引导线表达层级。 */
 .workspace-tree {
   display: flex;
   flex-direction: column;
   min-width: 0;
   height: 100%;
   overflow: hidden;
+  padding: var(--space-2);
 }
 
-.workspace-tree__actions {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: flex-end;
-  min-height: var(--row-h);
-  padding: 0 calc(var(--space-1) / 2);
-}
-
-.workspace-tree__action {
-  display: grid;
-  flex: 0 0 var(--row-h);
-  width: var(--row-h);
-  height: var(--row-h);
-  place-items: center;
-  padding: 0;
-  border: 0;
-  border-radius: var(--ctl-radius-sm);
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-}
-
-.workspace-tree__action:hover {
-  color: var(--ink);
-  background: var(--hover);
-}
-
-/* 目录树本体独立滚动。 */
+/* 树本体单独滚动。 */
 .workspace-tree__body {
   flex: 1;
   min-height: 0;
@@ -43,37 +18,35 @@
 }
 
 .workspace-tree__empty {
-  margin: 0;
-  padding: var(--space-2) var(--space-2);
   color: var(--muted);
-  font-size: var(--font-sm);
+  font-size: var(--font-md);
+  padding: var(--space-2);
 }
 
 .workspace-tree__list,
-.workspace-tree__children {
+.workspace-tree ul {
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
-/* 子级缩进只挂在 .workspace-tree__children 上：竖向引导线对准父级箭头中心，每级缩进 16px。 */
+/* 子级缩进 + 竖向引导线：每级共 16px（8 外距 + 8 内距），层级不用只靠留白表达。 */
 .workspace-tree__children {
   margin-left: var(--space-2);
   padding-left: var(--space-2);
   border-left: 1px solid var(--glass-line-soft);
 }
 
+/* 树行：无行间分隔线，靠行底色区分状态；圆角收在行上。 */
 .workspace-tree__row {
   display: flex;
   align-items: center;
   min-width: 0;
-  overflow: hidden;
   min-height: var(--row-h);
   border-radius: var(--ctl-radius-sm);
-  box-sizing: border-box;
 }
 
-/* 树行三态梯度：hover 轻扫（--field 5%），选中高一档（--hover 10%）。 */
+/* 交互态梯度：hover 轻扫（--field 5%），选中重一档（--hover 10%）。 */
 .workspace-tree__row:hover {
   background: var(--field);
 }
@@ -89,7 +62,6 @@
   align-items: center;
   gap: var(--space-1);
   min-width: 0;
-  overflow: hidden;
   border: 0;
   background: transparent;
   color: var(--ink);
@@ -100,6 +72,7 @@
   cursor: pointer;
 }
 
+/* chevron 槽位 12px：目录与文件同列，文件名与图标全树对齐。 */
 .workspace-tree__chevron {
   display: grid;
   flex: 0 0 12px;
@@ -108,15 +81,16 @@
   color: var(--muted);
 }
 
+/* VS Code 图标槽位 16px（与 TSX fontSize=16 同步的图标档）。 */
 .workspace-tree__icon-vscode {
-  flex: 0 0 var(--space-4);
-  font-size: var(--space-4);
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
 }
 
 .workspace-tree__item:focus-visible {
   outline: 1px solid var(--mint-text);
   outline-offset: -1px;
-  border-radius: var(--ctl-radius-sm);
 }
 
 .workspace-tree__name {
@@ -127,13 +101,14 @@
   white-space: nowrap;
 }
 
+/* 删除钮：hover 行内浮现，避免常驻噪声。 */
 .workspace-tree__delete {
   border: 0;
   background: transparent;
   color: inherit;
   opacity: 0;
   cursor: pointer;
-  padding: calc(var(--space-1) / 2);
+  padding: 0 var(--space-1);
   border-radius: var(--ctl-radius-sm);
 }
 

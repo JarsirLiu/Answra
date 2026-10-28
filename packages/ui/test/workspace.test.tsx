@@ -96,32 +96,26 @@ describe("WorkspacePanel", () => {
         onClose={() => undefined}
       />,
     );
-    // 目录路径成为侧栏顶部路径行；更换目录收成纸面工具条上的文件夹图标钮。
-    expect(await screen.findByRole("heading", { name: "D:/notes" })).toHaveClass(
-      "workspace-tree__root-path",
-    );
+    // 根目录路径在面板头部标题位；更换目录/收起目录收成头部图标钮。
+    expect(await screen.findByRole("heading", { name: "D:/notes" })).toHaveClass("panel-title");
     const pickRootButton = screen.getByRole("button", { name: "更换目录" });
     expect(pickRootButton).toHaveClass("workspace-panel__pick-root");
     fireEvent.click(pickRootButton);
     await waitFor(() => expect(pickWorkspaceRoot).toHaveBeenCalledTimes(1));
-    expect((await screen.findAllByText("错题.md")).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("阅读.md").length).toBeGreaterThan(0);
+    // 顶层列表只渲染顶层节点：嵌套文件不重复出现。
+    expect(screen.getAllByText("错题.md")).toHaveLength(1);
+    expect(screen.getByText("阅读.md")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "数学" })).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByRole("button", { name: "数学" })).toHaveClass("workspace-tree__item");
     expect(screen.getByText("阅读.md").closest(".workspace-tree__row")).toHaveClass(
       "workspace-tree__row",
     );
-    expect(screen.getAllByText("错题.md")[0]?.closest("ul")).toHaveClass(
-      "workspace-tree__children",
-    );
-    const collapseButton = screen.getByRole("button", { name: "收起目录" });
-    expect(collapseButton).toHaveClass("workspace-tree__action");
-    fireEvent.click(collapseButton);
-    expect(screen.getByRole("button", { name: "展开目录" })).toHaveClass(
-      "workspace-panel__sidebar-toggle",
-    );
+    expect(screen.getByText("错题.md").closest("ul")).toHaveClass("workspace-tree__children");
+    // 收起/展开目录走面板头部图标钮：收起后侧栏整体不渲染。
+    fireEvent.click(screen.getByRole("button", { name: "收起目录" }));
     expect(screen.queryByText("阅读.md")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "放大预览区域" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "展开目录" }));
+    expect(screen.getByText("阅读.md")).toBeInTheDocument();
   });
 
   it("opens a markdown file through the bridge", async () => {
