@@ -38,7 +38,7 @@
 
 ## IPC 约定（三层类型安全）
 
-1. 频道常量与请求/响应类型映射只写在 `packages/shared/src/channels.ts`，命名 `answra:<域>:<动作>`。
+1. 频道常量与请求/响应类型映射只写在 `packages/shared/src/channels/` 对应领域文件；`packages/shared/src/channels.ts` 仅作为稳定聚合入口，命名 `answra:<域>:<动作>`。
 2. main 侧 handler 按领域一个文件，注册前用 `isWindowFromSender` 校验来源。
 3. preload 消费 ChannelMap 类型；renderer 通过 `DesktopBridge` 接口访问，测试注入 mock bridge。
 
