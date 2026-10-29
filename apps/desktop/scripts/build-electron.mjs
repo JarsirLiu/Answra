@@ -1,6 +1,13 @@
 import { copyFile, mkdir } from "node:fs/promises";
 import { build } from "esbuild";
 
+const bundleOptions = {
+  bundle: true,
+  minify: true,
+  sourcemap: false,
+  legalComments: "none",
+};
+
 /**
  * 打包 Electron main / preload。
  * 两端都以 CJS bundle 输出：main 可直接 require workspace 源码包，
@@ -9,8 +16,8 @@ import { build } from "esbuild";
  */
 await Promise.all([
   build({
+    ...bundleOptions,
     entryPoints: ["src/main/index.ts"],
-    bundle: true,
     platform: "node",
     format: "cjs",
     // electron-updater 保持外部依赖：它内部按 Electron 运行时解析路径，不可打包。
@@ -18,24 +25,24 @@ await Promise.all([
     outfile: "out/main/index.cjs",
   }),
   build({
+    ...bundleOptions,
     entryPoints: ["src/preload/index.ts"],
-    bundle: true,
     platform: "node",
     format: "cjs",
     external: ["electron", "koffi"],
     outfile: "out/preload/index.cjs",
   }),
   build({
+    ...bundleOptions,
     entryPoints: ["src/preload/selection.ts"],
-    bundle: true,
     platform: "node",
     format: "cjs",
     external: ["electron", "koffi"],
     outfile: "out/preload/selection.cjs",
   }),
   build({
+    ...bundleOptions,
     entryPoints: ["src/main/conversation/worker.ts"],
-    bundle: true,
     platform: "node",
     format: "cjs",
     target: "node20.9",

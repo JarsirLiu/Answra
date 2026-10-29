@@ -4,4 +4,8 @@ import { defineConfig } from "vite";
 export default defineConfig({
   base: "./",
   plugins: [react()],
+  build: {
+    minify: "esbuild",
+    sourcemap: false,
+  },
 });
