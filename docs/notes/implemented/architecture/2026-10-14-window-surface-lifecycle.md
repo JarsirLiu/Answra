@@ -4,13 +4,13 @@
 
 ## 问题
 
-桌面端已有主窗口、回复窗口、IME 候选窗口和截图选择窗口。它们各自创建 BrowserWindow，并分别应用捕获保护、恢复显示和关闭清理。新增窗口容易漏掉隐私策略；重复监听和窗口重建也缺少统一登记点。页面与原生窗口的生命周期边界也需要明确，避免每加一个页面就创建一套窗口基础设施。
+桌面端已有主窗口、回复窗口和截图选择窗口。它们各自创建 BrowserWindow，并分别应用捕获保护、恢复显示和关闭清理。新增窗口容易漏掉隐私策略；重复监听和窗口重建也缺少统一登记点。页面与原生窗口的生命周期边界也需要明确，避免每加一个页面就创建一套窗口基础设施。
 
 ## 涉及范围
 
-- 代码/模块：`apps/desktop/src/main/windowSurfaceRegistry.ts`、`window.ts`、各 BrowserWindow controller、`capture/selectionWindow.ts`、`windowStealthController.ts`、`ime/imeIpc.ts`、`scripts/architecture/architecture-check.mjs`。
+- 代码/模块：`apps/desktop/src/main/windowSurfaceRegistry.ts`、`window.ts`、各 BrowserWindow controller、`capture/selectionWindow.ts`、`windowStealthController.ts`、`scripts/architecture/architecture-check.mjs`。
 - UI/进程/协议/持久化表面：main 进程的窗口实例、捕获保护生命周期、隐身切换和 controller teardown；不改变 renderer 页面路由及 IPC 业务协议。
-- 相关 Note：[主窗口生命周期与隐身策略拆分](../../implemented/architecture/2026-10-11-main-window-and-stealth-boundaries.md)、[会议场景隐身模式的窗口与捕获边界](../../proposed/architecture/2026-10-13-comprehensive-stealth-mode.md)、[统一 IME 输入目标与窗口生命周期](./2026-10-15-unified-ime-target-lifecycle.md)。
+- 相关 Note：[主窗口生命周期与隐身策略拆分](../../implemented/architecture/2026-10-11-main-window-and-stealth-boundaries.md)、[会议场景隐身模式的窗口与捕获边界](../../proposed/architecture/2026-10-13-comprehensive-stealth-mode.md)。
 
 ## 决定
 
@@ -18,7 +18,7 @@
 
 UI 页面继续由 renderer 路由管理。只有需要独立原生位置、焦点、z-order 或捕获策略的 surface 才创建 BrowserWindow。页面卸载不能直接销毁应用级共享服务。
 
-窗口角色首批固定为 `main`、`reply-bar`、`ime-candidate`、`selection-overlay`。各角色的层级和交互能力由 registry 内的策略表唯一声明。BrowserWindow 原生焦点事件由 registry 统一分发；DOM 输入控件焦点、IME lease owner 和 Rime composition 仍归 IME lease manager，不能从 BrowserWindow focus 推断。
+窗口角色首批固定为 `main`、`reply-bar`、`selection-overlay`。各角色的层级和交互能力由 registry 内的策略表唯一声明。BrowserWindow 原生焦点事件由 registry 统一分发，不能从中推断 renderer 内部输入状态。
 
 ## 生命周期契约
 
@@ -36,7 +36,6 @@ UI 页面继续由 renderer 路由管理。只有需要独立原生位置、焦�
 - 各窗口 controller：拥有对应 BrowserWindow 的创建、加载、业务状态、位置和显隐；声明角色，在显示前请求策略许可，并在业务 owner 变化时请求关系更新。
 - `windowStealthController.ts`：持有隐身模式状态并通知窗口注册表；任务栏/Dock 等应用级策略仍在此处。
 - `windowInteractionPolicy.ts`：只提供平台能力判断；BrowserWindow 的交互属性由 `windowSurfaceRegistry` 统一应用。
-- IME lease manager：订阅 registry 的原生窗口 focus/blur 事实，决定 lease suspend/resume；renderer DOM focus confirmation 仍是恢复输入的必要条件。
 - renderer 页面：只管理页面/组件生命周期，不直接控制 BrowserWindow 或应用级共享 session。
 
 ## 曾考虑的替代方案
@@ -52,11 +51,11 @@ UI 页面继续由 renderer 路由管理。只有需要独立原生位置、焦�
 - 增加 renderer 内部页面时优先使用页面路由，不新增 BrowserWindow；只有原生 surface 能力需求才新增窗口角色。
 - 捕获保护、层级和非激活交互由同一 surface 描述登记，但分别执行、分别验证；不允许用 `showInactive()` 代替捕获保护。
 - 注册表只释放自己拥有的 listener；各 controller 继续负责业务 listener 和资源 teardown。
-- IME lease 仍是输入目标焦点、generation 和 composition 的唯一权威；surface registry 只发布 BrowserWindow 原生焦点事实。renderer crash 后业务状态恢复和全应用统一 dispose 编排不属于本阶段。
+- surface registry 只发布 BrowserWindow 原生焦点事实；renderer crash 后业务状态恢复和全应用统一 dispose 编排不属于本阶段。
 
 ## 验证
 
-- 自动化：`windowSurfaceRegistry.test.ts` 覆盖角色策略、捕获保护、原生焦点订阅、候选 owner attach/reconcile/解绑、策略失败 fail-closed、closed 清理和重复注册；IME IPC 测试覆盖共享原生 focus 流触发 lease suspend；selection/reply/candidate/capture controller 测试通过。
+- 自动化：`windowSurfaceRegistry.test.ts` 覆盖角色策略、捕获保护、原生焦点订阅、策略失败 fail-closed、closed 清理和重复注册；selection/reply/capture controller 测试通过。
 - 自动化：`pnpm --filter @answra/desktop typecheck`、desktop 全量 Vitest、`pnpm architecture:check` 通过。
 - 完整门禁：`pnpm notes:check`、`pnpm verify`、`git diff --check` 通过；全仓 207 项测试通过。
 - 实机：Windows 11 22631、Electron 29.4.6 的外部截图行为尚未复测；Electron API 状态不作为第三方捕获绝对保证。

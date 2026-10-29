@@ -173,4 +173,18 @@ describe("theme CSS integrity", () => {
       expect(css, file).not.toMatch(/font-size:\s*[\d.]+px/);
     }
   });
+
+  it("keeps the light baseline neutral and uses a platform-aware Chinese font stack", () => {
+    const tokens = readFileSync(join(sourceRoot, "styles", "tokens.css"), "utf8");
+    expect(tokens).toContain("--app-ui-font-family:");
+    expect(tokens).toContain('"PingFang SC", "苹方-简", "Segoe UI Variable", "Noto Sans SC"');
+    expect(tokens).toContain("--ink-tint: 52 58 64;");
+    expect(tokens).toContain("--panel-tint: 247 248 249;");
+    expect(tokens).toContain("--paper-tint: 255 255 255;");
+    expect(tokens).toContain("--user-wash-base: 0.1;");
+    expect(tokens).toContain(
+      "--user-wash: rgb(var(--mint-tint) / calc(var(--user-wash-base) * var(--fade)));",
+    );
+    expect(tokens).toContain("--placeholder: rgb(var(--ink-tint) / calc(0.42 * var(--fade)));");
+  });
 });

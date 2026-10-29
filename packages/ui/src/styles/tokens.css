@@ -24,7 +24,10 @@
    层3  组件 css 只消费感知令牌，不出现字面量颜色。
    ============================================================ */
 :root {
-  font-family: "Segoe UI", "Microsoft YaHei UI", sans-serif;
+  --app-ui-font-family:
+    "PingFang SC", "苹方-简", "Segoe UI Variable", "Noto Sans SC", "Microsoft YaHei UI", "Segoe UI",
+    sans-serif;
+  font-family: var(--app-ui-font-family);
   color: var(--ink);
   background: transparent;
   font-synthesis: none;
@@ -72,31 +75,31 @@
 
   /* 【文字】全应用唯一文字色相：层级靠字号/字重，状态靠元素透明度；
       改文字颜色只动 --ink-tint 一个参数。
-      冷石板灰（#5F6F7E）：浅底上不糊也不"死黑"，对 #F2F2F7 约 4.7:1，
-      近看清晰；比近黑低一档存在感，照片里不那么扎眼 */
-  --ink-tint: 95 111 126; /* #5F6F7E */
+      中性炭灰（#343A40）：浅底上保持清晰的正文对比，避免蓝灰文字显脏发虚 */
+  --ink-tint: 52 58 64; /* #343A40 */
 
-  /* 【图标】比正文再柔一档（#6E7E8C），保证任何表面上都看得清、又不比正文抢眼 */
-  --icon-tint: 110 126 140;
+  /* 【图标】比正文柔一档，但仍保持中性，不再整体偏蓝 */
+  --icon-tint: 103 112 122; /* #67707A */
 
   /* 【背景与表面】glass=胶囊条 panel=内容面板/菜单 paper=纸面
      全部表面完全不透明（base=1 且不乘 fade）：背景零参与混色，
      拖动/滚动/切换窗口都不会改变应用颜色——这是硬约束，任何表面
      不得引入半透明。透明度滑杆只作用于前景（文字/图标/描边/控件）。
-     浅色调色板取系统灰阶：面板 #F2F2F7 与纸面 #FBFBFD 之间只差一档，
-     边界靠描边与投影区分，而不是靠色块存在感 */
-  --glass-tint: 242 242 247; /* #F2F2F7 */
+     浅色调色板取中性灰阶：面板 #F7F8F9 与纸面 #FFFFFF 之间保持轻微层级，
+     边界靠描边与投影区分，而不是靠蓝灰色块存在感 */
+  --glass-tint: 247 248 249; /* #F7F8F9 */
   --glass-base: 1;
-  --panel-tint: 242 242 247; /* #F2F2F7 */
+  --panel-tint: 247 248 249; /* #F7F8F9 */
   --panel-base: 1;
-  --paper-tint: 251 251 253; /* #FBFBFD */
+  --paper-tint: 255 255 255; /* #FFFFFF */
   --paper-base: 1;
 
-  /* 【强调】品牌薄荷绿系 */
-  --mint-tint: 47 161 113; /* #2fa171 */
-  --mint-deep-tint: 24 112 74; /* 比品牌绿深两档，玻璃底上的主操作图标可辨 */
-  --mint-text-tint: 31 122 83; /* #1f7a53 */
+  /* 【强调】低饱和青绿色系，保留品牌识别但降低廉价感 */
+  --mint-tint: 61 145 119; /* #3D9177 */
+  --mint-deep-tint: 38 111 88; /* #266F58 */
+  --mint-text-tint: 44 119 94; /* #2C775E */
   --mint-wash-base: 0.2;
+  --user-wash-base: 0.1;
 
   /* 【描边与交互态】
        描边分两类，原始参数也分开：
@@ -147,10 +150,12 @@
   --icon: rgb(var(--icon-tint) / var(--fade));
   --muted: rgb(var(--ink-tint) / var(--fade));
   --faint: rgb(var(--ink-tint) / var(--fade));
+  --placeholder: rgb(var(--ink-tint) / calc(0.42 * var(--fade)));
   --mint: rgb(var(--mint-tint) / var(--fade));
   --mint-deep: rgb(var(--mint-deep-tint) / var(--fade));
   --mint-text: rgb(var(--mint-text-tint) / var(--fade));
   --mint-wash: rgb(var(--mint-tint) / calc(var(--mint-wash-base) * var(--fade)));
+  --user-wash: rgb(var(--mint-tint) / calc(var(--user-wash-base) * var(--fade)));
   --mint-wash-strong: rgb(var(--mint-tint) / calc((var(--mint-wash-base) + 0.08) * var(--fade)));
   --mint-line: rgb(var(--mint-tint) / calc(0.25 * var(--fade)));
   --mint-line-focus: rgb(var(--mint-tint) / calc(0.5 * var(--fade)));

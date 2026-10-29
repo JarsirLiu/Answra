@@ -88,7 +88,7 @@
   border: 1px solid var(--mint-line);
   border-radius: 10px 4px 10px 10px;
   color: var(--mint-text);
-  background: var(--mint-wash);
+  background: var(--user-wash);
   font-size: 12px;
   line-height: 1.6;
   white-space: pre-wrap;

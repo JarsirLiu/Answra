@@ -163,6 +163,7 @@ export const FALLBACK_TOKEN_KEYS = [
   "--mint-deep-tint",
   "--mint-text-tint",
   "--mint-wash-base",
+  "--user-wash-base",
 ];
 
 /** 令牌写入器：null 表示移除内联覆盖回落样式表默认；undefined 整体清除。 */

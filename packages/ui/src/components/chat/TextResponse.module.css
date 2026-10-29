@@ -91,13 +91,44 @@
   background: var(--field);
   overflow: hidden;
 }
+.codeHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 28px;
+  padding: 2px 7px 2px 12px;
+  border-bottom: 1px solid var(--glass-line-soft);
+}
 .codeLang {
-  display: block;
-  padding: 5px 12px;
+  padding: 0;
   font-size: 11px;
   color: var(--muted);
-  border-bottom: 1px solid var(--glass-line-soft);
   text-transform: lowercase;
+}
+.copyButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  border-radius: 5px;
+  padding: 4px 5px;
+  color: var(--muted);
+  background: transparent;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    color 140ms ease,
+    background 140ms ease;
+}
+.copyButton:hover {
+  color: var(--ink);
+  background: var(--hover);
+}
+.copyButton:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
 }
 .tableScroll {
   margin: 0 0 10px;

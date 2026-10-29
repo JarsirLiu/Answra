@@ -39,7 +39,7 @@
   border-color: var(--mint-line);
   border-radius: 11px 4px 11px 11px;
   color: var(--mint-text);
-  background: var(--mint-wash);
+  background: var(--user-wash);
 }
 /* 对话区自定义滚动条：极细圆条，避免原生粗灰条。 */
 .conversation::-webkit-scrollbar,

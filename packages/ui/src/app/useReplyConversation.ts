@@ -48,6 +48,7 @@ export function useReplyConversation(
     let queued: ConversationChange[] = [];
     let processing = Promise.resolve();
     const activityByRun = new Map<string, ReplyBarActivity[]>();
+    let capturedRound = false;
 
     const applySnapshot = (snapshot: ConversationSnapshot) => {
       if (
@@ -57,6 +58,10 @@ export function useReplyConversation(
       )
         return;
       revisionRef.current = snapshot.revision;
+      // 答题运行结束后，agent 会清空临时会话并发布空快照。详情面板仍需
+      // 展示本轮已缓存的用户截图和答案，因此只推进游标，不覆盖本地内容。
+      if (capturedRound && snapshot.messages.length === 0 && !snapshot.activeRunId) return;
+      if (snapshot.messages.length > 0) capturedRound = true;
       setState((current) => ({
         ...current,
         messages: snapshot.messages.map((message) => ({
@@ -94,6 +99,7 @@ export function useReplyConversation(
 
       revisionRef.current = revision;
       if (change.type === "messages-appended") {
+        if (change.messages.length > 0) capturedRound = true;
         setState((current) => ({
           ...current,
           activeRunId: change.activeRunId,
@@ -118,6 +124,7 @@ export function useReplyConversation(
         }
         addActivity(event.runId, event);
       } else {
+        capturedRound = true;
         const priorActivities = activityByRun.get(change.runId) ?? [];
         setState((current) => ({
           ...current,

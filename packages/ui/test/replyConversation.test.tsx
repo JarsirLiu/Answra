@@ -8,7 +8,7 @@ interface FakeStore {
   begin: (conversationId: string) => void;
   delta: (conversationId: string, delta: string) => void;
   finish: (conversationId: string) => void;
-  /** 模拟答题会话的 ephemeral 清空：只清数据、不发变更，和 MemoryConversationStore.clear 一致。 */
+  /** 模拟答题会话的 ephemeral 清空，并发布实际的空快照。 */
   clear: (conversationId: string) => void;
 }
 
@@ -88,8 +88,12 @@ function createFakeStore(): FakeStore {
         message: { ...assistant },
       });
     },
-    clear: () => {
+    clear: (conversationId) => {
       messages = [];
+      publish({
+        type: "snapshot",
+        snapshot: { conversationId, revision: revision + 1, messages: [] },
+      });
     },
   };
 }

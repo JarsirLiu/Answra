@@ -61,7 +61,7 @@
 }
 
 .conversation-composer textarea::placeholder {
-  color: var(--faint);
+  color: var(--placeholder);
 }
 
 .conversation-composer textarea:disabled {

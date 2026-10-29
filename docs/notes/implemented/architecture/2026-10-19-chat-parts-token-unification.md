@@ -17,7 +17,7 @@
 
 - 代码/模块：`packages/ui/src/components/chat/{ThinkingReasoning,TextResponse,MessageActions,ToolResponse,MessageStream}.module.css`、`MessageActions.tsx`、`packages/ui/src/styles/tokens.css`、`packages/ui/test/themeCss.test.ts`。
 - UI 表面：对话面板与回复条浮层里的思考块、Markdown 正文、工具调用卡、消息操作条及其悬停提示片。
-- 相关 Note：[悬浮表面视觉契约](2026-10-11-floating-surface-visual-contract.md)（同一思路，作用范围是悬浮条）、[深色主题下 AI 正文与候选词不可见](../bug-fix/2026-10-16-dark-theme-invisible-chat-and-candidates.md)（本 Note 移除的 `--tr-*` 正是那次修复引入的）。
+- 相关 Note：[悬浮表面视觉契约](2026-10-11-floating-surface-visual-contract.md)（同一思路，作用范围是悬浮条）。
 
 ## 决定
 
