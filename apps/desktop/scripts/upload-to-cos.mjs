@@ -1,4 +1,4 @@
-import { readdir, readFile } from "node:fs/promises";
+import { access, readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import util from "node:util";
@@ -34,7 +34,21 @@ for (const name of (await readdir(releaseDir)).filter((n) => /^latest.*\.yml$/i.
   files.add(name);
   const content = await readFile(path.join(releaseDir, name), "utf8");
   for (const match of content.matchAll(/^\s*-?\s*url:\s*(.+)$/gm)) {
-    files.add(match[1].trim());
+    const artifactName = match[1].trim();
+    files.add(artifactName);
+
+    // electron-updater 请求同名 blockmap 来做差异下载；它不会出现在 latest.yml 的 url 列表里。
+    if (/\.(exe|dmg|zip|appimage)$/i.test(artifactName)) {
+      const blockMapName = `${artifactName}.blockmap`;
+      if (!(await fileExists(path.join(releaseDir, blockMapName)))) {
+        if (/\.exe$/i.test(artifactName)) {
+          console.error(`[upload] Windows 安装包缺少差异更新文件：${blockMapName}`);
+          process.exit(1);
+        }
+        continue;
+      }
+      files.add(blockMapName);
+    }
   }
 }
 if (files.size === 0) {
@@ -93,3 +107,13 @@ for (const prefix of [`download/v${version}`, "download/latest"]) {
   }
 }
 console.log("[upload] 完成：官网与客户端更新源已指向新版本。");
+
+async function fileExists(filePath) {
+  try {
+    await access(filePath);
+    return true;
+  } catch (error) {
+    if (error?.code === "ENOENT") return false;
+    throw error;
+  }
+}
