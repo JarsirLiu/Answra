@@ -172,3 +172,10 @@
     animation: none;
   }
 }
+
+/* 主窗口里与内容面板（.content-panel）的条-面板间距保持一致（8px）。
+   只作用 .overlay-root：独立回复窗形态的间距来自 .reply-window-root 的
+   flex gap 8px，在这里加 margin 会出现双重间距。 */
+.overlay-root .reply-conversation-popover {
+  margin-top: 8px;
+}
