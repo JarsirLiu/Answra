@@ -105,6 +105,25 @@ describe("theme CSS integrity", () => {
     expect(css).toMatch(/--shadow-pop:\s*none;/);
   });
 
+  it("keeps announcement views inside the fixed panel, scrolled not stretched", () => {
+    // 定高面板（560px 上限）必须由列表/详情自身滚动，任何一条根容器
+    // 失去 min-height:0 / overflow-y 都会让窗口随公告内容无限变高。
+    const css = stripComments(
+      readFileSync(join(sourceRoot, "components", "panels", "AnnouncementList.css"), "utf8"),
+    );
+    const ruleOf = (selector: string) => {
+      const start = css.indexOf(selector);
+      if (start === -1) return "";
+      return css.slice(start, css.indexOf("}", start));
+    };
+    for (const selector of [".announcement-view", ".announcement-detail"]) {
+      expect(ruleOf(selector), selector).toContain("min-height: 0");
+    }
+    for (const selector of [".announcement-list", ".announcement-detail"]) {
+      expect(ruleOf(selector), selector).toContain("overflow-y: auto");
+    }
+  });
+
   it("keeps panel status colors on semantic tokens", () => {
     for (const file of ["AnnouncementList.css", "SettingsPanel.css"]) {
       const css = stripComments(
@@ -115,7 +134,9 @@ describe("theme CSS integrity", () => {
     const announcements = stripComments(
       readFileSync(join(sourceRoot, "components", "panels", "AnnouncementList.css"), "utf8"),
     );
-    expect(announcements).toContain("var(--danger-wash)");
+    // 未读红点与详情页错误提示都从 --danger 家族取色；这是守卫意图，
+    // 不是具体版式断言（见 2026-10-31 公告两级导航 Note）。
+    expect(announcements).toContain("var(--danger)");
     const settings = stripComments(
       readFileSync(join(sourceRoot, "components", "panels", "SettingsPanel.css"), "utf8"),
     );

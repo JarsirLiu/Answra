@@ -1,8 +1,29 @@
+/* 公告中心（2026-10-31 Note）：面板定高，滚动只发生在列表与详情内部；
+   列表条目是导航行（标题/日期/未读点/chevron），正文只在详情态渲染；
+   工具栏动作一律 icon-only。颜色全部取语义令牌。 */
+.announcement-view {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.announcement-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 6px 6px 4px;
+  border-bottom: 1px solid var(--glass-line-soft);
+}
+.announcement-toolbar-button {
+  min-width: 25px;
+  height: 25px;
+  padding: 0;
+}
 .announcement-list {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 12px;
+  padding: 8px;
   scrollbar-width: none;
 }
 .announcement-list::-webkit-scrollbar {
@@ -13,68 +34,117 @@
   color: var(--muted);
   font-size: var(--font-sm);
 }
-.announcement-item {
-  padding: 12px 10px;
-  border-bottom: 1px solid var(--glass-line-soft);
-}
-.announcement-item:first-of-type {
-  padding-top: 4px;
-}
-.announcement-item__heading {
+.announcement-row {
+  appearance: none;
+  width: 100%;
   display: flex;
   align-items: center;
-  gap: 7px;
-}
-.announcement-item__heading h2 {
-  min-width: 0;
-  margin: 0;
+  gap: 8px;
+  padding: 11px 8px;
+  border: 0;
+  border-bottom: 1px solid var(--glass-line-soft);
+  border-radius: var(--ctl-radius);
   color: var(--ink);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  transition: background 140ms ease-out;
+}
+.announcement-row:hover {
+  background: var(--hover);
+}
+.announcement-row__dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--danger);
+}
+.announcement-row__title {
+  flex: 1;
+  min-width: 0;
   font-size: var(--font-sm);
+  font-weight: var(--label-weight);
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.announcement-row.is-read .announcement-row__title {
+  color: var(--muted);
+}
+.announcement-row__time {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+.announcement-row__chevron {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+.announcement-back {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 6px;
+  border: 0;
+  border-radius: var(--ctl-radius);
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--font-sm);
+  transition:
+    background 140ms ease-out,
+    color 140ms ease-out;
+}
+.announcement-back:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+.announcement-detail {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px;
+  scrollbar-width: none;
+}
+.announcement-detail::-webkit-scrollbar {
+  display: none;
+}
+.announcement-detail__body {
+  padding: 0 4px 12px;
+}
+.announcement-detail__body h2 {
+  margin: 0 0 6px;
+  color: var(--ink);
+  font-size: var(--font-md);
   font-weight: var(--label-weight);
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
-.announcement-unread {
-  flex: 0 0 auto;
-  padding: 1px 5px;
-  border-radius: 3px;
-  color: var(--danger);
-  background: var(--danger-wash);
-  font-size: var(--font-xs);
-  line-height: 1.5;
-}
-.announcement-item__content {
-  margin: 8px 0 10px;
+.announcement-detail__body time {
+  display: block;
   color: var(--muted);
+  font-size: var(--font-xs);
+}
+.announcement-detail__content {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--glass-line-soft);
+  color: var(--ink);
   font-size: var(--font-sm);
-  line-height: 1.6;
+  line-height: 1.7;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.announcement-item footer {
-  min-height: 26px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-.announcement-item time {
-  color: var(--muted);
-  font-size: var(--font-xs);
-}
-.announcement-read-button {
-  min-height: 25px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0 6px;
-  font-size: var(--font-xs);
-}
-.announcement-item.is-read .announcement-item__heading h2 {
-  color: var(--muted);
-}
 .announcement-error {
-  margin: 0 4px 10px;
+  margin: 0 6px 10px;
+  padding: 6px 8px;
+  border-radius: var(--ctl-radius);
   color: var(--danger);
+  background: var(--danger-wash);
   font-size: var(--font-xs);
 }
