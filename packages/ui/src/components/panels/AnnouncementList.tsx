@@ -41,7 +41,6 @@ export function AnnouncementList({ announcements, onMarkRead }: AnnouncementList
             <div className="announcement-item__heading">
               <h2>{item.title}</h2>
               {!item.readAt && <span className="announcement-unread">未读</span>}
-              {item.notifyMode === "popup" && <span className="announcement-priority">重要</span>}
             </div>
             <p className="announcement-item__content">{item.content}</p>
             <footer>

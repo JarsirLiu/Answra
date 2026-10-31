@@ -155,6 +155,7 @@ const bridge: DesktopBridge = {
   loginAccount: () => ipcRenderer.invoke(AuthChannels.Login),
   logoutAccount: () => ipcRenderer.invoke(AuthChannels.Logout),
   getAuthStatus: () => ipcRenderer.invoke(AuthChannels.GetStatus),
+  syncAuthStatus: () => ipcRenderer.invoke(AuthChannels.Sync),
   onAuthStatus: (listener: (status: AuthStatus) => void) => {
     const wrapped = (_event: Electron.IpcRendererEvent, status: AuthStatus) => listener(status);
     ipcRenderer.on(AuthChannels.Status, wrapped);

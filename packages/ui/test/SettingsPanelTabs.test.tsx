@@ -1,5 +1,5 @@
 ﻿import type { DesktopAnnouncement } from "@answra/shared";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { SettingsPanel } from "../src/components/panels/SettingsPanel";
 
@@ -8,9 +8,12 @@ const announcements: DesktopAnnouncement[] = [
     id: 1,
     title: "系统升级",
     content: "明天凌晨升级。",
-    notifyMode: "silent",
+    platform: "desktop",
+    startsAt: null,
+    endsAt: null,
     readAt: null,
     createdAt: "2026-10-19T09:00:00Z",
+    updatedAt: "2026-10-19T09:00:00Z",
   },
 ];
 
@@ -155,6 +158,74 @@ describe("SettingsPanel tabs", () => {
     expect(screen.getByText("账户额度")).toBeInTheDocument();
     expect(screen.getByText("8")).toBeInTheDocument();
     expect(screen.getByText("福利到期")).toBeInTheDocument();
+  });
+
+  it("re-syncs cloud quota every time the account tab is opened", async () => {
+    const initialQuota = {
+      kind: "default",
+      planName: "免费版",
+      availableCredits: 18,
+      welfareCredits: 10,
+      accountCredits: 8,
+      welfareExpiresAt: "2026-11-01T00:00:00Z",
+      usedPercent: null,
+      expiresAt: null,
+      daysRemaining: null,
+    };
+    const syncAuthStatus = vi.fn().mockResolvedValue({
+      signedIn: true,
+      plan: null,
+      account: { email: "user@answra.local", username: null },
+      quota: {
+        ...initialQuota,
+        availableCredits: 15,
+        welfareCredits: 15,
+        accountCredits: 0,
+        welfareExpiresAt: "2026-11-30T12:17:01Z",
+      },
+      capabilities: [],
+      cloudBaseUrl: "https://api.answra.com",
+    });
+    const bridge = { ...signedInBridge(initialQuota), syncAuthStatus };
+
+    render(<SettingsPanel {...baseProps({ bridge })} />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "账户" }));
+    // 打开账户页立即联网同步，换成云端最新的 15 积分。
+    expect(await screen.findByText("15 积分")).toBeInTheDocument();
+    expect(syncAuthStatus).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("tab", { name: "设置" }));
+    fireEvent.click(screen.getByRole("tab", { name: "账户" }));
+    await waitFor(() => expect(syncAuthStatus).toHaveBeenCalledTimes(2));
+  });
+
+  it("rounds fractional credit balances and never renders negative credits", async () => {
+    render(
+      <SettingsPanel
+        {...baseProps({
+          bridge: signedInBridge({
+            kind: "default",
+            planName: "免费版",
+            availableCredits: 14.9999976,
+            welfareCredits: 14.9999976,
+            accountCredits: -0.00117014,
+            welfareExpiresAt: "2026-11-30T12:17:01Z",
+            usedPercent: null,
+            expiresAt: null,
+            daysRemaining: null,
+          }),
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "账户" }));
+
+    // 15 积分按 USD 存成 14.9999976 时，四舍五入展示 15 而不是 floor 成 14。
+    expect(await screen.findByText("15 积分")).toBeInTheDocument();
+    expect(screen.getByText("15")).toBeInTheDocument();
+    // 负的浮点尾差夹紧为 0，不把 -0.001 这类余额外露给用户。
+    expect(screen.getByText("0")).toBeInTheDocument();
   });
 
   it("shows subscription quota details as rows with the usage meter", async () => {

@@ -41,6 +41,14 @@ function formatDate(value: string): string {
 }
 
 /**
+ * 积分取整展示：服务端按 USD 存储额度，15 积分会落成 14.9999976，
+ * 直接 floor 会显示 14；四舍五入同时夹紧非负，避免浮点误差和负余额外露。
+ */
+function displayCredits(value: number): number {
+  return Math.max(0, Math.round(value));
+}
+
+/**
  * 额度明细行：标签在左、数值在右。
  * 只列服务端额度摘要里真实存在的字段，缺失的字段不出行，也不补默认值。
  */
@@ -50,17 +58,17 @@ function quotaRows(quota: AuthQuotaInfo): { label: string; value: string }[] {
     if (typeof quota.usedCredits === "number" && typeof quota.totalCredits === "number") {
       rows.push({
         label: "本周期已用",
-        value: `${Math.floor(quota.usedCredits)} / ${Math.floor(quota.totalCredits)} 积分`,
+        value: `${displayCredits(quota.usedCredits)} / ${displayCredits(quota.totalCredits)} 积分`,
       });
     }
     if (quota.expiresAt) rows.push({ label: "套餐到期", value: formatDate(quota.expiresAt) });
     return rows;
   }
   if (typeof quota.welfareCredits === "number") {
-    rows.push({ label: "福利积分", value: `${Math.floor(quota.welfareCredits)}` });
+    rows.push({ label: "福利积分", value: `${displayCredits(quota.welfareCredits)}` });
   }
   if (typeof quota.accountCredits === "number") {
-    rows.push({ label: "账户额度", value: `${Math.floor(quota.accountCredits)}` });
+    rows.push({ label: "账户额度", value: `${displayCredits(quota.accountCredits)}` });
   }
   if (quota.welfareExpiresAt) {
     rows.push({ label: "福利到期", value: formatDate(quota.welfareExpiresAt) });
@@ -87,7 +95,7 @@ export function AccountPanel({
   const quota = status?.quota ?? null;
   const badge = planBadge(quota);
   const availableCredits = quota?.availableCredits ?? null;
-  const quotaAmount = availableCredits === null ? null : `${Math.floor(availableCredits)} 积分`;
+  const quotaAmount = availableCredits === null ? null : `${displayCredits(availableCredits)} 积分`;
   const usedPercent = quota?.usedPercent ?? null;
   const daysRemaining = quota?.daysRemaining ?? null;
   const rows = signedIn && quota ? quotaRows(quota) : [];

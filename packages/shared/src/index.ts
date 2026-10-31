@@ -1,5 +1,6 @@
 export type { DesktopBridge, OverlayMode } from "./bridge";
 export type {
+  AnnouncementPlatform,
   DesktopAnnouncement,
   InterviewAudioSource,
   InterviewChange,

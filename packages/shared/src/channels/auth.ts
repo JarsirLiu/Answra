@@ -8,8 +8,10 @@ export const AuthChannels = {
   Login: "answra:auth:login",
   /** 退出登录：尽最大努力撤销本机 refresh token 并清除本地凭据。 */
   Logout: "answra:auth:logout",
-  /** 查询当前账号与会员状态（不含任何 token）。 */
+  /** 查询当前账号与会员状态（不含任何 token）；access token 有效时直接返回缓存。 */
   GetStatus: "answra:auth:get-status",
+  /** 强制从云端同步账号与额度快照（账户面板每次打开时调用）。 */
+  Sync: "answra:auth:sync",
   /** 主进程推送账号状态变化（登录成功、登出、凭据失效）。 */
   Status: "answra:auth:status",
   /** 读取当前账号可见的站点公告；token 只由 main 使用。 */
@@ -18,13 +20,18 @@ export const AuthChannels = {
   MarkAnnouncementRead: "answra:auth:mark-announcement-read",
 } as const;
 
+export type AnnouncementPlatform = "web" | "desktop";
+
 export interface DesktopAnnouncement {
   id: number;
   title: string;
   content: string;
-  notifyMode: "silent" | "popup";
+  platform: AnnouncementPlatform;
+  startsAt: string | null;
+  endsAt: string | null;
   readAt: string | null;
   createdAt: string;
+  updatedAt: string;
 }
 
 /**
@@ -94,6 +101,7 @@ export interface AuthChannelMap {
   [AuthChannels.Login]: { request: undefined; response: AuthLoginResult };
   [AuthChannels.Logout]: { request: undefined; response: AuthStatus };
   [AuthChannels.GetStatus]: { request: undefined; response: AuthStatus };
+  [AuthChannels.Sync]: { request: undefined; response: AuthStatus };
   [AuthChannels.Status]: { request: undefined; response: undefined };
   [AuthChannels.ListAnnouncements]: { request: undefined; response: DesktopAnnouncement[] };
   [AuthChannels.MarkAnnouncementRead]: { request: number; response: undefined };

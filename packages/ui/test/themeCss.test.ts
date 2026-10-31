@@ -116,8 +116,6 @@ describe("theme CSS integrity", () => {
       readFileSync(join(sourceRoot, "components", "panels", "AnnouncementList.css"), "utf8"),
     );
     expect(announcements).toContain("var(--danger-wash)");
-    expect(announcements).toContain("var(--warning)");
-    expect(announcements).toContain("var(--warning-wash)");
     const settings = stripComments(
       readFileSync(join(sourceRoot, "components", "panels", "SettingsPanel.css"), "utf8"),
     );

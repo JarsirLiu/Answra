@@ -453,6 +453,53 @@ describe("AuthService.restore / refresh", () => {
     expect(harness.credentials.current()).toMatchObject({ plan: "starter", capabilities: [] });
   });
 
+  it("syncStatus re-pulls quota on demand without rotating tokens", async () => {
+    const harness = createHarness((call) => {
+      if (call.url.endsWith(AUTH_PATHS.capabilities))
+        return jsonResponse({ code: 0, data: { plan: "starter", capabilities: [] } });
+      if (call.url.endsWith(AUTH_PATHS.profile))
+        return jsonResponse({ code: 0, data: { email: "user@answra.local" } });
+      if (call.url.endsWith(AUTH_PATHS.quota))
+        return jsonResponse({
+          code: 0,
+          data: {
+            kind: "default",
+            available_credits: 15,
+            welfare_credits: 15,
+            account_credits: 0,
+            welfare_expires_at: "2026-11-30T12:17:01Z",
+          },
+        });
+      return jsonResponse({}, 404);
+    });
+    await harness.credentials.store.save({
+      accessToken: "access-old",
+      refreshToken: "refresh-old",
+      expiresAt: TEST_NOW + 60_000,
+      plan: "starter",
+      capabilities: [],
+    });
+    await harness.service.restore();
+    harness.calls.length = 0;
+
+    const status = await harness.service.syncStatus();
+
+    expect(status.quota).toMatchObject({
+      kind: "default",
+      availableCredits: 15,
+      welfareCredits: 15,
+      accountCredits: 0,
+      welfareExpiresAt: "2026-11-30T12:17:01Z",
+    });
+    expect(harness.calls.map((call) => call.url)).toEqual([
+      `https://api.test${AUTH_PATHS.capabilities}`,
+      `https://api.test${AUTH_PATHS.profile}`,
+      `https://api.test${AUTH_PATHS.quota}`,
+    ]);
+    expect(harness.calls.some((call) => call.url.endsWith(AUTH_PATHS.refresh))).toBe(false);
+    expect(harness.credentials.current()).toMatchObject({ quota: { availableCredits: 15 } });
+  });
+
   it("refreshes an expired token and rotates the stored refresh token", async () => {
     const harness = createHarness((call) =>
       call.url.endsWith(AUTH_PATHS.refresh)
@@ -875,9 +922,12 @@ describe("AuthService announcements", () => {
             id: 7,
             title: "版本更新",
             content: "新增公告中心",
-            notify_mode: "popup",
+            platform: "desktop",
+            starts_at: null,
+            ends_at: null,
             read_at: null,
             created_at: "2026-10-17T10:00:00Z",
+            updated_at: "2026-10-17T10:00:00Z",
           },
         ],
       }),
@@ -896,13 +946,18 @@ describe("AuthService announcements", () => {
         id: 7,
         title: "版本更新",
         content: "新增公告中心",
-        notifyMode: "popup",
+        platform: "desktop",
+        startsAt: null,
+        endsAt: null,
         readAt: null,
         createdAt: "2026-10-17T10:00:00Z",
+        updatedAt: "2026-10-17T10:00:00Z",
       },
     ]);
     expect(
-      harness.calls.find((call) => call.url === "https://api.test/api/v1/announcements"),
+      harness.calls.find(
+        (call) => call.url === "https://api.test/api/v1/announcements?platform=desktop",
+      ),
     ).toMatchObject({
       authorization: "Bearer private-access",
     });
@@ -937,7 +992,17 @@ describe("AuthService announcements", () => {
     expect(
       readAnnouncements([null, { id: "bad" }, { id: 2, title: "ok", content: "body" }]),
     ).toEqual([
-      { id: 2, title: "ok", content: "body", notifyMode: "silent", readAt: null, createdAt: "" },
+      {
+        id: 2,
+        title: "ok",
+        content: "body",
+        platform: "desktop",
+        startsAt: null,
+        endsAt: null,
+        readAt: null,
+        createdAt: "",
+        updatedAt: "",
+      },
     ]);
   });
 });

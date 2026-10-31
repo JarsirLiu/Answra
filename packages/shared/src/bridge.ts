@@ -136,8 +136,10 @@ export interface DesktopBridge {
   loginAccount?: () => Promise<AuthLoginResult>;
   /** 退出登录并清除本地凭据；返回登出后的状态。 */
   logoutAccount?: () => Promise<AuthStatus>;
-  /** 查询当前账号与会员状态（不含 token）。 */
+  /** 查询当前账号与会员状态（不含 token）；access token 有效时直接返回缓存。 */
   getAuthStatus?: () => Promise<AuthStatus>;
+  /** 强制从云端同步账号与额度快照（打开账户面板时调用）。 */
+  syncAuthStatus?: () => Promise<AuthStatus>;
   /** 订阅账号状态变化；返回取消订阅函数。 */
   onAuthStatus?: (listener: (status: AuthStatus) => void) => () => void;
   /** 读取当前账号可见的站点公告；未登录返回空列表。 */

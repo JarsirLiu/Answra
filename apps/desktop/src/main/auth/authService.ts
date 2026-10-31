@@ -154,6 +154,20 @@ export class AuthService {
   }
 
   /**
+   * 强制从云端同步账号与额度快照：账户面板每次打开时调用。
+   *
+   * access token 仍有效时只重拉画像（能力目录、账号、额度），不消耗 refresh token；
+   * 已过期则走与 getStatus 相同的刷新/冷却路径。失败时回退本地缓存，不影响登录态。
+   */
+  async syncStatus(): Promise<AuthStatus> {
+    const session = this.session;
+    if (!session) return this.signedOutStatus();
+    if (session.expiresAt - this.now > 0) return this.refreshDirectory(session.accessToken);
+    if (this.now < this.refreshRetryAt) return this.statusFrom(session);
+    return this.refresh();
+  }
+
+  /**
    * 本机是否持有登录会话（同步，不触发刷新或网络请求）。
    *
    * 登录态尚未从磁盘恢复完时按「有会话」处理：冷启动首屏不能因为还没读完本地凭据
@@ -333,7 +347,11 @@ export class AuthService {
     const status = await this.getStatus();
     if (!status.signedIn || !this.session) return [];
     return readAnnouncements(
-      await this.request(AUTH_PATHS.announcements, undefined, this.session.accessToken),
+      await this.request(
+        `${AUTH_PATHS.announcements}?platform=desktop`,
+        undefined,
+        this.session.accessToken,
+      ),
     );
   }
 
@@ -723,9 +741,12 @@ export function readAnnouncements(body: unknown): DesktopAnnouncement[] {
         id: value.id,
         title: value.title,
         content: value.content,
-        notifyMode: value.notify_mode === "popup" ? "popup" : "silent",
+        platform: value.platform === "web" ? "web" : "desktop",
+        startsAt: typeof value.starts_at === "string" ? value.starts_at : null,
+        endsAt: typeof value.ends_at === "string" ? value.ends_at : null,
         readAt: typeof value.read_at === "string" ? value.read_at : null,
         createdAt: typeof value.created_at === "string" ? value.created_at : "",
+        updatedAt: typeof value.updated_at === "string" ? value.updated_at : "",
       },
     ];
   });

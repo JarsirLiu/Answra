@@ -86,6 +86,7 @@ export function SettingsPanel({
   const [tab, setTab] = useState<SettingsTab>("settings");
 
   const getAuthStatus = bridge?.getAuthStatus;
+  const syncAuthStatus = bridge?.syncAuthStatus;
   const onAuthStatus = bridge?.onAuthStatus;
   const getConversationConfig = bridge?.getConversationConfig;
   const getConversationApiKey = bridge?.getConversationApiKey;
@@ -108,6 +109,21 @@ export function SettingsPanel({
       unsubscribe?.();
     };
   }, [getAuthStatus, onAuthStatus]);
+
+  // 每次切到「账户」页都向云端要一次最新快照：积分消耗、福利到期等只由服务端给出，
+  // 不能沿用进程启动时的缓存，也不在客户端本地推算。
+  useEffect(() => {
+    if (tab !== "account" || !syncAuthStatus) return;
+    let cancelled = false;
+    syncAuthStatus()
+      .then((status) => {
+        if (!cancelled) setAuthStatus(status);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, syncAuthStatus]);
 
   async function signIn() {
     if (!bridge?.loginAccount) return;

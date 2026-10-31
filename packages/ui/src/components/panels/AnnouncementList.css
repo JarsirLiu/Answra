@@ -34,21 +34,14 @@
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
-.announcement-unread,
-.announcement-priority {
+.announcement-unread {
   flex: 0 0 auto;
   padding: 1px 5px;
   border-radius: 3px;
-  font-size: var(--font-xs);
-  line-height: 1.5;
-}
-.announcement-unread {
   color: var(--danger);
   background: var(--danger-wash);
-}
-.announcement-priority {
-  color: var(--warning);
-  background: var(--warning-wash);
+  font-size: var(--font-xs);
+  line-height: 1.5;
 }
 .announcement-item__content {
   margin: 8px 0 10px;
