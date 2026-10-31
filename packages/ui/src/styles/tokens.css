@@ -134,9 +134,10 @@
   /* 【遮罩】图片缩略图上的浮层按钮底 */
   --scrim-base: 0.55;
 
-  /* 【投影】alpha 基数：轻投影把悬浮层从页面上"抬起来"一格。
-      变色龙下归零：投影是远距离与照片里最先暴露悬浮层矩形的信号，
-      而近距离可读性完全不依赖它（文字/图标/控件边界都是实色） */
+  /* 【投影】alpha 基数：--shadow-ctl-base 服务不透明表面内部的控件接触影。
+      --shadow-base 已无 CSS 消费方（悬浮层表面投影整体移除，见
+      2026-10-31 bug-fix Note），保留声明作为变色龙归零契约的载体——
+      useAmbientTheme / theme 的归零与回退测试锚定在它上面。 */
   --shadow-base: 0.14;
   --shadow-ctl-base: 0.25;
 
@@ -181,10 +182,12 @@
   --success-wash: rgb(var(--success-wash-tint) / var(--fade));
   --scrim: rgb(0 0 0 / max(calc(var(--scrim-base) * var(--fade)), 0.45));
   --scrim-strong: rgb(0 0 0 / max(calc((var(--scrim-base) + 0.2) * var(--fade)), 0.6));
-  --shadow-bar:
-    0 8px 24px rgb(10 25 20 / calc(var(--shadow-base) * var(--fade))),
-    0 1px 3px rgb(10 25 20 / calc(var(--shadow-base) * 0.57 * var(--fade)));
-  --shadow-pop: 0 14px 34px rgb(10 25 20 / calc((var(--shadow-base) + 0.06) * var(--fade)));
+  /* 表面投影 = none：透明窗口四周只有 4/8px 透明余量，任何大 blur/offset
+     都会被窗口边界裁成贴边灰环（实测"应用外有一层"的来源）；悬浮条也
+     不用阴影装悬浮感。要恢复投影必须先对照 2026-10-31 bug-fix Note 的
+     余量约束与用户裁定。box-shadow: none 是合法值，消费方声明不用改。 */
+  --shadow-bar: none;
+  --shadow-pop: none;
   --shadow-ctl: 0 1px 3px rgb(10 25 20 / calc(var(--shadow-ctl-base) * var(--fade)));
 
   /* ── 对话内容原语：思考 / 正文 / 工具调用 / 报错块共用的表面与状态 ──

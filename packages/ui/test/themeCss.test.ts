@@ -96,6 +96,15 @@ describe("theme CSS integrity", () => {
     expect(css).toContain("--success-wash:");
   });
 
+  it("keeps surface shadows at none", () => {
+    // 透明窗口四周只有 4/8px 的透明余量，任何 blur/offset 都会被窗口边界
+    // 裁成贴边灰环（实测「应用外有一层」的来源）；悬浮条也不用阴影装悬浮感。
+    // 要恢复投影必须先对照 2026-10-31 bug-fix Note 的余量约束与用户裁定。
+    const css = readFileSync(join(sourceRoot, "styles", "tokens.css"), "utf8");
+    expect(css).toMatch(/--shadow-bar:\s*none;/);
+    expect(css).toMatch(/--shadow-pop:\s*none;/);
+  });
+
   it("keeps panel status colors on semantic tokens", () => {
     for (const file of ["AnnouncementList.css", "SettingsPanel.css"]) {
       const css = stripComments(
