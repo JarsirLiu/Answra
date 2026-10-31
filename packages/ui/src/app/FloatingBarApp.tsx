@@ -188,7 +188,6 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
     onSetReplyPhase: (phase) => surfaces.setReplyPhase(phase),
     phase: replyPhase,
     platform,
-    replyText: answer.replyText,
     replyActivities: answer.replyActivities,
     // 传输层失败也要进入回复条状态：内联回复条与独立回复窗共用同一份失败展示。
     replyError: replyFailure?.message ?? answer.replyError,
@@ -206,7 +205,6 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
     handleAttachmentChange,
     performSend,
     removeAttachment,
-    replyText,
     replyActivities,
     replyError,
     setDraft,
@@ -224,7 +222,6 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
         draft={draft}
         fileInputRef={fileInputRef}
         phase={featureSlot.phase ?? "composing"}
-        replyText={replyText}
         replyActivities={replyActivities}
         replyError={replyError}
         replyPending={answer.replyPending}

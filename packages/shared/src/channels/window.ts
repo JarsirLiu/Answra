@@ -59,7 +59,6 @@ export interface ReplyBarState {
   conversationId?: string;
   attachments: ReplyBarAttachment[];
   draft: string;
-  replyText: string;
   replyActivities: ReplyBarActivity[];
   replyError?: string;
   replyPending?: boolean;

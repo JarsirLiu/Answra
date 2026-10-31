@@ -18,7 +18,6 @@ interface ReplyBarProps {
   attachments: ChatAttachment[];
   draft: string;
   /** 按标准消息 chunk 投影出的本轮活动。 */
-  replyText: string;
   replyActivities: ReplyBarActivity[];
   replyError?: string;
   /**
@@ -64,7 +63,6 @@ export function ReplyBar({
   phase,
   attachments,
   draft,
-  replyText,
   replyActivities,
   replyError,
   onSignIn,
@@ -92,7 +90,6 @@ export function ReplyBar({
           error={replyError}
           onConversationHover={onConversationHover}
           pending={replyPending}
-          replyText={replyText}
         />
         <div className="reply-actions reply-actions--stream">
           {showConversationToggle && (
@@ -150,7 +147,6 @@ export function ReplyBar({
           error={replyError}
           onConversationHover={onConversationHover}
           pending={false}
-          replyText={replyText}
         />
         <div className="reply-actions reply-actions--stream">
           {showConversationToggle && (

@@ -98,7 +98,6 @@ export function ReplyBarWindowApp({ bridge }: ReplyBarWindowAppProps) {
       draft={state.draft}
       fileInputRef={fileInputRef}
       phase={state.phase}
-      replyText={state.replyText}
       replyActivities={state.replyActivities ?? []}
       replyError={state.replyError}
       replyPending={state.replyPending}

@@ -70,7 +70,6 @@ function replyState(stealth = false): ReplyBarState {
     conversationId,
     attachments: [],
     draft: "",
-    replyText: "用于 ticker 的摘要",
     replyActivities: [],
     replyPending: true,
     stealth,

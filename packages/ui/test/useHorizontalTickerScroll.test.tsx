@@ -36,15 +36,17 @@ function stubViewport(viewport: HTMLElement, clientWidth: number, contentWidth: 
 function TickerHarness({
   pending,
   phase,
+  error,
   contentWidth,
 }: {
   pending: boolean;
   phase: TickerScrollPhase;
+  error?: string;
   contentWidth: number;
 }) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
-  useHorizontalTickerScroll({ viewportRef, trackRef, phase, pending });
+  useHorizontalTickerScroll({ viewportRef, trackRef, phase, pending, error });
   return (
     <div className="viewport" ref={viewportRef}>
       <div className="track" ref={trackRef}>
@@ -101,6 +103,20 @@ describe("useHorizontalTickerScroll", () => {
     expect(viewport.scrollLeft).toBe(0);
   });
 
+  it("keeps following the process activities while an error is active", () => {
+    const { container, rerender } = render(
+      <TickerHarness pending phase="process" contentWidth={400} />,
+    );
+    const viewport = container.querySelector(".viewport") as HTMLElement;
+    stubViewport(viewport, 100, 400);
+    pumpFrame(0);
+    // 错误流是唯一允许结束后继续跟滚的形态：pending 翻转但 error 在场，继续跟进失败过程。
+    rerender(<TickerHarness pending={false} phase="process" error="连接超时" contentWidth={400} />);
+    pumpFrame(0);
+    pumpFrame(1000);
+    expect(Number(viewport.scrollLeft)).toBeGreaterThan(0);
+  });
+
   it("holds the start when the done state mounts without any pending phase", () => {
     const { container } = render(<TickerHarness pending={false} phase="text" contentWidth={400} />);
     const viewport = container.querySelector(".viewport") as HTMLElement;
@@ -110,16 +126,17 @@ describe("useHorizontalTickerScroll", () => {
     expect(viewport.scrollLeft).toBe(0);
   });
 
-  it("keeps following the process activities after an error", () => {
+  it("holds the start when the run finishes with a process tail still queued", () => {
     const { container, rerender } = render(
       <TickerHarness pending phase="process" contentWidth={400} />,
     );
     const viewport = container.querySelector(".viewport") as HTMLElement;
     stubViewport(viewport, 100, 400);
     pumpFrame(0);
+    // 结束以 pending 翻转为准：最后一帧是 tool/source 也必须停在答案（正文从开头读起）。
     rerender(<TickerHarness pending={false} phase="process" contentWidth={400} />);
     pumpFrame(0);
     pumpFrame(1000);
-    expect(Number(viewport.scrollLeft)).toBeGreaterThan(0);
+    expect(Number(viewport.scrollLeft)).toBe(0);
   });
 });

@@ -13,6 +13,7 @@ interface UseHorizontalTickerScrollOptions {
   trackRef: RefObject<HTMLDivElement | null>;
   phase: TickerScrollPhase;
   pending?: boolean;
+  error?: string;
 }
 
 /** Keeps ticker motion independent from event projection and item rendering. */
@@ -21,6 +22,7 @@ export function useHorizontalTickerScroll({
   trackRef,
   phase,
   pending,
+  error,
 }: UseHorizontalTickerScrollOptions): void {
   const speedRef = useRef(SCROLL_SPEED.process);
   const holdStartRef = useRef(false);
@@ -82,18 +84,19 @@ export function useHorizontalTickerScroll({
 
   useLayoutEffect(() => {
     const enteringText = phase === "text" && previousPhaseRef.current !== "text";
-    const finishedText = phase === "text" && previousPendingRef.current && !pending;
+    const finishing = previousPendingRef.current && !pending;
     speedRef.current = SCROLL_SPEED[phase];
-    // 回复结束后停在文本回复开头：按契约答案是回复的第一段，停在最前让用户直接读答案，
-    // 并挂起自动跟滚，直到新一轮输出（pending 恢复）才继续。
-    holdStartRef.current = phase === "text" && !pending;
-    if ((enteringText || finishedText) && viewportRef.current) {
+    // 停跑只以运行结束为准（pending 翻转 = AI SDK finish/abort 收流的权威信号），
+    // 不再从“最后一帧是不是文本”猜测：正常完成一律停在答案开头并挂起跟滚；
+    // 错误流保持跟滚，让用户看到失败的完整过程。
+    holdStartRef.current = !pending && !error;
+    if ((enteringText || finishing) && !error && viewportRef.current) {
       viewportRef.current.scrollLeft = 0;
     }
     if (!holdStartRef.current) followLatestRef.current();
     previousPhaseRef.current = phase;
     previousPendingRef.current = Boolean(pending);
-  }, [pending, phase, viewportRef]);
+  }, [pending, phase, error, viewportRef]);
 
   useLayoutEffect(() => {
     followLatestRef.current();

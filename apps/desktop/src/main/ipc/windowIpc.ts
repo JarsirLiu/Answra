@@ -110,7 +110,6 @@ function isValidReplyBarState(state: ReplyBarState | null): boolean {
           typeof attachment.previewUrl === "string",
       ) &&
       typeof state.draft === "string" &&
-      typeof state.replyText === "string" &&
       Array.isArray(state.replyActivities) &&
       state.replyActivities.every(
         (activity) =>

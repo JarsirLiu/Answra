@@ -16,7 +16,6 @@ interface UseReplyWorkflowOptions {
     conversationId?: string,
   ) => Promise<string>;
   cancelMessage: () => void;
-  replyText: string;
   replyActivities: ReplyBarActivity[];
   replyError?: string;
   replyPending?: boolean;
@@ -57,7 +56,6 @@ export function useReplyWorkflow({
   platform,
   sendMessage,
   cancelMessage,
-  replyText,
   replyActivities,
   replyError,
   replyPending,
@@ -92,7 +90,6 @@ export function useReplyWorkflow({
       ...(conversationId ? { conversationId } : {}),
       attachments,
       draft,
-      replyText,
       replyActivities,
       ...(replyError ? { replyError } : {}),
       replyPending: phase === "done" ? false : (replyPending ?? phase === "streaming"),
@@ -107,7 +104,6 @@ export function useReplyWorkflow({
     replyActivities,
     replyError,
     replyPending,
-    replyText,
     stealth,
   ]);
 
@@ -286,7 +282,6 @@ export function useReplyWorkflow({
     attachments,
     conversationId,
     draft,
-    replyText,
     replyActivities,
     replyError,
     fileInputRef,

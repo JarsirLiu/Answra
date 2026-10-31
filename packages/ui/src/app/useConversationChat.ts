@@ -315,7 +315,6 @@ function useAiConversation(
       })),
     [chat.messages],
   );
-  const lastAssistant = [...messages].reverse().find((message) => message.role === "assistant");
 
   const send = useCallback(
     async (text: string, attachments: ChatAttachment[], targetConversationId = conversationId) => {
@@ -384,7 +383,6 @@ function useAiConversation(
     cancel,
     clearMessages,
     messages,
-    replyText: lastAssistant?.content ?? "",
     replyError,
     replyPending: Boolean(activeRunId || sendPending),
     replyActivities,
