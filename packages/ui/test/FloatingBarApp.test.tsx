@@ -25,10 +25,44 @@ function createConversationBridge() {
     createConversation: vi.fn().mockImplementation(async (id: string) => emptySnapshot(id)),
     sendConversationMessage: vi
       .fn()
-      .mockImplementation(async (command: { conversationId: string }) => {
-        emittedConversationId = command.conversationId;
-        return { runId: "run-1" };
-      }),
+      .mockImplementation(
+        async (command: {
+          conversationId: string;
+          operation?: string;
+          request?: { text?: string };
+        }) => {
+          emittedConversationId = command.conversationId;
+          // 对齐 agent 侧会话的真实语义：beginRun / beginEphemeralRun 先发布
+          // revision 1 的 messages-appended(用户消息 + 助手占位)，随后的流事件
+          // 接着同一 revision 序列继续；UI 订阅依赖这一连续性。
+          if (command.operation && command.request) {
+            const userMessage: ConversationMessage = {
+              id: `user-${command.conversationId.slice(-8)}`,
+              role: "user",
+              text: command.request.text ?? "",
+              images: [],
+              status: "complete",
+            };
+            const assistantMessage: ConversationMessage = {
+              id: "run-1",
+              role: "assistant",
+              text: "",
+              images: [],
+              status: "streaming",
+            };
+            conversationListeners.forEach((listener) => {
+              listener({
+                type: "messages-appended",
+                conversationId: command.conversationId,
+                revision: 1,
+                messages: [userMessage, assistantMessage],
+                activeRunId: "run-1",
+              });
+            });
+          }
+          return { runId: "run-1" };
+        },
+      ),
     appendConversationUserMessage: vi.fn(async (id: string, text: string) => {
       conversationListeners.forEach((listener) => {
         listener({
@@ -43,6 +77,9 @@ function createConversationBridge() {
     }),
     cancelConversationRun: vi.fn(),
     onConversationChange: vi.fn((listener: (change: ConversationChange) => void) => {
+      // 会话域跟踪：答题轮次每次换新的 conversationId，revision 重新从 1 计数，
+      // 与 ephemeral 会话「messages-appended 占 revision 1」的序列衔接。
+      let scopeId = "";
       let revision = 0;
       const messages: ConversationMessage[] = [];
       conversationListeners.add(listener);
@@ -52,6 +89,11 @@ function createConversationBridge() {
         });
       };
       emitConversationEvent = ({ runId, chunk }) => {
+        if (scopeId !== emittedConversationId) {
+          scopeId = emittedConversationId;
+          revision = 1;
+          messages.length = 0;
+        }
         revision += 1;
         if (chunk.type === "text-delta") {
           const assistant = messages.find((message) => message.id === runId);
@@ -706,6 +748,66 @@ describe("three-segment floating navigation", () => {
     await waitFor(() =>
       expect(screen.getByRole("region", { name: "当前对话" })).toBeInTheDocument(),
     );
+  });
+
+  it("clears the details panel for each new screenshot answer round", async () => {
+    const bridge = createConversationBridge();
+    render(<FloatingBarApp bridge={bridge} />);
+
+    clickAnswerScreenshot();
+    await waitFor(() =>
+      expect(screen.getByRole("img", { name: /screenshot-.*\.png/ })).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "确认发送" }));
+    await waitFor(() => expect(bridge.sendConversationMessage).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      emitConversationEvent?.({
+        runId: "run-1",
+        chunk: { type: "text-delta", id: "segment-1", delta: "答案：D" },
+      });
+      emitConversationEvent?.({ runId: "run-1", chunk: { type: "finish" } });
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "继续截图" })).toBeInTheDocument(),
+    );
+
+    // 开始第二轮截图答题：新一轮发送生成新的会话 id，面板不得再显示第一轮记录。
+    fireEvent.click(screen.getByRole("button", { name: "收起回复条" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "确认发送" })).toBeInTheDocument(),
+    );
+    clickAnswerScreenshot();
+    await waitFor(() =>
+      expect(screen.getByRole("img", { name: /screenshot-.*\.png/ })).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "确认发送" }));
+    await waitFor(() => expect(bridge.sendConversationMessage).toHaveBeenCalledTimes(2));
+    const secondCommand = bridge.sendConversationMessage.mock.calls[1]?.[0] as
+      | { conversationId: string }
+      | undefined;
+    if (!secondCommand) throw new Error("第二轮发送未被调用");
+    const secondConversationId = secondCommand.conversationId;
+    expect(secondConversationId).toMatch(/^screenshot-/);
+    await waitFor(() =>
+      expect(bridge.getConversationSnapshot).toHaveBeenCalledWith(secondConversationId),
+    );
+
+    await act(async () => {
+      emitConversationEvent?.({
+        runId: "run-1",
+        chunk: { type: "text-delta", id: "segment-2", delta: "答案：B" },
+      });
+      emitConversationEvent?.({ runId: "run-1", chunk: { type: "finish" } });
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "继续截图" })).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "收起回复条" }));
+    fireEvent.click(screen.getByRole("button", { name: "展开对话面板" }));
+
+    const details = screen.getByRole("region", { name: "当前对话" });
+    await waitFor(() => expect(within(details).getByText(/答案：B/)).toBeInTheDocument());
+    expect(within(details).queryByText(/答案：D/)).not.toBeInTheDocument();
   });
 
   it("restores the panel that was open before entering screenshot reply workflow", async () => {

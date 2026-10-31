@@ -29,15 +29,16 @@ export function useReplyConversation(
   const revisionRef = useRef(0);
 
   useEffect(() => {
-    if (
-      !enabled ||
-      !conversationId ||
-      !platform?.getConversationSnapshot ||
-      !platform.readConversationEvents ||
-      !platform.onConversationChange
-    ) {
-      revisionRef.current = 0;
-      setState(EMPTY_STATE);
+    // 每次 effect 重跑都是一次全新的订阅会话：新一轮答题会用新的
+    // screenshot-<uuid> 顶替旧会话，而其 revision 从 1 重新计数。本地缓存与
+    // revision 游标必须一起归零，否则新轮事件被旧游标当作“已应用”丢弃，
+    // 面板会一直滞留上一轮的内容。
+    revisionRef.current = 0;
+    setState(EMPTY_STATE);
+    if (!enabled || !conversationId || !platform?.getConversationSnapshot) {
+      return;
+    }
+    if (!platform.readConversationEvents || !platform.onConversationChange) {
       return;
     }
 
