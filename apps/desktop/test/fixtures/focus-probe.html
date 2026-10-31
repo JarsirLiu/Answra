@@ -1,108 +1,467 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Window Focus Probe</title>
+    <title>隐身模式 · 网页检测台</title>
     <style>
       :root {
-        color-scheme: light dark;
-        font: 14px/1.5 system-ui, sans-serif;
+        --background: oklch(0.985 0.003 95);
+        --foreground: oklch(0.24 0.006 60);
+        --card: oklch(1 0 0);
+        --primary: oklch(0.40 0.072 184);
+        --primary-foreground: oklch(0.99 0.005 95);
+        --muted-foreground: oklch(0.50 0.008 60);
+        --border: oklch(0.905 0.006 90);
+        --danger: oklch(0.58 0.20 28);
+        --grid-line: oklch(0.24 0.006 60 / 0.045);
+        --glow-1: oklch(0.50 0.09 184 / 0.10);
+        --glow-2: oklch(0.45 0.06 250 / 0.05);
+        --radius-lg: 10px;
+        --radius-md: 8px;
+        --radius-sm: 6px;
+        --font-sans:
+          ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang SC",
+          "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+        --font-mono:
+          ui-monospace, "SFMono-Regular", "Cascadia Code", Consolas,
+          "Microsoft YaHei", monospace;
+        color-scheme: light;
       }
 
       body {
-        margin: 24px auto;
-        max-width: 900px;
-        padding: 0 16px;
+        background:
+          radial-gradient(55% 50% at 78% -4%, var(--glow-1), transparent 70%),
+          radial-gradient(45% 42% at 8% 4%, var(--glow-2), transparent 72%),
+          linear-gradient(var(--grid-line) 1px, transparent 1px),
+          linear-gradient(90deg, var(--grid-line) 1px, transparent 1px),
+          var(--background);
+        background-size:
+          auto,
+          auto,
+          56px 56px,
+          56px 56px,
+          auto;
+        color: var(--foreground);
+        font: 14px/1.6 var(--font-sans);
+        margin: 32px auto;
+        max-width: 1200px;
+        padding: 0 24px;
       }
 
-      header,
-      .summary,
-      .controls {
+      .eyebrow {
+        color: var(--primary);
+        display: inline-flex;
         align-items: center;
+        font-family: var(--font-mono);
+        font-size: 0.7rem;
+        font-weight: 600;
+        gap: 0.55rem;
+        letter-spacing: 0.16em;
+      }
+
+      .eyebrow::before {
+        background: var(--primary);
+        border-radius: 1px;
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent);
+        content: "";
+        height: 0.4rem;
+        width: 0.4rem;
+      }
+
+      header {
+        align-items: flex-end;
         display: flex;
         flex-wrap: wrap;
-        gap: 12px;
+        gap: 16px;
+        justify-content: space-between;
+      }
+
+      h1 {
+        font-size: 26px;
+        letter-spacing: -0.02em;
+        margin: 4px 0 0;
+      }
+
+      #state {
+        font-family: var(--font-mono);
+        font-size: 12px;
+      }
+
+      .controls {
+        background: color-mix(in srgb, var(--card) 70%, transparent);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        box-shadow:
+          0 1px 0 0 color-mix(in srgb, var(--foreground) 4%, transparent),
+          0 14px 30px -16px color-mix(in srgb, var(--foreground) 14%, transparent);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-block: 20px;
+        padding: 12px;
+      }
+
+      button {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        color: var(--foreground);
+        cursor: pointer;
+        font: inherit;
+        font-weight: 600;
+        padding: 6px 14px;
+        transition:
+          background 0.15s ease,
+          border-color 0.15s ease,
+          color 0.15s ease;
+      }
+
+      button:hover {
+        background: color-mix(in srgb, var(--foreground) 6%, var(--card));
+      }
+
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.55;
+      }
+
+      button.running {
+        background: var(--primary);
+        border-color: transparent;
+        color: var(--primary-foreground);
+      }
+
+      button.running:hover {
+        background: color-mix(in srgb, #fff 12%, var(--primary));
       }
 
       .summary {
-        border-block: 1px solid currentColor;
-        justify-content: space-between;
-        margin-block: 16px;
-        padding-block: 12px;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        display: grid;
+        gap: 10px 28px;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        margin-block: 0 20px;
+        padding: 16px 20px;
       }
 
-      .counts {
-        display: grid;
-        gap: 8px 20px;
-        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      summary-label,
+      .summary span {
+        font-size: 13px;
+      }
+
+      .summary span {
+        color: var(--muted-foreground);
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
       }
 
       output {
+        color: var(--foreground);
+        font-family: var(--font-mono);
         font-variant-numeric: tabular-nums;
         font-weight: 650;
       }
 
+      .eyebrow ~ h2 {
+        font-size: 17px;
+        letter-spacing: -0.01em;
+        margin: 6px 0 0;
+      }
+
+      .probes {
+        display: grid;
+        gap: 20px;
+        grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+        margin-block: 20px;
+      }
+
+      .probe {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        box-shadow:
+          0 1px 0 0 color-mix(in srgb, var(--foreground) 4%, transparent),
+          0 14px 30px -16px color-mix(in srgb, var(--foreground) 14%, transparent);
+        padding: 18px 20px;
+      }
+
+      .probe h2 {
+        margin: 6px 0 10px;
+      }
+
+      .probe p {
+        color: var(--muted-foreground);
+        font-size: 13px;
+        margin: 0 0 14px;
+      }
+
+      .probe p code,
+      .probe p strong {
+        color: var(--foreground);
+      }
+
+      .stats {
+        display: grid;
+        gap: 6px 20px;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        margin-top: 14px;
+      }
+
+      .stats span {
+        color: var(--muted-foreground);
+        font-size: 13px;
+      }
+
+      canvas {
+        background:
+          linear-gradient(var(--grid-line) 1px, transparent 1px),
+          linear-gradient(90deg, var(--grid-line) 1px, transparent 1px),
+          var(--card);
+        background-size: 28px 28px, 28px 28px, auto;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        display: block;
+        max-width: 100%;
+      }
+
+      .warn {
+        color: var(--danger);
+        font-weight: 650;
+      }
+
+      body.fullscreen {
+        background: repeating-linear-gradient(
+          45deg,
+          #e6641f,
+          #e6641f 40px,
+          #f7f7f7 40px,
+          #f7f7f7 80px
+        );
+      }
+
+      .coverage {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        color: var(--muted-foreground);
+        font-size: 13px;
+        margin-block: 20px;
+        padding: 14px 20px;
+      }
+
+      .counts {
+        display: grid;
+        gap: 8px 10px;
+        grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+        margin-block: 20px;
+      }
+
+      .counts div {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        font-family: var(--font-mono);
+        font-size: 12px;
+        padding: 6px 10px;
+      }
+
       table {
-        border-collapse: collapse;
-        margin-block-start: 20px;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        border-collapse: separate;
+        border-spacing: 0;
+        font-size: 13px;
+        margin-block: 0 40px;
+        overflow: hidden;
         width: 100%;
       }
 
       th,
       td {
-        border-bottom: 1px solid color-mix(in srgb, currentColor 25%, transparent);
-        padding: 6px 8px;
+        border-bottom: 1px solid var(--border);
+        padding: 6px 12px;
         text-align: left;
       }
 
-      tbody {
-        font-family: ui-monospace, monospace;
+      thead th {
+        background: color-mix(in srgb, var(--foreground) 4%, var(--card));
+        color: var(--muted-foreground);
+        font-family: var(--font-mono);
+        font-size: 11px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
       }
 
-      button {
-        font: inherit;
-        padding: 4px 10px;
+      tbody td {
+        font-family: var(--font-mono);
+        font-variant-numeric: tabular-nums;
+      }
+
+      tbody tr:last-child td {
+        border-bottom: none;
+      }
+
+      #capture-preview[hidden],
+      #capture-video[hidden] {
+        display: none;
       }
     </style>
   </head>
   <body>
     <header>
-      <h1>Window Focus Probe</h1>
+      <div>
+        <span class="eyebrow">STEALTH PROBE</span>
+        <h1>隐身模式 · 网页检测台</h1>
+      </div>
       <span id="state"></span>
     </header>
     <div class="controls">
-      <button id="reset" type="button">Reset counts</button>
-      <button id="observe" type="button">Start capture observation</button>
-      <button id="copy" type="button">Copy report</button>
+      <button id="reset" type="button">重置计数</button>
+      <button id="observe" type="button">开始捕获观测</button>
+      <button id="pointer" type="button">开始指针追踪</button>
+      <button id="capture" type="button">开始屏幕共享</button>
+      <button id="fullscreen" type="button">进入全屏测试</button>
+      <button id="copy" type="button">复制报告</button>
     </div>
-    <section class="summary" aria-label="Current document state">
-      <span>visibilityState: <output id="visibility"></output></span>
-      <span>document.hasFocus(): <output id="has-focus"></output></span>
-      <span>last sampled: <output id="sampled-at"></output></span>
+    <section class="summary" aria-label="当前文档状态">
+      <span>可见性 visibilityState<output id="visibility"></output></span>
+      <span>页面焦点 hasFocus<output id="has-focus"></output></span>
+      <span>指针位置<output id="pointer-pos"></output></span>
+      <span>全屏状态<output id="fullscreen-state"></output></span>
+      <span>最后采样时间<output id="sampled-at"></output></span>
     </section>
-    <section class="counts" id="counts" aria-label="Event counts"></section>
+    <span class="eyebrow">EVENT FEED</span>
+    <section class="counts" id="counts" aria-label="事件计数"></section>
+    <div class="probes">
+      <section class="probe" aria-label="指针空洞探测">
+        <span class="eyebrow">POINTER HOLES</span>
+        <h2>指针空洞探测</h2>
+        <p>
+          开启追踪后<strong>持续移动</strong>光标扫过全屏与 Answra 周边。
+          事件流中断超过 400ms 记 <code>pointer-gap</code>；出现超过 150px
+          的坐标突变记 <code>pointer-jump</code>。绿色方块表示 2.5s
+          内有事件经过的区域，被浮层吞掉事件的区域会呈现为空白巷道。
+        </p>
+        <canvas id="pointer-canvas" width="440" height="220"></canvas>
+        <div class="stats">
+          <span>空间断档 gaps<output id="gap-count">0</output></span>
+          <span>坐标突变 jumps<output id="jump-count">0</output></span>
+          <span>累计事件<output id="pointer-events">0</output></span>
+          <span>距上次事件<output id="pointer-age"></output></span>
+        </div>
+      </section>
+      <section class="probe" aria-label="屏幕共享分析">
+        <span class="eyebrow">CAPTURE ANALYSIS</span>
+        <h2>屏幕共享分析</h2>
+        <p>
+          共享时选择<strong>整个屏幕</strong>，随后切换 Answra
+          隐身开关观察预览。隐身处关必须与「不存在」像素级一致；出现大面积深色区域可能是
+          <strong>黑块回归</strong>（WDA_MONITOR 路径），会触发
+          <code>black-region-suspect</code>。共享选择器中是否出现
+          "Answra" 窗口标题，需人工核对。
+        </p>
+        <canvas id="capture-preview" hidden></canvas>
+        <div class="stats">
+          <span>共享来源<output id="capture-surface"></output></span>
+          <span>已采帧数<output id="frame-count">0</output></span>
+          <span>近黑占比<output id="black-ratio"></output></span>
+          <span id="black-warn"></span>
+        </div>
+      </section>
+    </div>
+    <section class="coverage" aria-label="全屏覆盖测试">
+      <strong>全屏覆盖测试：</strong>进入全屏后整页铺橙色斜纹，请确认
+      Answra 是否仍悬浮在全屏内容之上、及其在共享画面中的可见性。
+      fullscreenchange 轨迹：<output id="change-kinds"></output>
+    </section>
+    <span class="eyebrow">EVENT LOG</span>
     <table>
       <thead>
-        <tr><th>Time</th><th>Event</th><th>Visible</th><th>Has focus</th></tr>
+        <tr><th>时间</th><th>事件</th><th>可见性</th><th>页面焦点</th><th>详情</th></tr>
       </thead>
       <tbody id="events"></tbody>
     </table>
+    <video id="capture-video" muted playsinline hidden></video>
     <script>
-      const EVENT_NAMES = ["blur", "focus", "visibilitychange", "pagehide", "pageshow"];
+      const FOCUS_EVENTS = ["blur", "focus", "visibilitychange", "pagehide", "pageshow", "fullscreenchange"];
+      const COUNT_EVENTS = [...FOCUS_EVENTS, "pointer-gap", "pointer-jump", "capture-lost", "black-region-suspect"];
       const SAMPLE_INTERVAL_MS = 500;
       const MAX_EVENT_ROWS = 300;
-      const counts = Object.fromEntries(EVENT_NAMES.map((name) => [name, 0]));
+      const POINTER_CELL = 24;
+      const POINTER_DECAY_MS = 2500;
+      const POINTER_IDLE_RESET_MS = 2500;
+      const POINTER_GAP_MS = 400;
+      const POINTER_JUMP_PX = 150;
+      const CAPTURE_SAMPLE_MS = 1000;
+      const CAPTURE_W = 480;
+      const CAPTURE_H = 270;
+      const ANALYSIS_W = 160;
+      const ANALYSIS_H = 90;
+      const NEAR_BLACK_LEVEL = 16;
+      const BLACK_WARN_RATIO = 0.12;
+
+      const counts = Object.fromEntries(COUNT_EVENTS.map((name) => [name, 0]));
       const rows = [];
+      const observationEvents = [];
+      const pointerVisits = new Map();
+      const pointerAnomalies = [];
+      const pointerStats = { gaps: 0, jumps: 0, events: 0, lastAt: 0, lastX: -1, lastY: -1 };
+      const changeKinds = [];
+      let observing = false;
+      let pointerTracking = false;
+      let pointerTimer = 0;
+      let captureStream = null;
+      let captureTimer = 0;
+      let captureFrames = 0;
+      let blackMaxRatio = 0;
+
       const countRoot = document.querySelector("#counts");
       const eventRoot = document.querySelector("#events");
       const visibilityOutput = document.querySelector("#visibility");
       const focusOutput = document.querySelector("#has-focus");
+      const pointerPosOutput = document.querySelector("#pointer-pos");
+      const fullscreenOutput = document.querySelector("#fullscreen-state");
+      const changeKindsOutput = document.querySelector("#change-kinds");
       const sampledOutput = document.querySelector("#sampled-at");
       const stateOutput = document.querySelector("#state");
       const observeButton = document.querySelector("#observe");
-      let observing = false;
-      let observationEvents = [];
+      const pointerButton = document.querySelector("#pointer");
+      const captureButton = document.querySelector("#capture");
+      const fullscreenButton = document.querySelector("#fullscreen");
+      const pointerCanvas = document.querySelector("#pointer-canvas");
+      const pointerCtx = pointerCanvas.getContext("2d");
+      const captureCanvas = document.querySelector("#capture-preview");
+      const captureCtx = captureCanvas.getContext("2d");
+      const captureVideo = document.querySelector("#capture-video");
+      const captureSurfaceOutput = document.querySelector("#capture-surface");
+      const frameCountOutput = document.querySelector("#frame-count");
+      const blackRatioOutput = document.querySelector("#black-ratio");
+      const blackWarn = document.querySelector("#black-warn");
+      const gapCountOutput = document.querySelector("#gap-count");
+      const jumpCountOutput = document.querySelector("#jump-count");
+      const pointerEventsOutput = document.querySelector("#pointer-events");
+      const pointerAgeOutput = document.querySelector("#pointer-age");
+      const analysisCanvas = document.createElement("canvas");
+      analysisCanvas.width = ANALYSIS_W;
+      analysisCanvas.height = ANALYSIS_H;
+
+      const RUNNING_LABELS = {
+        observe: ["开始捕获观测", "结束捕获观测"],
+        pointer: ["开始指针追踪", "停止指针追踪"],
+        capture: ["开始屏幕共享", "停止屏幕共享"],
+        fullscreen: ["进入全屏测试", "退出全屏测试"],
+      };
+
+      function setRunning(key, running) {
+        const button = { observe: observeButton, pointer: pointerButton, capture: captureButton, fullscreen: fullscreenButton }[key];
+        button.classList.toggle("running", running);
+        button.textContent = RUNNING_LABELS[key][running ? 1 : 0];
+      }
 
       function snapshot(event) {
         return {
@@ -113,25 +472,35 @@
         };
       }
 
+      function renderCounts() {
+        countRoot.replaceChildren(
+          ...COUNT_EVENTS.map((name) => {
+            const item = document.createElement("div");
+            item.textContent = `${name}：${counts[name] ?? 0}`;
+            return item;
+          }),
+        );
+      }
+
       function render() {
         visibilityOutput.value = document.visibilityState;
         focusOutput.value = String(document.hasFocus());
         stateOutput.textContent = observing
-          ? "Observing capture"
+          ? "· 观测中（正在收集隐身破坏证据）"
           : document.hasFocus()
-            ? "Focused"
-            : "Not focused";
-        countRoot.replaceChildren(
-          ...EVENT_NAMES.map((name) => {
-            const item = document.createElement("div");
-            item.textContent = `${name}: ${counts[name]}`;
-            return item;
-          }),
-        );
+            ? "· 页面已聚焦"
+            : "· 页面未聚焦";
+        renderCounts();
         eventRoot.replaceChildren(
           ...rows.map((row) => {
             const tr = document.createElement("tr");
-            for (const value of [row.time, row.event, row.visibilityState, String(row.hasFocus)]) {
+            for (const value of [
+              row.time,
+              row.event,
+              row.visibilityState,
+              String(row.hasFocus),
+              row.detail ?? "",
+            ]) {
               const cell = document.createElement("td");
               cell.textContent = value;
               tr.append(cell);
@@ -141,42 +510,124 @@
         );
       }
 
-      function record(name, { includeInHistory = true } = {}) {
+      function record(name, { includeInHistory = true, detail = "" } = {}) {
         if (Object.hasOwn(counts, name)) counts[name] += 1;
-        const event = snapshot(name);
-        if (includeInHistory && observing) {
-          rows.unshift(event);
+        if (includeInHistory && observing && name !== "focus-sample") {
+          rows.unshift({ ...snapshot(name), detail });
           if (rows.length > MAX_EVENT_ROWS) rows.length = MAX_EVENT_ROWS;
         }
-        if (observing && name !== "focus-sample") observationEvents.push(event);
+        if (observing && FOCUS_EVENTS.includes(name)) observationEvents.push(snapshot(name));
         render();
       }
 
-      for (const name of EVENT_NAMES) {
-        const target = name === "blur" || name === "focus" ? window : document;
-        target.addEventListener(name, () => record(name));
+      function resetState() {
+        for (const name of COUNT_EVENTS) counts[name] = 0;
+        rows.length = 0;
+        observationEvents.length = 0;
+        pointerAnomalies.length = 0;
+        pointerVisits.clear();
+        Object.assign(pointerStats, { gaps: 0, jumps: 0, events: 0, lastAt: 0, lastX: -1, lastY: -1 });
+        gapCountOutput.value = "0";
+        jumpCountOutput.value = "0";
+        pointerEventsOutput.value = "0";
+        pointerPosOutput.value = "";
+        blackMaxRatio = 0;
+        blackWarn.textContent = "";
       }
 
+      function stopPointerTracking() {
+        pointerTracking = false;
+        clearInterval(pointerTimer);
+        pointerTimer = 0;
+        setRunning("pointer", false);
+        pointerVisits.clear();
+        pointerCtx.clearRect(0, 0, pointerCanvas.width, pointerCanvas.height);
+        pointerAgeOutput.value = "";
+      }
+
+      function drawPointerCells(now) {
+        pointerCtx.clearRect(0, 0, pointerCanvas.width, pointerCanvas.height);
+        for (const [key, at] of pointerVisits) {
+          const age = now - at;
+          if (age > POINTER_DECAY_MS) {
+            pointerVisits.delete(key);
+            continue;
+          }
+          const [cx, cy] = key.split(",").map(Number);
+          pointerCtx.fillStyle = `rgba(64, 123, 118, ${1 - age / POINTER_DECAY_MS})`;
+          pointerCtx.fillRect(cx * POINTER_CELL, cy * POINTER_CELL, POINTER_CELL - 2, POINTER_CELL - 2);
+        }
+      }
+
+      function pointerTick() {
+        const now = Date.now();
+        drawPointerCells(now);
+        pointerAgeOutput.value = pointerStats.lastAt ? `${now - pointerStats.lastAt}ms` : "-";
+      }
+
+      function addPointerAnomaly(detail) {
+        pointerAnomalies.push({ time: new Date().toISOString(), ...snapshot("pointer"), detail });
+        if (pointerAnomalies.length > 200) pointerAnomalies.shift();
+      }
+
+      function markPointerCell(x, y, now) {
+        const cx = Math.min(Math.floor(x / POINTER_CELL), Math.ceil(pointerCanvas.width / POINTER_CELL) - 1);
+        const cy = Math.min(Math.floor(y / POINTER_CELL), Math.ceil(pointerCanvas.height / POINTER_CELL) - 1);
+        pointerVisits.set(`${cx},${cy}`, now);
+      }
+
+      function handlePointerEvent(x, y) {
+        if (!pointerTracking) return;
+        const now = Date.now();
+        markPointerCell(x, y, now);
+        const primed = pointerStats.lastAt > 0;
+        const dt = primed ? now - pointerStats.lastAt : 0;
+        const rawDist = Math.hypot(x - pointerStats.lastX, y - pointerStats.lastY);
+        if (dt > POINTER_IDLE_RESET_MS) {
+          Object.assign(pointerStats, { lastAt: now, lastX: x, lastY: y });
+          pointerStats.events += 1;
+          pointerEventsOutput.value = String(pointerStats.events);
+          pointerPosOutput.value = `${Math.round(x)},${Math.round(y)}`;
+          return;
+        }
+        pointerStats.lastAt = now;
+        pointerStats.lastX = x;
+        pointerStats.lastY = y;
+        pointerStats.events += 1;
+        pointerEventsOutput.value = String(pointerStats.events);
+        pointerPosOutput.value = `${Math.round(x)},${Math.round(y)}`;
+        if (dt > POINTER_GAP_MS) {
+          pointerStats.gaps += 1;
+          gapCountOutput.value = String(pointerStats.gaps);
+          addPointerAnomaly(`事件中断 ${Math.round(dt)}ms，期间位移约 ${Math.round(rawDist)}px`);
+          record("pointer-gap", { detail: `${Math.round(dt)}ms / ${Math.round(rawDist)}px` });
+        } else if (primed && dt > 0 && rawDist > POINTER_JUMP_PX) {
+          pointerStats.jumps += 1;
+          jumpCountOutput.value = String(pointerStats.jumps);
+          addPointerAnomaly(`坐标突变 ${Math.round(rawDist)}px`);
+          record("pointer-jump", { detail: `${Math.round(rawDist)}px` });
+        }
+      }
+
+      document.addEventListener("pointermove", (event) => handlePointerEvent(event.clientX, event.clientY));
+      document.addEventListener("pointerdown", (event) => handlePointerEvent(event.clientX, event.clientY));
+      document.addEventListener("pointerup", (event) => handlePointerEvent(event.clientX, event.clientY));
+
       document.querySelector("#reset").addEventListener("click", () => {
-        for (const name of EVENT_NAMES) counts[name] = 0;
-        rows.length = 0;
-        observationEvents = [];
+        resetState();
         render();
       });
 
       observeButton.addEventListener("click", () => {
         if (!observing) {
-          for (const name of EVENT_NAMES) counts[name] = 0;
-          observationEvents = [];
-          rows.length = 0;
+          resetState();
           observing = true;
-          observeButton.textContent = "Finish capture observation";
-          stateOutput.textContent = "Observing capture";
+          setRunning("observe", true);
           return;
         }
 
         observing = false;
-        observeButton.textContent = "Start capture observation";
+        setRunning("observe", false);
         const issues = observationEvents.filter(
           (event) =>
             event.event === "blur" ||
@@ -192,10 +643,121 @@
         render();
       });
 
+      pointerButton.addEventListener("click", () => {
+        if (!pointerTracking) {
+          pointerTracking = true;
+          setRunning("pointer", true);
+          pointerTimer = setInterval(pointerTick, 100);
+          return;
+        }
+        stopPointerTracking();
+        render();
+      });
+
+      function stopCaptureProbing() {
+        if (captureTimer) {
+          clearInterval(captureTimer);
+          captureTimer = 0;
+        }
+        if (captureStream) {
+          for (const track of captureStream.getTracks()) track.stop();
+          captureStream = null;
+        }
+        captureVideo.srcObject = null;
+        captureCanvas.hidden = true;
+        setRunning("capture", false);
+      }
+
+      function analyzeFrame() {
+        captureCtx.drawImage(captureVideo, 0, 0, CAPTURE_W, CAPTURE_H);
+        const analysisCtx = analysisCanvas.getContext("2d", { willReadFrequently: true });
+        analysisCtx.drawImage(captureVideo, 0, 0, ANALYSIS_W, ANALYSIS_H);
+        const data = analysisCtx.getImageData(0, 0, ANALYSIS_W, ANALYSIS_H).data;
+        let dark = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          if (data[i] < NEAR_BLACK_LEVEL && data[i + 1] < NEAR_BLACK_LEVEL && data[i + 2] < NEAR_BLACK_LEVEL) {
+            dark += 1;
+          }
+        }
+        const ratio = dark / (data.length / 4);
+        captureFrames += 1;
+        frameCountOutput.value = String(captureFrames);
+        blackRatioOutput.value = `${(ratio * 100).toFixed(1)}%`;
+        if (ratio > blackMaxRatio) blackMaxRatio = ratio;
+        if (ratio > BLACK_WARN_RATIO && counts["black-region-suspect"] === 0) {
+          blackWarn.textContent = "大面积深色区域：疑似黑块回归，请人工核对";
+          record("black-region-suspect", { detail: `近黑占比 ${(ratio * 100).toFixed(1)}%` });
+        }
+      }
+
+      captureButton.addEventListener("click", async () => {
+        if (captureStream) {
+          stopCaptureProbing();
+          return;
+        }
+        try {
+          captureStream = await navigator.mediaDevices.getDisplayMedia({
+            audio: false,
+            video: { frameRate: 5, displaySurface: "monitor" },
+          });
+        } catch (error) {
+          record("capture-lost", { detail: `共享被拒绝：${String(error).slice(0, 80)}` });
+          return;
+        }
+        const track = captureStream.getVideoTracks()[0];
+        track.addEventListener("ended", () => {
+          record("capture-lost", { detail: "共享已结束" });
+          stopCaptureProbing();
+        });
+        captureVideo.srcObject = captureStream;
+        await captureVideo.play();
+        captureCanvas.width = CAPTURE_W;
+        captureCanvas.height = CAPTURE_H;
+        captureCanvas.hidden = false;
+        const settings = track.getSettings();
+        captureSurfaceOutput.value = settings.displaySurface || "未知";
+        setRunning("capture", true);
+        captureTimer = setInterval(analyzeFrame, CAPTURE_SAMPLE_MS);
+      });
+
+      fullscreenButton.addEventListener("click", () => {
+        if (document.fullscreenElement) {
+          document.exitFullscreen();
+        } else {
+          document.documentElement.requestFullscreen();
+        }
+      });
+
+      document.addEventListener("fullscreenchange", () => {
+        const entered = Boolean(document.fullscreenElement);
+        changeKinds.push(entered ? "进入" : "退出");
+        changeKindsOutput.value = changeKinds.join(" → ");
+        document.body.classList.toggle("fullscreen", entered);
+        fullscreenOutput.value = entered ? "全屏中" : "未全屏";
+        setRunning("fullscreen", entered);
+        record("fullscreenchange", { detail: entered ? "进入全屏" : "退出全屏" });
+      });
+
       document.querySelector("#copy").addEventListener("click", async () => {
-        const report = JSON.stringify({ counts, current: snapshot("report"), events: rows }, null, 2);
+        const report = JSON.stringify(
+          {
+            counts,
+            current: snapshot("report"),
+            events: rows,
+            pointer: { anomalies: pointerAnomalies, stats: pointerStats },
+            capture: { frames: captureFrames, blackMaxRatio },
+            changeKinds,
+          },
+          null,
+          2,
+        );
         await navigator.clipboard.writeText(report);
       });
+
+      for (const name of FOCUS_EVENTS) {
+        const target = name === "blur" || name === "focus" ? window : document;
+        target.addEventListener(name, () => record(name));
+      }
 
       setInterval(() => {
         sampledOutput.value = new Date().toISOString();
