@@ -2,6 +2,7 @@ import type { DesktopBridge, WorkspaceFileContent, WorkspaceNode } from "@answra
 import { FolderOpen, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { ICON_SM } from "../../../tokens";
+import { Tooltip } from "../../controls/Tooltip";
 import { PanelShell } from "../PanelShell";
 import { DirectoryTree } from "./DirectoryTree";
 import { DocxPreviewPane } from "./DocxPreviewPane";
@@ -104,28 +105,30 @@ export function WorkspacePanel({ bridge, onClose, stealth = false }: WorkspacePa
       headerAction={
         workspace.root ? (
           <div className="panel-header-action workspace-panel__header-actions">
-            <button
-              type="button"
-              className="workspace-panel__icon-button"
-              aria-label={sidebarCollapsed ? "展开目录" : "收起目录"}
-              title={sidebarCollapsed ? "展开目录" : "收起目录"}
-              onClick={() => setSidebarCollapsed((value) => !value)}
-            >
-              {sidebarCollapsed ? (
-                <PanelLeftOpen aria-hidden="true" size={ICON_SM + 2} />
-              ) : (
-                <PanelLeftClose aria-hidden="true" size={ICON_SM + 2} />
-              )}
-            </button>
-            <button
-              type="button"
-              className="workspace-panel__icon-button workspace-panel__pick-root"
-              aria-label="更换目录"
-              title="更换目录"
-              onClick={() => void workspace.pickRoot()}
-            >
-              <FolderOpen aria-hidden="true" size={ICON_SM + 2} />
-            </button>
+            <Tooltip label={sidebarCollapsed ? "展开目录" : "收起目录"}>
+              <button
+                type="button"
+                className="workspace-panel__icon-button"
+                aria-label={sidebarCollapsed ? "展开目录" : "收起目录"}
+                onClick={() => setSidebarCollapsed((value) => !value)}
+              >
+                {sidebarCollapsed ? (
+                  <PanelLeftOpen aria-hidden="true" size={ICON_SM + 2} />
+                ) : (
+                  <PanelLeftClose aria-hidden="true" size={ICON_SM + 2} />
+                )}
+              </button>
+            </Tooltip>
+            <Tooltip label="更换目录">
+              <button
+                type="button"
+                className="workspace-panel__icon-button workspace-panel__pick-root"
+                aria-label="更换目录"
+                onClick={() => void workspace.pickRoot()}
+              >
+                <FolderOpen aria-hidden="true" size={ICON_SM + 2} />
+              </button>
+            </Tooltip>
           </div>
         ) : undefined
       }

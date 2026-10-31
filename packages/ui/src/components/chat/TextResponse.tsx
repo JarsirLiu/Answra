@@ -32,7 +32,6 @@ function CodeBlock({ code, language }: { code: string; language: string }) {
           type="button"
           className={styles.copyButton}
           aria-label={copied ? "已复制代码" : "复制代码"}
-          title={copied ? "已复制" : "复制代码"}
           onClick={copy}
         >
           {copied ? <Check aria-hidden="true" size={13} /> : <Copy aria-hidden="true" size={13} />}

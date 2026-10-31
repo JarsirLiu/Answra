@@ -8,6 +8,7 @@ import {
   isAuthRequiredError,
 } from "@answra/shared";
 import { useEffect, useState } from "react";
+import { TooltipProvider } from "../components/controls/Tooltip";
 import { FloatingBar } from "../components/floating-bar/FloatingBar";
 import { FloatingLayerHost } from "../components/floating-bar/FloatingLayerHost";
 import { ChatPanel } from "../components/panels/ChatPanel";
@@ -326,152 +327,154 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
   }
 
   return (
-    <main
-      className="overlay-root"
-      data-stealth={stealthSetting.enabled ? "true" : undefined}
-      ref={shellRef}
-    >
-      <FloatingBar
-        modeMenuOpen={surfaces.layer === "mode-menu"}
-        mode={mode}
-        modes={modes}
-        onClose={() => platform?.close()}
-        onModeAction={handleModeAction}
-        onModeChange={handleModeChange}
-        onDismissModeMenu={surfaces.closeFloatingLayers}
-        onToggleModeMenu={toggleModeMenu}
-        onTogglePanel={surfaces.togglePanel}
-        panel={panel}
-        featureSlot={replyFeatureSlot}
-      />
+    <TooltipProvider stealth={stealthSetting.enabled}>
+      <main
+        className="overlay-root"
+        data-stealth={stealthSetting.enabled ? "true" : undefined}
+        ref={shellRef}
+      >
+        <FloatingBar
+          modeMenuOpen={surfaces.layer === "mode-menu"}
+          mode={mode}
+          modes={modes}
+          onClose={() => platform?.close()}
+          onModeAction={handleModeAction}
+          onModeChange={handleModeChange}
+          onDismissModeMenu={surfaces.closeFloatingLayers}
+          onToggleModeMenu={toggleModeMenu}
+          onTogglePanel={surfaces.togglePanel}
+          panel={panel}
+          featureSlot={replyFeatureSlot}
+        />
 
-      <FloatingLayerHost layers={floatingLayers} onDismiss={surfaces.dismissFloatingLayer} />
+        <FloatingLayerHost layers={floatingLayers} onDismiss={surfaces.dismissFloatingLayer} />
 
-      {panel === "chat" && featureSlot.kind === "chat" && (
-        <ChatPanel
-          bridge={platform}
-          stealth={stealthSetting.enabled}
-          attachments={attachments}
-          draft={draft}
-          error={chatFailureMessage}
-          fileInputRef={fileInputRef}
-          streaming={Boolean(conversation.activeRunId)}
-          thinkingMs={conversation.thinkingMs}
-          messages={conversation.messages}
-          onCancel={conversation.cancel}
-          onAttachmentChange={handleAttachmentChange}
-          onAttachmentRemove={removeAttachment}
-          onClose={() => {
-            surfaces.openPanel("closed");
-          }}
-          onDraftChange={setDraft}
-          onSignIn={chatNeedsSignIn ? () => signIn("chat") : undefined}
-          onVote={(vote) =>
-            surfaces.dispatch({
-              type: "layer/show-notice",
-              id: "conversation-vote",
-              message: vote === "up" ? "感谢反馈！" : "已收到反馈，我们会继续改进",
-            })
-          }
-          onSend={() => {
-            // 发送即清空输入框与附件；失败时恢复草稿，避免丢失输入。
-            const sentDraft = draft;
-            const sentAttachments = attachments;
-            setDraft("");
-            setAttachments([]);
-            setChatFailure(undefined);
-            void conversation
-              .send(sentDraft, sentAttachments)
-              .then(() => reply.clearPending())
-              .catch((error: unknown) => {
-                setDraft(sentDraft);
-                setAttachments(sentAttachments);
-                notifySendError("chat", error);
-              });
-          }}
-          onClear={
-            platform?.clearConversationMessages
-              ? () => clearConversation(ActiveChatConversationId)
-              : undefined
-          }
-          clearDisabledReason={
-            conversation.activeRunId
-              ? "回复完成后才能清空"
-              : conversation.messages.length === 0
-                ? "暂无可清空的对话"
+        {panel === "chat" && featureSlot.kind === "chat" && (
+          <ChatPanel
+            bridge={platform}
+            stealth={stealthSetting.enabled}
+            attachments={attachments}
+            draft={draft}
+            error={chatFailureMessage}
+            fileInputRef={fileInputRef}
+            streaming={Boolean(conversation.activeRunId)}
+            thinkingMs={conversation.thinkingMs}
+            messages={conversation.messages}
+            onCancel={conversation.cancel}
+            onAttachmentChange={handleAttachmentChange}
+            onAttachmentRemove={removeAttachment}
+            onClose={() => {
+              surfaces.openPanel("closed");
+            }}
+            onDraftChange={setDraft}
+            onSignIn={chatNeedsSignIn ? () => signIn("chat") : undefined}
+            onVote={(vote) =>
+              surfaces.dispatch({
+                type: "layer/show-notice",
+                id: "conversation-vote",
+                message: vote === "up" ? "感谢反馈！" : "已收到反馈，我们会继续改进",
+              })
+            }
+            onSend={() => {
+              // 发送即清空输入框与附件；失败时恢复草稿，避免丢失输入。
+              const sentDraft = draft;
+              const sentAttachments = attachments;
+              setDraft("");
+              setAttachments([]);
+              setChatFailure(undefined);
+              void conversation
+                .send(sentDraft, sentAttachments)
+                .then(() => reply.clearPending())
+                .catch((error: unknown) => {
+                  setDraft(sentDraft);
+                  setAttachments(sentAttachments);
+                  notifySendError("chat", error);
+                });
+            }}
+            onClear={
+              platform?.clearConversationMessages
+                ? () => clearConversation(ActiveChatConversationId)
                 : undefined
-          }
-        />
-      )}
+            }
+            clearDisabledReason={
+              conversation.activeRunId
+                ? "回复完成后才能清空"
+                : conversation.messages.length === 0
+                  ? "暂无可清空的对话"
+                  : undefined
+            }
+          />
+        )}
 
-      {panel === "interview" && (
-        <InterviewCapturePanel
-          capture={interviewCapture}
-          state={interviewCaptureState}
-          messages={interviewMessages}
-          error={interviewError}
-          onSendText={(text) => {
-            setInterviewError(undefined);
-            void platform
-              ?.appendConversationUserMessage?.(ActiveInterviewConversationId, text)
-              .catch((error: unknown) =>
-                setInterviewError(error instanceof Error ? error.message : "消息发送失败"),
+        {panel === "interview" && (
+          <InterviewCapturePanel
+            capture={interviewCapture}
+            state={interviewCaptureState}
+            messages={interviewMessages}
+            error={interviewError}
+            onSendText={(text) => {
+              setInterviewError(undefined);
+              void platform
+                ?.appendConversationUserMessage?.(ActiveInterviewConversationId, text)
+                .catch((error: unknown) =>
+                  setInterviewError(error instanceof Error ? error.message : "消息发送失败"),
+                );
+            }}
+            onClear={
+              platform?.clearConversationMessages
+                ? () => clearConversation(ActiveInterviewConversationId)
+                : undefined
+            }
+            clearDisabledReason={interviewMessages.length === 0 ? "本场还没有对话" : undefined}
+            onClose={() => surfaces.openPanel("closed")}
+          />
+        )}
+
+        {featureSlot.kind === "reply" ? (
+          <ReplyDetails
+            bridge={platform}
+            conversationId={conversationId}
+            enabled={Boolean(conversationId)}
+            expanded={replyDetail.expanded}
+            stealth={stealthSetting.enabled}
+          />
+        ) : null}
+
+        {panel === "notes" && (
+          <WorkspacePanel
+            bridge={platform}
+            onClose={() => {
+              surfaces.openPanel("closed");
+            }}
+            stealth={stealthSetting.enabled}
+          />
+        )}
+
+        {panel === "settings" && (
+          <SettingsPanel
+            bridge={platform}
+            ambientFollow={appearance.ambientFollow}
+            onAmbientFollowChange={appearance.setAmbientFollow}
+            onClose={() => surfaces.openPanel("closed")}
+            onOpacityChange={appearance.setOpacity}
+            onStealthChange={stealthSetting.setEnabled}
+            opacity={appearance.opacity}
+            stealth={stealthSetting.enabled}
+            stealthSupported={stealthSetting.supported}
+            announcements={announcements}
+            unreadAnnouncements={announcements.filter((item) => !item.readAt).length}
+            signedIn={authSignedIn}
+            onMarkAnnouncementRead={async (id) => {
+              if (!platform?.markAnnouncementRead) throw new Error("当前版本不支持公告操作");
+              await platform.markAnnouncementRead(id);
+              const readAt = new Date().toISOString();
+              setAnnouncements((items) =>
+                items.map((item) => (item.id === id ? { ...item, readAt } : item)),
               );
-          }}
-          onClear={
-            platform?.clearConversationMessages
-              ? () => clearConversation(ActiveInterviewConversationId)
-              : undefined
-          }
-          clearDisabledReason={interviewMessages.length === 0 ? "本场还没有对话" : undefined}
-          onClose={() => surfaces.openPanel("closed")}
-        />
-      )}
-
-      {featureSlot.kind === "reply" ? (
-        <ReplyDetails
-          bridge={platform}
-          conversationId={conversationId}
-          enabled={Boolean(conversationId)}
-          expanded={replyDetail.expanded}
-          stealth={stealthSetting.enabled}
-        />
-      ) : null}
-
-      {panel === "notes" && (
-        <WorkspacePanel
-          bridge={platform}
-          onClose={() => {
-            surfaces.openPanel("closed");
-          }}
-          stealth={stealthSetting.enabled}
-        />
-      )}
-
-      {panel === "settings" && (
-        <SettingsPanel
-          bridge={platform}
-          ambientFollow={appearance.ambientFollow}
-          onAmbientFollowChange={appearance.setAmbientFollow}
-          onClose={() => surfaces.openPanel("closed")}
-          onOpacityChange={appearance.setOpacity}
-          onStealthChange={stealthSetting.setEnabled}
-          opacity={appearance.opacity}
-          stealth={stealthSetting.enabled}
-          stealthSupported={stealthSetting.supported}
-          announcements={announcements}
-          unreadAnnouncements={announcements.filter((item) => !item.readAt).length}
-          signedIn={authSignedIn}
-          onMarkAnnouncementRead={async (id) => {
-            if (!platform?.markAnnouncementRead) throw new Error("当前版本不支持公告操作");
-            await platform.markAnnouncementRead(id);
-            const readAt = new Date().toISOString();
-            setAnnouncements((items) =>
-              items.map((item) => (item.id === id ? { ...item, readAt } : item)),
-            );
-          }}
-        />
-      )}
-    </main>
+            }}
+          />
+        )}
+      </main>
+    </TooltipProvider>
   );
 }

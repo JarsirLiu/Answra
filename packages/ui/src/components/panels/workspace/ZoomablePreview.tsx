@@ -1,5 +1,6 @@
 import { Maximize, Minus, Plus, RotateCcw } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { Tooltip } from "../../controls/Tooltip";
 
 const MIN_ZOOM = 0.2;
 const MAX_ZOOM = 5;
@@ -94,44 +95,50 @@ export function ZoomablePreview({
   return (
     <div className={`zoomable-preview${className ? ` ${className}` : ""}`}>
       <div className="zoomable-preview__toolbar" role="toolbar" aria-label="缩放">
-        <button
-          type="button"
-          aria-label="缩小"
-          title="缩小"
-          disabled={zoom <= MIN_ZOOM}
-          onClick={() => zoomManually(clampZoom(zoom - ZOOM_STEP))}
-        >
-          <Minus aria-hidden="true" size={14} />
-        </button>
-        <button
-          type="button"
-          className="zoomable-preview__value"
-          title="重置为 100%"
-          onClick={() => zoomManually(initialZoom)}
-        >
-          {Math.round(zoom * 100)}%
-        </button>
-        <button
-          type="button"
-          aria-label="放大"
-          title="放大"
-          disabled={zoom >= MAX_ZOOM}
-          onClick={() => zoomManually(clampZoom(zoom + ZOOM_STEP))}
-        >
-          <Plus aria-hidden="true" size={14} />
-        </button>
-        <button type="button" aria-label="适应宽度" title="适应宽度" onClick={refit}>
-          <Maximize aria-hidden="true" size={13} />
-        </button>
-        <button
-          type="button"
-          aria-label="重置缩放"
-          title="重置缩放"
-          disabled={zoom === initialZoom}
-          onClick={() => zoomManually(initialZoom)}
-        >
-          <RotateCcw aria-hidden="true" size={13} />
-        </button>
+        <Tooltip label="缩小">
+          <button
+            type="button"
+            aria-label="缩小"
+            disabled={zoom <= MIN_ZOOM}
+            onClick={() => zoomManually(clampZoom(zoom - ZOOM_STEP))}
+          >
+            <Minus aria-hidden="true" size={14} />
+          </button>
+        </Tooltip>
+        <Tooltip label="重置为 100%">
+          <button
+            type="button"
+            className="zoomable-preview__value"
+            onClick={() => zoomManually(initialZoom)}
+          >
+            {Math.round(zoom * 100)}%
+          </button>
+        </Tooltip>
+        <Tooltip label="放大">
+          <button
+            type="button"
+            aria-label="放大"
+            disabled={zoom >= MAX_ZOOM}
+            onClick={() => zoomManually(clampZoom(zoom + ZOOM_STEP))}
+          >
+            <Plus aria-hidden="true" size={14} />
+          </button>
+        </Tooltip>
+        <Tooltip label="适应宽度">
+          <button type="button" aria-label="适应宽度" onClick={refit}>
+            <Maximize aria-hidden="true" size={13} />
+          </button>
+        </Tooltip>
+        <Tooltip label="重置缩放">
+          <button
+            type="button"
+            aria-label="重置缩放"
+            disabled={zoom === initialZoom}
+            onClick={() => zoomManually(initialZoom)}
+          >
+            <RotateCcw aria-hidden="true" size={13} />
+          </button>
+        </Tooltip>
       </div>
       <div className="zoomable-preview__viewport" ref={viewportRef}>
         <div className="zoomable-preview__content" ref={contentRef} style={{ zoom }}>

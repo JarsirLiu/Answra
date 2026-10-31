@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 import { RangeSlider } from "../controls/RangeSlider";
 import { SurfaceButton } from "../controls/SurfaceButton";
 import { Switch } from "../controls/Switch";
+import { Tooltip } from "../controls/Tooltip";
 import { AccountPanel } from "./AccountPanel";
 import { AnnouncementList } from "./AnnouncementList";
 import { PanelShell, type PanelTab } from "./PanelShell";
@@ -304,7 +305,6 @@ export function SettingsPanel({
                     aria-pressed={source === "local"}
                     className="setting-source-option"
                     onClick={() => setSource("local")}
-                    title="使用本机保存的 OpenAI 兼容端点，不需要登录"
                   >
                     本地模型
                   </SurfaceButton>
@@ -312,7 +312,6 @@ export function SettingsPanel({
                     aria-pressed={source === "cloud"}
                     className="setting-source-option"
                     onClick={() => setSource("cloud")}
-                    title="使用云端订阅，需要登录"
                   >
                     云端订阅
                   </SurfaceButton>
@@ -351,15 +350,17 @@ export function SettingsPanel({
                         type={revealKey ? "text" : "password"}
                         value={apiKey}
                       />
-                      <SurfaceButton
-                        aria-pressed={revealKey}
-                        className="setting-secret-toggle"
-                        onClick={() => setRevealKey((value) => !value)}
-                        title={revealKey ? "隐藏" : "显示"}
-                        variant="quiet"
-                      >
-                        {revealKey ? <EyeOff /> : <Eye />}
-                      </SurfaceButton>
+                      <Tooltip label={revealKey ? "隐藏" : "显示"}>
+                        <SurfaceButton
+                          aria-label={revealKey ? "隐藏密钥" : "显示密钥"}
+                          aria-pressed={revealKey}
+                          className="setting-secret-toggle"
+                          onClick={() => setRevealKey((value) => !value)}
+                          variant="quiet"
+                        >
+                          {revealKey ? <EyeOff /> : <Eye />}
+                        </SurfaceButton>
+                      </Tooltip>
                     </span>
                   </label>
                   <div className="setting-model-footer">

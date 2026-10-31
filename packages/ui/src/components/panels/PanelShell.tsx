@@ -76,9 +76,7 @@ export function PanelShell({
         <div className="panel-header panel-header--tabs">{tabsNode}</div>
       ) : (
         <header className="panel-header">
-          <h1 className="panel-title" title={title}>
-            {title}
-          </h1>
+          <h1 className="panel-title">{title}</h1>
           {context && <div className="panel-context">{context}</div>}
           {headerAction}
           <button aria-label="收起面板" className="panel-close" onClick={onClose} type="button">

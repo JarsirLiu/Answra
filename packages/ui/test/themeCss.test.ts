@@ -144,6 +144,13 @@ describe("theme CSS integrity", () => {
     expect(settings).toContain("var(--success)");
   });
 
+  it("keeps the stealth-gated glyph bubble on palette tokens, without hardcoded colors", () => {
+    const css = stripComments(
+      readFileSync(join(sourceRoot, "components", "controls", "Tooltip.css"), "utf8"),
+    );
+    expect(css).not.toMatch(/#[0-9a-f]{3,8}\b|(?:rgba?|hsla?)\(/i);
+  });
+
   it("keeps the reply bar and its details panel on palette tokens, without hardcoded colors", () => {
     // 写死的色值绕过 [data-theme] 与变色龙：主题切换或跟随背景时这些文字/图标不会
     // 跟着变（浅色主题下配深底、深色主题下配近黑），跑马灯的活动色尤其明显。

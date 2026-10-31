@@ -79,7 +79,6 @@ export function ReplyActivityTicker({
         aria-label={`当前事件：${currentLabel}`}
         className="reply-activity-indicator"
         role="img"
-        title={currentLabel}
       >
         <Icon
           aria-hidden="true"

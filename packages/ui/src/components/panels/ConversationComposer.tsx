@@ -91,7 +91,6 @@ export function ConversationComposer({
               className="conversation-composer-icon-button conversation-composer-add"
               disabled={disabled || !onAddAttachment}
               onClick={onAddAttachment}
-              title="添加附件"
               type="button"
             >
               <Plus aria-hidden="true" size={ICON_SM} />
@@ -104,7 +103,6 @@ export function ConversationComposer({
               aria-label={streamingStopLabel}
               className="conversation-composer-icon-button conversation-composer-stop"
               onClick={onStop}
-              title={streamingStopLabel}
               type="button"
             >
               <span aria-hidden="true" className="conversation-composer-stop-glyph" />
@@ -114,7 +112,6 @@ export function ConversationComposer({
               aria-label="发送消息"
               className="conversation-composer-icon-button conversation-composer-submit"
               disabled={disabled || submitDisabled}
-              title="发送消息"
               type="submit"
             >
               <ArrowUp aria-hidden="true" size={ICON_SM} />

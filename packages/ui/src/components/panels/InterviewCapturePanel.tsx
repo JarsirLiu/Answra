@@ -75,11 +75,10 @@ export function InterviewCapturePanel({
       headerAction={
         onClear ? (
           <button
-            aria-label="清空对话"
+            aria-label={clearDisabledReason ?? "清空对话历史"}
             className="panel-header-action surface-control surface-control--quiet"
             disabled={Boolean(clearDisabledReason)}
             onClick={onClear}
-            title={clearDisabledReason ?? "清空对话历史"}
             type="button"
           >
             清空
@@ -153,7 +152,6 @@ export function InterviewCapturePanel({
               className="conversation-composer-icon-button"
               disabled={!capture}
               onClick={() => void capture?.start()}
-              title="开始麦克风监听"
               type="button"
             >
               <Mic aria-hidden="true" size={ICON_SM} />
