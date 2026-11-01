@@ -73,10 +73,11 @@ export function registerConversationIpc(service: AgentService, deps: Conversatio
     ConversationChannels.ClearMessages,
     (event, payload: { conversationId: string }) => {
       if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用方");
-      // 清空是破坏性操作：只开放给主窗口的常驻会话；答题等瞬时会话由 ephemeral 流程自清。
+      // 清空是破坏性操作：主窗口可清空常驻会话，以及本轮截图答题的一次性会话。
+      // 成功/取消轮由 agent 自行释放；失败轮保留到用户关闭回复条时由此显式释放。
       if (
         !isValidConversationId(payload?.conversationId) ||
-        !CLEARABLE_CONVERSATION_IDS.has(payload.conversationId)
+        !isClearableConversationId(payload.conversationId)
       )
         throw new Error("会话请求无效");
       return service.clearConversation(payload.conversationId);
@@ -124,11 +125,21 @@ function isValidConversationId(conversationId: unknown): conversationId is strin
   );
 }
 
-/** 允许用户清空的常驻会话：多轮对话与面试；答题会话由 ephemeral 流程自动清理。 */
+/** 允许用户清空的常驻会话：多轮对话与面试。 */
 const CLEARABLE_CONVERSATION_IDS = new Set<string>([
   ActiveChatConversationId,
   ActiveInterviewConversationId,
 ]);
+
+/** 截图答题轮次使用的一次性会话前缀；失败轮由用户关闭回复条时显式释放。 */
+const SCREENSHOT_CONVERSATION_PREFIX = "screenshot-";
+
+function isClearableConversationId(conversationId: string): boolean {
+  return (
+    CLEARABLE_CONVERSATION_IDS.has(conversationId) ||
+    conversationId.startsWith(SCREENSHOT_CONVERSATION_PREFIX)
+  );
+}
 
 function isConversationReadSender(
   event: Parameters<typeof isWindowFromSender>[1],

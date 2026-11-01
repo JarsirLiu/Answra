@@ -10,7 +10,7 @@
 
 - 代码/模块：`packages/ui/src/app/useReplyConversation.ts`（hook 重置语义）、`packages/ui/test/replyConversation.test.tsx`（fake store 按会话隔离）、`packages/ui/test/FloatingBarApp.test.tsx`（连续两轮 e2e 与 conversation bridge mock 语义修正）。
 - UI/进程/协议/持久化表面：仅 renderer UI 的回复详情订阅状态生命周期；IPC 契约、agent 线协议与会话持久化不变（答题会话仍是 ephemeral）。
-- 相关 Note：[回复条展开详情为空](2026-10-18-reply-details-empty-ephemeral-conversation.md)、[悬浮导航功能槽就地回复架构](../architecture/2026-10-18-in-place-reply-slot-and-feature-slot.md)。
+- 相关 Note：[回复条展开详情为空](2026-10-18-reply-details-empty-ephemeral-conversation.md)、[悬浮导航功能槽就地回复架构](../architecture/2026-10-18-in-place-reply-slot-and-feature-slot.md)、[回复详情面板在模型失败后保留本轮，并清理本地兜底](2026-11-01-reply-details-missing-failed-send.md)。
 
 ## 根因
 
@@ -38,7 +38,7 @@
 ## 后果与防回退
 
 - `useReplyConversation` 不得恢复"只在 disabled 分支清零"：新增一条订阅重绑定路径（无论 enabled、conversationId 还是 platform 变化）都必须伴随 state 与 revision 游标归零。
-- 轮内行为不变：运行结束后 ephemeral 清空快照仍只推进游标不清本地内容（`capturedRound` 守卫保留），完成态收起回发送条后仍可展开回看本轮。
+- 轮内行为：成功/取消轮运行结束后 ephemeral 清空快照仍只推进游标不清本地内容（`capturedRound` 守卫保留）；失败轮从 2026-11-01 起由运行时保留到关闭回复条或下一轮。关闭回复条即清空本轮，不再跨收起保留。
 - 测试 mock 的会话语义（先 `messages-appended` 占 revision 1、流事件接续同一序列、按会话 id 重置）不得简化回"每订阅独立 revision 计数"：UI 订阅依赖跨模块的 revision 连续性，mock 偏离会掩盖真实 bug。
 
 ## 验证

@@ -19,6 +19,11 @@ import { type ConversationStore, createUserMessage, MemoryConversationStore } fr
 import { buildTimeReminder } from "./timeReminder";
 import { createAuthorizedConversationTools } from "./tools/registry";
 
+/** 答题需要稳定但保留少量多样性；通用对话不覆盖提供商默认值。 */
+const ANSWER_TEMPERATURE = 0.3;
+/** 答题优先降低内部推理开销；不支持的 OpenAI-compatible 端点通常会忽略。 */
+const ANSWER_REASONING_EFFORT = "low";
+
 export interface ConversationRuntimeOptions {
   emit: (change: ConversationChange) => void;
   store?: ConversationStore;
@@ -246,12 +251,14 @@ export class ConversationRuntime {
     const chunkCounts: Record<string, number> = {};
     let started = false;
     let terminal = false;
+    let failed = false;
     const emitChunk = async (chunk: import("ai").UIMessageChunk) => {
       chunkCounts[chunk.type] = (chunkCounts[chunk.type] ?? 0) + 1;
       if (Object.keys(chunkCounts).length === 1 && chunkCounts[chunk.type] === 1)
         console.info("[conversation][run] first chunk", { runId, type: chunk.type });
       await this.store.appendEvent({ conversationId, runId, chunk });
       if (chunk.type === "start") started = true;
+      if (chunk.type === "error") failed = true;
       if (chunk.type === "finish" || chunk.type === "abort") terminal = true;
     };
     try {
@@ -326,6 +333,14 @@ export class ConversationRuntime {
         system: systemPrompt,
         messages,
         abortSignal: controller.signal,
+        ...(ephemeral
+          ? {
+              temperature: ANSWER_TEMPERATURE,
+              providerOptions: {
+                openaiCompatible: { reasoningEffort: ANSWER_REASONING_EFFORT },
+              },
+            }
+          : {}),
         ...(tools ? { tools, stopWhen: stepCountIs(6) } : {}),
         onError: ({ error }) => {
           console.error("[conversation][run] provider error", summarizeError(error));
@@ -358,7 +373,9 @@ export class ConversationRuntime {
         runId,
         controller.signal.aborted ? "interrupted" : "complete",
       );
-      if (ephemeral) await this.store.clear(conversationId);
+      // 失败轮是用户可见结果，保留消息与 journal 供详情面板读取；成功/取消轮
+      // 仍即时释放。下一轮 beginEphemeralRun 会清掉上一次的失败残留。
+      if (ephemeral && !failed) await this.store.clear(conversationId);
       console.info("[conversation][run] finished", {
         runId,
         elapsedMs: Date.now() - startedAt,

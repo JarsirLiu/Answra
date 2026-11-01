@@ -62,11 +62,6 @@
   scrollbar-width: thin;
 }
 
-/* 只读弹窗没有附件入口，隐藏加号按钮进一步压缩输入框。 */
-.reply-conversation-popover .conversation-composer-add {
-  display: none;
-}
-
 .reply-conversation-message {
   display: flex;
   max-width: 94%;

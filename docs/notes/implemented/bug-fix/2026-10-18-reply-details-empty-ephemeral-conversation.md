@@ -22,7 +22,7 @@
 ## 决定
 
 1. 详情订阅的**生命周期 = reply slot 的生命周期**，而不是「面板是否展开」：`ReplyDetails` 在 `featureSlot.kind === "reply"` 期间始终挂载，`enabled = Boolean(conversationId)`；`expanded` 只控制是否渲染 `ReplyConversationPopover`（收起时 return null，但 hook 与订阅保持）。这样从流式第一帧起就订阅、用增量事件把消息累积在本地 state 里，运行时清空后仍能展开回看。
-2. 本轮会话 id 跨「收起回复条回发送条」保留：`useReplyWorkflow` 拆出 `resetRoundInput()`（只滚缩略图与草稿），`closeReplyBar` 的 streaming/done 分支调用它而不再 `clearPending()`；`cancelReply` 也不再置空 `conversationId`。**只在退出 reply slot（`onExitReply` / 组件卸载）时**才丢本轮内容，符合用户「退出回复条才清空本次对话内容」的要求；新一次发送仍会生成新 `screenshot-${uuid}` 顶替旧会话。
+2. （原方案，已被 2026-11-01 Note 取代）本轮会话 id 曾跨「收起回复条回发送条」保留：`useReplyWorkflow` 拆出 `resetRoundInput()`（只滚缩略图与草稿），`closeReplyBar` 的 streaming/done 分支调用它而不再 `clearPending()`；`cancelReply` 也不再置空 `conversationId`。现在改为：关闭回复条即清空本轮会话，失败轮由运行时保留到关闭或下一轮；新一次发送仍生成新 `screenshot-${uuid}`。详见[回复详情面板在模型失败后保留本轮，并清理本地兜底](./2026-11-01-reply-details-missing-failed-send.md)。
 3. 抹掉订阅早于会话创建造成的瞬时错误：回复工作流先 `setConversationId` 再 `createConversation`，`useReplyConversation` 的首个快照可能命中「会话不存在」。在 `applyContiguous` 应用真实变更时一并 `error: undefined`，避免残留错误卡片。
 4. `useReplyConversation` 在本轮已经捕获到消息后，收到「无活动 run 且消息为空」的清理快照时只推进 `revision` 游标，不覆盖本地消息与答案。这样保留详情面板的展示缓存，同时继续接受后续 revision，避免同一清理快照重复处理。
 
@@ -46,12 +46,12 @@
 ## 后果与防回退
 
 - **不要把 `ReplyDetails` 改回「只在展开时挂载」**，也不要把 `enabled` 缩到只在 `expanded` 时为真：答题会话完成即被运行时清空，晚订阅必然拿到空快照。新增展示答题会话的 UI 必须沿用「会话存活期内持续订阅」的写法。
-- 本轮 `conversationId` 只在退出 reply slot 时清空；不要在 `closeReplyBar` 的 streaming/done 分支里恢复 `clearPending()`，否则收起回发送条后展开又变空。
-- 运行时的 ephemeral 语义（`runAnswer` 完成后 `store.clear`）不要为了让 UI 好取而改动；这是会话内存与隐私边界。
+- 关闭回复条时现在必须清空本轮会话（`clearPending()`），详见 2026-11-01 Note；不要再恢复「收起后继续复用本轮 conversationId」的旧行为。
+- 运行时的 ephemeral 语义仍以 `store.clear` 为释放动作；仅失败轮例外保留到关闭或下一轮，见 2026-11-01 Note。不要为了让 UI 好取而在 desktop 再缓存一份会话。
 - `useReplyConversation` 的首个快照失败要能被后续变更自愈（清 `error`），不要再把「会话不存在」当成需要长期展示的错误态。
 
 ## 验证
 
 - `packages/ui/test/replyConversation.test.tsx`：用模仿当前 agent 语义的假 store（`messages-appended` + 事件 + `run-finished`，随后 `clear` 发布空 `snapshot`）断言——(1) 全程订阅时，清空后仍保留完成态答案；(2) 反例守卫：运行结束清空后才订阅只能得到空会话，说明必须全程保持订阅。
-- `packages/ui/test/FloatingBarApp.test.tsx` 新增「keeps this round's conversation after collapsing the reply bar back to the send bar」：流式期间即按本轮 `screenshot-*` id 拉取快照；收起回发送条后仍能展开「当前对话」。
+- `packages/ui/test/FloatingBarApp.test.tsx` 现由「clears the round when closing the reply bar and shows the next round in details」覆盖：关闭回复条清空本轮，下一轮展开只显示新会话；本 Note 记录的「收起后保留」行为已被 2026-11-01 Note 取代。
 - `pnpm --filter @answra/ui test -- replyConversation.test.tsx FloatingBarApp.test.tsx`：46 项通过；并补充执行 UI typecheck 与 `git diff --check`。

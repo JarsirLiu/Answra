@@ -495,17 +495,15 @@ describe("ReplyBarWindowApp live conversation popover", () => {
     expect(image.closest("figure")).toHaveClass("reply-conversation-image");
   });
 
-  it("keeps the composer focusable when stealth mode is disabled", async () => {
+  it("keeps the conversation panel read-only", async () => {
     const bridge = createBridge();
     render(<ReplyBarWindowApp bridge={bridge as DesktopBridge} />);
     act(() => stateListener?.(replyState(true)));
     fireEvent.mouseEnter(document.querySelector(".reply-activity-viewport") as HTMLElement);
 
-    expect(await screen.findByRole("textbox", { name: "消息输入" })).not.toBeDisabled();
-    expect(screen.getByRole("button", { name: "发送消息" })).toBeDisabled();
-    expect(screen.queryByRole("button", { name: "关闭内置输入法" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "启用内置输入法" })).toBeNull();
-    expect(document.querySelector(".conversation-composer")?.nextElementSibling).toBeNull();
+    expect(await screen.findByRole("region", { name: "当前对话" })).toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "发送消息" })).not.toBeInTheDocument();
   });
 
   it("opens only when hovering the reply text area, not the action buttons", async () => {

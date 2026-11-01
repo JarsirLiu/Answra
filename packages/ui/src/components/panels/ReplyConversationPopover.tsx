@@ -1,11 +1,9 @@
 import type { DesktopBridge, ReplyBarActivity } from "@answra/shared";
 import { isAuthRequiredError } from "@answra/shared";
 import { AlertCircle, FileText, Wrench } from "lucide-react";
-import { useRef, useState } from "react";
 import type { ReplyConversationMessage } from "../../app/useReplyConversation";
 import { ICON_SM } from "../../tokens";
 import { AssistantMessage, MessageStream, ModelErrorNotice } from "../chat";
-import { ConversationComposer } from "./ConversationComposer";
 import "./ReplyConversationPopover.css";
 
 interface ReplyConversationPopoverProps {
@@ -15,7 +13,6 @@ interface ReplyConversationPopoverProps {
   placement: "above" | "below";
   stealth: boolean;
   bridge?: DesktopBridge;
-  conversationId?: string;
 }
 
 /**
@@ -30,30 +27,7 @@ export function ReplyConversationPopover({
   placement,
   stealth: _stealth,
   bridge,
-  conversationId,
 }: ReplyConversationPopoverProps) {
-  const [draft, setDraft] = useState("");
-  const [sendError, setSendError] = useState<string>();
-  const composerInputRef = useRef<HTMLTextAreaElement>(null);
-  const draftRef = useRef(draft);
-  draftRef.current = draft;
-  const send = async () => {
-    const text = draftRef.current.trim();
-    if (!text || !conversationId || !bridge?.sendConversationMessage) return;
-    setDraft("");
-    setSendError(undefined);
-    try {
-      await bridge.sendConversationMessage({
-        operation: "answer.run",
-        conversationId,
-        request: { text, images: [] },
-      });
-    } catch (error) {
-      // 失败必须回到发送方：草稿还给用户，原因显示在同一处失败提示里。
-      setDraft(text);
-      setSendError(error instanceof Error ? error.message : "发送失败");
-    }
-  };
   const signIn = () => {
     void bridge?.loginAccount?.();
   };
@@ -61,8 +35,8 @@ export function ReplyConversationPopover({
   const hasErrorActivity = messages.some((message) =>
     message.activities.some((activity) => activity.kind === "error"),
   );
-  const failure = sendError ?? error;
-  const failureNeedsSignIn = isAuthRequiredError(sendError ?? "");
+  const failure = error;
+  const failureNeedsSignIn = isAuthRequiredError(failure ?? "");
   const contentKey = messages
     .map(
       (message) =>
@@ -128,17 +102,6 @@ export function ReplyConversationPopover({
           <p className="reply-conversation-empty">发送后将在这里显示本轮对话</p>
         )}
       </MessageStream>
-      <ConversationComposer
-        compact
-        disabled={false}
-        inputLabel="消息输入"
-        inputRef={composerInputRef}
-        onSubmit={() => void send()}
-        onValueChange={setDraft}
-        placeholder="继续输入消息…"
-        submitDisabled={!draft.trim()}
-        value={draft}
-      />
     </section>
   );
 }

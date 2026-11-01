@@ -160,10 +160,19 @@ export function useReplyWorkflow({
     setDraft("");
   }, []);
 
-  const clearPending = useCallback(() => {
+  const dropRound = useCallback(() => {
     resetRoundInput();
     setConversationId(undefined);
   }, [resetRoundInput]);
+
+  const clearPending = useCallback(() => {
+    dropRound();
+    if (conversationId) {
+      void platform?.clearConversationMessages?.(conversationId).catch((error: unknown) => {
+        console.warn("[reply] 清理本轮会话失败", error);
+      });
+    }
+  }, [conversationId, dropRound, platform]);
 
   const startRegionCapture = useCallback(
     async (startCapture: NonNullable<DesktopBridge["startRegionCapture"]>) => {
@@ -202,19 +211,31 @@ export function useReplyWorkflow({
     }
   }, [onEnterReply, platform, startRegionCapture]);
 
+  const exitReply = useCallback(() => {
+    cancelMessage();
+    // 流式期间 store 仍被活动 run 占用，取消后由运行时清理；其他阶段显式释放。
+    if (phase === "streaming") dropRound();
+    else clearPending();
+    onExitReply();
+  }, [cancelMessage, clearPending, dropRound, onExitReply, phase]);
+
   const closeReplyBar = useCallback(() => {
     // 发送条（composing）：收起发送条本身，退出 reply slot 回到对话。
     if (phase === "composing") {
-      clearPending();
-      onExitReply();
+      exitReply();
       return;
     }
-    // 回复条（streaming / done）：收起回复条回到发送条，而不是直接回退到对话。
-    // 只清空本轮的截图与草稿；本轮会话保留到退出 reply slot 为止，收起后仍可展开回看。
-    if (phase === "streaming") cancelMessage();
-    resetRoundInput();
+    // 回复条（streaming / done）：收起回复条回到发送条，同时清空本轮会话。
+    // 失败轮在关闭时必须释放；否则下一轮会被旧内容污染。
+    if (phase === "streaming") {
+      cancelMessage();
+      dropRound();
+      onSetReplyPhase("composing");
+      return;
+    }
+    clearPending();
     onSetReplyPhase("composing");
-  }, [cancelMessage, clearPending, onExitReply, onSetReplyPhase, phase, resetRoundInput]);
+  }, [cancelMessage, clearPending, dropRound, exitReply, onSetReplyPhase, phase]);
 
   const cancelReply = useCallback(() => {
     // 取消只退出当前回复态，保留 reply slot 与本轮会话，让用户能继续截图发送或回看。
@@ -291,6 +312,7 @@ export function useReplyWorkflow({
     removeAttachment,
     closeReplyBar,
     cancelReply,
+    exitReply,
     clearPending,
     performSend,
     setDraft,

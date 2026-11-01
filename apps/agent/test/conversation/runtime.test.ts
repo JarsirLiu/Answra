@@ -12,6 +12,8 @@ import { MemoryConversationStore } from "../../src/conversation/store";
 type RecordedRequest = {
   messages: Array<{ role: string; content: unknown }>;
   tools?: unknown;
+  temperature?: number;
+  reasoningEffort?: string;
   authorization?: string;
 };
 
@@ -35,25 +37,36 @@ describe("ephemeral conversation runtime", () => {
   let runtime: ConversationRuntime;
   let changes: ConversationChange[];
   let holdResponse: boolean;
+  let modelFailure: { status: number; message: string } | undefined;
   let serverPort = 0;
 
   beforeEach(async () => {
     requests = [];
     changes = [];
     holdResponse = false;
+    modelFailure = undefined;
     server = createServer(async (request, response) => {
       const chunks: Buffer[] = [];
       for await (const chunk of request) chunks.push(Buffer.from(chunk));
       const parsed = JSON.parse(Buffer.concat(chunks).toString("utf8")) as {
         messages?: Array<{ role: string; content: unknown }>;
         tools?: unknown;
+        temperature?: number;
+        reasoning_effort?: string;
       };
       requests.push({
         messages: parsed.messages ?? [],
         tools: parsed.tools,
+        temperature: parsed.temperature,
+        reasoningEffort: parsed.reasoning_effort,
         authorization: request.headers.authorization,
       });
       if (holdResponse) return;
+      if (modelFailure) {
+        response.writeHead(modelFailure.status, { "content-type": "application/json" });
+        response.end(JSON.stringify({ error: { message: modelFailure.message } }));
+        return;
+      }
       response.writeHead(200, { "content-type": "text/event-stream" });
       response.end(streamBody("收到"));
     });
@@ -119,6 +132,60 @@ describe("ephemeral conversation runtime", () => {
     expect(
       events.some((event) => event.chunk.type === "text-delta" && event.chunk.delta === "收到"),
     ).toBe(true);
+  });
+
+  it("sets answer temperature and low reasoning effort without changing general chat", async () => {
+    const answer = await runtime.runAnswer(
+      "answer-tuning-conversation",
+      { text: "这道题选什么", images: [] },
+      ACCESS_TOKEN,
+    );
+    await waitForTerminal(answer.runId);
+    expect(requests.at(-1)).toMatchObject({ temperature: 0.3, reasoningEffort: "low" });
+
+    const chat = await runtime.sendChat(
+      "general-chat",
+      "chat-tuning-conversation",
+      { text: "普通聊天", images: [] },
+      ACCESS_TOKEN,
+    );
+    await waitForTerminal(chat.runId);
+    expect(requests.at(-1)?.temperature).toBeUndefined();
+    expect(requests.at(-1)?.reasoningEffort).toBeUndefined();
+  });
+
+  it("keeps a failed ephemeral round until the next round claims the conversation", async () => {
+    modelFailure = {
+      status: 403,
+      message:
+        "No model service is configured for this plan yet. Please contact the administrator.",
+    };
+    const failed = await runtime.runAnswer(
+      "failed-conversation",
+      { text: "这道题选什么", images: [] },
+      ACCESS_TOKEN,
+    );
+    await waitForTerminal(failed.runId);
+
+    const snapshot = await runtime.getSnapshot("failed-conversation");
+    expect(snapshot.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+    expect(snapshot.messages[0]?.text).toBe("这道题选什么");
+    const events = changes.flatMap((change) => (change.type === "event" ? [change.event] : []));
+    expect(
+      events.some(
+        (event) =>
+          event.chunk.type === "error" && event.chunk.errorText.includes("No model service"),
+      ),
+    ).toBe(true);
+
+    modelFailure = undefined;
+    const recovered = await runtime.runAnswer(
+      "failed-conversation",
+      { text: "第二题", images: [] },
+      ACCESS_TOKEN,
+    );
+    await waitForTerminal(recovered.runId);
+    expect((await runtime.getSnapshot("failed-conversation")).messages).toEqual([]);
   });
 
   it("sends chat history only in the independent general chat conversation", async () => {

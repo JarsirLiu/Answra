@@ -201,6 +201,7 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
     closeReplyBar,
     conversationId,
     draft,
+    exitReply,
     fileInputRef,
     handleAttachmentChange,
     performSend,
@@ -298,7 +299,7 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
       return;
     }
     if (action.id === "chat") {
-      if (featureSlot.kind === "reply") surfaces.exitReply();
+      if (featureSlot.kind === "reply") exitReply();
       else surfaces.openPanel("chat");
     }
     if (action.id === "capture") surfaces.openPanel("interview");
@@ -432,6 +433,7 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
             bridge={platform}
             conversationId={conversationId}
             enabled={Boolean(conversationId)}
+            error={replyFailure?.message}
             expanded={replyDetail.expanded}
             stealth={stealthSetting.enabled}
           />

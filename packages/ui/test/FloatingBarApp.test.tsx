@@ -23,13 +23,14 @@ function createConversationBridge() {
     getConversationSnapshot: vi.fn().mockImplementation(async (id: string) => emptySnapshot(id)),
     readConversationEvents: vi.fn().mockResolvedValue([]),
     createConversation: vi.fn().mockImplementation(async (id: string) => emptySnapshot(id)),
+    clearConversationMessages: vi.fn().mockResolvedValue(undefined),
     sendConversationMessage: vi
       .fn()
       .mockImplementation(
         async (command: {
           conversationId: string;
           operation?: string;
-          request?: { text?: string };
+          request?: { text?: string; images?: Array<{ name: string; dataUrl: string }> };
         }) => {
           emittedConversationId = command.conversationId;
           // 对齐 agent 侧会话的真实语义：beginRun / beginEphemeralRun 先发布
@@ -40,7 +41,7 @@ function createConversationBridge() {
               id: `user-${command.conversationId.slice(-8)}`,
               role: "user",
               text: command.request.text ?? "",
-              images: [],
+              images: command.request.images ?? [],
               status: "complete",
             };
             const assistantMessage: ConversationMessage = {
@@ -555,6 +556,43 @@ describe("three-segment floating navigation", () => {
     expect(screen.getByRole("button", { name: "去登录" })).toBeInTheDocument();
   });
 
+  it("keeps a failed model round in the current conversation panel", async () => {
+    const bridge = createConversationBridge();
+    render(<FloatingBarApp bridge={bridge} />);
+    clickAnswerScreenshot();
+    await waitFor(() =>
+      expect(screen.getByRole("img", { name: /screenshot-.*\.png/ })).toBeInTheDocument(),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "确认发送" }));
+    await waitFor(() => expect(bridge.sendConversationMessage).toHaveBeenCalled());
+    act(() =>
+      emitConversationEvent?.({
+        runId: "run-1",
+        chunk: {
+          type: "error",
+          errorText:
+            "No model service is configured for this plan yet. Please contact the administrator.",
+        },
+      }),
+    );
+    act(() => emitConversationEvent?.({ runId: "run-1", chunk: { type: "finish" } }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "No model service is configured for this plan yet.",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "展开对话面板" }));
+
+    const details = await screen.findByRole("region", { name: "当前对话" });
+    expect(
+      within(details).getByText(/No model service is configured for this plan yet\./),
+    ).toBeInTheDocument();
+    expect(within(details).getByRole("img", { name: "题目截图" })).toBeInTheDocument();
+    expect(within(details).queryByText("发送后将在这里显示本轮对话")).not.toBeInTheDocument();
+    // 详情只读：不再提供继续打字的输入框。
+    expect(within(details).queryByRole("textbox")).not.toBeInTheDocument();
+  });
+
   it("captures a region screenshot through the bridge and attaches it to the chat", async () => {
     const bridge = createConversationBridge();
     render(<FloatingBarApp bridge={bridge} />);
@@ -708,7 +746,7 @@ describe("three-segment floating navigation", () => {
     );
   });
 
-  it("keeps this round's conversation after collapsing the reply bar back to the send bar", async () => {
+  it("clears the round when closing the reply bar and shows the next round in details", async () => {
     const bridge = createConversationBridge();
     render(<FloatingBarApp bridge={bridge} />);
     clickAnswerScreenshot();
@@ -717,19 +755,18 @@ describe("three-segment floating navigation", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "确认发送" }));
     await waitFor(() => expect(bridge.sendConversationMessage).toHaveBeenCalled());
-    const sentCommand = bridge.sendConversationMessage.mock.calls[0]?.[0] as
+    const firstCommand = bridge.sendConversationMessage.mock.calls[0]?.[0] as
       | { conversationId: string }
       | undefined;
-    if (!sentCommand) throw new Error("sendConversationMessage 未被调用");
-    const sentConversationId = sentCommand.conversationId;
-    // 全程订阅本轮会话：流式期间就按本轮 id 拉取，而不是等展开时再取（那时已被清空）。
+    if (!firstCommand) throw new Error("sendConversationMessage 未被调用");
+    const firstConversationId = firstCommand.conversationId;
     await waitFor(() =>
-      expect(bridge.getConversationSnapshot).toHaveBeenCalledWith(sentConversationId),
+      expect(bridge.getConversationSnapshot).toHaveBeenCalledWith(firstConversationId),
     );
     await act(async () => {
       emitConversationEvent?.({
         runId: "run-1",
-        chunk: { type: "text-delta", id: "segment-1", delta: "答案" },
+        chunk: { type: "text-delta", id: "segment-1", delta: "第一轮答案" },
       });
       emitConversationEvent?.({ runId: "run-1", chunk: { type: "finish" } });
     });
@@ -737,17 +774,41 @@ describe("three-segment floating navigation", () => {
       expect(screen.getByRole("button", { name: "继续截图" })).toBeInTheDocument(),
     );
 
-    // 收起回复条只清空本轮截图与草稿，本轮会话保留到退出回复槽为止。
+    // 关闭回复条：本轮会话立即清空，回到发送条。
     fireEvent.click(screen.getByRole("button", { name: "收起回复条" }));
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "确认发送" })).toBeInTheDocument(),
     );
+    expect(bridge.clearConversationMessages).toHaveBeenCalledWith(firstConversationId);
 
-    // 展开发送条里的对话面板：订阅自流式期间就一直在，无需重新拉取即可渲染本轮会话。
-    fireEvent.click(screen.getByRole("button", { name: "展开对话面板" }));
+    // 新一轮发送后展开面板：只显示新会话，旧轮次不再残留。
+    fireEvent.click(screen.getByRole("button", { name: "继续截图" }));
     await waitFor(() =>
-      expect(screen.getByRole("region", { name: "当前对话" })).toBeInTheDocument(),
+      expect(screen.getByRole("img", { name: /screenshot-.*\.png/ })).toBeInTheDocument(),
     );
+    fireEvent.click(screen.getByRole("button", { name: "确认发送" }));
+    await waitFor(() => expect(bridge.sendConversationMessage).toHaveBeenCalledTimes(2));
+    const secondCommand = bridge.sendConversationMessage.mock.calls[1]?.[0] as
+      | { conversationId: string }
+      | undefined;
+    if (!secondCommand) throw new Error("第二轮发送未被调用");
+    expect(secondCommand.conversationId).not.toBe(firstConversationId);
+    await act(async () => {
+      emitConversationEvent?.({
+        runId: "run-1",
+        chunk: { type: "text-delta", id: "segment-2", delta: "第二轮答案" },
+      });
+      emitConversationEvent?.({ runId: "run-1", chunk: { type: "finish" } });
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "继续截图" })).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "展开对话面板" }));
+
+    const details = await screen.findByRole("region", { name: "当前对话" });
+    expect(within(details).getByText(/第二轮答案/)).toBeInTheDocument();
+    expect(within(details).queryByText(/第一轮答案/)).not.toBeInTheDocument();
+    expect(within(details).queryByRole("textbox")).not.toBeInTheDocument();
   });
 
   it("clears the details panel for each new screenshot answer round", async () => {
@@ -802,7 +863,6 @@ describe("three-segment floating navigation", () => {
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "继续截图" })).toBeInTheDocument(),
     );
-    fireEvent.click(screen.getByRole("button", { name: "收起回复条" }));
     fireEvent.click(screen.getByRole("button", { name: "展开对话面板" }));
 
     const details = screen.getByRole("region", { name: "当前对话" });

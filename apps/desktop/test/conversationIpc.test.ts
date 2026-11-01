@@ -43,6 +43,7 @@ const service = {
   readEvents: vi.fn().mockResolvedValue([]),
   send: vi.fn(),
   cancel: vi.fn(),
+  clearConversation: vi.fn().mockResolvedValue(undefined),
   onChange: shared.onChange,
 };
 
@@ -98,6 +99,7 @@ describe("conversation IPC read access for reply renderer", () => {
     service.getSnapshot.mockClear();
     service.readEvents.mockClear();
     service.send.mockClear();
+    service.clearConversation.mockClear();
     modelSettings.getView.mockClear();
     modelSettings.save.mockClear();
     modelSettings.clear.mockClear();
@@ -126,6 +128,23 @@ describe("conversation IPC read access for reply renderer", () => {
       readEvents(
         { sender: { id: "reply" } },
         { conversationId: "other-conversation", afterRevision: 0 },
+      ),
+    ).toThrow("非法调用方");
+  });
+
+  it("lets the main renderer clear the current screenshot round", async () => {
+    await expect(
+      getHandler(ConversationChannels.ClearMessages)(
+        { sender: { id: "main" } },
+        { conversationId: shared.replyConversationId },
+      ),
+    ).resolves.toBeUndefined();
+    expect(service.clearConversation).toHaveBeenCalledWith(shared.replyConversationId);
+
+    await expect(() =>
+      getHandler(ConversationChannels.ClearMessages)(
+        { sender: { id: "reply" } },
+        { conversationId: shared.replyConversationId },
       ),
     ).toThrow("非法调用方");
   });
@@ -221,6 +240,7 @@ describe("conversation IPC model settings", () => {
     service.getSnapshot.mockClear();
     service.readEvents.mockClear();
     service.send.mockClear();
+    service.clearConversation.mockClear();
     modelSettings.getView.mockClear();
     modelSettings.save.mockClear();
     modelSettings.clear.mockClear();
