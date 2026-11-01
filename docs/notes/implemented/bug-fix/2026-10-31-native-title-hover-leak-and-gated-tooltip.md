@@ -15,8 +15,14 @@
 
 - 代码/模块：全部 ui 包组件的 DOM `title` 属性清除（约 12 个文件）；新增 `packages/ui/src/components/controls/Tooltip.tsx` + `Tooltip.css`（自制气泡 + 隐身门控）；`FloatingBarApp` 植入 `TooltipProvider`。
 - UI 行为变化：悬停在原来带 title 的控件上不再出现 OS 提示；非隐身状态下，高歧义 icon-only 控件出现自制小气泡（300ms 延迟、跟随控件上方、越界钳制）。
-- 相关 Note：[公告工具栏与定高列表](2026-10-31-announcement-toolbar-clear-read-and-fixed-height.md)——该 Note 的约束一写过"icon-only + tooltip"，其中 tooltip 的实现从本 Note 起改判为"自制门控气泡"；其余语义不变。
+- 相关 Note：[公告工具栏与定高列表](../feature/2026-10-31-announcement-toolbar-clear-read-and-fixed-height.md)——该 Note 的约束一写过"icon-only + tooltip"，其中 tooltip 的实现从本 Note 起改判为"自制门控气泡"；其余语义不变。
 - 协议/进程：无 IPC 变化；隐身状态沿用 `localStorage` + `useMeetingStealth`，气泡组件经 React Context 读取。
+
+## 根因
+
+1. 原生 `title` 提示由 Chromium/操作系统合成层渲染在页面之上，CSS 与 JS 既不能按隐身状态隐藏它，也不能改它的样式——代码里没有"在隐身时关掉它"的落点。
+2. 隐身状态的权威来源在应用层（`FloatingBarApp` 的 `useMeetingStealth` → `data-stealth`），ui 包内组件没有全局订阅；即便只想给提示加门控，组件也拿不到隐身状态。
+3. 泄漏点不是单个控件，而是 ui 包内 20+ 处分散的 DOM `title`；逐处接状态既不可维护，也必然漏改。
 
 ## 决定
 

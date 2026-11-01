@@ -18,6 +18,13 @@
 - UI 行为变化：回复完成后（无论尾帧是什么 kind）跑马灯一律停在答案开头且挂起跟滚（resize/render 都不再推进）；错误流保持"继续跟滚"以展示失败过程；完成态不再出现"等待模型输出"伪装。
 - 相关 Note：无直接关联的同线 Note；与同日「原生 title 悬停提示破隐身」Note 同属展示层治理线，但互相独立。
 
+## 根因
+
+1. 停止判定用的是 `phase === "text" && !pending`，而 `phase` 由"跑马灯最后一帧活动是否为 text"推导——把权威的"运行已结束"信号降级成了"最后一帧恰好是文本"的猜测。
+2. 协议层已经把结束信号送到 UI：AI SDK 的 `finish`/`abort` 收流、agent 的 `run-finished` 对账都在，但滚动钩子只消费 `pending` 翻转，还额外附加了与结束无关的帧 kind 条件。
+3. 答题尾帧形态不受我方控制：`source-url` / `tool-output` 常排在最终文本之后，此时完成态停在 `phase === "process"`，`pending=false` 不触发 hold，viewport 继续滑向工具/来源尾巴且永不回滚。
+4. 旧测试把"process 不停"钉成护栏，且 `replyText` 在完成但没有活动时回填"等待模型输出"，让"无内容"看起来像"仍在等待"，掩盖了停止判定的错误。
+
 ## 决定
 
 1. **停止＝运行结束，不猜帧**：`holdStartRef = !pending && !error`。pending 翻转（true→false）即认为运行结束（来源：AI SDK `finish`/`abort` 收流 + agent `run-finished` 对账），hold 后任何后续 render/resize 都不得推进滚动。
@@ -25,6 +32,13 @@
 3. **择帧以运行状态为准**：进行中保持现行两态（尾帧 text → 只展示尾段文本帧；否则全量最近 5 帧）；完成态一律先取"最后一个过程帧之后的文本帧"，没有文本帧才退回最近过程帧（诚实展示工具/来源尾巴，靠 hold 保证用户看到的第一屏是答案开头）。
 4. **`replyText` 全链路删除**：跑马灯不再从最终答案文本反推状态（这条"以文本内容臆断运行状态"的支柱整体拆除，不留兜底）；连带清理 `ReplyBar`/`useReplyWorkflow`/`ReplyBarState` 窗口契约与 `useAiConversation` 返回值中的死字段。
 5. **空活动回填修正**：完成态无活动 → "模型未返回可展示内容"；"等待模型输出"只允许在 pending 时出现。
+
+## 修复
+
+- `useHorizontalTickerScroll` 新增 `error` 入参，停止判定改为 `holdStartRef = !pending && !error`；hold 之后 render/resize 不再推进滚动，错误态保留原跟滚行为。
+- 择帧改由运行状态驱动：进行中保持"尾帧 text 只展示尾段文本帧，否则最近 5 帧"；完成态取最后一个过程帧之后的文本帧，没有文本帧才退回最近过程帧。
+- `ReplyActivityTicker` 删除 `replyText` 兜底，完成态无活动时显示"模型未返回可展示内容"。
+- `replyText` 从 `ReplyBarState`（`packages/shared/src/channels/window.ts`）、`windowIpc` 校验、`ReplyBar`/`useReplyWorkflow`/`ReplyBarWindowApp` 全链路删除，避免从最终产物反推运行状态。
 
 ## 曾考虑的替代方案
 

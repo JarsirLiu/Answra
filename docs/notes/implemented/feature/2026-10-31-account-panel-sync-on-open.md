@@ -12,6 +12,13 @@
 - `AuthService.syncStatus()`：access token 有效时只调用 `refreshDirectory`（能力目录 + 账号 + 额度），不消耗 refresh token；已过期时复用现有 `refresh()` 的刷新与冷却路径；失败时回退本地缓存，不影响登录态。
 - `SettingsPanel` 在每次切到「账户」Tab 时调用 `syncAuthStatus`，返回结果直接更新面板；同时已有的 `onAuthStatus` 推送仍作为兜底。
 
+## 影响表面
+
+- 设置面板「账户」Tab：每次切入都会触发一次云端同步，额度、套餐与福利到期展示随之刷新；其他 Tab 不受影响。
+- IPC/bridge：新增 `answra:auth:sync` 通道与 `DesktopBridge.syncAuthStatus`，仅主窗口向 main 发起。
+- 登录态：同步失败只保留旧快照，不登出；登录/登出流程与失败语义不变。
+- 服务端：不改网关接口与计费逻辑，仍只读取既有配额响应。
+
 ## 额度与日期的来源
 
 - 可用积分、福利积分、账户额度、套餐周期均来自网关 `GET /api/v1/user/quota` 的响应，客户端不读取余额金额、不在本地推算。

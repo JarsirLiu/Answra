@@ -25,6 +25,13 @@
 3. **定高滚动**：列表态根 `.announcement-view` 与详情态根 `.announcement-detail` 都约束为 `flex:1 + min-height:0`；滚动只发生在 `.announcement-list`（列表）与 `.announcement-detail`（详情正文）内部。面板高度上限维持 `content-panel--settings` 的 560px，窗口不再随内容变高。
 4. **控件约束延续**（上 Note 约束二的延伸）：工具栏动作一律 icon-only + tooltip，任何"文字按钮"不得回潮；空态、错误为文案节点（非控件）不受此限。
 
+## 影响表面
+
+- 公告 Tab 列表态：顶部固定一行工具栏，右侧两个 icon-only 控件（全部已读、清除已读），带自制 tooltip；无可见已读时清除按钮禁用。
+- 面板呈现：列表与详情各自约束为 `flex:1 + min-height:0`，滚动只发生在内部，面板高度上限保持 560px，窗口不再随内容变高。
+- 持久化：渲染器 `localStorage` 新增 `answra:dismissed-announcements`，清走效果跨面板重开与应用重启保持；不按账户隔离。
+- 其它表面：无新 IPC、无服务端接口/协议变化，`markAnnouncementRead` 仍逐条调用。
+
 ## 修复
 
 - `AnnouncementList.tsx`：`dismissed` 集合状态（挂载时从 localStorage 注水，写入即持久化）、`markAllRead` 编排、`clearRead` 动作；列表改为「工具栏 + 滚动列表」两段。
