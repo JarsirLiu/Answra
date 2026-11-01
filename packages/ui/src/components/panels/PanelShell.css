@@ -17,10 +17,14 @@
   background: var(--panel);
   box-shadow: var(--shadow-pop);
 }
+/* 固定宽度面板不能用 100vw 封顶：本窗口是 fit-content，视口宽度由外壳
+   上报的宽度决定；`min(480px, 100vw - 16px)` 会在悬浮条窄于 480px 时把
+   面板锁在窄宽度（answer Profile 只有答题/设置入口时即触发）。越界保护
+   交给主进程 clampToWorkArea，不在渲染层复制一份，见 2026-11-01 bug-fix Note。 */
 .content-panel--notes,
 .content-panel--settings,
 .content-panel--interview {
-  width: min(480px, calc(100vw - 16px));
+  width: 480px;
   height: min(560px, calc(100vh - var(--bar-h) - 24px));
 }
 /* 账户页只有资料卡 + 额度卡 + 动作行，面板高度随内容收紧，
@@ -31,7 +35,7 @@
    其它变体不塌是因为基类 min-height: 400px 提供了循环地板；
    这里靠去掉上限自洽，超高保护交给主进程的工作区钳制。 */
 .content-panel--account {
-  width: min(480px, calc(100vw - 16px));
+  width: 480px;
   height: auto;
   min-height: 0;
 }

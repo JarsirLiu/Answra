@@ -105,6 +105,24 @@ describe("theme CSS integrity", () => {
     expect(css).toMatch(/--shadow-pop:\s*none;/);
   });
 
+  it("keeps fixed panel widths independent from the fit-content viewport", () => {
+    // 窗口宽度由 .overlay-root 上报，视口宽度再反过来约束面板会形成自引用：
+    // 悬浮条窄于面板时，min(480px, 100vw - 16px) 会永久把面板锁窄。
+    // 固定宽度变体必须用 px，越界交给主进程 clampToWorkArea。
+    const css = stripComments(
+      readFileSync(join(sourceRoot, "components", "panels", "PanelShell.css"), "utf8"),
+    );
+    const fixedVariants = css.match(
+      /\.content-panel--notes,\s*\.content-panel--settings,\s*\.content-panel--interview\s*\{([^}]*)\}/,
+    )?.[1];
+    const account = css.match(/\.content-panel--account\s*\{([^}]*)\}/)?.[1];
+    for (const body of [fixedVariants, account]) {
+      expect(body).toBeDefined();
+      expect(body).toContain("width: 480px");
+      expect(body).not.toContain("100vw");
+    }
+  });
+
   it("keeps announcement views inside the fixed panel, scrolled not stretched", () => {
     // 定高面板（560px 上限）必须由列表/详情自身滚动，任何一条根容器
     // 失去 min-height:0 / overflow-y 都会让窗口随公告内容无限变高。

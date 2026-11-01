@@ -33,6 +33,7 @@
 
 - `--surface-w` 只在 `.overlay-root` 上由 `useSurfaceWidth` 维护；不要在组件里各自实现宽度逻辑。
 - 其它面板靠 `.content-panel--<variant>` 覆盖宽度，新增面板若不覆盖会继承“跟随导航栏”的默认宽度。
+- 固定宽度变体禁止再用 `100vw` 封顶：fit-content 窗口里会自引用成窄条，见 [answer Profile 设置面板宽度被视口钳制](../bug-fix/2026-11-01-answer-panel-width-fit-content-clamp.md)。
 - “启动默认收起”与 [对话模式与答题模式分离](2026-10-17-separate-chat-and-exam-modes.md) 原“启动直接进入通用对话”相冲突，已同步更新该 Note。
 
 ## 验证
