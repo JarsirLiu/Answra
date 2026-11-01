@@ -255,6 +255,10 @@ describe("SettingsPanel tabs", () => {
     expect(screen.getByText("本周期已用")).toBeInTheDocument();
     expect(screen.getByText("30 / 80 积分")).toBeInTheDocument();
     expect(screen.getByText("套餐到期")).toBeInTheDocument();
+    const expiryRow = screen.getByText("套餐到期").closest(".account-quota-row") as HTMLElement;
+    expect(expiryRow).toHaveTextContent("2026");
+    expect(expiryRow).toHaveTextContent(/\d{1,2}:\d{2}/);
+    expect(expiryRow).not.toHaveTextContent(/\d{1,2}:\d{2}:\d{2}/);
     const meter = screen.getByRole("progressbar", { name: "本月额度用量" });
     expect(meter).toHaveAttribute("aria-valuenow", "38");
   });

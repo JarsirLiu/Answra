@@ -35,9 +35,20 @@ function planBadge(quota: AuthQuotaInfo | null): { text: string; variant: BadgeV
   return null;
 }
 
-/** 日期按本地日历展示：服务端给的是 RFC3339 时间戳，账户页只关心哪一天。 */
+/** 福利到期按本地日历展示：只关心哪一天。 */
 function formatDate(value: string): string {
   return new Date(value).toLocaleDateString();
+}
+
+/** 套餐到期按本地时间展示到分钟：服务端 RFC3339 自带时刻，不能截断成日期。 */
+function formatDateTime(value: string): string {
+  return new Date(value).toLocaleString(undefined, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 /**
@@ -61,7 +72,7 @@ function quotaRows(quota: AuthQuotaInfo): { label: string; value: string }[] {
         value: `${displayCredits(quota.usedCredits)} / ${displayCredits(quota.totalCredits)} 积分`,
       });
     }
-    if (quota.expiresAt) rows.push({ label: "套餐到期", value: formatDate(quota.expiresAt) });
+    if (quota.expiresAt) rows.push({ label: "套餐到期", value: formatDateTime(quota.expiresAt) });
     return rows;
   }
   if (typeof quota.welfareCredits === "number") {
