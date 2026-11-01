@@ -6,12 +6,12 @@ import { resolveReleaseProfile } from "../scripts/release-profile.mjs";
 import { readViteReleaseConfig } from "../scripts/vite-release-config";
 
 describe("release profile resolution", () => {
-  it("uses the explicit answer allowlist and excludes internal feature domains", async () => {
+  it("uses the explicit answer allowlist and keeps the notebook workspace", async () => {
     const manifest = await resolveReleaseProfile(["--profile=answer"]);
     expect(manifest.profile).toBe("answer");
     expect(manifest.features).toContain("answer");
+    expect(manifest.features).toContain("workspace");
     expect(manifest.features).not.toContain("chat");
-    expect(manifest.features).not.toContain("workspace");
     expect(manifest.features).not.toContain("interview");
   });
 

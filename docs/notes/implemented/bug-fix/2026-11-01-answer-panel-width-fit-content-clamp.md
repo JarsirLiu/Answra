@@ -10,7 +10,7 @@ answer 安装包打开「设置」后，面板明显比开发态窄，设置项�
 
 - 代码/模块：`packages/ui/src/components/panels/PanelShell.css`、`packages/ui/test/themeCss.test.ts`。
 - UI 表面：notes / settings / interview / account 四个固定宽度面板；chat 面板仍跟随悬浮导航栏。
-- 相关 Note：[浮窗启动收起与面板宽度跟随导航栏](../feature/2026-10-18-collapsed-startup-and-panel-width.md)、[账户面板 vh 上限在 fit-content 窗口里引发塌缩](2026-10-24-account-panel-vh-max-height-collapse.md)、[安装包功能裁切与发布 Profile](../../implemented/architecture/2026-11-01-answer-only-release-profile.md)。
+- 相关 Note：[浮窗启动收起与面板宽度跟随导航栏](../feature/2026-10-18-collapsed-startup-and-panel-width.md)、[账户面板 vh 上限在 fit-content 窗口里引发塌缩](2026-10-24-account-panel-vh-max-height-collapse.md)、[安装包功能裁切与发布 Profile](../../implemented/architecture/2026-11-01-answer-only-release-profile.md)、[answer Profile 恢复笔记本工作区](2026-11-01-answer-profile-restore-notebook.md)。
 
 ## 根因
 
@@ -39,7 +39,7 @@ fit-content 窗口的宽度自引用：`useFitContent` 测量 `.overlay-root` �
 
 ## 后果与防回退
 
-- 固定宽度面板在窄导航栏 Profile 下会主动把窗口撑到 496px；这是与 full 一致的预期尺寸。
+- 固定宽度面板在窄导航栏 Profile 下会主动把窗口撑到 496px；这是与 full 一致的预期尺寸。answer 后来恢复工作区入口，窄导航栏不再是常态，但固定宽度规则继续保留，防止未来裁切再次触发同一回路。
 - 渲染层不再用 `vw` 封顶固定面板宽度；新增固定尺寸面板必须沿用 px 宽度，并自查是否参与 fit-content 宽度上报。
 - 极窄显示器下窗口被 `clampToWorkArea` 钳制后面板可能横向裁切，这与既有高度钳制语义一致，不在渲染层另做响应式压缩。
 

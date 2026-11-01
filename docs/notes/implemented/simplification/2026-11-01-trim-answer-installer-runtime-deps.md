@@ -4,7 +4,7 @@
 
 ## 问题
 
-answer 只保留答题、设置、账号、公告、更新和隐身，但安装包仍 104.9 MB。`app.asar` 中真正的应用产物只有 `out` + `dist` 约 3 MB，其余约 154 MB 是 `node_modules`：`pdfjs-dist`、`@napi-rs/canvas`、`lucide-react`、`shiki`、`react-dom`、`ai`、`@tiptap`、`katex` 等。它们已经被 Vite/esbuild 完整 bundle，却又作为生产依赖被 electron-builder 复制了一遍。`locales` 还带着约 37 MB 未使用的 Chromium 语言包。
+answer 保留答题、笔记本工作区、设置、账号、公告、更新和隐身，但安装包仍 104.9 MB。`app.asar` 中真正的应用产物只有 `out` + `dist` 约 3 MB，其余约 154 MB 是 `node_modules`：`pdfjs-dist`、`@napi-rs/canvas`、`lucide-react`、`shiki`、`react-dom`、`ai`、`@tiptap`、`katex` 等。它们已经被 Vite/esbuild 完整 bundle，却又作为生产依赖被 electron-builder 复制了一遍。`locales` 还带着约 37 MB 未使用的 Chromium 语言包。
 
 面试 ASR 的疑问来自旧 full 包和依赖元数据：`sherpa-onnx-node` 仍在 `apps/desktop` 的 `dependencies` 里供 full 使用，answer 只是通过 `files` 排除。实际 answer 产物已用 7z 核验没有 `sherpa`/`resources/asr`，但依赖清单仍容易被误读为“答题包也带 ASR”。
 
@@ -13,7 +13,7 @@ answer 只保留答题、设置、账号、公告、更新和隐身，但安装�
 - `apps/desktop/package.json`：生产/开发依赖归属、`electronLanguages`。
 - `apps/desktop/scripts/audit-packaged-app.cjs`：最终 `app.asar` 的重复依赖守卫。
 - `pnpm-lock.yaml`：依赖归类变化。
-- 相关 Note：[安装包功能裁切与发布 Profile](../architecture/2026-11-01-answer-only-release-profile.md)、[answer Profile 设置面板宽度被视口钳制](../bug-fix/2026-11-01-answer-panel-width-fit-content-clamp.md)。
+- 相关 Note：[安装包功能裁切与发布 Profile](../architecture/2026-11-01-answer-only-release-profile.md)、[answer Profile 恢复笔记本工作区](../bug-fix/2026-11-01-answer-profile-restore-notebook.md)、[answer Profile 设置面板宽度被视口钳制](../bug-fix/2026-11-01-answer-panel-width-fit-content-clamp.md)。
 
 ## 决定
 

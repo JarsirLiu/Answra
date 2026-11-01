@@ -20,9 +20,9 @@
 
 共享功能目录列出 `answer`、`chat`、`workspace`、`interview`、`settings`、`account`、`announcements`、`updates`、`stealth`。每份 Profile 必须对目录中的每项功能明确写入 `include` 或 `exclude`；未知、重复、缺失、空清单及缺少 `--profile` 都会失败，不会回退到 full。增加功能 ID 时必须同步扩展所有 Profile 的决定，测试会检查 TypeScript 契约与构建目录一致。
 
-`answer` 包含答题和必要基础设施；排除通用对话 UI/runtime、工作区与笔记、面试、VAD/ASR、会议占位入口及 sherpa 原生依赖。答题 runtime 保留模型请求与答题链路，工具注册由 worker 组合根注入；answer worker 不装配聊天 profile、工作区工具或面试处理器。`full` 使用聊天 runtime、工作区组合、面试 worker 和原生依赖。
+`answer` 包含答题、工作区（笔记与资料）和必要基础设施；排除通用对话 UI/runtime、面试、VAD/ASR、会议占位入口及 sherpa 原生依赖。答题 runtime 保留模型请求与答题链路，工具注册由 worker 组合根注入；answer worker 不装配聊天 profile、工作区工具或面试处理器。`full` 使用聊天 runtime、工作区组合、面试 worker 和原生依赖。
 
-`build:answer` 与 `build` 分别构建 answer 和 full。开发态明确选择 full。main、preload、Agent worker 使用 Profile 对应入口；renderer 用构建期常量裁掉分支，工作区另处于独立 lazy chunk，answer 构建不生成它。preload 的 answer 入口只暴露答题、设置、账号、更新、截图及共享窗口功能 API。
+`build:answer` 与 `build` 分别构建 answer 和 full。`pnpm dev` 默认 answer，`pnpm dev:full` 用于全量开发。main、preload、Agent worker 使用 Profile 对应入口；renderer 用构建期常量裁掉分支，工作区另处于独立 lazy chunk，answer 构建会生成它。preload 的 answer 入口暴露答题、工作区、设置、账号、更新、截图及共享窗口功能 API，不暴露面试 API。
 
 `ReleaseManifest` 记录 schema 版本、Profile 与包含功能，写入 `out/release-manifest.json` 并进入 `app.asar`。它是构建事实，不作为运行时授权凭据。answer main 对一般聊天 IPC 额外拒绝，answer worker 也拒绝聊天和面试命令。
 
@@ -32,14 +32,14 @@
 
 - `packages/shared` 持有跨包 Profile/FeatureId/Manifest 契约，不包含构建逻辑。
 - `packages/ui` 保留共享答题/reply 工作流；聊天面板与工作区面板各自处于功能模块，Profile 组合根决定是否进入产物。
-- `apps/desktop/src/main` 只在 full 组合时装配面试 IPC 与工作区服务；preload answer 入口不导出这两域的 API。
+- `apps/desktop/src/main` 只在 full 组合时装配面试 IPC；工作区服务在 answer 与 full 都装配。preload answer 入口导出工作区 API，不导出面试 API。
 - `apps/agent/src/conversation/runtime.ts` 保持答题运行时；通用聊天 profile 运行时拆到 `chatRuntime.ts`。工具构造由 Agent 组合根注入，answer 不导入工具注册表。
 - 构建脚本负责选择入口、生成清单和审计；不实现运行时权益或服务端开关。`apps/desktop/scripts` 只在打包期运行，架构守护允许其使用 Node 内置模块；renderer/preload 的运行时隔离规则不变。
 
 ## 曾考虑的替代方案
 
 - **只隐藏 UI 或关闭运行时 flag：** 舍弃。IPC、worker、依赖和资源仍会进入包。
-- **把未发布功能改成动态 import：** 舍弃。延迟 chunk 仍随安装包分发；只有 Profile 构建入口根本不引用的模块才会被排除。工作区 lazy chunk 只用于 full 包内延迟加载，answer 构建审计确认该 chunk 不存在。
+- **把未发布功能改成动态 import：** 舍弃。延迟 chunk 仍随安装包分发；只有 Profile 构建入口根本不引用的模块才会被排除。工作区 lazy chunk 在包含该功能的 Profile 中延迟加载，answer 构建审计只检查被排除的聊天、面试模块不可达。
 - **只维护 FeatureId 表：** 舍弃。配置表不能裁剪 bundler 依赖图，必须与入口拆分、依赖注入和构建图审计配套。
 - **只靠 ASAR、混淆或 source map 策略：** 舍弃。它们不能证明功能模块未交付，也不能阻止已交付代码被逆向。
 - **复制完整应用或 Agent runtime：** 舍弃。会导致答题和共享生命周期实现分叉；保留共用 runtime，通过工具工厂与功能组合根分离聊天、工作区和面试。
@@ -54,11 +54,11 @@
 
 ## 验收标准
 
-- answer bundle 与 worker 依赖图中不含通用聊天 profile、工作区工具/面板、面试处理器及其模型适配代码。
+- answer bundle 与 worker 依赖图中不含通用聊天 profile、面试处理器及其模型适配代码；工作区面板在 answer 中按需加载。
 - answer 最终 app 目录不含 VAD/ASR 资源或 sherpa 原生依赖；manifest 与选择的 Profile 一致。
 - full 内部配置使用隔离的 appId、安装名、输出目录，并包含 VAD/ASR 与 sherpa。
 - `pnpm verify`、`pnpm notes:check` 通过。
-- 自动化门禁通过后，answer Windows 安装包可在干净 Windows 虚拟机实测登录、截图答题、回复条、设置、公告、更新和隐身；full 另测面试与工作区。
+- 自动化门禁通过后，answer Windows 安装包可在干净 Windows 虚拟机实测登录、截图答题、回复条、笔记本、设置、公告、更新和隐身；full 另测面试。
 
 ## 验证
 
@@ -70,6 +70,6 @@
 
 ## 风险
 
-- full renderer 的工作区 lazy chunk 仍较大；这是 full Profile 的包内容，后续可单独优化体积。
+- answer 与 full renderer 的工作区 lazy chunk 仍较大；后续可单独优化体积。
 - 不同 Profile 的组合入口可能行为漂移；共享答题链路继续由同一 runtime 与 UI 组件提供，功能 UI 与 worker 要有各自测试。
 - electron-builder 与 pnpm 对 optional native dependencies 的处理依赖锁文件和打包配置；`afterPack` 审计失败时不得发布。

@@ -10,7 +10,9 @@
   "scripts": {
     "bootstrap": "node scripts/bootstrap.mjs",
     "dev": "pnpm --filter @answra/desktop dev",
+    "dev:full": "pnpm --filter @answra/desktop dev:full",
     "dev:web": "pnpm --filter @answra/desktop dev:web",
+    "dev:web:full": "pnpm --filter @answra/desktop dev:web:full",
     "build": "pnpm -r build",
     "test": "pnpm -r --if-present test",
     "typecheck": "pnpm -r --if-present typecheck",

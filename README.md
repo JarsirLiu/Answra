@@ -29,7 +29,7 @@ pnpm --filter @answra/desktop asr:prepare
 pnpm dev
 ```
 
-`pnpm bootstrap` 是统一的环境初始化入口：安装 workspace 依赖，并校验/通过 npmmirror 镜像补齐 Electron 二进制，避免 `pnpm dev` 启动时才临时下载卡住。`pnpm dev` 会同时启动 Vite 和 Electron。使用 `pnpm dev:web` 可只启动浏览器预览。桌面开发窗口使用 5180 端口；端口被占用时命令会报错退出，不会静默换端口。
+`pnpm bootstrap` 是统一的环境初始化入口：安装 workspace 依赖，并校验/通过 npmmirror 镜像补齐 Electron 二进制，避免 `pnpm dev` 启动时才临时下载卡住。`pnpm dev` 默认按 answer Profile 启动，和公开发布安装包保持同一套功能裁切；需要聊天或面试时使用 `pnpm dev:full`。两者都会同时启动 Vite 和 Electron，`pnpm dev:web` / `pnpm dev:web:full` 可只启动浏览器预览。桌面开发窗口使用 5180 端口；端口被占用时命令会报错退出，不会静默换端口。
 
 面试语音运行还需要 TEN VAD 与 Paraformer 模型。上面两条 prepare 命令会下载并校验资源；ASR 模型约 82 MB，支持断点续传。`bootstrap` 不包含这两类语音资源。
 
@@ -85,7 +85,8 @@ docs                   Note 索引
 | 命令 | 说明 |
 | --- | --- |
 | `pnpm bootstrap` | 环境初始化：安装依赖并补齐 Electron 二进制 |
-| `pnpm dev` | 启动 Vite + Electron（先构建 main/preload bundle） |
+| `pnpm dev` | 以 answer Profile 启动 Vite + Electron（先构建 main/preload bundle） |
+| `pnpm dev:full` | 以 full Profile 启动开发窗口（含聊天与面试） |
 | `pnpm --filter @answra/desktop vad:prepare` | 下载并校验 TEN VAD 运行资源 |
 | `pnpm --filter @answra/desktop asr:prepare` | 下载并校验本地 Paraformer ASR 模型 |
 | `pnpm build` | 全 workspace 构建（desktop: esbuild + vite） |

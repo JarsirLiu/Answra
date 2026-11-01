@@ -6,8 +6,11 @@
   "type": "module",
   "main": "out/main/index.cjs",
   "scripts": {
-    "dev": "pnpm build:electron -- --profile=full && concurrently -k \"vite --mode full --host 127.0.0.1 --port 5180 --strictPort\" \"wait-on http://127.0.0.1:5180 && electron .\"",
-    "dev:web": "vite --mode full --host 127.0.0.1 --port 5180 --strictPort",
+    "dev": "pnpm dev:answer",
+    "dev:answer": "pnpm build:electron -- --profile=answer && concurrently -k \"vite --mode answer --host 127.0.0.1 --port 5180 --strictPort\" \"wait-on http://127.0.0.1:5180 && electron .\"",
+    "dev:full": "pnpm build:electron -- --profile=full && concurrently -k \"vite --mode full --host 127.0.0.1 --port 5180 --strictPort\" \"wait-on http://127.0.0.1:5180 && electron .\"",
+    "dev:web": "vite --mode answer --host 127.0.0.1 --port 5180 --strictPort",
+    "dev:web:full": "vite --mode full --host 127.0.0.1 --port 5180 --strictPort",
     "build": "pnpm build:electron -- --profile=full && vite build --mode full",
     "build:answer": "pnpm build:electron -- --profile=answer && vite build --mode answer",
     "build:electron": "node ./scripts/build-electron.mjs",

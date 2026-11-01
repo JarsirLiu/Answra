@@ -17,6 +17,9 @@ import {
   UpdateChannels,
   type UpdateStatus,
   WindowChannels,
+  type WorkspaceChangeSet,
+  WorkspaceChannels,
+  type WorkspaceCreateRequest,
 } from "@answra/shared";
 import { contextBridge, ipcRenderer } from "electron";
 
@@ -82,6 +85,24 @@ const bridge: DesktopBridge = {
     ipcRenderer.invoke(ConversationChannels.Configure, settings),
   getConversationApiKey: () => ipcRenderer.invoke(ConversationChannels.GetApiKey),
   clearConversationConfig: () => ipcRenderer.invoke(ConversationChannels.ClearConfig),
+  getWorkspaceRoot: () => ipcRenderer.invoke(WorkspaceChannels.GetRoot),
+  pickWorkspaceRoot: () => ipcRenderer.invoke(WorkspaceChannels.PickRoot),
+  listWorkspaceTree: () => ipcRenderer.invoke(WorkspaceChannels.ListTree),
+  readWorkspaceFile: (path: string) => ipcRenderer.invoke(WorkspaceChannels.ReadFile, { path }),
+  writeWorkspaceFile: (path: string, text: string) =>
+    ipcRenderer.invoke(WorkspaceChannels.WriteFile, { path, text }),
+  writeWorkspaceBytes: (path: string, dataBase64: string) =>
+    ipcRenderer.invoke(WorkspaceChannels.WriteBytes, { path, dataBase64 }),
+  createWorkspaceEntry: (request: WorkspaceCreateRequest) =>
+    ipcRenderer.invoke(WorkspaceChannels.CreateEntry, request),
+  deleteWorkspaceEntry: (path: string) =>
+    ipcRenderer.invoke(WorkspaceChannels.DeleteEntry, { path }),
+  onWorkspaceChanged: (listener: (change: WorkspaceChangeSet) => void) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, change: WorkspaceChangeSet) =>
+      listener(change);
+    ipcRenderer.on(WorkspaceChannels.Changed, wrapped);
+    return () => ipcRenderer.removeListener(WorkspaceChannels.Changed, wrapped);
+  },
   loginAccount: () => ipcRenderer.invoke(AuthChannels.Login),
   logoutAccount: () => ipcRenderer.invoke(AuthChannels.Logout),
   getAuthStatus: () => ipcRenderer.invoke(AuthChannels.GetStatus),
