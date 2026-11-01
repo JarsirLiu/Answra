@@ -66,7 +66,7 @@
 - `ConversationRuntime` 与 Agent host 测试覆盖答题、通用聊天 runtime 和 worker 行为。
 - answer renderer/main/preload/worker 构建依赖图与 full 构建依赖图均执行 `audit:packaged`。
 - `pnpm verify` 与 `pnpm notes:check` 在本变更上通过。
-- `dist:win` 成功生成 answer NSIS 安装包；`app.asar` 内 manifest 为 `answer`，不含 sherpa 原生依赖，`afterPack` 审计通过。Windows 安装界面与产品行为的干净虚拟机实测尚未执行。
+- `dist:win` 成功生成 answer NSIS 安装包；`app.asar` 内 manifest 为 `answer`，不含 sherpa 原生依赖，`afterPack` 审计通过。依赖裁剪与体积实测见 [裁剪 answer 安装包的重复运行时依赖](../simplification/2026-11-01-trim-answer-installer-runtime-deps.md)。Windows 安装界面与产品行为的干净虚拟机实测尚未执行。
 
 ## 风险
 

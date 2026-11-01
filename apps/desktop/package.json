@@ -26,6 +26,10 @@
     "productName": "Answra",
     "asar": true,
     "compression": "maximum",
+    "electronLanguages": [
+      "zh-CN",
+      "en-US"
+    ],
     "removePackageScripts": true,
     "asarUnpack": [
       "**/node_modules/sherpa-onnx-node/**",
@@ -84,18 +88,16 @@
     }
   },
   "dependencies": {
-    "@answra/shared": "workspace:*",
-    "@answra/ui": "workspace:*",
     "electron-updater": "^6.6.4",
     "koffi": "^3.3.3",
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0",
     "sherpa-onnx-node": "1.13.8"
   },
   "devDependencies": {
     "7zip-bin": "5.2.0",
     "@electron/asar": "3.4.1",
     "@answra/agent": "workspace:*",
+    "@answra/shared": "workspace:*",
+    "@answra/ui": "workspace:*",
     "@resvg/resvg-js": "^2.6.2",
     "@types/node": "^26.6.5",
     "@types/react": "^19.3.0",
@@ -107,6 +109,8 @@
     "electron-builder": "^26.18.0",
     "esbuild": "^0.27.2",
     "png2icons": "^2.0.1",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
     "typescript": "~5.9.3",
     "vite": "^8.3.4",
     "vitest": "^5.0.3",

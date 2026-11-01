@@ -2,6 +2,46 @@ const { readFile, stat } = require("node:fs/promises");
 const { join } = require("node:path");
 const { extractFile, listPackage } = require("@electron/asar");
 
+/**
+ * These packages are consumed at build time by Vite/esbuild and already live in
+ * out/ or dist/. They must never be copied again as runtime dependencies.
+ */
+const bundledOnlyScopes = [
+  "@ai-sdk/",
+  "@answra/",
+  "@codemirror/",
+  "@floating-ui/",
+  "@iconify/",
+  "@iconify-json/",
+  "@lezer/",
+  "@marijn/",
+  "@napi-rs/",
+  "@opentelemetry/",
+  "@shikijs/",
+  "@standard-schema/",
+  "@tiptap/",
+  "@ungap/",
+  "@vercel/",
+];
+const bundledOnlyPackages = new Set([
+  "ai",
+  "docx-preview",
+  "jszip",
+  "katex",
+  "lucide-react",
+  "pdfjs-dist",
+  "react",
+  "react-dom",
+  "react-markdown",
+  "shiki",
+  "vscode-icons-js",
+]);
+const bundledOnlyPrefixes = ["prosemirror-", "rehype-", "remark-"];
+
+function runtimePackageName(entry) {
+  return /(?:^|\/)node_modules\/((?:@[^/]+\/)?[^/]+)\//.exec(entry)?.[1];
+}
+
 /** Verify the actual Electron app directory after electron-builder has assembled it. */
 module.exports = async function auditPackagedApp(context) {
   const manifest = JSON.parse(await readFile("out/release-manifest.json", "utf8"));
@@ -16,10 +56,23 @@ module.exports = async function auditPackagedApp(context) {
   if (JSON.stringify(packagedManifest) !== JSON.stringify(manifest)) {
     violations.push("app.asar 中的 ReleaseManifest 与构建 Profile 不一致");
   }
+  const bundledRuntimePackages = new Set();
   for (const entry of normalizedEntries) {
     if (manifest.profile === "answer" && /(^|\/)node_modules\/sherpa-onnx[^/]*\//i.test(entry)) {
       violations.push(`answer 安装包包含面试原生依赖：${entry}`);
     }
+    const packageName = runtimePackageName(entry);
+    if (!packageName) continue;
+    if (
+      bundledOnlyPackages.has(packageName) ||
+      bundledOnlyScopes.some((scope) => packageName.startsWith(scope)) ||
+      bundledOnlyPrefixes.some((prefix) => packageName.startsWith(prefix))
+    ) {
+      bundledRuntimePackages.add(packageName);
+    }
+  }
+  for (const packageName of bundledRuntimePackages) {
+    violations.push(`app.asar 包含已由 bundle 覆盖的运行时依赖：${packageName}`);
   }
 
   for (const resource of ["vad", "asr"]) {
