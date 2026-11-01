@@ -337,4 +337,27 @@ describe("SettingsPanel tabs", () => {
     expect(screen.getByText("登录账户后可查看公告。")).toBeInTheDocument();
     expect(screen.queryByText("系统升级")).not.toBeInTheDocument();
   });
+
+  it("shows the about group with the current version inside settings", async () => {
+    const bridge = {
+      ...authBridge,
+      getUpdateStatus: vi.fn().mockResolvedValue({
+        phase: "idle",
+        currentVersion: "0.1.0",
+        availableVersion: null,
+        progress: null,
+        error: null,
+        installMode: "next-launch",
+        lastCheckedAt: null,
+      }),
+      onUpdateStatus: vi.fn(() => () => undefined),
+      checkForUpdates: vi.fn(),
+    };
+
+    render(<SettingsPanel {...baseProps({ bridge })} />);
+
+    expect(await screen.findByText("v0.1.0")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "关于" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "检查更新" })).toBeInTheDocument();
+  });
 });

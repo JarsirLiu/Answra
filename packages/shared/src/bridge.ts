@@ -16,6 +16,8 @@ import type {
   ReplyBarPlacement,
   ReplyBarState,
   ScreenshotResult,
+  UpdateInstallResult,
+  UpdateStatus,
   WorkspaceChangeSet,
   WorkspaceCreateRequest,
   WorkspaceFileContent,
@@ -146,4 +148,15 @@ export interface DesktopBridge {
   getAnnouncements?: () => Promise<DesktopAnnouncement[]>;
   /** 标记当前账号可见公告为已读。 */
   markAnnouncementRead?: (id: number) => Promise<void>;
+  // ---- 应用更新（版本号、手动检查、立即安装）；浏览器预览/测试环境可未实现，调用方需判空。----
+  /** 读取当前更新状态；包含当前版本号，设置页据此展示。 */
+  getUpdateStatus?: () => Promise<UpdateStatus>;
+  /** 手动检查更新；发现新版本后由 main 按自动下载策略继续。 */
+  checkForUpdates?: () => Promise<UpdateStatus>;
+  /** 下载失败后重试下载。 */
+  downloadUpdate?: () => Promise<UpdateStatus>;
+  /** 立即重启并安装已下载的更新；失败时 started=false，应用仍运行。 */
+  installUpdateNow?: () => Promise<UpdateInstallResult>;
+  /** 订阅更新状态变化；返回取消订阅函数。 */
+  onUpdateStatus?: (listener: (status: UpdateStatus) => void) => () => void;
 }

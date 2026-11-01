@@ -1,0 +1,30 @@
+/* 「关于」更新分组：与设置页共用 .setting-row / .setting-error 等基础样式。 */
+.update-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.update-detail {
+  color: var(--ink-soft);
+  font-size: var(--font-xs);
+}
+.update-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+}
+.update-progress {
+  height: 4px;
+  margin: 2px 0 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--field);
+}
+.update-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--mint);
+  transition: width 160ms linear;
+}

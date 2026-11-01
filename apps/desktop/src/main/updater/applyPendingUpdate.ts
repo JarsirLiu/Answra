@@ -1,8 +1,8 @@
 /**
- * 启动时安装上次下载好的更新（仅 Windows）。
+ * 待安装更新的安装器拉起（仅 Windows）。
  *
- * 由 `update-downloaded` 写入的 pending 记录驱动：启动时静默拉起 NSIS 安装器并退出，
- * 安装完成后由安装器重新拉起应用；失败则保留当前版本、继续正常启动。
+ * 启动时安装由 `applyPendingUpdateOnLaunch` 消费记录并退出；设置页「立即重启安装」
+ * 由 updateController 复用 `installPendingUpdate`，避免两套安装路径漂移。
  */
 
 import { spawn } from "node:child_process";
@@ -17,18 +17,25 @@ import {
 /** 与 electron-updater 的 NsisUpdater 保持一致：静默安装并在结束后重开应用。 */
 const NSIS_INSTALL_ARGS = ["--updated", "/S", "--force-run"];
 
-export interface ApplyPendingUpdateOptions {
+export interface InstallPendingUpdateOptions {
   configDir: string;
   currentVersion: string;
-  /** 调用方应在返回 true 后立即停止启动流程（安装器会重开应用）。 */
-  quit: () => void;
   platform?: NodeJS.Platform;
   isFile?: (path: string) => boolean;
   spawnInstaller?: (installerPath: string) => boolean;
   log?: (message: string, error?: unknown) => void;
 }
 
-export function applyPendingUpdateOnLaunch(options: ApplyPendingUpdateOptions): boolean {
+export interface ApplyPendingUpdateOptions extends InstallPendingUpdateOptions {
+  /** 安装器成功拉起后调用方应停止启动流程（安装器会重开应用）。 */
+  quit: () => void;
+}
+
+/**
+ * 校验待安装记录并拉起安装器。返回 true 表示安装器已启动，调用方负责退出应用；
+ * 记录不新、安装包缺失或拉起失败时返回 false。
+ */
+export function installPendingUpdate(options: InstallPendingUpdateOptions): boolean {
   const platform = options.platform ?? process.platform;
   if (platform !== "win32") return false;
 
@@ -52,6 +59,12 @@ export function applyPendingUpdateOnLaunch(options: ApplyPendingUpdateOptions): 
 
   // 先清除再退出：安装若再次被打断，后台检查会重新下载并写回记录，避免每次启动都重启。
   clearPendingUpdate(markerPath);
+  return true;
+}
+
+/** 启动时安装：成功拉起安装器后立即退出，安装器结束后重开新版本。 */
+export function applyPendingUpdateOnLaunch(options: ApplyPendingUpdateOptions): boolean {
+  if (!installPendingUpdate(options)) return false;
   options.quit();
   return true;
 }

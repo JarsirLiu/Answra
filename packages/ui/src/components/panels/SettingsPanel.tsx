@@ -14,6 +14,7 @@ import { Tooltip } from "../controls/Tooltip";
 import { AccountPanel } from "./AccountPanel";
 import { AnnouncementList } from "./AnnouncementList";
 import { PanelShell, type PanelTab } from "./PanelShell";
+import { UpdateSettingsGroup } from "./UpdateSettingsGroup";
 import "./SettingsPanel.css";
 
 type SettingsTab = "account" | "settings" | "announcements";
@@ -411,6 +412,8 @@ export function SettingsPanel({
               )}
             </section>
           )}
+
+          <UpdateSettingsGroup bridge={bridge} />
         </div>
       )}
 

@@ -17,6 +17,8 @@ import {
   type ReplyBarAction,
   type ReplyBarPlacement,
   type ReplyBarState,
+  UpdateChannels,
+  type UpdateStatus,
   WindowChannels,
   type WorkspaceChangeSet,
   WorkspaceChannels,
@@ -163,6 +165,15 @@ const bridge: DesktopBridge = {
   },
   getAnnouncements: () => ipcRenderer.invoke(AuthChannels.ListAnnouncements),
   markAnnouncementRead: (id: number) => ipcRenderer.invoke(AuthChannels.MarkAnnouncementRead, id),
+  getUpdateStatus: () => ipcRenderer.invoke(UpdateChannels.GetStatus),
+  checkForUpdates: () => ipcRenderer.invoke(UpdateChannels.Check),
+  downloadUpdate: () => ipcRenderer.invoke(UpdateChannels.Download),
+  installUpdateNow: () => ipcRenderer.invoke(UpdateChannels.InstallNow),
+  onUpdateStatus: (listener: (status: UpdateStatus) => void) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, status: UpdateStatus) => listener(status);
+    ipcRenderer.on(UpdateChannels.Status, wrapped);
+    return () => ipcRenderer.removeListener(UpdateChannels.Status, wrapped);
+  },
 };
 
 contextBridge.exposeInMainWorld("answra", bridge);

@@ -20,6 +20,7 @@ import { registerAmbientIpc } from "./ipc/ambientIpc";
 import { registerWindowIpc } from "./ipc/windowIpc";
 import { applyPendingUpdateOnLaunch } from "./updater/applyPendingUpdate";
 import { createUpdateController } from "./updater/updateController";
+import { registerUpdateIpc } from "./updater/updateIpc";
 import { createMainWindow, getWindow, isStealthEnabled, sendAuthStatus } from "./window";
 import {
   registerWorkspaceFileProtocol,
@@ -44,6 +45,7 @@ if (!app.isPackaged) {
 let ambientController: ReturnType<typeof createAmbientThemeController> | undefined;
 let interviewIpc: ReturnType<typeof registerInterviewIpc> | undefined;
 let updateController: ReturnType<typeof createUpdateController> | undefined;
+let disposeUpdateIpc: (() => void) | undefined;
 const configDir = app.getPath("userData");
 const workspaceService = new WorkspaceService({ configDir });
 
@@ -135,8 +137,14 @@ if (!app.requestSingleInstanceLock()) {
           .start()
           .catch((error) => console.error("[agent-service] failed to start", error));
       });
+    updateController = createUpdateController({
+      isPackaged: app.isPackaged,
+      currentVersion: app.getVersion(),
+      configDir,
+      quit: () => app.quit(),
+    });
+    disposeUpdateIpc = registerUpdateIpc(updateController);
     createManagedMainWindow();
-    updateController = createUpdateController({ isPackaged: app.isPackaged, configDir });
     void authService
       .restore()
       .catch((error) => console.warn("[auth] 登录态恢复失败", error))
@@ -144,6 +152,7 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.on("before-quit", () => {
+    disposeUpdateIpc?.();
     updateController?.dispose();
     authService.dispose();
     const interviewStop = interviewIpc?.stopActive() ?? Promise.resolve();
