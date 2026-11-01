@@ -87,20 +87,115 @@ describe("createUpdateController", () => {
       phase: "downloaded",
       availableVersion: "0.2.0",
       installMode: "next-launch",
+      downloadedPath: "C:\\cache\\Answra-Setup.exe",
     });
     controller.dispose();
   });
 
-  it("keeps quit-time installs on non-Windows platforms", () => {
-    const { controller } = createController({ platform: "darwin" });
+  it("keeps quit-time installs on non-Windows, non-macOS platforms", () => {
+    const { controller } = createController({ platform: "freebsd" });
 
     expect(fakeUpdater.autoInstallOnAppQuit).toBe(true);
     fakeUpdater.emit("update-downloaded", {
       version: "0.2.0",
-      downloadedFile: "/cache/Answra.zip",
+      downloadedFile: "/cache/Answra.AppImage",
     });
     expect(existsSync(join(configDir, "pending-update.json"))).toBe(false);
     expect(controller.getStatus().installMode).toBe("on-quit");
+    controller.dispose();
+  });
+
+  it("waits for the user instead of silently downloading on every platform", async () => {
+    const { controller } = createController();
+    fakeUpdater.checkForUpdates.mockImplementation(() => {
+      fakeUpdater.emit("update-available", { version: "0.2.0" });
+      return Promise.resolve(undefined);
+    });
+
+    expect(fakeUpdater.autoDownload).toBe(false);
+    expect(fakeUpdater.autoInstallOnAppQuit).toBe(false);
+
+    const available = await controller.check({ manual: true });
+    expect(available).toMatchObject({
+      phase: "available",
+      availableVersion: "0.2.0",
+      installMode: "next-launch",
+      downloadedPath: null,
+    });
+    expect(fakeUpdater.downloadUpdate).not.toHaveBeenCalled();
+    controller.dispose();
+  });
+
+  it("prepares the macOS zip for a swap install on demand", async () => {
+    const swap = fakeSwapInstaller();
+    const { controller, quit } = createController({ platform: "darwin", macSwapInstaller: swap });
+    fakeUpdater.checkForUpdates.mockImplementation(() => {
+      fakeUpdater.emit("update-available", { version: "0.2.0" });
+      return Promise.resolve(undefined);
+    });
+    fakeUpdater.downloadUpdate.mockImplementation(() => {
+      fakeUpdater.emit("update-downloaded", {
+        version: "0.2.0",
+        downloadedFile: "/cache/Answra-zip",
+      });
+      return Promise.resolve(["/cache/Answra-zip"]);
+    });
+
+    await controller.check({ manual: true });
+    const downloaded = await controller.download();
+    expect(downloaded).toMatchObject({
+      phase: "downloaded",
+      installMode: "auto-swap",
+      downloadedPath: "/updates/Answra.app",
+    });
+    expect(swap.extracted).toEqual(["/cache/Answra-zip"]);
+    expect(fakeUpdater.autoInstallOnAppQuit).toBe(false);
+
+    expect(await controller.installNow()).toEqual({ started: true });
+    expect(swap.installed).toEqual(["/updates/Answra.app"]);
+    expect(quit).toHaveBeenCalledOnce();
+    expect(fakeUpdater.quitAndInstall).not.toHaveBeenCalled();
+    controller.dispose();
+  });
+
+  it("surfaces a mac swap preparation failure and lets the user retry", async () => {
+    const swap = fakeSwapInstaller();
+    swap.extract = vi.fn().mockRejectedValue(new Error("ditto failed"));
+    const { controller } = createController({ platform: "darwin", macSwapInstaller: swap });
+    fakeUpdater.downloadUpdate.mockImplementation(() => {
+      fakeUpdater.emit("update-downloaded", {
+        version: "0.2.0",
+        downloadedFile: "/cache/Answra-zip",
+      });
+      return Promise.resolve(["/cache/Answra-zip"]);
+    });
+    fakeUpdater.checkForUpdates.mockImplementation(() => {
+      fakeUpdater.emit("update-available", { version: "0.2.0" });
+      return Promise.resolve(undefined);
+    });
+
+    await controller.check({ manual: true });
+    await controller.download();
+    expect(controller.getStatus()).toMatchObject({
+      phase: "error",
+      error: "更新下载失败，请重试",
+      downloadedPath: null,
+    });
+
+    swap.extract = vi.fn().mockResolvedValue("/updates/Answra.app");
+    fakeUpdater.downloadUpdate.mockImplementation(() => {
+      fakeUpdater.emit("update-downloaded", {
+        version: "0.2.0",
+        downloadedFile: "/cache/Answra-zip",
+      });
+      return Promise.resolve(["/cache/Answra-zip"]);
+    });
+    const retried = await controller.download();
+    expect(retried).toMatchObject({
+      phase: "downloaded",
+      error: null,
+      downloadedPath: "/updates/Answra.app",
+    });
     controller.dispose();
   });
 
@@ -283,11 +378,11 @@ describe("createUpdateController", () => {
     controller.dispose();
   });
 
-  it("installs through quitAndInstall on macOS", async () => {
-    const { controller } = createController({ platform: "darwin" });
+  it("installs through quitAndInstall on Linux", async () => {
+    const { controller } = createController({ platform: "freebsd" });
     fakeUpdater.emit("update-downloaded", {
       version: "0.2.0",
-      downloadedFile: "/cache/Answra.zip",
+      downloadedFile: "/cache/Answra.AppImage",
     });
 
     expect(await controller.installNow()).toEqual({ started: true });
@@ -323,3 +418,17 @@ describe("createUpdateController", () => {
     controller.dispose();
   });
 });
+
+function fakeSwapInstaller() {
+  return {
+    extracted: [] as string[],
+    installed: [] as string[],
+    extract: vi.fn(async function (zipPath: string) {
+      this.extracted.push(zipPath);
+      return "/updates/Answra.app";
+    }),
+    startInstall: vi.fn(async function (appPath: string) {
+      this.installed.push(appPath);
+    }),
+  };
+}

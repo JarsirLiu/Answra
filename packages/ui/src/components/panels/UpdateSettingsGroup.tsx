@@ -1,5 +1,5 @@
 /**
- * 设置页「关于」分组：展示版本号，并提供手动检查、下载重试与立即重启安装。
+ * 设置页「关于」分组：展示版本号，并提供检查、点击下载与立即重启安装。
  *
  * 更新状态由 main 进程推送，这里只做镜像；不在渲染层根据版本号推算状态。
  */
@@ -198,12 +198,13 @@ function detailFor(
     case "checking":
       return "正在向更新服务器查询…";
     case "available":
-      return "即将开始下载";
+      // autoDownload 关闭：发现新版本后停在 available，等用户点击下载。
+      return "有新版本可下载";
     case "downloading":
       return status.progress ? `已下载 ${percent}%` : "正在下载更新包…";
     case "downloaded":
       if (confirming) return "将关闭应用并立即安装，未保存的草稿会丢失。";
-      return status.installMode === "next-launch" ? "下次启动应用时自动安装" : "退出应用后自动安装";
+      return installModeDetail(status.installMode);
     case "error":
       return status.error;
     case "idle":
@@ -223,7 +224,7 @@ function actionFor(
     case "checking":
       return { kind: "check", label: "正在检查…", enabled: false };
     case "available":
-      return { kind: "download", label: "准备下载…", enabled: false };
+      return { kind: "download", label: "下载更新", enabled: true };
     case "downloading":
       return { kind: "download", label: "下载中…", enabled: false };
     case "downloaded":
@@ -239,6 +240,17 @@ function actionFor(
     case "idle":
     case "up-to-date":
       return { kind: "check", label: "检查更新", enabled: true };
+  }
+}
+
+function installModeDetail(mode: UpdateStatus["installMode"]): string {
+  switch (mode) {
+    case "next-launch":
+      return "下次启动应用时自动安装";
+    case "auto-swap":
+      return "将自动换装并重启";
+    case "on-quit":
+      return "退出应用后自动安装";
   }
 }
 

@@ -1,9 +1,16 @@
 /**
  * 更新控制器：main 进程里唯一持有更新状态的地方。
  *
- * 后台按 5s 首查 / 4h 轮询自动检查并下载；设置页通过 updateIpc 读取状态、
- * 手动触发检查或重试下载、立即重启安装。Windows 下载完成后只写待安装记录，
- * 真正的安装仍推迟到下次启动，避免关机打断 NSIS 覆盖写。
+ * 下载不静默：检查发现新版本后停在 `available`，由用户点击「下载更新」触发，
+ * 两平台一致；进度、差异更新和校验都来自 electron-updater 官方链路。
+ *
+ * 安装按平台分叉（见 `UpdateInstallMode`）：
+ * - Windows：下载完成只写待安装记录，真正的安装推迟到下次启动或「立即重启安装」，
+ *   避免关机打断 NSIS 覆盖写；
+ * - macOS（未签名构建）：Squirrel.Mac 校验 Apple 签名导致官方换装不可用，
+ *   `auto-swap` 模式把 electron-updater 下载到的 zip 解出 `Answra.app`，
+ *   由注入的 `macSwapInstaller` 生成换装脚本替换应用并重启；
+ * - 其余平台交给 electron-updater 退出时安装。
  */
 
 import type { UpdateInstallMode, UpdateInstallResult, UpdateStatus } from "@answra/shared";
@@ -26,6 +33,17 @@ const DOWNLOAD_FAILED_MESSAGE = "更新下载失败，请重试";
 const PROGRESS_NOTIFY_STEP = 1;
 const PROGRESS_NOTIFY_INTERVAL_MS = 250;
 
+/**
+ * macOS 换装端口：把 electron-updater 下载的 zip 准备成可替换的 `.app`，
+ * 并在旧进程退出后完成替换与重启。实现见 macUpdateSwap，由组合根注入。
+ */
+export interface MacSwapInstaller {
+  /** 解出新版 `.app`，返回可直接换装的本地路径。 */
+  extract(zipPath: string): Promise<string>;
+  /** 启动换装脚本；脚本等待旧进程退出后完成替换并重启。 */
+  startInstall(newAppPath: string): void;
+}
+
 interface UpdateControllerOptions {
   /** 仅打包态启用；开发态（pnpm dev）没有 app-update.yml，检查必然报错。 */
   isPackaged: boolean;
@@ -36,6 +54,8 @@ interface UpdateControllerOptions {
   /** 安装器成功拉起后退出应用。 */
   quit: () => void;
   platform?: NodeJS.Platform;
+  /** macOS 换装端口；darwin 打包态必须注入。 */
+  macSwapInstaller?: MacSwapInstaller;
   log?: (message: string, error?: unknown) => void;
 }
 
@@ -59,7 +79,9 @@ export function createUpdateController(options: UpdateControllerOptions): Update
   const platform = options.platform ?? process.platform;
   const log = options.log ?? ((message, error) => console.log(message, error ?? ""));
   const supported = options.isPackaged && platform !== "linux";
-  let installMode: UpdateInstallMode = platform === "win32" ? "next-launch" : "on-quit";
+  let installMode: UpdateInstallMode = installModeFor(platform);
+  /** mac 换装模式：下载完成后不交给 Squirrel，由换装脚本替换并重启。 */
+  const autoSwap = installMode === "auto-swap";
   let machine: UpdateMachineState = supported
     ? INITIAL_UPDATE_STATE
     : { ...INITIAL_UPDATE_STATE, phase: "unsupported" };
@@ -68,6 +90,7 @@ export function createUpdateController(options: UpdateControllerOptions): Update
   let checkInFlight = false;
   let manualCheck = false;
   let installing = false;
+  let downloadedPath: string | null = null;
   let lastProgressPercent = -1;
   let lastProgressAt = 0;
 
@@ -75,6 +98,7 @@ export function createUpdateController(options: UpdateControllerOptions): Update
     ...machine,
     currentVersion: options.currentVersion,
     installMode,
+    downloadedPath,
     lastCheckedAt,
   });
   let status = statusOf();
@@ -118,8 +142,10 @@ export function createUpdateController(options: UpdateControllerOptions): Update
   }
 
   const deferInstallToLaunch = platform === "win32";
-  autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = !deferInstallToLaunch;
+  // 全平台关闭静默下载：发现新版本停在 available，等用户点击「下载更新」。
+  autoUpdater.autoDownload = false;
+  // mac 换装绝不能让 electron-updater 在退出时触发 Squirrel（签名校验必失败）。
+  autoUpdater.autoInstallOnAppQuit = !deferInstallToLaunch && !autoSwap;
   autoUpdater.logger = {
     info: (message) => log(`[updater] ${String(message)}`),
     warn: (message) => log(`[updater] ${String(message)}`),
@@ -171,11 +197,41 @@ export function createUpdateController(options: UpdateControllerOptions): Update
         installMode = "on-quit";
         log("[updater] 无法记录待安装更新，回退为退出时安装", error);
       }
-    } else {
-      log(`[updater] 版本 ${event.version} 已下载，退出应用后自动安装`);
+      downloadedPath = event.downloadedFile ?? null;
+      apply({ type: "downloaded", version: event.version });
+      return;
     }
+    if (platform === "darwin") {
+      void prepareMacUpdate(event.version, event.downloadedFile);
+      return;
+    }
+    log(`[updater] 版本 ${event.version} 已下载，退出应用后自动安装`);
+    downloadedPath = event.downloadedFile ?? null;
     apply({ type: "downloaded", version: event.version });
   });
+
+  /** mac：把官方更新 zip 准备成 `.app`；失败回落到 error，由用户重试下载。 */
+  async function prepareMacUpdate(version: string, downloadedFile?: string): Promise<void> {
+    const installer = options.macSwapInstaller;
+    if (!installer) {
+      log("[updater] 缺少 mac 换装器，跳过准备");
+      apply({ type: "downloaded", version });
+      return;
+    }
+    if (!downloadedFile) {
+      log("[updater] 更新缓存缺少文件路径，无法换装");
+      finishFailure(DOWNLOAD_FAILED_MESSAGE);
+      return;
+    }
+    try {
+      downloadedPath = await installer.extract(downloadedFile);
+      log(`[updater] 版本 ${version} 已就绪，等待换装`);
+      apply({ type: "downloaded", version });
+    } catch (error) {
+      log("[updater] 更新包解压失败", error);
+      finishFailure(DOWNLOAD_FAILED_MESSAGE);
+    }
+  }
   autoUpdater.on("error", (error) => {
     log("[updater] 更新失败", error);
     const duringDownload =
@@ -228,6 +284,7 @@ export function createUpdateController(options: UpdateControllerOptions): Update
     // 重试从 0 开始：清掉上一轮进度节流凭据，保证首个进度事件可见。
     lastProgressPercent = -1;
     lastProgressAt = 0;
+    downloadedPath = null;
     apply({ type: "download-started" });
     try {
       await autoUpdater.downloadUpdate();
@@ -242,6 +299,7 @@ export function createUpdateController(options: UpdateControllerOptions): Update
     if (machine.phase !== "downloaded" || installing) return { started: false };
     installing = true;
     try {
+      if (autoSwap) return swapAndRestart();
       if (platform === "win32") {
         const started = installPendingUpdate({
           configDir: options.configDir,
@@ -265,6 +323,18 @@ export function createUpdateController(options: UpdateControllerOptions): Update
     }
   }
 
+  /** mac 换装：启动脚本后立即退出，脚本等旧进程退出完成替换并重启。 */
+  function swapAndRestart(): UpdateInstallResult {
+    const installer = options.macSwapInstaller;
+    if (!installer || !downloadedPath) {
+      log("[updater] 换装就绪信息缺失，保持当前版本继续运行");
+      return { started: false };
+    }
+    installer.startInstall(downloadedPath);
+    options.quit();
+    return { started: true };
+  }
+
   const startupTimer = setTimeout(() => void check(), STARTUP_DELAY_MS);
   const intervalTimer = setInterval(() => void check(), CHECK_INTERVAL_MS);
 
@@ -284,6 +354,12 @@ export function createUpdateController(options: UpdateControllerOptions): Update
       listeners.clear();
     },
   };
+}
+
+function installModeFor(platform: NodeJS.Platform): UpdateInstallMode {
+  if (platform === "win32") return "next-launch";
+  if (platform === "darwin") return "auto-swap";
+  return "on-quit";
 }
 
 function clampPercent(value: number): number {

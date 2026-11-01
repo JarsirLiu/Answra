@@ -22,6 +22,7 @@
     "test:watch": "vitest",
     "dist:win": "pnpm build:answer && pnpm audit:packaged -- --profile=answer && node ./scripts/write-electron-builder-config.mjs --profile=answer && electron-builder --config .release-audit/answer/electron-builder.json --win nsis",
     "dist:win:full": "pnpm vad:prepare && pnpm asr:prepare && pnpm build && pnpm audit:packaged -- --profile=full && node ./scripts/write-electron-builder-config.mjs --profile=full && electron-builder --config .release-audit/full/electron-builder.json --win nsis",
+    "dist:mac": "pnpm build:answer && pnpm audit:packaged -- --profile=answer && node ./scripts/write-electron-builder-config.mjs --profile=answer && electron-builder --config .release-audit/answer/electron-builder.json --mac --arm64 --x64",
     "icons": "node ./scripts/generate-icons.mjs"
   },
   "build": {
@@ -69,7 +70,13 @@
       ],
       "icon": "build/icon.icns",
       "category": "public.app-category.productivity",
-      "artifactName": "Answra-${arch}.${ext}"
+      "artifactName": "Answra-${arch}.${ext}",
+      "identity": null,
+      "hardenedRuntime": false,
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Answra 需要使用麦克风录入面试语音，用于本地转录与实时回答建议。",
+        "NSScreenCaptureUsageDescription": "Answra 需要读取屏幕内容以生成笔试截图回复与实时面试建议。"
+      }
     },
     "publish": {
       "provider": "generic",

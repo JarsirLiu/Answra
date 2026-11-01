@@ -1,0 +1,141 @@
+name: Release
+
+# 统一发布流水线：按平台矩阵各自构建，再由唯一 publish 作业汇总上传。
+# 触发：打 v* tag（正式发布）或手动 workflow_dispatch（验证构建）。
+#
+# 需要的仓库 Secrets（Settings → Secrets and variables → Actions）：
+#   COS_SECRET_ID / COS_SECRET_KEY  腾讯云 COS 上传凭证（子账号，需对象写入 + 桶配置写）
+#
+# Tag 与 apps/desktop/package.json 的 version 必须一致，否则 publish 失败。
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      upload:
+        description: "上传产物到 COS（未打 tag 时默认只做构建验证）"
+        type: boolean
+        default: false
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows
+            os: windows-latest
+            script: dist:win
+          - platform: macos
+            os: macos-14
+            script: dist:mac
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build installer
+        run: pnpm ${{ matrix.script }}
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: answra-${{ matrix.platform }}
+          path: |
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.blockmap
+            apps/desktop/release/latest*.yml
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Publish to COS and GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.upload
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Collect platform artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: answra-*
+          merge-multiple: true
+          path: apps/desktop/release
+
+      - name: Verify tag matches package version
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const { version } = JSON.parse(readFileSync("apps/desktop/package.json", "utf8"));
+            const tag = process.env.TAG.replace(/^v/, "");
+            if (tag !== version) {
+              console.error(`::error::tag ${process.env.TAG} 与 apps/desktop/package.json version ${version} 不一致`);
+              process.exit(1);
+            }
+          '
+
+      - name: Verify COS credentials
+        env:
+          COS_SECRET_ID: ${{ secrets.COS_SECRET_ID }}
+          COS_SECRET_KEY: ${{ secrets.COS_SECRET_KEY }}
+        run: |
+          if [ -z "$COS_SECRET_ID" ] || [ -z "$COS_SECRET_KEY" ]; then
+            echo "::error::缺少 COS_SECRET_ID / COS_SECRET_KEY 仓库 Secrets"
+            exit 1
+          fi
+
+      - name: Upload to Tencent COS
+        env:
+          COS_SECRET_ID: ${{ secrets.COS_SECRET_ID }}
+          COS_SECRET_KEY: ${{ secrets.COS_SECRET_KEY }}
+        run: node apps/desktop/scripts/upload-to-cos.mjs
+
+      - name: Attach artifacts to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --generate-notes --verify-tag 2>/dev/null || true
+          gh release upload "$GITHUB_REF_NAME" \
+            apps/desktop/release/*.exe \
+            apps/desktop/release/*.dmg \
+            apps/desktop/release/*.zip \
+            apps/desktop/release/latest*.yml \
+            --clobber

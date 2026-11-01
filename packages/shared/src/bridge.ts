@@ -151,9 +151,9 @@ export interface DesktopBridge {
   // ---- 应用更新（版本号、手动检查、立即安装）；浏览器预览/测试环境可未实现，调用方需判空。----
   /** 读取当前更新状态；包含当前版本号，设置页据此展示。 */
   getUpdateStatus?: () => Promise<UpdateStatus>;
-  /** 手动检查更新；发现新版本后由 main 按自动下载策略继续。 */
+  /** 手动检查更新；发现新版本后等待用户点击下载。 */
   checkForUpdates?: () => Promise<UpdateStatus>;
-  /** 下载失败后重试下载。 */
+  /** 点击后的下载（也用于失败重试）；带进度推送。 */
   downloadUpdate?: () => Promise<UpdateStatus>;
   /** 立即重启并安装已下载的更新；失败时 started=false，应用仍运行。 */
   installUpdateNow?: () => Promise<UpdateInstallResult>;

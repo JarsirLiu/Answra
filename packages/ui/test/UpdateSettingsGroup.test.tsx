@@ -11,6 +11,7 @@ function updateStatus(overrides: Partial<UpdateStatus> = {}): UpdateStatus {
     progress: null,
     error: null,
     installMode: "next-launch",
+    downloadedPath: null,
     lastCheckedAt: null,
     ...overrides,
   };
@@ -128,6 +129,57 @@ describe("UpdateSettingsGroup", () => {
     expect(await screen.findByText("更新不可用")).toBeInTheDocument();
     expect(screen.getByText("开发模式或当前平台不支持自动更新")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "检查更新" })).not.toBeInTheDocument();
+  });
+
+  it("waits in available until the user clicks the download button", async () => {
+    const downloadUpdate = vi
+      .fn()
+      .mockResolvedValue(updateStatus({ phase: "downloading", availableVersion: "0.2.0" }));
+    render(
+      <UpdateSettingsGroup
+        bridge={updateBridge({
+          getUpdateStatus: vi
+            .fn()
+            .mockResolvedValue(updateStatus({ phase: "available", availableVersion: "0.2.0" })),
+          downloadUpdate,
+        })}
+      />,
+    );
+
+    expect(await screen.findByText("发现 v0.2.0")).toBeInTheDocument();
+    expect(screen.getByText("有新版本可下载")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "下载更新" }));
+    await waitFor(() => expect(downloadUpdate).toHaveBeenCalledOnce());
+    expect(await screen.findByText("正在下载 v0.2.0")).toBeInTheDocument();
+  });
+
+  it("installing a downloaded update asks for confirmation on both platforms", async () => {
+    const installUpdateNow = vi.fn().mockResolvedValue({ started: true });
+    render(
+      <UpdateSettingsGroup
+        bridge={updateBridge({
+          getUpdateStatus: vi.fn().mockResolvedValue(
+            updateStatus({
+              phase: "downloaded",
+              availableVersion: "0.2.0",
+              installMode: "auto-swap",
+              downloadedPath: "/Users/me/Library/Application Support/Answra/mac-update/Answra.app",
+              lastCheckedAt: "2026-11-01T08:00:00.000Z",
+            }),
+          ),
+          installUpdateNow,
+        })}
+      />,
+    );
+
+    expect(await screen.findByText("将自动换装并重启")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "立即重启安装" }));
+    expect(installUpdateNow).not.toHaveBeenCalled();
+    expect(screen.getByText("将关闭应用并立即安装，未保存的草稿会丢失。")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "确认重启并安装" }));
+    await waitFor(() => expect(installUpdateNow).toHaveBeenCalledOnce());
   });
 
   it("mirrors pushed status changes and unsubscribes on unmount", async () => {

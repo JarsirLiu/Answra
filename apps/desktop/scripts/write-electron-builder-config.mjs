@@ -5,7 +5,7 @@ import { resolveReleaseProfile } from "./release-profile.mjs";
 const manifest = await resolveReleaseProfile();
 const packageJson = JSON.parse(await readFile("package.json", "utf8"));
 const config = structuredClone(packageJson.build);
-config.afterPack = resolve("scripts/audit-packaged-app.cjs");
+config.afterPack = resolve("scripts/after-pack.cjs");
 
 if (manifest.profile === "answer") {
   config.extraResources = [];

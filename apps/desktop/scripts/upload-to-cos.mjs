@@ -29,8 +29,11 @@ const secretKey = process.env.COS_SECRET_KEY;
 const { version } = JSON.parse(await readFile(path.join(desktopRoot, "package.json"), "utf8"));
 
 // 以 latest*.yml 清单为准：只上传清单里引用的安装包与差量文件，忽略上次构建遗留的旧产物。
-const files = new Set();
-for (const name of (await readdir(releaseDir)).filter((n) => /^latest.*\.yml$/i.test(n))) {
+// macOS 的 latest-mac.yml 只列 zip（electron-updater 用），dmg 是给人下载的安装包，
+// 不在清单里，必须单独补上，否则 COS 上只有 zip 没有 dmg。
+const releaseEntries = await readdir(releaseDir);
+const files = new Set(releaseEntries.filter((n) => /\.dmg$/i.test(n)));
+for (const name of releaseEntries.filter((n) => /^latest.*\.yml$/i.test(n))) {
   files.add(name);
   const content = await readFile(path.join(releaseDir, name), "utf8");
   for (const match of content.matchAll(/^\s*-?\s*url:\s*(.+)$/gm)) {
@@ -38,14 +41,13 @@ for (const name of (await readdir(releaseDir)).filter((n) => /^latest.*\.yml$/i.
     files.add(artifactName);
 
     // electron-updater 请求同名 blockmap 来做差异下载；它不会出现在 latest.yml 的 url 列表里。
-    if (/\.(exe|dmg|zip|appimage)$/i.test(artifactName)) {
+    // 清单里只会引用更新链路安装包（exe/zip/appimage），缺 blockmap 会让所有客户端
+    // 回退全量下载，必须硬失败；dmg 是人工安装包，单独在第 35 行收集，无需 blockmap。
+    if (/\.(exe|zip|appimage)$/i.test(artifactName)) {
       const blockMapName = `${artifactName}.blockmap`;
       if (!(await fileExists(path.join(releaseDir, blockMapName)))) {
-        if (/\.exe$/i.test(artifactName)) {
-          console.error(`[upload] Windows 安装包缺少差异更新文件：${blockMapName}`);
-          process.exit(1);
-        }
-        continue;
+        console.error(`[upload] 更新链路安装包缺少差异更新文件：${blockMapName}`);
+        process.exit(1);
       }
       files.add(blockMapName);
     }

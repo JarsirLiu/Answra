@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { app, BrowserWindow, shell } from "electron";
 import { createAmbientThemeController } from "./ambient";
 import { registerAuthIpc } from "./auth/authIpc";
@@ -18,6 +19,7 @@ import { loadDevDotEnv } from "./devEnv";
 import { registerAmbientIpc } from "./ipc/ambientIpc";
 import { registerWindowIpc } from "./ipc/windowIpc";
 import { applyPendingUpdateOnLaunch } from "./updater/applyPendingUpdate";
+import { createMacSwapInstaller } from "./updater/macUpdateSwap";
 import { createUpdateController } from "./updater/updateController";
 import { registerUpdateIpc } from "./updater/updateIpc";
 import { createMainWindow, getWindow, sendAuthStatus } from "./window";
@@ -152,6 +154,16 @@ if (!app.requestSingleInstanceLock()) {
       currentVersion: app.getVersion(),
       configDir,
       quit: () => app.quit(),
+      ...(process.platform === "darwin"
+        ? {
+            macSwapInstaller: createMacSwapInstaller({
+              execPath: process.execPath,
+              swapDir: join(configDir, "mac-update"),
+              scriptPath: join(configDir, "mac-update", "swap.sh"),
+              log: (message, error) => console.log(message, error ?? ""),
+            }),
+          }
+        : {}),
     });
     disposeUpdateIpc = registerUpdateIpc(updateController);
     createManagedMainWindow();

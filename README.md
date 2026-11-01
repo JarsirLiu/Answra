@@ -55,7 +55,16 @@ $env:COS_SECRET_ID="..."; $env:COS_SECRET_KEY="..."
 pnpm release:win
 ```
 
-`release:win` = `dist:win` + `apps/desktop/scripts/upload-to-cos.mjs`（同时归档到 `download/v{版本}/` 便于回滚）；加 `--dry-run` 参数可只列出待上传产物。macOS 安装包配置已就绪（dmg + zip），但必须在 macOS 机器或 CI runner 上执行打包。
+`release:win` = `dist:win` + `apps/desktop/scripts/upload-to-cos.mjs`（同时归档到 `download/v{版本}/` 便于回滚）；加 `--dry-run` 参数可只列出待上传产物。
+
+macOS 安装包（dmg + zip，arm64/x64 各一份，未签名）只能在 macOS 上打包：
+
+```powershell
+# 本机（macOS）：构建并上传
+pnpm release:mac
+```
+
+CI 侧使用 `.github/workflows/release.yml`（`Release`）：打 `v*` tag 或手动触发后，`windows-latest` 跑 `dist:win`、`macos-14` 跑 `dist:mac`，两个平台各自产出安装包作为 workflow artifact；随后唯一的 publish 作业把它们合并、校验 tag 与 `apps/desktop/package.json` 版本一致、上传到 COS 的 `download/latest/` 与 `download/v{版本}/`，tag 构建还会附到 GitHub Release。需要仓库 Secrets：`COS_SECRET_ID`、`COS_SECRET_KEY`。应用内更新两平台统一走「下载更新 → 进度条 → 安装/换装重启」（mac 未签名构建用自研换装脚本，替换方案与真机验收点见 `docs/notes/implemented/feature/2026-11-01-cross-platform-auto-update.md`）；未签名 mac 包首次启动需右键「打开」。
 
 ## 仓库结构
 

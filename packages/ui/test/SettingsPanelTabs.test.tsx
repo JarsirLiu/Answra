@@ -352,6 +352,7 @@ describe("SettingsPanel tabs", () => {
         progress: null,
         error: null,
         installMode: "next-launch",
+        downloadedPath: null,
         lastCheckedAt: null,
       }),
       onUpdateStatus: vi.fn(() => () => undefined),
