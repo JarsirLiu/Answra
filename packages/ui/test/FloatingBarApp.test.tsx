@@ -907,6 +907,19 @@ describe("three-segment floating navigation", () => {
     expect(screen.getByRole("tab", { name: "设置" })).toHaveAttribute("aria-selected", "true");
   });
 
+  it("expands the floating bar with the panel into one block while a panel is open", () => {
+    render(<FloatingBarApp />);
+    const root = document.querySelector(".overlay-root");
+    expect(root).not.toHaveAttribute("data-panel-open");
+
+    fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
+    expect(root).toHaveAttribute("data-panel-open", "true");
+
+    // 再次点击为收起态：胶囊回到紧凑宽度，不再携带打开标记。
+    fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
+    expect(root).not.toHaveAttribute("data-panel-open");
+  });
+
   it("toggles ambient background following in settings and persists the choice", () => {
     render(<FloatingBarApp />);
     fireEvent.click(screen.getByRole("button", { name: "打开设置" }));

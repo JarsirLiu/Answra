@@ -123,6 +123,25 @@ describe("theme CSS integrity", () => {
     }
   });
 
+  it("stretches the floating bar to the panel width only while a panel is open", () => {
+    // 固定宽度面板与窄导航栏各开各的会上下错位；opened 态把胶囊拉伸到面板宽度。
+    // 条件必须挂在 [data-panel-open] 上：常驻加宽会让紧凑胶囊永久的被破坏。
+    const css = stripComments(
+      readFileSync(join(sourceRoot, "components", "floating-bar", "FloatingBar.css"), "utf8"),
+    );
+    const stack = css.match(
+      /\.overlay-root\[data-panel-open="true"\] \.floating-bar-stack\s*\{([^}]*)\}/,
+    )?.[1];
+    const bar = css.match(
+      /\.overlay-root\[data-panel-open="true"\] \.floating-bar\s*\{([^}]*)\}/,
+    )?.[1];
+    expect(stack).toBeDefined();
+    expect(stack).toContain("align-self: stretch");
+    expect(stack).toContain("width: auto");
+    expect(bar).toBeDefined();
+    expect(bar).toContain("width: auto");
+  });
+
   it("keeps announcement views inside the fixed panel, scrolled not stretched", () => {
     // 定高面板（560px 上限）必须由列表/详情自身滚动，任何一条根容器
     // 失去 min-height:0 / overflow-y 都会让窗口随公告内容无限变高。
