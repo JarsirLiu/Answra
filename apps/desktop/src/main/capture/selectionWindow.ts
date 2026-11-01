@@ -89,11 +89,14 @@ export function createSelectionWindows(
   }
   activeWindows.add(selectionWindow);
   const windowForLoad = selectionWindow;
+  const cursor = screen.getCursorScreenPoint();
   void windowForLoad
     .loadFile(path.join(__dirname, "../capture/selection.html"), {
       query: {
         originX: String(bounds.x),
         originY: String(bounds.y),
+        cursorX: String(cursor.x),
+        cursorY: String(cursor.y),
         displays: JSON.stringify(
           displays.map(({ id, bounds: displayBounds }) => ({
             id,

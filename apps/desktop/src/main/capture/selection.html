@@ -28,9 +28,27 @@
         display: none;
         border: 1px dashed var(--selection-line, rgba(148, 163, 184, 0.9));
       }
+      /* 选区窗完全透明，隐身模式又保持默认箭头；没有提示时用户看不到
+         任何“已进入截图”的反馈。提示放在光标所在显示器的顶部，拖拽开始
+         后隐藏；它属于受捕获保护的 overlay，不会进入共享画面。 */
+      #hint {
+        position: fixed;
+        top: 16px;
+        left: 50%;
+        transform: translateX(-50%);
+        padding: 6px 12px;
+        border: 1px solid rgba(148, 163, 184, 0.28);
+        border-radius: 8px;
+        background: rgba(15, 23, 42, 0.78);
+        color: #fff;
+        font: 12px/1.4 system-ui, sans-serif;
+        white-space: nowrap;
+        pointer-events: none;
+      }
     </style>
   </head>
   <body>
+    <div id="hint">按住拖拽选择区域，按 Esc 取消</div>
     <div id="rect"></div>
     <script>
       // 本窗口覆盖联合显示器边界；选区仍限制在按下鼠标的那台显示器内。
@@ -38,15 +56,29 @@
       const originX = Number(params.get("originX") ?? 0);
       const originY = Number(params.get("originY") ?? 0);
       const displays = JSON.parse(params.get("displays") ?? "[]");
+      const cursorX = Number(params.get("cursorX") ?? originX);
+      const cursorY = Number(params.get("cursorY") ?? originY);
       // 框选线色随发起方主题（变色龙/深浅模式）联动；主进程已校验为字面 CSS 颜色
       const line = params.get("line");
       if (line) document.documentElement.style.setProperty("--selection-line", line);
       // 与主窗口共用主进程维护的隐身状态，避免框选 overlay 绕过隐身光标约束。
       if (params.get("stealth") === "true") document.documentElement.classList.add("stealth");
       const rectEl = document.getElementById("rect");
+      const hintEl = document.getElementById("hint");
       const MIN_SIZE = 8; // 小于该尺寸视为点击误触，保持 overlay 打开而非取消
       let startPoint = null;
       let startDisplay = null;
+
+      // overlay 覆盖所有显示器的联合边界，固定 top/left 可能落在别的屏幕上。
+      // 把提示放到光标所在显示器的顶部中央；找不到时退回联合边界顶部。
+      const hintDisplay = displays.find((display) =>
+        cursorX >= display.x && cursorX < display.x + display.width &&
+        cursorY >= display.y && cursorY < display.y + display.height
+      );
+      if (hintEl && hintDisplay) {
+        hintEl.style.left = `${hintDisplay.x - originX + hintDisplay.width / 2}px`;
+        hintEl.style.top = `${hintDisplay.y - originY + 16}px`;
+      }
 
       function clamp(value, min, max) {
         return Math.min(Math.max(value, min), max);
@@ -85,6 +117,7 @@
         rectEl.style.top = `${rect.y}px`;
         rectEl.style.width = `${rect.width}px`;
         rectEl.style.height = `${rect.height}px`;
+        if (hintEl) hintEl.style.display = "none";
       }
 
       window.addEventListener("mousedown", (event) => {
@@ -111,6 +144,7 @@
         // 误触（未拖出有效区域）：保持 overlay 打开，等待有效拖拽或 Esc，不再静默取消
         if (rect.width < MIN_SIZE || rect.height < MIN_SIZE) {
           rectEl.style.display = "none";
+          if (hintEl) hintEl.style.display = "block";
           return;
         }
         window.answraSelection.confirm({

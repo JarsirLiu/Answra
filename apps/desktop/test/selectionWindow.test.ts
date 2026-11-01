@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
@@ -189,5 +190,30 @@ describe("selectionWindow capture protection", () => {
     ]);
     expect(query).not.toHaveProperty("hintX");
     expect(query).not.toHaveProperty("hintY");
+  });
+
+  it("passes the cursor position so the hint lands on the active display", () => {
+    state.displays = [
+      { bounds: { height: 1080, width: 1920, x: -1920, y: 0 }, id: 1 },
+      { bounds: { height: 1080, width: 1920, x: 0, y: 0 }, id: 2 },
+    ];
+    state.cursor = { x: 2400, y: 320 };
+
+    createSelectionWindows(undefined, true, createPolicyHost(true));
+
+    const query = state.windows[0].loadFile.mock.calls[0][1].query;
+    expect(query).toMatchObject({ cursorX: "2400", cursorY: "320" });
+  });
+
+  it("keeps a visible drag hint in the overlay so stealth capture has an affordance", () => {
+    const html = readFileSync(
+      new URL("../src/main/capture/selection.html", import.meta.url),
+      "utf8",
+    );
+
+    expect(html).toContain('id="hint"');
+    expect(html).toContain("按住拖拽选择区域，按 Esc 取消");
+    expect(html).toContain("pointer-events: none");
+    expect(html).toContain('if (hintEl) hintEl.style.display = "none"');
   });
 });
