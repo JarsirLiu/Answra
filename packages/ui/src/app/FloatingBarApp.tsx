@@ -323,7 +323,6 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
     <TooltipProvider stealth={stealthSetting.enabled}>
       <main
         className="overlay-root"
-        data-panel-open={panel === "closed" ? undefined : "true"}
         data-stealth={stealthSetting.enabled ? "true" : undefined}
         ref={shellRef}
       >

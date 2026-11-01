@@ -59,9 +59,10 @@
 }
 
 .workspace-panel__sidebar {
-  /* 侧栏约面板四成宽，保证长文件名可读；硬裁切不让内容撑开。
+  /* 侧栏约面板四成宽；下限给到 132px 保证收窄后仍在目录树里可读，
+     不把硬下限推高到挤压正文（面板宽度跟随导航栏后整体变窄）。
      宽度三段是侧栏的一次性尺寸（可拖拽前不做令牌化）。 */
-  flex: 0 0 clamp(170px, 38%, 232px);
+  flex: 0 0 clamp(132px, 38%, 232px);
   min-width: 0;
   overflow: hidden;
   display: flex;

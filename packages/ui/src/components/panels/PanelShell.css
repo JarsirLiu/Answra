@@ -1,7 +1,7 @@
 /* ── 内容面板：同风格玻璃 ─────────────────────────────────────────── */
 /* 面板回到文档流，位于胶囊下方右对齐；高度即窗口需要上报的内容高度。 */
-/* 默认面板（对话）宽度跟随悬浮导航栏（--surface-w，由 useSurfaceWidth 测量），
-   保证两者默认同宽；其它面板用下方 variant 覆盖为各自宽度。 */
+/* 所有面板宽度跟随悬浮导航栏（--surface-w，由 useSurfaceWidth 测量），
+   与胶囊恒为同宽；变体只覆盖高度等尺寸，不再有第二套宽度来源。 */
 .content-panel {
   margin-top: 8px;
   display: flex;
@@ -17,14 +17,15 @@
   background: var(--panel);
   box-shadow: var(--shadow-pop);
 }
-/* 固定宽度面板不能用 100vw 封顶：本窗口是 fit-content，视口宽度由外壳
-   上报的宽度决定；`min(480px, 100vw - 16px)` 会在悬浮条窄于 480px 时把
-   面板锁在窄宽度（answer Profile 只有答题/设置入口时即触发）。越界保护
-   交给主进程 clampToWorkArea，不在渲染层复制一份，见 2026-11-01 bug-fix Note。 */
+/* 变体不再自带专属宽度：所有面板统一跟随悬浮导航栏（--surface-w），
+   与对话面板同一宽度来源，胶囊与面板恒为同宽浮层。宽度地板就是导航栏
+   本身（窗口 fit-content = 面板 + 外壳余量 ≥ 导航栏 + 16px），`100vw - 16px`
+   上限在这个不变量下永远不会生效，不会重新引入 fit-content 宽度自引用
+   回路（复盘见 2026-11-01 面板宽度 bug-fix Note）。越界保护交给主进程
+   clampToWorkArea，不在渲染层复制一份。 */
 .content-panel--notes,
 .content-panel--settings,
 .content-panel--interview {
-  width: 480px;
   height: min(560px, calc(100vh - var(--bar-h) - 24px));
 }
 /* 账户页只有资料卡 + 额度卡 + 动作行，面板高度随内容收紧，
@@ -35,7 +36,6 @@
    其它变体不塌是因为基类 min-height: 400px 提供了循环地板；
    这里靠去掉上限自洽，超高保护交给主进程的工作区钳制。 */
 .content-panel--account {
-  width: 480px;
   height: auto;
   min-height: 0;
 }

@@ -45,19 +45,3 @@
   min-width: 0;
   overflow: hidden;
 }
-
-/* ── 面板打开态：胶囊与面板合成一个整体 ─────────────────────────────
-   固定宽度面板（480px）天然比窄导航栏宽：两块浮层各开各的会在窗口里
-   上下错位。宽度不能反过来让面板缩到导航栏（笔记本/设置内容在 307px
-   宽度下会挤压破损），因此在面板打开期间把胶囊拉伸到面板宽度，段与段
-   分隔线随 space-between 均匀分布；面板关闭后胶囊回到 max-content 紧凑态。
-   宽度来源仍是面板的固定 px（无 vw 参与），不会重新引入 fit-content
-   宽度自引用回路（见 2026-11-01 面板宽度 bug-fix Note）。 */
-.overlay-root[data-panel-open="true"] .floating-bar-stack {
-  align-self: stretch;
-  width: auto;
-}
-.overlay-root[data-panel-open="true"] .floating-bar {
-  width: auto;
-  justify-content: space-between;
-}

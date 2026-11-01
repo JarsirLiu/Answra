@@ -105,41 +105,25 @@ describe("theme CSS integrity", () => {
     expect(css).toMatch(/--shadow-pop:\s*none;/);
   });
 
-  it("keeps fixed panel widths independent from the fit-content viewport", () => {
-    // 窗口宽度由 .overlay-root 上报，视口宽度再反过来约束面板会形成自引用：
-    // 悬浮条窄于面板时，min(480px, 100vw - 16px) 会永久把面板锁窄。
-    // 固定宽度变体必须用 px，越界交给主进程 clampToWorkArea。
+  it("keeps every panel width on the floating bar measurement", () => {
+    // 面板与胶囊恒为同宽：所有变体统一继承基类 --surface-w 宽度，
+    // 不允许出现第二套 px 宽度来源（曾导致 480px 面板 × 307px 胶囊的错位）。
+    // 视口不得反过来约束变体宽度；基类 100vw 上限只会被 surface-w 地板盖过。
     const css = stripComments(
       readFileSync(join(sourceRoot, "components", "panels", "PanelShell.css"), "utf8"),
     );
+    const base = css.match(/\.content-panel\s*\{([^}]*)\}/)?.[1];
+    expect(base).toBeDefined();
+    expect(base).toContain("min(var(--surface-w");
     const fixedVariants = css.match(
       /\.content-panel--notes,\s*\.content-panel--settings,\s*\.content-panel--interview\s*\{([^}]*)\}/,
     )?.[1];
     const account = css.match(/\.content-panel--account\s*\{([^}]*)\}/)?.[1];
     for (const body of [fixedVariants, account]) {
       expect(body).toBeDefined();
-      expect(body).toContain("width: 480px");
+      expect(body).not.toMatch(/width\s*:/);
       expect(body).not.toContain("100vw");
     }
-  });
-
-  it("stretches the floating bar to the panel width only while a panel is open", () => {
-    // 固定宽度面板与窄导航栏各开各的会上下错位；opened 态把胶囊拉伸到面板宽度。
-    // 条件必须挂在 [data-panel-open] 上：常驻加宽会让紧凑胶囊永久的被破坏。
-    const css = stripComments(
-      readFileSync(join(sourceRoot, "components", "floating-bar", "FloatingBar.css"), "utf8"),
-    );
-    const stack = css.match(
-      /\.overlay-root\[data-panel-open="true"\] \.floating-bar-stack\s*\{([^}]*)\}/,
-    )?.[1];
-    const bar = css.match(
-      /\.overlay-root\[data-panel-open="true"\] \.floating-bar\s*\{([^}]*)\}/,
-    )?.[1];
-    expect(stack).toBeDefined();
-    expect(stack).toContain("align-self: stretch");
-    expect(stack).toContain("width: auto");
-    expect(bar).toBeDefined();
-    expect(bar).toContain("width: auto");
   });
 
   it("keeps announcement views inside the fixed panel, scrolled not stretched", () => {
