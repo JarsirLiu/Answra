@@ -18,6 +18,7 @@ import { loadDevDotEnv } from "./devEnv";
 import { registerInterviewIpc } from "./interview/interviewIpc";
 import { registerAmbientIpc } from "./ipc/ambientIpc";
 import { registerWindowIpc } from "./ipc/windowIpc";
+import { applyPendingUpdateOnLaunch } from "./updater/applyPendingUpdate";
 import { createUpdateController } from "./updater/updateController";
 import { createMainWindow, getWindow, isStealthEnabled, sendAuthStatus } from "./window";
 import {
@@ -102,6 +103,17 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.whenReady().then(async () => {
+    // 上次下载好的更新在启动时安装：此时系统稳定，不会撞上“关闭后立刻关机”的窗口。
+    if (
+      app.isPackaged &&
+      applyPendingUpdateOnLaunch({
+        configDir,
+        currentVersion: app.getVersion(),
+        quit: () => app.quit(),
+      })
+    ) {
+      return;
+    }
     // 读盘依赖 safeStorage 就绪；放在注册会话 IPC 之前，避免首次拉取设置时回退到默认值。
     await modelSettings.init();
     registerWindowIpc();
@@ -124,7 +136,7 @@ if (!app.requestSingleInstanceLock()) {
           .catch((error) => console.error("[agent-service] failed to start", error));
       });
     createManagedMainWindow();
-    updateController = createUpdateController({ isPackaged: app.isPackaged });
+    updateController = createUpdateController({ isPackaged: app.isPackaged, configDir });
     void authService
       .restore()
       .catch((error) => console.warn("[auth] 登录态恢复失败", error))
