@@ -1,6 +1,8 @@
 import { INTERVIEW_AUDIO_CREDIT_BATCH } from "@answra/shared";
-import { ConversationRuntime } from "../conversation/runtime";
+import { ChatConversationRuntime } from "../conversation/chatRuntime";
+import type { ConversationRuntime } from "../conversation/runtime";
 import { type ConversationStore, MemoryConversationStore } from "../conversation/store";
+import { createAuthorizedConversationTools } from "../conversation/tools/registry";
 import { InterviewAudioIngress } from "../interview/audio/ingress";
 import {
   conversationId as asConversationId,
@@ -150,9 +152,10 @@ export function startAgentHost({
     });
   }
 
-  const runtime = new ConversationRuntime({
+  const runtime = new ChatConversationRuntime({
     emit: (change) => transport.send({ version: 1, type: "change", change }),
     store,
+    createTools: createAuthorizedConversationTools,
     tokenProvider: requestToken,
   });
 

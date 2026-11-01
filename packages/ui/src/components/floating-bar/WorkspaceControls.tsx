@@ -20,19 +20,21 @@ interface WorkspaceControlsProps {
 export function WorkspaceControls({ panel, onTogglePanel, onClose }: WorkspaceControlsProps) {
   return (
     <>
-      <SurfaceButton
-        aria-label="打开笔记本"
-        className={`utility-action utility-action--destination${panel === "notes" ? " is-active" : ""}`}
-        onClick={() => onTogglePanel("notes")}
-        type="button"
-      >
-        <FolderOpen aria-hidden="true" size={ICON} strokeWidth={ICON_STROKE} />
-        <span className="destination-label">
-          <small>记录到</small>
-          <strong>笔记本</strong>
-        </span>
-        <ChevronDownGlyph className="destination-chevron" />
-      </SurfaceButton>
+      {__ANSWRA_FEATURE_WORKSPACE__ && (
+        <SurfaceButton
+          aria-label="打开笔记本"
+          className={`utility-action utility-action--destination${panel === "notes" ? " is-active" : ""}`}
+          onClick={() => onTogglePanel("notes")}
+          type="button"
+        >
+          <FolderOpen aria-hidden="true" size={ICON} strokeWidth={ICON_STROKE} />
+          <span className="destination-label">
+            <small>记录到</small>
+            <strong>笔记本</strong>
+          </span>
+          <ChevronDownGlyph className="destination-chevron" />
+        </SurfaceButton>
+      )}
       <SurfaceButton
         aria-label="打开设置"
         className={`utility-action${panel === "settings" ? " is-active" : ""}`}

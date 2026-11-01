@@ -11,6 +11,8 @@ createRoot(container).render(
   isReplySurface ? (
     <ReplyBarWindowApp />
   ) : (
-    <FloatingBarApp interviewCapture={new InterviewAudioCapture()} />
+    <FloatingBarApp
+      interviewCapture={__ANSWRA_FEATURE_INTERVIEW__ ? new InterviewAudioCapture() : undefined}
+    />
   ),
 );

@@ -85,3 +85,10 @@ export {
   CLOUD_SITE_BASE_URL,
   parseAnswraEnv,
 } from "./env";
+export {
+  FEATURE_IDS,
+  type FeatureId,
+  RELEASE_PROFILES,
+  type ReleaseManifest,
+  type ReleaseProfile,
+} from "./release";

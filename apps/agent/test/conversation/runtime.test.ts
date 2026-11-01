@@ -5,9 +5,10 @@ import {
   type ConversationChange,
 } from "@answra/shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ConversationRuntime } from "../../src/conversation/runtime";
+import { ChatConversationRuntime } from "../../src/conversation/chatRuntime";
 import type { ConversationStore } from "../../src/conversation/store";
 import { MemoryConversationStore } from "../../src/conversation/store";
+import { createAuthorizedConversationTools } from "../../src/conversation/tools/registry";
 
 type RecordedRequest = {
   messages: Array<{ role: string; content: unknown }>;
@@ -34,7 +35,7 @@ function streamBody(text: string): string {
 describe("ephemeral conversation runtime", () => {
   let server: Server;
   let requests: RecordedRequest[];
-  let runtime: ConversationRuntime;
+  let runtime: ChatConversationRuntime;
   let changes: ConversationChange[];
   let holdResponse: boolean;
   let modelFailure: { status: number; message: string } | undefined;
@@ -74,7 +75,10 @@ describe("ephemeral conversation runtime", () => {
     const address = server.address();
     if (!address || typeof address === "string") throw new Error("test server did not bind");
     serverPort = address.port;
-    runtime = new ConversationRuntime({ emit: (change) => changes.push(change) });
+    runtime = new ChatConversationRuntime({
+      emit: (change) => changes.push(change),
+      createTools: createAuthorizedConversationTools,
+    });
     runtime.configure({ chat: endpoint(address.port), answer: endpoint(address.port) });
   });
 
@@ -406,8 +410,9 @@ describe("ephemeral conversation runtime", () => {
     const address = retryServer.address();
     if (!address || typeof address === "string") throw new Error("test server did not bind");
 
-    const retrying = new ConversationRuntime({
+    const retrying = new ChatConversationRuntime({
       emit: (change) => changes.push(change),
+      createTools: createAuthorizedConversationTools,
       tokenProvider: async (options) => {
         forceRefreshFlags.push(options.forceRefresh);
         return "refreshed-token";
@@ -454,8 +459,9 @@ describe("ephemeral conversation runtime", () => {
     const address = unauthorizedServer.address();
     if (!address || typeof address === "string") throw new Error("test server did not bind");
 
-    const retrying = new ConversationRuntime({
+    const retrying = new ChatConversationRuntime({
       emit: (change) => changes.push(change),
+      createTools: createAuthorizedConversationTools,
       tokenProvider: async () => "refreshed-token",
     });
     try {
@@ -557,7 +563,11 @@ describe("ephemeral conversation runtime", () => {
       subscribe: (listener) => inner.subscribe(listener),
     };
     const raceChanges: ConversationChange[] = [];
-    const racing = new ConversationRuntime({ emit: (change) => raceChanges.push(change), store });
+    const racing = new ChatConversationRuntime({
+      emit: (change) => raceChanges.push(change),
+      createTools: createAuthorizedConversationTools,
+      store,
+    });
     racing.configure({ chat: endpoint(serverPort), answer: endpoint(serverPort) });
     try {
       const settled = await Promise.allSettled([
@@ -633,8 +643,9 @@ describe("local endpoint runtime", () => {
   }
 
   function createTrackedRuntime(changes: ConversationChange[], tokenProvider?: unknown) {
-    return new ConversationRuntime({
+    return new ChatConversationRuntime({
       emit: (change) => changes.push(change),
+      createTools: createAuthorizedConversationTools,
       tokenProvider: tokenProvider as
         | ((options: { forceRefresh: boolean }) => Promise<string>)
         | undefined,

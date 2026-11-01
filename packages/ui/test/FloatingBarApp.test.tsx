@@ -162,7 +162,7 @@ function emptySnapshot(id = conversationId): ConversationSnapshot {
 
 function clickAnswerScreenshot() {
   if (!screen.queryByRole("button", { name: "截图提问" })) {
-    fireEvent.click(screen.getByRole("button", { name: /^(对话|答题|面试|会议)$/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^(对话|答题|面试)$/ }));
     fireEvent.click(screen.getByRole("menuitemradio", { name: "答题" }));
   }
   fireEvent.click(screen.getByRole("button", { name: "截图提问" }));
@@ -189,14 +189,12 @@ describe("three-segment floating navigation", () => {
     expect(screen.getByRole("menuitemradio", { name: "对话" })).toBeInTheDocument();
     expect(screen.getByRole("menuitemradio", { name: "答题" })).toBeInTheDocument();
     expect(screen.getByRole("menuitemradio", { name: "面试" })).toBeInTheDocument();
-    expect(screen.getByRole("menuitemradio", { name: "会议" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitemradio", { name: "会议" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("menuitemradio", { name: "答题" }));
     expect(screen.getByRole("button", { name: "截图提问" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "打开对话" })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "答题" }));
-    fireEvent.click(screen.getByRole("menuitemradio", { name: "会议" }));
-    expect(screen.getByRole("button", { name: "会议助手（即将推出）" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "会议助手（即将推出）" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "打开设置" })).toBeInTheDocument();
   });
 
@@ -301,8 +299,8 @@ describe("three-segment floating navigation", () => {
     fireEvent.click(screen.getByRole("button", { name: "收起面板" }));
     expect(screen.queryByRole("heading", { name: "AI 对话" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "打开对话" }));
-    expect(screen.getByText("我叫小明")).toBeInTheDocument();
-    expect(screen.getByText("你好，小明。")).toBeInTheDocument();
+    expect(await screen.findByText("我叫小明")).toBeInTheDocument();
+    expect(await screen.findByText("你好，小明。")).toBeInTheDocument();
   });
 
   it("renders every mode action as a plain icon button without a stuck tint", () => {
@@ -359,24 +357,28 @@ describe("three-segment floating navigation", () => {
 
     const menu = screen.getByRole("menu", { name: "工作模式" });
     expect(menu.parentElement).toHaveClass("is-menu-in-flow");
-    expect(screen.getByRole("menuitemradio", { name: "会议" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitemradio", { name: "会议" })).not.toBeInTheDocument();
   });
 
-  it("shows the mode menu as a dismissible layer without replacing the open panel", () => {
+  it("shows the mode menu as a dismissible layer without replacing the open panel", async () => {
     render(<FloatingBarApp />);
     fireEvent.click(screen.getByRole("button", { name: "打开笔记本" }));
     fireEvent.click(screen.getByRole("button", { name: "对话" }));
 
-    expect(screen.getByRole("heading", { name: "笔记本 / 资料" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "笔记本 / 资料" }, { timeout: 10_000 }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("menu", { name: "工作模式" })).toBeInTheDocument();
     expect(screen.getByRole("menu", { name: "工作模式" }).parentElement).not.toHaveClass(
       "is-menu-in-flow",
     );
-    expect(screen.getByRole("menuitemradio", { name: "会议" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitemradio", { name: "会议" })).not.toBeInTheDocument();
 
     fireEvent.pointerDown(document.body);
     expect(screen.queryByRole("menu", { name: "工作模式" })).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "笔记本 / 资料" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "笔记本 / 资料" }, { timeout: 10_000 }),
+    ).toBeInTheDocument();
   });
 
   it("attaches a screenshot, accepts a follow-up prompt, and streams the reply in the bar", async () => {

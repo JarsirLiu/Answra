@@ -79,6 +79,9 @@ export class AgentService {
   }
 
   async send(command: ConversationSendCommand): Promise<{ runId: string }> {
+    if (!__ANSWRA_FEATURE_CHAT__ && command.operation === "chat.send") {
+      throw new Error("对话功能不包含在此安装包中");
+    }
     validateSendRequest(command.request);
     await this.request("workspace-context", { root: this.deps.getWorkspaceRoot() });
     // 来源由设置显式选择：本地端点不需要登录，云端订阅未登录时 resolveModel 抛统一失败码。

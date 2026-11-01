@@ -11,6 +11,8 @@
  * Agent 工具在本进程实现；桌面平台能力（读屏/音频采集、键鼠注入、窗口）由 desktop
  * 适配。该包不依赖 Electron 与 React，worker transport 由宿主单独装配。
  */
+
+export { ChatConversationRuntime } from "./conversation/chatRuntime";
 export { ConversationRuntime } from "./conversation/runtime";
 export type { ConversationStore } from "./conversation/store";
 export { MemoryConversationStore } from "./conversation/store";
@@ -31,6 +33,12 @@ export type {
   TenVadSource,
 } from "./interview/vad/tenVadEngine";
 export { createTenVadEngine } from "./interview/vad/tenVadEngine";
+export {
+  type AnswerAgentHost,
+  type AnswerAgentHostOptions,
+  type AnswerAgentTransport,
+  startAnswerAgentHost,
+} from "./worker/answerHost";
 export type { AgentHost, AgentHostOptions, AgentTransport } from "./worker/host";
 export { startAgentHost } from "./worker/host";
 export type { AgentCommand, AgentFrame, InterviewWorkerEvent } from "./worker/protocol";

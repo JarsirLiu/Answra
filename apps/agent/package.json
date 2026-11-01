@@ -4,6 +4,7 @@
   "private": true,
   "description": "平台无关的 Agent 运行时：会话、模型调用与 worker 线协议。",
   "type": "module",
+  "sideEffects": false,
   "engines": {
     "node": ">=20.9.0"
   },

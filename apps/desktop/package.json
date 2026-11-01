@@ -6,9 +6,10 @@
   "type": "module",
   "main": "out/main/index.cjs",
   "scripts": {
-    "dev": "pnpm build:electron && concurrently -k \"vite --host 127.0.0.1 --port 5180 --strictPort\" \"wait-on http://127.0.0.1:5180 && electron .\"",
-    "dev:web": "vite --host 127.0.0.1 --port 5180 --strictPort",
-    "build": "pnpm build:electron && vite build",
+    "dev": "pnpm build:electron -- --profile=full && concurrently -k \"vite --mode full --host 127.0.0.1 --port 5180 --strictPort\" \"wait-on http://127.0.0.1:5180 && electron .\"",
+    "dev:web": "vite --mode full --host 127.0.0.1 --port 5180 --strictPort",
+    "build": "pnpm build:electron -- --profile=full && vite build --mode full",
+    "build:answer": "pnpm build:electron -- --profile=answer && vite build --mode answer",
     "build:electron": "node ./scripts/build-electron.mjs",
     "audit:packaged": "node ./scripts/audit-packaged-input.mjs",
     "vad:prepare": "node ./scripts/prepare-ten-vad.mjs",
@@ -16,7 +17,8 @@
     "typecheck": "tsc -p tsconfig.main.json && tsc -p tsconfig.preload.json && tsc -p tsconfig.renderer.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "dist:win": "pnpm build && pnpm audit:packaged && electron-builder --win nsis",
+    "dist:win": "pnpm build:answer && pnpm audit:packaged -- --profile=answer && node ./scripts/write-electron-builder-config.mjs --profile=answer && electron-builder --config .release-audit/answer/electron-builder.json --win nsis",
+    "dist:win:full": "pnpm vad:prepare && pnpm asr:prepare && pnpm build && pnpm audit:packaged -- --profile=full && node ./scripts/write-electron-builder-config.mjs --profile=full && electron-builder --config .release-audit/full/electron-builder.json --win nsis",
     "icons": "node ./scripts/generate-icons.mjs"
   },
   "build": {
@@ -92,6 +94,7 @@
   },
   "devDependencies": {
     "7zip-bin": "5.2.0",
+    "@electron/asar": "3.4.1",
     "@answra/agent": "workspace:*",
     "@resvg/resvg-js": "^2.6.2",
     "@types/node": "^26.6.5",

@@ -1,15 +1,8 @@
 import type { OverlayMode } from "@answra/shared";
 import type { LucideIcon } from "lucide-react";
-import {
-  AudioLines,
-  ClipboardList,
-  MessagesSquare,
-  ScanLine,
-  Sparkles,
-  UsersRound,
-} from "lucide-react";
+import { AudioLines, ClipboardList, MessagesSquare, ScanLine } from "lucide-react";
 
-export type Mode = "conversation" | "exam" | "interview" | "meeting";
+export type Mode = "conversation" | "exam" | "interview";
 
 /** 内容面板标识；`closed` 表示当前只显示悬浮条。 */
 export type Panel = Exclude<OverlayMode, "closed"> | "closed";
@@ -30,6 +23,13 @@ export interface ModeDefinition {
   actions: readonly ModeAction[];
 }
 
+export const ANSWER_MODE: ModeDefinition = {
+  id: "exam",
+  label: "答题",
+  icon: ClipboardList,
+  actions: [{ id: "screenshot", label: "截图提问", icon: ScanLine }],
+};
+
 export const MODES: readonly ModeDefinition[] = [
   {
     id: "conversation",
@@ -38,30 +38,13 @@ export const MODES: readonly ModeDefinition[] = [
     actions: [{ id: "chat", label: "打开对话", icon: MessagesSquare }],
   },
   {
-    id: "exam",
-    label: "答题",
-    icon: ClipboardList,
-    actions: [{ id: "screenshot", label: "截图提问", icon: ScanLine }],
+    ...ANSWER_MODE,
   },
   {
     id: "interview",
     label: "面试",
     icon: AudioLines,
     actions: [{ id: "capture", label: "面试对话", icon: AudioLines }],
-  },
-  {
-    id: "meeting",
-    label: "会议",
-    icon: UsersRound,
-    actions: [
-      {
-        id: "meeting",
-        label: "会议助手（即将推出）",
-        icon: Sparkles,
-        disabled: true,
-        hint: "会议记录与总结功能即将推出",
-      },
-    ],
   },
 ];
 

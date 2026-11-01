@@ -7,17 +7,12 @@ import {
   type ConversationModelConfig,
   type ConversationSendRequest,
 } from "@answra/shared";
-import { type ModelMessage, stepCountIs, streamText } from "ai";
-import {
-  ANSWER_PROFILE,
-  CHAT_PROFILES,
-  type ChatProfileId,
-  type ConversationToolId,
-} from "./profiles";
+import { type ModelMessage, stepCountIs, streamText, type ToolSet } from "ai";
+import { ANSWER_PROFILE } from "./answerProfile";
 import { parseDataUrl, validateRequest } from "./requestContent";
 import { type ConversationStore, createUserMessage, MemoryConversationStore } from "./store";
 import { buildTimeReminder } from "./timeReminder";
-import { createAuthorizedConversationTools } from "./tools/registry";
+import type { ConversationToolId } from "./tools/types";
 
 /** 答题需要稳定但保留少量多样性；通用对话不覆盖提供商默认值。 */
 const ANSWER_TEMPERATURE = 0.3;
@@ -27,6 +22,11 @@ const ANSWER_REASONING_EFFORT = "low";
 export interface ConversationRuntimeOptions {
   emit: (change: ConversationChange) => void;
   store?: ConversationStore;
+  /** Tool construction is owned by the worker composition, so release profiles can omit domains. */
+  createTools: (
+    authorizedIds: readonly ConversationToolId[],
+    context: { workspaceRoot: string | null; signal: AbortSignal },
+  ) => ToolSet | undefined;
   /**
    * 向宿主换取新的云端访问令牌；只在收到 401 时调用一次（单次重试）。
    * 缺省时不做重试，401 如实上报给上层。
@@ -40,15 +40,18 @@ export class ConversationRuntime {
   private readonly store: ConversationStore;
   private readonly unsubscribeStore: () => void;
   private readonly tokenProvider?: (options: { forceRefresh: boolean }) => Promise<string>;
+  private readonly createTools: ConversationRuntimeOptions["createTools"];
   private workspaceRoot: string | null = null;
 
   constructor({
     emit,
     store = new MemoryConversationStore(),
+    createTools,
     tokenProvider,
   }: ConversationRuntimeOptions) {
     this.store = store;
     this.tokenProvider = tokenProvider;
+    this.createTools = createTools;
     this.unsubscribeStore = store.subscribe(emit);
   }
 
@@ -90,26 +93,6 @@ export class ConversationRuntime {
     this.config = { chat: { ...config.chat }, answer: { ...config.answer } };
   }
 
-  async sendChat(
-    profileId: ChatProfileId,
-    conversationId: string,
-    request: ConversationSendRequest,
-    accessToken: string,
-  ): Promise<{ runId: string }> {
-    const profile = CHAT_PROFILES[profileId];
-    if (!profile) throw new Error("未授权的对话能力配置");
-    return this.startRun(
-      conversationId,
-      request,
-      accessToken,
-      profile.systemPrompt,
-      profile.includeHistory,
-      false,
-      profile.injectTime ?? false,
-      profile.tools,
-    );
-  }
-
   async runAnswer(
     conversationId: string,
     request: ConversationSendRequest,
@@ -127,7 +110,7 @@ export class ConversationRuntime {
     );
   }
 
-  private async startRun(
+  protected async startRun(
     conversationId: string,
     request: ConversationSendRequest,
     accessToken: string,
@@ -323,7 +306,7 @@ export class ConversationRuntime {
         }
       }
       const tools = authorizedTools.length
-        ? createAuthorizedConversationTools(authorizedTools, {
+        ? this.createTools(authorizedTools, {
             workspaceRoot,
             signal: controller.signal,
           })

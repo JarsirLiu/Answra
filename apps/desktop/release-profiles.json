@@ -1,0 +1,20 @@
+{
+  "answer": {
+    "include": ["answer", "settings", "account", "announcements", "updates", "stealth"],
+    "exclude": ["chat", "workspace", "interview"]
+  },
+  "full": {
+    "include": [
+      "answer",
+      "chat",
+      "workspace",
+      "interview",
+      "settings",
+      "account",
+      "announcements",
+      "updates",
+      "stealth"
+    ],
+    "exclude": []
+  }
+}

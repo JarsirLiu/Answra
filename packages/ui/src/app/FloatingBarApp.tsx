@@ -1,5 +1,4 @@
 import {
-  ActiveChatConversationId,
   ActiveExamConversationId,
   ActiveInterviewConversationId,
   AUTH_REQUIRED_NOTICE,
@@ -7,28 +6,35 @@ import {
   type DesktopBridge,
   isAuthRequiredError,
 } from "@answra/shared";
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { TooltipProvider } from "../components/controls/Tooltip";
 import { FloatingBar } from "../components/floating-bar/FloatingBar";
 import { FloatingLayerHost } from "../components/floating-bar/FloatingLayerHost";
-import { ChatPanel } from "../components/panels/ChatPanel";
 import { InterviewCapturePanel } from "../components/panels/InterviewCapturePanel";
 import { ReplyBar } from "../components/panels/ReplyBar";
 import { ReplyDetails } from "../components/panels/ReplyDetails";
 import { SettingsPanel } from "../components/panels/SettingsPanel";
-import { WorkspacePanel } from "../components/panels/workspace/WorkspacePanel";
 import { useFitContent } from "../hooks/useFitContent";
 import { useMeetingStealth } from "../hooks/useMeetingStealth";
 import { useStealthDocumentFlag } from "../hooks/useStealthDocumentFlag";
 import { useStealthInputGuard } from "../hooks/useStealthInputGuard";
 import { useSurfaceWidth } from "../hooks/useSurfaceWidth";
-import { applyModeAvailability, MODES, type Mode, type ModeAction } from "../model";
+import { ANSWER_MODE, applyModeAvailability, MODES, type Mode, type ModeAction } from "../model";
+import { ChatFeaturePanel } from "./ChatFeaturePanel";
 import type { InterviewCapturePort, InterviewCaptureState } from "./interviewCapture";
 import { useAppearanceController } from "./useAppearanceController";
-import { useGeneralChat, useScreenshotAnswer } from "./useConversationChat";
+import { useScreenshotAnswer } from "./useConversationChat";
 import { useReplyDetail } from "./useReplyDetail";
 import { useReplyWorkflow } from "./useReplyWorkflow";
 import { useSurfaceCoordinator } from "./useSurfaceCoordinator";
+
+const WorkspaceFeaturePanel = __ANSWRA_FEATURE_WORKSPACE__
+  ? lazy(() =>
+      import("./WorkspaceFeaturePanel").then((module) => ({
+        default: module.WorkspaceFeaturePanel,
+      })),
+    )
+  : undefined;
 
 interface FloatingBarAppProps {
   /** 桌面平台桥；默认使用 preload 注入的 window.answra，测试可注入 mock。 */
@@ -61,13 +67,13 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
   const stealthSetting = useMeetingStealth(platform);
   useStealthDocumentFlag(stealthSetting.enabled);
   useStealthInputGuard(stealthSetting.enabled);
-  // 安装版暂不带面试能力（见 DesktopBridge.interviewAvailable）：入口降级为「暂不支持」。
-  const modes = applyModeAvailability(MODES, {
-    interview: platform?.interviewAvailable !== false,
-  });
-  const conversation = useGeneralChat(platform, ActiveChatConversationId);
+  const modes =
+    __ANSWRA_FEATURE_CHAT__ || __ANSWRA_FEATURE_INTERVIEW__
+      ? applyModeAvailability(MODES, {
+          interview: __ANSWRA_FEATURE_INTERVIEW__ && platform?.interviewAvailable !== false,
+        })
+      : [ANSWER_MODE];
   const answer = useScreenshotAnswer(platform, ActiveExamConversationId);
-  const [chatFailure, setChatFailure] = useState<SendFailure>();
   const [replyFailure, setReplyFailure] = useState<SendFailure>();
   useEffect(() => {
     if (!platform?.getAuthStatus) return;
@@ -78,7 +84,6 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
       setAuthSignedIn(signedIn);
       // 登录成功即清掉上一轮「请先登录」提示：原因已经不存在了。
       if (signedIn) {
-        setChatFailure(undefined);
         setReplyFailure(undefined);
       }
       if (!signedIn || !platform.getAnnouncements) {
@@ -105,11 +110,13 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
     };
   }, [platform]);
   useEffect(() => {
+    if (!__ANSWRA_FEATURE_INTERVIEW__) return;
     if (!interviewCapture) return;
     setInterviewCaptureState(interviewCapture.getState());
     return interviewCapture.subscribe(setInterviewCaptureState);
   }, [interviewCapture]);
   useEffect(() => {
+    if (!__ANSWRA_FEATURE_INTERVIEW__) return;
     if (!platform?.createConversation || !platform.getConversationSnapshot) return;
     let alive = true;
     let revision = -1;
@@ -171,10 +178,6 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
   useEffect(() => {
     if (panel !== "chat" && replyPhase === "closed") answer.clearMessages();
   }, [answer.clearMessages, panel, replyPhase]);
-  // 失败提示属于本轮对话：离开对话面板即丢弃，重新打开不会压着上一轮的错误。
-  useEffect(() => {
-    if (panel !== "chat") setChatFailure(undefined);
-  }, [panel]);
   const reply = useReplyWorkflow({
     cancelMessage: answer.cancel,
     onCaptureError: (message) =>
@@ -184,7 +187,7 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
       answer.clearMessages();
       surfaces.exitReply();
     },
-    onSendError: (error) => notifySendError("reply", error),
+    onSendError: notifySendError,
     onSetReplyPhase: (phase) => surfaces.setReplyPhase(phase),
     phase: replyPhase,
     platform,
@@ -233,7 +236,7 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
         onAttachmentRemove={removeAttachment}
         onClose={closeReplyBar}
         onCancel={reply.cancelReply}
-        onSignIn={replyFailure?.needsSignIn ? () => signIn("reply") : undefined}
+        onSignIn={replyFailure?.needsSignIn ? signInReply : undefined}
         onScreenshot={triggerScreenshot}
         onSend={() => {
           // 重新发送即清掉上一轮的失败提示，避免旧错误压着新结果。
@@ -263,35 +266,27 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
       : { message: error instanceof Error ? error.message : "发送失败", needsSignIn: false };
   }
 
-  function notifySendError(target: "chat" | "reply", error: unknown) {
-    if (target === "chat") setChatFailure(toFailure(error));
-    else setReplyFailure(toFailure(error));
+  function notifySendError(error: unknown) {
+    setReplyFailure(toFailure(error));
   }
 
   /** 「去登录」：原地换成打开结果，避免点了没反应。 */
-  function signIn(target: "chat" | "reply") {
-    const setFailure = target === "chat" ? setChatFailure : setReplyFailure;
+  function signInReply() {
     const pending = platform?.loginAccount?.();
     if (!pending) return;
     void pending
       .then((result) => {
         if (!result.opened) {
-          setFailure({ message: result.error ?? "无法打开授权页", needsSignIn: true });
+          setReplyFailure({ message: result.error ?? "无法打开授权页", needsSignIn: true });
         }
       })
       .catch((error: unknown) => {
-        setFailure({
+        setReplyFailure({
           message: error instanceof Error ? error.message : "登录失败",
           needsSignIn: true,
         });
       });
   }
-
-  // 对话面板的失败来源有两个：发送被拒（chatFailure）与本轮流式 error chunk（conversation.replyError）。
-  // 两者共用一个展示位，传输层失败优先。
-  const chatFailureMessage = chatFailure?.message ?? conversation.replyError;
-  const chatNeedsSignIn =
-    Boolean(chatFailure?.needsSignIn) || isAuthRequiredError(conversation.replyError);
 
   function handleModeAction(action: ModeAction) {
     if (action.id === "screenshot") {
@@ -347,25 +342,21 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
 
         <FloatingLayerHost layers={floatingLayers} onDismiss={surfaces.dismissFloatingLayer} />
 
-        {panel === "chat" && featureSlot.kind === "chat" && (
-          <ChatPanel
+        {__ANSWRA_FEATURE_CHAT__ && (
+          <ChatFeaturePanel
+            visible={panel === "chat" && featureSlot.kind === "chat"}
             bridge={platform}
+            signedIn={authSignedIn}
             stealth={stealthSetting.enabled}
             attachments={attachments}
             draft={draft}
-            error={chatFailureMessage}
             fileInputRef={fileInputRef}
-            streaming={Boolean(conversation.activeRunId)}
-            thinkingMs={conversation.thinkingMs}
-            messages={conversation.messages}
-            onCancel={conversation.cancel}
-            onAttachmentChange={handleAttachmentChange}
-            onAttachmentRemove={removeAttachment}
-            onClose={() => {
-              surfaces.openPanel("closed");
-            }}
             onDraftChange={setDraft}
-            onSignIn={chatNeedsSignIn ? () => signIn("chat") : undefined}
+            onAttachmentChange={handleAttachmentChange}
+            onAttachmentsChange={setAttachments}
+            onAttachmentRemove={removeAttachment}
+            onConversationCleared={clearConversation}
+            onClose={() => surfaces.openPanel("closed")}
             onVote={(vote) =>
               surfaces.dispatch({
                 type: "layer/show-notice",
@@ -373,38 +364,11 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
                 message: vote === "up" ? "感谢反馈！" : "已收到反馈，我们会继续改进",
               })
             }
-            onSend={() => {
-              // 发送即清空输入框与附件；失败时恢复草稿，避免丢失输入。
-              const sentDraft = draft;
-              const sentAttachments = attachments;
-              setDraft("");
-              setAttachments([]);
-              setChatFailure(undefined);
-              void conversation
-                .send(sentDraft, sentAttachments)
-                .then(() => reply.clearPending())
-                .catch((error: unknown) => {
-                  setDraft(sentDraft);
-                  setAttachments(sentAttachments);
-                  notifySendError("chat", error);
-                });
-            }}
-            onClear={
-              platform?.clearConversationMessages
-                ? () => clearConversation(ActiveChatConversationId)
-                : undefined
-            }
-            clearDisabledReason={
-              conversation.activeRunId
-                ? "回复完成后才能清空"
-                : conversation.messages.length === 0
-                  ? "暂无可清空的对话"
-                  : undefined
-            }
+            onSent={reply.clearPending}
           />
         )}
 
-        {panel === "interview" && (
+        {__ANSWRA_FEATURE_INTERVIEW__ && panel === "interview" && (
           <InterviewCapturePanel
             capture={interviewCapture}
             state={interviewCaptureState}
@@ -439,14 +403,14 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
           />
         ) : null}
 
-        {panel === "notes" && (
-          <WorkspacePanel
-            bridge={platform}
-            onClose={() => {
-              surfaces.openPanel("closed");
-            }}
-            stealth={stealthSetting.enabled}
-          />
+        {__ANSWRA_FEATURE_WORKSPACE__ && panel === "notes" && WorkspaceFeaturePanel && (
+          <Suspense fallback={null}>
+            <WorkspaceFeaturePanel
+              bridge={platform}
+              onClose={() => surfaces.openPanel("closed")}
+              stealth={stealthSetting.enabled}
+            />
+          </Suspense>
         )}
 
         {panel === "settings" && (

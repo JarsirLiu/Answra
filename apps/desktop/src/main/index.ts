@@ -15,24 +15,18 @@ import { registerConversationIpc } from "./conversation/conversationIpc";
 import { ModelRouter } from "./conversation/modelRouter";
 import { ModelSettingsStore, modelSettingsFilePath } from "./conversation/modelSettings";
 import { loadDevDotEnv } from "./devEnv";
-import { registerInterviewIpc } from "./interview/interviewIpc";
 import { registerAmbientIpc } from "./ipc/ambientIpc";
 import { registerWindowIpc } from "./ipc/windowIpc";
 import { applyPendingUpdateOnLaunch } from "./updater/applyPendingUpdate";
 import { createUpdateController } from "./updater/updateController";
 import { registerUpdateIpc } from "./updater/updateIpc";
-import { createMainWindow, getWindow, isStealthEnabled, sendAuthStatus } from "./window";
-import {
-  registerWorkspaceFileProtocol,
-  registerWorkspaceSchemePrivileges,
-} from "./workspace/fileProtocol";
-import { registerWorkspaceIpc } from "./workspace/workspaceIpc";
-import { WorkspaceService } from "./workspace/workspaceService";
+import { createMainWindow, getWindow, sendAuthStatus } from "./window";
+import { registerWorkspaceSchemePrivileges } from "./workspace/scheme";
 
 // 必须在 app ready 前配置，避免 Chromium 先按 HDR 10-bit 输出初始化采集链。
 configureChromiumCompatibility({ app });
 // 自定义 scheme 权限同样必须在 ready 前声明。
-registerWorkspaceSchemePrivileges();
+if (__ANSWRA_FEATURE_WORKSPACE__) registerWorkspaceSchemePrivileges();
 
 // 打包版不读 .env；开发态在解析云端地址前注入仓库根 .env（不覆盖已有环境变量）。
 if (!app.isPackaged) {
@@ -43,11 +37,14 @@ if (!app.isPackaged) {
 }
 
 let ambientController: ReturnType<typeof createAmbientThemeController> | undefined;
-let interviewIpc: ReturnType<typeof registerInterviewIpc> | undefined;
+let stopInterview: () => Promise<void> = async () => undefined;
+let disposeInterview: () => void = () => undefined;
+let bindInterviewWindow: (window: BrowserWindow) => void = () => undefined;
+let getWorkspaceRoot: () => string | null = () => null;
+let disposeWorkspace: (() => void) | undefined;
 let updateController: ReturnType<typeof createUpdateController> | undefined;
 let disposeUpdateIpc: (() => void) | undefined;
 const configDir = app.getPath("userData");
-const workspaceService = new WorkspaceService({ configDir });
 
 const authService = new AuthService({
   endpoints: resolveCloudEndpoints(process.env, { isPackaged: app.isPackaged }),
@@ -74,7 +71,7 @@ const modelRouter = new ModelRouter({
 });
 const agentService = new AgentService({
   resolveModel: (options) => modelRouter.resolve(options),
-  getWorkspaceRoot: () => workspaceService.getRoot(),
+  getWorkspaceRoot: () => getWorkspaceRoot(),
   log: (message, error) => console.warn(message, error),
 });
 
@@ -120,23 +117,36 @@ if (!app.requestSingleInstanceLock()) {
     await modelSettings.init();
     registerWindowIpc();
     registerCaptureIpc();
-    interviewIpc = registerInterviewIpc(agentService);
+    if (__ANSWRA_FEATURE_INTERVIEW__) {
+      const { registerInterviewIpc } = await import("./interview/interviewIpc");
+      const interview = registerInterviewIpc(agentService);
+      stopInterview = () => interview.stopActive();
+      disposeInterview = () => interview.dispose();
+      bindInterviewWindow = (window) => interview.bindWindow(window);
+    }
     registerAmbientIpc((enabled) => ambientController?.setEnabled(enabled));
     registerConversationIpc(agentService, {
       canSend: () => modelRouter.canSend(),
       modelSettings: modelRouter,
     });
     registerAuthIpc(authService);
-    registerWorkspaceFileProtocol(workspaceService);
-    registerWorkspaceIpc(workspaceService, getWindow, isStealthEnabled);
-    void workspaceService
-      .restoreRoot()
-      .catch((error) => console.warn("[workspace] 根目录恢复失败", error))
-      .finally(() => {
-        void agentService
-          .start()
-          .catch((error) => console.error("[agent-service] failed to start", error));
-      });
+    const startAgent = () => {
+      void agentService
+        .start()
+        .catch((error) => console.error("[agent-service] failed to start", error));
+    };
+    if (__ANSWRA_FEATURE_WORKSPACE__) {
+      const { createWorkspaceComposition } = await import("./workspace/composition");
+      const workspace = createWorkspaceComposition(configDir);
+      getWorkspaceRoot = workspace.getRoot;
+      disposeWorkspace = workspace.dispose;
+      void workspace
+        .restoreRoot()
+        .catch((error) => console.warn("[workspace] 根目录恢复失败", error))
+        .finally(startAgent);
+    } else {
+      startAgent();
+    }
     updateController = createUpdateController({
       isPackaged: app.isPackaged,
       currentVersion: app.getVersion(),
@@ -155,10 +165,11 @@ if (!app.requestSingleInstanceLock()) {
     disposeUpdateIpc?.();
     updateController?.dispose();
     authService.dispose();
-    const interviewStop = interviewIpc?.stopActive() ?? Promise.resolve();
-    interviewIpc?.dispose();
-    void interviewStop.catch(() => undefined).finally(() => agentService.stop());
-    void workspaceService.dispose();
+    void stopInterview()
+      .catch(() => undefined)
+      .finally(() => agentService.stop());
+    disposeInterview();
+    disposeWorkspace?.();
   });
 
   app.on("activate", () => {
@@ -170,7 +181,7 @@ if (!app.requestSingleInstanceLock()) {
 
 function createManagedMainWindow(): void {
   const window = createMainWindow();
-  interviewIpc?.bindWindow(window);
+  bindInterviewWindow(window);
   const controller = createAmbientThemeController(window, {});
   ambientController = controller;
   window.once("closed", () => {

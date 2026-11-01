@@ -1,5 +1,6 @@
 import { pathToFileURL } from "node:url";
 import { net, protocol } from "electron";
+import { ANSWMRA_FILE_SCHEME } from "./scheme";
 import type { WorkspaceService } from "./workspaceService";
 
 /**
@@ -10,17 +11,6 @@ import type { WorkspaceService } from "./workspaceService";
  * scheme 权限必须在 app ready 前（registerSchemesAsPrivileged）声明，
  * 见 index.ts；handler 在 ready 后（registerFileProtocol）注册。
  */
-
-export const ANSWMRA_FILE_SCHEME = "answra-file";
-
-export function registerWorkspaceSchemePrivileges(): void {
-  protocol.registerSchemesAsPrivileged([
-    {
-      scheme: ANSWMRA_FILE_SCHEME,
-      privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
-    },
-  ]);
-}
 
 export function registerWorkspaceFileProtocol(service: WorkspaceService): void {
   protocol.handle(ANSWMRA_FILE_SCHEME, async (request) => {
