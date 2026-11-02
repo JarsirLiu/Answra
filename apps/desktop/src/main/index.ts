@@ -160,7 +160,6 @@ if (!app.requestSingleInstanceLock()) {
               execPath: process.execPath,
               swapDir: join(configDir, "mac-update"),
               scriptPath: join(configDir, "mac-update", "swap.sh"),
-              log: (message, error) => console.log(message, error ?? ""),
             }),
           }
         : {}),

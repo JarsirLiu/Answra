@@ -6,6 +6,7 @@
  * 失败还原，最后重新拉起应用。脚本内容见 `macSwapScript`（纯函数，可单测）。
  */
 
+import type { ChildProcess } from "node:child_process";
 import { execFile, spawn } from "node:child_process";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -23,11 +24,9 @@ interface MacSwapOptions {
   swapDir: string;
   /** 换装脚本落盘路径。 */
   scriptPath: string;
-  log?: (message: string, error?: unknown) => void;
 }
 
 export function createMacSwapInstaller(options: MacSwapOptions): MacSwapInstaller {
-  const log = options.log ?? ((message, error) => console.log(message, error ?? ""));
   const runningAppPath = extractAppPath(options.execPath);
   if (!runningAppPath) {
     throw new Error(`无法从可执行文件路径推断应用目录：${options.execPath}`);
@@ -42,8 +41,8 @@ export function createMacSwapInstaller(options: MacSwapOptions): MacSwapInstalle
       await execFileAsync("ditto", ["-x", "-k", zipPath, options.swapDir]);
       return newAppPath;
     },
-    startInstall(appPath: string): void {
-      void startSwap(options.scriptPath, macSwapScript(runningAppPath, appPath), log);
+    async startInstall(appPath: string): Promise<void> {
+      await startSwap(options.scriptPath, macSwapScript(runningAppPath, appPath));
     },
   };
 }
@@ -81,16 +80,16 @@ export function macSwapScript(appPath: string, newAppPath: string): string {
   ].join("\n");
 }
 
-async function startSwap(
-  scriptPath: string,
-  script: string,
-  log: (message: string, error?: unknown) => void,
-): Promise<void> {
-  try {
-    await writeFile(scriptPath, script, { mode: 0o700 });
-    const child = spawn("/bin/sh", [scriptPath], { detached: true, stdio: "ignore" });
-    child.unref();
-  } catch (error) {
-    log("[updater] 换装脚本无法落地，保持当前版本运行", error);
-  }
+async function startSwap(scriptPath: string, script: string): Promise<void> {
+  await writeFile(scriptPath, script, { mode: 0o700 });
+  const child = spawn("/bin/sh", [scriptPath], { detached: true, stdio: "ignore" });
+  await waitForSpawn(child);
+  child.unref();
+}
+
+function waitForSpawn(child: ChildProcess): Promise<void> {
+  return new Promise((resolve, reject) => {
+    child.once("spawn", resolve);
+    child.once("error", reject);
+  });
 }

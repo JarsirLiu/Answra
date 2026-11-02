@@ -25,11 +25,11 @@
 2. **macOS `auto-swap` 换装**（唯一自研面）：
    - 下载走 electron-updater 官方链路：`latest-mac.yml` 指向 `Answra-{arch}.zip`，享受 blockmap 差异更新；zip 是 electron-updater 在 mac 的更新介质硬契约，dmg 只供人工安装，不进更新链路。
    - `update-downloaded` 事件给出缓存 zip 路径，`MacSwapInstaller.extract`（`macUpdateSwap.ts`）用 macOS 自带 `ditto -x -k` 解出 `Answra.app` 到 `userData/mac-update/`；落盘不经浏览器，无 quarantine 属性。
-   - `installNow()` 调 `startInstall`：写换装脚本（内容为纯函数 `macSwapScript`，spawn detached + unref）后 `app.quit()`。脚本逻辑：清 `.old` 残留 → `pgrep -f` 等旧进程退出（≤30s）→ 旧 app 挪 `.old` → 新版挪进原位（同卷 mv 原子）→ 失败从 `.old` 还原 → `open` 重启应用。目标目录由 `process.execPath` 反推，兼容 `~/Applications` 与 `/Applications`。
+   - `installNow()` 等待 `startInstall` 确认 detached 脚本进程已成功 spawn 后才 `app.quit()`；脚本写入或启动失败时保留旧应用运行并向 UI 返回安装未启动。脚本内容为纯函数 `macSwapScript`：清 `.old` 残留 → `pgrep -f` 等旧进程退出（≤30s）→ 旧 app 挪 `.old` → 新版挪进原位（同卷 mv 原子）→ 失败从 `.old` 还原 → `open` 重启应用。目标目录由 `process.execPath` 反推，兼容 `~/Applications` 与 `/Applications`。
    - `autoUpdater.autoInstallOnAppQuit = false`（darwin），Squirrel 全程不被触碰。开发态维持 `unsupported`。
 3. **合同收敛**：`UpdateStatus` 增加 `downloadedPath: string | null`（下载就绪后的本地安装载体路径：Windows 安装包 / 换出的 `.app`）；删除 `downloadUrl`、`UpdateChannels.OpenDownload`、`UpdateOpenDownloadResult`、`openUpdateDownload` 桥方法与 `packages/shared/src/distribution.ts`（其 `macInstallerDownloadUrl` 只服务浏览器方案）；`UpdateInstallMode` 改为 `"next-launch" | "auto-swap" | "on-quit"`。
 4. **UI 收敛**：`downloaded` 阶段双平台同一形态（「立即重启安装」+确认文案），详情按 `installMode` 分别提示「下次启动应用时自动安装 / 将自动换装并重启 / 退出应用后自动安装」；`manual` 分支与「打开下载页」从 UI 删除。
-5. **发布约束**：`upload-to-cos.mjs` 清单引用的更新链路安装包（exe/zip/appimage）缺 `.blockmap` 时硬失败退出；dmg 走旧的人工安装收集路径，无需 blockmap。mac `build.mac.extendInfo` 补 `NSMicrophoneUsageDescription`、`NSScreenCaptureUsageDescription`。
+5. **发布约束**：`upload-to-cos.mjs` 仅收集清单引用的更新链路安装包（exe/zip/appimage）及其 `.blockmap`，另外保留官网人工安装所需的 `.dmg`；缺少 blockmap 时硬失败退出。`latest*.yml` 在每个 COS 前缀的安装包与 blockmap 上传完成后最后上传，避免新清单先于文件可用。mac `build.mac.extendInfo` 补 `NSMicrophoneUsageDescription`、`NSScreenCaptureUsageDescription`。
 
 ## 影响表面
 
@@ -62,10 +62,10 @@
 
 ## 验证
 
-- `apps/desktop/test/updateController.test.ts`：点击下载才触发（两平台）、mac 换装注入（下载 → extract → installNow spawn 先于 quit）、换装失败回 error 且可重试成功、`autoInstallOnAppQuit=false` 断言。
-- `apps/desktop/test/macUpdateSwap.test.ts`：`extractAppPath` 反推与换装脚本内容（等待退出、原子替换、失败还原、重启命令）。
+- `apps/desktop/test/updateController.test.ts`：点击下载才触发（两平台）、mac 换装注入（下载 → extract → installNow spawn 成功后 quit）、spawn 失败不退出应用、换装准备失败可重试、`autoInstallOnAppQuit=false` 断言。
+- `apps/desktop/test/macUpdateSwap.test.ts`：`extractAppPath` 反推、换装脚本内容，以及写入脚本后等待 spawn 成功/失败的行为。
 - `packages/ui/test/UpdateSettingsGroup.test.tsx`：available 停留与点击下载、`auto-swap` 的换装文案与确认安装；`SettingsPanelTabs.test.tsx` fixture 同步。
-- 已通过：`pnpm verify`（biome lint、全包 typecheck、desktop 273 项 / UI 24 项测试、架构检查）。
+- 已通过（2026-11-02）：`pnpm verify`（Biome、全包 typecheck、agent 107 项 / UI 199 项 / desktop 277 项测试、架构检查）与 `pnpm notes:check`。
 - 平台实测（未完成，为 mac 发布验收点）：mac 真机换装一轮（arm64），记录系统版本与 Gatekeeper 行为；本机是 Windows 无法验证，装完 0.1.1 的用户不应期待同版本号内升级行为（见 Release 流水线 Note）。
 
 ## 风险

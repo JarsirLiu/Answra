@@ -16,6 +16,7 @@
 
 - 单一 release 流水线，矩阵构建：`windows-latest` 跑 `dist:win`，`macos-14` 跑 `dist:mac`，两平台都产出 answer Profile 的安装包；`fail-fast: false` 保证一个平台失败不影响另一个平台的产物。
 - 单一 publish 作业：`needs: build`，用 `actions/download-artifact`（`pattern: answra-*`、`merge-multiple: true`）把两平台产物合并到 `apps/desktop/release/`，再执行一次 `upload-to-cos.mjs`，统一写入 `download/latest/` 与 `download/v{version}/`。更新清单 `latest.yml` 与 `latest-mac.yml` 同目录共存，客户端按平台各取各的。
+- COS 文件集合只取 latest 清单引用的更新安装包及其 blockmap，另加官网人工安装使用的 DMG；不上传 release 目录里的旧构建残留。每个前缀都先上传包与 blockmap，最后上传 `latest*.yml`。
 - 发布前置校验：tag 推送时校验 `v{version}` 与 `apps/desktop/package.json` 的 `version` 一致；COS 凭证缺失时在 publish 阶段显式失败并给出提示，而不是静默跳上传。
 - 手动触发默认只构建不上传（`workflow_dispatch` 的 `upload` 输入默认 `false`），只有打 tag 或手动勾选才执行 publish，避免验证性运行覆盖线上更新源。
 - 分发双写：COS 是 electron-updater 与官网下载源；tag 构建同时用 `gh release upload` 把安装包与清单附到 GitHub Release（`gh release create --generate-notes --verify-tag` 不存在时创建）。
@@ -58,4 +59,5 @@
 - 新增平台（如 Linux）时只能加矩阵项 + 对应 `dist:*` 脚本，禁止另建 workflow，否则又回到多套发布入口。
 - 任何安装包产物都必须能被 `upload-to-cos.mjs` 的文件集合覆盖（清单引用或 `.dmg`）；新增产物类型要同时改脚本，否则会出现"artifact 有、COS 没有"。
 - 清单引用的更新链路安装包（exe/zip/appimage）缺 `.blockmap` 时上传脚本硬失败，禁止回退为只提示；相关更新行为见 [双平台自动更新与未签名 mac 自动换装](../feature/2026-11-01-cross-platform-auto-update.md)。
+- 更新清单必须最后发布，不能让客户端先读到尚未就绪的新版本元数据；上传集合不得扩展为整个 `release/` 目录，以免引入无用文件与额外分发流量。
 - tag 与版本号一致性校验不得移除，否则会出现 tag v0.1.2 但包内容为 0.1.1 的错版发布。

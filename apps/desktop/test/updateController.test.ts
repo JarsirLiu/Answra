@@ -158,6 +158,62 @@ describe("createUpdateController", () => {
     controller.dispose();
   });
 
+  it("keeps macOS running until the swap script confirms it started", async () => {
+    const swap = fakeSwapInstaller();
+    let resolveStart: (() => void) | undefined;
+    swap.startInstall = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveStart = resolve;
+        }),
+    );
+    const { controller, quit } = createController({ platform: "darwin", macSwapInstaller: swap });
+    fakeUpdater.checkForUpdates.mockImplementation(() => {
+      fakeUpdater.emit("update-available", { version: "0.2.0" });
+      return Promise.resolve(undefined);
+    });
+    fakeUpdater.downloadUpdate.mockImplementation(() => {
+      fakeUpdater.emit("update-downloaded", {
+        version: "0.2.0",
+        downloadedFile: "/cache/Answra-zip",
+      });
+      return Promise.resolve(["/cache/Answra-zip"]);
+    });
+    await controller.check({ manual: true });
+    await controller.download();
+
+    const install = controller.installNow();
+    expect(quit).not.toHaveBeenCalled();
+    resolveStart?.();
+
+    expect(await install).toEqual({ started: true });
+    expect(quit).toHaveBeenCalledOnce();
+    controller.dispose();
+  });
+
+  it("keeps macOS running and reports failure when the swap script cannot start", async () => {
+    const swap = fakeSwapInstaller();
+    swap.startInstall = vi.fn().mockRejectedValue(new Error("spawn failed"));
+    const { controller, quit } = createController({ platform: "darwin", macSwapInstaller: swap });
+    fakeUpdater.checkForUpdates.mockImplementation(() => {
+      fakeUpdater.emit("update-available", { version: "0.2.0" });
+      return Promise.resolve(undefined);
+    });
+    fakeUpdater.downloadUpdate.mockImplementation(() => {
+      fakeUpdater.emit("update-downloaded", {
+        version: "0.2.0",
+        downloadedFile: "/cache/Answra-zip",
+      });
+      return Promise.resolve(["/cache/Answra-zip"]);
+    });
+    await controller.check({ manual: true });
+    await controller.download();
+
+    expect(await controller.installNow()).toEqual({ started: false });
+    expect(quit).not.toHaveBeenCalled();
+    controller.dispose();
+  });
+
   it("surfaces a mac swap preparation failure and lets the user retry", async () => {
     const swap = fakeSwapInstaller();
     swap.extract = vi.fn().mockRejectedValue(new Error("ditto failed"));

@@ -40,8 +40,8 @@ const PROGRESS_NOTIFY_INTERVAL_MS = 250;
 export interface MacSwapInstaller {
   /** 解出新版 `.app`，返回可直接换装的本地路径。 */
   extract(zipPath: string): Promise<string>;
-  /** 启动换装脚本；脚本等待旧进程退出后完成替换并重启。 */
-  startInstall(newAppPath: string): void;
+  /** 脚本成功启动后 resolve；启动失败 reject，脚本随后等待旧进程并完成替换。 */
+  startInstall(newAppPath: string): Promise<void>;
 }
 
 interface UpdateControllerOptions {
@@ -299,7 +299,7 @@ export function createUpdateController(options: UpdateControllerOptions): Update
     if (machine.phase !== "downloaded" || installing) return { started: false };
     installing = true;
     try {
-      if (autoSwap) return swapAndRestart();
+      if (autoSwap) return await swapAndRestart();
       if (platform === "win32") {
         const started = installPendingUpdate({
           configDir: options.configDir,
@@ -323,14 +323,14 @@ export function createUpdateController(options: UpdateControllerOptions): Update
     }
   }
 
-  /** mac 换装：启动脚本后立即退出，脚本等旧进程退出完成替换并重启。 */
-  function swapAndRestart(): UpdateInstallResult {
+  /** mac 换装：确认脚本进程已启动后退出，脚本等旧进程完成替换并重启。 */
+  async function swapAndRestart(): Promise<UpdateInstallResult> {
     const installer = options.macSwapInstaller;
     if (!installer || !downloadedPath) {
       log("[updater] 换装就绪信息缺失，保持当前版本继续运行");
       return { started: false };
     }
-    installer.startInstall(downloadedPath);
+    await installer.startInstall(downloadedPath);
     options.quit();
     return { started: true };
   }

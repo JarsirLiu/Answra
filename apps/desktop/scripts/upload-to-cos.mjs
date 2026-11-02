@@ -33,8 +33,8 @@ const { version } = JSON.parse(await readFile(path.join(desktopRoot, "package.js
 // 不在清单里，必须单独补上，否则 COS 上只有 zip 没有 dmg。
 const releaseEntries = await readdir(releaseDir);
 const files = new Set(releaseEntries.filter((n) => /\.dmg$/i.test(n)));
-for (const name of releaseEntries.filter((n) => /^latest.*\.yml$/i.test(n))) {
-  files.add(name);
+const manifests = releaseEntries.filter((n) => /^latest.*\.yml$/i.test(n));
+for (const name of manifests) {
   const content = await readFile(path.join(releaseDir, name), "utf8");
   for (const match of content.matchAll(/^\s*-?\s*url:\s*(.+)$/gm)) {
     const artifactName = match[1].trim();
@@ -53,6 +53,8 @@ for (const name of releaseEntries.filter((n) => /^latest.*\.yml$/i.test(n))) {
     }
   }
 }
+// 客户端可能随时读取 latest；先让其引用的包和 blockmap 就位，再发布清单。
+for (const name of manifests) files.add(name);
 if (files.size === 0) {
   console.error(`[upload] ${releaseDir} 下没有 latest*.yml 发版清单，先跑 pnpm dist:win。`);
   process.exit(1);
