@@ -1,5 +1,5 @@
 import type { DesktopBridge, MarkdownDocument } from "@answra/shared";
-import { Check, Code2, Eye, FilePlus2, Save } from "lucide-react";
+import { Code2, Eye, FileText, FolderOpen, Save } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LazyMarkdownRuntime } from "../../components/markdown/LazyMarkdownRuntime";
 import "./MarkdownWindowApp.css";
@@ -160,42 +160,59 @@ export function MarkdownWindowApp({ bridge }: { bridge: DesktopBridge | undefine
     );
   return (
     <main className="markdown-window">
-      <header className="markdown-window__toolbar">
-        <div className="markdown-window__file">
-          <strong>{document.name}</strong>
-          <small>{document.path}</small>
+      <header className="markdown-window__header">
+        <div className="markdown-window__document" title={document.path}>
+          <span aria-hidden="true" className="markdown-window__document-icon">
+            <FileText size={15} />
+          </span>
+          <span className="markdown-window__document-name">{document.name}</span>
+          <span
+            aria-live="polite"
+            className={`markdown-window__save-state ${dirty ? "is-dirty" : "is-saved"}`}
+            role="status"
+          >
+            {dirty ? "未保存" : "已保存"}
+          </span>
         </div>
-        <span className={`markdown-window__status ${dirty ? "is-dirty" : "is-saved"}`}>
-          {dirty ? (
-            "未保存"
-          ) : (
-            <>
-              <Check size={14} /> 已保存
-            </>
-          )}
-        </span>
-        <button
-          type="button"
-          aria-label="打开 Markdown 文件"
-          title="打开文件"
-          onClick={() => void bridge?.markdownOpenDocument?.()}
-        >
-          <FilePlus2 size={16} />
-        </button>
-        <button
-          type="button"
-          aria-label="保存 Markdown 文件"
-          title="保存 (Ctrl+S)"
-          onClick={() => void save()}
-        >
-          <Save size={16} />
-        </button>
-        <div className="markdown-window__modes" role="toolbar" aria-label="编辑模式">
-          <button type="button" aria-pressed={!preview} onClick={() => setPreview(false)}>
-            <Code2 size={15} /> 源码
+        <div className="markdown-window__toolbar">
+          <div className="markdown-window__modes" role="toolbar" aria-label="编辑模式">
+            <button
+              aria-pressed={!preview}
+              onClick={() => setPreview(false)}
+              title="源码模式"
+              type="button"
+            >
+              <Code2 size={14} />
+              <span>源码</span>
+            </button>
+            <button
+              aria-pressed={preview}
+              onClick={() => setPreview(true)}
+              title="预览模式"
+              type="button"
+            >
+              <Eye size={14} />
+              <span>预览</span>
+            </button>
+          </div>
+          <span aria-hidden="true" className="markdown-window__toolbar-divider" />
+          <button
+            aria-label="打开 Markdown 文件"
+            className="markdown-window__icon-button"
+            onClick={() => void bridge?.markdownOpenDocument?.()}
+            title="打开文件"
+            type="button"
+          >
+            <FolderOpen size={16} />
           </button>
-          <button type="button" aria-pressed={preview} onClick={() => setPreview(true)}>
-            <Eye size={15} /> 预览
+          <button
+            aria-label="保存 Markdown 文件"
+            className={`markdown-window__icon-button ${dirty ? "is-dirty" : ""}`}
+            onClick={() => void save()}
+            title="保存（Ctrl/Cmd+S）"
+            type="button"
+          >
+            <Save size={16} />
           </button>
         </div>
       </header>
@@ -203,10 +220,15 @@ export function MarkdownWindowApp({ bridge }: { bridge: DesktopBridge | undefine
       {conflict && (
         <div className="markdown-window__conflict">
           文件已在其他程序中修改。
-          <button type="button" onClick={() => void save()}>
+          <button
+            className="markdown-window__banner-action"
+            type="button"
+            onClick={() => void save()}
+          >
             保留本地版本
           </button>
           <button
+            className="markdown-window__banner-action"
             type="button"
             onClick={() => {
               void bridge

@@ -30,6 +30,8 @@ describe("MarkdownWindowApp", () => {
     render(<MarkdownWindowApp bridge={bridge} />);
 
     expect(await screen.findByText("meeting notes.md")).toBeTruthy();
+    expect(screen.getByTitle("C:/Notes/meeting notes.md")).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toContain("已保存");
     fireEvent.click(screen.getByRole("button", { name: "保存 Markdown 文件" }));
 
     await waitFor(() =>

@@ -1,6 +1,9 @@
 .markdown-window {
   display: flex;
   flex-direction: column;
+  /* 渲染器根 body 为悬浮胶囊使用 fit-content；文档窗口必须显式撑满视口，
+     否则预览会按最长行收缩，滚动条停在内容右缘而不是窗口右缘。 */
+  width: 100vw;
   height: 100dvh;
   min-height: 0;
   min-width: 0;
@@ -8,90 +11,160 @@
   background: var(--paper);
   color: var(--ink);
 }
-.markdown-window__toolbar {
+.markdown-window > p {
+  margin: auto;
+  color: color-mix(in srgb, var(--ink) 55%, transparent);
+  font-size: 13px;
+}
+/* 细滚动条：贴右缘、低对比，只为提示位置，不抢占视线。 */
+.markdown-window ::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+.markdown-window ::-webkit-scrollbar-button {
+  display: none;
+}
+.markdown-window ::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink) 16%, transparent);
+}
+.markdown-window ::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--ink) 34%, transparent);
+}
+.markdown-window ::-webkit-scrollbar-track,
+.markdown-window ::-webkit-scrollbar-corner {
+  background: transparent;
+}
+.markdown-window__header {
   display: flex;
   flex: 0 0 auto;
-  min-height: 56px;
+  height: calc(var(--space-6) * 2);
   align-items: center;
-  gap: 8px;
-  padding: 10px 18px;
-  background: var(--panel);
-  border-bottom: 1px solid var(--glass-line);
+  gap: var(--space-4);
+  padding: 0 var(--space-3) 0 var(--space-4);
+  background: var(--paper);
+  border-bottom: 1px solid var(--glass-line-soft);
+  font-family: var(--app-ui-font-family);
+  user-select: none;
 }
-.markdown-window__file {
+.markdown-window__document {
   display: flex;
   min-width: 0;
-  flex-direction: column;
-  margin-right: auto;
+  align-items: center;
+  gap: var(--space-2);
 }
-.markdown-window__file strong,
-.markdown-window__file small {
+.markdown-window__document-icon {
+  display: inline-flex;
+  width: var(--ctl-h);
+  height: var(--ctl-h);
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--ctl-radius);
+  background: var(--field);
+  color: color-mix(in srgb, var(--ink) 62%, transparent);
+}
+.markdown-window__document-name {
   overflow: hidden;
+  font-size: var(--font-md);
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.markdown-window__status {
+.markdown-window__save-state {
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
-  gap: 5px;
-  margin: 0 10px;
-  color: var(--muted);
-  font-size: 12px;
+  gap: var(--space-1);
+  color: color-mix(in srgb, var(--ink) 68%, transparent);
+  font-size: var(--font-sm);
   white-space: nowrap;
 }
-.markdown-window__status.is-dirty {
-  color: var(--danger);
+.markdown-window__save-state::before {
+  width: calc(var(--space-1) + 1px);
+  height: calc(var(--space-1) + 1px);
+  border-radius: 50%;
+  background: var(--success);
+  content: "";
+  opacity: 0.75;
 }
-.markdown-window__file small {
-  color: var(--muted);
-  font-size: 11px;
+.markdown-window__save-state.is-dirty {
+  color: var(--warning);
 }
-.markdown-window__toolbar span {
+.markdown-window__save-state.is-dirty::before {
+  background: var(--warning);
+  opacity: 1;
+}
+.markdown-window__toolbar {
   display: flex;
   align-items: center;
-  gap: 5px;
-  margin: 0 8px;
-  color: var(--muted);
-  font-size: 12px;
-  white-space: nowrap;
-}
-.markdown-window__toolbar .is-dirty {
-  color: var(--danger);
-}
-.markdown-window button {
-  display: inline-flex;
-  min-height: 32px;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  border: 1px solid var(--glass-line);
-  border-radius: 5px;
-  padding: 5px 10px;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-}
-.markdown-window button:hover {
-  background: color-mix(in srgb, var(--ink) 7%, transparent);
+  gap: var(--space-1);
+  margin-left: auto;
 }
 .markdown-window__modes {
   display: inline-flex;
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--glass-line);
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--ink) 4%, transparent);
+  gap: calc(var(--space-1) / 2);
+  padding: calc(var(--space-1) / 2);
+  border-radius: var(--space-2);
+  background: var(--field);
 }
 .markdown-window__modes button {
+  display: inline-flex;
+  height: var(--ctl-h);
+  align-items: center;
+  gap: var(--space-1);
   border: 0;
-  min-height: 28px;
-  padding: 4px 9px;
-  color: var(--muted);
+  border-radius: calc(var(--ctl-radius) - 1px);
+  padding: 0 var(--space-2);
+  background: transparent;
+  color: color-mix(in srgb, var(--ink) 70%, transparent);
+  font: inherit;
+  font-size: var(--font-md);
+  cursor: pointer;
+}
+.markdown-window__modes button:hover {
+  color: var(--ink);
 }
 .markdown-window__modes button[aria-pressed="true"] {
   background: var(--paper);
   color: var(--ink);
-  box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 12%, transparent);
+  box-shadow: var(--shadow-ctl);
+}
+.markdown-window__toolbar-divider {
+  width: 1px;
+  height: var(--divider-h);
+  margin: 0 var(--space-1);
+  background: var(--glass-line-soft);
+}
+.markdown-window__icon-button {
+  display: inline-flex;
+  width: calc(var(--ctl-h) + var(--space-1));
+  height: calc(var(--ctl-h) + var(--space-1));
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--ctl-radius);
+  background: transparent;
+  color: color-mix(in srgb, var(--ink) 70%, transparent);
+  cursor: pointer;
+}
+.markdown-window__icon-button:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+.markdown-window__icon-button.is-dirty {
+  color: var(--warning);
+}
+.markdown-window__header button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+.markdown-window__modes button,
+.markdown-window__icon-button,
+.markdown-window__banner-action {
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
 }
 .markdown-window__editor {
   position: relative;
@@ -131,16 +204,10 @@
   min-height: 0;
   min-width: 0;
   overflow: auto;
-  padding: 34px 24px 64px;
+  padding: 34px max(24px, calc((100% - 860px) / 2)) 64px;
   background: var(--paper);
   overscroll-behavior: contain;
-  scrollbar-gutter: stable both-edges;
-}
-.markdown-window__preview > * {
-  width: 100%;
-  max-width: 860px;
-  margin-right: auto;
-  margin-left: auto;
+  scrollbar-gutter: stable;
 }
 .markdown-window__preview > h1:first-child {
   margin-top: 0;
@@ -234,11 +301,39 @@
 .markdown-window__error,
 .markdown-window__conflict {
   display: flex;
+  flex: 0 0 auto;
+  min-height: calc(var(--ctl-h) + var(--space-3));
   align-items: center;
-  gap: 10px;
-  padding: 8px 14px;
+  gap: var(--space-2);
+  border-bottom: 1px solid var(--glass-line-soft);
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--font-md);
+}
+.markdown-window__error {
+  background: var(--danger-wash);
   color: var(--danger);
 }
-.markdown-window__conflict button {
-  margin-left: 4px;
+.markdown-window__conflict {
+  background: var(--warning-wash);
+  color: var(--warning);
+}
+.markdown-window__banner-action {
+  display: inline-flex;
+  height: calc(var(--ctl-h) - 2px);
+  flex: 0 0 auto;
+  align-items: center;
+  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+  border-radius: var(--ctl-radius-sm);
+  padding: 0 var(--space-2);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: var(--font-sm);
+  cursor: pointer;
+}
+.markdown-window__banner-action:first-of-type {
+  margin-left: auto;
+}
+.markdown-window__banner-action:hover {
+  background: color-mix(in srgb, currentColor 8%, transparent);
 }
