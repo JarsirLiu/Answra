@@ -1,0 +1,244 @@
+.markdown-window {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--paper);
+  color: var(--ink);
+}
+.markdown-window__toolbar {
+  display: flex;
+  flex: 0 0 auto;
+  min-height: 56px;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--glass-line);
+}
+.markdown-window__file {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  margin-right: auto;
+}
+.markdown-window__file strong,
+.markdown-window__file small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.markdown-window__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0 10px;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.markdown-window__status.is-dirty {
+  color: var(--danger);
+}
+.markdown-window__file small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.markdown-window__toolbar span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0 8px;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.markdown-window__toolbar .is-dirty {
+  color: var(--danger);
+}
+.markdown-window button {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--glass-line);
+  border-radius: 5px;
+  padding: 5px 10px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.markdown-window button:hover {
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+}
+.markdown-window__modes {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--glass-line);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+}
+.markdown-window__modes button {
+  border: 0;
+  min-height: 28px;
+  padding: 4px 9px;
+  color: var(--muted);
+}
+.markdown-window__modes button[aria-pressed="true"] {
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 12%, transparent);
+}
+.markdown-window__editor {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.markdown-window__editor-host,
+.markdown-window__editor-host .cm-editor {
+  height: 100%;
+}
+.markdown-window__editor-host .cm-editor {
+  background: transparent;
+  color: var(--ink);
+  font:
+    15px / 1.75 Consolas,
+    monospace;
+}
+.markdown-window__editor-host .cm-scroller {
+  overflow: auto;
+  padding: 22px max(24px, calc((100% - 900px) / 2));
+}
+.markdown-window__editor-host .cm-content {
+  caret-color: var(--ink);
+}
+.markdown-window__loading {
+  position: absolute;
+  top: 12px;
+  right: 18px;
+  color: var(--muted);
+  font-size: 12px;
+  pointer-events: none;
+}
+.markdown-window__preview {
+  display: block;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  padding: 34px 24px 64px;
+  background: var(--paper);
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable both-edges;
+}
+.markdown-window__preview > * {
+  width: 100%;
+  max-width: 860px;
+  margin-right: auto;
+  margin-left: auto;
+}
+.markdown-window__preview > h1:first-child {
+  margin-top: 0;
+}
+.markdown-window__preview h1,
+.markdown-window__preview h2,
+.markdown-window__preview h3,
+.markdown-window__preview h4 {
+  margin: 1.2em 0 0.5em;
+  line-height: 1.3;
+}
+.markdown-window__preview h1 {
+  font-size: 2em;
+}
+.markdown-window__preview h2 {
+  font-size: 1.45em;
+  border-bottom: 1px solid var(--glass-line-soft);
+  padding-bottom: 0.25em;
+}
+.markdown-window__preview p,
+.markdown-window__preview ul,
+.markdown-window__preview ol {
+  line-height: 1.75;
+}
+.markdown-window__preview blockquote {
+  margin: 1em 0;
+  padding: 0.2em 1em;
+  border-left: 3px solid var(--mint);
+  color: var(--muted);
+  background: color-mix(in srgb, var(--mint) 6%, transparent);
+}
+.markdown-window__preview code {
+  font-family: Consolas, monospace;
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+  border-radius: 4px;
+  padding: 0.12em 0.35em;
+}
+.markdown-window__preview pre {
+  max-width: 100%;
+  overflow: auto;
+  padding: 14px 16px;
+  border: 1px solid var(--glass-line-soft);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+}
+.markdown-window__preview pre code {
+  background: transparent;
+  padding: 0;
+}
+.markdown-window__preview img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 16px auto;
+  border-radius: 6px;
+}
+.markdown-window__preview table {
+  display: block;
+  max-width: 100%;
+  overflow: auto;
+  border-collapse: collapse;
+}
+.markdown-window__preview th,
+.markdown-window__preview td {
+  border: 1px solid var(--glass-line-soft);
+  padding: 7px 10px;
+}
+.markdown-window__preview-status,
+.markdown-window__image-loading,
+.markdown-window__image-error {
+  color: var(--muted);
+}
+.markdown-window__image-error {
+  display: block;
+  padding: 12px;
+  border: 1px dashed var(--glass-line);
+}
+.markdown-window__preview a {
+  color: var(--mint-text);
+}
+.markdown-window__preview hr {
+  border: 0;
+  border-top: 1px solid var(--glass-line-soft);
+  margin: 2em 0;
+}
+.markdown-window__preview kbd {
+  border: 1px solid var(--glass-line);
+  border-radius: 4px;
+  padding: 2px 5px;
+}
+.markdown-window__error,
+.markdown-window__conflict {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  color: var(--danger);
+}
+.markdown-window__conflict button {
+  margin-left: 4px;
+}

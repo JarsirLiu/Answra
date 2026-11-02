@@ -11,6 +11,7 @@ import type {
   DesktopAnnouncement,
   InterviewChange,
   InterviewPcmFrame,
+  MarkdownDocument,
   RegionCaptureOptions,
   ReplyBarAction,
   ReplyBarPlacement,
@@ -35,6 +36,11 @@ export type OverlayMode = "closed" | "chat" | "interview" | "notes" | "settings"
 
 /** 渲染进程暴露给 UI 的桌面平台桥（由 preload 注入，测试可 mock）。 */
 export interface DesktopBridge {
+  markdownGetDocument?: () => Promise<MarkdownDocument>;
+  markdownSaveDocument?: (text: string) => Promise<void>;
+  markdownOpenDocument?: () => Promise<MarkdownDocument | null>;
+  markdownResolveImage?: (reference: string) => Promise<string>;
+  onMarkdownChanged?: (listener: (change: { path: string }) => void) => () => void;
   /** Whether this renderer belongs to a packaged desktop application. */
   isPackaged?: boolean;
   /**

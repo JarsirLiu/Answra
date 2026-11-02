@@ -135,6 +135,24 @@ describe("window surface registry", () => {
     expect(reply.setFocusable).toHaveBeenLastCalledWith(true);
   });
 
+  it("keeps Markdown document windows in the normal desktop stacking and focus policy", () => {
+    const registry = createWindowSurfaceRegistry({
+      applyCaptureProtection: () => true,
+      platform: "win32",
+    });
+    const document = new MockWindow();
+
+    registry.register(document as never, {
+      role: "markdown-document",
+      captureProtection: "never",
+    });
+
+    expect(document.setAlwaysOnTop).toHaveBeenCalledWith(false);
+    expect(document.setFocusable).not.toHaveBeenCalled();
+    registry.setStealthEnabled(true);
+    expect(document.setFocusable).not.toHaveBeenCalled();
+  });
+
   it("reasserts the Windows non-activating policy after blur or hide only when it drifted", () => {
     const registry = createWindowSurfaceRegistry({
       applyCaptureProtection: () => true,

@@ -1,9 +1,7 @@
 import { Check, Copy } from "lucide-react";
 import { type ReactElement, type ReactNode, useEffect, useState } from "react";
-import ReactMarkdown, { type Components } from "react-markdown";
-import rehypeKatex from "rehype-katex";
-import remarkGfm from "remark-gfm";
-import remarkMath from "remark-math";
+import type { Components } from "react-markdown";
+import { LazyMarkdownRuntime } from "../markdown/LazyMarkdownRuntime";
 import styles from "./TextResponse.module.css";
 
 function CodeBlock({ code, language }: { code: string; language: string }) {
@@ -71,13 +69,9 @@ const markdownComponents: Components = {
 export function TextResponse({ text, caret = false }: { text: string; caret?: boolean }) {
   return (
     <div className={styles.prose} data-caret={caret || undefined}>
-      <ReactMarkdown
-        components={markdownComponents}
-        rehypePlugins={[[rehypeKatex, { strict: false }]]}
-        remarkPlugins={[remarkGfm, remarkMath]}
-      >
+      <LazyMarkdownRuntime components={markdownComponents} mode="chat">
         {text}
-      </ReactMarkdown>
+      </LazyMarkdownRuntime>
     </div>
   );
 }

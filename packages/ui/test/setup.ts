@@ -1,6 +1,9 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup } from "@testing-library/react";
+import { cleanup, configure } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
+
+// Markdown/编辑器运行时按需加载；测试环境首次解析动态 import 可能超过默认 1 秒。
+configure({ asyncUtilTimeout: 5_000 });
 
 afterEach(cleanup);
 

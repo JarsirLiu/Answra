@@ -9,6 +9,7 @@ export * from "./channels/auth";
 export * from "./channels/capture";
 export * from "./channels/conversation";
 export * from "./channels/interview";
+export * from "./channels/markdown";
 export * from "./channels/update";
 export * from "./channels/window";
 export * from "./channels/workspace";

@@ -13,6 +13,7 @@ import {
   type InterviewChange,
   InterviewChannels,
   type InterviewPcmFrame,
+  MarkdownChannels,
   type RegionCaptureOptions,
   type ReplyBarAction,
   type ReplyBarPlacement,
@@ -31,7 +32,26 @@ import { contextBridge, ipcRenderer } from "electron";
  * 频道名与载荷类型来自 shared 契约，禁止在此之外新增 IPC 通道。
  */
 const isPackaged = process.argv.includes("--answra-packaged=true");
+const isMarkdownWindow = process.argv.some((argument) =>
+  argument.startsWith("--answra-markdown-path="),
+);
 const bridge: DesktopBridge = {
+  ...(isMarkdownWindow
+    ? {
+        markdownGetDocument: () => ipcRenderer.invoke(MarkdownChannels.GetDocument),
+        markdownSaveDocument: (text: string) =>
+          ipcRenderer.invoke(MarkdownChannels.SaveDocument, { text }),
+        markdownOpenDocument: () => ipcRenderer.invoke(MarkdownChannels.OpenDocument),
+        markdownResolveImage: (reference: string) =>
+          ipcRenderer.invoke(MarkdownChannels.ResolveImage, { reference }),
+        onMarkdownChanged: (listener: (change: { path: string }) => void) => {
+          const wrapped = (_event: Electron.IpcRendererEvent, change: { path: string }) =>
+            listener(change);
+          ipcRenderer.on(MarkdownChannels.Changed, wrapped);
+          return () => ipcRenderer.removeListener(MarkdownChannels.Changed, wrapped);
+        },
+      }
+    : {}),
   isPackaged,
   // 面试对话尚未开发完且安装版不带本地 ASR 模型：打包态置 false，UI 渲染「暂不支持」入口。
   interviewAvailable: !isPackaged,

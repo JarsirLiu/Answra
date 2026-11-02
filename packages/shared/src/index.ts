@@ -7,6 +7,7 @@ export type {
   InterviewPcmFrame,
   InterviewSpeaker,
   InterviewState,
+  MarkdownDocument,
 } from "./channels";
 export {
   ActiveChatConversationId,
@@ -50,6 +51,8 @@ export {
   type InterviewChannelMap,
   InterviewChannels,
   isAuthRequiredError,
+  type MarkdownChannelMap,
+  MarkdownChannels,
   type RegionCaptureOptions,
   type RegionRect,
   type RegionSelection,

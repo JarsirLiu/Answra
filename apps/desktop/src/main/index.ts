@@ -18,6 +18,7 @@ import { ModelSettingsStore, modelSettingsFilePath } from "./conversation/modelS
 import { loadDevDotEnv } from "./devEnv";
 import { registerAmbientIpc } from "./ipc/ambientIpc";
 import { registerWindowIpc } from "./ipc/windowIpc";
+import { isMarkdownPath, openMarkdownDocument, registerMarkdownIpc } from "./markdown";
 import { applyPendingUpdateOnLaunch } from "./updater/applyPendingUpdate";
 import { createMacSwapInstaller } from "./updater/macUpdateSwap";
 import { createUpdateController } from "./updater/updateController";
@@ -79,6 +80,7 @@ const agentService = new AgentService({
 
 // 授权回跳可能早于服务就绪（冷启动走深链）：先排队，等 restore 载入待处理登录后再消费。
 const queuedAuthUrls: string[] = [];
+const queuedMarkdownPaths: string[] = process.argv.filter(isMarkdownPath);
 let authReady = false;
 function routeAuthCallback(url: string): void {
   if (authReady) {
@@ -100,7 +102,11 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   registerAuthLifecycle({
     onCallbackUrl: (url) => routeAuthCallback(url),
-    onSecondInstance: () => getWindow()?.focus(),
+    onSecondInstance: (argv) => {
+      const candidate = argv.find(isMarkdownPath);
+      if (candidate) void openMarkdownDocument(candidate);
+      else getWindow()?.focus();
+    },
   });
 
   app.whenReady().then(async () => {
@@ -118,6 +124,7 @@ if (!app.requestSingleInstanceLock()) {
     // 读盘依赖 safeStorage 就绪；放在注册会话 IPC 之前，避免首次拉取设置时回退到默认值。
     await modelSettings.init();
     registerWindowIpc();
+    registerMarkdownIpc();
     registerCaptureIpc();
     if (__ANSWRA_FEATURE_INTERVIEW__) {
       const { registerInterviewIpc } = await import("./interview/interviewIpc");
@@ -166,6 +173,7 @@ if (!app.requestSingleInstanceLock()) {
     });
     disposeUpdateIpc = registerUpdateIpc(updateController);
     createManagedMainWindow();
+    for (const filePath of queuedMarkdownPaths.splice(0)) void openMarkdownDocument(filePath);
     void authService
       .restore()
       .catch((error) => console.warn("[auth] 登录态恢复失败", error))
@@ -185,6 +193,11 @@ if (!app.requestSingleInstanceLock()) {
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createManagedMainWindow();
+  });
+
+  app.on("open-file", (event, filePath) => {
+    event.preventDefault();
+    if (isMarkdownPath(filePath)) void openMarkdownDocument(filePath);
   });
 
   app.on("window-all-closed", () => app.quit());

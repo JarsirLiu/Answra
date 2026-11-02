@@ -6,10 +6,10 @@
   "type": "module",
   "main": "out/main/index.cjs",
   "scripts": {
-    "dev": "pnpm dev:answer",
+    "dev": "pnpm dev:full",
     "dev:answer": "pnpm build:electron -- --profile=answer && concurrently -k \"vite --mode answer --host 127.0.0.1 --port 5180 --strictPort\" \"wait-on http://127.0.0.1:5180 && electron .\"",
     "dev:full": "pnpm build:electron -- --profile=full && concurrently -k \"vite --mode full --host 127.0.0.1 --port 5180 --strictPort\" \"wait-on http://127.0.0.1:5180 && electron .\"",
-    "dev:web": "vite --mode answer --host 127.0.0.1 --port 5180 --strictPort",
+    "dev:web": "vite --mode full --host 127.0.0.1 --port 5180 --strictPort",
     "dev:web:full": "vite --mode full --host 127.0.0.1 --port 5180 --strictPort",
     "build": "pnpm build:electron -- --profile=full && vite build --mode full",
     "build:answer": "pnpm build:electron -- --profile=answer && vite build --mode answer",
@@ -61,6 +61,14 @@
     "win": {
       "target": [
         "nsis"
+      ],
+      "fileAssociations": [
+        {
+          "ext": "md",
+          "name": "Markdown document",
+          "description": "Markdown document",
+          "role": "Editor"
+        }
       ]
     },
     "mac": {
@@ -75,7 +83,33 @@
       "hardenedRuntime": false,
       "extendInfo": {
         "NSMicrophoneUsageDescription": "Answra 需要使用麦克风录入面试语音，用于本地转录与实时回答建议。",
-        "NSScreenCaptureUsageDescription": "Answra 需要读取屏幕内容以生成笔试截图回复与实时面试建议。"
+        "NSScreenCaptureUsageDescription": "Answra 需要读取屏幕内容以生成笔试截图回复与实时面试建议。",
+        "CFBundleDocumentTypes": [
+          {
+            "CFBundleTypeName": "Markdown document",
+            "CFBundleTypeRole": "Editor",
+            "LSItemContentTypes": [
+              "net.daringfireball.markdown"
+            ]
+          }
+        ],
+        "UTExportedTypeDeclarations": [
+          {
+            "UTTypeIdentifier": "net.daringfireball.markdown",
+            "UTTypeDescription": "Markdown document",
+            "UTTypeConformsTo": [
+              "public.text"
+            ],
+            "UTTypeTagSpecification": {
+              "public.filename-extension": [
+                "md"
+              ],
+              "public.mime-type": [
+                "text/markdown"
+              ]
+            }
+          }
+        ]
       }
     },
     "publish": {

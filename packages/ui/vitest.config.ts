@@ -12,5 +12,7 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./test/setup.ts"],
+    // 懒加载运行时首次动态 import 会叠加到单测用时上，默认 5 秒在并行跑全量时不够。
+    testTimeout: 15_000,
   },
 });

@@ -1,6 +1,8 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TextResponse } from "../src/components/chat/TextResponse";
+// 预热懒加载 Markdown 运行时，避免并发全量测试时动态 import 排队超过断言等待窗口。
+import "../src/components/markdown/MarkdownRuntime";
 
 let previousClipboard: PropertyDescriptor | undefined;
 
@@ -24,6 +26,7 @@ describe("TextResponse code blocks", () => {
     setClipboard(writeText);
     render(<TextResponse text={"```typescript\nconst answer = 42;\n```"} />);
 
+    expect(await screen.findByText("typescript")).toBeInTheDocument();
     const codeBlock = document.querySelector("[class*='codeBlock']");
     expect(codeBlock).not.toBeNull();
     expect(codeBlock).toContainElement(screen.getByText("typescript"));

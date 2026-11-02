@@ -9,6 +9,8 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import type { UIMessageChunk } from "ai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FloatingBarApp } from "../src/app/FloatingBarApp";
+// 预热懒加载 Markdown 运行时，避免并发全量测试时动态 import 排队超过断言等待窗口。
+import "../src/components/markdown/MarkdownRuntime";
 import { ICON } from "../src/tokens";
 
 let emitConversationEvent: ((event: { runId: string; chunk: UIMessageChunk }) => void) | undefined;

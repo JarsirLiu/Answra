@@ -1,5 +1,6 @@
 import type { DesktopBridge, WorkspaceFileContent } from "@answra/shared";
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { LazyMarkdownRuntime } from "../../markdown/LazyMarkdownRuntime";
 import { pasteImageName, resolveRelative, toResourceUrl } from "./fileKind";
 import { ZoomablePreview } from "./ZoomablePreview";
 import "./WorkspacePanel.css";
@@ -330,16 +331,6 @@ export function MarkdownEditorPane({
   );
 }
 
-/** react-markdown 组件在预览态用到的最小属性面（避免暴露完整 Options 泛型）。 */
-interface MarkdownRendererProps {
-  children?: string;
-  remarkPlugins?: unknown[];
-  rehypePlugins?: unknown[];
-  components?: {
-    img?: (props: { src?: unknown; alt?: unknown }) => ReactNode;
-  };
-}
-
 /**
  * 预览态：react-markdown + remark-gfm + remark-math + rehype-raw（渲染内嵌 HTML，如 br/a），
  * rehype-sanitize 兜底白名单，rehype-katex 渲染公式；图片走 answra-file 协议。
@@ -348,38 +339,11 @@ interface MarkdownRendererProps {
  * 内嵌 HTML，再由 KaTeX 依据可信文本生成公式 HTML。
  */
 function MarkdownStaticPreview({ text, dir }: { text: string; dir: string }) {
-  const [renderer, setRenderer] = useState<null | ((props: MarkdownRendererProps) => ReactNode)>(
-    null,
-  );
-  const [plugins, setPlugins] = useState<{ remark: unknown[]; rehype: unknown[] } | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    void Promise.all([
-      import("react-markdown"),
-      import("remark-gfm"),
-      import("remark-math"),
-      import("rehype-raw"),
-      import("rehype-sanitize"),
-      import("rehype-katex"),
-    ]).then(([markdownModule, gfmModule, mathModule, rawModule, sanitizeModule, katexModule]) => {
-      if (cancelled) return;
-      setRenderer(() => markdownModule.default as (props: MarkdownRendererProps) => ReactNode);
-      setPlugins({
-        remark: [gfmModule.default, mathModule.default],
-        rehype: [rawModule.default, sanitizeModule.default, katexModule.default],
-      });
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-  if (!renderer || !plugins) return <div className="workspace-preview-status">预览加载中…</div>;
-  const ReactMarkdown = renderer;
   return (
     <div className="workspace-preview-markdown">
-      <ReactMarkdown
-        remarkPlugins={plugins.remark}
-        rehypePlugins={plugins.rehype}
+      <LazyMarkdownRuntime
+        mode="safe-preview"
+        fallback={<div className="workspace-preview-status">预览加载中…</div>}
         components={{
           img: ({ src, alt }) => {
             if (typeof src !== "string") return null;
@@ -390,7 +354,7 @@ function MarkdownStaticPreview({ text, dir }: { text: string; dir: string }) {
         }}
       >
         {text}
-      </ReactMarkdown>
+      </LazyMarkdownRuntime>
     </div>
   );
 }

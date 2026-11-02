@@ -2,7 +2,7 @@ import type { BrowserWindow } from "electron";
 import { setWindowCaptureProtection } from "./windowCaptureProtection";
 import { isNonActivatingPlatform } from "./windowInteractionPolicy";
 
-export type WindowRole = "main" | "reply-bar" | "selection-overlay";
+export type WindowRole = "main" | "reply-bar" | "selection-overlay" | "markdown-document";
 export type CaptureProtectionPolicy = "stealth-only" | "always" | "never";
 export type WindowFocusEvent = {
   window: BrowserWindow;
@@ -23,7 +23,7 @@ export interface WindowSurfaceRegistryOptions {
 }
 
 interface SurfacePolicy {
-  alwaysOnTopLevel: "floating" | "pop-up-menu" | "screen-saver";
+  alwaysOnTopLevel: "none" | "floating" | "pop-up-menu" | "screen-saver";
   /** `stealth` surfaces are non-activating while stealth is on, or unknown at startup. */
   nonActivating: "always" | "stealth" | "never";
 }
@@ -43,6 +43,7 @@ const SURFACE_POLICIES: Record<WindowRole, SurfacePolicy> = {
   main: { alwaysOnTopLevel: "floating", nonActivating: "stealth" },
   "reply-bar": { alwaysOnTopLevel: "floating", nonActivating: "stealth" },
   "selection-overlay": { alwaysOnTopLevel: "screen-saver", nonActivating: "always" },
+  "markdown-document": { alwaysOnTopLevel: "none", nonActivating: "never" },
 };
 
 const DEFAULT_OPTIONS: WindowSurfaceRegistryOptions = {
@@ -201,7 +202,8 @@ export function createWindowSurfaceRegistry(
   function applySurfacePolicy(window: BrowserWindow, role: WindowRole): void {
     if (window.isDestroyed()) return;
     const policy = SURFACE_POLICIES[role];
-    window.setAlwaysOnTop(true, policy.alwaysOnTopLevel);
+    if (policy.alwaysOnTopLevel === "none") window.setAlwaysOnTop(false);
+    else window.setAlwaysOnTop(true, policy.alwaysOnTopLevel);
     if (!isNonActivatingPlatform(options.platform ?? process.platform)) return;
     const nonActivating = isNonActivatingPolicy(policy);
     // Main and reply surfaces are unfocusable for the entire stealth lifetime;

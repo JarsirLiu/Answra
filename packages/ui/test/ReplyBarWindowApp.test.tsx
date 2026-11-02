@@ -9,6 +9,8 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import type { UIMessageChunk } from "ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ReplyBarWindowApp } from "../src/app/ReplyBarWindowApp";
+// 预热懒加载 Markdown 运行时，避免并发全量测试时动态 import 排队超过断言等待窗口。
+import "../src/components/markdown/MarkdownRuntime";
 
 const conversationId = "screenshot-01234567-89ab-4cde-8fab-0123456789ab";
 const runId = "run-live";
@@ -102,7 +104,7 @@ describe("ReplyBarWindowApp live conversation popover", () => {
 
     fireEvent.mouseEnter(document.querySelector(".reply-activity-viewport") as HTMLElement);
     expect(await screen.findByRole("region", { name: "当前对话" })).toBeInTheDocument();
-    expect(screen.getByText("初始")).toBeInTheDocument();
+    expect(await screen.findByText("初始")).toBeInTheDocument();
     expect(screen.getByText("文本").tagName).toBe("STRONG");
 
     act(() => {

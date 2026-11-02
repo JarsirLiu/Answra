@@ -10,6 +10,7 @@ import {
   type ConversationModelSettings,
   type ConversationSendCommand,
   type DesktopBridge,
+  MarkdownChannels,
   type RegionCaptureOptions,
   type ReplyBarAction,
   type ReplyBarPlacement,
@@ -23,8 +24,27 @@ import {
 } from "@answra/shared";
 import { contextBridge, ipcRenderer } from "electron";
 
-/** Answer profile preload API. Feature-specific IPC methods are absent from this bridge. */
+/** Answer profile preload API. Markdown methods are exposed only for document windows. */
+const isMarkdownWindow = process.argv.some((argument) =>
+  argument.startsWith("--answra-markdown-path="),
+);
 const bridge: DesktopBridge = {
+  ...(isMarkdownWindow
+    ? {
+        markdownGetDocument: () => ipcRenderer.invoke(MarkdownChannels.GetDocument),
+        markdownSaveDocument: (text: string) =>
+          ipcRenderer.invoke(MarkdownChannels.SaveDocument, { text }),
+        markdownOpenDocument: () => ipcRenderer.invoke(MarkdownChannels.OpenDocument),
+        markdownResolveImage: (reference: string) =>
+          ipcRenderer.invoke(MarkdownChannels.ResolveImage, { reference }),
+        onMarkdownChanged: (listener: (change: { path: string }) => void) => {
+          const wrapped = (_event: Electron.IpcRendererEvent, change: { path: string }) =>
+            listener(change);
+          ipcRenderer.on(MarkdownChannels.Changed, wrapped);
+          return () => ipcRenderer.removeListener(MarkdownChannels.Changed, wrapped);
+        },
+      }
+    : {}),
   fitContent: (size: ContentSize) => ipcRenderer.send(WindowChannels.FitContent, size),
   close: () => ipcRenderer.send(WindowChannels.Close),
   setReplyBarState: (state: ReplyBarState | null) =>
