@@ -35,6 +35,8 @@ export type OverlayMode = "closed" | "chat" | "interview" | "notes" | "settings"
 
 /** 渲染进程暴露给 UI 的桌面平台桥（由 preload 注入，测试可 mock）。 */
 export interface DesktopBridge {
+  /** Whether this renderer belongs to a packaged desktop application. */
+  isPackaged?: boolean;
   /**
    * 面试对话功能是否可用。安装版尚未内置本地 ASR 模型且面试流程未开发完，
    * 主进程按打包态下发 false，UI 把面试模式渲染成「暂不支持」入口；开发态为 true。

@@ -4,7 +4,12 @@ import { STEALTH_STORAGE_KEY } from "../model";
 
 /** 隐身状态、能力查询和主进程同步独立于主题开关。 */
 export function useMeetingStealth(platform: DesktopBridge | undefined) {
-  const [enabled, setEnabled] = useState(() => localStorage.getItem(STEALTH_STORAGE_KEY) === "on");
+  const [enabled, setEnabled] = useState(() => {
+    const preference = localStorage.getItem(STEALTH_STORAGE_KEY);
+    if (preference === "on") return true;
+    if (preference === "off") return false;
+    return platform?.isPackaged === true;
+  });
   const [supported, setSupported] = useState<boolean | null>(null);
 
   useEffect(() => {

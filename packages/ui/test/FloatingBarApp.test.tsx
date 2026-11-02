@@ -1084,6 +1084,33 @@ describe("three-segment floating navigation", () => {
     await waitFor(() => expect(bridge.setStealth).toHaveBeenCalledWith(false));
   });
 
+  it("enables meeting stealth by default in packaged builds unless the user turned it off", async () => {
+    const bridge = {
+      close: vi.fn(),
+      fitContent: vi.fn(),
+      getStealthSupport: vi.fn().mockResolvedValue(true),
+      isPackaged: true,
+      setStealth: vi.fn(),
+    };
+    const { unmount } = render(<FloatingBarApp bridge={bridge} />);
+    fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
+
+    const toggle = screen.getByRole("checkbox", { name: "会议隐身" });
+    expect(toggle).toBeChecked();
+    expect(document.documentElement).toHaveAttribute("data-stealth", "true");
+    expect(localStorage.getItem("answra-stealth")).toBeNull();
+    await waitFor(() => expect(bridge.setStealth).toHaveBeenCalledWith(true));
+
+    unmount();
+    localStorage.setItem("answra-stealth", "off");
+    const secondBridge = { ...bridge, setStealth: vi.fn() };
+    render(<FloatingBarApp bridge={secondBridge} />);
+    fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
+    expect(screen.getByRole("checkbox", { name: "会议隐身" })).not.toBeChecked();
+    expect(document.documentElement).not.toHaveAttribute("data-stealth");
+    await waitFor(() => expect(secondBridge.setStealth).toHaveBeenCalledWith(false));
+  });
+
   it("disables meeting stealth when the system does not support content protection", async () => {
     const bridge = {
       close: vi.fn(),

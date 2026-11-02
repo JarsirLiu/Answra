@@ -30,9 +30,11 @@ import { contextBridge, ipcRenderer } from "electron";
  * 渲染进程唯一 API 面：window.answra。
  * 频道名与载荷类型来自 shared 契约，禁止在此之外新增 IPC 通道。
  */
+const isPackaged = process.argv.includes("--answra-packaged=true");
 const bridge: DesktopBridge = {
+  isPackaged,
   // 面试对话尚未开发完且安装版不带本地 ASR 模型：打包态置 false，UI 渲染「暂不支持」入口。
-  interviewAvailable: !process.argv.includes("--answra-packaged=true"),
+  interviewAvailable: !isPackaged,
   fitContent: (size: ContentSize) => {
     ipcRenderer.send(WindowChannels.FitContent, size);
   },
