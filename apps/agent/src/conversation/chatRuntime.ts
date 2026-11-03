@@ -24,4 +24,15 @@ export class ChatConversationRuntime extends ConversationRuntime {
       profile.tools,
     );
   }
+
+  /** Generates an assistant turn for the last user message already in the store. */
+  async replyToLastUser(
+    profileId: ChatProfileId,
+    conversationId: string,
+    getAccessToken: () => Promise<string>,
+  ): Promise<{ runId: string }> {
+    const profile = CHAT_PROFILES[profileId];
+    if (!profile) throw new Error("未授权的对话能力配置");
+    return this.replyToLastUserWithProfile(profile, conversationId, getAccessToken);
+  }
 }

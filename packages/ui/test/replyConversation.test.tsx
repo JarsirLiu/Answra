@@ -92,7 +92,8 @@ function createFakeStore(): FakeStore {
           conversationId,
           revision: session.revision + 1,
           runId: "run-1",
-          chunk: { type: "text-delta", id: "text-1", delta: text },
+          seq: 1,
+          stream: { type: "text-delta", partId: "text-1", delta: text },
         },
       });
     },
@@ -106,6 +107,7 @@ function createFakeStore(): FakeStore {
         conversationId,
         revision: session.revision + 1,
         runId: "run-1",
+        outcome: "completed",
         message: { ...assistant },
       });
     },

@@ -7,15 +7,18 @@
   "exports": {
     ".": "./src/index.ts",
     "./channels": "./src/channels.ts",
-    "./env": "./src/env.ts"
+    "./env": "./src/env.ts",
+    "./schema": "./src/schema/index.ts"
   },
   "scripts": {
+    "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "ai": "6.0.303"
+    "zod": "4.6.5"
   },
   "devDependencies": {
-    "typescript": "~5.9.3"
+    "typescript": "~5.9.3",
+    "vitest": "^5.0.3"
   }
 }

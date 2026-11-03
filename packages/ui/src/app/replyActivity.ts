@@ -4,7 +4,7 @@ export function projectReplyActivity(
   current: ReplyBarActivity[],
   event: ConversationEvent,
 ): ReplyBarActivity[] {
-  const { chunk, runId } = event;
+  const { stream, runId } = event;
   const add = (activity: ReplyBarActivity, merge = false) => {
     const priorIndex = merge
       ? current.findIndex((item) => item.id === activity.id && item.kind === activity.kind)
@@ -16,58 +16,58 @@ export function projectReplyActivity(
     }
     return [...current, activity];
   };
-  if (chunk.type === "text-delta")
-    return add({ id: chunk.id, kind: "text", label: "", text: chunk.delta }, true);
-  if (chunk.type === "reasoning-delta")
-    return add({ id: chunk.id, kind: "thinking", label: "思考", text: chunk.delta }, true);
-  if (chunk.type === "tool-input-start")
+  if (stream.type === "text-delta")
+    return add({ id: stream.partId, kind: "text", label: "", text: stream.delta }, true);
+  if (stream.type === "reasoning-delta")
+    return add({ id: stream.partId, kind: "thinking", label: "思考", text: stream.delta }, true);
+  if (stream.type === "tool-input-start")
     return add({
-      id: `${chunk.toolCallId}:start`,
+      id: `${stream.toolCallId}:start`,
       kind: "tool",
-      label: `工具：${chunk.title ?? chunk.toolName}`,
+      label: `工具：${stream.title ?? stream.toolName}`,
       text: "准备调用",
     });
-  if (chunk.type === "tool-input-delta")
+  if (stream.type === "tool-input-delta")
     return add(
       {
-        id: `${chunk.toolCallId}:input`,
+        id: `${stream.toolCallId}:input`,
         kind: "tool",
         label: "工具参数",
-        text: chunk.inputTextDelta,
+        text: stream.delta,
       },
       true,
     );
-  if (chunk.type === "tool-input-available")
+  if (stream.type === "tool-call")
     return add({
-      id: `${chunk.toolCallId}:input-ready`,
+      id: `${stream.toolCallId}:input-ready`,
       kind: "tool",
-      label: `工具：${chunk.title ?? chunk.toolName}`,
-      text: formatValue(chunk.input),
+      label: `工具：${stream.toolName}`,
+      text: formatValue(stream.input),
     });
-  if (chunk.type === "tool-output-available")
+  if (stream.type === "tool-result")
     return add({
-      id: `${chunk.toolCallId}:output`,
+      id: `${stream.toolCallId}:output`,
       kind: "tool",
       label: "工具结果",
-      text: formatValue(chunk.output),
+      text: formatValue(stream.output),
     });
-  if (chunk.type === "tool-input-error" || chunk.type === "tool-output-error")
+  if (stream.type === "tool-error")
     return add({
-      id: `${chunk.toolCallId}:error`,
+      id: `${stream.toolCallId}:error`,
       kind: "error",
       label: "工具失败",
-      text: chunk.errorText,
+      text: stream.errorText,
     });
-  if (chunk.type === "error")
-    return add({ id: `${runId}:error`, kind: "error", label: "模型错误", text: chunk.errorText });
-  if (chunk.type === "start")
+  if (stream.type === "error")
+    return add({ id: `${runId}:error`, kind: "error", label: "模型错误", text: stream.errorText });
+  if (stream.type === "start")
     return add({ id: `${runId}:start`, kind: "status", label: "模型已连接，等待输出", text: "" });
-  if (chunk.type === "source-url" || chunk.type === "source-document")
+  if (stream.type === "source-url" || stream.type === "source-document")
     return add({
-      id: chunk.sourceId,
+      id: stream.sourceId,
       kind: "source",
       label: "来源",
-      text: chunk.type === "source-url" ? (chunk.title ?? chunk.url) : chunk.title,
+      text: stream.type === "source-url" ? (stream.title ?? stream.url) : stream.title,
     });
   return current;
 }

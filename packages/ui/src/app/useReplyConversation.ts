@@ -85,7 +85,7 @@ export function useReplyConversation(
         messages: current.messages.map((message) =>
           message.id === runId ? { ...message, activities: next } : message,
         ),
-        ...(event.chunk.type === "error" ? { error: event.chunk.errorText } : {}),
+        ...(event.stream.type === "error" ? { error: event.stream.errorText } : {}),
       }));
     };
 
@@ -113,8 +113,8 @@ export function useReplyConversation(
         }));
       } else if (change.type === "event") {
         const { event } = change;
-        if (event.chunk.type === "text-delta") {
-          const delta = event.chunk.delta;
+        if (event.stream.type === "text-delta") {
+          const delta = event.stream.delta;
           setState((current) => ({
             ...current,
             messages: current.messages.map((message) =>

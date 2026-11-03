@@ -77,7 +77,21 @@ function checkImports(pkg) {
 
   for (const file of walk(pkg.dir)) {
     const rel = path.relative(ROOT, file);
+    const normalizedRel = rel.replaceAll("\\", "/");
     const code = readFileSync(file, "utf8");
+
+    // 5. 事件 schema 单一来源：shared 不得绑定 AI SDK，AI SDK 消息类型只在 core 归一化层出现。
+    if (normalizedRel.startsWith("packages/shared/") && /(?:from|import)\s+["']ai["']/.test(code)) {
+      errors.push(`${rel}: packages/shared 不得依赖 AI SDK；事件类型请使用 @answra/shared/schema`);
+    }
+    if (
+      normalizedRel.startsWith("apps/agent/src/") &&
+      !normalizedRel.startsWith("apps/agent/src/core/") &&
+      /\bUIMessage(?:Chunk)?\b/.test(code) &&
+      /(?:from|import)\s+["']ai["']/.test(code)
+    ) {
+      errors.push(`${rel}: UIMessage/UIMessageChunk 只允许出现在 apps/agent/src/core/`);
+    }
 
     if (
       rel.replaceAll("\\", "/").startsWith("apps/desktop/src/main/") &&

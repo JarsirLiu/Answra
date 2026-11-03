@@ -17,6 +17,7 @@
 面试面板采用普通对话消息流与输入区风格，复用 `ChatPanel`/`ConversationComposer` 的消息呈现、`MessageStream`、`PanelShell` 和设计 token。空闲输入区提供小型麦克风按钮；启动后输入框区域替换为实时音量波形和停止控制。波形值必须来自当前麦克风 `MediaStream` 的实际电平采样，采集/会话停止或失败时释放采样资源并停止波形更新。
 
 语音源仅为麦克风，对应 `candidate` PCM source。VAD 产出的 `continuation` 片段只等待后续片段；自然 `utterance-end` 后 turn 聚合器按 `utteranceId/chunkIndex` 等待片段解码结果，所有片段有序且无 gap 时提交完整 turn。缺片、ASR 错误、session 失效或用户停止时不得把不完整文本作为已提交消息发送；停止时 segmenter 的 flush 不伪装成自然 turn-end。turn 提交后通过独立 append-only Conversation 命令写入 user message，不调用 `sendConversationMessage`/`chat-send`，不启动模型 run。手动文本输入走同一 append-only 用户消息路径。
+  > 2026-11-03 补充：candidate 阶段的目标已推进到「验证实时对话」，自动回复与开口打断见[candidate 语音对话的自动回复与开口打断](../../implemented/feature/2026-11-03-interview-candidate-voice-reply-loop.md)。本 Note 的 append-only 边界仍适用于手动文本；语音轮改为 user 消息落账后由回复状态机启动 assistant 回合。
 
 当前 turn 范围是一条 VAD utterance（含其 continuation chunks），不是跨多个静音 utterance 的语义合并。实机试用若显示句内停顿导致拆分，再基于可观察事件与标注重新调整 settle/合并窗口并另行记录；不以任意固定等待掩盖 turn 定义。
 

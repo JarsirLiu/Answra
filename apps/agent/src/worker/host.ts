@@ -22,6 +22,7 @@ import {
 import { InterviewVadPipeline } from "../interview/vad/pipeline";
 import type { TenVadSource } from "../interview/vad/tenVadEngine";
 import { toInterviewWorkerEvent } from "./interviewProjection";
+import { createInterviewReplyLoop } from "./interviewReply";
 import type { AgentCommand, AgentFrame } from "./protocol";
 
 /**
@@ -85,44 +86,8 @@ export function startAgentHost({
    * 重启 worker 才能恢复，而不是每个会话重复付出装配成本。
    */
   let recognizerAssembly: Promise<LocalParaformerAdapter> | undefined;
-  const turnAssembler = new InterviewTurnAssembler();
-  const turnSettlerInstance = new CandidateTurnSettler(
-    turnSettler ?? {
-      settleMs: DEFAULT_CANDIDATE_TURN_SETTLE_MS,
-      minTurnChars: MIN_CANDIDATE_TURN_CHARS,
-    },
-    {
-      // 窗口结算才进入对话：合并后的多条 committed turns 共享一条用户消息，
-      // 事件投影仍逐 turn 发出，保留真实 utterance 证据。
-      onSettled: (turns, text) => {
-        const first = turns[0];
-        if (!first) return;
-        void runtime
-          .appendUserMessage(first.conversationId, text)
-          .then(() => {
-            for (const turn of turns) emitInterviewEvent({ type: "turn-committed", turn });
-          })
-          .catch((error: unknown) => {
-            console.warn("[interview-turn] user message append failed", {
-              sessionId: first.sessionId,
-              error: error instanceof Error ? error.message : "unknown",
-            });
-          });
-      },
-    },
-  );
-  const interviewConversations = new Map<string, string>();
 
-  function loadTranscriptionProvider(): Promise<LocalParaformerAdapter> {
-    recognizerAssembly ??= optionsRecognizerLoad();
-    return recognizerAssembly;
-  }
-
-  function optionsRecognizerLoad(): Promise<LocalParaformerAdapter> {
-    return recognizer.load().then((assembly) => new LocalParaformerAdapter(assembly));
-  }
-
-  /** 专用于云端令牌刷新的等待表。Agent 工具不通过宿主请求执行。 */
+  /** 云端令牌的等待表：run 启动与 401 刷新共用同一条反向请求。 */
   const tokenRequests = new Map<
     string,
     {
@@ -133,7 +98,7 @@ export function startAgentHost({
   >();
   let requestSeq = 0;
 
-  function requestToken(): Promise<string> {
+  function requestAccessToken(options: { forceRefresh: boolean }): Promise<string> {
     const id = `token-request:${++requestSeq}`;
     return new Promise<string>((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -148,7 +113,12 @@ export function startAgentHost({
         reject,
         cleanup: () => clearTimeout(timer),
       });
-      transport.send({ version: 1, type: "token-request", id, forceRefresh: true });
+      transport.send({
+        version: 1,
+        type: "token-request",
+        id,
+        forceRefresh: options.forceRefresh,
+      });
     });
   }
 
@@ -156,8 +126,47 @@ export function startAgentHost({
     emit: (change) => transport.send({ version: 1, type: "change", change }),
     store,
     createTools: createAuthorizedConversationTools,
-    tokenProvider: requestToken,
+    tokenProvider: requestAccessToken,
   });
+
+  const replyLoop = createInterviewReplyLoop({
+    runtime,
+    requestAccessToken,
+    onTurnCommitted: (turn) => emitInterviewEvent({ type: "turn-committed", turn }),
+    onError: (stage, error) => {
+      console.warn("[interview-reply] failed", {
+        stage,
+        error: error instanceof Error ? error.message : "unknown",
+      });
+    },
+  });
+
+  const turnAssembler = new InterviewTurnAssembler();
+  const turnSettlerInstance = new CandidateTurnSettler(
+    turnSettler ?? {
+      settleMs: DEFAULT_CANDIDATE_TURN_SETTLE_MS,
+      minTurnChars: MIN_CANDIDATE_TURN_CHARS,
+    },
+    {
+      // 窗口结算才进入对话：合并后的多条 committed turns 共享一条用户消息，
+      // 事件投影仍逐 turn 发出，保留真实 utterance 证据；回复由 loop 串行启动。
+      onSettled: (turns, text) => {
+        const first = turns[0];
+        if (!first) return;
+        void replyLoop.turnSettled(first.conversationId, turns, text);
+      },
+    },
+  );
+  const interviewConversations = new Map<string, string>();
+
+  function loadTranscriptionProvider(): Promise<LocalParaformerAdapter> {
+    recognizerAssembly ??= optionsRecognizerLoad();
+    return recognizerAssembly;
+  }
+
+  function optionsRecognizerLoad(): Promise<LocalParaformerAdapter> {
+    return recognizer.load().then((assembly) => new LocalParaformerAdapter(assembly));
+  }
 
   const interviewAudio = new InterviewAudioIngress({
     emit: (event) => emitInterviewEvent(event),
@@ -186,7 +195,9 @@ export function startAgentHost({
       interviewConversations.delete(id);
       transcription.fail(id);
       interviewAudio.fail(id, code);
+      void replyLoop.stop();
     },
+    onSpeechActivity: (event) => replyLoop.speechStarted(event.source),
     onSegment: (segment) => {
       const conversationId = interviewConversations.get(segment.sessionId);
       if (conversationId) {
@@ -210,6 +221,7 @@ export function startAgentHost({
     disposed = true;
     // 运行时马上关闭：挂起内容不做异步结算，显式丢弃而非冒险 race。
     turnSettlerInstance.discardAll();
+    void replyLoop.stop();
     interviewVad.dispose();
     transcription.dispose();
     for (const pending of tokenRequests.values()) {
@@ -236,8 +248,10 @@ export function startAgentHost({
       if (!pending) return;
       tokenRequests.delete(command.id);
       pending.cleanup();
-      if (command.accessToken) pending.resolve(command.accessToken);
-      else pending.reject(new Error(command.error ?? "令牌刷新失败"));
+      // 本地端点可以合法地返回空 token（不需要 Authorization）；只有显式 error
+      // 才是失败，不能把空字符串当成“没有回答”。
+      if (command.error !== undefined) pending.reject(new Error(command.error));
+      else pending.resolve(command.accessToken ?? "");
       return;
     }
     if (command.type === "interview-audio-frame") {
@@ -281,6 +295,7 @@ export function startAgentHost({
     switch (command.type) {
       case "interview-start": {
         await runtime.createConversation(command.conversationId);
+        replyLoop.start();
         interviewConversations.set(command.sessionId, command.conversationId);
         interviewAudio.start(
           asSessionId(command.sessionId),
@@ -299,6 +314,7 @@ export function startAgentHost({
           interviewAudio.fail(asSessionId(command.sessionId), "runtime-failed");
           interviewConversations.delete(command.sessionId);
           clearAudioCredits(command.sessionId);
+          void replyLoop.stop();
           throw error;
         }
         return undefined;
@@ -315,10 +331,12 @@ export function startAgentHost({
         transcription.fail(asSessionId(command.sessionId));
         interviewAudio.fail(asSessionId(command.sessionId), "capture-failed");
         clearAudioCredits(command.sessionId);
+        void replyLoop.stop();
         return undefined;
       case "interview-stop":
         // 停止即结算：用户刚说完就按停，不再等 settle 窗口，内容不丢。
         turnSettlerInstance.flush(asSessionId(command.sessionId));
+        void replyLoop.stop();
         turnAssembler.reset(asSessionId(command.sessionId));
         interviewConversations.delete(command.sessionId);
         interviewVad.stop(asSessionId(command.sessionId));

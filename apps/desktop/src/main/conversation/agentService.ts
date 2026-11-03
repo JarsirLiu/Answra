@@ -119,6 +119,11 @@ export class AgentService {
   }
 
   async startInterview(sessionId: string, conversationId: string): Promise<void> {
+    // 面试语音会直接触发模型回复：先按普通发送同一门禁准备端点与凭据。
+    // 未登录/未配置时显式失败，不进入「只采集不回复」的降级状态。
+    await this.request("workspace-context", { root: this.deps.getWorkspaceRoot() });
+    const { config } = await this.deps.resolveModel();
+    await this.ensureConfigured(config);
     await this.request("interview-start", { sessionId, conversationId });
   }
 

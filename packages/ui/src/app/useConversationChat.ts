@@ -6,13 +6,8 @@ import type {
   DesktopBridge,
   ReplyBarActivity,
 } from "@answra/shared";
-import {
-  type ChatTransport,
-  type FileUIPart,
-  type UIMessage,
-  type UIMessageChunk,
-  uiMessageChunkSchema,
-} from "ai";
+import type { RunOutcome } from "@answra/shared/schema";
+import type { ChatTransport, FileUIPart, UIMessage, UIMessageChunk } from "ai";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChatAttachment, ChatMessage } from "../components/panels/ChatPanel";
 import { projectReplyActivity } from "./replyActivity";
@@ -61,8 +56,8 @@ function useAiConversation(
                 change.event.revision <= initial.revision
               ) {
                 setReplyActivities((current) => projectReplyActivity(current, change.event));
-                if (change.event.chunk.type === "error")
-                  setReplyError(change.event.chunk.errorText);
+                if (change.event.stream.type === "error")
+                  setReplyError(change.event.stream.errorText);
               }
             }
           }
@@ -102,7 +97,8 @@ function useAiConversation(
         revisionRef.current = change.revision;
         runIdRef.current = undefined;
         setSendPending(false);
-        runCancelledRef.current = change.message.status === "interrupted";
+        runCancelledRef.current = change.outcome === "aborted" || change.outcome === "superseded";
+        if (change.outcome === "failed") runErrorRef.current ??= "模型请求失败";
         setActiveRunId(undefined);
         if (runErrorRef.current) waiterRef.current?.reject(new Error(runErrorRef.current));
         else waiterRef.current?.resolve();
@@ -112,8 +108,7 @@ function useAiConversation(
       const { event } = change;
       if (event.conversationId !== conversationId || event.revision <= revisionRef.current) return;
       revisionRef.current = event.revision;
-      if (event.chunk.type === "error") runErrorRef.current = event.chunk.errorText;
-      if (event.chunk.type === "abort") runCancelledRef.current = true;
+      if (event.stream.type === "error") runErrorRef.current = event.stream.errorText;
     };
     const onChange = (change: ConversationChange) => {
       changeQueue = changeQueue
@@ -160,9 +155,12 @@ function useAiConversation(
         );
         let controller: ReadableStreamDefaultController<UIMessageChunk> | undefined;
         const queue: UIMessageChunk[] = [];
+        const earlyEvents: ConversationEvent[] = [];
         let runId: string | undefined;
+        let earlyOutcome: RunOutcome | undefined;
         let closed = false;
         let eventQueue = Promise.resolve();
+        let unsubscribe: () => void = () => undefined;
         const flush = () => {
           while (controller && queue.length) {
             const chunk = queue.shift();
@@ -170,30 +168,40 @@ function useAiConversation(
             controller.enqueue(chunk);
           }
         };
-        const onChange = (change: ConversationChange) => {
-          if (change.type !== "event") return;
-          const { event } = change;
-          if (event.conversationId !== conversationId || (runId && event.runId !== runId)) return;
-          eventQueue = eventQueue.then(async () => {
-            if (closed) return;
-            if (!runId) {
-              earlyEvents.push(event);
-              return;
-            }
-            if (event.runId !== runId) return;
-            await acceptEvent(event);
-          });
-        };
-        const earlyEvents: ConversationEvent[] = [];
-        const unsubscribe = platform.onConversationChange?.(onChange) ?? (() => undefined);
         const abort = () => {
           if (runId) platform?.cancelConversationRun?.(runId);
         };
-        const acceptEvent = async (event: ConversationEvent) => {
-          const validation = await uiMessageChunkSchema().validate?.(event.chunk);
-          if (!validation || validation.success === false)
-            throw new Error("收到无效的 AI 消息事件");
-          const chunk = validation.value;
+        const close = (outcome: RunOutcome) => {
+          if (closed) return;
+          if (!runId) {
+            earlyOutcome = outcome;
+            return;
+          }
+          queue.push(
+            outcome === "aborted" || outcome === "superseded"
+              ? { type: "abort", ...(outcome === "superseded" ? { reason: "superseded" } : {}) }
+              : { type: "finish", ...(outcome === "failed" ? { finishReason: "error" } : {}) },
+          );
+          flush();
+          closed = true;
+          unsubscribe();
+          abortSignal?.removeEventListener("abort", abort);
+          try {
+            controller?.close();
+          } catch {
+            /* The consumer already cancelled the stream. */
+          }
+          runIdRef.current = undefined;
+          setActiveRunId(undefined);
+          setSendPending(false);
+          if (outcome === "aborted" || outcome === "superseded") runCancelledRef.current = true;
+          if (runErrorRef.current) waiterRef.current?.reject(new Error(runErrorRef.current));
+          else waiterRef.current?.resolve();
+          waiterRef.current = undefined;
+        };
+        const acceptEvent = (event: ConversationEvent) => {
+          const chunk = toUIMessageChunk(event);
+          if (!chunk) return;
           queue.push(chunk);
           setReplyActivities((current) => projectReplyActivity(current, event));
           if (chunk.type === "error") {
@@ -201,24 +209,28 @@ function useAiConversation(
             setReplyError(chunk.errorText);
           }
           flush();
-          if (chunk.type === "finish" || chunk.type === "abort") {
-            closed = true;
-            unsubscribe();
-            abortSignal?.removeEventListener("abort", abort);
-            try {
-              controller?.close();
-            } catch {
-              /* The consumer already cancelled the stream. */
-            }
-            runIdRef.current = undefined;
-            setActiveRunId(undefined);
-            setSendPending(false);
-            if (chunk.type === "abort") runCancelledRef.current = true;
-            if (runErrorRef.current) waiterRef.current?.reject(new Error(runErrorRef.current));
-            else waiterRef.current?.resolve();
-            waiterRef.current = undefined;
-          }
         };
+        const onChange = (change: ConversationChange) => {
+          if (change.type === "run-finished") {
+            if (change.conversationId !== conversationId) return;
+            if (runId && change.runId !== runId) return;
+            eventQueue = eventQueue.then(() => close(change.outcome));
+            return;
+          }
+          if (change.type !== "event") return;
+          const { event } = change;
+          if (event.conversationId !== conversationId || (runId && event.runId !== runId)) return;
+          eventQueue = eventQueue.then(() => {
+            if (closed) return;
+            if (!runId) {
+              earlyEvents.push(event);
+              return;
+            }
+            if (event.runId !== runId) return;
+            acceptEvent(event);
+          });
+        };
+        unsubscribe = platform.onConversationChange?.(onChange) ?? (() => undefined);
         abortSignal?.addEventListener("abort", abort, { once: true });
         try {
           const command =
@@ -234,7 +246,8 @@ function useAiConversation(
           runId = result.runId;
           runIdRef.current = runId;
           setActiveRunId(runId);
-          for (const event of earlyEvents) if (event.runId === runId) await acceptEvent(event);
+          for (const event of earlyEvents) if (event.runId === runId) acceptEvent(event);
+          if (earlyOutcome) close(earlyOutcome);
           return new ReadableStream<UIMessageChunk>({
             start(streamController) {
               controller = streamController;
@@ -415,6 +428,74 @@ async function blobUrlToDataUrl(url: string): Promise<string> {
     reader.onerror = () => reject(reader.error ?? new Error("无法读取图片"));
     reader.readAsDataURL(blob);
   });
+}
+
+function toUIMessageChunk(event: ConversationEvent): UIMessageChunk | undefined {
+  const stream = event.stream;
+  switch (stream.type) {
+    case "start":
+      return { type: "start", messageId: event.runId };
+    case "text-start":
+      return { type: "text-start", id: stream.partId };
+    case "text-end":
+      return { type: "text-end", id: stream.partId };
+    case "text-delta":
+      return { type: "text-delta", id: stream.partId, delta: stream.delta };
+    case "reasoning-start":
+      return { type: "reasoning-start", id: stream.partId };
+    case "reasoning-end":
+      return { type: "reasoning-end", id: stream.partId };
+    case "reasoning-delta":
+      return { type: "reasoning-delta", id: stream.partId, delta: stream.delta };
+    case "tool-input-start":
+      return {
+        type: "tool-input-start",
+        toolCallId: stream.toolCallId,
+        toolName: stream.toolName,
+        ...(stream.title === undefined ? {} : { title: stream.title }),
+      };
+    case "tool-input-delta":
+      return {
+        type: "tool-input-delta",
+        toolCallId: stream.toolCallId,
+        inputTextDelta: stream.delta,
+      };
+    case "tool-call":
+      return {
+        type: "tool-input-available",
+        toolCallId: stream.toolCallId,
+        toolName: stream.toolName,
+        input: stream.input,
+      };
+    case "tool-result":
+      return {
+        type: "tool-output-available",
+        toolCallId: stream.toolCallId,
+        output: stream.output,
+      };
+    case "tool-error":
+      return {
+        type: "tool-output-error",
+        toolCallId: stream.toolCallId,
+        errorText: stream.errorText,
+      };
+    case "source-url":
+      return {
+        type: "source-url",
+        sourceId: stream.sourceId,
+        url: stream.url,
+        ...(stream.title === undefined ? {} : { title: stream.title }),
+      };
+    case "source-document":
+      return {
+        type: "source-document",
+        sourceId: stream.sourceId,
+        mediaType: stream.mediaType,
+        title: stream.title,
+      };
+    case "error":
+      return { type: "error", errorText: stream.errorText };
+  }
 }
 
 function toUIMessage(message: ConversationMessage): UIMessage {

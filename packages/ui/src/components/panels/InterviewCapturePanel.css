@@ -24,6 +24,14 @@
   color: var(--icon);
 }
 
+/* 被新语音打断的助手消息只标记状态，不改变消息内容本身。 */
+.interview-message-status {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+
 /* 消息区空态提示：整块留白时垂直居中给出唯一引导。 */
 .interview-capture-empty {
   margin: auto;

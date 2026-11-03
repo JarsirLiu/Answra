@@ -24,6 +24,54 @@ describe("memory conversation store", () => {
     expect(changes[0]).not.toHaveProperty("activeRunId");
   });
 
+  it("claims a reply run for the last user message without duplicating it", async () => {
+    const store = new MemoryConversationStore();
+    await store.create("interview");
+    await store.appendUserMessage("interview", {
+      id: "user-1",
+      role: "user",
+      text: "请自我介绍",
+      images: [],
+      status: "complete",
+    });
+
+    const claimed = await store.beginReplyRun("interview", "run-1");
+
+    expect(claimed).toMatchObject({ id: "user-1", role: "user", text: "请自我介绍" });
+    const snapshot = await store.load("interview");
+    expect(snapshot.messages.map((message) => [message.id, message.role, message.status])).toEqual([
+      ["user-1", "user", "complete"],
+      ["run-1", "assistant", "streaming"],
+    ]);
+    expect(snapshot.activeRunId).toBe("run-1");
+  });
+
+  it("rejects a reply run without a complete user message", async () => {
+    const store = new MemoryConversationStore();
+    await store.create("interview");
+
+    await expect(store.beginReplyRun("interview", "run-1")).rejects.toThrow("没有可回复的用户消息");
+    expect((await store.load("interview")).messages).toEqual([]);
+  });
+
+  it("rejects a reply run while another run is active", async () => {
+    const store = new MemoryConversationStore();
+    await store.create("interview");
+    await store.beginRun("interview", "run-1", {
+      id: "user-1",
+      role: "user",
+      text: "first",
+      images: [],
+      status: "complete",
+    });
+
+    await expect(store.beginReplyRun("interview", "run-2")).rejects.toThrow("当前回复尚未完成");
+    expect((await store.load("interview")).messages.map((message) => message.id)).toEqual([
+      "user-1",
+      "run-1",
+    ]);
+  });
+
   it("assigns monotonic revisions and replays changes after a cursor", async () => {
     const store = new MemoryConversationStore();
     await store.create("session-a");
@@ -37,9 +85,9 @@ describe("memory conversation store", () => {
     const first = await store.appendEvent({
       conversationId: "session-a",
       runId: "run-1",
-      chunk: { type: "text-delta", id: "text-1", delta: "answer" },
+      stream: { type: "text-delta", partId: "text-1", delta: "answer" },
     });
-    await store.finishRun("session-a", "run-1", "complete");
+    await store.finishRun("session-a", "run-1", "completed");
 
     const snapshot = await store.load("session-a");
     expect(snapshot.messages.map((message) => message.id)).toEqual(["user-1", "run-1"]);
@@ -72,7 +120,7 @@ describe("memory conversation store", () => {
       await store.appendEvent({
         conversationId: "session-b",
         runId: "run-1",
-        chunk: { type: "text-delta", id: "text-1", delta: "x" },
+        stream: { type: "text-delta", partId: "text-1", delta: "x" },
       });
     }
 
@@ -118,9 +166,9 @@ describe("memory conversation store", () => {
     await store.appendEvent({
       conversationId: "session-e",
       runId: "run-1",
-      chunk: { type: "text-delta", id: "text-1", delta: "答案：A" },
+      stream: { type: "text-delta", partId: "text-1", delta: "答案：A" },
     });
-    await store.finishRun("session-e", "run-1", "complete");
+    await store.finishRun("session-e", "run-1", "completed");
     const before = await store.load("session-e");
 
     await store.beginEphemeralRun("session-e", "run-2", {
@@ -186,7 +234,7 @@ describe("memory conversation store", () => {
     expect(snapshot.activeRunId).toBe("run-1");
     expect(snapshot.messages.map((message) => message.id)).toEqual(["user-1", "run-1"]);
 
-    await store.finishRun("session-g", "run-1", "complete");
+    await store.finishRun("session-g", "run-1", "completed");
     const changes: import("@answra/shared").ConversationChange[] = [];
     store.subscribe((change) => changes.push(change));
     await store.clear("session-g");
@@ -215,7 +263,7 @@ describe("memory conversation store", () => {
       images: [],
       status: "complete",
     });
-    await store.finishRun("session-h", "run-1", "complete");
+    await store.finishRun("session-h", "run-1", "completed");
     await store.clear("session-h");
 
     const snapshot = await store.load("session-h");

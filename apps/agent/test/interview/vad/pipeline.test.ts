@@ -170,6 +170,26 @@ describe("interview vad pipeline", () => {
     expect(failures).toHaveLength(0);
   });
 
+  it("publishes speech activity for reply policy without changing segmentation", async () => {
+    const events: import("../../../src/interview/contracts").SpeechActivityEvent[] = [];
+    const { engine } = makeEngine([hopProgram(66, [{ fromHop: 0, untilHop: 18 }])]);
+    const pipeline = new InterviewVadPipeline({
+      vad: { load: () => Promise.resolve(engine) },
+      failSession: () => undefined,
+      onSpeechActivity: (event) => events.push(event),
+    });
+    await pipeline.start(TEST_SESSION);
+
+    for (let frame = 0; frame < 11; frame += 1) {
+      pipeline.handleFrame(makeFrame("candidate", frame, TEST_FRAME_SAMPLES, loudSpeechValue));
+    }
+
+    expect(events.map((event) => event.type)).toEqual(["speech-started", "speech-ended"]);
+    expect(events[0]).toMatchObject({ source: "candidate", sessionId: TEST_SESSION });
+    expect(pipeline.stagedSegments("capture-1")).toHaveLength(1);
+    pipeline.dispose();
+  });
+
   it("memoizes a single engine load and rethrows failures for later sessions without failing them", async () => {
     const load = vi.fn(() => Promise.reject(new Error("VAD 资源缺失，请运行 vad:prepare")));
     const { pipeline, failures } = makePipeline({ load });

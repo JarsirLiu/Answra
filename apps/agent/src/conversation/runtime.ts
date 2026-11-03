@@ -7,7 +7,10 @@ import {
   type ConversationModelConfig,
   type ConversationSendRequest,
 } from "@answra/shared";
+import type { AgentStreamEvent, RunOutcome } from "@answra/shared/schema";
 import { type ModelMessage, stepCountIs, streamText, type ToolSet } from "ai";
+import { RunRegistry } from "../core/run/registry";
+import { normalizeStreamChunk } from "../core/streamEvents";
 import { ANSWER_PROFILE } from "./answerProfile";
 import { parseDataUrl, validateRequest } from "./requestContent";
 import { type ConversationStore, createUserMessage, MemoryConversationStore } from "./store";
@@ -18,6 +21,14 @@ import type { ConversationToolId } from "./tools/types";
 const ANSWER_TEMPERATURE = 0.3;
 /** 答题优先降低内部推理开销；不支持的 OpenAI-compatible 端点通常会忽略。 */
 const ANSWER_REASONING_EFFORT = "low";
+
+/** 生成 assistant 回合所需的领域策略；各领域自持 profile，不借用对话配置。 */
+export interface ReplyProfile {
+  systemPrompt: string;
+  includeHistory: boolean;
+  injectTime?: boolean;
+  tools: readonly ConversationToolId[];
+}
 
 export interface ConversationRuntimeOptions {
   emit: (change: ConversationChange) => void;
@@ -36,7 +47,7 @@ export interface ConversationRuntimeOptions {
 
 export class ConversationRuntime {
   private config?: ConversationModelConfig;
-  private readonly runs = new Map<string, AbortController>();
+  private readonly runs = new RunRegistry();
   private readonly store: ConversationStore;
   private readonly unsubscribeStore: () => void;
   private readonly tokenProvider?: (options: { forceRefresh: boolean }) => Promise<string>;
@@ -134,12 +145,12 @@ export class ConversationRuntime {
     // 多轮对话沿用 beginRun 的原子守卫。
     if (ephemeral) await this.store.beginEphemeralRun(conversationId, runId, userMessage);
     else await this.store.beginRun(conversationId, runId, userMessage);
-    this.runs.set(runId, controller);
+    this.trackRun(runId, controller);
     void this.execute(
       conversationId,
       runId,
       endpoint,
-      accessToken,
+      async () => accessToken,
       request,
       controller,
       systemPrompt,
@@ -152,18 +163,87 @@ export class ConversationRuntime {
     return { runId };
   }
 
+  /**
+   * Replies to the last complete user message with a caller-owned profile.
+   * The user message is already in the store, so this claims only the assistant turn.
+   */
+  async replyToLastUserWithProfile(
+    profile: ReplyProfile,
+    conversationId: string,
+    getAccessToken: () => Promise<string>,
+  ): Promise<{ runId: string }> {
+    return this.startReplyRun(
+      conversationId,
+      getAccessToken,
+      profile.systemPrompt,
+      profile.includeHistory,
+      profile.injectTime ?? false,
+      profile.tools,
+    );
+  }
+
+  /**
+   * Replies to the last complete user message. The user message is already in the
+   * store, so this claims only the assistant turn and never duplicates the input.
+   */
+  protected async startReplyRun(
+    conversationId: string,
+    getAccessToken: () => Promise<string>,
+    systemPrompt: string,
+    includeHistory: boolean,
+    injectTime: boolean,
+    authorizedTools: readonly ConversationToolId[],
+  ): Promise<{ runId: string }> {
+    if (!this.config) throw new Error("云端模型服务尚未就绪");
+
+    const runId = randomUUID();
+    const controller = new AbortController();
+    const workspaceRoot = this.workspaceRoot;
+    const endpoint = this.config.chat;
+    // 认领与取最后一条 user 消息必须在同一步完成：先读快照再认领会让并发
+    // 追加的用户消息与本次请求错位，尤其会影响 includeHistory=false 的 profile。
+    const target = await this.store.beginReplyRun(conversationId, runId);
+    const request: ConversationSendRequest = { text: target.text, images: target.images };
+    this.trackRun(runId, controller);
+    // 令牌在 run 认领后、execute 内获取：换取失败也走 start/error/failed，
+    // 用户能在消息流里看到这一轮回复失败，而不是只收到一个已启动却无下文的 run。
+    void this.execute(
+      conversationId,
+      runId,
+      endpoint,
+      getAccessToken,
+      request,
+      controller,
+      systemPrompt,
+      includeHistory,
+      false,
+      injectTime,
+      authorizedTools,
+      workspaceRoot,
+    );
+    return { runId };
+  }
+
+  private trackRun(runId: string, controller: AbortController): void {
+    this.runs.register(runId, controller);
+  }
+
   cancel(runId: string): void {
-    this.runs.get(runId)?.abort();
+    this.runs.cancel(runId);
+  }
+
+  /** Completes after the run's `finishRun` and cleanup, whether it succeeded or was interrupted. */
+  waitForRun(runId: string): Promise<void> {
+    return this.runs.wait(runId);
   }
 
   dispose(): void {
-    for (const controller of this.runs.values()) controller.abort();
-    this.runs.clear();
+    this.runs.abortAll();
     this.unsubscribeStore();
   }
 
   get activeRunCount(): number {
-    return this.runs.size;
+    return this.runs.activeCount;
   }
 
   /**
@@ -220,7 +300,7 @@ export class ConversationRuntime {
     conversationId: string,
     runId: string,
     endpoint: ConversationCapabilityEndpoint,
-    accessToken: string,
+    getAccessToken: () => Promise<string>,
     request: ConversationSendRequest,
     controller: AbortController,
     systemPrompt: string,
@@ -233,18 +313,17 @@ export class ConversationRuntime {
     const startedAt = Date.now();
     const chunkCounts: Record<string, number> = {};
     let started = false;
-    let terminal = false;
     let failed = false;
-    const emitChunk = async (chunk: import("ai").UIMessageChunk) => {
-      chunkCounts[chunk.type] = (chunkCounts[chunk.type] ?? 0) + 1;
-      if (Object.keys(chunkCounts).length === 1 && chunkCounts[chunk.type] === 1)
-        console.info("[conversation][run] first chunk", { runId, type: chunk.type });
-      await this.store.appendEvent({ conversationId, runId, chunk });
-      if (chunk.type === "start") started = true;
-      if (chunk.type === "error") failed = true;
-      if (chunk.type === "finish" || chunk.type === "abort") terminal = true;
+    const emitStream = async (stream: AgentStreamEvent) => {
+      chunkCounts[stream.type] = (chunkCounts[stream.type] ?? 0) + 1;
+      if (Object.keys(chunkCounts).length === 1 && chunkCounts[stream.type] === 1)
+        console.info("[conversation][run] first chunk", { runId, type: stream.type });
+      await this.store.appendEvent({ conversationId, runId, stream });
+      if (stream.type === "start") started = true;
+      if (stream.type === "error") failed = true;
     };
     try {
+      const accessToken = await getAccessToken();
       console.info("[conversation][run] started", {
         runId,
         model: endpoint.model,
@@ -332,30 +411,31 @@ export class ConversationRuntime {
       for await (const chunk of result.toUIMessageStream({
         generateMessageId: () => runId,
         onError: (error) => (error instanceof Error ? error.message.slice(0, 300) : "模型请求失败"),
-      }))
-        await emitChunk(chunk);
+      })) {
+        const stream = normalizeStreamChunk(chunk);
+        if (stream) await emitStream(stream);
+      }
     } catch (error) {
       console.error("[conversation][run] failed", {
         runId,
         elapsedMs: Date.now() - startedAt,
         ...summarizeError(error),
       });
-      if (!started) await emitChunk({ type: "start", messageId: runId });
-      if (controller.signal.aborted) await emitChunk({ type: "abort" });
-      else {
-        await emitChunk({
+      if (!started) await emitStream({ type: "start" });
+      if (!controller.signal.aborted) {
+        await emitStream({
           type: "error",
           errorText: error instanceof Error ? error.message : "模型请求失败",
         });
-        await emitChunk({ type: "finish", finishReason: "error" });
+        failed = true;
       }
     } finally {
-      if (!terminal) await emitChunk({ type: "finish" });
-      await this.store.finishRun(
-        conversationId,
-        runId,
-        controller.signal.aborted ? "interrupted" : "complete",
-      );
+      const outcome: RunOutcome = controller.signal.aborted
+        ? "aborted"
+        : failed
+          ? "failed"
+          : "completed";
+      await this.store.finishRun(conversationId, runId, outcome);
       // 失败轮是用户可见结果，保留消息与 journal 供详情面板读取；成功/取消轮
       // 仍即时释放。下一轮 beginEphemeralRun 会清掉上一次的失败残留。
       if (ephemeral && !failed) await this.store.clear(conversationId);
@@ -365,7 +445,7 @@ export class ConversationRuntime {
         chunkCounts,
         cancelled: controller.signal.aborted,
       });
-      this.runs.delete(runId);
+      this.runs.finish(runId);
     }
   }
 }

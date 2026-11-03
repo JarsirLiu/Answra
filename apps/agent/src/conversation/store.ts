@@ -5,6 +5,7 @@ import type {
   ConversationSendRequest,
   ConversationSnapshot,
 } from "@answra/shared";
+import type { RunOutcome } from "@answra/shared/schema";
 
 export interface ConversationStore {
   create(conversationId: string): Promise<ConversationSnapshot>;
@@ -18,6 +19,12 @@ export interface ConversationStore {
   clear(conversationId: string): Promise<void>;
   load(conversationId: string): Promise<ConversationSnapshot>;
   beginRun(conversationId: string, runId: string, userMessage: ConversationMessage): Promise<void>;
+  /**
+   * 认领一次「回复最后一条用户消息」的运行：不写 user，只追加 streaming 的
+   * assistant 消息，并返回被认领的 user 消息。没有可回复的用户消息或已有活动
+   * run 时抛错，且不产生任何写入。
+   */
+  beginReplyRun(conversationId: string, runId: string): Promise<ConversationMessage>;
   appendUserMessage(conversationId: string, userMessage: ConversationMessage): Promise<void>;
   /**
    * 一次性答题运行的认领原语：在同一步内完成「有活动 run 时抛
@@ -31,12 +38,8 @@ export interface ConversationStore {
     runId: string,
     userMessage: ConversationMessage,
   ): Promise<void>;
-  appendEvent(event: Omit<ConversationEvent, "revision">): Promise<ConversationChange>;
-  finishRun(
-    conversationId: string,
-    runId: string,
-    status: "complete" | "interrupted",
-  ): Promise<void>;
+  appendEvent(event: Omit<ConversationEvent, "revision" | "seq">): Promise<ConversationChange>;
+  finishRun(conversationId: string, runId: string, outcome: RunOutcome): Promise<void>;
   readAfter(conversationId: string, revision: number): Promise<ConversationChange[]>;
   subscribe(listener: (change: ConversationChange) => void): () => void;
 }
@@ -44,6 +47,8 @@ export interface ConversationStore {
 type Session = {
   snapshot: ConversationSnapshot;
   journal: ConversationChange[];
+  /** Per-run content sequence, reset when the run or session is cleared. */
+  seqByRun: Map<string, number>;
 };
 
 /** Process-local adapter. SQLite can implement the same asynchronous port later. */
@@ -57,6 +62,7 @@ export class MemoryConversationStore implements ConversationStore {
     const session: Session = {
       snapshot: { conversationId, revision: 0, messages: [] },
       journal: [],
+      seqByRun: new Map(),
     };
     this.sessions.set(conversationId, session);
     return cloneSnapshot(session.snapshot);
@@ -72,6 +78,7 @@ export class MemoryConversationStore implements ConversationStore {
     if (!session || session.snapshot.activeRunId) return;
     session.snapshot.messages = [];
     session.journal = [];
+    session.seqByRun.clear();
     session.snapshot.revision += 1;
     this.publish({ type: "snapshot", snapshot: cloneSnapshot(session.snapshot) }, session);
   }
@@ -107,6 +114,36 @@ export class MemoryConversationStore implements ConversationStore {
       },
       session,
     );
+  }
+
+  async beginReplyRun(conversationId: string, runId: string): Promise<ConversationMessage> {
+    const session = this.requireSession(conversationId);
+    if (session.snapshot.activeRunId) throw new Error("当前回复尚未完成");
+    const last = session.snapshot.messages.at(-1);
+    if (last?.role !== "user" || last.status !== "complete")
+      throw new Error("没有可回复的用户消息");
+    const claimedUser = cloneMessage(last);
+    const assistantMessage: ConversationMessage = {
+      id: runId,
+      role: "assistant",
+      text: "",
+      images: [],
+      status: "streaming",
+    };
+    session.snapshot.messages.push(assistantMessage);
+    session.snapshot.activeRunId = runId;
+    session.snapshot.revision += 1;
+    this.publish(
+      {
+        type: "messages-appended",
+        conversationId,
+        revision: session.snapshot.revision,
+        messages: [assistantMessage],
+        activeRunId: runId,
+      },
+      session,
+    );
+    return claimedUser;
   }
 
   async appendUserMessage(conversationId: string, userMessage: ConversationMessage): Promise<void> {
@@ -153,6 +190,7 @@ export class MemoryConversationStore implements ConversationStore {
     session.snapshot.activeRunId = runId;
     session.snapshot.revision += 1;
     session.journal = [];
+    session.seqByRun.clear();
     this.publish(
       {
         type: "messages-appended",
@@ -165,30 +203,36 @@ export class MemoryConversationStore implements ConversationStore {
     );
   }
 
-  async appendEvent(event: Omit<ConversationEvent, "revision">): Promise<ConversationChange> {
+  async appendEvent(
+    event: Omit<ConversationEvent, "revision" | "seq">,
+  ): Promise<ConversationChange> {
     const session = this.requireSession(event.conversationId);
     if (session.snapshot.activeRunId !== event.runId) throw new Error("会话没有匹配的活动 run");
-    const stored: ConversationEvent = { ...event, revision: ++session.snapshot.revision };
-    if (stored.chunk.type === "text-delta") {
+    const seq = (session.seqByRun.get(event.runId) ?? 0) + 1;
+    session.seqByRun.set(event.runId, seq);
+    const stored: ConversationEvent = {
+      ...event,
+      seq,
+      revision: ++session.snapshot.revision,
+    };
+    if (stored.stream.type === "text-delta") {
       const message = session.snapshot.messages.find((item) => item.id === event.runId);
-      if (message) message.text += stored.chunk.delta;
+      if (message) message.text += stored.stream.delta;
     }
     const change: ConversationChange = { type: "event", event: stored };
     this.publish(change, session);
     return change;
   }
 
-  async finishRun(
-    conversationId: string,
-    runId: string,
-    status: "complete" | "interrupted",
-  ): Promise<void> {
+  async finishRun(conversationId: string, runId: string, outcome: RunOutcome): Promise<void> {
     const session = this.requireSession(conversationId);
     if (session.snapshot.activeRunId !== runId) return;
     const message = session.snapshot.messages.find((item) => item.id === runId);
     if (!message) return;
-    message.status = status;
+    message.status =
+      outcome === "completed" ? "complete" : outcome === "failed" ? "failed" : "interrupted";
     delete session.snapshot.activeRunId;
+    session.seqByRun.delete(runId);
     session.snapshot.revision += 1;
     this.publish(
       {
@@ -196,6 +240,7 @@ export class MemoryConversationStore implements ConversationStore {
         conversationId,
         revision: session.snapshot.revision,
         runId,
+        outcome,
         message: cloneMessage(message),
       },
       session,

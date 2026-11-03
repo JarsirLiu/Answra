@@ -24,6 +24,7 @@ import { ChatFeaturePanel } from "./ChatFeaturePanel";
 import type { InterviewCapturePort, InterviewCaptureState } from "./interviewCapture";
 import { useAppearanceController } from "./useAppearanceController";
 import { useScreenshotAnswer } from "./useConversationChat";
+import { useInterviewConversation } from "./useInterviewConversation";
 import { useReplyDetail } from "./useReplyDetail";
 import { useReplyWorkflow } from "./useReplyWorkflow";
 import { useSurfaceCoordinator } from "./useSurfaceCoordinator";
@@ -57,8 +58,16 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
   const [interviewCaptureState, setInterviewCaptureState] = useState<InterviewCaptureState>(
     interviewCapture?.getState() ?? { phase: "idle" },
   );
-  const [interviewMessages, setInterviewMessages] = useState<{ id: string; content: string }[]>([]);
+  const interviewConversation = useInterviewConversation(platform, ActiveInterviewConversationId);
   const [interviewError, setInterviewError] = useState<string>();
+  const lastInterviewMessage = interviewConversation.messages.at(-1);
+  const interviewReplyId =
+    lastInterviewMessage?.role === "assistant" ? lastInterviewMessage.id : undefined;
+  // 自动回复真正开始后，手动发送留下的旧错误已经过期；只清 transcript 侧
+  // 的错误不够，因为这里的 interviewError 优先级更高。
+  useEffect(() => {
+    if (interviewReplyId) setInterviewError(undefined);
+  }, [interviewReplyId]);
   const surfaces = useSurfaceCoordinator();
   const { panel, floatingLayers, featureSlot } = surfaces;
   const replyPhase = featureSlot.kind === "reply" ? (featureSlot.phase ?? "composing") : "closed";
@@ -115,47 +124,6 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
     setInterviewCaptureState(interviewCapture.getState());
     return interviewCapture.subscribe(setInterviewCaptureState);
   }, [interviewCapture]);
-  useEffect(() => {
-    if (!__ANSWRA_FEATURE_INTERVIEW__) return;
-    if (!platform?.createConversation || !platform.getConversationSnapshot) return;
-    let alive = true;
-    let revision = -1;
-    const apply = (change: import("@answra/shared").ConversationChange) => {
-      if (change.type === "snapshot") {
-        if (
-          change.snapshot.conversationId !== ActiveInterviewConversationId ||
-          change.snapshot.revision < revision
-        )
-          return;
-        revision = change.snapshot.revision;
-        setInterviewMessages(
-          change.snapshot.messages
-            .filter((message) => message.role === "user")
-            .map((message) => ({ id: message.id, content: message.text })),
-        );
-      } else if (change.type === "messages-appended") {
-        if (change.conversationId !== ActiveInterviewConversationId || change.revision <= revision)
-          return;
-        revision = change.revision;
-        setInterviewMessages((current) => [
-          ...current,
-          ...change.messages
-            .filter((message) => message.role === "user")
-            .map((message) => ({ id: message.id, content: message.text })),
-        ]);
-      }
-    };
-    const unsubscribe = platform.onConversationChange?.((change) => {
-      if (alive) apply(change);
-    });
-    void platform.createConversation(ActiveInterviewConversationId).then((snapshot) => {
-      if (alive) apply({ type: "snapshot", snapshot });
-    });
-    return () => {
-      alive = false;
-      unsubscribe?.();
-    };
-  }, [platform]);
   useEffect(() => {
     if (!authSignedIn || !platform?.getAnnouncements) return;
     let cancelled = false;
@@ -372,22 +340,27 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
           <InterviewCapturePanel
             capture={interviewCapture}
             state={interviewCaptureState}
-            messages={interviewMessages}
-            error={interviewError}
-            onSendText={(text) => {
+            messages={interviewConversation.messages}
+            error={interviewError ?? interviewConversation.error}
+            onSendText={async (text) => {
               setInterviewError(undefined);
-              void platform
-                ?.appendConversationUserMessage?.(ActiveInterviewConversationId, text)
-                .catch((error: unknown) =>
-                  setInterviewError(error instanceof Error ? error.message : "消息发送失败"),
-                );
+              if (!platform?.appendConversationUserMessage)
+                throw new Error("当前版本不支持发送消息");
+              try {
+                await platform.appendConversationUserMessage(ActiveInterviewConversationId, text);
+              } catch (error) {
+                setInterviewError(error instanceof Error ? error.message : "消息发送失败");
+                throw error;
+              }
             }}
             onClear={
               platform?.clearConversationMessages
                 ? () => clearConversation(ActiveInterviewConversationId)
                 : undefined
             }
-            clearDisabledReason={interviewMessages.length === 0 ? "本场还没有对话" : undefined}
+            clearDisabledReason={
+              interviewConversation.messages.length === 0 ? "本场还没有对话" : undefined
+            }
             onClose={() => surfaces.openPanel("closed")}
           />
         )}

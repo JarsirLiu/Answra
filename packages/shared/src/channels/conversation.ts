@@ -1,4 +1,11 @@
-import type { UIMessageChunk } from "ai";
+import type { ConversationChange, ConversationSnapshot } from "../schema";
+
+export type {
+  ConversationChange,
+  ConversationEvent,
+  ConversationMessage,
+  ConversationSnapshot,
+} from "../schema";
 
 /** 对话运行、模型设置与会话快照的 IPC 频道和载荷契约。 */
 export const ConversationChannels = {
@@ -142,46 +149,6 @@ export interface AnswerRunCommand {
 }
 
 export type ConversationSendCommand = ChatSendCommand | AnswerRunCommand;
-
-export type ConversationMessage = {
-  id: string;
-  role: "user" | "assistant";
-  text: string;
-  images: Array<{ name: string; dataUrl: string }>;
-  status: "complete" | "streaming" | "interrupted";
-};
-
-export type ConversationSnapshot = {
-  conversationId: string;
-  revision: number;
-  messages: ConversationMessage[];
-  activeRunId?: string;
-};
-
-export type ConversationEvent = {
-  conversationId: string;
-  runId: string;
-  revision: number;
-  chunk: UIMessageChunk;
-};
-
-export type ConversationChange =
-  | { type: "snapshot"; snapshot: ConversationSnapshot }
-  | {
-      type: "messages-appended";
-      conversationId: string;
-      revision: number;
-      messages: ConversationMessage[];
-      activeRunId?: string;
-    }
-  | { type: "event"; event: ConversationEvent }
-  | {
-      type: "run-finished";
-      conversationId: string;
-      revision: number;
-      runId: string;
-      message: ConversationMessage;
-    };
 
 export interface ConversationChannelMap {
   [ConversationChannels.Send]: {

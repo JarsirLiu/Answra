@@ -1,17 +1,17 @@
 import type { ConversationEvent } from "@answra/shared";
-import type { UIMessageChunk } from "ai";
 import { describe, expect, it } from "vitest";
 import { projectReplyActivity } from "../src/app/replyActivity";
 
 const conversationId = "active-exam-conversation";
 const runId = "run-1";
 
-function event(revision: number, chunk: object): ConversationEvent {
+function event(revision: number, stream: ConversationEvent["stream"]): ConversationEvent {
   return {
     conversationId,
     runId,
     revision,
-    chunk: chunk as UIMessageChunk,
+    seq: revision,
+    stream,
   };
 }
 
@@ -19,15 +19,15 @@ describe("projectReplyActivity chunk identity", () => {
   it("keeps interleaved reasoning blocks independent and appends deltas by chunk id", () => {
     let activities = projectReplyActivity(
       [],
-      event(1, { type: "reasoning-delta", id: "reason-1", delta: "思考一" }),
+      event(1, { type: "reasoning-delta", partId: "reason-1", delta: "思考一" }),
     );
     activities = projectReplyActivity(
       activities,
-      event(2, { type: "reasoning-delta", id: "reason-2", delta: "思考二" }),
+      event(2, { type: "reasoning-delta", partId: "reason-2", delta: "思考二" }),
     );
     activities = projectReplyActivity(
       activities,
-      event(3, { type: "reasoning-delta", id: "reason-1", delta: "继续" }),
+      event(3, { type: "reasoning-delta", partId: "reason-1", delta: "继续" }),
     );
 
     expect(activities).toEqual([
@@ -55,15 +55,15 @@ describe("projectReplyActivity chunk identity", () => {
     );
     activities = projectReplyActivity(
       activities,
-      event(3, { type: "tool-input-delta", toolCallId: "call-1", inputTextDelta: '{"q":' }),
+      event(3, { type: "tool-input-delta", toolCallId: "call-1", delta: '{"q":' }),
     );
     activities = projectReplyActivity(
       activities,
-      event(4, { type: "tool-input-delta", toolCallId: "call-2", inputTextDelta: '{"q":' }),
+      event(4, { type: "tool-input-delta", toolCallId: "call-2", delta: '{"q":' }),
     );
     activities = projectReplyActivity(
       activities,
-      event(5, { type: "tool-input-delta", toolCallId: "call-1", inputTextDelta: '"a"}' }),
+      event(5, { type: "tool-input-delta", toolCallId: "call-1", delta: '"a"}' }),
     );
 
     expect(activities).toMatchObject([

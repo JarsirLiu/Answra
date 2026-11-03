@@ -6,7 +6,6 @@ import type {
   ReplyBarState,
 } from "@answra/shared";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { UIMessageChunk } from "ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ReplyBarWindowApp } from "../src/app/ReplyBarWindowApp";
 
@@ -112,7 +111,8 @@ describe("ReplyBarWindowApp live conversation popover", () => {
           conversationId,
           runId,
           revision: 2,
-          chunk: { type: "text-delta", id: "text-1", delta: " 实时" } as UIMessageChunk,
+          seq: 1,
+          stream: { type: "text-delta", partId: "text-1", delta: " 实时" },
         },
       });
     });
@@ -176,11 +176,12 @@ describe("ReplyBarWindowApp live conversation popover", () => {
           conversationId,
           runId,
           revision: 2,
-          chunk: {
+          seq: 1,
+          stream: {
             type: "reasoning-delta",
-            id: "reasoning-1",
+            partId: "reasoning-1",
             delta: "先检查条件",
-          } as UIMessageChunk,
+          },
         },
       },
     ]);
@@ -195,6 +196,7 @@ describe("ReplyBarWindowApp live conversation popover", () => {
         conversationId,
         runId,
         revision: 3,
+        outcome: "completed",
         message: { ...(snapshot.messages[1] as ConversationMessage), status: "complete" },
       });
     });
@@ -220,11 +222,12 @@ describe("ReplyBarWindowApp live conversation popover", () => {
           conversationId,
           runId,
           revision: 2,
-          chunk: {
+          seq: 1,
+          stream: {
             type: "reasoning-delta",
-            id: "reasoning-1",
+            partId: "reasoning-1",
             delta: "先检查题目条件",
-          } as UIMessageChunk,
+          },
         },
       },
       {
@@ -233,7 +236,8 @@ describe("ReplyBarWindowApp live conversation popover", () => {
           conversationId,
           runId,
           revision: 3,
-          chunk: { type: "text-delta", id: "text-1", delta: "最终答案" } as UIMessageChunk,
+          seq: 1,
+          stream: { type: "text-delta", partId: "text-1", delta: "最终答案" },
         },
       },
     ]);
@@ -266,11 +270,12 @@ describe("ReplyBarWindowApp live conversation popover", () => {
           conversationId,
           runId,
           revision: 2,
-          chunk: {
+          seq: 1,
+          stream: {
             type: "reasoning-delta",
-            id: "reasoning-1",
+            partId: "reasoning-1",
             delta: "正在检查条件",
-          } as UIMessageChunk,
+          },
         },
       },
     ]);
@@ -292,7 +297,8 @@ describe("ReplyBarWindowApp live conversation popover", () => {
           conversationId,
           runId,
           revision: 3,
-          chunk: { type: "text-delta", id: "text-1", delta: "答案" } as UIMessageChunk,
+          seq: 1,
+          stream: { type: "text-delta", partId: "text-1", delta: "答案" },
         },
       });
     });
@@ -321,11 +327,12 @@ describe("ReplyBarWindowApp live conversation popover", () => {
           conversationId,
           runId,
           revision: 2,
-          chunk: {
+          seq: 1,
+          stream: {
             type: "reasoning-delta",
-            id: "reasoning-1",
+            partId: "reasoning-1",
             delta: "先检查题目条件。",
-          } as UIMessageChunk,
+          },
         },
       });
     });
@@ -341,11 +348,12 @@ describe("ReplyBarWindowApp live conversation popover", () => {
           conversationId,
           runId,
           revision: 3,
-          chunk: {
+          seq: 1,
+          stream: {
             type: "reasoning-delta",
-            id: "reasoning-1",
+            partId: "reasoning-1",
             delta: "继续逐步核对每个条件，并计算最终结果。",
-          } as UIMessageChunk,
+          },
         },
       });
     });
@@ -375,6 +383,7 @@ describe("ReplyBarWindowApp live conversation popover", () => {
         conversationId,
         runId,
         revision: 2,
+        outcome: "completed",
         message: { ...(snapshot.messages[1] as ConversationMessage), status: "complete" },
       });
     });
@@ -450,7 +459,8 @@ describe("ReplyBarWindowApp live conversation popover", () => {
           conversationId,
           runId,
           revision: 2,
-          chunk: { type: "text-delta", id: "text-1", delta: "更多内容" } as UIMessageChunk,
+          seq: 1,
+          stream: { type: "text-delta", partId: "text-1", delta: "更多内容" },
         },
       });
     });
@@ -465,7 +475,8 @@ describe("ReplyBarWindowApp live conversation popover", () => {
           conversationId,
           runId,
           revision: 3,
-          chunk: { type: "text-delta", id: "text-1", delta: "新答案" } as UIMessageChunk,
+          seq: 1,
+          stream: { type: "text-delta", partId: "text-1", delta: "新答案" },
         },
       });
     });

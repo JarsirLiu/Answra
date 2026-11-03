@@ -3,6 +3,7 @@ import {
   type AudioSource,
   type PcmFrame,
   type SessionId,
+  type SpeechActivityEvent,
   sessionId as toSessionId,
 } from "../contracts";
 import {
@@ -29,6 +30,11 @@ export interface InterviewVadPipelineOptions {
    * 未注入时分段仅入内存暂存（有界），评测据此观察。
    */
   onSegment?(segment: AudioSegment): void;
+  /**
+   * 逐 hop 的语音起点/终点。回复策略据此在开口瞬间取消在途回答；
+   * 音频链路本身不因该回调改变。
+   */
+  onSpeechActivity?(event: SpeechActivityEvent): void;
 }
 
 interface SourceRuntime {
@@ -121,6 +127,7 @@ export class InterviewVadPipeline {
       if (!engine) throw new Error("VAD 引擎尚未就绪");
       const sourceRuntime = this.sourceFor(runtime, frame.source, engine);
       const activity = sourceRuntime.detector.process(frame);
+      for (const event of activity) this.options.onSpeechActivity?.(event);
       this.stage(runtime, sourceRuntime.segmenter.pushFrame(frame, activity));
     } catch (error) {
       this.failSession(runtime, error);

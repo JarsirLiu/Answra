@@ -63,6 +63,14 @@ function createHarness() {
   };
 }
 
+function streamBody(text: string): string {
+  return [
+    `data: ${JSON.stringify({ id: "test", object: "chat.completion.chunk", created: 1, model: "text.chat", choices: [{ index: 0, delta: { role: "assistant", content: text }, finish_reason: null }] })}\n\n`,
+    `data: ${JSON.stringify({ id: "test", object: "chat.completion.chunk", created: 1, model: "text.chat", choices: [{ index: 0, delta: {}, finish_reason: "stop" }] })}\n\n`,
+    "data: [DONE]\n\n",
+  ].join("");
+}
+
 describe("agent worker host", () => {
   const servers: Server[] = [];
 
@@ -72,6 +80,18 @@ describe("agent worker host", () => {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
   });
+
+  async function startChatServer(text = "收到"): Promise<string> {
+    const server = createServer((_request, response) => {
+      response.writeHead(200, { "content-type": "text/event-stream" });
+      response.end(streamBody(text));
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("test server did not bind");
+    return `http://127.0.0.1:${address.port}/v1`;
+  }
 
   it("publishes typed interview domain events over the worker transport", () => {
     const harness = createHarness();
@@ -348,7 +368,7 @@ describe("agent worker host", () => {
     });
   });
 
-  it("appends a naturally ended microphone turn as one user message without starting a run", async () => {
+  it("keeps a naturally ended microphone turn as one user message when reply cannot start", async () => {
     const harness = createHarness();
     const host = startAgentHost({
       transport: harness.transport,
@@ -393,12 +413,69 @@ describe("agent worker host", () => {
       ]);
     });
     expect(host.runtime.activeRunCount).toBe(0);
-    expect(harness.frames).not.toContainEqual(
-      expect.objectContaining({
-        type: "change",
-        change: expect.objectContaining({ type: "assistant-delta" }),
-      }),
-    );
+    // 模型未配置时回复在取令牌前就失败：用户文本保留，且不产生无意义的反向请求。
+    expect(harness.tokenRequests()).toHaveLength(0);
+    host.dispose();
+  });
+
+  it("replies automatically to a settled candidate turn with an empty local token", async () => {
+    const baseUrl = await startChatServer("收到");
+    const harness = createHarness();
+    const host = startAgentHost({
+      transport: harness.transport,
+      vad: scriptedVadEngine(hopProgram(138, [{ fromHop: 0, untilHop: 42 }])),
+      recognizer: scriptedRecognizer("请介绍一下你负责的项目"),
+      turnSettler: { settleMs: 0, minTurnChars: 2 },
+    });
+    host.runtime.configure({
+      chat: { baseUrl, model: "text.chat" },
+      answer: { baseUrl, model: "image.answer" },
+    });
+
+    harness.dispatch({
+      id: "start-auto-reply",
+      type: "interview-start",
+      sessionId: "capture-1",
+      conversationId: "active-interview-conversation",
+    });
+    await vi.waitFor(() => expect(harness.responses()).toHaveLength(1));
+    harness.dispatch({
+      id: "ready-auto-reply",
+      type: "interview-capture-ready",
+      sessionId: "capture-1",
+    });
+    await vi.waitFor(() => expect(harness.responses()).toHaveLength(2));
+
+    for (let index = 0; index < 23; index += 1) {
+      harness.dispatch({
+        type: "interview-audio-frame",
+        frame: {
+          ...makeFrame("candidate", index, TEST_FRAME_SAMPLES),
+          sessionId: "capture-1",
+        },
+      });
+    }
+
+    let answered = false;
+    await vi.waitFor(() => {
+      const [request] = harness.tokenRequests();
+      expect(request).toBeDefined();
+      if (answered || request?.type !== "token-request") return;
+      answered = true;
+      expect(request.forceRefresh).toBe(false);
+      // 本地端点未保存 API Key 时合法返回空 token；回复不能因此被拒绝。
+      harness.dispatch({ id: request.id, type: "token", accessToken: "" });
+    });
+
+    await vi.waitFor(async () => {
+      const snapshot = await host.runtime.getSnapshot("active-interview-conversation");
+      expect(
+        snapshot.messages.map((message) => [message.role, message.text, message.status]),
+      ).toEqual([
+        ["user", "请介绍一下你负责的项目", "complete"],
+        ["assistant", "收到", "complete"],
+      ]);
+    });
     host.dispose();
   });
 

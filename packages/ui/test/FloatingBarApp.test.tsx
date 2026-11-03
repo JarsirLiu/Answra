@@ -5,6 +5,7 @@ import type {
   ConversationSnapshot,
 } from "@answra/shared";
 import { ActiveChatConversationId, ActiveInterviewConversationId } from "@answra/shared";
+import type { AgentStreamEvent } from "@answra/shared/schema";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { UIMessageChunk } from "ai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -15,6 +16,73 @@ let emitConversationEvent: ((event: { runId: string; chunk: UIMessageChunk }) =>
 const conversationId = "active-exam-conversation";
 let emittedConversationId = conversationId;
 const conversationListeners = new Set<(change: ConversationChange) => void>();
+
+/** Test-only bridge from the legacy chunk fixtures to the app-owned stream shape. */
+function toStream(chunk: UIMessageChunk): AgentStreamEvent | undefined {
+  switch (chunk.type) {
+    case "start":
+      return { type: "start" };
+    case "text-start":
+      return { type: "text-start", partId: chunk.id };
+    case "text-end":
+      return { type: "text-end", partId: chunk.id };
+    case "text-delta":
+      return { type: "text-delta", partId: chunk.id, delta: chunk.delta };
+    case "reasoning-start":
+      return { type: "reasoning-start", partId: chunk.id };
+    case "reasoning-end":
+      return { type: "reasoning-end", partId: chunk.id };
+    case "reasoning-delta":
+      return { type: "reasoning-delta", partId: chunk.id, delta: chunk.delta };
+    case "tool-input-start":
+      return {
+        type: "tool-input-start",
+        toolCallId: chunk.toolCallId,
+        toolName: chunk.toolName,
+        ...(chunk.title === undefined ? {} : { title: chunk.title }),
+      };
+    case "tool-input-delta":
+      return {
+        type: "tool-input-delta",
+        toolCallId: chunk.toolCallId,
+        delta: chunk.inputTextDelta,
+      };
+    case "tool-input-available":
+      return {
+        type: "tool-call",
+        toolCallId: chunk.toolCallId,
+        toolName: chunk.toolName,
+        input: chunk.input,
+      };
+    case "tool-output-available":
+      return { type: "tool-result", toolCallId: chunk.toolCallId, output: chunk.output };
+    case "tool-input-error":
+    case "tool-output-error":
+      return {
+        type: "tool-error",
+        toolCallId: chunk.toolCallId,
+        errorText: chunk.errorText,
+      };
+    case "source-url":
+      return {
+        type: "source-url",
+        sourceId: chunk.sourceId,
+        url: chunk.url,
+        ...(chunk.title === undefined ? {} : { title: chunk.title }),
+      };
+    case "source-document":
+      return {
+        type: "source-document",
+        sourceId: chunk.sourceId,
+        mediaType: chunk.mediaType,
+        title: chunk.title,
+      };
+    case "error":
+      return { type: "error", errorText: chunk.errorText };
+    default:
+      return undefined;
+  }
+}
 
 function createConversationBridge() {
   return {
@@ -82,6 +150,7 @@ function createConversationBridge() {
       // 与 ephemeral 会话「messages-appended 占 revision 1」的序列衔接。
       let scopeId = "";
       let revision = 0;
+      let seq = 0;
       const messages: ConversationMessage[] = [];
       conversationListeners.add(listener);
       const publish = (change: ConversationChange) => {
@@ -93,30 +162,36 @@ function createConversationBridge() {
         if (scopeId !== emittedConversationId) {
           scopeId = emittedConversationId;
           revision = 1;
+          seq = 0;
           messages.length = 0;
         }
         revision += 1;
-        if (chunk.type === "text-delta") {
-          const assistant = messages.find((message) => message.id === runId);
-          if (assistant) assistant.text += chunk.delta;
-          else
-            messages.push({
-              id: runId,
-              role: "assistant",
-              text: chunk.delta,
-              images: [],
-              status: "streaming",
-            });
+        const stream = toStream(chunk);
+        if (stream) {
+          seq += 1;
+          if (stream.type === "text-delta") {
+            const assistant = messages.find((message) => message.id === runId);
+            if (assistant) assistant.text += stream.delta;
+            else
+              messages.push({
+                id: runId,
+                role: "assistant",
+                text: stream.delta,
+                images: [],
+                status: "streaming",
+              });
+          }
+          publish({
+            type: "event",
+            event: {
+              conversationId: emittedConversationId,
+              revision,
+              runId,
+              seq,
+              stream,
+            },
+          });
         }
-        if (chunk.type === "finish" || chunk.type === "abort") {
-          const assistant = messages.find((message) => message.id === runId);
-          if (assistant) assistant.status = "complete";
-        }
-        const event = { conversationId: emittedConversationId, revision, runId, chunk };
-        publish({
-          type: "event",
-          event,
-        });
         if (chunk.type === "finish" || chunk.type === "abort") {
           revision += 1;
           let assistant = messages.find((message) => message.id === runId);
@@ -135,6 +210,7 @@ function createConversationBridge() {
             conversationId: emittedConversationId,
             revision,
             runId,
+            outcome: chunk.type === "abort" ? "aborted" : "completed",
             message: {
               ...assistant,
               status: chunk.type === "abort" ? "interrupted" : "complete",
@@ -256,6 +332,60 @@ describe("three-segment floating navigation", () => {
     );
     expect(bridge.sendConversationMessage).not.toHaveBeenCalled();
     expect(await screen.findByText("只追加用户消息")).toHaveClass("message-content");
+  });
+
+  it("keeps the interview draft and shows the failure when the append is rejected", async () => {
+    const bridge = createConversationBridge();
+    bridge.appendConversationUserMessage.mockRejectedValueOnce(new Error("当前回复尚未完成"));
+    const capture = {
+      getState: () => ({ phase: "idle" as const }),
+      subscribe: () => () => undefined,
+      start: vi.fn(async () => undefined),
+      stop: vi.fn(async () => undefined),
+    };
+    render(<FloatingBarApp bridge={bridge} interviewCapture={capture} />);
+    fireEvent.click(screen.getByRole("button", { name: "对话" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "面试" }));
+    fireEvent.click(screen.getByRole("button", { name: "面试对话" }));
+    const input = screen.getByRole("textbox", { name: "面试消息" });
+    fireEvent.change(input, { target: { value: "不能丢的草稿" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("当前回复尚未完成"));
+    expect(input).toHaveValue("不能丢的草稿");
+  });
+
+  it("clears a stale manual-send error when a new assistant reply starts", async () => {
+    const bridge = createConversationBridge();
+    bridge.appendConversationUserMessage.mockRejectedValueOnce(new Error("当前回复尚未完成"));
+    const capture = {
+      getState: () => ({ phase: "idle" as const }),
+      subscribe: () => () => undefined,
+      start: vi.fn(async () => undefined),
+      stop: vi.fn(async () => undefined),
+    };
+    render(<FloatingBarApp bridge={bridge} interviewCapture={capture} />);
+    fireEvent.click(screen.getByRole("button", { name: "对话" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "面试" }));
+    fireEvent.click(screen.getByRole("button", { name: "面试对话" }));
+    const input = screen.getByRole("textbox", { name: "面试消息" });
+    fireEvent.change(input, { target: { value: "不能丢的草稿" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("当前回复尚未完成"));
+
+    act(() => {
+      for (const listener of conversationListeners) {
+        listener({
+          type: "messages-appended",
+          conversationId: ActiveInterviewConversationId,
+          revision: 2,
+          messages: [{ id: "run-1", role: "assistant", text: "", images: [], status: "streaming" }],
+          activeRunId: "run-1",
+        });
+      }
+    });
+
+    await waitFor(() => expect(screen.queryByText("当前回复尚未完成")).not.toBeInTheDocument());
   });
 
   it("sends general chat on its independent conversation and keeps it when the panel closes", async () => {

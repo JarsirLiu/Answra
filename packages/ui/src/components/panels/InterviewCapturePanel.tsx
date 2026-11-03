@@ -2,6 +2,7 @@ import { AudioLines, CircleAlert, LoaderCircle, Mic } from "lucide-react";
 import { useState } from "react";
 import type { InterviewCapturePort, InterviewCaptureState } from "../../app/interviewCapture";
 import { INTERVIEW_INPUT_LEVEL_WINDOW } from "../../app/interviewCapture";
+import type { InterviewMessageView } from "../../app/interviewConversation";
 import { ICON, ICON_SM, ICON_STROKE } from "../../tokens";
 import { MessageStream, ModelErrorNotice } from "../chat";
 import "../chat/conversation.css";
@@ -12,8 +13,8 @@ import "./InterviewCapturePanel.css";
 interface InterviewCapturePanelProps {
   capture?: InterviewCapturePort;
   state: InterviewCaptureState;
-  messages: readonly { id: string; content: string }[];
-  onSendText: (text: string) => void;
+  messages: readonly InterviewMessageView[];
+  onSendText: (text: string) => Promise<void>;
   /** 清空当前面试对话历史；缺省不显示入口。 */
   onClear?: () => void;
   /** 清空不可用的原因（没有历史）；设置即禁用按钮并以 title 提示。 */
@@ -35,6 +36,11 @@ export function InterviewCapturePanel({
   const [draft, setDraft] = useState("");
   const running =
     state.phase === "starting" || state.phase === "listening" || state.phase === "stopping";
+  // 助手回复期间 store 会拒绝追加 user 消息；这里按消息状态禁用发送，
+  // 让用户保留草稿，而不是提交后才看到「当前回复尚未完成」。
+  const replying = messages.some(
+    (message) => message.role === "assistant" && message.status === "streaming",
+  );
   // 采集状态行只在有状态可看时出现；空闲时说明收敛到消息区空态，不占常驻两行。
   const status =
     state.phase === "starting"
@@ -54,11 +60,11 @@ export function InterviewCapturePanel({
         : CircleAlert;
   // 内容指纹与 ChatPanel 同构：error 出现或更新也要能滚到可见位置。
   const contentKey = [
-    ...messages.map((message) => `${message.id}:${message.content.length}`),
+    ...messages.map((message) => `${message.id}:${message.text.length}:${message.status}`),
     error ?? "",
   ].join("|");
   const emptyHint =
-    state.phase === "idle" ? "点击下方麦克风开始语音输入。" : "识别完成后会作为你的消息加入对话。";
+    state.phase === "idle" ? "点击下方麦克风开始语音输入。" : "识别完成后会加入对话并生成回复。";
   // 波形铺满输入区：窗口不足时不收缩宽度，以静默槽位补齐左侧历史。
   const levelBars = state.inputLevels?.length
     ? [
@@ -107,8 +113,16 @@ export function InterviewCapturePanel({
           viewportClassName="conversation"
         >
           {messages.map((message) => (
-            <article className="chat-message chat-message--user" key={message.id}>
-              <div className="message-content">{message.content}</div>
+            <article className={`chat-message chat-message--${message.role}`} key={message.id}>
+              {message.role === "assistant" && message.status === "interrupted" && (
+                <span className="interview-message-status">已中断</span>
+              )}
+              <div className="message-content">
+                {message.text ||
+                  (message.role === "assistant" && message.status === "streaming"
+                    ? "正在回复…"
+                    : "")}
+              </div>
             </article>
           ))}
           {error && <ModelErrorNotice message={error} />}
@@ -124,11 +138,13 @@ export function InterviewCapturePanel({
         onValueChange={setDraft}
         onSubmit={() => {
           const text = draft.trim();
-          if (!text) return;
-          onSendText(text);
-          setDraft("");
+          if (!text || replying) return;
+          // 只有追加成功才清草稿；失败时保留输入，用户可直接重试。
+          void onSendText(text)
+            .then(() => setDraft(""))
+            .catch(() => undefined);
         }}
-        submitDisabled={!draft.trim()}
+        submitDisabled={!draft.trim() || replying}
         showAttachmentButton={false}
         liveContent={
           running ? (
