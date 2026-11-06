@@ -36,6 +36,7 @@ export function ReplyDetails({
     <ReplyConversationPopover
       messages={conversation.messages}
       activeRunId={conversation.activeRunId}
+      retry={conversation.retry}
       error={error ?? conversation.error}
       placement="below"
       stealth={stealth}

@@ -2,9 +2,9 @@ import { AudioLines, CircleAlert, LoaderCircle, Mic } from "lucide-react";
 import { useState } from "react";
 import type { InterviewCapturePort, InterviewCaptureState } from "../../app/interviewCapture";
 import { INTERVIEW_INPUT_LEVEL_WINDOW } from "../../app/interviewCapture";
-import type { InterviewMessageView } from "../../app/interviewConversation";
 import { ICON, ICON_SM, ICON_STROKE } from "../../tokens";
-import { MessageStream, ModelErrorNotice } from "../chat";
+import { AssistantMessage, MessageStream, ModelErrorNotice, RetryNotice } from "../chat";
+import type { ConversationRetry, ConversationViewMessage } from "../chat/conversationMessage";
 import "../chat/conversation.css";
 import { ConversationComposer } from "./ConversationComposer";
 import { PanelShell } from "./PanelShell";
@@ -13,7 +13,8 @@ import "./InterviewCapturePanel.css";
 interface InterviewCapturePanelProps {
   capture?: InterviewCapturePort;
   state: InterviewCaptureState;
-  messages: readonly InterviewMessageView[];
+  messages: readonly ConversationViewMessage[];
+  retry?: ConversationRetry;
   onSendText: (text: string) => Promise<void>;
   /** 清空当前面试对话历史；缺省不显示入口。 */
   onClear?: () => void;
@@ -27,6 +28,7 @@ export function InterviewCapturePanel({
   capture,
   state,
   messages,
+  retry,
   onSendText,
   onClear,
   clearDisabledReason,
@@ -58,9 +60,20 @@ export function InterviewCapturePanel({
       : state.phase === "listening"
         ? AudioLines
         : CircleAlert;
+  const visibleMessages = messages.filter(
+    (message) =>
+      !(
+        message.role === "assistant" &&
+        message.status === "interrupted" &&
+        !message.text &&
+        !message.reasoning &&
+        !message.activities?.length
+      ),
+  );
   // 内容指纹与 ChatPanel 同构：error 出现或更新也要能滚到可见位置。
   const contentKey = [
     ...messages.map((message) => `${message.id}:${message.text.length}:${message.status}`),
+    retry ? `retry:${retry.attempt}/${retry.maxRetries}` : "",
     error ?? "",
   ].join("|");
   const emptyHint =
@@ -112,21 +125,24 @@ export function InterviewCapturePanel({
           contentKey={contentKey}
           viewportClassName="conversation"
         >
-          {messages.map((message) => (
+          {visibleMessages.map((message) => (
             <article className={`chat-message chat-message--${message.role}`} key={message.id}>
-              {message.role === "assistant" && message.status === "interrupted" && (
-                <span className="interview-message-status">已中断</span>
+              {message.role === "user" ? (
+                <div className="message-content">{message.text}</div>
+              ) : (
+                <AssistantMessage
+                  caret={message.status === "streaming" && Boolean(message.text)}
+                  content={message.text}
+                  reasoning={message.reasoning}
+                  streaming={message.status === "streaming"}
+                  thinking={message.thinking === true}
+                />
               )}
-              <div className="message-content">
-                {message.text ||
-                  (message.role === "assistant" && message.status === "streaming"
-                    ? "正在回复…"
-                    : "")}
-              </div>
             </article>
           ))}
+          {retry && <RetryNotice retry={retry} />}
           {error && <ModelErrorNotice message={error} />}
-          {messages.length === 0 && !error && (
+          {visibleMessages.length === 0 && !error && (
             <p className="interview-capture-empty">{emptyHint}</p>
           )}
         </MessageStream>

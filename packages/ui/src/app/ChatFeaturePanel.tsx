@@ -100,6 +100,7 @@ export function ChatFeaturePanel({
       error={error}
       fileInputRef={fileInputRef}
       streaming={Boolean(conversation.activeRunId)}
+      retry={conversation.retry}
       thinkingMs={conversation.thinkingMs}
       messages={conversation.messages}
       onCancel={conversation.cancel}

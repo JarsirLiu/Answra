@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-/** App-owned stream event. This is the only event shape persisted and sent over IPC. */
+/** Provider-neutral model output events normalized at the Agent boundary. */
 export const agentStreamEventSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("start") }),
   z.strictObject({ type: z.literal("text-start"), partId: z.string() }),
@@ -56,12 +56,14 @@ export const agentStreamEventSchema = z.discriminatedUnion("type", [
     mediaType: z.string(),
     title: z.string(),
   }),
+  z.strictObject({
+    type: z.literal("retry"),
+    kind: z.enum(["rate-limit", "server-error", "network-error"]),
+    attempt: z.number().int().positive(),
+    maxRetries: z.number().int().positive(),
+    delayMs: z.number().int().nonnegative(),
+  }),
   z.strictObject({ type: z.literal("error"), errorText: z.string() }),
 ]);
 
 export type AgentStreamEvent = z.infer<typeof agentStreamEventSchema>;
-
-/** Terminal state of one model run. */
-export const runOutcomeSchema = z.enum(["completed", "failed", "aborted", "superseded"]);
-
-export type RunOutcome = z.infer<typeof runOutcomeSchema>;

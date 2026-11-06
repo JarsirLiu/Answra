@@ -3,12 +3,14 @@ import { isAuthRequiredError } from "@answra/shared";
 import { AlertCircle, FileText, Wrench } from "lucide-react";
 import type { ReplyConversationMessage } from "../../app/useReplyConversation";
 import { ICON_SM } from "../../tokens";
-import { AssistantMessage, MessageStream, ModelErrorNotice } from "../chat";
+import { AssistantMessage, MessageStream, ModelErrorNotice, RetryNotice } from "../chat";
+import type { ConversationRetry } from "../chat/conversationMessage";
 import "./ReplyConversationPopover.css";
 
 interface ReplyConversationPopoverProps {
   messages: ReplyConversationMessage[];
   activeRunId?: string;
+  retry?: ConversationRetry;
   error?: string;
   placement: "above" | "below";
   stealth: boolean;
@@ -23,6 +25,7 @@ interface ReplyConversationPopoverProps {
 export function ReplyConversationPopover({
   messages,
   activeRunId,
+  retry,
   error,
   placement,
   stealth: _stealth,
@@ -37,14 +40,25 @@ export function ReplyConversationPopover({
   );
   const failure = error;
   const failureNeedsSignIn = isAuthRequiredError(failure ?? "");
-  const contentKey = messages
-    .map(
+  const visibleMessages = messages.filter(
+    (message) =>
+      !(
+        message.role === "assistant" &&
+        message.status === "interrupted" &&
+        !textContent(message) &&
+        !reasoningText(message) &&
+        message.activities.length === 0
+      ),
+  );
+  const contentKey = [
+    ...messages.map(
       (message) =>
         `${message.id}:${message.text.length}:${message.status}:${message.activities
           .map((item) => `${item.kind}:${item.text.length}`)
           .join(",")}`,
-    )
-    .join("|");
+    ),
+    retry ? `retry:${retry.attempt}/${retry.maxRetries}` : "",
+  ].join("|");
 
   return (
     <section
@@ -61,14 +75,14 @@ export function ReplyConversationPopover({
         contentKey={contentKey}
         viewportClassName="reply-conversation-scroll"
       >
-        {messages.map((message) => (
+        {visibleMessages.map((message) => (
           <article
             className={`reply-conversation-message reply-conversation-message--${message.role}`}
             key={message.id}
           >
             {message.role === "user" ? (
               <div className="reply-conversation-user-content">
-                {message.images.map((image) => (
+                {(message.images ?? []).map((image) => (
                   <figure className="reply-conversation-image" key={`${message.id}-${image.name}`}>
                     <img alt="题目截图" src={image.dataUrl} />
                   </figure>
@@ -81,24 +95,22 @@ export function ReplyConversationPopover({
                 content={textContent(message)}
                 reasoning={reasoningText(message)}
                 streaming={isActive(message, activeRunId)}
-                thinking={isActive(message, activeRunId) && !textContent(message).trim()}
+                thinking={message.thinking === true}
               >
                 {message.activities
                   .filter((activity) => activity.kind !== "thinking" && activity.kind !== "text")
                   .map((activity) => (
                     <ActivityCard activity={activity} key={`${activity.kind}:${activity.id}`} />
                   ))}
-                {message.status === "interrupted" && (
-                  <div className="reply-conversation-interrupted">回复已停止</div>
-                )}
               </AssistantMessage>
             )}
           </article>
         ))}
+        {retry && <RetryNotice retry={retry} />}
         {failure && !hasErrorActivity && (
           <ModelErrorNotice message={failure} onSignIn={failureNeedsSignIn ? signIn : undefined} />
         )}
-        {messages.length === 0 && !failure && (
+        {visibleMessages.length === 0 && !failure && (
           <p className="reply-conversation-empty">发送后将在这里显示本轮对话</p>
         )}
       </MessageStream>

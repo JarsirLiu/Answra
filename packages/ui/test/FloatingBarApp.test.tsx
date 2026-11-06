@@ -698,6 +698,32 @@ describe("three-segment floating navigation", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "确认发送" }));
     await waitFor(() => expect(bridge.sendConversationMessage).toHaveBeenCalled());
+    act(() => {
+      conversationListeners.forEach((listener) => {
+        listener({
+          type: "messages-appended",
+          conversationId: emittedConversationId,
+          revision: 1,
+          messages: [
+            {
+              id: "user-run-1",
+              role: "user",
+              text: "",
+              images: [{ name: "screenshot.png", dataUrl: "data:image/png;base64,QUJD" }],
+              status: "complete",
+            },
+            {
+              id: "run-1",
+              role: "assistant",
+              text: "",
+              images: [],
+              status: "streaming",
+            },
+          ],
+          activeRunId: "run-1",
+        });
+      });
+    });
     act(() =>
       emitConversationEvent?.({
         runId: "run-1",

@@ -1,7 +1,8 @@
 import { z } from "zod";
-import { agentStreamEventSchema, runOutcomeSchema } from "./agent";
+import { runOutcomeSchema } from "./execution";
+import { agentStreamEventSchema } from "./stream";
 
-/** Persisted text-session message; intentionally smaller than AI SDK's UIMessage. */
+/** Persisted conversation messages, snapshots, events, and change notifications. */
 export const conversationMessageSchema = z.strictObject({
   id: z.string(),
   role: z.enum(["user", "assistant"]),

@@ -2,7 +2,8 @@ import type { DesktopBridge } from "@answra/shared";
 import { X } from "lucide-react";
 import { type RefObject, useRef } from "react";
 import { ICON_SM } from "../../tokens";
-import { AssistantMessage, MessageStream, ModelErrorNotice } from "../chat";
+import { AssistantMessage, MessageStream, ModelErrorNotice, RetryNotice } from "../chat";
+import type { ConversationRetry, ConversationViewMessage } from "../chat/conversationMessage";
 import { ConversationComposer } from "./ConversationComposer";
 import { PanelShell } from "./PanelShell";
 import "../chat/conversation.css";
@@ -14,17 +15,8 @@ export interface ChatAttachment {
   previewUrl: string;
 }
 
-export interface ChatMessage {
-  id: string;
-  role: "assistant" | "user";
-  content: string;
-  /** 模型思维链（reasoning part），流式更新；可能为空。 */
-  reasoning?: string;
-  attachments?: ChatAttachment[];
-}
-
 interface ChatPanelProps {
-  messages: ChatMessage[];
+  messages: ConversationViewMessage[];
   draft: string;
   attachments: ChatAttachment[];
   fileInputRef: RefObject<HTMLInputElement | null>;
@@ -34,6 +26,8 @@ interface ChatPanelProps {
   onSend: () => void;
   onCancel: () => void;
   streaming: boolean;
+  /** 本轮模型调用正在指数退避重试；同一条消息内原地更新。 */
+  retry?: ConversationRetry;
   /** 本轮思考耗时（毫秒），回答开始输出后冻结。 */
   thinkingMs?: number;
   /**
@@ -71,6 +65,7 @@ export function ChatPanel({
   onSend,
   onCancel,
   streaming,
+  retry,
   thinkingMs,
   error,
   onSignIn,
@@ -87,8 +82,9 @@ export function ChatPanel({
   // 失败提示也算本轮结果，出现时要能滚到可见位置。
   const contentKey = [
     ...messages.map(
-      (message) => `${message.id}:${message.content.length}:${message.reasoning?.length ?? 0}`,
+      (message) => `${message.id}:${message.text.length}:${message.reasoning?.length ?? 0}`,
     ),
+    retry ? `retry:${retry.attempt}/${retry.maxRetries}` : "",
     error ? `error:${error}` : "",
   ].join("|");
   return (
@@ -116,34 +112,36 @@ export function ChatPanel({
           <article className={`chat-message chat-message--${message.role}`} key={message.id}>
             {message.role === "user" ? (
               <div className="message-content">
-                {message.attachments?.map((att) => (
-                  <figure className="message-attachment" key={att.id}>
-                    <img alt="用户添加的截图" src={att.previewUrl} />
+                {message.images?.map((image, index) => (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: 持久化消息只带图片内容，没有稳定 id
+                  <figure className="message-attachment" key={`${message.id}-${index}`}>
+                    <img alt="用户添加的截图" src={image.dataUrl} />
                   </figure>
                 ))}
-                {message.content}
+                {message.text}
               </div>
             ) : (
               <AssistantMessage
                 caret={
-                  Boolean(streaming) &&
+                  message.status === "streaming" &&
                   message.id === messages.at(-1)?.id &&
-                  Boolean(message.content)
+                  Boolean(message.text)
                 }
-                content={message.content}
+                content={message.text}
                 onFork={onFork}
                 onReply={() => {
                   composerInputRef.current?.focus();
                 }}
                 onVote={onVote}
                 reasoning={message.reasoning}
-                streaming={Boolean(streaming) && message.id === messages.at(-1)?.id}
-                thinking={Boolean(streaming && !message.content)}
+                streaming={message.status === "streaming" && message.id === messages.at(-1)?.id}
+                thinking={message.thinking === true}
                 thinkingMs={thinkingMs}
               />
             )}
           </article>
         ))}
+        {retry && <RetryNotice retry={retry} />}
         {error && <ModelErrorNotice message={error} onSignIn={onSignIn} />}
       </MessageStream>
       <ConversationComposer

@@ -151,7 +151,7 @@ describe("InterviewCapturePanel", () => {
     expect(screen.getByRole("button", { name: "停止语音输入" })).toBeInTheDocument();
   });
 
-  it("renders assistant messages in the same timeline and marks interrupted replies", () => {
+  it("renders interrupted replies as ordinary finished content without a status label", () => {
     render(
       <InterviewCapturePanel
         capture={capturePort()}
@@ -170,7 +170,92 @@ describe("InterviewCapturePanel", () => {
     expect(screen.getByText("我先说说经历").closest("article")).toHaveClass(
       "chat-message--assistant",
     );
-    expect(screen.getByText("上一轮回答").closest("article")).toHaveTextContent("已中断");
+    expect(screen.getByText("上一轮回答").closest("article")).not.toHaveTextContent("已中断");
+  });
+
+  it("omits an empty interrupted assistant message", () => {
+    render(
+      <InterviewCapturePanel
+        capture={capturePort()}
+        state={{ phase: "listening", inputLevels: [] }}
+        messages={[{ id: "run-1", role: "assistant", text: "", status: "interrupted" }]}
+        onSendText={vi.fn(async () => undefined)}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole("article")).not.toBeInTheDocument();
+    expect(screen.getByText("识别完成后会加入对话并生成回复。")).toBeInTheDocument();
+  });
+
+  it("renders assistant markdown through the shared message component", () => {
+    render(
+      <InterviewCapturePanel
+        capture={capturePort()}
+        state={{ phase: "idle" }}
+        messages={[
+          {
+            id: "run-1",
+            role: "assistant",
+            text: "**重点**\n\n- 第一条",
+            status: "complete",
+          },
+        ]}
+        onSendText={vi.fn(async () => undefined)}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("重点").tagName).toBe("STRONG");
+    expect(screen.getByText("第一条").closest("li")).not.toBeNull();
+  });
+
+  it("shows the retry attempt in place without adding a message", () => {
+    const { rerender } = render(
+      <InterviewCapturePanel
+        capture={capturePort()}
+        state={{ phase: "idle" }}
+        messages={[{ id: "run-1", role: "assistant", text: "", status: "streaming" }]}
+        retry={{ kind: "rate-limit", attempt: 1, maxRetries: 5 }}
+        onSendText={vi.fn(async () => undefined)}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("status")).toHaveTextContent("请求触发限流，正在等待后重试 1/5");
+    expect(screen.getAllByRole("article")).toHaveLength(1);
+
+    rerender(
+      <InterviewCapturePanel
+        capture={capturePort()}
+        state={{ phase: "idle" }}
+        messages={[{ id: "run-1", role: "assistant", text: "", status: "streaming" }]}
+        retry={{ kind: "rate-limit", attempt: 2, maxRetries: 5 }}
+        onSendText={vi.fn(async () => undefined)}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("status")).toHaveTextContent("请求触发限流，正在等待后重试 2/5");
+    expect(screen.getAllByRole("article")).toHaveLength(1);
+  });
+
+  it("shows a settled retry record with the failure alert after an abnormal end", () => {
+    render(
+      <InterviewCapturePanel
+        capture={capturePort()}
+        state={{ phase: "idle" }}
+        messages={[{ id: "run-1", role: "assistant", text: "", status: "failed" }]}
+        retry={{ kind: "rate-limit", attempt: 5, maxRetries: 5, finished: true }}
+        error="inference exceeds tpm/rpm limit"
+        onSendText={vi.fn(async () => undefined)}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("status")).toHaveTextContent("限流重试结束，本轮异常终止 5/5");
+    expect(screen.getByRole("alert")).toHaveTextContent("inference exceeds tpm/rpm limit");
+    expect(screen.getAllByRole("article")).toHaveLength(1);
   });
 
   it("maps the capture failure phase to a status alert", () => {

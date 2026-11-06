@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  agentEventEnvelopeSchema,
+  agentRunSnapshotSchema,
   agentStreamEventSchema,
   conversationChangeSchema,
   conversationEventSchema,
@@ -26,6 +28,13 @@ describe("event schema", () => {
         sourceId: "source-2",
         mediaType: "text/plain",
         title: "doc",
+      },
+      {
+        type: "retry",
+        kind: "rate-limit",
+        attempt: 1,
+        maxRetries: 5,
+        delayMs: 5_000,
       },
       { type: "error", errorText: "failed" },
     ] as const;
@@ -71,5 +80,30 @@ describe("event schema", () => {
       },
     });
     expect(change).toMatchObject({ outcome: "failed", message: { status: "failed" } });
+  });
+
+  it("accepts execution facts needed for future hosted adapters", () => {
+    expect(
+      agentRunSnapshotSchema.parse({
+        runId: "run-1",
+        state: "retry-wait",
+        attempt: 2,
+        generation: 0,
+        updatedAt: "2026-11-06T00:00:00.000Z",
+      }),
+    ).toMatchObject({ state: "retry-wait" });
+    expect(
+      agentEventEnvelopeSchema.parse({
+        schemaVersion: 1,
+        eventId: "event-1",
+        runId: "run-1",
+        attemptId: "attempt-1",
+        sequence: 1,
+        aggregateRevision: 1,
+        producerId: "agent-local-1",
+        occurredAt: "2026-11-06T00:00:00.000Z",
+        event: { type: "run-state-changed", state: "running" },
+      }),
+    ).toMatchObject({ event: { state: "running" } });
   });
 });

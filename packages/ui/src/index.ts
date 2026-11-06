@@ -6,6 +6,7 @@ export type {
 } from "./app/interviewCapture";
 export { INTERVIEW_INPUT_LEVEL_WINDOW } from "./app/interviewCapture";
 export { ReplyBarWindowApp } from "./app/ReplyBarWindowApp";
+export type { ConversationViewMessage } from "./components/chat/conversationMessage";
 export { RangeSlider } from "./components/controls/RangeSlider";
 export type { SurfaceButtonProps, SurfaceButtonVariant } from "./components/controls/SurfaceButton";
 export { SurfaceButton } from "./components/controls/SurfaceButton";
@@ -16,7 +17,7 @@ export { FeatureActions } from "./components/floating-bar/FeatureActions";
 export { FloatingBar } from "./components/floating-bar/FloatingBar";
 export { ModeMenu, ModePicker } from "./components/floating-bar/ModePicker";
 export { WorkspaceControls } from "./components/floating-bar/WorkspaceControls";
-export type { ChatAttachment, ChatMessage } from "./components/panels/ChatPanel";
+export type { ChatAttachment } from "./components/panels/ChatPanel";
 export { InterviewCapturePanel } from "./components/panels/InterviewCapturePanel";
 export { PanelShell } from "./components/panels/PanelShell";
 export { useDismissableOpen } from "./hooks/useDismissableOpen";

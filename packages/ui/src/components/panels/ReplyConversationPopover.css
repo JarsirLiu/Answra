@@ -147,13 +147,9 @@
 .reply-conversation-waiting {
   align-self: flex-start;
 }
-.reply-conversation-interrupted,
 .reply-conversation-empty {
   color: var(--muted);
   font-size: 11px;
-}
-.reply-conversation-interrupted {
-  font-style: italic;
 }
 .reply-conversation-message-actions {
   margin-top: 2px;

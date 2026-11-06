@@ -341,6 +341,7 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
             capture={interviewCapture}
             state={interviewCaptureState}
             messages={interviewConversation.messages}
+            retry={interviewConversation.retry}
             error={interviewError ?? interviewConversation.error}
             onSendText={async (text) => {
               setInterviewError(undefined);

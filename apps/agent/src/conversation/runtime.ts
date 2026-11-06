@@ -13,6 +13,7 @@ import { RunRegistry } from "../core/run/registry";
 import { normalizeStreamChunk } from "../core/streamEvents";
 import { ANSWER_PROFILE } from "./answerProfile";
 import { parseDataUrl, validateRequest } from "./requestContent";
+import { createRetryingFetch, RATE_LIMIT_RETRY_POLICY } from "./retryFetch";
 import { type ConversationStore, createUserMessage, MemoryConversationStore } from "./store";
 import { buildTimeReminder } from "./timeReminder";
 import type { ConversationToolId } from "./tools/types";
@@ -312,12 +313,62 @@ export class ConversationRuntime {
   ): Promise<void> {
     const startedAt = Date.now();
     const chunkCounts: Record<string, number> = {};
+    const textPartLengths = new Map<string, number>();
+    const reasoningPartLengths = new Map<string, number>();
+    let textLength = 0;
+    let reasoningLength = 0;
+    let finishReason: string | undefined;
     let started = false;
     let failed = false;
     const emitStream = async (stream: AgentStreamEvent) => {
       chunkCounts[stream.type] = (chunkCounts[stream.type] ?? 0) + 1;
       if (Object.keys(chunkCounts).length === 1 && chunkCounts[stream.type] === 1)
         console.info("[conversation][run] first chunk", { runId, type: stream.type });
+      if (stream.type === "text-delta") {
+        textLength += stream.delta.length;
+        textPartLengths.set(
+          stream.partId,
+          (textPartLengths.get(stream.partId) ?? 0) + stream.delta.length,
+        );
+      }
+      if (stream.type === "reasoning-delta") {
+        reasoningLength += stream.delta.length;
+        reasoningPartLengths.set(
+          stream.partId,
+          (reasoningPartLengths.get(stream.partId) ?? 0) + stream.delta.length,
+        );
+      }
+      if (stream.type === "text-end") {
+        console.info("[conversation][run] text part finished", {
+          runId,
+          partId: stream.partId,
+          length: textPartLengths.get(stream.partId) ?? 0,
+        });
+        textPartLengths.delete(stream.partId);
+      }
+      if (stream.type === "reasoning-end") {
+        console.info("[conversation][run] reasoning part finished", {
+          runId,
+          partId: stream.partId,
+          length: reasoningPartLengths.get(stream.partId) ?? 0,
+        });
+        reasoningPartLengths.delete(stream.partId);
+      }
+      if (
+        stream.type === "tool-call" ||
+        stream.type === "tool-result" ||
+        stream.type === "tool-error"
+      ) {
+        console.info(`[conversation][run] ${stream.type}`, {
+          runId,
+          toolCallId: stream.toolCallId,
+          ...(stream.type === "tool-call" ? { toolName: stream.toolName } : {}),
+          ...(stream.type === "tool-error" ? { errorText: stream.errorText } : {}),
+        });
+      }
+      if (stream.type === "error") {
+        console.error("[conversation][run] stream error", { runId, errorText: stream.errorText });
+      }
       await this.store.appendEvent({ conversationId, runId, stream });
       if (stream.type === "start") started = true;
       if (stream.type === "error") failed = true;
@@ -330,13 +381,24 @@ export class ConversationRuntime {
         host: new URL(endpoint.baseUrl).host,
         imageCount: request.images.length,
         textLength: request.text.length,
+        includeHistory,
+        ephemeral,
+        toolCount: authorizedTools.length,
+        maxRetries: 0,
+        rateLimitRetries: RATE_LIMIT_RETRY_POLICY.maxRetries,
       });
       const local = endpoint.auth === "local";
+      const baseFetch = local
+        ? this.createLocalFetch(accessToken)
+        : this.createAuthorizedFetch(accessToken);
       const provider = createOpenAICompatible({
         name: "answra",
         baseURL: endpoint.baseUrl,
         apiKey: accessToken || "local",
-        fetch: local ? this.createLocalFetch(accessToken) : this.createAuthorizedFetch(accessToken),
+        fetch: createRetryingFetch(baseFetch, {
+          runId,
+          onRetry: (retry) => emitStream({ type: "retry", ...retry }),
+        }),
       });
       const content = [
         ...(request.text.trim() ? [{ type: "text" as const, text: request.text }] : []),
@@ -395,6 +457,7 @@ export class ConversationRuntime {
         system: systemPrompt,
         messages,
         abortSignal: controller.signal,
+        maxRetries: 0,
         ...(ephemeral
           ? {
               temperature: ANSWER_TEMPERATURE,
@@ -405,7 +468,22 @@ export class ConversationRuntime {
           : {}),
         ...(tools ? { tools, stopWhen: stepCountIs(6) } : {}),
         onError: ({ error }) => {
-          console.error("[conversation][run] provider error", summarizeError(error));
+          console.error("[conversation][run] provider error", {
+            runId,
+            ...summarizeError(error),
+          });
+        },
+        onFinish: ({ finishReason: reason, text, reasoningText, toolCalls, usage, totalUsage }) => {
+          finishReason = reason;
+          console.info("[conversation][run] model finished", {
+            runId,
+            finishReason: reason,
+            textLength: text.length,
+            reasoningLength: reasoningText?.length ?? 0,
+            toolCallCount: toolCalls.length,
+            usage,
+            totalUsage,
+          });
         },
       });
       for await (const chunk of result.toUIMessageStream({
@@ -442,6 +520,10 @@ export class ConversationRuntime {
       console.info("[conversation][run] finished", {
         runId,
         elapsedMs: Date.now() - startedAt,
+        outcome,
+        finishReason,
+        textLength,
+        reasoningLength,
         chunkCounts,
         cancelled: controller.signal.aborted,
       });
@@ -462,12 +544,53 @@ function validateEndpoint(endpoint: ConversationCapabilityEndpoint): void {
   }
 }
 
-function summarizeError(error: unknown): { errorName: string; error: string; statusCode?: number } {
-  const value = error as { name?: unknown; message?: unknown; statusCode?: unknown } | null;
-  const statusCode = typeof value?.statusCode === "number" ? value.statusCode : undefined;
-  return {
+type ErrorSummary = {
+  errorName: string;
+  error: string;
+  statusCode?: number;
+  urlHost?: string;
+  isRetryable?: boolean;
+  responseBody?: string;
+  retryReason?: string;
+  attempts?: ErrorSummary[];
+  lastError?: ErrorSummary;
+};
+
+function summarizeError(error: unknown, depth = 0): ErrorSummary {
+  const value = error as {
+    name?: unknown;
+    message?: unknown;
+    statusCode?: unknown;
+    url?: unknown;
+    isRetryable?: unknown;
+    responseBody?: unknown;
+    reason?: unknown;
+    errors?: unknown;
+    lastError?: unknown;
+  } | null;
+  const summary: ErrorSummary = {
     errorName: typeof value?.name === "string" ? value.name : "Error",
-    error: typeof value?.message === "string" ? value.message.slice(0, 300) : "模型请求失败",
-    ...(statusCode === undefined ? {} : { statusCode }),
+    error: typeof value?.message === "string" ? value.message.slice(0, 500) : "模型请求失败",
   };
+  if (typeof value?.statusCode === "number") summary.statusCode = value.statusCode;
+  if (typeof value?.url === "string") {
+    try {
+      summary.urlHost = new URL(value.url).host;
+    } catch {
+      // 非法 URL 不阻断日志
+    }
+  }
+  if (typeof value?.isRetryable === "boolean") summary.isRetryable = value.isRetryable;
+  if (typeof value?.responseBody === "string")
+    summary.responseBody = value.responseBody.slice(0, 2_000);
+  if (typeof value?.reason === "string") summary.retryReason = value.reason;
+  const errors = value?.errors;
+  if (depth < 2 && Array.isArray(errors)) {
+    summary.attempts = errors.map((item) => summarizeError(item, depth + 1));
+  }
+  const lastError = value?.lastError;
+  if (depth < 2 && lastError !== undefined) {
+    summary.lastError = summarizeError(lastError, depth + 1);
+  }
+  return summary;
 }

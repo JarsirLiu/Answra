@@ -16,7 +16,7 @@
 ## 涉及范围
 
 - 代码/模块：`packages/shared/src/schema/`、`packages/shared/src/channels/conversation.ts`、`apps/agent/src/core/`、`apps/agent/src/conversation/`、`packages/ui/src/app/`、`apps/desktop/src/main/window.ts`。
-- UI/进程/协议/持久化表面：renderer IPC 的 `ConversationChange` 载荷；agent worker 的 `AgentFrame.change`；内存 store 的 journal；UI 的 `useConversationChat` / `useReplyConversation` / `interviewConversation`。
+- UI/进程/协议/持久化表面：renderer IPC 的 `ConversationChange` 载荷；agent worker 的 `AgentFrame.change`；内存 store 的 journal；UI 的 `useConversationView` / `useConversationChat` / `useReplyConversation`（面试与对话共用同一投影，见[前端会话消息投影收敛为唯一一份](./2026-11-06-unified-conversation-view-projection.md)）。
 - 相关 Note：[产品方向与 Agent 底座](../../proposed/architecture/2026-10-20-product-direction-and-agent-foundation.md)、[面试语音运行时模块边界](../../proposed/architecture/2026-10-19-interview-runtime-module-boundaries.md)、[对话与答题 AI 领域拆分及对话能力复用](../../implemented/architecture/2026-10-18-ai-capability-domains-and-reuse.md)。
 
 ## 决定
@@ -27,8 +27,9 @@
 
 ```text
 packages/shared/src/schema/
-  agent.ts       AgentStreamEvent、RunOutcome
-  session.ts     ConversationMessage、ConversationSnapshot、ConversationEvent、ConversationChange
+  stream.ts      AgentStreamEvent
+  execution.ts   RunOutcome、run/step/usage/envelope facts
+  conversation.ts ConversationMessage、ConversationSnapshot、ConversationEvent、ConversationChange
   index.ts
 ```
 
@@ -56,7 +57,7 @@ UI 领域 reducer
 
 - `packages/shared` 不得 import `ai`。
 - `UIMessageChunk` 只允许出现在 `apps/agent/src/core/`；对话与面试领域不得直接消费。
-- `packages/ui` 可以继续使用 AI SDK 的 `useChat`/`UIMessageChunk` 做聊天渲染，但必须通过 app-owned 事件适配，不把 AI SDK 类型放进 shared。
+- `packages/ui` 不再用 AI SDK `useChat` 持有消息状态；所有会话表面经 `useConversationView` 消费 app-owned `ConversationChange`，不把 AI SDK 类型放进 shared。
 - `ConversationChange` 暂保留现有命名，避免本次同时做 `Session*` 重命名；重命名作为后续独立变更。
 
 ### 明确不做
@@ -71,7 +72,7 @@ UI 领域 reducer
 - `apps/agent/src/core/streamEvents.ts`：AI SDK chunk → app event 的唯一归一化点。
 - `apps/agent/src/conversation/runtime.ts`：只负责编排模型调用与 store 写入，不再向 store 写 AI SDK chunk。
 - `apps/agent/src/conversation/store.ts`：维护 `seq` 与会话 `revision`，终态由 `run-finished` 发布。
-- `packages/ui/src/app/`：消费 app event；`useConversationChat` 负责把 app event 适配成 `useChat` 需要的 `UIMessageChunk`。
+- `packages/ui/src/app/`：消费 app event；`conversationView.ts` 是唯一消息投影，`useConversationView` 负责订阅、历史回放与 gap 恢复。
 
 ## 曾考虑的替代方案
 
@@ -88,7 +89,7 @@ UI 领域 reducer
 
 ## 风险
 
-- UI 的 `useChat` 依赖 `UIMessageChunk` 的 start/finish/abort 帧；适配层必须保证流正常关闭，否则聊天会停在“思考中”。
+- UI 的 `useConversationView` 依赖 `run-finished` 收口发送等待；投影层必须保证 gap 恢复和终态可见，否则聊天会停在“思考中”。
 - 当前工作区还有未提交的面试语音闭环改动；本变更与其重叠，必须按测试逐步收口，不能把行为变化混进 schema 迁移。
 - `RunOutcome` 与消息状态是新增语义，错误轮从 `complete` 改为 `failed` 会影响既有断言；需要同步更新测试与 UI 状态判断。
 
@@ -97,7 +98,7 @@ UI 领域 reducer
 - `ConversationEvent.stream` 与 `run-finished.outcome` 是持久化/IPC 的唯一内容事件与终态；新增事件类型必须同时修改 `packages/shared/src/schema/` 和 `apps/agent/src/core/streamEvents.ts`，否则类型检查会失败。
 - `packages/shared` 不得重新依赖 `ai`；`UIMessageChunk` 只允许出现在 `apps/agent/src/core/`。架构脚本已加入这两条检查。
 - `seq` 由 store 按 run 分配；未来 SQLite 实现必须按 `(runId, seq)` 幂等，并在 `run-finished` 后清理该 run 的序号。
-- `packages/ui` 可以继续使用 AI SDK 的 `useChat`，但必须通过 `useConversationChat` 的适配层；不得把 `UIMessageChunk` 写回 shared 契约。
+- `packages/ui` 不得重新引入 `useChat` 持有消息状态；所有会话表面必须经 `conversationView.ts` / `useConversationView` 消费 app event，不得把 `UIMessageChunk` 写回 shared 契约。
 
 ## 验证
 

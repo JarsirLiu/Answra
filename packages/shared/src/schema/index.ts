@@ -1,9 +1,4 @@
-export {
-  type AgentStreamEvent,
-  agentStreamEventSchema,
-  type RunOutcome,
-  runOutcomeSchema,
-} from "./agent";
+// Stable runtime schema entrypoint for domain contracts.
 export {
   type ConversationChange,
   type ConversationEvent,
@@ -13,4 +8,30 @@ export {
   conversationEventSchema,
   conversationMessageSchema,
   conversationSnapshotSchema,
-} from "./session";
+} from "./conversation";
+export {
+  type AgentEventEnvelope,
+  type AgentExecutionEvent,
+  type AgentFinishReason,
+  type AgentPartKind,
+  type AgentRunSnapshot,
+  type AgentRunState,
+  type AgentStepSnapshot,
+  type AgentStepState,
+  type AgentUsage,
+  agentEventEnvelopeSchema,
+  agentExecutionEventSchema,
+  agentFinishReasonSchema,
+  agentPartKindSchema,
+  agentRunSnapshotSchema,
+  agentRunStateSchema,
+  agentStepSnapshotSchema,
+  agentStepStateSchema,
+  agentUsageSchema,
+  type RunOutcome,
+  runOutcomeSchema,
+} from "./execution";
+export {
+  type AgentStreamEvent,
+  agentStreamEventSchema,
+} from "./stream";

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
+import { createInterface } from "node:readline";
 import type { AgentCommand, AgentFrame, InterviewWorkerEvent } from "@answra/agent";
 import type {
   ConversationChange,
@@ -47,10 +48,16 @@ export class AgentService {
       {
         cwd: app.getPath("userData"),
         serviceName: "Answra Agent Runtime",
-        stdio: "ignore",
+        stdio: "pipe",
       },
     );
     this.worker = worker;
+    if (worker.stdout) {
+      createInterface({ input: worker.stdout }).on("line", (line) => console.info(line));
+    }
+    if (worker.stderr) {
+      createInterface({ input: worker.stderr }).on("line", (line) => console.error(line));
+    }
     worker.on("message", (message) => this.onFrame(message as AgentFrame));
     worker.on("exit", (code) => {
       if (this.worker !== worker) return;

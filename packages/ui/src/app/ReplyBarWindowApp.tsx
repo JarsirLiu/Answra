@@ -138,6 +138,7 @@ export function ReplyBarWindowApp({ bridge }: ReplyBarWindowAppProps) {
   const popover = expanded ? (
     <ReplyConversationPopover
       activeRunId={conversation.activeRunId}
+      retry={conversation.retry}
       error={conversation.error ?? state.replyError}
       messages={conversation.messages}
       placement={placement}

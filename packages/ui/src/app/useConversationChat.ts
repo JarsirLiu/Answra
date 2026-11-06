@@ -1,404 +1,146 @@
-import { useChat } from "@ai-sdk/react";
-import type {
-  ConversationChange,
-  ConversationEvent,
-  ConversationMessage,
-  DesktopBridge,
-  ReplyBarActivity,
-} from "@answra/shared";
-import type { RunOutcome } from "@answra/shared/schema";
-import type { ChatTransport, FileUIPart, UIMessage, UIMessageChunk } from "ai";
+import type { DesktopBridge, ReplyBarActivity } from "@answra/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ChatAttachment, ChatMessage } from "../components/panels/ChatPanel";
-import { projectReplyActivity } from "./replyActivity";
-
-type TerminalWaiter = { resolve: () => void; reject: (error: Error) => void };
+import type { ChatAttachment } from "../components/panels/ChatPanel";
+import { useConversationView } from "./useConversationView";
 
 function useAiConversation(
   platform: DesktopBridge | undefined,
   conversationId: string,
   operation: "chat.send" | "answer.run" = "chat.send",
 ) {
-  const [activeRunId, setActiveRunId] = useState<string>();
-  const [replyError, setReplyError] = useState<string>();
-  const [sendPending, setSendPending] = useState(false);
-  const [replyActivities, setReplyActivities] = useState<ReplyBarActivity[]>([]);
-  const waiterRef = useRef<TerminalWaiter | undefined>(undefined);
-  const runIdRef = useRef<string | undefined>(undefined);
-  const setMessagesRef = useRef<(messages: UIMessage[]) => void>(() => undefined);
-  const cancelRequestedRef = useRef(false);
-  const runCancelledRef = useRef(false);
-  const runErrorRef = useRef<string | undefined>(undefined);
-  const revisionRef = useRef(0);
-  const sendConversationIdRef = useRef(conversationId);
-
-  useEffect(() => {
-    let alive = true;
-    let changeQueue = Promise.resolve();
-    const initialize = async () => {
-      if (!platform) return;
-      try {
-        const initial = platform.createConversation
-          ? await platform.createConversation(conversationId)
-          : await platform.getConversationSnapshot?.(conversationId);
-        if (!initial) return;
-        if (alive && initial.revision >= revisionRef.current) {
-          revisionRef.current = initial.revision;
-          runIdRef.current = initial.activeRunId;
-          setActiveRunId(initial.activeRunId);
-          setMessagesRef.current(initial.messages.map(toUIMessage));
-          if (initial.activeRunId && platform.readConversationEvents) {
-            const history = await platform.readConversationEvents(conversationId, 0);
-            for (const change of history) {
-              if (
-                change.type === "event" &&
-                change.event.runId === initial.activeRunId &&
-                change.event.revision <= initial.revision
-              ) {
-                setReplyActivities((current) => projectReplyActivity(current, change.event));
-                if (change.event.stream.type === "error")
-                  setReplyError(change.event.stream.errorText);
-              }
-            }
-          }
-        }
-      } catch (error) {
-        console.error("[conversation] failed to initialize snapshot", error);
-      }
-    };
-    void initialize();
-    const applyChange = (change: ConversationChange) => {
-      if (change.type === "snapshot") {
-        const next = change.snapshot;
-        if (next.conversationId !== conversationId || next.revision <= revisionRef.current) return;
-        revisionRef.current = next.revision;
-        runIdRef.current = next.activeRunId;
-        setActiveRunId(next.activeRunId);
-        setMessagesRef.current(next.messages.map(toUIMessage));
-        if (!next.activeRunId) {
-          setSendPending(false);
-          if (runErrorRef.current) waiterRef.current?.reject(new Error(runErrorRef.current));
-          else waiterRef.current?.resolve();
-          waiterRef.current = undefined;
-        }
-        return;
-      }
-      if (change.type === "messages-appended") {
-        if (change.conversationId !== conversationId || change.revision <= revisionRef.current)
-          return;
-        revisionRef.current = change.revision;
-        runIdRef.current = change.activeRunId;
-        setActiveRunId(change.activeRunId);
-        return;
-      }
-      if (change.type === "run-finished") {
-        if (change.conversationId !== conversationId || change.revision <= revisionRef.current)
-          return;
-        revisionRef.current = change.revision;
-        runIdRef.current = undefined;
-        setSendPending(false);
-        runCancelledRef.current = change.outcome === "aborted" || change.outcome === "superseded";
-        if (change.outcome === "failed") runErrorRef.current ??= "模型请求失败";
-        setActiveRunId(undefined);
-        if (runErrorRef.current) waiterRef.current?.reject(new Error(runErrorRef.current));
-        else waiterRef.current?.resolve();
-        waiterRef.current = undefined;
-        return;
-      }
-      const { event } = change;
-      if (event.conversationId !== conversationId || event.revision <= revisionRef.current) return;
-      revisionRef.current = event.revision;
-      if (event.stream.type === "error") runErrorRef.current = event.stream.errorText;
-    };
-    const onChange = (change: ConversationChange) => {
-      changeQueue = changeQueue
-        .then(async () => {
-          if (
-            changeRevision(change) > revisionRef.current + 1 &&
-            platform?.getConversationSnapshot
-          ) {
-            const recovered = await platform.getConversationSnapshot(conversationId);
-            if (recovered.revision >= revisionRef.current) {
-              revisionRef.current = recovered.revision;
-              runIdRef.current = recovered.activeRunId;
-              setActiveRunId(recovered.activeRunId);
-              setMessagesRef.current(recovered.messages.map(toUIMessage));
-            }
-          }
-          applyChange(change);
-        })
-        .catch(() => applyChange(change));
-    };
-    const unsubscribe = platform?.onConversationChange?.(onChange);
-    return () => {
-      alive = false;
-      unsubscribe?.();
-    };
-  }, [conversationId, platform]);
-
-  const transport = useMemo<ChatTransport<UIMessage>>(
-    () => ({
-      sendMessages: async ({ messages: uiMessages, abortSignal }) => {
-        const conversationId = sendConversationIdRef.current;
-        const user = [...uiMessages].reverse().find((message) => message.role === "user");
-        if (!user) throw new Error("没有可发送的用户消息");
-        if (!platform?.sendConversationMessage)
-          throw new Error("本地 AI 服务未连接，请重启应用后重试");
-        const text = user.parts
-          .filter((part) => part.type === "text")
-          .map((part) => part.text)
-          .join("\n");
-        const images = user.parts.flatMap((part) =>
-          part.type === "file" && part.mediaType.startsWith("image/")
-            ? [{ name: part.filename ?? "image", dataUrl: part.url }]
-            : [],
-        );
-        let controller: ReadableStreamDefaultController<UIMessageChunk> | undefined;
-        const queue: UIMessageChunk[] = [];
-        const earlyEvents: ConversationEvent[] = [];
-        let runId: string | undefined;
-        let earlyOutcome: RunOutcome | undefined;
-        let closed = false;
-        let eventQueue = Promise.resolve();
-        let unsubscribe: () => void = () => undefined;
-        const flush = () => {
-          while (controller && queue.length) {
-            const chunk = queue.shift();
-            if (!chunk) break;
-            controller.enqueue(chunk);
-          }
-        };
-        const abort = () => {
-          if (runId) platform?.cancelConversationRun?.(runId);
-        };
-        const close = (outcome: RunOutcome) => {
-          if (closed) return;
-          if (!runId) {
-            earlyOutcome = outcome;
-            return;
-          }
-          queue.push(
-            outcome === "aborted" || outcome === "superseded"
-              ? { type: "abort", ...(outcome === "superseded" ? { reason: "superseded" } : {}) }
-              : { type: "finish", ...(outcome === "failed" ? { finishReason: "error" } : {}) },
-          );
-          flush();
-          closed = true;
-          unsubscribe();
-          abortSignal?.removeEventListener("abort", abort);
-          try {
-            controller?.close();
-          } catch {
-            /* The consumer already cancelled the stream. */
-          }
-          runIdRef.current = undefined;
-          setActiveRunId(undefined);
-          setSendPending(false);
-          if (outcome === "aborted" || outcome === "superseded") runCancelledRef.current = true;
-          if (runErrorRef.current) waiterRef.current?.reject(new Error(runErrorRef.current));
-          else waiterRef.current?.resolve();
-          waiterRef.current = undefined;
-        };
-        const acceptEvent = (event: ConversationEvent) => {
-          const chunk = toUIMessageChunk(event);
-          if (!chunk) return;
-          queue.push(chunk);
-          setReplyActivities((current) => projectReplyActivity(current, event));
-          if (chunk.type === "error") {
-            runErrorRef.current = chunk.errorText;
-            setReplyError(chunk.errorText);
-          }
-          flush();
-        };
-        const onChange = (change: ConversationChange) => {
-          if (change.type === "run-finished") {
-            if (change.conversationId !== conversationId) return;
-            if (runId && change.runId !== runId) return;
-            eventQueue = eventQueue.then(() => close(change.outcome));
-            return;
-          }
-          if (change.type !== "event") return;
-          const { event } = change;
-          if (event.conversationId !== conversationId || (runId && event.runId !== runId)) return;
-          eventQueue = eventQueue.then(() => {
-            if (closed) return;
-            if (!runId) {
-              earlyEvents.push(event);
-              return;
-            }
-            if (event.runId !== runId) return;
-            acceptEvent(event);
-          });
-        };
-        unsubscribe = platform.onConversationChange?.(onChange) ?? (() => undefined);
-        abortSignal?.addEventListener("abort", abort, { once: true });
-        try {
-          const command =
-            operation === "chat.send"
-              ? {
-                  operation,
-                  profileId: "general-chat" as const,
-                  conversationId,
-                  request: { text, images },
-                }
-              : { operation, conversationId, request: { text, images } };
-          const result = await platform.sendConversationMessage(command);
-          runId = result.runId;
-          runIdRef.current = runId;
-          setActiveRunId(runId);
-          for (const event of earlyEvents) if (event.runId === runId) acceptEvent(event);
-          if (earlyOutcome) close(earlyOutcome);
-          return new ReadableStream<UIMessageChunk>({
-            start(streamController) {
-              controller = streamController;
-              flush();
-              if (closed) streamController.close();
-            },
-            cancel() {
-              closed = true;
-              unsubscribe();
-              abortSignal?.removeEventListener("abort", abort);
-              abort();
-            },
-          });
-        } catch (error) {
-          closed = true;
-          unsubscribe();
-          abortSignal?.removeEventListener("abort", abort);
-          throw error;
-        }
-      },
-      reconnectToStream: async () => null,
-    }),
-    [platform, operation],
+  const { view, selectConversation, waitForRun, getView, clear } = useConversationView(
+    platform,
+    conversationId,
+    { trackActivities: true },
   );
-  const chat = useChat({
-    id: conversationId,
-    transport,
-    /**
-     * 传输层失败（模型服务未起、未登录被 main 拒绝）不会体现在流事件里，useChat 会
-     * 自行吞掉异常；这里把同一个错误交回发送方，让失败可见而不是停在「思考中」。
-     */
-    onError: (error) => {
-      setSendPending(false);
-      runErrorRef.current = error.message;
-      waiterRef.current?.reject(error);
-      waiterRef.current = undefined;
-    },
-  });
-  setMessagesRef.current = chat.setMessages;
-  // 思考耗时：从本轮发起计时，到助手正文出现第一个字为止。
+  const [sendPending, setSendPending] = useState(false);
+  const [sendError, setSendError] = useState<string>();
+  const [hideActivities, setHideActivities] = useState(false);
+  const lastActivityMessageIdRef = useRef<string | undefined>(undefined);
+  const cancelRequestedRef = useRef(false);
   const [thinkingMs, setThinkingMs] = useState<number>();
   const runStartRef = useRef<number | undefined>(undefined);
   const thinkingSetRef = useRef(true);
+
   useEffect(() => {
-    if (chat.status !== "streaming" && chat.status !== "submitted") return;
-    if (thinkingSetRef.current) return;
-    const streaming = chat.messages.at(-1);
-    const hasText = streaming?.parts.some((part) => part.type === "text" && part.text);
-    if (hasText && runStartRef.current !== undefined) {
+    if (!hideActivities) return;
+    const lastAssistant = [...view.messages]
+      .reverse()
+      .find((message) => message.role === "assistant");
+    if (
+      !lastActivityMessageIdRef.current ||
+      lastAssistant?.id !== lastActivityMessageIdRef.current
+    ) {
+      setHideActivities(false);
+    }
+  }, [hideActivities, view.messages]);
+
+  // 思考耗时：从本轮发起计时，到助手正文出现第一个字为止。
+  useEffect(() => {
+    if (thinkingSetRef.current || !view.activeRunId) return;
+    const active = view.messages.find((message) => message.id === view.activeRunId);
+    if (active?.text && runStartRef.current !== undefined) {
       thinkingSetRef.current = true;
       setThinkingMs(Date.now() - runStartRef.current);
     }
-  }, [chat.status, chat.messages]);
-  const messages: ChatMessage[] = useMemo(
-    () =>
-      chat.messages.map((message) => ({
-        id: message.id,
-        role: message.role === "assistant" ? "assistant" : "user",
-        content: message.parts
-          .filter((part) => part.type === "text")
-          .map((part) => part.text)
-          .join(""),
-        reasoning: message.parts
-          .filter((part) => part.type === "reasoning")
-          .map((part) => part.text)
-          .join(""),
-        attachments: message.parts.flatMap((part) =>
-          part.type === "file" && part.mediaType.startsWith("image/")
-            ? [
-                {
-                  id: `${message.id}-${part.url.slice(-12)}`,
-                  name: part.filename ?? "截图",
-                  previewUrl: part.url,
-                },
-              ]
-            : [],
-        ),
-      })),
-    [chat.messages],
-  );
+  }, [view.activeRunId, view.messages]);
+
+  const replyActivities = useMemo<ReplyBarActivity[]>(() => {
+    if (hideActivities) return [];
+    const message = view.activeRunId
+      ? view.messages.find((item) => item.id === view.activeRunId)
+      : [...view.messages].reverse().find((item) => item.role === "assistant");
+    return [...(message?.activities ?? [])];
+  }, [hideActivities, view.activeRunId, view.messages]);
 
   const send = useCallback(
     async (text: string, attachments: ChatAttachment[], targetConversationId = conversationId) => {
       if (!platform?.sendConversationMessage)
         throw new Error("本地 AI 服务未连接，请重启应用后重试");
-      if (activeRunId || runIdRef.current) throw new Error("当前回复尚未完成");
-      setReplyError(undefined);
-      setReplyActivities([]);
+      if (view.activeRunId || sendPending) throw new Error("当前回复尚未完成");
+      setSendError(undefined);
       setSendPending(true);
-      runErrorRef.current = undefined;
-      runCancelledRef.current = false;
-      cancelRequestedRef.current = false;
-      runStartRef.current = Date.now();
       thinkingSetRef.current = false;
       setThinkingMs(undefined);
-      let resolveTerminal: () => void = () => {};
-      let rejectTerminal: (error: Error) => void = () => {};
-      const terminal = new Promise<void>((resolve, reject) => {
-        resolveTerminal = resolve;
-        rejectTerminal = reject;
-      });
-      waiterRef.current = { resolve: resolveTerminal, reject: rejectTerminal };
+      runStartRef.current = Date.now();
+      cancelRequestedRef.current = false;
+      const previousAssistant = [...view.messages]
+        .reverse()
+        .find((message) => message.role === "assistant");
+      lastActivityMessageIdRef.current = previousAssistant?.id;
+      setHideActivities(Boolean(previousAssistant));
       try {
-        sendConversationIdRef.current = targetConversationId;
-        if (targetConversationId !== conversationId) {
-          await platform.createConversation?.(targetConversationId);
-        }
-        const files: FileUIPart[] = await Promise.all(
+        const images = await Promise.all(
           attachments.map(async (attachment) => ({
-            type: "file" as const,
-            filename: attachment.name,
-            mediaType: await getImageMediaType(attachment.previewUrl),
-            url: attachment.previewUrl.startsWith("data:")
+            name: attachment.name,
+            dataUrl: attachment.previewUrl.startsWith("data:")
               ? attachment.previewUrl
               : await blobUrlToDataUrl(attachment.previewUrl),
           })),
         );
-        await chat.sendMessage({ text, files });
-        await terminal;
-        if (runCancelledRef.current) return "cancelled";
-        return runIdRef.current ?? "completed";
+        if (targetConversationId !== conversationId) {
+          selectConversation(targetConversationId);
+          await platform.createConversation?.(targetConversationId);
+        }
+        const command =
+          operation === "chat.send"
+            ? {
+                operation,
+                profileId: "general-chat" as const,
+                conversationId: targetConversationId,
+                request: { text, images },
+              }
+            : { operation, conversationId: targetConversationId, request: { text, images } };
+        const { runId } = await platform.sendConversationMessage(command);
+        if (cancelRequestedRef.current) platform.cancelConversationRun?.(runId);
+        const outcome = await waitForRun(runId);
+        if (outcome === "aborted" || outcome === "superseded") return "cancelled";
+        const runError = getView().error;
+        if (runError) throw new Error(runError);
+        if (outcome === "failed") throw new Error("模型请求失败");
+        return runId;
       } catch (error) {
-        setSendPending(false);
-        waiterRef.current = undefined;
+        setSendError(error instanceof Error ? error.message : "发送失败");
         throw error;
+      } finally {
+        setSendPending(false);
       }
     },
-    [platform, activeRunId, chat.sendMessage, conversationId],
+    [
+      platform,
+      operation,
+      conversationId,
+      view.activeRunId,
+      view.messages,
+      sendPending,
+      selectConversation,
+      waitForRun,
+      getView,
+    ],
   );
 
   const cancel = useCallback(() => {
     cancelRequestedRef.current = true;
-    if (runIdRef.current) platform?.cancelConversationRun?.(runIdRef.current);
-    chat.stop();
-  }, [platform, chat.stop]);
+    if (view.activeRunId) platform?.cancelConversationRun?.(view.activeRunId);
+  }, [platform, view.activeRunId]);
 
   const clearMessages = useCallback(() => {
-    setMessagesRef.current([]);
-    setReplyActivities([]);
-    setReplyError(undefined);
-  }, []);
+    clear();
+    setSendError(undefined);
+    setThinkingMs(undefined);
+    setHideActivities(false);
+    lastActivityMessageIdRef.current = undefined;
+  }, [clear]);
 
   return {
-    activeRunId:
-      chat.status === "streaming" || chat.status === "submitted" ? activeRunId : undefined,
+    activeRunId: view.activeRunId,
     cancel,
     clearMessages,
-    messages,
-    replyError,
-    replyPending: Boolean(activeRunId || sendPending),
+    messages: view.messages,
+    replyError: sendError ?? view.error,
+    replyPending: Boolean(view.activeRunId || sendPending),
     replyActivities,
+    retry: view.retry,
     send,
     thinkingMs,
   };
@@ -412,11 +154,6 @@ export function useScreenshotAnswer(platform: DesktopBridge | undefined, convers
   return useAiConversation(platform, conversationId, "answer.run");
 }
 
-function changeRevision(change: ConversationChange): number {
-  if (change.type === "event") return change.event.revision;
-  return change.type === "snapshot" ? change.snapshot.revision : change.revision;
-}
-
 async function blobUrlToDataUrl(url: string): Promise<string> {
   const blob = await fetch(url).then((response) => response.blob());
   return await new Promise((resolve, reject) => {
@@ -428,99 +165,4 @@ async function blobUrlToDataUrl(url: string): Promise<string> {
     reader.onerror = () => reject(reader.error ?? new Error("无法读取图片"));
     reader.readAsDataURL(blob);
   });
-}
-
-function toUIMessageChunk(event: ConversationEvent): UIMessageChunk | undefined {
-  const stream = event.stream;
-  switch (stream.type) {
-    case "start":
-      return { type: "start", messageId: event.runId };
-    case "text-start":
-      return { type: "text-start", id: stream.partId };
-    case "text-end":
-      return { type: "text-end", id: stream.partId };
-    case "text-delta":
-      return { type: "text-delta", id: stream.partId, delta: stream.delta };
-    case "reasoning-start":
-      return { type: "reasoning-start", id: stream.partId };
-    case "reasoning-end":
-      return { type: "reasoning-end", id: stream.partId };
-    case "reasoning-delta":
-      return { type: "reasoning-delta", id: stream.partId, delta: stream.delta };
-    case "tool-input-start":
-      return {
-        type: "tool-input-start",
-        toolCallId: stream.toolCallId,
-        toolName: stream.toolName,
-        ...(stream.title === undefined ? {} : { title: stream.title }),
-      };
-    case "tool-input-delta":
-      return {
-        type: "tool-input-delta",
-        toolCallId: stream.toolCallId,
-        inputTextDelta: stream.delta,
-      };
-    case "tool-call":
-      return {
-        type: "tool-input-available",
-        toolCallId: stream.toolCallId,
-        toolName: stream.toolName,
-        input: stream.input,
-      };
-    case "tool-result":
-      return {
-        type: "tool-output-available",
-        toolCallId: stream.toolCallId,
-        output: stream.output,
-      };
-    case "tool-error":
-      return {
-        type: "tool-output-error",
-        toolCallId: stream.toolCallId,
-        errorText: stream.errorText,
-      };
-    case "source-url":
-      return {
-        type: "source-url",
-        sourceId: stream.sourceId,
-        url: stream.url,
-        ...(stream.title === undefined ? {} : { title: stream.title }),
-      };
-    case "source-document":
-      return {
-        type: "source-document",
-        sourceId: stream.sourceId,
-        mediaType: stream.mediaType,
-        title: stream.title,
-      };
-    case "error":
-      return { type: "error", errorText: stream.errorText };
-  }
-}
-
-function toUIMessage(message: ConversationMessage): UIMessage {
-  return {
-    id: message.id,
-    role: message.role,
-    parts: [
-      ...(message.text ? [{ type: "text" as const, text: message.text }] : []),
-      ...message.images.map(
-        (image): FileUIPart => ({
-          type: "file",
-          filename: image.name,
-          mediaType: image.dataUrl.startsWith("data:")
-            ? image.dataUrl.slice(5, image.dataUrl.indexOf(";"))
-            : "image/png",
-          url: image.dataUrl,
-        }),
-      ),
-    ],
-  };
-}
-
-async function getImageMediaType(url: string): Promise<string> {
-  if (url.startsWith("data:")) return url.slice(5, url.indexOf(";"));
-  return await fetch(url)
-    .then((response) => response.blob())
-    .then((blob) => blob.type || "image/png");
 }
