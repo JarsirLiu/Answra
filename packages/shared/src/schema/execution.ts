@@ -33,6 +33,18 @@ export const agentStepStateSchema = z.enum([
 
 export const agentPartKindSchema = z.enum(["text", "reasoning", "tool", "source", "file", "data"]);
 
+/** Provider-neutral retry fact shared by model stream and execution lifecycle. */
+export const agentRetrySchema = z.strictObject({
+  kind: z.enum(["rate-limit", "server-error", "network-error"]),
+  attempt: z.number().int().positive(),
+  maxRetries: z.number().int().positive(),
+  delayMs: z.number().int().nonnegative(),
+});
+
+export const agentRetryWaitSchema = agentRetrySchema.extend({
+  scheduledAt: z.string().datetime(),
+});
+
 /** AI SDK finish reasons, kept as product-owned values at the boundary. */
 export const agentFinishReasonSchema = z.enum([
   "stop",
@@ -83,7 +95,12 @@ export const agentStepSnapshotSchema = z.strictObject({
 });
 
 export const agentExecutionEventSchema = z.discriminatedUnion("type", [
-  z.strictObject({ type: z.literal("run-state-changed"), state: agentRunStateSchema }),
+  z.strictObject({
+    type: z.literal("run-state-changed"),
+    state: agentRunStateSchema,
+    attempt: z.number().int().positive(),
+    retry: agentRetryWaitSchema.optional(),
+  }),
   z.strictObject({
     type: z.literal("step-started"),
     stepId: z.string(),
@@ -130,6 +147,7 @@ export const agentEventEnvelopeSchema = z.strictObject({
 export type AgentRunState = z.infer<typeof agentRunStateSchema>;
 export type AgentStepState = z.infer<typeof agentStepStateSchema>;
 export type AgentPartKind = z.infer<typeof agentPartKindSchema>;
+export type AgentRetry = z.infer<typeof agentRetrySchema>;
 export type AgentFinishReason = z.infer<typeof agentFinishReasonSchema>;
 export type AgentUsage = z.infer<typeof agentUsageSchema>;
 export type AgentExecutionEvent = z.infer<typeof agentExecutionEventSchema>;

@@ -1,6 +1,7 @@
-import type { ConversationToolId } from "./tools/types";
+/** 通用聊天 profile 的类型与静态注册表；不接受 renderer 动态注入策略。 */
+import type { ConversationToolId } from "../tools/types";
 
-export type { ConversationToolId } from "./tools/types";
+export type { ConversationToolId } from "../tools/types";
 
 export interface ChatProfile {
   systemPrompt: string;

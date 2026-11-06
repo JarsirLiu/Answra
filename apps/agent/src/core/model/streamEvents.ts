@@ -1,11 +1,14 @@
+/**
+ * AI SDK 模型流的归一化边界。
+ *
+ * 文件职责：接收 AI SDK 的 `UIMessageChunk`，输出共享 schema 定义的
+ * `AgentStreamEvent`，让 Conversation 生成领域不直接依赖供应商流字段。
+ * 这里只处理模型流语义，不创建 Conversation 消息、Execution 状态或 UI 状态。
+ * provider metadata、step framing 和供应商特有字段不会进入稳定事件。
+ */
 import type { AgentStreamEvent } from "@answra/shared/schema";
 import type { UIMessageChunk } from "ai";
 
-/**
- * AI SDK 的流式 chunk 与产品事件的唯一转换点。
- * 只保留 UI 与 store 需要的稳定语义；provider metadata、step framing 与
- * 供应商特有字段不进入跨进程契约。
- */
 export function normalizeStreamChunk(chunk: UIMessageChunk): AgentStreamEvent | undefined {
   switch (chunk.type) {
     case "start":

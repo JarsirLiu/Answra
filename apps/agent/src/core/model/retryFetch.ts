@@ -1,5 +1,18 @@
+/**
+ * 模型 HTTP 请求的自动重试边界。
+ *
+ * 这里只处理可重放请求的等待与再次发送，并通过回调报告 retry 事实；不负责
+ * 会话消息、Execution 状态持久化或 UI 展示。AI SDK 的 `maxRetries` 由调用方
+ * 关闭后，模型请求统一经过本文件的策略。
+ */
+import type { AgentRetry } from "@answra/shared/schema";
+
+/**
+ * 模型 HTTP 请求的重试策略。
+ * `maxRetries` 表示首次请求之后最多再发起多少次请求。
+ */
 export interface RetryPolicy {
-  /** Number of retries after the first attempt. */
+  /** 首次请求之后最多再次请求的次数。 */
   maxRetries: number;
   initialDelayMs: number;
   maxDelayMs: number;
@@ -20,13 +33,9 @@ export const SERVER_ERROR_RETRY_POLICY: RetryPolicy = {
   jitterMs: 100,
 };
 
-export interface RetryAttempt {
-  kind: "rate-limit" | "server-error" | "network-error";
-  attempt: number;
-  maxRetries: number;
-  delayMs: number;
+export type RetryAttempt = AgentRetry & {
   statusCode?: number;
-}
+};
 
 const NETWORK_ERROR_CODES = new Set([
   "ECONNREFUSED",
@@ -43,14 +52,19 @@ export interface RetryingFetchOptions {
   rateLimit?: Partial<RetryPolicy>;
   serverError?: Partial<RetryPolicy>;
   onRetry?: (retry: RetryAttempt) => Promise<void> | void;
+  /** Called after the wait and immediately before the replayed HTTP request. */
+  onRetryResume?: (retry: RetryAttempt) => Promise<void> | void;
   sleep?: (ms: number, signal?: AbortSignal | null) => Promise<void>;
   log?: (message: string, details: Record<string, unknown>) => void;
 }
 
 /**
- * Retries replayable OpenAI-compatible requests at the HTTP boundary.
- * AI SDK's built-in retry is intentionally disabled so a 429 gets a minute-scale
- * backoff instead of the SDK's 2s/4s schedule.
+ * 在模型 HTTP 边界重试可安全重放的 OpenAI-compatible 请求。
+ *
+ * AI SDK 的内置重试由调用方设置为 `maxRetries: 0`；这里集中处理 429、服务端
+ * 错误和可识别的网络错误，才能使用仓库统一的等待策略，并通过 `onRetry` 把
+ * “正在等待下一次模型请求”明确交给上层记录。该函数不写 Conversation 或
+ * Execution 状态，也不负责 UI 展示。
  */
 export function createRetryingFetch(
   baseFetch: typeof fetch,
@@ -96,6 +110,7 @@ export function createRetryingFetch(
         });
         await options.onRetry?.(retry);
         await sleep(delayMs, init?.signal);
+        await options.onRetryResume?.(retry);
         retryCounts.set(kind, retries + 1);
         continue;
       }
@@ -125,6 +140,7 @@ export function createRetryingFetch(
       await options.onRetry?.(retry);
       await discardBody(response);
       await sleep(delayMs, init?.signal);
+      await options.onRetryResume?.(retry);
       retryCounts.set(retryRule.kind, retries + 1);
     }
   };

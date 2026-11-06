@@ -9,6 +9,7 @@ import type {
   ConversationSendRequest,
   InterviewPcmFrame,
 } from "@answra/shared";
+import type { AgentEventEnvelope } from "@answra/shared/schema";
 import { app, type UtilityProcess, utilityProcess } from "electron";
 import type { ResolvedModel } from "./modelRouter";
 
@@ -31,6 +32,7 @@ export class AgentService {
   private readonly pending = new Map<string, Pending>();
   private readonly listeners = new Set<(change: ConversationChange) => void>();
   private readonly interviewListeners = new Set<(event: InterviewWorkerEvent) => void>();
+  private readonly executionListeners = new Set<(event: AgentEventEnvelope) => void>();
   private readonly interviewAudioCreditListeners = new Set<
     (credit: { sessionId: string; count: number }) => void
   >();
@@ -76,6 +78,11 @@ export class AgentService {
   onInterviewEvent(listener: (event: InterviewWorkerEvent) => void): () => void {
     this.interviewListeners.add(listener);
     return () => this.interviewListeners.delete(listener);
+  }
+
+  onExecutionEvent(listener: (event: AgentEventEnvelope) => void): () => void {
+    this.executionListeners.add(listener);
+    return () => this.executionListeners.delete(listener);
   }
 
   onInterviewAudioCredit(
@@ -190,6 +197,10 @@ export class AgentService {
     }
     if (frame.type === "interview-event") {
       for (const listener of this.interviewListeners) listener(frame.event);
+      return;
+    }
+    if (frame.type === "execution-event") {
+      for (const listener of this.executionListeners) listener(frame.event);
       return;
     }
     if (frame.type === "interview-audio-credit") {

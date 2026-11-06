@@ -1,8 +1,12 @@
 import { INTERVIEW_AUDIO_CREDIT_BATCH } from "@answra/shared";
-import { ChatConversationRuntime } from "../conversation/chatRuntime";
-import type { ConversationRuntime } from "../conversation/runtime";
-import { type ConversationStore, MemoryConversationStore } from "../conversation/store";
+import type { AgentEventEnvelope } from "@answra/shared/schema";
+import { MemoryConversationStore } from "../conversation/session/memoryStore";
+import type { ConversationStore } from "../conversation/session/store";
 import { createAuthorizedConversationTools } from "../conversation/tools/registry";
+import { ChatConversationRuntime } from "../conversation/turn/chatRuntime";
+import type { ConversationRuntime } from "../conversation/turn/runtime";
+import { MemoryExecutionStore } from "../execution/memoryStore";
+import type { ExecutionStore } from "../execution/store";
 import { InterviewAudioIngress } from "../interview/audio/ingress";
 import {
   conversationId as asConversationId,
@@ -41,6 +45,7 @@ export interface AgentTransport {
 export interface AgentHostOptions {
   transport: AgentTransport;
   store?: ConversationStore;
+  executionStore?: ExecutionStore;
   /**
    * 面试 VAD 的资源来源（预编译 TEN VAD wasm 由 desktop 组合根读盘后注入）。
    * 未注入时 interview-start 会显式失败：不静默降级为无 VAD 会话。
@@ -76,6 +81,7 @@ const TOKEN_REQUEST_TIMEOUT_MS = 10_000;
 export function startAgentHost({
   transport,
   store = new MemoryConversationStore(),
+  executionStore = new MemoryExecutionStore(),
   vad,
   recognizer,
   turnSettler,
@@ -124,7 +130,10 @@ export function startAgentHost({
 
   const runtime = new ChatConversationRuntime({
     emit: (change) => transport.send({ version: 1, type: "change", change }),
+    emitExecution: (event: AgentEventEnvelope) =>
+      transport.send({ version: 1, type: "execution-event", event }),
     store,
+    executionStore,
     createTools: createAuthorizedConversationTools,
     tokenProvider: requestAccessToken,
   });

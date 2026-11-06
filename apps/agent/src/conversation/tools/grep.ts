@@ -1,4 +1,4 @@
-/** Grep searches bounded plain-text workspace files for a literal string. */
+/** 在工作区范围内按字面文本搜索有大小上限的纯文本文件。 */
 
 import { promises as fs } from "node:fs";
 import { jsonSchema, tool } from "ai";

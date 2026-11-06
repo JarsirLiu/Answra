@@ -1,6 +1,5 @@
-import type { ChatProfile } from "./profiles";
-
-/** Prompt and run policy for screenshot answers; kept separate from general chat profiles. */
+/** 截图答题的提示词与回合策略；与通用聊天 profile 分开，避免互相污染。 */
+import type { ChatProfile } from "./registry";
 export const ANSWER_PROFILE = {
   systemPrompt: [
     "你是 Answra 答题助手。先快速看懂题目，内部推理从简，直接作答，不反复验算、不比较多个方案；最终回复只给答案，不写分析过程，也不复述题目。",

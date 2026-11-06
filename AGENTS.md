@@ -29,7 +29,14 @@
 | 目录 | 职责 | 约束 |
 | --- | --- | --- |
 | `src/worker` | 线协议 `AgentCommand` / `AgentFrame`，跨进程唯一契约 | 只放协议类型；命令/帧变更必须同步 desktop worker |
-| `src/conversation` | 会话运行时、会话存储端口与内存适配器 | 不依赖 Electron / React；新增领域平级加目录 |
+| `src/core/run` | 跨领域进程内 run 取消与完成等待原语 | 不保存持久化 run 状态；不放产品策略 |
+| `src/core/model` | AI SDK/provider 边界归一化与模型 HTTP 重试原语 | 不放 Conversation profile 或 transcript 规则 |
+| `src/execution` | run/attempt/step 的状态、事件、进程内 store 和查询投影归属 | 当前只实现进程内 store；不得声称已有 durable store 或恢复流程 |
+| `src/conversation/session` | Conversation transcript、snapshot/revision、仓储端口与内存适配器 | 不拥有通用执行状态机或 UI DTO 投影 |
+| `src/conversation/turn` | 一次对话/答题回合的认领、模型执行、流消费与终态收尾 | 不定义共享执行状态 schema；依赖 `core/model` 归一化模型边界 |
+| `src/conversation/profiles` | Agent 注册的提示词、上下文策略与工具授权 | 不接收 renderer 提供的任意 prompt 或工具实现 |
+| `src/conversation/tools` | Conversation 领域工具及静态授权 registry | 不执行桌面平台能力；不得由 desktop 反向 RPC 代执行 |
+| `src/interview` | 语音采集后的转录、turn 与自动回复领域 | 与 Conversation 保持平级，不把面试状态塞进会话目录 |
 | 平台能力与工具 | 采集、键鼠注入、窗口、密钥等桌面平台实现留在 desktop；Agent 工具由 Agent 注册并在 Agent 进程执行 | desktop 可注入工作区根目录等授权上下文，不得代执行 Agent 工具或通过反向 RPC 提供工具能力 |
 
 入口规则：desktop 只从 `@answra/agent`（`exports` 的 `.`）导入；本包不产出独立构建产物，由 desktop 的 `build:electron` 一并 bundle。

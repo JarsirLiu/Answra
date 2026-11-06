@@ -1,4 +1,4 @@
-/** Agent-process filesystem boundaries shared by conversation Read and Grep. */
+/** Conversation Read/Grep 共用的 Agent 进程工作区文件边界。 */
 
 import { promises as fs } from "node:fs";
 import path from "node:path";

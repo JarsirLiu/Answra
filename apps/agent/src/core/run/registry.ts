@@ -1,6 +1,11 @@
 /**
- * 跨领域的 run 生命周期原语：登记 runId 与 AbortController，提供取消、完成信号与
- * 整体收尾。它不关心会话、消息或模型，领域 runtime 负责在 run 结束时调用 finish。
+ * 进程内的 run 生命周期协调器。
+ *
+ * 文件职责：登记 `runId` 与 `AbortController`，提供取消、完成等待、在途数量和
+ * 进程退出时的批量收尾。它不关心会话、消息、模型或产品状态；领域 runtime
+ * 负责在自己的 run 事实落账后调用 `finish`。
+ *
+ * 这不是 Execution 领域的状态机，也不提供持久化。进程重启后它不会恢复任何 run。
  */
 export class RunRegistry {
   private readonly runs = new Map<string, RunRecord>();

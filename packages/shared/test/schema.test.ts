@@ -102,7 +102,7 @@ describe("event schema", () => {
         aggregateRevision: 1,
         producerId: "agent-local-1",
         occurredAt: "2026-11-06T00:00:00.000Z",
-        event: { type: "run-state-changed", state: "running" },
+        event: { type: "run-state-changed", state: "running", attempt: 1 },
       }),
     ).toMatchObject({ event: { state: "running" } });
   });

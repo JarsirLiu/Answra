@@ -1,48 +1,12 @@
+/** Conversation transcript 的进程内仓储适配器，保存快照、revision 和有界 journal。 */
 import type {
   ConversationChange,
   ConversationEvent,
   ConversationMessage,
-  ConversationSendRequest,
   ConversationSnapshot,
 } from "@answra/shared";
 import type { RunOutcome } from "@answra/shared/schema";
-
-export interface ConversationStore {
-  create(conversationId: string): Promise<ConversationSnapshot>;
-  /**
-   * 仅空闲清理：会话没有活动 run 时才清空消息与 journal；仍有活动 run 时 no-op。
-   * 运行中的残留清理由以下原子认领负责，任何调用方不得在活动 run 期间强制清空。
-   * 清空本身是一次状态迁移：递增 revision 并发布 snapshot change（同时入 journal），
-   * 迟到/重连的订阅者按既有游标规则即可回放到清空后的状态；
-   * 未来 SQLite 实现须在同一事务内完成删除与版本推进，并按会话串行。
-   */
-  clear(conversationId: string): Promise<void>;
-  load(conversationId: string): Promise<ConversationSnapshot>;
-  beginRun(conversationId: string, runId: string, userMessage: ConversationMessage): Promise<void>;
-  /**
-   * 认领一次「回复最后一条用户消息」的运行：不写 user，只追加 streaming 的
-   * assistant 消息，并返回被认领的 user 消息。没有可回复的用户消息或已有活动
-   * run 时抛错，且不产生任何写入。
-   */
-  beginReplyRun(conversationId: string, runId: string): Promise<ConversationMessage>;
-  appendUserMessage(conversationId: string, userMessage: ConversationMessage): Promise<void>;
-  /**
-   * 一次性答题运行的认领原语：在同一步内完成「有活动 run 时抛
-   * 『当前回复尚未完成』→ 清空上一轮残留消息与 journal（revision 保持单调）→
-   * 安装本轮 user/assistant 消息对」。检查、清理与安装是不可拆分的状态迁移：
-   * 未来 SQLite 实现必须放在同一事务并按会话串行，绝不允许通过陈旧快照
-   * 抹除在途运行。
-   */
-  beginEphemeralRun(
-    conversationId: string,
-    runId: string,
-    userMessage: ConversationMessage,
-  ): Promise<void>;
-  appendEvent(event: Omit<ConversationEvent, "revision" | "seq">): Promise<ConversationChange>;
-  finishRun(conversationId: string, runId: string, outcome: RunOutcome): Promise<void>;
-  readAfter(conversationId: string, revision: number): Promise<ConversationChange[]>;
-  subscribe(listener: (change: ConversationChange) => void): () => void;
-}
+import type { ConversationStore } from "./store";
 
 type Session = {
   snapshot: ConversationSnapshot;
@@ -311,17 +275,4 @@ function changeRevision(change: ConversationChange): number {
 
 function oldestRevision(change: ConversationChange): number {
   return changeRevision(change);
-}
-
-export function createUserMessage(
-  id: string,
-  request: ConversationSendRequest,
-): ConversationMessage {
-  return {
-    id,
-    role: "user",
-    text: request.text,
-    images: request.images.map((image) => ({ ...image })),
-    status: "complete",
-  };
 }

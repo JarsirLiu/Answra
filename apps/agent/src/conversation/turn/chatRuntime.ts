@@ -1,9 +1,9 @@
+/** 通用聊天 profile 到 Conversation 回合入口的薄组合适配器。 */
 import type { ConversationSendRequest } from "@answra/shared";
-import type { ChatProfileId } from "./profiles";
-import { CHAT_PROFILES } from "./profiles";
+import type { ChatProfileId } from "../profiles/registry";
+import { CHAT_PROFILES } from "../profiles/registry";
 import { ConversationRuntime } from "./runtime";
 
-/** Conversation-only runtime extension; answer builds depend on the base runtime directly. */
 export class ChatConversationRuntime extends ConversationRuntime {
   async sendChat(
     profileId: ChatProfileId,
@@ -13,16 +13,16 @@ export class ChatConversationRuntime extends ConversationRuntime {
   ): Promise<{ runId: string }> {
     const profile = CHAT_PROFILES[profileId];
     if (!profile) throw new Error("未授权的对话能力配置");
-    return this.startRun(
+    return this.startRun({
       conversationId,
       request,
       accessToken,
-      profile.systemPrompt,
-      profile.includeHistory,
-      false,
-      profile.injectTime ?? false,
-      profile.tools,
-    );
+      systemPrompt: profile.systemPrompt,
+      includeHistory: profile.includeHistory,
+      ephemeral: false,
+      injectTime: profile.injectTime ?? false,
+      authorizedTools: profile.tools,
+    });
   }
 
   /** Generates an assistant turn for the last user message already in the store. */

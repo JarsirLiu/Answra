@@ -36,8 +36,8 @@ const auditDirectory = `.release-audit/${manifest.profile}`;
 const featureModulePatterns = {
   chat: [
     "packages/ui/src/components/panels/ChatPanel",
-    "agent/src/conversation/chatRuntime.ts",
-    "agent/src/conversation/profiles.ts",
+    "agent/src/conversation/turn/chatRuntime.ts",
+    "agent/src/conversation/profiles/registry.ts",
   ],
   workspace: [
     "packages/ui/src/components/panels/workspace/",

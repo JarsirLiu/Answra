@@ -1,4 +1,4 @@
-/** Static conversation tool registry; authorization and AI SDK tools derive from one definition. */
+/** Conversation 静态工具注册表；授权判断与 AI SDK tool set 共用同一份定义。 */
 
 import type { ToolSet } from "ai";
 import { grepDefinition } from "./grep";

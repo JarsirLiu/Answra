@@ -1,4 +1,4 @@
-/** Time reminder injected into the last user message for time-aware profiles. */
+/** 为显式开启时间上下文的 profile 构造注入到最后一条用户消息的时间提醒。 */
 
 function formatLocalTime(): string {
   const now = new Date();

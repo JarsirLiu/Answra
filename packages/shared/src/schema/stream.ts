@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { agentRetrySchema } from "./execution";
 
 /** Provider-neutral model output events normalized at the Agent boundary. */
 export const agentStreamEventSchema = z.discriminatedUnion("type", [
@@ -56,13 +57,7 @@ export const agentStreamEventSchema = z.discriminatedUnion("type", [
     mediaType: z.string(),
     title: z.string(),
   }),
-  z.strictObject({
-    type: z.literal("retry"),
-    kind: z.enum(["rate-limit", "server-error", "network-error"]),
-    attempt: z.number().int().positive(),
-    maxRetries: z.number().int().positive(),
-    delayMs: z.number().int().nonnegative(),
-  }),
+  z.strictObject({ type: z.literal("retry"), ...agentRetrySchema.shape }),
   z.strictObject({ type: z.literal("error"), errorText: z.string() }),
 ]);
 

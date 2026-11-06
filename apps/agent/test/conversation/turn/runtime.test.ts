@@ -4,11 +4,12 @@ import {
   ActiveExamConversationId,
   type ConversationChange,
 } from "@answra/shared";
+import type { AgentEventEnvelope } from "@answra/shared/schema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ChatConversationRuntime } from "../../src/conversation/chatRuntime";
-import type { ConversationStore } from "../../src/conversation/store";
-import { MemoryConversationStore } from "../../src/conversation/store";
-import { createAuthorizedConversationTools } from "../../src/conversation/tools/registry";
+import { MemoryConversationStore } from "../../../src/conversation/session/memoryStore";
+import type { ConversationStore } from "../../../src/conversation/session/store";
+import { createAuthorizedConversationTools } from "../../../src/conversation/tools/registry";
+import { ChatConversationRuntime } from "../../../src/conversation/turn/chatRuntime";
 
 type RecordedRequest = {
   messages: Array<{ role: string; content: unknown }>;
@@ -37,6 +38,7 @@ describe("ephemeral conversation runtime", () => {
   let requests: RecordedRequest[];
   let runtime: ChatConversationRuntime;
   let changes: ConversationChange[];
+  let executionEvents: AgentEventEnvelope[];
   let holdResponse: boolean;
   let modelFailure: { status: number; message: string } | undefined;
   let serverPort = 0;
@@ -44,6 +46,7 @@ describe("ephemeral conversation runtime", () => {
   beforeEach(async () => {
     requests = [];
     changes = [];
+    executionEvents = [];
     holdResponse = false;
     modelFailure = undefined;
     server = createServer(async (request, response) => {
@@ -77,6 +80,7 @@ describe("ephemeral conversation runtime", () => {
     serverPort = address.port;
     runtime = new ChatConversationRuntime({
       emit: (change) => changes.push(change),
+      emitExecution: (event) => executionEvents.push(event),
       createTools: createAuthorizedConversationTools,
     });
     runtime.configure({ chat: endpoint(address.port), answer: endpoint(address.port) });
@@ -128,6 +132,11 @@ describe("ephemeral conversation runtime", () => {
       { type: "snapshot", snapshot },
     ]);
     expect(changes.filter((change) => change.type === "run-finished")).toHaveLength(2);
+    expect(
+      executionEvents
+        .filter((event) => event.runId === first.runId)
+        .map((event) => event.event.type === "run-state-changed" && event.event.state),
+    ).toEqual(["queued", "claimed", "running", "completed"]);
     expect(
       events.some(
         (event) => event.stream.type === "reasoning-delta" && event.stream.delta === "分析中",

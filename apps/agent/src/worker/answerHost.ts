@@ -1,5 +1,9 @@
-import { ConversationRuntime } from "../conversation/runtime";
-import { type ConversationStore, MemoryConversationStore } from "../conversation/store";
+import type { AgentEventEnvelope } from "@answra/shared/schema";
+import { MemoryConversationStore } from "../conversation/session/memoryStore";
+import type { ConversationStore } from "../conversation/session/store";
+import { ConversationRuntime } from "../conversation/turn/runtime";
+import { MemoryExecutionStore } from "../execution/memoryStore";
+import type { ExecutionStore } from "../execution/store";
 import type { AgentCommand, AgentFrame } from "./protocol";
 
 /** Transport boundary used by the answer-only worker composition. */
@@ -17,12 +21,14 @@ export interface AnswerAgentHost {
 export interface AnswerAgentHostOptions {
   transport: AnswerAgentTransport;
   store?: ConversationStore;
+  executionStore?: ExecutionStore;
 }
 
 /** Composition root for the answer profile; it has no interview runtime or media dependencies. */
 export function startAnswerAgentHost({
   transport,
   store = new MemoryConversationStore(),
+  executionStore = new MemoryExecutionStore(),
 }: AnswerAgentHostOptions): AnswerAgentHost {
   const tokenRequests = new Map<
     string,
@@ -32,7 +38,10 @@ export function startAnswerAgentHost({
   let disposed = false;
   const runtime = new ConversationRuntime({
     emit: (change) => transport.send({ version: 1, type: "change", change }),
+    emitExecution: (event: AgentEventEnvelope) =>
+      transport.send({ version: 1, type: "execution-event", event }),
     store,
+    executionStore,
     createTools: () => undefined,
     tokenProvider: () =>
       new Promise((resolve, reject) => {

@@ -4,18 +4,21 @@
  * 目录分层（按领域切分，新增领域平行加目录，减少并行开发的改动冲突）：
  *   worker/host.ts          组装点：传输 + 运行时 + 命令分发
  *   worker/protocol.ts      worker 线协议（与 desktop main 之间的唯一契约）
- *   conversation/profiles.ts Agent 注册的提示词、上下文策略与工具授权
- *   conversation/runtime.ts 会话运行时：模型调用、运行生命周期、取消
- *   conversation/store.ts   会话存储端口与内存适配器
+ *   conversation/session/ 会话 transcript、快照、revision 与仓储
+ *   conversation/turn/    对话/答题的一次回复回合与模型流编排
+ *   conversation/profiles/ Agent 注册的提示词、上下文策略与工具授权
+ *   conversation/tools/   Conversation 领域内的工具与静态授权
  *
  * Agent 工具在本进程实现；桌面平台能力（读屏/音频采集、键鼠注入、窗口）由 desktop
  * 适配。该包不依赖 Electron 与 React，worker transport 由宿主单独装配。
  */
 
-export { ChatConversationRuntime } from "./conversation/chatRuntime";
-export { ConversationRuntime } from "./conversation/runtime";
-export type { ConversationStore } from "./conversation/store";
-export { MemoryConversationStore } from "./conversation/store";
+export { MemoryConversationStore } from "./conversation/session/memoryStore";
+export type { ConversationStore } from "./conversation/session/store";
+export { ChatConversationRuntime } from "./conversation/turn/chatRuntime";
+export { ConversationRuntime } from "./conversation/turn/runtime";
+export { MemoryExecutionStore } from "./execution/memoryStore";
+export type { ExecutionStore } from "./execution/store";
 export type {
   OfflineRecognizerModule,
   OfflineRecognizerRecipe,

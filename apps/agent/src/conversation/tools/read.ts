@@ -1,4 +1,4 @@
-/** Read retrieves bounded, line-numbered plain text from the active workspace. */
+/** 从当前工作区读取有大小上限、带行号的纯文本内容。 */
 
 import { jsonSchema, tool } from "ai";
 import type { ConversationToolContext } from "./types";

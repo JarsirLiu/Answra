@@ -2,12 +2,12 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { executeGrep } from "../../src/conversation/tools/grep";
-import { executeRead } from "../../src/conversation/tools/read";
+import { executeGrep } from "../../../src/conversation/tools/grep";
+import { executeRead } from "../../../src/conversation/tools/read";
 import {
   createAuthorizedConversationTools,
   getConversationToolDefinitions,
-} from "../../src/conversation/tools/registry";
+} from "../../../src/conversation/tools/registry";
 
 describe("conversation tool registry", () => {
   const roots: string[] = [];

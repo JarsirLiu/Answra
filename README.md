@@ -80,7 +80,11 @@ apps/desktop           Electron 桌面壳
 apps/agent             平台无关的 Agent 运行时（不依赖 Electron/React），由 desktop 的 utility process 拉起
   src/index.ts         公共入口：desktop worker 的唯一导入面
   src/worker           worker 线协议（main ↔ agent 命令与帧）
-  src/conversation     会话运行时与存储端口；新增领域（转写、工具、触发）平级加目录
+  src/core/run         进程内 run 取消与完成等待原语
+  src/core/model       AI SDK/provider 归一化与模型 HTTP 重试
+  src/execution        run/attempt/step 事件、状态、进程内 store 和投影
+  src/conversation     会话领域：session、turn、profiles、tools 子域
+  src/interview        面试语音领域：audio、transcription、turns、vad、reply
 examples/vad-asr-eval  可选真实样本 VAD/ASR 评测：原句与链路转录并排、人工审阅及 turn 延迟；不生成回答、不进常规门禁
 scripts/architecture   架构守护脚本（深导入/依赖环/平台越界检查）
 scripts/docs           文档门禁

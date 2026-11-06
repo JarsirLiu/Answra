@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createRetryingFetch, type RetryAttempt } from "../../src/conversation/retryFetch";
+import { createRetryingFetch, type RetryAttempt } from "../../../src/core/model/retryFetch";
 
 describe("retrying fetch", () => {
   it("retries a replayable 429 with the configured delay and reports the attempt", async () => {

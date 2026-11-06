@@ -1,6 +1,6 @@
 import type { UIMessageChunk } from "ai";
 import { describe, expect, it } from "vitest";
-import { normalizeStreamChunk } from "../../src/core/streamEvents";
+import { normalizeStreamChunk } from "../../../src/core/model/streamEvents";
 
 describe("normalizeStreamChunk", () => {
   it("keeps content parts and tool/source events in the app-owned shape", () => {

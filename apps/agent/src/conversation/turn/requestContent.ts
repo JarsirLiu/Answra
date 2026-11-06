@@ -1,6 +1,5 @@
+/** 校验用户发送内容，并把有大小上限的 data URL 解码成模型请求内容。 */
 import type { ConversationSendRequest } from "@answra/shared";
-
-/** Conversation request content validation: text/image limits and data-URL parsing. */
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
