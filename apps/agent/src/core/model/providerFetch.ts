@@ -35,7 +35,7 @@ export function createAuthorizedFetch(
       try {
         refreshed = await tokenProvider({ forceRefresh: true });
       } catch (error) {
-        console.warn("[conversation][run] 令牌刷新失败", summarizeModelError(error));
+        console.warn("[agent][run] 令牌刷新失败", summarizeModelError(error));
       }
       if (refreshed && refreshed !== accessToken) {
         const retried = await send(refreshed, input, init);

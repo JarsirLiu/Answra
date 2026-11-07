@@ -5,7 +5,7 @@ import {
 } from "@answra/shared";
 import { type BrowserWindow, type IpcMainEvent, ipcMain, session } from "electron";
 import type { AgentService } from "../conversation/agentService";
-import { getWindow, isWindowFromSender, sendConversationSnapshot } from "../window";
+import { getWindow, isWindowFromSender } from "../window";
 import { InterviewCaptureService } from "./interviewCaptureService";
 
 /** IPC and permission boundary for the current microphone-only interview input. */
@@ -52,16 +52,6 @@ export function registerInterviewIpc(agent: AgentService) {
     if (!capture.acceptAudioCredit(credit.sessionId, credit.count)) return;
     getWindow()?.webContents.send(InterviewChannels.AudioCredit, credit);
   });
-  const unsubscribeInterviewEvents = agent.onInterviewEvent((event) => {
-    if (event.type !== "turn-committed") return;
-    void agent
-      .getSnapshot(event.turn.conversationId)
-      .then(sendConversationSnapshot)
-      .catch((error: unknown) =>
-        console.warn("[interview] failed to publish transcript snapshot", error),
-      );
-  });
-
   session.defaultSession.setDisplayMediaRequestHandler((_request, callback) => callback({}));
   session.defaultSession.setPermissionRequestHandler(
     (webContents, permission, callback, details) => {
@@ -119,7 +109,6 @@ export function registerInterviewIpc(agent: AgentService) {
       ipcMain.removeHandler(InterviewChannels.Stop);
       ipcMain.removeListener(InterviewChannels.AudioFrame, onAudioFrame);
       unsubscribeAudioCredits();
-      unsubscribeInterviewEvents();
     },
   };
 }

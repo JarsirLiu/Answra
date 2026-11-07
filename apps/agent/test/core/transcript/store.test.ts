@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MemoryConversationStore } from "../../../src/conversation/session/memoryStore";
+import { MemoryConversationStore } from "../../../src/core/transcript/memoryStore";
 
 describe("memory conversation transcript store", () => {
   it("appends completed user messages without creating an Agent run", async () => {

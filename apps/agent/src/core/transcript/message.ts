@@ -1,4 +1,4 @@
-/** 把已校验的用户输入映射成 transcript 中的完整用户消息。 */
+/** 把已校验的请求映射成 transcript 中的完整用户消息。 */
 import type { ConversationMessage, ConversationSendRequest } from "@answra/shared";
 export function createUserMessage(
   id: string,

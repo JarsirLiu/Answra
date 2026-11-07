@@ -1,9 +1,8 @@
-/** 将 fullStream 事件串行写入唯一 ExecutionStore，并维护回合终态指标。 */
-import type { AgentEvent, AgentStreamEvent } from "@answra/shared/schema";
-import type { ConversationStore } from "../session/store";
+/** 串行追加现有 AgentEvent 到 ExecutionStore 并通知领域订阅者；不写 transcript。 */
+import type { AgentEvent, AgentEventEnvelope } from "@answra/shared/schema";
+import type { ExecutionEventMetadata, ExecutionStore } from "../../execution/store";
 
-/** 一个回合的流统计；只用于诊断，不进入跨进程 schema。 */
-export interface TurnMetrics {
+export interface RunMetrics {
   readonly chunkCounts: Record<string, number>;
   readonly textLength: number;
   readonly reasoningLength: number;
@@ -13,16 +12,14 @@ export interface TurnMetrics {
   readonly aborted: boolean;
 }
 
-export function createStreamJournal({
-  conversationId,
+export function createExecutionJournal({
   runId,
-  store,
   executionStore,
+  onEvent,
 }: {
-  conversationId: string;
   runId: string;
-  store: ConversationStore;
-  executionStore: import("../../execution/store").ExecutionStore;
+  executionStore: ExecutionStore;
+  onEvent: (event: AgentEventEnvelope) => Promise<void>;
 }) {
   const chunkCounts: Record<string, number> = {};
   const textPartLengths = new Map<string, number>();
@@ -34,11 +31,23 @@ export function createStreamJournal({
   let finished = false;
   let aborted = false;
 
+  async function notify(envelope: AgentEventEnvelope): Promise<void> {
+    await onEvent(envelope);
+    const event = envelope.event;
+    if (event.type === "start") started = true;
+    if (event.type === "finish") {
+      finished = true;
+      if (event.finishReason === "error") failed = true;
+    }
+    if (event.type === "abort") aborted = true;
+    if (event.type === "error") failed = true;
+  }
+
   return {
     async append(event: AgentEvent): Promise<void> {
       chunkCounts[event.type] = (chunkCounts[event.type] ?? 0) + 1;
       if (Object.keys(chunkCounts).length === 1 && chunkCounts[event.type] === 1)
-        console.info("[conversation][run] first event", { runId, type: event.type });
+        console.info("[agent][run] first event", { runId, type: event.type });
       if (event.type === "text-delta") {
         textLength += event.delta.length;
         textPartLengths.set(
@@ -54,7 +63,7 @@ export function createStreamJournal({
         );
       }
       if (event.type === "text-end") {
-        console.info("[conversation][run] text part finished", {
+        console.info("[agent][run] text part finished", {
           runId,
           partId: event.partId,
           length: textPartLengths.get(event.partId) ?? 0,
@@ -62,7 +71,7 @@ export function createStreamJournal({
         textPartLengths.delete(event.partId);
       }
       if (event.type === "reasoning-end") {
-        console.info("[conversation][run] reasoning part finished", {
+        console.info("[agent][run] reasoning part finished", {
           runId,
           partId: event.partId,
           length: reasoningPartLengths.get(event.partId) ?? 0,
@@ -76,30 +85,27 @@ export function createStreamJournal({
         event.type === "tool-output-denied" ||
         event.type === "tool-approval-request"
       ) {
-        console.info(`[conversation][run] ${event.type}`, {
+        console.info(`[agent][run] ${event.type}`, {
           runId,
           toolCallId: event.toolCallId,
           ...("toolName" in event ? { toolName: event.toolName } : {}),
           ...(event.type === "tool-error" ? { errorText: event.errorText } : {}),
         });
       }
-      if (event.type === "error") {
-        console.error("[conversation][run] stream error", { runId, errorText: event.errorText });
-      }
-      const stepId =
-        event.type === "step-started" || event.type === "step-finished" ? event.stepId : undefined;
-      await executionStore.appendEvent(runId, event, stepId ? { stepId } : undefined);
-      if (isStreamEvent(event)) await store.applyStreamEvent(conversationId, runId, event);
-      if (event.type === "start") started = true;
-      if (event.type === "finish") {
-        finished = true;
-        if (event.finishReason === "error") failed = true;
-      }
-      if (event.type === "abort") aborted = true;
-      if (event.type === "error") failed = true;
+      if (event.type === "error")
+        console.error("[agent][run] stream error", { runId, errorText: event.errorText });
+      const metadata: ExecutionEventMetadata =
+        event.type === "step-started" || event.type === "step-finished"
+          ? { stepId: event.stepId }
+          : {};
+      await notify(await executionStore.appendEvent(runId, event, metadata));
     },
 
-    get metrics(): TurnMetrics {
+    async notify(envelope: AgentEventEnvelope): Promise<void> {
+      await notify(envelope);
+    },
+
+    get metrics(): RunMetrics {
       return {
         chunkCounts,
         textLength,
@@ -111,13 +117,4 @@ export function createStreamJournal({
       };
     },
   };
-}
-
-function isStreamEvent(event: AgentEvent): event is AgentStreamEvent {
-  return (
-    event.type !== "run-state-changed" &&
-    event.type !== "step-started" &&
-    event.type !== "step-finished" &&
-    event.type !== "part-state-changed"
-  );
 }

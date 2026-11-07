@@ -1,5 +1,3 @@
-import type { InterviewWorkerEvent } from "@answra/agent";
-import type { ConversationSnapshot } from "@answra/shared";
 import { ActiveInterviewConversationId, InterviewChannels } from "@answra/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -33,17 +31,6 @@ const harness = vi.hoisted(() => {
     audioCreditListener: undefined as
       | ((credit: { sessionId: string; count: number }) => void)
       | undefined,
-    interviewEventListener: undefined as ((event: InterviewWorkerEvent) => void) | undefined,
-    publishConversationSnapshot: vi.fn(),
-    getSnapshot: vi.fn(
-      async (): Promise<ConversationSnapshot> => ({
-        conversationId: ActiveInterviewConversationId,
-        eventRevision: 0,
-        messages: [
-          { id: "user-1", role: "user", text: "已识别的问题", images: [], status: "complete" },
-        ],
-      }),
-    ),
     startInterview: vi.fn(async () => undefined),
     markInterviewCaptureReady: vi.fn(async () => undefined),
     failInterviewCapture: vi.fn(async () => undefined),
@@ -238,43 +225,6 @@ describe("interview IPC", () => {
     expect(agent.sendInterviewPcmFrame).toHaveBeenCalledOnce();
 
     await ipc.stopActive();
-    ipc.dispose();
-  });
-
-  it("publishes the transcript snapshot after an interview turn is committed", async () => {
-    const agent = {
-      getSnapshot: harness.getSnapshot,
-      onInterviewAudioCredit: () => () => undefined,
-      onInterviewEvent: (listener: (event: InterviewWorkerEvent) => void) => {
-        harness.interviewEventListener = listener;
-        return () => {
-          harness.interviewEventListener = undefined;
-        };
-      },
-    } as unknown as AgentService;
-    const ipc = registerInterviewIpc(agent);
-
-    harness.interviewEventListener?.({
-      type: "turn-committed",
-      turn: {
-        sessionId: "capture-1",
-        conversationId: ActiveInterviewConversationId,
-        turnId: "turn-1",
-        version: 1,
-        status: "committed",
-        chunks: [],
-        missingChunkIndexes: [],
-      },
-    });
-
-    await vi.waitFor(() =>
-      expect(harness.publishConversationSnapshot).toHaveBeenCalledWith(
-        expect.objectContaining({
-          conversationId: ActiveInterviewConversationId,
-          messages: [expect.objectContaining({ role: "user", text: "已识别的问题" })],
-        }),
-      ),
-    );
     ipc.dispose();
   });
 });

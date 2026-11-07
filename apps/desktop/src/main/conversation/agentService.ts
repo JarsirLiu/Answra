@@ -31,6 +31,7 @@ export class AgentService {
   private worker?: UtilityProcess;
   private readonly pending = new Map<string, Pending>();
   private readonly listeners = new Set<(event: AgentEventEnvelope) => void>();
+  private readonly snapshotListeners = new Set<(snapshot: ConversationSnapshot) => void>();
   private readonly interviewListeners = new Set<(event: InterviewWorkerEvent) => void>();
   private readonly interviewAudioCreditListeners = new Set<
     (credit: { sessionId: string; count: number }) => void
@@ -72,6 +73,11 @@ export class AgentService {
   onEvent(listener: (event: AgentEventEnvelope) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  onSnapshot(listener: (snapshot: ConversationSnapshot) => void): () => void {
+    this.snapshotListeners.add(listener);
+    return () => this.snapshotListeners.delete(listener);
   }
 
   onInterviewEvent(listener: (event: InterviewWorkerEvent) => void): () => void {
@@ -190,6 +196,10 @@ export class AgentService {
     if (frame.version !== 1) return;
     if (frame.type === "event") {
       for (const listener of this.listeners) listener(frame.event);
+      return;
+    }
+    if (frame.type === "conversation-snapshot") {
+      for (const listener of this.snapshotListeners) listener(frame.snapshot);
       return;
     }
     if (frame.type === "interview-event") {

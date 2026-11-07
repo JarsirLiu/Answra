@@ -1,33 +1,24 @@
+import type { ConversationSnapshot } from "@answra/shared";
 import { INTERVIEW_AUDIO_CREDIT_BATCH } from "@answra/shared";
 import type { AgentEventEnvelope } from "@answra/shared/schema";
-import { MemoryConversationStore } from "../conversation/session/memoryStore";
-import type { ConversationStore } from "../conversation/session/store";
-import { createAuthorizedConversationTools } from "../conversation/tools/registry";
-import { ChatConversationRuntime } from "../conversation/turn/chatRuntime";
-import type { ConversationRuntime } from "../conversation/turn/runtime";
-import { MemoryExecutionStore } from "../execution/memoryStore";
-import type { ExecutionStore } from "../execution/store";
-import { InterviewAudioIngress } from "../interview/audio/ingress";
-import {
-  conversationId as asConversationId,
-  sessionId as asSessionId,
-  type InterviewDomainEvent,
-} from "../interview/contracts";
-import { LocalParaformerAdapter } from "../interview/transcription/local/adapter";
-import type { RecognizerSource } from "../interview/transcription/local/recognizerPort";
-import { TranscriptionPump } from "../interview/transcription/pump";
-import { InterviewTurnAssembler } from "../interview/turns/assembler";
-import {
-  CandidateTurnSettler,
-  type CandidateTurnSettlerOptions,
-  DEFAULT_CANDIDATE_TURN_SETTLE_MS,
-  MIN_CANDIDATE_TURN_CHARS,
-} from "../interview/turns/settler";
-import { InterviewVadPipeline } from "../interview/vad/pipeline";
-import type { TenVadSource } from "../interview/vad/tenVadEngine";
-import { toInterviewWorkerEvent } from "./interviewProjection";
-import { createInterviewReplyLoop } from "./interviewReply";
-import type { AgentCommand, AgentFrame } from "./protocol";
+import { screenshotAnswerAgent } from "./answer/agent";
+import { AnswerApplication } from "./answer/application";
+import { createConversationAgentDefinition } from "./conversation/agent";
+import { ConversationApplication } from "./conversation/application";
+import { createAuthorizedConversationTools } from "./conversation/tools/registry";
+import { AgentRuntime } from "./core/agent/runtime";
+import { MemoryConversationStore } from "./core/transcript/memoryStore";
+import type { ConversationStore } from "./core/transcript/store";
+import { MemoryExecutionStore } from "./execution/memoryStore";
+import type { ExecutionStore } from "./execution/store";
+import { createInterviewReplyAgent } from "./interview/agent";
+import { InterviewApplication } from "./interview/application";
+import type { InterviewDomainEvent } from "./interview/contracts";
+import { InterviewRuntime } from "./interview/runtime";
+import type { RecognizerSource } from "./interview/transcription/local/recognizerPort";
+import type { TenVadSource } from "./interview/vad/tenVadEngine";
+import { toInterviewWorkerEvent } from "./interview/workerProjection";
+import type { AgentCommand, AgentFrame } from "./worker/protocol";
 
 /**
  * agent 与宿主进程之间的传输。agent 只认这个接口：宿主是 Electron utility
@@ -60,11 +51,12 @@ export interface AgentHostOptions {
    * candidate turn settle 合并参数（测试注入 settleMs:0 以获得同步结算）。
    * 缺省用默认窗口：真实面试延迟特征待校准后再收敛默认值。
    */
-  turnSettler?: CandidateTurnSettlerOptions;
+  turnSettler?: import("./interview/turns/settler").CandidateTurnSettlerOptions;
 }
 
 export interface AgentHost {
-  runtime: ConversationRuntime;
+  runtime: ConversationApplication;
+  answer: AnswerApplication;
   /** Publishes a domain event for desktop-main projection into renderer DTOs. */
   emitInterviewEvent(event: InterviewDomainEvent): void;
   dispose(): void;
@@ -74,7 +66,7 @@ export interface AgentHost {
 const TOKEN_REQUEST_TIMEOUT_MS = 10_000;
 
 /**
- * 组装点：把传输、会话运行时与领域运行时装配在一起。
+ * Agent 组合根：把 worker transport、领域处理和运行时装配在一起。
  * 这是唯一允许知道"命令怎么分发"的地方——领域模块只暴露方法。
  * 桌面 adapter 通过 transport 下发上下文和用户输入；Agent 工具不经 transport 调用 desktop。
  */
@@ -86,13 +78,6 @@ export function startAgentHost({
   recognizer,
   turnSettler,
 }: AgentHostOptions): AgentHost {
-  /**
-   * 本地转录引擎共享装配（worker 生命周期只装一次）：失败过的装配 promise
-   * 会保留同一个 rejection，与 VAD 引擎共享加载的既有语义一致——修好资源后
-   * 重启 worker 才能恢复，而不是每个会话重复付出装配成本。
-   */
-  let recognizerAssembly: Promise<LocalParaformerAdapter> | undefined;
-
   /** 云端令牌的等待表：run 启动与 401 刷新共用同一条反向请求。 */
   const tokenRequests = new Map<
     string,
@@ -128,17 +113,29 @@ export function startAgentHost({
     });
   }
 
-  const runtime = new ChatConversationRuntime({
-    emitEvent: (event: AgentEventEnvelope) => transport.send({ version: 1, type: "event", event }),
-    store,
+  const agentRuntime = new AgentRuntime({
     executionStore,
-    createTools: createAuthorizedConversationTools,
+    emitEvent: (event: AgentEventEnvelope) => transport.send({ version: 1, type: "event", event }),
     tokenProvider: requestAccessToken,
   });
+  const conversationAgent = agentRuntime.registerAgent(
+    createConversationAgentDefinition({ store, createTools: createAuthorizedConversationTools }),
+  );
+  const answerAgent = agentRuntime.registerAgent(screenshotAnswerAgent);
+  const interviewAgent = agentRuntime.registerAgent(createInterviewReplyAgent(store));
+  const runtime = new ConversationApplication({
+    agentRuntime,
+    store,
+    conversationAgent,
+  });
+  const answer = new AnswerApplication({ agentRuntime, store, executor: answerAgent });
 
-  const replyLoop = createInterviewReplyLoop({
-    runtime,
-    requestAccessToken,
+  const interview = new InterviewApplication({
+    agentRuntime,
+    store,
+    executor: interviewAgent,
+    requestAccessToken: () => requestAccessToken({ forceRefresh: false }),
+    onSnapshot: async (snapshot) => emitConversationSnapshot(snapshot),
     onTurnCommitted: (turn) => emitInterviewEvent({ type: "turn-committed", turn }),
     onError: (stage, error) => {
       console.warn("[interview-reply] failed", {
@@ -148,70 +145,12 @@ export function startAgentHost({
     },
   });
 
-  const turnAssembler = new InterviewTurnAssembler();
-  const turnSettlerInstance = new CandidateTurnSettler(
-    turnSettler ?? {
-      settleMs: DEFAULT_CANDIDATE_TURN_SETTLE_MS,
-      minTurnChars: MIN_CANDIDATE_TURN_CHARS,
-    },
-    {
-      // 窗口结算才进入对话：合并后的多条 committed turns 共享一条用户消息，
-      // 事件投影仍逐 turn 发出，保留真实 utterance 证据；回复由 loop 串行启动。
-      onSettled: (turns, text) => {
-        const first = turns[0];
-        if (!first) return;
-        void replyLoop.turnSettled(first.conversationId, turns, text);
-      },
-    },
-  );
-  const interviewConversations = new Map<string, string>();
-
-  function loadTranscriptionProvider(): Promise<LocalParaformerAdapter> {
-    recognizerAssembly ??= optionsRecognizerLoad();
-    return recognizerAssembly;
-  }
-
-  function optionsRecognizerLoad(): Promise<LocalParaformerAdapter> {
-    return recognizer.load().then((assembly) => new LocalParaformerAdapter(assembly));
-  }
-
-  const interviewAudio = new InterviewAudioIngress({
-    emit: (event) => emitInterviewEvent(event),
-    onFrame: (frame) => interviewVad.handleFrame(frame),
-  });
-  const transcription = new TranscriptionPump({
-    emit: (event) => {
-      emitInterviewEvent({ type: "transcript-event", event });
-      const turn = turnAssembler.accept(event);
-      if (!turn) return;
-      const text = turn.chunks
-        .map((chunk) => chunk.text)
-        .join("")
-        .trim();
-      if (!text) return;
-      // settle 窗口内暂存：紧邻续句合并后再进入对话，碎句不再逐条上屏。
-      turnSettlerInstance.receive(turn);
-      return;
-    },
-  });
-  const interviewVad = new InterviewVadPipeline({
+  const interviewRuntime = new InterviewRuntime({
+    application: interview,
     vad,
-    failSession: (id, code) => {
-      turnAssembler.reset(id);
-      turnSettlerInstance.discard(id);
-      interviewConversations.delete(id);
-      transcription.fail(id);
-      interviewAudio.fail(id, code);
-      void replyLoop.stop();
-    },
-    onSpeechActivity: (event) => replyLoop.speechStarted(event.source),
-    onSegment: (segment) => {
-      const conversationId = interviewConversations.get(segment.sessionId);
-      if (conversationId) {
-        turnAssembler.registerSegment(segment, asConversationId(conversationId));
-        transcription.handleSegment(segment);
-      }
-    },
+    recognizer,
+    turnSettler,
+    emit: (event) => emitInterviewEvent(event),
   });
   let audioCreditSessionId: string | undefined;
   let uncreditedAudioFrames = 0;
@@ -221,16 +160,19 @@ export function startAgentHost({
     transport.send({ version: 1, type: "interview-event", event: toInterviewWorkerEvent(event) });
   }
 
+  function emitConversationSnapshot(snapshot: ConversationSnapshot): void {
+    if (disposed) return;
+    transport.send({ version: 1, type: "conversation-snapshot", snapshot });
+  }
+
   let disposed = false;
 
   function dispose(): void {
     if (disposed) return;
     disposed = true;
     // 运行时马上关闭：挂起内容不做异步结算，显式丢弃而非冒险 race。
-    turnSettlerInstance.discardAll();
-    void replyLoop.stop();
-    interviewVad.dispose();
-    transcription.dispose();
+    interviewRuntime.dispose();
+    void interview.stop();
     for (const pending of tokenRequests.values()) {
       pending.cleanup();
       pending.reject(new Error("本地 AI 服务已关闭"));
@@ -262,7 +204,7 @@ export function startAgentHost({
       return;
     }
     if (command.type === "interview-audio-frame") {
-      const result = interviewAudio.acceptFrame(command.frame);
+      const result = interviewRuntime.acceptFrame(command.frame);
       if (!result.accepted) {
         console.warn("[interview-audio] frame rejected", result.code);
       } else if (command.frame.sessionId === audioCreditSessionId) {
@@ -301,54 +243,22 @@ export function startAgentHost({
   async function run(command: AgentCommand): Promise<unknown> {
     switch (command.type) {
       case "interview-start": {
-        await runtime.createConversation(command.conversationId);
-        replyLoop.start();
-        interviewConversations.set(command.sessionId, command.conversationId);
-        interviewAudio.start(
-          asSessionId(command.sessionId),
-          asConversationId(command.conversationId),
-        );
+        await interviewRuntime.start(command.sessionId, command.conversationId);
         audioCreditSessionId = command.sessionId;
         uncreditedAudioFrames = 0;
-        try {
-          await interviewVad.start(asSessionId(command.sessionId));
-          // 转录引擎装配与 VAD 同一批显式失败：82MB 模型校验失败时整个会话
-          // 打成 failed 而不是采集一段无人消费的音频。
-          transcription.start(asSessionId(command.sessionId), await loadTranscriptionProvider());
-        } catch (error) {
-          // 资源加载失败属于显式失败路径：先把会话打成 failed，再把错误冒给 desktop。
-          interviewVad.fail(asSessionId(command.sessionId));
-          interviewAudio.fail(asSessionId(command.sessionId), "runtime-failed");
-          interviewConversations.delete(command.sessionId);
-          clearAudioCredits(command.sessionId);
-          void replyLoop.stop();
-          throw error;
-        }
         return undefined;
       }
       case "interview-capture-ready":
-        if (!interviewAudio.captureReady(asSessionId(command.sessionId)))
+        if (!interviewRuntime.captureReady(command.sessionId))
           throw new Error("面试音频会话已失效");
         return undefined;
       case "interview-capture-failed":
-        turnAssembler.reset(asSessionId(command.sessionId));
-        turnSettlerInstance.discard(asSessionId(command.sessionId));
-        interviewConversations.delete(command.sessionId);
-        interviewVad.fail(asSessionId(command.sessionId));
-        transcription.fail(asSessionId(command.sessionId));
-        interviewAudio.fail(asSessionId(command.sessionId), "capture-failed");
+        interviewRuntime.captureFailed(command.sessionId);
         clearAudioCredits(command.sessionId);
-        void replyLoop.stop();
         return undefined;
       case "interview-stop":
         // 停止即结算：用户刚说完就按停，不再等 settle 窗口，内容不丢。
-        turnSettlerInstance.flush(asSessionId(command.sessionId));
-        void replyLoop.stop();
-        turnAssembler.reset(asSessionId(command.sessionId));
-        interviewConversations.delete(command.sessionId);
-        interviewVad.stop(asSessionId(command.sessionId));
-        transcription.stop(asSessionId(command.sessionId));
-        interviewAudio.stop(asSessionId(command.sessionId));
+        interviewRuntime.stop(command.sessionId);
         clearAudioCredits(command.sessionId);
         return undefined;
       case "configure":
@@ -365,7 +275,7 @@ export function startAgentHost({
           command.accessToken,
         );
       case "answer-run":
-        return runtime.runAnswer(command.conversationId, command.request, command.accessToken);
+        return answer.run(command.conversationId, command.request, command.accessToken);
       case "snapshot":
         return runtime.getSnapshot(command.conversationId);
       case "read-events":
@@ -396,6 +306,7 @@ export function startAgentHost({
 
   return {
     runtime,
+    answer,
     emitInterviewEvent,
     dispose,
   };

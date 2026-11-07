@@ -1,10 +1,13 @@
 import type { AgentEventEnvelope } from "@answra/shared/schema";
-import { MemoryConversationStore } from "../conversation/session/memoryStore";
-import type { ConversationStore } from "../conversation/session/store";
-import { ConversationRuntime } from "../conversation/turn/runtime";
+import { ConversationApplication } from "../conversation/application";
+import { AgentRuntime } from "../core/agent/runtime";
+import { MemoryConversationStore } from "../core/transcript/memoryStore";
+import type { ConversationStore } from "../core/transcript/store";
 import { MemoryExecutionStore } from "../execution/memoryStore";
 import type { ExecutionStore } from "../execution/store";
-import type { AgentCommand, AgentFrame } from "./protocol";
+import type { AgentCommand, AgentFrame } from "../worker/protocol";
+import { screenshotAnswerAgent } from "./agent";
+import { AnswerApplication } from "./application";
 
 /** Transport boundary used by the answer-only worker composition. */
 export interface AnswerAgentTransport {
@@ -14,7 +17,8 @@ export interface AnswerAgentTransport {
 }
 
 export interface AnswerAgentHost {
-  runtime: ConversationRuntime;
+  runtime: ConversationApplication;
+  answer: AnswerApplication;
   dispose(): void;
 }
 
@@ -36,11 +40,9 @@ export function startAnswerAgentHost({
   >();
   let requestSequence = 0;
   let disposed = false;
-  const runtime = new ConversationRuntime({
-    emitEvent: (event: AgentEventEnvelope) => transport.send({ version: 1, type: "event", event }),
-    store,
+  const agentRuntime = new AgentRuntime({
     executionStore,
-    createTools: () => undefined,
+    emitEvent: (event: AgentEventEnvelope) => transport.send({ version: 1, type: "event", event }),
     tokenProvider: () =>
       new Promise((resolve, reject) => {
         const id = `answer-token-request:${++requestSequence}`;
@@ -51,6 +53,9 @@ export function startAnswerAgentHost({
         transport.send({ version: 1, type: "token-request", id, forceRefresh: true });
       }),
   });
+  const answerAgent = agentRuntime.registerAgent(screenshotAnswerAgent);
+  const runtime = new ConversationApplication({ agentRuntime, store });
+  const answer = new AnswerApplication({ agentRuntime, store, executor: answerAgent });
 
   function dispose(): void {
     if (disposed) return;
@@ -111,7 +116,7 @@ export function startAnswerAgentHost({
       case "chat-send":
         throw new Error("对话功能不包含在此安装包中");
       case "answer-run":
-        return runtime.runAnswer(command.conversationId, command.request, command.accessToken);
+        return answer.run(command.conversationId, command.request, command.accessToken);
       case "snapshot":
         return runtime.getSnapshot(command.conversationId);
       case "read-events":
@@ -134,5 +139,5 @@ export function startAnswerAgentHost({
     }
   }
 
-  return { runtime, dispose };
+  return { runtime, answer, dispose };
 }

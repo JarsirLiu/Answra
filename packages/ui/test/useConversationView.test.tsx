@@ -157,4 +157,52 @@ describe("useConversationView recovery", () => {
 
     expect(screen.getByRole("status")).toHaveTextContent("已结算语音");
   });
+
+  it("replays live events when the pushed run snapshot arrives after them", async () => {
+    const listeners = new Set<(event: AgentEventEnvelope) => void>();
+    let publishSnapshot: ((snapshot: ConversationSnapshot) => void) | undefined;
+    let eventHistoryAvailable = false;
+    const runEvent = envelope(1, "A");
+    const bridge = {
+      getConversationSnapshot: vi.fn(async () => ({
+        conversationId: "conversation-1",
+        eventRevision: 0,
+        messages: [],
+      })),
+      readConversationEvents: vi.fn(async (_id: string, afterRevision: number) =>
+        eventHistoryAvailable && runEvent.aggregateRevision > afterRevision ? [runEvent] : [],
+      ),
+      onConversationEvent: vi.fn((listener: (event: AgentEventEnvelope) => void) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      }),
+      onConversationSnapshot: vi.fn((listener: (snapshot: ConversationSnapshot) => void) => {
+        publishSnapshot = listener;
+        return () => {
+          publishSnapshot = undefined;
+        };
+      }),
+    } as unknown as DesktopBridge;
+
+    render(<Harness bridge={bridge} />);
+    await waitFor(() =>
+      expect(bridge.readConversationEvents).toHaveBeenCalledWith("conversation-1", 0),
+    );
+
+    act(() => {
+      for (const listener of listeners) listener(runEvent);
+    });
+    eventHistoryAvailable = true;
+    act(() =>
+      publishSnapshot?.({
+        conversationId: "conversation-1",
+        eventRevision: 0,
+        activeRunId: "run-1",
+        messages: [{ id: "run-1", role: "assistant", text: "", images: [], status: "streaming" }],
+      }),
+    );
+
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("A"));
+    expect(bridge.readConversationEvents).toHaveBeenLastCalledWith("conversation-1", 0);
+  });
 });

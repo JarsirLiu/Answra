@@ -136,6 +136,7 @@ export function useConversationView(
   const reconcileRunSnapshot = useCallback(
     async (snapshot: import("@answra/shared").ConversationSnapshot) => {
       if (activeIdRef.current !== snapshot.conversationId) return;
+      const generation = ++generationRef.current;
       initializingRef.current = true;
       pendingEventsRef.current.clear();
       const next = applyConversationSnapshot(viewRef.current, snapshot, optionsRef.current);
@@ -147,16 +148,26 @@ export function useConversationView(
             snapshot.conversationId,
             snapshot.eventRevision,
           )) ?? [];
-        if (activeIdRef.current !== snapshot.conversationId) return;
+        if (activeIdRef.current !== snapshot.conversationId || generation !== generationRef.current)
+          return;
         for (const event of events) pendingEventsRef.current.set(event.aggregateRevision, event);
       } finally {
-        initializingRef.current = false;
-        await drainEvents();
+        if (generation === generationRef.current) {
+          initializingRef.current = false;
+          await drainEvents();
+        }
       }
     },
     [drainEvents, platform],
   );
-  const receiveSnapshot = applySnapshot;
+  const receiveSnapshot = useCallback(
+    (snapshot: import("@answra/shared").ConversationSnapshot) => {
+      void reconcileRunSnapshot(snapshot).catch((error: unknown) => {
+        console.error("[conversation-view] failed to recover snapshot events", error);
+      });
+    },
+    [reconcileRunSnapshot],
+  );
 
   useEffect(() => {
     if (activeIdRef.current === conversationId) return;

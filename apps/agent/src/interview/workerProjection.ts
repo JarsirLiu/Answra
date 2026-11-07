@@ -1,5 +1,5 @@
-import type { InterviewDomainEvent } from "../interview/contracts";
-import type { InterviewWorkerEvent } from "./protocol";
+import type { InterviewWorkerEvent } from "../worker/protocol";
+import type { InterviewDomainEvent } from "./contracts";
 
 /** Converts branded Agent events into the serializable worker line protocol. */
 export function toInterviewWorkerEvent(event: InterviewDomainEvent): InterviewWorkerEvent {

@@ -8,7 +8,7 @@
 
 ## 涉及范围
 
-- 代码/模块：`packages/shared/src/schema`、`apps/agent/src/execution`、`apps/agent/src/conversation/session`、worker IPC、desktop bridge、`packages/ui/src/app/conversationView.ts`
+- 代码/模块：`packages/shared/src/schema`、`apps/agent/src/execution`、`apps/agent/src/core/transcript`、worker IPC、desktop bridge、`packages/ui/src/app/conversationView.ts`
 - UI/进程/协议/持久化表面：worker 上行事件、对话 transcript 快照、统一 UI reducer
 - 相关 Note：产品与 Agent 底座架构约束
 
@@ -25,7 +25,7 @@
 ## 模块边界
 
 - `execution/` 拥有 AgentEventEnvelope 的写入、事件读取订阅和运行状态缓存。
-- `conversation/session/` 拥有 transcript 消息、快照和会话认领，不拥有事件日志。
+- `core/transcript/` 拥有 transcript 消息、快照和会话认领，不拥有事件日志。
 - `packages/ui/` 从 snapshot 初始化，随后只把 AgentEventEnvelope 投影为界面状态。
 - `status.ts` 不定义 event payload；`events.ts` 不定义 status vocabulary。
 

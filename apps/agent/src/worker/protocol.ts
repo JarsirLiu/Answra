@@ -2,6 +2,7 @@ import type {
   AnswerRunCommand,
   ChatSendCommand,
   ConversationModelConfig,
+  ConversationSnapshot,
   InterviewPcmFrame,
 } from "@answra/shared";
 import type { AgentEventEnvelope } from "@answra/shared/schema";
@@ -137,6 +138,7 @@ export type AgentFrame =
   | { version: 1; type: "response"; id: string; ok: true; value?: unknown }
   | { version: 1; type: "response"; id: string; ok: false; error: string }
   | { version: 1; type: "event"; event: AgentEventEnvelope }
+  | { version: 1; type: "conversation-snapshot"; snapshot: ConversationSnapshot }
   /** Worker DTOs cross to desktop-main for projection into renderer contracts. */
   | { version: 1; type: "interview-event"; event: InterviewWorkerEvent }
   /** A batch acknowledgment releases a bounded number of renderer audio frames. */

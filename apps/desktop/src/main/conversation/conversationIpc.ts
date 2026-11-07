@@ -13,6 +13,7 @@ import {
   isReplyBarWindowFromSender,
   isWindowFromSender,
   sendConversationEvent,
+  sendConversationSnapshot,
 } from "../window";
 import type { AgentService } from "./agentService";
 
@@ -117,6 +118,7 @@ export function registerConversationIpc(service: AgentService, deps: Conversatio
     return deps.modelSettings.clear();
   });
   service.onEvent(sendConversationEvent);
+  service.onSnapshot(sendConversationSnapshot);
 }
 
 function isValidConversationId(conversationId: unknown): conversationId is string {

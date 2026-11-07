@@ -58,7 +58,7 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
   const [interviewCaptureState, setInterviewCaptureState] = useState<InterviewCaptureState>(
     interviewCapture?.getState() ?? { phase: "idle" },
   );
-  const { view: interviewConversation, applySnapshot: applyInterviewSnapshot } =
+  const { view: interviewConversation, reconcileSnapshot: reconcileInterviewSnapshot } =
     useInterviewConversation(platform, ActiveInterviewConversationId);
   const [interviewError, setInterviewError] = useState<string>();
   const lastInterviewMessage = interviewConversation.messages.at(-1);
@@ -352,7 +352,7 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
                   ActiveInterviewConversationId,
                   text,
                 );
-                applyInterviewSnapshot(snapshot);
+                await reconcileInterviewSnapshot(snapshot);
               } catch (error) {
                 setInterviewError(error instanceof Error ? error.message : "消息发送失败");
                 throw error;

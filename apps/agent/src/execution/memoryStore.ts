@@ -22,7 +22,7 @@ export class MemoryExecutionStore implements ExecutionStore {
   private readonly conversationRevisions = new Map<string, number>();
   private readonly listeners = new Set<(event: AgentEventEnvelope) => void>();
 
-  async startRun(input: ExecutionRunStart): Promise<void> {
+  async startRun(input: ExecutionRunStart): Promise<AgentEventEnvelope[]> {
     if (this.runs.has(input.runId)) throw new Error(`Execution run already exists: ${input.runId}`);
     const record: ExecutionRecord = {
       snapshot: {
@@ -37,26 +37,27 @@ export class MemoryExecutionStore implements ExecutionStore {
       events: [],
     };
     this.runs.set(input.runId, record);
-    await this.appendEvent(input.runId, {
+    const queued = await this.appendEvent(input.runId, {
       type: "run-state-changed",
       state: "queued",
       attempt: record.snapshot.attempt,
     });
-    await this.transition(input.runId, "claimed");
+    const claimed = await this.transition(input.runId, "claimed");
+    return [queued, claimed];
   }
 
-  async transition(runId: string, state: AgentRunState): Promise<void> {
+  async transition(runId: string, state: AgentRunState): Promise<AgentEventEnvelope> {
     const record = this.requireRun(runId);
-    await this.appendEvent(runId, {
+    return this.appendEvent(runId, {
       type: "run-state-changed",
       state,
       attempt: record.snapshot.attempt,
     });
   }
 
-  async scheduleRetry(runId: string, retry: AgentRetry): Promise<void> {
+  async scheduleRetry(runId: string, retry: AgentRetry): Promise<AgentEventEnvelope> {
     const record = this.requireRun(runId);
-    await this.appendEvent(runId, {
+    return this.appendEvent(runId, {
       type: "run-state-changed",
       state: "retry-wait",
       attempt: record.snapshot.attempt,
@@ -64,9 +65,9 @@ export class MemoryExecutionStore implements ExecutionStore {
     });
   }
 
-  async resumeRetry(runId: string): Promise<void> {
+  async resumeRetry(runId: string): Promise<AgentEventEnvelope> {
     const record = this.requireRun(runId);
-    await this.appendEvent(runId, {
+    return this.appendEvent(runId, {
       type: "run-state-changed",
       state: "running",
       attempt: record.snapshot.attempt + 1,
@@ -76,10 +77,10 @@ export class MemoryExecutionStore implements ExecutionStore {
   async finishRun(
     runId: string,
     state: Extract<AgentRunState, "completed" | "failed" | "aborted">,
-  ): Promise<void> {
+  ): Promise<AgentEventEnvelope | undefined> {
     const record = this.requireRun(runId);
-    if (isTerminalRunState(record.snapshot.state)) return;
-    await this.appendEvent(runId, {
+    if (isTerminalRunState(record.snapshot.state)) return undefined;
+    return this.appendEvent(runId, {
       type: "run-state-changed",
       state,
       attempt: record.snapshot.attempt,

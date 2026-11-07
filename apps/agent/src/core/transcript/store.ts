@@ -1,9 +1,9 @@
-/** Conversation transcript 的仓储端口；只定义会话事实，不绑定内存或磁盘实现。 */
+/** 跨领域 transcript 仓储端口；只定义消息与恢复游标，不绑定具体存储实现。 */
 import type { ConversationMessage, ConversationSnapshot } from "@answra/shared";
 import type { AgentStreamEvent, RunOutcome } from "@answra/shared/schema";
 
 /**
- * Conversation transcript 的仓储端口。
+ * Conversation、Answer 与 Interview 共用的 transcript 仓储端口。
  * 约束会话消息、活动回合认领和事件恢复游标；不指定内存或磁盘实现。
  */
 export interface ConversationStore {

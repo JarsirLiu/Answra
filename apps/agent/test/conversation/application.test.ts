@@ -2,10 +2,44 @@ import { createServer, type Server } from "node:http";
 import { ActiveChatConversationId, ActiveExamConversationId } from "@answra/shared";
 import type { AgentEventEnvelope } from "@answra/shared/schema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MemoryConversationStore } from "../../../src/conversation/session/memoryStore";
-import type { ConversationStore } from "../../../src/conversation/session/store";
-import { createAuthorizedConversationTools } from "../../../src/conversation/tools/registry";
-import { ChatConversationRuntime } from "../../../src/conversation/turn/chatRuntime";
+import { screenshotAnswerAgent } from "../../src/answer/agent";
+import { AnswerApplication } from "../../src/answer/application";
+import { createConversationAgentDefinition } from "../../src/conversation/agent";
+import { ConversationApplication } from "../../src/conversation/application";
+import { createAuthorizedConversationTools } from "../../src/conversation/tools/registry";
+import { AgentRuntime } from "../../src/core/agent/runtime";
+import { MemoryConversationStore } from "../../src/core/transcript/memoryStore";
+import type { ConversationStore } from "../../src/core/transcript/store";
+import { MemoryExecutionStore } from "../../src/execution/memoryStore";
+
+function createTestRuntime({
+  emitEvent,
+  store = new MemoryConversationStore(),
+  tokenProvider,
+}: {
+  emitEvent: (event: AgentEventEnvelope) => void;
+  store?: ConversationStore;
+  tokenProvider?: (options: { forceRefresh: boolean }) => Promise<string>;
+}): ConversationApplication & { runAnswer: AnswerApplication["run"] } {
+  const agentRuntime = new AgentRuntime({
+    executionStore: new MemoryExecutionStore(),
+    emitEvent,
+    tokenProvider,
+  });
+  const runtime = new ConversationApplication({
+    agentRuntime,
+    store,
+    conversationAgent: agentRuntime.registerAgent(
+      createConversationAgentDefinition({ store, createTools: createAuthorizedConversationTools }),
+    ),
+  });
+  const answer = new AnswerApplication({
+    agentRuntime,
+    store,
+    executor: agentRuntime.registerAgent(screenshotAnswerAgent),
+  });
+  return Object.assign(runtime, { runAnswer: answer.run.bind(answer) });
+}
 
 type RecordedRequest = {
   messages: Array<{ role: string; content: unknown }>;
@@ -56,7 +90,7 @@ function streamBody(text: string): string {
 describe("ephemeral conversation runtime", () => {
   let server: Server;
   let requests: RecordedRequest[];
-  let runtime: ChatConversationRuntime;
+  let runtime: ReturnType<typeof createTestRuntime>;
   let changes: AgentEventEnvelope[];
   let holdResponse: boolean;
   let modelFailure: { status: number; message: string } | undefined;
@@ -96,9 +130,8 @@ describe("ephemeral conversation runtime", () => {
     const address = server.address();
     if (!address || typeof address === "string") throw new Error("test server did not bind");
     serverPort = address.port;
-    runtime = new ChatConversationRuntime({
+    runtime = createTestRuntime({
       emitEvent: (event) => changes.push(event),
-      createTools: createAuthorizedConversationTools,
     });
     runtime.configure({ chat: endpoint(address.port), answer: endpoint(address.port) });
   });
@@ -119,6 +152,10 @@ describe("ephemeral conversation runtime", () => {
       },
       ACCESS_TOKEN,
     );
+    expect(first.snapshot.activeRunId).toBe(first.runId);
+    const firstRunEvent = changes.find((event) => event.runId === first.runId);
+    expect(firstRunEvent).toBeDefined();
+    expect(first.snapshot.eventRevision).toBe((firstRunEvent?.aggregateRevision ?? 0) - 1);
     await waitForTerminal(first.runId);
     const second = await runtime.runAnswer(
       "test-conversation",
@@ -349,6 +386,48 @@ describe("ephemeral conversation runtime", () => {
     expect(requests.at(-1)?.tools).toBeUndefined();
   });
 
+  it("injects the current workspace root into chat turns and follows directory changes", async () => {
+    runtime.setWorkspaceRoot("D:/notes/first");
+    const first = await runtime.sendChat(
+      "general-chat",
+      "workspace-context-chat",
+      { text: "工作区是什么？", images: [] },
+      ACCESS_TOKEN,
+    );
+    await waitForTerminal(first.runId);
+    expect(JSON.stringify(requests.at(-1))).toContain("当前工作区根目录：D:/notes/first");
+
+    runtime.setWorkspaceRoot("D:/notes/second");
+    const second = await runtime.sendChat(
+      "general-chat",
+      "workspace-context-chat",
+      { text: "现在工作区是什么？", images: [] },
+      ACCESS_TOKEN,
+    );
+    await waitForTerminal(second.runId);
+    expect(JSON.stringify(requests.at(-1))).toContain("D:/notes/second");
+    expect(JSON.stringify(requests.at(-1))).not.toContain("D:/notes/first");
+
+    runtime.setWorkspaceRoot(null);
+    const third = await runtime.sendChat(
+      "general-chat",
+      "workspace-context-chat",
+      { text: "还能读文件吗？", images: [] },
+      ACCESS_TOKEN,
+    );
+    await waitForTerminal(third.runId);
+    expect(JSON.stringify(requests.at(-1))).toContain("尚未选择工作区目录");
+
+    const answer = await runtime.runAnswer(
+      "workspace-context-answer",
+      { text: "答题", images: [] },
+      ACCESS_TOKEN,
+    );
+    await waitForTerminal(answer.runId);
+    expect(JSON.stringify(requests.at(-1))).not.toContain("当前工作区根目录");
+    expect(JSON.stringify(requests.at(-1))).not.toContain("尚未选择工作区目录");
+  });
+
   it("injects current date as a user-side system-reminder only for chat profiles", async () => {
     const { runId } = await runtime.sendChat(
       "general-chat",
@@ -506,9 +585,8 @@ describe("ephemeral conversation runtime", () => {
     const address = retryServer.address();
     if (!address || typeof address === "string") throw new Error("test server did not bind");
 
-    const retrying = new ChatConversationRuntime({
+    const retrying = createTestRuntime({
       emitEvent: (event) => changes.push(event),
-      createTools: createAuthorizedConversationTools,
       tokenProvider: async (options) => {
         forceRefreshFlags.push(options.forceRefresh);
         return "refreshed-token";
@@ -555,9 +633,8 @@ describe("ephemeral conversation runtime", () => {
     const address = unauthorizedServer.address();
     if (!address || typeof address === "string") throw new Error("test server did not bind");
 
-    const retrying = new ChatConversationRuntime({
+    const retrying = createTestRuntime({
       emitEvent: (event) => changes.push(event),
-      createTools: createAuthorizedConversationTools,
       tokenProvider: async () => "refreshed-token",
     });
     try {
@@ -660,9 +737,8 @@ describe("ephemeral conversation runtime", () => {
       },
     };
     const raceChanges: AgentEventEnvelope[] = [];
-    const racing = new ChatConversationRuntime({
+    const racing = createTestRuntime({
       emitEvent: (event) => raceChanges.push(event),
-      createTools: createAuthorizedConversationTools,
       store,
     });
     racing.configure({ chat: endpoint(serverPort), answer: endpoint(serverPort) });
@@ -726,9 +802,8 @@ describe("local endpoint runtime", () => {
   }
 
   function createTrackedRuntime(changes: AgentEventEnvelope[], tokenProvider?: unknown) {
-    return new ChatConversationRuntime({
+    return createTestRuntime({
       emitEvent: (event) => changes.push(event),
-      createTools: createAuthorizedConversationTools,
       tokenProvider: tokenProvider as
         | ((options: { forceRefresh: boolean }) => Promise<string>)
         | undefined,

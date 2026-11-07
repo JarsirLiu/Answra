@@ -6,10 +6,13 @@ import { useConversationView } from "./useConversationView";
 export function useInterviewConversation(
   platform: DesktopBridge | undefined,
   conversationId: string,
-): { view: ConversationView; applySnapshot: (snapshot: ConversationSnapshot) => void } {
-  const { view, applySnapshot } = useConversationView(platform, conversationId, {
+): {
+  view: ConversationView;
+  reconcileSnapshot: (snapshot: ConversationSnapshot) => Promise<void>;
+} {
+  const { view, reconcileRunSnapshot } = useConversationView(platform, conversationId, {
     enabled: __ANSWRA_FEATURE_INTERVIEW__,
     create: true,
   });
-  return { view, applySnapshot };
+  return { view, reconcileSnapshot: reconcileRunSnapshot };
 }

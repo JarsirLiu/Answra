@@ -43,7 +43,7 @@ apps/agent/src/
   core/model/                AI SDK/provider 归一化与 HTTP 重试
   execution/                 run/attempt/step 状态、事件、进程内 store 和 projection
   conversation/
-    session/                 会话 transcript、snapshot 恢复游标、内存 store
+    core/transcript/         共享 transcript、snapshot 恢复游标、内存 store
     turn/                    对话/答题的一次 assistant 回合与模型执行
     profiles/                profile 注册与答题策略
     tools/                   Conversation 工具实现和静态授权
@@ -51,7 +51,7 @@ apps/agent/src/
   worker/                    命令分发、线协议及领域 DTO 投影
 ```
 
-`conversation/session/*`、`conversation/turn/*`、`conversation/profiles/*` 和 `core/model/*` 已按职责归档；Agent 测试也按相同子域归档。Conversation 的进一步拆分见 [Conversation 领域目录按会话与回合组织](./2026-11-06-conversation-domain-layout.md)。`execution/{events,status,store,projection,memoryStore}.ts` 负责共享 schema 之上的状态转移、事件 envelope、进程内快照和读取；当前没有磁盘、Redis 或重启恢复。
+`core/transcript/*`、`conversation/turn/*`、`conversation/profiles/*` 和 `core/model/*` 已按职责归档；Agent 测试也按相同子域归档。Conversation 的进一步拆分见 [Conversation 领域目录按会话与回合组织](./2026-11-06-conversation-domain-layout.md)。`execution/{events,status,store,projection,memoryStore}.ts` 负责共享 schema 之上的状态转移、事件 envelope、进程内快照和读取；当前没有磁盘、Redis 或重启恢复。
 
 跨包 schema 暂时继续位于 `packages/shared/src/schema/`，不为模仿 OpenCode 的 `packages/contracts`、`packages/schema` 立即拆包。Agent 事件载荷集中在 `events.ts`，不再按执行/模型生产方拆成两份事件定义；状态词汇独立放在 `status.ts`。IPC channel map 仍留在 `packages/shared/src/channels/`。完整事件目录与 delta 持久化资格见[集中 Agent 事件目录](./2026-11-07-unified-agent-event-catalog.md)。
 
@@ -69,7 +69,7 @@ apps/agent/src/
 ## 模块边界
 
 - `packages/shared/src/schema/`：跨包稳定 DTO 与执行词汇；不实现领域 runtime、存储或 reducer。
-- `apps/agent/src/conversation/session/`：Conversation transcript、快照和当前内存 store。
+- `apps/agent/src/core/transcript/`：跨领域 transcript、快照和当前内存 store。
 - `apps/agent/src/conversation/turn/`：Conversation/Answer 的回合认领与模型生成编排；具体拆分见配套 Note。
 - `apps/agent/src/conversation/profiles/` 与 `tools/`：场景策略和工具授权，各自由 Agent 静态注册。
 - `apps/agent/src/core/model/`：当前模型 SDK 边界归一化和 HTTP 重试实现；不持有领域策略。
@@ -100,7 +100,7 @@ apps/agent/src/
 
 ## 后果与防回退
 
-- 新增 Conversation transcript 代码归 `conversation/session/`；回合认领与执行编排归 `conversation/turn/`；场景策略归 `conversation/profiles/`；工具归 `conversation/tools/`。
+- 新增共享 transcript 代码归 `core/transcript/`；回合认领与执行编排归 `conversation/turn/`；场景策略归 `conversation/profiles/`；工具归 `conversation/tools/`。
 - `execution/` 的模块是当前进程内领域实现；新增 durable adapter、恢复语义和跨实例一致性前必须补原子写入、幂等、租约和重启测试。
 - AI SDK 类型只在 `core/model/` 的 adapter 边界出现；跨进程 schema 仍从 `@answra/shared/schema` 导入。
 - 新增能力领域放在 `apps/agent/src/` 与 `conversation/` 平级，并同步 `AGENTS.md` 和 README 结构表。

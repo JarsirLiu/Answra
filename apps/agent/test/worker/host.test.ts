@@ -476,6 +476,32 @@ describe("agent worker host", () => {
         ["assistant", "收到", "complete"],
       ]);
     });
+
+    const snapshots = harness.frames.filter((frame) => frame.type === "conversation-snapshot");
+    expect(snapshots).toHaveLength(2);
+    if (
+      snapshots[0]?.type !== "conversation-snapshot" ||
+      snapshots[1]?.type !== "conversation-snapshot"
+    )
+      throw new Error("interview reply must publish user and assistant snapshots");
+    expect(snapshots[0].snapshot.messages).toEqual([
+      expect.objectContaining({ role: "user", text: "请介绍一下你负责的项目" }),
+    ]);
+    expect(snapshots[1].snapshot).toMatchObject({
+      activeRunId: expect.any(String),
+      messages: [
+        expect.objectContaining({ role: "user", text: "请介绍一下你负责的项目" }),
+        expect.objectContaining({ role: "assistant", text: "", status: "streaming" }),
+      ],
+    });
+    const assistantRunId = snapshots[1].snapshot.activeRunId;
+    if (!assistantRunId) throw new Error("assistant placeholder snapshot must identify its run");
+    const assistantSnapshotIndex = harness.frames.indexOf(snapshots[1]);
+    const firstRunEventIndex = harness.frames.findIndex(
+      (frame) => frame.type === "event" && frame.event.runId === assistantRunId,
+    );
+    expect(assistantSnapshotIndex).toBeGreaterThanOrEqual(0);
+    expect(firstRunEventIndex).toBeGreaterThan(assistantSnapshotIndex);
     host.dispose();
   });
 

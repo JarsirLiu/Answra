@@ -1,43 +1,30 @@
 # Conversation 领域
 
-Conversation 负责用户与 Agent 之间的 transcript，以及一次回复回合的模型执行。目录按业务事实组织，不按 Event、Status、Store 等技术名词平铺。
+Conversation 负责用户与 Agent 之间的 transcript，以及本领域 Agent 的上下文和工具策略。模型执行与 run 状态由跨领域的 `core/agent` 提供。目录按业务事实组织，不按 Event、Status、Store 等技术名词平铺。
 
 ```text
 conversation/
-  session/       会话 transcript、snapshot 恢复游标和仓储
-  turn/          一次 assistant 回合的认领、模型调用、流消费和终态
-  profiles/      场景提示词、上下文策略和工具白名单
+  turn/          Conversation application、transcript 回合认领和模型上下文准备
+  agent.ts       静态注册的 Conversation Agent 定义
+  profiles/      Chat Agent 使用的提示词、上下文策略和工具白名单
   tools/         Conversation 获准工具及工作区安全边界
 ```
 
-## `session/`
-
-- `store.ts`：`ConversationStore` 仓储端口。定义创建、加载、原子认领、更新 transcript 和结束回合。
-- `memoryStore.ts`：当前进程内的 transcript 仓储实现；不保存 Agent 事件或事件 journal。
-- `message.ts`：把已校验的发送请求转换成 transcript 用户消息。
-
-Session 只拥有消息和会话 revision。`run/attempt/step` 的执行状态属于平级的 `execution/` 领域。
-
 ## `turn/`
 
-- `runtime.ts`：Conversation 组合根。暴露创建会话、发送、答题、取消和等待；负责认领回合并组装执行依赖。
-- `executeTurn.ts`：已认领回合的流程组合，调用 AI SDK 并协调流、事件写入和终态收尾。
-- `chatRuntime.ts`：把通用聊天 profile 接到回合入口。
-- `endpointFetch.ts`：模型端点校验、云端令牌一次刷新和本地 API Key fetch。
-- `errorSummary.ts`：将未知模型错误压缩成有界诊断字段。
+- `application.ts`：Conversation application。暴露创建会话、发送、回复、取消和等待；通过共享 `core/transcript` 仓储原子认领 transcript 回合，并调用注册 executor。Answer 和 Interview 用例不在此目录。
 - `modelMessages.ts`：按 profile 选择 transcript 历史、把图片输入转换成 AI SDK 消息，并注入已授权的时间提醒。
-- `streamJournal.ts`：串行把模型事件交给唯一 `ExecutionStore`，并收集仅供日志使用的回合指标；名称中的 journal 不代表第二个事件日志。
-- `requestContent.ts`：发送文本和图片的边界校验与 data URL 解析。
+- `workspaceContext.ts`：把本回合快照的工作区根目录或「未选择目录」事实压成系统提示片段，只描述边界，不读取内容。
 - `timeReminder.ts`：只供显式开启时间上下文的 profile 使用的系统提醒。
 
-`turn/` 消费 `result.fullStream` 并交由 `core/model/` 转换为 shared Agent event contract；不消费 `toUIMessageStream()`，避免并列事实源。`turn/` 不定义长期执行状态；所有模型与生命周期事件写入唯一 `ExecutionStore`，UI 从同一 `AgentEventEnvelope` 流投影状态。
+`agent.ts` 通过 `AgentDefinition.prepare` 组装 profile、transcript 历史和白名单工具；`core/agent` 消费 AI SDK `result.fullStream` 并写入唯一 `ExecutionStore`。Conversation application 按序消费同一 `AgentEventEnvelope` 更新 transcript；不消费 `toUIMessageStream()`，不创建领域事件副本。
 
 ## `profiles/`
 
 定义场景策略：提示词、是否读取历史、时间上下文和工具授权。它们是 Agent 内部静态注册，不接受 renderer 动态注入。
 
 - `registry.ts`：通用聊天 profile 类型与静态注册表。
-- `answer.ts`：截图答题专用策略，不使用通用聊天历史或工具。
+- 截图答题策略已经迁入 `apps/agent/src/answer/agent.ts`，不使用通用聊天历史或工具。
 
 ## `tools/`
 

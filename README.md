@@ -81,12 +81,17 @@ apps/desktop           Electron 桌面壳
   src/renderer         薄渲染层：仅挂载 <FloatingBarApp/>
 apps/agent             平台无关的 Agent 运行时（不依赖 Electron/React），由 desktop 的 utility process 拉起
   src/index.ts         公共入口：desktop worker 的唯一导入面
-  src/worker           worker 线协议（main ↔ agent 命令与帧）
+  src/host.ts           Conversation/Interview worker 组合根：路由命令、连接领域模块
+  src/worker            worker 线协议类型（main ↔ agent 命令与帧）
+  src/answer/host.ts    Answer-only worker 组合入口
+  src/answer/application.ts  截图答题一次性用例与 transcript 生命周期
+  src/core/agent        静态 Agent 注册、AI SDK 执行与 run 生命周期
+  src/core/transcript   Conversation、Answer、Interview 共用的 transcript 端口与内存适配器
   src/core/run         进程内 run 取消与完成等待原语
-  src/core/model       AI SDK/provider 归一化与模型 HTTP 重试
+  src/core/model       provider 适配、模型流归一化、图片输入与 HTTP 重试
   src/execution        run/attempt/step 事件、状态、进程内 store 和投影
-  src/conversation     会话领域：session、turn、profiles、tools 子域
-  src/interview        面试语音领域：audio、transcription、turns、vad、reply
+  src/conversation     对话领域：turn、agent、profiles、tools 子域
+  src/interview        面试语音领域：audio、transcription、turns、vad、reply 与 worker adapter
 examples/vad-asr-eval  可选真实样本 VAD/ASR 评测：原句与链路转录并排、人工审阅及 turn 延迟；不生成回答、不进常规门禁
 scripts/architecture   架构守护脚本（深导入/依赖环/平台越界检查）
 scripts/docs           文档门禁

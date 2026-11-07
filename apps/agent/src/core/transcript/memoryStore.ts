@@ -1,4 +1,4 @@
-/** Conversation transcript 的进程内仓储；不记录 Agent 事件事实或事件 journal。 */
+/** 进程内 transcript 仓储；不记录 Agent 事件事实或事件 journal。 */
 import type { ConversationMessage, ConversationSnapshot } from "@answra/shared";
 import type { AgentStreamEvent, RunOutcome } from "@answra/shared/schema";
 import type { ConversationStore } from "./store";

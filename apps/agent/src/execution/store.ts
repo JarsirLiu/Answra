@@ -19,14 +19,14 @@ export interface ExecutionEventMetadata {
 }
 
 export interface ExecutionStore {
-  startRun(input: ExecutionRunStart): Promise<void>;
-  transition(runId: string, state: AgentRunState): Promise<void>;
-  scheduleRetry(runId: string, retry: AgentRetry): Promise<void>;
-  resumeRetry(runId: string): Promise<void>;
+  startRun(input: ExecutionRunStart): Promise<AgentEventEnvelope[]>;
+  transition(runId: string, state: AgentRunState): Promise<AgentEventEnvelope>;
+  scheduleRetry(runId: string, retry: AgentRetry): Promise<AgentEventEnvelope>;
+  resumeRetry(runId: string): Promise<AgentEventEnvelope>;
   finishRun(
     runId: string,
     state: Extract<AgentRunState, "completed" | "failed" | "aborted">,
-  ): Promise<void>;
+  ): Promise<AgentEventEnvelope | undefined>;
   appendEvent(
     runId: string,
     event: AgentEvent,

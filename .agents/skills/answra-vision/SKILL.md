@@ -27,15 +27,17 @@ Windows 桌面屏幕 AI 助手：围绕"屏幕上看到的、正在听的、正�
 
 ```text
 src/
-  worker/        线协议 + 命令分发 + 各域投影（唯一跨进程边界）
-  core/          跨领域底座：模型执行器、Run 生命周期、
-                 工具注册表、agent loop
+  host.ts        Conversation/Interview worker 组合根：路由命令并连接领域模块
+  worker/        AgentCommand / AgentFrame 线协议类型（唯一跨进程契约）
+  core/          跨领域底座：静态 Agent 注册、模型执行器、Run 生命周期
   conversation/  多轮对话 + 一次性答题（已有）
   interview/     采集→VAD→ASR→turn→可打断回答（在途，按 10-19 Note 分阶段）
   voice/ meeting/ inline/ document/   领域平级加入；voice 未来从 interview 提升
 ```
 
-依赖铁律：`domains → core`；core 不导入领域；领域之间禁止互导（`voice` 例外但只暴露端口）。Agent 工具由 Agent 静态注册并在 Agent 进程执行；desktop 可注入获准上下文（如工作区根目录），不得代执行 Agent 工具。采集、键鼠、窗口、密钥等桌面平台能力留在 desktop。
+依赖铁律：`domains → core`；core 不导入领域；领域之间禁止互导（`voice` 例外但只暴露端口）。`src/host.ts` 负责接线，`worker/` 只定义进程边界协议，领域专属投影和适配留在对应领域。Agent 工具由 Agent 静态注册并在 Agent 进程执行；desktop 可注入获准上下文（如工作区根目录），不得代执行 Agent 工具。采集、键鼠、窗口、密钥等桌面平台能力留在 desktop。
+
+`core/agent` 只执行领域启动时静态注册的 Agent 定义，持有模型调用、HTTP 重试、run 生命周期和唯一 AgentEventEnvelope 写入；领域定义 prompt、上下文和工具授权，并消费同一事件更新自己的 transcript。
 
 ## 新需求落位判断（改代码前先过一遍）
 

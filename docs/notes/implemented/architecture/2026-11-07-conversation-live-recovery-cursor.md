@@ -8,7 +8,7 @@ renderer 切换页面或重新挂载对话面板时，之前先加载 transcript
 
 ## 涉及范围
 
-- 代码/模块：`packages/shared/src/schema/conversation.ts`、`apps/agent/src/conversation/session/`、`apps/agent/src/conversation/turn/`、`apps/agent/src/execution/`、`packages/ui/src/app/`
+- 代码/模块：`packages/shared/src/schema/conversation.ts`、`apps/agent/src/core/transcript/`、`apps/agent/src/conversation/turn/`、`apps/agent/src/execution/`、`packages/ui/src/app/`
 - UI/进程/协议/持久化表面：Agent 存活期间的 conversation snapshot、统一 `AgentEventEnvelope` 流、renderer 切页和缺口补读
 - 相关 Note：[统一 Agent 事件事实流](./2026-11-07-single-agent-event-stream.md)、[Agent 事件与状态的领域归属](./2026-11-06-agent-event-status-domain-ownership.md)
 
@@ -24,7 +24,7 @@ renderer 切换页面或重新挂载对话面板时，之前先加载 transcript
 
 - `packages/shared/src/schema/conversation.ts`：定义跨进程 transcript snapshot 和 `eventRevision`。
 - `apps/agent/src/execution/`：提供 conversation 当前事件 revision 与按游标读取事件。
-- `apps/agent/src/conversation/session/`：保存 transcript 和其事件恢复游标；不保存事件日志。
+- `apps/agent/src/core/transcript/`：保存 transcript 和其事件恢复游标；不保存事件日志。
 - `apps/agent/src/conversation/turn/`：在 run 开始和终结时推进 transcript 的恢复边界。
 - `packages/ui/src/app/useConversationView.ts`：订阅缓冲、初始化回放、顺序应用与缺口补读。
 
@@ -54,6 +54,6 @@ renderer 切换页面或重新挂载对话面板时，之前先加载 transcript
 
 ## 验证
 
-- `pnpm --filter @answra/agent test -- test/conversation/session/store.test.ts test/conversation/turn/runtime.test.ts test/execution/store.test.ts`：30 项通过。
+- `pnpm --filter @answra/agent test -- test/core/transcript/store.test.ts test/conversation/application.test.ts test/execution/store.test.ts`：30 项通过。
 - `pnpm --filter @answra/ui exec vitest run test/conversationView.test.ts test/useConversationView.test.tsx`：12 项通过，包含初始化期间缓冲、revision 缺口补读、snapshot 推进后继续 drain。
 - Agent 与 UI typecheck 通过。

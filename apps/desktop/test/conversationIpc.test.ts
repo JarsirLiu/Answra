@@ -3,7 +3,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const shared = vi.hoisted(() => ({
   handlers: {} as Record<string, (...args: unknown[]) => unknown>,
   onEvent: vi.fn(),
+  onSnapshot: vi.fn(),
   send: vi.fn(),
+  sendSnapshot: vi.fn(),
   signedIn: true,
   modelSource: "cloud" as "local" | "cloud",
   mainWindow: { webContents: { id: "main" } },
@@ -31,6 +33,7 @@ vi.mock("../src/main/window", () => ({
     event: { sender: { id: string } },
   ) => window.webContents.id === event.sender.id,
   sendConversationEvent: shared.send,
+  sendConversationSnapshot: shared.sendSnapshot,
 }));
 
 import { AUTH_REQUIRED_CODE, ConversationChannels } from "@answra/shared";
@@ -45,6 +48,7 @@ const service = {
   cancel: vi.fn(),
   clearConversation: vi.fn().mockResolvedValue(undefined),
   onEvent: shared.onEvent,
+  onSnapshot: shared.onSnapshot,
 };
 
 const modelSettings = {
@@ -93,7 +97,9 @@ describe("conversation IPC read access for reply renderer", () => {
   beforeEach(() => {
     shared.handlers = {};
     shared.onEvent.mockClear();
+    shared.onSnapshot.mockClear();
     shared.send.mockClear();
+    shared.sendSnapshot.mockClear();
     shared.signedIn = true;
     shared.modelSource = "cloud";
     service.getSnapshot.mockClear();
@@ -167,6 +173,7 @@ describe("conversation IPC read access for reply renderer", () => {
 
   it("forwards the service change subscription to the window broadcaster", () => {
     expect(shared.onEvent).toHaveBeenCalledWith(shared.send);
+    expect(shared.onSnapshot).toHaveBeenCalledWith(shared.sendSnapshot);
   });
 
   it("rejects cloud model calls while signed out with the shared auth-required code", () => {
@@ -234,7 +241,9 @@ describe("conversation IPC model settings", () => {
   beforeEach(() => {
     shared.handlers = {};
     shared.onEvent.mockClear();
+    shared.onSnapshot.mockClear();
     shared.send.mockClear();
+    shared.sendSnapshot.mockClear();
     shared.signedIn = true;
     shared.modelSource = "cloud";
     service.getSnapshot.mockClear();

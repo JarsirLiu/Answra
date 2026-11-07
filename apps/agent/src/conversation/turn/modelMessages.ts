@@ -1,8 +1,8 @@
 /** 将 Conversation 请求和仓储历史转换成 AI SDK 模型上下文。 */
 import type { ConversationSendRequest } from "@answra/shared";
 import type { ModelMessage } from "ai";
-import type { ConversationStore } from "../session/store";
-import { parseDataUrl } from "./requestContent";
+import { parseDataUrl } from "../../core/model/imageInput";
+import type { ConversationStore } from "../../core/transcript/store";
 import { buildTimeReminder } from "./timeReminder";
 
 /** 为一个回合构造模型上下文；历史只从 ConversationStore 读取。 */
