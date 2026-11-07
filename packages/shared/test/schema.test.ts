@@ -3,8 +3,6 @@ import {
   agentEventEnvelopeSchema,
   agentRunSnapshotSchema,
   agentStreamEventSchema,
-  conversationChangeSchema,
-  conversationEventSchema,
 } from "../src/schema";
 
 describe("event schema", () => {
@@ -55,31 +53,20 @@ describe("event schema", () => {
     ).toBe(false);
   });
 
-  it("round-trips a persisted run event with seq and outcome", () => {
-    const event = conversationEventSchema.parse({
+  it("uses one envelope schema for both lifecycle and model stream facts", () => {
+    const envelope = agentEventEnvelopeSchema.parse({
+      schemaVersion: 1,
+      eventId: "event-2",
       conversationId: "conversation",
       runId: "run-1",
-      seq: 2,
-      revision: 4,
-      stream: { type: "text-delta", partId: "text-1", delta: "answer" },
+      attemptId: "attempt-1",
+      sequence: 2,
+      aggregateRevision: 2,
+      producerId: "agent-local-1",
+      occurredAt: "2026-11-06T00:00:01.000Z",
+      event: { type: "text-delta", partId: "text-1", delta: "answer" },
     });
-    expect(event).toMatchObject({ seq: 2, revision: 4, stream: { type: "text-delta" } });
-
-    const change = conversationChangeSchema.parse({
-      type: "run-finished",
-      conversationId: "conversation",
-      revision: 5,
-      runId: "run-1",
-      outcome: "failed",
-      message: {
-        id: "run-1",
-        role: "assistant",
-        text: "",
-        images: [],
-        status: "failed",
-      },
-    });
-    expect(change).toMatchObject({ outcome: "failed", message: { status: "failed" } });
+    expect(envelope.event).toEqual({ type: "text-delta", partId: "text-1", delta: "answer" });
   });
 
   it("accepts execution facts needed for future hosted adapters", () => {
@@ -96,6 +83,7 @@ describe("event schema", () => {
       agentEventEnvelopeSchema.parse({
         schemaVersion: 1,
         eventId: "event-1",
+        conversationId: "conversation",
         runId: "run-1",
         attemptId: "attempt-1",
         sequence: 1,

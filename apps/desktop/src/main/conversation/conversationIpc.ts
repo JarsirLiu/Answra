@@ -12,7 +12,7 @@ import {
   isReplyBarConversationId,
   isReplyBarWindowFromSender,
   isWindowFromSender,
-  sendConversationChange,
+  sendConversationEvent,
 } from "../window";
 import type { AgentService } from "./agentService";
 
@@ -116,7 +116,7 @@ export function registerConversationIpc(service: AgentService, deps: Conversatio
     if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用方");
     return deps.modelSettings.clear();
   });
-  service.onChange(sendConversationChange);
+  service.onEvent(sendConversationEvent);
 }
 
 function isValidConversationId(conversationId: unknown): conversationId is string {

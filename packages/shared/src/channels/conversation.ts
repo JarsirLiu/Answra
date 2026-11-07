@@ -1,8 +1,7 @@
-import type { ConversationChange, ConversationSnapshot } from "../schema";
+import type { AgentEventEnvelope, ConversationSnapshot } from "../schema";
 
 export type {
-  ConversationChange,
-  ConversationEvent,
+  AgentEventEnvelope,
   ConversationMessage,
   ConversationSnapshot,
 } from "../schema";
@@ -25,7 +24,7 @@ export const ConversationChannels = {
   ClearConfig: "answra:conversation:clear-config",
   /** 清空会话消息（仅空闲会话生效；发布 snapshot change 通知所有订阅方）。 */
   ClearMessages: "answra:conversation:clear-messages",
-  Change: "answra:conversation:change",
+  Event: "answra:conversation:event",
 } as const;
 
 /**
@@ -153,11 +152,11 @@ export type ConversationSendCommand = ChatSendCommand | AnswerRunCommand;
 export interface ConversationChannelMap {
   [ConversationChannels.Send]: {
     request: ConversationSendCommand;
-    response: { runId: string };
+    response: { runId: string; snapshot: ConversationSnapshot };
   };
   [ConversationChannels.AppendUserMessage]: {
     request: { conversationId: string; text: string };
-    response: undefined;
+    response: ConversationSnapshot;
   };
   [ConversationChannels.Cancel]: { request: { runId: string }; response: undefined };
   [ConversationChannels.GetSnapshot]: {
@@ -170,7 +169,7 @@ export interface ConversationChannelMap {
   };
   [ConversationChannels.ReadEvents]: {
     request: { conversationId: string; afterRevision: number };
-    response: ConversationChange[];
+    response: AgentEventEnvelope[];
   };
   [ConversationChannels.GetConfig]: {
     request: undefined;
@@ -189,5 +188,5 @@ export interface ConversationChannelMap {
     request: { conversationId: string };
     response: undefined;
   };
-  [ConversationChannels.Change]: { request: undefined; response: undefined };
+  [ConversationChannels.Event]: { request: undefined; response: undefined };
 }

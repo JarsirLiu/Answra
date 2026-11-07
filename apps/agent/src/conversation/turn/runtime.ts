@@ -2,7 +2,6 @@
 import { randomUUID } from "node:crypto";
 import type {
   ConversationCapabilityEndpoint,
-  ConversationChange,
   ConversationModelConfig,
   ConversationSendRequest,
 } from "@answra/shared";
@@ -22,8 +21,7 @@ import { validateRequest } from "./requestContent";
 
 /** 会话仓储订阅与一次 assistant 回合的认领、取消、等待入口。 */
 export interface ConversationRuntimeOptions {
-  emit: (change: ConversationChange) => void;
-  emitExecution?: (event: AgentEventEnvelope) => void;
+  emitEvent: (event: AgentEventEnvelope) => void;
   store?: ConversationStore;
   executionStore?: ExecutionStore;
   createTools: (
@@ -42,15 +40,13 @@ export class ConversationRuntime {
   private readonly runs = new RunRegistry();
   private readonly store: ConversationStore;
   private readonly executionStore: ExecutionStore;
-  private readonly unsubscribeStore: () => void;
-  private readonly unsubscribeExecution: () => void;
+  private readonly unsubscribeEvents: () => void;
   private readonly tokenProvider?: (options: { forceRefresh: boolean }) => Promise<string>;
   private readonly createTools: ConversationRuntimeOptions["createTools"];
   private workspaceRoot: string | null = null;
 
   constructor({
-    emit,
-    emitExecution,
+    emitEvent,
     store = new MemoryConversationStore(),
     executionStore = new MemoryExecutionStore(),
     createTools,
@@ -60,10 +56,7 @@ export class ConversationRuntime {
     this.executionStore = executionStore;
     this.tokenProvider = tokenProvider;
     this.createTools = createTools;
-    this.unsubscribeStore = store.subscribe(emit);
-    this.unsubscribeExecution = emitExecution
-      ? executionStore.subscribe(emitExecution)
-      : () => undefined;
+    this.unsubscribeEvents = executionStore.subscribe(emitEvent);
   }
 
   setWorkspaceRoot(root: string | null): void {
@@ -75,7 +68,7 @@ export class ConversationRuntime {
   }
 
   readEventsAfter(conversationId: string, revision: number) {
-    return this.store.readAfter(conversationId, revision);
+    return this.executionStore.readEvents(conversationId, revision);
   }
 
   async createConversation(conversationId: string) {
@@ -87,10 +80,10 @@ export class ConversationRuntime {
     await this.store.clear(conversationId);
   }
 
-  async appendUserMessage(conversationId: string, text: string): Promise<void> {
+  async appendUserMessage(conversationId: string, text: string) {
     if (typeof text !== "string" || !text.trim() || text.length > 32_000)
       throw new Error("消息内容无效或过长");
-    await this.store.appendUserMessage(
+    return this.store.appendUserMessage(
       conversationId,
       createUserMessage(randomUUID(), { text: text.trim(), images: [] }),
     );
@@ -105,7 +98,7 @@ export class ConversationRuntime {
     conversationId: string,
     request: ConversationSendRequest,
     accessToken: string,
-  ): Promise<{ runId: string }> {
+  ): Promise<{ runId: string; snapshot: Awaited<ReturnType<ConversationStore["load"]>> }> {
     return this.startRun({
       conversationId,
       request,
@@ -127,7 +120,7 @@ export class ConversationRuntime {
     ephemeral: boolean;
     injectTime: boolean;
     authorizedTools: readonly ConversationToolId[];
-  }): Promise<{ runId: string }> {
+  }): Promise<{ runId: string; snapshot: Awaited<ReturnType<ConversationStore["load"]>> }> {
     const {
       conversationId,
       request,
@@ -148,6 +141,7 @@ export class ConversationRuntime {
     const userMessage = createUserMessage(randomUUID(), request);
     if (ephemeral) await this.store.beginEphemeralRun(conversationId, runId, userMessage);
     else await this.store.beginRun(conversationId, runId, userMessage);
+    const snapshot = await this.store.load(conversationId);
     this.trackRun(runId, controller);
     this.executeClaimedTurn({
       conversationId,
@@ -162,7 +156,7 @@ export class ConversationRuntime {
       injectTime,
       authorizedTools,
     });
-    return { runId };
+    return { runId, snapshot };
   }
 
   /** 对已经入 transcript 的最后一条用户消息认领 assistant 回合。 */
@@ -170,11 +164,12 @@ export class ConversationRuntime {
     profile: ReplyProfile,
     conversationId: string,
     getAccessToken: () => Promise<string>,
-  ): Promise<{ runId: string }> {
+  ): Promise<{ runId: string; snapshot: Awaited<ReturnType<ConversationStore["load"]>> }> {
     const config = this.requireConfig();
     const runId = randomUUID();
     const controller = new AbortController();
     const target = await this.store.beginReplyRun(conversationId, runId);
+    const snapshot = await this.store.load(conversationId);
     this.trackRun(runId, controller);
     this.executeClaimedTurn({
       conversationId,
@@ -189,7 +184,7 @@ export class ConversationRuntime {
       injectTime: profile.injectTime ?? false,
       authorizedTools: profile.tools,
     });
-    return { runId };
+    return { runId, snapshot };
   }
 
   private executeClaimedTurn(options: {
@@ -233,13 +228,12 @@ export class ConversationRuntime {
   }
 
   readExecutionEvents(runId: string) {
-    return this.executionStore.readEvents(runId);
+    return this.executionStore.readEventsForRun(runId);
   }
 
   dispose(): void {
     this.runs.abortAll();
-    this.unsubscribeStore();
-    this.unsubscribeExecution();
+    this.unsubscribeEvents();
   }
 
   get activeRunCount(): number {

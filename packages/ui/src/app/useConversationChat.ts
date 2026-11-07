@@ -8,11 +8,8 @@ function useAiConversation(
   conversationId: string,
   operation: "chat.send" | "answer.run" = "chat.send",
 ) {
-  const { view, selectConversation, waitForRun, getView, clear } = useConversationView(
-    platform,
-    conversationId,
-    { trackActivities: true },
-  );
+  const { view, selectConversation, applySnapshot, waitForRun, getView, clear } =
+    useConversationView(platform, conversationId, { trackActivities: true });
   const [sendPending, setSendPending] = useState(false);
   const [sendError, setSendError] = useState<string>();
   const [hideActivities, setHideActivities] = useState(false);
@@ -91,7 +88,8 @@ function useAiConversation(
                 request: { text, images },
               }
             : { operation, conversationId: targetConversationId, request: { text, images } };
-        const { runId } = await platform.sendConversationMessage(command);
+        const { runId, snapshot } = await platform.sendConversationMessage(command);
+        applySnapshot(snapshot);
         if (cancelRequestedRef.current) platform.cancelConversationRun?.(runId);
         const outcome = await waitForRun(runId);
         if (outcome === "aborted" || outcome === "superseded") return "cancelled";
@@ -114,6 +112,7 @@ function useAiConversation(
       view.messages,
       sendPending,
       selectConversation,
+      applySnapshot,
       waitForRun,
       getView,
     ],

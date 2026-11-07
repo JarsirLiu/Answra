@@ -1,9 +1,9 @@
 import type {
+  AgentEventEnvelope,
   AmbientColorPayload,
   AuthLoginResult,
   AuthStatus,
   ContentSize,
-  ConversationChange,
   ConversationModelSettings,
   ConversationModelSettingsView,
   ConversationSendCommand,
@@ -86,16 +86,21 @@ export interface DesktopBridge {
   setAmbientFollow?: (value: boolean) => void;
   getConversationSnapshot?: (conversationId: string) => Promise<ConversationSnapshot>;
   createConversation?: (conversationId: string) => Promise<ConversationSnapshot>;
-  /** 清空会话消息（仅空闲会话生效）；清空通过 snapshot change 推回给所有订阅方。 */
+  /** 清空会话消息（仅空闲会话生效）。 */
   clearConversationMessages?: (conversationId: string) => Promise<void>;
   readConversationEvents?: (
     conversationId: string,
     afterRevision: number,
-  ) => Promise<ConversationChange[]>;
-  sendConversationMessage?: (command: ConversationSendCommand) => Promise<{ runId: string }>;
-  appendConversationUserMessage?: (conversationId: string, text: string) => Promise<void>;
+  ) => Promise<AgentEventEnvelope[]>;
+  sendConversationMessage?: (
+    command: ConversationSendCommand,
+  ) => Promise<{ runId: string; snapshot: ConversationSnapshot }>;
+  appendConversationUserMessage?: (
+    conversationId: string,
+    text: string,
+  ) => Promise<ConversationSnapshot>;
   cancelConversationRun?: (runId: string) => void;
-  onConversationChange?: (listener: (change: ConversationChange) => void) => () => void;
+  onConversationEvent?: (listener: (event: AgentEventEnvelope) => void) => () => void;
   // ---- 模型来源（本地自定义端点 / 云端订阅；可选，实现由 preload 注入） ----
   /** 读取当前模型来源与本地端点摘要（不含 API Key）。 */
   getConversationConfig?: () => Promise<ConversationModelSettingsView>;

@@ -58,7 +58,8 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
   const [interviewCaptureState, setInterviewCaptureState] = useState<InterviewCaptureState>(
     interviewCapture?.getState() ?? { phase: "idle" },
   );
-  const interviewConversation = useInterviewConversation(platform, ActiveInterviewConversationId);
+  const { view: interviewConversation, applySnapshot: applyInterviewSnapshot } =
+    useInterviewConversation(platform, ActiveInterviewConversationId);
   const [interviewError, setInterviewError] = useState<string>();
   const lastInterviewMessage = interviewConversation.messages.at(-1);
   const interviewReplyId =
@@ -66,8 +67,8 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
   // 自动回复真正开始后，手动发送留下的旧错误已经过期；只清 transcript 侧
   // 的错误不够，因为这里的 interviewError 优先级更高。
   useEffect(() => {
-    if (interviewReplyId) setInterviewError(undefined);
-  }, [interviewReplyId]);
+    if (interviewReplyId || interviewConversation.activeRunId) setInterviewError(undefined);
+  }, [interviewConversation.activeRunId, interviewReplyId]);
   const surfaces = useSurfaceCoordinator();
   const { panel, floatingLayers, featureSlot } = surfaces;
   const replyPhase = featureSlot.kind === "reply" ? (featureSlot.phase ?? "composing") : "closed";
@@ -170,7 +171,6 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
   const {
     attachments,
     closeReplyBar,
-    conversationId,
     draft,
     exitReply,
     fileInputRef,
@@ -276,7 +276,7 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
     else if (panel === "chat" || panel === "interview") surfaces.openPanel("closed");
   }
 
-  /** 清空常驻会话：归零由 worker 的 snapshot change 推回，这里只负责失败提示。 */
+  /** 清空常驻会话并同步清理本地投影。 */
   function clearConversation(conversationId: string) {
     void platform?.clearConversationMessages?.(conversationId).catch((error: unknown) =>
       surfaces.dispatch({
@@ -348,7 +348,11 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
               if (!platform?.appendConversationUserMessage)
                 throw new Error("当前版本不支持发送消息");
               try {
-                await platform.appendConversationUserMessage(ActiveInterviewConversationId, text);
+                const snapshot = await platform.appendConversationUserMessage(
+                  ActiveInterviewConversationId,
+                  text,
+                );
+                applyInterviewSnapshot(snapshot);
               } catch (error) {
                 setInterviewError(error instanceof Error ? error.message : "消息发送失败");
                 throw error;
@@ -369,8 +373,7 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
         {featureSlot.kind === "reply" ? (
           <ReplyDetails
             bridge={platform}
-            conversationId={conversationId}
-            enabled={Boolean(conversationId)}
+            conversation={answer}
             error={replyFailure?.message}
             expanded={replyDetail.expanded}
             stealth={stealthSetting.enabled}

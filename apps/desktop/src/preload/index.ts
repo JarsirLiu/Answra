@@ -1,11 +1,11 @@
 import {
+  type AgentEventEnvelope,
   AmbientChannels,
   type AmbientColorPayload,
   AuthChannels,
   type AuthStatus,
   CaptureChannels,
   type ContentSize,
-  type ConversationChange,
   ConversationChannels,
   type ConversationModelSettings,
   type ConversationSendCommand,
@@ -101,13 +101,11 @@ const bridge: DesktopBridge = {
     ipcRenderer.invoke(ConversationChannels.AppendUserMessage, { conversationId, text }),
   cancelConversationRun: (runId: string) =>
     ipcRenderer.send(ConversationChannels.Cancel, { runId }),
-  onConversationChange: (listener: (change: ConversationChange) => void) => {
-    const wrapped = (_event: Electron.IpcRendererEvent, change: ConversationChange) =>
-      listener(change);
-    ipcRenderer.on(ConversationChannels.Change, wrapped);
-    return () => {
-      ipcRenderer.removeListener(ConversationChannels.Change, wrapped);
-    };
+  onConversationEvent: (listener: (event: AgentEventEnvelope) => void) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, event: AgentEventEnvelope) =>
+      listener(event);
+    ipcRenderer.on(ConversationChannels.Event, wrapped);
+    return () => ipcRenderer.removeListener(ConversationChannels.Event, wrapped);
   },
   getConversationConfig: () => ipcRenderer.invoke(ConversationChannels.GetConfig),
   configureConversation: (settings: ConversationModelSettings) =>

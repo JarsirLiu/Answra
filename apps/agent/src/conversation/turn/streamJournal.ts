@@ -1,4 +1,4 @@
-/** 将模型事件串行写入 Conversation session，并维护仅供诊断的回合指标。 */
+/** 将模型事件串行写入唯一 ExecutionStore，并维护仅供诊断的回合指标。 */
 import type { AgentStreamEvent } from "@answra/shared/schema";
 import type { ConversationStore } from "../session/store";
 
@@ -15,10 +15,12 @@ export function createStreamJournal({
   conversationId,
   runId,
   store,
+  executionStore,
 }: {
   conversationId: string;
   runId: string;
   store: ConversationStore;
+  executionStore: import("../../execution/store").ExecutionStore;
 }) {
   const chunkCounts: Record<string, number> = {};
   const textPartLengths = new Map<string, number>();
@@ -78,7 +80,8 @@ export function createStreamJournal({
       if (stream.type === "error") {
         console.error("[conversation][run] stream error", { runId, errorText: stream.errorText });
       }
-      await store.appendEvent({ conversationId, runId, stream });
+      await executionStore.appendEvent(runId, stream);
+      await store.applyStreamEvent(conversationId, runId, stream);
       if (stream.type === "start") started = true;
       if (stream.type === "error") failed = true;
     },

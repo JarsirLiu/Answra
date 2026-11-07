@@ -2,6 +2,8 @@
  * 面试回复的组合点：把回复状态机接到会话能力与令牌反向请求。
  * 只依赖窄端口，不 import 对话领域的具体 runtime；触发源与 profile 都在 interview 域内决定。
  */
+
+import type { ConversationSnapshot } from "@answra/shared";
 import type { CommittedInterviewTurn } from "../interview/contracts";
 import { InterviewReplyLoop } from "../interview/reply/loop";
 import { INTERVIEW_REPLY_POLICY } from "../interview/reply/policy";
@@ -9,7 +11,7 @@ import { INTERVIEW_REPLY_PROFILE, type InterviewReplyProfile } from "../intervie
 
 /** worker 组合根提供给面试回复的最小会话能力。 */
 export interface InterviewReplyRuntime {
-  appendUserMessage(conversationId: string, text: string): Promise<void>;
+  appendUserMessage(conversationId: string, text: string): Promise<ConversationSnapshot>;
   replyToLastUserWithProfile(
     profile: InterviewReplyProfile,
     conversationId: string,

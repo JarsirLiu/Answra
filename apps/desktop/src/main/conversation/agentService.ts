@@ -3,7 +3,6 @@ import path from "node:path";
 import { createInterface } from "node:readline";
 import type { AgentCommand, AgentFrame, InterviewWorkerEvent } from "@answra/agent";
 import type {
-  ConversationChange,
   ConversationModelConfig,
   ConversationSendCommand,
   ConversationSendRequest,
@@ -30,9 +29,8 @@ export interface AgentServiceDeps {
 export class AgentService {
   private worker?: UtilityProcess;
   private readonly pending = new Map<string, Pending>();
-  private readonly listeners = new Set<(change: ConversationChange) => void>();
+  private readonly listeners = new Set<(event: AgentEventEnvelope) => void>();
   private readonly interviewListeners = new Set<(event: InterviewWorkerEvent) => void>();
-  private readonly executionListeners = new Set<(event: AgentEventEnvelope) => void>();
   private readonly interviewAudioCreditListeners = new Set<
     (credit: { sessionId: string; count: number }) => void
   >();
@@ -70,7 +68,7 @@ export class AgentService {
     console.info("[agent-service] started", { pid: worker.pid, packaged: app.isPackaged });
   }
 
-  onChange(listener: (change: ConversationChange) => void): () => void {
+  onEvent(listener: (event: AgentEventEnvelope) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }
@@ -80,11 +78,6 @@ export class AgentService {
     return () => this.interviewListeners.delete(listener);
   }
 
-  onExecutionEvent(listener: (event: AgentEventEnvelope) => void): () => void {
-    this.executionListeners.add(listener);
-    return () => this.executionListeners.delete(listener);
-  }
-
   onInterviewAudioCredit(
     listener: (credit: { sessionId: string; count: number }) => void,
   ): () => void {
@@ -92,7 +85,7 @@ export class AgentService {
     return () => this.interviewAudioCreditListeners.delete(listener);
   }
 
-  async send(command: ConversationSendCommand): Promise<{ runId: string }> {
+  async send(command: ConversationSendCommand): Promise<{ runId: string; snapshot: unknown }> {
     if (!__ANSWRA_FEATURE_CHAT__ && command.operation === "chat.send") {
       throw new Error("对话功能不包含在此安装包中");
     }
@@ -102,12 +95,15 @@ export class AgentService {
     const { config, accessToken } = await this.deps.resolveModel();
     await this.ensureConfigured(config);
     const type = command.operation === "chat.send" ? "chat-send" : "answer-run";
-    return (await this.request(type, { ...command, accessToken })) as { runId: string };
+    return (await this.request(type, { ...command, accessToken })) as {
+      runId: string;
+      snapshot: unknown;
+    };
   }
 
-  async appendUserMessage(conversationId: string, text: string): Promise<void> {
+  async appendUserMessage(conversationId: string, text: string) {
     if (!text.trim() || text.length > 32_000) throw new Error("消息内容无效或过长");
-    await this.request("append-user-message", { conversationId, text });
+    return this.request("append-user-message", { conversationId, text });
   }
 
   cancel(runId: string): void {
@@ -191,16 +187,12 @@ export class AgentService {
 
   private onFrame(frame: AgentFrame): void {
     if (frame.version !== 1) return;
-    if (frame.type === "change") {
-      for (const listener of this.listeners) listener(frame.change);
+    if (frame.type === "event") {
+      for (const listener of this.listeners) listener(frame.event);
       return;
     }
     if (frame.type === "interview-event") {
       for (const listener of this.interviewListeners) listener(frame.event);
-      return;
-    }
-    if (frame.type === "execution-event") {
-      for (const listener of this.executionListeners) listener(frame.event);
       return;
     }
     if (frame.type === "interview-audio-credit") {

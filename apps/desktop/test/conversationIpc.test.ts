@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const shared = vi.hoisted(() => ({
   handlers: {} as Record<string, (...args: unknown[]) => unknown>,
-  onChange: vi.fn(),
+  onEvent: vi.fn(),
   send: vi.fn(),
   signedIn: true,
   modelSource: "cloud" as "local" | "cloud",
@@ -30,7 +30,7 @@ vi.mock("../src/main/window", () => ({
     window: { webContents: { id: string } },
     event: { sender: { id: string } },
   ) => window.webContents.id === event.sender.id,
-  sendConversationChange: shared.send,
+  sendConversationEvent: shared.send,
 }));
 
 import { AUTH_REQUIRED_CODE, ConversationChannels } from "@answra/shared";
@@ -44,7 +44,7 @@ const service = {
   send: vi.fn(),
   cancel: vi.fn(),
   clearConversation: vi.fn().mockResolvedValue(undefined),
-  onChange: shared.onChange,
+  onEvent: shared.onEvent,
 };
 
 const modelSettings = {
@@ -92,7 +92,7 @@ function register(): void {
 describe("conversation IPC read access for reply renderer", () => {
   beforeEach(() => {
     shared.handlers = {};
-    shared.onChange.mockClear();
+    shared.onEvent.mockClear();
     shared.send.mockClear();
     shared.signedIn = true;
     shared.modelSource = "cloud";
@@ -166,7 +166,7 @@ describe("conversation IPC read access for reply renderer", () => {
   });
 
   it("forwards the service change subscription to the window broadcaster", () => {
-    expect(shared.onChange).toHaveBeenCalledWith(shared.send);
+    expect(shared.onEvent).toHaveBeenCalledWith(shared.send);
   });
 
   it("rejects cloud model calls while signed out with the shared auth-required code", () => {
@@ -233,7 +233,7 @@ describe("conversation IPC read access for reply renderer", () => {
 describe("conversation IPC model settings", () => {
   beforeEach(() => {
     shared.handlers = {};
-    shared.onChange.mockClear();
+    shared.onEvent.mockClear();
     shared.send.mockClear();
     shared.signedIn = true;
     shared.modelSource = "cloud";

@@ -1,6 +1,6 @@
 /** Execution event writer; creates the shared, provider-neutral event envelope. */
 import { randomUUID } from "node:crypto";
-import type { AgentEventEnvelope, AgentExecutionEvent } from "@answra/shared/schema";
+import type { AgentEvent, AgentEventEnvelope } from "@answra/shared/schema";
 
 export interface ExecutionEventContext {
   runId: string;
@@ -14,7 +14,7 @@ export interface ExecutionEventContext {
 
 export function createExecutionEvent(
   context: ExecutionEventContext,
-  event: AgentExecutionEvent,
+  event: AgentEvent,
 ): AgentEventEnvelope {
   return {
     schemaVersion: 1,

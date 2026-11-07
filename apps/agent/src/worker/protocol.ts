@@ -1,7 +1,6 @@
 import type {
   AnswerRunCommand,
   ChatSendCommand,
-  ConversationChange,
   ConversationModelConfig,
   InterviewPcmFrame,
 } from "@answra/shared";
@@ -137,8 +136,7 @@ export type AgentCommand =
 export type AgentFrame =
   | { version: 1; type: "response"; id: string; ok: true; value?: unknown }
   | { version: 1; type: "response"; id: string; ok: false; error: string }
-  | { version: 1; type: "change"; change: ConversationChange }
-  | { version: 1; type: "execution-event"; event: AgentEventEnvelope }
+  | { version: 1; type: "event"; event: AgentEventEnvelope }
   /** Worker DTOs cross to desktop-main for projection into renderer contracts. */
   | { version: 1; type: "interview-event"; event: InterviewWorkerEvent }
   /** A batch acknowledgment releases a bounded number of renderer audio frames. */

@@ -1,4 +1,4 @@
-import type { DesktopBridge } from "@answra/shared";
+import type { ConversationSnapshot, DesktopBridge } from "@answra/shared";
 import type { ConversationView } from "./conversationView";
 import { useConversationView } from "./useConversationView";
 
@@ -6,10 +6,10 @@ import { useConversationView } from "./useConversationView";
 export function useInterviewConversation(
   platform: DesktopBridge | undefined,
   conversationId: string,
-): ConversationView {
-  const { view } = useConversationView(platform, conversationId, {
+): { view: ConversationView; applySnapshot: (snapshot: ConversationSnapshot) => void } {
+  const { view, applySnapshot } = useConversationView(platform, conversationId, {
     enabled: __ANSWRA_FEATURE_INTERVIEW__,
     create: true,
   });
-  return view;
+  return { view, applySnapshot };
 }

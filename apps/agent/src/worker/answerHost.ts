@@ -37,9 +37,7 @@ export function startAnswerAgentHost({
   let requestSequence = 0;
   let disposed = false;
   const runtime = new ConversationRuntime({
-    emit: (change) => transport.send({ version: 1, type: "change", change }),
-    emitExecution: (event: AgentEventEnvelope) =>
-      transport.send({ version: 1, type: "execution-event", event }),
+    emitEvent: (event: AgentEventEnvelope) => transport.send({ version: 1, type: "event", event }),
     store,
     executionStore,
     createTools: () => undefined,

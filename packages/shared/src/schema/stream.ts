@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { agentRetrySchema } from "./execution";
+import { agentRetrySchema } from "./status";
 
 /** Provider-neutral model output events normalized at the Agent boundary. */
 export const agentStreamEventSchema = z.discriminatedUnion("type", [

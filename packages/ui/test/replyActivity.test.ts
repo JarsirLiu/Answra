@@ -1,17 +1,17 @@
-import type { ConversationEvent } from "@answra/shared";
+import type { AgentEventEnvelope, AgentStreamEvent } from "@answra/shared/schema";
 import { describe, expect, it } from "vitest";
 import { projectReplyActivity } from "../src/app/replyActivity";
 
-const conversationId = "active-exam-conversation";
 const runId = "run-1";
 
-function event(revision: number, stream: ConversationEvent["stream"]): ConversationEvent {
+function event(
+  revision: number,
+  stream: AgentStreamEvent,
+): Pick<AgentEventEnvelope, "runId" | "event"> {
+  void revision;
   return {
-    conversationId,
     runId,
-    revision,
-    seq: revision,
-    stream,
+    event: stream,
   };
 }
 

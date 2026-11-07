@@ -1,10 +1,10 @@
 import type {
-  ConversationChange,
   ConversationMessage,
   ConversationSnapshot,
   DesktopBridge,
   ReplyBarState,
 } from "@answra/shared";
+import type { AgentEventEnvelope } from "@answra/shared/schema";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ReplyBarWindowApp } from "../src/app/ReplyBarWindowApp";
@@ -12,7 +12,7 @@ import { ReplyBarWindowApp } from "../src/app/ReplyBarWindowApp";
 const conversationId = "screenshot-01234567-89ab-4cde-8fab-0123456789ab";
 const runId = "run-live";
 let stateListener: ((state: ReplyBarState) => void) | undefined;
-let changeListener: ((change: ConversationChange) => void) | undefined;
+let changeListener: ((event: unknown) => void) | undefined;
 let previousClipboard: PropertyDescriptor | undefined;
 let clipboardOverridden = false;
 
@@ -45,8 +45,8 @@ function createBridge() {
     fitReplyBar: vi.fn(),
     getConversationSnapshot: vi.fn().mockResolvedValue(snapshot),
     readConversationEvents: vi.fn().mockResolvedValue([]),
-    onConversationChange: vi.fn((listener: (change: ConversationChange) => void) => {
-      changeListener = listener;
+    onConversationEvent: vi.fn((listener: (event: AgentEventEnvelope) => void) => {
+      changeListener = (event) => listener(normalizeEvent(event));
       return () => {
         changeListener = undefined;
       };
@@ -61,6 +61,39 @@ function createBridge() {
     requestReplyBarState: vi.fn(),
     sendReplyBarAction: vi.fn(),
   } satisfies Partial<DesktopBridge>;
+}
+
+function eventEnvelope(revision: number, event: AgentEventEnvelope["event"]): AgentEventEnvelope {
+  return {
+    schemaVersion: 1,
+    eventId: `event-${revision}`,
+    conversationId,
+    runId,
+    attemptId: `${runId}:attempt:1`,
+    sequence: revision,
+    aggregateRevision: revision,
+    producerId: "test",
+    occurredAt: "2026-11-07T00:00:00.000Z",
+    event,
+  };
+}
+
+function terminalEnvelope(revision: number): AgentEventEnvelope {
+  return eventEnvelope(revision, { type: "run-state-changed", state: "completed", attempt: 1 });
+}
+
+function normalizeEvent(input: unknown): AgentEventEnvelope {
+  const value = input as Record<string, unknown>;
+  if (value.type === "event") {
+    const event = value.event as Record<string, unknown>;
+    return eventEnvelope(Number(event.revision), event.stream as AgentEventEnvelope["event"]);
+  }
+  if (value.type === "run-finished") return terminalEnvelope(Number(value.revision));
+  return input as AgentEventEnvelope;
+}
+
+function normalizeEvents(inputs: readonly unknown[]): AgentEventEnvelope[] {
+  return inputs.map(normalizeEvent);
 }
 
 function replyState(stealth = false): ReplyBarState {
@@ -116,7 +149,7 @@ describe("ReplyBarWindowApp live conversation popover", () => {
         },
       });
     });
-    await waitFor(() => expect(screen.getByText(/实时/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("实时")).toBeInTheDocument());
     expect(bridge.readConversationEvents).toHaveBeenCalledWith(conversationId, 0);
   });
 
@@ -167,24 +200,28 @@ describe("ReplyBarWindowApp live conversation popover", () => {
     expect(popover.querySelector(".katex-display")).not.toBeNull();
   });
 
-  it("recovers a missing revision from the event journal", async () => {
+  it("replays persisted stream events during initialization", async () => {
     const bridge = createBridge();
-    bridge.readConversationEvents.mockResolvedValueOnce([]).mockResolvedValueOnce([
-      {
-        type: "event",
-        event: {
-          conversationId,
-          runId,
-          revision: 2,
-          seq: 1,
-          stream: {
-            type: "reasoning-delta",
-            partId: "reasoning-1",
-            delta: "先检查条件",
+    bridge.readConversationEvents
+      .mockResolvedValueOnce(
+        normalizeEvents([
+          {
+            type: "event",
+            event: {
+              conversationId,
+              runId,
+              revision: 2,
+              seq: 1,
+              stream: {
+                type: "reasoning-delta",
+                partId: "reasoning-1",
+                delta: "先检查条件",
+              },
+            },
           },
-        },
-      },
-    ]);
+        ]),
+      )
+      .mockResolvedValueOnce([]);
     render(<ReplyBarWindowApp bridge={bridge as DesktopBridge} />);
     act(() => stateListener?.(replyState()));
     await waitFor(() =>
@@ -205,7 +242,7 @@ describe("ReplyBarWindowApp live conversation popover", () => {
     expect(screen.queryByText("先检查条件")).not.toBeInTheDocument();
     fireEvent.click(toggle);
     expect(screen.getByText("先检查条件")).toBeInTheDocument();
-    expect(bridge.readConversationEvents).toHaveBeenCalledWith(conversationId, 1);
+    expect(bridge.readConversationEvents).toHaveBeenCalledWith(conversationId, 0);
   });
 
   it("renders reasoning in a neutral collapsible block instead of italic answer text", async () => {
@@ -215,32 +252,34 @@ describe("ReplyBarWindowApp live conversation popover", () => {
       revision: 3,
       messages: [snapshot.messages[0], { ...snapshot.messages[1], text: "最终答案" }],
     });
-    bridge.readConversationEvents.mockResolvedValue([
-      {
-        type: "event",
-        event: {
-          conversationId,
-          runId,
-          revision: 2,
-          seq: 1,
-          stream: {
-            type: "reasoning-delta",
-            partId: "reasoning-1",
-            delta: "先检查题目条件",
+    bridge.readConversationEvents.mockResolvedValue(
+      normalizeEvents([
+        {
+          type: "event",
+          event: {
+            conversationId,
+            runId,
+            revision: 2,
+            seq: 1,
+            stream: {
+              type: "reasoning-delta",
+              partId: "reasoning-1",
+              delta: "先检查题目条件",
+            },
           },
         },
-      },
-      {
-        type: "event",
-        event: {
-          conversationId,
-          runId,
-          revision: 3,
-          seq: 1,
-          stream: { type: "text-delta", partId: "text-1", delta: "最终答案" },
+        {
+          type: "event",
+          event: {
+            conversationId,
+            runId,
+            revision: 3,
+            seq: 1,
+            stream: { type: "text-delta", partId: "text-1", delta: "最终答案" },
+          },
         },
-      },
-    ]);
+      ]),
+    );
     render(<ReplyBarWindowApp bridge={bridge as DesktopBridge} />);
     act(() => stateListener?.(replyState()));
     fireEvent.mouseEnter(document.querySelector(".reply-activity-viewport") as HTMLElement);
@@ -263,22 +302,24 @@ describe("ReplyBarWindowApp live conversation popover", () => {
       // 本轮刚开口：只有思维链，回答正文尚未开始
       messages: [snapshot.messages[0], { ...snapshot.messages[1], text: "" }],
     });
-    bridge.readConversationEvents.mockResolvedValue([
-      {
-        type: "event",
-        event: {
-          conversationId,
-          runId,
-          revision: 2,
-          seq: 1,
-          stream: {
-            type: "reasoning-delta",
-            partId: "reasoning-1",
-            delta: "正在检查条件",
+    bridge.readConversationEvents.mockResolvedValue(
+      normalizeEvents([
+        {
+          type: "event",
+          event: {
+            conversationId,
+            runId,
+            revision: 2,
+            seq: 1,
+            stream: {
+              type: "reasoning-delta",
+              partId: "reasoning-1",
+              delta: "正在检查条件",
+            },
           },
         },
-      },
-    ]);
+      ]),
+    );
     render(<ReplyBarWindowApp bridge={bridge as DesktopBridge} />);
     act(() => stateListener?.(replyState()));
     fireEvent.mouseEnter(document.querySelector(".reply-activity-viewport") as HTMLElement);

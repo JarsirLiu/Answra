@@ -1,9 +1,5 @@
 import { createServer, type Server } from "node:http";
-import {
-  ActiveChatConversationId,
-  ActiveExamConversationId,
-  type ConversationChange,
-} from "@answra/shared";
+import { ActiveChatConversationId, ActiveExamConversationId } from "@answra/shared";
 import type { AgentEventEnvelope } from "@answra/shared/schema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryConversationStore } from "../../../src/conversation/session/memoryStore";
@@ -21,6 +17,30 @@ type RecordedRequest = {
 
 const ACCESS_TOKEN = "test-access-token";
 
+function isRunStateEvent(event: AgentEventEnvelope): event is AgentEventEnvelope & {
+  event: Extract<AgentEventEnvelope["event"], { type: "run-state-changed" }>;
+} {
+  return event.event.type === "run-state-changed";
+}
+
+function isTerminalEvent(event: AgentEventEnvelope, runId: string): boolean {
+  return (
+    event.runId === runId &&
+    isRunStateEvent(event) &&
+    ["completed", "failed", "aborted"].includes(event.event.state)
+  );
+}
+
+function streamEvents(events: AgentEventEnvelope[], runId?: string): AgentEventEnvelope[] {
+  return events.filter(
+    (event) => (runId === undefined || event.runId === runId) && !isRunStateEvent(event),
+  );
+}
+
+function isFulfilled<T>(result: PromiseSettledResult<T>): result is PromiseFulfilledResult<T> {
+  return result.status === "fulfilled";
+}
+
 function endpoint(port: number) {
   return { baseUrl: `http://127.0.0.1:${port}/v1`, model: "text.chat" };
 }
@@ -37,8 +57,7 @@ describe("ephemeral conversation runtime", () => {
   let server: Server;
   let requests: RecordedRequest[];
   let runtime: ChatConversationRuntime;
-  let changes: ConversationChange[];
-  let executionEvents: AgentEventEnvelope[];
+  let changes: AgentEventEnvelope[];
   let holdResponse: boolean;
   let modelFailure: { status: number; message: string } | undefined;
   let serverPort = 0;
@@ -46,7 +65,6 @@ describe("ephemeral conversation runtime", () => {
   beforeEach(async () => {
     requests = [];
     changes = [];
-    executionEvents = [];
     holdResponse = false;
     modelFailure = undefined;
     server = createServer(async (request, response) => {
@@ -79,8 +97,7 @@ describe("ephemeral conversation runtime", () => {
     if (!address || typeof address === "string") throw new Error("test server did not bind");
     serverPort = address.port;
     runtime = new ChatConversationRuntime({
-      emit: (change) => changes.push(change),
-      emitExecution: (event) => executionEvents.push(event),
+      emitEvent: (event) => changes.push(event),
       createTools: createAuthorizedConversationTools,
     });
     runtime.configure({ chat: endpoint(address.port), answer: endpoint(address.port) });
@@ -116,34 +133,31 @@ describe("ephemeral conversation runtime", () => {
     expect(JSON.stringify(requests[1]?.messages)).toContain("只看问题 B");
     expect(JSON.stringify(requests[1]?.messages)).not.toContain("解释截图 A");
     expect(runtime.activeRunCount).toBe(0);
-    const events = changes.flatMap((change) => (change.type === "event" ? [change.event] : []));
-    const revisions = changes.map((change) =>
-      change.type === "event"
-        ? change.event.revision
-        : change.type === "snapshot"
-          ? change.snapshot.revision
-          : change.revision,
-    );
+    const events = changes;
+    const revisions = changes.map((change) => change.aggregateRevision);
     expect(revisions).toEqual([...revisions].sort((left, right) => left - right));
     const snapshot = await runtime.getSnapshot("test-conversation");
     expect(snapshot.messages).toEqual([]);
     expect(snapshot.revision).toBeGreaterThan(0);
-    expect(await runtime.readEventsAfter("test-conversation", 0)).toEqual([
-      { type: "snapshot", snapshot },
-    ]);
-    expect(changes.filter((change) => change.type === "run-finished")).toHaveLength(2);
+    expect(await runtime.readEventsAfter("test-conversation", 0)).toHaveLength(changes.length);
     expect(
-      executionEvents
+      changes.filter(
+        (change) => isTerminalEvent(change, first.runId) || isTerminalEvent(change, second.runId),
+      ),
+    ).toHaveLength(2);
+    expect(
+      changes
         .filter((event) => event.runId === first.runId)
-        .map((event) => event.event.type === "run-state-changed" && event.event.state),
+        .filter(isRunStateEvent)
+        .map((event) => event.event.state),
     ).toEqual(["queued", "claimed", "running", "completed"]);
     expect(
       events.some(
-        (event) => event.stream.type === "reasoning-delta" && event.stream.delta === "分析中",
+        (event) => event.event.type === "reasoning-delta" && event.event.delta === "分析中",
       ),
     ).toBe(true);
     expect(
-      events.some((event) => event.stream.type === "text-delta" && event.stream.delta === "收到"),
+      events.some((event) => event.event.type === "text-delta" && event.event.delta === "收到"),
     ).toBe(true);
   });
 
@@ -191,15 +205,15 @@ describe("ephemeral conversation runtime", () => {
       ["user", "请自我介绍", "complete"],
       ["assistant", "", "failed"],
     ]);
-    const runEvents = changes
-      .flatMap((change) => (change.type === "event" ? [change.event] : []))
-      .filter((event) => event.runId === runId);
-    expect(runEvents.map((event) => event.stream.type)).toEqual(["start", "error"]);
-    expect(runEvents[1]?.stream).toMatchObject({ type: "error", errorText: "令牌不可用" });
+    const runEvents = streamEvents(changes, runId);
+    expect(runEvents.map((event) => event.event.type)).toEqual(["start", "error"]);
+    expect(runEvents[1]?.event).toMatchObject({ type: "error", errorText: "令牌不可用" });
     expect(
       changes.some(
         (change) =>
-          change.type === "run-finished" && change.runId === runId && change.outcome === "failed",
+          change.runId === runId &&
+          change.event.type === "run-state-changed" &&
+          change.event.state === "failed",
       ),
     ).toBe(true);
     expect(runtime.activeRunCount).toBe(0);
@@ -251,11 +265,11 @@ describe("ephemeral conversation runtime", () => {
     const snapshot = await runtime.getSnapshot("failed-conversation");
     expect(snapshot.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
     expect(snapshot.messages[0]?.text).toBe("这道题选什么");
-    const events = changes.flatMap((change) => (change.type === "event" ? [change.event] : []));
+    const events = changes;
     expect(
       events.some(
         (event) =>
-          event.stream.type === "error" && event.stream.errorText.includes("No model service"),
+          event.event.type === "error" && event.event.errorText.includes("No model service"),
       ),
     ).toBe(true);
 
@@ -402,7 +416,7 @@ describe("ephemeral conversation runtime", () => {
       ),
     ).rejects.toThrow("8 MB");
     expect(runtime.activeRunCount).toBe(0);
-    expect(changes.filter((change) => change.type === "event")).toHaveLength(0);
+    expect(changes).toHaveLength(0);
   });
 
   it("aborts an active request and releases its temporary run state", async () => {
@@ -418,7 +432,9 @@ describe("ephemeral conversation runtime", () => {
     expect(
       changes.some(
         (change) =>
-          change.type === "run-finished" && change.runId === runId && change.outcome === "aborted",
+          change.runId === runId &&
+          change.event.type === "run-state-changed" &&
+          change.event.state === "aborted",
       ),
     ).toBe(true);
     expect(runtime.activeRunCount).toBe(0);
@@ -449,17 +465,19 @@ describe("ephemeral conversation runtime", () => {
     );
     await waitForTerminal(runId);
 
-    const events = changes.flatMap((change) => (change.type === "event" ? [change.event] : []));
-    const errorChunk = events.find(
-      (event) => event.runId === runId && event.stream.type === "error",
+    const events = changes;
+    const errorChunk = streamEvents(events, runId).find(
+      (event) => event.runId === runId && event.event.type === "error",
     );
     expect(
-      errorChunk && errorChunk.stream.type === "error" ? errorChunk.stream.errorText : "",
+      errorChunk && errorChunk.event.type === "error" ? errorChunk.event.errorText : "",
     ).toContain("auth-required");
     expect(
       changes.some(
         (change) =>
-          change.type === "run-finished" && change.runId === runId && change.outcome === "failed",
+          change.runId === runId &&
+          change.event.type === "run-state-changed" &&
+          change.event.state === "failed",
       ),
     ).toBe(true);
     expect(runtime.activeRunCount).toBe(0);
@@ -489,7 +507,7 @@ describe("ephemeral conversation runtime", () => {
     if (!address || typeof address === "string") throw new Error("test server did not bind");
 
     const retrying = new ChatConversationRuntime({
-      emit: (change) => changes.push(change),
+      emitEvent: (event) => changes.push(event),
       createTools: createAuthorizedConversationTools,
       tokenProvider: async (options) => {
         forceRefreshFlags.push(options.forceRefresh);
@@ -507,13 +525,13 @@ describe("ephemeral conversation runtime", () => {
 
       expect(authorizations).toEqual(["Bearer stale-token", "Bearer refreshed-token"]);
       expect(forceRefreshFlags).toEqual([true]);
-      const events = changes.flatMap((change) => (change.type === "event" ? [change.event] : []));
+      const events = changes;
       expect(
         events.some(
-          (event) => event.stream.type === "text-delta" && event.stream.delta === "重试成功",
+          (event) => event.event.type === "text-delta" && event.event.delta === "重试成功",
         ),
       ).toBe(true);
-      expect(events.some((event) => event.runId === runId && event.stream.type === "error")).toBe(
+      expect(events.some((event) => event.runId === runId && event.event.type === "error")).toBe(
         false,
       );
     } finally {
@@ -538,7 +556,7 @@ describe("ephemeral conversation runtime", () => {
     if (!address || typeof address === "string") throw new Error("test server did not bind");
 
     const retrying = new ChatConversationRuntime({
-      emit: (change) => changes.push(change),
+      emitEvent: (event) => changes.push(event),
       createTools: createAuthorizedConversationTools,
       tokenProvider: async () => "refreshed-token",
     });
@@ -552,13 +570,13 @@ describe("ephemeral conversation runtime", () => {
       await waitForTerminal(runId);
 
       expect(attempts).toEqual(["Bearer stale-token", "Bearer refreshed-token"]);
-      const events = changes.flatMap((change) => (change.type === "event" ? [change.event] : []));
+      const events = changes;
       expect(
         events.some(
           (event) =>
             event.runId === runId &&
-            event.stream.type === "error" &&
-            event.stream.errorText.includes("auth-required"),
+            event.event.type === "error" &&
+            event.event.errorText.includes("auth-required"),
         ),
       ).toBe(true);
       expect(retrying.activeRunCount).toBe(0);
@@ -573,10 +591,7 @@ describe("ephemeral conversation runtime", () => {
       runtime.runAnswer("race-conversation", { text: "并发第一题", images: [] }, ACCESS_TOKEN),
       runtime.runAnswer("race-conversation", { text: "并发第二题", images: [] }, ACCESS_TOKEN),
     ]);
-    const fulfilled = settled.filter(
-      (outcome): outcome is PromiseFulfilledResult<{ runId: string }> =>
-        outcome.status === "fulfilled",
-    );
+    const fulfilled = settled.filter(isFulfilled);
     const rejected = settled.filter(
       (outcome): outcome is PromiseRejectedResult => outcome.status === "rejected",
     );
@@ -588,12 +603,15 @@ describe("ephemeral conversation runtime", () => {
 
     const survivorRunId = fulfilled[0]?.value.runId ?? "";
     await waitForTerminal(survivorRunId);
-    const survivorEvents = changes
-      .flatMap((change) => (change.type === "event" ? [change.event] : []))
-      .filter((event) => event.runId === survivorRunId);
-    expect(survivorEvents.some((event) => event.stream.type === "error")).toBe(false);
+    const survivorEvents = streamEvents(changes, survivorRunId);
+    expect(survivorEvents.some((event) => event.event.type === "error")).toBe(false);
     expect(
-      changes.some((change) => change.type === "run-finished" && change.runId === survivorRunId),
+      changes.some(
+        (change) =>
+          change.runId === survivorRunId &&
+          change.event.type === "run-state-changed" &&
+          ["completed", "failed", "aborted"].includes(change.event.state),
+      ),
     ).toBe(true);
     expect(runtime.activeRunCount).toBe(0);
   });
@@ -626,29 +644,24 @@ describe("ephemeral conversation runtime", () => {
       },
       appendUserMessage: async (conversationId, userMessage) => {
         await tick();
-        await inner.appendUserMessage(conversationId, userMessage);
+        return inner.appendUserMessage(conversationId, userMessage);
       },
       beginEphemeralRun: async (conversationId, runId, userMessage) => {
         await tick();
         await inner.beginEphemeralRun(conversationId, runId, userMessage);
       },
-      appendEvent: async (event) => {
-        await tick();
-        return inner.appendEvent(event);
-      },
       finishRun: async (conversationId, runId, status) => {
         await tick();
         await inner.finishRun(conversationId, runId, status);
       },
-      readAfter: async (conversationId, revision) => {
+      applyStreamEvent: async (conversationId, runId, event) => {
         await tick();
-        return inner.readAfter(conversationId, revision);
+        await inner.applyStreamEvent(conversationId, runId, event);
       },
-      subscribe: (listener) => inner.subscribe(listener),
     };
-    const raceChanges: ConversationChange[] = [];
+    const raceChanges: AgentEventEnvelope[] = [];
     const racing = new ChatConversationRuntime({
-      emit: (change) => raceChanges.push(change),
+      emitEvent: (event) => raceChanges.push(event),
       createTools: createAuthorizedConversationTools,
       store,
     });
@@ -666,10 +679,7 @@ describe("ephemeral conversation runtime", () => {
           ACCESS_TOKEN,
         ),
       ]);
-      const fulfilled = settled.filter(
-        (outcome): outcome is PromiseFulfilledResult<{ runId: string }> =>
-          outcome.status === "fulfilled",
-      );
+      const fulfilled = settled.filter(isFulfilled);
       const rejected = settled.filter(
         (outcome): outcome is PromiseRejectedResult => outcome.status === "rejected",
       );
@@ -681,20 +691,17 @@ describe("ephemeral conversation runtime", () => {
       const survivorRunId = fulfilled[0]?.value.runId ?? "";
       for (let attempt = 0; attempt < 300; attempt += 1) {
         const finished = raceChanges.some(
-          (change) => change.type === "run-finished" && change.runId === survivorRunId,
+          (change) =>
+            change.runId === survivorRunId &&
+            change.event.type === "run-state-changed" &&
+            ["completed", "failed", "aborted"].includes(change.event.state),
         );
         if (finished) break;
         await new Promise((resolve) => setTimeout(resolve, 10));
       }
-      const survivorEvents = raceChanges
-        .flatMap((change) => (change.type === "event" ? [change.event] : []))
-        .filter((event) => event.runId === survivorRunId);
-      expect(survivorEvents.some((event) => event.stream.type === "error")).toBe(false);
-      expect(
-        raceChanges.some(
-          (change) => change.type === "run-finished" && change.runId === survivorRunId,
-        ),
-      ).toBe(true);
+      const survivorEvents = streamEvents(raceChanges, survivorRunId);
+      expect(survivorEvents.some((event) => event.event.type === "error")).toBe(false);
+      expect(raceChanges.some((change) => isTerminalEvent(change, survivorRunId))).toBe(true);
       // run-finished 先于验收清理（finishRun → clear）到达：activeRunCount 归零即清理
       // 完成，此时才允许读快照，否则读到的是清理前的占位消息对。
       await expect.poll(() => racing.activeRunCount, { timeout: 5_000, interval: 10 }).toBe(0);
@@ -706,8 +713,7 @@ describe("ephemeral conversation runtime", () => {
 
   async function waitForTerminal(runId: string): Promise<void> {
     for (let attempt = 0; attempt < 200; attempt += 1) {
-      if (changes.some((change) => change.type === "run-finished" && change.runId === runId))
-        return;
+      if (changes.some((change) => isTerminalEvent(change, runId))) return;
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
     throw new Error(`run timed out: ${runId}`);
@@ -719,9 +725,9 @@ describe("local endpoint runtime", () => {
     return { baseUrl: `http://127.0.0.1:${port}/v1`, model: "local-model", auth: "local" as const };
   }
 
-  function createTrackedRuntime(changes: ConversationChange[], tokenProvider?: unknown) {
+  function createTrackedRuntime(changes: AgentEventEnvelope[], tokenProvider?: unknown) {
     return new ChatConversationRuntime({
-      emit: (change) => changes.push(change),
+      emitEvent: (event) => changes.push(event),
       createTools: createAuthorizedConversationTools,
       tokenProvider: tokenProvider as
         | ((options: { forceRefresh: boolean }) => Promise<string>)
@@ -729,10 +735,9 @@ describe("local endpoint runtime", () => {
     });
   }
 
-  async function waitForRun(changes: ConversationChange[], runId: string): Promise<void> {
+  async function waitForRun(changes: AgentEventEnvelope[], runId: string): Promise<void> {
     for (let attempt = 0; attempt < 200; attempt += 1) {
-      if (changes.some((change) => change.type === "run-finished" && change.runId === runId))
-        return;
+      if (changes.some((change) => isTerminalEvent(change, runId))) return;
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
     throw new Error(`run timed out: ${runId}`);
@@ -754,7 +759,7 @@ describe("local endpoint runtime", () => {
 
   it("sends the saved api key as a bearer token", async () => {
     const authorizations: Array<string | undefined> = [];
-    const changes: ConversationChange[] = [];
+    const changes: AgentEventEnvelope[] = [];
     const { server, port } = await startServer((request) => {
       authorizations.push(request.authorization);
       return { status: 200, body: streamBody("本地回复") };
@@ -777,7 +782,7 @@ describe("local endpoint runtime", () => {
 
   it("drops the authorization header when no api key is saved", async () => {
     const authorizations: Array<string | undefined> = [];
-    const changes: ConversationChange[] = [];
+    const changes: AgentEventEnvelope[] = [];
     const { server, port } = await startServer((request) => {
       authorizations.push(request.authorization);
       return { status: 200, body: streamBody("匿名回复") };
@@ -800,7 +805,7 @@ describe("local endpoint runtime", () => {
 
   it("surfaces a 401 from a local endpoint as a plain error without token refresh", async () => {
     const authorizations: Array<string | undefined> = [];
-    const changes: ConversationChange[] = [];
+    const changes: AgentEventEnvelope[] = [];
     const { server, port } = await startServer((request) => {
       authorizations.push(request.authorization);
       return {
@@ -821,12 +826,12 @@ describe("local endpoint runtime", () => {
       await waitForRun(changes, runId);
       // 本地 401 不触发令牌刷新，也不伪装成「需要登录」：服务端消息如实呈现。
       expect(authorizations).toEqual(["Bearer local-key"]);
-      const events = changes.flatMap((change) => (change.type === "event" ? [change.event] : []));
-      const errorChunk = events.find(
-        (event) => event.runId === runId && event.stream.type === "error",
+      const events = changes;
+      const errorChunk = streamEvents(events, runId).find(
+        (event) => event.runId === runId && event.event.type === "error",
       );
       expect(
-        errorChunk && errorChunk.stream.type === "error" ? errorChunk.stream.errorText : "",
+        errorChunk && errorChunk.event.type === "error" ? errorChunk.event.errorText : "",
       ).not.toContain("auth-required");
     } finally {
       runtime.dispose();

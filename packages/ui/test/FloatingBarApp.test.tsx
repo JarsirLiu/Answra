@@ -1,11 +1,6 @@
-import type {
-  AuthStatus,
-  ConversationChange,
-  ConversationMessage,
-  ConversationSnapshot,
-} from "@answra/shared";
+import type { AuthStatus, ConversationMessage, ConversationSnapshot } from "@answra/shared";
 import { ActiveChatConversationId, ActiveInterviewConversationId } from "@answra/shared";
-import type { AgentStreamEvent } from "@answra/shared/schema";
+import type { AgentEventEnvelope, AgentStreamEvent } from "@answra/shared/schema";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { UIMessageChunk } from "ai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -15,7 +10,7 @@ import { ICON } from "../src/tokens";
 let emitConversationEvent: ((event: { runId: string; chunk: UIMessageChunk }) => void) | undefined;
 const conversationId = "active-exam-conversation";
 let emittedConversationId = conversationId;
-const conversationListeners = new Set<(change: ConversationChange) => void>();
+const conversationListeners = new Set<(event: AgentEventEnvelope) => void>();
 
 /** Test-only bridge from the legacy chunk fixtures to the app-owned stream shape. */
 function toStream(chunk: UIMessageChunk): AgentStreamEvent | undefined {
@@ -85,13 +80,23 @@ function toStream(chunk: UIMessageChunk): AgentStreamEvent | undefined {
 }
 
 function createConversationBridge() {
+  const snapshots = new Map<string, ConversationSnapshot>();
+  const snapshotFor = (id: string) => snapshots.get(id) ?? emptySnapshot(id);
+  const saveSnapshot = (snapshot: ConversationSnapshot) => {
+    snapshots.set(snapshot.conversationId, snapshot);
+    return snapshot;
+  };
   return {
     close: vi.fn(),
     fitContent: vi.fn(),
-    getConversationSnapshot: vi.fn().mockImplementation(async (id: string) => emptySnapshot(id)),
+    getConversationSnapshot: vi.fn().mockImplementation(async (id: string) => snapshotFor(id)),
     readConversationEvents: vi.fn().mockResolvedValue([]),
-    createConversation: vi.fn().mockImplementation(async (id: string) => emptySnapshot(id)),
-    clearConversationMessages: vi.fn().mockResolvedValue(undefined),
+    createConversation: vi
+      .fn()
+      .mockImplementation(async (id: string) => saveSnapshot(snapshotFor(id))),
+    clearConversationMessages: vi.fn().mockImplementation(async (id: string) => {
+      saveSnapshot(emptySnapshot(id));
+    }),
     sendConversationMessage: vi
       .fn()
       .mockImplementation(
@@ -101,9 +106,7 @@ function createConversationBridge() {
           request?: { text?: string; images?: Array<{ name: string; dataUrl: string }> };
         }) => {
           emittedConversationId = command.conversationId;
-          // 对齐 agent 侧会话的真实语义：beginRun / beginEphemeralRun 先发布
-          // revision 1 的 messages-appended(用户消息 + 助手占位)，随后的流事件
-          // 接着同一 revision 序列继续；UI 订阅依赖这一连续性。
+          // send returns the transcript snapshot; subsequent model output is carried by envelopes.
           if (command.operation && command.request) {
             const userMessage: ConversationMessage = {
               id: `user-${command.conversationId.slice(-8)}`,
@@ -119,43 +122,47 @@ function createConversationBridge() {
               images: [],
               status: "streaming",
             };
-            conversationListeners.forEach((listener) => {
-              listener({
-                type: "messages-appended",
-                conversationId: command.conversationId,
-                revision: 1,
-                messages: [userMessage, assistantMessage],
-                activeRunId: "run-1",
-              });
+            const snapshot = saveSnapshot({
+              conversationId: command.conversationId,
+              revision: 1,
+              messages: [userMessage, assistantMessage],
+              activeRunId: "run-1",
             });
+            return {
+              runId: "run-1",
+              snapshot,
+            };
           }
-          return { runId: "run-1" };
+          return { runId: "run-1", snapshot: emptySnapshot(command.conversationId) };
         },
       ),
     appendConversationUserMessage: vi.fn(async (id: string, text: string) => {
-      conversationListeners.forEach((listener) => {
-        listener({
-          type: "messages-appended",
-          conversationId: id,
-          revision: 1,
-          messages: [
-            { id: "interview-user-1", role: "user", text, images: [], status: "complete" },
-          ],
-        });
+      const prior = snapshotFor(id);
+      return saveSnapshot({
+        ...prior,
+        revision: prior.revision + 1,
+        messages: [
+          ...prior.messages,
+          {
+            id: `user-${prior.revision + 1}`,
+            role: "user",
+            text,
+            images: [],
+            status: "complete",
+          },
+        ],
       });
     }),
     cancelConversationRun: vi.fn(),
-    onConversationChange: vi.fn((listener: (change: ConversationChange) => void) => {
-      // 会话域跟踪：答题轮次每次换新的 conversationId，revision 重新从 1 计数，
-      // 与 ephemeral 会话「messages-appended 占 revision 1」的序列衔接。
+    onConversationEvent: vi.fn((listener: (event: AgentEventEnvelope) => void) => {
       let scopeId = "";
       let revision = 0;
       let seq = 0;
       const messages: ConversationMessage[] = [];
       conversationListeners.add(listener);
-      const publish = (change: ConversationChange) => {
+      const publish = (event: AgentEventEnvelope) => {
         conversationListeners.forEach((subscriber) => {
-          subscriber(change);
+          subscriber(event);
         });
       };
       emitConversationEvent = ({ runId, chunk }) => {
@@ -180,16 +187,28 @@ function createConversationBridge() {
                 images: [],
                 status: "streaming",
               });
+            const snapshot = snapshotFor(emittedConversationId);
+            const assistantText =
+              messages.find((message) => message.id === runId)?.text ?? stream.delta;
+            saveSnapshot({
+              ...snapshot,
+              revision: snapshot.revision + 1,
+              messages: snapshot.messages.map((message) =>
+                message.id === runId ? { ...message, text: assistantText } : message,
+              ),
+            });
           }
           publish({
-            type: "event",
-            event: {
-              conversationId: emittedConversationId,
-              revision,
-              runId,
-              seq,
-              stream,
-            },
+            schemaVersion: 1,
+            eventId: `event-${revision}`,
+            attemptId: `${runId}:attempt:1`,
+            producerId: "test",
+            occurredAt: "2026-11-07T00:00:00.000Z",
+            aggregateRevision: revision,
+            sequence: seq,
+            conversationId: emittedConversationId,
+            runId,
+            event: stream,
           });
         }
         if (chunk.type === "finish" || chunk.type === "abort") {
@@ -205,15 +224,29 @@ function createConversationBridge() {
             };
             messages.push(assistant);
           }
+          const snapshot = snapshotFor(emittedConversationId);
+          saveSnapshot({
+            ...snapshot,
+            revision: snapshot.revision + 1,
+            activeRunId: undefined,
+            messages: snapshot.messages.map((message) =>
+              message.id === runId ? { ...message, status: "complete" } : message,
+            ),
+          });
           publish({
-            type: "run-finished",
+            schemaVersion: 1,
+            eventId: `event-${revision}`,
+            attemptId: `${runId}:attempt:1`,
+            producerId: "test",
+            occurredAt: "2026-11-07T00:00:00.000Z",
+            aggregateRevision: revision,
+            sequence: seq + 1,
             conversationId: emittedConversationId,
-            revision,
             runId,
-            outcome: chunk.type === "abort" ? "aborted" : "completed",
-            message: {
-              ...assistant,
-              status: chunk.type === "abort" ? "interrupted" : "complete",
+            event: {
+              type: "run-state-changed",
+              state: chunk.type === "abort" ? "aborted" : "completed",
+              attempt: 1,
             },
           });
         }
@@ -376,11 +409,16 @@ describe("three-segment floating navigation", () => {
     act(() => {
       for (const listener of conversationListeners) {
         listener({
-          type: "messages-appended",
+          schemaVersion: 1,
+          eventId: "manual-run-start",
           conversationId: ActiveInterviewConversationId,
-          revision: 2,
-          messages: [{ id: "run-1", role: "assistant", text: "", images: [], status: "streaming" }],
-          activeRunId: "run-1",
+          runId: "run-1",
+          attemptId: "run-1:attempt:1",
+          sequence: 1,
+          aggregateRevision: 2,
+          producerId: "test",
+          occurredAt: "2026-11-07T00:00:00.000Z",
+          event: { type: "run-state-changed", state: "running", attempt: 1 },
         });
       }
     });
@@ -698,32 +736,6 @@ describe("three-segment floating navigation", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "确认发送" }));
     await waitFor(() => expect(bridge.sendConversationMessage).toHaveBeenCalled());
-    act(() => {
-      conversationListeners.forEach((listener) => {
-        listener({
-          type: "messages-appended",
-          conversationId: emittedConversationId,
-          revision: 1,
-          messages: [
-            {
-              id: "user-run-1",
-              role: "user",
-              text: "",
-              images: [{ name: "screenshot.png", dataUrl: "data:image/png;base64,QUJD" }],
-              status: "complete",
-            },
-            {
-              id: "run-1",
-              role: "assistant",
-              text: "",
-              images: [],
-              status: "streaming",
-            },
-          ],
-          activeRunId: "run-1",
-        });
-      });
-    });
     act(() =>
       emitConversationEvent?.({
         runId: "run-1",
@@ -918,9 +930,6 @@ describe("three-segment floating navigation", () => {
       | undefined;
     if (!firstCommand) throw new Error("sendConversationMessage 未被调用");
     const firstConversationId = firstCommand.conversationId;
-    await waitFor(() =>
-      expect(bridge.getConversationSnapshot).toHaveBeenCalledWith(firstConversationId),
-    );
     await act(async () => {
       emitConversationEvent?.({
         runId: "run-1",
@@ -1007,9 +1016,6 @@ describe("three-segment floating navigation", () => {
     if (!secondCommand) throw new Error("第二轮发送未被调用");
     const secondConversationId = secondCommand.conversationId;
     expect(secondConversationId).toMatch(/^screenshot-/);
-    await waitFor(() =>
-      expect(bridge.getConversationSnapshot).toHaveBeenCalledWith(secondConversationId),
-    );
 
     await act(async () => {
       emitConversationEvent?.({

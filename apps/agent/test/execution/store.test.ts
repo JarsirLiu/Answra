@@ -23,7 +23,7 @@ describe("MemoryExecutionStore", () => {
       state: "completed",
       attempt: 2,
     });
-    await expect(store.readEvents("run-1")).resolves.toEqual(
+    await expect(store.readEventsForRun("run-1")).resolves.toEqual(
       expect.arrayContaining([
         expect.objectContaining({ event: expect.objectContaining({ state: "claimed" }) }),
         expect.objectContaining({ event: expect.objectContaining({ state: "running" }) }),
@@ -52,6 +52,6 @@ describe("MemoryExecutionStore", () => {
     await store.startRun({ runId: "run-1", conversationId: "conversation-1", producerId: "test" });
 
     expect(published).toEqual(["run-state-changed", "run-state-changed"]);
-    await expect(store.readEvents("run-1")).resolves.toHaveLength(2);
+    await expect(store.readEvents("conversation-1", 0)).resolves.toHaveLength(2);
   });
 });

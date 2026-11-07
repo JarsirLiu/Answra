@@ -1,5 +1,6 @@
 /** Execution lifecycle repository port; the current adapter is process-local and replaceable. */
 import type {
+  AgentEvent,
   AgentEventEnvelope,
   AgentRetry,
   AgentRunSnapshot,
@@ -22,7 +23,9 @@ export interface ExecutionStore {
     runId: string,
     state: Extract<AgentRunState, "completed" | "failed" | "aborted">,
   ): Promise<void>;
+  appendEvent(runId: string, event: AgentEvent): Promise<AgentEventEnvelope>;
   getRun(runId: string): Promise<AgentRunSnapshot | undefined>;
-  readEvents(runId: string): Promise<AgentEventEnvelope[]>;
+  readEvents(conversationId: string, afterRevision: number): Promise<AgentEventEnvelope[]>;
+  readEventsForRun(runId: string): Promise<AgentEventEnvelope[]>;
   subscribe(listener: (event: AgentEventEnvelope) => void): () => void;
 }

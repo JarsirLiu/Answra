@@ -12,8 +12,8 @@ conversation/
 
 ## `session/`
 
-- `store.ts`：`ConversationStore` 仓储端口。定义创建、加载、原子认领、追加流事件、结束回合和按 revision 补发。
-- `memoryStore.ts`：当前进程内的唯一仓储实现，保存消息快照和有界 journal；不提供应用重启恢复。
+- `store.ts`：`ConversationStore` 仓储端口。定义创建、加载、原子认领、更新 transcript 和结束回合。
+- `memoryStore.ts`：当前进程内的 transcript 仓储实现；不保存 Agent 事件或事件 journal。
 - `message.ts`：把已校验的发送请求转换成 transcript 用户消息。
 
 Session 只拥有消息和会话 revision。`run/attempt/step` 的执行状态属于平级的 `execution/` 领域。
@@ -26,11 +26,11 @@ Session 只拥有消息和会话 revision。`run/attempt/step` 的执行状态�
 - `endpointFetch.ts`：模型端点校验、云端令牌一次刷新和本地 API Key fetch。
 - `errorSummary.ts`：将未知模型错误压缩成有界诊断字段。
 - `modelMessages.ts`：按 profile 选择 transcript 历史、把图片输入转换成 AI SDK 消息，并注入已授权的时间提醒。
-- `streamJournal.ts`：串行追加模型事件到 session feed，并收集仅供日志使用的回合指标。
+- `streamJournal.ts`：串行把模型事件交给唯一 `ExecutionStore`，并收集仅供日志使用的回合指标；名称中的 journal 不代表第二个事件日志。
 - `requestContent.ts`：发送文本和图片的边界校验与 data URL 解析。
 - `timeReminder.ts`：只供显式开启时间上下文的 profile 使用的系统提醒。
 
-`turn/` 不直接依赖 AI SDK 的 chunk 类型；AI SDK chunk 到稳定模型事件的归一化由 `core/model/` 拥有。`turn/` 不定义长期执行状态，也不把重试等待推导成 UI 状态；模型流中的 retry 事件仍由 session 仓储按现有 revision 规则发布。
+`turn/` 不直接依赖 AI SDK 的 chunk 类型；AI SDK chunk 到稳定模型事件的归一化由 `core/model/` 拥有。`turn/` 不定义长期执行状态；模型流事件由唯一 `ExecutionStore` 写入 `AgentEventEnvelope`，UI 从同一事件流投影重试与输出状态。
 
 ## `profiles/`
 

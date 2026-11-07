@@ -22,7 +22,11 @@ function turn(): CommittedInterviewTurn {
 
 describe("interview reply composition", () => {
   it("uses the interview-owned profile and keeps the conversation runtime behind a narrow port", async () => {
-    const appendUserMessage = vi.fn(async () => undefined);
+    const appendUserMessage = vi.fn(async () => ({
+      conversationId: "conversation-1",
+      revision: 1,
+      messages: [],
+    }));
     const replyToLastUserWithProfile = vi.fn(
       async (
         _profile: typeof INTERVIEW_REPLY_PROFILE,

@@ -1,5 +1,6 @@
 /** 通用聊天 profile 到 Conversation 回合入口的薄组合适配器。 */
 import type { ConversationSendRequest } from "@answra/shared";
+import type { ConversationSnapshot } from "@answra/shared/schema";
 import type { ChatProfileId } from "../profiles/registry";
 import { CHAT_PROFILES } from "../profiles/registry";
 import { ConversationRuntime } from "./runtime";
@@ -10,7 +11,7 @@ export class ChatConversationRuntime extends ConversationRuntime {
     conversationId: string,
     request: ConversationSendRequest,
     accessToken: string,
-  ): Promise<{ runId: string }> {
+  ): Promise<{ runId: string; snapshot: ConversationSnapshot }> {
     const profile = CHAT_PROFILES[profileId];
     if (!profile) throw new Error("未授权的对话能力配置");
     return this.startRun({
@@ -30,7 +31,7 @@ export class ChatConversationRuntime extends ConversationRuntime {
     profileId: ChatProfileId,
     conversationId: string,
     getAccessToken: () => Promise<string>,
-  ): Promise<{ runId: string }> {
+  ): Promise<{ runId: string; snapshot: ConversationSnapshot }> {
     const profile = CHAT_PROFILES[profileId];
     if (!profile) throw new Error("未授权的对话能力配置");
     return this.replyToLastUserWithProfile(profile, conversationId, getAccessToken);

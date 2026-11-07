@@ -1,20 +1,18 @@
-import type { ConversationEvent, ReplyBarActivity } from "@answra/shared";
+import type { AgentEventEnvelope, ReplyBarActivity } from "@answra/shared";
 
 export function projectReplyActivity(
   current: ReplyBarActivity[],
-  event: ConversationEvent,
+  envelope: Pick<AgentEventEnvelope, "runId" | "event">,
 ): ReplyBarActivity[] {
-  const { stream, runId } = event;
+  const stream = envelope.event;
   const add = (activity: ReplyBarActivity, merge = false) => {
-    const priorIndex = merge
+    const index = merge
       ? current.findIndex((item) => item.id === activity.id && item.kind === activity.kind)
       : -1;
-    if (priorIndex !== -1) {
-      return current.map((item, index) =>
-        index === priorIndex ? { ...item, text: item.text + activity.text } : item,
-      );
-    }
-    return [...current, activity];
+    if (index < 0) return [...current, activity];
+    return current.map((item, itemIndex) =>
+      itemIndex === index ? { ...item, text: item.text + activity.text } : item,
+    );
   };
   if (stream.type === "text-delta")
     return add({ id: stream.partId, kind: "text", label: "", text: stream.delta }, true);
@@ -29,12 +27,7 @@ export function projectReplyActivity(
     });
   if (stream.type === "tool-input-delta")
     return add(
-      {
-        id: `${stream.toolCallId}:input`,
-        kind: "tool",
-        label: "工具参数",
-        text: stream.delta,
-      },
+      { id: `${stream.toolCallId}:input`, kind: "tool", label: "工具参数", text: stream.delta },
       true,
     );
   if (stream.type === "tool-call")
@@ -59,9 +52,19 @@ export function projectReplyActivity(
       text: stream.errorText,
     });
   if (stream.type === "error")
-    return add({ id: `${runId}:error`, kind: "error", label: "模型错误", text: stream.errorText });
+    return add({
+      id: `${envelope.runId}:error`,
+      kind: "error",
+      label: "模型错误",
+      text: stream.errorText,
+    });
   if (stream.type === "start")
-    return add({ id: `${runId}:start`, kind: "status", label: "模型已连接，等待输出", text: "" });
+    return add({
+      id: `${envelope.runId}:start`,
+      kind: "status",
+      label: "模型已连接，等待输出",
+      text: "",
+    });
   if (stream.type === "source-url" || stream.type === "source-document")
     return add({
       id: stream.sourceId,

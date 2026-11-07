@@ -32,10 +32,8 @@ export {
   type ChatSendCommand,
   type ContentSize,
   type ConversationCapabilityEndpoint,
-  type ConversationChange,
   type ConversationChannelMap,
   ConversationChannels,
-  type ConversationEvent,
   type ConversationMessage,
   type ConversationModelConfig,
   type ConversationModelSettings,
@@ -92,3 +90,9 @@ export {
   type ReleaseManifest,
   type ReleaseProfile,
 } from "./release";
+export type {
+  AgentEvent,
+  AgentEventEnvelope,
+  AgentExecutionEvent,
+  AgentStreamEvent,
+} from "./schema";

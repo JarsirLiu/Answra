@@ -1,8 +1,8 @@
 import {
+  type AgentEventEnvelope,
   AuthChannels,
   type AuthStatus,
   type ContentSize,
-  type ConversationChange,
   ConversationChannels,
   type RegionSelection,
   type ReplyBarAction,
@@ -74,27 +74,23 @@ export function getReplyBarWindow(): BrowserWindow | undefined {
   ensureControllers();
   return replyBarController.getWindow();
 }
-export function sendConversationChange(change: ConversationChange): void {
+export function sendConversationEvent(event: AgentEventEnvelope): void {
   const mainWindow = getWindow();
   if (mainWindow && !mainWindow.isDestroyed())
-    mainWindow.webContents.send(ConversationChannels.Change, change);
+    mainWindow.webContents.send(ConversationChannels.Event, event);
   const replyWindow = getReplyBarWindow();
   if (
-    conversationIdOf(change) === replyBarController.getConversationId() &&
+    event.conversationId === replyBarController.getConversationId() &&
     replyWindow &&
     !replyWindow.isDestroyed()
   )
-    replyWindow.webContents.send(ConversationChannels.Change, change);
+    replyWindow.webContents.send(ConversationChannels.Event, event);
 }
 /** 把账号状态推给所有还活着的窗口（主悬浮条与独立回复窗口都要能刷门禁）。 */
 export function sendAuthStatus(status: AuthStatus): void {
   for (const target of [getWindow(), getReplyBarWindow()]) {
     if (target && !target.isDestroyed()) target.webContents.send(AuthChannels.Status, status);
   }
-}
-function conversationIdOf(change: ConversationChange): string {
-  if (change.type === "event") return change.event.conversationId;
-  return change.type === "snapshot" ? change.snapshot.conversationId : change.conversationId;
 }
 export function isStealthEnabled(): boolean {
   ensureControllers();
