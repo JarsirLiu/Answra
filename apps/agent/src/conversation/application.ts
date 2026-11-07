@@ -68,10 +68,11 @@ export class ConversationApplication {
     return this.loadRecoverySnapshot(conversationId);
   }
 
-  /** 用户显式清空会话；仓储只允许清空空闲会话。 */
-  async clearConversation(conversationId: string): Promise<void> {
+  /** 用户显式清空会话；仓储只允许清空空闲会话，并返回清空后的 snapshot。 */
+  async clearConversation(conversationId: string): Promise<ConversationSnapshot> {
     const eventRevision = await this.agentRuntime.getConversationRevision(conversationId);
     await this.store.clear(conversationId, eventRevision);
+    return this.loadRecoverySnapshot(conversationId);
   }
 
   async appendUserMessage(conversationId: string, text: string): Promise<ConversationSnapshot> {

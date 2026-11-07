@@ -277,14 +277,21 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
   }
 
   /** 清空常驻会话并同步清理本地投影。 */
-  function clearConversation(conversationId: string) {
-    void platform?.clearConversationMessages?.(conversationId).catch((error: unknown) =>
+  async function clearConversation(conversationId: string) {
+    if (!platform?.clearConversationMessages) throw new Error("当前版本不支持清空会话");
+    try {
+      const snapshot = await platform.clearConversationMessages(conversationId);
+      if (conversationId === ActiveInterviewConversationId)
+        await reconcileInterviewSnapshot(snapshot);
+      return snapshot;
+    } catch (error) {
       surfaces.dispatch({
         type: "layer/show-notice",
         id: "conversation-clear",
         message: error instanceof Error ? error.message : "清空失败，请稍后再试",
-      }),
-    );
+      });
+      throw error;
+    }
   }
 
   return (
@@ -360,7 +367,9 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
             }}
             onClear={
               platform?.clearConversationMessages
-                ? () => clearConversation(ActiveInterviewConversationId)
+                ? () => {
+                    void clearConversation(ActiveInterviewConversationId).catch(() => undefined);
+                  }
                 : undefined
             }
             clearDisabledReason={

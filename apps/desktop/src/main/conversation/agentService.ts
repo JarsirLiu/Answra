@@ -127,8 +127,8 @@ export class AgentService {
     return this.request("create-conversation", { conversationId });
   }
 
-  async clearConversation(conversationId: string): Promise<void> {
-    await this.request("clear-conversation", { conversationId });
+  async clearConversation(conversationId: string): Promise<ConversationSnapshot> {
+    return (await this.request("clear-conversation", { conversationId })) as ConversationSnapshot;
   }
 
   async readEvents(conversationId: string, afterRevision: number) {

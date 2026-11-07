@@ -282,9 +282,11 @@ export function startAgentHost({
         return runtime.readEventsAfter(command.conversationId, command.afterRevision);
       case "create-conversation":
         return runtime.createConversation(command.conversationId);
-      case "clear-conversation":
-        await runtime.clearConversation(command.conversationId);
-        return undefined;
+      case "clear-conversation": {
+        const snapshot = await runtime.clearConversation(command.conversationId);
+        emitConversationSnapshot(snapshot);
+        return snapshot;
+      }
       case "append-user-message":
         return runtime.appendUserMessage(command.conversationId, command.text);
       case "cancel":

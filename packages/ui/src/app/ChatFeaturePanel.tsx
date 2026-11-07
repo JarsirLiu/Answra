@@ -1,4 +1,4 @@
-import type { DesktopBridge } from "@answra/shared";
+import type { ConversationSnapshot, DesktopBridge } from "@answra/shared";
 import {
   ActiveChatConversationId,
   AUTH_REQUIRED_NOTICE,
@@ -20,7 +20,7 @@ interface ChatFeaturePanelProps {
   onAttachmentChange: (event: ChangeEvent<HTMLInputElement> | File | null) => void;
   onAttachmentsChange: (attachments: ChatAttachment[]) => void;
   onAttachmentRemove: (id: string) => void;
-  onConversationCleared: (conversationId: string) => void;
+  onConversationCleared: (conversationId: string) => Promise<ConversationSnapshot>;
   onClose: () => void;
   onVote: (vote: "up" | "down" | null) => void;
   onSent: () => void;
@@ -86,6 +86,16 @@ export function ChatFeaturePanel({
       });
   }
 
+  async function clearConversation(): Promise<void> {
+    if (!bridge?.clearConversationMessages) return;
+    try {
+      const snapshot = await onConversationCleared(ActiveChatConversationId);
+      await conversation.reconcileSnapshot(snapshot);
+    } catch {
+      // FloatingBarApp has already shown the shared clear failure notice.
+    }
+  }
+
   const error = failure?.message ?? conversation.replyError;
   const needsSignIn = Boolean(failure?.needsSignIn) || isAuthRequiredError(conversation.replyError);
   if (!visible) return null;
@@ -111,11 +121,7 @@ export function ChatFeaturePanel({
       onSignIn={needsSignIn ? signIn : undefined}
       onVote={onVote}
       onSend={send}
-      onClear={
-        bridge?.clearConversationMessages
-          ? () => onConversationCleared(ActiveChatConversationId)
-          : undefined
-      }
+      onClear={bridge?.clearConversationMessages ? () => void clearConversation() : undefined}
       clearDisabledReason={
         conversation.activeRunId || conversation.sendPending
           ? "回复完成后才能清空"

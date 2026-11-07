@@ -95,7 +95,7 @@ function createConversationBridge() {
       .fn()
       .mockImplementation(async (id: string) => saveSnapshot(snapshotFor(id))),
     clearConversationMessages: vi.fn().mockImplementation(async (id: string) => {
-      saveSnapshot(emptySnapshot(id));
+      return saveSnapshot(emptySnapshot(id));
     }),
     sendConversationMessage: vi
       .fn()

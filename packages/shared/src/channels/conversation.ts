@@ -188,7 +188,7 @@ export interface ConversationChannelMap {
   };
   [ConversationChannels.ClearMessages]: {
     request: { conversationId: string };
-    response: undefined;
+    response: ConversationSnapshot;
   };
   [ConversationChannels.Event]: { request: undefined; response: undefined };
   [ConversationChannels.SnapshotChanged]: { request: undefined; response: ConversationSnapshot };
