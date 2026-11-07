@@ -8,7 +8,7 @@ function useAiConversation(
   conversationId: string,
   operation: "chat.send" | "answer.run" = "chat.send",
 ) {
-  const { view, selectConversation, applySnapshot, waitForRun, getView, clear } =
+  const { view, selectConversation, reconcileRunSnapshot, waitForRun, getView, clear } =
     useConversationView(platform, conversationId, { trackActivities: true });
   const [sendPending, setSendPending] = useState(false);
   const [sendError, setSendError] = useState<string>();
@@ -51,7 +51,12 @@ function useAiConversation(
   }, [hideActivities, view.activeRunId, view.messages]);
 
   const send = useCallback(
-    async (text: string, attachments: ChatAttachment[], targetConversationId = conversationId) => {
+    async (
+      text: string,
+      attachments: ChatAttachment[],
+      targetConversationId = conversationId,
+      onAccepted?: () => void,
+    ) => {
       if (!platform?.sendConversationMessage)
         throw new Error("本地 AI 服务未连接，请重启应用后重试");
       if (view.activeRunId || sendPending) throw new Error("当前回复尚未完成");
@@ -89,7 +94,8 @@ function useAiConversation(
               }
             : { operation, conversationId: targetConversationId, request: { text, images } };
         const { runId, snapshot } = await platform.sendConversationMessage(command);
-        applySnapshot(snapshot);
+        await reconcileRunSnapshot(snapshot);
+        onAccepted?.();
         if (cancelRequestedRef.current) platform.cancelConversationRun?.(runId);
         const outcome = await waitForRun(runId);
         if (outcome === "aborted" || outcome === "superseded") return "cancelled";
@@ -112,7 +118,7 @@ function useAiConversation(
       view.messages,
       sendPending,
       selectConversation,
-      applySnapshot,
+      reconcileRunSnapshot,
       waitForRun,
       getView,
     ],
@@ -138,6 +144,7 @@ function useAiConversation(
     messages: view.messages,
     replyError: sendError ?? view.error,
     replyPending: Boolean(view.activeRunId || sendPending),
+    sendPending,
     replyActivities,
     retry: view.retry,
     send,

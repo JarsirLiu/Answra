@@ -1,5 +1,5 @@
-/** 将模型事件串行写入唯一 ExecutionStore，并维护仅供诊断的回合指标。 */
-import type { AgentStreamEvent } from "@answra/shared/schema";
+/** 将 fullStream 事件串行写入唯一 ExecutionStore，并维护回合终态指标。 */
+import type { AgentEvent, AgentStreamEvent } from "@answra/shared/schema";
 import type { ConversationStore } from "../session/store";
 
 /** 一个回合的流统计；只用于诊断，不进入跨进程 schema。 */
@@ -9,6 +9,8 @@ export interface TurnMetrics {
   readonly reasoningLength: number;
   readonly started: boolean;
   readonly failed: boolean;
+  readonly finished: boolean;
+  readonly aborted: boolean;
 }
 
 export function createStreamJournal({
@@ -29,65 +31,93 @@ export function createStreamJournal({
   let reasoningLength = 0;
   let started = false;
   let failed = false;
+  let finished = false;
+  let aborted = false;
 
   return {
-    async append(stream: AgentStreamEvent): Promise<void> {
-      chunkCounts[stream.type] = (chunkCounts[stream.type] ?? 0) + 1;
-      if (Object.keys(chunkCounts).length === 1 && chunkCounts[stream.type] === 1)
-        console.info("[conversation][run] first chunk", { runId, type: stream.type });
-      if (stream.type === "text-delta") {
-        textLength += stream.delta.length;
+    async append(event: AgentEvent): Promise<void> {
+      chunkCounts[event.type] = (chunkCounts[event.type] ?? 0) + 1;
+      if (Object.keys(chunkCounts).length === 1 && chunkCounts[event.type] === 1)
+        console.info("[conversation][run] first event", { runId, type: event.type });
+      if (event.type === "text-delta") {
+        textLength += event.delta.length;
         textPartLengths.set(
-          stream.partId,
-          (textPartLengths.get(stream.partId) ?? 0) + stream.delta.length,
+          event.partId,
+          (textPartLengths.get(event.partId) ?? 0) + event.delta.length,
         );
       }
-      if (stream.type === "reasoning-delta") {
-        reasoningLength += stream.delta.length;
+      if (event.type === "reasoning-delta") {
+        reasoningLength += event.delta.length;
         reasoningPartLengths.set(
-          stream.partId,
-          (reasoningPartLengths.get(stream.partId) ?? 0) + stream.delta.length,
+          event.partId,
+          (reasoningPartLengths.get(event.partId) ?? 0) + event.delta.length,
         );
       }
-      if (stream.type === "text-end") {
+      if (event.type === "text-end") {
         console.info("[conversation][run] text part finished", {
           runId,
-          partId: stream.partId,
-          length: textPartLengths.get(stream.partId) ?? 0,
+          partId: event.partId,
+          length: textPartLengths.get(event.partId) ?? 0,
         });
-        textPartLengths.delete(stream.partId);
+        textPartLengths.delete(event.partId);
       }
-      if (stream.type === "reasoning-end") {
+      if (event.type === "reasoning-end") {
         console.info("[conversation][run] reasoning part finished", {
           runId,
-          partId: stream.partId,
-          length: reasoningPartLengths.get(stream.partId) ?? 0,
+          partId: event.partId,
+          length: reasoningPartLengths.get(event.partId) ?? 0,
         });
-        reasoningPartLengths.delete(stream.partId);
+        reasoningPartLengths.delete(event.partId);
       }
       if (
-        stream.type === "tool-call" ||
-        stream.type === "tool-result" ||
-        stream.type === "tool-error"
+        event.type === "tool-call" ||
+        event.type === "tool-result" ||
+        event.type === "tool-error" ||
+        event.type === "tool-output-denied" ||
+        event.type === "tool-approval-request"
       ) {
-        console.info(`[conversation][run] ${stream.type}`, {
+        console.info(`[conversation][run] ${event.type}`, {
           runId,
-          toolCallId: stream.toolCallId,
-          ...(stream.type === "tool-call" ? { toolName: stream.toolName } : {}),
-          ...(stream.type === "tool-error" ? { errorText: stream.errorText } : {}),
+          toolCallId: event.toolCallId,
+          ...("toolName" in event ? { toolName: event.toolName } : {}),
+          ...(event.type === "tool-error" ? { errorText: event.errorText } : {}),
         });
       }
-      if (stream.type === "error") {
-        console.error("[conversation][run] stream error", { runId, errorText: stream.errorText });
+      if (event.type === "error") {
+        console.error("[conversation][run] stream error", { runId, errorText: event.errorText });
       }
-      await executionStore.appendEvent(runId, stream);
-      await store.applyStreamEvent(conversationId, runId, stream);
-      if (stream.type === "start") started = true;
-      if (stream.type === "error") failed = true;
+      const stepId =
+        event.type === "step-started" || event.type === "step-finished" ? event.stepId : undefined;
+      await executionStore.appendEvent(runId, event, stepId ? { stepId } : undefined);
+      if (isStreamEvent(event)) await store.applyStreamEvent(conversationId, runId, event);
+      if (event.type === "start") started = true;
+      if (event.type === "finish") {
+        finished = true;
+        if (event.finishReason === "error") failed = true;
+      }
+      if (event.type === "abort") aborted = true;
+      if (event.type === "error") failed = true;
     },
 
     get metrics(): TurnMetrics {
-      return { chunkCounts, textLength, reasoningLength, started, failed };
+      return {
+        chunkCounts,
+        textLength,
+        reasoningLength,
+        started,
+        failed,
+        finished,
+        aborted,
+      };
     },
   };
+}
+
+function isStreamEvent(event: AgentEvent): event is AgentStreamEvent {
+  return (
+    event.type !== "run-state-changed" &&
+    event.type !== "step-started" &&
+    event.type !== "step-finished" &&
+    event.type !== "part-state-changed"
+  );
 }

@@ -135,7 +135,7 @@ describe("agent worker host", () => {
         chunkIndex: 0,
         startSample: 0,
         endSample: 1_600,
-        revision: 1,
+        revision: 0,
         boundary: "continuation",
         text: "请介绍一下",
       },
@@ -653,7 +653,7 @@ describe("agent worker host", () => {
 
   it("executes commands and answers with a response frame carrying the same id", async () => {
     const harness = createHarness();
-    startAgentHost({
+    const host = startAgentHost({
       transport: harness.transport,
       vad: silenceVadSource(),
       recognizer: scriptedRecognizer("识别文本"),
@@ -670,8 +670,25 @@ describe("agent worker host", () => {
     expect(snapshot).toMatchObject({
       id: "2",
       ok: true,
-      value: { conversationId: "c1", revision: 0, messages: [] },
+      value: { conversationId: "c1", eventRevision: 0, messages: [] },
     });
+
+    harness.dispatch({
+      id: "3",
+      type: "append-user-message",
+      conversationId: "c1",
+      text: "面试问题",
+    });
+    await vi.waitFor(() => expect(harness.responses()).toHaveLength(3));
+    expect(harness.responses()[2]).toMatchObject({
+      id: "3",
+      ok: true,
+      value: {
+        conversationId: "c1",
+        messages: [{ role: "user", text: "面试问题" }],
+      },
+    });
+    host.dispose();
   });
 
   it("reports a command failure in the response frame instead of throwing", async () => {

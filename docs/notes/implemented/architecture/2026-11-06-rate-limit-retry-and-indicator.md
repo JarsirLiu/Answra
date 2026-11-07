@@ -8,7 +8,7 @@ SenseNova 等 OpenAI 兼容端点对 RPM/TPM 超限返回 429。AI SDK 自带重
 
 ## 涉及范围
 
-- 代码/模块：`apps/agent/src/conversation/retryFetch.ts`、`apps/agent/src/conversation/runtime.ts`、`packages/shared/src/schema/stream.ts`、`packages/ui/src/app/conversationView.ts`、`packages/ui/src/components/chat/RetryNotice.tsx`、`packages/ui/src/components/panels/ChatPanel.tsx`、`InterviewCapturePanel.tsx`、`ReplyConversationPopover.tsx`
+- 代码/模块：`apps/agent/src/conversation/retryFetch.ts`、`apps/agent/src/conversation/runtime.ts`、`packages/shared/src/schema/events.ts`、`packages/ui/src/app/conversationView.ts`、`packages/ui/src/components/chat/RetryNotice.tsx`、`packages/ui/src/components/panels/ChatPanel.tsx`、`InterviewCapturePanel.tsx`、`ReplyConversationPopover.tsx`
 - 进程/协议/持久化表面：新增 `retry` 流事件，进入既有 `ConversationEvent` journal 与 IPC；不改消息快照结构
 - 相关 Note：[Agent 模型调用诊断日志](./2026-11-06-agent-provider-diagnostics.md)、[前端会话消息投影收敛为唯一一套](./2026-11-06-unified-conversation-view-projection.md)
 
@@ -36,7 +36,7 @@ SenseNova 等 OpenAI 兼容端点对 RPM/TPM 超限返回 429。AI SDK 自带重
 
 `kind` 区分 `rate-limit`、`server-error` 与 `network-error`，UI 按真实原因说明等待状态。每种失败类别各自使用独立重试预算，避免一次 429 消耗后续 5xx/网络错误的次数。重试事件属于会话 journal 的持久化事件；轮次最终失败时保留最后一次 Wi‑Fi 状态，直到新一轮开始或会话被清空。
 
-重试前通过 `emitStream` 写入会话 journal 并推给 renderer；下一次请求真正收到 `start` 时清除，最终失败时保留。事件可被重连回放，但不进入消息快照。
+重试前通过事件入口写入当前进程内 store 并推给 renderer；下一次请求真正收到 `start` 时清除，最终失败时保留。`retry` 列入未来 durable event adapter 的资格 schema，但当前没有 durable store 或进程重启回放；高频 text/reasoning/tool-input delta 不在该资格清单中。
 
 ### 原地 UI
 

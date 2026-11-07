@@ -9,6 +9,9 @@
   overflow-x: hidden;
   padding: 14px 14px 10px;
 }
+.conversation--chat {
+  padding-bottom: 18px;
+}
 .chat-message {
   max-width: 94%;
   display: flex;

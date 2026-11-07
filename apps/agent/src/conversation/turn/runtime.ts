@@ -64,7 +64,25 @@ export class ConversationRuntime {
   }
 
   getSnapshot(conversationId: string) {
-    return this.store.load(conversationId);
+    return this.loadRecoverySnapshot(conversationId);
+  }
+
+  private async loadRecoverySnapshot(conversationId: string) {
+    const snapshot = await this.store.load(conversationId);
+    const events = await this.executionStore.readEvents(conversationId, snapshot.eventRevision);
+    const latestAssistant = [...snapshot.messages]
+      .reverse()
+      .find((message) => message.role === "assistant");
+    if (!latestAssistant || snapshot.activeRunId !== latestAssistant.id) return snapshot;
+    if (!events.some((event) => event.runId === latestAssistant.id)) return snapshot;
+    return {
+      ...snapshot,
+      messages: snapshot.messages.map((message) =>
+        message.id === latestAssistant.id
+          ? { ...message, text: "", status: "streaming" as const }
+          : message,
+      ),
+    };
   }
 
   readEventsAfter(conversationId: string, revision: number) {
@@ -72,12 +90,14 @@ export class ConversationRuntime {
   }
 
   async createConversation(conversationId: string) {
-    return this.store.create(conversationId);
+    await this.store.create(conversationId);
+    return this.loadRecoverySnapshot(conversationId);
   }
 
   /** 用户显式清空会话；仓储只允许清空空闲会话。 */
   async clearConversation(conversationId: string): Promise<void> {
-    await this.store.clear(conversationId);
+    const eventRevision = await this.executionStore.getConversationRevision(conversationId);
+    await this.store.clear(conversationId, eventRevision);
   }
 
   async appendUserMessage(conversationId: string, text: string) {
@@ -138,10 +158,12 @@ export class ConversationRuntime {
     const controller = new AbortController();
     const endpoint = ephemeral ? config.answer : config.chat;
     await this.store.create(conversationId);
+    const eventRevision = await this.executionStore.getConversationRevision(conversationId);
     const userMessage = createUserMessage(randomUUID(), request);
-    if (ephemeral) await this.store.beginEphemeralRun(conversationId, runId, userMessage);
-    else await this.store.beginRun(conversationId, runId, userMessage);
-    const snapshot = await this.store.load(conversationId);
+    if (ephemeral)
+      await this.store.beginEphemeralRun(conversationId, runId, userMessage, eventRevision);
+    else await this.store.beginRun(conversationId, runId, userMessage, eventRevision);
+    const snapshot = await this.loadRecoverySnapshot(conversationId);
     this.trackRun(runId, controller);
     this.executeClaimedTurn({
       conversationId,
@@ -168,8 +190,9 @@ export class ConversationRuntime {
     const config = this.requireConfig();
     const runId = randomUUID();
     const controller = new AbortController();
-    const target = await this.store.beginReplyRun(conversationId, runId);
-    const snapshot = await this.store.load(conversationId);
+    const eventRevision = await this.executionStore.getConversationRevision(conversationId);
+    const target = await this.store.beginReplyRun(conversationId, runId, eventRevision);
+    const snapshot = await this.loadRecoverySnapshot(conversationId);
     this.trackRun(runId, controller);
     this.executeClaimedTurn({
       conversationId,

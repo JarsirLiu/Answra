@@ -11,7 +11,9 @@ export class MemoryConversationStore implements ConversationStore {
   async create(conversationId: string): Promise<ConversationSnapshot> {
     const existing = this.sessions.get(conversationId);
     if (existing) return cloneSnapshot(existing.snapshot);
-    const session = { snapshot: { conversationId, revision: 0, messages: [] } } satisfies Session;
+    const session = {
+      snapshot: { conversationId, eventRevision: 0, messages: [] },
+    } satisfies Session;
     this.sessions.set(conversationId, session);
     return cloneSnapshot(session.snapshot);
   }
@@ -20,12 +22,12 @@ export class MemoryConversationStore implements ConversationStore {
     return cloneSnapshot(this.requireSession(conversationId).snapshot);
   }
 
-  async clear(conversationId: string): Promise<void> {
+  async clear(conversationId: string, eventRevision = 0): Promise<void> {
     const session = this.sessions.get(conversationId);
     if (!session || session.snapshot.activeRunId) return;
     session.snapshot = {
       conversationId,
-      revision: session.snapshot.revision + 1,
+      eventRevision,
       messages: [],
     };
   }
@@ -34,11 +36,16 @@ export class MemoryConversationStore implements ConversationStore {
     conversationId: string,
     runId: string,
     userMessage: ConversationMessage,
+    eventRevision = 0,
   ): Promise<void> {
-    this.beginMessages(conversationId, runId, userMessage, true);
+    this.beginMessages(conversationId, runId, userMessage, true, eventRevision);
   }
 
-  async beginReplyRun(conversationId: string, runId: string): Promise<ConversationMessage> {
+  async beginReplyRun(
+    conversationId: string,
+    runId: string,
+    eventRevision = 0,
+  ): Promise<ConversationMessage> {
     const session = this.requireSession(conversationId);
     if (session.snapshot.activeRunId) throw new Error("当前回复尚未完成");
     const last = session.snapshot.messages.at(-1);
@@ -49,7 +56,7 @@ export class MemoryConversationStore implements ConversationStore {
       ...session.snapshot,
       messages: [...session.snapshot.messages, assistant],
       activeRunId: runId,
-      revision: session.snapshot.revision + 1,
+      eventRevision,
     };
     return cloneMessage(last);
   }
@@ -65,7 +72,6 @@ export class MemoryConversationStore implements ConversationStore {
     session.snapshot = {
       ...session.snapshot,
       messages: [...session.snapshot.messages, cloneMessage(userMessage)],
-      revision: session.snapshot.revision + 1,
     };
     return cloneSnapshot(session.snapshot);
   }
@@ -74,8 +80,9 @@ export class MemoryConversationStore implements ConversationStore {
     conversationId: string,
     runId: string,
     userMessage: ConversationMessage,
+    eventRevision = 0,
   ): Promise<void> {
-    this.beginMessages(conversationId, runId, userMessage, false);
+    this.beginMessages(conversationId, runId, userMessage, false, eventRevision);
   }
 
   async applyStreamEvent(
@@ -91,15 +98,20 @@ export class MemoryConversationStore implements ConversationStore {
       messages: session.snapshot.messages.map((message) =>
         message.id === runId ? { ...message, text: message.text + event.delta } : message,
       ),
-      revision: session.snapshot.revision + 1,
     };
   }
 
-  async finishRun(conversationId: string, runId: string, outcome: RunOutcome): Promise<void> {
+  async finishRun(
+    conversationId: string,
+    runId: string,
+    outcome: RunOutcome,
+    eventRevision = 0,
+  ): Promise<void> {
     const session = this.requireSession(conversationId);
     if (session.snapshot.activeRunId !== runId) return;
     session.snapshot = {
       ...session.snapshot,
+      eventRevision,
       activeRunId: undefined,
       messages: session.snapshot.messages.map((message) =>
         message.id === runId
@@ -114,7 +126,6 @@ export class MemoryConversationStore implements ConversationStore {
             }
           : message,
       ),
-      revision: session.snapshot.revision + 1,
     };
   }
 
@@ -123,13 +134,14 @@ export class MemoryConversationStore implements ConversationStore {
     runId: string,
     userMessage: ConversationMessage,
     preserveHistory: boolean,
+    eventRevision: number,
   ): void {
     const session = this.requireSession(conversationId);
     if (session.snapshot.activeRunId) throw new Error("当前回复尚未完成");
     if (userMessage.role !== "user") throw new Error("run 必须从用户消息开始");
     session.snapshot = {
       conversationId,
-      revision: session.snapshot.revision + 1,
+      eventRevision,
       messages: [
         ...(preserveHistory ? session.snapshot.messages.map(cloneMessage) : []),
         cloneMessage(userMessage),

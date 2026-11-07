@@ -8,7 +8,7 @@ import type {
 } from "@answra/shared/schema";
 import { createExecutionEvent } from "./events";
 import { canTransitionRun, isTerminalRunState } from "./status";
-import type { ExecutionRunStart, ExecutionStore } from "./store";
+import type { ExecutionEventMetadata, ExecutionRunStart, ExecutionStore } from "./store";
 
 type ExecutionRecord = {
   snapshot: AgentRunSnapshot;
@@ -86,7 +86,11 @@ export class MemoryExecutionStore implements ExecutionStore {
     });
   }
 
-  async appendEvent(runId: string, event: AgentEvent): Promise<AgentEventEnvelope> {
+  async appendEvent(
+    runId: string,
+    event: AgentEvent,
+    metadata: ExecutionEventMetadata = {},
+  ): Promise<AgentEventEnvelope> {
     const record = this.requireRun(runId);
     if (event.type === "run-state-changed") {
       if (
@@ -103,6 +107,7 @@ export class MemoryExecutionStore implements ExecutionStore {
         runId,
         attemptId: `${runId}:attempt:${event.type === "run-state-changed" ? event.attempt : record.snapshot.attempt}`,
         conversationId: record.conversationId,
+        ...(metadata.stepId === undefined ? {} : { stepId: metadata.stepId }),
         producerId: record.producerId,
         sequence,
         aggregateRevision,
@@ -127,6 +132,10 @@ export class MemoryExecutionStore implements ExecutionStore {
   async getRun(runId: string): Promise<AgentRunSnapshot | undefined> {
     const record = this.runs.get(runId);
     return record ? { ...record.snapshot } : undefined;
+  }
+
+  async getConversationRevision(conversationId: string): Promise<number> {
+    return this.conversationRevisions.get(conversationId) ?? 0;
   }
 
   async readEvents(conversationId: string, afterRevision: number): Promise<AgentEventEnvelope[]> {

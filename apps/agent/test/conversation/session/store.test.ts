@@ -78,7 +78,7 @@ describe("memory conversation transcript store", () => {
     expect(snapshot.messages.map((message) => message.id)).toEqual(["user-1", "run-1"]);
     expect(snapshot.messages[1]).toMatchObject({ text: "answer", status: "complete" });
     expect(snapshot.activeRunId).toBeUndefined();
-    expect(snapshot.revision).toBe(3);
+    expect(snapshot.eventRevision).toBe(0);
   });
 
   it("claims ephemeral runs atomically and replaces the previous round", async () => {
@@ -112,7 +112,7 @@ describe("memory conversation transcript store", () => {
       ["run-2", ""],
     ]);
     expect(snapshot.activeRunId).toBe("run-2");
-    expect(snapshot.revision).toBe(before.revision + 1);
+    expect(snapshot.eventRevision).toBe(before.eventRevision);
   });
 
   it("rejects a concurrent ephemeral claim without touching the active run", async () => {

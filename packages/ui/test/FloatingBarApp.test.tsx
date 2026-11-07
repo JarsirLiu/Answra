@@ -124,7 +124,7 @@ function createConversationBridge() {
             };
             const snapshot = saveSnapshot({
               conversationId: command.conversationId,
-              revision: 1,
+              eventRevision: 1,
               messages: [userMessage, assistantMessage],
               activeRunId: "run-1",
             });
@@ -140,11 +140,11 @@ function createConversationBridge() {
       const prior = snapshotFor(id);
       return saveSnapshot({
         ...prior,
-        revision: prior.revision + 1,
+        eventRevision: prior.eventRevision,
         messages: [
           ...prior.messages,
           {
-            id: `user-${prior.revision + 1}`,
+            id: `user-${prior.eventRevision + 1}`,
             role: "user",
             text,
             images: [],
@@ -172,9 +172,9 @@ function createConversationBridge() {
           seq = 0;
           messages.length = 0;
         }
-        revision += 1;
         const stream = toStream(chunk);
         if (stream) {
+          revision += 1;
           seq += 1;
           if (stream.type === "text-delta") {
             const assistant = messages.find((message) => message.id === runId);
@@ -192,7 +192,7 @@ function createConversationBridge() {
               messages.find((message) => message.id === runId)?.text ?? stream.delta;
             saveSnapshot({
               ...snapshot,
-              revision: snapshot.revision + 1,
+              eventRevision: snapshot.eventRevision,
               messages: snapshot.messages.map((message) =>
                 message.id === runId ? { ...message, text: assistantText } : message,
               ),
@@ -227,7 +227,7 @@ function createConversationBridge() {
           const snapshot = snapshotFor(emittedConversationId);
           saveSnapshot({
             ...snapshot,
-            revision: snapshot.revision + 1,
+            eventRevision: revision,
             activeRunId: undefined,
             messages: snapshot.messages.map((message) =>
               message.id === runId ? { ...message, status: "complete" } : message,
@@ -266,7 +266,7 @@ function createConversationBridge() {
 }
 
 function emptySnapshot(id = conversationId): ConversationSnapshot {
-  return { conversationId: id, revision: 0, messages: [] };
+  return { conversationId: id, eventRevision: 0, messages: [] };
 }
 
 function clickAnswerScreenshot() {
@@ -415,7 +415,7 @@ describe("three-segment floating navigation", () => {
           runId: "run-1",
           attemptId: "run-1:attempt:1",
           sequence: 1,
-          aggregateRevision: 2,
+          aggregateRevision: 1,
           producerId: "test",
           occurredAt: "2026-11-07T00:00:00.000Z",
           event: { type: "run-state-changed", state: "running", attempt: 1 },
@@ -469,6 +469,167 @@ describe("three-segment floating navigation", () => {
     fireEvent.click(screen.getByRole("button", { name: "打开对话" }));
     expect(await screen.findByText("我叫小明")).toBeInTheDocument();
     expect(await screen.findByText("你好，小明。")).toBeInTheDocument();
+  });
+
+  it("keeps the draft visible while chat send is pending, then renders the returned snapshot", async () => {
+    const bridge = createConversationBridge();
+    const earlyEvents: AgentEventEnvelope[] = [];
+    bridge.readConversationEvents.mockImplementation(async (_id, afterRevision) =>
+      earlyEvents.filter((event) => event.aggregateRevision > afterRevision),
+    );
+    let acceptSend: (value: { runId: string; snapshot: ConversationSnapshot }) => void = () => {
+      throw new Error("send response was not initialized");
+    };
+    bridge.sendConversationMessage.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          acceptSend = resolve;
+        }),
+    );
+    render(<FloatingBarApp bridge={bridge} />);
+    fireEvent.click(screen.getByRole("button", { name: "打开对话" }));
+    const input = screen.getByRole("textbox", { name: "补充问题" });
+    fireEvent.change(input, { target: { value: "这条消息不能消失" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+
+    expect(screen.getByRole("log", { name: "对话消息" })).toHaveClass("conversation--chat");
+    expect(input).toHaveValue("这条消息不能消失");
+    expect(input).toBeDisabled();
+    await waitFor(() => expect(bridge.sendConversationMessage).toHaveBeenCalled());
+
+    const publishEarlyEvent = (aggregateRevision: number, event: AgentEventEnvelope["event"]) => {
+      const envelope: AgentEventEnvelope = {
+        schemaVersion: 1,
+        eventId: `early-${aggregateRevision}`,
+        conversationId: ActiveChatConversationId,
+        runId: "run-delayed",
+        attemptId: "run-delayed:attempt:1",
+        sequence: aggregateRevision,
+        aggregateRevision,
+        producerId: "test",
+        occurredAt: "2026-11-07T00:00:00.000Z",
+        event,
+      };
+      earlyEvents.push(envelope);
+      act(() => {
+        conversationListeners.forEach((listener) => {
+          listener(envelope);
+        });
+      });
+    };
+    publishEarlyEvent(1, { type: "run-state-changed", state: "running", attempt: 1 });
+    publishEarlyEvent(2, { type: "text-delta", partId: "text-1", delta: "模型已经开始回复" });
+    publishEarlyEvent(3, { type: "run-state-changed", state: "completed", attempt: 1 });
+
+    await act(async () => {
+      acceptSend({
+        runId: "run-delayed",
+        snapshot: {
+          conversationId: ActiveChatConversationId,
+          eventRevision: 0,
+          activeRunId: "run-delayed",
+          messages: [
+            {
+              id: "user-delayed",
+              role: "user",
+              text: "这条消息不能消失",
+              images: [],
+              status: "complete",
+            },
+            {
+              id: "run-delayed",
+              role: "assistant",
+              text: "",
+              images: [],
+              status: "streaming",
+            },
+          ],
+        },
+      });
+    });
+
+    expect(await screen.findByText("这条消息不能消失")).toBeInTheDocument();
+    expect(await screen.findByText("模型已经开始回复")).toBeInTheDocument();
+    expect(input).toHaveValue("");
+  });
+
+  it("shows the run icon after Agent acceptance and replaces it with the thinking event", async () => {
+    const bridge = createConversationBridge();
+    let acceptSend: (value: { runId: string; snapshot: ConversationSnapshot }) => void = () => {
+      throw new Error("send response was not initialized");
+    };
+    bridge.sendConversationMessage.mockImplementationOnce(
+      () => new Promise((resolve) => (acceptSend = resolve)),
+    );
+    render(<FloatingBarApp bridge={bridge} />);
+    fireEvent.click(screen.getByRole("button", { name: "打开对话" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "补充问题" }), {
+      target: { value: "你好" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+    await waitFor(() => expect(bridge.sendConversationMessage).toHaveBeenCalled());
+
+    expect(screen.queryByRole("status", { name: "回复运行中" })).not.toBeInTheDocument();
+    await act(async () => {
+      acceptSend({
+        runId: "run-accepted",
+        snapshot: {
+          conversationId: ActiveChatConversationId,
+          eventRevision: 0,
+          activeRunId: "run-accepted",
+          messages: [
+            {
+              id: "user-accepted",
+              role: "user",
+              text: "你好",
+              images: [],
+              status: "complete",
+            },
+            {
+              id: "run-accepted",
+              role: "assistant",
+              text: "",
+              images: [],
+              status: "streaming",
+            },
+          ],
+        },
+      });
+    });
+
+    expect(await screen.findByRole("status", { name: "回复运行中" })).toBeInTheDocument();
+    const reasoningStart: AgentEventEnvelope = {
+      schemaVersion: 1,
+      eventId: "accepted-reasoning-start",
+      conversationId: ActiveChatConversationId,
+      runId: "run-accepted",
+      attemptId: "run-accepted:attempt:1",
+      sequence: 1,
+      aggregateRevision: 1,
+      producerId: "test",
+      occurredAt: "2026-11-07T00:00:00.000Z",
+      event: { type: "reasoning-start", partId: "reasoning-1" },
+    };
+    act(() => {
+      conversationListeners.forEach((listener) => {
+        listener(reasoningStart);
+      });
+    });
+    expect(await screen.findByText("思考中…")).toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: "回复运行中" })).not.toBeInTheDocument();
+
+    const completed: AgentEventEnvelope = {
+      ...reasoningStart,
+      eventId: "accepted-completed",
+      sequence: 2,
+      aggregateRevision: 2,
+      event: { type: "run-state-changed", state: "completed", attempt: 1 },
+    };
+    act(() => {
+      conversationListeners.forEach((listener) => {
+        listener(completed);
+      });
+    });
   });
 
   it("renders every mode action as a plain icon button without a stuck tint", () => {
@@ -622,7 +783,9 @@ describe("three-segment floating navigation", () => {
     // 完成态：回复条就地停在导航条功能槽内，停在原地等用户收起。
     await waitFor(() => expect(screen.getByText("截图内容已识别")).toBeInTheDocument());
     expect(document.querySelector(".floating-bar .reply-bar")).not.toBeNull();
-    expect(screen.queryByRole("button", { name: "取消回复并返回发送" })).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "取消回复并返回发送" })).not.toBeInTheDocument(),
+    );
     expect(screen.queryByRole("textbox", { name: "补充问题" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "继续截图" })).toBeInTheDocument();
 

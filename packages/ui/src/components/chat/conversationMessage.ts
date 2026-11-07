@@ -11,6 +11,8 @@ export interface ConversationViewMessage {
   status: ConversationMessage["status"];
   /** 由模型流事件投影出的思考状态；不从消息正文或 status 推导。 */
   thinking?: boolean;
+  /** Agent 已接受活动 run，但尚未发出具体流活动事件。 */
+  waitingForStream?: boolean;
   reasoning?: string;
   images?: ConversationMessage["images"];
   activities?: readonly ReplyBarActivity[];
@@ -21,6 +23,6 @@ export interface ConversationRetry {
   kind: "rate-limit" | "server-error" | "network-error";
   attempt: number;
   maxRetries: number;
-  /** 来自 run-finished.failed；保留重试事件，但不再表示正在等待。 */
+  /** 来自失败 run 终态；保留 Wi-Fi 记录，但不再表示正在等待。 */
   finished?: boolean;
 }

@@ -8,13 +8,13 @@
 
 ## 涉及范围
 
-- 代码/模块：`packages/shared/src/schema/execution.ts`、`packages/shared/src/schema/stream.ts`、`packages/shared/src/schema/conversation.ts`
+- 代码/模块：`packages/shared/src/schema/status.ts`、`packages/shared/src/schema/events.ts`、`packages/shared/src/schema/conversation.ts`
 - UI/进程/协议/持久化表面：当前桌面会话合同保持兼容；未来执行器、事件存储和多租户适配器消费新增 schema
 - 相关 Note：[事件 schema 单一来源与 AI SDK 边界](2026-11-03-event-schema-single-source.md)、[产品方向与 Agent 底座](../../proposed/architecture/2026-10-20-product-direction-and-agent-foundation.md)
 
 ## 决定
 
-在 `packages/shared/src/schema/execution.ts` 冻结平台无关的执行词汇：
+在 shared schema 冻结平台无关的执行词汇：状态和快照位于 `packages/shared/src/schema/status.ts`，Agent 事件与 envelope 位于 `packages/shared/src/schema/events.ts`：
 
 - run 状态：`queued`、`claimed`、`running`、`retry-wait`、`completed`、`failed`、`aborted`、`superseded`、`orphaned`；
 - step 状态：`started`、`streaming`、`tool-awaiting`、`tool-running`、`completed`、`failed`、`aborted`；
@@ -34,7 +34,8 @@
 
 ## 模块边界
 
-- `packages/shared/src/schema/execution.ts`：只定义跨进程、跨部署形态的执行事实，不依赖 AI SDK、Redis 或 Electron。
+- `packages/shared/src/schema/status.ts`：只定义跨进程执行状态与快照，不依赖 AI SDK、Redis 或 Electron。
+- `packages/shared/src/schema/events.ts`：集中定义 Agent 事件与唯一 envelope，不依赖 AI SDK、Redis 或 Electron。
 - `apps/agent/src/core`：未来负责把 AI SDK 的模型事实归一化为执行事件；本轮不改变现有领域 runtime。
 - `apps/agent/src/conversation`：继续维护当前桌面会话 store 和 `ConversationEvent` 兼容合同。
 - 未来 Redis/数据库 adapter：实现事件 envelope 的存储、幂等和重放端口，不改变领域状态定义。
@@ -59,7 +60,7 @@
 ## 后果与防回退
 
 - shared schema 不依赖 AI SDK；AI SDK 升级必须由 agent adapter 显式映射，不能把 SDK 类型直接透传到 IPC 或存储。
-- 新增执行状态或事件时，只扩展 `execution.ts` 并配 schema 测试；provider 原始字段与未知事件不得进入共享 envelope。
+- 新增执行状态时只扩展 `status.ts`；新增 Agent 事件时只扩展 `events.ts`，并配 schema 测试；provider 原始字段与未知事件不得进入共享 envelope。
 - `tenantId`、`actorId` 当前仅为可选契约字段，不代表现有桌面端有租户隔离或身份授权能力。
 - Redis、数据库、租约、fencing token、消费确认与实例故障恢复均未实现；部署成多租户网站之前必须单独设计与验证这些机制。
 

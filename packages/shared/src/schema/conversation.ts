@@ -10,7 +10,8 @@ export const conversationMessageSchema = z.strictObject({
 
 export const conversationSnapshotSchema = z.strictObject({
   conversationId: z.string(),
-  revision: z.number().int().nonnegative(),
+  /** Conversation event revision before the most recent run; UI replays that run from the event store. */
+  eventRevision: z.number().int().nonnegative(),
   messages: z.array(conversationMessageSchema),
   activeRunId: z.string().optional(),
 });

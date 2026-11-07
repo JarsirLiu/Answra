@@ -9,6 +9,7 @@ import {
   ConversationChannels,
   type ConversationModelSettings,
   type ConversationSendCommand,
+  type ConversationSnapshot,
   type DesktopBridge,
   type RegionCaptureOptions,
   type ReplyBarAction,
@@ -79,6 +80,12 @@ const bridge: DesktopBridge = {
       listener(event);
     ipcRenderer.on(ConversationChannels.Event, wrapped);
     return () => ipcRenderer.removeListener(ConversationChannels.Event, wrapped);
+  },
+  onConversationSnapshot: (listener: (snapshot: ConversationSnapshot) => void) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, snapshot: ConversationSnapshot) =>
+      listener(snapshot);
+    ipcRenderer.on(ConversationChannels.SnapshotChanged, wrapped);
+    return () => ipcRenderer.removeListener(ConversationChannels.SnapshotChanged, wrapped);
   },
   getConversationConfig: () => ipcRenderer.invoke(ConversationChannels.GetConfig),
   configureConversation: (settings: ConversationModelSettings) =>

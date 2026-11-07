@@ -91,6 +91,7 @@ export {
   type ReleaseProfile,
 } from "./release";
 export type {
+  AgentDurableEvent,
   AgentEvent,
   AgentEventEnvelope,
   AgentExecutionEvent,

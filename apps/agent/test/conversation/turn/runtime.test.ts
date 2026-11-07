@@ -138,7 +138,7 @@ describe("ephemeral conversation runtime", () => {
     expect(revisions).toEqual([...revisions].sort((left, right) => left - right));
     const snapshot = await runtime.getSnapshot("test-conversation");
     expect(snapshot.messages).toEqual([]);
-    expect(snapshot.revision).toBeGreaterThan(0);
+    expect(snapshot.eventRevision).toBe(changes.at(-1)?.aggregateRevision);
     expect(await runtime.readEventsAfter("test-conversation", 0)).toHaveLength(changes.length);
     expect(
       changes.filter(

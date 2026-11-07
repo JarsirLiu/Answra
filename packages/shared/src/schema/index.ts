@@ -6,12 +6,16 @@ export {
   conversationSnapshotSchema,
 } from "./conversation";
 export {
+  type AgentDurableEvent,
   type AgentEvent,
   type AgentEventEnvelope,
   type AgentExecutionEvent,
+  type AgentStreamEvent,
+  agentDurableEventSchema,
   agentEventEnvelopeSchema,
   agentEventSchema,
   agentExecutionEventSchema,
+  agentStreamEventSchema,
 } from "./events";
 export {
   type AgentFinishReason,
@@ -34,7 +38,3 @@ export {
   type RunOutcome,
   runOutcomeSchema,
 } from "./status";
-export {
-  type AgentStreamEvent,
-  agentStreamEventSchema,
-} from "./stream";

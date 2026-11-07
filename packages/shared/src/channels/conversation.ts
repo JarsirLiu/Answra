@@ -25,6 +25,8 @@ export const ConversationChannels = {
   /** 清空会话消息（仅空闲会话生效；发布 snapshot change 通知所有订阅方）。 */
   ClearMessages: "answra:conversation:clear-messages",
   Event: "answra:conversation:event",
+  /** Pushes the authoritative transcript snapshot after an Agent-owned transcript write. */
+  SnapshotChanged: "answra:conversation:snapshot-changed",
 } as const;
 
 /**
@@ -189,4 +191,5 @@ export interface ConversationChannelMap {
     response: undefined;
   };
   [ConversationChannels.Event]: { request: undefined; response: undefined };
+  [ConversationChannels.SnapshotChanged]: { request: undefined; response: ConversationSnapshot };
 }

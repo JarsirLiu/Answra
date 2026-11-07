@@ -101,6 +101,8 @@ export interface DesktopBridge {
   ) => Promise<ConversationSnapshot>;
   cancelConversationRun?: (runId: string) => void;
   onConversationEvent?: (listener: (event: AgentEventEnvelope) => void) => () => void;
+  /** Receives an authoritative transcript snapshot after an Agent-owned transcript write. */
+  onConversationSnapshot?: (listener: (snapshot: ConversationSnapshot) => void) => () => void;
   // ---- 模型来源（本地自定义端点 / 云端订阅；可选，实现由 preload 注入） ----
   /** 读取当前模型来源与本地端点摘要（不含 API Key）。 */
   getConversationConfig?: () => Promise<ConversationModelSettingsView>;

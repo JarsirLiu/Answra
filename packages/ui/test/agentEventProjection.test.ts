@@ -9,7 +9,7 @@ describe("AgentEventEnvelope UI projection", () => {
   it("keeps reasoning and retry as separate event-driven states", () => {
     const view = applyConversationSnapshot(EMPTY_CONVERSATION_VIEW, {
       conversationId: "conversation",
-      revision: 1,
+      eventRevision: 0,
       messages: [{ id: "run-1", role: "assistant", text: "", images: [], status: "streaming" }],
       activeRunId: "run-1",
     });

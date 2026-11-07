@@ -18,7 +18,7 @@
 
 `ExecutionStore` 是当前唯一进程内事件 store：append envelope 后验证 run 状态迁移、更新可重建的状态缓存，并保留事件用于读取和订阅。当前实现仍为内存，不声称具备重启恢复或分布式能力。
 
-`ConversationStore` 只保存 transcript 消息与快照，不保存事件日志、事件游标或通知 journal。snapshot 用于 renderer 初始化；run 中的实时变化统一由 envelope 订阅。UI 的 `conversationView.ts` 是唯一事件投影。
+`ConversationStore` 只保存 transcript 消息与快照，不保存事件日志或通知 journal。snapshot 携带 `eventRevision` 恢复游标；run 中的实时变化统一由 envelope 订阅。UI 的 `conversationView.ts` 是唯一事件投影。
 
 普通对话、截图答题与基于 ConversationRuntime 的回复共用同一事件 store 和 envelope 通道。
 
@@ -44,7 +44,7 @@
 ## 后果与防回退
 
 - 事件 store 当前是进程内内存实现；替换为 SQLite 或 Redis 时应只替换该 store，不增加 Conversation 事件表。
-- Transcript snapshot 的 revision 只描述快照，不充当事件游标；事件顺序使用 envelope 的 `sequence` 与 `aggregateRevision`。
+- `ConversationSnapshot.eventRevision` 标记 transcript 初始化后应从哪里回放最近一轮事件；它不是 transcript 版本。事件顺序使用 envelope 的 `sequence` 与 `aggregateRevision`。
 - 自动答题完成后可清空 transcript snapshot，但已生成的事件仍属于 Agent event store；renderer 可保留当前投影直到用户关闭。
 - 新的会话 UI 通知不得重新引入第二种事件帧；需要的实时行为应来自既有 envelope 事件或用户操作后的显式快照读取。
 

@@ -14,6 +14,7 @@
 - 依赖必须单向，禁止环（`pnpm architecture:check` 强制）。
 - 跨包导入只允许使用目标包 `package.json` `exports` 声明的入口；禁止深导入、禁止相对路径跨包（架构脚本强制）。
 - 新增共享能力时：类型/常量进 `shared`，纯 UI 进 `ui`，平台能力进 `desktop`，与平台无关的 Agent 运行时进 `agent`。
+- Agent 事件 payload 的唯一目录与 envelope 定义在 `packages/shared/src/schema/events.ts`；状态词汇/快照单独定义在 `status.ts`。`AgentDurableEvent` 仅规定未来适配器的事件资格，不代表已有持久化实现。
 - `apps/` 只放可启动单元（`desktop` 是 Electron 壳，`agent` 由 utility process 拉起并保留独立为常驻 sidecar 的可能）；纯库放 `packages/`。
 
 ## 进程边界（apps/desktop）
@@ -31,8 +32,8 @@
 | `src/worker` | 线协议 `AgentCommand` / `AgentFrame`，跨进程唯一契约 | 只放协议类型；命令/帧变更必须同步 desktop worker |
 | `src/core/run` | 跨领域进程内 run 取消与完成等待原语 | 不保存持久化 run 状态；不放产品策略 |
 | `src/core/model` | AI SDK/provider 边界归一化与模型 HTTP 重试原语 | 不放 Conversation profile 或 transcript 规则 |
-| `src/execution` | run/attempt/step 的状态、事件、进程内 store 和查询投影归属 | 当前只实现进程内 store；不得声称已有 durable store 或恢复流程 |
-| `src/conversation/session` | Conversation transcript、snapshot/revision、仓储端口与内存适配器 | 不拥有通用执行状态机或 UI DTO 投影 |
+| `src/execution` | run/attempt/step 状态迁移规则、事件 envelope 工厂、进程内 store 和查询投影 | 跨包事件 payload 与状态词汇唯一来自 `packages/shared/src/schema/`；当前只实现进程内 store，不得声称已有 durable store 或恢复流程 |
+| `src/conversation/session` | Conversation transcript、snapshot 恢复游标、仓储端口与内存适配器 | 不拥有通用执行状态机或 UI DTO 投影 |
 | `src/conversation/turn` | 一次对话/答题回合的认领、模型执行、流消费与终态收尾 | 不定义共享执行状态 schema；依赖 `core/model` 归一化模型边界 |
 | `src/conversation/profiles` | Agent 注册的提示词、上下文策略与工具授权 | 不接收 renderer 提供的任意 prompt 或工具实现 |
 | `src/conversation/tools` | Conversation 领域工具及静态授权 registry | 不执行桌面平台能力；不得由 desktop 反向 RPC 代执行 |

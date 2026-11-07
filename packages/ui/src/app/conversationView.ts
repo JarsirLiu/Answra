@@ -12,7 +12,7 @@ import type {
 import { projectReplyActivity } from "./replyActivity";
 
 export interface ConversationView {
-  revision: number;
+  eventRevision: number;
   messages: ConversationViewMessage[];
   activeRunId?: string;
   retry?: ConversationRetry;
@@ -20,7 +20,7 @@ export interface ConversationView {
   error?: string;
 }
 
-export const EMPTY_CONVERSATION_VIEW: ConversationView = { revision: 0, messages: [] };
+export const EMPTY_CONVERSATION_VIEW: ConversationView = { eventRevision: 0, messages: [] };
 
 export interface ConversationProjectionOptions {
   retainCapturedRound?: boolean;
@@ -41,11 +41,13 @@ export function applyConversationSnapshot(
   options: ConversationProjectionOptions = {},
 ): ConversationView {
   if (options.retainCapturedRound && snapshot.messages.length === 0 && view.messages.length > 0)
-    return { ...view, activeRunId: undefined };
+    return { ...view, eventRevision: snapshot.eventRevision, activeRunId: undefined };
   const prior = new Map(view.messages.map((message) => [message.id, message]));
   return {
-    revision: view.revision,
-    messages: snapshot.messages.map((message) => toViewMessage(message, prior.get(message.id))),
+    eventRevision: snapshot.eventRevision,
+    messages: snapshot.messages.map((message) =>
+      toViewMessage(message, prior.get(message.id), snapshot.activeRunId === message.id),
+    ),
     activeRunId: snapshot.activeRunId,
     retry: view.retry,
     retryRunId: view.retryRunId,
@@ -58,24 +60,39 @@ export function applyAgentEvent(
   envelope: AgentEventEnvelope,
   options: ConversationProjectionOptions = {},
 ): ConversationView {
-  if (envelope.aggregateRevision <= view.revision) return view;
+  if (envelope.aggregateRevision <= view.eventRevision) return view;
   const event = envelope.event;
-  let next = { ...view, revision: envelope.aggregateRevision };
+  let next = { ...view, eventRevision: envelope.aggregateRevision };
   if (event.type === "run-state-changed") {
-    if (["queued", "claimed", "running", "retry-wait"].includes(event.state)) {
+    const messageStatus = conversationStatusForRunState(event.state);
+    if (!messageStatus) {
       next = { ...next, activeRunId: envelope.runId };
+      next = updateMessage(next, envelope.runId, (message) => ({
+        ...message,
+        waitingForStream: event.state === "claimed" || event.state === "running",
+      }));
       if (event.state === "retry-wait" && event.retry)
         next = { ...next, retry: event.retry, retryRunId: envelope.runId };
     } else {
+      const retryBelongsToRun = next.retryRunId === envelope.runId && next.retry !== undefined;
+      const failed = messageStatus === "failed";
+      const retry = next.retry;
       next = {
         ...next,
         activeRunId: next.activeRunId === envelope.runId ? undefined : next.activeRunId,
+        retry: retryBelongsToRun
+          ? failed && retry
+            ? { ...retry, finished: true }
+            : undefined
+          : retry,
+        retryRunId: retryBelongsToRun && !failed ? undefined : next.retryRunId,
         messages: next.messages.map((message) =>
           message.id === envelope.runId
             ? {
                 ...message,
                 thinking: false,
-                status: event.state === "failed" ? "failed" : message.status,
+                waitingForStream: false,
+                status: messageStatus,
               }
             : message,
         ),
@@ -91,7 +108,33 @@ export function applyAgentEvent(
     event.type === "part-state-changed"
   )
     return next;
+  if (event.type !== "start") {
+    next = updateMessage(next, envelope.runId, (message) => ({
+      ...message,
+      waitingForStream: false,
+    }));
+  }
   return applyStreamEvent(next, envelope.runId, event, options);
+}
+
+function conversationStatusForRunState(
+  state: Extract<AgentEventEnvelope["event"], { type: "run-state-changed" }>["state"],
+): ConversationMessage["status"] | undefined {
+  switch (state) {
+    case "completed":
+      return "complete";
+    case "failed":
+    case "orphaned":
+      return "failed";
+    case "aborted":
+    case "superseded":
+      return "interrupted";
+    case "queued":
+    case "claimed":
+    case "running":
+    case "retry-wait":
+      return undefined;
+  }
 }
 
 function applyStreamEvent(
@@ -157,6 +200,7 @@ function setThinking(view: ConversationView, id: string, thinking: boolean): Con
 function toViewMessage(
   message: ConversationMessage,
   prior?: ConversationViewMessage,
+  activeRun = false,
 ): ConversationViewMessage {
   return {
     id: message.id,
@@ -165,6 +209,7 @@ function toViewMessage(
     status: message.status,
     images: message.images,
     ...(prior?.thinking === undefined ? {} : { thinking: prior.thinking }),
+    waitingForStream: prior?.thinking ? false : (prior?.waitingForStream ?? activeRun),
     ...(prior?.reasoning === undefined ? {} : { reasoning: prior.reasoning }),
     ...(prior?.activities === undefined ? {} : { activities: prior.activities }),
   };

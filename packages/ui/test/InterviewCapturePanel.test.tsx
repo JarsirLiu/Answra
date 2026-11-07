@@ -253,7 +253,8 @@ describe("InterviewCapturePanel", () => {
       />,
     );
 
-    expect(screen.getByRole("status")).toHaveTextContent("限流重试结束，本轮异常终止 5/5");
+    expect(screen.getByRole("status", { name: "重试已结束" })).toBeInTheDocument();
+    expect(screen.queryByText("限流重试结束，本轮异常终止 5/5")).toBeNull();
     expect(screen.getByRole("alert")).toHaveTextContent("inference exceeds tpm/rpm limit");
     expect(screen.getAllByRole("article")).toHaveLength(1);
   });

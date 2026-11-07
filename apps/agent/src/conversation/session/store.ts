@@ -4,19 +4,28 @@ import type { AgentStreamEvent, RunOutcome } from "@answra/shared/schema";
 
 /**
  * Conversation transcript 的仓储端口。
- * 约束会话消息、活动回合认领和 transcript revision；不指定内存或磁盘实现。
+ * 约束会话消息、活动回合认领和事件恢复游标；不指定内存或磁盘实现。
  */
 export interface ConversationStore {
   create(conversationId: string): Promise<ConversationSnapshot>;
   /**
    * 仅空闲清理：会话没有活动 run 时才清空消息；仍有活动 run 时 no-op。
-   * 清空递增 transcript revision；UI 由发起操作的一方清理本地投影。
+   * 清空并记录覆盖到的事件 revision；UI 由发起操作的一方清理本地投影。
    */
-  clear(conversationId: string): Promise<void>;
+  clear(conversationId: string, eventRevision?: number): Promise<void>;
   load(conversationId: string): Promise<ConversationSnapshot>;
-  beginRun(conversationId: string, runId: string, userMessage: ConversationMessage): Promise<void>;
+  beginRun(
+    conversationId: string,
+    runId: string,
+    userMessage: ConversationMessage,
+    eventRevision?: number,
+  ): Promise<void>;
   /** 认领最后一条用户消息并追加 assistant 占位；不存在可回复消息或已有活动 run 时不写入。 */
-  beginReplyRun(conversationId: string, runId: string): Promise<ConversationMessage>;
+  beginReplyRun(
+    conversationId: string,
+    runId: string,
+    eventRevision?: number,
+  ): Promise<ConversationMessage>;
   appendUserMessage(
     conversationId: string,
     userMessage: ConversationMessage,
@@ -26,7 +35,13 @@ export interface ConversationStore {
     conversationId: string,
     runId: string,
     userMessage: ConversationMessage,
+    eventRevision?: number,
   ): Promise<void>;
   applyStreamEvent(conversationId: string, runId: string, event: AgentStreamEvent): Promise<void>;
-  finishRun(conversationId: string, runId: string, outcome: RunOutcome): Promise<void>;
+  finishRun(
+    conversationId: string,
+    runId: string,
+    outcome: RunOutcome,
+    eventRevision?: number,
+  ): Promise<void>;
 }

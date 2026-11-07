@@ -35,15 +35,15 @@
 ```text
 packages/shared/src/schema/
   conversation.ts   跨进程会话消息、快照和 change DTO
-  execution.ts      跨包的 run/step 状态与执行事实词汇
-  stream.ts         Agent 对模型输出流的稳定归一化子集
+  events.ts         全部 Agent 事件、执行/流消费子集、durable 候选集和唯一 envelope
+  status.ts         跨包 run/step 状态词汇与快照
 
 apps/agent/src/
   core/run/registry.ts       进程内 run 取消与完成等待原语
   core/model/                AI SDK/provider 归一化与 HTTP 重试
   execution/                 run/attempt/step 状态、事件、进程内 store 和 projection
   conversation/
-    session/                 会话 transcript、snapshot/revision、内存 store
+    session/                 会话 transcript、snapshot 恢复游标、内存 store
     turn/                    对话/答题的一次 assistant 回合与模型执行
     profiles/                profile 注册与答题策略
     tools/                   Conversation 工具实现和静态授权
@@ -53,11 +53,11 @@ apps/agent/src/
 
 `conversation/session/*`、`conversation/turn/*`、`conversation/profiles/*` 和 `core/model/*` 已按职责归档；Agent 测试也按相同子域归档。Conversation 的进一步拆分见 [Conversation 领域目录按会话与回合组织](./2026-11-06-conversation-domain-layout.md)。`execution/{events,status,store,projection,memoryStore}.ts` 负责共享 schema 之上的状态转移、事件 envelope、进程内快照和读取；当前没有磁盘、Redis 或重启恢复。
 
-跨包 schema 暂时继续位于 `packages/shared/src/schema/`，不为模仿 OpenCode 的 `packages/contracts`、`packages/schema` 立即拆包。未来如果 schema 数量确实造成领域定位困难，应按 `conversation/`、`execution/`、`model-stream/` 等领域子目录拆分，再由稳定 index 导出；IPC channel map 仍留在 `packages/shared/src/channels/`。
+跨包 schema 暂时继续位于 `packages/shared/src/schema/`，不为模仿 OpenCode 的 `packages/contracts`、`packages/schema` 立即拆包。Agent 事件载荷集中在 `events.ts`，不再按执行/模型生产方拆成两份事件定义；状态词汇独立放在 `status.ts`。IPC channel map 仍留在 `packages/shared/src/channels/`。完整事件目录与 delta 持久化资格见[集中 Agent 事件目录](./2026-11-07-unified-agent-event-catalog.md)。
 
 ### 持久化语义
 
-- Conversation 存 transcript：用户输入、assistant 最终消息与需要恢复的 parts。
+- Conversation 存 transcript：用户输入、assistant 消息与 `eventRevision` 恢复游标；UI 恢复最近一轮流式细节时从该游标重放 Agent 事件。
 - Execution 持 run/attempt 当前状态；重试等待中的 `attempt` 与 `nextRetryAt` 必须有执行事件/状态写入来源，不能从 Wi-Fi 图标或时间反推。
 - 只将对审计、恢复或产品查询有价值的执行事实写入 durable event log。token 级 delta、网络 tick 和动画状态不写入长期事件表；完整消息或有界 checkpoint 才是恢复边界。
 - Snapshot/projection 是查询读模型；它可以持久化用于加速，但必须带来源 revision/sequence，能够从权威事实校验或重建。

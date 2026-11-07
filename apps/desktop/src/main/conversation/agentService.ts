@@ -6,6 +6,7 @@ import type {
   ConversationModelConfig,
   ConversationSendCommand,
   ConversationSendRequest,
+  ConversationSnapshot,
   InterviewPcmFrame,
 } from "@answra/shared";
 import type { AgentEventEnvelope } from "@answra/shared/schema";
@@ -112,8 +113,8 @@ export class AgentService {
     );
   }
 
-  async getSnapshot(conversationId: string) {
-    return this.request("snapshot", { conversationId });
+  async getSnapshot(conversationId: string): Promise<ConversationSnapshot> {
+    return (await this.request("snapshot", { conversationId })) as ConversationSnapshot;
   }
 
   async createConversation(conversationId: string) {

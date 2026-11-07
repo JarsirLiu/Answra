@@ -72,6 +72,8 @@ pnpm workspace monorepo，按 ZCode 的团队协作标准组织：包间依赖�
 
 ```text
 packages/shared        跨进程契约：IPC 频道常量 + ChannelMap 类型、环境变量常量、领域类型
+  src/schema/events.ts Agent 全量事件目录与唯一 envelope；delta 不属于 durable 候选
+  src/schema/status.ts Agent run/step 状态词汇与快照
 packages/ui            悬浮条与面板的全部业务 UI（React），含组件测试
 apps/desktop           Electron 桌面壳
   src/main             主进程：窗口管理、按领域拆分的 IPC handler

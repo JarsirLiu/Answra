@@ -70,15 +70,14 @@ export function ChatFeaturePanel({
   function send(): void {
     const sentDraft = draft;
     const sentAttachments = attachments;
-    onDraftChange("");
-    onAttachmentsChange([]);
     setFailure(undefined);
     void conversation
-      .send(sentDraft, sentAttachments)
+      .send(sentDraft, sentAttachments, undefined, () => {
+        onDraftChange("");
+        onAttachmentsChange([]);
+      })
       .then(onSent)
       .catch((error: unknown) => {
-        onDraftChange(sentDraft);
-        onAttachmentsChange(sentAttachments);
         setFailure(
           isAuthRequiredError(error)
             ? { message: AUTH_REQUIRED_NOTICE, needsSignIn: true }
@@ -100,6 +99,7 @@ export function ChatFeaturePanel({
       error={error}
       fileInputRef={fileInputRef}
       streaming={Boolean(conversation.activeRunId)}
+      sending={conversation.sendPending && !conversation.activeRunId}
       retry={conversation.retry}
       thinkingMs={conversation.thinkingMs}
       messages={conversation.messages}
@@ -117,7 +117,7 @@ export function ChatFeaturePanel({
           : undefined
       }
       clearDisabledReason={
-        conversation.activeRunId
+        conversation.activeRunId || conversation.sendPending
           ? "回复完成后才能清空"
           : conversation.messages.length === 0
             ? "暂无可清空的对话"

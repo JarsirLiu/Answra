@@ -1,5 +1,5 @@
 import type { DesktopBridge } from "@answra/shared";
-import { X } from "lucide-react";
+import { LoaderCircle, X } from "lucide-react";
 import { type RefObject, useRef } from "react";
 import { ICON_SM } from "../../tokens";
 import { AssistantMessage, MessageStream, ModelErrorNotice, RetryNotice } from "../chat";
@@ -26,6 +26,8 @@ interface ChatPanelProps {
   onSend: () => void;
   onCancel: () => void;
   streaming: boolean;
+  /** IPC 正在接收本轮模型运行；此时还没有可取消的 run。 */
+  sending?: boolean;
   /** 本轮模型调用正在指数退避重试；同一条消息内原地更新。 */
   retry?: ConversationRetry;
   /** 本轮思考耗时（毫秒），回答开始输出后冻结。 */
@@ -65,6 +67,7 @@ export function ChatPanel({
   onSend,
   onCancel,
   streaming,
+  sending = false,
   retry,
   thinkingMs,
   error,
@@ -107,7 +110,11 @@ export function ChatPanel({
       title="AI 对话"
       variant="chat"
     >
-      <MessageStream ariaLabel="对话消息" contentKey={contentKey} viewportClassName="conversation">
+      <MessageStream
+        ariaLabel="对话消息"
+        contentKey={contentKey}
+        viewportClassName="conversation conversation--chat"
+      >
         {messages.map((message) => (
           <article className={`chat-message chat-message--${message.role}`} key={message.id}>
             {message.role === "user" ? (
@@ -121,23 +128,34 @@ export function ChatPanel({
                 {message.text}
               </div>
             ) : (
-              <AssistantMessage
-                caret={
-                  message.status === "streaming" &&
-                  message.id === messages.at(-1)?.id &&
-                  Boolean(message.text)
-                }
-                content={message.text}
-                onFork={onFork}
-                onReply={() => {
-                  composerInputRef.current?.focus();
-                }}
-                onVote={onVote}
-                reasoning={message.reasoning}
-                streaming={message.status === "streaming" && message.id === messages.at(-1)?.id}
-                thinking={message.thinking === true}
-                thinkingMs={thinkingMs}
-              />
+              <>
+                {message.waitingForStream && (
+                  <div aria-label="回复运行中" className="conversation-running" role="status">
+                    <LoaderCircle
+                      aria-hidden="true"
+                      className="conversation-running-icon"
+                      size={15}
+                    />
+                  </div>
+                )}
+                <AssistantMessage
+                  caret={
+                    message.status === "streaming" &&
+                    message.id === messages.at(-1)?.id &&
+                    Boolean(message.text)
+                  }
+                  content={message.text}
+                  onFork={onFork}
+                  onReply={() => {
+                    composerInputRef.current?.focus();
+                  }}
+                  onVote={onVote}
+                  reasoning={message.reasoning}
+                  streaming={message.status === "streaming" && message.id === messages.at(-1)?.id}
+                  thinking={message.thinking === true}
+                  thinkingMs={thinkingMs}
+                />
+              </>
             )}
           </article>
         ))}
@@ -156,6 +174,7 @@ export function ChatPanel({
         onValueChange={onDraftChange}
         placeholder={attachments.length ? "补充问题或说明…" : "输入问题，或先从模式功能添加截图…"}
         streaming={streaming}
+        disabled={sending}
         submitDisabled={!draft.trim() && attachments.length === 0}
         value={draft}
       >

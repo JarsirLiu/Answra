@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import { useReplyConversation } from "../src/app/useReplyConversation";
 
 interface FakeSession {
-  revision: number;
+  eventRevision: number;
   messages: ConversationMessage[];
   events: AgentEventEnvelope[];
 }
@@ -44,16 +44,16 @@ function createFakeStore(): FakeStore {
   const sessionOf = (id: string): FakeSession => {
     let session = sessions.get(id);
     if (!session) {
-      session = { revision: 0, messages: [], events: [] };
+      session = { eventRevision: 0, messages: [], events: [] };
       sessions.set(id, session);
     }
     return session;
   };
   const publish = (id: string, event: AgentEventEnvelope["event"]) => {
     const session = sessionOf(id);
-    const revision = session.revision + 1;
+    const revision = session.eventRevision + 1;
     const item = envelope(id, revision, event);
-    session.revision = revision;
+    session.eventRevision = revision;
     session.events.push(item);
     for (const listener of listeners) listener(item);
   };
@@ -63,7 +63,7 @@ function createFakeStore(): FakeStore {
         const session = sessionOf(id);
         return {
           conversationId: id,
-          revision: session.revision,
+          eventRevision: session.eventRevision,
           messages: session.messages.map((message) => ({ ...message })),
         };
       }),
@@ -77,7 +77,7 @@ function createFakeStore(): FakeStore {
     } as unknown as DesktopBridge,
     begin: (id) => {
       const session = sessionOf(id);
-      session.revision += 1;
+      session.eventRevision = Math.max(session.eventRevision, 1);
       session.messages = [
         { id: "user-1", role: "user", text: "这题选什么", images: [], status: "complete" },
         { id: "run-1", role: "assistant", text: "", images: [], status: "streaming" },
@@ -98,7 +98,6 @@ function createFakeStore(): FakeStore {
     clear: (id) => {
       const session = sessionOf(id);
       session.messages = [];
-      session.revision += 1;
     },
   };
 }

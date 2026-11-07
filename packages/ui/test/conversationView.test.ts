@@ -32,7 +32,7 @@ describe("conversation projection", () => {
   it("keeps snapshot messages and appends streamed text to the active assistant", () => {
     const view = applyConversationSnapshot(EMPTY_CONVERSATION_VIEW, {
       conversationId: CONVERSATION,
-      revision: 1,
+      eventRevision: 1,
       activeRunId: "run-1",
       messages: [
         { id: "user-1", role: "user", text: "请自我介绍", images: [], status: "complete" },
@@ -48,7 +48,7 @@ describe("conversation projection", () => {
 
   it("keeps reasoning and rate-limit retry as separate explicit states", () => {
     const base: ConversationView = {
-      revision: 1,
+      eventRevision: 1,
       activeRunId: "run-1",
       messages: [{ id: "run-1", role: "assistant", text: "", status: "streaming" }],
     };
@@ -77,22 +77,76 @@ describe("conversation projection", () => {
     expect(retrying.retryRunId).toBe("run-1");
   });
 
-  it("uses terminal run state to end the assistant message", () => {
+  it("shows the accepted run indicator until an explicit stream event arrives", () => {
+    const accepted = applyConversationSnapshot(EMPTY_CONVERSATION_VIEW, {
+      conversationId: CONVERSATION,
+      eventRevision: 0,
+      activeRunId: "run-1",
+      messages: [{ id: "run-1", role: "assistant", text: "", images: [], status: "streaming" }],
+    });
+    expect(accepted.messages[0]?.waitingForStream).toBe(true);
+    const thinking = applyAgentEvent(
+      accepted,
+      envelope(1, { type: "reasoning-start", partId: "reasoning-1" }),
+    );
+    expect(thinking.messages[0]).toMatchObject({ waitingForStream: false, thinking: true });
+  });
+
+  it.each([
+    ["completed", "complete"],
+    ["failed", "failed"],
+    ["aborted", "interrupted"],
+    ["superseded", "interrupted"],
+    ["orphaned", "failed"],
+  ] as const)("maps the %s run terminal state to %s", (runState, messageStatus) => {
     const view: ConversationView = {
-      revision: 1,
+      eventRevision: 1,
       activeRunId: "run-1",
       messages: [{ id: "run-1", role: "assistant", text: "说到一半", status: "streaming" }],
     };
     const finished = applyAgentEvent(
       view,
-      envelope(2, { type: "run-state-changed", state: "failed", attempt: 1 }),
+      envelope(2, { type: "run-state-changed", state: runState, attempt: 1 }),
     );
     expect(finished.activeRunId).toBeUndefined();
-    expect(finished.messages[0]).toMatchObject({ status: "failed", thinking: false });
+    expect(finished.messages[0]).toMatchObject({ status: messageStatus, thinking: false });
+  });
+
+  it("keeps a failed retry as a static Wi-Fi record", () => {
+    const view: ConversationView = {
+      eventRevision: 1,
+      activeRunId: "run-1",
+      retryRunId: "run-1",
+      retry: { kind: "rate-limit", attempt: 5, maxRetries: 5 },
+      messages: [{ id: "run-1", role: "assistant", text: "", status: "streaming" }],
+    };
+    const finished = applyAgentEvent(
+      view,
+      envelope(2, { type: "run-state-changed", state: "failed", attempt: 6 }),
+    );
+    expect(finished.retry).toMatchObject({ attempt: 5, maxRetries: 5, finished: true });
+    expect(finished.retryRunId).toBe("run-1");
+  });
+
+  it("clears a retry record when the run completes successfully", () => {
+    const view: ConversationView = {
+      eventRevision: 1,
+      activeRunId: "run-1",
+      retryRunId: "run-1",
+      retry: { kind: "rate-limit", attempt: 1, maxRetries: 5 },
+      messages: [{ id: "run-1", role: "assistant", text: "答案", status: "streaming" }],
+    };
+    const finished = applyAgentEvent(
+      view,
+      envelope(2, { type: "run-state-changed", state: "completed", attempt: 2 }),
+    );
+    expect(finished.retry).toBeUndefined();
+    expect(finished.retryRunId).toBeUndefined();
+    expect(finished.messages[0]?.status).toBe("complete");
   });
 
   it("ignores old revisions and other conversations", () => {
-    const view: ConversationView = { revision: 5, messages: [] };
+    const view: ConversationView = { eventRevision: 5, messages: [] };
     expect(applyAgentEvent(view, envelope(5, { type: "start" }))).toBe(view);
   });
 });

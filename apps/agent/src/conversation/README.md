@@ -4,7 +4,7 @@ Conversation 负责用户与 Agent 之间的 transcript，以及一次回复回�
 
 ```text
 conversation/
-  session/       会话 transcript、snapshot、revision 和仓储
+  session/       会话 transcript、snapshot 恢复游标和仓储
   turn/          一次 assistant 回合的认领、模型调用、流消费和终态
   profiles/      场景提示词、上下文策略和工具白名单
   tools/         Conversation 获准工具及工作区安全边界
@@ -30,7 +30,7 @@ Session 只拥有消息和会话 revision。`run/attempt/step` 的执行状态�
 - `requestContent.ts`：发送文本和图片的边界校验与 data URL 解析。
 - `timeReminder.ts`：只供显式开启时间上下文的 profile 使用的系统提醒。
 
-`turn/` 不直接依赖 AI SDK 的 chunk 类型；AI SDK chunk 到稳定模型事件的归一化由 `core/model/` 拥有。`turn/` 不定义长期执行状态；模型流事件由唯一 `ExecutionStore` 写入 `AgentEventEnvelope`，UI 从同一事件流投影重试与输出状态。
+`turn/` 消费 `result.fullStream` 并交由 `core/model/` 转换为 shared Agent event contract；不消费 `toUIMessageStream()`，避免并列事实源。`turn/` 不定义长期执行状态；所有模型与生命周期事件写入唯一 `ExecutionStore`，UI 从同一 `AgentEventEnvelope` 流投影状态。
 
 ## `profiles/`
 

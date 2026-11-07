@@ -2,7 +2,13 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { ConversationCapabilityEndpoint, ConversationSendRequest } from "@answra/shared";
 import type { RunOutcome } from "@answra/shared/schema";
-import { stepCountIs, streamText, type ToolSet } from "ai";
+import {
+  type OnToolCallFinishEvent,
+  type OnToolCallStartEvent,
+  stepCountIs,
+  streamText,
+  type ToolSet,
+} from "ai";
 import { consumeModelStream } from "../../core/model/consumeStream";
 import { createRetryingFetch, RATE_LIMIT_RETRY_POLICY } from "../../core/model/retryFetch";
 import type { ExecutionStore } from "../../execution/store";
@@ -126,20 +132,53 @@ export async function executeTurn(options: ExecuteTurnOptions): Promise<void> {
           totalUsage,
         });
       },
+      experimental_onToolCallStart: async (event: OnToolCallStartEvent<ToolSet>) => {
+        await journal.append({
+          type: "tool-execution-started",
+          toolCallId: event.toolCall.toolCallId,
+          toolName: event.toolCall.toolName,
+          input: event.toolCall.input,
+          ...(event.stepNumber === undefined ? {} : { stepNumber: event.stepNumber }),
+        });
+      },
+      experimental_onToolCallFinish: async (event: OnToolCallFinishEvent<ToolSet>) => {
+        const common = {
+          type: "tool-execution-finished" as const,
+          toolCallId: event.toolCall.toolCallId,
+          toolName: event.toolCall.toolName,
+          input: event.toolCall.input,
+          durationMs: event.durationMs,
+          ...(event.stepNumber === undefined ? {} : { stepNumber: event.stepNumber }),
+        };
+        await journal.append(
+          event.success
+            ? { ...common, result: { success: true, output: event.output } }
+            : { ...common, result: { success: false, errorText: errorText(event.error) } },
+        );
+      },
     });
-    await consumeModelStream(
-      result.toUIMessageStream({
-        generateMessageId: () => options.runId,
-        onError: (error) => (error instanceof Error ? error.message.slice(0, 300) : "模型请求失败"),
-      }),
-      journal.append,
-    );
+    await consumeModelStream(result.fullStream, journal.append);
+    if (
+      !journal.metrics.finished &&
+      !journal.metrics.aborted &&
+      !options.controller.signal.aborted
+    ) {
+      await journal.append({ type: "error", errorText: "模型流未提供终态" });
+    }
   } catch (error) {
     await handleTurnError(options, journal, error, startedAt);
   } finally {
     await finishTurn(options, journal.metrics, finishReason, startedAt, executionStarted);
     options.onFinished(options.runId);
   }
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error
+    ? error.message
+    : typeof error === "string"
+      ? error
+      : "工具执行失败";
 }
 
 function logTurnStarted(options: ExecuteTurnOptions): void {
@@ -184,16 +223,24 @@ async function finishTurn(
   startedAt: number,
   executionStarted: boolean,
 ): Promise<void> {
-  const outcome: RunOutcome = options.controller.signal.aborted
-    ? "aborted"
-    : metrics.failed
-      ? "failed"
-      : "completed";
+  const outcome: RunOutcome =
+    options.controller.signal.aborted || metrics.aborted
+      ? "aborted"
+      : metrics.failed
+        ? "failed"
+        : metrics.finished
+          ? "completed"
+          : "failed";
   const executionOutcome: Extract<RunOutcome, "completed" | "failed" | "aborted"> =
     outcome === "completed" ? "completed" : outcome === "aborted" ? "aborted" : "failed";
   if (executionStarted) await options.executionStore.finishRun(options.runId, executionOutcome);
-  await options.store.finishRun(options.conversationId, options.runId, outcome);
-  if (options.ephemeral && !metrics.failed) await options.store.clear(options.conversationId);
+  const eventRevision = await options.executionStore.getConversationRevision(
+    options.conversationId,
+  );
+  await options.store.finishRun(options.conversationId, options.runId, outcome, eventRevision);
+  if (options.ephemeral && !metrics.failed) {
+    await options.store.clear(options.conversationId, eventRevision);
+  }
   console.info("[conversation][run] finished", {
     runId: options.runId,
     elapsedMs: Date.now() - startedAt,

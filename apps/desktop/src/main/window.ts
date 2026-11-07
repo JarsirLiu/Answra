@@ -4,6 +4,7 @@ import {
   type AuthStatus,
   type ContentSize,
   ConversationChannels,
+  type ConversationSnapshot,
   type RegionSelection,
   type ReplyBarAction,
   type ReplyBarState,
@@ -85,6 +86,19 @@ export function sendConversationEvent(event: AgentEventEnvelope): void {
     !replyWindow.isDestroyed()
   )
     replyWindow.webContents.send(ConversationChannels.Event, event);
+}
+
+export function sendConversationSnapshot(snapshot: ConversationSnapshot): void {
+  const mainWindow = getWindow();
+  if (mainWindow && !mainWindow.isDestroyed())
+    mainWindow.webContents.send(ConversationChannels.SnapshotChanged, snapshot);
+  const replyWindow = getReplyBarWindow();
+  if (
+    snapshot.conversationId === replyBarController.getConversationId() &&
+    replyWindow &&
+    !replyWindow.isDestroyed()
+  )
+    replyWindow.webContents.send(ConversationChannels.SnapshotChanged, snapshot);
 }
 /** 把账号状态推给所有还活着的窗口（主悬浮条与独立回复窗口都要能刷门禁）。 */
 export function sendAuthStatus(status: AuthStatus): void {

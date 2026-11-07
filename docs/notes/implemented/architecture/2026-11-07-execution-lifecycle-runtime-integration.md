@@ -8,7 +8,7 @@
 
 ## 涉及范围
 
-- `packages/shared/src/schema/execution.ts`、`stream.ts`
+- `packages/shared/src/schema/status.ts`、`events.ts`
 - `apps/agent/src/execution/`
 - `apps/agent/src/conversation/turn/`
 - `apps/agent/src/core/model/retryFetch.ts`
@@ -18,7 +18,7 @@
 
 ## 决定
 
-- `packages/shared/src/schema/execution.ts` 是 retry、run 状态和 Execution event envelope 的唯一 schema 来源。
+- `packages/shared/src/schema/status.ts` 是 retry 与 run 状态的唯一 schema 来源；`packages/shared/src/schema/events.ts` 是完整 Agent 事件目录和唯一 envelope 来源。
 - `MemoryExecutionStore` 是当前进程内实现；它以显式转移表拒绝非法回退，并为每次迁移写入 `AgentEventEnvelope`。
 - `executeTurn` 在模型调用前创建并认领 run，进入 `running`；HTTP 重试等待写入 `retry-wait`，等待后递增 attempt 并回到 `running`；模型完成、失败或取消分别写入对应终态。
 - 现有 `ConversationEvent.stream.retry` 继续服务 Wi‑Fi UI；它与 Execution event 是同一次重试的两个明确投影，不互相推导状态。
@@ -38,7 +38,8 @@
 
 ## 模块边界
 
-- `packages/shared/src/schema/execution.ts`：唯一执行状态、重试事实和 envelope schema。
+- `packages/shared/src/schema/status.ts`：唯一执行状态、重试 metadata 与 snapshot schema。
+- `packages/shared/src/schema/events.ts`：唯一 Agent event payload 与 envelope schema；delta 的 durable eligibility 由同处的 `AgentDurableEvent` 明确排除。
 - `apps/agent/src/execution/`：状态转移、事件创建、进程内 store 和读投影；不依赖 Electron 或 React。
 - `apps/agent/src/core/model/retryFetch.ts`：只决定 HTTP 是否可重放及等待多久，通过回调报告 retry；不写 Execution store。
 - `apps/agent/src/conversation/turn/executeTurn.ts`：把模型调用生命周期接到 ExecutionStore 与 ConversationStore。

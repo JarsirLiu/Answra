@@ -27,11 +27,13 @@
 
 ```text
 packages/shared/src/schema/
-  stream.ts      AgentStreamEvent
-  execution.ts   RunOutcome、run/step/usage/envelope facts
+  events.ts      AgentEvent complete catalog、AgentEventEnvelope
+  status.ts      RunOutcome、run/step/usage/status snapshots
   conversation.ts ConversationMessage、ConversationSnapshot、ConversationEvent、ConversationChange
   index.ts
 ```
+
+后续事件和 Execution 状态收敛见[集中 Agent 事件目录](./2026-11-07-unified-agent-event-catalog.md)：全部事件 payload 位于 `events.ts`，状态定义独立位于 `status.ts`；本 Note 中描述的早期 schema 文件划分不再是当前布局。
 
 ### 事件分层
 

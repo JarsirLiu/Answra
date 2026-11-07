@@ -18,7 +18,7 @@ let clipboardOverridden = false;
 
 const snapshot: ConversationSnapshot = {
   conversationId,
-  revision: 1,
+  eventRevision: 1,
   activeRunId: runId,
   messages: [
     {
@@ -150,7 +150,7 @@ describe("ReplyBarWindowApp live conversation popover", () => {
       });
     });
     await waitFor(() => expect(screen.getByText("实时")).toBeInTheDocument());
-    expect(bridge.readConversationEvents).toHaveBeenCalledWith(conversationId, 0);
+    expect(bridge.readConversationEvents).toHaveBeenCalledWith(conversationId, 1);
   });
 
   it("mirrors stealth state to the document root for body portals", async () => {
@@ -168,7 +168,7 @@ describe("ReplyBarWindowApp live conversation popover", () => {
     const bridge = createBridge();
     bridge.getConversationSnapshot.mockResolvedValue({
       conversationId,
-      revision: 1,
+      eventRevision: 0,
       activeRunId: runId,
       messages: [
         { id: "user-1", role: "user", text: "请回答", images: [], status: "complete" },
@@ -225,7 +225,7 @@ describe("ReplyBarWindowApp live conversation popover", () => {
     render(<ReplyBarWindowApp bridge={bridge as DesktopBridge} />);
     act(() => stateListener?.(replyState()));
     await waitFor(() =>
-      expect(bridge.readConversationEvents).toHaveBeenCalledWith(conversationId, 0),
+      expect(bridge.readConversationEvents).toHaveBeenCalledWith(conversationId, 1),
     );
     act(() => {
       changeListener?.({
@@ -242,14 +242,14 @@ describe("ReplyBarWindowApp live conversation popover", () => {
     expect(screen.queryByText("先检查条件")).not.toBeInTheDocument();
     fireEvent.click(toggle);
     expect(screen.getByText("先检查条件")).toBeInTheDocument();
-    expect(bridge.readConversationEvents).toHaveBeenCalledWith(conversationId, 0);
+    expect(bridge.readConversationEvents).toHaveBeenCalledWith(conversationId, 1);
   });
 
   it("renders reasoning in a neutral collapsible block instead of italic answer text", async () => {
     const bridge = createBridge();
     bridge.getConversationSnapshot.mockResolvedValue({
       ...snapshot,
-      revision: 3,
+      eventRevision: 1,
       messages: [snapshot.messages[0], { ...snapshot.messages[1], text: "最终答案" }],
     });
     bridge.readConversationEvents.mockResolvedValue(
@@ -298,7 +298,7 @@ describe("ReplyBarWindowApp live conversation popover", () => {
     const bridge = createBridge();
     bridge.getConversationSnapshot.mockResolvedValue({
       ...snapshot,
-      revision: 2,
+      eventRevision: 1,
       // 本轮刚开口：只有思维链，回答正文尚未开始
       messages: [snapshot.messages[0], { ...snapshot.messages[1], text: "" }],
     });
