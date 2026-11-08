@@ -106,7 +106,9 @@ jobs:
           test -s release-assets/Answra-arm64.dmg
           test -s release-assets/Answra-x64.dmg
 
-          base="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/answer-latest"
+          version="$(node -p 'require("./apps/desktop/package.json").version')"
+          release_tag="v${version}"
+          base="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${release_tag}"
           cat > release-notes.md <<EOF
           ## 直接下载 Answer 安装包
 
@@ -116,21 +118,24 @@ jobs:
 
           EOF
 
-          if gh release view answer-latest >/dev/null 2>&1; then
-            gh release upload answer-latest release-assets/* --clobber
-            release_id="$(gh release view answer-latest --json databaseId --jq .databaseId)"
+          if gh release view "$release_tag" >/dev/null 2>&1; then
+            gh release upload "$release_tag" release-assets/* --clobber
+            gh release edit "$release_tag" \
+              --title "Answra ${version}" \
+              --notes-file release-notes.md
+            release_id="$(gh release view "$release_tag" --json databaseId --jq .databaseId)"
           else
-            gh release create answer-latest release-assets/* \
-              --title "Answra Answer Windows + macOS (latest)" \
+            gh release create "$release_tag" release-assets/* \
+              --title "Answra ${version}" \
               --notes-file release-notes.md \
               --target "$GITHUB_SHA" \
               --latest
-            release_id="$(gh release view answer-latest --json databaseId --jq .databaseId)"
+            release_id="$(gh release view "$release_tag" --json databaseId --jq .databaseId)"
           fi
 
           gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}" \
             --method PATCH \
-            -F name="Answra Answer Windows + macOS (latest)" \
+            -F name="Answra ${version}" \
             -F body="$(cat release-notes.md)" \
             -F prerelease=false \
             -f make_latest=true

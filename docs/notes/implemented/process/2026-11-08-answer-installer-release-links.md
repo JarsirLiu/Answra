@@ -14,12 +14,12 @@
 
 ## 决定
 
-Answer Release 使用独立 Windows 和 macOS 构建 job，两个平台均成功后由单一 publish job 汇总。发布前必须验证 Windows x64 `.exe`、macOS arm64 `.dmg` 和 macOS x64 `.dmg` 均存在；Release 正文只列出三种安装包下载链接，不显示构建过程说明；Assets 保留完整构建文件（包括 macOS zip 和自动更新元数据）。该 Release 设为 GitHub Latest；旧 Rime release 与 tag 删除，避免其占据仓库主页的 Release 入口。
+Answer Release 使用独立 Windows 和 macOS 构建 job，两个平台均成功后由单一 publish job 汇总。发布前必须验证 Windows x64 `.exe`、macOS arm64 `.dmg` 和 macOS x64 `.dmg` 均存在；Release 正文只列出三种安装包下载链接，不显示构建过程说明。Release tag 与名称使用 `apps/desktop/package.json` 的真实版本（例如 `v0.1.1`），并设为 GitHub Latest；旧 Rime release 与 tag 删除，避免其占据仓库主页的 Release 入口。
 
 ## 流程变化
 
 - main push 或手动触发后，Windows 与 macOS 在各自原生 runner 上独立构建 Answer 包。
-- publish job 只在所有构建成功后下载并验证安装包，再创建或更新 `answer-latest`。
+- publish job 只在所有构建成功后下载并验证安装包，再创建或更新版本化 release tag。
 - Release 正文仅列出 Windows x64、macOS Apple Silicon 和 macOS Intel 的安装包链接；用户不必从 Assets 中寻找安装器。
 - 发布后将 Answer release 标记为非 prerelease 的 Latest；应用内更新仍由既有 COS 更新源负责。
 
@@ -40,6 +40,7 @@ Answer Release 使用独立 Windows 和 macOS 构建 job，两个平台均成功
 - publish job 是唯一修改 `answer-latest` 的 job；不得在单个平台 job 先行更新 Release，以免产生不完整的下载页。
 - 仓库主页显示的 Latest 与应用内更新源是两件事；应用更新继续使用既有 COS 配置，不读取 GitHub Latest。
 - 删除旧 Rime release 与 tag 后，其资产下载链接失效；如需恢复，必须重新发布相应 tag 与资产。
+- Release 下载 URL 包含版本号；新版本发布会创建新 tag，不能复用长期浮动的 `answer-latest` tag。
 
 ## 验证
 
