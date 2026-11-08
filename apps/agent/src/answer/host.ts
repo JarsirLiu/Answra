@@ -1,5 +1,4 @@
 import type { AgentEventEnvelope } from "@answra/shared/schema";
-import { ConversationApplication } from "../conversation/application";
 import { AgentRuntime } from "../core/agent/runtime";
 import { MemoryConversationStore } from "../core/transcript/memoryStore";
 import type { ConversationStore } from "../core/transcript/store";
@@ -17,7 +16,6 @@ export interface AnswerAgentTransport {
 }
 
 export interface AnswerAgentHost {
-  runtime: ConversationApplication;
   answer: AnswerApplication;
   dispose(): void;
 }
@@ -54,7 +52,6 @@ export function startAnswerAgentHost({
       }),
   });
   const answerAgent = agentRuntime.registerAgent(screenshotAnswerAgent);
-  const runtime = new ConversationApplication({ agentRuntime, store });
   const answer = new AnswerApplication({ agentRuntime, store, executor: answerAgent });
 
   function dispose(): void {
@@ -62,7 +59,7 @@ export function startAnswerAgentHost({
     disposed = true;
     for (const settle of tokenRequests.values()) settle({ error: "本地 AI 服务已关闭" });
     tokenRequests.clear();
-    runtime.dispose();
+    answer.dispose();
   }
 
   transport.onCommand((command) => {
@@ -108,28 +105,27 @@ export function startAnswerAgentHost({
   ) {
     switch (command.type) {
       case "configure":
-        runtime.configure(command.config);
+        answer.configure(command.config);
         return undefined;
       case "workspace-context":
-        runtime.setWorkspaceRoot(null);
         return undefined;
       case "chat-send":
         throw new Error("对话功能不包含在此安装包中");
       case "answer-run":
         return answer.run(command.conversationId, command.request, command.accessToken);
       case "snapshot":
-        return runtime.getSnapshot(command.conversationId);
+        return answer.getSnapshot(command.conversationId);
       case "read-events":
-        return runtime.readEventsAfter(command.conversationId, command.afterRevision);
+        return answer.readEventsAfter(command.conversationId, command.afterRevision);
       case "create-conversation":
-        return runtime.createConversation(command.conversationId);
+        return answer.createConversation(command.conversationId);
       case "clear-conversation":
-        await runtime.clearConversation(command.conversationId);
+        await answer.clearConversation(command.conversationId);
         return undefined;
       case "append-user-message":
-        return runtime.appendUserMessage(command.conversationId, command.text);
+        return answer.appendUserMessage(command.conversationId, command.text);
       case "cancel":
-        runtime.cancel(command.runId);
+        answer.cancel(command.runId);
         return undefined;
       case "interview-start":
       case "interview-capture-ready":
@@ -139,5 +135,5 @@ export function startAnswerAgentHost({
     }
   }
 
-  return { runtime, answer, dispose };
+  return { answer, dispose };
 }

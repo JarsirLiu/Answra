@@ -14,13 +14,14 @@
 
 ## 决定
 
-AnswerApplication 在 Answer 领域持有截图答题用例：校验请求、通过已注册的 Answer executor 原子安装一次性用户/assistant transcript、消费同一 AgentEventEnvelope 更新 transcript，并在成功或中止后清理本轮消息。失败结果保留失败 transcript，遵循既有行为。
+AnswerApplication 在 Answer 领域持有截图答题用例：校验请求、通过已注册的 Answer executor 原子安装一次性用户/assistant transcript、消费同一 AgentEventEnvelope 更新 transcript，并在成功或中止后清理本轮消息。失败结果保留失败 transcript，遵循既有行为。Answer 组合根只依赖 AnswerApplication、core Agent runtime 与共享 transcript store；快照、事件查询、会话创建/清理和用户消息写入也由 AnswerApplication 暴露，不能借用 Conversation application。
 
 ConversationRuntime 只保留 Conversation transcript 与 Chat/Interview 当前所需的会话能力；Agent host 在 `answer-run` 命令处分发给 AnswerApplication。AgentRuntime、ExecutionStore 与 ConversationStore 仍由组合根共享，没有新增事件流或状态来源。
 
 ## 模块边界
 
 - `answer/application.ts` 拥有答题请求与一次性清理策略，不拥有 Agent 模型执行实现。
+- `answer/host.ts` 通过 AnswerApplication 暴露 Answer worker 所需 transcript API，不导入 `conversation/application.ts` 或聊天 profile registry。
 - `answer/agent.ts` 拥有答题 prompt 与模型选项。
 - `core/agent` 执行静态注册的 Answer 定义并写入唯一 AgentEventEnvelope。
 - `core/transcript` 保存临时消息；AnswerApplication 决定何时调用 `clear`。
@@ -42,9 +43,13 @@ ConversationRuntime 只保留 Conversation transcript 与 Chat/Interview 当前�
 
 - Chat 与 Answer application 现在分属 Conversation 和 Answer；Interview 仍需下一阶段从 ConversationRuntime 收回自己的 reply application/runtime。
 - Answer 临时 transcript 的清理归 AnswerApplication；不可把 `runAnswer` 重新加回 ConversationRuntime。
+- Answer worker 的依赖图必须无法到达 Conversation application 和 chat profile registry；`pnpm --filter @answra/desktop build:answer` 后的 `audit:packaged` 是该边界的验证。
 - `AgentEventEnvelope` 和 `AgentRuntime` 仍是唯一执行事件来源；不可让 Answer application 自建事件记录或状态迁移。
 
 ## 验证
 
 - `pnpm notes:check`
 - `pnpm verify`
+- `pnpm --filter @answra/desktop build:answer`
+- `pnpm --filter @answra/desktop audit:packaged -- --profile=answer`
+- Agent worker host 测试

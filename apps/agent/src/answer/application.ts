@@ -1,6 +1,10 @@
 /** Screenshot Answer use case: owns one-shot transcript lifecycle, not model execution. */
 import { randomUUID } from "node:crypto";
-import type { ConversationSendRequest, ConversationSnapshot } from "@answra/shared";
+import type {
+  ConversationModelConfig,
+  ConversationSendRequest,
+  ConversationSnapshot,
+} from "@answra/shared";
 import type { AgentEventEnvelope, AgentRunSnapshot, RunOutcome } from "@answra/shared/schema";
 import type { AgentExecutor } from "../core/agent/definition";
 import type { AgentRuntime } from "../core/agent/runtime";
@@ -50,6 +54,52 @@ export class AnswerApplication {
       onEvent: (event) => this.applyRunEvent(conversationId, event),
     });
     return { runId, snapshot: prepared };
+  }
+
+  configure(config: ConversationModelConfig): void {
+    this.agentRuntime.configureModelRoutes({ chat: config.chat, answer: config.answer });
+  }
+
+  async getSnapshot(conversationId: string): Promise<ConversationSnapshot> {
+    const snapshot = await this.store.load(conversationId);
+    const events = await this.agentRuntime.readEvents(conversationId, snapshot.eventRevision);
+    const latestAssistant = [...snapshot.messages]
+      .reverse()
+      .find((message) => message.role === "assistant");
+    if (!latestAssistant || snapshot.activeRunId !== latestAssistant.id) return snapshot;
+    if (!events.some((event) => event.runId === latestAssistant.id)) return snapshot;
+    return {
+      ...snapshot,
+      messages: snapshot.messages.map((message) =>
+        message.id === latestAssistant.id
+          ? { ...message, text: "", status: "streaming" as const }
+          : message,
+      ),
+    };
+  }
+
+  readEventsAfter(conversationId: string, revision: number): Promise<AgentEventEnvelope[]> {
+    return this.agentRuntime.readEvents(conversationId, revision);
+  }
+
+  async createConversation(conversationId: string): Promise<ConversationSnapshot> {
+    await this.store.create(conversationId);
+    return this.getSnapshot(conversationId);
+  }
+
+  async clearConversation(conversationId: string): Promise<ConversationSnapshot> {
+    const eventRevision = await this.agentRuntime.getConversationRevision(conversationId);
+    await this.store.clear(conversationId, eventRevision);
+    return this.getSnapshot(conversationId);
+  }
+
+  async appendUserMessage(conversationId: string, text: string): Promise<ConversationSnapshot> {
+    if (typeof text !== "string" || !text.trim() || text.length > 32_000)
+      throw new Error("消息内容无效或过长");
+    return this.store.appendUserMessage(
+      conversationId,
+      createUserMessage(randomUUID(), { text: text.trim(), images: [] }),
+    );
   }
 
   cancel(runId: string): void {
