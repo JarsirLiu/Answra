@@ -8,7 +8,7 @@ Windows 开发机无法本地构建 macOS 安装包。原有发布工作流需�
 
 ## 涉及范围
 
-- 代码/模块：`.github/workflows/answer-macos.yml`、根 `package.json` 的 `dist:mac` 入口。
+- 代码/模块：`.github/workflows/answer-macos.yml`、`.github/workflows/release.yml`、根 `package.json` 的 `dist:mac` 入口。
 - UI/进程/协议/持久化表面：无运行时行为变化；只影响构建与分发。
 - 相关 Note：[GitHub Actions 双平台发布流水线](./2026-11-01-github-release-pipeline.md)。
 
@@ -18,15 +18,18 @@ Windows 开发机无法本地构建 macOS 安装包。原有发布工作流需�
 
 正式发布仍由 `release.yml` 的 tag/手动流程负责；本工作流不上传 COS、不创建 GitHub Release，避免验证构建产生正式发布副作用。
 
+旧 `Release` 手动入口保留用于平台验证和正式上传，但其默认平台也设为 macOS；两条工作流的 Electron 依赖安装都最多重试三次。
+
 ## 流程变化
 
 - `main` 推送和手动触发 `Build Answer macOS` 都只运行 `macos-14`。
+- 手动触发 `Release` 默认只运行 macOS；需要 Windows 或双平台时必须显式选择。推送版本 tag 仍运行两个平台。
 - 构建命令固定为 `pnpm dist:mac`，该命令使用 `answer` profile，上传 DMG、ZIP、blockmap 和更新清单作为 30 天 Actions 工件。
-- Electron 依赖安装最多尝试三次，并设置 Electron 与 electron-builder 二进制镜像。
+- 两条工作流中的 Electron 依赖安装最多尝试三次，并设置 Electron 与 electron-builder 二进制镜像。
 
 ## 曾考虑的替代方案
 
-- **只修复原有 `release.yml`：** 舍弃。验证构建仍会同时消耗 Windows runner，不能满足只要 Answer macOS 包的目标。
+- **只使用原有 `release.yml`：** 舍弃。此前手动触发会默认同时启动 Windows 与 macOS，容易误跑 Windows job。
 - **在 Windows 本地交叉构建 macOS：** 舍弃。Electron 原生打包、签名和资源审计不适合依赖 Windows 交叉构建，无法提供可靠的 macOS 工件。
 - **只增加镜像不重试：** 舍弃。镜像本身仍可能瞬时超时，不能覆盖本次已观察到的失败模式。
 
@@ -43,6 +46,7 @@ Windows 开发机无法本地构建 macOS 安装包。原有发布工作流需�
 ## 后果与防回退
 
 - 新增平台或正式发布仍应修改 `release.yml`，不能把上传 COS 逻辑复制到验证工作流。
+- 手动验证应选择 macOS；推送正式版本 tag 才会默认构建双平台。
 - 工作流必须保持 `pnpm dist:mac`，该脚本固定使用 `answer` profile。
 - Electron 下载失败时必须继续重试，不能恢复为单次 `pnpm install`。
 
