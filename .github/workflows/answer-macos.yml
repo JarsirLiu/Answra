@@ -139,3 +139,9 @@ jobs:
             -F body="$(cat release-notes.md)" \
             -F prerelease=false \
             -f make_latest=true
+
+          # Keep the release list versioned; remove the former floating tag after
+          # the versioned release has been published successfully.
+          if gh release view answer-latest >/dev/null 2>&1; then
+            gh release delete answer-latest --yes --cleanup-tag
+          fi

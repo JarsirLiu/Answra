@@ -41,6 +41,7 @@ Answer Release 使用独立 Windows 和 macOS 构建 job，两个平台均成功
 - 仓库主页显示的 Latest 与应用内更新源是两件事；应用更新继续使用既有 COS 配置，不读取 GitHub Latest。
 - 删除旧 Rime release 与 tag 后，其资产下载链接失效；如需恢复，必须重新发布相应 tag 与资产。
 - Release 下载 URL 包含版本号；新版本发布会创建新 tag，不能复用长期浮动的 `answer-latest` tag。
+- 版本化 release 发布成功后，workflow 删除旧的 `answer-latest` release/tag，避免浮动标签重新出现在仓库主页。
 
 ## 验证
 
