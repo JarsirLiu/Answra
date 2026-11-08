@@ -154,18 +154,16 @@ describe("vad segmenter folding frames and activity into segments", () => {
     );
   });
 
-  it("carries the post-cut tail forward and only cuts after the previous cut window", () => {
+  it("uses a safe fallback cut when a narrow low valley cannot provide another cut", () => {
     // 低谷收窄为单个 RMS 窗 [40_000..40_160)。第一刀落在低谷中心 40_080；
-    // 若无防环下限，第二刀会在重叠区里再次选中同一个低谷窗口（永远切 40_080），
-    // chunk 不推进；正确行为是第二刀落在低谷之后的第一个窗口 40_160。
-    const narrowDipValue = (sample: number): number =>
-      sample >= 40_000 && sample < 40_160 ? 10 : loudSpeechValue(sample);
+    // 若无防环下限，第二刀会在重叠区里再次选中同一个低谷窗口（永远切 40_080）。
     const megaFrames = Array.from({ length: 71 }, (): FrameSpec => ({}));
-    const { feed } = buildSegmenter();
+    const { segmenter, feed } = buildSegmenter();
     const segments = feed([{ activity: [started("interviewer-1", 1_024)] }, ...megaFrames]);
 
-    // 第一刀：chunk[0..73_728) 在 40_080 处闭合，chunkIndex 1
-    const [first, second] = segments;
+    // 长语音必须继续切分，不能因为切点难找而等待到会话失败。
+    expect(segments.length).toBeGreaterThan(1);
+    const [first] = segments;
     expect(first).toMatchObject({
       boundary: "continuation",
       chunkIndex: 0,
@@ -173,19 +171,27 @@ describe("vad segmenter folding frames and activity into segments", () => {
       endSample: 40_080,
     });
 
-    // 第二刀：chunk[38_480..) 在 40_160 关闭，低谷 [40_000..40_160) 完整保留在段内
-    expect(second).toMatchObject({
-      boundary: "continuation",
-      chunkIndex: 1,
-      startSample: 40_080 - VAD_CHUNK_OVERLAP_SAMPLES,
-      endSample: 40_160,
-    });
-    expect(second?.pcm).toEqual(
-      makePcmBytes(1_680, narrowDipValue, 40_080 - VAD_CHUNK_OVERLAP_SAMPLES),
-    );
-    // 两刀的重叠区完全重放，且 [cut1..cut2) 的流区间只在第二段内出现一次。
-    expect(second?.pcm.subarray(0, VAD_CHUNK_OVERLAP_SAMPLES * 2)).toEqual(
-      first?.pcm.subarray((first?.pcm.length ?? 0) - VAD_CHUNK_OVERLAP_SAMPLES * 2),
+    const tail = segmenter.flush(TEST_SESSION, "interviewer");
+    expect(tail).toHaveLength(1);
+    const finalSegment = tail[0];
+    expect(finalSegment).toBeDefined();
+    expect(finalSegment).toMatchObject({ boundary: "utterance-end", chunkIndex: 2 });
+    expect(finalSegment?.endSample).toBe(110_592);
+    expect(
+      finalSegment && finalSegment.endSample - finalSegment.startSample,
+    ).toBeGreaterThanOrEqual(4_800);
+  });
+
+  it("uses a provider-safe fallback cut instead of failing a long utterance", () => {
+    const { feed } = buildSegmenter();
+    const segments = feed([
+      { activity: [started("interviewer-1", 1_024)] },
+      ...Array.from({ length: 100 }, (): FrameSpec => ({})),
+    ]);
+
+    expect(segments.length).toBeGreaterThan(1);
+    expect(segments.every((segment) => segment.endSample - segment.startSample >= 4_800)).toBe(
+      true,
     );
   });
 

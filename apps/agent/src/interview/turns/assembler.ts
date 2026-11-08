@@ -8,6 +8,7 @@ import {
   turnId as asTurnId,
   type CommittedInterviewTurn,
   type ConversationId,
+  type IncompleteInterviewTurn,
   type SessionId,
   type TranscriptChunk,
   type TranscriptEvent,
@@ -39,15 +40,16 @@ export class InterviewTurnAssembler {
     this.pending.set(key, turn);
   }
 
-  accept(event: TranscriptEvent): CommittedInterviewTurn | undefined {
+  accept(event: TranscriptEvent): CommittedInterviewTurn | IncompleteInterviewTurn | undefined {
     if (event.source !== "candidate" || event.kind === "partial") return undefined;
     const key = turnKey(event.sessionId, event.utteranceId);
     const turn = this.pending.get(key);
     if (!turn) return undefined;
     if (event.kind === "error") {
       turn.failed = true;
-      this.pending.delete(key);
-      return undefined;
+      if (event.boundary !== "utterance-end") return undefined;
+      turn.finalChunkIndex = event.chunkIndex;
+      return this.finishIncomplete(key, turn);
     }
     turn.chunks.set(event.chunkIndex, {
       utteranceId: event.utteranceId,
@@ -57,7 +59,8 @@ export class InterviewTurnAssembler {
       text: event.text,
     });
     if (event.boundary === "utterance-end") turn.finalChunkIndex = event.chunkIndex;
-    if (turn.finalChunkIndex === undefined || turn.failed) return undefined;
+    if (turn.finalChunkIndex === undefined) return undefined;
+    if (turn.failed) return this.finishIncomplete(key, turn);
     for (let index = 0; index <= turn.finalChunkIndex; index += 1)
       if (!turn.chunks.has(index)) return undefined;
     this.pending.delete(key);
@@ -69,6 +72,23 @@ export class InterviewTurnAssembler {
       status: "committed",
       chunks: [...turn.chunks.values()].sort((left, right) => left.chunkIndex - right.chunkIndex),
       missingChunkIndexes: [],
+    };
+  }
+
+  private finishIncomplete(key: string, turn: PendingTurn): IncompleteInterviewTurn {
+    const finalChunkIndex = turn.finalChunkIndex ?? -1;
+    const missingChunkIndexes: number[] = [];
+    for (let index = 0; index <= finalChunkIndex; index += 1)
+      if (!turn.chunks.has(index)) missingChunkIndexes.push(index);
+    this.pending.delete(key);
+    return {
+      sessionId: turn.sessionId,
+      conversationId: asConversationId(turn.conversationId),
+      turnId: asTurnId(`${turn.sessionId}:${turn.utteranceId}`),
+      version: 0,
+      status: "incomplete",
+      chunks: [...turn.chunks.values()].sort((left, right) => left.chunkIndex - right.chunkIndex),
+      missingChunkIndexes,
     };
   }
 

@@ -65,6 +65,10 @@ export class InterviewRuntime {
         this.emit({ type: "transcript-event", event });
         const turn = this.assembler.accept(event);
         if (!turn) return;
+        if (turn.status === "incomplete") {
+          this.emit({ type: "turn-incomplete", turn });
+          return;
+        }
         const text = turn.chunks
           .map((chunk) => chunk.text)
           .join("")

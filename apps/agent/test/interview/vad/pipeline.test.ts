@@ -65,9 +65,9 @@ function makeEngine(programs: HopVerdict[][]): FakeEngine {
   return { engine, destroyed };
 }
 
-/** 一个完整 utterance 周期的判决程序：16 voiced（≥250ms）+ 44 静默（超过当前闭合窗）。 */
+/** 一个完整 utterance 周期的判决程序：16 voiced（≥250ms）+ 80 静默（超过 1200ms 兜底窗）。 */
 function oneUtteranceCycle(): HopVerdict[] {
-  return hopProgram(60, [{ fromHop: 0, untilHop: 16, probability: 0.9 }]);
+  return hopProgram(100, [{ fromHop: 0, untilHop: 16, probability: 0.9 }]);
 }
 
 function makePipeline(options: { engine?: TenVadEngine; load?: () => Promise<TenVadEngine> }): {
@@ -137,8 +137,8 @@ describe("interview vad pipeline", () => {
 
   it("replays warmup pending frames in stream order once the engine resolves", async () => {
     const gate = deferred<TenVadEngine>();
-    // 66 hops：18 voiced（3 个暖机帧）+ 44 静默 → ended 在 hop 61（第 11 帧内）发出。
-    const { engine } = makeEngine([hopProgram(66, [{ fromHop: 0, untilHop: 18 }])]);
+    // 90 hops：18 voiced（3 个暖机帧）+ 72 静默，尚不足 1200ms，需继续到第 15 帧闭合。
+    const { engine } = makeEngine([hopProgram(110, [{ fromHop: 0, untilHop: 18 }])]);
     const { pipeline, failures } = makePipeline({ load: () => gate.promise });
     const starting = pipeline.start(TEST_SESSION);
 
@@ -150,7 +150,7 @@ describe("interview vad pipeline", () => {
     gate.resolve(engine);
     await starting;
 
-    for (let frame = 3; frame < 11; frame += 1) {
+    for (let frame = 3; frame < 16; frame += 1) {
       pipeline.handleFrame(makeFrame("interviewer", frame, TEST_FRAME_SAMPLES));
     }
 
@@ -172,7 +172,7 @@ describe("interview vad pipeline", () => {
 
   it("publishes speech activity for reply policy without changing segmentation", async () => {
     const events: import("../../../src/interview/contracts").SpeechActivityEvent[] = [];
-    const { engine } = makeEngine([hopProgram(66, [{ fromHop: 0, untilHop: 18 }])]);
+    const { engine } = makeEngine([hopProgram(110, [{ fromHop: 0, untilHop: 18 }])]);
     const pipeline = new InterviewVadPipeline({
       vad: { load: () => Promise.resolve(engine) },
       failSession: () => undefined,
@@ -180,7 +180,7 @@ describe("interview vad pipeline", () => {
     });
     await pipeline.start(TEST_SESSION);
 
-    for (let frame = 0; frame < 11; frame += 1) {
+    for (let frame = 0; frame < 16; frame += 1) {
       pipeline.handleFrame(makeFrame("candidate", frame, TEST_FRAME_SAMPLES, loudSpeechValue));
     }
 
@@ -207,7 +207,7 @@ describe("interview vad pipeline", () => {
     const { pipeline, failures } = makePipeline({ engine });
     await pipeline.start(TEST_SESSION);
 
-    for (let frame = 0; frame < 330; frame += 1) {
+    for (let frame = 0; frame < 550; frame += 1) {
       pipeline.handleFrame(makeFrame("interviewer", frame, TEST_FRAME_SAMPLES, loudSpeechValue));
     }
 
@@ -220,15 +220,15 @@ describe("interview vad pipeline", () => {
   });
 
   it("routes frames per source so each channel keeps its own utterance timeline", async () => {
-    // interviewer 66 hops（18 voiced + 48 静默 → ended）；candidate 全静默无事件。
+    // interviewer 100 hops（18 voiced + 82 静默 → ended）；candidate 全静默无事件。
     const { engine, destroyed } = makeEngine([
-      hopProgram(66, [{ fromHop: 0, untilHop: 18 }]),
-      hopProgram(66),
+      hopProgram(110, [{ fromHop: 0, untilHop: 18 }]),
+      hopProgram(110),
     ]);
     const { pipeline, failures } = makePipeline({ engine });
     await pipeline.start(TEST_SESSION);
 
-    for (let frame = 0; frame < 11; frame += 1) {
+    for (let frame = 0; frame < 16; frame += 1) {
       pipeline.handleFrame(makeFrame("interviewer", frame, TEST_FRAME_SAMPLES, loudSpeechValue));
       pipeline.handleFrame(makeFrame("candidate", frame, TEST_FRAME_SAMPLES));
     }

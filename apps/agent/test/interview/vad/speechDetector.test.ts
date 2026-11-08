@@ -21,12 +21,12 @@ describe("speech activity detector", () => {
   it("produces no utterance when voiced blips never reach 250ms of speech", () => {
     // 两段短噪声 blip，随后静音耗尽闭合判决窗：onset 被丢弃，状态回到 idle。
     const detector = detectorFor(
-      hopProgram(102, [
+      hopProgram(150, [
         { fromHop: 0, untilHop: 2 },
         { fromHop: 30, untilHop: 31 },
       ]),
     );
-    expect(runFrames(detector, 17)).toEqual([]);
+    expect(runFrames(detector, 25)).toEqual([]);
   });
 
   it("emits speech-started with a backdated onset after 250ms of speech", () => {
@@ -44,15 +44,15 @@ describe("speech activity detector", () => {
     ]);
   });
 
-  it("keeps a short pause inside one utterance and closes after 500ms of silence", () => {
+  it("keeps a short pause inside one utterance and closes after 1200ms of silence", () => {
     // 静音 10 hop（160ms）后恢复语音：不得再发 started；ended 回溯到最后语音样本。
     const detector = detectorFor(
-      hopProgram(102, [
+      hopProgram(150, [
         { fromHop: 4, untilHop: 20 },
         { fromHop: 30, untilHop: 38 },
       ]),
     );
-    const events = runFrames(detector, 17);
+    const events = runFrames(detector, 25);
     expect(events.map((event) => event.type)).toEqual(["speech-started", "speech-ended"]);
     const [started, ended] = events as [
       Extract<SpeechActivityEvent, { type: "speech-started" }>,
@@ -65,26 +65,26 @@ describe("speech activity detector", () => {
     expect(ended.confidence).toBe(0.99);
   });
 
-  it("waits through 496ms of silence and closes after the next 16ms VAD hop", () => {
-    const detector = detectorFor(hopProgram(54, [{ fromHop: 0, untilHop: 16 }]));
+  it("waits through 1184ms of silence and closes after the next 16ms VAD hop", () => {
+    const detector = detectorFor(hopProgram(100, [{ fromHop: 0, untilHop: 16 }]));
     const events: SpeechActivityEvent[] = [];
-    for (let hop = 0; hop < 47; hop += 1) {
+    for (let hop = 0; hop < 90; hop += 1) {
       events.push(...detector.process(makeFrame(SOURCE, hop, 256, () => 0, hop * 256)));
     }
     expect(events.map((event) => event.type)).toEqual(["speech-started"]);
-    events.push(...detector.process(makeFrame(SOURCE, 47, 256, () => 0, 47 * 256)));
+    events.push(...detector.process(makeFrame(SOURCE, 91, 256, () => 0, 91 * 256)));
     expect(events.map((event) => event.type)).toEqual(["speech-started", "speech-ended"]);
   });
 
   it("starts a fresh utterance after a closed one with a strictly increasing id", () => {
     // 两条独立语句：utteranceId 单调递增，ended 回溯到最后语音、started 回溯到 onset。
     const detector = detectorFor(
-      hopProgram(120, [
+      hopProgram(240, [
         { fromHop: 4, untilHop: 20 },
-        { fromHop: 68, untilHop: 84 },
+        { fromHop: 120, untilHop: 136 },
       ]),
     );
-    const events = runFrames(detector, 14);
+    const events = runFrames(detector, 35);
     expect(events).toHaveLength(3);
     const [, ended, started] = events as [
       Extract<SpeechActivityEvent, { type: "speech-started" }>,
@@ -93,12 +93,12 @@ describe("speech activity detector", () => {
     ];
     expect([ended.utteranceId, started.utteranceId]).toEqual(["interviewer-1", "interviewer-2"]);
     expect(ended.atSample).toBe(5_120);
-    expect(started.atSample).toBe(17_408);
+    expect(started.atSample).toBe(30_720);
   });
 
   it("reset clears speech state but keeps the utterance counter monotonic", () => {
     const detector = detectorFor(
-      hopProgram(200, [
+      hopProgram(240, [
         { fromHop: 0, untilHop: 16 },
         { fromHop: 60, untilHop: 76 },
       ]),

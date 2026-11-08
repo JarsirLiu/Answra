@@ -512,7 +512,7 @@ describe("agent worker host", () => {
     const host = startAgentHost({
       transport: harness.transport,
       vad: scriptedVadEngine(
-        hopProgram(324, [
+        hopProgram(400, [
           { fromHop: 0, untilHop: 42 },
           { fromHop: 231, untilHop: 273 },
         ]),
@@ -535,7 +535,7 @@ describe("agent worker host", () => {
     });
     await vi.waitFor(() => expect(harness.responses()).toHaveLength(2));
 
-    for (let index = 0; index < 54; index += 1) {
+    for (let index = 0; index < 60; index += 1) {
       harness.dispatch({
         type: "interview-audio-frame",
         frame: {

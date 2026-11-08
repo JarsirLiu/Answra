@@ -79,12 +79,32 @@ describe("InterviewTurnAssembler", () => {
         code: "provider-error",
         retryable: false,
       }),
-    ).toBeUndefined();
+    ).toMatchObject({ status: "incomplete", missingChunkIndexes: [0], chunks: [] });
 
     assembler.registerSegment(
       { ...segment(0, "utterance-end"), source: "interviewer" },
       conversation,
     );
     expect(assembler.accept(finalEvent(0, "utterance-end", "系统声音"))).toBeUndefined();
+  });
+
+  it("emits an incomplete turn when a terminal chunk cannot be decoded", () => {
+    const assembler = new InterviewTurnAssembler();
+    assembler.registerSegment(segment(0, "continuation"), conversation);
+    assembler.registerSegment(segment(1, "utterance-end"), conversation);
+    assembler.accept(finalEvent(0, "continuation", "前半句"));
+
+    const result = assembler.accept({
+      ...finalEvent(1, "utterance-end", ""),
+      kind: "error",
+      code: "audio-too-short",
+      retryable: false,
+    });
+
+    expect(result).toMatchObject({
+      status: "incomplete",
+      missingChunkIndexes: [1],
+      chunks: [{ chunkIndex: 0, text: "前半句" }],
+    });
   });
 });

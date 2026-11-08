@@ -10,6 +10,7 @@ import {
   type UtteranceId,
 } from "../contracts";
 import {
+  MIN_TRANSCRIBABLE_SEGMENT_MS,
   msToSamples,
   VAD_CHUNK_OVERLAP_SAMPLES,
   VAD_MAX_CHUNK_MS,
@@ -188,8 +189,15 @@ export class VadSegmenter implements AudioSegmenter {
     const cut = lowestRmsCenterOffset(open.pcm, open.rmsScanStart);
     // 扫描窗口放不下（rmsScanStart 之后凑不满一个 10ms 窗）时本轮不切：
     // 等下一帧继续积累音频，避免钳到块尾产出只剩 overlap 的 100ms 微块。
-    if (cut === undefined) return;
-    const cutOffset = Math.min(chunkSamples - 1, Math.max(VAD_CHUNK_OVERLAP_SAMPLES, cut));
+    const minSegmentSamples = msToSamples(MIN_TRANSCRIBABLE_SEGMENT_MS);
+    // A low-RMS cut is preferred. If no safe valley exists, use the latest
+    // provider-safe cut instead of growing the buffer until the session fails.
+    const fallbackCut = chunkSamples - minSegmentSamples;
+    const cutOffset = Math.min(
+      chunkSamples - minSegmentSamples,
+      Math.max(minSegmentSamples, cut ?? fallbackCut),
+    );
+    if (cutOffset < minSegmentSamples) return;
     const cutSample = open.chunkStartSample + cutOffset;
     const startSample = cutSample - VAD_CHUNK_OVERLAP_SAMPLES;
     // 后继 chunk 以重叠窗为头、保留切点后的全部已积累音频，保证采样范围

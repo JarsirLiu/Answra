@@ -17,14 +17,23 @@ export const TEN_VAD_ONSET_THRESHOLD = 0.5;
 /** 真语音最短时长：低于该值的短噪声 blip 不产出任何 utterance。 */
 export const VAD_MIN_SPEECH_MS = 250;
 
-/** 本地 turn-end 静音闭合窗；TEN semantic VAD 的 500ms 仅作延迟参考。 */
-export const VAD_CLOSE_SILENCE_MS = 500;
+/**
+ * 未接入语义端点判定模型时的固定结束兜底。
+ *
+ * 这不是“暂停”阈值：当前 SpeechActivityDetector 只有 started/ended 两个
+ * 内部边界，因此必须等待足够长的静音才允许封口。接入 smart-turn 后，
+ * 该值只应作为 judge 不可用时的显式降级策略。
+ */
+export const VAD_CLOSE_SILENCE_MS = 1_200;
 
 /** speech-started 事件回溯携带的最长 pre-roll 时长。 */
 export const VAD_PRE_ROLL_MS = 300;
 
 /** 单个 chunk 的目标上限；达到后按最低 RMS 强切为 continuation。 */
 export const VAD_MAX_CHUNK_MS = 4_500;
+
+/** 任何 continuation 分片都必须满足本地批式识别器的最短可解码长度。 */
+export const MIN_TRANSCRIBABLE_SEGMENT_MS = 300;
 
 /** 强切时与后继 chunk 重放重叠的采样数：1 帧承载，转录按稳定范围去重。 */
 export const VAD_CHUNK_OVERLAP_SAMPLES = PCM_FRAME_MAX_SAMPLES;

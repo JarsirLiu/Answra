@@ -139,6 +139,7 @@ export interface TranscriptBase {
 
 export type TranscriptionErrorCode =
   | "invalid-audio"
+  | "audio-too-short"
   | "audio-too-long"
   | "queue-full"
   | "timeout"
@@ -195,6 +196,7 @@ export type InterviewTurnEvent =
   | { type: "turn-incomplete"; turn: InterviewerTurn & { status: "incomplete" } };
 
 export type CommittedInterviewTurn = InterviewerTurn & { status: "committed" };
+export type IncompleteInterviewTurn = InterviewerTurn & { status: "incomplete" };
 
 export type InterviewSessionState = "starting" | "listening" | "stopping" | "stopped" | "failed";
 

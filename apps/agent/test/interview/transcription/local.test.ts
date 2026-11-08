@@ -92,7 +92,7 @@ describe("LocalParaformerAdapter（阶段 2：本地批式转录 provider）", (
     expect(session.accepted).toEqual([{ samples: new Float32Array(12_800), sampleRate: 16_000 }]);
   });
 
-  it("跳过低于引擎最小时长的段，不触发解码也不产生事件", async () => {
+  it("将低于引擎最小时长的段显式标记为不可转写", async () => {
     const session = new FakeSession();
     const adapter = new LocalParaformerAdapter(fakeModule(session));
     const events = await adapter.transcribe(
@@ -100,7 +100,9 @@ describe("LocalParaformerAdapter（阶段 2：本地批式转录 provider）", (
       new AbortController().signal,
     );
 
-    expect(events).toEqual([]);
+    expect(events).toMatchObject([
+      { kind: "error", code: "audio-too-short", retryable: false, chunkIndex: 3 },
+    ]);
     expect(session.decodeCount).toBe(0);
   });
 

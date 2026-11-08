@@ -68,6 +68,7 @@ export type InterviewWorkerEvent =
             boundary: "utterance-end" | "continuation";
             code:
               | "invalid-audio"
+              | "audio-too-short"
               | "audio-too-long"
               | "queue-full"
               | "timeout"

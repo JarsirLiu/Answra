@@ -10,6 +10,7 @@ import type {
   TranscriptEvent,
   TranscriptionErrorCode,
 } from "../../contracts";
+import { MIN_TRANSCRIBABLE_SEGMENT_MS } from "../../vad/config";
 import type {
   OfflineRecognizerModule,
   OfflineRecognizerRecipe,
@@ -18,9 +19,8 @@ import type {
 
 /**
  * 引擎约束（2026-10-21 spike 实测记档）：低于该时长的整段解码会触发引擎内部
- * Reshape 异常并产出空文本；此类超短段来自强切尾巴，解码无意义，跳过。
+ * Reshape 异常并产出空文本；此类超短段来自强切尾巴，不能静默跳过，必须显式报错。
  */
-const LOCAL_MIN_DECODE_SECONDS = 0.3;
 /** 首个转录结果的 revision 从 0 起步（局部单调，重发才递增）。 */
 const FIRST_TRANSCRIPT_REVISION = 0;
 
@@ -44,7 +44,8 @@ export class LocalParaformerAdapter {
     signal: AbortSignal,
   ): Promise<readonly TranscriptEvent[]> {
     const durationSeconds = (segment.endSample - segment.startSample) / segment.sampleRate;
-    if (durationSeconds < LOCAL_MIN_DECODE_SECONDS) return [];
+    if (durationSeconds * 1_000 < MIN_TRANSCRIBABLE_SEGMENT_MS)
+      return [errorEvent(segment, "audio-too-short", false)];
     // 引擎解码是同步 native 调用、不可被事件循环抢占；取消语义只能在
     // 解码前后检查信号——解码中触发的 abort 会丢弃已完成结果并报 cancelled。
     if (signal.aborted) return [errorEvent(segment, "cancelled", false)];

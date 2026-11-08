@@ -2,6 +2,10 @@
 
 状态：已实施
 
+后续策略说明：本 Note 记录的是当时从 700ms 调到 500ms 的离线评测决定。当前代码在尚未接入
+语义端点 judge 的过渡阶段，已改用 1200ms 作为固定结束兜底，以避免 500ms 句中停顿误封口；
+smart-turn 接入后将由端点判定层决定 seal。
+
 ## 问题
 
 真实 eot-bench 中 `zh__2270` 和 `zh__2272` 都有明确语音与可识别转录，但音频结束前没有自然 `speech-ended`。当前静音闭合阈值为 700ms；这两条样本标注的尾静音分别约 550ms、627ms，在线端点因此漏检。stop flush 能回收转录段，但不能作为及时 turn-end 的证据。
@@ -18,15 +22,15 @@
 
 ## 决定
 
-- 将本地静音闭合窗从 700ms 调至 500ms。TEN Framework 的 Realtime 示例使用 `semantic_vad`，并配置 500ms silence duration；其 turn 判断含语义信号，不与本地 TEN VAD 的二值非语音累计完全等价。本地采用 500ms 是由当前数据集上的延迟/召回优先取舍决定，不是直接移植 TEN 的语义策略。
+- 历史离线评测曾将本地静音闭合窗从 700ms 调至 500ms。该值只适用于当时的候选边界评测，不再作为当前无 judge 生产路径的最终封口值。
 - 保留基于 TEN VAD 非语音判决累计时长的状态机、端点回溯时间戳和事件契约。
 - 用真实 38 轮评测检查 EOT 召回、误切、检测延迟和 ASR 可用性。500ms 在本次样本上取得最高召回与 F1、最低延迟，并识别出 `zh__2270`、`zh__2272` 的自然端点；接受误切增加，等待 turn settle 消费者作候选端点判定。
 - 自然 `speech-ended` 只标记语音段边界；它不是发送 AI 消息的命令。短停顿和业务发言策略仍由后续 turn 决策层处理。
 
 ## 修复
 
-- `apps/agent/src/interview/vad/config.ts`：`VAD_CLOSE_SILENCE_MS` 从 700 调至 500。
-- `apps/agent/test/interview/vad/speechDetector.test.ts`：锁定 496ms 仍不闭合、达到下一个 16ms VAD hop 后闭合；已有短停顿续说与新 utterance 测试继续覆盖事件顺序和 ID。
+- `apps/agent/src/interview/vad/config.ts`：当前固定兜底为 1200ms。
+- `apps/agent/test/interview/vad/speechDetector.test.ts`：锁定 1184ms 仍不闭合、达到下一个 16ms VAD hop 后闭合；已有短停顿续说与新 utterance 测试继续覆盖事件顺序和 ID。
 
 ## 曾考虑的替代方案
 
@@ -40,8 +44,8 @@
 
 - 在同一 38 轮真实样本上的 500ms 结果：EOT 精确率 62.96%、召回率 89.47%、F1 73.91%；检测延迟 P50/P95 508/992ms；轮内误切 17/86（19.77%）；turn-ready 覆盖 31/38（81.58%），P50/P95 566/1009ms（按当前评测 CSV 四舍五入）。
 - `zh__2270`、`zh__2272` 均自然命中；TEN VAD hop 分类和样本边界差异意味着名义静音时长不保证相同实测闭合时间。
-- 500ms 是偏响应速度的本地阈值，不是经 Windows loopback 完成校准的普适最优值。短思考/句中停顿误切明显增加；固定样本评测锁定此取舍，后续 turn settle 应将 `speech-ended` 作为候选边界并可等待续语音更新，而非立即派发。
-- 500ms 的 `speech-ended` 不直接触发 AI 派发；turn 聚合与主 Agent 的发送/攒批策略仍需独立设计。
+- 500ms 评测结果仍保留作历史基线；它证明纯能量阈值会增加句中停顿误切。当前 1200ms 只是未接入 judge 时的保守兜底，不是语义端点的替代品。
+- `speech-ended` 不直接触发 AI 派发；turn 聚合与主 Agent 的发送/攒批策略仍需独立设计。
 
 ## 验收标准
 
