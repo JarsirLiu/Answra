@@ -1,6 +1,6 @@
-name: Build Answer macOS
+name: Build Answer installers
 
-# Answer 版 macOS 验证包：代码推送后自动构建并更新 GitHub Release。
+# Build platform installers independently, then publish one discoverable Answer release.
 on:
   push:
     branches:
@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: answer-macos-${{ github.ref }}
+  group: answer-installers-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -16,8 +16,18 @@ permissions:
 
 jobs:
   build:
-    name: Build Answer macOS installer
-    runs-on: macos-15
+    name: Build Answer ${{ matrix.platform }} installer
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows
+            os: windows-latest
+            script: dist:win
+          - platform: macos
+            os: macos-15
+            script: dist:mac
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
@@ -33,6 +43,7 @@ jobs:
         env:
           ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
           ELECTRON_BUILDER_BINARIES_MIRROR: https://registry.npmmirror.com/-/binary/electron-builder-binaries/
+        shell: bash
         run: |
           for attempt in 1 2 3; do
             if pnpm install --frozen-lockfile; then
@@ -45,13 +56,26 @@ jobs:
           exit 1
 
       - name: Build Answer installer
-        run: pnpm dist:mac
+        run: pnpm ${{ matrix.script }}
+
+      - name: Validate Windows installer
+        if: matrix.platform == 'windows'
+        shell: bash
+        run: test -s apps/desktop/release/Answra-Setup-x64.exe
+
+      - name: Validate macOS installers
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: |
+          test -s apps/desktop/release/Answra-arm64.dmg
+          test -s apps/desktop/release/Answra-x64.dmg
 
       - name: Upload installer artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: answra-answer-macos
+          name: answra-answer-${{ matrix.platform }}
           path: |
+            apps/desktop/release/*.exe
             apps/desktop/release/*.dmg
             apps/desktop/release/*.zip
             apps/desktop/release/*.blockmap
@@ -59,25 +83,55 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Publish latest Answer release
+  publish:
+    name: Publish Answer installers
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Download platform installers
+        uses: actions/download-artifact@v4
+        with:
+          pattern: answra-answer-*
+          merge-multiple: true
+          path: release-assets
+
+      - name: Verify installers and publish download links
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
         run: |
+          set -euo pipefail
+          test -s release-assets/Answra-Setup-x64.exe
+          test -s release-assets/Answra-arm64.dmg
+          test -s release-assets/Answra-x64.dmg
+
+          base="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/answer-latest"
+          cat > release-notes.md <<EOF
+          ## 直接下载 Answer 安装包
+
+          - [Windows x64 安装包（.exe）](${base}/Answra-Setup-x64.exe)
+          - [macOS Apple Silicon 安装包（arm64 .dmg）](${base}/Answra-arm64.dmg)
+          - [macOS Intel 安装包（x64 .dmg）](${base}/Answra-x64.dmg)
+
+          此版本由 main 分支自动构建。Rime 输入法辅助程序请查看下方历史 release。
+          EOF
+
           if gh release view answer-latest >/dev/null 2>&1; then
-            gh release edit answer-latest \
-              --title "Answra Answer macOS (latest)" \
-              --notes "由 main 分支自动构建的 Answer 版 macOS 安装包。" \
-              --prerelease
+            gh release upload answer-latest release-assets/* --clobber
+            release_id="$(gh release view answer-latest --json databaseId --jq .databaseId)"
           else
-            gh release create answer-latest \
-              --title "Answra Answer macOS (latest)" \
-              --notes "由 main 分支自动构建的 Answer 版 macOS 安装包。" \
-              --prerelease \
-              --target "$GITHUB_SHA"
+            gh release create answer-latest release-assets/* \
+              --title "Answra Answer Windows + macOS (latest)" \
+              --notes-file release-notes.md \
+              --target "$GITHUB_SHA" \
+              --latest
+            release_id="$(gh release view answer-latest --json databaseId --jq .databaseId)"
           fi
-          gh release upload answer-latest \
-            apps/desktop/release/*.dmg \
-            apps/desktop/release/*.zip \
-            apps/desktop/release/*.blockmap \
-            apps/desktop/release/latest*.yml \
-            --clobber
+
+          gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}" \
+            --method PATCH \
+            -F name="Answra Answer Windows + macOS (latest)" \
+            -F body="$(cat release-notes.md)" \
+            -F prerelease=false \
+            -f make_latest=true
