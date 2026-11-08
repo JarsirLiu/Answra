@@ -199,7 +199,7 @@ TranscriptStore 是 Conversation 与 Interview 已经共享的实际数据能力
 | `turns/assembler.ts` | `InterviewTurnAssembler` 合并 transcript chunks 成 turn。 | 保留 |
 | `turns/settler.ts` | `CandidateTurnSettler` 合并短句并在结算后通知 application。 | 保留；回调改接 InterviewApplication |
 | `reply/loop.ts` | `InterviewReplyLoop` 串行化 turn 回复、开口打断、session/speech epoch。 | 保留在 Interview；startReply 结果携带 run 与 snapshot |
-| `reply/policy.ts` | `INTERVIEW_REPLY_POLICY` 声明自动回复触发源。 | 保留 |
+| `reply/loop.ts` | 已确认 interview turn 的排队、回复 API 调用和会话停止收口。语音活动不直接控制 AI run。 | 保留 |
 | `reply/agent.ts` | `interviewReplyAgent` 注册面试 prompt、历史/上下文策略、工具授权和模型路由。 | 从 `reply/profile.ts` 改为静态 Agent 定义 |
 | `evaluation.ts` | 暴露 VAD/ASR 评测所需类型。 | 保留 |
 

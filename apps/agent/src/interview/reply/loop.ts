@@ -1,11 +1,11 @@
 /**
- * 面试语音的回复状态机：持有当前回复 run，负责开口取消与结算后启动回复。
+ * 面试语音的回复状态机：持有当前回复 run，负责结算后启动回复。
  * 它不碰采集、VAD、ASR、模型或传输；这些只经端口注入。
  *
- * 当前只接入一个触发源（candidate）。第二个 source 进入时，必须先决定它是否
- * 允许打断、以及它的 turn 是否进入同一会话，再扩展这里。
+ * 语音开口只进入 ASR 链路，不会打断正在生成的辅助回答；确认的 turn 会排队，
+ * 等当前回答自然结束后再写入 transcript 并启动下一次回复。
  */
-import type { AudioSource, CommittedInterviewTurn } from "../contracts";
+import type { CommittedInterviewTurn } from "../contracts";
 
 export interface InterviewReplyPorts {
   /** 先把已结算的语音轮写成 user 消息，再交给事件投影。 */
@@ -23,8 +23,6 @@ export interface InterviewReplyPorts {
 }
 
 export interface InterviewReplyLoopOptions {
-  /** 只有这一路语音的开口会取消在途回复。 */
-  source: AudioSource;
   ports: InterviewReplyPorts;
 }
 
@@ -35,18 +33,13 @@ interface ActiveReply {
 
 export class InterviewReplyLoop {
   private readonly ports: InterviewReplyPorts;
-  private readonly source: AudioSource;
   private active?: ActiveReply;
   private queue: Promise<void> = Promise.resolve();
   private stopped = false;
   /** 每次会话 start/stop 递增；用于淘汰上一场会话尚未落账的结算。 */
   private sessionEpoch = 0;
-  /** 每次触发源开口递增；用于淘汰开口前已开始、开口后才拿到的 runId 的回复。 */
-  private speechEpoch = 0;
-
   constructor(options: InterviewReplyLoopOptions) {
     this.ports = options.ports;
-    this.source = options.source;
   }
 
   /** 新会话开始；只有 host 的组合点调用。 */
@@ -55,20 +48,7 @@ export class InterviewReplyLoop {
     this.sessionEpoch += 1;
   }
 
-  /** 触发源开口：立即取消在途回复，不等待落账，也不阻塞音频链路。 */
-  speechStarted(source: AudioSource): void {
-    if (source !== this.source) return;
-    // 即使当前还没有 active，也要推进 epoch：回复可能正在取令牌或落账，
-    // 不能在开口之后再把上一轮的回复启动起来。
-    this.speechEpoch += 1;
-    if (this.stopped) return;
-    const active = this.active;
-    if (!active) return;
-    // 保留 active 直到落账：下一次 turnSettled 必须先等它结束，才能认领新 run。
-    this.ports.cancelReply(active.runId);
-  }
-
-  /** 一轮语音结算：user 消息落账，触发源随后启动回复。 */
+  /** 一轮语音结算：确认后排队写入 user 消息，再启动回复。 */
   turnSettled(
     conversationId: string,
     turns: readonly CommittedInterviewTurn[],
@@ -85,8 +65,8 @@ export class InterviewReplyLoop {
   async stop(): Promise<void> {
     this.stopped = true;
     this.sessionEpoch += 1;
+    await this.cancelActive();
     await this.queue.catch(() => undefined);
-    await this.finishActive();
   }
 
   private async settle(
@@ -95,10 +75,7 @@ export class InterviewReplyLoop {
     text: string,
     sessionEpoch: number,
   ): Promise<void> {
-    // 先记下本轮结算时的开口序号：等待旧 run 落账或追加用户消息期间若用户
-    // 又开口，这一轮的回复就已经过期，不能再启动。
-    const epoch = this.speechEpoch;
-    await this.finishActive();
+    await this.waitForActive();
     try {
       await this.ports.appendUserTurn(conversationId, turns, text);
     } catch (error) {
@@ -106,23 +83,17 @@ export class InterviewReplyLoop {
       return;
     }
     // 停止或切换到新会话期间只保留用户消息，不再产生新的回复。
-    if (this.stopped || sessionEpoch !== this.sessionEpoch || epoch !== this.speechEpoch) return;
-    await this.startReply(conversationId, epoch, sessionEpoch);
+    if (this.stopped || sessionEpoch !== this.sessionEpoch) return;
+    await this.startReply(conversationId, sessionEpoch);
   }
 
-  private async startReply(
-    conversationId: string,
-    epoch: number,
-    sessionEpoch: number,
-  ): Promise<void> {
+  private async startReply(conversationId: string, sessionEpoch: number): Promise<void> {
     try {
       const { runId } = await this.ports.startReply(conversationId);
       const active: ActiveReply = { runId, done: this.ports.waitForReply(runId) };
       this.active = active;
-      // startReply 可能等待令牌；若期间用户已开口、会话已停止或已切换到新场次，
-      // 立即取消这个迟到的 run。保留 active 让后续 turnSettled 等它落账，避免并发认领。
-      if (this.stopped || sessionEpoch !== this.sessionEpoch || epoch !== this.speechEpoch)
-        this.ports.cancelReply(runId);
+      // startReply 可能等待令牌；会话停止或切换期间得到的迟到 run 仍需取消。
+      if (this.stopped || sessionEpoch !== this.sessionEpoch) this.ports.cancelReply(runId);
       void active.done
         .then(() => {
           if (this.active === active) this.active = undefined;
@@ -136,7 +107,17 @@ export class InterviewReplyLoop {
     }
   }
 
-  private async finishActive(): Promise<void> {
+  private async waitForActive(): Promise<void> {
+    const active = this.active;
+    if (!active) return;
+    try {
+      await active.done;
+    } catch (error) {
+      this.ports.onError("reply", error);
+    }
+  }
+
+  private async cancelActive(): Promise<void> {
     const active = this.active;
     if (!active) return;
     this.active = undefined;

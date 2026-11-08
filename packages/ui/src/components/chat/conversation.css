@@ -1,4 +1,27 @@
 /* ── 对话消息区（ChatPanel / InterviewCapturePanel 共用） ────────── */
+.conversation-running {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  min-height: 20px;
+  color: var(--chat-meta);
+}
+
+.conversation-running-icon {
+  animation: conversation-running-spin 1.1s linear infinite;
+}
+
+@keyframes conversation-running-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .conversation-running-icon {
+    animation: none;
+  }
+}
 /* 视口滚动样式 + 消息气泡家族只在这里定义；面板各自补充专有块。 */
 .conversation {
   flex: 1;

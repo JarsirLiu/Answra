@@ -130,13 +130,24 @@ export function InterviewCapturePanel({
               {message.role === "user" ? (
                 <div className="message-content">{message.text}</div>
               ) : (
-                <AssistantMessage
-                  caret={message.status === "streaming" && Boolean(message.text)}
-                  content={message.text}
-                  reasoning={message.reasoning}
-                  streaming={message.status === "streaming"}
-                  thinking={message.thinking === true}
-                />
+                <>
+                  {message.waitingForStream && (
+                    <div aria-label="回复运行中" className="conversation-running" role="status">
+                      <LoaderCircle
+                        aria-hidden="true"
+                        className="conversation-running-icon"
+                        size={15}
+                      />
+                    </div>
+                  )}
+                  <AssistantMessage
+                    caret={message.status === "streaming" && Boolean(message.text)}
+                    content={message.text}
+                    reasoning={message.reasoning}
+                    streaming={message.status === "streaming"}
+                    thinking={message.thinking === true}
+                  />
+                </>
               )}
             </article>
           ))}

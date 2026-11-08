@@ -31,7 +31,7 @@ export interface InterviewVadPipelineOptions {
    */
   onSegment?(segment: AudioSegment): void;
   /**
-   * 逐 hop 的语音起点/终点。回复策略据此在开口瞬间取消在途回答；
+   * 逐 hop 的语音起点/终点观察回调。面试回复不消费开口作为打断信号；
    * 音频链路本身不因该回调改变。
    */
   onSpeechActivity?(event: SpeechActivityEvent): void;

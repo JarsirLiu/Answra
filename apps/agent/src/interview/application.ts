@@ -9,7 +9,6 @@ import type { ConversationStore } from "../core/transcript/store";
 import type { InterviewReplyInput } from "./agent";
 import type { CommittedInterviewTurn } from "./contracts";
 import { InterviewReplyLoop } from "./reply/loop";
-import { INTERVIEW_REPLY_POLICY } from "./reply/policy";
 
 export interface InterviewApplicationOptions {
   agentRuntime: AgentRuntime;
@@ -36,7 +35,6 @@ export class InterviewApplication {
     this.requestAccessToken = options.requestAccessToken;
     this.onSnapshot = options.onSnapshot;
     this.replyLoop = new InterviewReplyLoop({
-      source: INTERVIEW_REPLY_POLICY.source,
       ports: {
         appendUserTurn: (conversationId, turns, text) =>
           this.appendUserTurn(conversationId, turns, text, options.onTurnCommitted),
@@ -50,10 +48,6 @@ export class InterviewApplication {
 
   start(): void {
     this.replyLoop.start();
-  }
-
-  speechStarted(source: "interviewer" | "candidate"): void {
-    this.replyLoop.speechStarted(source);
   }
 
   turnSettled(

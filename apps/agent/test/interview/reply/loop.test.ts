@@ -33,11 +33,7 @@ function createHarness() {
   const onError = vi.fn();
   const replies = new Map<string, ReturnType<typeof deferred>>();
   let sequence = 0;
-  let startGate: ReturnType<typeof deferred> | undefined;
   const startReply = vi.fn(async () => {
-    const gate = startGate;
-    startGate = undefined;
-    if (gate) await gate.promise;
     sequence += 1;
     const runId = `run-${sequence}`;
     replies.set(runId, deferred());
@@ -45,7 +41,6 @@ function createHarness() {
   });
   const waitForReply = vi.fn((runId: string) => replies.get(runId)?.promise ?? Promise.resolve());
   const loop = new InterviewReplyLoop({
-    source: "candidate",
     ports: { appendUserTurn, startReply, cancelReply, waitForReply, onError },
   });
   return {
@@ -58,11 +53,6 @@ function createHarness() {
     finish: (runId?: string) => {
       const id = runId ?? `run-${sequence}`;
       replies.get(id)?.resolve();
-    },
-    holdNextStart: () => {
-      const gate = deferred();
-      startGate = gate;
-      return gate;
     },
   };
 }
@@ -84,57 +74,6 @@ describe("interview reply loop", () => {
     );
   });
 
-  it("cancels the active reply when the trigger source speaks again", async () => {
-    const harness = createHarness();
-    await harness.loop.turnSettled("conversation-1", [turn("u1")], "第一句");
-
-    harness.loop.speechStarted("candidate");
-
-    expect(harness.cancelReply).toHaveBeenCalledWith("run-1");
-  });
-
-  it("cancels a reply whose run starts after the trigger source spoke during token acquisition", async () => {
-    const harness = createHarness();
-    const gate = harness.holdNextStart();
-    const settled = harness.loop.turnSettled("conversation-1", [turn("u1")], "第一句");
-    await new Promise<void>((resolve) => setImmediate(resolve));
-
-    expect(harness.startReply).toHaveBeenCalledTimes(1);
-    harness.loop.speechStarted("candidate");
-    gate.resolve();
-    await settled;
-
-    expect(harness.cancelReply).toHaveBeenCalledWith("run-1");
-    harness.finish("run-1");
-  });
-
-  it("keeps the reply when the trigger source spoke before its turn settled", async () => {
-    const harness = createHarness();
-
-    harness.loop.speechStarted("candidate");
-    await harness.loop.turnSettled("conversation-1", [turn("u1")], "第一句");
-
-    expect(harness.startReply).toHaveBeenCalledTimes(1);
-    expect(harness.cancelReply).not.toHaveBeenCalled();
-    harness.finish("run-1");
-  });
-
-  it("does not reply to a turn superseded while its user message is being appended", async () => {
-    const harness = createHarness();
-    const gate = deferred();
-    harness.appendUserTurn.mockImplementationOnce(async () => {
-      await gate.promise;
-    });
-
-    const settled = harness.loop.turnSettled("conversation-1", [turn("u1")], "第一句");
-    await new Promise<void>((resolve) => setImmediate(resolve));
-    harness.loop.speechStarted("candidate");
-    gate.resolve();
-    await settled;
-
-    expect(harness.startReply).not.toHaveBeenCalled();
-  });
-
   it("does not start a queued turn from a previous session after a new session starts", async () => {
     const harness = createHarness();
     const gate = deferred();
@@ -153,20 +92,10 @@ describe("interview reply loop", () => {
     expect(harness.startReply).not.toHaveBeenCalled();
   });
 
-  it("does not cancel for a non-trigger source", async () => {
+  it("waits for the active run to finish before sending the next confirmed turn", async () => {
     const harness = createHarness();
     await harness.loop.turnSettled("conversation-1", [turn("u1")], "第一句");
 
-    harness.loop.speechStarted("interviewer");
-
-    expect(harness.cancelReply).not.toHaveBeenCalled();
-  });
-
-  it("waits for the cancelled run to settle before starting the next reply", async () => {
-    const harness = createHarness();
-    await harness.loop.turnSettled("conversation-1", [turn("u1")], "第一句");
-
-    harness.loop.speechStarted("candidate");
     const next = harness.loop.turnSettled("conversation-1", [turn("u2")], "第二句");
     await new Promise<void>((resolve) => setImmediate(resolve));
 

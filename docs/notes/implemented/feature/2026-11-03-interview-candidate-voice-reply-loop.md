@@ -2,6 +2,8 @@
 
 状态：已实施
 
+> 当前产品语义已由 [面试语音不打断辅助回答](../bug-fix/2026-11-08-interview-voice-does-not-interrupt-reply.md) 更新：VAD 开口不再取消 AI 回复；只有确认后的 turn 进入排队发送流程。本 Note 中关于开口打断的实现与验证记录是历史决策，不再代表当前行为。
+
 ## 问题
 
 面试语音链路已经能把麦克风语音经 VAD、ASR、turn 聚合与 settle 合并写成用户消息，但刻意停在「只入对话、不生成回答」（[面试模式麦克风对话输入](../../proposed/feature/2026-10-22-interview-microphone-conversation-input.md)）。因此当前无法验证真正的实时对话效果：用户说完一句没有回复；回复生成后用户再开口也没有任何打断路径；面试面板只投影 `user` 消息，助手消息即使存在也不显示。

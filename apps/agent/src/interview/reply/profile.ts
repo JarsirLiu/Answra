@@ -1,6 +1,6 @@
 /**
  * 面试自动回复的产品 profile：与对话 profile 分开，避免面试借用通用对话的提示词和工具。
- * 触发哪一路语音仍由 policy.ts 决定；这里只描述“怎么回答”。
+ * 这里只描述“怎么回答”；语音采集与模型回复通过 InterviewApplication 端口连接。
  */
 export const INTERVIEW_REPLY_PROFILE = {
   systemPrompt: [

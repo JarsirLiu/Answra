@@ -1,25 +1,5 @@
 /* ── 对话 ─────────────────────────────────────────────────────────── */
 /* 消息区视口与气泡样式在 chat/conversation.css 共用。 */
-.conversation-running {
-  display: grid;
-  place-items: center;
-  width: 20px;
-  min-height: 20px;
-  color: var(--chat-meta);
-}
-.conversation-running-icon {
-  animation: conversation-running-spin 1.1s linear infinite;
-}
-@keyframes conversation-running-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .conversation-running-icon {
-    animation: none;
-  }
-}
 .message-attachment {
   margin: 0 0 7px;
 }

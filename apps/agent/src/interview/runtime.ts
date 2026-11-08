@@ -82,7 +82,6 @@ export class InterviewRuntime {
         this.audio.fail(id, code);
         void this.application.stop();
       },
-      onSpeechActivity: (event) => this.application.speechStarted(event.source),
       onSegment: (segment) => {
         const conversationId = this.conversations.get(segment.sessionId);
         if (!conversationId) return;
