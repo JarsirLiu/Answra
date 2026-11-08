@@ -1,6 +1,6 @@
 name: Build Answer macOS
 
-# Answer 版 macOS 验证包：代码推送后自动构建，不发布到 COS 或 GitHub Release。
+# Answer 版 macOS 验证包：代码推送后自动构建并更新 GitHub Release。
 on:
   push:
     branches:
@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -58,3 +58,26 @@ jobs:
             apps/desktop/release/latest*.yml
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish latest Answer release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view answer-latest >/dev/null 2>&1; then
+            gh release edit answer-latest \
+              --title "Answra Answer macOS (latest)" \
+              --notes "由 main 分支自动构建的 Answer 版 macOS 安装包。" \
+              --prerelease
+          else
+            gh release create answer-latest \
+              --title "Answra Answer macOS (latest)" \
+              --notes "由 main 分支自动构建的 Answer 版 macOS 安装包。" \
+              --prerelease \
+              --target "$GITHUB_SHA"
+          fi
+          gh release upload answer-latest \
+            apps/desktop/release/*.dmg \
+            apps/desktop/release/*.zip \
+            apps/desktop/release/*.blockmap \
+            apps/desktop/release/latest*.yml \
+            --clobber

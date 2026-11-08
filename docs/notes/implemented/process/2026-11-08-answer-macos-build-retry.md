@@ -14,9 +14,9 @@ Windows 开发机无法本地构建 macOS 安装包。原有发布工作流需�
 
 ## 决定
 
-新增独立的 Answer macOS 工作流：`main` 推送和手动触发都会在 `macos-14` runner 上执行 `pnpm dist:mac`，上传 DMG、ZIP、blockmap 和更新清单作为 GitHub Actions 工件。Electron 依赖安装最多重试三次，并显式使用仓库已有的 Electron 与 electron-builder 镜像。
+新增独立的 Answer macOS 工作流：`main` 推送和手动触发都会在 `macos-14` runner 上执行 `pnpm dist:mac`，上传 DMG、ZIP、blockmap 和更新清单作为 GitHub Actions 工件，并更新 `answer-latest` GitHub Release。Electron 依赖安装最多重试三次，并显式使用仓库已有的 Electron 与 electron-builder 镜像。
 
-正式发布仍由 `release.yml` 的 tag/手动流程负责；本工作流不上传 COS、不创建 GitHub Release，避免验证构建产生正式发布副作用。
+正式发布仍由 `release.yml` 的 tag/手动流程负责；本工作流不上传 COS，只维护标记为预发布的 `answer-latest` GitHub Release，避免把验证构建误认为正式版本。
 
 旧 `Release` 手动入口保留用于平台验证和正式上传，但其默认平台也设为 macOS；两条工作流的 Electron 依赖安装都最多重试三次。
 
@@ -25,6 +25,7 @@ Windows 开发机无法本地构建 macOS 安装包。原有发布工作流需�
 - `main` 推送和手动触发 `Build Answer macOS` 都只运行 `macos-14`。
 - 手动触发 `Release` 默认只运行 macOS；需要 Windows 或双平台时必须显式选择。推送版本 tag 仍运行两个平台。
 - 构建命令固定为 `pnpm dist:mac`，该命令使用 `answer` profile，上传 DMG、ZIP、blockmap 和更新清单作为 30 天 Actions 工件。
+- 成功构建会创建或更新 `answer-latest` 预发布版本，安装包可从仓库 Releases 页面下载；该版本不使用正式版本号，也不上传 COS。
 - 两条工作流中的 Electron 依赖安装最多尝试三次，并设置 Electron 与 electron-builder 二进制镜像。
 
 ## 曾考虑的替代方案
@@ -35,13 +36,13 @@ Windows 开发机无法本地构建 macOS 安装包。原有发布工作流需�
 
 ## 验收标准
 
-- 可观察结果：`Build Answer macOS` 运行后出现 `answra-answer-macos` 工件，包含 Answer 版 DMG 和 ZIP。
+- 可观察结果：`Build Answer macOS` 运行后出现 `answra-answer-macos` 工件，并在 Releases 页面更新 `answer-latest`，包含 Answer 版 DMG 和 ZIP。
 - 自动化验证：`pnpm notes:check`、`pnpm verify`、`git diff --check` 通过。
 - 需要的实机验证：GitHub macOS runner 首次真实运行完成安装包构建；本地 Windows 无法替代该验证。
 
 ## 风险
 
-每次 `main` 推送都会消耗一次 macOS runner，并保留 30 天工件。构建产物是未公证、未上传 COS 的验证包；正式分发仍需使用发布工作流和相应凭证。镜像连续不可用时，三次重试仍会失败并保留明确的安装日志。
+每次 `main` 推送都会消耗一次 macOS runner，并保留 30 天工件。构建产物是未公证、未上传 COS 的验证包；正式分发仍需使用发布工作流和相应凭证。`answer-latest` 会被后续成功构建覆盖。镜像连续不可用时，三次重试仍会失败并保留明确的安装日志。
 
 ## 后果与防回退
 
