@@ -92,27 +92,31 @@ describe("interview reply loop", () => {
     expect(harness.startReply).not.toHaveBeenCalled();
   });
 
-  it("waits for the active run to finish before sending the next confirmed turn", async () => {
+  it("cancels the active reply before sending the next confirmed turn", async () => {
     const harness = createHarness();
     await harness.loop.turnSettled("conversation-1", [turn("u1")], "第一句");
 
     const next = harness.loop.turnSettled("conversation-1", [turn("u2")], "第二句");
     await new Promise<void>((resolve) => setImmediate(resolve));
 
-    // 旧 run 未落账前既不追加新用户消息，也不启动新回复。
+    // 确认后的 turn 请求取消旧 run；旧 run 未落账前不追加消息。
     expect(harness.appendUserTurn).toHaveBeenCalledTimes(1);
     expect(harness.startReply).toHaveBeenCalledTimes(1);
+    expect(harness.cancelReply).toHaveBeenCalledWith("run-1");
 
     harness.finish("run-1");
     await next;
 
     expect(harness.appendUserTurn).toHaveBeenCalledTimes(2);
     expect(harness.startReply).toHaveBeenCalledTimes(2);
+    expect(harness.cancelReply.mock.invocationCallOrder[0]).toBeLessThan(
+      harness.appendUserTurn.mock.invocationCallOrder[1] ?? Number.POSITIVE_INFINITY,
+    );
   });
 
   it("does not start a reply when the append fails", async () => {
     const harness = createHarness();
-    harness.appendUserTurn.mockRejectedValueOnce(new Error("当前回复尚未完成"));
+    harness.appendUserTurn.mockRejectedValueOnce(new Error("transcript 写入失败"));
 
     await harness.loop.turnSettled("conversation-1", [turn()], "第一句");
 

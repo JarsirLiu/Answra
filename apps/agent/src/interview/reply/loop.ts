@@ -2,8 +2,8 @@
  * 面试语音的回复状态机：持有当前回复 run，负责结算后启动回复。
  * 它不碰采集、VAD、ASR、模型或传输；这些只经端口注入。
  *
- * 语音开口只进入 ASR 链路，不会打断正在生成的辅助回答；确认的 turn 会排队，
- * 等当前回答自然结束后再写入 transcript 并启动下一次回复。
+ * 语音开口只进入 ASR 链路；确认的 turn 才会通过端口中断当前回复，
+ * 写入 transcript 并启动下一次回复。
  */
 import type { CommittedInterviewTurn } from "../contracts";
 
@@ -75,7 +75,7 @@ export class InterviewReplyLoop {
     text: string,
     sessionEpoch: number,
   ): Promise<void> {
-    await this.waitForActive();
+    await this.interruptActive();
     try {
       await this.ports.appendUserTurn(conversationId, turns, text);
     } catch (error) {
@@ -107,9 +107,11 @@ export class InterviewReplyLoop {
     }
   }
 
-  private async waitForActive(): Promise<void> {
+  private async interruptActive(): Promise<void> {
     const active = this.active;
     if (!active) return;
+    this.active = undefined;
+    this.ports.cancelReply(active.runId);
     try {
       await active.done;
     } catch (error) {
