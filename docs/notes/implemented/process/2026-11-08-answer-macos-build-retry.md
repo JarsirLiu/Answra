@@ -14,7 +14,7 @@ Windows 开发机无法本地构建 macOS 安装包。原有发布工作流需�
 
 ## 决定
 
-新增独立的 Answer macOS 工作流：`main` 推送和手动触发都会在 `macos-14` runner 上执行 `pnpm dist:mac`，上传 DMG、ZIP、blockmap 和更新清单作为 GitHub Actions 工件，并更新 `answer-latest` GitHub Release。Electron 依赖安装最多重试三次，并显式使用仓库已有的 Electron 与 electron-builder 镜像。
+新增独立的 Answer macOS 工作流：`main` 推送和手动触发都会在 `macos-15` runner 上执行 `pnpm dist:mac`，上传 DMG、ZIP、blockmap 和更新清单作为 GitHub Actions 工件，并更新 `answer-latest` GitHub Release。Electron 依赖安装最多重试三次，并显式使用仓库已有的 Electron 与 electron-builder 镜像。
 
 正式发布仍由 `release.yml` 的 tag/手动流程负责；本工作流不上传 COS，只维护标记为预发布的 `answer-latest` GitHub Release，避免把验证构建误认为正式版本。
 
@@ -22,7 +22,7 @@ Windows 开发机无法本地构建 macOS 安装包。原有发布工作流需�
 
 ## 流程变化
 
-- `main` 推送和手动触发 `Build Answer macOS` 都只运行 `macos-14`。
+- `main` 推送和手动触发 `Build Answer macOS` 都只运行 `macos-15`。
 - 手动触发 `Release` 默认只运行 macOS；需要 Windows 或双平台时必须显式选择。推送版本 tag 仍运行两个平台。
 - 构建命令固定为 `pnpm dist:mac`，该命令使用 `answer` profile，上传 DMG、ZIP、blockmap 和更新清单作为 30 天 Actions 工件。
 - 成功构建会创建或更新 `answer-latest` 预发布版本，安装包可从仓库 Releases 页面下载；该版本不使用正式版本号，也不上传 COS。
@@ -33,12 +33,13 @@ Windows 开发机无法本地构建 macOS 安装包。原有发布工作流需�
 - **只使用原有 `release.yml`：** 舍弃。此前手动触发会默认同时启动 Windows 与 macOS，容易误跑 Windows job。
 - **在 Windows 本地交叉构建 macOS：** 舍弃。Electron 原生打包、签名和资源审计不适合依赖 Windows 交叉构建，无法提供可靠的 macOS 工件。
 - **只增加镜像不重试：** 舍弃。镜像本身仍可能瞬时超时，不能覆盖本次已观察到的失败模式。
+- **继续使用 `macos-14`：** 舍弃。GitHub Actions 实际返回 runner 配置 `macos-14-arm64-us-default` 不受支持，job 在 runner 启动前即被取消。
 
 ## 验收标准
 
 - 可观察结果：`Build Answer macOS` 运行后出现 `answra-answer-macos` 工件，并在 Releases 页面更新 `answer-latest`，包含 Answer 版 DMG 和 ZIP。
 - 自动化验证：`pnpm notes:check`、`pnpm verify`、`git diff --check` 通过。
-- 需要的实机验证：GitHub macOS runner 首次真实运行完成安装包构建；本地 Windows 无法替代该验证。
+- 需要的实机验证：GitHub `macos-15` runner 完成安装包构建并发布 `answer-latest`；本地 Windows 无法替代该验证。
 
 ## 风险
 
@@ -47,7 +48,7 @@ Windows 开发机无法本地构建 macOS 安装包。原有发布工作流需�
 ## 后果与防回退
 
 - 新增平台或正式发布仍应修改 `release.yml`，不能把上传 COS 逻辑复制到验证工作流。
-- 手动验证应选择 macOS；推送正式版本 tag 才会默认构建双平台。
+- 手动验证应使用受支持的 macOS runner；推送正式版本 tag 才会默认构建双平台。
 - 工作流必须保持 `pnpm dist:mac`，该脚本固定使用 `answer` profile。
 - Electron 下载失败时必须继续重试，不能恢复为单次 `pnpm install`。
 
