@@ -89,6 +89,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      - uses: actions/checkout@v4
+
       - name: Download platform installers
         uses: actions/download-artifact@v4
         with:
@@ -106,7 +108,7 @@ jobs:
           test -s release-assets/Answra-arm64.dmg
           test -s release-assets/Answra-x64.dmg
 
-          version="$(node -p 'require("./apps/desktop/package.json").version')"
+          version="$(node -e 'const { readFileSync } = require("node:fs"); console.log(JSON.parse(readFileSync("apps/desktop/package.json", "utf8")).version)')"
           release_tag="v${version}"
           base="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${release_tag}"
           cat > release-notes.md <<EOF

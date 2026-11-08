@@ -42,10 +42,11 @@ Answer Release 使用独立 Windows 和 macOS 构建 job，两个平台均成功
 - 删除旧 Rime release 与 tag 后，其资产下载链接失效；如需恢复，必须重新发布相应 tag 与资产。
 - Release 下载 URL 包含版本号；新版本发布会创建新 tag，不能复用长期浮动的 `answer-latest` tag。
 - 版本化 release 发布成功后，workflow 删除旧的 `answer-latest` release/tag，避免浮动标签重新出现在仓库主页。
+- publish job 必须 checkout 仓库后才能从 `apps/desktop/package.json` 读取版本；构建 job 的 checkout 不会跨 job 保留。
 
 ## 验证
 
-- 工作流静态检查与 YAML 解析：待本地验证。
-- `pnpm notes:check`：待本地验证。
-- `pnpm verify`：待本地验证。
-- GitHub Actions 跨平台构建及 Release 页面下载：推送后验证。
+- 已知发布失败：Windows/macOS 构建和产物校验成功，publish job 因未 checkout 仓库，无法读取版本文件；修复是在 publish job 增加 checkout。
+- `pnpm notes:check`：本次修复待验证。
+- `pnpm verify`：本次修复待验证。
+- GitHub Actions 跨平台构建及版本 Release 页面下载：修复推送后验证。
