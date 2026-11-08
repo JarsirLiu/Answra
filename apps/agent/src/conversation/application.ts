@@ -5,7 +5,7 @@ import type {
   ConversationSendRequest,
   ConversationSnapshot,
 } from "@answra/shared";
-import type { AgentEventEnvelope, AgentRunSnapshot, RunOutcome } from "@answra/shared/schema";
+import type { AgentEventEnvelope, AgentRunSnapshot } from "@answra/shared/schema";
 import type { AgentExecutor, AgentRunPrepared } from "../core/agent/definition";
 import type { AgentRuntime } from "../core/agent/runtime";
 import { validateModelRequest } from "../core/model/requestContent";
@@ -42,21 +42,7 @@ export class ConversationApplication {
   }
 
   private async loadRecoverySnapshot(conversationId: string): Promise<ConversationSnapshot> {
-    const snapshot = await this.store.load(conversationId);
-    const events = await this.agentRuntime.readEvents(conversationId, snapshot.eventRevision);
-    const latestAssistant = [...snapshot.messages]
-      .reverse()
-      .find((message) => message.role === "assistant");
-    if (!latestAssistant || snapshot.activeRunId !== latestAssistant.id) return snapshot;
-    if (!events.some((event) => event.runId === latestAssistant.id)) return snapshot;
-    return {
-      ...snapshot,
-      messages: snapshot.messages.map((message) =>
-        message.id === latestAssistant.id
-          ? { ...message, text: "", status: "streaming" as const }
-          : message,
-      ),
-    };
+    return this.store.load(conversationId);
   }
 
   readEventsAfter(conversationId: string, revision: number): Promise<AgentEventEnvelope[]> {
@@ -189,14 +175,7 @@ export class ConversationApplication {
   }
 
   private async applyRunEvent(conversationId: string, envelope: AgentEventEnvelope): Promise<void> {
-    const { event, runId, aggregateRevision } = envelope;
-    if (event.type === "text-delta")
-      await this.store.applyStreamEvent(conversationId, runId, event);
-    if (event.type !== "run-state-changed") return;
-
-    const outcome = runOutcomeForState(event.state);
-    if (!outcome) return;
-    await this.store.finishRun(conversationId, runId, outcome, aggregateRevision);
+    await this.store.applyAgentEvent(conversationId, envelope);
   }
 
   cancel(runId: string): void {
@@ -226,18 +205,5 @@ export class ConversationApplication {
   private requireConversationAgent(): AgentExecutor<ConversationAgentInput> {
     if (!this.conversationAgent) throw new Error("Conversation Agent 未注册");
     return this.conversationAgent;
-  }
-}
-
-function runOutcomeForState(state: string): RunOutcome | undefined {
-  switch (state) {
-    case "completed":
-    case "failed":
-    case "aborted":
-      return state;
-    case "superseded":
-      return "superseded";
-    default:
-      return undefined;
   }
 }

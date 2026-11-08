@@ -6,6 +6,8 @@ import {
   agentExecutionEventSchema,
   agentRunSnapshotSchema,
   agentStreamEventSchema,
+  conversationMessagePartSchema,
+  conversationMessageSchema,
 } from "../src/schema";
 
 describe("event schema", () => {
@@ -161,5 +163,42 @@ describe("event schema", () => {
         event: { type: "run-state-changed", state: "running", attempt: 1 },
       }),
     ).toMatchObject({ event: { state: "running" } });
+  });
+});
+
+describe("execution status schema", () => {
+  it("shares message status vocabulary with transcript", () => {
+    expect(
+      conversationMessageSchema.parse({
+        id: "message-1",
+        role: "assistant",
+        text: "answer",
+        images: [],
+        status: "complete",
+      }).status,
+    ).toBe("complete");
+  });
+});
+
+describe("transcript message part schema", () => {
+  it("accepts text, reasoning, and tool content with explicit discriminants", () => {
+    expect(
+      conversationMessagePartSchema.parse({
+        id: "reason-1",
+        kind: "reasoning",
+        text: "considering",
+        state: "streaming",
+      }),
+    ).toMatchObject({ kind: "reasoning", state: "streaming" });
+    expect(
+      conversationMessagePartSchema.parse({
+        id: "tool-1",
+        kind: "tool",
+        toolCallId: "tool-1",
+        toolName: "Search",
+        state: "completed",
+        output: "result",
+      }),
+    ).toMatchObject({ kind: "tool", state: "completed" });
   });
 });

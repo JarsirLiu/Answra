@@ -92,6 +92,45 @@ describe("conversation projection", () => {
     expect(thinking.messages[0]).toMatchObject({ waitingForStream: false, thinking: true });
   });
 
+  it("restores assistant text, reasoning, and tool activity from transcript parts", () => {
+    const restored = applyConversationSnapshot(EMPTY_CONVERSATION_VIEW, {
+      conversationId: CONVERSATION,
+      eventRevision: 8,
+      messages: [
+        {
+          id: "run-1",
+          role: "assistant",
+          text: "legacy text",
+          reasoning: "legacy reasoning",
+          images: [],
+          status: "complete",
+          parts: [
+            { id: "text-1", kind: "text", text: "part text", state: "completed" },
+            { id: "reason-1", kind: "reasoning", text: "part reasoning", state: "completed" },
+            {
+              id: "tool-1",
+              kind: "tool",
+              toolCallId: "tool-1",
+              toolName: "Search",
+              state: "completed",
+              input: { query: "topic" },
+              output: "result",
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(restored.messages[0]).toMatchObject({
+      text: "part text",
+      reasoning: "part reasoning",
+      activities: [
+        { id: "tool-1:input-ready", kind: "tool", label: "工具：Search" },
+        { id: "tool-1:output", kind: "tool", label: "工具结果", text: "result" },
+      ],
+    });
+  });
+
   it.each([
     ["completed", "complete"],
     ["failed", "failed"],

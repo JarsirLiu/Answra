@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-/** Retry metadata and run/step status vocabulary with rebuildable snapshots. */
+/** Runtime status vocabulary used by the canonical Agent event flow and transcript. */
 export const agentRetrySchema = z.strictObject({
   kind: z.enum(["rate-limit", "server-error", "network-error"]),
   attempt: z.number().int().positive(),
@@ -22,14 +22,26 @@ export const agentRunStateSchema = z.enum([
   "orphaned",
 ]);
 export const runOutcomeSchema = z.enum(["completed", "failed", "aborted", "superseded"]);
-export const agentStepStateSchema = z.enum([
-  "started",
-  "streaming",
-  "tool-awaiting",
-  "tool-running",
+/** Lifecycle of a model-requested tool call. */
+export const agentToolCallStateSchema = z.enum([
+  "input-streaming",
+  "pending",
+  "awaiting-approval",
+  "running",
   "completed",
   "failed",
-  "aborted",
+  "interrupted",
+  "denied",
+]);
+/** Lifecycle of a transcript message. */
+export const agentMessageStateSchema = z.enum(["streaming", "complete", "failed", "interrupted"]);
+/** Lifecycle of a text, reasoning, or tool content part. */
+export const agentPartStateSchema = z.enum([
+  "started",
+  "streaming",
+  "completed",
+  "failed",
+  "interrupted",
 ]);
 export const agentPartKindSchema = z.enum(["text", "reasoning", "tool", "source", "file", "data"]);
 export const agentFinishReasonSchema = z.enum([
@@ -66,21 +78,13 @@ export const agentRunSnapshotSchema = z.strictObject({
   currentStepId: z.string().optional(),
   updatedAt: z.string().datetime(),
 });
-export const agentStepSnapshotSchema = z.strictObject({
-  stepId: z.string(),
-  runId: z.string(),
-  state: agentStepStateSchema,
-  index: z.number().int().nonnegative(),
-  finishReason: agentFinishReasonSchema.optional(),
-  usage: agentUsageSchema.optional(),
-  updatedAt: z.string().datetime(),
-});
 export type AgentRunState = z.infer<typeof agentRunStateSchema>;
 export type RunOutcome = z.infer<typeof runOutcomeSchema>;
 export type AgentRetry = z.infer<typeof agentRetrySchema>;
-export type AgentStepState = z.infer<typeof agentStepStateSchema>;
+export type AgentToolCallState = z.infer<typeof agentToolCallStateSchema>;
+export type AgentMessageState = z.infer<typeof agentMessageStateSchema>;
+export type AgentPartState = z.infer<typeof agentPartStateSchema>;
 export type AgentPartKind = z.infer<typeof agentPartKindSchema>;
 export type AgentFinishReason = z.infer<typeof agentFinishReasonSchema>;
 export type AgentUsage = z.infer<typeof agentUsageSchema>;
 export type AgentRunSnapshot = z.infer<typeof agentRunSnapshotSchema>;
-export type AgentStepSnapshot = z.infer<typeof agentStepSnapshotSchema>;

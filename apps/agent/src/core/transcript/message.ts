@@ -10,5 +10,6 @@ export function createUserMessage(
     text: request.text,
     images: request.images.map((image) => ({ ...image })),
     status: "complete",
+    parts: [],
   };
 }

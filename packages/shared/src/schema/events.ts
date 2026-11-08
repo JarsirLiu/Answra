@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   agentFinishReasonSchema,
   agentPartKindSchema,
+  agentPartStateSchema,
   agentRetrySchema,
   agentRetryWaitSchema,
   agentRunStateSchema,
@@ -33,7 +34,7 @@ const executionEventOptions = [
     type: z.literal("part-state-changed"),
     partId: z.string(),
     kind: agentPartKindSchema,
-    state: z.enum(["started", "streaming", "completed", "failed"]),
+    state: agentPartStateSchema,
   }),
 ] as const;
 

@@ -727,13 +727,9 @@ describe("ephemeral conversation runtime", () => {
         await tick();
         await inner.beginEphemeralRun(conversationId, runId, userMessage);
       },
-      finishRun: async (conversationId, runId, status) => {
+      applyAgentEvent: async (conversationId, envelope) => {
         await tick();
-        await inner.finishRun(conversationId, runId, status);
-      },
-      applyStreamEvent: async (conversationId, runId, event) => {
-        await tick();
-        await inner.applyStreamEvent(conversationId, runId, event);
+        await inner.applyAgentEvent(conversationId, envelope);
       },
     };
     const raceChanges: AgentEventEnvelope[] = [];

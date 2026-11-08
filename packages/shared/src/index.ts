@@ -96,4 +96,5 @@ export type {
   AgentEventEnvelope,
   AgentExecutionEvent,
   AgentStreamEvent,
+  ConversationMessagePart,
 } from "./schema";

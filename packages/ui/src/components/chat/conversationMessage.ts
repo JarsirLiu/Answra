@@ -14,6 +14,7 @@ export interface ConversationViewMessage {
   /** Agent 已接受活动 run，但尚未发出具体流活动事件。 */
   waitingForStream?: boolean;
   reasoning?: string;
+  parts?: ConversationMessage["parts"];
   images?: ConversationMessage["images"];
   activities?: readonly ReplyBarActivity[];
 }

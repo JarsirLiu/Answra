@@ -1,6 +1,6 @@
 /** 跨领域 transcript 仓储端口；只定义消息与恢复游标，不绑定具体存储实现。 */
 import type { ConversationMessage, ConversationSnapshot } from "@answra/shared";
-import type { AgentStreamEvent, RunOutcome } from "@answra/shared/schema";
+import type { AgentEventEnvelope } from "@answra/shared/schema";
 
 /**
  * Conversation、Answer 与 Interview 共用的 transcript 仓储端口。
@@ -37,11 +37,6 @@ export interface ConversationStore {
     userMessage: ConversationMessage,
     eventRevision?: number,
   ): Promise<void>;
-  applyStreamEvent(conversationId: string, runId: string, event: AgentStreamEvent): Promise<void>;
-  finishRun(
-    conversationId: string,
-    runId: string,
-    outcome: RunOutcome,
-    eventRevision?: number,
-  ): Promise<void>;
+  /** Consume the canonical event envelope to update recoverable message content and status. */
+  applyAgentEvent(conversationId: string, envelope: AgentEventEnvelope): Promise<void>;
 }

@@ -3,7 +3,9 @@ import type {
   AgentEventEnvelope,
   AgentStreamEvent,
   ConversationMessage,
+  ConversationMessagePart,
   ConversationSnapshot,
+  ReplyBarActivity,
 } from "@answra/shared";
 import type {
   ConversationRetry,
@@ -202,15 +204,77 @@ function toViewMessage(
   prior?: ConversationViewMessage,
   activeRun = false,
 ): ConversationViewMessage {
+  const parts = message.parts ?? [];
+  const text = textFromParts(parts) || message.text;
+  const reasoning = reasoningFromParts(parts) || message.reasoning || prior?.reasoning;
+  const activities = prior?.activities ?? activitiesFromParts(parts);
   return {
     id: message.id,
     role: message.role,
-    text: message.text,
+    text,
     status: message.status,
     images: message.images,
+    ...(message.parts === undefined ? {} : { parts }),
     ...(prior?.thinking === undefined ? {} : { thinking: prior.thinking }),
     waitingForStream: prior?.thinking ? false : (prior?.waitingForStream ?? activeRun),
-    ...(prior?.reasoning === undefined ? {} : { reasoning: prior.reasoning }),
-    ...(prior?.activities === undefined ? {} : { activities: prior.activities }),
+    ...(reasoning === undefined ? {} : { reasoning }),
+    ...(activities.length === 0 ? {} : { activities }),
   };
+}
+
+function textFromParts(parts: ConversationMessagePart[]): string {
+  return parts
+    .filter(
+      (part): part is Extract<ConversationMessagePart, { kind: "text" }> => part.kind === "text",
+    )
+    .map((part) => part.text)
+    .join("");
+}
+
+function reasoningFromParts(parts: ConversationMessagePart[]): string {
+  return parts
+    .filter(
+      (part): part is Extract<ConversationMessagePart, { kind: "reasoning" }> =>
+        part.kind === "reasoning",
+    )
+    .map((part) => part.text)
+    .join("\n\n");
+}
+
+function activitiesFromParts(parts: ConversationMessagePart[]): ReplyBarActivity[] {
+  return parts.flatMap((part) => {
+    if (part.kind !== "tool") return [];
+    const activities: ReplyBarActivity[] = [
+      {
+        id: `${part.toolCallId}:input-ready`,
+        kind: "tool",
+        label: `工具：${part.title ?? part.toolName}`,
+        text: formatToolValue(part.input ?? part.inputText ?? ""),
+      },
+    ];
+    if (part.output !== undefined)
+      activities.push({
+        id: `${part.toolCallId}:output`,
+        kind: "tool",
+        label: "工具结果",
+        text: formatToolValue(part.output),
+      });
+    if (part.errorText)
+      activities.push({
+        id: `${part.toolCallId}:error`,
+        kind: "error",
+        label: "工具失败",
+        text: part.errorText,
+      });
+    return activities;
+  });
+}
+
+function formatToolValue(value: unknown): string {
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return "工具已返回结果";
+  }
 }
