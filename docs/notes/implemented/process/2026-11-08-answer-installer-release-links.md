@@ -14,23 +14,23 @@
 
 ## 决定
 
-Answer Release 使用独立 Windows 和 macOS 构建 job，两个平台均成功后由单一 publish job 汇总。发布前必须验证 Windows x64 `.exe`、macOS arm64 `.dmg` 和 macOS x64 `.dmg` 均存在；Release 正文直接列出三种下载链接，Assets 保留完整构建文件（包括 macOS zip 和自动更新元数据）。该 Release 设为 GitHub Latest，旧 Rime Release 保持为历史版本，不删除其资产。
+Answer Release 使用独立 Windows 和 macOS 构建 job，两个平台均成功后由单一 publish job 汇总。发布前必须验证 Windows x64 `.exe`、macOS arm64 `.dmg` 和 macOS x64 `.dmg` 均存在；Release 正文只列出三种安装包下载链接，不显示构建过程说明；Assets 保留完整构建文件（包括 macOS zip 和自动更新元数据）。该 Release 设为 GitHub Latest；旧 Rime release 与 tag 删除，避免其占据仓库主页的 Release 入口。
 
 ## 流程变化
 
 - main push 或手动触发后，Windows 与 macOS 在各自原生 runner 上独立构建 Answer 包。
 - publish job 只在所有构建成功后下载并验证安装包，再创建或更新 `answer-latest`。
-- Release 正文明确列出 Windows x64、macOS Apple Silicon 和 macOS Intel 的安装包链接；用户不必从 Assets 中寻找安装器。
+- Release 正文仅列出 Windows x64、macOS Apple Silicon 和 macOS Intel 的安装包链接；用户不必从 Assets 中寻找安装器。
 - 发布后将 Answer release 标记为非 prerelease 的 Latest；应用内更新仍由既有 COS 更新源负责。
 
 ## 曾考虑的替代方案
 
 - **只调整 Release 标题和说明：** 不会产生 Windows 安装包，也不能保证目标资产存在，舍弃。
-- **删除旧 Rime Release 资产：** 会破坏已有 Rime 用户的下载链接；将 Answer 标记为 Latest 后旧 release 自然位于历史列表，保留资产。
+- **保留旧 Rime release 并仅将 Answer 标记为 Latest：** Rime release 仍占用主页的 release 列表位置，不符合当前产品发布入口需求，因此删除旧 Rime release 和 tag。
 
 ## 验收标准
 
-- 可观察结果：Release 正文直接显示三种平台安装包链接，Windows/macOS 构建均成功后才发布。
+- 可观察结果：Release 正文只显示三种平台安装包链接，Windows/macOS 构建均成功后才发布。
 - 自动化验证：工作流对三种安装包执行非空校验；仓库 Note 检查和全量门禁通过。
 - 需要的实机验证：GitHub Actions 真实完成 Windows 和 macOS 构建，并确认 Release 页面链接可下载。
 
@@ -39,7 +39,7 @@ Answer Release 使用独立 Windows 和 macOS 构建 job，两个平台均成功
 - macOS 安装包仍为 arm64 与 x64 两个 `.dmg`；Windows 当前只发布 x64 NSIS `.exe`。
 - publish job 是唯一修改 `answer-latest` 的 job；不得在单个平台 job 先行更新 Release，以免产生不完整的下载页。
 - 仓库主页显示的 Latest 与应用内更新源是两件事；应用更新继续使用既有 COS 配置，不读取 GitHub Latest。
-- 不删除 Rime 旧 release 或其资产。
+- 删除旧 Rime release 与 tag 后，其资产下载链接失效；如需恢复，必须重新发布相应 tag 与资产。
 
 ## 验证
 

@@ -114,7 +114,6 @@ jobs:
           - [macOS Apple Silicon 安装包（arm64 .dmg）](${base}/Answra-arm64.dmg)
           - [macOS Intel 安装包（x64 .dmg）](${base}/Answra-x64.dmg)
 
-          此版本由 main 分支自动构建。Rime 输入法辅助程序请查看下方历史 release。
           EOF
 
           if gh release view answer-latest >/dev/null 2>&1; then
