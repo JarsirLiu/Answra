@@ -109,20 +109,13 @@ describe("tool call renderers", () => {
     expect(screen.getByText("return;")).toBeInTheDocument();
   });
 
-  it("shows a RunCommand as one Shell disclosure with command and output together", () => {
+  it("strips the model-facing exit status and renders one Shell panel", () => {
     const { container } = render(
       <RunCommandToolCall
         part={toolPart(
           "RunCommand",
           { command: "npm test", workdir: "packages/ui" },
-          {
-            kind: "result",
-            result: {
-              stdout: "hello\n",
-              stderr: "warn\n",
-              outcome: { type: "exit", exitCode: 0 },
-            },
-          },
+          "Exit code: 0\nhello\nwarn",
         )}
       />,
     );
@@ -130,12 +123,28 @@ describe("tool call renderers", () => {
     expect(screen.getByText("npm test")).toBeInTheDocument();
     expect(screen.queryByText("packages/ui")).toBeNull();
     expect(screen.queryByText("Shell")).toBeNull();
+    expect(screen.queryByText(/Exit code/)).toBeNull();
 
     expand(/Ran/);
     expect(screen.getByText("Shell")).toBeInTheDocument();
-    expect(container.querySelector("pre")?.textContent).toBe(
-      "$ npm test\nExit code: 0\nhello\nwarn",
+    expect(screen.queryByText(/Exit code/)).toBeNull();
+    expect(container.querySelector("pre")?.textContent).toBe("$ npm test\nhello\nwarn");
+  });
+
+  it("keeps a RunCommand with no stream output to the command line", () => {
+    const { container } = render(
+      <RunCommandToolCall
+        part={toolPart(
+          "RunCommand",
+          { command: "dir" },
+          "Command completed successfully with no output.\nExit code: 0",
+        )}
+      />,
     );
+
+    expand(/Ran/);
+    expect(screen.queryByText(/Exit code/)).toBeNull();
+    expect(container.querySelector("pre")?.textContent).toBe("$ dir");
   });
 
   it("renders a WriteStdin session snapshot", () => {

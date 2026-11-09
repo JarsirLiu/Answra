@@ -39,7 +39,7 @@ Agent 已有的 `workspace.read`、`workspace.grep`、`workspace.run-command`、
 
 - **part 是唯一内容单位**：assistant 消息按 `ConversationMessagePart[]` 顺序渲染，不再从 `text + reasoning + activities` 反推顺序。
 - **工具卡只有一层外壳**：`ToolCallCard` 统一处理摘要、展开、状态、错误和可访问性；工具差异只在 renderer。
-- **执行记录采用 Codex 风格的轻量 Shell 表面**：摘要行保持低密度，展开内容使用单层浅色终端区域承载命令、工作目录和结果；不再让输出块与消息背景混在一起。
+- **执行记录采用扁平执行日志**：摘要行保持低密度（icon、动作词、内联等宽命令，无外层卡片）；`RunCommand` 展开内容使用单层描边终端面板承载 `Shell` 标签、命令和输出，不做「结果/退出码」多段堆叠，也不出现原生粗滚动条。
 - **未知工具只落 fallback**：不把已知工具的原始 JSON 全量摊进消息流。
 - **答题跑马灯不动**：`ReplyBarActivity`、`ReplyActivityTicker`、答题回复详情继续服务截图答题；答题没有工具，不需要工具卡。
 
@@ -126,7 +126,7 @@ export interface ToolCallCardProps {
 - `part.state` 直接映射状态词；`completed` 不显示“完成”，只有非终态/失败态才在行尾显示；
 - 运行态用文字扫光表达，不使用旋转 loading 图标；
 - `failed` / `denied` 只把错误放在详情和状态词 `title` 中，**不自动展开**；
-- 展开使用原生 `<button type="button" aria-expanded>`；整行可点，chevron 默认透明，hover/focus/展开时出现；
+- 展开使用原生 `<button type="button" aria-expanded>`；整行可点，chevron 默认透明并紧跟在命令文本之后，hover/focus/展开时出现（展开时朝下）；摘要行不做 hover 换底色。
 - 展开状态用组件内 `useState`，本期不做全局持久化；
 - 没有 `children` 的卡片不可展开，不显示箭头；
 - 展开区只在需要时显示，输出使用单层浅灰终端表面承载，不形成卡片套卡片。
@@ -168,7 +168,7 @@ return RENDERERS[part.toolName] ?? ToolCallFallback;
 | --- | --- | --- | --- |
 | `Read` | 完整路径（`input.file_path` 或 `output.filePath`） | 行数 | 文件内容、截断提示 |
 | `Grep` | `pattern` | path / glob / 匹配数 | content 模式的文件与行；files 模式的路径；count 模式的计数 |
-| `RunCommand` | 等宽 `command` | `workdir` / exit code | 命令全文、stdout、stderr；session 形态显示 `sessionId` |
+| `RunCommand` | 等宽 `command`（单行、超长省略） | 无（摘要不堆工作目录/退出码） | 单个描边 Shell 面板：`Shell` 标签、`$ 命令`、stdout/stderr；session 截断时补提示 |
 | `WriteStdin` | `sessionId` | 会话状态 / 写入字符预览 | stdout、stderr、exitCode |
 | 未知工具 | `title ?? toolName` | 无 | input / output 的安全格式化；失败时只显示 `errorText` |
 
@@ -187,6 +187,31 @@ return RENDERERS[part.toolName] ?? ToolCallFallback;
 - `ChatPanel`：把每条 assistant 消息的 `parts` 传给 `AssistantMessage`。
 - `InterviewCapturePanel`：同样传 `parts`；当前面试 profile 的 `tools` 为空，卡片不会出现，但接入是未来授权工具的前置条件。
 - `MessageTimeline` 连续同类 part 合并：连续 reasoning 合成一个 `ThinkingReasoning`，连续 text 合成一个 `TextResponse`；遇到 tool part 时结束当前段并渲染卡片，保证“文字 → 工具 → 文字”的真实顺序。
+
+## 修订：RunCommand 复刻参考 UI（2026-11-09）
+
+问题：初版 `RunCommand` 展开态沿用 `ToolDetailSection("Shell")` + 灰底 `.shellBlock` + `ToolDetailSection("结果")` 三层堆叠，摘要行右侧常驻 chevron 且带 hover 底色，展开后还要单独显示工作目录与 `Exit code`；输出区使用浏览器默认滚动条，出现又粗又长的竖向滚动条。与参考实现（`>_ Ran <command>` 单行摘要 + 单个描边 `Shell` 面板）明显不一致。
+
+根因（第一次改完仍然丑）：工具执行器 `registry.createModelTool` 的 `execute` 返回的是 `result.modelContent`（`formatModelContent` 产出的字符串），因此 UI 里 `part.output` 实际是 `"Exit code: 0\n<stdout>\n<stderr>"` 这类**字符串**，而不是 `{ kind: "result", result: {...} }`。旧 renderer 的窄结构守卫匹配不到，落到 `formatToolValue` 回退，把 agent 自带的 `Exit code` 行和原始输出整段铺进面板；滚动条则是因为同时写了 `scrollbar-width: thin`，Chromium 会忽略 `::-webkit-scrollbar` 细条规则而回落到系统粗条。
+
+决定：
+
+- 摘要行固定为 `[SquareTerminal] Ran <command>`；命令单行省略，chevron 透明并紧贴命令尾部，仅 hover/focus/展开时可见，展开时朝下；摘要行不再 hover 换底色。
+- 展开态只渲染一个 `.shellPanel`：与摘要行左缘对齐（抵消 `.body` 的 22px 缩进）、`max-height: 240px` 硬上限、1px `--glass-line` 描边、8px 圆角、透明底；内部依次是 `Shell` 标签、`$ 命令` 与输出合并的等宽 `<pre>`。
+- `Shell` 标签和输出文本用左右 `--space-4` 内边距，但面板本身左右不设内边距，使 `<pre>` 的竖向滚动条贴住面板右缘，而不是缩在内容区里。
+- `parseShellOutput` 同时接受运行时真实字符串和旧结构化对象：字符串形态按 `formatShellResult` 的固定格式剥掉首尾 `Exit code: …`、`Command completed successfully with no output.` 与超时说明，并去掉命令输出开头的空行，只保留真正的 stdout/stderr；不支持的行原样保留，避免误删命令自身的输出。
+- 不再单独展示 `workdir`、`Exit code`、`结果` 段落；失败/会话截断只保留 `ToolErrorBlock` 与 `ToolNotice`。
+- 输出 `<pre>` 用 `white-space: pre`：命令行和表格输出保持单行，宽度不足时横向滚动，而不是折行把内容上下挤在一起；竖/横滚动条都只写 `::-webkit-scrollbar` 4px 细条（与 `.conversation` 同规格），不再声明 `scrollbar-width`，避免细条规则被标准属性覆盖。
+
+舍弃方案：
+
+- **保留「结果 / Exit code」分段并把输出再套一层灰底：** 舍弃，正是叠层和色块让展开态显得笨重，且参考实现没有这些段落。
+- **摘要行右侧固定展示 chevron：** 舍弃，参考实现的 chevron 只在交互/展开时紧贴命令出现，常驻右对齐会让所有历史行都多一个视觉锚点。
+- **展开面板用 `--paper` 白底：** 舍弃，白底在对话灰背景上过亮、更像独立卡片；参考实现是同底细描边面板。
+- **只按结构化 `{kind:"result"}` 解析：** 舍弃，运行时 `part.output` 是 `modelContent` 字符串，结构化守卫永远匹配不到；必须同时兼容字符串形态。
+- **在 UI 用正则猜测并删除任意 `Exit code` 行：** 舍弃，只剥离开头/结尾的状态行，命令自身输出里的同名行保持原样。
+
+后果与防回退：`RunCommand` 的展开结构只允许一个 `.shellPanel`；`workdir`/退出码不得重新塞回摘要或另起 section；新增输出形态仍在 `<pre>` 内合并，不得再引入第二层卡片或系统粗滚动条。自动化证据为 `toolCallRenderers.test.tsx` 的 RunCommand 用例：运行时字符串 `"Exit code: 0\nhello\nwarn"` 展开后 `pre` 文本为 `$ npm test\nhello\nwarn` 且不含 `Exit code`，无输出字符串只显示 `$ dir`。
 
 ## 模块边界
 

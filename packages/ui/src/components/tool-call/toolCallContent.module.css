@@ -35,16 +35,60 @@
   color: var(--danger);
 }
 
-.shellBlock {
-  padding: var(--space-2);
-  border-radius: var(--ctl-radius-sm);
-  background: var(--field);
+/* RunCommand 展开：单层描边终端面板，与摘要行左缘对齐，滚动条贴右缘。 */
+.shellPanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  /* 抵消 .body 的 22px 缩进，让面板与工具行左缘齐平。 */
+  margin-left: -22px;
+  max-height: 240px;
+  padding: var(--space-3) 0;
+  overflow: hidden;
+  border: 1px solid var(--glass-line);
+  border-radius: 8px;
 }
 
-.shellBlock .pre {
-  max-height: 260px;
-  padding: 0;
-  border: 0;
+.shellLabel {
+  flex: none;
+  padding: 0 var(--space-4);
+  color: var(--chat-meta);
+  font-size: var(--font-md);
+  line-height: 1.4;
+}
+
+.shellPre {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 0 var(--space-4);
+  overflow: auto;
+  color: var(--chat-meta);
+  font-family: var(--app-mono-font-family);
+  font-size: 12.5px;
+  line-height: 1.6;
+  /* 命令行/表格输出保持单行，宽度不够时横向滚动，而不是折行挤压。 */
+  white-space: pre;
+}
+
+/* 与对话视口一致的极细滚动条；不写 scrollbar-width，避免覆盖 webkit 细条。 */
+.shellPre::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.shellPre::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: var(--glass-line);
+}
+
+.shellPre::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+
+.shellPre::-webkit-scrollbar-track,
+.shellPre::-webkit-scrollbar-corner {
   background: transparent;
 }
 

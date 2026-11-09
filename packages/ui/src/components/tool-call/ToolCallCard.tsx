@@ -1,4 +1,4 @@
-import { ChevronRight } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import styles from "./ToolCallCard.module.css";
 import type { ToolCallPart } from "./toolCallPart";
@@ -40,21 +40,17 @@ export function ToolCallCard({
       <span className={styles.primary} title={typeof primary === "string" ? primary : undefined}>
         {primary}
       </span>
-      <span className={styles.right}>
-        {showState ? (
-          <span
-            className={styles.state}
-            data-error={isToolCallError(part.state) || undefined}
-            data-running={isToolCallRunning(part.state) || undefined}
-            title={part.errorText}
-          >
-            {TOOL_CALL_STATE_LABEL[part.state]}
-          </span>
-        ) : null}
-        {expandable ? (
-          <ChevronRight aria-hidden="true" className={styles.chevron} size={12} />
-        ) : null}
-      </span>
+      {showState ? (
+        <span
+          className={styles.state}
+          data-error={isToolCallError(part.state) || undefined}
+          data-running={isToolCallRunning(part.state) || undefined}
+          title={part.errorText}
+        >
+          {TOOL_CALL_STATE_LABEL[part.state]}
+        </span>
+      ) : null}
+      {expandable ? <ChevronDown aria-hidden="true" className={styles.chevron} size={14} /> : null}
     </>
   );
 
