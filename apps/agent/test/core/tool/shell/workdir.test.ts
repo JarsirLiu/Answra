@@ -70,7 +70,9 @@ describe("resolveShellWorkdir", () => {
   });
 
   async function createRoot(): Promise<string> {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "answra-workdir-test-"));
+    const root = await fs.realpath(
+      await fs.mkdtemp(path.join(os.tmpdir(), "answra-workdir-test-")),
+    );
     roots.push(root);
     return root;
   }

@@ -109,8 +109,8 @@ describe("tool call renderers", () => {
     expect(screen.getByText("return;")).toBeInTheDocument();
   });
 
-  it("renders RunCommand stdout, stderr, and exit code", () => {
-    render(
+  it("shows a RunCommand as one Shell disclosure with command and output together", () => {
+    const { container } = render(
       <RunCommandToolCall
         part={toolPart(
           "RunCommand",
@@ -129,12 +129,13 @@ describe("tool call renderers", () => {
 
     expect(screen.getByText("npm test")).toBeInTheDocument();
     expect(screen.queryByText("packages/ui")).toBeNull();
+    expect(screen.queryByText("Shell")).toBeNull();
 
-    expand(/运行/);
-    expect(screen.getByText(/packages\/ui/)).toBeInTheDocument();
-    expect(screen.getAllByText("退出码 0").length).toBeGreaterThan(0);
-    expect(screen.getByText("hello")).toBeInTheDocument();
-    expect(screen.getByText("warn")).toBeInTheDocument();
+    expand(/Ran/);
+    expect(screen.getByText("Shell")).toBeInTheDocument();
+    expect(container.querySelector("pre")?.textContent).toBe(
+      "$ npm test\nExit code: 0\nhello\nwarn",
+    );
   });
 
   it("renders a WriteStdin session snapshot", () => {

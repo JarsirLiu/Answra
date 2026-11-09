@@ -462,7 +462,7 @@ describe("Grep tool", () => {
   }
 
   async function createRoot(): Promise<string> {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "answra-grep-"));
+    const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "answra-grep-")));
     roots.push(root);
     return root;
   }

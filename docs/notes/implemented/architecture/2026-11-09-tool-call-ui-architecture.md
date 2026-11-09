@@ -39,6 +39,7 @@ Agent 已有的 `workspace.read`、`workspace.grep`、`workspace.run-command`、
 
 - **part 是唯一内容单位**：assistant 消息按 `ConversationMessagePart[]` 顺序渲染，不再从 `text + reasoning + activities` 反推顺序。
 - **工具卡只有一层外壳**：`ToolCallCard` 统一处理摘要、展开、状态、错误和可访问性；工具差异只在 renderer。
+- **执行记录采用 Codex 风格的轻量 Shell 表面**：摘要行保持低密度，展开内容使用单层浅色终端区域承载命令、工作目录和结果；不再让输出块与消息背景混在一起。
 - **未知工具只落 fallback**：不把已知工具的原始 JSON 全量摊进消息流。
 - **答题跑马灯不动**：`ReplyBarActivity`、`ReplyActivityTicker`、答题回复详情继续服务截图答题；答题没有工具，不需要工具卡。
 
@@ -120,7 +121,7 @@ export interface ToolCallCardProps {
 
 `ToolCallCard` 的职责：
 
-- 默认是一条与正文同色的轻量日志行：icon、动作词、等宽主目标；不画外边框、不铺卡片底色、不占固定 360px 宽；
+- 默认是一条 Codex 风格的扁平执行日志：终端 icon、动作词、内联等宽命令；不使用外层边框或卡片底色，不占固定宽度；
 - 次目标和统计信息（目录、行数、匹配数、退出码、工作目录）移到展开区，避免摘要行堆信息；
 - `part.state` 直接映射状态词；`completed` 不显示“完成”，只有非终态/失败态才在行尾显示；
 - 运行态用文字扫光表达，不使用旋转 loading 图标；
@@ -128,7 +129,7 @@ export interface ToolCallCardProps {
 - 展开使用原生 `<button type="button" aria-expanded>`；整行可点，chevron 默认透明，hover/focus/展开时出现；
 - 展开状态用组件内 `useState`，本期不做全局持久化；
 - 没有 `children` 的卡片不可展开，不显示箭头；
-- 展开区左侧缩进到主目标下方，内部用轻量代码块承载输出，不再形成第二层卡片。
+- 展开区只在需要时显示，输出使用单层浅灰终端表面承载，不形成卡片套卡片。
 
 状态词集中定义在 `toolCallPresentation.ts`：
 
@@ -209,7 +210,7 @@ return RENDERERS[part.toolName] ?? ToolCallFallback;
 ## 后果与防回退
 
 - 已实现的可观察结果：
-  - 普通对话触发 `Read` / `Grep` / `RunCommand` / `WriteStdin` 时，消息流按真实顺序出现轻量工具行：icon、动作词、等宽主目标；默认无外边框、无卡片底色、不占固定宽度。
+  - 普通对话触发 `Read` / `Grep` / `RunCommand` / `WriteStdin` 时，消息流按真实顺序出现 Codex 风格扁平执行日志：终端 icon、动作词、内联等宽命令；不占固定宽度。
   - 完成态不显示“完成”；只有运行/等待/失败/中断/拒绝等非终态在行尾显示状态。
   - 整行可点击展开；chevron 默认透明，hover/focus/展开时出现；失败详情不自动展开。
   - 次目标与统计信息（目录、行数、匹配数、退出码、工作目录）移到展开区，摘要保持单行。
@@ -218,7 +219,7 @@ return RENDERERS[part.toolName] ?? ToolCallFallback;
 - 防回退约束：
   - `conversationView.ts` + `conversationParts.ts` 是唯一事件投影；面板不得自行累加 text / reasoning / tool。
   - `MessageTimeline` 是唯一按 part kind 分派的位置；工具差异只放 renderer。
-  - 工具摘要不得恢复固定宽度、外边框或卡片底色；次信息只能进展开区，否则会重新退化成重卡片。
+  - 工具摘要保持紧凑；工作目录、统计和输出放在摘要下方的单层 Shell 表面，禁止嵌套卡片或固定宽度。
   - 快照初始化只信 `parts`，实时事件按 revision 连续应用；不能回退到单独累加 `text`。
   - `part.output` 是 `unknown`，四个 renderer 的窄守卫必须配测试；工具输出一旦变更，必须同步更新 renderer 和 Note。
   - 大输出继续受字符数、行数和高度上限约束，超限必须显示截断提示。

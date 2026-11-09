@@ -145,7 +145,9 @@ describe("workspace path resolution", () => {
   });
 
   async function createRoot(): Promise<string> {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "answra-workspace-test-"));
+    const root = await fs.realpath(
+      await fs.mkdtemp(path.join(os.tmpdir(), "answra-workspace-test-")),
+    );
     roots.push(root);
     return root;
   }

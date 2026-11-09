@@ -277,7 +277,7 @@ describe("builtin workspace tools", () => {
   });
 
   async function createRoot(): Promise<string> {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "answra-agent-tools-"));
+    const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "answra-agent-tools-")));
     roots.push(root);
     return root;
   }

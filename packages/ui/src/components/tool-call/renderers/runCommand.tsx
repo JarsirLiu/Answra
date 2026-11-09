@@ -1,6 +1,7 @@
-import { Terminal } from "lucide-react";
+import { SquareTerminal } from "lucide-react";
 import { ToolCallCard } from "../ToolCallCard";
 import { ToolDetailSection, ToolErrorBlock, ToolNotice, ToolOutputBlock } from "../ToolCallDetails";
+import styles from "../toolCallContent.module.css";
 import type { ToolCallRendererProps } from "../toolCallPart";
 import {
   asRecord,
@@ -8,7 +9,6 @@ import {
   firstLine,
   formatExitCode,
   formatToolValue,
-  MAX_TOOL_STREAM_CHARS,
   MAX_TOOL_VALUE_CHARS,
   sessionStatusLabel,
   stringField,
@@ -57,8 +57,8 @@ export function RunCommandToolCall({ part }: ToolCallRendererProps) {
 
   return (
     <ToolCallCard
-      actionLabel="运行"
-      icon={<Terminal size={13} />}
+      actionLabel="Ran"
+      icon={<SquareTerminal size={15} strokeWidth={1.7} />}
       meta={meta}
       part={part}
       primary={command ? firstLine(command) : (part.title ?? "命令")}
@@ -67,12 +67,7 @@ export function RunCommandToolCall({ part }: ToolCallRendererProps) {
       {hasDetails ? (
         <>
           {error ? <ToolErrorBlock text={error.text} /> : null}
-          {command ? (
-            <ToolDetailSection label="命令">
-              <ToolOutputBlock text={command} />
-            </ToolDetailSection>
-          ) : null}
-          {output ? <ShellDetails output={output} /> : null}
+          {command || output ? <ShellDetails command={command} output={output} /> : null}
           {malformed ? (
             <ToolDetailSection label="结果">
               <ToolOutputBlock text={malformed.text} />
@@ -84,38 +79,30 @@ export function RunCommandToolCall({ part }: ToolCallRendererProps) {
   );
 }
 
-function ShellDetails({ output }: { output: RunCommandOutput }) {
-  const hasStream = output.stdout.length > 0 || output.stderr.length > 0;
+function ShellDetails({ command, output }: { command?: string; output?: RunCommandOutput }) {
+  const streams = output
+    ? [output.stdout.trimEnd(), output.stderr.trimEnd()].filter(Boolean).join("\n")
+    : "";
+  const status = output
+    ? output.kind === "result"
+      ? output.timedOut
+        ? "Command timed out"
+        : output.exitCode === null || output.exitCode === undefined
+          ? "Command completed"
+          : `Exit code: ${output.exitCode}`
+      : `${sessionStatusLabel(output.status)}${output.sessionId ? ` · ${output.sessionId}` : ""}`
+    : "";
+  const shellText = [command ? `$ ${command}` : "", status, streams].filter(Boolean).join("\n");
+  const hasStream = Boolean(output && (output.stdout.length > 0 || output.stderr.length > 0));
   return (
-    <>
-      {output.stdout ? (
-        <ToolDetailSection label="stdout">
-          <ToolOutputBlock text={clipText(output.stdout, MAX_TOOL_STREAM_CHARS).text} />
-        </ToolDetailSection>
-      ) : null}
-      {output.stderr ? (
-        <ToolDetailSection label="stderr">
-          <ToolOutputBlock
-            text={clipText(output.stderr, MAX_TOOL_STREAM_CHARS).text}
-            tone="error"
-          />
-        </ToolDetailSection>
-      ) : null}
-      {!hasStream ? <ToolNotice>命令没有输出。</ToolNotice> : null}
-      {output.kind === "result" ? (
-        <ToolNotice>
-          {output.timedOut
-            ? "命令在超时前未正常退出。"
-            : (formatExitCode(output.exitCode) ?? "已完成")}
-        </ToolNotice>
-      ) : (
-        <ToolNotice>
-          {sessionStatusLabel(output.status)}
-          {output.sessionId ? ` · ${output.sessionId}` : ""}
-          {output.outputTruncated ? " · 输出已截断" : ""}
-        </ToolNotice>
-      )}
-    </>
+    <ToolDetailSection label="Shell">
+      <div className={styles.shellBlock}>
+        <ToolOutputBlock text={shellText || (hasStream ? "" : "Command produced no output.")} />
+        {output?.kind === "session" && output.outputTruncated ? (
+          <ToolNotice>Output truncated.</ToolNotice>
+        ) : null}
+      </div>
+    </ToolDetailSection>
   );
 }
 
