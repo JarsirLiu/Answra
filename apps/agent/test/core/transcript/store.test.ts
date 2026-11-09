@@ -318,4 +318,58 @@ describe("memory conversation transcript store", () => {
     await store.clear("session-g");
     expect((await store.load("session-g")).messages).toEqual([]);
   });
+
+  it("keeps the transcript revision monotonic across stale events and clear", async () => {
+    const store = new MemoryConversationStore();
+    await store.create("session-revision");
+    await store.beginRun("session-revision", "run-1", {
+      id: "user-1",
+      role: "user",
+      text: "question",
+      images: [],
+      status: "complete",
+    });
+    await store.applyAgentEvent(
+      "session-revision",
+      eventEnvelope("session-revision", "run-1", 3, {
+        type: "text-delta",
+        partId: "text-1",
+        delta: "answer",
+      }),
+    );
+    await store.applyAgentEvent(
+      "session-revision",
+      eventEnvelope("session-revision", "run-1", 2, {
+        type: "text-delta",
+        partId: "text-1",
+        delta: "stale",
+      }),
+    );
+
+    await expect(store.load("session-revision")).resolves.toMatchObject({
+      eventRevision: 3,
+      messages: [expect.anything(), expect.objectContaining({ text: "answer" })],
+    });
+    await store.applyAgentEvent(
+      "session-revision",
+      eventEnvelope("session-revision", "run-1", 4, {
+        type: "run-state-changed",
+        state: "completed",
+        attempt: 1,
+      }),
+    );
+    await store.clear("session-revision", 1);
+    await expect(store.load("session-revision")).resolves.toMatchObject({
+      eventRevision: 4,
+      messages: [],
+    });
+  });
+
+  it("rejects an event envelope addressed to another conversation", async () => {
+    const store = new MemoryConversationStore();
+    await store.create("session-a");
+    await expect(
+      store.applyAgentEvent("session-a", eventEnvelope("session-b", "run-1", 1, { type: "start" })),
+    ).rejects.toThrow("事件不属于当前会话");
+  });
 });

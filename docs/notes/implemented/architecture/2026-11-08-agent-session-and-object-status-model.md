@@ -105,9 +105,20 @@ UI 仍负责唯一界面投影。
    `MemoryExecutionStore` 固定 Run 状态迁移、事件顺序和订阅。失败终态会把未完成的 Part
    收束为 `failed`；中止或替代终态会把未完成的 Part 收束为 `interrupted`，已终结 Part 不被覆盖。
 
-下一步是单独审查并实现可替换的 Transcript/Execution 存储适配器接口测试，优先使用内存
-适配器作为基线；仍不实现 SQLite、Redis、实例切换或进程重启恢复。只有该接口行为稳定后，
-才另立 Note 讨论 SQLite 适配器和事务边界。
+本轮已完成第一版可替换的 Transcript/Execution 存储适配器契约测试，以内存适配器作为基线：
+覆盖 Run 状态迁移与非法迁移、终态幂等、事件订阅顺序、会话隔离、`afterRevision` 边界、
+Transcript revision 单调、旧事件丢弃、跨会话事件拒绝，以及清空不回退游标。适配器端口仍保持
+不绑定具体存储实现；本轮仍不实现 SQLite、Redis、实例切换或进程重启恢复。只有内存契约和
+实际运行链路继续稳定后，才另立 Note 讨论 SQLite 适配器和事务边界。
+
+随后对 Conversation、Answer、Interview、worker、Desktop IPC 和 UI 的生产接入做了逐层审计：
+模型执行事件均从 `AgentRuntime` 进入 `AgentEventEnvelope`，三个领域都交给同一个
+`ConversationStore.applyAgentEvent`；snapshot 通过 worker frame、Desktop listener 和 UI 的
+统一恢复入口传递。发现并修复 Answer-only worker 的清空命令丢弃 snapshot 返回值且不广播
+`conversation-snapshot` 的旧接法，并补充 worker 回归测试。Interview 的 `turn-committed`
+仍是语音领域 DTO，用于转录/回合展示，不属于 Agent 执行事实流，不能与 envelope 混合。
+生产代码中未发现 `ConversationEvent`、`run-finished` 或 `UIMessageChunk` 旧事件路径；测试夹具中
+仍有兼容输入，只用于验证旧数据不会进入当前生产契约。
 
 ## 曾考虑的替代方案
 
@@ -122,7 +133,7 @@ UI 仍负责唯一界面投影。
 - Transcript 能提供完整消息内容；UI 不依赖重放每个 delta 恢复历史正文。
 - Run 状态只能由明确事件迁移，不能由 UI 或文本是否到达推测。
 - `pnpm notes:check`、`pnpm verify` 和 `git diff --check` 通过。
-- Agent 23 个测试文件共 145 项通过；UI 28 个测试文件共 229 项通过；Desktop 43 个测试
+- Agent 24 个测试文件共 151 项通过；UI 28 个测试文件共 229 项通过；Desktop 43 个测试
   文件共 277 项通过。
 - 架构检查通过：无跨包深导入、依赖环或平台依赖越界。
 
@@ -132,6 +143,8 @@ UI 仍负责唯一界面投影。
   隐藏能力，而是明确限制。
 - 新领域必须注入现有两个 Store 端口并消费完整 envelope，不得在领域目录筛选后另建事件
   或状态来源。
+- 新的存储适配器必须通过与内存基线相同的契约测试，至少保持 revision 单调、事件顺序、
+  终态幂等、活动 run 认领和清空游标语义。
 - 新增状态词汇前必须先有真实 writer、来源事件和失效条件；没有消费者的快照 schema 不得
   进入共享契约。
 - 后续实现 SQLite 时必须通过本阶段内存适配器的契约测试，不能以新后端改变事件顺序、
@@ -139,8 +152,9 @@ UI 仍负责唯一界面投影。
 
 ## 验证
 
-本阶段已运行 `pnpm notes:check`、`pnpm verify` 和 `git diff --check`。验证结果包括：
-Agent 23 个测试文件 143 项通过，UI 28 个测试文件 229 项通过，Desktop 43 个测试文件
+本阶段已运行 `pnpm notes:check`、`pnpm verify` 和 `git diff --check`。存储契约定向测试现覆盖
+18 项（Execution 6 项、Transcript 12 项），Answer worker snapshot 回归测试 1 项，验证结果包括：
+Agent 24 个测试文件 151 项通过，UI 28 个测试文件 229 项通过，Desktop 43 个测试文件
 277 项通过，架构检查通过。SQLite、Redis、进程重启恢复和多实例接管未实施，也未宣称
 支持。
 

@@ -119,9 +119,11 @@ export function startAnswerAgentHost({
         return answer.readEventsAfter(command.conversationId, command.afterRevision);
       case "create-conversation":
         return answer.createConversation(command.conversationId);
-      case "clear-conversation":
-        await answer.clearConversation(command.conversationId);
-        return undefined;
+      case "clear-conversation": {
+        const snapshot = await answer.clearConversation(command.conversationId);
+        transport.send({ version: 1, type: "conversation-snapshot", snapshot });
+        return snapshot;
+      }
       case "append-user-message":
         return answer.appendUserMessage(command.conversationId, command.text);
       case "cancel":

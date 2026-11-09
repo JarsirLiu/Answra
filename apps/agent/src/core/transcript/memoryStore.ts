@@ -31,7 +31,7 @@ export class MemoryConversationStore implements ConversationStore {
     if (!session || session.snapshot.activeRunId) return;
     session.snapshot = {
       conversationId,
-      eventRevision,
+      eventRevision: Math.max(session.snapshot.eventRevision, eventRevision),
       messages: [],
     };
   }
@@ -92,6 +92,8 @@ export class MemoryConversationStore implements ConversationStore {
   async applyAgentEvent(conversationId: string, envelope: AgentEventEnvelope): Promise<void> {
     const { event, runId, aggregateRevision } = envelope;
     const session = this.requireSession(conversationId);
+    if (envelope.conversationId !== conversationId) throw new Error("事件不属于当前会话");
+    if (aggregateRevision <= session.snapshot.eventRevision) return;
     if (event.type === "run-state-changed") {
       const outcome = runOutcomeForState(event.state);
       if (outcome) {
