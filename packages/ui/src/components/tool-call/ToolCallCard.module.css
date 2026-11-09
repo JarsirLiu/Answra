@@ -1,0 +1,168 @@
+/* 工具调用行：默认是一条与正文同色的轻量日志，不再用独立卡片抢视线。 */
+.card {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: calc(100% + 12px);
+  min-width: 0;
+  margin: -2px -6px;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--chat-meta);
+  text-align: left;
+  font: inherit;
+  font-size: 13px;
+  line-height: 19px;
+}
+
+button.header {
+  cursor: pointer;
+  transition:
+    background 140ms ease,
+    color 140ms ease;
+}
+
+button.header:hover {
+  background: var(--hover);
+  color: var(--ink-soft);
+}
+
+button.header:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.icon {
+  display: flex;
+  flex: none;
+  color: var(--chat-meta);
+}
+
+.action {
+  flex: none;
+  color: inherit;
+  white-space: nowrap;
+}
+
+.primary {
+  min-width: 0;
+  padding: 1px 5px;
+  overflow: hidden;
+  border-radius: 5px;
+  background: var(--field);
+  color: var(--chat-meta);
+  font-family: var(--app-mono-font-family);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+button.header:hover .primary {
+  color: var(--ink-soft);
+}
+
+.right {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+}
+
+.state {
+  color: var(--chat-meta);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.state[data-error="true"] {
+  color: var(--danger);
+}
+
+/* 运行态用文字扫光表达，不用旋转 loading 图标。 */
+.state[data-running="true"] {
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  background: linear-gradient(
+    90deg,
+    var(--chat-meta) 0%,
+    var(--chat-meta) 30%,
+    color-mix(in srgb, var(--ink) 32%, transparent) 45%,
+    color-mix(in srgb, var(--ink) 32%, transparent) 55%,
+    var(--chat-meta) 70%,
+    var(--chat-meta) 100%
+  );
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: tool-call-shine 2.25s cubic-bezier(0.25, 0.1, 0.25, 1) infinite;
+}
+
+.chevron {
+  flex: none;
+  color: var(--chat-meta);
+  opacity: 0;
+  transform: rotate(0deg);
+  transition:
+    opacity 140ms ease,
+    transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+button.header:hover .chevron,
+button.header:focus-visible .chevron,
+button.header[aria-expanded="true"] .chevron {
+  opacity: 1;
+}
+
+button.header[aria-expanded="true"] .chevron {
+  transform: rotate(90deg);
+}
+
+.body {
+  margin: 3px 0 2px 21px;
+  padding: 2px 0;
+}
+
+.context {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-family: var(--app-mono-font-family);
+  font-size: 11.5px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+@keyframes tool-call-shine {
+  0%,
+  18% {
+    background-position: 100% 0;
+  }
+  82%,
+  100% {
+    background-position: 0% 0;
+  }
+}
+
+@media (hover: none) {
+  .chevron {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .state[data-running="true"] {
+    animation: none;
+  }
+
+  .chevron {
+    transition: none;
+  }
+}

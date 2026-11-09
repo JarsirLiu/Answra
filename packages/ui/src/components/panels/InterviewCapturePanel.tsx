@@ -4,7 +4,11 @@ import type { InterviewCapturePort, InterviewCaptureState } from "../../app/inte
 import { INTERVIEW_INPUT_LEVEL_WINDOW } from "../../app/interviewCapture";
 import { ICON, ICON_SM, ICON_STROKE } from "../../tokens";
 import { AssistantMessage, MessageStream, ModelErrorNotice, RetryNotice } from "../chat";
-import type { ConversationRetry, ConversationViewMessage } from "../chat/conversationMessage";
+import {
+  type ConversationRetry,
+  type ConversationViewMessage,
+  partsContentKey,
+} from "../chat/conversationMessage";
 import "../chat/conversation.css";
 import { ConversationComposer } from "./ConversationComposer";
 import { PanelShell } from "./PanelShell";
@@ -60,19 +64,23 @@ export function InterviewCapturePanel({
       : state.phase === "listening"
         ? AudioLines
         : CircleAlert;
-  const visibleMessages = messages.filter(
-    (message) =>
-      !(
-        message.role === "assistant" &&
-        message.status === "interrupted" &&
-        !message.text &&
-        !message.reasoning &&
-        !message.activities?.length
-      ),
-  );
+  const visibleMessages = messages.filter((message) => {
+    const hasToolPart = message.parts?.some((part) => part.kind === "tool") ?? false;
+    return !(
+      message.role === "assistant" &&
+      message.status === "interrupted" &&
+      !message.text &&
+      !message.reasoning &&
+      !message.activities?.length &&
+      !hasToolPart
+    );
+  });
   // 内容指纹与 ChatPanel 同构：error 出现或更新也要能滚到可见位置。
   const contentKey = [
-    ...messages.map((message) => `${message.id}:${message.text.length}:${message.status}`),
+    ...messages.map(
+      (message) =>
+        `${message.id}:${message.text.length}:${message.status}:${partsContentKey(message.parts)}`,
+    ),
     retry ? `retry:${retry.attempt}/${retry.maxRetries}` : "",
     error ?? "",
   ].join("|");
@@ -143,6 +151,7 @@ export function InterviewCapturePanel({
                   <AssistantMessage
                     caret={message.status === "streaming" && Boolean(message.text)}
                     content={message.text}
+                    parts={message.parts}
                     reasoning={message.reasoning}
                     streaming={message.status === "streaming"}
                     thinking={message.thinking === true}

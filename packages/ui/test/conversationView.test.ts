@@ -129,6 +129,107 @@ describe("conversation projection", () => {
         { id: "tool-1:output", kind: "tool", label: "工具结果", text: "result" },
       ],
     });
+    expect(restored.messages[0]?.parts?.map((part) => part.kind)).toEqual([
+      "text",
+      "reasoning",
+      "tool",
+    ]);
+  });
+
+  it("synthesizes ordered parts for legacy messages without persisted parts", () => {
+    const restored = applyConversationSnapshot(EMPTY_CONVERSATION_VIEW, {
+      conversationId: CONVERSATION,
+      eventRevision: 1,
+      messages: [
+        {
+          id: "run-1",
+          role: "assistant",
+          text: "legacy text",
+          reasoning: "legacy reasoning",
+          images: [],
+          status: "complete",
+        },
+      ],
+    });
+
+    expect(restored.messages[0]?.parts?.map((part) => part.kind)).toEqual(["reasoning", "text"]);
+  });
+
+  it("keeps text and tool parts in event order while streaming", () => {
+    let view: ConversationView = {
+      eventRevision: 1,
+      activeRunId: "run-1",
+      messages: [{ id: "run-1", role: "assistant", text: "", status: "streaming", parts: [] }],
+    };
+    view = applyAgentEvent(
+      view,
+      envelope(2, { type: "text-delta", partId: "text-1", delta: "先" }),
+    );
+    view = applyAgentEvent(
+      view,
+      envelope(3, {
+        type: "tool-input-start",
+        toolCallId: "tool-1",
+        toolName: "Read",
+      }),
+    );
+    view = applyAgentEvent(
+      view,
+      envelope(4, {
+        type: "tool-call",
+        toolCallId: "tool-1",
+        toolName: "Read",
+        input: { file_path: "a.ts" },
+      }),
+    );
+    view = applyAgentEvent(
+      view,
+      envelope(5, {
+        type: "tool-execution-finished",
+        toolCallId: "tool-1",
+        toolName: "Read",
+        input: { file_path: "a.ts" },
+        result: { success: true, output: "content" },
+        durationMs: 1,
+      }),
+    );
+    view = applyAgentEvent(
+      view,
+      envelope(6, { type: "text-delta", partId: "text-2", delta: "后" }),
+    );
+
+    expect(view.messages[0]?.parts?.map((part) => part.kind)).toEqual(["text", "tool", "text"]);
+    expect(view.messages[0]?.text).toBe("先后");
+  });
+
+  it("settles a running tool part when the run fails", () => {
+    const view: ConversationView = {
+      eventRevision: 1,
+      activeRunId: "run-1",
+      messages: [
+        {
+          id: "run-1",
+          role: "assistant",
+          text: "",
+          status: "streaming",
+          parts: [
+            {
+              id: "tool-1",
+              kind: "tool",
+              toolCallId: "tool-1",
+              toolName: "Read",
+              state: "running",
+            },
+          ],
+        },
+      ],
+    };
+    const finished = applyAgentEvent(
+      view,
+      envelope(2, { type: "run-state-changed", state: "failed", attempt: 2 }),
+    );
+
+    expect(finished.messages[0]?.parts?.[0]).toMatchObject({ state: "failed" });
   });
 
   it.each([

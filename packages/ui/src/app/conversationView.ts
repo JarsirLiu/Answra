@@ -11,6 +11,12 @@ import type {
   ConversationRetry,
   ConversationViewMessage,
 } from "../components/chat/conversationMessage";
+import {
+  applyConversationPartEvent,
+  reasoningFromConversationParts,
+  settleConversationParts,
+  textFromConversationParts,
+} from "./conversationParts";
 import { projectReplyActivity } from "./replyActivity";
 
 export interface ConversationView {
@@ -95,6 +101,9 @@ export function applyAgentEvent(
                 thinking: false,
                 waitingForStream: false,
                 status: messageStatus,
+                parts: message.parts
+                  ? settleConversationParts(message.parts, failed ? "failed" : "interrupted")
+                  : message.parts,
               }
             : message,
         ),
@@ -150,31 +159,25 @@ function applyStreamEvent(
     case "retry":
       next = { ...next, retry: event, retryRunId: runId };
       break;
-    case "reasoning-start":
-      next = setThinking(next, runId, true);
-      break;
-    case "reasoning-delta":
-      next = updateMessage(next, runId, (message) => ({
-        ...message,
-        thinking: true,
-        reasoning: (message.reasoning ?? "") + event.delta,
-      }));
-      break;
     case "start":
       next = { ...setThinking(next, runId, false), retry: undefined, retryRunId: undefined };
-      break;
-    case "text-delta":
-      next = updateMessage(next, runId, (message) => ({
-        ...message,
-        thinking: false,
-        text: message.text + event.delta,
-      }));
       break;
     case "error":
       next = { ...setThinking(next, runId, false), error: event.errorText };
       break;
     default:
-      next = setThinking(next, runId, false);
+      next = updateMessage(next, runId, (message) => {
+        const parts = applyConversationPartEvent(message.parts ?? [], event);
+        if (!parts) return { ...message, thinking: false };
+        const reasoning = reasoningFromConversationParts(parts);
+        return {
+          ...message,
+          parts,
+          text: textFromConversationParts(parts),
+          thinking: event.type === "reasoning-start" || event.type === "reasoning-delta",
+          ...(reasoning ? { reasoning } : {}),
+        };
+      });
   }
   if (options.trackActivities) {
     const message = next.messages.find((item) => item.id === runId);
@@ -204,9 +207,9 @@ function toViewMessage(
   prior?: ConversationViewMessage,
   activeRun = false,
 ): ConversationViewMessage {
-  const parts = message.parts ?? [];
-  const text = textFromParts(parts) || message.text;
-  const reasoning = reasoningFromParts(parts) || message.reasoning || prior?.reasoning;
+  const parts = messageParts(message);
+  const text = textFromConversationParts(parts) || message.text;
+  const reasoning = reasoningFromConversationParts(parts) || message.reasoning || prior?.reasoning;
   const activities = prior?.activities ?? activitiesFromParts(parts);
   return {
     id: message.id,
@@ -214,7 +217,7 @@ function toViewMessage(
     text,
     status: message.status,
     images: message.images,
-    ...(message.parts === undefined ? {} : { parts }),
+    parts,
     ...(prior?.thinking === undefined ? {} : { thinking: prior.thinking }),
     waitingForStream: prior?.thinking ? false : (prior?.waitingForStream ?? activeRun),
     ...(reasoning === undefined ? {} : { reasoning }),
@@ -222,23 +225,24 @@ function toViewMessage(
   };
 }
 
-function textFromParts(parts: ConversationMessagePart[]): string {
-  return parts
-    .filter(
-      (part): part is Extract<ConversationMessagePart, { kind: "text" }> => part.kind === "text",
-    )
-    .map((part) => part.text)
-    .join("");
-}
-
-function reasoningFromParts(parts: ConversationMessagePart[]): string {
-  return parts
-    .filter(
-      (part): part is Extract<ConversationMessagePart, { kind: "reasoning" }> =>
-        part.kind === "reasoning",
-    )
-    .map((part) => part.text)
-    .join("\n\n");
+function messageParts(message: ConversationMessage): ConversationMessagePart[] {
+  if (message.parts && message.parts.length > 0) return message.parts;
+  const parts: ConversationMessagePart[] = [];
+  if (message.reasoning)
+    parts.push({
+      id: `${message.id}:reasoning`,
+      kind: "reasoning",
+      text: message.reasoning,
+      state: "completed",
+    });
+  if (message.text)
+    parts.push({
+      id: `${message.id}:text`,
+      kind: "text",
+      text: message.text,
+      state: "completed",
+    });
+  return parts;
 }
 
 function activitiesFromParts(parts: ConversationMessagePart[]): ReplyBarActivity[] {

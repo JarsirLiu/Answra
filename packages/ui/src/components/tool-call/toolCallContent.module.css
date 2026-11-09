@@ -1,0 +1,109 @@
+/* 工具卡展开内容：输入、输出、错误与 Grep 行列表的共用排版。 */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.section + .section {
+  margin-top: 8px;
+}
+
+.label {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  line-height: 1.4;
+}
+
+.pre {
+  max-height: 260px;
+  margin: 0;
+  padding: 8px 10px;
+  overflow: auto;
+  border-radius: 6px;
+  background: var(--field);
+  color: var(--ink-soft);
+  font-family: var(--app-mono-font-family);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.pre[data-tone="error"] {
+  color: var(--danger);
+}
+
+.notice {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.file {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.file + .file {
+  margin-top: 6px;
+}
+
+.fileHeader {
+  color: var(--ink-soft);
+  font-family: var(--app-mono-font-family);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
+.lines {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--field);
+  font-family: var(--app-mono-font-family);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+
+.line {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  color: var(--ink-soft);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.line[data-kind="context"] {
+  color: var(--muted);
+}
+
+.lineNumber {
+  flex: none;
+  min-width: 3ch;
+  color: var(--muted);
+  text-align: right;
+  user-select: none;
+}
+
+.countRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--ink-soft);
+  font-family: var(--app-mono-font-family);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+
+.countValue {
+  flex: none;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}

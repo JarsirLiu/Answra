@@ -3,7 +3,11 @@ import { LoaderCircle, X } from "lucide-react";
 import { type RefObject, useRef } from "react";
 import { ICON_SM } from "../../tokens";
 import { AssistantMessage, MessageStream, ModelErrorNotice, RetryNotice } from "../chat";
-import type { ConversationRetry, ConversationViewMessage } from "../chat/conversationMessage";
+import {
+  type ConversationRetry,
+  type ConversationViewMessage,
+  partsContentKey,
+} from "../chat/conversationMessage";
 import { ConversationComposer } from "./ConversationComposer";
 import { PanelShell } from "./PanelShell";
 import "../chat/conversation.css";
@@ -85,7 +89,8 @@ export function ChatPanel({
   // 失败提示也算本轮结果，出现时要能滚到可见位置。
   const contentKey = [
     ...messages.map(
-      (message) => `${message.id}:${message.text.length}:${message.reasoning?.length ?? 0}`,
+      (message) =>
+        `${message.id}:${message.text.length}:${message.reasoning?.length ?? 0}:${partsContentKey(message.parts)}`,
     ),
     retry ? `retry:${retry.attempt}/${retry.maxRetries}` : "",
     error ? `error:${error}` : "",
@@ -150,6 +155,7 @@ export function ChatPanel({
                     composerInputRef.current?.focus();
                   }}
                   onVote={onVote}
+                  parts={message.parts}
                   reasoning={message.reasoning}
                   streaming={message.status === "streaming" && message.id === messages.at(-1)?.id}
                   thinking={message.thinking === true}

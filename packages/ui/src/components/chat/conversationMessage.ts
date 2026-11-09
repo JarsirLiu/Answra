@@ -19,6 +19,18 @@ export interface ConversationViewMessage {
   activities?: readonly ReplyBarActivity[];
 }
 
+/** Content fingerprint for scroll following: text lengths plus every tool lifecycle state. */
+export function partsContentKey(parts: ConversationViewMessage["parts"]): string {
+  if (!parts) return "";
+  return parts
+    .map((part) =>
+      part.kind === "tool"
+        ? `${part.toolCallId}:${part.state}`
+        : `${part.kind}:${part.text.length}`,
+    )
+    .join(",");
+}
+
 /** 一次模型调用重试的渲染态；同一条消息内原地更新，不新增消息。 */
 export interface ConversationRetry {
   kind: "rate-limit" | "server-error" | "network-error";

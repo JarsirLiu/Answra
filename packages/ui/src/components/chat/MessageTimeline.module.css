@@ -1,0 +1,8 @@
+/* AI 消息内容时间线：思考 / 正文 / 工具卡按 part 顺序纵排。 */
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+}

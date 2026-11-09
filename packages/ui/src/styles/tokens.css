@@ -27,6 +27,9 @@
   --app-ui-font-family:
     "PingFang SC", "苹方-简", "Segoe UI Variable", "Noto Sans SC", "Microsoft YaHei UI", "Segoe UI",
     sans-serif;
+  /* 跨平台等宽字体栈：不把 monospace 当唯一回退，避免 Windows 落到衬线字体。 */
+  --app-mono-font-family:
+    Consolas, "Cascadia Mono", "SFMono-Regular", "Menlo", "Courier New", monospace;
   font-family: var(--app-ui-font-family);
   color: var(--ink);
   background: transparent;

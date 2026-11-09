@@ -1,10 +1,12 @@
+import type { ConversationMessagePart } from "@answra/shared";
 import type { ReactNode } from "react";
 import styles from "./AssistantMessage.module.css";
 import { MessageActions } from "./MessageActions";
-import { TextResponse } from "./TextResponse";
-import { ThinkingReasoning } from "./ThinkingReasoning";
+import { MessageTimeline } from "./MessageTimeline";
 
 interface AssistantMessageProps {
+  /** 按事件顺序排列的正文/思维链/工具 part；传入后优先于 content/reasoning。 */
+  parts?: readonly ConversationMessagePart[];
   /** 模型思维链（reasoning part），流式更新；可能为空。 */
   reasoning?: string;
   /** 正文内容；可能为空（思考阶段）。 */
@@ -33,6 +35,7 @@ interface AssistantMessageProps {
  * 用统一的 6px 间距自然衔接；回复完毕后自动显示操作条。
  */
 export function AssistantMessage({
+  parts,
   reasoning,
   content,
   thinking = false,
@@ -46,18 +49,17 @@ export function AssistantMessage({
   onFork,
   children,
 }: AssistantMessageProps) {
-  const text = content?.trim();
+  const timelineParts = parts ?? legacyParts(content, reasoning);
+  const text = textFromParts(timelineParts).trim();
   const done = !thinking && !streaming && Boolean(text);
   return (
     <div className={styles.stack}>
-      {reasoning || thinking ? (
-        <ThinkingReasoning
-          durationMs={thinkingMs}
-          reasoning={reasoning ?? ""}
-          thinking={thinking}
-        />
-      ) : null}
-      {text ? <TextResponse caret={caret} text={text} /> : null}
+      <MessageTimeline
+        caret={caret}
+        parts={timelineParts}
+        thinking={thinking}
+        thinkingMs={thinkingMs}
+      />
       {children}
       {done ? (
         <MessageActions
@@ -71,4 +73,24 @@ export function AssistantMessage({
       ) : null}
     </div>
   );
+}
+
+function legacyParts(
+  content: string | undefined,
+  reasoning: string | undefined,
+): ConversationMessagePart[] {
+  const parts: ConversationMessagePart[] = [];
+  if (reasoning)
+    parts.push({ id: "legacy-reasoning", kind: "reasoning", text: reasoning, state: "completed" });
+  if (content) parts.push({ id: "legacy-text", kind: "text", text: content, state: "completed" });
+  return parts;
+}
+
+function textFromParts(parts: readonly ConversationMessagePart[]): string {
+  return parts
+    .filter(
+      (part): part is Extract<ConversationMessagePart, { kind: "text" }> => part.kind === "text",
+    )
+    .map((part) => part.text)
+    .join("");
 }

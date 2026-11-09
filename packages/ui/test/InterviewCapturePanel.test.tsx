@@ -288,4 +288,37 @@ describe("InterviewCapturePanel", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("消息发送失败");
     expect(screen.queryByText("点击下方麦克风开始语音输入。")).not.toBeInTheDocument();
   });
+
+  it("renders compact tool rows from assistant message parts", () => {
+    render(
+      <InterviewCapturePanel
+        capture={capturePort()}
+        state={{ phase: "idle" }}
+        messages={[
+          {
+            id: "run-1",
+            role: "assistant",
+            text: "",
+            status: "complete",
+            parts: [
+              {
+                id: "tool-1",
+                kind: "tool",
+                toolCallId: "tool-1",
+                toolName: "Read",
+                state: "completed",
+                input: { file_path: "src/a.ts" },
+              },
+            ],
+          },
+        ]}
+        onSendText={vi.fn(async () => undefined)}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("读取")).toBeInTheDocument();
+    expect(screen.getByText("src/a.ts")).toBeInTheDocument();
+    expect(screen.queryByText("完成")).toBeNull();
+  });
 });

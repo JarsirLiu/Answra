@@ -9,7 +9,9 @@ function useAiConversation(
   operation: "chat.send" | "answer.run" = "chat.send",
 ) {
   const { view, selectConversation, reconcileRunSnapshot, waitForRun, getView, clear } =
-    useConversationView(platform, conversationId, { trackActivities: true });
+    useConversationView(platform, conversationId, {
+      trackActivities: operation === "answer.run",
+    });
   const [sendPending, setSendPending] = useState(false);
   const [sendError, setSendError] = useState<string>();
   const [hideActivities, setHideActivities] = useState(false);
