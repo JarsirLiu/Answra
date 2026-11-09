@@ -1,109 +1,96 @@
-/** Agent 进程内 Read/Grep 共用的工作区文件边界；不涉及模型执行或事件写入。 */
+/** Agent 进程内 Read/Grep 共用的文件路径解析；工作区只是默认根目录，不是访问边界。 */
 
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { ToolExecutionError } from "../executor/result";
 
 export const READ_FILE_MAX_BYTES = 256 * 1024;
 /** 带 offset/limit 的 Read 仍需避免无界读取；超过上限时明确失败。 */
 export const READ_SCAN_MAX_BYTES = 16 * 1024 * 1024;
-export const GREP_FILE_MAX_BYTES = 128 * 1024;
-export const WORKSPACE_MAX_DEPTH = 8;
-export const WORKSPACE_MAX_FILES = 5_000;
-/** 模型可见的工具输出上限；按字符计，避免多字节文本被提前截断。 */
-export const TOOL_OUTPUT_MAX_CHARS = 20_000;
 
 const UTF8_BOM = [0xef, 0xbb, 0xbf] as const;
 const UTF16LE_BOM = [0xff, 0xfe] as const;
 const UTF16BE_BOM = [0xfe, 0xff] as const;
-const IGNORED_DIRS = new Set(["node_modules", ".git", ".svn", "dist", "out"]);
-const TEXT_EXTENSIONS = new Set([
-  ".md",
-  ".txt",
-  ".json",
-  ".ts",
-  ".tsx",
-  ".js",
-  ".jsx",
-  ".css",
-  ".html",
-  ".yaml",
-  ".yml",
-  ".toml",
-  ".xml",
-  ".csv",
-]);
-
-export function requireWorkspaceRoot(root: string | null): string {
-  if (!root) throw new Error("尚未选择工作区目录");
-  return root;
-}
+const VCS_DIRS = new Set([".git", ".svn", ".hg", ".bzr", ".jj", ".sl"]);
 
 export function assertNotAborted(signal: AbortSignal): void {
   if (signal.aborted) throw new Error("工具调用已取消");
 }
 
-export async function resolveWorkspaceFile(root: string, inputPath: string): Promise<string> {
-  if (!inputPath || inputPath.length > 1024) throw new Error("文件路径无效");
-  const absoluteRoot = path.resolve(root);
-  const absoluteTarget = path.isAbsolute(inputPath)
-    ? path.resolve(inputPath)
-    : path.resolve(absoluteRoot, ...relativePathSegments(inputPath));
-  assertWithin(absoluteRoot, absoluteTarget);
-  assertAllowedPath(absoluteRoot, absoluteTarget);
-  const [realRoot, realTarget] = await Promise.all([
-    fs.realpath(absoluteRoot),
-    fs.realpath(absoluteTarget),
-  ]);
-  assertWithin(realRoot, realTarget);
-  assertAllowedPath(realRoot, realTarget);
-  return realTarget;
+export async function resolveToolFile(root: string | null, inputPath: string): Promise<string> {
+  const target = await resolveToolTarget(root, inputPath);
+  if (target.kind !== "file") throw new ToolExecutionError("invalid-input", "Agent 只能读取文件");
+  return target.target;
 }
 
-export interface WorkspaceFileStat {
+export interface ToolTarget {
+  readonly target: string;
+  readonly kind: "file" | "directory";
+  readonly searchRoot: string;
+  readonly guestPath: string;
+}
+
+export async function resolveToolTarget(
+  root: string | null,
+  inputPath: string,
+): Promise<ToolTarget> {
+  const absoluteTarget = resolveInputPath(root, inputPath);
+  assertAllowedPath(absoluteTarget);
+  const realTarget = await fs.realpath(absoluteTarget);
+  assertAllowedPath(realTarget);
+  const stat = await fs.stat(realTarget);
+  if (!stat.isFile() && !stat.isDirectory())
+    throw new ToolExecutionError("invalid-input", "Agent 只能访问文件或目录");
+  const isFile = stat.isFile();
+  return {
+    target: realTarget,
+    kind: isFile ? "file" : "directory",
+    searchRoot: isFile ? path.dirname(realTarget) : realTarget,
+    guestPath: isFile ? `./${path.basename(realTarget)}` : ".",
+  };
+}
+
+export interface ToolFileStat {
   readonly target: string;
   readonly sizeBytes: number;
   readonly mtimeMs: number;
 }
 
-export async function statWorkspaceFile(
-  root: string,
-  inputPath: string,
-): Promise<WorkspaceFileStat> {
-  const target = await resolveWorkspaceFile(root, inputPath);
+export async function statToolFile(root: string | null, inputPath: string): Promise<ToolFileStat> {
+  const target = await resolveToolFile(root, inputPath);
   const stat = await fs.stat(target);
-  if (!stat.isFile()) throw new Error("Agent 只能读取文件");
   return { target, sizeBytes: stat.size, mtimeMs: stat.mtimeMs };
 }
 
-export interface WorkspaceTextFile {
+export interface ToolTextFile {
   readonly text: string;
   readonly bytesRead: number;
 }
 
-export async function readWorkspaceTextFile(
-  target: string,
-  maxBytes: number,
-): Promise<WorkspaceTextFile> {
+export async function readToolTextFile(target: string, maxBytes: number): Promise<ToolTextFile> {
   const bytes = await fs.readFile(target);
   if (bytes.length > maxBytes) throw new Error("文件超过 Agent 单次读取上限");
   return { text: decodeText(bytes), bytesRead: bytes.length };
 }
 
-function relativePathSegments(inputPath: string): string[] {
-  if (/^[a-zA-Z]:/.test(inputPath)) throw new Error("路径必须是工作区内的文件路径");
-  const segments = inputPath.split(/[\\/]/);
-  if (
-    segments.some((segment) => !segment || segment === "." || segment === ".." || segment === "~")
-  )
-    throw new Error("路径必须是工作区内的文件路径");
-  return segments;
+function resolveInputPath(root: string | null, inputPath: string): string {
+  if (!inputPath || inputPath.length > 1024)
+    throw new ToolExecutionError("invalid-input", "文件路径无效");
+  if (path.isAbsolute(inputPath)) return path.resolve(inputPath);
+  if (/^[a-zA-Z]:/.test(inputPath))
+    throw new ToolExecutionError("invalid-input", "路径不能是盘符相对形式");
+  if (!root)
+    throw new ToolExecutionError(
+      "invalid-input",
+      "使用相对路径前请先选择工作区目录，或提供绝对路径",
+    );
+  return path.resolve(root, inputPath);
 }
 
-function assertAllowedPath(root: string, target: string): void {
-  const relative = path.relative(root, target);
-  for (const segment of relative.split(path.sep)) {
-    if (segment.startsWith(".") || IGNORED_DIRS.has(segment))
-      throw new Error("Agent 不可访问隐藏文件或忽略目录中的内容");
+function assertAllowedPath(target: string): void {
+  for (const segment of path.resolve(target).split(path.sep)) {
+    if (VCS_DIRS.has(segment))
+      throw new ToolExecutionError("invalid-input", "Agent 不可访问版本库目录中的内容");
   }
 }
 
@@ -131,40 +118,4 @@ function looksLikeBinary(bytes: Uint8Array): boolean {
     if (byte < 0x09 || (byte > 0x0d && byte < 0x20)) controlBytes += 1;
   }
   return controlBytes / bytes.length > 0.3;
-}
-
-export async function collectWorkspaceTextFiles(
-  root: string,
-  signal: AbortSignal,
-): Promise<string[]> {
-  const files: string[] = [];
-  const realRoot = await fs.realpath(root);
-  async function visit(directory: string, depth: number): Promise<void> {
-    assertNotAborted(signal);
-    if (depth > WORKSPACE_MAX_DEPTH) return;
-    for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
-      assertNotAborted(signal);
-      if (entry.name.startsWith(".") || IGNORED_DIRS.has(entry.name)) continue;
-      const target = path.join(directory, entry.name);
-      if (entry.isSymbolicLink()) continue;
-      if (entry.isDirectory()) await visit(target, depth + 1);
-      else if (entry.isFile() && TEXT_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) {
-        files.push(target);
-        if (files.length >= WORKSPACE_MAX_FILES) return;
-      }
-      if (files.length >= WORKSPACE_MAX_FILES) return;
-    }
-  }
-  await visit(realRoot, 0);
-  return files;
-}
-
-export function relativeWorkspacePath(root: string, target: string): string {
-  return path.relative(root, target).split(path.sep).join("/");
-}
-
-function assertWithin(root: string, target: string): void {
-  const relative = path.relative(root, target);
-  if (!relative || relative.startsWith("..") || path.isAbsolute(relative))
-    throw new Error("路径超出工作区范围");
 }

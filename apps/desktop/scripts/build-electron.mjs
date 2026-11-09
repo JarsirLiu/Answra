@@ -50,57 +50,93 @@ const bundleOptions = {
  * preload 在 sandbox 下必须是单文件 CJS。
  * 区域框选 overlay 是静态页（selection.html），复制到 out/capture 供主进程 loadFile。
  */
-const results = await Promise.all([
-  build({
-    ...bundleOptions,
-    entryPoints: ["src/main/index.ts"],
-    platform: "node",
-    format: "cjs",
-    metafile: true,
-    // electron-updater 保持外部依赖：它内部按 Electron 运行时解析路径，不可打包。
-    external: ["electron", "koffi", "electron-updater"],
-    outfile: "out/main/index.cjs",
-  }),
-  build({
-    ...bundleOptions,
-    entryPoints: [preloadEntry],
-    platform: "node",
-    format: "cjs",
-    metafile: true,
-    external: ["electron", "koffi"],
-    outfile: "out/preload/index.cjs",
-  }),
-  build({
-    ...bundleOptions,
-    entryPoints: ["src/preload/selection.ts"],
-    platform: "node",
-    format: "cjs",
-    metafile: true,
-    external: ["electron", "koffi"],
-    outfile: "out/preload/selection.cjs",
-  }),
-  build({
-    ...bundleOptions,
-    entryPoints: [agentWorkerEntry],
-    platform: "node",
-    format: "cjs",
-    target: "node20.9",
-    metafile: true,
-    // sherpa-onnx-node 留给 utility process 运行时 require：native addon 不可打包。
-    external: ["electron", "koffi", "sherpa-onnx-node"],
-    outfile: "out/main/conversation/worker.cjs",
-  }),
-  mkdir("out/capture", { recursive: true }).then(() =>
-    copyFile("src/main/capture/selection.html", "out/capture/selection.html"),
-  ),
-]);
+const buildTargets = [
+  {
+    name: "main",
+    options: {
+      ...bundleOptions,
+      entryPoints: ["src/main/index.ts"],
+      platform: "node",
+      format: "cjs",
+      metafile: true,
+      // electron-updater 保持外部依赖：它内部按 Electron 运行时解析路径，不可打包。
+      external: ["electron", "koffi", "electron-updater"],
+      outfile: "out/main/index.cjs",
+    },
+  },
+  {
+    name: "preload",
+    options: {
+      ...bundleOptions,
+      entryPoints: [preloadEntry],
+      platform: "node",
+      format: "cjs",
+      metafile: true,
+      external: ["electron", "koffi"],
+      outfile: "out/preload/index.cjs",
+    },
+  },
+  {
+    name: "selection-preload",
+    options: {
+      ...bundleOptions,
+      entryPoints: ["src/preload/selection.ts"],
+      platform: "node",
+      format: "cjs",
+      metafile: true,
+      external: ["electron", "koffi"],
+      outfile: "out/preload/selection.cjs",
+    },
+  },
+  {
+    name: "agent-worker",
+    options: {
+      ...bundleOptions,
+      entryPoints: [agentWorkerEntry],
+      platform: "node",
+      format: "cjs",
+      target: "node20.9",
+      metafile: true,
+      // sherpa-onnx-node 留给 utility process 运行时 require：native addon 不可打包。
+      external: ["electron", "koffi", "sherpa-onnx-node"],
+      outfile: "out/main/conversation/worker.cjs",
+    },
+  },
+  ...(manifest.features.includes("chat")
+    ? [
+        {
+          name: "grep-worker",
+          options: {
+            ...bundleOptions,
+            // ripgrep 的 ESM 入口会计算未使用的 rgPath；CJS 运行时没有 import.meta。
+            define: {
+              ...bundleOptions.define,
+              "import.meta.url": JSON.stringify("file:///C:/__answra__/rg.mjs"),
+            },
+            entryPoints: ["src/main/conversation/grepWorker.ts"],
+            platform: "node",
+            format: "cjs",
+            target: "node20.9",
+            metafile: true,
+            external: ["electron", "koffi"],
+            outfile: "out/main/conversation/grepWorker.cjs",
+          },
+        },
+      ]
+    : []),
+];
 
-for (const [index, name] of ["main", "preload", "selection-preload", "agent-worker"].entries()) {
+const results = await Promise.all(buildTargets.map(({ options }) => build(options)));
+
+for (const [index, target] of buildTargets.entries()) {
   const result = results[index];
   if (result && "metafile" in result) {
     await writeFile(
-      `${auditDirectory}/${name}.meta.json`,
+      `${auditDirectory}/${target.name}.meta.json`,
       `${JSON.stringify(result.metafile, null, 2)}\n`,
     );
   }
 }
+
+await mkdir("out/capture", { recursive: true });
+await copyFile("src/main/capture/selection.html", "out/capture/selection.html");

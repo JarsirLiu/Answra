@@ -1,6 +1,6 @@
 #!/usr/bin/node
 /**
- * 架构守护（参照 ZCode 的 architecture-check 思路）：
+ * 架构守护：
  *
  * 1. forbidDeepImports —— 跨包导入只能使用该包 exports 声明的入口，
  *    不允许相对路径穿透到其它包内部。

@@ -59,6 +59,29 @@ describe("tool registry", () => {
     );
   });
 
+  it("returns model-visible failure content instead of throwing for business failures", async () => {
+    const registry = new ToolRegistry();
+    registry.register(
+      defineTool<string, string>({
+        id: toolId("test.fail"),
+        metadata: { ...BASE_METADATA, name: "Fail" },
+        inputSchema: { type: "object", properties: {}, additionalProperties: false },
+        handler: async () => ({
+          ok: false as const,
+          code: "handler-failed" as const,
+          message: "nope",
+        }),
+      }),
+    );
+
+    const execute = registry.authorize([toolId("test.fail")], sessionContext()).Fail?.execute;
+    if (!execute) throw new Error("test tool must be executable");
+
+    await expect(execute({}, { toolCallId: "call-1", messages: [] })).resolves.toBe(
+      "工具调用失败（handler-failed）：nope",
+    );
+  });
+
   it("rejects two authorized tools that share the same model name", () => {
     const registry = new ToolRegistry();
     registry.register(testTool("test.one", "Same"));

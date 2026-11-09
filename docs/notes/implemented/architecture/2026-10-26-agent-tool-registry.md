@@ -6,8 +6,6 @@
 
 对话 Agent 原先在 `ConversationRuntime` 按 profile 临时拼装 AI SDK 工具；工具身份、模型 schema、授权和执行逻辑没有单一来源。一次性 `list_workspace_files` / `read_workspace_file` 也没有形成可演进的专用工具边界。
 
-ZCode 的 `Read`、`Grep` handler 值得参考其职责和模型输入习惯，但依赖 ZCode 自有文件系统端口、权限体系与运行时 contracts，不能原样搬入 Answra。
-
 ## 涉及范围
 
 - `apps/agent/src/conversation/tools/`：对话工具 ID、上下文、注册表、AI SDK 转换和工具实现。
@@ -41,7 +39,7 @@ ZCode 的 `Read`、`Grep` handler 值得参考其职责和模型输入习惯，�
 ## 后果与防回退
 
 - 未授权工具不得暴露给模型；schema 与执行函数来自同一注册定义。
-- workspace 工具在 Agent 进程执行；模型路径相对于本次 run 根目录，越界和符号链接逃逸必须拒绝。
+- workspace 工具在 Agent 进程执行；相对路径以本次 run 根目录为基线，绝对路径和工作区外路径可用；版本库目录必须继续拒绝。后续决策见 `2026-11-09-workspace-default-root-not-boundary.md`。
 - PDF/DOCX 进入 Read 前，需确认解析依赖、资源边界及 Agent 独立运行证据。
 
 ## 验证

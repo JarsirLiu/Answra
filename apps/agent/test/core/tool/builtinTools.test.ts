@@ -10,6 +10,7 @@ import {
   toolId,
 } from "../../../src/core/tool";
 import { executeGrep } from "../../../src/core/tool/builtin/grep";
+import { formatGrepOutput } from "../../../src/core/tool/builtin/grepOutput";
 import { executeRead } from "../../../src/core/tool/builtin/read";
 import { formatReadOutput } from "../../../src/core/tool/builtin/readOutput";
 
@@ -69,7 +70,10 @@ describe("builtin workspace tools", () => {
       offset: 2,
       limit: 1,
     });
-    const grepResult = await executeGrep(toolContext, { pattern: "Agent" });
+    const grepResult = await executeGrep(toolContext, {
+      pattern: "Agent",
+      output_mode: "content",
+    });
 
     expect(readResult).toMatchObject({
       type: "text",
@@ -79,8 +83,8 @@ describe("builtin workspace tools", () => {
       truncated: false,
     });
     expect(formatReadOutput(readResult)).toContain("2\tAgent foundation");
-    expect(grepResult).toContain("notes/plan.md:2:Agent foundation");
-    expect(grepResult).not.toContain("hidden.md");
+    expect(formatGrepOutput(grepResult)).toContain("notes/plan.md:2:Agent foundation");
+    expect(formatGrepOutput(grepResult)).toContain(".private/hidden.md:1:Agent secret");
   });
 
   it("reads empty files, extensionless files, absolute paths, and past-end offsets", async () => {
@@ -193,32 +197,81 @@ describe("builtin workspace tools", () => {
     expect(modelContent).toContain("中文");
   });
 
-  it("rejects traversal, symlink escapes, binary files, hidden files, invalid patterns, and cancellation", async () => {
+  it("allows reads and searches outside the workspace while keeping VCS and binary guards", async () => {
     const root = await createRoot();
     const outside = await createRoot();
-    await fs.writeFile(path.join(outside, "secret.md"), "secret", "utf8");
+    const outsideFile = path.join(outside, "secret.md");
+    await fs.writeFile(outsideFile, "secret", "utf8");
     await fs.symlink(outside, path.join(root, "escape"), "junction");
     await fs.writeFile(path.join(root, "document.bin"), Buffer.from([0, 1, 2]));
     await fs.mkdir(path.join(root, ".private"));
     await fs.writeFile(path.join(root, ".private", "hidden.md"), "secret");
+    await fs.mkdir(path.join(root, ".git"));
+    await fs.writeFile(path.join(root, ".git", "config"), "secret");
+    await fs.writeFile(path.join(root, ".env"), "SECRET=1");
     const controller = new AbortController();
     const toolContext = context(root, controller.signal);
-    await expect(executeRead(toolContext, { file_path: "../secret.md" })).rejects.toThrow(
-      "工作区内的文件路径",
-    );
-    await expect(executeRead(toolContext, { file_path: "escape/secret.md" })).rejects.toThrow(
-      "路径超出",
-    );
+
     await expect(
-      executeRead(toolContext, { file_path: path.join(outside, "secret.md") }),
-    ).rejects.toThrow("路径超出");
+      executeRead(toolContext, { file_path: path.relative(root, outsideFile) }),
+    ).resolves.toMatchObject({ type: "text", content: "secret" });
+    await expect(
+      executeRead(toolContext, { file_path: "escape/secret.md" }),
+    ).resolves.toMatchObject({
+      type: "text",
+      content: "secret",
+    });
+    await expect(executeRead(toolContext, { file_path: outsideFile })).resolves.toMatchObject({
+      type: "text",
+      content: "secret",
+    });
     await expect(executeRead(toolContext, { file_path: "document.bin" })).rejects.toThrow("UTF-8");
-    await expect(executeRead(toolContext, { file_path: ".private/hidden.md" })).rejects.toThrow(
-      "隐藏",
+    await expect(executeRead(toolContext, { file_path: ".git/config" })).rejects.toThrow("版本库");
+    await expect(executeRead(toolContext, { file_path: ".env" })).resolves.toMatchObject({
+      type: "text",
+      content: "SECRET=1",
+    });
+
+    const workspaceSearch = await executeGrep(toolContext, { pattern: "secret" });
+    expect(formatGrepOutput(workspaceSearch)).toContain(".private/hidden.md");
+    expect(formatGrepOutput(workspaceSearch)).not.toContain(".git/config");
+
+    const outsideSearch = await executeGrep(toolContext, {
+      pattern: "secret",
+      path: outside,
+      output_mode: "content",
+    });
+    expect(formatGrepOutput(outsideSearch)).toContain(
+      `${outsideFile.split(path.sep).join("/")}:1:secret`,
     );
-    await expect(executeGrep(toolContext, { pattern: "secret" })).resolves.toContain("未找到");
+
+    await expect(executeGrep(toolContext, { pattern: "[" })).rejects.toThrow("regex parse error");
     controller.abort();
     await expect(executeRead(toolContext, { file_path: "document.bin" })).rejects.toThrow("取消");
+  });
+
+  it("requires absolute paths when no workspace is selected", async () => {
+    const root = await createRoot();
+    const file = path.join(root, "secret.md");
+    await fs.writeFile(file, "secret", "utf8");
+
+    await expect(executeRead(context(null), { file_path: file })).resolves.toMatchObject({
+      type: "text",
+      content: "secret",
+    });
+    await expect(executeRead(context(null), { file_path: "secret.md" })).rejects.toThrow(
+      "绝对路径",
+    );
+    expect(
+      formatGrepOutput(
+        await executeGrep(context(null), {
+          pattern: "secret",
+          path: file,
+          output_mode: "content",
+        }),
+      ),
+    ).toContain(`${file.split(path.sep).join("/")}:1:secret`);
+    await expect(executeGrep(context(null), { pattern: "secret" })).rejects.toThrow("绝对路径");
   });
 
   async function createRoot(): Promise<string> {

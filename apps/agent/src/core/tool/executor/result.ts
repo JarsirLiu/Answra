@@ -15,6 +15,7 @@ export function toFailure(code: ToolFailureCode, message: string, startedAt: num
   return {
     success: false,
     error: { code, message },
+    modelContent: `工具调用失败（${code}）：${message}`,
     durationMs: Date.now() - startedAt,
   };
 }

@@ -17,6 +17,8 @@ export interface ToolResultBudget {
   readonly strategy: ToolResultBudgetStrategy;
   /** 模型可见内容的最大字符数；按字符而非字节，避免多字节文本被提前截断。 */
   readonly maxModelChars: number;
+  /** 模型可见内容的字节上限；与字符上限同时生效时先裁字节。 */
+  readonly maxModelBytes?: number;
 }
 
 export interface ToolMetadata {
@@ -44,6 +46,10 @@ export interface ReadFileStateEntry {
 
 export type ReadFileStateMap = Map<string, ReadFileStateEntry>;
 
+export interface ToolWorkerPaths {
+  readonly grep?: string;
+}
+
 export interface ToolContext {
   readonly toolCallId: string;
   readonly signal: AbortSignal;
@@ -51,6 +57,7 @@ export interface ToolContext {
   readonly runId: string;
   readonly sessionId: string;
   readonly readFileState?: ReadFileStateMap;
+  readonly workerPaths?: ToolWorkerPaths;
 }
 
 export type ToolFailureCode =
@@ -79,6 +86,8 @@ export interface ToolSuccess<Output = unknown> {
 export interface ToolFailure {
   readonly success: false;
   readonly error: { readonly code: ToolFailureCode; readonly message: string };
+  /** 返回给模型的工具结果文本；工具业务失败不是 AI SDK 执行异常。 */
+  readonly modelContent: string;
   readonly durationMs: number;
 }
 

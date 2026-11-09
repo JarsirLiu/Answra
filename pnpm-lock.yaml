@@ -32,6 +32,9 @@ importers:
       ai:
         specifier: 6.0.303
         version: 6.0.303(zod@4.6.5)
+      ripgrep:
+        specifier: 0.3.1
+        version: 0.3.1
     devDependencies:
       '@types/node':
         specifier: ^26.6.5
@@ -3273,6 +3276,10 @@ packages:
   rimraf@2.6.2:
     resolution: {integrity: sha512-lreewLK/BlghmxtfH36YYVg1i8IAce4TI7oao75I1g245+6BctqTVQiBP3YUJ9C6DQOXJmkYR9X9fCLtCOJc5w==}
     deprecated: Rimraf versions prior to v4 are no longer supported
+    hasBin: true
+
+  ripgrep@0.3.1:
+    resolution: {integrity: sha512-6bDtNIBh1qPviVIU685/4uv0Ap5t8eS4wiJhy/tR2LdIeIey9CVasENlGS+ul3HnTmGANIp7AjnfsztsRmALfQ==}
     hasBin: true
 
   roarr@2.15.3:
@@ -7278,6 +7285,8 @@ snapshots:
   rimraf@2.6.2:
     dependencies:
       glob: 7.2.0
+
+  ripgrep@0.3.1: {}
 
   roarr@2.15.3:
     dependencies:

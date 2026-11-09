@@ -113,6 +113,7 @@ describe("executeToolCall", () => {
     expect(result).toMatchObject({
       success: false,
       error: { code: "invalid-input", message: "bad input" },
+      modelContent: "工具调用失败（invalid-input）：bad input",
     });
   });
 
@@ -130,6 +131,7 @@ describe("executeToolCall", () => {
     expect(result).toMatchObject({
       success: false,
       error: { code: "handler-failed", message: "nope" },
+      modelContent: "工具调用失败（handler-failed）：nope",
     });
   });
 
@@ -158,7 +160,11 @@ describe("executeToolCall", () => {
     await vi.advanceTimersByTimeAsync(20);
     const result = await pending;
 
-    expect(result).toMatchObject({ success: false, error: { code: "timeout" } });
+    expect(result).toMatchObject({
+      success: false,
+      error: { code: "timeout" },
+      modelContent: "工具调用失败（timeout）：工具执行超过 10ms",
+    });
   });
 
   it("returns aborted before starting when the run signal is already aborted", async () => {
@@ -237,6 +243,24 @@ describe("executeToolCall", () => {
       success: true,
       output: "abcdef",
       modelContent: "abc\n[输出已截断]",
+      truncated: true,
+    });
+  });
+
+  it("truncates model content by UTF-8 bytes without splitting characters", async () => {
+    const result = await executeToolCall(
+      testTool(async () => "中文中文", {
+        metadata: metadata("ByteTrimmed", {
+          resultBudget: { strategy: "truncate", maxModelChars: 100, maxModelBytes: 7 },
+        }),
+      }),
+      {},
+      context(),
+    );
+
+    expect(result).toMatchObject({
+      success: true,
+      modelContent: "中文\n[输出已截断]",
       truncated: true,
     });
   });

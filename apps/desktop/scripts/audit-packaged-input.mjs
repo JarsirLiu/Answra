@@ -45,10 +45,7 @@ const featureModulePatterns = {
     "src/main/workspace/fileProtocol.ts",
     "src/main/workspace/workspaceIpc.ts",
     "src/main/workspace/workspaceService.ts",
-    "agent/src/conversation/tools/registry.ts",
-    "agent/src/conversation/tools/read.ts",
-    "agent/src/conversation/tools/grep.ts",
-    "agent/src/conversation/tools/workspace.ts",
+    "agent/src/core/tool/",
   ],
   interview: [
     "packages/ui/src/components/panels/InterviewCapturePanel",
@@ -98,6 +95,9 @@ const expectedEntries = {
   "agent-worker": manifest.features.includes("interview")
     ? "src/main/conversation/worker.ts"
     : "src/main/conversation/workerAnswer.ts",
+  ...(manifest.features.includes("chat")
+    ? { "grep-worker": "src/main/conversation/grepWorker.ts" }
+    : {}),
 };
 for (const name of Object.keys(expectedEntries)) {
   auditEsbuildMetafile(

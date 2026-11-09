@@ -72,7 +72,11 @@ interface ToolEntry<Input = unknown, Output = unknown> {
     sideEffectScope: "none" | "workspace" | "network" | "session" | "userInteraction";
     timeoutMs: number;
     maxOutputBytes: number;
-    resultBudget: { strategy: "inline" | "truncate" | "artifact"; maxModelChars: number };
+    resultBudget: {
+      strategy: "inline" | "truncate" | "artifact";
+      maxModelChars: number;
+      maxModelBytes?: number;
+    };
   };
   readonly inputSchema: JSONSchema7;
   handler(input: Input, context: ToolContext): Promise<Output | ToolHandlerFailure>;
@@ -83,10 +87,10 @@ interface ToolEntry<Input = unknown, Output = unknown> {
 ```
 
 - `ToolId` 是品牌字符串，由 `toolId()` 工厂创建；注册表在启动装配时拒绝重复 id，授权时拒绝未注册 id，fail-closed。
-- `ToolContext` 包含 `toolCallId`、`signal`、`workspaceRoot`、`runId`、`sessionId`；上下文由本次 run 注入。
+- `ToolContext` 包含 `toolCallId`、`signal`、`workspaceRoot`、`runId`、`sessionId`；可选的 `readFileState` 与 `workerPaths` 由宿主/会话上下文注入。
 - 采用开放 id 而不是 core 内的闭合联合，是为了让领域新增工具时不需要改 core 的类型文件；代价是失去编译期穷举，由「启动注册 + 授权 fail-closed」补偿。
 - 运行时输入校验继续使用 AI SDK 的 `jsonSchema` 和 JSON Schema 约束，不引入 zod。`validateInput` 只补 schema 表达不了的业务前置。
-- 结果预算按字符计（`maxModelChars`），而不是提案中的 `maxModelBytes`；现有 Read/Grep 的截断语义是 20,000 字符，按字节会在中文内容上提前截断，改变既有行为。`maxOutputBytes` 是模型可见内容的字节上限，执行器在 `formatModelContent` 投影后检查，超过时返回 `output-too-large`；结构化原始输出不能因 JSON 包装被误判。Read 的独立 token/字符预算见 `../feature/2026-11-09-read-tool-text-quality.md`。
+- 结果预算默认按字符计（`maxModelChars`）；新增可选 `maxModelBytes`，两者同时配置时先按 UTF-8 字节安全截断，再按字符截断。Read 继续只使用字符/token 预算；Grep 按 ZCode 对齐同时使用 20,000 字符和 20,000 字节。`maxOutputBytes` 是投影后模型可见内容的硬上限，执行器在 `formatModelContent` 后检查，超过时返回 `output-too-large`；结构化原始输出不能因 JSON 包装被误判。Read 的独立预算见 `../feature/2026-11-09-read-tool-text-quality.md`，Grep 见 `../feature/2026-11-09-grep-ripgrep-tool.md`。
 
 注册表与工具集申请：
 
@@ -118,9 +122,9 @@ const conversationAgent: AgentDefinition<ConversationAgentInput> = {
 4. 调 `handler`：只在 Agent 进程执行，不通过 desktop 反向 RPC。
 5. 结果预算：本期实现 `inline` 与 `truncate`；`artifact` 保留在类型里但显式返回 `unsupported-budget`，不静默降级。
 6. `formatModelContent`：把结构化输出投影成模型消息；没有自定义投影时使用统一的文本序列化。
-7. 返回 `ToolResult`：包含 `success`、`output`、`error`、`durationMs`、`modelContent`、`truncated`。
+7. 返回 `ToolResult`：包含 `success`、`output`、`error`、`durationMs`、`modelContent`、`truncated`。失败结果的 `modelContent` 是模型可见文本，格式见 `2026-11-09-tool-business-failures-as-model-results.md`。
 
-事件写入不双写：`core/agent/executeRun.ts:108-131` 仍用 `experimental_onToolCallStart/Finish` 写事件。执行器只返回 `ToolResult`，registry 在失败时抛出 `ToolExecutionError`，由 AI SDK 的 finish 回调统一呈现为 `success:false`，避免出现两套事实来源。
+事件写入不双写：`core/agent/executeRun.ts:108-131` 仍用 `experimental_onToolCallStart/Finish` 写事件。执行器只返回 `ToolResult`；registry 对 `ToolFailure` 直接返回 `modelContent`，不再抛 `ToolExecutionError`。AI SDK 因此产生普通 `tool-result` 与 finish 事件；只有基础设施异常继续抛出，避免出现两套事实来源。
 
 迁移结果：
 
@@ -142,10 +146,8 @@ const conversationAgent: AgentDefinition<ConversationAgentInput> = {
 
 - **维持工具系统仅在 conversation 域：** 舍弃。它会让 answer/interview 只能反向依赖 conversation 或复制一套机制，违反领域互导禁令；本次提升到 core 正是为了消除这条依赖。
 - **把工具契约放进 `packages/shared`：** 舍弃。工具定义、handler 和执行上下文只存在于 Agent 进程，不跨 IPC；`shared` 只保留已经跨进程的工具体事件 schema，避免把 Agent 内部类型暴露成协议。
-- **完整照搬 ZCode 工具系统（权限审批、调度器、动态工具目录、插件）：** 舍弃。Answra 目前没有第二个工具消费者、没有危险写工具、没有多 agent 编排需求；提前引入会违反「工具生态未成形前不预支复杂度」的防回退红线。
-- **自研 agent loop 与工具调度器：** 舍弃。AI SDK 6 的 `streamText` + `stopWhen` 已满足当前断点和步数需求；实测不足时再单独提案。
 - **保留 `conversation/tools` 作为实现、只在 core 放接口：** 舍弃。接口与实现分离会让通用工具继续被锁在对话域，其他领域仍然无法复用。
-- **结果预算按字节计：** 舍弃。现有行为是 20,000 字符截断；按字节会让中文内容显著提前截断。改为 `maxModelChars`，`maxOutputBytes` 限制模型可见投影，避免结构化 JSON 的包装开销被误算进 Read 正文预算。
+- **结果预算只按字节计：** 舍弃。Read 的既有 20,000 字符/token 语义不能被字节统一替换；因此保留 `maxModelChars` 为主，新增可选 `maxModelBytes` 给需要对齐 ZCode 20k 模型字节的 Grep 使用。`maxOutputBytes` 仍限制投影后模型可见内容，避免结构化 JSON 包装被误算。
 
 ## 后果与防回退
 
@@ -162,9 +164,10 @@ const conversationAgent: AgentDefinition<ConversationAgentInput> = {
 ## 验证
 
 - `pnpm --filter @answra/agent typecheck`：通过。
-- `pnpm --filter @answra/agent test`：26 个测试文件、168 个测试通过。
+- `pnpm --filter @answra/agent test`：27 个测试文件、193 个测试通过。
 - 新增 `apps/agent/test/core/tool/registry.test.ts`：重复 id、未注册 id、重复模型名、授权过滤。
-- 新增 `apps/agent/test/core/tool/executeToolCall.test.ts`：成功、默认序列化、`resolveInput`、`formatModelContent`、业务失败、基础设施错误、超时、取消、原始输出超限、截断、inline、artifact 未实现。
-- `apps/agent/test/core/tool/builtinTools.test.ts`：授权模型名、Read/Grep 工作区边界、隐藏目录、符号链接逃逸、取消。
+- 新增 `apps/agent/test/core/tool/executeToolCall.test.ts`：成功、默认序列化、`resolveInput`、`formatModelContent`、业务失败、基础设施错误、超时、取消、原始输出超限、字符/字节截断、inline、artifact 未实现。
+- `apps/agent/test/core/tool/builtinTools.test.ts`：授权模型名、Read/Grep 工作区外路径与符号链接目标、无 workspace 的绝对路径、版本库目录、取消。
+- `apps/agent/test/core/tool/grep.test.ts`：ripgrep 正则、glob/type、上下文、分页、multiline、`.gitignore`、点文件、版本库排除、大文件、20k 字节预算。
 - `apps/agent/test/conversation/application.test.ts`：仍验证只把 profile 授权的 Read/Grep schema 发送给模型，Answer 不发送工具。
 - 实机验证待桌面端真实对话中触发 Read/Grep 后补录；当前自动化证据覆盖工具契约、执行管理和模型请求投影。

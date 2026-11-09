@@ -10,7 +10,8 @@
   },
   "exports": {
     ".": "./src/index.ts",
-    "./evaluation": "./src/interview/evaluation.ts"
+    "./evaluation": "./src/interview/evaluation.ts",
+    "./grep-worker": "./src/core/tool/builtin/grepWorker.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -19,7 +20,8 @@
   "dependencies": {
     "@ai-sdk/openai-compatible": "2.0.81",
     "@answra/shared": "workspace:*",
-    "ai": "6.0.303"
+    "ai": "6.0.303",
+    "ripgrep": "0.3.1"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",

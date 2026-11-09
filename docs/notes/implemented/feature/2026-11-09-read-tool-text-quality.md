@@ -6,7 +6,7 @@
 
 `Read` 迁移到 `core/tool/builtin` 后仍沿用早期 MVP：只接受工作区相对路径、只允许固定扩展名、单文件上限 128 KiB，空文件会返回 `1\t`，大文件由执行器静默截断，模型拿不到“内容被截断、下一段从哪里开始”的明确提示。与 ZCode 的文本读取能力相比，这些差异会直接影响模型读取工作区的可靠性。
 
-本次把 `Read` 的文本子集提升到可日常使用的程度：结构化输出、25k token 预算、部分视图、文件状态去重、缺失文件建议、UTF-8/UTF-16 解码，并修正执行器对结构化输出的字节上限检查。`Grep` 仍是字面文本搜索，本次不改名、不接 ripgrep。
+本次把 `Read` 的文本子集提升到可日常使用的程度：结构化输出、25k token 预算、部分视图、文件状态去重、缺失文件建议、UTF-8/UTF-16 解码，并修正执行器对结构化输出的字节上限检查。`Grep` 的后续 ripgrep 改造见 `2026-11-09-grep-ripgrep-tool.md`。
 
 ## 涉及范围
 
@@ -23,14 +23,14 @@
 ## 影响表面
 
 - 模型可读取工作区内任意 UTF-8/UTF-16 纯文本文件，包括无扩展名文件和常见源码/配置；不再受固定扩展名白名单限制。
-- 模型可使用工作区相对路径或工作区内绝对路径；工作区外路径、隐藏项、忽略目录和符号链接逃逸仍被拒绝。
+- 模型可使用工作区相对/绝对路径以及工作区外路径；工作区只是相对路径基线。版本库目录仍被拒绝，符号链接经 `realpath` 后按目标路径判断。普通点文件（如 `.env`）可读取。
 - 默认读取全文；内容超过 25k token 时返回带行号的部分视图、已显示范围和下一 `offset`，模型可继续分段读取。空文件、越界 offset、缺失文件和相似文件名都有明确提示。
 - 同一会话内重复读取相同范围且文件未变化时返回 `file_unchanged`，避免模型重复消耗上下文。
 - 工作区正文仍会发送给当前配置的模型服务；本次不改变 UI、IPC、worker 协议或持久化表面。
 
 ## 决定
 
-- `file_path` 同时接受工作区相对路径和工作区内绝对路径；两者都经过 `realpath` 与工作区边界校验。隐藏项、忽略目录和符号链接逃逸仍拒绝。
+- `file_path` 同时接受工作区相对路径和任意绝对路径；两者都经过 `realpath`，只按真实路径的目录段排除版本库目录，不要求落在工作区内。工作区外路径策略见 `../architecture/2026-11-09-workspace-default-root-not-boundary.md`。
 - 不再用扩展名白名单判断文本：读取字节后按 BOM 识别 UTF-8/UTF-16LE/UTF-16BE，否则执行二进制控制字符预检并严格 UTF-8 解码。不引入 `iconv-lite`，GBK 等遗留编码仍不支持。
 - `Read` 单文件上限 256 KiB；带 `offset`/`limit` 的范围读取允许读到 16 MiB 扫描上限，避免大文件只能整文件拒绝。
 - 空文件返回 `<system-reminder>文件存在，但内容为空。</system-reminder>`，不再输出 `1\t`。
@@ -53,20 +53,20 @@
 ## 后果与防回退
 
 - 正面后果：Read 对绝对/相对路径、无扩展名文本、UTF-8/UTF-16、空文件、缺失文件和越界范围的反馈稳定；大文件可以被模型分段读取，重复读取不再浪费上下文。
-- 代价：Read 会读取任意受支持编码的文本文件，不再按扩展名预筛；安全边界仍依赖工作区路径校验和隐藏/忽略目录规则。会话级 read 状态只存在内存中，进程重启后失效。
+- 代价：Read 会读取任意受支持编码的文本文件，不再按扩展名预筛；安全边界仍依赖工作区路径校验和版本库目录排除。会话级 read 状态只存在内存中，进程重启后失效。
 - 防回退：
   - 不得恢复扩展名白名单作为 Read 的唯一准入条件。
   - 不得让空文件返回空字符串或伪造行号。
   - 部分视图必须同时给出已显示范围和下一 offset。
-  - 隐藏项、忽略目录、符号链接逃逸仍然拒绝；不能因为支持绝对路径而放宽工作区边界。
+  - 版本库目录仍然拒绝；不能因为支持工作区外路径而取消 `realpath` 后的 VCS 排除。
   - `partialView` 的读取结果不得返回 `file_unchanged`。
   - `maxOutputBytes` 必须检查模型投影结果，不得回退到原始 JSON 序列化。
-  - `Grep` 的文件上限和字面搜索行为本次不变；若后续要保留 `Grep` 名称，需单独决定是否接入 ripgrep/regex。
+  - `Grep` 已由 `2026-11-09-grep-ripgrep-tool.md` 升级为 WASI ripgrep；不得回退为字面搜索。
 
 ## 验证
 
 - `pnpm --filter @answra/agent typecheck`：通过。
-- `pnpm --filter @answra/agent test`：26 个测试文件、176 个测试通过。
-- `pnpm exec vitest run test/core/tool/builtinTools.test.ts test/core/tool/executeToolCall.test.ts`：25 个测试通过。
-- 覆盖：工作区绝对路径、`Dockerfile` 无扩展名文本、空文件提示、offset 越界、默认全文读取、25k token 部分视图、单行超 token 预算、256 KiB 整文件上限与范围读取、`file_unchanged`、缺失文件相似名建议、UTF-16 BOM、二进制拒绝、隐藏路径拒绝、遍历/符号链接/取消、结构化输出投影后的字节上限。
+- `pnpm --filter @answra/agent test`：27 个测试文件、193 个测试通过。
+- `pnpm exec vitest run test/core/tool/builtinTools.test.ts test/core/tool/executeToolCall.test.ts test/core/tool/registry.test.ts test/core/tool/grep.test.ts test/conversation/turn/workspaceContext.test.ts`：47 个测试通过。
+- 覆盖：工作区绝对/相对路径、工作区外相对/绝对路径与符号链接目标、无 workspace 的绝对路径、`Dockerfile` 无扩展名文本、空文件提示、offset 越界、默认全文读取、25k token 部分视图、单行超 token 预算、256 KiB 整文件上限与范围读取、`file_unchanged`、缺失文件相似名建议、UTF-16 BOM、二进制拒绝、版本库路径拒绝、取消、结构化输出投影后的字节上限。
 - 实机验证待桌面端真实对话中触发 Read 后补录；自动化验证只覆盖 Agent 进程内的工具行为。

@@ -18,6 +18,7 @@ export {
   type ToolResultBudget,
   type ToolSideEffectScope,
   type ToolSuccess,
+  type ToolWorkerPaths,
   toolId,
 } from "./contracts";
 export { executeToolCall } from "./executor/executeToolCall";

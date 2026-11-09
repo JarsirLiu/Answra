@@ -52,6 +52,8 @@ export interface AgentHostOptions {
    * 缺省用默认窗口：真实面试延迟特征待校准后再收敛默认值。
    */
   turnSettler?: import("./interview/turns/settler").CandidateTurnSettlerOptions;
+  /** 宿主注入的 Grep WASI worker 脚本路径；缺省时在 Agent 进程内执行。 */
+  grepWorkerPath?: string;
 }
 
 export interface AgentHost {
@@ -77,6 +79,7 @@ export function startAgentHost({
   vad,
   recognizer,
   turnSettler,
+  grepWorkerPath,
 }: AgentHostOptions): AgentHost {
   /** 云端令牌的等待表：run 启动与 401 刷新共用同一条反向请求。 */
   const tokenRequests = new Map<
@@ -119,7 +122,12 @@ export function startAgentHost({
     tokenProvider: requestAccessToken,
   });
   const conversationAgent = agentRuntime.registerAgent(
-    createConversationAgentDefinition({ store, tools: createBuiltinToolRegistry() }),
+    createConversationAgentDefinition({
+      store,
+      tools: createBuiltinToolRegistry({
+        ...(grepWorkerPath ? { workerPaths: { grep: grepWorkerPath } } : {}),
+      }),
+    }),
   );
   const answerAgent = agentRuntime.registerAgent(screenshotAnswerAgent);
   const interviewAgent = agentRuntime.registerAgent(createInterviewReplyAgent(store));

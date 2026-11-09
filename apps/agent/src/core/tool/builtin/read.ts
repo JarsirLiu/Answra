@@ -1,4 +1,4 @@
-/** 从当前工作区读取有大小/token 上限、带行号的 UTF-8/UTF-16 纯文本内容。 */
+/** 读取有大小/token 上限、带行号的 UTF-8/UTF-16 纯文本；相对路径以当前工作区为基线。 */
 
 import { promises as fs } from "node:fs";
 import path from "node:path";
@@ -15,10 +15,9 @@ import {
   assertNotAborted,
   READ_FILE_MAX_BYTES,
   READ_SCAN_MAX_BYTES,
-  readWorkspaceTextFile,
-  requireWorkspaceRoot,
-  statWorkspaceFile,
-  type WorkspaceFileStat,
+  readToolTextFile,
+  statToolFile,
+  type ToolFileStat,
 } from "./workspace";
 
 interface ReadInput {
@@ -43,7 +42,7 @@ export const readTool = defineTool<ReadInput, ReadOutput>({
   metadata: {
     name: "Read",
     description:
-      "读取工作区内的 UTF-8/UTF-16 纯文本文件。file_path 推荐使用绝对路径，也接受工作区相对路径；默认读取全文，超过 token 上限时返回可续读的部分视图。offset 和 limit 用于读取指定行范围。",
+      "读取 UTF-8/UTF-16 纯文本文件。file_path 推荐使用绝对路径，也接受相对于当前工作区的路径；默认读取全文，超过 token 上限时返回可续读的部分视图。offset 和 limit 用于读取指定行范围。",
     readOnly: true,
     destructive: false,
     concurrentSafe: true,
@@ -58,19 +57,13 @@ export const readTool = defineTool<ReadInput, ReadOutput>({
 });
 
 export async function executeRead(context: ToolContext, input: ReadInput): Promise<ReadOutput> {
-  let root: string;
-  try {
-    root = requireWorkspaceRoot(context.workspaceRoot);
-  } catch {
-    throw new ToolExecutionError("invalid-input", "尚未选择工作区目录");
-  }
-
+  const root = context.workspaceRoot;
   const offset = normalizeOffset(input.offset);
   const limit = normalizeLimit(input.limit);
 
   try {
     assertNotAborted(context.signal);
-    const stat = await statWorkspaceFile(root, input.file_path);
+    const stat = await statToolFile(root, input.file_path);
     const key = createReadFileStateKey(stat.target, offset, limit);
     const cached = context.readFileState?.get(key);
     if (cached && isCachedReadFresh(cached, stat)) {
@@ -85,7 +78,7 @@ export async function executeRead(context: ToolContext, input: ReadInput): Promi
       );
     }
 
-    const read = await readWorkspaceTextFile(stat.target, maxBytes);
+    const read = await readToolTextFile(stat.target, maxBytes);
     assertNotAborted(context.signal);
     const output = createReadTextOutput({
       bytesRead: read.bytesRead,
@@ -146,7 +139,7 @@ function readStatePathKey(filePath: string): string {
   return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }
 
-function isCachedReadFresh(entry: ReadFileStateEntry, stat: WorkspaceFileStat): boolean {
+function isCachedReadFresh(entry: ReadFileStateEntry, stat: ToolFileStat): boolean {
   return (
     !entry.partialView &&
     entry.mtimeMs === Math.trunc(stat.mtimeMs) &&
@@ -154,20 +147,32 @@ function isCachedReadFresh(entry: ReadFileStateEntry, stat: WorkspaceFileStat): 
   );
 }
 
-async function createMissingReadFileMessage(root: string, inputPath: string): Promise<string> {
+async function createMissingReadFileMessage(
+  root: string | null,
+  inputPath: string,
+): Promise<string> {
   const target = path.isAbsolute(inputPath)
     ? path.resolve(inputPath)
-    : path.resolve(root, inputPath);
+    : path.resolve(root ?? process.cwd(), inputPath);
   const suggestion = await findSimilarFilename(target);
-  const relativeSuggestion = suggestion
-    ? path
-        .relative(root, path.join(path.dirname(target), suggestion))
-        .split(path.sep)
-        .join("/")
+  const displaySuggestion = suggestion
+    ? displayPath(root, path.join(path.dirname(target), suggestion))
     : undefined;
-  return `文件不存在。当前工作区根目录是 ${root}。${
-    relativeSuggestion ? ` 是否想找 ${relativeSuggestion}？` : ""
+  const rootDescription = root
+    ? `当前工作区根目录是 ${root}。`
+    : "尚未选择工作区目录，已按绝对路径查找。";
+  return `文件不存在。${rootDescription}${
+    displaySuggestion ? ` 是否想找 ${displaySuggestion}？` : ""
   }`;
+}
+
+function displayPath(root: string | null, target: string): string {
+  if (root) {
+    const relative = path.relative(path.resolve(root), target);
+    if (relative && !relative.startsWith("..") && !path.isAbsolute(relative))
+      return relative.split(path.sep).join("/");
+  }
+  return target.split(path.sep).join("/");
 }
 
 async function findSimilarFilename(target: string): Promise<string | undefined> {

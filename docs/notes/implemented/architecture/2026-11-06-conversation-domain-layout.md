@@ -33,7 +33,7 @@ conversation/
     requestContent.ts       请求与图片边界校验
     timeReminder.ts         仅授权 profile 使用的时间上下文
   profiles/                 场景提示词、上下文策略与工具授权
-  tools/                    Conversation 自有工具、工作区边界与静态注册
+  tools/                    Conversation 自有工具、工作区默认根与静态注册
 ```
 
 保留 `profiles/` 和 `tools/`，因为它们分别表达场景策略和 Conversation 拥有的能力，而不是传输或 UI 概念。`core/transcript/` 只拥有共享消息 transcript；run/attempt/step 执行事实仍属于独立 `execution/` 领域。跨领域共享原语仍由 `core/` 负责，但不得借本次目录整理新增跨领域抽象。

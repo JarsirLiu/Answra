@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import path from "node:path";
 import type {
   AgentCommand,
   AgentFrame,
@@ -40,7 +42,14 @@ export function startAgentWorker(
     // 缺省路径时文件源会在加载阶段以显式错误失败（fail-closed），而不是假装可用。
     createTenVadFileSource(options?.vadResourceRoot ?? "");
   const recognizer = createRecognizer(options?.recognizer, options?.asrResourceRoot ?? "");
-  return startAgentHost({ transport, vad, recognizer });
+  const grepWorkerPath =
+    typeof __dirname === "string" ? path.join(__dirname, "grepWorker.cjs") : undefined;
+  return startAgentHost({
+    transport,
+    vad,
+    recognizer,
+    ...(grepWorkerPath && existsSync(grepWorkerPath) ? { grepWorkerPath } : {}),
+  });
 }
 
 function createRecognizer(

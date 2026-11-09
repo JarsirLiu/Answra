@@ -193,7 +193,7 @@ function findLargestPrefixCharsWithinTokenBudget(content: string): number {
   return low;
 }
 
-/** 与 ZCode 的 Read token 估算保持一致：中文字符按两个字符计入，再按除数折算。 */
+/** 中文字符按两个字符计入，再按除数折算。 */
 function estimateTokens(text: string): number {
   const chineseChars = (text.match(/[\u4e00-\u9fff]/g) ?? []).length;
   const otherChars = text.length - chineseChars;
