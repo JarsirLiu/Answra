@@ -46,6 +46,7 @@
 - `ToolResultBudget` 增加可选 `maxModelBytes`；Grep 同时限制 20,000 字符和 20,000 字节，按 UTF-8 字节安全截断，避免中文被切半。
 - `createBuiltinToolRegistry` 接收 `workerPaths`；desktop 组合根注入 `grepWorker.cjs`。worker 文件只随 chat profile 构建，answer profile 不携带。
 - `audit-packaged-input.mjs` 的 workspace 特征路径从已删除的 `conversation/tools` 更新为 `core/tool`，避免 profile 审计继续检查不存在的路径。
+- `ripgrep` 的 ESM 入口在模块加载时用 `import.meta.url` 计算未使用的 `rgPath`。`agent-worker` 也静态包含 `grep.ts`/`ripgrep`，因此 `build-electron.mjs` 对 `agent-worker` 和 `grep-worker` 都注入合法的 `import.meta.url`；否则 CJS utility process 启动即因 `Invalid URL (./rg.mjs)` 退出，表现为“本地 AI 服务尚未启动”。
 
 ## 曾考虑的替代方案
 
@@ -70,6 +71,7 @@
   - `head_limit` 与 `offset` 必须按匹配记录分页，不能先拼接全部结果再截字符串。
   - 模型可见内容必须同时受 20,000 字节上限约束；字节截断不得切坏 UTF-8 字符。
   - worker 超时/取消必须 terminate，不得留下后台 WASI 调用。
+  - 任何包含 `ripgrep` 的 CJS bundle 必须注入 `import.meta.url`；新增 worker 入口时不得只修 `grep-worker` 而遗漏 `agent-worker`。
 
 ## 验证
 
@@ -78,8 +80,9 @@
 - `pnpm --filter @answra/agent test`：27 个测试文件、193 个测试通过。
 - `pnpm exec vitest run test/core/tool/grep.test.ts test/core/tool/builtinTools.test.ts test/core/tool/registry.test.ts test/core/tool/executeToolCall.test.ts test/conversation/turn/workspaceContext.test.ts`：47 个测试通过。
 - 新增覆盖：regex、非法正则、files/count/content、glob/type、上下文、`-o`、Windows 路径、绝对路径、工作区外路径与输出投影、`.gitignore`、`.env`、版本库排除、大于 128 KiB 文件、`head_limit`/`offset`、multiline、无结果、缺失路径、取消、20k 字节预算、UTF-8 字节截断。
-- `pnpm --filter @answra/desktop build:electron -- --profile=full`：通过，生成 `grepWorker.cjs`。
+- `pnpm --filter @answra/desktop build:electron -- --profile=full`：通过，生成 `grepWorker.cjs` 与 `worker.cjs`。
 - 用 Node `worker_threads` 直接执行构建后的 `grepWorker.cjs`，成功返回 ripgrep JSON；worker 路径与 WASI 预开放目录验证通过。
+- 直接 `node out/main/conversation/worker.cjs`：不再出现 `Invalid URL (./rg.mjs)`，只在预期的 utility process 入口守卫处退出，证明 `ripgrep` 模块加载阶段已修复。
 - 实机 Electron 对话中的 Grep 调用和 asar 内 worker 加载仍需在安装包中验收。
 
 ## 风险

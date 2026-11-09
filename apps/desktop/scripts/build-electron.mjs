@@ -45,6 +45,14 @@ const bundleOptions = {
 };
 
 /**
+ * ripgrep 的 ESM 入口在模块加载时用 import.meta.url 计算未使用的 rgPath。
+ * 所有包含 ripgrep 的 CJS worker 都必须注入一个合法 URL，否则启动即抛 Invalid URL。
+ */
+const ripgrepDefine = {
+  "import.meta.url": JSON.stringify("file:///C:/__answra__/rg.mjs"),
+};
+
+/**
  * 打包 Electron main / preload。
  * 两端都以 CJS bundle 输出：main 可直接 require workspace 源码包，
  * preload 在 sandbox 下必须是单文件 CJS。
@@ -97,6 +105,10 @@ const buildTargets = [
       format: "cjs",
       target: "node20.9",
       metafile: true,
+      define: {
+        ...bundleOptions.define,
+        ...ripgrepDefine,
+      },
       // sherpa-onnx-node 留给 utility process 运行时 require：native addon 不可打包。
       external: ["electron", "koffi", "sherpa-onnx-node"],
       outfile: "out/main/conversation/worker.cjs",
@@ -108,10 +120,9 @@ const buildTargets = [
           name: "grep-worker",
           options: {
             ...bundleOptions,
-            // ripgrep 的 ESM 入口会计算未使用的 rgPath；CJS 运行时没有 import.meta。
             define: {
               ...bundleOptions.define,
-              "import.meta.url": JSON.stringify("file:///C:/__answra__/rg.mjs"),
+              ...ripgrepDefine,
             },
             entryPoints: ["src/main/conversation/grepWorker.ts"],
             platform: "node",
