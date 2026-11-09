@@ -50,6 +50,8 @@ describe("builtin workspace tools", () => {
     expect(registry.list().map(({ id, metadata }) => [id, metadata.name])).toEqual([
       ["workspace.read", "Read"],
       ["workspace.grep", "Grep"],
+      ["workspace.run-command", "RunCommand"],
+      ["workspace.write-stdin", "WriteStdin"],
     ]);
     expect(Object.keys(tools)).toEqual(["Read"]);
   });

@@ -121,12 +121,13 @@ export function startAgentHost({
     emitEvent: (event: AgentEventEnvelope) => transport.send({ version: 1, type: "event", event }),
     tokenProvider: requestAccessToken,
   });
+  const tools = createBuiltinToolRegistry({
+    ...(grepWorkerPath ? { workerPaths: { grep: grepWorkerPath } } : {}),
+  });
   const conversationAgent = agentRuntime.registerAgent(
     createConversationAgentDefinition({
       store,
-      tools: createBuiltinToolRegistry({
-        ...(grepWorkerPath ? { workerPaths: { grep: grepWorkerPath } } : {}),
-      }),
+      tools,
     }),
   );
   const answerAgent = agentRuntime.registerAgent(screenshotAnswerAgent);
@@ -186,6 +187,9 @@ export function startAgentHost({
       pending.reject(new Error("本地 AI 服务已关闭"));
     }
     tokenRequests.clear();
+    void tools.dispose().catch((error: unknown) => {
+      console.warn("[agent] tool cleanup failed", error);
+    });
     runtime.dispose();
   }
 

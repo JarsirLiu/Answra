@@ -3,6 +3,7 @@ import type { ToolWorkerPaths } from "../contracts";
 import { ToolRegistry } from "../registry";
 import { grepTool } from "./grep";
 import { readTool } from "./read";
+import { createShellTools } from "./shell/tools";
 
 export function createBuiltinToolRegistry(
   options: { readonly workerPaths?: ToolWorkerPaths } = {},
@@ -10,7 +11,10 @@ export function createBuiltinToolRegistry(
   const registry = new ToolRegistry({
     ...(options.workerPaths ? { workerPaths: options.workerPaths } : {}),
   });
+  const shell = createShellTools();
   registry.register(readTool);
   registry.register(grepTool);
+  registry.register(shell.runCommand);
+  registry.register(shell.writeStdin);
   return registry;
 }

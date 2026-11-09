@@ -4,6 +4,7 @@ import {
   executeToolCall,
   type ToolContext,
   type ToolEntry,
+  ToolExecutionError,
   type ToolMetadata,
   toolId,
 } from "../../../src/core/tool";
@@ -298,5 +299,123 @@ describe("executeToolCall", () => {
       success: false,
       error: { code: "unsupported-budget" },
     });
+  });
+
+  it("maps a ToolExecutionError thrown by resolveInput to a structured failure", async () => {
+    const result = await executeToolCall(
+      testTool(async () => "unused", {
+        resolveInput: () => {
+          throw new ToolExecutionError("invalid-input", "cannot resolve");
+        },
+      }),
+      {},
+      context(),
+    );
+
+    expect(result).toMatchObject({
+      success: false,
+      error: { code: "invalid-input", message: "cannot resolve" },
+    });
+  });
+
+  it("propagates unexpected errors thrown by resolveInput", async () => {
+    await expect(
+      executeToolCall(
+        testTool(async () => "unused", {
+          resolveInput: () => {
+            throw new Error("resolver crashed");
+          },
+        }),
+        {},
+        context(),
+      ),
+    ).rejects.toThrow("resolver crashed");
+  });
+
+  it("falls back to String for outputs without a JSON representation", async () => {
+    const undef = await executeToolCall(
+      testTool(async () => undefined),
+      {},
+      context(),
+    );
+    const nul = await executeToolCall(
+      testTool(async () => null),
+      {},
+      context(),
+    );
+
+    expect(undef).toMatchObject({ success: true, modelContent: "undefined" });
+    expect(nul).toMatchObject({ success: true, modelContent: "null" });
+  });
+
+  it("validates input before resolving it or invoking the handler", async () => {
+    const validateInput = vi.fn(() => ({
+      ok: false as const,
+      code: "invalid-input" as const,
+      message: "rejected",
+    }));
+    const resolveInput = vi.fn((input: unknown) => input);
+    const handler = vi.fn(async () => "unused");
+
+    const result = await executeToolCall(
+      testTool(handler, { validateInput, resolveInput }),
+      {},
+      context(),
+    );
+
+    expect(result).toMatchObject({ success: false, error: { message: "rejected" } });
+    expect(validateInput).toHaveBeenCalledTimes(1);
+    expect(resolveInput).not.toHaveBeenCalled();
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it("skips validation and the handler when the signal is already aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const validateInput = vi.fn(() => undefined);
+    const handler = vi.fn(async () => "unused");
+
+    const result = await executeToolCall(
+      testTool(handler, { validateInput }),
+      {},
+      context(controller.signal),
+    );
+
+    expect(result).toMatchObject({ success: false, error: { code: "aborted" } });
+    expect(validateInput).not.toHaveBeenCalled();
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it("turns a non-positive tool timeout into an invalid-input failure", async () => {
+    const result = await executeToolCall(
+      testTool(async () => "unused", {
+        metadata: metadata("NoTimeout", { timeoutMs: 0 }),
+      }),
+      {},
+      context(),
+    );
+
+    expect(result).toMatchObject({
+      success: false,
+      error: { code: "invalid-input", message: "工具超时必须为正数" },
+    });
+  });
+
+  it("reports a non-negative duration for both success and failure", async () => {
+    const success = await executeToolCall(
+      testTool(async () => "ok"),
+      {},
+      context(),
+    );
+    const failure = await executeToolCall(
+      testTool(async () => "ok", {
+        validateInput: () => ({ ok: false, code: "invalid-input", message: "bad" }),
+      }),
+      {},
+      context(),
+    );
+
+    expect(success.durationMs).toBeGreaterThanOrEqual(0);
+    expect(failure.durationMs).toBeGreaterThanOrEqual(0);
   });
 });

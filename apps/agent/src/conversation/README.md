@@ -27,6 +27,6 @@ conversation/
 
 ## 工具
 
-Conversation 不持有工具实现或工具 registry，只在 profile 中声明 `ToolId[]`。通用 `Read`/`Grep` 由 `../core/tool/builtin/` 提供并在 Agent 进程执行；desktop 只注入获准的工作区根目录。工作区是默认根目录而非访问边界，路径规则与 VCS 排除见 `docs/notes/implemented/architecture/2026-11-09-workspace-default-root-not-boundary.md`。
+Conversation 不持有工具实现或工具 registry，只在 profile 中声明 `ToolId[]`。通用 `Read`/`Grep`/`RunCommand`/`WriteStdin` 由 `../core/tool/builtin/` 提供并在 Agent 进程执行；desktop 只注入获准的工作区根目录。工作区是默认根目录而非访问边界，路径规则与 VCS 排除见 `docs/notes/implemented/architecture/2026-11-09-workspace-default-root-not-boundary.md`；shell 的权限范围与会话生命周期见 `docs/notes/implemented/feature/2026-11-09-shell-tools-and-session-runtime.md`。
 
 Answra 只采用按事实拆分的原则，当前仍保持单 Agent 进程和内存仓储，不预建远程服务、SQLite 或插件框架。

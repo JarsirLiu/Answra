@@ -10,7 +10,13 @@ export function toolId(value: string): ToolId {
   return value as ToolId;
 }
 
-export type ToolSideEffectScope = "none" | "workspace" | "network" | "session" | "userInteraction";
+export type ToolSideEffectScope =
+  | "none"
+  | "workspace"
+  | "network"
+  | "session"
+  | "userInteraction"
+  | "process";
 export type ToolResultBudgetStrategy = "inline" | "truncate" | "artifact";
 
 export interface ToolResultBudget {
@@ -101,6 +107,8 @@ export interface ToolEntry<Input = unknown, Output = unknown> {
   validateInput?(input: unknown): ToolHandlerFailure | undefined;
   resolveInput?(input: Input, context: ToolContext): Input | Promise<Input>;
   formatModelContent?(output: Output): string;
+  /** Agent 进程收尾时释放该工具持有的长生命周期资源。 */
+  dispose?(): void | Promise<void>;
 }
 
 /** 注册表内部擦除泛型后的工具条目；输入已由 AI SDK 按 inputSchema 校验。 */

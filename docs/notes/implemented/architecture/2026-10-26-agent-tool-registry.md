@@ -25,14 +25,14 @@
 - 静态注册项绑定稳定 ID、模型名称/schema 和执行器；profile 仅列允许的 ID，runtime 根据 profile 授权构造 AI SDK 工具。
 - 首批只提供 `Read` 与 `Grep` 两项只读纯文本工具，移除旧 workspace 清单/读取工具。目录树不默认注入 prompt。
 - 每次 run 将 workspace 根目录快照和 `AbortSignal` 传给 Agent 工具。工具用 Agent 进程 Node 文件 API，自行校验真实路径、符号链接、隐藏目录、忽略目录和资源限制；desktop 只下发根目录。
-- Read 读取行号文本及指定行范围；Grep 搜索字面文本。PDF/DOCX、Glob、Bash、写入工具和 CLI/stdio 启动器不属于本阶段。
+- Read 读取行号文本及指定行范围；Grep 搜索字面文本。PDF/DOCX、Glob、Bash、写入工具和 CLI/stdio 启动器不属于本阶段。后续由 `../feature/2026-11-09-shell-tools-and-session-runtime.md` 覆盖 Bash 范围限制：当前 `general-chat` 已开放 `RunCommand`/`WriteStdin`。
 - 不抽象 `FileSystemPort`：目前只有一种本地文件系统实现；第二个真实实现消费者出现后再评估。
 
 ## 曾考虑的替代方案
 
 - **继续由 runtime 手工拼装工具：** 舍弃。schema 与授权会随工具增加而分散。
 - **搬运 ZCode handlers/contracts：** 舍弃。其内部端口和权限/运行时 contracts 不是独立复用模块。
-- **开放 Bash 代替专用工具：** 舍弃。命令执行权限远高于文件读取。
+- **开放 Bash 代替专用工具：** 本阶段舍弃，因为命令执行权限远高于文件读取；后续用户明确要求移植 shell 工具，决定与风险见 `../feature/2026-11-09-shell-tools-and-session-runtime.md`。
 - **由 desktop 提供工具执行：** 舍弃。Agent 改由 CLI 调用时会失去工具能力。
 - **现在建立 FileSystemPort：** 舍弃。当前没有第二种实现消费者。
 

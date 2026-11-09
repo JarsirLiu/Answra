@@ -17,8 +17,8 @@
 ## 决定
 
 - 每次 run 组装 system prompt 时，从本回合快照的 `workspaceRoot` 生成 `# 工作区` 段，追加到 profile 系统提示词之后；该段不持久化，不进入 transcript。
-- 已选择目录：给出根目录绝对路径，声明它是默认根目录而非访问边界，`Read`/`Grep` 也接受任意绝对路径；优先在当前工作区查找，并要求需要文件信息时用 `Grep` 检索、不得臆测文件名。
-- 未选择目录：声明 `Read`/`Grep` 仍可用但必须提供绝对路径，并建议用户先在「笔记本」面板选择目录以使用相对路径和默认搜索范围。
+- 已选择目录：给出根目录绝对路径，声明它是默认根目录而非访问边界；相对路径以它为准，也允许任意绝对路径。提示词只描述事实和路径规则，不点名工具或枚举工具能力。
+- 未选择目录：声明相对路径不可解析、查看文件必须使用绝对路径，并建议用户先在「笔记本」面板选择目录。
 - 只有授权了工具的 profile 才注入该段；截图答题 profile 不携带工作区事实。
 - 更换目录无需额外通道：desktop 在每次发送前重新下发 `workspace-context`，`executeTurn` 按 run 快照生成提示词，所以下一条消息即使用新目录；运行中的回合不追改。
 
@@ -41,11 +41,12 @@
 - 工作区事实只能来自 run 快照的 `workspaceRoot`；不得在 profile 写死路径，也不得从 renderer 接受任意 prompt。
 - 未选择目录的提示语与已选择目录的路径规则必须与 `core/tool/builtin/workspace.ts` 的实际行为一致；工作区语义变化时同步更新该提示词及其测试。
 - 绝对路径暴露给模型是本次有意接受的代价（与 WeCode 的 environment 段一致）；提示词不得扩展到文件内容或目录树。
+- 工作区段只陈述环境事实与路径规则，不点名工具或列举“能读取/能搜索”等能力；工具能力由工具 schema 自身表达，避免模型在回答里复述能力清单。
 - 新增会读取工作区的工具时，必须同时确认该提示词是否仍准确。
 
 ## 验证
 
-- `apps/agent/test/conversation/turn/workspaceContext.test.ts`：已选目录包含根目录、默认根语义与绝对路径规则；未选目录要求绝对路径且不再声明工具不可用。
+- `apps/agent/test/conversation/turn/workspaceContext.test.ts`：已选目录包含根目录、默认根语义与绝对路径规则；未选目录要求使用绝对路径；两段提示都不出现 `Read`/`Grep` 工具名，避免模型复述能力清单。
 - `apps/agent/test/conversation/application.test.ts` 新增用例：根目录 A → 根目录 B → 未选择依次出现在对应请求中，且答题 profile 不包含工作区块。
 - 命令：`pnpm --filter @answra/agent exec vitest run test/conversation/turn/workspaceContext.test.ts test/conversation/application.test.ts`（23 项通过）。
 - `pnpm verify`：Biome、全包 typecheck、全包测试与架构检查全部通过。

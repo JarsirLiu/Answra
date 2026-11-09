@@ -70,26 +70,97 @@ const TYPE_GLOBS: Readonly<Record<string, string>> = {
   yml: "*.{yaml,yml}",
 };
 
+const GREP_TOOL_DESCRIPTION = [
+  "Content search built on ripgrep.",
+  "",
+  '- Full regex syntax (e.g. "log.*Error", "function\\s+\\w+"). This is ripgrep, not grep; escape literal braces (`interface\\{\\}`).',
+  '- Filter with `glob` (e.g. "**/*.tsx") or `type` (e.g. "js", "py", "rust").',
+  '- `output_mode`: "content" (matching lines), "files_with_matches" (paths only, default), or "count".',
+  "- `path` is a file or directory; defaults to the workspace root.",
+  "- `multiline: true` for patterns that span lines.",
+].join("\n");
+
 const GREP_INPUT_SCHEMA: JSONSchema7 = {
   type: "object",
   properties: {
-    pattern: { type: "string", minLength: 1, maxLength: MAX_PATTERN_LENGTH },
-    path: { type: "string", minLength: 1, maxLength: 1024 },
-    glob: { type: "string", minLength: 1, maxLength: 1024 },
-    type: { type: "string", minLength: 1, maxLength: 64 },
+    pattern: {
+      type: "string",
+      minLength: 1,
+      maxLength: MAX_PATTERN_LENGTH,
+      description: "Ripgrep-compatible regular expression pattern to search for in file contents.",
+    },
+    path: {
+      type: "string",
+      minLength: 1,
+      maxLength: 1024,
+      description:
+        "File or directory to search. Absolute and workspace-relative paths are accepted; defaults to the workspace root.",
+    },
+    glob: {
+      type: "string",
+      minLength: 1,
+      maxLength: 1024,
+      description: 'Glob pattern to filter files (e.g. "*.js", "*.{ts,tsx}") - maps to rg --glob.',
+    },
+    type: {
+      type: "string",
+      minLength: 1,
+      maxLength: 64,
+      description: "File type to search (rg --type). Common types: js, py, rust, go, java.",
+    },
     output_mode: {
       type: "string",
       enum: ["content", "files_with_matches", "count"],
+      description:
+        'Output mode: "content" shows matching lines, "files_with_matches" shows file paths, "count" shows match counts. Defaults to "files_with_matches".',
     },
-    "-A": { type: "integer", minimum: 0, maximum: MAX_CONTEXT_LINES },
-    "-B": { type: "integer", minimum: 0, maximum: MAX_CONTEXT_LINES },
-    "-C": { type: "integer", minimum: 0, maximum: MAX_CONTEXT_LINES },
-    "-n": { type: "boolean" },
-    "-i": { type: "boolean" },
-    "-o": { type: "boolean" },
-    head_limit: { type: "integer", minimum: 0, maximum: MAX_HEAD_LIMIT },
-    offset: { type: "integer", minimum: 0 },
-    multiline: { type: "boolean" },
+    "-A": {
+      type: "integer",
+      minimum: 0,
+      maximum: MAX_CONTEXT_LINES,
+      description:
+        'Number of lines to show after each match (rg -A). Requires output_mode: "content".',
+    },
+    "-B": {
+      type: "integer",
+      minimum: 0,
+      maximum: MAX_CONTEXT_LINES,
+      description:
+        'Number of lines to show before each match (rg -B). Requires output_mode: "content".',
+    },
+    "-C": {
+      type: "integer",
+      minimum: 0,
+      maximum: MAX_CONTEXT_LINES,
+      description:
+        'Number of lines to show before and after each match (rg -C). Requires output_mode: "content".',
+    },
+    "-n": {
+      type: "boolean",
+      description: "Show line numbers in output (rg -n). Defaults to true.",
+    },
+    "-i": { type: "boolean", description: "Case insensitive search (rg -i)." },
+    "-o": {
+      type: "boolean",
+      description:
+        'Print only the matched parts of each matching line (rg -o). Requires output_mode: "content".',
+    },
+    head_limit: {
+      type: "integer",
+      minimum: 0,
+      maximum: MAX_HEAD_LIMIT,
+      description: "Limit output to the first N entries. Defaults to 250. Pass 0 for unlimited.",
+    },
+    offset: {
+      type: "integer",
+      minimum: 0,
+      description: "Skip the first N entries before applying head_limit. Defaults to 0.",
+    },
+    multiline: {
+      type: "boolean",
+      description:
+        "Enable multiline mode where . matches newlines and patterns can span lines (rg -U --multiline-dotall). Default: false.",
+    },
   },
   required: ["pattern"],
   additionalProperties: false,
@@ -99,8 +170,7 @@ export const grepTool = defineTool<GrepInput, GrepOutput>({
   id: toolId("workspace.grep"),
   metadata: {
     name: "Grep",
-    description:
-      "使用 ripgrep 正则搜索文本。path 支持绝对路径或相对于当前工作区的路径，省略时搜索整个工作区。默认只返回匹配文件；output_mode=content 返回带行号和上下文的匹配行，count 返回每文件匹配数。支持 glob、type、-A/-B/-C、-n、-i、-o、head_limit、offset 和 multiline。",
+    description: GREP_TOOL_DESCRIPTION,
     readOnly: true,
     destructive: false,
     concurrentSafe: true,

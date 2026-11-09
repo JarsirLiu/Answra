@@ -13,7 +13,7 @@
 - `apps/agent/src/worker/`、`apps/desktop/src/main/conversation/`：workspace 根目录上下文下发。
 - Agent 测试及本 Note。
 
-本阶段只支持纯文本读取和搜索；不提供目录树工具、不写入或删除文件、不执行命令、不解析 PDF/DOCX。当前仓库没有 CLI/stdio 启动器，但 conversation runtime 和工具执行不依赖 desktop。
+本阶段只支持纯文本读取和搜索；不提供目录树工具、不写入或删除文件、不执行命令、不解析 PDF/DOCX。当前仓库没有 CLI/stdio 启动器，但 conversation runtime 和工具执行不依赖 desktop。后续已由 `2026-11-09-shell-tools-and-session-runtime.md` 开放 `RunCommand`/`WriteStdin`。
 
 ## 影响表面
 
@@ -36,7 +36,7 @@
 
 - **把目录树和全部正文拼进 prompt：** 舍弃。隐式读取会放大上下文且难以审计模型实际访问内容。
 - **通过 host bridge 请求 desktop 读文件：** 舍弃。Agent 脱离 desktop 后会失去核心工具能力。
-- **开放 Bash：** 舍弃。命令执行权限远高于受限只读文件工具。
+- **开放 Bash：** 本阶段舍弃，因为命令执行权限远高于受限只读文件工具；后续用户明确要求移植 shell 工具，决定与风险见 `2026-11-09-shell-tools-and-session-runtime.md`。
 - **建立通用工具框架或 `FileSystemPort`：** 舍弃。当前仅 conversation 一个消费者和本地文件系统一种实现。
 - **本阶段实现 CLI/stdio、Glob、PDF/DOCX 或写工具：** 暂缓。它们分别属于入口、文件发现、文档解析和持久化副作用决策。
 

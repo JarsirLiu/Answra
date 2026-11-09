@@ -45,6 +45,13 @@ export class ToolRegistry {
     return entry;
   }
 
+  /** 关闭注册表并释放工具持有的进程、会话等长生命周期资源。 */
+  async dispose(): Promise<void> {
+    const entries = [...this.entries.values()];
+    this.entries.clear();
+    await Promise.all(entries.map((entry) => entry.dispose?.()));
+  }
+
   authorize(ids: readonly ToolId[], context: ToolSessionContext): ToolSet {
     const tools: ToolSet = {};
     const workerPaths = context.workerPaths ?? this.workerPaths;

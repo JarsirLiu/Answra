@@ -26,12 +26,37 @@ interface ReadInput {
   limit?: number;
 }
 
+const READ_TOOL_DESCRIPTION = [
+  "Reads a text file from the local filesystem.",
+  "",
+  "- `file_path` should be an absolute path; a path relative to the workspace root is also accepted.",
+  "- Reads the whole file by default; long files return a partial view with continuation information.",
+  "- Use `offset` and `limit` to read a specific line range.",
+  "- Results use cat -n format, with line numbers starting at 1.",
+  "- Reading a directory, a missing file, or a non-text file returns an error instead of content.",
+  "- Do not re-read a file you just edited to verify.",
+].join("\n");
+
 const READ_INPUT_SCHEMA: JSONSchema7 = {
   type: "object",
   properties: {
-    file_path: { type: "string", minLength: 1, maxLength: 1024 },
-    offset: { type: "integer", minimum: 1 },
-    limit: { type: "integer", minimum: 1 },
+    file_path: {
+      type: "string",
+      minLength: 1,
+      maxLength: 1024,
+      description:
+        "The path to the file to read. Absolute paths are preferred; workspace-relative paths are also accepted.",
+    },
+    offset: {
+      type: "integer",
+      minimum: 1,
+      description: "The 1-based line number to start reading from.",
+    },
+    limit: {
+      type: "integer",
+      minimum: 1,
+      description: "The number of lines to read.",
+    },
   },
   required: ["file_path"],
   additionalProperties: false,
@@ -41,8 +66,7 @@ export const readTool = defineTool<ReadInput, ReadOutput>({
   id: toolId("workspace.read"),
   metadata: {
     name: "Read",
-    description:
-      "读取 UTF-8/UTF-16 纯文本文件。file_path 推荐使用绝对路径，也接受相对于当前工作区的路径；默认读取全文，超过 token 上限时返回可续读的部分视图。offset 和 limit 用于读取指定行范围。",
+    description: READ_TOOL_DESCRIPTION,
     readOnly: true,
     destructive: false,
     concurrentSafe: true,

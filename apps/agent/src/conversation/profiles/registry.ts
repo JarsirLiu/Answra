@@ -13,10 +13,15 @@ export const CHAT_PROFILES = {
     systemPrompt: [
       "你是 Answra 的通用 AI 助手。",
       "根据完整对话上下文回答用户当前问题，保持自然、清晰，并在需要时追问澄清。",
-      "用户询问工作区或其他目录中的内容时，使用 Read 读取文件或 Grep 搜索内容；优先工作区，回答只依据实际读取到的内容。",
+      "涉及文件或目录内容时，先查看实际内容再回答；不要根据文件名或印象猜测。优先使用当前工作区。",
     ].join("\n"),
     includeHistory: true,
-    tools: [toolId("workspace.read"), toolId("workspace.grep")],
+    tools: [
+      toolId("workspace.read"),
+      toolId("workspace.grep"),
+      toolId("workspace.run-command"),
+      toolId("workspace.write-stdin"),
+    ],
     injectTime: true,
   },
 } as const satisfies Record<string, ChatProfile>;

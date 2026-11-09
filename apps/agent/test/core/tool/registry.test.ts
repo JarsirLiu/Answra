@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   defineTool,
   type ToolEntry,
@@ -90,5 +90,54 @@ describe("tool registry", () => {
     expect(() =>
       registry.authorize([toolId("test.one"), toolId("test.two")], sessionContext()),
     ).toThrow("工具名重复：Same");
+  });
+
+  it("passes the session worker path and combines it with the SDK abort signal", async () => {
+    const registry = new ToolRegistry({ workerPaths: { grep: "registry-worker" } });
+    registry.register(
+      defineTool<string, string>({
+        id: toolId("test.worker"),
+        metadata: { ...BASE_METADATA, name: "Worker" },
+        inputSchema: { type: "object", properties: {}, additionalProperties: false },
+        handler: async (_input, context) => context.workerPaths?.grep ?? "none",
+      }),
+    );
+    const execute = registry.authorize([toolId("test.worker")], sessionContext()).Worker?.execute;
+    if (!execute) throw new Error("test tool must be executable");
+    const overridden = registry.authorize([toolId("test.worker")], {
+      ...sessionContext(),
+      workerPaths: { grep: "session-worker" },
+    }).Worker?.execute;
+    if (!overridden) throw new Error("test tool must be executable");
+
+    await expect(execute({}, { toolCallId: "call-1", messages: [] })).resolves.toBe(
+      "registry-worker",
+    );
+    await expect(overridden({}, { toolCallId: "call-1", messages: [] })).resolves.toBe(
+      "session-worker",
+    );
+
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      execute({}, { toolCallId: "call-1", messages: [], abortSignal: controller.signal }),
+    ).resolves.toBe("工具调用失败（aborted）：工具调用已取消");
+  });
+
+  it("disposes registered tool resources and clears the registry", async () => {
+    const dispose = vi.fn();
+    const registry = new ToolRegistry();
+    registry.register(
+      defineTool<string, string>({
+        ...testTool("test.dispose", "Dispose"),
+        dispose,
+      }),
+    );
+
+    await registry.dispose();
+
+    expect(dispose).toHaveBeenCalledTimes(1);
+    expect(registry.list()).toEqual([]);
+    expect(() => registry.require(toolId("test.dispose"))).toThrow("工具未注册");
   });
 });

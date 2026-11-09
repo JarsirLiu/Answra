@@ -256,6 +256,211 @@ describe("Grep tool", () => {
     expect(Buffer.byteLength(result.modelContent, "utf8")).toBeLessThanOrEqual(20_100);
   });
 
+  it("rejects an invalid type filter", async () => {
+    const root = await createRoot();
+
+    await expect(
+      executeGrep(context(root), { pattern: "needle", type: "bad type!" }),
+    ).rejects.toMatchObject({ code: "invalid-input", message: "type 参数无效" });
+  });
+
+  it("maps an unknown type to an extension glob", async () => {
+    const root = await createRoot();
+    await fs.writeFile(path.join(root, "a.txt"), "needle");
+    await fs.writeFile(path.join(root, "b.md"), "needle");
+
+    const output = await executeGrep(context(root), { pattern: "needle", type: "txt" });
+
+    expect(output).toMatchObject({ type: "files_with_matches", files: ["a.txt"] });
+  });
+
+  it("supports case-insensitive search", async () => {
+    const root = await createRoot();
+    await fs.writeFile(path.join(root, "a.txt"), "NEEDLE");
+
+    const output = await executeGrep(context(root), {
+      pattern: "needle",
+      output_mode: "content",
+      "-i": true,
+    });
+
+    expect(formatGrepOutput(output)).toContain("a.txt:1:NEEDLE");
+  });
+
+  it("supports separate before and after context", async () => {
+    const root = await createRoot();
+    await fs.writeFile(path.join(root, "a.txt"), "before\nneedle\nafter");
+
+    const output = await executeGrep(context(root), {
+      pattern: "needle",
+      output_mode: "content",
+      "-B": 1,
+      "-A": 1,
+    });
+
+    expect(formatGrepOutput(output)).toContain("a.txt-1-before");
+    expect(formatGrepOutput(output)).toContain("a.txt:2:needle");
+    expect(formatGrepOutput(output)).toContain("a.txt-3-after");
+  });
+
+  it("omits line numbers when -n is false", async () => {
+    const root = await createRoot();
+    await fs.writeFile(path.join(root, "a.txt"), "needle");
+
+    const output = await executeGrep(context(root), {
+      pattern: "needle",
+      output_mode: "content",
+      "-n": false,
+    });
+
+    expect(formatGrepOutput(output)).toBe("a.txt:needle");
+  });
+
+  it("searches a single file path", async () => {
+    const root = await createRoot();
+    await fs.writeFile(path.join(root, "a.txt"), "needle");
+    await fs.writeFile(path.join(root, "b.txt"), "needle");
+
+    const output = await executeGrep(context(root), {
+      pattern: "needle",
+      path: "a.txt",
+      output_mode: "content",
+    });
+
+    expect(formatGrepOutput(output)).toBe("a.txt:1:needle");
+  });
+
+  it("pages file matches with offset and head_limit", async () => {
+    const root = await createRoot();
+    for (const name of ["a.txt", "b.txt", "c.txt"]) {
+      await fs.writeFile(path.join(root, name), "needle");
+    }
+
+    const paged = await executeGrep(context(root), {
+      pattern: "needle",
+      offset: 1,
+      head_limit: 1,
+    });
+    const unlimited = await executeGrep(context(root), {
+      pattern: "needle",
+      head_limit: 0,
+    });
+
+    expect(paged).toMatchObject({ type: "files_with_matches", files: ["b.txt"], truncated: true });
+    expect(formatGrepOutput(paged)).toContain("[结果达到上限]");
+    expect(unlimited).toMatchObject({
+      type: "files_with_matches",
+      files: ["a.txt", "b.txt", "c.txt"],
+    });
+    expect(unlimited).toMatchObject({ truncated: false });
+  });
+
+  it("pages count output", async () => {
+    const root = await createRoot();
+    await fs.writeFile(path.join(root, "a.txt"), "needle\nneedle");
+    await fs.writeFile(path.join(root, "b.txt"), "needle");
+
+    const output = await executeGrep(context(root), {
+      pattern: "needle",
+      output_mode: "count",
+      head_limit: 1,
+    });
+
+    expect(output).toMatchObject({
+      type: "count",
+      counts: [{ path: "a.txt", count: 2 }],
+      truncated: true,
+    });
+    expect(formatGrepOutput(output)).toContain("[结果达到上限]");
+  });
+
+  describe("worker path", () => {
+    it("executes ripgrep through the configured worker script", async () => {
+      const root = await createRoot();
+      const workerPath = await createWorker(
+        root,
+        [
+          'import { parentPort } from "node:worker_threads"',
+          `const line = ${JSON.stringify(
+            JSON.stringify({
+              type: "match",
+              data: {
+                path: { text: "a.txt" },
+                lines: { text: "needle\n" },
+                line_number: 1,
+                submatches: [{ match: { text: "needle" } }],
+              },
+            }),
+          )}`,
+          'parentPort.postMessage({ ok: true, code: 0, stdout: line + "\\n", stderr: "" })',
+        ].join("\n"),
+      );
+
+      const output = await executeGrep(contextWithWorker(root, workerPath), {
+        pattern: "needle",
+        output_mode: "content",
+      });
+
+      expect(formatGrepOutput(output)).toBe("a.txt:1:needle");
+    });
+
+    it("maps a worker business failure to handler-failed", async () => {
+      const root = await createRoot();
+      const workerPath = await createWorker(
+        root,
+        'import { parentPort } from "node:worker_threads"\nparentPort.postMessage({ ok: false, error: "worker boom" })',
+      );
+
+      await expect(
+        executeGrep(contextWithWorker(root, workerPath), { pattern: "needle" }),
+      ).rejects.toMatchObject({ code: "handler-failed", message: "worker boom" });
+    });
+
+    it("maps a worker that exits without a message to handler-failed", async () => {
+      const root = await createRoot();
+      const workerPath = await createWorker(root, "process.exit(0)");
+
+      await expect(
+        executeGrep(contextWithWorker(root, workerPath), { pattern: "needle" }),
+      ).rejects.toMatchObject({ code: "handler-failed", message: "Grep worker 退出码 0" });
+    });
+
+    it("maps a worker load error to handler-failed", async () => {
+      const root = await createRoot();
+
+      await expect(
+        executeGrep(contextWithWorker(root, path.join(root, "missing-worker.mjs")), {
+          pattern: "needle",
+        }),
+      ).rejects.toMatchObject({ code: "handler-failed" });
+    });
+
+    it("cancels a pending worker and terminates it", async () => {
+      const root = await createRoot();
+      const workerPath = await createWorker(root, "setTimeout(() => {}, 60_000)");
+      const controller = new AbortController();
+      const pending = executeGrep(
+        { ...context(root, controller.signal), workerPaths: { grep: workerPath } },
+        { pattern: "needle" },
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      controller.abort();
+
+      await expect(pending).rejects.toMatchObject({ code: "aborted" });
+    });
+  });
+
+  function contextWithWorker(root: string, workerPath: string): ToolContext {
+    return { ...context(root), workerPaths: { grep: workerPath } };
+  }
+
+  async function createWorker(root: string, source: string): Promise<string> {
+    const workerPath = path.join(root, `worker-${Math.random().toString(36).slice(2)}.mjs`);
+    await fs.writeFile(workerPath, source, "utf8");
+    return workerPath;
+  }
+
   async function createRoot(): Promise<string> {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "answra-grep-"));
     roots.push(root);
