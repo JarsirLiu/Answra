@@ -1,12 +1,10 @@
 /** 通用聊天 profile 的类型与静态注册表；不接受 renderer 动态注入策略。 */
-import type { ConversationToolId } from "../tools/types";
-
-export type { ConversationToolId } from "../tools/types";
+import { type ToolId, toolId } from "../../core/tool";
 
 export interface ChatProfile {
   systemPrompt: string;
   includeHistory: boolean;
-  tools: readonly ConversationToolId[];
+  tools: readonly ToolId[];
   injectTime?: boolean;
 }
 
@@ -18,7 +16,7 @@ export const CHAT_PROFILES = {
       "用户询问笔记本工作区内容时，使用 Read 读取文件或 Grep 搜索内容；回答只依据实际读取到的内容。",
     ].join("\n"),
     includeHistory: true,
-    tools: ["conversation.read", "conversation.grep"],
+    tools: [toolId("workspace.read"), toolId("workspace.grep")],
     injectTime: true,
   },
 } as const satisfies Record<string, ChatProfile>;

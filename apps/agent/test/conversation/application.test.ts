@@ -6,8 +6,8 @@ import { screenshotAnswerAgent } from "../../src/answer/agent";
 import { AnswerApplication } from "../../src/answer/application";
 import { createConversationAgentDefinition } from "../../src/conversation/agent";
 import { ConversationApplication } from "../../src/conversation/application";
-import { createAuthorizedConversationTools } from "../../src/conversation/tools/registry";
 import { AgentRuntime } from "../../src/core/agent/runtime";
+import { createBuiltinToolRegistry } from "../../src/core/tool";
 import { MemoryConversationStore } from "../../src/core/transcript/memoryStore";
 import type { ConversationStore } from "../../src/core/transcript/store";
 import { MemoryExecutionStore } from "../../src/execution/memoryStore";
@@ -30,7 +30,7 @@ function createTestRuntime({
     agentRuntime,
     store,
     conversationAgent: agentRuntime.registerAgent(
-      createConversationAgentDefinition({ store, createTools: createAuthorizedConversationTools }),
+      createConversationAgentDefinition({ store, tools: createBuiltinToolRegistry() }),
     ),
   });
   const answer = new AnswerApplication({

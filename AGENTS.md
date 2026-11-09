@@ -35,12 +35,13 @@
 | `src/core/agent` | 静态 Agent 注册、模型路由、AI SDK 执行与统一事件写入 | 不读写 transcript、不包含领域 prompt/工具授权；领域注入注册后的 executor |
 | `src/core/transcript` | Conversation、Answer、Interview 共用的消息 transcript、活动 run 认领、恢复游标端口与内存适配器 | 不保存 Agent 事件、不包含领域产品策略；当前无磁盘持久化 |
 | `src/core/model` | AI SDK/provider 边界归一化、共享模型输入校验与 HTTP 重试原语 | 不放 Conversation profile 或 transcript 规则 |
+| `src/core/tool` | 跨领域工具契约、静态注册表与单次调用执行管理；通用工具在 `builtin/` | 不导入领域、不写工具事件；领域专属工具留在 `<domain>/tools/`，执行器只返回结果 |
 | `src/execution` | run/attempt/step 状态迁移规则、事件 envelope 工厂、进程内 store 和查询投影 | 跨包事件 payload 与状态词汇唯一来自 `packages/shared/src/schema/`；当前只实现进程内 store，不得声称已有 durable store 或恢复流程 |
 | `src/conversation/turn` | Conversation transcript 回合认领、模型上下文与应用事件回调 | 模型执行/run 生命周期由 `core/agent` 负责；不定义共享执行状态 schema |
 | `src/conversation/agent.ts`、`src/answer/agent.ts` | 各领域静态 Agent 定义，组装 prompt、上下文和授权工具 | 不接收 renderer 提供的任意 prompt 或工具实现 |
 | `src/answer/application.ts` | 截图答题用例、一次性 transcript 清理和事件回调 | 不实现模型调用、重试或第二套事件 |
-| `src/conversation/profiles` | Conversation 内部提示词、上下文策略与工具白名单 | 不接收 renderer 提供的任意 prompt 或工具实现 |
-| `src/conversation/tools` | Conversation 领域工具及静态授权 registry | 不执行桌面平台能力；不得由 desktop 反向 RPC 代执行 |
+| `src/conversation/profiles` | Conversation 内部提示词、上下文策略与工具授权清单 | 只声明授权 `ToolId[]`，不接收 renderer 提供的任意 prompt 或工具实现 |
+| `src/<domain>/tools` | 领域专属工具实现，实现 `core/tool` 契约 | 不执行桌面平台能力；不得由 desktop 反向 RPC 代执行 |
 | `src/interview` | 语音采集后的转录、turn 与自动回复领域，包括 worker DTO adapter | 与 Conversation 保持平级，不把面试状态塞进会话目录；领域逻辑不放入 `worker/` |
 | `src/interview/runtime.ts` | 面试媒体生命周期组合：连接 audio ingress、VAD、ASR、turn assembler/settler 与 InterviewApplication | 只编排领域端口，不定义 worker 协议或模型执行策略 |
 | 平台能力与工具 | 采集、键鼠注入、窗口、密钥等桌面平台实现留在 desktop；Agent 工具由 Agent 注册并在 Agent 进程执行 | desktop 可注入工作区根目录等授权上下文，不得代执行 Agent 工具或通过反向 RPC 提供工具能力 |

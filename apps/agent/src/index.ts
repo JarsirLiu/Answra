@@ -5,10 +5,10 @@
  *   host.ts                 Conversation/Interview worker composition root and command routing
  *   worker/protocol.ts      worker 线协议（与 desktop main 之间的唯一契约）
  *   core/transcript/ 共享 transcript、快照恢复游标与仓储
+ *   core/tool/            跨领域工具契约、静态注册表、执行器与通用工具
  *   conversation/turn/    对话/答题 application 与模型上下文
  *   interview/             面试媒体 runtime、语音管线与回复 application
  *   conversation/profiles/ Agent 注册的提示词、上下文策略与工具授权
- *   conversation/tools/   Conversation 领域内的工具与静态授权
  *
  * Agent 工具在本进程实现；桌面平台能力（读屏/音频采集、键鼠注入、窗口）由 desktop
  * 适配。该包不依赖 Electron 与 React，worker transport 由宿主单独装配。

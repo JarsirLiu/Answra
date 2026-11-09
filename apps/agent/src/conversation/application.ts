@@ -9,6 +9,7 @@ import type { AgentEventEnvelope, AgentRunSnapshot } from "@answra/shared/schema
 import type { AgentExecutor, AgentRunPrepared } from "../core/agent/definition";
 import type { AgentRuntime } from "../core/agent/runtime";
 import { validateModelRequest } from "../core/model/requestContent";
+import type { ReadFileStateMap } from "../core/tool";
 import { createUserMessage } from "../core/transcript/message";
 import type { ConversationStore } from "../core/transcript/store";
 import type { ConversationAgentInput, ConversationAgentProfile } from "./agent";
@@ -25,6 +26,7 @@ export class ConversationApplication {
   private readonly agentRuntime: AgentRuntime;
   private readonly store: ConversationStore;
   private readonly conversationAgent?: AgentExecutor<ConversationAgentInput>;
+  private readonly readFileStates = new Map<string, ReadFileStateMap>();
   private workspaceRoot: string | null = null;
 
   constructor({ agentRuntime, store, conversationAgent }: ConversationApplicationOptions) {
@@ -51,6 +53,7 @@ export class ConversationApplication {
 
   async createConversation(conversationId: string): Promise<ConversationSnapshot> {
     await this.store.create(conversationId);
+    this.readFileStates.delete(conversationId);
     return this.loadRecoverySnapshot(conversationId);
   }
 
@@ -58,6 +61,7 @@ export class ConversationApplication {
   async clearConversation(conversationId: string): Promise<ConversationSnapshot> {
     const eventRevision = await this.agentRuntime.getConversationRevision(conversationId);
     await this.store.clear(conversationId, eventRevision);
+    this.readFileStates.delete(conversationId);
     return this.loadRecoverySnapshot(conversationId);
   }
 
@@ -109,9 +113,11 @@ export class ConversationApplication {
         return {
           input: {
             conversationId,
+            runId,
             request: { text: target.text, images: target.images },
             profile,
             workspaceRoot: this.workspaceRoot,
+            readFileState: this.getReadFileState(conversationId),
           },
           snapshot: await this.loadRecoverySnapshot(conversationId),
         };
@@ -139,7 +145,14 @@ export class ConversationApplication {
           eventRevision,
         );
         return {
-          input: { conversationId, request, profile, workspaceRoot: this.workspaceRoot },
+          input: {
+            conversationId,
+            runId,
+            request,
+            profile,
+            workspaceRoot: this.workspaceRoot,
+            readFileState: this.getReadFileState(conversationId),
+          },
           snapshot: await this.loadRecoverySnapshot(conversationId),
         };
       },
@@ -195,11 +208,20 @@ export class ConversationApplication {
   }
 
   dispose(): void {
+    this.readFileStates.clear();
     this.agentRuntime.dispose();
   }
 
   get activeRunCount(): number {
     return this.agentRuntime.activeRunCount;
+  }
+
+  private getReadFileState(conversationId: string): ReadFileStateMap {
+    const existing = this.readFileStates.get(conversationId);
+    if (existing) return existing;
+    const state: ReadFileStateMap = new Map();
+    this.readFileStates.set(conversationId, state);
+    return state;
   }
 
   private requireConversationAgent(): AgentExecutor<ConversationAgentInput> {

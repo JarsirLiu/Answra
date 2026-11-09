@@ -25,9 +25,9 @@
 
 - conversation 域静态注册工具。注册项绑定稳定 ID、模型名称、输入 schema 和执行器；profile 只授权 ID，runtime 仅暴露白名单工具。
 - `general-chat` 授权 `conversation.read` / `conversation.grep`，分别以 `Read` / `Grep` 名称呈现。旧 `list_workspace_files`、`read_workspace_file` 已移除，目录树不注入 prompt。
-- 每次 run 快照 workspace 根目录和 `AbortSignal`。Read 支持相对路径、行号及行范围；Grep 搜索字面文本，支持相对目录、忽略大小写和匹配上下文。
-- 支持 `.md`、`.txt`、`.json` 及常见源码/文本配置后缀；Read 单文件上限 128 KiB。Grep 限制递归深度 8、候选文件 500、累计扫描 16 MiB、结果 100 条和输出 20,000 字符。
-- 路径必须是工作区相对路径；拒绝隐藏项、忽略目录和符号链接逃逸。边界在 Agent 内校验。
+- 每次 run 快照 workspace 根目录和 `AbortSignal`。Read 支持工作区内相对/绝对路径、行号及行范围；Grep 搜索字面文本，支持相对目录、忽略大小写和匹配上下文。
+- Read 支持任意 UTF-8/UTF-16 纯文本（含无扩展名文件），整文件上限 256 KiB，并具备 25k token 部分视图与文件状态去重；Grep 仍按 `.md`、`.txt`、`.json` 及常见源码/文本配置后缀筛选候选文件，单文件上限 128 KiB，并限制递归深度 8、候选文件 500、累计扫描 16 MiB、结果 100 条和输出 20,000 字符。
+- 路径必须是工作区相对路径或工作区内绝对路径；拒绝隐藏项、忽略目录和符号链接逃逸。边界在 Agent 内校验。Read 的后续质量调整见 `2026-11-09-read-tool-text-quality.md`。
 - 不抽取跨领域 `core/`，不建立 `FileSystemPort`；当前只有本地文件系统这一消费者。
 - 写入能力必须另行定义用户确认、差异预览、并发修改检测和失败恢复后再开放。
 - 不复用 Codex 的 `codex-core`。本地源码中的 Agent 核心依赖 Rust 内部 crates，并非可独立接入的 SDK；引入会增加 native/sidecar 与协议维护边界。

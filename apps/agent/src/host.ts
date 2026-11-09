@@ -5,8 +5,8 @@ import { screenshotAnswerAgent } from "./answer/agent";
 import { AnswerApplication } from "./answer/application";
 import { createConversationAgentDefinition } from "./conversation/agent";
 import { ConversationApplication } from "./conversation/application";
-import { createAuthorizedConversationTools } from "./conversation/tools/registry";
 import { AgentRuntime } from "./core/agent/runtime";
+import { createBuiltinToolRegistry } from "./core/tool";
 import { MemoryConversationStore } from "./core/transcript/memoryStore";
 import type { ConversationStore } from "./core/transcript/store";
 import { MemoryExecutionStore } from "./execution/memoryStore";
@@ -119,7 +119,7 @@ export function startAgentHost({
     tokenProvider: requestAccessToken,
   });
   const conversationAgent = agentRuntime.registerAgent(
-    createConversationAgentDefinition({ store, createTools: createAuthorizedConversationTools }),
+    createConversationAgentDefinition({ store, tools: createBuiltinToolRegistry() }),
   );
   const answerAgent = agentRuntime.registerAgent(screenshotAnswerAgent);
   const interviewAgent = agentRuntime.registerAgent(createInterviewReplyAgent(store));

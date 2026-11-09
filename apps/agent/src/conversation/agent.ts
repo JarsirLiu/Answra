@@ -1,11 +1,11 @@
-/** Conversation Agent 定义：组装对话 profile、transcript 上下文和授权工具。 */
+/** Conversation Agent 定义：组装对话 profile、transcript 上下文和授权工具集。 */
 import type { ConversationSendRequest } from "@answra/shared";
-import { stepCountIs, type ToolSet } from "ai";
+import { stepCountIs } from "ai";
 import type { AgentDefinition } from "../core/agent/definition";
 import { agentId } from "../core/agent/definition";
+import type { ReadFileStateMap, ToolRegistry } from "../core/tool";
 import type { ConversationStore } from "../core/transcript/store";
 import type { ChatProfile } from "./profiles/registry";
-import type { ConversationToolId } from "./tools/types";
 import { buildModelMessages } from "./turn/modelMessages";
 import { buildWorkspaceSystemContext } from "./turn/workspaceContext";
 
@@ -13,20 +13,19 @@ export type ConversationAgentProfile = ChatProfile;
 
 export interface ConversationAgentInput {
   conversationId: string;
+  runId: string;
   request: ConversationSendRequest;
   profile: ConversationAgentProfile;
   workspaceRoot: string | null;
+  readFileState?: ReadFileStateMap;
 }
 
 export function createConversationAgentDefinition({
   store,
-  createTools,
+  tools,
 }: {
   store: ConversationStore;
-  createTools: (
-    ids: readonly ConversationToolId[],
-    context: { workspaceRoot: string | null; signal: AbortSignal },
-  ) => ToolSet | undefined;
+  tools: ToolRegistry;
 }): AgentDefinition<ConversationAgentInput> {
   return {
     id: agentId("conversation.general"),
@@ -39,16 +38,22 @@ export function createConversationAgentDefinition({
         injectTime: input.profile.injectTime ?? false,
         store,
       });
-      const tools =
+      const toolSet =
         input.profile.tools.length === 0
           ? undefined
-          : createTools(input.profile.tools, { workspaceRoot: input.workspaceRoot, signal });
+          : tools.authorize(input.profile.tools, {
+              signal,
+              workspaceRoot: input.workspaceRoot,
+              runId: input.runId,
+              sessionId: input.conversationId,
+              ...(input.readFileState ? { readFileState: input.readFileState } : {}),
+            });
       return {
-        system: tools
+        system: toolSet
           ? `${input.profile.systemPrompt}\n\n${buildWorkspaceSystemContext(input.workspaceRoot)}`
           : input.profile.systemPrompt,
         messages,
-        ...(tools ? { tools, stopWhen: stepCountIs(6) } : {}),
+        ...(toolSet ? { tools: toolSet, stopWhen: stepCountIs(6) } : {}),
       };
     },
   };
