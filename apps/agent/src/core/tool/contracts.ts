@@ -64,6 +64,8 @@ export interface ToolContext {
   readonly sessionId: string;
   readonly readFileState?: ReadFileStateMap;
   readonly workerPaths?: ToolWorkerPaths;
+  /** 长命令在结束前增量回报已产生的输出；只用于实时预览，不参与模型结果。 */
+  readonly onOutput?: (delta: string) => void;
 }
 
 export type ToolFailureCode =

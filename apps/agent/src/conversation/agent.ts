@@ -30,7 +30,7 @@ export function createConversationAgentDefinition({
   return {
     id: agentId("conversation.general"),
     modelRoute: "chat",
-    async prepare(input, signal) {
+    async prepare(input, signal, emitter) {
       const messages = await buildModelMessages({
         conversationId: input.conversationId,
         request: input.request,
@@ -47,6 +47,7 @@ export function createConversationAgentDefinition({
               runId: input.runId,
               sessionId: input.conversationId,
               ...(input.readFileState ? { readFileState: input.readFileState } : {}),
+              ...(emitter ? { onToolOutput: emitter.toolOutput } : {}),
             });
       return {
         system: toolSet

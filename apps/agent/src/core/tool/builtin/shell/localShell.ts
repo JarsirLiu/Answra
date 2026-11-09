@@ -4,6 +4,7 @@
  */
 
 import { type ChildProcess, spawn } from "node:child_process";
+import { StringDecoder } from "node:string_decoder";
 import { terminateProcessTree } from "./processTree";
 import {
   buildShellInvocation,
@@ -18,6 +19,8 @@ export interface ShellAction {
   readonly cwd: string;
   readonly timeoutMs?: number;
   readonly maxOutputLength?: number;
+  /** 结束前的增量输出；只用于实时预览，最终结果仍以 ShellOutputResult 为准。 */
+  readonly onOutput?: (delta: string) => void;
 }
 
 export interface ShellOutputResult {
@@ -39,6 +42,7 @@ interface ShellProcessOptions {
   readonly timeoutMs: number;
   readonly maxOutputLength: number;
   readonly signal: AbortSignal | undefined;
+  readonly onOutput?: (delta: string) => void;
 }
 
 interface ShellProcessState {
@@ -70,6 +74,7 @@ export class LocalShell {
       timeoutMs,
       maxOutputLength,
       signal,
+      ...(action.onOutput ? { onOutput: action.onOutput } : {}),
     });
   }
 }
@@ -106,14 +111,30 @@ function runShellProcess(options: ShellProcessOptions): Promise<ShellOutputResul
     // 覆盖 spawn 与监听注册之间发生的取消，避免漏掉 AbortSignal。
     if (options.signal?.aborted) terminateShellProcess(state, "aborted");
 
-    child.stdout?.on("data", (chunk: Buffer) => appendShellOutput(state, "stdout", chunk));
-    child.stderr?.on("data", (chunk: Buffer) => appendShellOutput(state, "stderr", chunk));
+    const decoders: Record<ShellStream, StringDecoder> = {
+      stdout: new StringDecoder("utf8"),
+      stderr: new StringDecoder("utf8"),
+    };
+    child.stdout?.on("data", (chunk: Buffer) => {
+      appendShellOutput(state, "stdout", chunk);
+      emitShellDelta(options, decoders.stdout.write(chunk));
+    });
+    child.stderr?.on("data", (chunk: Buffer) => {
+      appendShellOutput(state, "stderr", chunk);
+      emitShellDelta(options, decoders.stderr.write(chunk));
+    });
     child.on("error", (error: Error) => settleShellProcess(state, resolve, reject, error));
     child.on("close", (code: number | null) => {
       state.exitCode = code;
+      emitShellDelta(options, decoders.stdout.end());
+      emitShellDelta(options, decoders.stderr.end());
       settleShellProcess(state, resolve, reject);
     });
   });
+}
+
+function emitShellDelta(options: ShellProcessOptions, delta: string): void {
+  if (delta) options.onOutput?.(delta);
 }
 
 function terminateShellProcess(state: ShellProcessState, reason: TerminationReason): void {

@@ -86,6 +86,53 @@ describe("conversation part projection", () => {
     expect(parts[0]).toMatchObject({ inputText: '{"file_path"' });
   });
 
+  it("accumulates running tool output deltas and ignores them after completion", () => {
+    let parts = apply([], {
+      type: "tool-call",
+      toolCallId: "tool-1",
+      toolName: "RunCommand",
+      input: { command: "dir" },
+    });
+    parts = apply(parts, {
+      type: "tool-execution-started",
+      toolCallId: "tool-1",
+      toolName: "RunCommand",
+      input: { command: "dir" },
+    });
+    parts = apply(parts, {
+      type: "tool-output-delta",
+      toolCallId: "tool-1",
+      delta: "line 1\n",
+    });
+    parts = apply(parts, {
+      type: "tool-output-delta",
+      toolCallId: "tool-1",
+      delta: "line 2",
+    });
+
+    expect(parts[0]).toMatchObject({ state: "running", output: "line 1\nline 2" });
+
+    parts = apply(parts, {
+      type: "tool-execution-finished",
+      toolCallId: "tool-1",
+      toolName: "RunCommand",
+      input: { command: "dir" },
+      result: { success: true, output: "Exit code: 0\nline 1\nline 2" },
+      durationMs: 12,
+    });
+    const afterLateDelta = applyConversationPartEvent(parts, {
+      type: "tool-output-delta",
+      toolCallId: "tool-1",
+      delta: "late",
+    });
+
+    expect(afterLateDelta).toBeUndefined();
+    expect(parts[0]).toMatchObject({
+      state: "completed",
+      output: "Exit code: 0\nline 1\nline 2",
+    });
+  });
+
   it("records failed and denied tool outcomes without dropping the input", () => {
     const called = apply([], {
       type: "tool-call",

@@ -164,6 +164,11 @@ const liveOnlyStreamEventOptions = [
     toolCallId: z.string(),
     delta: z.string(),
   }),
+  z.strictObject({
+    type: z.literal("tool-output-delta"),
+    toolCallId: z.string(),
+    delta: z.string(),
+  }),
 ] as const;
 
 const streamEventOptions = [

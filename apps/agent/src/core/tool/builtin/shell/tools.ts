@@ -224,6 +224,7 @@ async function executeRunCommand(
           ...(input.maxOutputLength !== undefined && {
             maxOutputLength: input.maxOutputLength,
           }),
+          ...(context.onOutput ? { onOutput: context.onOutput } : {}),
         },
         context.signal,
       );

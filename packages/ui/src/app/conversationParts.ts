@@ -109,6 +109,12 @@ export function applyConversationPartEvent(
       if (!current) return undefined;
       return upsertPart(parts, { ...current, state: "running" });
     }
+    case "tool-output-delta": {
+      const current = findPart(parts, event.toolCallId, "tool");
+      if (current?.state !== "running") return undefined;
+      const previous = typeof current.output === "string" ? current.output : "";
+      return upsertPart(parts, { ...current, output: previous + event.delta });
+    }
     case "tool-execution-finished": {
       const current = findPart(parts, event.toolCallId, "tool");
       if (!current) return undefined;

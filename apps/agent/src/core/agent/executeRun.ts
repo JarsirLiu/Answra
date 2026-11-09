@@ -16,6 +16,9 @@ import { createRetryingFetch, RATE_LIMIT_RETRY_POLICY } from "../model/retryFetc
 import type { AgentDefinition, AgentRunRequest } from "./definition";
 import { createExecutionJournal } from "./streamJournal";
 
+/** 单次工具调用实时输出的字符上限，避免长命令把事件日志撑爆。 */
+const MAX_LIVE_TOOL_OUTPUT_CHARS = 8_000;
+
 export async function executeRun<Input, Prepared>({
   definition,
   request,
@@ -52,7 +55,10 @@ export async function executeRun<Input, Prepared>({
     for (const event of initialEvents) await journal.notify(event);
 
     const accessToken = await request.getAccessToken();
-    const modelRequest = await definition.prepare(input, controller.signal);
+    const liveOutput = createLiveToolOutputRelay(journal);
+    const modelRequest = await definition.prepare(input, controller.signal, {
+      toolOutput: liveOutput.emit,
+    });
     await journal.notify(await executionStore.transition(runId, "running"));
     logRunStarted({ runId, agentId: definition.id, endpoint });
 
@@ -115,6 +121,7 @@ export async function executeRun<Input, Prepared>({
         });
       },
       experimental_onToolCallFinish: async (event: OnToolCallFinishEvent<ToolSet>) => {
+        await liveOutput.flush();
         const common = {
           type: "tool-execution-finished" as const,
           toolCallId: event.toolCall.toolCallId,
@@ -171,6 +178,32 @@ function errorText(error: unknown): string {
     : typeof error === "string"
       ? error
       : "工具执行失败";
+}
+
+/**
+ * Serializes live tool output into the journal so deltas always precede the tool's
+ * terminal event. Deltas are capped per tool call; the final result still carries
+ * the full (budgeted) output.
+ */
+function createLiveToolOutputRelay(journal: ReturnType<typeof createExecutionJournal>) {
+  let chain: Promise<void> = Promise.resolve();
+  const emittedChars = new Map<string, number>();
+  return {
+    emit(toolCallId: string, delta: string): void {
+      if (!delta) return;
+      const emitted = emittedChars.get(toolCallId) ?? 0;
+      if (emitted >= MAX_LIVE_TOOL_OUTPUT_CHARS) return;
+      const room = MAX_LIVE_TOOL_OUTPUT_CHARS - emitted;
+      const chunk = delta.length > room ? delta.slice(0, room) : delta;
+      emittedChars.set(toolCallId, emitted + chunk.length);
+      chain = chain
+        .then(() => journal.append({ type: "tool-output-delta", toolCallId, delta: chunk }))
+        .catch(() => undefined);
+    },
+    flush(): Promise<void> {
+      return chain;
+    },
+  };
 }
 
 function logRunStarted({

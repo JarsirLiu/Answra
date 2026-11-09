@@ -26,10 +26,19 @@ export interface AgentModelRequest {
   providerOptions?: ProviderOptions;
 }
 
+export interface AgentToolOutputEmitter {
+  /** 单次工具调用在结束前产生的增量输出；由 Agent 层负责排序与写入。 */
+  toolOutput(toolCallId: string, delta: string): void;
+}
+
 export interface AgentDefinition<Input> {
   readonly id: AgentId;
   readonly modelRoute: AgentModelRoute;
-  prepare(input: Input, signal: AbortSignal): Promise<AgentModelRequest>;
+  prepare(
+    input: Input,
+    signal: AbortSignal,
+    emitter?: AgentToolOutputEmitter,
+  ): Promise<AgentModelRequest>;
 }
 
 export interface AgentRunPrepared {

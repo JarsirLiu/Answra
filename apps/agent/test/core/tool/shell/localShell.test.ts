@@ -20,4 +20,17 @@ describe("LocalShell", () => {
     expect(result.outcome).toEqual({ type: "exit", exitCode: 1 });
     expect(result.stderr.length).toBeGreaterThan(0);
   });
+
+  it("streams output deltas before the command settles", async () => {
+    const deltas: string[] = [];
+
+    const result = await new LocalShell().run({
+      command: "echo hello",
+      cwd: process.cwd(),
+      onOutput: (delta) => deltas.push(delta),
+    });
+
+    expect(result.stdout).toContain("hello");
+    expect(deltas.join("")).toContain("hello");
+  });
 });

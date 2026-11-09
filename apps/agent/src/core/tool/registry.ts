@@ -16,6 +16,8 @@ export interface ToolSessionContext {
   readonly sessionId: string;
   readonly readFileState?: ReadFileStateMap;
   readonly workerPaths?: ToolWorkerPaths;
+  /** 单次工具调用的增量输出回调；由 Agent 层接到事件日志。 */
+  readonly onToolOutput?: (toolCallId: string, delta: string) => void;
 }
 
 export interface ToolRegistryOptions {
@@ -83,6 +85,13 @@ function createModelTool(
         sessionId: context.sessionId,
         ...(context.readFileState ? { readFileState: context.readFileState } : {}),
         ...(workerPaths ? { workerPaths } : {}),
+        ...(context.onToolOutput
+          ? {
+              onOutput: (delta: string) => {
+                context.onToolOutput?.(options.toolCallId, delta);
+              },
+            }
+          : {}),
       });
       return result.modelContent;
     },

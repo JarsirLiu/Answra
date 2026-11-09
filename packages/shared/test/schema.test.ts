@@ -25,6 +25,7 @@ describe("event schema", () => {
       { type: "tool-input-start", toolCallId: "tool-1", toolName: "Read" },
       { type: "tool-input-delta", toolCallId: "tool-1", delta: "{" },
       { type: "tool-input-end", toolCallId: "tool-1" },
+      { type: "tool-output-delta", toolCallId: "tool-1", delta: "partial" },
       { type: "tool-call", toolCallId: "tool-1", toolName: "Read", input: { path: "a" } },
       { type: "tool-result", toolCallId: "tool-1", output: "ok" },
       { type: "tool-error", toolCallId: "tool-1", errorText: "boom" },
@@ -81,7 +82,12 @@ describe("event schema", () => {
       { type: "error", errorText: "failed" },
     ] as const;
 
-    const liveOnlyEventTypes = new Set(["text-delta", "reasoning-delta", "tool-input-delta"]);
+    const liveOnlyEventTypes = new Set([
+      "text-delta",
+      "reasoning-delta",
+      "tool-input-delta",
+      "tool-output-delta",
+    ]);
     for (const event of events) {
       expect(agentStreamEventSchema.parse(event)).toEqual(event);
       expect(agentEventSchema.parse(event)).toEqual(event);
@@ -90,7 +96,7 @@ describe("event schema", () => {
       );
     }
 
-    expect(agentStreamEventSchema.options).toHaveLength(27);
+    expect(agentStreamEventSchema.options).toHaveLength(28);
   });
 
   it("includes every execution event in the complete and durable catalogs", () => {
@@ -108,7 +114,7 @@ describe("event schema", () => {
     }
 
     expect(agentExecutionEventSchema.options).toHaveLength(4);
-    expect(agentEventSchema.options).toHaveLength(31);
+    expect(agentEventSchema.options).toHaveLength(32);
     expect(agentDurableEventSchema.options).toHaveLength(28);
   });
 
