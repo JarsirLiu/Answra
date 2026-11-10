@@ -22,7 +22,7 @@
 - 保留真实 ASR adapter 解码；只对实际产出 `chunk-final` 的段计算解码 P50/P95，短段跳过单独计数。仅在末段产出转录时报告「EOT 检测延迟 + 最后一段解码」估算。回答模型生成时间不在范围内。
 - CER 保留为逐轮辅助诊断，不作为 VAD 质量判断依据。
 - 逐轮 CSV 并列保留参考原句与真实链路识别句，另提供人工审阅列（是否应回复、语义是否完整、是否可输入文本模型、备注）。不输出数据集参考回答，也不生成产品答案。
-- 评测放在仓库根目录 `examples/vad-asr-eval`，作为独立可选 workspace 包；跨包通过 `@answra/agent/evaluation` 明确导出评测所需链路，不使用相对深导入。
+- 评测放在仓库根目录 `examples/vad-asr-eval`，作为独立可选 workspace（不属于根 workspace）；跨包通过 `@answra/agent/evaluation` 明确导出评测所需链路，不使用相对深导入。
 - Agent 已有 turn 状态和 worker 帧类型，但尚无聚合转写并提交 turn 的运行时，也没有 AI 消息派发策略。不可将单个 VAD `utterance-end` 直接当作 AI 发送命令；后续需要独立 turn 聚合/决策阶段，策略和主 Agent/子 Agent 协作方式另行设计。
 
 ## 曾考虑的替代方案
@@ -52,7 +52,7 @@
 
 ## 验证
 
-- `pnpm --filter @answra/vad-asr-eval exec vitest run eot-bench-metrics.test.ts`：3 项指标测试通过；`pnpm --filter @answra/vad-asr-eval eval:eot`：真实链路 1 项评测通过，生成 38 轮逐轮 CSV。
+- `pnpm --dir examples/vad-asr-eval exec vitest run eot-bench-metrics.test.ts`：3 项指标测试通过；`pnpm --dir examples/vad-asr-eval eval:eot`：真实链路 1 项评测通过，生成 38 轮逐轮 CSV。
 - 初始 700ms 真实样本基线（38 轮）：EOT 精确率 66.67%、召回率 63.16%、F1 64.86%；检测延迟 P50/P95 为 688/1196ms；实际 ASR 解码 P50/P95 为 92/159ms；端点 + 末段解码估算覆盖 22 轮（57.89%），P50/P95 为 777/1246ms；VAD RTF 0.02295。CER 30.36% 仅作诊断。后续 500ms 阈值结果和取舍见 [VAD 自然 turn-end 闭合过慢](../bug-fix/2026-10-21-vad-turn-end-close-window.md)。
 - 人工抽查：`zh__2258`、`zh__2260` 的主要问题和约束基本完整，可作为回复上下文；`zh__2256` 人名被错识；`zh__2257` 末尾“来午饭我试一下”语义不可靠；`zh__2262` 电话号码与标注不符且 EOT 漏检；`zh__2270`、`zh__2272` 没有识别文本。因此这批样本不能整体判为可输入，逐轮 CSV 保留空白人工审阅列供进一步标注。
 - `pnpm typecheck`、`pnpm test`、`pnpm notes:check`、`pnpm architecture:check` 通过；本次评测目录 targeted Biome 检查通过。`pnpm verify` 在 lint 阶段被工作区已有的 `apps/agent/src/interview/vad/segmenter.ts` 格式差异阻断，该文件未纳入本次提交。

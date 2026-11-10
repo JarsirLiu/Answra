@@ -50,7 +50,7 @@
 
 入口规则：desktop 只从 `@answra/agent`（`exports` 的 `.`）导入；本包不产出独立构建产物，由 desktop 的 `build:electron` 一并 bundle。
 
-仓库根目录 `examples/vad-asr-eval/` 是可选真实样本 VAD/ASR 评测 workspace：原句与链路转录并排供人工审阅，不生成回答；经 `@answra/agent/evaluation` 公开入口调用，不进入常规门禁，下载资产和 CSV 产物不入 Git。
+仓库根目录 `examples/vad-asr-eval/` 是独立的可选真实样本 VAD/ASR 评测 workspace：原句与链路转录并排供人工审阅，不生成回答；经 `@answra/agent/evaluation` 公开入口调用。它不在根 pnpm workspace 内，不参与根安装、`pnpm verify` 或 CI 测试；需在目录内单独 `pnpm install`，下载资产和 CSV 产物不入 Git。
 
 ## IPC 约定（三层类型安全）
 

@@ -1,19 +1,24 @@
 # VAD + ASR 评测
 
-这个可选工具位于仓库根目录 `examples/vad-asr-eval`，查看真实样本经过产品音频链路后的转录与 turn-end 行为。它调用真实 `InterviewAudioIngress`、TEN VAD、`InterviewVadPipeline` 和 `LocalParaformerAdapter`，不会生成回答，也不进入 `pnpm verify`。
+这个可选工具位于仓库根目录 `examples/vad-asr-eval`，查看真实样本经过产品音频链路后的转录与 turn-end 行为。它调用真实 `InterviewAudioIngress`、TEN VAD、`InterviewVadPipeline` 和 `LocalParaformerAdapter`，不会生成回答，也不进入根 workspace、`pnpm verify` 或 CI。
 
 ## 用法
 
+首次使用前先完成根 workspace 的 `pnpm install`，再单独安装本示例；示例通过 `link:../../apps/agent` 使用仓库内 Agent 源码。
+
 ```bash
+# 首次使用：在示例目录单独安装，不污染根 workspace
+pnpm --dir examples/vad-asr-eval install
+
 # 下载真实中文轮次样本和 Paraformer 模型
-pnpm --filter @answra/vad-asr-eval eval:eot:fetch --count 40
-pnpm --filter @answra/vad-asr-eval eval:asr:fetch
+pnpm --dir examples/vad-asr-eval eval:eot:fetch --count 40
+pnpm --dir examples/vad-asr-eval eval:asr:fetch
 
 # 运行 turn + 转录评测
-pnpm --filter @answra/vad-asr-eval eval:eot
+pnpm --dir examples/vad-asr-eval eval:eot
 
 # 可选：运行 AISHELL 模型诊断
-pnpm --filter @answra/vad-asr-eval eval:asr
+pnpm --dir examples/vad-asr-eval eval:asr
 ```
 
 资产 URL、字节数和 SHA-256 以 manifest 为唯一事实来源。模型、样本数据落在 `models/`、`data/`，产物落在 `out/`；均不提交 Git。

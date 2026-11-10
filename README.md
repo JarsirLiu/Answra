@@ -95,7 +95,7 @@ apps/agent             平台无关的 Agent 运行时（不依赖 Electron/Reac
   src/execution        run/attempt/step 事件、状态、进程内 store 和投影
   src/conversation     对话领域：turn、agent、profiles、tools 子域
   src/interview        面试语音领域：audio、transcription、turns、vad、reply 与 worker adapter
-examples/vad-asr-eval  可选真实样本 VAD/ASR 评测：原句与链路转录并排、人工审阅及 turn 延迟；不生成回答、不进常规门禁
+examples/vad-asr-eval  独立 workspace 的可选 VAD/ASR 评测：按需安装，不进根 workspace、依赖安装或常规门禁
 scripts/architecture   架构守护脚本（深导入/依赖环/平台越界检查）
 scripts/docs           文档门禁
 .agents/skills         AI 开发流程指南
@@ -118,7 +118,8 @@ docs                   Note 索引
 | `pnpm notes:hint` | Note 格式、本地链接和变更配对检查（仅提示，不阻断） |
 | `pnpm notes:check` | 同 `notes:hint` 但严格：缺失或格式错误即失败（CI/发布用） |
 | `pnpm architecture:check` | 架构守护检查 |
-| `pnpm --filter @answra/vad-asr-eval eval:eot` | 可选运行真实中文轮次 VAD/ASR 评测，结果在 `examples/vad-asr-eval/out/` |
+| `pnpm --dir examples/vad-asr-eval install` | 可选：单独安装 VAD/ASR 评测依赖，不影响根 workspace |
+| `pnpm --dir examples/vad-asr-eval eval:eot` | 可选运行真实中文轮次 VAD/ASR 评测，结果在 `examples/vad-asr-eval/out/` |
 | `pnpm verify` | lint + typecheck + test + architecture（Note 检查为提示；pre-push 同款） |
 
 ## 参与开发

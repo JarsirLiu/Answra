@@ -61,5 +61,5 @@ smart-turn 接入后将由端点判定层决定 seal。
 ## 验证
 
 - `pnpm --filter @answra/agent test`：11 个文件、79 项通过；`pnpm --filter @answra/agent typecheck` 通过。
-- `pnpm --filter @answra/vad-asr-eval eval:eot`：38 轮真实链路通过，产出上述 500ms 指标。
+- `pnpm --dir examples/vad-asr-eval eval:eot`：38 轮真实链路通过，产出上述 500ms 指标。
 - 对照试跑 700/600/550/520/500ms：EOT F1 分别为 64.86/71.60/71.26/73.33/73.91%；轮内误切率分别为 5.81/9.30/15.12/18.60/19.77%。

@@ -10,7 +10,7 @@
     "eval:eot": "node run-eot-bench.mjs"
   },
   "dependencies": {
-    "@answra/agent": "workspace:*"
+    "@answra/agent": "link:../../apps/agent"
   },
   "devDependencies": {
     "sherpa-onnx-node": "1.13.8",
