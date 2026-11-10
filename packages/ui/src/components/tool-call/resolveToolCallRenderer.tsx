@@ -1,4 +1,5 @@
 import type { ComponentType } from "react";
+import { EditToolCall } from "./renderers/edit";
 import { GrepToolCall } from "./renderers/grep";
 import { ReadToolCall } from "./renderers/read";
 import { RunCommandToolCall } from "./renderers/runCommand";
@@ -9,6 +10,7 @@ import type { ToolCallRendererProps } from "./toolCallPart";
 const TOOL_CALL_RENDERERS: Readonly<Record<string, ComponentType<ToolCallRendererProps>>> = {
   Read: ReadToolCall,
   Grep: GrepToolCall,
+  Edit: EditToolCall,
   RunCommand: RunCommandToolCall,
   WriteStdin: WriteStdinToolCall,
 };

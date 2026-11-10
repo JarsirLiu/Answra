@@ -9,6 +9,11 @@ interface ToolCallCardProps {
   icon: ReactNode;
   actionLabel: string;
   primary: ReactNode;
+  /** 摘要主目标后的附加内容，例如 Edit 的 +N/-N。 */
+  summaryExtra?: ReactNode;
+  /** 展开后替换主目标；设置后 summaryExtra 默认隐藏，除非提供 expandedSummaryExtra。 */
+  expandedPrimary?: ReactNode;
+  expandedSummaryExtra?: ReactNode;
   secondary?: ReactNode;
   meta?: ReactNode;
   /** 默认在非 completed 状态显示生命周期词；RunCommand 用 running/ran 取代它。 */
@@ -27,6 +32,9 @@ export function ToolCallCard({
   icon,
   actionLabel,
   primary,
+  summaryExtra,
+  expandedPrimary,
+  expandedSummaryExtra,
   secondary,
   meta,
   showState: showStateProp,
@@ -38,19 +46,25 @@ export function ToolCallCard({
   const running = isToolCallRunning(part.state);
   const showState = showStateProp ?? part.state !== "completed";
   const hasContext = secondary !== undefined || meta !== undefined;
+  const expanded = open && expandedPrimary !== undefined;
+  const visiblePrimary = expanded ? expandedPrimary : primary;
+  const visibleSummaryExtra = expanded ? expandedSummaryExtra : summaryExtra;
   const summary = (
     <>
       <span aria-hidden="true" className={styles.icon}>
         {icon}
       </span>
-      <span className={styles.action}>{actionLabel}</span>
+      <span className={styles.action}>{actionLabel}</span>{" "}
       <span
         className={styles.primary}
         data-running={(pulsePrimary && running) || undefined}
-        title={typeof primary === "string" ? primary : undefined}
+        title={typeof visiblePrimary === "string" ? visiblePrimary : undefined}
       >
-        {primary}
-      </span>
+        {visiblePrimary}
+      </span>{" "}
+      {visibleSummaryExtra !== undefined ? (
+        <span className={styles.summaryExtra}>{visibleSummaryExtra}</span>
+      ) : null}{" "}
       {showState ? (
         <span
           className={styles.state}

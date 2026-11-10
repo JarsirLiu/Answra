@@ -22,7 +22,7 @@ Agent 已有的 `workspace.read`、`workspace.grep`、`workspace.run-command`、
   - `packages/ui/src/components/chat/conversationMessage.ts`：给 `ConversationViewMessage` 增加稳定的 `parts`。
   - `packages/ui/src/components/chat/MessageTimeline.tsx`（新增）：按 parts 顺序渲染 text / reasoning / tool。
   - `packages/ui/src/components/chat/AssistantMessage.tsx`：支持 `parts` 入口，保留旧 `content/reasoning` 入口给答题回复详情。
-  - `packages/ui/src/components/tool-call/`（新增）：统一卡片外壳、fallback、resolver 与四个 renderer。
+  - `packages/ui/src/components/tool-call/`（新增）：统一卡片外壳、fallback、resolver 与各工具 renderer。
   - `packages/ui/src/components/panels/ChatPanel.tsx`、`InterviewCapturePanel.tsx`：接入 parts 渲染。
   - 删除 `packages/ui/src/components/chat/ToolResponse.tsx` 与 `ToolResponse.module.css`，并从 `chat/index.ts` 移除导出。
   - `packages/ui/src/app/useConversationChat.ts`：普通对话不再计算跑马灯 activities。
@@ -154,6 +154,7 @@ const TOOL_CALL_STATE_LABEL: Record<AgentToolCallState, string> = {
 const RENDERERS = {
   Read: ReadToolCall,
   Grep: GrepToolCall,
+  Edit: EditToolCall,
   RunCommand: RunCommandToolCall,
   WriteStdin: WriteStdinToolCall,
 };
@@ -162,12 +163,13 @@ return RENDERERS[part.toolName] ?? ToolCallFallback;
 
 使用 `part.toolName` 而不是 `ToolId`：`ToolId` 是 Agent 内部身份，工具事件只携带模型 wire name。禁止从 `title` / `kind` / `raw` 正则猜工具语义。
 
-### 四个 renderer 的显示内容
+### 工具 renderer 的显示内容
 
 | 工具 | 摘要主目标 | 展开上下文 | 展开详情 |
 | --- | --- | --- | --- |
 | `Read` | 文件名（`input.file_path` 的 basename，`part.title` 兜底） | 无 | 无展开详情，不展示文件内容 |
 | `Grep` | `pattern` | path / glob / 匹配数 | content 模式的文件与行；files 模式的路径；count 模式的计数 |
+| `Edit` | 文件名 + `+N -M`（`Created` 时同样显示文件与统计） | 无（展开后摘要改为 `Edited file` / `Created file`） | 行级 diff：文件名与增删统计、复制按钮、旧/新行号、红绿整行底色和横向滚动 |
 | `RunCommand` | 等宽 `command`（单行、超长省略） | 无（摘要不堆工作目录/退出码） | 单个描边 Shell 面板：`Shell` 标签、`$ 命令`、stdout/stderr；session 截断时补提示 |
 | `WriteStdin` | `sessionId` | 会话状态 / 写入字符预览 | stdout、stderr、exitCode |
 | 未知工具 | `title ?? toolName` | 无 | input / output 的安全格式化；失败时只显示 `errorText` |
@@ -176,6 +178,7 @@ return RENDERERS[part.toolName] ?? ToolCallFallback;
 
 - Read：只从 `input.file_path` 取摘要，不解析 `part.output`；
 - Grep：`type: "content" | "files_with_matches" | "count"`；
+- Edit：结构化 `type: "edited"` + `replacements`，或模型可见的 `Replaced N occurrences` 回执；
 - RunCommand：`kind: "result"` 或 `kind: "session"`；
 - WriteStdin：`ShellSessionSnapshot` 形态。
 
@@ -274,6 +277,27 @@ return RENDERERS[part.toolName] ?? ToolCallFallback;
 
 后果与防回退：`ReadToolCall` 不得重新传入 `meta` 或 `children`，不得渲染文件内容、行数、`[data-tool-panel]` 或展开按钮；工具失败只通过摘要状态和 `errorText` title 表达。自动化证据为 `toolCallRenderers.test.tsx` 的 Read 摘要/无展开/不渲染内容用例，以及 `ChatPanel.test.tsx`、`InterviewCapturePanel.test.tsx` 对 `Read` + 文件名的断言。
 
+## 修订：Edit 摘要与行级 diff（2026-11-10）
+
+问题：Edit 摘要仍使用「编辑 + 完整路径」，增删统计只藏在展开后的 diff 头；展开后摘要仍保留路径和统计，与参考 UI 的折叠态 `Edited <文件> +N -M`、展开态 `Edited file` 不一致，收起时也无法快速判断改动量。
+
+决定：
+
+- 摘要动作词为 `Edited`；当 `old_string` 为空且能生成 diff 时使用 `Created`。主目标为文件名，摘要尾部显示 `+N -M`，统计直接来自 `buildEditDiff`。
+- 展开后主目标切换为 `file`，摘要尾部统计隐藏；完整文件名与 `+N -M` 进入 diff 面板头，避免摘要和面板重复。
+- `ToolCallCard` 新增可选 `summaryExtra`、`expandedPrimary`、`expandedSummaryExtra`；它们只改变摘要呈现，开合状态仍由卡片自身 `useState` 唯一持有。
+- diff 面板复用淡色描边表面：表头为文件名、`+N -M` 与复制按钮；行级 diff 使用旧/新行号、红色删除行、绿色新增行和整行底色；内容区允许横向滚动，滚动条保持 4px 细条。
+- `Edit` 的行级 diff 面板保留自己的表头与行布局，不套 `ToolDetailSection` 的 `.panel` 标签结构。
+
+舍弃方案：
+
+- **折叠态只显示文件名、改动量放展开态：** 舍弃，用户需要在收起时直接看到 `+N -M`。
+- **展开态继续显示文件名和统计：** 舍弃，与参考的 `Edited file` 展开态不一致，且 diff 表头已经有同样信息。
+- **只做摘要、不复刻 diff 行：** 舍弃，参考展开态的核心是行号、红绿整行底色和横向滚动。
+- **把 `Created` 也做成独立渲染器：** 舍弃，输入和 diff 形态与 Edit 相同，仅动作词不同。
+
+后果与防回退：折叠态必须出现文件名与 `+N -M`；展开态摘要必须是 `Edited file` / `Created file`，统计只留在 diff 表头；不得移除旧/新行号、整行红绿底色或复制按钮。自动化证据为 `toolCallRenderers.test.tsx` 的 Edit 折叠/展开、`Created`、行号与复制用例，以及 `editDiff.test.ts` 的 diff 行号推导。
+
 ## 模块边界
 
 - `app/conversationParts.ts` 是纯函数，只依赖 `@answra/shared` 的事件与 part 类型；不引 React、DOM、bridge 或 agent 包。
@@ -307,7 +331,7 @@ return RENDERERS[part.toolName] ?? ToolCallFallback;
   - `MessageTimeline` 是唯一按 part kind 分派的位置；工具差异只放 renderer。
   - 工具摘要保持紧凑；工作目录、统计和输出放在摘要下方的单层 Shell 表面，禁止嵌套卡片或固定宽度。
   - 快照初始化只信 `parts`，实时事件按 revision 连续应用；不能回退到单独累加 `text`。
-  - `part.output` 是 `unknown`，四个 renderer 的窄守卫必须配测试；工具输出一旦变更，必须同步更新 renderer 和 Note。
+  - `part.output` 是 `unknown`，各工具 renderer 的窄守卫必须配测试；工具输出一旦变更，必须同步更新 renderer 和 Note。
   - 大输出继续受字符数、行数和高度上限约束，超限必须显示截断提示。
   - `AssistantMessage` 保留旧 `content/reasoning` 入口；答题 popover 不切换 parts。
   - `useConversationChat` 只在 `operation === "answer.run"` 开启 activities；普通对话不再复制一份活动投影。
@@ -317,6 +341,7 @@ return RENDERERS[part.toolName] ?? ToolCallFallback;
 - 自动化：
   - 2026-11-10 统一面板修订：`toolCallRenderers` 覆盖 Grep content/files 字符串、WriteStdin JSON snapshot 与共享 `data-tool-panel`；`themeCss` 覆盖 `.panel` 底面/描边和 `.body` 取消 22px 缩进。
   - 2026-11-10 Read 摘要修订：`toolCallRenderers` 断言 Read 只显示 `Read` + 文件名，无行数、无内容、无展开；`ChatPanel`、`InterviewCapturePanel` 同步断言 `Read` + `a.ts`。
+  - 2026-11-10 Edit UI 修订：`toolCallRenderers` 覆盖折叠态 `Edited a.ts +1 -1`、展开态 `Edited file`、`Created`、行号 diff 与复制；`editDiff.test.ts` 覆盖 Read 行号前缀；全量 UI 288 项通过，`tsc --noEmit` 通过。
   - 2026-11-10 RunCommand 表面修订：`pnpm --filter @answra/ui exec vitest run` 276 项通过（`toolCallRenderers` 覆盖 `running`/`ran` 与命令 `data-running`，`themeCss` 覆盖面板底色与命令脉冲）；`pnpm lint`、`pnpm --filter @answra/ui typecheck` 通过。
   - `pnpm verify`：通过（lint、typecheck、全仓测试、架构检查）。
   - `pnpm lint`：通过（biome check 全仓无 fix）。

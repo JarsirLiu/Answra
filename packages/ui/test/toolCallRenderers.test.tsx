@@ -1,9 +1,11 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import { EditToolCall } from "../src/components/tool-call/renderers/edit";
 import { GrepToolCall } from "../src/components/tool-call/renderers/grep";
 import { ReadToolCall } from "../src/components/tool-call/renderers/read";
 import { RunCommandToolCall } from "../src/components/tool-call/renderers/runCommand";
 import { WriteStdinToolCall } from "../src/components/tool-call/renderers/writeStdin";
+import { resolveToolCallRenderer } from "../src/components/tool-call/resolveToolCallRenderer";
 import { ToolCallFallback } from "../src/components/tool-call/ToolCallFallback";
 import type { ToolCallPart } from "../src/components/tool-call/toolCallPart";
 
@@ -86,6 +88,179 @@ describe("tool call renderers", () => {
     expect(screen.getByText("失败")).toBeInTheDocument();
     expect(screen.queryByText("文件不存在")).toBeNull();
     expect(container.querySelector("[aria-expanded]")).toBeNull();
+  });
+
+  it("maps the Edit tool name to its renderer", () => {
+    expect(resolveToolCallRenderer("Edit")).toBe(EditToolCall);
+  });
+
+  it("summarizes an Edit replacement and expands to a diff", () => {
+    render(
+      <EditToolCall
+        part={toolPart(
+          "Edit",
+          { file_path: "src/a.ts", old_string: "before", new_string: "after" },
+          "The file src/a.ts has been updated successfully. Replaced 1 occurrence. No need to read it again to verify.",
+        )}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: /Edited a\.ts \+1 -1/ })).toBeInTheDocument();
+    expect(screen.queryByText("before")).toBeNull();
+    expect(screen.queryByText("after")).toBeNull();
+
+    expand(/Edited a\.ts \+1 -1/);
+    expect(screen.getByRole("button", { name: /Edited file/ })).toBeInTheDocument();
+    expect(screen.getByText("a.ts")).toBeInTheDocument();
+    expect(screen.getAllByText("+1")).toHaveLength(1);
+    expect(screen.getAllByText("-1")).toHaveLength(1);
+    expect(screen.getByText("before")).toBeInTheDocument();
+    expect(screen.getByText("after")).toBeInTheDocument();
+    expect(screen.queryByText("替换前")).toBeNull();
+    expect(screen.queryByText("替换后")).toBeNull();
+  });
+
+  it("labels an Edit with an empty old string as Created", () => {
+    render(
+      <EditToolCall
+        part={toolPart(
+          "Edit",
+          { file_path: "src/new.ts", old_string: "", new_string: "one\ntwo" },
+          "The file src/new.ts has been created successfully.",
+        )}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: /Created new\.ts \+2 -0/ })).toBeInTheDocument();
+
+    expand(/Created new\.ts/);
+    expect(screen.getByRole("button", { name: /Created file/ })).toBeInTheDocument();
+    expect(screen.getByText("new.ts")).toBeInTheDocument();
+    expect(screen.getByText("+2")).toBeInTheDocument();
+    expect(screen.getByText("-0")).toBeInTheDocument();
+  });
+
+  it("shows Read line numbers in the Edit diff", () => {
+    render(
+      <EditToolCall
+        part={toolPart(
+          "Edit",
+          {
+            file_path: "src/conversationView.test.ts",
+            old_string: [
+              '292\t    error: "Cannot connect to API",',
+              '293\t    messages: [{ id: "run-1", role: "assistant", text: "", status: "streaming" }],',
+              "294\t  };",
+            ].join("\n"),
+            new_string: [
+              '    error: "Cannot connect to API",',
+              '    messages: [{ id: "run-2", role: "assistant", text: "", status: "streaming" }],',
+              "  };",
+            ].join("\n"),
+          },
+          "The file src/conversationView.test.ts has been updated successfully. Replaced 1 occurrence.",
+        )}
+      />,
+    );
+
+    expand(/Edited/);
+    expect(screen.getByText("292")).toBeInTheDocument();
+    expect(screen.getAllByText("293")).toHaveLength(2);
+    expect(screen.getByText("294")).toBeInTheDocument();
+    expect(screen.queryByText(/292\t/)).toBeNull();
+  });
+
+  it("copies the replacement text from the diff header", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const previousClipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+
+    try {
+      render(
+        <EditToolCall
+          part={toolPart(
+            "Edit",
+            { file_path: "src/a.ts", old_string: "before", new_string: "after" },
+            "The file src/a.ts has been updated successfully. Replaced 1 occurrence.",
+          )}
+        />,
+      );
+
+      expand(/Edited/);
+      fireEvent.click(screen.getByRole("button", { name: "复制修改后片段" }));
+      await waitFor(() => expect(writeText).toHaveBeenCalledWith("after"));
+      expect(screen.getByRole("button", { name: "已复制修改后片段" })).toBeInTheDocument();
+    } finally {
+      if (previousClipboard) Object.defineProperty(navigator, "clipboard", previousClipboard);
+      else Reflect.deleteProperty(navigator, "clipboard");
+    }
+  });
+
+  it("marks replace_all edits and accepts a structured output", () => {
+    render(
+      <EditToolCall
+        part={toolPart(
+          "Edit",
+          {
+            file_path: "src/a.ts",
+            old_string: "x",
+            new_string: "y",
+            replace_all: true,
+          },
+          { type: "edited", replacements: 3, replaceAll: true },
+        )}
+      />,
+    );
+
+    expand(/Edited/);
+    expect(screen.getByText("3 处替换")).toBeInTheDocument();
+    expect(screen.getByText("x")).toBeInTheDocument();
+    expect(screen.getByText("y")).toBeInTheDocument();
+  });
+
+  it("shows a business failure returned as model content", () => {
+    render(
+      <EditToolCall
+        part={toolPart(
+          "Edit",
+          { file_path: "src/a.ts", old_string: "missing", new_string: "after" },
+          "工具调用失败（invalid-input）：旧内容未在文件中找到",
+        )}
+      />,
+    );
+
+    expect(screen.getByText("Edited")).toBeInTheDocument();
+    expect(screen.queryByText(/旧内容未在文件中找到/)).toBeNull();
+
+    expand(/Edited/);
+    expect(screen.getByText("错误")).toBeInTheDocument();
+    expect(screen.getByText(/旧内容未在文件中找到/)).toBeInTheDocument();
+  });
+
+  it("shows a hard Edit failure with the attempted replacement", () => {
+    render(
+      <EditToolCall
+        part={toolPart(
+          "Edit",
+          { file_path: "src/a.ts", old_string: "before", new_string: "after" },
+          undefined,
+          "failed",
+          "文件在读取后已被修改",
+        )}
+      />,
+    );
+
+    expect(screen.getByText("失败")).toBeInTheDocument();
+    expect(screen.queryByText("文件在读取后已被修改")).toBeNull();
+
+    expand(/Edited/);
+    expect(screen.getByText("文件在读取后已被修改")).toBeInTheDocument();
+    expect(screen.getByText("编辑未写入文件。")).toBeInTheDocument();
+    expect(screen.getByText("before")).toBeInTheDocument();
+    expect(screen.getByText("after")).toBeInTheDocument();
   });
 
   it("renders Grep content matches with line numbers", () => {

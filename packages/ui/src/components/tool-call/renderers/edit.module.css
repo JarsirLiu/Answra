@@ -1,0 +1,152 @@
+/* Edit 展开结果：文件名、增删统计与单列表格的行级 diff。 */
+.summaryFile {
+  text-decoration: underline dotted;
+  text-decoration-color: var(--glass-line);
+  text-underline-offset: 2px;
+}
+
+.diffPanel {
+  margin-top: var(--space-2);
+  overflow: hidden;
+  border: 1px solid var(--glass-line);
+  border-radius: 8px;
+  background: var(--chat-card-bg);
+}
+
+.diffHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 2px 6px 2px 12px;
+  border-bottom: 1px solid var(--glass-line-soft);
+  color: var(--chat-meta);
+  font-family: var(--app-mono-font-family);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.fileName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.replacements {
+  flex: none;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.additions,
+.deletions {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.additions {
+  color: var(--success);
+}
+
+.deletions {
+  color: var(--danger);
+}
+
+.copyButton {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.copyButton:hover,
+.copyButton:focus-visible {
+  background: var(--field);
+  color: var(--ink-soft);
+}
+
+.copyButton:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.diffBody {
+  max-height: 260px;
+  overflow: auto;
+}
+
+.diffBody::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.diffBody::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: var(--glass-line);
+}
+
+.diffBody::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+
+.diffBody::-webkit-scrollbar-track,
+.diffBody::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.diffTable {
+  width: max-content;
+  min-width: 100%;
+  font-family: var(--app-mono-font-family);
+  font-size: 12px;
+  line-height: 1.65;
+  tab-size: 4;
+}
+
+.diffRow {
+  display: flex;
+  min-width: 100%;
+  border-left: 3px solid transparent;
+  color: var(--chat-meta);
+  white-space: pre;
+}
+
+.diffRow[data-kind="removed"] {
+  border-left-color: var(--danger);
+  background: var(--danger-wash);
+}
+
+.diffRow[data-kind="added"] {
+  border-left-color: var(--success);
+  background: var(--success-wash);
+}
+
+.lineNumber {
+  flex: none;
+  min-width: 5ch;
+  padding: 0 10px 0 6px;
+  color: var(--muted);
+  text-align: right;
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.lineText {
+  flex: none;
+  padding-right: 12px;
+}
+
+.diffRow[data-kind="removed"] .lineText,
+.diffRow[data-kind="added"] .lineText {
+  color: var(--ink-soft);
+}

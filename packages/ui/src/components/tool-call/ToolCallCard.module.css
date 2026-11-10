@@ -54,6 +54,17 @@ button.header:focus-visible {
   white-space: nowrap;
 }
 
+.summaryExtra {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  color: var(--chat-meta);
+  font-variant-numeric: tabular-nums;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
 .state {
   flex: none;
   color: var(--chat-meta);
