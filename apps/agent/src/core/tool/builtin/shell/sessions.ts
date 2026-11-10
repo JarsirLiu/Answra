@@ -63,10 +63,12 @@ type Session = {
   readonly stdout: Buffer[];
   readonly stderr: Buffer[];
   readonly done: Promise<void>;
+  readonly terminationStarted: Promise<void>;
   termination?: Promise<void>;
   readonly ownerSignal?: AbortSignal;
   ownerAbort?: () => void;
   resolveDone: () => void;
+  resolveTerminationStarted: () => void;
   interactionTail: Promise<void>;
   timeout: ReturnType<typeof setTimeout> | undefined;
   terminalReason?: TerminalReason;
@@ -195,13 +197,19 @@ export class ShellSessionManager {
     const done = new Promise<void>((resolve) => {
       resolveDone = resolve;
     });
+    let resolveTerminationStarted: () => void = () => undefined;
+    const terminationStarted = new Promise<void>((resolve) => {
+      resolveTerminationStarted = resolve;
+    });
     const session: Session = {
       child,
       jobMarkerPath,
       stdout: [],
       stderr: [],
       done,
+      terminationStarted,
       resolveDone,
+      resolveTerminationStarted,
       interactionTail: Promise.resolve(),
       timeout: undefined,
       exitCode: undefined,
@@ -297,6 +305,7 @@ export class ShellSessionManager {
     session.exitCode = null;
     session.signal = "SIGTERM";
     this.clearTimeout(session);
+    session.resolveTerminationStarted();
     return true;
   }
 
@@ -307,11 +316,9 @@ export class ShellSessionManager {
 
   private async wait(session: Session, milliseconds?: number): Promise<void> {
     if (this.isFinished(session)) return;
-    const termination = session.termination;
-    const waitForTermination = termination ?? new Promise<void>(() => undefined);
     await Promise.race([
       session.done,
-      waitForTermination,
+      session.terminationStarted,
       delay(normalizePositiveInteger(milliseconds, DEFAULT_YIELD_MS)),
     ]);
   }

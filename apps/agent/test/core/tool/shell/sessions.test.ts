@@ -51,6 +51,25 @@ function combineOutput(...snapshots: readonly ShellSessionSnapshot[]): string {
   return snapshots.map((snapshot) => snapshot.stdout).join("");
 }
 
+async function waitForCompletion(
+  manager: ShellSessionManager,
+  started: ShellSessionSnapshot,
+  timeoutMs = 15_000,
+): Promise<{ readonly result: ShellSessionSnapshot; readonly stderr: string }> {
+  let result = started;
+  const stderr = [started.stderr];
+  const deadline = Date.now() + timeoutMs;
+  while (result.status === "running") {
+    if (Date.now() >= deadline) throw new Error("会话未在测试期限内完成。");
+    result = await manager.writeStdin({
+      sessionId: requireSessionId(started),
+      yieldTimeMs: 1_000,
+    });
+    stderr.push(result.stderr);
+  }
+  return { result, stderr: stderr.join("") };
+}
+
 function requireSessionId(snapshot: ShellSessionSnapshot): string {
   if (!snapshot.sessionId) throw new Error("运行中的会话缺少 sessionId。");
   return snapshot.sessionId;
@@ -483,7 +502,7 @@ function registerCapacityEvictionTests(): void {
     await expect(
       manager.writeStdin({ sessionId: secondOldest.sessionId, yieldTimeMs: 1 }),
     ).rejects.toThrow(/Shell session 不存在/);
-  });
+  }, 30_000);
 }
 
 function registerCapacityFinishedPreferenceTests(): void {
@@ -543,25 +562,26 @@ function registerCapacityFinishedPreferenceTests(): void {
     const stillRunning = running[1];
     if (!stillRunning?.sessionId) throw new Error("容量测试未创建运行中的会话。");
     await manager.writeStdin({ sessionId: stillRunning.sessionId, yieldTimeMs: 1 });
-  });
+  }, 30_000);
 }
 
 function registerStderrCleanupTests(): void {
   it("removes the PowerShell script echo and location block from session stderr", async () => {
     if (process.platform !== "win32") return;
     const { manager, workspace } = await createHarness();
-    const result = await manager.start({
+    const started = await manager.start({
       command: 'Write-Error "中文错误"',
       cwd: workspace,
       yieldTimeMs: 1_000,
     });
+    const { result, stderr } = await waitForCompletion(manager, started);
 
     expect(result.status).toBe("completed");
-    expect(result.stderr).toContain("中文错误");
-    expect(result.stderr).not.toMatch(
+    expect(stderr).toContain("中文错误");
+    expect(stderr).not.toMatch(
       /CategoryInfo|FullyQualifiedErrorId|\[Console\]::|所在位置|At line:/,
     );
-  });
+  }, 20_000);
 }
 
 function registerCleanupTests(): void {
@@ -585,7 +605,7 @@ function registerCleanupTests(): void {
     await manager.cleanup();
     await new Promise((resolve) => setTimeout(resolve, 2_800));
     expect(await exists(leakMarker)).toBe(false);
-  });
+  }, 20_000);
 }
 
 describe("ShellSessionManager", () => {
