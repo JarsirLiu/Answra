@@ -23,6 +23,7 @@ import { applyPendingUpdateOnLaunch } from "./updater/applyPendingUpdate";
 import { createMacSwapInstaller } from "./updater/macUpdateSwap";
 import { createUpdateController } from "./updater/updateController";
 import { registerUpdateIpc } from "./updater/updateIpc";
+import { applyUserShellEnv } from "./userShellEnv";
 import { createMainWindow, getWindow, sendAuthStatus } from "./window";
 import { registerWorkspaceSchemePrivileges } from "./workspace/scheme";
 
@@ -37,6 +38,17 @@ if (!app.isPackaged) {
   if (loaded.appliedKeys.length > 0) {
     console.log("[dev-env] applied keys:", loaded.appliedKeys.join(", "));
   }
+}
+
+// 启动时把用户登录 shell 的 PATH 等环境注入主进程，供 Agent utility process 继承。
+// Windows 跳过：shell 工具直接使用 powershell.exe，不经过 POSIX 登录 shell。
+const userShellEnv = applyUserShellEnv(process.env);
+if (userShellEnv.status === "loaded") {
+  console.log(
+    `[shell-env] loaded ${Object.keys(userShellEnv.variables).length} vars via ${userShellEnv.source} shell: ${userShellEnv.shell}`,
+  );
+} else if (userShellEnv.reason !== "windows") {
+  console.warn(`[shell-env] not applied: ${userShellEnv.reason}`);
 }
 
 let ambientController: ReturnType<typeof createAmbientThemeController> | undefined;
