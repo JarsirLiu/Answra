@@ -34,11 +34,11 @@ describe("InterviewCapturePanel", () => {
     );
 
     expect(
-      screen.getByRole("region", { name: "面试对话" }).querySelector(".panel-context"),
+      screen.getByRole("region", { name: "面试演练" }).querySelector(".panel-context"),
     ).toBeNull();
     expect(screen.queryAllByText("正在监听麦克风")).toHaveLength(0);
-    expect(screen.getByText("点击下方麦克风开始语音输入。")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "开始麦克风监听" })).toBeInTheDocument();
+    expect(screen.getByText("点击麦克风用语音回答，或直接输入文字开始演练。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "开始演练麦克风监听" })).toBeInTheDocument();
   });
 
   it("appends manual input as a user message", async () => {
@@ -53,7 +53,7 @@ describe("InterviewCapturePanel", () => {
       />,
     );
 
-    const input = screen.getByRole("textbox", { name: "面试消息" });
+    const input = screen.getByRole("textbox", { name: "演练消息" });
     fireEvent.change(input, { target: { value: "手动补充内容" } });
     fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
 
@@ -73,7 +73,7 @@ describe("InterviewCapturePanel", () => {
       />,
     );
 
-    const input = screen.getByRole("textbox", { name: "面试消息" });
+    const input = screen.getByRole("textbox", { name: "演练消息" });
     fireEvent.change(input, { target: { value: "手动补充内容" } });
     fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
 
@@ -96,7 +96,7 @@ describe("InterviewCapturePanel", () => {
       />,
     );
 
-    const input = screen.getByRole("textbox", { name: "面试消息" });
+    const input = screen.getByRole("textbox", { name: "演练消息" });
     fireEvent.change(input, { target: { value: "手动补充内容" } });
     fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
 
@@ -118,7 +118,7 @@ describe("InterviewCapturePanel", () => {
       />,
     );
 
-    const input = screen.getByRole("textbox", { name: "面试消息" });
+    const input = screen.getByRole("textbox", { name: "演练消息" });
     fireEvent.change(input, { target: { value: "补充内容" } });
     expect(screen.getByRole("button", { name: "发送消息" })).toBeDisabled();
     expect(input).not.toBeDisabled();
@@ -138,7 +138,7 @@ describe("InterviewCapturePanel", () => {
     );
 
     expect(screen.getAllByText("正在监听麦克风")).toHaveLength(1);
-    expect(screen.queryByRole("textbox", { name: "面试消息" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "演练消息" })).not.toBeInTheDocument();
     const wave = screen.getByRole("img", { name: "麦克风实时音量" });
     // 窗口不足时以静默槽位补齐，波形槽位恒定并铺满输入区
     expect(wave.children).toHaveLength(INTERVIEW_INPUT_LEVEL_WINDOW);
@@ -185,7 +185,7 @@ describe("InterviewCapturePanel", () => {
     );
 
     expect(screen.queryByRole("article")).not.toBeInTheDocument();
-    expect(screen.getByText("识别完成后会加入对话并生成回复。")).toBeInTheDocument();
+    expect(screen.getByText("回答会加入对话，面试官会继续追问。")).toBeInTheDocument();
   });
 
   it("renders assistant markdown through the shared message component", () => {
@@ -286,7 +286,9 @@ describe("InterviewCapturePanel", () => {
     );
 
     expect(screen.getByRole("alert")).toHaveTextContent("消息发送失败");
-    expect(screen.queryByText("点击下方麦克风开始语音输入。")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("点击麦克风用语音回答，或直接输入文字开始演练。"),
+    ).not.toBeInTheDocument();
   });
 
   it("renders compact tool rows from assistant message parts", () => {

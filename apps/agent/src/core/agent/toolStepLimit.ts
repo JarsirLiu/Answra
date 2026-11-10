@@ -1,4 +1,4 @@
-/** Conversation 工具循环上限：保留有限工具步数，并在最后一步强制文本收尾。 */
+/** Agent 工具循环上限：保留有限工具步数，并在最后一步强制文本收尾。 */
 import { type PrepareStepFunction, type StopCondition, stepCountIs, type ToolSet } from "ai";
 
 /** 允许模型发起工具调用的最大步数；最后额外保留一次纯文本总结。 */

@@ -1,4 +1,4 @@
-/* ── 面试对话面板：只有本面板专有的块；消息区样式在 chat/conversation.css ── */
+/* ── 面试演练面板：只有本面板专有的块；消息区样式在 chat/conversation.css ── */
 .interview-capture-content {
   display: flex;
   flex: 1;

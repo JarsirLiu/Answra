@@ -120,6 +120,10 @@ export interface DesktopBridge {
   /** 清除本地端点与 Key，恢复云端订阅。 */
   clearConversationConfig?: () => Promise<ConversationModelSettingsView>;
   startInterview?: (conversationId: string) => Promise<{ sessionId: string }>;
+  sendInterviewMessage?: (
+    conversationId: string,
+    text: string,
+  ) => Promise<{ runId: string; snapshot: ConversationSnapshot }>;
   stopInterview?: (sessionId: string) => Promise<void>;
   markInterviewCaptureReady?: (sessionId: string) => Promise<void>;
   failInterviewCapture?: (sessionId: string) => Promise<void>;

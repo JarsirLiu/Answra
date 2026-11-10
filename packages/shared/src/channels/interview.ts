@@ -1,6 +1,9 @@
+import type { ConversationSnapshot } from "../schema";
+
 /** 面试采集、音频流和回答状态的 IPC 频道和载荷契约。 */
 export const InterviewChannels = {
   Start: "answra:interview:start",
+  Message: "answra:interview:message",
   Stop: "answra:interview:stop",
   CaptureReady: "answra:interview:capture-ready",
   CaptureFailed: "answra:interview:capture-failed",
@@ -51,6 +54,10 @@ export interface InterviewChannelMap {
   [InterviewChannels.Start]: {
     request: { conversationId: string };
     response: { sessionId: string };
+  };
+  [InterviewChannels.Message]: {
+    request: { conversationId: string; text: string };
+    response: { runId: string; snapshot: ConversationSnapshot };
   };
   [InterviewChannels.Stop]: { request: { sessionId: string }; response: undefined };
   [InterviewChannels.CaptureReady]: { request: { sessionId: string }; response: undefined };

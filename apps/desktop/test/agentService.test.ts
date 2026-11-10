@@ -49,7 +49,7 @@ vi.mock("electron", () => ({
   },
 }));
 
-import { AgentService } from "../src/main/conversation/agentService";
+import { AgentService } from "../src/main/agent/agentService";
 
 const emptySnapshot = (conversationId: string): ConversationSnapshot => ({
   conversationId,
@@ -73,6 +73,7 @@ function createService(): AgentService {
       accessToken: "",
     }),
     getWorkspaceRoot: () => null,
+    getInterviewDataRoot: () => "C:/data/interview",
   });
 }
 

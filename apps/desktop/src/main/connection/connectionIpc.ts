@@ -1,6 +1,6 @@
 import { ConnectionChannels } from "@answra/shared";
 import { type IpcMainInvokeEvent, ipcMain } from "electron";
-import type { AgentService } from "../conversation/agentService";
+import type { AgentService } from "../agent/agentService";
 import {
   getWindow,
   isReplyBarWindowFromSender,

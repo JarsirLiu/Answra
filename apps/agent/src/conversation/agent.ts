@@ -2,12 +2,12 @@
 import type { ConversationSendRequest } from "@answra/shared";
 import type { AgentDefinition } from "../core/agent/definition";
 import { agentId } from "../core/agent/definition";
+import { createToolStepLimit } from "../core/agent/toolStepLimit";
 import type { ReadFileStateMap, ToolRegistry } from "../core/tool";
 import type { ConversationStore } from "../core/transcript/store";
 import type { ChatProfile } from "./profiles/registry";
 import { buildEnvironmentSystemContext, readRuntimeEnvironment } from "./turn/environmentContext";
 import { buildModelMessages } from "./turn/modelMessages";
-import { createToolStepLimit } from "./turn/stepLimit";
 import { buildWorkspaceSystemContext } from "./turn/workspaceContext";
 
 export type ConversationAgentProfile = ChatProfile;

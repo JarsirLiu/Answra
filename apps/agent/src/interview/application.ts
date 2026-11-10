@@ -1,19 +1,20 @@
-/** Interview application：拥有候选人 turn 的 transcript 写入、回复 run 与 snapshot 发布。 */
+/** Interview application：拥有演练文本/语音回合、transcript 写入、回复 run 与 snapshot 发布。 */
 import { randomUUID } from "node:crypto";
 import type { ConversationSnapshot } from "@answra/shared";
 import type { AgentEventEnvelope, AgentRunSnapshot } from "@answra/shared/schema";
 import type { AgentExecutor } from "../core/agent/definition";
 import type { AgentRuntime } from "../core/agent/runtime";
+import type { ReadFileStateMap } from "../core/tool";
 import { createUserMessage } from "../core/transcript/message";
 import type { ConversationStore } from "../core/transcript/store";
-import type { InterviewReplyInput } from "./agent";
+import type { InterviewRehearsalInput } from "./agent";
 import type { CommittedInterviewTurn } from "./contracts";
 import { InterviewReplyLoop } from "./reply/loop";
 
 export interface InterviewApplicationOptions {
   agentRuntime: AgentRuntime;
   store: ConversationStore;
-  executor: AgentExecutor<InterviewReplyInput>;
+  executor: AgentExecutor<InterviewRehearsalInput>;
   requestAccessToken: () => Promise<string>;
   onSnapshot: (snapshot: ConversationSnapshot) => Promise<void>;
   onTurnCommitted: (turn: CommittedInterviewTurn) => void;
@@ -23,10 +24,13 @@ export interface InterviewApplicationOptions {
 export class InterviewApplication {
   private readonly agentRuntime: AgentRuntime;
   private readonly store: ConversationStore;
-  private readonly executor: AgentExecutor<InterviewReplyInput>;
+  private readonly executor: AgentExecutor<InterviewRehearsalInput>;
   private readonly requestAccessToken: () => Promise<string>;
   private readonly onSnapshot: (snapshot: ConversationSnapshot) => Promise<void>;
   private readonly replyLoop: InterviewReplyLoop;
+  private readonly readFileStates = new Map<string, ReadFileStateMap>();
+  private workspaceRoot: string | null = null;
+  private interviewDataRoot: string | null = null;
 
   constructor(options: InterviewApplicationOptions) {
     this.agentRuntime = options.agentRuntime;
@@ -38,12 +42,23 @@ export class InterviewApplication {
       ports: {
         appendUserTurn: (conversationId, turns, text) =>
           this.appendUserTurn(conversationId, turns, text, options.onTurnCommitted),
-        startReply: (conversationId) => this.startReply(conversationId),
+        startReply: async (conversationId) => {
+          const { runId } = await this.startReply(conversationId);
+          return { runId };
+        },
         cancelReply: (runId) => this.agentRuntime.cancel(runId),
         waitForReply: (runId) => this.agentRuntime.waitForRun(runId),
         onError: options.onError,
       },
     });
+  }
+
+  setWorkspaceRoot(root: string | null): void {
+    this.workspaceRoot = root;
+  }
+
+  setInterviewDataRoot(root: string | null): void {
+    this.interviewDataRoot = root;
   }
 
   start(): void {
@@ -58,6 +73,21 @@ export class InterviewApplication {
     return this.replyLoop.turnSettled(conversationId, turns, text);
   }
 
+  /** 演练文本输入：先落 user 消息，再用同一 Agent 开始回复。 */
+  async sendText(
+    conversationId: string,
+    text: string,
+  ): Promise<{ runId: string; snapshot: ConversationSnapshot }> {
+    const trimmed = text.trim();
+    if (!trimmed || trimmed.length > 32_000) throw new Error("演练消息无效或过长");
+    const appended = await this.store.appendUserMessage(
+      conversationId,
+      createUserMessage(randomUUID(), { text: trimmed, images: [] }),
+    );
+    await this.onSnapshot(appended);
+    return this.startReply(conversationId);
+  }
+
   stop(): Promise<void> {
     return this.replyLoop.stop();
   }
@@ -68,6 +98,7 @@ export class InterviewApplication {
 
   async createConversation(conversationId: string): Promise<ConversationSnapshot> {
     await this.store.create(conversationId);
+    this.readFileStates.delete(conversationId);
     return this.loadRecoverySnapshot(conversationId);
   }
 
@@ -101,19 +132,30 @@ export class InterviewApplication {
     for (const turn of turns) onTurnCommitted(turn);
   }
 
-  private async startReply(conversationId: string): Promise<{ runId: string }> {
-    const handle = await this.executor.startRun({
+  private async startReply(
+    conversationId: string,
+  ): Promise<{ runId: string; snapshot: ConversationSnapshot }> {
+    const handle = await this.executor.startRun<ConversationSnapshot>({
       conversationId,
       getAccessToken: this.requestAccessToken,
       prepareRun: async ({ runId, eventRevision }) => {
         await this.store.beginReplyRun(conversationId, runId, eventRevision);
         const snapshot = await this.loadRecoverySnapshot(conversationId);
         await this.onSnapshot(snapshot);
-        return { input: { conversationId }, prepared: snapshot };
+        return {
+          input: {
+            conversationId,
+            runId,
+            workspaceRoot: this.workspaceRoot,
+            interviewDataRoot: this.interviewDataRoot,
+            readFileState: this.getReadFileState(conversationId),
+          },
+          prepared: snapshot,
+        };
       },
       onEvent: (event) => this.applyRunEvent(conversationId, event),
     });
-    return { runId: handle.runId };
+    return { runId: handle.runId, snapshot: handle.prepared };
   }
 
   private async loadRecoverySnapshot(conversationId: string): Promise<ConversationSnapshot> {
@@ -122,5 +164,13 @@ export class InterviewApplication {
 
   private async applyRunEvent(conversationId: string, envelope: AgentEventEnvelope): Promise<void> {
     await this.store.applyAgentEvent(conversationId, envelope);
+  }
+
+  private getReadFileState(conversationId: string): ReadFileStateMap {
+    const existing = this.readFileStates.get(conversationId);
+    if (existing) return existing;
+    const state: ReadFileStateMap = new Map();
+    this.readFileStates.set(conversationId, state);
+    return state;
   }
 }

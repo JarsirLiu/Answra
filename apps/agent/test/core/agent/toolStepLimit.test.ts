@@ -3,7 +3,7 @@ import {
   createToolStepLimit,
   MAX_STEPS_PROMPT,
   MAX_TOOL_STEPS,
-} from "../../../src/conversation/turn/stepLimit";
+} from "../../../src/core/agent/toolStepLimit";
 
 describe("conversation tool step limit", () => {
   it("stops after the tool steps plus one final answer step", () => {

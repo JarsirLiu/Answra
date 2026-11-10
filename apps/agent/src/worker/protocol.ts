@@ -123,6 +123,8 @@ export type AgentCommand =
   | { type: "interview-audio-frame"; frame: InterviewPcmFrame }
   | { id: string; type: "configure"; config: ConversationModelConfig }
   | { id: string; type: "workspace-context"; root: string | null }
+  | { id: string; type: "interview-context"; root: string | null }
+  | { id: string; type: "interview-message"; conversationId: string; text: string }
   | ({ id: string; type: "chat-send"; accessToken: string } & ChatSendCommand)
   | ({ id: string; type: "answer-run"; accessToken: string } & AnswerRunCommand)
   /** 宿主对 `token-request` 的回答：`accessToken` 与 `error` 二者必居其一。 */

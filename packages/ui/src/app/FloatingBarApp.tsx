@@ -1,6 +1,5 @@
 import {
   ActiveExamConversationId,
-  ActiveInterviewConversationId,
   AUTH_REQUIRED_NOTICE,
   type DesktopAnnouncement,
   type DesktopBridge,
@@ -12,7 +11,6 @@ import { AGENT_SERVICE_UNAVAILABLE_NOTICE } from "../components/chat";
 import { TooltipProvider } from "../components/controls/Tooltip";
 import { FloatingBar } from "../components/floating-bar/FloatingBar";
 import { FloatingLayerHost } from "../components/floating-bar/FloatingLayerHost";
-import { InterviewCapturePanel } from "../components/panels/InterviewCapturePanel";
 import { ReplyBar } from "../components/panels/ReplyBar";
 import { ReplyDetails } from "../components/panels/ReplyDetails";
 import { SettingsPanel } from "../components/panels/SettingsPanel";
@@ -23,11 +21,11 @@ import { useStealthInputGuard } from "../hooks/useStealthInputGuard";
 import { useSurfaceWidth } from "../hooks/useSurfaceWidth";
 import { ANSWER_MODE, applyModeAvailability, MODES, type Mode, type ModeAction } from "../model";
 import { ChatFeaturePanel } from "./ChatFeaturePanel";
+import { InterviewFeaturePanel } from "./InterviewFeaturePanel";
 import type { InterviewCapturePort, InterviewCaptureState } from "./interviewCapture";
 import { useAppearanceController } from "./useAppearanceController";
 import { useConnectionState } from "./useConnectionState";
 import { useScreenshotAnswer } from "./useConversationChat";
-import { useInterviewConversation } from "./useInterviewConversation";
 import { useReplyDetail } from "./useReplyDetail";
 import { useReplyWorkflow } from "./useReplyWorkflow";
 import { useSurfaceCoordinator } from "./useSurfaceCoordinator";
@@ -61,20 +59,6 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
   const [interviewCaptureState, setInterviewCaptureState] = useState<InterviewCaptureState>(
     interviewCapture?.getState() ?? { phase: "idle" },
   );
-  const {
-    view: interviewConversation,
-    reconcileSnapshot: reconcileInterviewSnapshot,
-    clearMessages: clearInterviewMessages,
-  } = useInterviewConversation(platform, ActiveInterviewConversationId);
-  const [interviewError, setInterviewError] = useState<string>();
-  const lastInterviewMessage = interviewConversation.messages.at(-1);
-  const interviewReplyId =
-    lastInterviewMessage?.role === "assistant" ? lastInterviewMessage.id : undefined;
-  // 自动回复真正开始后，手动发送留下的旧错误已经过期；只清 transcript 侧
-  // 的错误不够，因为这里的 interviewError 优先级更高。
-  useEffect(() => {
-    if (interviewReplyId || interviewConversation.activeRunId) setInterviewError(undefined);
-  }, [interviewConversation.activeRunId, interviewReplyId]);
   const surfaces = useSurfaceCoordinator();
   const { panel, floatingLayers, featureSlot } = surfaces;
   const replyPhase = featureSlot.kind === "reply" ? (featureSlot.phase ?? "composing") : "closed";
@@ -96,10 +80,8 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
     if (connection?.status !== "reconnecting" && connection?.status !== "unavailable") return;
     // 链路断开后旧失败原因已过期：连接提示是唯一主因，重连成功后的空快照再清 transcript。
     setReplyFailure(undefined);
-    setInterviewError(undefined);
     answer.clearMessages();
-    clearInterviewMessages();
-  }, [answer.clearMessages, clearInterviewMessages, connection?.status]);
+  }, [answer.clearMessages, connection?.status]);
   useEffect(() => {
     if (!platform?.getAuthStatus) return;
     let cancelled = false;
@@ -298,10 +280,7 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
   async function clearConversation(conversationId: string) {
     if (!platform?.clearConversationMessages) throw new Error("当前版本不支持清空会话");
     try {
-      const snapshot = await platform.clearConversationMessages(conversationId);
-      if (conversationId === ActiveInterviewConversationId)
-        await reconcileInterviewSnapshot(snapshot);
-      return snapshot;
+      return await platform.clearConversationMessages(conversationId);
     } catch (error) {
       surfaces.dispatch({
         type: "layer/show-notice",
@@ -363,45 +342,12 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
         )}
 
         {__ANSWRA_FEATURE_INTERVIEW__ && panel === "interview" && (
-          <InterviewCapturePanel
+          <InterviewFeaturePanel
+            platform={platform}
             capture={interviewCapture}
             state={interviewCaptureState}
-            messages={interviewConversation.messages}
-            retry={interviewConversation.retry}
             connection={connection}
-            error={interviewError ?? interviewConversation.error}
-            onSendText={async (text) => {
-              setInterviewError(undefined);
-              if (!platform?.appendConversationUserMessage)
-                throw new Error("当前版本不支持发送消息");
-              try {
-                const snapshot = await platform.appendConversationUserMessage(
-                  ActiveInterviewConversationId,
-                  text,
-                );
-                await reconcileInterviewSnapshot(snapshot);
-              } catch (error) {
-                setInterviewError(
-                  isAgentServiceDisconnectedError(error)
-                    ? AGENT_SERVICE_UNAVAILABLE_NOTICE
-                    : error instanceof Error
-                      ? error.message
-                      : "消息发送失败",
-                );
-                throw error;
-              }
-            }}
-            onClear={
-              platform?.clearConversationMessages
-                ? () => {
-                    setInterviewError(undefined);
-                    void clearConversation(ActiveInterviewConversationId).catch(() => undefined);
-                  }
-                : undefined
-            }
-            clearDisabledReason={
-              interviewConversation.messages.length === 0 ? "本场还没有对话" : undefined
-            }
+            onClear={clearConversation}
             onClose={() => surfaces.openPanel("closed")}
           />
         )}

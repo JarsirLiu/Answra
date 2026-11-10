@@ -7,6 +7,7 @@ import {
   type ConversationSendCommand,
 } from "@answra/shared";
 import { ipcMain } from "electron";
+import type { AgentService } from "../agent/agentService";
 import {
   getWindow,
   isReplyBarConversationId,
@@ -15,7 +16,6 @@ import {
   sendConversationEvent,
   sendConversationSnapshot,
 } from "../window";
-import type { AgentService } from "./agentService";
 
 /** 模型设置侧的只读/写入面，由 `ModelRouter` 实现。 */
 export interface ConversationModelSettingsPort {

@@ -32,6 +32,7 @@ const harness = vi.hoisted(() => {
       | ((credit: { sessionId: string; count: number }) => void)
       | undefined,
     startInterview: vi.fn(async () => undefined),
+    sendInterviewMessage: vi.fn(async () => ({ runId: "run-1", snapshot: {} })),
     markInterviewCaptureReady: vi.fn(async () => undefined),
     failInterviewCapture: vi.fn(async () => undefined),
     stopInterview: vi.fn(async () => undefined),
@@ -71,7 +72,7 @@ vi.mock("../src/main/window", () => ({
   sendConversationSnapshot: harness.publishConversationSnapshot,
 }));
 
-import type { AgentService } from "../src/main/conversation/agentService";
+import type { AgentService } from "../src/main/agent/agentService";
 import { registerInterviewIpc } from "../src/main/interview/interviewIpc";
 
 describe("interview IPC", () => {
@@ -89,6 +90,7 @@ describe("interview IPC", () => {
   it("authorizes microphone-only capture and forwards candidate PCM", async () => {
     const agent = {
       startInterview: harness.startInterview,
+      sendInterviewMessage: harness.sendInterviewMessage,
       markInterviewCaptureReady: harness.markInterviewCaptureReady,
       failInterviewCapture: harness.failInterviewCapture,
       stopInterview: harness.stopInterview,
@@ -111,6 +113,17 @@ describe("interview IPC", () => {
     expect(agent.startInterview).toHaveBeenCalledWith(
       result.sessionId,
       ActiveInterviewConversationId,
+    );
+
+    const message = harness.handlers.get(InterviewChannels.Message);
+    if (!message) throw new Error("message handler not registered");
+    await message(senderEvent, {
+      conversationId: ActiveInterviewConversationId,
+      text: "介绍一下你的项目",
+    });
+    expect(agent.sendInterviewMessage).toHaveBeenCalledWith(
+      ActiveInterviewConversationId,
+      "介绍一下你的项目",
     );
 
     const permissionHandler = harness.permissionHandler;

@@ -130,6 +130,8 @@ const bridge: DesktopBridge = {
   clearConversationConfig: () => ipcRenderer.invoke(ConversationChannels.ClearConfig),
   startInterview: (conversationId: string) =>
     ipcRenderer.invoke(InterviewChannels.Start, { conversationId }),
+  sendInterviewMessage: (conversationId: string, text: string) =>
+    ipcRenderer.invoke(InterviewChannels.Message, { conversationId, text }),
   stopInterview: (sessionId: string) => ipcRenderer.invoke(InterviewChannels.Stop, { sessionId }),
   markInterviewCaptureReady: (sessionId: string) =>
     ipcRenderer.invoke(InterviewChannels.CaptureReady, { sessionId }),

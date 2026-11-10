@@ -11,7 +11,7 @@ import { MemoryConversationStore } from "./core/transcript/memoryStore";
 import type { ConversationStore } from "./core/transcript/store";
 import { MemoryExecutionStore } from "./execution/memoryStore";
 import type { ExecutionStore } from "./execution/store";
-import { createInterviewReplyAgent } from "./interview/agent";
+import { createInterviewRehearsalAgent } from "./interview/agent";
 import { InterviewApplication } from "./interview/application";
 import type { InterviewDomainEvent } from "./interview/contracts";
 import { InterviewRuntime } from "./interview/runtime";
@@ -131,7 +131,12 @@ export function startAgentHost({
     }),
   );
   const answerAgent = agentRuntime.registerAgent(screenshotAnswerAgent);
-  const interviewAgent = agentRuntime.registerAgent(createInterviewReplyAgent(store));
+  const interviewAgent = agentRuntime.registerAgent(
+    createInterviewRehearsalAgent({
+      store,
+      tools,
+    }),
+  );
   const runtime = new ConversationApplication({
     agentRuntime,
     store,
@@ -278,7 +283,13 @@ export function startAgentHost({
         return undefined;
       case "workspace-context":
         runtime.setWorkspaceRoot(command.root);
+        interview.setWorkspaceRoot(command.root);
         return undefined;
+      case "interview-context":
+        interview.setInterviewDataRoot(command.root);
+        return undefined;
+      case "interview-message":
+        return interview.sendText(command.conversationId, command.text);
       case "chat-send":
         return runtime.sendChat(
           command.profileId,

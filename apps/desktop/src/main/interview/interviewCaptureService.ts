@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { INTERVIEW_AUDIO_CREDIT_WINDOW, type InterviewPcmFrame } from "@answra/shared";
-import type { AgentService } from "../conversation/agentService";
+import type { AgentService } from "../agent/agentService";
 
 interface ActiveCapture {
   sessionId: string;

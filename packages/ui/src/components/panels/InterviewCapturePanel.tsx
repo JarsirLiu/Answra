@@ -30,7 +30,7 @@ interface InterviewCapturePanelProps {
   /** Agent worker 链路状态；与模型重试/错误互斥展示。 */
   connection?: AgentConnectionState;
   onSendText: (text: string) => Promise<void>;
-  /** 清空当前面试对话历史；缺省不显示入口。 */
+  /** 清空当前演练对话历史；缺省不显示入口。 */
   onClear?: () => void;
   /** 清空不可用的原因（没有历史）；设置即禁用按钮并以 title 提示。 */
   clearDisabledReason?: string;
@@ -98,7 +98,9 @@ export function InterviewCapturePanel({
     connection ? `connection:${connection.revision}` : "",
   ].join("|");
   const emptyHint =
-    state.phase === "idle" ? "点击下方麦克风开始语音输入。" : "识别完成后会加入对话并生成回复。";
+    state.phase === "idle"
+      ? "点击麦克风用语音回答，或直接输入文字开始演练。"
+      : "回答会加入对话，面试官会继续追问。";
   // 波形铺满输入区：窗口不足时不收缩宽度，以静默槽位补齐左侧历史。
   const levelBars = state.inputLevels?.length
     ? [
@@ -125,7 +127,7 @@ export function InterviewCapturePanel({
           </button>
         ) : undefined
       }
-      title="面试对话"
+      title="面试演练"
       variant="interview"
       onClose={onClose}
     >
@@ -142,7 +144,7 @@ export function InterviewCapturePanel({
           </div>
         )}
         <MessageStream
-          ariaLabel="面试对话消息"
+          ariaLabel="面试演练消息"
           contentKey={contentKey}
           viewportClassName="conversation"
         >
@@ -182,8 +184,8 @@ export function InterviewCapturePanel({
         </MessageStream>
       </div>
       <ConversationComposer
-        inputLabel="面试消息"
-        placeholder="输入消息…"
+        inputLabel="演练消息"
+        placeholder="输入你的回答…"
         value={draft}
         onValueChange={setDraft}
         onSubmit={() => {
@@ -214,7 +216,7 @@ export function InterviewCapturePanel({
         leadingAction={
           running ? undefined : (
             <button
-              aria-label="开始麦克风监听"
+              aria-label="开始演练麦克风监听"
               className="conversation-composer-icon-button"
               disabled={!capture}
               onClick={() => void capture?.start()}

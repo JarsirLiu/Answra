@@ -8,8 +8,8 @@ import type {
   InterviewPcmFrame,
 } from "@answra/shared";
 import type { AgentEventEnvelope } from "@answra/shared/schema";
+import type { ResolvedModel } from "../conversation/modelRouter";
 import { AgentWorkerProcess } from "./agentWorkerHost";
-import type { ResolvedModel } from "./modelRouter";
 
 /** 重连后要刷新快照的会话上限；截图答题会创建大量一次性会话。 */
 const MAX_TRACKED_CONVERSATIONS = 32;
@@ -22,6 +22,7 @@ export interface AgentServiceDeps {
    */
   resolveModel: (options?: { forceRefresh?: boolean }) => Promise<ResolvedModel>;
   getWorkspaceRoot: () => string | null;
+  getInterviewDataRoot: () => string;
   log?: (message: string, error?: unknown) => void;
 }
 
@@ -117,6 +118,23 @@ export class AgentService {
     return this.workerHost.request("append-user-message", { conversationId, text });
   }
 
+  async sendInterviewMessage(
+    conversationId: string,
+    text: string,
+  ): Promise<{ runId: string; snapshot: ConversationSnapshot }> {
+    if (!text.trim() || text.length > 32_000) throw new Error("演练消息无效或过长");
+    await this.start();
+    this.trackConversation(conversationId);
+    await this.workerHost.request("workspace-context", { root: this.deps.getWorkspaceRoot() });
+    await this.sendInterviewContext();
+    const { config } = await this.deps.resolveModel();
+    await this.ensureConfigured(config);
+    return (await this.workerHost.request("interview-message", {
+      conversationId,
+      text,
+    })) as { runId: string; snapshot: ConversationSnapshot };
+  }
+
   cancel(runId: string): void {
     void this.workerHost
       .request("cancel", { runId })
@@ -157,6 +175,7 @@ export class AgentService {
     await this.start();
     this.trackConversation(conversationId);
     await this.workerHost.request("workspace-context", { root: this.deps.getWorkspaceRoot() });
+    await this.sendInterviewContext();
     const { config } = await this.deps.resolveModel();
     await this.ensureConfigured(config);
     await this.workerHost.request("interview-start", { sessionId, conversationId });
@@ -183,6 +202,11 @@ export class AgentService {
 
   async stop(): Promise<void> {
     await this.connection.dispose();
+  }
+
+  /** 演练记忆目录由桌面组合根注入；Agent 只拿路径，不自行猜 userData。 */
+  private async sendInterviewContext(): Promise<void> {
+    await this.workerHost.request("interview-context", { root: this.deps.getInterviewDataRoot() });
   }
 
   /** 配置只在真正变化时下发：登录/登出/服务端端点变更都会自然触发一次重下发。 */

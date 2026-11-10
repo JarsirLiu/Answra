@@ -17,7 +17,7 @@ import {
 } from "@answra/shared";
 import type { AgentEventEnvelope } from "@answra/shared/schema";
 import { app, type UtilityProcess, utilityProcess } from "electron";
-import type { ResolvedModel } from "./modelRouter";
+import type { ResolvedModel } from "../conversation/modelRouter";
 
 type Pending = { resolve: (value: unknown) => void; reject: (error: Error) => void };
 type RequestCommand = Exclude<AgentCommand, { type: "interview-audio-frame" }>;

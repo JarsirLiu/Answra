@@ -4,7 +4,7 @@ import {
   type InterviewPcmFrame,
 } from "@answra/shared";
 import { type BrowserWindow, type IpcMainEvent, ipcMain, session } from "electron";
-import type { AgentService } from "../conversation/agentService";
+import type { AgentService } from "../agent/agentService";
 import { getWindow, isWindowFromSender } from "../window";
 import { InterviewCaptureService } from "./interviewCaptureService";
 
@@ -23,6 +23,23 @@ export function registerInterviewIpc(agent: AgentService) {
       throw new Error("面试会话无效");
 
     return capture.start(ActiveInterviewConversationId);
+  });
+
+  ipcMain.handle(InterviewChannels.Message, async (event, payload: unknown) => {
+    if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用");
+    if (
+      typeof payload !== "object" ||
+      payload === null ||
+      (payload as { conversationId?: unknown }).conversationId !== ActiveInterviewConversationId ||
+      typeof (payload as { text?: unknown }).text !== "string" ||
+      !(payload as { text: string }).text.trim() ||
+      (payload as { text: string }).text.length > 32_000
+    )
+      throw new Error("演练消息无效");
+    return agent.sendInterviewMessage(
+      ActiveInterviewConversationId,
+      (payload as { text: string }).text,
+    );
   });
 
   ipcMain.handle(InterviewChannels.CaptureReady, async (event, payload: unknown) => {
@@ -104,6 +121,7 @@ export function registerInterviewIpc(agent: AgentService) {
       session.defaultSession.setPermissionRequestHandler(null);
       session.defaultSession.setPermissionCheckHandler(null);
       ipcMain.removeHandler(InterviewChannels.Start);
+      ipcMain.removeHandler(InterviewChannels.Message);
       ipcMain.removeHandler(InterviewChannels.CaptureReady);
       ipcMain.removeHandler(InterviewChannels.CaptureFailed);
       ipcMain.removeHandler(InterviewChannels.Stop);

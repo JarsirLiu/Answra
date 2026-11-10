@@ -1,5 +1,7 @@
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { app, BrowserWindow, shell } from "electron";
+import { AgentService } from "./agent/agentService";
 import { createAmbientThemeController } from "./ambient";
 import { registerAuthIpc } from "./auth/authIpc";
 import { AuthService } from "./auth/authService";
@@ -12,7 +14,6 @@ import { FilePendingAuthStore } from "./auth/pendingAuthStore";
 import { registerCaptureIpc } from "./capture/captureIpc";
 import { configureChromiumCompatibility } from "./chromiumCompatibility";
 import { registerConnectionIpc } from "./connection/connectionIpc";
-import { AgentService } from "./conversation/agentService";
 import { registerConversationIpc } from "./conversation/conversationIpc";
 import { ModelRouter } from "./conversation/modelRouter";
 import { ModelSettingsStore, modelSettingsFilePath } from "./conversation/modelSettings";
@@ -60,6 +61,8 @@ let disposeWorkspace: (() => void) | undefined;
 let updateController: ReturnType<typeof createUpdateController> | undefined;
 let disposeUpdateIpc: (() => void) | undefined;
 const configDir = app.getPath("userData");
+const interviewDataRoot = join(configDir, "interview");
+mkdirSync(interviewDataRoot, { recursive: true });
 
 const authService = new AuthService({
   endpoints: resolveCloudEndpoints(process.env, { isPackaged: app.isPackaged }),
@@ -87,6 +90,7 @@ const modelRouter = new ModelRouter({
 const agentService = new AgentService({
   resolveModel: (options) => modelRouter.resolve(options),
   getWorkspaceRoot: () => getWorkspaceRoot(),
+  getInterviewDataRoot: () => interviewDataRoot,
   log: (message, error) => console.warn(message, error),
 });
 

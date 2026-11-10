@@ -44,7 +44,7 @@ export const MODES: readonly ModeDefinition[] = [
     id: "interview",
     label: "面试",
     icon: AudioLines,
-    actions: [{ id: "capture", label: "面试对话", icon: AudioLines }],
+    actions: [{ id: "capture", label: "面试演练", icon: AudioLines }],
   },
 ];
 
