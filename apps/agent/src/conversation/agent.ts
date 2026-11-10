@@ -1,6 +1,5 @@
 /** Conversation Agent 定义：组装对话 profile、transcript 上下文和授权工具集。 */
 import type { ConversationSendRequest } from "@answra/shared";
-import { stepCountIs } from "ai";
 import type { AgentDefinition } from "../core/agent/definition";
 import { agentId } from "../core/agent/definition";
 import type { ReadFileStateMap, ToolRegistry } from "../core/tool";
@@ -8,6 +7,7 @@ import type { ConversationStore } from "../core/transcript/store";
 import type { ChatProfile } from "./profiles/registry";
 import { buildEnvironmentSystemContext, readRuntimeEnvironment } from "./turn/environmentContext";
 import { buildModelMessages } from "./turn/modelMessages";
+import { createToolStepLimit } from "./turn/stepLimit";
 import { buildWorkspaceSystemContext } from "./turn/workspaceContext";
 
 export type ConversationAgentProfile = ChatProfile;
@@ -60,7 +60,7 @@ export function createConversationAgentDefinition({
       return {
         system,
         messages,
-        ...(toolSet ? { tools: toolSet, stopWhen: stepCountIs(6) } : {}),
+        ...(toolSet ? { tools: toolSet, ...createToolStepLimit() } : {}),
       };
     },
   };

@@ -1,7 +1,7 @@
 /** 描述静态注册的 Agent 输入、模型路由和模型请求准备；不包含领域存储或 IPC DTO。 */
 import type { ConversationCapabilityEndpoint } from "@answra/shared";
 import type { AgentEventEnvelope, RunOutcome } from "@answra/shared/schema";
-import type { ModelMessage, StopCondition, streamText, ToolSet } from "ai";
+import type { ModelMessage, PrepareStepFunction, StopCondition, streamText, ToolSet } from "ai";
 
 type ProviderOptions = NonNullable<Parameters<typeof streamText>[0]["providerOptions"]>;
 
@@ -22,6 +22,7 @@ export interface AgentModelRequest {
   messages: ModelMessage[];
   tools?: ToolSet;
   stopWhen?: StopCondition<ToolSet> | Array<StopCondition<ToolSet>>;
+  prepareStep?: PrepareStepFunction<ToolSet>;
   temperature?: number;
   providerOptions?: ProviderOptions;
 }

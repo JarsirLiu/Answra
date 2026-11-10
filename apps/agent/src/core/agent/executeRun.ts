@@ -160,7 +160,7 @@ export async function executeRun<Input, Prepared>({
       });
     }
   } finally {
-    outcome = runOutcome(controller.signal.aborted, journal.metrics);
+    outcome = runOutcome(controller.signal.aborted, journal.metrics, finishReason);
     if (executionStarted) {
       const terminal = await executionStore.finishRun(runId, outcome);
       if (terminal) await journal.notify(terminal);
@@ -171,12 +171,13 @@ export async function executeRun<Input, Prepared>({
   return outcome;
 }
 
-function runOutcome(
+export function runOutcome(
   cancelled: boolean,
   metrics: ReturnType<typeof createExecutionJournal>["metrics"],
+  finishReason: string | undefined,
 ): Extract<RunOutcome, "completed" | "failed" | "aborted"> {
   if (cancelled || metrics.aborted) return "aborted";
-  if (metrics.failed || !metrics.finished) return "failed";
+  if (metrics.failed || !metrics.finished || finishReason === "tool-calls") return "failed";
   return "completed";
 }
 
