@@ -1,6 +1,6 @@
 import { editDiffDisplaySchema } from "@answra/shared/schema";
 import { Check, Copy, Pencil } from "lucide-react";
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useDeferredValue, useEffect, useMemo, useState } from "react";
 import { ToolCallCard } from "../ToolCallCard";
 import { ToolDetailSection, ToolErrorBlock, ToolNotice, ToolOutputBlock } from "../ToolCallDetails";
 import type { ToolCallRendererProps } from "../toolCallPart";
@@ -51,13 +51,15 @@ export function EditToolCall({ part }: ToolCallRendererProps) {
     const diff = structured?.diff;
     return diff === undefined ? undefined : editDiffDisplaySchema.safeParse(diff);
   }, [structured]);
+  const deferredOldString = useDeferredValue(oldString);
+  const deferredNewString = useDeferredValue(newString);
   const diff = useMemo(() => {
     if (structuredDiff?.success) return fromEditDiffDisplay(structuredDiff.data);
-    if (oldString !== undefined && newString !== undefined) {
-      return fromLegacyEditDiff(buildEditDiff(oldString, newString));
+    if (deferredOldString !== undefined && deferredNewString !== undefined) {
+      return fromLegacyEditDiff(buildEditDiff(deferredOldString, deferredNewString));
     }
     return undefined;
-  }, [structuredDiff, oldString, newString]);
+  }, [structuredDiff, deferredOldString, deferredNewString]);
   const hasDetails = error !== undefined || diff !== undefined || malformed !== undefined;
   const notWritten =
     error !== undefined || isToolCallError(part.state) || part.state === "interrupted";

@@ -120,6 +120,38 @@ describe("tool call renderers", () => {
     expect(screen.queryByText("替换后")).toBeNull();
   });
 
+  it("keeps the streamed Edit summary visible before the diff is available", async () => {
+    const streaming: ToolCallPart = {
+      id: "tool-1",
+      kind: "tool",
+      toolCallId: "tool-1",
+      toolName: "Edit",
+      state: "input-streaming",
+      inputText: "x".repeat(1536),
+    };
+    const { rerender } = render(<EditToolCall part={streaming} />);
+
+    expect(screen.getByText("准备中")).toBeInTheDocument();
+    expect(screen.getByText("1.5 KB")).toBeInTheDocument();
+    expect(screen.queryByRole("button")).toBeNull();
+
+    rerender(
+      <EditToolCall
+        part={{
+          ...streaming,
+          state: "pending",
+          input: { file_path: "src/a.ts", old_string: "before", new_string: "after" },
+        }}
+      />,
+    );
+
+    expect(screen.getByText("a.ts")).toBeInTheDocument();
+    expect(screen.queryByText("1.5 KB")).toBeNull();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /Edited a\.ts \+1 -1/ })).toBeInTheDocument(),
+    );
+  });
+
   it("labels an Edit with an empty old string as Created", () => {
     render(
       <EditToolCall

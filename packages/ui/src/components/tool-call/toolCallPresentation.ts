@@ -15,6 +15,17 @@ export const TOOL_CALL_STATE_LABEL: Record<AgentToolCallState, string> = {
 export const MAX_TOOL_VALUE_CHARS = 8_000;
 export const MAX_TOOL_STREAM_CHARS = 6_000;
 export const MAX_TOOL_PREVIEW_LINES = 200;
+export const TOOL_INPUT_SIZE_STEP_CHARS = 100;
+export const TOOL_INPUT_SIZE_KB = 1024;
+
+/** Rounds the streamed argument size so the meter does not change on every delta. */
+export function formatToolInputStreamSize(chars: number): string {
+  if (chars < TOOL_INPUT_SIZE_STEP_CHARS) return `${chars} 字符`;
+  const rounded = Math.floor(chars / TOOL_INPUT_SIZE_STEP_CHARS) * TOOL_INPUT_SIZE_STEP_CHARS;
+  return rounded < TOOL_INPUT_SIZE_KB
+    ? `${rounded} 字符`
+    : `${(rounded / TOOL_INPUT_SIZE_KB).toFixed(1)} KB`;
+}
 
 export function isToolCallRunning(state: AgentToolCallState): boolean {
   return (

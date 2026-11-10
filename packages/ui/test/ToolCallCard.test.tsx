@@ -35,6 +35,32 @@ describe("ToolCallCard", () => {
     expect(screen.queryByRole("button")).toBeNull();
   });
 
+  it("shows the streamed argument size only while input is still streaming", () => {
+    const { rerender } = render(
+      <ToolCallCard
+        actionLabel="Edited"
+        icon={null}
+        part={toolPart({ state: "input-streaming", inputText: "x".repeat(1536) })}
+        primary="文件"
+      />,
+    );
+
+    expect(screen.getByText("准备中")).toHaveAttribute("data-running", "true");
+    expect(screen.getByText("1.5 KB")).toBeInTheDocument();
+    expect(screen.queryByRole("button")).toBeNull();
+
+    rerender(
+      <ToolCallCard
+        actionLabel="Edited"
+        icon={null}
+        part={toolPart({ state: "pending", inputText: "x".repeat(1536), input: {} })}
+        primary="文件"
+      />,
+    );
+
+    expect(screen.queryByText("1.5 KB")).toBeNull();
+  });
+
   it("hides the lifecycle label once the call has completed", () => {
     render(<ToolCallCard actionLabel="读取" icon={null} part={toolPart()} primary="a.ts" />);
 

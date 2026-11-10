@@ -2,7 +2,12 @@ import { ChevronDown } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import styles from "./ToolCallCard.module.css";
 import type { ToolCallPart } from "./toolCallPart";
-import { isToolCallError, isToolCallRunning, TOOL_CALL_STATE_LABEL } from "./toolCallPresentation";
+import {
+  formatToolInputStreamSize,
+  isToolCallError,
+  isToolCallRunning,
+  TOOL_CALL_STATE_LABEL,
+} from "./toolCallPresentation";
 
 interface ToolCallCardProps {
   part: ToolCallPart;
@@ -48,7 +53,11 @@ export function ToolCallCard({
   const hasContext = secondary !== undefined || meta !== undefined;
   const expanded = open && expandedPrimary !== undefined;
   const visiblePrimary = expanded ? expandedPrimary : primary;
-  const visibleSummaryExtra = expanded ? expandedSummaryExtra : summaryExtra;
+  const streamedSize =
+    part.state === "input-streaming" && part.inputText
+      ? formatToolInputStreamSize(part.inputText.length)
+      : undefined;
+  const visibleSummaryExtra = expanded ? expandedSummaryExtra : (summaryExtra ?? streamedSize);
   const summary = (
     <>
       <span aria-hidden="true" className={styles.icon}>
