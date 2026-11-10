@@ -27,8 +27,8 @@ Shell 会话在创建时持有 `terminationStarted`，终止流程一开始就 r
 - 每个 Session 在创建时持有 `terminationStarted`，由 `markTerminated` 在进入终止流程时 resolve。
 - `wait` 改为同时等待 `session.done`、`session.terminationStarted` 和 yield 延迟；abort/timeout 触发终止后立即唤醒，再由调用方执行 `throwIfSessionAborted` 或生成终止快照。
 - `waitForShutdown` 继续等待实际 `termination` Promise，`kill`/`cleanup` 的资源回收语义不变。
-- 测试新增 `waitForCompletion`，持续读取会话直到非 `running` 或达到期限，并累计 stderr，避免只读一次启动快照。
-- 对真实的清理、LRU 容量和 PowerShell stderr 集成测试设置明确的 20–30 秒超时，不改变生产超时。
+- 测试新增 `waitForCompletion`，持续读取会话直到非 `running` 或达到期限，并累计 stdout/stderr，避免只读一次启动快照。
+- 写入 stdin、工作目录和会话续接测试也循环读取到终态；shell 集成测试套件统一使用 30 秒 suite timeout，不改变生产超时。
 
 ## 曾考虑的替代方案
 

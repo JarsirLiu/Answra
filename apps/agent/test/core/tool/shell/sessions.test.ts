@@ -55,8 +55,13 @@ async function waitForCompletion(
   manager: ShellSessionManager,
   started: ShellSessionSnapshot,
   timeoutMs = 15_000,
-): Promise<{ readonly result: ShellSessionSnapshot; readonly stderr: string }> {
+): Promise<{
+  readonly result: ShellSessionSnapshot;
+  readonly stdout: string;
+  readonly stderr: string;
+}> {
   let result = started;
+  const stdout = [started.stdout];
   const stderr = [started.stderr];
   const deadline = Date.now() + timeoutMs;
   while (result.status === "running") {
@@ -65,9 +70,10 @@ async function waitForCompletion(
       sessionId: requireSessionId(started),
       yieldTimeMs: 1_000,
     });
+    stdout.push(result.stdout);
     stderr.push(result.stderr);
   }
-  return { result, stderr: stderr.join("") };
+  return { result, stdout: stdout.join(""), stderr: stderr.join("") };
 }
 
 function requireSessionId(snapshot: ShellSessionSnapshot): string {
@@ -247,14 +253,15 @@ function registerStdinTests(): void {
       yieldTimeMs: 100,
       timeoutMs: 20_000,
     });
-    const finished = await manager.writeStdin({
+    const first = await manager.writeStdin({
       sessionId: requireSessionId(started),
       chars: "hello\n",
       yieldTimeMs: 3_000,
     });
+    const { result, stdout } = await waitForCompletion(manager, first);
 
-    expect(finished).toMatchObject({ status: "completed", exitCode: 0 });
-    expect(combineOutput(started, finished)).toContain("received:hello");
+    expect(result).toMatchObject({ status: "completed", exitCode: 0 });
+    expect(`${started.stdout}${stdout}`).toContain("received:hello");
   });
 }
 
@@ -502,7 +509,7 @@ function registerCapacityEvictionTests(): void {
     await expect(
       manager.writeStdin({ sessionId: secondOldest.sessionId, yieldTimeMs: 1 }),
     ).rejects.toThrow(/Shell session 不存在/);
-  }, 30_000);
+  });
 }
 
 function registerCapacityFinishedPreferenceTests(): void {
@@ -562,7 +569,7 @@ function registerCapacityFinishedPreferenceTests(): void {
     const stillRunning = running[1];
     if (!stillRunning?.sessionId) throw new Error("容量测试未创建运行中的会话。");
     await manager.writeStdin({ sessionId: stillRunning.sessionId, yieldTimeMs: 1 });
-  }, 30_000);
+  });
 }
 
 function registerStderrCleanupTests(): void {
@@ -581,7 +588,7 @@ function registerStderrCleanupTests(): void {
     expect(stderr).not.toMatch(
       /CategoryInfo|FullyQualifiedErrorId|\[Console\]::|所在位置|At line:/,
     );
-  }, 20_000);
+  });
 }
 
 function registerCleanupTests(): void {
@@ -605,10 +612,10 @@ function registerCleanupTests(): void {
     await manager.cleanup();
     await new Promise((resolve) => setTimeout(resolve, 2_800));
     expect(await exists(leakMarker)).toBe(false);
-  }, 20_000);
+  });
 }
 
-describe("ShellSessionManager", () => {
+describe("ShellSessionManager", { timeout: 30_000 }, () => {
   registerConfigurationTests();
   registerCompletionTests();
   registerStdinTests();

@@ -3,7 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { executeToolCall, type ToolContext, type ToolResult } from "../../../../src/core/tool";
-import type { ShellYieldTimePolicy } from "../../../../src/core/tool/builtin/shell/sessions";
+import type {
+  ShellSessionSnapshot,
+  ShellYieldTimePolicy,
+} from "../../../../src/core/tool/builtin/shell/sessions";
 import { createShellTools, type ShellTools } from "../../../../src/core/tool/builtin/shell/tools";
 
 const roots: string[] = [];
@@ -125,7 +128,7 @@ async function writeProcessTree(
   return { command: nodeCommand(parent), started, marker };
 }
 
-describe("RunCommand", () => {
+describe("RunCommand", { timeout: 30_000 }, () => {
   it("reports a successful empty output with exit code 0", async () => {
     const root = await createRoot();
     const tools = createTools();
@@ -223,22 +226,22 @@ describe("RunCommand", () => {
     );
     const tools = createTools();
     const started = await execute(tools, { command: nodeCommand(script), yieldTimeMs: 50 }, root);
-    const snapshot = JSON.parse(modelText(started)) as {
-      status: string;
-      sessionId: string;
-      stdout: string;
-    };
+    let snapshot = JSON.parse(modelText(started)) as ShellSessionSnapshot;
     expect(snapshot.status).toBe("running");
-    expect(snapshot.sessionId).toBeTypeOf("string");
+    const sessionId = snapshot.sessionId;
+    if (!sessionId) throw new Error("运行中的会话缺少 sessionId。");
 
-    const finished = await tools.writeStdin.handler(
-      { sessionId: snapshot.sessionId, yieldTimeMs: 3_000 },
-      context(root),
-    );
-    if ("ok" in finished) throw new Error(finished.message);
-    expect(finished).toMatchObject({ status: "completed", exitCode: 0 });
-    expect(`${snapshot.stdout}${finished.stdout}`.match(/first/g)).toHaveLength(1);
-    expect(`${snapshot.stdout}${finished.stdout}`.match(/second/g)).toHaveLength(1);
+    const stdout = [snapshot.stdout];
+    const deadline = Date.now() + 15_000;
+    while (snapshot.status === "running") {
+      if (Date.now() >= deadline) throw new Error("会话未在测试期限内完成。");
+      snapshot = await tools.writeStdin.handler({ sessionId, yieldTimeMs: 1_000 }, context(root));
+      stdout.push(snapshot.stdout);
+    }
+    expect(snapshot).toMatchObject({ status: "completed", exitCode: 0 });
+    const output = stdout.join("");
+    expect(output.match(/first/g)).toHaveLength(1);
+    expect(output.match(/second/g)).toHaveLength(1);
   });
 
   it("turns an unknown sessionId into an invalid-input failure", async () => {
