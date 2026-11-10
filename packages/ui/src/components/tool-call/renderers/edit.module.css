@@ -85,25 +85,6 @@
   overflow: auto;
 }
 
-.diffBody::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
-}
-
-.diffBody::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: var(--glass-line);
-}
-
-.diffBody::-webkit-scrollbar-thumb:hover {
-  background: var(--muted);
-}
-
-.diffBody::-webkit-scrollbar-track,
-.diffBody::-webkit-scrollbar-corner {
-  background: transparent;
-}
-
 .diffTable {
   width: max-content;
   min-width: 100%;

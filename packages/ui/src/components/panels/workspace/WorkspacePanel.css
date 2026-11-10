@@ -459,23 +459,3 @@
   padding: var(--space-3);
   text-align: center;
 }
-
-/* 细滚动条：预览区两侧尽量少占面积。 */
-.workspace-panel ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-.workspace-panel ::-webkit-scrollbar-thumb {
-  background: var(--glass-line-soft);
-  border-radius: 3px;
-}
-
-.workspace-panel ::-webkit-scrollbar-thumb:hover {
-  background: var(--glass-line);
-}
-
-.workspace-panel ::-webkit-scrollbar-track,
-.workspace-panel ::-webkit-scrollbar-corner {
-  background: transparent;
-}

@@ -18,6 +18,23 @@ afterEach(() => {
   previousClipboard = undefined;
 });
 
+describe("TextResponse markdown", () => {
+  it("renders GFM tables and fenced code blocks as markdown structures", () => {
+    const { container } = render(
+      <TextResponse
+        text={"## 示例表格\n\n| 姓名 | 年龄 |\n| --- | --- |\n| 张三 | 25 |\n\n```ts\nconst answer = 42;\n```"}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "示例表格" })).toBeInTheDocument();
+    const table = screen.getByRole("table");
+    expect(table.parentElement?.className).toContain("tableScroll");
+    expect(screen.getByText("张三")).toBeInTheDocument();
+    expect(screen.getByText("ts")).toBeInTheDocument();
+    expect(container.querySelector("pre code")?.textContent).toBe("const answer = 42;");
+  });
+});
+
 describe("TextResponse code blocks", () => {
   it("shows a copy button in the code block header and copies code without the markdown trailing newline", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);

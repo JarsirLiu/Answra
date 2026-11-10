@@ -67,27 +67,3 @@
   color: var(--mint-text);
   background: var(--user-wash);
 }
-/* 对话区自定义滚动条：极细圆条，避免原生粗灰条。 */
-.conversation::-webkit-scrollbar,
-.conversation-composer textarea::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
-}
-
-.conversation::-webkit-scrollbar-thumb,
-.conversation-composer textarea::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: var(--glass-line);
-}
-
-.conversation::-webkit-scrollbar-thumb:hover,
-.conversation-composer textarea::-webkit-scrollbar-thumb:hover {
-  background: var(--muted);
-}
-
-.conversation::-webkit-scrollbar-track,
-.conversation::-webkit-scrollbar-corner,
-.conversation-composer textarea::-webkit-scrollbar-track,
-.conversation-composer textarea::-webkit-scrollbar-corner {
-  background: transparent;
-}

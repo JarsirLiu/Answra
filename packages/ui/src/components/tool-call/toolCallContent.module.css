@@ -33,26 +33,6 @@
   overflow: auto;
 }
 
-/* 与对话视口一致的极细滚动条；不写 scrollbar-width，避免覆盖 webkit 细条。 */
-.content::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
-}
-
-.content::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: var(--glass-line);
-}
-
-.content::-webkit-scrollbar-thumb:hover {
-  background: var(--muted);
-}
-
-.content::-webkit-scrollbar-track,
-.content::-webkit-scrollbar-corner {
-  background: transparent;
-}
-
 .pre {
   min-width: 0;
   margin: 0;

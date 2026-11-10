@@ -12,21 +12,6 @@
   overflow-y: auto;
   overflow-x: hidden;
 }
-.viewport::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
-}
-.viewport::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: var(--glass-line);
-}
-.viewport::-webkit-scrollbar-thumb:hover {
-  background: var(--muted);
-}
-.viewport::-webkit-scrollbar-track,
-.viewport::-webkit-scrollbar-corner {
-  background: transparent;
-}
 
 .jumpButton {
   position: absolute;

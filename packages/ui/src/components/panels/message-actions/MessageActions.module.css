@@ -489,27 +489,14 @@
   padding: 0 4px 10px 8px;
   overflow-x: hidden;
   overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: var(--ma-hover) transparent;
-}
-
-.pickerScroll::-webkit-scrollbar {
-  width: 4px;
-  height: 0;
 }
 
 .pickerScroll::-webkit-scrollbar:horizontal {
   display: none;
 }
 
-.pickerScroll::-webkit-scrollbar-track,
-.pickerScroll::-webkit-scrollbar-corner {
-  background: transparent;
-}
-
 .pickerScroll::-webkit-scrollbar-thumb {
   background: var(--ma-hover);
-  border-radius: 999px;
 }
 
 .groupLabel {

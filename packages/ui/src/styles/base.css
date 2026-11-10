@@ -3,6 +3,31 @@
 * {
   box-sizing: border-box;
 }
+/* 全局极细滚动条：Windows/Chromium 默认滚动条约 15px，会在 Markdown 表格、
+   代码块和长输出下压出一条粗灰轨道。只写 WebKit 伪元素，不写
+   scrollbar-width/scrollbar-color：这两个标准属性一旦非 auto，Chromium 会忽略
+   下面的细条规则并回落到系统粗条。需要隐藏滚动条的容器仍由自身的
+   `::-webkit-scrollbar { display: none }` 覆盖。 */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: var(--glass-line);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
 body {
   margin: 0;
   width: fit-content;

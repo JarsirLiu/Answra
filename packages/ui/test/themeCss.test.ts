@@ -229,6 +229,32 @@ describe("theme CSS integrity", () => {
     expect(card).toContain("animation: tool-call-shine");
   });
 
+  it("keeps every scrollbar hairline and rejects standard thin overrides", () => {
+    // Windows/Chromium 默认滚动条约 15px；`scrollbar-width: thin` 还会让
+    // Chromium 忽略 `::-webkit-scrollbar` 的 4px 规则。全局只允许 base.css
+    // 定义滚动条，且宽高必须是 4px（隐藏态可用 display:none / 0）。
+    const base = stripComments(readFileSync(join(sourceRoot, "styles", "base.css"), "utf8"));
+    expect(base).toMatch(/::-webkit-scrollbar\s*\{[^}]*width:\s*4px;[^}]*height:\s*4px;/);
+    expect(base).toMatch(/::-webkit-scrollbar-button\s*\{[^}]*display:\s*none;/);
+    expect(base).toMatch(/::-webkit-scrollbar-thumb\s*\{[^}]*background:\s*var\(--glass-line\);/);
+
+    const offenders = cssFiles.filter((file) =>
+      /scrollbar-width:\s*thin/.test(stripComments(readFileSync(file, "utf8"))),
+    );
+    expect(offenders).toEqual([]);
+
+    const scrollbarSizes = cssFiles.flatMap((file) => {
+      const css = stripComments(readFileSync(file, "utf8"));
+      return [...css.matchAll(/::-webkit-scrollbar(?:\s*:[a-z-]+)?\s*\{([^}]*)\}/g)].flatMap(
+        (match) =>
+          [...(match[1] as string).matchAll(/(?:width|height):\s*(\d+)px/g)].map(
+            (size) => size[1],
+          ),
+      );
+    });
+    expect(scrollbarSizes.filter((size) => size !== "0" && size !== "4")).toEqual([]);
+  });
+
   it("keeps the stealth cursor override strong enough to beat component cursor rules", () => {
     // 隐身模式下指针必须恒为默认箭头，否则指针形状会暴露正在输入/选择。
     // 组件里的 cursor 规则会追平覆盖规则的 (0,2,0)（如 `.trHeader.isClickable`），
