@@ -11,6 +11,32 @@ import {
 describe("floating bar interview rehearsal", () => {
   beforeEach(resetFloatingBarTestState);
 
+  it("starts rehearsal from the empty state by sending the fixed action message", async () => {
+    const bridge = createConversationBridge();
+    const capture = {
+      getState: () => ({ phase: "idle" as const }),
+      subscribe: () => () => undefined,
+      start: vi.fn(async () => undefined),
+      stop: vi.fn(async () => undefined),
+    };
+    render(<FloatingBarApp bridge={bridge} interviewCapture={capture} />);
+    fireEvent.click(screen.getByRole("button", { name: "对话" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "面试" }));
+    fireEvent.click(screen.getByRole("button", { name: "面试演练" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "开始面试演练" }));
+
+    await waitFor(() =>
+      expect(bridge.sendInterviewMessage).toHaveBeenCalledWith(
+        ActiveInterviewConversationId,
+        expect.stringContaining("请先检查我的面试记忆和简历是否存在"),
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "开始面试演练" })).not.toBeInTheDocument(),
+    );
+  });
+
   it("sends interview text through the interview message command", async () => {
     const bridge = createConversationBridge();
     const capture = {

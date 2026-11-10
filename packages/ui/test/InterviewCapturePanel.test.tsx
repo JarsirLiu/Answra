@@ -37,8 +37,33 @@ describe("InterviewCapturePanel", () => {
       screen.getByRole("region", { name: "面试演练" }).querySelector(".panel-context"),
     ).toBeNull();
     expect(screen.queryAllByText("正在监听麦克风")).toHaveLength(0);
-    expect(screen.getByText("点击麦克风用语音回答，或直接输入文字开始演练。")).toBeInTheDocument();
+    expect(screen.getByText("先让我检查你的面试记忆和简历，再开始演练。")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "开始演练麦克风监听" })).toBeInTheDocument();
+  });
+
+  it("starts rehearsal from the empty state and disables the action while pending", async () => {
+    const pending = deferred();
+    const onStartRehearsal = vi.fn(() => pending.promise);
+    render(
+      <InterviewCapturePanel
+        capture={capturePort()}
+        state={{ phase: "idle" }}
+        messages={[]}
+        onSendText={vi.fn(async () => undefined)}
+        onStartRehearsal={onStartRehearsal}
+        onClose={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "开始面试演练" }));
+
+    expect(onStartRehearsal).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "正在开始…" })).toBeDisabled();
+
+    pending.resolve();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "开始面试演练" })).not.toBeDisabled(),
+    );
   });
 
   it("appends manual input as a user message", async () => {

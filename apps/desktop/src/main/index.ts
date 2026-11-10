@@ -61,7 +61,8 @@ let disposeWorkspace: (() => void) | undefined;
 let updateController: ReturnType<typeof createUpdateController> | undefined;
 let disposeUpdateIpc: (() => void) | undefined;
 const configDir = app.getPath("userData");
-const interviewDataRoot = join(configDir, "interview");
+// 面试记忆是用户可见数据，不能依赖 Electron 由 package name 派生的 userData 目录名。
+const interviewDataRoot = join(app.getPath("appData"), "Answra", "interview");
 mkdirSync(interviewDataRoot, { recursive: true });
 
 const authService = new AuthService({

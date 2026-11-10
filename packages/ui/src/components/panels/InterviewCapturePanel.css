@@ -26,9 +26,19 @@
 
 /* 消息区空态提示：整块留白时垂直居中给出唯一引导。 */
 .interview-capture-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
   margin: auto;
+  padding: 0 16px;
   color: var(--muted);
   font-size: var(--font-sm);
+  text-align: center;
+}
+
+.interview-capture-empty p {
+  margin: 0;
 }
 
 /* 波形：数值只来自麦克风电平（渲染高度交给百分比），CSS 管最小/最大物理范围。 */

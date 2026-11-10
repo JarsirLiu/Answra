@@ -11,6 +11,9 @@ import { InterviewCapturePanel } from "../components/panels/InterviewCapturePane
 import type { InterviewCapturePort, InterviewCaptureState } from "./interviewCapture";
 import { useInterviewConversation } from "./useInterviewConversation";
 
+const START_REHEARSAL_MESSAGE =
+  "开始面试演练。请先检查我的面试记忆和简历是否存在，再引导我补充信息；资料齐全后再开始提问。";
+
 interface InterviewFeaturePanelProps {
   platform: DesktopBridge | undefined;
   capture: InterviewCapturePort | undefined;
@@ -66,6 +69,10 @@ export function InterviewFeaturePanel({
     }
   }
 
+  function startRehearsal(): Promise<void> {
+    return sendText(START_REHEARSAL_MESSAGE);
+  }
+
   return (
     <InterviewCapturePanel
       capture={capture}
@@ -75,6 +82,7 @@ export function InterviewFeaturePanel({
       connection={connection}
       error={error ?? view.error}
       onSendText={sendText}
+      onStartRehearsal={platform?.sendInterviewMessage ? startRehearsal : undefined}
       onClear={() => {
         setError(undefined);
         void onClear(ActiveInterviewConversationId).catch(() => undefined);

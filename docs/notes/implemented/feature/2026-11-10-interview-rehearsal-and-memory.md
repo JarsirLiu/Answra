@@ -20,8 +20,9 @@
 ## 影响表面
 
 - 用户进入“面试演练”，可以直接输入文字，也可以打开麦克风说；两种输入都进入同一份会话和同一个 Agent。
+- 空白消息区提供“开始面试演练”按钮；点击等价于代替用户发送固定消息“开始面试演练。请先检查我的面试记忆和简历是否存在，再引导我补充信息；资料齐全后再开始提问。”，仍走 `interview-message`，不新增启动命令或状态机。
 - 演练 Agent 获得 `Read`、`Grep`、`Edit` 和通用 Shell。它先读资料再提问，不自动把记忆、简历摘要或项目总结塞进 prompt。
-- 面试记忆固定为 `userData/interview/profile.md`，由 Agent 用通用文件工具读写；不新增专用 store、写文档工具或 JSON schema。
+- 面试记忆固定为 `appData/Answra/interview/profile.md`（Windows 为 `%APPDATA%\Answra\interview\profile.md`），由 Agent 用通用文件工具读写；不新增专用 store、写文档工具或 JSON schema。
 - system prompt 只带记忆路径、工作区上下文和读取规则；资料内容按需读取。
 - 文字发送通过 `answra:interview:message` 到 worker，先追加 user 消息，再启动模型回复；麦克风路径仍走原有 turn 结算。
 - 本轮不实现系统声音采集、音频来源切换和面试模式；desktop 仍只采集用户麦克风。
@@ -31,6 +32,7 @@
 - 只有一个面试 bot，一个 conversation，一份 `profile.md`。没有 `botId`、bot 选择器、coach、bot 互相召唤，也没有 `interview-profile-start` / `interview-profile-confirm` 阶段命令。
 - 记忆是 Markdown，不是应用解析的数据库。文档记录：目标岗位、简历摘要、简历路径、项目总结、项目地址、经历证据、披露边界、待确认、上次修改时间和记忆变更记录。
 - 写入只发生在演练模式，且只写 `interviewDataRoot` 下的记忆文件；不改用户工作区。面试模式以后只读。
+- `interviewDataRoot` 由 desktop 固定为 `appData/Answra/interview`，不跟随 Electron 的 `userData` 目录名；开发态 package name 是 `@answra/desktop`，用户记忆不能落在 `@answra` 下。
 - 演练提示要求一次只问一个关键问题，回答后先给一句简短反馈再追问；不套固定题库，不编造项目、指标、职责或技术细节。
 - 每次写入更新顶部“上次修改”并追加一条“记忆变更记录”；文件 mtime 作为外部校验。
 - 工作区是默认查找位置，不是访问边界；找不到资料时直接问用户路径，只有用户明确要求才做全盘扫描。当前没有新增 `workspace.find`，需要发现文件时用 `Grep`/Shell。
