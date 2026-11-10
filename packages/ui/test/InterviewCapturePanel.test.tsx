@@ -174,6 +174,36 @@ describe("InterviewCapturePanel", () => {
       "chat-message--user",
     );
     expect(screen.getByRole("button", { name: "停止语音输入" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "切换到打字" })).toBeInTheDocument();
+  });
+
+  it("returns to the text editor after switching off voice capture", () => {
+    const capture = capturePort();
+    const { rerender } = render(
+      <InterviewCapturePanel
+        capture={capture}
+        state={{ phase: "listening", inputLevels: [] }}
+        messages={[{ id: "message-1", role: "user", text: "语音消息", status: "complete" }]}
+        onSendText={vi.fn(async () => undefined)}
+        onClose={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "切换到打字" }));
+
+    expect(capture.stop).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <InterviewCapturePanel
+        capture={capture}
+        state={{ phase: "idle" }}
+        messages={[{ id: "message-1", role: "user", text: "语音消息", status: "complete" }]}
+        onSendText={vi.fn(async () => undefined)}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("textbox", { name: "演练消息" })).toBeInTheDocument();
   });
 
   it("renders interrupted replies as ordinary finished content without a status label", () => {

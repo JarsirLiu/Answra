@@ -1,5 +1,5 @@
 import type { AgentConnectionState } from "@answra/shared";
-import { AudioLines, CircleAlert, LoaderCircle, Mic } from "lucide-react";
+import { AudioLines, CircleAlert, Keyboard, LoaderCircle, Mic } from "lucide-react";
 import { useState } from "react";
 import type { InterviewCapturePort, InterviewCaptureState } from "../../app/interviewCapture";
 import { INTERVIEW_INPUT_LEVEL_WINDOW } from "../../app/interviewCapture";
@@ -237,7 +237,18 @@ export function InterviewCapturePanel({
           ) : undefined
         }
         leadingAction={
-          running ? undefined : (
+          running ? (
+            <button
+              aria-label="切换到打字"
+              className="conversation-composer-icon-button"
+              disabled={!capture || state.phase === "stopping"}
+              onClick={() => void capture?.stop()}
+              title="切换到打字"
+              type="button"
+            >
+              <Keyboard aria-hidden="true" size={ICON_SM} />
+            </button>
+          ) : (
             <button
               aria-label="开始演练麦克风监听"
               className="conversation-composer-icon-button"

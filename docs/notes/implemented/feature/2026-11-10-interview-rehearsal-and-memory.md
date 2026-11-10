@@ -20,6 +20,7 @@
 ## 影响表面
 
 - 用户进入“面试演练”，可以直接输入文字，也可以打开麦克风说；两种输入都进入同一份会话和同一个 Agent。
+- 语音监听时输入区左侧提供键盘图标（`aria-label="切换到打字"`）；点击调用现有 `capture.stop()`，采集回到 idle 后恢复文字输入，草稿保留。
 - 空白消息区提供“开始面试演练”按钮；点击等价于代替用户发送固定消息“开始面试演练。请先检查我的面试记忆和简历是否存在，再引导我补充信息；资料齐全后再开始提问。”，仍走 `interview-message`，不新增启动命令或状态机。
 - 演练 Agent 获得 `Read`、`Grep`、`Edit` 和通用 Shell。它先读资料再提问，不自动把记忆、简历摘要或项目总结塞进 prompt。
 - 面试记忆固定为 `appData/Answra/interview/profile.md`（Windows 为 `%APPDATA%\Answra\interview\profile.md`），由 Agent 用通用文件工具读写；不新增专用 store、写文档工具或 JSON schema。
