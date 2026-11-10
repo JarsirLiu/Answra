@@ -166,7 +166,7 @@ return RENDERERS[part.toolName] ?? ToolCallFallback;
 
 | 工具 | 摘要主目标 | 展开上下文 | 展开详情 |
 | --- | --- | --- | --- |
-| `Read` | 完整路径（`input.file_path` 或 `output.filePath`） | 行数 | 文件内容、截断提示 |
+| `Read` | 文件名（`input.file_path` 的 basename，`part.title` 兜底） | 无 | 无展开详情，不展示文件内容 |
 | `Grep` | `pattern` | path / glob / 匹配数 | content 模式的文件与行；files 模式的路径；count 模式的计数 |
 | `RunCommand` | 等宽 `command`（单行、超长省略） | 无（摘要不堆工作目录/退出码） | 单个描边 Shell 面板：`Shell` 标签、`$ 命令`、stdout/stderr；session 截断时补提示 |
 | `WriteStdin` | `sessionId` | 会话状态 / 写入字符预览 | stdout、stderr、exitCode |
@@ -174,7 +174,7 @@ return RENDERERS[part.toolName] ?? ToolCallFallback;
 
 `part.output` 是 `unknown`，renderer 内做窄结构守卫：
 
-- Read：`type: "text"`、`filePath`、`content`、`numLines`、`totalLines`、`startLine`、`truncated`；
+- Read：只从 `input.file_path` 取摘要，不解析 `part.output`；
 - Grep：`type: "content" | "files_with_matches" | "count"`；
 - RunCommand：`kind: "result"` 或 `kind: "session"`；
 - WriteStdin：`ShellSessionSnapshot` 形态。
@@ -252,7 +252,27 @@ return RENDERERS[part.toolName] ?? ToolCallFallback;
 - **让 agent 直接返回结构化 output 给 UI：** 舍弃，当前 AI SDK 工具结果需要模型可见字符串；为 UI 改线协议会同时改变模型上下文，超出 UI 表面修正范围。
 - **在 UI 用正则删除 `<system-reminder>` 之外的任意行号：** 舍弃，只解析 `formatReadOutput` 的固定开头提醒；文件正文中的 `<system-reminder>` 字样不被误删。
 
-后果与防回退：除 `Edit` 自有的行级 diff 面板外，所有工具展开详情只能通过 `ToolDetailSection` 生成 `.panel`；任何工具都不得再使用 `margin-left: -22px`、独立灰底块或第二层卡片。`ToolOutputBlock` 的 `data-wrap` 是 Shell 单行与普通换行的唯一开关；运行时字符串输出必须继续由 renderer 解析，不能退回「结果」原始文本。自动化证据为 `toolCallRenderers.test.tsx` 的 Read 字符串、Grep 字符串与 WriteStdin JSON 用例，以及 `themeCss.test.ts` 对 `.panel` 背景/描边、`.body` 无 22px 缩进和命令脉冲的守卫。
+后果与防回退：除 `Edit` 自有的行级 diff 面板外，所有需要展开详情的工具只能通过 `ToolDetailSection` 生成 `.panel`；任何工具都不得再使用 `margin-left: -22px`、独立灰底块或第二层卡片。`ToolOutputBlock` 的 `data-wrap` 是 Shell 单行与普通换行的唯一开关；Grep/WriteStdin 的运行时字符串输出必须继续由 renderer 解析，不能退回「结果」原始文本。自动化证据为 `toolCallRenderers.test.tsx` 的 Grep 字符串与 WriteStdin JSON 用例，以及 `themeCss.test.ts` 对 `.panel` 背景/描边、`.body` 无 22px 缩进和命令脉冲的守卫。
+
+## 修订：Read 只保留摘要（2026-11-10）
+
+问题：`Read` 展开后仍显示行数和「内容」面板，把整段文件正文铺进对话；用户明确不需要在工具卡里查看文件内容，参考 UI 只有 `Read <文件名>` 单行摘要，既没有行数，也没有展开 chevron。
+
+决定：
+
+- `ReadToolCall` 只保留摘要：`FileText` 图标 + `Read` + `fileName(input.file_path)`，`part.title` 兜底；不传 `children`，因此卡片不生成展开按钮、`aria-expanded`、上下文行或 `.panel`。
+- 摘要主目标由完整路径改为文件名，保持参考图的单行紧凑形态；路径不再进入卡片可视文本。
+- 失败仍由 `ToolCallCard` 显示状态词与 `errorText` title，不自动展开，也不为了错误重新引入详情面板。
+- Read 不再解析 `part.output`，删除内容、提醒、截断和行号投影 helper；`Read` 不再是统一展开面板的接入方。
+
+舍弃方案：
+
+- **保留折叠的内容面板、只是默认不展开：** 舍弃。用户明确不要文件内容，留下展开入口仍会增加 chevron 和误点成本。
+- **只隐藏行数、保留内容面板：** 舍弃，没有满足「不要显示内容」。
+- **继续显示完整路径：** 舍弃，参考图用文件名；摘要保持单行，避免长路径挤压工具行。
+- **在摘要补一个行数或截断提示：** 舍弃，这正是用户要求移除的冗余信息；截断仍存在于模型可见输出，不进入 UI 摘要。
+
+后果与防回退：`ReadToolCall` 不得重新传入 `meta` 或 `children`，不得渲染文件内容、行数、`[data-tool-panel]` 或展开按钮；工具失败只通过摘要状态和 `errorText` title 表达。自动化证据为 `toolCallRenderers.test.tsx` 的 Read 摘要/无展开/不渲染内容用例，以及 `ChatPanel.test.tsx`、`InterviewCapturePanel.test.tsx` 对 `Read` + 文件名的断言。
 
 ## 模块边界
 
@@ -295,7 +315,8 @@ return RENDERERS[part.toolName] ?? ToolCallFallback;
 ## 验证
 
 - 自动化：
-  - 2026-11-10 统一面板修订：`toolCallRenderers` 覆盖 Read 字符串提醒/行号、Grep content/files 字符串、WriteStdin JSON snapshot 与共享 `data-tool-panel`；`themeCss` 覆盖 `.panel` 底面/描边和 `.body` 取消 22px 缩进。
+  - 2026-11-10 统一面板修订：`toolCallRenderers` 覆盖 Grep content/files 字符串、WriteStdin JSON snapshot 与共享 `data-tool-panel`；`themeCss` 覆盖 `.panel` 底面/描边和 `.body` 取消 22px 缩进。
+  - 2026-11-10 Read 摘要修订：`toolCallRenderers` 断言 Read 只显示 `Read` + 文件名，无行数、无内容、无展开；`ChatPanel`、`InterviewCapturePanel` 同步断言 `Read` + `a.ts`。
   - 2026-11-10 RunCommand 表面修订：`pnpm --filter @answra/ui exec vitest run` 276 项通过（`toolCallRenderers` 覆盖 `running`/`ran` 与命令 `data-running`，`themeCss` 覆盖面板底色与命令脉冲）；`pnpm lint`、`pnpm --filter @answra/ui typecheck` 通过。
   - `pnpm verify`：通过（lint、typecheck、全仓测试、架构检查）。
   - `pnpm lint`：通过（biome check 全仓无 fix）。

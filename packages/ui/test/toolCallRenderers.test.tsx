@@ -31,7 +31,7 @@ function expand(name: RegExp): void {
 }
 
 describe("tool call renderers", () => {
-  it("summarizes and expands a Read result", () => {
+  it("summarizes a Read result without details or expandable content", () => {
     const { container } = render(
       <ReadToolCall
         part={toolPart(
@@ -50,16 +50,15 @@ describe("tool call renderers", () => {
       />,
     );
 
-    expect(screen.getByText("读取")).toBeInTheDocument();
-    expect(screen.getByText("src/a.ts")).toBeInTheDocument();
+    expect(screen.getByText("Read")).toBeInTheDocument();
+    expect(screen.getByText("a.ts")).toBeInTheDocument();
     expect(screen.queryByText("2 行")).toBeNull();
-
-    expand(/读取/);
-    expect(screen.getByText("2 行")).toBeInTheDocument();
-    expect(container.querySelector("pre")?.textContent).toBe("one\ntwo");
+    expect(screen.queryByText("one")).toBeNull();
+    expect(container.querySelector("[aria-expanded]")).toBeNull();
+    expect(container.querySelector("[data-tool-panel]")).toBeNull();
   });
 
-  it("parses the model-facing Read output into the shared content panel", () => {
+  it("does not render the model-facing Read content", () => {
     const { container } = render(
       <ReadToolCall
         part={toolPart(
@@ -71,18 +70,14 @@ describe("tool call renderers", () => {
     );
 
     expect(screen.queryByText(/system-reminder/)).toBeNull();
-
-    expand(/读取/);
-    expect(screen.getByText("2 行")).toBeInTheDocument();
-    expect(screen.getByText("内容")).toBeInTheDocument();
-    expect(screen.getByText(/文件内容约 100 tokens/)).toBeInTheDocument();
+    expect(screen.queryByText("内容")).toBeNull();
     expect(screen.queryByText("结果")).toBeNull();
-    expect(container.querySelector("[data-tool-panel]")?.textContent).toContain("1\tone");
-    expect(container.querySelector("pre")?.textContent).toBe("1\tone\n2\ttwo");
+    expect(container.querySelector("pre")).toBeNull();
+    expect(container.textContent).not.toContain("1\tone");
   });
 
-  it("shows a Read failure without auto-expanding details", () => {
-    render(
+  it("shows a Read failure without details", () => {
+    const { container } = render(
       <ReadToolCall
         part={toolPart("Read", { file_path: "missing.ts" }, undefined, "failed", "文件不存在")}
       />,
@@ -90,9 +85,7 @@ describe("tool call renderers", () => {
 
     expect(screen.getByText("失败")).toBeInTheDocument();
     expect(screen.queryByText("文件不存在")).toBeNull();
-
-    expand(/读取/);
-    expect(screen.getByText("文件不存在")).toBeInTheDocument();
+    expect(container.querySelector("[aria-expanded]")).toBeNull();
   });
 
   it("renders Grep content matches with line numbers", () => {

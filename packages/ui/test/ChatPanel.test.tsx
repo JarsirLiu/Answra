@@ -66,9 +66,10 @@ describe("ChatPanel tool calls", () => {
       },
     ]);
 
-    expect(screen.getByText("读取")).toBeInTheDocument();
-    expect(screen.getByText("src/a.ts")).toBeInTheDocument();
+    expect(screen.getByText("Read")).toBeInTheDocument();
+    expect(screen.getByText("a.ts")).toBeInTheDocument();
     expect(screen.queryByText("完成")).toBeNull();
+    expect(screen.queryByText("one")).toBeNull();
   });
 
   it("shows the connection state instead of model retry and error notices", () => {
