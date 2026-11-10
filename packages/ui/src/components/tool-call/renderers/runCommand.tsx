@@ -7,6 +7,7 @@ import {
   clipText,
   firstLine,
   formatToolValue,
+  isToolCallError,
   isToolCallRunning,
   MAX_TOOL_VALUE_CHARS,
   stringField,
@@ -60,7 +61,7 @@ export function RunCommandToolCall({ part }: ToolCallRendererProps) {
       part={part}
       primary={command ? firstLine(command) : (part.title ?? "命令")}
       pulsePrimary
-      showState={!running}
+      showState={isToolCallError(part.state) || part.state === "interrupted"}
     >
       {hasDetails ? (
         <>

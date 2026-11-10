@@ -178,6 +178,7 @@ describe("tool call renderers", () => {
 
     expect(screen.getByText("npm test")).toBeInTheDocument();
     expect(screen.queryByText("packages/ui")).toBeNull();
+    expect(screen.queryByText("完成")).toBeNull();
     expect(screen.queryByText("Shell")).toBeNull();
     expect(screen.queryByText(/Exit code/)).toBeNull();
 
@@ -199,6 +200,17 @@ describe("tool call renderers", () => {
     expect(screen.getByText("running")).toBeInTheDocument();
     expect(screen.queryByText("运行中")).toBeNull();
     expect(screen.getByText("npm test")).toHaveAttribute("data-running", "true");
+  });
+
+  it("keeps the failure label for a failed RunCommand", () => {
+    render(
+      <RunCommandToolCall
+        part={toolPart("RunCommand", { command: "npm test" }, undefined, "failed", "exit 1")}
+      />,
+    );
+
+    expect(screen.getByText("ran")).toBeInTheDocument();
+    expect(screen.getByText("失败")).toBeInTheDocument();
   });
 
   it("keeps a RunCommand with no stream output to the command line", () => {

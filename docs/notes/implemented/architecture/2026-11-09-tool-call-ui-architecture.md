@@ -221,9 +221,9 @@ return RENDERERS[part.toolName] ?? ToolCallFallback;
 
 - `.shellPanel` 使用 `background: var(--chat-card-bg)`，与工具调用其他表面共用同一淡色令牌；保留 1px `--glass-line` 描边和 8px 圆角，不引入第二层卡片。
 - `RunCommand` 的摘要动作词由 `part.state` 决定：`isToolCallRunning(part.state)` 为真时显示小写 `running`，其余终态显示小写 `ran`。
-- 运行中不再额外显示生命周期词（隐藏 `TOOL_CALL_STATE_LABEL`）；失败/中断/拒绝仍保留状态词和错误 `title`。
+- 运行中与完成态都不再额外显示生命周期词（`running`/`ran` 已描述动作）；失败/中断/拒绝仍保留状态词和错误 `title`。
 - 运行中给命令主文本加 `data-running`，复用 `.state` 的文字扫光动画；完成后移除 `data-running`，命令恢复静态文本。
-- `ToolCallCard` 新增可选的 `showState` 与 `pulsePrimary`，只由 `RunCommand` 覆盖；其他工具维持原有状态词与静态主文本。
+- `ToolCallCard` 新增可选的 `showState` 与 `pulsePrimary`，只由 `RunCommand` 覆盖；RunCommand 仅在失败/中断/拒绝时开启状态词，其他工具维持原有状态词与静态主文本。
 
 舍弃方案：
 
@@ -232,7 +232,7 @@ return RENDERERS[part.toolName] ?? ToolCallFallback;
 - **把底色做成独立 `--paper` 白底或高对比色块：** 舍弃，会像卡片套卡片，破坏扁平执行日志；必须复用对话表面令牌。
 - **全局把主文本都改成脉冲：** 舍弃，Read/Grep 的路径与 pattern 不是运行命令，只在 RunCommand 开启 `pulsePrimary`。
 
-后果与防回退：RunCommand 的摘要只能出现一个动作词（`running` 或 `ran`），运行中不得再渲染“运行中”状态词；`.shellPanel` 必须保留淡色背景；命令脉冲必须继续复用 `tool-call-shine`，不得换成旋转图标。自动化证据为 `toolCallRenderers.test.tsx` 的运行态用例（`running`、无“运行中”、命令 `data-running`）与 `themeCss.test.ts` 的背景/脉冲 CSS 守卫。
+后果与防回退：RunCommand 的摘要只能出现一个动作词（`running` 或 `ran`），运行中不得再渲染“运行中”，完成态不得再渲染“完成”；失败/中断/拒绝仍必须显示状态词。`.shellPanel` 必须保留淡色背景；命令脉冲必须继续复用 `tool-call-shine`，不得换成旋转图标。自动化证据为 `toolCallRenderers.test.tsx` 的运行态用例（`running`、无“运行中”、命令 `data-running`）、完成态无“完成”和失败态保留“失败”，以及 `themeCss.test.ts` 的背景/脉冲 CSS 守卫。
 
 ## 修订：统一展开面板与真实输出投影（2026-11-10）
 
