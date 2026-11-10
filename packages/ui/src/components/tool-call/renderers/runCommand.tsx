@@ -8,6 +8,7 @@ import {
   clipText,
   firstLine,
   formatToolValue,
+  isToolCallRunning,
   MAX_TOOL_VALUE_CHARS,
   stringField,
 } from "../toolCallPresentation";
@@ -51,13 +52,16 @@ export function RunCommandToolCall({ part }: ToolCallRendererProps) {
       : undefined;
   const hasDetails =
     error !== undefined || command !== undefined || parsed !== undefined || malformed !== undefined;
+  const running = isToolCallRunning(part.state);
 
   return (
     <ToolCallCard
-      actionLabel="Ran"
+      actionLabel={running ? "running" : "ran"}
       icon={<SquareTerminal size={15} strokeWidth={1.7} />}
       part={part}
       primary={command ? firstLine(command) : (part.title ?? "命令")}
+      pulsePrimary
+      showState={!running}
     >
       {hasDetails ? (
         <>

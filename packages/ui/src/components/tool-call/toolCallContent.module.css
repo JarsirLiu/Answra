@@ -35,7 +35,7 @@
   color: var(--danger);
 }
 
-/* RunCommand 展开：单层描边终端面板，与摘要行左缘对齐，滚动条贴右缘。 */
+/* RunCommand 展开：单层淡色终端面板，与摘要行左缘对齐，滚动条贴右缘。 */
 .shellPanel {
   display: flex;
   flex-direction: column;
@@ -47,6 +47,7 @@
   overflow: hidden;
   border: 1px solid var(--glass-line);
   border-radius: 8px;
+  background: var(--chat-card-bg);
 }
 
 .shellLabel {

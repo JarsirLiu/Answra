@@ -196,8 +196,8 @@ return RENDERERS[part.toolName] ?? ToolCallFallback;
 
 决定：
 
-- 摘要行固定为 `[SquareTerminal] Ran <command>`；命令单行省略，chevron 透明并紧贴命令尾部，仅 hover/focus/展开时可见，展开时朝下；摘要行不再 hover 换底色。
-- 展开态只渲染一个 `.shellPanel`：与摘要行左缘对齐（抵消 `.body` 的 22px 缩进）、`max-height: 240px` 硬上限、1px `--glass-line` 描边、8px 圆角、透明底；内部依次是 `Shell` 标签、`$ 命令` 与输出合并的等宽 `<pre>`。
+- 摘要行固定为 `[SquareTerminal] running|ran <command>`（2026-11-10 起由固定的 `Ran` 改为按状态显示）；命令单行省略，chevron 透明并紧贴命令尾部，仅 hover/focus/展开时可见，展开时朝下；摘要行不再 hover 换底色。
+- 展开态只渲染一个 `.shellPanel`：与摘要行左缘对齐（抵消 `.body` 的 22px 缩进）、`max-height: 240px` 硬上限、1px `--glass-line` 描边、8px 圆角、淡色 `--chat-card-bg` 底；内部依次是 `Shell` 标签、`$ 命令` 与输出合并的等宽 `<pre>`。
 - `Shell` 标签和输出文本用左右 `--space-4` 内边距，但面板本身左右不设内边距，使 `<pre>` 的竖向滚动条贴住面板右缘，而不是缩在内容区里。
 - `parseShellOutput` 同时接受运行时真实字符串和旧结构化对象：字符串形态按 `formatShellResult` 的固定格式剥掉首尾 `Exit code: …`、`Command completed successfully with no output.` 与超时说明，并去掉命令输出开头的空行，只保留真正的 stdout/stderr；不支持的行原样保留，避免误删命令自身的输出。
 - 不再单独展示 `workdir`、`Exit code`、`结果` 段落；失败/会话截断只保留 `ToolErrorBlock` 与 `ToolNotice`。
@@ -212,6 +212,27 @@ return RENDERERS[part.toolName] ?? ToolCallFallback;
 - **在 UI 用正则猜测并删除任意 `Exit code` 行：** 舍弃，只剥离开头/结尾的状态行，命令自身输出里的同名行保持原样。
 
 后果与防回退：`RunCommand` 的展开结构只允许一个 `.shellPanel`；`workdir`/退出码不得重新塞回摘要或另起 section；新增输出形态仍在 `<pre>` 内合并，不得再引入第二层卡片或系统粗滚动条。自动化证据为 `toolCallRenderers.test.tsx` 的 RunCommand 用例：运行时字符串 `"Exit code: 0\nhello\nwarn"` 展开后 `pre` 文本为 `$ npm test\nhello\nwarn` 且不含 `Exit code`，无输出字符串只显示 `$ dir`。
+
+## 修订：RunCommand 运行态与展开底色（2026-11-10）
+
+问题：`RunCommand` 展开后的 `.shellPanel` 只有描边、没有底色，在对话背景上像一块悬空内容；运行中摘要行同时出现 `Ran` 和中文 `运行中`，且命令文本静止，不符合“运行中只显示 running、完成后显示 ran，命令本身动态脉冲”的反馈要求。
+
+决定：
+
+- `.shellPanel` 使用 `background: var(--chat-card-bg)`，与工具调用其他表面共用同一淡色令牌；保留 1px `--glass-line` 描边和 8px 圆角，不引入第二层卡片。
+- `RunCommand` 的摘要动作词由 `part.state` 决定：`isToolCallRunning(part.state)` 为真时显示小写 `running`，其余终态显示小写 `ran`。
+- 运行中不再额外显示生命周期词（隐藏 `TOOL_CALL_STATE_LABEL`）；失败/中断/拒绝仍保留状态词和错误 `title`。
+- 运行中给命令主文本加 `data-running`，复用 `.state` 的文字扫光动画；完成后移除 `data-running`，命令恢复静态文本。
+- `ToolCallCard` 新增可选的 `showState` 与 `pulsePrimary`，只由 `RunCommand` 覆盖；其他工具维持原有状态词与静态主文本。
+
+舍弃方案：
+
+- **保留 `Ran` + 中文“运行中”双标签：** 舍弃，状态词重复且中英文混杂，用户需要的是单一 `running`/`ran`。
+- **对命令使用旋转 loading 或额外图标：** 舍弃，既有工具卡约定是文字扫光，不加第二个视觉锚点。
+- **把底色做成独立 `--paper` 白底或高对比色块：** 舍弃，会像卡片套卡片，破坏扁平执行日志；必须复用对话表面令牌。
+- **全局把主文本都改成脉冲：** 舍弃，Read/Grep 的路径与 pattern 不是运行命令，只在 RunCommand 开启 `pulsePrimary`。
+
+后果与防回退：RunCommand 的摘要只能出现一个动作词（`running` 或 `ran`），运行中不得再渲染“运行中”状态词；`.shellPanel` 必须保留淡色背景；命令脉冲必须继续复用 `tool-call-shine`，不得换成旋转图标。自动化证据为 `toolCallRenderers.test.tsx` 的运行态用例（`running`、无“运行中”、命令 `data-running`）与 `themeCss.test.ts` 的背景/脉冲 CSS 守卫。
 
 ## 模块边界
 
@@ -254,6 +275,7 @@ return RENDERERS[part.toolName] ?? ToolCallFallback;
 ## 验证
 
 - 自动化：
+  - 2026-11-10 RunCommand 表面修订：`pnpm --filter @answra/ui exec vitest run` 276 项通过（`toolCallRenderers` 覆盖 `running`/`ran` 与命令 `data-running`，`themeCss` 覆盖面板底色与命令脉冲）；`pnpm lint`、`pnpm --filter @answra/ui typecheck` 通过。
   - `pnpm verify`：通过（lint、typecheck、全仓测试、架构检查）。
   - `pnpm lint`：通过（biome check 全仓无 fix）。
   - `pnpm --filter @answra/ui typecheck`、`pnpm --filter @answra/agent typecheck`：通过。

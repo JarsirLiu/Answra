@@ -11,6 +11,10 @@ interface ToolCallCardProps {
   primary: ReactNode;
   secondary?: ReactNode;
   meta?: ReactNode;
+  /** 默认在非 completed 状态显示生命周期词；RunCommand 用 running/ran 取代它。 */
+  showState?: boolean;
+  /** 运行中给主目标文字套用扫光脉冲，用于等宽命令行动态反馈。 */
+  pulsePrimary?: boolean;
   children?: ReactNode;
 }
 
@@ -25,11 +29,14 @@ export function ToolCallCard({
   primary,
   secondary,
   meta,
+  showState: showStateProp,
+  pulsePrimary = false,
   children,
 }: ToolCallCardProps) {
   const [open, setOpen] = useState(false);
   const expandable = children !== undefined;
-  const showState = part.state !== "completed";
+  const running = isToolCallRunning(part.state);
+  const showState = showStateProp ?? part.state !== "completed";
   const hasContext = secondary !== undefined || meta !== undefined;
   const summary = (
     <>
@@ -37,14 +44,18 @@ export function ToolCallCard({
         {icon}
       </span>
       <span className={styles.action}>{actionLabel}</span>
-      <span className={styles.primary} title={typeof primary === "string" ? primary : undefined}>
+      <span
+        className={styles.primary}
+        data-running={(pulsePrimary && running) || undefined}
+        title={typeof primary === "string" ? primary : undefined}
+      >
         {primary}
       </span>
       {showState ? (
         <span
           className={styles.state}
           data-error={isToolCallError(part.state) || undefined}
-          data-running={isToolCallRunning(part.state) || undefined}
+          data-running={running || undefined}
           title={part.errorText}
         >
           {TOOL_CALL_STATE_LABEL[part.state]}

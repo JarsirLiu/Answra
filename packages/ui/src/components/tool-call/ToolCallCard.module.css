@@ -65,7 +65,8 @@ button.header:focus-visible {
   color: var(--danger);
 }
 
-/* 运行态用文字扫光表达，不用旋转 loading 图标。 */
+/* 运行态用文字扫光表达，不用旋转 loading 图标；命令行沿用同一脉冲。 */
+.primary[data-running="true"],
 .state[data-running="true"] {
   color: transparent;
   -webkit-text-fill-color: transparent;
@@ -136,6 +137,7 @@ button.header[aria-expanded="true"] .chevron {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .primary[data-running="true"],
   .state[data-running="true"] {
     animation: none;
   }

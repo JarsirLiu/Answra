@@ -208,6 +208,23 @@ describe("theme CSS integrity", () => {
     }
   });
 
+  it("keeps the expanded run-command panel tinted and its command pulsing", () => {
+    const content = stripComments(
+      readFileSync(
+        join(sourceRoot, "components", "tool-call", "toolCallContent.module.css"),
+        "utf8",
+      ),
+    );
+    const panel = content.match(/\.shellPanel\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(panel).toContain("background: var(--chat-card-bg)");
+
+    const card = stripComments(
+      readFileSync(join(sourceRoot, "components", "tool-call", "ToolCallCard.module.css"), "utf8"),
+    );
+    expect(card).toMatch(/\.primary\[data-running="true"\]/);
+    expect(card).toContain("animation: tool-call-shine");
+  });
+
   it("keeps the stealth cursor override strong enough to beat component cursor rules", () => {
     // 隐身模式下指针必须恒为默认箭头，否则指针形状会暴露正在输入/选择。
     // 组件里的 cursor 规则会追平覆盖规则的 (0,2,0)（如 `.trHeader.isClickable`），

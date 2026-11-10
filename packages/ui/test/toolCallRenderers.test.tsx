@@ -125,10 +125,22 @@ describe("tool call renderers", () => {
     expect(screen.queryByText("Shell")).toBeNull();
     expect(screen.queryByText(/Exit code/)).toBeNull();
 
-    expand(/Ran/);
+    expand(/ran/);
     expect(screen.getByText("Shell")).toBeInTheDocument();
     expect(screen.queryByText(/Exit code/)).toBeNull();
     expect(container.querySelector("pre")?.textContent).toBe("$ npm test\nhello\nwarn");
+  });
+
+  it("labels an active RunCommand as running and pulses the command line", () => {
+    render(
+      <RunCommandToolCall
+        part={toolPart("RunCommand", { command: "npm test" }, undefined, "running")}
+      />,
+    );
+
+    expect(screen.getByText("running")).toBeInTheDocument();
+    expect(screen.queryByText("运行中")).toBeNull();
+    expect(screen.getByText("npm test")).toHaveAttribute("data-running", "true");
   });
 
   it("keeps a RunCommand with no stream output to the command line", () => {
@@ -142,7 +154,7 @@ describe("tool call renderers", () => {
       />,
     );
 
-    expand(/Ran/);
+    expand(/ran/);
     expect(screen.queryByText(/Exit code/)).toBeNull();
     expect(container.querySelector("pre")?.textContent).toBe("$ dir");
   });
