@@ -151,7 +151,7 @@ function EditDiffCard({
           title={copied ? "已复制修改后片段" : "复制修改后片段"}
           type="button"
         >
-          {copied ? <Check aria-hidden="true" size={13} /> : <Copy aria-hidden="true" size={13} />}
+          {copied ? <Check aria-hidden="true" size={15} /> : <Copy aria-hidden="true" size={15} />}
         </button>
       </div>
       <div className={styles.diffBody}>

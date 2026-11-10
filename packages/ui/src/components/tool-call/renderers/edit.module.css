@@ -9,19 +9,18 @@
   margin-top: var(--space-2);
   overflow: hidden;
   border: 1px solid var(--glass-line);
-  border-radius: 8px;
-  background: var(--chat-card-bg);
+  border-radius: 10px;
+  background: var(--paper);
 }
 
 .diffHeader {
   display: flex;
   align-items: center;
   gap: 6px;
-  min-height: 28px;
+  min-height: 32px;
   padding: 2px 6px 2px 12px;
   border-bottom: 1px solid var(--glass-line-soft);
-  color: var(--chat-meta);
-  font-family: var(--app-mono-font-family);
+  color: var(--ink-soft);
   font-size: 12px;
   line-height: 1.5;
 }
@@ -58,8 +57,8 @@
   flex: none;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   margin-left: auto;
   padding: 0;
   border: 0;
@@ -83,6 +82,7 @@
 .diffBody {
   max-height: 260px;
   overflow: auto;
+  background: var(--paper);
 }
 
 .diffTable {
@@ -90,44 +90,48 @@
   min-width: 100%;
   font-family: var(--app-mono-font-family);
   font-size: 12px;
-  line-height: 1.65;
+  line-height: 1.7;
   tab-size: 4;
 }
 
 .diffRow {
   display: flex;
   min-width: 100%;
-  border-left: 3px solid transparent;
-  color: var(--chat-meta);
+  border-left: 4px solid transparent;
+  color: var(--ink-soft);
+  background: var(--paper);
   white-space: pre;
 }
 
 .diffRow[data-kind="removed"] {
   border-left-color: var(--danger);
-  background: var(--danger-wash);
+  background: var(--diff-remove-bg);
 }
 
 .diffRow[data-kind="added"] {
   border-left-color: var(--success);
-  background: var(--success-wash);
+  background: var(--diff-add-bg);
 }
 
 .lineNumber {
   flex: none;
   min-width: 5ch;
-  padding: 0 10px 0 6px;
+  padding: 0 12px 0 8px;
   color: var(--muted);
   text-align: right;
   user-select: none;
   font-variant-numeric: tabular-nums;
 }
 
+.diffRow[data-kind="removed"] .lineNumber {
+  color: var(--danger);
+}
+
+.diffRow[data-kind="added"] .lineNumber {
+  color: var(--success);
+}
+
 .lineText {
   flex: none;
   padding-right: 12px;
-}
-
-.diffRow[data-kind="removed"] .lineText,
-.diffRow[data-kind="added"] .lineText {
-  color: var(--ink-soft);
 }

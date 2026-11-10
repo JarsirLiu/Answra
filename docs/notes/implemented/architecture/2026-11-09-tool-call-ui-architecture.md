@@ -169,7 +169,7 @@ return RENDERERS[part.toolName] ?? ToolCallFallback;
 | --- | --- | --- | --- |
 | `Read` | 文件名（`input.file_path` 的 basename，`part.title` 兜底） | 无 | 无展开详情，不展示文件内容 |
 | `Grep` | `pattern` | path / glob / 匹配数 | content 模式的文件与行；files 模式的路径；count 模式的计数 |
-| `Edit` | 文件名 + `+N -M`（`Created` 时同样显示文件与统计） | 无（展开后摘要改为 `Edited file` / `Created file`） | 行级 diff：文件名与增删统计、复制按钮、旧/新行号、红绿整行底色和横向滚动 |
+| `Edit` | 文件名 + `+N -M`（`Created` 时同样显示文件与统计） | 无（展开后摘要改为 `Edited file` / `Created file`） | 白底纸面卡片：文件名与增删统计、复制按钮、单列行号、红绿整行底色、同色行号和左侧粗色条 |
 | `RunCommand` | 等宽 `command`（单行、超长省略） | 无（摘要不堆工作目录/退出码） | 单个描边 Shell 面板：`Shell` 标签、`$ 命令`、stdout/stderr；session 截断时补提示 |
 | `WriteStdin` | `sessionId` | 会话状态 / 写入字符预览 | stdout、stderr、exitCode |
 | 未知工具 | `title ?? toolName` | 无 | input / output 的安全格式化；失败时只显示 `errorText` |
@@ -243,7 +243,7 @@ return RENDERERS[part.toolName] ?? ToolCallFallback;
 
 决定：
 
-- `ToolDetailSection` 统一成唯一的 `.panel` 表面：与摘要行左缘齐平、`max-height: 240px`、1px `--glass-line` 描边、`--chat-card-radius` 圆角、`--chat-card-bg` 淡色底；`.body` 取消 22px 左缩进，所有工具不再通过负 margin 抵消缩进。`Edit` 的 diff 面板保留自己的表头与行级 diff 结构，但复用同一淡色描边表面并取消负 margin。
+- `ToolDetailSection` 统一成唯一的 `.panel` 表面：与摘要行左缘齐平、`max-height: 240px`、1px `--glass-line` 描边、`--chat-card-radius` 圆角、`--chat-card-bg` 淡色底；`.body` 取消 22px 左缩进，所有工具不再通过负 margin 抵消缩进。`Edit` 的 diff 面板保留自己的表头与行级 diff 结构，使用白底 `--paper` 纸面卡并取消负 margin。
 - 面板内部分成标签和滚动内容：标签左侧 `--space-4` 内边距；内容区统一承担纵向/横向滚动与 4px 细滚动条；正文 `<pre>` 只负责字体、换行和左右内边距。Shell 形输出用 `data-wrap="false"` 保持单行横向滚动。
 - `Read`、`Grep`、`WriteStdin` 同时支持结构化旧快照和运行时真实字符串：`Read` 剥离开头 `<system-reminder>` 后显示行号内容并把提醒放进通知；`Grep` 按 `output_mode` 选择「匹配/文件/计数」面板并保留 ripgrep 文本行；`WriteStdin` 解析 JSON snapshot 字符串。`RunCommand` 继续使用同一面板，只是标签为 `Shell`。
 - 错误、通知、上下文行也统一到同一左缘：通知和 context 使用 `--space-4` 内边距；Grep 行列表不再套第二层灰底，直接落在共享面板里。
@@ -286,7 +286,7 @@ return RENDERERS[part.toolName] ?? ToolCallFallback;
 - 摘要动作词为 `Edited`；当 `old_string` 为空且能生成 diff 时使用 `Created`。主目标为文件名，摘要尾部显示 `+N -M`，统计直接来自 `buildEditDiff`。
 - 展开后主目标切换为 `file`，摘要尾部统计隐藏；完整文件名与 `+N -M` 进入 diff 面板头，避免摘要和面板重复。
 - `ToolCallCard` 新增可选 `summaryExtra`、`expandedPrimary`、`expandedSummaryExtra`；它们只改变摘要呈现，开合状态仍由卡片自身 `useState` 唯一持有。
-- diff 面板复用淡色描边表面：表头为文件名、`+N -M` 与复制按钮；行级 diff 使用旧/新行号、红色删除行、绿色新增行和整行底色；内容区允许横向滚动，滚动条保持 4px 细条。
+- diff 面板使用白底 `--paper` 纸面卡：表头为文件名、`+N -M` 与复制按钮；行级 diff 使用单列行号、红色删除行、绿色新增行、整行淡红/淡绿底色、同色行号和左侧粗色条；内容区允许横向滚动，滚动条保持 4px 细条。
 - `Edit` 的行级 diff 面板保留自己的表头与行布局，不套 `ToolDetailSection` 的 `.panel` 标签结构。
 
 舍弃方案：
@@ -297,6 +297,28 @@ return RENDERERS[part.toolName] ?? ToolCallFallback;
 - **把 `Created` 也做成独立渲染器：** 舍弃，输入和 diff 形态与 Edit 相同，仅动作词不同。
 
 后果与防回退：折叠态必须出现文件名与 `+N -M`；展开态摘要必须是 `Edited file` / `Created file`，统计只留在 diff 表头；不得移除旧/新行号、整行红绿底色或复制按钮。自动化证据为 `toolCallRenderers.test.tsx` 的 Edit 折叠/展开、`Created`、行号与复制用例，以及 `editDiff.test.ts` 的 diff 行号推导。
+
+## 修订：Edit 展开卡改为白底彩色 diff（2026-11-10）
+
+问题：上一版 Edit 展开卡沿用其他工具面板的 `--chat-card-bg` 灰底，行文本使用 `--chat-meta`，增删行只靠很弱的背景区分；与用户本地 ChatGPT 桌面应用的参考 UI 明显不同。参考 UI 是白底卡片、浅色表头、单列行号，删除行整行淡红、增加行整行淡绿，行号与左侧粗色条同色，代码正文保持深色。
+
+决定：
+
+- `.diffPanel` 与 `.diffBody` 使用 `--paper` 白底纸面，不再使用工具面板的 `--chat-card-bg`；表头使用界面字体和 `--ink-soft`，圆角为 10px。
+- 删除/增加行分别使用新的 `--diff-remove-bg` / `--diff-add-bg` 令牌：`--danger` / `--success` 以 10% 混入 `--paper`，保证浅色主题下是清晰的淡红/淡绿，深色主题下自动落到深纸面。
+- 每行左侧保留 4px 实色条；删除条为 `--danger`、增加条为 `--success`；行号在对应行同样使用 `--danger` / `--success`，正文统一 `--ink-soft`。
+- 继续使用单列行号（新增行显示新行号，删除行显示旧行号），不做旧/新双列；保留表头文件名、`+N -M`、复制按钮、最大高度和横向滚动。
+- 仅 Edit 使用白底纸面；`Read` / `Grep` / `WriteStdin` 等其他工具仍使用共享 `ToolDetailSection` 的淡色面板。
+
+舍弃方案：
+
+- **继续复用 `--chat-card-bg` 灰底：** 舍弃，灰底会把淡红/淡绿压成脏灰色，与参考白底卡片完全不同。
+- **直接用 `--danger-wash` / `--success-wash`：** 舍弃，两者一个半透明、一个不透明，叠在纸面上红绿饱和度不一致；改用同构的 diff 专用令牌。
+- **整行正文也涂成红/绿：** 舍弃，参考 UI 的代码正文保持深色，只用底色、行号和左侧色条表达增删。
+- **改成旧/新双列行号：** 舍弃，参考 UI 是单列行号，双列会显著增宽并在窄面板里挤压代码。
+- **把白底扩散到所有工具面板：** 舍弃，其他工具是扁平执行日志，只有 Edit 是参考应用里的独立 diff 卡。
+
+后果与防回退：`.diffPanel` 必须保持 `background: var(--paper)`，不得重新引用 `--chat-card-bg`；删除/增加行必须同时有专用底色、左侧 4px 色条和同色行号；正文不得整行改成红/绿。其他工具面板不受影响。自动化证据为 `themeCss.test.ts` 对 `.diffPanel` 白底、diff 令牌、红绿底色与行号颜色的守卫，以及 `toolCallRenderers.test.tsx` 的单列行号与复制用例。
 
 ## 模块边界
 
@@ -342,6 +364,7 @@ return RENDERERS[part.toolName] ?? ToolCallFallback;
   - 2026-11-10 统一面板修订：`toolCallRenderers` 覆盖 Grep content/files 字符串、WriteStdin JSON snapshot 与共享 `data-tool-panel`；`themeCss` 覆盖 `.panel` 底面/描边和 `.body` 取消 22px 缩进。
   - 2026-11-10 Read 摘要修订：`toolCallRenderers` 断言 Read 只显示 `Read` + 文件名，无行数、无内容、无展开；`ChatPanel`、`InterviewCapturePanel` 同步断言 `Read` + `a.ts`。
   - 2026-11-10 Edit UI 修订：`toolCallRenderers` 覆盖折叠态 `Edited a.ts +1 -1`、展开态 `Edited file`、`Created`、行号 diff 与复制；`editDiff.test.ts` 覆盖 Read 行号前缀；全量 UI 288 项通过，`tsc --noEmit` 通过。
+  - 2026-11-10 Edit 白底 diff 修订：`themeCss` 守卫 `.diffPanel` 使用 `--paper`、删除/新增行使用专用淡红/淡绿令牌、4px 左侧色条与同色行号；`toolCallRenderers` 的单列行号用例继续通过。
   - 2026-11-10 RunCommand 表面修订：`pnpm --filter @answra/ui exec vitest run` 276 项通过（`toolCallRenderers` 覆盖 `running`/`ran` 与命令 `data-running`，`themeCss` 覆盖面板底色与命令脉冲）；`pnpm lint`、`pnpm --filter @answra/ui typecheck` 通过。
   - `pnpm verify`：通过（lint、typecheck、全仓测试、架构检查）。
   - `pnpm lint`：通过（biome check 全仓无 fix）。

@@ -203,6 +203,10 @@
   --chat-card-radius: 8px;
   --chat-card-pad: 6px 9px;
   --chat-meta: color-mix(in srgb, var(--ink) 72%, transparent);
+  /* Edit diff：白底纸面卡片上的淡红/淡绿整行底色；与桌面聊天应用的
+     diff 观感一致，不再复用工具面板的灰色 --chat-card-bg。 */
+  --diff-remove-bg: color-mix(in srgb, var(--danger) 10%, var(--paper));
+  --diff-add-bg: color-mix(in srgb, var(--success) 10%, var(--paper));
 }
 
 /* ── 深色主题：只覆盖原始参数，fade 合成层与组件样式零改动 ──

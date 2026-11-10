@@ -247,12 +247,43 @@ describe("theme CSS integrity", () => {
       const css = stripComments(readFileSync(file, "utf8"));
       return [...css.matchAll(/::-webkit-scrollbar(?:\s*:[a-z-]+)?\s*\{([^}]*)\}/g)].flatMap(
         (match) =>
-          [...(match[1] as string).matchAll(/(?:width|height):\s*(\d+)px/g)].map(
-            (size) => size[1],
-          ),
+          [...(match[1] as string).matchAll(/(?:width|height):\s*(\d+)px/g)].map((size) => size[1]),
       );
     });
     expect(scrollbarSizes.filter((size) => size !== "0" && size !== "4")).toEqual([]);
+  });
+
+  it("keeps the edit diff on a white paper card with tinted change rows", () => {
+    // 参考 UI 是白底卡片：变更行用淡红/淡绿整行底色和同色行号、左侧粗色条，
+    // 不能回退到工具面板的灰色 --chat-card-bg 或纯文字 diff。
+    const tokens = stripComments(readFileSync(join(sourceRoot, "styles", "tokens.css"), "utf8"));
+    expect(tokens).toContain("--diff-remove-bg:");
+    expect(tokens).toContain("--diff-add-bg:");
+
+    const css = stripComments(
+      readFileSync(
+        join(sourceRoot, "components", "tool-call", "renderers", "edit.module.css"),
+        "utf8",
+      ),
+    );
+    const panel = css.match(/\.diffPanel\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(panel).toContain("background: var(--paper)");
+    expect(panel).not.toContain("var(--chat-card-bg)");
+
+    const removed = css.match(/\.diffRow\[data-kind="removed"\]\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(removed).toContain("background: var(--diff-remove-bg)");
+    expect(removed).toContain("border-left-color: var(--danger)");
+
+    const added = css.match(/\.diffRow\[data-kind="added"\]\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(added).toContain("background: var(--diff-add-bg)");
+    expect(added).toContain("border-left-color: var(--success)");
+
+    expect(css).toMatch(
+      /\.diffRow\[data-kind="removed"\]\s+\.lineNumber\s*\{[^}]*color:\s*var\(--danger\);/,
+    );
+    expect(css).toMatch(
+      /\.diffRow\[data-kind="added"\]\s+\.lineNumber\s*\{[^}]*color:\s*var\(--success\);/,
+    );
   });
 
   it("keeps the stealth cursor override strong enough to beat component cursor rules", () => {
