@@ -1,5 +1,9 @@
 import type { AuthStatus, ConversationMessage, ConversationSnapshot } from "@answra/shared";
-import { ActiveChatConversationId, ActiveInterviewConversationId } from "@answra/shared";
+import {
+  ActiveChatConversationId,
+  ActiveInterviewConversationId,
+  AGENT_SERVICE_DISCONNECTED_CODE,
+} from "@answra/shared";
 import type { AgentEventEnvelope, AgentStreamEvent } from "@answra/shared/schema";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { UIMessageChunk } from "ai";
@@ -931,6 +935,28 @@ describe("three-segment floating navigation", () => {
     fireEvent.click(within(stream).getByRole("button", { name: "去登录" }));
     await waitFor(() => expect(bridge.loginAccount).toHaveBeenCalledTimes(1));
     expect(screen.queryByRole("button", { name: "登录" })).not.toBeInTheDocument();
+  });
+
+  it("shows a service error when a chat send fails because the worker disconnected", async () => {
+    const bridge = {
+      ...createConversationBridge(),
+      sendConversationMessage: vi
+        .fn()
+        .mockRejectedValue(new Error(`${AGENT_SERVICE_DISCONNECTED_CODE}: worker is not running`)),
+    };
+    render(<FloatingBarApp bridge={bridge} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "打开对话" }));
+    const input = screen.getByRole("textbox", { name: "补充问题" });
+    fireEvent.change(input, { target: { value: "你好" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
+
+    const stream = screen.getByRole("log", { name: "对话消息" });
+    expect(await within(stream).findByRole("alert")).toHaveTextContent(
+      "本地 AI 服务暂不可用，请稍后重试",
+    );
+    expect(screen.queryByRole("button", { name: "去登录" })).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "补充问题" })).toHaveValue("你好");
   });
 
   it("shows a rejected screenshot answer on screen instead of only logging it", async () => {

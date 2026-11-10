@@ -8,6 +8,7 @@ import {
   isAuthRequiredError,
 } from "@answra/shared";
 import { lazy, Suspense, useEffect, useState } from "react";
+import { AGENT_SERVICE_UNAVAILABLE_NOTICE } from "../components/chat";
 import { TooltipProvider } from "../components/controls/Tooltip";
 import { FloatingBar } from "../components/floating-bar/FloatingBar";
 import { FloatingLayerHost } from "../components/floating-bar/FloatingLayerHost";
@@ -244,13 +245,14 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
    * 失败本身不自动拉起浏览器，只有用户点按钮才去登录。
    */
   function toFailure(error: unknown): SendFailure {
+    if (isAgentServiceDisconnectedError(error))
+      return { message: AGENT_SERVICE_UNAVAILABLE_NOTICE, needsSignIn: false };
     return isAuthRequiredError(error)
       ? { message: AUTH_REQUIRED_NOTICE, needsSignIn: true }
       : { message: error instanceof Error ? error.message : "发送失败", needsSignIn: false };
   }
 
   function notifySendError(error: unknown) {
-    if (isAgentServiceDisconnectedError(error)) return;
     setReplyFailure(toFailure(error));
   }
 
@@ -379,9 +381,13 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
                 );
                 await reconcileInterviewSnapshot(snapshot);
               } catch (error) {
-                if (!isAgentServiceDisconnectedError(error)) {
-                  setInterviewError(error instanceof Error ? error.message : "消息发送失败");
-                }
+                setInterviewError(
+                  isAgentServiceDisconnectedError(error)
+                    ? AGENT_SERVICE_UNAVAILABLE_NOTICE
+                    : error instanceof Error
+                      ? error.message
+                      : "消息发送失败",
+                );
                 throw error;
               }
             }}

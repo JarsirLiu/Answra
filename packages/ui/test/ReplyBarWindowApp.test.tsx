@@ -106,6 +106,18 @@ function normalizeEvents(inputs: readonly unknown[]): AgentEventEnvelope[] {
   return inputs.map(normalizeEvent);
 }
 
+function connectedState(): AgentConnectionState {
+  return {
+    target: "agent-service",
+    revision: 1,
+    updatedAt: 1_000,
+    status: "connected",
+    attempt: 1,
+    maxAttempts: 5,
+    connectedAt: 1_000,
+  };
+}
+
 function reconnectingState(): AgentConnectionState {
   return {
     target: "agent-service",
@@ -115,6 +127,18 @@ function reconnectingState(): AgentConnectionState {
     attempt: 2,
     maxAttempts: 5,
     nextRetryAt: 2_000,
+    reason: "worker-exit",
+  };
+}
+
+function unavailableState(): AgentConnectionState {
+  return {
+    target: "agent-service",
+    revision: 3,
+    updatedAt: 1_200,
+    status: "unavailable",
+    attempt: 5,
+    maxAttempts: 5,
     reason: "worker-exit",
   };
 }
@@ -177,16 +201,29 @@ describe("ReplyBarWindowApp live conversation popover", () => {
     expect(bridge.readConversationEvents).toHaveBeenCalledWith(conversationId, 1);
   });
 
-  it("shows the worker connection state instead of the reply error", async () => {
+  it("shows the terminal service error instead of the reply error", async () => {
     const bridge = createBridge();
     render(<ReplyBarWindowApp bridge={bridge as DesktopBridge} />);
     await act(async () => {
       stateListener?.({ ...replyState(), replyError: "模型请求失败" });
+      connectionListener?.(connectedState());
+      connectionListener?.(unavailableState());
+    });
+
+    expect(screen.getByText("本地 AI 服务暂不可用，请稍后重试")).toBeInTheDocument();
+    expect(screen.queryByText("模型请求失败")).toBeNull();
+  });
+
+  it("shows reconnects after the first successful connection", async () => {
+    const bridge = createBridge();
+    render(<ReplyBarWindowApp bridge={bridge as DesktopBridge} />);
+    await act(async () => {
+      stateListener?.(replyState());
+      connectionListener?.(connectedState());
       connectionListener?.(reconnectingState());
     });
 
-    expect(screen.getByText("网络连接中断，正在重连 2/5")).toBeInTheDocument();
-    expect(screen.queryByText("模型请求失败")).toBeNull();
+    expect(screen.getByText("本地 AI 服务未连接，正在重连 2/5")).toBeInTheDocument();
   });
 
   it("mirrors stealth state to the document root for body portals", async () => {

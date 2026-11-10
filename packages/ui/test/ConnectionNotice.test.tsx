@@ -27,7 +27,7 @@ describe("ConnectionNotice", () => {
       />,
     );
 
-    expect(screen.getByText("网络连接中断，正在重连 3/5")).toBeInTheDocument();
+    expect(screen.getByText("本地 AI 服务未连接，正在重连 3/5")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveAttribute("data-status", "reconnecting");
   });
 
@@ -38,7 +38,7 @@ describe("ConnectionNotice", () => {
       />,
     );
 
-    expect(screen.getByText("网络不可用，请检查网络后继续")).toBeInTheDocument();
+    expect(screen.getByText("本地 AI 服务暂不可用，请稍后重试")).toBeInTheDocument();
     expect(screen.getByRole("alert")).toHaveAttribute("data-status", "unavailable");
     expect(screen.queryByRole("button")).toBeNull();
   });

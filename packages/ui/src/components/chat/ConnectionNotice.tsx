@@ -3,6 +3,8 @@ import { Wifi } from "lucide-react";
 import { ICON_SM } from "../../tokens";
 import styles from "./ConnectionNotice.module.css";
 
+export const AGENT_SERVICE_UNAVAILABLE_NOTICE = "本地 AI 服务暂不可用，请稍后重试";
+
 interface ConnectionNoticeProps {
   state?: AgentConnectionState;
 }
@@ -28,13 +30,13 @@ export function ConnectionNotice({ state }: ConnectionNoticeProps) {
   );
 }
 
-/** `connecting`/`connected` 不展示提示；返回 undefined 表示当前没有连接提示。 */
+/** 启动阶段的静默由 `useConnectionState` 负责；连接成功后的重连计数仍要可见。 */
 export function formatConnectionNotice(
   state: AgentConnectionState | undefined,
 ): string | undefined {
   if (state?.status === "reconnecting") {
-    return `网络连接中断，正在重连 ${state.attempt}/${state.maxAttempts}`;
+    return `本地 AI 服务未连接，正在重连 ${state.attempt}/${state.maxAttempts}`;
   }
-  if (state?.status === "unavailable") return "网络不可用，请检查网络后继续";
+  if (state?.status === "unavailable") return AGENT_SERVICE_UNAVAILABLE_NOTICE;
   return undefined;
 }

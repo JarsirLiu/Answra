@@ -9,7 +9,11 @@
  * - useFollowLatest：跟随滚动控制器（供自定义视口复用）
  */
 export { AssistantMessage } from "./AssistantMessage";
-export { ConnectionNotice, formatConnectionNotice } from "./ConnectionNotice";
+export {
+  AGENT_SERVICE_UNAVAILABLE_NOTICE,
+  ConnectionNotice,
+  formatConnectionNotice,
+} from "./ConnectionNotice";
 export { MessageActions } from "./MessageActions";
 export { MessageStream, useFollowLatest } from "./MessageStream";
 export { MessageTimeline } from "./MessageTimeline";

@@ -72,7 +72,27 @@ describe("ChatPanel tool calls", () => {
     expect(screen.queryByText("one")).toBeNull();
   });
 
-  it("shows the connection state instead of model retry and error notices", () => {
+  it("shows the terminal service error instead of model retry and error notices", () => {
+    renderChat([], {
+      connection: {
+        target: "agent-service",
+        revision: 4,
+        updatedAt: 1_000,
+        status: "unavailable",
+        attempt: 5,
+        maxAttempts: 5,
+        reason: "readiness-timeout",
+      },
+      retry: { kind: "network-error", attempt: 2, maxRetries: 5 },
+      error: "模型请求失败",
+    });
+
+    expect(screen.getByText("本地 AI 服务暂不可用，请稍后重试")).toBeInTheDocument();
+    expect(screen.queryByText(/正在重试 2\/5/)).toBeNull();
+    expect(screen.queryByText("模型请求失败")).toBeNull();
+  });
+
+  it("shows the reconnect counter after the connection was established", () => {
     renderChat([], {
       connection: {
         target: "agent-service",
@@ -82,14 +102,10 @@ describe("ChatPanel tool calls", () => {
         attempt: 3,
         maxAttempts: 5,
         nextRetryAt: 2_000,
-        reason: "readiness-timeout",
+        reason: "worker-exit",
       },
-      retry: { kind: "network-error", attempt: 2, maxRetries: 5 },
-      error: "模型请求失败",
     });
 
-    expect(screen.getByText("网络连接中断，正在重连 3/5")).toBeInTheDocument();
-    expect(screen.queryByText(/正在重试 2\/5/)).toBeNull();
-    expect(screen.queryByText("模型请求失败")).toBeNull();
+    expect(screen.getByText("本地 AI 服务未连接，正在重连 3/5")).toBeInTheDocument();
   });
 });

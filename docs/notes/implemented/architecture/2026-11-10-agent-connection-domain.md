@@ -85,10 +85,17 @@ type AgentConnectionState =
 - worker 重启会丢失内存 transcript（当前 `MemoryConversationStore` 无磁盘持久化），这是已接受的代价。
 - `AgentService` 记录最近 32 个会话 ID；重连成功后逐个向新 worker 请求权威快照并广播。新 worker 返回空 transcript，UI 回到干净状态。
 - 旧 worker 的迟到帧按 worker 身份丢弃，不能写入新连接。
-- 在途 run 不会伪造模型失败：UI 在连接断开时清空会话，并把 `waitForRun` 的等待者以 `aborted` 结束、清除活动 run；原因由连接提示承担。
+- 在途 run 不会伪造模型失败：UI 在连接断开时清空会话，并把 `waitForRun` 的等待者以 `aborted` 结束、清除活动 run；启动阶段的后台重连不展示提示，连接成功后的重连仍显示计数，终态 `unavailable` 与发送失败分别由连接提示和该次发送的错误提示承担。
 - UI 清空会话时同时把事件游标归零；新 worker 的 transcript 与 revision 从头开始，旧游标会让重连后的空快照和第一轮事件被误判为过期。
 - 链路失败使用 `agent-service-disconnected` 稳定错误码；UI 不把它渲染成 `ModelErrorNotice`。
 - 连接状态不阻止发送：发送失败按该次调用的正常失败处理。
+
+### 启动静默与发送失败
+
+- 启动预热仍在 `apps/desktop/src/main/index.ts` 发起，但连接尝试属于后台事实：`useConnectionState` 在首次 `connected` 前丢弃 `connecting`、`reconnecting`、`unavailable`，启动失败不进入 UI。
+- 首次连接成功后，后续 `reconnecting` 恢复显示“本地 AI 服务未连接，正在重连 n/5”；重试耗尽的 `unavailable` 显示“本地 AI 服务暂不可用，请稍后重试”。
+- 发送是错误提示的触发点：发送链路不再吞掉 `agent-service-disconnected`，对话、截图答题、面试和回复条将该错误映射为同一句本地服务提示。
+- 该决定对齐 opencode：健康检查只用于后台状态/状态点，prompt 提交失败才展示错误；启动时不弹全局连接错误。
 
 ### IPC 与 UI
 
@@ -102,9 +109,9 @@ export const ConnectionChannels = {
 - 不使用 `AgentEventEnvelope`，也不进入会话事件日志。
 - main 广播到主窗口与回复条窗口；preload 只转发；`GetState` 只接受应用窗口调用。
 - `useConnectionState` 先订阅再拉取初始快照，按 revision 保留较新状态。
-- `ConnectionNotice` 只接收 `AgentConnectionState`；`connecting`/`connected` 不显示。
+- `ConnectionNotice` 只接收 `AgentConnectionState`；`connecting`/`connected` 不显示，`reconnecting` 展示重连计数，`unavailable` 展示本地服务终态。启动阶段的静默由 `useConnectionState` 在首次 `connected` 前过滤。
 - 提示优先级：`unavailable` > `reconnecting` > 模型 `RetryNotice` > `ModelErrorNotice`；同一表面只显示一条主因。
-- 连接提示出现时，对话与面试面板清空本地发送失败；回复条 ticker 用连接活动替换模型错误/活动。
+- `unavailable` 出现时，对话与面试面板清空本地发送失败；回复条 ticker 用连接活动替换模型错误/活动。
 - 现有 `RetryNotice` 保持只表达模型请求重试。
 
 ### 明确不做
@@ -162,9 +169,9 @@ CLI 只需实现自己的 worker host（如 `child_process`）和输出适配层
 - `apps/agent/test/client/connection.test.ts`：connecting → connected、退避重连、5 次失败 → unavailable、下一次请求开启新 episode、connected 时 worker 退出自动重连、dispose 停止重试。
 - `apps/desktop/test/agentService.test.ts`：启动经 `ping` 进入 connected；worker 退出后自动重启；重连后刷新已知会话空快照。
 - `apps/desktop/test/connectionIpc.test.ts`：主窗口/回复窗口可读状态、非法来源拒绝、状态变更广播。
-- `packages/ui/test/ConnectionNotice.test.tsx`、`ChatPanel.test.tsx`、`ReplyActivityTicker.test.tsx`、`ReplyBarWindowApp.test.tsx`、`useConnectionState.test.tsx`：连接文案、不可用无手动重试、连接提示压过模型重试/错误、revision 防乱序。
+- `packages/ui/test/ConnectionNotice.test.tsx`、`ChatPanel.test.tsx`、`ReplyActivityTicker.test.tsx`、`ReplyBarWindowApp.test.tsx`、`useConnectionState.test.tsx`：连接文案、启动期 reconnecting 静默、首次连接后 reconnecting 显示、unavailable 无手动重试、连接提示压过模型重试/错误、revision 防乱序。
+- `packages/ui/test/FloatingBarApp.test.tsx`：用户发送时 worker 已断链，会话显示“本地 AI 服务暂不可用，请稍后重试”，且草稿保留。
 - `packages/ui/test/useConversationView.test.tsx`：清空会话时在途 run 等待者以 `aborted` 结束，发送方不会永久停在等待状态；清空同时把事件游标归零，重连后新 worker 的事件可以重新应用。
-- 已执行：`pnpm lint`、`pnpm typecheck`、`pnpm architecture:check` 通过；`packages/shared` 8 测试、`apps/agent` 379 测试、`apps/desktop` 283 测试、`packages/ui` 274 测试全部通过。
-- `pnpm verify` 复跑通过。首次并行运行时 `apps/agent/test/core/tool/shell/sessions.test.ts` 有 4 条 5s 超时；该文件单独运行 19/19 通过，复跑整套 agent 379/379 通过，判定为并行负载下的既有慢测抖动。
-- `pnpm notes:check` 当前被另一未完成的 `docs/notes/implemented/feature/2026-11-10-workspace-edit-tool.md` 阻断（缺少“后果与防回退”“验证”），与本次连接域无关。
-- 需要的实机验证：手动结束 agent utility process，观察 WiFi 重连计数、5 次失败后的“网络不可用”，以及重连后 transcript 清空；断网发送确认不做前置连接检查，模型失败仍显示模型错误。
+- 本次变更已执行：`pnpm lint`、`pnpm --filter @answra/ui typecheck`、`pnpm architecture:check`、`pnpm notes:check` 通过；目标 UI 84 测试、全量 UI 298 测试通过。
+- 全仓 `pnpm verify` 当前在 `apps/desktop` typecheck 被未提交的文档工具依赖阻断：`pdfjs-dist/legacy/build/pdf.worker.mjs` 与 `word-extractor` 缺少声明文件，与本次连接提示变更无关；`packages/ui` 自身 typecheck 已通过。
+- 需要的实机验证：启动时观察是否不再出现连接错误；手动结束 agent utility process 后应看到“本地 AI 服务未连接，正在重连 n/5”，重试耗尽后变为“本地 AI 服务暂不可用”；断网发送确认不做前置连接检查，发送失败显示同一句本地服务提示，模型正常失败仍显示模型错误。

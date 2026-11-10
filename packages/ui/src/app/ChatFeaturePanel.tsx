@@ -6,6 +6,7 @@ import {
   isAuthRequiredError,
 } from "@answra/shared";
 import { type ChangeEvent, type RefObject, useEffect, useState } from "react";
+import { AGENT_SERVICE_UNAVAILABLE_NOTICE } from "../components/chat";
 import { type ChatAttachment, ChatPanel } from "../components/panels/ChatPanel";
 import { useGeneralChat } from "./useConversationChat";
 
@@ -87,7 +88,10 @@ export function ChatFeaturePanel({
       })
       .then(onSent)
       .catch((error: unknown) => {
-        if (isAgentServiceDisconnectedError(error)) return;
+        if (isAgentServiceDisconnectedError(error)) {
+          setFailure({ message: AGENT_SERVICE_UNAVAILABLE_NOTICE, needsSignIn: false });
+          return;
+        }
         setFailure(
           isAuthRequiredError(error)
             ? { message: AUTH_REQUIRED_NOTICE, needsSignIn: true }

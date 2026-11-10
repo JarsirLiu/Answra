@@ -71,7 +71,7 @@ describe("ReplyActivityTicker", () => {
     expect(screen.queryByText("回答")).not.toBeInTheDocument();
   });
 
-  it("shows the connection state instead of the model error", () => {
+  it("shows the reconnect state instead of the model error", () => {
     render(
       <ReplyActivityTicker
         activities={[]}
@@ -83,7 +83,7 @@ describe("ReplyActivityTicker", () => {
           attempt: 2,
           maxAttempts: 5,
           nextRetryAt: 2_000,
-          reason: "readiness-timeout",
+          reason: "worker-exit",
         }}
         error="模型请求失败"
         pending={false}
@@ -91,7 +91,7 @@ describe("ReplyActivityTicker", () => {
     );
 
     expect(screen.getByLabelText("当前事件：连接")).toBeInTheDocument();
-    expect(screen.getByText("网络连接中断，正在重连 2/5")).toBeInTheDocument();
+    expect(screen.getByText("本地 AI 服务未连接，正在重连 2/5")).toBeInTheDocument();
     expect(screen.queryByText("模型请求失败")).toBeNull();
   });
 
