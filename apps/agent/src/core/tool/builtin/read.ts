@@ -5,6 +5,7 @@ import path from "node:path";
 import type { JSONSchema7 } from "ai";
 import { defineTool, type ToolContext, toolId } from "../contracts";
 import { ToolExecutionError } from "../executor/result";
+import { readDocumentText } from "./documents/documentText";
 import { createReadFileStateKey, isCachedReadFresh } from "./readFileState";
 import {
   createReadTextOutput,
@@ -27,13 +28,15 @@ interface ReadInput {
 }
 
 const READ_TOOL_DESCRIPTION = [
-  "Reads a text file from the local filesystem.",
+  "Reads a text file or extracts text from a PDF, DOC, or DOCX document.",
   "",
   "- `file_path` should be an absolute path; a path relative to the workspace root is also accepted.",
   "- Reads the whole file by default; long files return a partial view with continuation information.",
-  "- Use `offset` and `limit` to read a specific line range.",
+  "- Use `offset` and `limit` to read a specific line range of the extracted text.",
   "- Results use cat -n format, with line numbers starting at 1.",
-  "- Reading a directory, a missing file, or a non-text file returns an error instead of content.",
+  "- PDF text is returned page by page with page markers; scanned pages without a text layer are reported as empty.",
+  "- DOC/DOCX extraction covers body text only; headers, footers, comments, and images are not included.",
+  "- Reading a directory, a missing file, or an unsupported binary file returns an error instead of content.",
   "- Do not re-read a file you just edited to verify.",
 ].join("\n");
 
@@ -71,7 +74,7 @@ export const readTool = defineTool<ReadInput, ReadOutput>({
     destructive: false,
     concurrentSafe: true,
     sideEffectScope: "none",
-    timeoutMs: 30_000,
+    timeoutMs: 60_000,
     maxOutputBytes: READ_FILE_MAX_BYTES,
     resultBudget: { strategy: "truncate", maxModelChars: READ_FILE_MAX_BYTES },
   },
@@ -92,6 +95,30 @@ export async function executeRead(context: ToolContext, input: ReadInput): Promi
     const cached = context.readFileState?.get(key);
     if (cached && isCachedReadFresh(cached, stat)) {
       return { type: "file_unchanged", filePath: stat.target };
+    }
+
+    const document = await readDocumentText(stat.target, stat.sizeBytes, context.signal);
+    if (document) {
+      assertNotAborted(context.signal);
+      const output = createReadTextOutput({
+        bytesRead: stat.sizeBytes,
+        document: document.metadata,
+        filePath: stat.target,
+        limit,
+        offset,
+        sizeBytes: stat.sizeBytes,
+        text: document.text,
+      });
+      context.readFileState?.set(key, {
+        limit,
+        mtimeMs: Math.trunc(stat.mtimeMs),
+        offset,
+        origin: "read",
+        partialView: output.truncatedByTokenCap === true,
+        path: stat.target,
+        sizeBytes: stat.sizeBytes,
+      });
+      return output;
     }
 
     const maxBytes = limit === undefined ? READ_FILE_MAX_BYTES : READ_SCAN_MAX_BYTES;

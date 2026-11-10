@@ -1,5 +1,7 @@
 /** Read 的结构化文本输出、token 预算与模型可见投影；不读写文件系统。 */
 
+import type { ReadDocumentMetadata } from "./documents/contracts";
+
 const ESTIMATED_TOKEN_CHAR_DIVISOR = 3;
 
 export const READ_MAX_OUTPUT_TOKENS = 25_000;
@@ -21,6 +23,7 @@ export interface ReadTextOutput {
   readonly truncated?: boolean;
   readonly truncatedByTokenCap?: boolean;
   readonly partialViewNotice?: string;
+  readonly document?: ReadDocumentMetadata;
 }
 
 export interface ReadUnchangedOutput {
@@ -49,6 +52,7 @@ export function createReadTextOutput(input: {
   offset?: number;
   sizeBytes: number;
   text: string;
+  document?: ReadDocumentMetadata;
 }): ReadTextOutput {
   const lines = splitLines(input.text);
   const startLine = normalizeOffset(input.offset);
@@ -68,6 +72,7 @@ export function createReadTextOutput(input: {
     sizeBytes: input.sizeBytes,
     bytesRead: input.bytesRead,
     truncated: false,
+    ...(input.document ? { document: input.document } : {}),
   };
 
   if (tokenCount <= READ_MAX_OUTPUT_TOKENS) return output;
@@ -87,6 +92,7 @@ export function createReadTextOutput(input: {
     filePath: input.filePath,
     sizeBytes: input.sizeBytes,
     bytesRead: input.bytesRead,
+    ...(input.document ? { document: input.document } : {}),
     ...partial,
   };
 }
@@ -101,9 +107,12 @@ export function formatReadOutput(output: ReadOutput): string {
 }
 
 function formatReadTextOutput(output: ReadTextOutput): string {
-  const prefix = output.partialViewNotice
-    ? `${formatReadToolResultWarning(output.partialViewNotice)}\n\n`
-    : "";
+  const prefixParts: string[] = [];
+  if (output.document) prefixParts.push(formatDocumentContext(output.document));
+  if (output.partialViewNotice) {
+    prefixParts.push(formatReadToolResultWarning(output.partialViewNotice));
+  }
+  const prefix = prefixParts.length > 0 ? `${prefixParts.join("\n\n")}\n\n` : "";
   if (!output.content) {
     const warning =
       output.totalLines === 0
@@ -211,6 +220,18 @@ function normalizeOffset(offset: number | undefined): number {
 
 function normalizeLimit(limit: number | undefined): number | undefined {
   return limit === undefined ? undefined : Math.max(1, Math.trunc(limit));
+}
+
+function formatDocumentContext(metadata: ReadDocumentMetadata): string {
+  if (metadata.format === "pdf") {
+    const pageCount = metadata.pageCount ?? 0;
+    const emptyPageCount = metadata.emptyPageCount ?? 0;
+    const emptySuffix = emptyPageCount > 0 ? `，其中 ${emptyPageCount} 页没有可提取文本` : "";
+    return formatReadToolResultWarning(`已从 PDF 抽取文本（共 ${pageCount} 页${emptySuffix}）。`);
+  }
+  const notice =
+    metadata.notices.length > 0 ? metadata.notices.join(" ") : "已从 Word 文档抽取正文文本。";
+  return formatReadToolResultWarning(notice);
 }
 
 function formatReadToolResultWarning(body: string): string {

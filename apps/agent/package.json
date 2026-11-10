@@ -22,7 +22,9 @@
     "@ai-sdk/openai-compatible": "2.0.81",
     "@answra/shared": "workspace:*",
     "ai": "6.0.303",
-    "ripgrep": "0.3.1"
+    "pdfjs-dist": "4.10.38",
+    "ripgrep": "0.3.1",
+    "word-extractor": "1.0.4"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
