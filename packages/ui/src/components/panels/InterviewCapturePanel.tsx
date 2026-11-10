@@ -1,9 +1,17 @@
+import type { AgentConnectionState } from "@answra/shared";
 import { AudioLines, CircleAlert, LoaderCircle, Mic } from "lucide-react";
 import { useState } from "react";
 import type { InterviewCapturePort, InterviewCaptureState } from "../../app/interviewCapture";
 import { INTERVIEW_INPUT_LEVEL_WINDOW } from "../../app/interviewCapture";
 import { ICON, ICON_SM, ICON_STROKE } from "../../tokens";
-import { AssistantMessage, MessageStream, ModelErrorNotice, RetryNotice } from "../chat";
+import {
+  AssistantMessage,
+  ConnectionNotice,
+  formatConnectionNotice,
+  MessageStream,
+  ModelErrorNotice,
+  RetryNotice,
+} from "../chat";
 import {
   type ConversationRetry,
   type ConversationViewMessage,
@@ -19,6 +27,8 @@ interface InterviewCapturePanelProps {
   state: InterviewCaptureState;
   messages: readonly ConversationViewMessage[];
   retry?: ConversationRetry;
+  /** Agent worker 链路状态；与模型重试/错误互斥展示。 */
+  connection?: AgentConnectionState;
   onSendText: (text: string) => Promise<void>;
   /** 清空当前面试对话历史；缺省不显示入口。 */
   onClear?: () => void;
@@ -33,6 +43,7 @@ export function InterviewCapturePanel({
   state,
   messages,
   retry,
+  connection,
   onSendText,
   onClear,
   clearDisabledReason,
@@ -75,6 +86,7 @@ export function InterviewCapturePanel({
       !hasToolPart
     );
   });
+  const connectionNotice = formatConnectionNotice(connection);
   // 内容指纹与 ChatPanel 同构：error 出现或更新也要能滚到可见位置。
   const contentKey = [
     ...messages.map(
@@ -83,6 +95,7 @@ export function InterviewCapturePanel({
     ),
     retry ? `retry:${retry.attempt}/${retry.maxRetries}` : "",
     error ?? "",
+    connection ? `connection:${connection.revision}` : "",
   ].join("|");
   const emptyHint =
     state.phase === "idle" ? "点击下方麦克风开始语音输入。" : "识别完成后会加入对话并生成回复。";
@@ -160,9 +173,10 @@ export function InterviewCapturePanel({
               )}
             </article>
           ))}
-          {retry && <RetryNotice retry={retry} />}
-          {error && <ModelErrorNotice message={error} />}
-          {visibleMessages.length === 0 && !error && (
+          <ConnectionNotice state={connection} />
+          {!connectionNotice && retry && <RetryNotice retry={retry} />}
+          {!connectionNotice && error && <ModelErrorNotice message={error} />}
+          {visibleMessages.length === 0 && !error && !connectionNotice && (
             <p className="interview-capture-empty">{emptyHint}</p>
           )}
         </MessageStream>

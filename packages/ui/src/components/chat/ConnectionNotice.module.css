@@ -1,0 +1,39 @@
+.notice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.notice[data-status="unavailable"] {
+  color: var(--danger);
+}
+
+.icon {
+  flex: none;
+  animation: connection-pulse 1.6s ease-in-out infinite;
+}
+
+.text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+@keyframes connection-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .icon {
+    animation: none;
+  }
+}

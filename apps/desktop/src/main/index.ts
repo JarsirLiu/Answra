@@ -11,6 +11,7 @@ import { registerAuthLifecycle } from "./auth/lifecycle";
 import { FilePendingAuthStore } from "./auth/pendingAuthStore";
 import { registerCaptureIpc } from "./capture/captureIpc";
 import { configureChromiumCompatibility } from "./chromiumCompatibility";
+import { registerConnectionIpc } from "./connection/connectionIpc";
 import { AgentService } from "./conversation/agentService";
 import { registerConversationIpc } from "./conversation/conversationIpc";
 import { ModelRouter } from "./conversation/modelRouter";
@@ -131,6 +132,7 @@ if (!app.requestSingleInstanceLock()) {
       canSend: () => modelRouter.canSend(),
       modelSettings: modelRouter,
     });
+    registerConnectionIpc(agentService);
     registerAuthIpc(authService);
     const startAgent = () => {
       void agentService

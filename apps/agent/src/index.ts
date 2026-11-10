@@ -21,6 +21,15 @@ export {
   type AnswerAgentTransport,
   startAnswerAgentHost,
 } from "./answer/host";
+export {
+  type AgentConnectionClient,
+  type AgentConnectionPolicy,
+  AgentConnectionSupervisor,
+  type AgentWorkerExit,
+  type AgentWorkerHost,
+  AgentWorkerStartError,
+  DEFAULT_AGENT_CONNECTION_POLICY,
+} from "./client/connection";
 export { ConversationApplication } from "./conversation/application";
 export { MemoryConversationStore } from "./core/transcript/memoryStore";
 export type { ConversationStore } from "./core/transcript/store";

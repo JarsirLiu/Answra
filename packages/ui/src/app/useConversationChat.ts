@@ -1,4 +1,5 @@
 import type { DesktopBridge, ReplyBarActivity } from "@answra/shared";
+import { isAgentServiceDisconnectedError } from "@answra/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChatAttachment } from "../components/panels/ChatPanel";
 import { useConversationView } from "./useConversationView";
@@ -106,7 +107,10 @@ function useAiConversation(
         if (outcome === "failed") throw new Error("模型请求失败");
         return runId;
       } catch (error) {
-        setSendError(error instanceof Error ? error.message : "发送失败");
+        // 链路断开由连接域统一提示；不要再把同一次失败渲染成模型错误。
+        if (!isAgentServiceDisconnectedError(error)) {
+          setSendError(error instanceof Error ? error.message : "发送失败");
+        }
         throw error;
       } finally {
         setSendPending(false);

@@ -1,10 +1,20 @@
+import type { AgentConnectionState } from "@answra/shared";
 import { render, screen } from "@testing-library/react";
 import { createRef } from "react";
 import { describe, expect, it, vi } from "vitest";
-import type { ConversationViewMessage } from "../src/components/chat/conversationMessage";
+import type {
+  ConversationRetry,
+  ConversationViewMessage,
+} from "../src/components/chat/conversationMessage";
 import { ChatPanel } from "../src/components/panels/ChatPanel";
 
-function renderChat(messages: ConversationViewMessage[]): void {
+interface ChatRenderOptions {
+  connection?: AgentConnectionState;
+  error?: string;
+  retry?: ConversationRetry;
+}
+
+function renderChat(messages: ConversationViewMessage[], options: ChatRenderOptions = {}): void {
   render(
     <ChatPanel
       attachments={[]}
@@ -19,6 +29,9 @@ function renderChat(messages: ConversationViewMessage[]): void {
       onSend={vi.fn()}
       stealth={false}
       streaming={false}
+      connection={options.connection}
+      error={options.error}
+      retry={options.retry}
     />,
   );
 }
@@ -56,5 +69,26 @@ describe("ChatPanel tool calls", () => {
     expect(screen.getByText("读取")).toBeInTheDocument();
     expect(screen.getByText("src/a.ts")).toBeInTheDocument();
     expect(screen.queryByText("完成")).toBeNull();
+  });
+
+  it("shows the connection state instead of model retry and error notices", () => {
+    renderChat([], {
+      connection: {
+        target: "agent-service",
+        revision: 4,
+        updatedAt: 1_000,
+        status: "reconnecting",
+        attempt: 3,
+        maxAttempts: 5,
+        nextRetryAt: 2_000,
+        reason: "readiness-timeout",
+      },
+      retry: { kind: "network-error", attempt: 2, maxRetries: 5 },
+      error: "模型请求失败",
+    });
+
+    expect(screen.getByText("网络连接中断，正在重连 3/5")).toBeInTheDocument();
+    expect(screen.queryByText(/正在重试 2\/5/)).toBeNull();
+    expect(screen.queryByText("模型请求失败")).toBeNull();
   });
 });

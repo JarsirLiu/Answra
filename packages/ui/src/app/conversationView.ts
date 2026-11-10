@@ -51,15 +51,19 @@ export function applyConversationSnapshot(
   if (options.retainCapturedRound && snapshot.messages.length === 0 && view.messages.length > 0)
     return { ...view, eventRevision: snapshot.eventRevision, activeRunId: undefined };
   const prior = new Map(view.messages.map((message) => [message.id, message]));
+  const keepRetry =
+    snapshot.activeRunId !== undefined && snapshot.activeRunId === view.retryRunId && view.retry;
   return {
     eventRevision: snapshot.eventRevision,
     messages: snapshot.messages.map((message) =>
       toViewMessage(message, prior.get(message.id), snapshot.activeRunId === message.id),
     ),
     activeRunId: snapshot.activeRunId,
-    retry: view.retry,
-    retryRunId: view.retryRunId,
-    error: view.error,
+    retry: keepRetry ? view.retry : undefined,
+    retryRunId: keepRetry ? view.retryRunId : undefined,
+    // A snapshot is the server's current conversation truth. Do not carry a
+    // terminal error from the previous run into a cleared or resumed view.
+    error: undefined,
   };
 }
 
@@ -160,7 +164,12 @@ function applyStreamEvent(
       next = { ...next, retry: event, retryRunId: runId };
       break;
     case "start":
-      next = { ...setThinking(next, runId, false), retry: undefined, retryRunId: undefined };
+      next = {
+        ...setThinking(next, runId, false),
+        retry: undefined,
+        retryRunId: undefined,
+        error: undefined,
+      };
       break;
     case "error":
       next = { ...setThinking(next, runId, false), error: event.errorText };

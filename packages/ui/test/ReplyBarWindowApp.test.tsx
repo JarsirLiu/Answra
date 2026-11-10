@@ -1,4 +1,5 @@
 import type {
+  AgentConnectionState,
   ConversationMessage,
   ConversationSnapshot,
   DesktopBridge,
@@ -13,6 +14,7 @@ const conversationId = "screenshot-01234567-89ab-4cde-8fab-0123456789ab";
 const runId = "run-live";
 let stateListener: ((state: ReplyBarState) => void) | undefined;
 let changeListener: ((event: unknown) => void) | undefined;
+let connectionListener: ((state: AgentConnectionState) => void) | undefined;
 let previousClipboard: PropertyDescriptor | undefined;
 let clipboardOverridden = false;
 
@@ -44,11 +46,19 @@ function createBridge() {
     fitContent: vi.fn(),
     fitReplyBar: vi.fn(),
     getConversationSnapshot: vi.fn().mockResolvedValue(snapshot),
+    // 这些用例只验证订阅；初始快照永不返回，避免异步 setState 落在 act 之外。
+    getConnectionState: vi.fn(() => new Promise<AgentConnectionState>(() => undefined)),
     readConversationEvents: vi.fn().mockResolvedValue([]),
     onConversationEvent: vi.fn((listener: (event: AgentEventEnvelope) => void) => {
       changeListener = (event) => listener(normalizeEvent(event));
       return () => {
         changeListener = undefined;
+      };
+    }),
+    onConnectionState: vi.fn((listener: (state: AgentConnectionState) => void) => {
+      connectionListener = listener;
+      return () => {
+        connectionListener = undefined;
       };
     }),
     onReplyBarPlacement: vi.fn(() => () => undefined),
@@ -96,6 +106,19 @@ function normalizeEvents(inputs: readonly unknown[]): AgentEventEnvelope[] {
   return inputs.map(normalizeEvent);
 }
 
+function reconnectingState(): AgentConnectionState {
+  return {
+    target: "agent-service",
+    revision: 2,
+    updatedAt: 1_100,
+    status: "reconnecting",
+    attempt: 2,
+    maxAttempts: 5,
+    nextRetryAt: 2_000,
+    reason: "worker-exit",
+  };
+}
+
 function replyState(stealth = false): ReplyBarState {
   return {
     phase: "streaming",
@@ -122,6 +145,7 @@ describe("ReplyBarWindowApp live conversation popover", () => {
   beforeEach(() => {
     stateListener = undefined;
     changeListener = undefined;
+    connectionListener = undefined;
   });
 
   it("shows snapshot markdown and applies arriving text deltas without ticker replay", async () => {
@@ -151,6 +175,18 @@ describe("ReplyBarWindowApp live conversation popover", () => {
     });
     await waitFor(() => expect(screen.getByText("实时")).toBeInTheDocument());
     expect(bridge.readConversationEvents).toHaveBeenCalledWith(conversationId, 1);
+  });
+
+  it("shows the worker connection state instead of the reply error", async () => {
+    const bridge = createBridge();
+    render(<ReplyBarWindowApp bridge={bridge as DesktopBridge} />);
+    await act(async () => {
+      stateListener?.({ ...replyState(), replyError: "模型请求失败" });
+      connectionListener?.(reconnectingState());
+    });
+
+    expect(screen.getByText("网络连接中断，正在重连 2/5")).toBeInTheDocument();
+    expect(screen.queryByText("模型请求失败")).toBeNull();
   });
 
   it("mirrors stealth state to the document root for body portals", async () => {

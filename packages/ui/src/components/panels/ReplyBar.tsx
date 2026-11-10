@@ -1,8 +1,8 @@
-import type { ReplyBarActivity } from "@answra/shared";
+import type { AgentConnectionState, ReplyBarActivity } from "@answra/shared";
 import { Camera, ChevronDown, ChevronUp, Send, Square, X } from "lucide-react";
 import type { RefObject } from "react";
 import { ICON, ICON_SM, ICON_STROKE } from "../../tokens";
-import { ModelErrorNotice } from "../chat";
+import { ConnectionNotice, formatConnectionNotice, ModelErrorNotice } from "../chat";
 import { SurfaceButton } from "../controls/SurfaceButton";
 import type { ChatAttachment } from "./ChatPanel";
 import { ReplyActivityTicker } from "./ReplyActivityTicker";
@@ -20,6 +20,8 @@ interface ReplyBarProps {
   /** 按标准消息 chunk 投影出的本轮活动。 */
   replyActivities: ReplyBarActivity[];
   replyError?: string;
+  /** Agent worker 链路状态；展示时压过模型错误。 */
+  connection?: AgentConnectionState;
   /**
    * 传了才在失败提示里出现「去登录」按钮：仅在 `replyError` 确定是「需要登录」时传入。
    * 登录动作由调用方执行，回复条本身不认识账号体系。
@@ -65,6 +67,7 @@ export function ReplyBar({
   draft,
   replyActivities,
   replyError,
+  connection,
   onSignIn,
   replyPending,
   showConversationToggle = false,
@@ -82,12 +85,14 @@ export function ReplyBar({
   embedded = false,
 }: ReplyBarProps) {
   const surfaceClass = embedded ? "reply-bar--embedded" : "floating-surface";
+  const connectionNotice = formatConnectionNotice(connection);
   if (phase === "streaming") {
     return (
       <section aria-live="polite" className={`reply-bar reply-bar--stream ${surfaceClass}`}>
         <ReplyActivityTicker
           activities={replyActivities}
           error={replyError}
+          connection={connection}
           onConversationHover={onConversationHover}
           pending={replyPending}
         />
@@ -145,6 +150,7 @@ export function ReplyBar({
         <ReplyActivityTicker
           activities={replyActivities}
           error={replyError}
+          connection={connection}
           onConversationHover={onConversationHover}
           pending={false}
         />
@@ -214,7 +220,11 @@ export function ReplyBar({
           ))}
         </fieldset>
       )}
-      {replyError && <ModelErrorNotice message={replyError} onSignIn={onSignIn} />}
+      {connectionNotice ? (
+        <ConnectionNotice state={connection} />
+      ) : (
+        replyError && <ModelErrorNotice message={replyError} onSignIn={onSignIn} />
+      )}
       <div className="reply-actions">
         {showConversationToggle && (
           <SurfaceButton

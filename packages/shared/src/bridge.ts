@@ -1,4 +1,5 @@
 import type {
+  AgentConnectionState,
   AgentEventEnvelope,
   AmbientColorPayload,
   AuthLoginResult,
@@ -103,6 +104,10 @@ export interface DesktopBridge {
   onConversationEvent?: (listener: (event: AgentEventEnvelope) => void) => () => void;
   /** Receives an authoritative transcript snapshot after an Agent-owned transcript write. */
   onConversationSnapshot?: (listener: (snapshot: ConversationSnapshot) => void) => () => void;
+  /** 读取当前 Agent worker 连接状态；浏览器预览/测试环境可未实现。 */
+  getConnectionState?: () => Promise<AgentConnectionState>;
+  /** 订阅 Agent worker 连接状态变更；返回取消订阅函数。 */
+  onConnectionState?: (listener: (state: AgentConnectionState) => void) => () => void;
   // ---- 模型来源（本地自定义端点 / 云端订阅；可选，实现由 preload 注入） ----
   /** 读取当前模型来源与本地端点摘要（不含 API Key）。 */
   getConversationConfig?: () => Promise<ConversationModelSettingsView>;

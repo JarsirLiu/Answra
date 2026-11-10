@@ -74,14 +74,17 @@ pnpm workspace monorepo：包间依赖只走 `workspace:*` 与各包 `exports` �
 packages/shared        跨进程契约：IPC 频道常量 + ChannelMap 类型、环境变量常量、领域类型
   src/schema/events.ts Agent 全量事件目录与唯一 envelope；delta 不属于 durable 候选
   src/schema/status.ts Agent run/step 状态词汇与快照
+  src/schema/connection.ts Agent 连接状态词汇与稳定失败码（桌面/CLI 共用）
 packages/ui            悬浮条与面板的全部业务 UI（React），含组件测试
 apps/desktop           Electron 桌面壳
   src/main             主进程：窗口管理、按领域拆分的 IPC handler
+  src/main/connection  Agent 连接状态 IPC、窗口广播与 Electron worker host 适配
   src/preload          contextBridge 桥（window.answra）
   src/renderer         薄渲染层：仅挂载 <FloatingBarApp/>
 apps/agent             平台无关的 Agent 运行时（不依赖 Electron/React），由 desktop 的 utility process 拉起
   src/index.ts         公共入口：desktop worker 的唯一导入面
   src/host.ts           Conversation/Interview worker 组合根：路由命令、连接领域模块
+  src/client           平台无关连接状态机：worker host 端口、退避重试与状态快照
   src/worker            worker 线协议类型（main ↔ agent 命令与帧）
   src/answer/host.ts    Answer-only worker 组合入口
   src/answer/application.ts  截图答题一次性用例与 transcript 生命周期

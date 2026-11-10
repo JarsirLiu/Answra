@@ -71,6 +71,30 @@ describe("ReplyActivityTicker", () => {
     expect(screen.queryByText("回答")).not.toBeInTheDocument();
   });
 
+  it("shows the connection state instead of the model error", () => {
+    render(
+      <ReplyActivityTicker
+        activities={[]}
+        connection={{
+          target: "agent-service",
+          revision: 2,
+          updatedAt: 1_000,
+          status: "reconnecting",
+          attempt: 2,
+          maxAttempts: 5,
+          nextRetryAt: 2_000,
+          reason: "readiness-timeout",
+        }}
+        error="模型请求失败"
+        pending={false}
+      />,
+    );
+
+    expect(screen.getByLabelText("当前事件：连接")).toBeInTheDocument();
+    expect(screen.getByText("网络连接中断，正在重连 2/5")).toBeInTheDocument();
+    expect(screen.queryByText("模型请求失败")).toBeNull();
+  });
+
   it("shows only the answer text when the run finishes with a tool or source tail", () => {
     const activities: ReplyBarActivity[] = [
       { id: "t1", kind: "text", label: "", text: "一段足够长的最终答案" },

@@ -1,6 +1,6 @@
 import type { ConversationSnapshot, DesktopBridge } from "@answra/shared";
 import type { AgentEventEnvelope } from "@answra/shared/schema";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, renderHook, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { useConversationView } from "../src/app/useConversationView";
 
@@ -204,5 +204,53 @@ describe("useConversationView recovery", () => {
 
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("A"));
     expect(bridge.readConversationEvents).toHaveBeenLastCalledWith("conversation-1", 0);
+  });
+
+  it("resolves in-flight run waiters as aborted when the view is cleared", async () => {
+    const bridge = {
+      getConversationSnapshot: vi.fn(async () => ({
+        conversationId: "conversation-1",
+        eventRevision: 0,
+        messages: [],
+      })),
+      readConversationEvents: vi.fn(async () => []),
+    } as unknown as DesktopBridge;
+    const { result } = renderHook(() => useConversationView(bridge, "conversation-1"));
+
+    const outcome = result.current.waitForRun("run-1");
+    act(() => result.current.clear());
+
+    await expect(outcome).resolves.toBe("aborted");
+  });
+
+  it("resets the event revision when cleared so a restarted worker's events apply", async () => {
+    const listeners = new Set<(event: AgentEventEnvelope) => void>();
+    const bridge = {
+      getConversationSnapshot: vi.fn(async () => ({
+        conversationId: "conversation-1",
+        eventRevision: 0,
+        messages: [],
+      })),
+      readConversationEvents: vi.fn(async () => []),
+      onConversationEvent: vi.fn((listener: (event: AgentEventEnvelope) => void) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      }),
+    } as unknown as DesktopBridge;
+    const { result } = renderHook(() => useConversationView(bridge, "conversation-1"));
+    await waitFor(() => expect(listeners.size).toBe(1));
+
+    act(() => {
+      for (const listener of listeners) listener(envelope(1, "old"));
+    });
+    await waitFor(() => expect(result.current.view.eventRevision).toBe(1));
+
+    act(() => result.current.clear());
+    expect(result.current.view.eventRevision).toBe(0);
+
+    act(() => {
+      for (const listener of listeners) listener(envelope(1, "new"));
+    });
+    await waitFor(() => expect(result.current.view.eventRevision).toBe(1));
   });
 });

@@ -9,10 +9,11 @@ export function useInterviewConversation(
 ): {
   view: ConversationView;
   reconcileSnapshot: (snapshot: ConversationSnapshot) => Promise<void>;
+  clearMessages: () => void;
 } {
-  const { view, reconcileRunSnapshot } = useConversationView(platform, conversationId, {
+  const { view, reconcileRunSnapshot, clear } = useConversationView(platform, conversationId, {
     enabled: __ANSWRA_FEATURE_INTERVIEW__,
     create: true,
   });
-  return { view, reconcileSnapshot: reconcileRunSnapshot };
+  return { view, reconcileSnapshot: reconcileRunSnapshot, clearMessages: clear };
 }

@@ -139,7 +139,15 @@ export async function executeRun<Input, Prepared>({
     });
 
     await consumeModelStream(result.fullStream, journal.append);
-    if (!journal.metrics.finished && !journal.metrics.aborted && !controller.signal.aborted) {
+    // The SDK can report a provider/network error and then close without a finish
+    // event. That error is already the authoritative terminal fact; only synthesize
+    // the diagnostic when the stream ended without either success or failure.
+    if (
+      !journal.metrics.finished &&
+      !journal.metrics.failed &&
+      !journal.metrics.aborted &&
+      !controller.signal.aborted
+    ) {
       await journal.append({ type: "error", errorText: "模型流未提供终态" });
     }
   } catch (error) {

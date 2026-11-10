@@ -21,7 +21,8 @@
 
 | 目录 | 职责 | 约束 |
 | --- | --- | --- |
-| `src/main` | 窗口管理、生命周期、按领域拆分的 IPC handler（`src/main/ipc/*Ipc.ts`） | 可用 electron / node 内置模块 |
+| `src/main` | 窗口管理、生命周期、按领域拆分的 IPC handler（`src/main/ipc/*Ipc.ts`、`src/main/connection/*Ipc.ts`） | 可用 electron / node 内置模块 |
+| `src/main/connection` | Agent worker 连接状态 IPC、窗口广播与 Electron worker host 适配 | 状态机与重试策略在 `@answra/agent`，不得在 desktop 复制连接语义 |
 | `src/preload` | `contextBridge` 暴露唯一 `window.answra` API 面 | 只做转发，不放业务逻辑 |
 | `src/renderer` | 薄壳：挂载 `<FloatingBarApp/>` | 禁止 import electron / node 模块 |
 
@@ -30,6 +31,7 @@
 | 目录 | 职责 | 约束 |
 | --- | --- | --- |
 | `src/host.ts` | Conversation/Interview worker 组合根：创建运行时、路由显式命令、连接面试领域 adapter | 只接线，不承载 VAD/ASR/turn 算法；Answer-only 入口位于 `src/answer/host.ts` |
+| `src/client` | 平台无关连接客户端：worker host 端口、连接状态机、退避重试与状态快照 | 不依赖 Electron；不写 transcript 或 `AgentEventEnvelope`；desktop/CLI 只做 host 与传输适配 |
 | `src/worker` | 线协议 `AgentCommand` / `AgentFrame`，跨进程唯一契约 | 只放协议类型；命令/帧变更必须同步 desktop worker |
 | `src/core/run` | 跨领域进程内 run 取消与完成等待原语 | 不保存持久化 run 状态；不放产品策略 |
 | `src/core/agent` | 静态 Agent 注册、模型路由、AI SDK 执行与统一事件写入 | 不读写 transcript、不包含领域 prompt/工具授权；领域注入注册后的 executor |

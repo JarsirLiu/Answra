@@ -285,6 +285,31 @@ describe("conversation projection", () => {
     expect(finished.messages[0]?.status).toBe("complete");
   });
 
+  it("clears a previous model error when the next run starts", () => {
+    const view: ConversationView = {
+      eventRevision: 1,
+      activeRunId: "run-1",
+      error: "Cannot connect to API",
+      messages: [{ id: "run-2", role: "assistant", text: "", status: "streaming" }],
+    };
+    const next = applyAgentEvent(view, envelope(2, { type: "start" }, "run-2"));
+    expect(next.error).toBeUndefined();
+  });
+
+  it("does not carry a previous model error into a fresh snapshot", () => {
+    const view: ConversationView = {
+      eventRevision: 2,
+      error: "模型流未提供终态",
+      messages: [{ id: "run-1", role: "assistant", text: "", status: "failed" }],
+    };
+    const next = applyConversationSnapshot(view, {
+      conversationId: CONVERSATION,
+      eventRevision: 3,
+      messages: [],
+    });
+    expect(next.error).toBeUndefined();
+  });
+
   it("ignores old revisions and other conversations", () => {
     const view: ConversationView = { eventRevision: 5, messages: [] };
     expect(applyAgentEvent(view, envelope(5, { type: "start" }))).toBe(view);

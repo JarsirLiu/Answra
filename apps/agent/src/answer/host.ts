@@ -129,6 +129,8 @@ export function startAnswerAgentHost({
       case "cancel":
         answer.cancel(command.runId);
         return undefined;
+      case "ping":
+        return undefined;
       case "interview-start":
       case "interview-capture-ready":
       case "interview-capture-failed":

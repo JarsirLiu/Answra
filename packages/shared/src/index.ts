@@ -30,6 +30,8 @@ export {
   type ChannelRequest,
   type ChannelResponse,
   type ChatSendCommand,
+  type ConnectionChannelMap,
+  ConnectionChannels,
   type ContentSize,
   type ConversationCapabilityEndpoint,
   type ConversationChannelMap,
@@ -97,4 +99,12 @@ export type {
   AgentExecutionEvent,
   AgentStreamEvent,
   ConversationMessagePart,
+} from "./schema";
+export {
+  AGENT_CONNECTION_TARGET,
+  AGENT_SERVICE_DISCONNECTED_CODE,
+  type AgentConnectionReason,
+  type AgentConnectionState,
+  agentServiceDisconnectedError,
+  isAgentServiceDisconnectedError,
 } from "./schema";

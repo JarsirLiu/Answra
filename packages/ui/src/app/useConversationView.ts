@@ -61,9 +61,11 @@ export function useConversationView(
   const drainEvents = useCallback(async () => {
     if (drainingRef.current || initializingRef.current || !activeIdRef.current) return;
     drainingRef.current = true;
+    const generation = generationRef.current;
     const conversationId = activeIdRef.current;
     try {
       for (;;) {
+        if (generation !== generationRef.current) return;
         const cursor = viewRef.current.eventRevision;
         const nextRevision = cursor + 1;
         if (!pendingEventsRef.current.has(nextRevision)) {
@@ -72,13 +74,15 @@ export function useConversationView(
           );
           if (!hasLaterEvent) return;
           const recovered = await platform?.readConversationEvents?.(conversationId, cursor);
-          if (activeIdRef.current !== conversationId) return;
+          if (activeIdRef.current !== conversationId || generation !== generationRef.current)
+            return;
           for (const event of recovered ?? [])
             pendingEventsRef.current.set(event.aggregateRevision, event);
           if (!pendingEventsRef.current.has(nextRevision)) return;
         }
         const event = pendingEventsRef.current.get(nextRevision);
         if (!event) return;
+        if (generation !== generationRef.current) return;
         pendingEventsRef.current.delete(nextRevision);
         commit(event);
       }
@@ -229,11 +233,23 @@ export function useConversationView(
     return new Promise<RunOutcome>((resolve) => waitersRef.current.set(runId, resolve));
   }, []);
   const clear = useCallback(() => {
+    // 链路断开时在途 run 不会再收到终态事件：清空必须同时结束等待者，
+    // 否则发送方会永远停在等待 run 完成的状态。
+    generationRef.current += 1;
+    initializingRef.current = false;
+    pendingEventsRef.current.clear();
+    for (const resolve of waitersRef.current.values()) resolve("aborted");
+    waitersRef.current.clear();
+    finishedRef.current.clear();
     const next = {
       ...viewRef.current,
+      // 新 worker 的 transcript 与 revision 都从头开始，旧游标必须归零，
+      // 否则重连后的空快照和第一轮事件都会被当成过期而丢弃。
+      eventRevision: 0,
       messages: [],
       activeRunId: undefined,
       retry: undefined,
+      retryRunId: undefined,
       error: undefined,
     };
     viewRef.current = next;

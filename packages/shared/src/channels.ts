@@ -7,6 +7,7 @@
 export * from "./channels/ambient";
 export * from "./channels/auth";
 export * from "./channels/capture";
+export * from "./channels/connection";
 export * from "./channels/conversation";
 export * from "./channels/interview";
 export * from "./channels/update";

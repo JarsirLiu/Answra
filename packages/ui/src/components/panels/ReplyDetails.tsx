@@ -1,4 +1,4 @@
-import type { DesktopBridge } from "@answra/shared";
+import type { AgentConnectionState, DesktopBridge } from "@answra/shared";
 import type { ConversationView } from "../../app/conversationView";
 import type { ReplyConversationMessage } from "../../app/useReplyConversation";
 import { ReplyConversationPopover } from "./ReplyConversationPopover";
@@ -9,6 +9,8 @@ interface ReplyDetailsProps {
   conversation: Pick<ConversationView, "messages" | "activeRunId" | "retry" | "error">;
   /** 本轮失败提示；与订阅错误合并，调用方传入的内容优先。 */
   error?: string;
+  /** Agent worker 链路状态；与模型重试/错误互斥展示。 */
+  connection?: AgentConnectionState;
   /** 是否展示详情面板。 */
   expanded: boolean;
   stealth: boolean;
@@ -21,6 +23,7 @@ interface ReplyDetailsProps {
 export function ReplyDetails({
   bridge,
   error,
+  connection,
   expanded,
   stealth,
   conversation,
@@ -37,6 +40,7 @@ export function ReplyDetails({
       activeRunId={conversation.activeRunId}
       retry={conversation.retry}
       error={error ?? conversation.error}
+      connection={connection}
       placement="below"
       stealth={stealth}
       bridge={bridge}

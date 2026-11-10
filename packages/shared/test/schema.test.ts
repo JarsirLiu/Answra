@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  agentConnectionStateSchema,
   agentDurableEventSchema,
   agentEventEnvelopeSchema,
   agentEventSchema,
@@ -183,6 +184,54 @@ describe("execution status schema", () => {
         status: "complete",
       }).status,
     ).toBe("complete");
+  });
+});
+
+describe("agent connection schema", () => {
+  it("round-trips every connection phase with epoch timestamps and stable reasons", () => {
+    const states = [
+      {
+        target: "agent-service",
+        revision: 1,
+        updatedAt: 1_000,
+        status: "connecting",
+        attempt: 1,
+        maxAttempts: 5,
+      },
+      {
+        target: "agent-service",
+        revision: 2,
+        updatedAt: 1_100,
+        status: "connected",
+        attempt: 2,
+        maxAttempts: 5,
+        connectedAt: 1_100,
+      },
+      {
+        target: "agent-service",
+        revision: 3,
+        updatedAt: 1_200,
+        status: "reconnecting",
+        attempt: 3,
+        maxAttempts: 5,
+        nextRetryAt: 1_800,
+        reason: "readiness-timeout",
+        detail: "worker readiness timed out",
+      },
+      {
+        target: "agent-service",
+        revision: 4,
+        updatedAt: 1_900,
+        status: "unavailable",
+        attempt: 5,
+        maxAttempts: 5,
+        reason: "worker-exit",
+      },
+    ];
+
+    for (const state of states) {
+      expect(agentConnectionStateSchema.parse(JSON.parse(JSON.stringify(state)))).toEqual(state);
+    }
   });
 });
 

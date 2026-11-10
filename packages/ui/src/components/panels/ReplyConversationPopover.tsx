@@ -1,9 +1,16 @@
-import type { DesktopBridge, ReplyBarActivity } from "@answra/shared";
+import type { AgentConnectionState, DesktopBridge, ReplyBarActivity } from "@answra/shared";
 import { isAuthRequiredError } from "@answra/shared";
 import { AlertCircle, FileText, Wrench } from "lucide-react";
 import type { ReplyConversationMessage } from "../../app/useReplyConversation";
 import { ICON_SM } from "../../tokens";
-import { AssistantMessage, MessageStream, ModelErrorNotice, RetryNotice } from "../chat";
+import {
+  AssistantMessage,
+  ConnectionNotice,
+  formatConnectionNotice,
+  MessageStream,
+  ModelErrorNotice,
+  RetryNotice,
+} from "../chat";
 import type { ConversationRetry } from "../chat/conversationMessage";
 import "./ReplyConversationPopover.css";
 
@@ -12,6 +19,8 @@ interface ReplyConversationPopoverProps {
   activeRunId?: string;
   retry?: ConversationRetry;
   error?: string;
+  /** Agent worker 链路状态；与模型重试/错误互斥展示。 */
+  connection?: AgentConnectionState;
   placement: "above" | "below";
   stealth: boolean;
   bridge?: DesktopBridge;
@@ -27,6 +36,7 @@ export function ReplyConversationPopover({
   activeRunId,
   retry,
   error,
+  connection,
   placement,
   stealth: _stealth,
   bridge,
@@ -39,6 +49,7 @@ export function ReplyConversationPopover({
     message.activities.some((activity) => activity.kind === "error"),
   );
   const failure = error;
+  const connectionNotice = formatConnectionNotice(connection);
   const failureNeedsSignIn = isAuthRequiredError(failure ?? "");
   const visibleMessages = messages.filter(
     (message) =>
@@ -58,6 +69,7 @@ export function ReplyConversationPopover({
           .join(",")}`,
     ),
     retry ? `retry:${retry.attempt}/${retry.maxRetries}` : "",
+    connection ? `connection:${connection.revision}` : "",
   ].join("|");
 
   return (
@@ -106,11 +118,12 @@ export function ReplyConversationPopover({
             )}
           </article>
         ))}
-        {retry && <RetryNotice retry={retry} />}
-        {failure && !hasErrorActivity && (
+        <ConnectionNotice state={connection} />
+        {!connectionNotice && retry && <RetryNotice retry={retry} />}
+        {!connectionNotice && failure && !hasErrorActivity && (
           <ModelErrorNotice message={failure} onSignIn={failureNeedsSignIn ? signIn : undefined} />
         )}
-        {visibleMessages.length === 0 && !failure && (
+        {visibleMessages.length === 0 && !failure && !connectionNotice && (
           <p className="reply-conversation-empty">发送后将在这里显示本轮对话</p>
         )}
       </MessageStream>

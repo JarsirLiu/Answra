@@ -14,6 +14,7 @@ interface ReplyConversationState {
   activeRunId?: string;
   retry?: ConversationRetry;
   error?: string;
+  clearMessages: () => void;
 }
 
 /**
@@ -25,7 +26,7 @@ export function useReplyConversation(
   conversationId: string | undefined,
   enabled: boolean,
 ): ReplyConversationState {
-  const { view } = useConversationView(platform, conversationId, {
+  const { view, clear } = useConversationView(platform, conversationId, {
     enabled,
     create: false,
     retainCapturedRound: true,
@@ -39,5 +40,6 @@ export function useReplyConversation(
     activeRunId: view.activeRunId,
     retry: view.retry,
     error: view.error,
+    clearMessages: clear,
   };
 }

@@ -1,8 +1,15 @@
-import type { DesktopBridge } from "@answra/shared";
+import type { AgentConnectionState, DesktopBridge } from "@answra/shared";
 import { LoaderCircle, X } from "lucide-react";
 import { type RefObject, useRef } from "react";
 import { ICON_SM } from "../../tokens";
-import { AssistantMessage, MessageStream, ModelErrorNotice, RetryNotice } from "../chat";
+import {
+  AssistantMessage,
+  ConnectionNotice,
+  formatConnectionNotice,
+  MessageStream,
+  ModelErrorNotice,
+  RetryNotice,
+} from "../chat";
 import {
   type ConversationRetry,
   type ConversationViewMessage,
@@ -34,6 +41,8 @@ interface ChatPanelProps {
   sending?: boolean;
   /** 本轮模型调用正在指数退避重试；同一条消息内原地更新。 */
   retry?: ConversationRetry;
+  /** Agent worker 链路状态；与模型重试/错误互斥展示。 */
+  connection?: AgentConnectionState;
   /** 本轮思考耗时（毫秒），回答开始输出后冻结。 */
   thinkingMs?: number;
   /**
@@ -73,6 +82,7 @@ export function ChatPanel({
   streaming,
   sending = false,
   retry,
+  connection,
   thinkingMs,
   error,
   onSignIn,
@@ -85,6 +95,7 @@ export function ChatPanel({
   stealth: _stealth,
 }: ChatPanelProps) {
   const composerInputRef = useRef<HTMLTextAreaElement>(null);
+  const connectionNotice = formatConnectionNotice(connection);
   // 内容指纹：消息增减/正文与思维链流式增长都会变化，驱动 MessageStream 自动跟随；
   // 失败提示也算本轮结果，出现时要能滚到可见位置。
   const contentKey = [
@@ -94,6 +105,7 @@ export function ChatPanel({
     ),
     retry ? `retry:${retry.attempt}/${retry.maxRetries}` : "",
     error ? `error:${error}` : "",
+    connection ? `connection:${connection.revision}` : "",
   ].join("|");
   return (
     <PanelShell
@@ -165,8 +177,9 @@ export function ChatPanel({
             )}
           </article>
         ))}
-        {retry && <RetryNotice retry={retry} />}
-        {error && <ModelErrorNotice message={error} onSignIn={onSignIn} />}
+        <ConnectionNotice state={connection} />
+        {!connectionNotice && retry && <RetryNotice retry={retry} />}
+        {!connectionNotice && error && <ModelErrorNotice message={error} onSignIn={onSignIn} />}
       </MessageStream>
       <ConversationComposer
         inputLabel="补充问题"

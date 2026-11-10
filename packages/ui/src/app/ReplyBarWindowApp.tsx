@@ -11,6 +11,7 @@ import { ReplyConversationPopover } from "../components/panels/ReplyConversation
 import { useFitContent } from "../hooks/useFitContent";
 import { useStealthDocumentFlag } from "../hooks/useStealthDocumentFlag";
 import { useStealthInputGuard } from "../hooks/useStealthInputGuard";
+import { useConnectionState } from "./useConnectionState";
 import { useReplyConversation } from "./useReplyConversation";
 
 interface ReplyBarWindowAppProps {
@@ -20,6 +21,7 @@ interface ReplyBarWindowAppProps {
 /** Independent renderer for the task workflow; the toolbar renderer owns state. */
 export function ReplyBarWindowApp({ bridge }: ReplyBarWindowAppProps) {
   const platform = bridge ?? (globalThis as { answra?: DesktopBridge }).answra;
+  const connection = useConnectionState(platform);
   const [state, setState] = useState<ReplyBarState | null>(null);
   const [hovered, setHovered] = useState(false);
   const [pinned, setPinned] = useState(false);
@@ -36,6 +38,11 @@ export function ReplyBarWindowApp({ bridge }: ReplyBarWindowAppProps) {
     state?.conversationId,
     Boolean(state && (state.phase === "streaming" || expanded)),
   );
+  useEffect(() => {
+    if (connection?.status !== "reconnecting" && connection?.status !== "unavailable") return;
+    // 旧 worker 的内存 transcript 已丢失；连接提示期间先清掉旧一轮，重连后再取空快照。
+    conversation.clearMessages();
+  }, [connection?.status, conversation.clearMessages]);
   const togglePinned = useCallback(() => {
     if (pinned) {
       setPinned(false);
@@ -100,6 +107,7 @@ export function ReplyBarWindowApp({ bridge }: ReplyBarWindowAppProps) {
       phase={state.phase}
       replyActivities={state.replyActivities ?? []}
       replyError={state.replyError}
+      connection={connection}
       replyPending={state.replyPending}
       showConversationToggle
       conversationExpanded={expanded}
@@ -140,6 +148,7 @@ export function ReplyBarWindowApp({ bridge }: ReplyBarWindowAppProps) {
       activeRunId={conversation.activeRunId}
       retry={conversation.retry}
       error={conversation.error ?? state.replyError}
+      connection={connection}
       messages={conversation.messages}
       placement={placement}
       stealth={state.stealth}

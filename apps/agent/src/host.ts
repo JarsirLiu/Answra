@@ -304,6 +304,8 @@ export function startAgentHost({
       case "cancel":
         runtime.cancel(command.runId);
         return undefined;
+      case "ping":
+        return undefined;
       // shutdown/token 在上面就被拦下：不发响应帧。
       case "shutdown":
       case "token":

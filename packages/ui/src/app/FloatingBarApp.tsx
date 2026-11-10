@@ -4,6 +4,7 @@ import {
   AUTH_REQUIRED_NOTICE,
   type DesktopAnnouncement,
   type DesktopBridge,
+  isAgentServiceDisconnectedError,
   isAuthRequiredError,
 } from "@answra/shared";
 import { lazy, Suspense, useEffect, useState } from "react";
@@ -23,6 +24,7 @@ import { ANSWER_MODE, applyModeAvailability, MODES, type Mode, type ModeAction }
 import { ChatFeaturePanel } from "./ChatFeaturePanel";
 import type { InterviewCapturePort, InterviewCaptureState } from "./interviewCapture";
 import { useAppearanceController } from "./useAppearanceController";
+import { useConnectionState } from "./useConnectionState";
 import { useScreenshotAnswer } from "./useConversationChat";
 import { useInterviewConversation } from "./useInterviewConversation";
 import { useReplyDetail } from "./useReplyDetail";
@@ -58,8 +60,11 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
   const [interviewCaptureState, setInterviewCaptureState] = useState<InterviewCaptureState>(
     interviewCapture?.getState() ?? { phase: "idle" },
   );
-  const { view: interviewConversation, reconcileSnapshot: reconcileInterviewSnapshot } =
-    useInterviewConversation(platform, ActiveInterviewConversationId);
+  const {
+    view: interviewConversation,
+    reconcileSnapshot: reconcileInterviewSnapshot,
+    clearMessages: clearInterviewMessages,
+  } = useInterviewConversation(platform, ActiveInterviewConversationId);
   const [interviewError, setInterviewError] = useState<string>();
   const lastInterviewMessage = interviewConversation.messages.at(-1);
   const interviewReplyId =
@@ -84,7 +89,16 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
         })
       : [ANSWER_MODE];
   const answer = useScreenshotAnswer(platform, ActiveExamConversationId);
+  const connection = useConnectionState(platform);
   const [replyFailure, setReplyFailure] = useState<SendFailure>();
+  useEffect(() => {
+    if (connection?.status !== "reconnecting" && connection?.status !== "unavailable") return;
+    // 链路断开后旧失败原因已过期：连接提示是唯一主因，重连成功后的空快照再清 transcript。
+    setReplyFailure(undefined);
+    setInterviewError(undefined);
+    answer.clearMessages();
+    clearInterviewMessages();
+  }, [answer.clearMessages, clearInterviewMessages, connection?.status]);
   useEffect(() => {
     if (!platform?.getAuthStatus) return;
     let cancelled = false;
@@ -196,6 +210,7 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
         phase={featureSlot.phase ?? "composing"}
         replyActivities={replyActivities}
         replyError={replyError}
+        connection={connection}
         replyPending={answer.replyPending}
         showConversationToggle
         conversationExpanded={replyDetail.expanded}
@@ -235,6 +250,7 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
   }
 
   function notifySendError(error: unknown) {
+    if (isAgentServiceDisconnectedError(error)) return;
     setReplyFailure(toFailure(error));
   }
 
@@ -323,6 +339,7 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
             bridge={platform}
             signedIn={authSignedIn}
             stealth={stealthSetting.enabled}
+            connection={connection}
             attachments={attachments}
             draft={draft}
             fileInputRef={fileInputRef}
@@ -349,6 +366,7 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
             state={interviewCaptureState}
             messages={interviewConversation.messages}
             retry={interviewConversation.retry}
+            connection={connection}
             error={interviewError ?? interviewConversation.error}
             onSendText={async (text) => {
               setInterviewError(undefined);
@@ -361,13 +379,16 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
                 );
                 await reconcileInterviewSnapshot(snapshot);
               } catch (error) {
-                setInterviewError(error instanceof Error ? error.message : "消息发送失败");
+                if (!isAgentServiceDisconnectedError(error)) {
+                  setInterviewError(error instanceof Error ? error.message : "消息发送失败");
+                }
                 throw error;
               }
             }}
             onClear={
               platform?.clearConversationMessages
                 ? () => {
+                    setInterviewError(undefined);
                     void clearConversation(ActiveInterviewConversationId).catch(() => undefined);
                   }
                 : undefined
@@ -384,6 +405,7 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
             bridge={platform}
             conversation={answer}
             error={replyFailure?.message}
+            connection={connection}
             expanded={replyDetail.expanded}
             stealth={stealthSetting.enabled}
           />

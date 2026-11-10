@@ -1,10 +1,12 @@
 import {
+  type AgentConnectionState,
   type AgentEventEnvelope,
   AmbientChannels,
   type AmbientColorPayload,
   AuthChannels,
   type AuthStatus,
   CaptureChannels,
+  ConnectionChannels,
   type ContentSize,
   ConversationChannels,
   type ConversationModelSettings,
@@ -113,6 +115,13 @@ const bridge: DesktopBridge = {
       listener(snapshot);
     ipcRenderer.on(ConversationChannels.SnapshotChanged, wrapped);
     return () => ipcRenderer.removeListener(ConversationChannels.SnapshotChanged, wrapped);
+  },
+  getConnectionState: () => ipcRenderer.invoke(ConnectionChannels.GetState),
+  onConnectionState: (listener: (state: AgentConnectionState) => void) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, state: AgentConnectionState) =>
+      listener(state);
+    ipcRenderer.on(ConnectionChannels.StateChanged, wrapped);
+    return () => ipcRenderer.removeListener(ConnectionChannels.StateChanged, wrapped);
   },
   getConversationConfig: () => ipcRenderer.invoke(ConversationChannels.GetConfig),
   configureConversation: (settings: ConversationModelSettings) =>

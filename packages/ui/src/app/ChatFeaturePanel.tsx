@@ -1,7 +1,8 @@
-import type { ConversationSnapshot, DesktopBridge } from "@answra/shared";
+import type { AgentConnectionState, ConversationSnapshot, DesktopBridge } from "@answra/shared";
 import {
   ActiveChatConversationId,
   AUTH_REQUIRED_NOTICE,
+  isAgentServiceDisconnectedError,
   isAuthRequiredError,
 } from "@answra/shared";
 import { type ChangeEvent, type RefObject, useEffect, useState } from "react";
@@ -13,6 +14,7 @@ interface ChatFeaturePanelProps {
   bridge: DesktopBridge | undefined;
   signedIn: boolean;
   stealth: boolean;
+  connection?: AgentConnectionState;
   attachments: ChatAttachment[];
   draft: string;
   fileInputRef: RefObject<HTMLInputElement | null>;
@@ -32,6 +34,7 @@ export function ChatFeaturePanel({
   bridge,
   signedIn,
   stealth,
+  connection,
   attachments,
   draft,
   fileInputRef,
@@ -49,6 +52,12 @@ export function ChatFeaturePanel({
   useEffect(() => {
     if (signedIn) setFailure(undefined);
   }, [signedIn]);
+  useEffect(() => {
+    if (connection?.status !== "reconnecting" && connection?.status !== "unavailable") return;
+    // 链路已断：旧模型的错误不能再压在连接提示下面，清空本地失败与发送错误。
+    setFailure(undefined);
+    conversation.clearMessages();
+  }, [connection?.status, conversation.clearMessages]);
 
   function signIn(): void {
     const pending = bridge?.loginAccount?.();
@@ -78,6 +87,7 @@ export function ChatFeaturePanel({
       })
       .then(onSent)
       .catch((error: unknown) => {
+        if (isAgentServiceDisconnectedError(error)) return;
         setFailure(
           isAuthRequiredError(error)
             ? { message: AUTH_REQUIRED_NOTICE, needsSignIn: true }
@@ -90,7 +100,9 @@ export function ChatFeaturePanel({
     if (!bridge?.clearConversationMessages) return;
     try {
       const snapshot = await onConversationCleared(ActiveChatConversationId);
+      conversation.clearMessages();
       await conversation.reconcileSnapshot(snapshot);
+      setFailure(undefined);
     } catch {
       // FloatingBarApp has already shown the shared clear failure notice.
     }
@@ -108,6 +120,7 @@ export function ChatFeaturePanel({
       draft={draft}
       error={error}
       fileInputRef={fileInputRef}
+      connection={connection}
       streaming={Boolean(conversation.activeRunId)}
       sending={conversation.sendPending && !conversation.activeRunId}
       retry={conversation.retry}

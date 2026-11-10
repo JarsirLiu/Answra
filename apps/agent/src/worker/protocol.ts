@@ -133,6 +133,8 @@ export type AgentCommand =
   | { id: string; type: "clear-conversation"; conversationId: string }
   | { id: string; type: "append-user-message"; conversationId: string; text: string }
   | { id: string; type: "cancel"; runId: string }
+  /** 就绪探测：宿主在启动后确认 worker 能处理命令，连接域据此进入 connected。 */
+  | { id: string; type: "ping" }
   | { id: string; type: "shutdown" };
 
 export type AgentFrame =

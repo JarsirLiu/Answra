@@ -1,7 +1,9 @@
 import {
+  type AgentConnectionState,
   type AgentEventEnvelope,
   AuthChannels,
   type AuthStatus,
+  ConnectionChannels,
   type ContentSize,
   ConversationChannels,
   type ConversationSnapshot,
@@ -99,6 +101,13 @@ export function sendConversationSnapshot(snapshot: ConversationSnapshot): void {
     !replyWindow.isDestroyed()
   )
     replyWindow.webContents.send(ConversationChannels.SnapshotChanged, snapshot);
+}
+/** 把 Agent 连接状态推给所有还活着的窗口（主窗口与独立回复窗口共用一份事实）。 */
+export function sendConnectionState(state: AgentConnectionState): void {
+  for (const target of [getWindow(), getReplyBarWindow()]) {
+    if (target && !target.isDestroyed())
+      target.webContents.send(ConnectionChannels.StateChanged, state);
+  }
 }
 /** 把账号状态推给所有还活着的窗口（主悬浮条与独立回复窗口都要能刷门禁）。 */
 export function sendAuthStatus(status: AuthStatus): void {

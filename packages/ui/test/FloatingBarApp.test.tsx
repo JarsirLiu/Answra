@@ -426,6 +426,36 @@ describe("three-segment floating navigation", () => {
     await waitFor(() => expect(screen.queryByText("当前回复尚未完成")).not.toBeInTheDocument());
   });
 
+  it("clears the manual-send error when the interview conversation is cleared", async () => {
+    const bridge = createConversationBridge();
+    const capture = {
+      getState: () => ({ phase: "idle" as const }),
+      subscribe: () => () => undefined,
+      start: vi.fn(async () => undefined),
+      stop: vi.fn(async () => undefined),
+    };
+    render(<FloatingBarApp bridge={bridge} interviewCapture={capture} />);
+    fireEvent.click(screen.getByRole("button", { name: "对话" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "面试" }));
+    fireEvent.click(screen.getByRole("button", { name: "面试对话" }));
+    const input = screen.getByRole("textbox", { name: "面试消息" });
+
+    fireEvent.change(input, { target: { value: "先留下的消息" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+    await waitFor(() => expect(screen.getByText("先留下的消息")).toBeInTheDocument());
+
+    bridge.appendConversationUserMessage.mockRejectedValueOnce(new Error("当前回复尚未完成"));
+    fireEvent.change(input, { target: { value: "失败的第二条" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("当前回复尚未完成"));
+
+    fireEvent.click(screen.getByRole("button", { name: "清空对话历史" }));
+    await waitFor(() =>
+      expect(bridge.clearConversationMessages).toHaveBeenCalledWith(ActiveInterviewConversationId),
+    );
+    await waitFor(() => expect(screen.queryByText("当前回复尚未完成")).not.toBeInTheDocument());
+  });
+
   it("sends general chat on its independent conversation and keeps it when the panel closes", async () => {
     const bridge = createConversationBridge();
     render(<FloatingBarApp bridge={bridge} />);
@@ -469,6 +499,39 @@ describe("three-segment floating navigation", () => {
     fireEvent.click(screen.getByRole("button", { name: "打开对话" }));
     expect(await screen.findByText("我叫小明")).toBeInTheDocument();
     expect(await screen.findByText("你好，小明。")).toBeInTheDocument();
+  });
+
+  it("clears the failed-round error when the chat conversation is cleared", async () => {
+    const bridge = createConversationBridge();
+    render(<FloatingBarApp bridge={bridge} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "打开对话" }));
+    const input = screen.getByRole("textbox", { name: "补充问题" });
+    fireEvent.change(input, { target: { value: "这轮会失败" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
+    await waitFor(() => expect(bridge.sendConversationMessage).toHaveBeenCalled());
+
+    act(() =>
+      emitConversationEvent?.({
+        runId: "run-1",
+        chunk: { type: "error", errorText: "模型流未提供终态" },
+      }),
+    );
+    act(() => emitConversationEvent?.({ runId: "run-1", chunk: { type: "finish" } }));
+
+    const stream = screen.getByRole("log", { name: "对话消息" });
+    expect(await within(stream).findByRole("alert")).toHaveTextContent("模型流未提供终态");
+
+    const clear = screen.getByRole("button", { name: "清空对话历史" });
+    await waitFor(() => expect(clear).toBeEnabled());
+    fireEvent.click(clear);
+
+    await waitFor(() =>
+      expect(bridge.clearConversationMessages).toHaveBeenCalledWith(ActiveChatConversationId),
+    );
+    await waitFor(() =>
+      expect(within(stream).queryByText("模型流未提供终态")).not.toBeInTheDocument(),
+    );
   });
 
   it("keeps the draft visible while chat send is pending, then renders the returned snapshot", async () => {

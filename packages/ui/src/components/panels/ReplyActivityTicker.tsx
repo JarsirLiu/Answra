@@ -1,4 +1,4 @@
-import type { ReplyBarActivity } from "@answra/shared";
+import type { AgentConnectionState, ReplyBarActivity } from "@answra/shared";
 import katex from "katex";
 import {
   AlertCircle,
@@ -6,15 +6,19 @@ import {
   FileText,
   LoaderCircle,
   MessageSquareText,
+  Wifi,
   Wrench,
 } from "lucide-react";
 import { type ReactNode, useRef } from "react";
 import { ICON } from "../../tokens";
+import { formatConnectionNotice } from "../chat";
 import { useHorizontalTickerScroll } from "./useHorizontalTickerScroll";
 
 interface ReplyActivityTickerProps {
   activities: ReplyBarActivity[];
   error?: string;
+  /** Agent worker 链路状态；展示时压过模型错误与普通活动。 */
+  connection?: AgentConnectionState;
   pending?: boolean;
   onConversationHover?: () => void;
 }
@@ -36,21 +40,27 @@ const NO_ANSWER_ACTIVITY: ReplyBarActivity = {
 export function ReplyActivityTicker({
   activities,
   error,
+  connection,
   pending,
   onConversationHover,
 }: ReplyActivityTickerProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
+  const connectionNotice = formatConnectionNotice(connection);
+  const displayError = connectionNotice ? undefined : error;
+  const displayPending = connectionNotice ? false : pending;
   // 运行状态是权威信号（AI SDK finish/abort 收流，pending 由其翻转），
   // 帧只负责呈现：进行中跟滚最近过程，完成态只留答案文本，错误态展示失败。
-  const finished = !pending && !error;
-  const recentActivities = activities.length
-    ? activities.slice(-5)
-    : error
-      ? [{ id: "error", kind: "error" as const, label: "模型错误", text: error }]
-      : pending
-        ? [EMPTY_ACTIVITY]
-        : [NO_ANSWER_ACTIVITY];
+  const finished = !displayPending && !displayError;
+  const recentActivities = connectionNotice
+    ? [{ id: "connection", kind: "status" as const, label: "连接", text: connectionNotice }]
+    : activities.length
+      ? activities.slice(-5)
+      : displayError
+        ? [{ id: "error", kind: "error" as const, label: "模型错误", text: displayError }]
+        : displayPending
+          ? [EMPTY_ACTIVITY]
+          : [NO_ANSWER_ACTIVITY];
   /** 最后一个过程帧之后的答案文本帧；没有过程帧时即为全部。 */
   const trailingTexts = () => {
     for (let index = recentActivities.length - 1; index >= 0; index -= 1) {
@@ -59,7 +69,7 @@ export function ReplyActivityTicker({
     return recentActivities;
   };
   const latest = recentActivities.at(-1) ?? EMPTY_ACTIVITY;
-  const items = error
+  const items = displayError
     ? recentActivities
     : finished
       ? trailingTexts().length
@@ -74,11 +84,11 @@ export function ReplyActivityTicker({
     viewportRef,
     trackRef,
     phase: current.kind === "text" ? "text" : "process",
-    pending,
-    error,
+    pending: displayPending,
+    error: displayError,
   });
 
-  const Icon = getActivityIcon(current.kind);
+  const Icon = connectionNotice ? Wifi : getActivityIcon(current.kind);
 
   return (
     <div className={`reply-activity-ticker reply-activity-ticker--${current.kind}`}>
@@ -89,7 +99,9 @@ export function ReplyActivityTicker({
       >
         <Icon
           aria-hidden="true"
-          className={pending && current.kind === "status" ? "reply-activity-spinner" : undefined}
+          className={
+            displayPending && current.kind === "status" ? "reply-activity-spinner" : undefined
+          }
           size={ICON}
         />
       </span>

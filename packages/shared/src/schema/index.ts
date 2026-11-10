@@ -1,5 +1,15 @@
 // Stable runtime schema entrypoint for domain contracts.
 export {
+  AGENT_CONNECTION_TARGET,
+  AGENT_SERVICE_DISCONNECTED_CODE,
+  type AgentConnectionReason,
+  type AgentConnectionState,
+  agentConnectionReasonSchema,
+  agentConnectionStateSchema,
+  agentServiceDisconnectedError,
+  isAgentServiceDisconnectedError,
+} from "./connection";
+export {
   type ConversationMessage,
   type ConversationMessagePart,
   type ConversationSnapshot,
