@@ -52,3 +52,13 @@ export {
   type RunOutcome,
   runOutcomeSchema,
 } from "./status";
+export {
+  type EditDiffDisplay,
+  type EditDiffHunk,
+  type EditDiffLine,
+  type EditDiffLineKind,
+  editDiffDisplaySchema,
+  editDiffHunkSchema,
+  editDiffLineKindSchema,
+  editDiffLineSchema,
+} from "./toolDisplay";

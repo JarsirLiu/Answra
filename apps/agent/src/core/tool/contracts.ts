@@ -48,6 +48,8 @@ export interface ReadFileStateEntry {
   readonly offset: number;
   readonly limit: number | undefined;
   readonly partialView: boolean;
+  /** `edit` 表示内容由 Edit 写回，只能作为再次编辑的基线，不能被 Read 当作未变化缓存。 */
+  readonly origin: "read" | "edit";
 }
 
 export type ReadFileStateMap = Map<string, ReadFileStateEntry>;
@@ -109,6 +111,11 @@ export interface ToolEntry<Input = unknown, Output = unknown> {
   validateInput?(input: unknown): ToolHandlerFailure | undefined;
   resolveInput?(input: Input, context: ToolContext): Input | Promise<Input>;
   formatModelContent?(output: Output): string;
+  /**
+   * 成功时把结构化 handler output 暴露到工具事件，供 UI 展示；
+   * `toModelOutput` 仍用 `formatModelContent` 生成模型文本。
+   */
+  exposeOutput?: boolean;
   /** Agent 进程收尾时释放该工具持有的长生命周期资源。 */
   dispose?(): void | Promise<void>;
 }

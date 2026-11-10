@@ -3,8 +3,9 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { JSONSchema7 } from "ai";
-import { defineTool, type ReadFileStateEntry, type ToolContext, toolId } from "../contracts";
+import { defineTool, type ToolContext, toolId } from "../contracts";
 import { ToolExecutionError } from "../executor/result";
+import { createReadFileStateKey, isCachedReadFresh } from "./readFileState";
 import {
   createReadTextOutput,
   formatReadOutput,
@@ -17,7 +18,6 @@ import {
   READ_SCAN_MAX_BYTES,
   readToolTextFile,
   statToolFile,
-  type ToolFileStat,
 } from "./workspace";
 
 interface ReadInput {
@@ -116,6 +116,7 @@ export async function executeRead(context: ToolContext, input: ReadInput): Promi
       limit,
       mtimeMs: Math.trunc(stat.mtimeMs),
       offset,
+      origin: "read",
       partialView: output.truncatedByTokenCap === true,
       path: stat.target,
       sizeBytes: stat.sizeBytes,
@@ -144,31 +145,6 @@ function normalizeOffset(offset: number | undefined): number {
 
 function normalizeLimit(limit: number | undefined): number | undefined {
   return limit === undefined ? undefined : Math.max(1, Math.trunc(limit));
-}
-
-function createReadFileStateKey(
-  filePath: string,
-  offset: number,
-  limit: number | undefined,
-): string {
-  return [
-    readStatePathKey(filePath),
-    String(offset),
-    limit === undefined ? "" : String(limit),
-  ].join("\0");
-}
-
-function readStatePathKey(filePath: string): string {
-  const normalized = path.resolve(filePath);
-  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
-}
-
-function isCachedReadFresh(entry: ReadFileStateEntry, stat: ToolFileStat): boolean {
-  return (
-    !entry.partialView &&
-    entry.mtimeMs === Math.trunc(stat.mtimeMs) &&
-    entry.sizeBytes === stat.sizeBytes
-  );
 }
 
 async function createMissingReadFileMessage(

@@ -284,6 +284,11 @@ describe("theme CSS integrity", () => {
     expect(css).toMatch(
       /\.diffRow\[data-kind="added"\]\s+\.lineNumber\s*\{[^}]*color:\s*var\(--success\);/,
     );
+
+    const lineNumber = css.match(/\.lineNumber\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(lineNumber).toContain("position: sticky");
+    expect(lineNumber).toContain("background: var(--diff-row-bg)");
+    expect(css).toContain(".diffGap");
   });
 
   it("keeps the stealth cursor override strong enough to beat component cursor rules", () => {

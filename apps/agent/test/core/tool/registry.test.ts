@@ -82,6 +82,41 @@ describe("tool registry", () => {
     );
   });
 
+  it("exposes structured output only when requested and keeps the model text", async () => {
+    const registry = new ToolRegistry();
+    registry.register(
+      defineTool<string, { readonly value: string }>({
+        id: toolId("test.expose"),
+        metadata: { ...BASE_METADATA, name: "Expose" },
+        inputSchema: { type: "object", properties: {}, additionalProperties: false },
+        exposeOutput: true,
+        handler: async () => ({ value: "structured" }),
+        formatModelContent: (output) => `model:${output.value}`,
+      }),
+    );
+    registry.register(testTool("test.plain", "Plain"));
+
+    const exposed = registry.authorize([toolId("test.expose")], sessionContext()).Expose;
+    const plain = registry.authorize([toolId("test.plain")], sessionContext()).Plain;
+    if (!exposed?.execute || !exposed.toModelOutput || !plain?.execute || !plain.toModelOutput) {
+      throw new Error("test tools must be executable");
+    }
+
+    const output = await exposed.execute({}, { toolCallId: "call-1", messages: [] });
+    expect(output).toEqual({ value: "structured" });
+    expect(exposed.toModelOutput({ toolCallId: "call-1", input: {}, output })).toEqual({
+      type: "text",
+      value: "model:structured",
+    });
+
+    const plainOutput = await plain.execute({}, { toolCallId: "call-2", messages: [] });
+    expect(plainOutput).toBe("ok");
+    expect(plain.toModelOutput({ toolCallId: "call-2", input: {}, output: plainOutput })).toEqual({
+      type: "text",
+      value: "ok",
+    });
+  });
+
   it("rejects two authorized tools that share the same model name", () => {
     const registry = new ToolRegistry();
     registry.register(testTool("test.one", "Same"));

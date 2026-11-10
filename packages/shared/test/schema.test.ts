@@ -9,6 +9,7 @@ import {
   agentStreamEventSchema,
   conversationMessagePartSchema,
   conversationMessageSchema,
+  editDiffDisplaySchema,
 } from "../src/schema";
 
 describe("event schema", () => {
@@ -232,6 +233,62 @@ describe("agent connection schema", () => {
     for (const state of states) {
       expect(agentConnectionStateSchema.parse(JSON.parse(JSON.stringify(state)))).toEqual(state);
     }
+  });
+});
+
+describe("edit diff display schema", () => {
+  it("round-trips multiple hunks with explicit line kinds", () => {
+    const display = {
+      hunks: [
+        {
+          oldStart: 10,
+          oldLines: 5,
+          newStart: 10,
+          newLines: 6,
+          lines: [
+            { kind: "context", text: "before" },
+            { kind: "removed", text: "old" },
+            { kind: "added", text: "new" },
+            { kind: "context", text: "after" },
+          ],
+        },
+      ],
+      additions: 1,
+      deletions: 1,
+      truncated: false,
+    };
+
+    expect(editDiffDisplaySchema.parse(JSON.parse(JSON.stringify(display)))).toEqual(display);
+  });
+
+  it("rejects malformed hunk positions and line kinds", () => {
+    expect(
+      editDiffDisplaySchema.safeParse({
+        hunks: [
+          {
+            oldStart: 0,
+            oldLines: 1,
+            newStart: 1,
+            newLines: 1,
+            lines: [{ kind: "changed", text: "x" }],
+          },
+        ],
+        additions: 0,
+        deletions: 0,
+        truncated: false,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects an empty display diff", () => {
+    expect(
+      editDiffDisplaySchema.safeParse({
+        hunks: [],
+        additions: 0,
+        deletions: 0,
+        truncated: false,
+      }).success,
+    ).toBe(false);
   });
 });
 

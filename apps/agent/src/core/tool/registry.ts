@@ -74,7 +74,7 @@ function createModelTool(
   return tool({
     description: entry.metadata.description,
     inputSchema: jsonSchema(entry.inputSchema),
-    execute: async (input: unknown, options): Promise<string> => {
+    execute: async (input: unknown, options): Promise<unknown> => {
       const result = await executeToolCall(entry, input, {
         toolCallId: options.toolCallId,
         signal: options.abortSignal
@@ -93,7 +93,13 @@ function createModelTool(
             }
           : {}),
       });
-      return result.modelContent;
+      return result.success && entry.exposeOutput ? result.output : result.modelContent;
     },
+    toModelOutput: ({ output }) => ({ type: "text", value: modelOutput(entry, output) }),
   });
+}
+
+function modelOutput(entry: AnyToolEntry, output: unknown): string {
+  if (typeof output === "string") return output;
+  return entry.formatModelContent?.(output) ?? JSON.stringify(output) ?? String(output);
 }

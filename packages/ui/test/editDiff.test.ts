@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildEditDiff } from "../src/components/tool-call/renderers/editDiff";
+import { fromEditDiffDisplay } from "../src/components/tool-call/renderers/editDisplay";
 
 describe("buildEditDiff", () => {
   it("keeps shared context and marks removed and added lines", () => {
@@ -37,6 +38,35 @@ describe("buildEditDiff", () => {
     ]);
     expect(diff.additions).toBe(0);
     expect(diff.deletions).toBe(3);
+  });
+
+  it("projects shared hunks into independent old and new line numbers", () => {
+    const view = fromEditDiffDisplay({
+      hunks: [
+        {
+          oldStart: 10,
+          oldLines: 3,
+          newStart: 20,
+          newLines: 3,
+          lines: [
+            { kind: "context", text: "same" },
+            { kind: "removed", text: "old" },
+            { kind: "added", text: "new" },
+            { kind: "context", text: "after" },
+          ],
+        },
+      ],
+      additions: 1,
+      deletions: 1,
+      truncated: false,
+    });
+
+    expect(view.hunks[0]?.lines).toEqual([
+      { kind: "context", oldLine: 10, newLine: 20, text: "same" },
+      { kind: "removed", oldLine: 11, text: "old" },
+      { kind: "added", newLine: 21, text: "new" },
+      { kind: "context", oldLine: 12, newLine: 22, text: "after" },
+    ]);
   });
 
   it("caps very large snippets", () => {

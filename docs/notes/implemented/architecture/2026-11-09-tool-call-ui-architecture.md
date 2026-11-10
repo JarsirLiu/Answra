@@ -169,7 +169,7 @@ return RENDERERS[part.toolName] ?? ToolCallFallback;
 | --- | --- | --- | --- |
 | `Read` | 文件名（`input.file_path` 的 basename，`part.title` 兜底） | 无 | 无展开详情，不展示文件内容 |
 | `Grep` | `pattern` | path / glob / 匹配数 | content 模式的文件与行；files 模式的路径；count 模式的计数 |
-| `Edit` | 文件名 + `+N -M`（`Created` 时同样显示文件与统计） | 无（展开后摘要改为 `Edited file` / `Created file`） | 白底纸面卡片：文件名与增删统计、复制按钮、单列行号、红绿整行底色、同色行号和左侧粗色条 |
+| `Edit` | 文件名 + `+N -M`（`Created` 时同样显示文件与统计） | 无（展开后摘要改为 `Edited file` / `Created file`） | 白底纸面卡片：文件名与增删统计、复制按钮、多个 hunk 的真实上下文、sticky 单列行号、红绿整行底色、同色行号和左侧粗色条；hunk 之间显示未修改行数 |
 | `RunCommand` | 等宽 `command`（单行、超长省略） | 无（摘要不堆工作目录/退出码） | 单个描边 Shell 面板：`Shell` 标签、`$ 命令`、stdout/stderr；session 截断时补提示 |
 | `WriteStdin` | `sessionId` | 会话状态 / 写入字符预览 | stdout、stderr、exitCode |
 | 未知工具 | `title ?? toolName` | 无 | input / output 的安全格式化；失败时只显示 `errorText` |
@@ -178,7 +178,7 @@ return RENDERERS[part.toolName] ?? ToolCallFallback;
 
 - Read：只从 `input.file_path` 取摘要，不解析 `part.output`；
 - Grep：`type: "content" | "files_with_matches" | "count"`；
-- Edit：结构化 `type: "edited"` + `replacements`，或模型可见的 `Replaced N occurrences` 回执；
+- Edit：结构化 `type: "edited"` + `diff`（多 hunk）或旧版 `replacements`；无结构化 `diff` 时回退 `old_string`/`new_string`，字符串回执继续兼容；
 - RunCommand：`kind: "result"` 或 `kind: "session"`；
 - WriteStdin：`ShellSessionSnapshot` 形态。
 
@@ -283,10 +283,10 @@ return RENDERERS[part.toolName] ?? ToolCallFallback;
 
 决定：
 
-- 摘要动作词为 `Edited`；当 `old_string` 为空且能生成 diff 时使用 `Created`。主目标为文件名，摘要尾部显示 `+N -M`，统计直接来自 `buildEditDiff`。
+- 摘要动作词为 `Edited`；当 `old_string` 为空且能生成 diff 时使用 `Created`。主目标为文件名，摘要尾部显示 `+N -M`，统计优先来自结构化 `diff.additions/deletions`，旧事件回退 `buildEditDiff`。
 - 展开后主目标切换为 `file`，摘要尾部统计隐藏；完整文件名与 `+N -M` 进入 diff 面板头，避免摘要和面板重复。
 - `ToolCallCard` 新增可选 `summaryExtra`、`expandedPrimary`、`expandedSummaryExtra`；它们只改变摘要呈现，开合状态仍由卡片自身 `useState` 唯一持有。
-- diff 面板使用白底 `--paper` 纸面卡：表头为文件名、`+N -M` 与复制按钮；行级 diff 使用单列行号、红色删除行、绿色新增行、整行淡红/淡绿底色、同色行号和左侧粗色条；内容区允许横向滚动，滚动条保持 4px 细条。
+- diff 面板使用白底 `--paper` 纸面卡：表头为文件名、`+N -M` 与复制按钮；每个 hunk 使用真实旧/新行号、红色删除行、绿色新增行、整行淡红/淡绿底色和左侧粗色条；hunk 之间显示 `⋯ N 行未修改`；content 区横向滚动时行号 sticky，滚动条保持 4px 细条。
 - `Edit` 的行级 diff 面板保留自己的表头与行布局，不套 `ToolDetailSection` 的 `.panel` 标签结构。
 
 舍弃方案：
@@ -319,6 +319,25 @@ return RENDERERS[part.toolName] ?? ToolCallFallback;
 - **把白底扩散到所有工具面板：** 舍弃，其他工具是扁平执行日志，只有 Edit 是参考应用里的独立 diff 卡。
 
 后果与防回退：`.diffPanel` 必须保持 `background: var(--paper)`，不得重新引用 `--chat-card-bg`；删除/增加行必须同时有专用底色、左侧 4px 色条和同色行号；正文不得整行改成红/绿。其他工具面板不受影响。自动化证据为 `themeCss.test.ts` 对 `.diffPanel` 白底、diff 令牌、红绿底色与行号颜色的守卫，以及 `toolCallRenderers.test.tsx` 的单列行号与复制用例。
+
+## 修订：Edit 多 hunk 上下文 diff（2026-11-10）
+
+问题：旧 Edit 只从 `old_string`/`new_string` 在 renderer 内计算单段 diff，无法显示变更前后的文件上下文；`replace_all` 命中多个位置时也没有多段结构。继续调 CSS 只能得到没有上下文的红绿块。
+
+决定：
+
+- Edit 工具基于完整 before/after 文件文本生成 `EditDiffDisplay`（`hunks[] + oldStart/newStart + lines[{kind,text}]`），每个 hunk 前后各 3 行上下文，未修改间隔 ≤6 行合并，最多 20 段/600 行/约 20k 字符。
+- `ToolEntry` 增加通用 `exposeOutput`，仅 Edit 开启；`createModelTool` 对成功 Edit 返回结构化 `EditOutput`，并用 AI SDK 6 `toModelOutput` 保持模型可见回执不变。其他工具和失败结果仍是字符串。
+- UI 优先消费 `part.output.diff`，按 shared `editDiffDisplaySchema` 收窄；旧事件没有 `diff` 时回退 `buildEditDiff(old_string, new_string)`，不白屏。
+- hunk 行号由 `oldStart/newStart` 和 kind 推导；hunk 间显示 `⋯ N 行未修改`；行号列 sticky，背景随行底色变化。
+- 详见 [Edit 多 hunk 展示与结构化工具输出](2026-11-10-edit-multi-hunk-diff-display.md)。
+
+舍弃方案：
+
+- **UI 从 `old_string`/`new_string` 伪造上下文：** 舍弃。renderer 没有文件原文，补出的是假上下文，也看不到 `replace_all` 的其它命中位置。
+- **UI 读文件再算 diff：** 舍弃。renderer 不应获得文件读取权限，且读取时文件可能已被后续编辑改变。
+
+后果与防回退：Edit 的模型文本仍只能来自 `formatEditOutput`；不得把 `diff` 放进模型可见内容。结构化 `diff` 解析失败必须回退旧 diff，不得白屏。不得移除 hunk 间未修改行提示或 sticky 行号。
 
 ## 模块边界
 
@@ -365,6 +384,7 @@ return RENDERERS[part.toolName] ?? ToolCallFallback;
   - 2026-11-10 Read 摘要修订：`toolCallRenderers` 断言 Read 只显示 `Read` + 文件名，无行数、无内容、无展开；`ChatPanel`、`InterviewCapturePanel` 同步断言 `Read` + `a.ts`。
   - 2026-11-10 Edit UI 修订：`toolCallRenderers` 覆盖折叠态 `Edited a.ts +1 -1`、展开态 `Edited file`、`Created`、行号 diff 与复制；`editDiff.test.ts` 覆盖 Read 行号前缀；全量 UI 288 项通过，`tsc --noEmit` 通过。
   - 2026-11-10 Edit 白底 diff 修订：`themeCss` 守卫 `.diffPanel` 使用 `--paper`、删除/新增行使用专用淡红/淡绿令牌、4px 左侧色条与同色行号；`toolCallRenderers` 的单列行号用例继续通过。
+  - 2026-11-10 Edit 多 hunk 修订：`editDisplayDiff.test.ts` 覆盖上下文、多段、合并、插入、CRLF、hunk/行数上限；`registry.test.ts` 覆盖 `exposeOutput` 与 `toModelOutput`；`toolCallRenderers.test.tsx` 覆盖多 hunk 间隔与 malformed fallback；`themeCss` 守卫 sticky 行号与 `.diffGap`。
   - 2026-11-10 RunCommand 表面修订：`pnpm --filter @answra/ui exec vitest run` 276 项通过（`toolCallRenderers` 覆盖 `running`/`ran` 与命令 `data-running`，`themeCss` 覆盖面板底色与命令脉冲）；`pnpm lint`、`pnpm --filter @answra/ui typecheck` 通过。
   - `pnpm verify`：通过（lint、typecheck、全仓测试、架构检查）。
   - `pnpm lint`：通过（biome check 全仓无 fix）。

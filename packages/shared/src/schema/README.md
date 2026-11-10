@@ -10,6 +10,7 @@ remain in `src/channels/`.
 | `events.ts` | The complete Agent event catalog, live and durable-candidate subsets, and the single `AgentEventEnvelope` | State transitions, durable adapter, UI projection |
 | `status.ts` | Agent run/step status vocabulary, retry metadata and rebuildable snapshots | Event payloads, retry scheduling policy |
 | `conversation.ts` | Conversation message and snapshot DTOs | Event catalog, event log, execution state machine, IPC channel names, renderer projection |
+| `toolDisplay.ts` | Renderer-safe structured tool display payloads, currently `EditDiffDisplay` | Event payloads, tool execution, file reading, renderer projection |
 
 Use the package subpath `@answra/shared/schema`; consumers should not deep-import
 these files. `index.ts` is the stable export surface.

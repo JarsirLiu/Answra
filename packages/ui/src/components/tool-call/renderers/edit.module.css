@@ -1,4 +1,4 @@
-/* Edit 展开结果：文件名、增删统计与单列表格的行级 diff。 */
+/* Edit 展开结果：文件名、增删统计与多 hunk 行级 diff。 */
 .summaryFile {
   text-decoration: underline dotted;
   text-decoration-color: var(--glass-line);
@@ -95,28 +95,54 @@
 }
 
 .diffRow {
+  --diff-row-bg: var(--paper);
   display: flex;
   min-width: 100%;
   border-left: 4px solid transparent;
   color: var(--ink-soft);
-  background: var(--paper);
+  background: var(--diff-row-bg);
   white-space: pre;
 }
 
 .diffRow[data-kind="removed"] {
+  --diff-row-bg: var(--diff-remove-bg);
   border-left-color: var(--danger);
   background: var(--diff-remove-bg);
 }
 
 .diffRow[data-kind="added"] {
+  --diff-row-bg: var(--diff-add-bg);
   border-left-color: var(--success);
   background: var(--diff-add-bg);
 }
 
+.diffGap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 100%;
+  padding: 2px 12px;
+  border-block: 1px solid var(--glass-line-soft);
+  background: var(--paper);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+  user-select: none;
+}
+
+.diffGapMarker {
+  font-size: 13px;
+  letter-spacing: 1px;
+}
+
 .lineNumber {
+  position: sticky;
+  left: 0;
+  z-index: 1;
   flex: none;
   min-width: 5ch;
   padding: 0 12px 0 8px;
+  background: var(--diff-row-bg);
   color: var(--muted);
   text-align: right;
   user-select: none;

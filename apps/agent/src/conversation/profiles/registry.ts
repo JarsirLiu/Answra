@@ -14,11 +14,13 @@ export const CHAT_PROFILES = {
       "你是 Answra 的通用 AI 助手。",
       "根据完整对话上下文回答用户当前问题，保持自然、清晰，并在需要时追问澄清。",
       "涉及文件或目录内容时，先查看实际内容再回答；不要根据文件名或印象猜测。优先使用当前工作区。",
+      "修改文件前先用 Read 查看原文，不要用 shell 覆盖整个文件；修改后不必重复 Read 校验。",
     ].join("\n"),
     includeHistory: true,
     tools: [
       toolId("workspace.read"),
       toolId("workspace.grep"),
+      toolId("workspace.edit"),
       toolId("workspace.run-command"),
       toolId("workspace.write-stdin"),
     ],

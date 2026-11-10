@@ -362,7 +362,7 @@ describe("ephemeral conversation runtime", () => {
     expect(answerPayload).not.toContain("我叫小明");
   });
 
-  it("sends only profile-authorized Read and Grep schemas to the model", async () => {
+  it("sends only profile-authorized Read, Grep, and Edit schemas to the model", async () => {
     const chat = await runtime.sendChat(
       "general-chat",
       "tools-authorized-chat",
@@ -373,8 +373,11 @@ describe("ephemeral conversation runtime", () => {
     const chatTools = JSON.stringify(requests.at(-1)?.tools);
     expect(chatTools).toContain("Read");
     expect(chatTools).toContain("Grep");
+    expect(chatTools).toContain("Edit");
     expect(chatTools).toContain("file_path");
     expect(chatTools).toContain("pattern");
+    expect(chatTools).toContain("old_string");
+    expect(chatTools).toContain("new_string");
     expect(chatTools).not.toContain("list_workspace_files");
 
     const answer = await runtime.runAnswer(

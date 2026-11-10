@@ -199,6 +199,100 @@ describe("tool call renderers", () => {
     }
   });
 
+  it("renders multiple structured hunks with a gap instead of the legacy fragment", () => {
+    render(
+      <EditToolCall
+        part={toolPart(
+          "Edit",
+          {
+            file_path: "src/a.ts",
+            old_string: "legacy-before",
+            new_string: "legacy-after",
+            replace_all: true,
+          },
+          {
+            type: "edited",
+            replacements: 2,
+            replaceAll: true,
+            diff: {
+              hunks: [
+                {
+                  oldStart: 2,
+                  oldLines: 7,
+                  newStart: 2,
+                  newLines: 7,
+                  lines: [
+                    { kind: "context", text: "ctx-a-2" },
+                    { kind: "context", text: "ctx-a-3" },
+                    { kind: "context", text: "ctx-a-4" },
+                    { kind: "removed", text: "old-a" },
+                    { kind: "added", text: "new-a" },
+                    { kind: "context", text: "ctx-a-6" },
+                    { kind: "context", text: "ctx-a-7" },
+                    { kind: "context", text: "ctx-a-8" },
+                  ],
+                },
+                {
+                  oldStart: 20,
+                  oldLines: 7,
+                  newStart: 20,
+                  newLines: 7,
+                  lines: [
+                    { kind: "context", text: "ctx-b-20" },
+                    { kind: "context", text: "ctx-b-21" },
+                    { kind: "context", text: "ctx-b-22" },
+                    { kind: "removed", text: "old-b" },
+                    { kind: "added", text: "new-b" },
+                    { kind: "context", text: "ctx-b-24" },
+                    { kind: "context", text: "ctx-b-25" },
+                    { kind: "context", text: "ctx-b-26" },
+                  ],
+                },
+              ],
+              additions: 2,
+              deletions: 2,
+              truncated: false,
+            },
+          },
+        )}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: /Edited a\.ts \+2 -2/ })).toBeInTheDocument();
+    expand(/Edited a\.ts/);
+
+    expect(screen.getByText("old-a")).toBeInTheDocument();
+    expect(screen.getByText("new-a")).toBeInTheDocument();
+    expect(screen.getByText("old-b")).toBeInTheDocument();
+    expect(screen.getByText("new-b")).toBeInTheDocument();
+    expect(screen.getByText("11 行未修改")).toBeInTheDocument();
+    expect(screen.queryByText("legacy-before")).toBeNull();
+    expect(screen.queryByText("legacy-after")).toBeNull();
+    expect(screen.getByText("2 处替换")).toBeInTheDocument();
+  });
+
+  it("falls back to the legacy fragment when a structured diff is malformed", () => {
+    render(
+      <EditToolCall
+        part={toolPart(
+          "Edit",
+          { file_path: "src/a.ts", old_string: "before", new_string: "after" },
+          {
+            type: "edited",
+            replacements: 1,
+            replaceAll: false,
+            diff: { hunks: [{ oldStart: 0 }] },
+          },
+        )}
+      />,
+    );
+
+    expand(/Edited/);
+    expect(screen.getByText("before")).toBeInTheDocument();
+    expect(screen.getByText("after")).toBeInTheDocument();
+    expect(screen.queryByText("0 行未修改")).toBeNull();
+  });
+
   it("marks replace_all edits and accepts a structured output", () => {
     render(
       <EditToolCall

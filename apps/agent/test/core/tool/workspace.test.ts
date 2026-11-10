@@ -4,10 +4,14 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   assertNotAborted,
+  EDIT_FILE_MAX_BYTES,
   readToolTextFile,
+  readToolTextFileForEdit,
   resolveToolFile,
   resolveToolTarget,
+  resolveToolWriteFile,
   statToolFile,
+  writeToolTextFileAtomic,
 } from "../../../src/core/tool/builtin/workspace";
 
 describe("workspace path resolution", () => {
@@ -134,6 +138,131 @@ describe("workspace path resolution", () => {
     for (const file of [withNull, controlHeavy, invalidUtf8]) {
       await expect(readToolTextFile(file, 100)).rejects.toThrow("UTF-8/UTF-16");
     }
+  });
+
+  it("requires a file target for editing", async () => {
+    const root = await createRoot();
+    await fs.mkdir(path.join(root, "notes"));
+
+    await expect(resolveToolWriteFile(root, "notes")).rejects.toMatchObject({
+      code: "invalid-input",
+      message: "Agent 只能编辑文件",
+    });
+  });
+
+  it("reads editable text metadata for BOM, UTF-16, and CRLF files", async () => {
+    const root = await createRoot();
+    const utf8 = path.join(root, "utf8.txt");
+    const utf16le = path.join(root, "utf16le.txt");
+    const utf16be = path.join(root, "utf16be.txt");
+    await fs.writeFile(
+      utf8,
+      Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from("a\r\nb\r\n")]),
+    );
+    await fs.writeFile(utf16le, Buffer.from("\uFEFFHello\r\n", "utf16le"));
+    await fs.writeFile(utf16be, Buffer.from([0xfe, 0xff, 0x00, 0x48, 0x00, 0x69]));
+
+    await expect(readToolTextFileForEdit(utf8, EDIT_FILE_MAX_BYTES)).resolves.toMatchObject({
+      text: "a\r\nb\r\n",
+      encoding: "utf8",
+      bom: true,
+      lineEndings: "CRLF",
+    });
+    await expect(readToolTextFileForEdit(utf16le, EDIT_FILE_MAX_BYTES)).resolves.toMatchObject({
+      text: "Hello\r\n",
+      encoding: "utf16le",
+      bom: true,
+      lineEndings: "CRLF",
+    });
+    await expect(readToolTextFileForEdit(utf16be, EDIT_FILE_MAX_BYTES)).resolves.toMatchObject({
+      text: "Hi",
+      encoding: "utf16be",
+      bom: true,
+      lineEndings: "LF",
+    });
+  });
+
+  it("writes atomically while preserving encoding, BOM, line endings, and mode", async () => {
+    const root = await createRoot();
+    const filePath = path.join(root, "utf8.txt");
+    await fs.writeFile(
+      filePath,
+      Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from("a\r\nb\r\n")]),
+      { mode: 0o640 },
+    );
+    const file = await readToolTextFileForEdit(filePath, EDIT_FILE_MAX_BYTES);
+
+    const written = await writeToolTextFileAtomic(filePath, "a\nB\n", {
+      encoding: file.encoding,
+      bom: file.bom,
+      lineEndings: file.lineEndings,
+      mode: file.mode,
+      expectedMtimeMs: file.mtimeMs,
+      expectedSizeBytes: file.sizeBytes,
+    });
+
+    const bytes = await fs.readFile(filePath);
+    expect([...bytes.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
+    expect(bytes.toString("utf8").slice(1)).toBe("a\r\nB\r\n");
+    expect(written).toMatchObject({ sizeBytes: bytes.length });
+    if (process.platform !== "win32") {
+      expect((await fs.stat(filePath)).mode & 0o777).toBe(0o640);
+    }
+  });
+
+  it("rejects content above the write byte limit without touching the source", async () => {
+    const root = await createRoot();
+    const filePath = path.join(root, "a.txt");
+    await fs.writeFile(filePath, "alpha", "utf8");
+    const file = await readToolTextFileForEdit(filePath, EDIT_FILE_MAX_BYTES);
+
+    await expect(
+      writeToolTextFileAtomic(filePath, "abcdef", {
+        encoding: file.encoding,
+        bom: file.bom,
+        lineEndings: file.lineEndings,
+        maxBytes: 3,
+        mode: file.mode,
+        expectedMtimeMs: file.mtimeMs,
+        expectedSizeBytes: file.sizeBytes,
+      }),
+    ).rejects.toThrow("超过上限");
+
+    await expect(fs.readFile(filePath, "utf8")).resolves.toBe("alpha");
+    expect(await fs.readdir(root)).toEqual(["a.txt"]);
+  });
+
+  it("leaves the original file intact and cleans the temporary file when the source changed", async () => {
+    const root = await createRoot();
+    const filePath = path.join(root, "a.txt");
+    await fs.writeFile(filePath, "alpha", "utf8");
+    const file = await readToolTextFileForEdit(filePath, EDIT_FILE_MAX_BYTES);
+    await fs.writeFile(filePath, "alpha changed", "utf8");
+
+    await expect(
+      writeToolTextFileAtomic(filePath, "beta", {
+        encoding: file.encoding,
+        bom: file.bom,
+        lineEndings: file.lineEndings,
+        mode: file.mode,
+        expectedMtimeMs: file.mtimeMs,
+        expectedSizeBytes: file.sizeBytes,
+      }),
+    ).rejects.toThrow("已被修改");
+
+    await expect(fs.readFile(filePath, "utf8")).resolves.toBe("alpha changed");
+    expect(await fs.readdir(root)).toEqual(["a.txt"]);
+  });
+
+  it("rejects editable files above the edit size limit", async () => {
+    const root = await createRoot();
+    const filePath = path.join(root, "large.txt");
+    await fs.writeFile(filePath, "x".repeat(1_024));
+
+    await expect(readToolTextFileForEdit(filePath, 100)).rejects.toMatchObject({
+      code: "invalid-input",
+      message: expect.stringContaining("编辑上限"),
+    });
   });
 
   it("throws when reading with an aborted signal", () => {

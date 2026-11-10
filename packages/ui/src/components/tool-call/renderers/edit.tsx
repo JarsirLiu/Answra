@@ -1,5 +1,6 @@
+import { editDiffDisplaySchema } from "@answra/shared/schema";
 import { Check, Copy, Pencil } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { ToolCallCard } from "../ToolCallCard";
 import { ToolDetailSection, ToolErrorBlock, ToolNotice, ToolOutputBlock } from "../ToolCallDetails";
 import type { ToolCallRendererProps } from "../toolCallPart";
@@ -15,7 +16,8 @@ import {
   stringField,
 } from "../toolCallPresentation";
 import styles from "./edit.module.css";
-import { buildEditDiff, type EditDiff } from "./editDiff";
+import { buildEditDiff } from "./editDiff";
+import { type EditDiffView, fromEditDiffDisplay, fromLegacyEditDiff } from "./editDisplay";
 
 const TOOL_FAILURE_PREFIX = "工具调用失败（";
 const REPLACEMENTS_PATTERN = /Replaced (\d+) occurrences?/;
@@ -45,13 +47,17 @@ export function EditToolCall({ part }: ToolCallRendererProps) {
     part.output !== undefined && outputText === undefined && outputType !== "edited"
       ? clipText(formatToolValue(part.output), MAX_TOOL_VALUE_CHARS)
       : undefined;
-  const diff = useMemo(
-    () =>
-      oldString !== undefined && newString !== undefined
-        ? buildEditDiff(oldString, newString)
-        : undefined,
-    [oldString, newString],
-  );
+  const structuredDiff = useMemo(() => {
+    const diff = structured?.diff;
+    return diff === undefined ? undefined : editDiffDisplaySchema.safeParse(diff);
+  }, [structured]);
+  const diff = useMemo(() => {
+    if (structuredDiff?.success) return fromEditDiffDisplay(structuredDiff.data);
+    if (oldString !== undefined && newString !== undefined) {
+      return fromLegacyEditDiff(buildEditDiff(oldString, newString));
+    }
+    return undefined;
+  }, [structuredDiff, oldString, newString]);
   const hasDetails = error !== undefined || diff !== undefined || malformed !== undefined;
   const notWritten =
     error !== undefined || isToolCallError(part.state) || part.state === "interrupted";
@@ -110,7 +116,7 @@ function EditDiffCard({
   replaceAll,
   copyText,
 }: {
-  diff: EditDiff;
+  diff: EditDiffView;
   filePath: string;
   replacements?: number;
   replaceAll: boolean;
@@ -156,19 +162,35 @@ function EditDiffCard({
       </div>
       <div className={styles.diffBody}>
         <div className={styles.diffTable}>
-          {diff.lines.map((line) => (
-            <div
-              className={styles.diffRow}
-              data-kind={line.kind}
-              key={`${line.kind}-${line.oldLine ?? ""}-${line.newLine ?? ""}`}
-            >
-              <span className={styles.lineNumber}>{line.newLine ?? line.oldLine ?? ""}</span>
-              <span className={styles.lineText}>{line.text}</span>
-            </div>
-          ))}
+          {diff.hunks.map((hunk, hunkIndex) => {
+            const previous = diff.hunks[hunkIndex - 1];
+            const gap = previous ? hunk.oldStart - (previous.oldStart + previous.oldLines) : 0;
+            return (
+              <Fragment key={`${hunk.oldStart}-${hunk.newStart}-${hunk.oldLines}-${hunk.newLines}`}>
+                {gap > 0 ? (
+                  <div className={styles.diffGap}>
+                    <span aria-hidden="true" className={styles.diffGapMarker}>
+                      ⋯
+                    </span>
+                    <span>{gap} 行未修改</span>
+                  </div>
+                ) : null}
+                {hunk.lines.map((line) => (
+                  <div
+                    className={styles.diffRow}
+                    data-kind={line.kind}
+                    key={`${line.kind}-${line.oldLine ?? ""}-${line.newLine ?? ""}`}
+                  >
+                    <span className={styles.lineNumber}>{line.newLine ?? line.oldLine ?? ""}</span>
+                    <span className={styles.lineText}>{line.text}</span>
+                  </div>
+                ))}
+              </Fragment>
+            );
+          })}
         </div>
       </div>
-      {diff.truncated ? <ToolNotice>差异过大，仅显示前 600 行。</ToolNotice> : null}
+      {diff.truncated ? <ToolNotice>差异过大，仅显示部分内容。</ToolNotice> : null}
     </section>
   );
 }
