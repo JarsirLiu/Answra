@@ -1,3 +1,6 @@
+/// <reference path="./types/pdfjs-dist-worker.d.ts" />
+/// <reference path="./types/word-extractor.d.ts" />
+
 /**
  * @answra/agent 公共入口：desktop 的 worker 只从这里导入。
  *

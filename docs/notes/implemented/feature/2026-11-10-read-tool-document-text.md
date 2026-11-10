@@ -60,6 +60,7 @@
   - 不得移除 pdfjs worker 预加载，否则 CJS 打包后会报找不到 `pdf.worker.mjs`。
   - 不得把 Node `Buffer` 直接传给 pdfjs；必须先转成普通 `Uint8Array` 视图。
   - 不得用 `createRequire(import.meta.url)` 加载 `word-extractor`；必须保持可被打包的静态 import。
+  - `apps/agent/src/index.ts` 必须保留两个 ambient 声明文件的 `/// <reference path>`；desktop 的 `tsconfig.main.json` 只 include `src/main`，删除后会在 `@answra/desktop typecheck` 中重新出现 TS7016。
   - 不得把“整份 PDF 无文本”降级为空文件或空字符串，必须返回明确错误。
   - 不得静默截断超过 20 MiB 的文档；必须返回 `output-too-large`。
   - 不得让文档读取绕过 `readFileState`，否则重复读取会浪费上下文。
@@ -67,6 +68,7 @@
 ## 验证
 
 - `pnpm --filter @answra/agent typecheck`：通过。
+- `pnpm --filter @answra/desktop typecheck`：通过；确认 desktop 通过 `@answra/agent` 入口加载 ambient 声明。
 - `pnpm --filter @answra/desktop build:electron -- --profile=full`：通过；`worker.cjs` 打包后约 3,484,114 字节。
 - `pnpm exec biome check`（本次改动文件）：通过。
 - 本地手动验证（Electron 29.4.6 / Node 20.9.0，以及 Node 24.16.0）：
