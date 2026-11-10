@@ -3,9 +3,9 @@ import styles from "./toolCallContent.module.css";
 
 export function ToolDetailSection({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <section className={styles.section}>
+    <section className={styles.panel} data-tool-panel="">
       <div className={styles.label}>{label}</div>
-      {children}
+      <div className={styles.content}>{children}</div>
     </section>
   );
 }
@@ -13,12 +13,14 @@ export function ToolDetailSection({ label, children }: { label: string; children
 export function ToolOutputBlock({
   text,
   tone = "normal",
+  wrap = true,
 }: {
   text: string;
   tone?: "normal" | "error";
+  wrap?: boolean;
 }) {
   return (
-    <pre className={styles.pre} data-tone={tone}>
+    <pre className={styles.pre} data-tone={tone} data-wrap={wrap ? undefined : "false"}>
       {text}
     </pre>
   );

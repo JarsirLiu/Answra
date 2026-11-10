@@ -1,7 +1,6 @@
 import { SquareTerminal } from "lucide-react";
 import { ToolCallCard } from "../ToolCallCard";
-import { ToolErrorBlock, ToolNotice } from "../ToolCallDetails";
-import styles from "../toolCallContent.module.css";
+import { ToolDetailSection, ToolErrorBlock, ToolNotice, ToolOutputBlock } from "../ToolCallDetails";
 import type { ToolCallRendererProps } from "../toolCallPart";
 import {
   asRecord,
@@ -91,11 +90,10 @@ function ShellPanel({
   const text = [command ? `$ ${command}` : "", outputText ?? ""].filter(Boolean).join("\n");
 
   return (
-    <div className={styles.shellPanel}>
-      <div className={styles.shellLabel}>Shell</div>
-      <pre className={styles.shellPre}>{text || "Command produced no output."}</pre>
+    <ToolDetailSection label="Shell">
+      <ToolOutputBlock text={text || "Command produced no output."} wrap={false} />
       {truncated ? <ToolNotice>Output truncated.</ToolNotice> : null}
-    </div>
+    </ToolDetailSection>
   );
 }
 

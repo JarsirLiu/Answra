@@ -208,19 +208,23 @@ describe("theme CSS integrity", () => {
     }
   });
 
-  it("keeps the expanded run-command panel tinted and its command pulsing", () => {
+  it("keeps every expanded tool panel tinted and the run-command command pulsing", () => {
     const content = stripComments(
       readFileSync(
         join(sourceRoot, "components", "tool-call", "toolCallContent.module.css"),
         "utf8",
       ),
     );
-    const panel = content.match(/\.shellPanel\s*\{([^}]*)\}/)?.[1] ?? "";
+    const panel = content.match(/\.panel\s*\{([^}]*)\}/)?.[1] ?? "";
     expect(panel).toContain("background: var(--chat-card-bg)");
+    expect(panel).toContain("border: 1px solid var(--glass-line)");
+    expect(panel).not.toContain("margin-left");
 
     const card = stripComments(
       readFileSync(join(sourceRoot, "components", "tool-call", "ToolCallCard.module.css"), "utf8"),
     );
+    const body = card.match(/\.body\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(body).not.toContain("22px");
     expect(card).toMatch(/\.primary\[data-running="true"\]/);
     expect(card).toContain("animation: tool-call-shine");
   });

@@ -59,6 +59,28 @@ describe("tool call renderers", () => {
     expect(container.querySelector("pre")?.textContent).toBe("one\ntwo");
   });
 
+  it("parses the model-facing Read output into the shared content panel", () => {
+    const { container } = render(
+      <ReadToolCall
+        part={toolPart(
+          "Read",
+          { file_path: "src/a.ts" },
+          "<system-reminder>文件内容约 100 tokens，仅显示第 1-2 行（共 9 行）。</system-reminder>\n\n1\tone\n2\ttwo",
+        )}
+      />,
+    );
+
+    expect(screen.queryByText(/system-reminder/)).toBeNull();
+
+    expand(/读取/);
+    expect(screen.getByText("2 行")).toBeInTheDocument();
+    expect(screen.getByText("内容")).toBeInTheDocument();
+    expect(screen.getByText(/文件内容约 100 tokens/)).toBeInTheDocument();
+    expect(screen.queryByText("结果")).toBeNull();
+    expect(container.querySelector("[data-tool-panel]")?.textContent).toContain("1\tone");
+    expect(container.querySelector("pre")?.textContent).toBe("1\tone\n2\ttwo");
+  });
+
   it("shows a Read failure without auto-expanding details", () => {
     render(
       <ReadToolCall
@@ -109,6 +131,40 @@ describe("tool call renderers", () => {
     expect(screen.getByText("return;")).toBeInTheDocument();
   });
 
+  it("keeps model-facing Grep content in the shared panel", () => {
+    const { container } = render(
+      <GrepToolCall
+        part={toolPart(
+          "Grep",
+          { pattern: "useEffect", output_mode: "content" },
+          "src/a.ts:3:useEffect(() => {\nsrc/a.ts-4-  return;\n[结果达到上限]",
+        )}
+      />,
+    );
+
+    expect(screen.queryByText("匹配")).toBeNull();
+
+    expand(/搜索/);
+    expect(screen.getByText("匹配")).toBeInTheDocument();
+    expect(screen.getByText("结果达到上限，已截断。")).toBeInTheDocument();
+    expect(screen.queryByText("结果")).toBeNull();
+    expect(container.querySelector("[data-tool-panel]")?.textContent).toContain(
+      "src/a.ts:3:useEffect",
+    );
+    expect(container.querySelector("pre")).toHaveAttribute("data-wrap", "false");
+  });
+
+  it("labels model-facing Grep file results by their output mode", () => {
+    render(
+      <GrepToolCall part={toolPart("Grep", { pattern: "useEffect" }, "src/a.ts\nsrc/b.ts")} />,
+    );
+
+    expand(/搜索/);
+    expect(screen.getByText("文件")).toBeInTheDocument();
+    expect(screen.getByText("2 个文件")).toBeInTheDocument();
+    expect(screen.queryByText("结果")).toBeNull();
+  });
+
   it("strips the model-facing exit status and renders one Shell panel", () => {
     const { container } = render(
       <RunCommandToolCall
@@ -128,6 +184,8 @@ describe("tool call renderers", () => {
     expand(/ran/);
     expect(screen.getByText("Shell")).toBeInTheDocument();
     expect(screen.queryByText(/Exit code/)).toBeNull();
+    expect(container.querySelector("[data-tool-panel]")?.textContent).toContain("Shell");
+    expect(container.querySelector("pre")).toHaveAttribute("data-wrap", "false");
     expect(container.querySelector("pre")?.textContent).toBe("$ npm test\nhello\nwarn");
   });
 
@@ -183,6 +241,27 @@ describe("tool call renderers", () => {
     expect(screen.getAllByText(/会话运行中/).length).toBeGreaterThan(0);
     expect(screen.getByText("started")).toBeInTheDocument();
     expect(container.querySelector("pre")?.textContent).toBe("y\n");
+  });
+
+  it("parses the model-facing WriteStdin JSON snapshot", () => {
+    const snapshot = {
+      status: "completed",
+      sessionId: "sess-1",
+      stdout: "done\n",
+      stderr: "",
+      exitCode: 0,
+    };
+    const { container } = render(
+      <WriteStdinToolCall
+        part={toolPart("WriteStdin", { sessionId: "sess-1" }, JSON.stringify(snapshot))}
+      />,
+    );
+
+    expand(/写入/);
+    expect(screen.getByText("stdout")).toBeInTheDocument();
+    expect(screen.getByText("done")).toBeInTheDocument();
+    expect(screen.queryByText("结果")).toBeNull();
+    expect(container.querySelector("[data-tool-panel]")?.textContent).toContain("done");
   });
 
   it("keeps unknown tools behind a fallback card with formatted input and output", () => {

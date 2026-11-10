@@ -15,6 +15,14 @@ import {
 
 const MAX_GREP_FILES = 20;
 const MAX_GREP_LINES = 120;
+const GREP_TRUNCATED_SUFFIX = "\n[结果达到上限]";
+
+interface GrepTextOutput {
+  label: string;
+  text: string;
+  truncated: boolean;
+  meta?: string;
+}
 
 interface GrepLine {
   lineNumber: number;
@@ -55,9 +63,10 @@ export function GrepToolCall({ part }: ToolCallRendererProps) {
   const content = parseContentOutput(part.output);
   const files = parseFilesOutput(part.output);
   const counts = parseCountOutput(part.output);
+  const text = parseTextOutput(part.output, input);
   const error = part.errorText ? clipText(part.errorText, MAX_TOOL_VALUE_CHARS) : undefined;
   const malformed =
-    part.output !== undefined && !content && !files && !counts
+    part.output !== undefined && !content && !files && !counts && !text
       ? clipText(formatToolValue(part.output), MAX_TOOL_VALUE_CHARS)
       : undefined;
   const meta = content
@@ -66,7 +75,7 @@ export function GrepToolCall({ part }: ToolCallRendererProps) {
       ? `${files.files.length} 个文件`
       : counts
         ? `${counts.counts.length} 个文件`
-        : undefined;
+        : text?.meta;
   const scope =
     [inputPath, glob ? `glob:${glob}` : undefined, type ? `type:${type}` : undefined]
       .filter(Boolean)
@@ -76,6 +85,7 @@ export function GrepToolCall({ part }: ToolCallRendererProps) {
     content !== undefined ||
     files !== undefined ||
     counts !== undefined ||
+    text !== undefined ||
     malformed !== undefined;
 
   return (
@@ -93,6 +103,12 @@ export function GrepToolCall({ part }: ToolCallRendererProps) {
           {content ? <ContentDetails output={content} /> : null}
           {files ? <FilesDetails output={files} /> : null}
           {counts ? <CountDetails output={counts} /> : null}
+          {text ? (
+            <ToolDetailSection label={text.label}>
+              <ToolOutputBlock text={text.text} wrap={false} />
+              {text.truncated ? <ToolNotice>结果达到上限，已截断。</ToolNotice> : null}
+            </ToolDetailSection>
+          ) : null}
           {malformed ? (
             <ToolDetailSection label="结果">
               <ToolOutputBlock text={malformed.text} />
@@ -189,6 +205,34 @@ function CountDetails({ output }: { output: GrepCountOutput }) {
       ) : null}
     </ToolDetailSection>
   );
+}
+
+/**
+ * Grep reaches the renderer as `formatGrepOutput` text. The structured shapes
+ * remain supported for older snapshots and tests; string output keeps the
+ * model-facing line format in one shared panel.
+ */
+function parseTextOutput(
+  value: unknown,
+  input: Record<string, unknown> | undefined,
+): GrepTextOutput | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.replaceAll("\r\n", "\n").trimEnd();
+  if (!normalized) return undefined;
+  const truncated = normalized.endsWith(GREP_TRUNCATED_SUFFIX);
+  const text = truncated
+    ? normalized.slice(0, -GREP_TRUNCATED_SUFFIX.length).trimEnd()
+    : normalized;
+  const mode = input ? stringField(input, "output_mode") : undefined;
+  const label = mode === "content" ? "匹配" : mode === "count" ? "计数" : "文件";
+  const lines = text.split("\n").filter((line) => line.length > 0);
+  const count = lines.filter((line) => line !== "未找到匹配内容").length;
+  return {
+    label,
+    text,
+    truncated,
+    ...(mode === "content" || count === 0 ? {} : { meta: `${count} 个文件` }),
+  };
 }
 
 function parseContentOutput(value: unknown): GrepContentOutput | undefined {

@@ -95,7 +95,7 @@ function SnapshotDetails({ output }: { output: ShellSessionSnapshot }) {
 }
 
 function parseSnapshot(value: unknown): ShellSessionSnapshot | undefined {
-  const record = asRecord(value);
+  const record = asRecord(parseJsonRecord(value));
   if (!record) return undefined;
   const status = stringField(record, "status");
   const stdout = stringField(record, "stdout");
@@ -115,4 +115,14 @@ function exitCodeOf(record: Record<string, unknown>): number | null | undefined 
   const value = record.exitCode;
   if (value === null || value === undefined || typeof value === "number") return value;
   return undefined;
+}
+
+/** WriteStdin's model-facing output is a JSON snapshot string. */
+function parseJsonRecord(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return undefined;
+  }
 }

@@ -107,11 +107,12 @@ button.header[aria-expanded="true"] .chevron {
 
 .body {
   margin: 0;
-  padding: 3px 0 3px 22px;
+  padding: 3px 0;
 }
 
 .context {
   margin: 0 0 var(--space-2);
+  padding: 0 var(--space-4);
   color: var(--muted);
   font-family: var(--app-mono-font-family);
   font-size: 11.5px;

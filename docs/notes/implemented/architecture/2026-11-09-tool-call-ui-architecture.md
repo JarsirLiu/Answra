@@ -234,6 +234,26 @@ return RENDERERS[part.toolName] ?? ToolCallFallback;
 
 后果与防回退：RunCommand 的摘要只能出现一个动作词（`running` 或 `ran`），运行中不得再渲染“运行中”状态词；`.shellPanel` 必须保留淡色背景；命令脉冲必须继续复用 `tool-call-shine`，不得换成旋转图标。自动化证据为 `toolCallRenderers.test.tsx` 的运行态用例（`running`、无“运行中”、命令 `data-running`）与 `themeCss.test.ts` 的背景/脉冲 CSS 守卫。
 
+## 修订：统一展开面板与真实输出投影（2026-11-10）
+
+问题：只有 `RunCommand` 的展开态是左缘与摘要行对齐的淡色描边面板；`Read`、`Grep`、`WriteStdin`、`Edit`、fallback 仍沿用 22px 缩进的 `.section + .label + 灰底 pre`，展开后标签和内容整体向右缩进，滚动条也缩在内容区里，与 Shell 面板明显不对齐。实际运行时 `Read`/`Grep`/`WriteStdin` 的 `part.output` 是 `formatModelContent` 产出的字符串，renderer 的结构化守卫匹配不到，纷纷回退到「结果」原始文本；截图中的 `Read` 因此把 `<system-reminder>` 与原始行号直接铺在灰块里。
+
+决定：
+
+- `ToolDetailSection` 统一成唯一的 `.panel` 表面：与摘要行左缘齐平、`max-height: 240px`、1px `--glass-line` 描边、`--chat-card-radius` 圆角、`--chat-card-bg` 淡色底；`.body` 取消 22px 左缩进，所有工具不再通过负 margin 抵消缩进。`Edit` 的 diff 面板保留自己的表头与行级 diff 结构，但复用同一淡色描边表面并取消负 margin。
+- 面板内部分成标签和滚动内容：标签左侧 `--space-4` 内边距；内容区统一承担纵向/横向滚动与 4px 细滚动条；正文 `<pre>` 只负责字体、换行和左右内边距。Shell 形输出用 `data-wrap="false"` 保持单行横向滚动。
+- `Read`、`Grep`、`WriteStdin` 同时支持结构化旧快照和运行时真实字符串：`Read` 剥离开头 `<system-reminder>` 后显示行号内容并把提醒放进通知；`Grep` 按 `output_mode` 选择「匹配/文件/计数」面板并保留 ripgrep 文本行；`WriteStdin` 解析 JSON snapshot 字符串。`RunCommand` 继续使用同一面板，只是标签为 `Shell`。
+- 错误、通知、上下文行也统一到同一左缘：通知和 context 使用 `--space-4` 内边距；Grep 行列表不再套第二层灰底，直接落在共享面板里。
+
+舍弃方案：
+
+- **只把 `.body` 缩进改小：** 舍弃，解决不了各工具自带的灰底 section、标签层级和滚动条位置，仍会出现第二套表面。
+- **只调整 `Read` 一个 renderer：** 舍弃，`Grep`/`WriteStdin`/`Edit`/fallback 会继续各自缩进，用户很快会看到下一处不对齐。
+- **让 agent 直接返回结构化 output 给 UI：** 舍弃，当前 AI SDK 工具结果需要模型可见字符串；为 UI 改线协议会同时改变模型上下文，超出 UI 表面修正范围。
+- **在 UI 用正则删除 `<system-reminder>` 之外的任意行号：** 舍弃，只解析 `formatReadOutput` 的固定开头提醒；文件正文中的 `<system-reminder>` 字样不被误删。
+
+后果与防回退：除 `Edit` 自有的行级 diff 面板外，所有工具展开详情只能通过 `ToolDetailSection` 生成 `.panel`；任何工具都不得再使用 `margin-left: -22px`、独立灰底块或第二层卡片。`ToolOutputBlock` 的 `data-wrap` 是 Shell 单行与普通换行的唯一开关；运行时字符串输出必须继续由 renderer 解析，不能退回「结果」原始文本。自动化证据为 `toolCallRenderers.test.tsx` 的 Read 字符串、Grep 字符串与 WriteStdin JSON 用例，以及 `themeCss.test.ts` 对 `.panel` 背景/描边、`.body` 无 22px 缩进和命令脉冲的守卫。
+
 ## 模块边界
 
 - `app/conversationParts.ts` 是纯函数，只依赖 `@answra/shared` 的事件与 part 类型；不引 React、DOM、bridge 或 agent 包。
@@ -275,6 +295,7 @@ return RENDERERS[part.toolName] ?? ToolCallFallback;
 ## 验证
 
 - 自动化：
+  - 2026-11-10 统一面板修订：`toolCallRenderers` 覆盖 Read 字符串提醒/行号、Grep content/files 字符串、WriteStdin JSON snapshot 与共享 `data-tool-panel`；`themeCss` 覆盖 `.panel` 底面/描边和 `.body` 取消 22px 缩进。
   - 2026-11-10 RunCommand 表面修订：`pnpm --filter @answra/ui exec vitest run` 276 项通过（`toolCallRenderers` 覆盖 `running`/`ran` 与命令 `data-running`，`themeCss` 覆盖面板底色与命令脉冲）；`pnpm lint`、`pnpm --filter @answra/ui typecheck` 通过。
   - `pnpm verify`：通过（lint、typecheck、全仓测试、架构检查）。
   - `pnpm lint`：通过（biome check 全仓无 fix）。
