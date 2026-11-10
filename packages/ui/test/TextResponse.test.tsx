@@ -22,7 +22,9 @@ describe("TextResponse markdown", () => {
   it("renders GFM tables and fenced code blocks as markdown structures", () => {
     const { container } = render(
       <TextResponse
-        text={"## 示例表格\n\n| 姓名 | 年龄 |\n| --- | --- |\n| 张三 | 25 |\n\n```ts\nconst answer = 42;\n```"}
+        text={
+          "## 示例表格\n\n| 姓名 | 年龄 |\n| --- | --- |\n| 张三 | 25 |\n\n```ts\nconst answer = 42;\n```"
+        }
       />,
     );
 
