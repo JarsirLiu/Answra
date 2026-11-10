@@ -5,6 +5,9 @@
 
 export const SHELL_OUTPUT_BUFFER_BYTES = 10 * 1024 * 1024;
 
+const POWERSHELL_EXECUTABLE = "powershell.exe";
+const POWERSHELL_DISPLAY_NAME = "Windows PowerShell 5.1 (powershell.exe)";
+
 const POWERSHELL_PREFIX = [
   "[Console]::InputEncoding = New-Object System.Text.UTF8Encoding($false)",
   "[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)",
@@ -25,10 +28,36 @@ export interface ShellInvocation {
   readonly args: readonly string[];
 }
 
-export interface ShellInvocationOptions {
+export interface ShellRuntimeOptions {
   readonly platform?: NodeJS.Platform;
   readonly shell?: string;
+}
+
+/** 当前平台上真正会被执行的 shell；提示词与 spawn 共用这一份事实。 */
+export interface ShellRuntime {
+  readonly executable: string;
+  readonly displayName: string;
+  readonly syntax: "powershell" | "posix";
+}
+
+export interface ShellInvocationOptions extends ShellRuntimeOptions {
   readonly windowsBootstrap?: string;
+}
+
+export function resolveShellRuntime(options: ShellRuntimeOptions = {}): ShellRuntime {
+  const platform = options.platform ?? process.platform;
+  if (platform === "win32") {
+    return {
+      executable: POWERSHELL_EXECUTABLE,
+      displayName: POWERSHELL_DISPLAY_NAME,
+      syntax: "powershell",
+    };
+  }
+
+  const configuredShell = options.shell ?? process.env.SHELL;
+  const executable =
+    configuredShell === undefined || configuredShell === "" ? "sh" : configuredShell;
+  return { executable, displayName: executable, syntax: "posix" };
 }
 
 export interface TruncatedShellOutput {
@@ -48,13 +77,9 @@ export function buildShellInvocation(
   command: string,
   options: ShellInvocationOptions = {},
 ): ShellInvocation {
-  const platform = options.platform ?? process.platform;
-  if (platform !== "win32") {
-    const configuredShell = options.shell ?? process.env.SHELL;
-    return {
-      executable: configuredShell === undefined || configuredShell === "" ? "sh" : configuredShell,
-      args: ["-c", command],
-    };
+  const runtime = resolveShellRuntime(options);
+  if (runtime.syntax === "posix") {
+    return { executable: runtime.executable, args: ["-c", command] };
   }
 
   const script = [
@@ -66,7 +91,7 @@ export function buildShellInvocation(
     .filter((part): part is string => Boolean(part))
     .join("\n");
   return {
-    executable: "powershell.exe",
+    executable: runtime.executable,
     args: ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script],
   };
 }

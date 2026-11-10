@@ -12,11 +12,12 @@ conversation/
 ## `turn/`
 
 - `application.ts`：Conversation application。暴露创建会话、发送、回复、取消和等待；通过共享 `core/transcript` 仓储原子认领 transcript 回合，并调用注册 executor。Answer 和 Interview 用例不在此目录。
+- `environmentContext.ts`：把当前进程的平台、OS 版本、架构和真实 shell 压成工具型 profile 的系统提示片段；shell 事实与执行层共用 `resolveShellRuntime`。
 - `modelMessages.ts`：按 profile 选择 transcript 历史、把图片输入转换成 AI SDK 消息，并注入已授权的时间提醒。
 - `workspaceContext.ts`：把本回合快照的工作区根目录或「未选择目录」事实压成系统提示片段；工作区是默认根目录而非访问边界，不读取内容。
-- `timeReminder.ts`：只供显式开启时间上下文的 profile 使用的系统提醒。
+- `timeReminder.ts`：只供显式开启时间上下文的 profile 使用的系统提醒；每轮重算本地时间、IANA 时区和 UTC，不写入 transcript。
 
-`agent.ts` 通过 `AgentDefinition.prepare` 组装 profile、transcript 历史和白名单工具；`core/agent` 消费 AI SDK `result.fullStream` 并写入唯一 `ExecutionStore`。Conversation application 按序消费同一 `AgentEventEnvelope` 更新 transcript；不消费 `toUIMessageStream()`，不创建领域事件副本。
+`agent.ts` 通过 `AgentDefinition.prepare` 组装 profile、运行环境、transcript 历史和白名单工具；`core/agent` 消费 AI SDK `result.fullStream` 并写入唯一 `ExecutionStore`。Conversation application 按序消费同一 `AgentEventEnvelope` 更新 transcript；不消费 `toUIMessageStream()`，不创建领域事件副本。
 
 ## `profiles/`
 

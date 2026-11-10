@@ -2,6 +2,11 @@
 
 export { createBuiltinToolRegistry } from "./builtin";
 export {
+  resolveShellRuntime,
+  type ShellRuntime,
+  type ShellRuntimeOptions,
+} from "./builtin/shell/runtime";
+export {
   type AnyToolEntry,
   defineTool,
   isToolHandlerFailure,

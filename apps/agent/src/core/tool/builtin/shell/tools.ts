@@ -54,7 +54,7 @@ type RunCommandOutput =
 const RUN_COMMAND_DESCRIPTION = [
   "Executes a shell command in the current workspace.",
   "",
-  "- Windows uses PowerShell; POSIX uses `$SHELL` or `sh`.",
+  "- Windows uses Windows PowerShell 5.1 (powershell.exe); POSIX uses `$SHELL` or `sh`.",
   "- Multiple statements run in one shell process, so variables and state persist.",
   "- Windows PowerShell: use `$LASTEXITCODE` for exit codes and `Get-Command` instead of `where`.",
   "- `workdir` may be workspace-relative or absolute; the workspace is the default cwd, not a sandbox.",

@@ -2,9 +2,35 @@ import { describe, expect, it } from "vitest";
 import {
   buildShellInvocation,
   decodeShellOutput,
+  resolveShellRuntime,
   stripPowerShellErrorWrapper,
   truncateShellOutput,
 } from "../../../../src/core/tool/builtin/shell/runtime";
+
+describe("shell runtime resolution", () => {
+  it("reports Windows PowerShell even when SHELL points at a POSIX shell", () => {
+    const runtime = resolveShellRuntime({ platform: "win32", shell: "/bin/bash" });
+
+    expect(runtime).toEqual({
+      executable: "powershell.exe",
+      displayName: "Windows PowerShell 5.1 (powershell.exe)",
+      syntax: "powershell",
+    });
+  });
+
+  it("reports the configured POSIX shell used by the invocation", () => {
+    const runtime = resolveShellRuntime({ platform: "linux", shell: "/bin/zsh" });
+
+    expect(runtime).toEqual({
+      executable: "/bin/zsh",
+      displayName: "/bin/zsh",
+      syntax: "posix",
+    });
+    expect(
+      buildShellInvocation("echo ok", { platform: "linux", shell: "/bin/zsh" }).executable,
+    ).toBe(runtime.executable);
+  });
+});
 
 describe("shell runtime invocation", () => {
   it("uses PowerShell and puts encoding, command, and exit-code trailer in one script", () => {

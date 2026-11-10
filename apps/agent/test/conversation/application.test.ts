@@ -428,7 +428,32 @@ describe("ephemeral conversation runtime", () => {
     expect(JSON.stringify(requests.at(-1))).not.toContain("尚未选择工作区目录");
   });
 
-  it("injects current date as a user-side system-reminder only for chat profiles", async () => {
+  it("injects runtime environment before the workspace only for tool-enabled chat profiles", async () => {
+    const { runId } = await runtime.sendChat(
+      "general-chat",
+      "environment-context-chat",
+      { text: "你运行在什么环境？", images: [] },
+      ACCESS_TOKEN,
+    );
+    await waitForTerminal(runId);
+
+    const chatBody = JSON.stringify(requests.at(-1));
+    expect(chatBody).toContain("# 运行环境");
+    expect(chatBody).toContain("操作系统：");
+    expect(chatBody).toContain("Shell：");
+    expect(chatBody).toContain("命令语法：");
+    expect(chatBody.indexOf("# 运行环境")).toBeLessThan(chatBody.indexOf("# 工作区"));
+
+    const answer = await runtime.runAnswer(
+      "environment-context-answer",
+      { text: "答题", images: [] },
+      ACCESS_TOKEN,
+    );
+    await waitForTerminal(answer.runId);
+    expect(JSON.stringify(requests.at(-1))).not.toContain("# 运行环境");
+  });
+
+  it("injects current local time and time zone only for chat profiles", async () => {
     const { runId } = await runtime.sendChat(
       "general-chat",
       "time-inject-chat",
@@ -442,8 +467,10 @@ describe("ephemeral conversation runtime", () => {
 
     const chatBody = JSON.stringify(requests.at(-1));
     expect(chatBody).toContain("<system-reminder>");
-    expect(chatBody).toContain("currentDate");
-    expect(chatBody).toContain("Current date and time is");
+    expect(chatBody).toContain("# currentTime");
+    expect(chatBody).toContain("Current local time:");
+    expect(chatBody).toContain("Current UTC time:");
+    expect(chatBody).toContain("Do not infer how long ago earlier messages were sent");
 
     const answer = await runtime.runAnswer(
       "time-inject-exam",
@@ -455,7 +482,7 @@ describe("ephemeral conversation runtime", () => {
     );
     await waitForTerminal(answer.runId);
     const answerBody = JSON.stringify(requests.at(-1));
-    expect(answerBody).not.toContain("currentDate");
+    expect(answerBody).not.toContain("# currentTime");
   });
 
   it("rejects unregistered chat profiles", async () => {

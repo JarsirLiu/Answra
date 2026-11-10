@@ -6,6 +6,7 @@ import { agentId } from "../core/agent/definition";
 import type { ReadFileStateMap, ToolRegistry } from "../core/tool";
 import type { ConversationStore } from "../core/transcript/store";
 import type { ChatProfile } from "./profiles/registry";
+import { buildEnvironmentSystemContext, readRuntimeEnvironment } from "./turn/environmentContext";
 import { buildModelMessages } from "./turn/modelMessages";
 import { buildWorkspaceSystemContext } from "./turn/workspaceContext";
 
@@ -49,10 +50,15 @@ export function createConversationAgentDefinition({
               ...(input.readFileState ? { readFileState: input.readFileState } : {}),
               ...(emitter ? { onToolOutput: emitter.toolOutput } : {}),
             });
+      const system = toolSet
+        ? [
+            input.profile.systemPrompt,
+            buildEnvironmentSystemContext(readRuntimeEnvironment()),
+            buildWorkspaceSystemContext(input.workspaceRoot),
+          ].join("\n\n")
+        : input.profile.systemPrompt;
       return {
-        system: toolSet
-          ? `${input.profile.systemPrompt}\n\n${buildWorkspaceSystemContext(input.workspaceRoot)}`
-          : input.profile.systemPrompt,
+        system,
         messages,
         ...(toolSet ? { tools: toolSet, stopWhen: stepCountIs(6) } : {}),
       };
