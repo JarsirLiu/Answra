@@ -23,6 +23,7 @@ export { PanelShell } from "./components/panels/PanelShell";
 export { useDismissableOpen } from "./hooks/useDismissableOpen";
 export type { Mode, ModeAction, ModeDefinition, Panel } from "./model";
 export { MODES, NOTE_STORAGE_KEY, WELCOME_MESSAGE } from "./model";
+export { SurfaceWindowApp } from "./surfaces/SurfaceWindowApp";
 export {
   COLOR_GROUPS,
   type ColorGroupId,

@@ -33,6 +33,8 @@ interface InterviewCapturePanelProps {
   onSendText: (text: string) => Promise<void>;
   /** 空白会话的启动入口；点击后由调用方代替用户发送固定消息。 */
   onStartRehearsal?: () => Promise<void>;
+  /** 取消正在流式输出的助手回复。 */
+  onCancel?: () => void;
   /** 清空当前演练对话历史；缺省不显示入口。 */
   onClear?: () => void;
   /** 清空不可用的原因（没有历史）；设置即禁用按钮并以 title 提示。 */
@@ -49,6 +51,7 @@ export function InterviewCapturePanel({
   connection,
   onSendText,
   onStartRehearsal,
+  onCancel,
   onClear,
   clearDisabledReason,
   error,
@@ -123,6 +126,9 @@ export function InterviewCapturePanel({
         ...state.inputLevels,
       ]
     : Array.from({ length: INTERVIEW_INPUT_LEVEL_WINDOW }, () => 0);
+  const cancellingReply = replying && Boolean(onCancel);
+  const streamingStopLabel = running ? "停止语音输入" : "停止回复";
+  const stopStreaming = running ? () => void capture?.stop() : onCancel;
 
   return (
     <PanelShell
@@ -260,9 +266,9 @@ export function InterviewCapturePanel({
             </button>
           )
         }
-        streaming={running}
-        streamingStopLabel="停止语音输入"
-        onStop={() => void capture?.stop()}
+        streaming={running || cancellingReply}
+        streamingStopLabel={streamingStopLabel}
+        onStop={stopStreaming}
       />
     </PanelShell>
   );

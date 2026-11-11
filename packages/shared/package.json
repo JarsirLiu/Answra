@@ -8,7 +8,8 @@
     ".": "./src/index.ts",
     "./channels": "./src/channels.ts",
     "./env": "./src/env.ts",
-    "./schema": "./src/schema/index.ts"
+    "./schema": "./src/schema/index.ts",
+    "./surfaces": "./src/surfaces/index.ts"
   },
   "scripts": {
     "test": "vitest run",

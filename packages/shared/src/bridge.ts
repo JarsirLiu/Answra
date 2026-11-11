@@ -17,6 +17,8 @@ import type {
   ReplyBarPlacement,
   ReplyBarState,
   ScreenshotResult,
+  SurfaceActionEvent,
+  SurfaceWindowState,
   UpdateInstallResult,
   UpdateStatus,
   WorkspaceChangeSet,
@@ -24,6 +26,7 @@ import type {
   WorkspaceFileContent,
   WorkspaceNode,
 } from "./channels";
+import type { SurfacePresetId } from "./surfaces";
 
 /**
  * 悬浮条窗口的内容面板标识。
@@ -59,6 +62,21 @@ export interface DesktopBridge {
   onReplyBarState?: (listener: (state: ReplyBarState) => void) => () => void;
   /** Requests the latest workflow snapshot after the reply renderer subscribes. */
   requestReplyBarState?: () => void;
+  // ---- 声明式浮窗（产品内置 preset；浏览器预览/测试环境可未实现） ----
+  /** 产品代码请求主进程显示一个内置浮窗。 */
+  showSurface?: (presetId: SurfacePresetId) => Promise<{ shown: boolean }>;
+  /** 浮窗渲染器订阅当前内容。 */
+  onSurfaceState?: (listener: (state: SurfaceWindowState) => void) => () => void;
+  /** 浮窗渲染器就绪后请求当前内容。 */
+  requestSurfaceState?: () => void;
+  /** 浮窗渲染器请求关闭当前浮窗。 */
+  dismissSurface?: () => void;
+  /** 浮窗渲染器上报按钮动作。 */
+  sendSurfaceAction?: (actionId: string) => void;
+  /** 浮窗渲染器上报内容尺寸。 */
+  fitSurface?: (size: ContentSize) => void;
+  /** 主窗口订阅被转发的浮窗动作。 */
+  onSurfaceAction?: (listener: (event: SurfaceActionEvent) => void) => () => void;
   /**
    * 切换会议隐身。开启后，系统支持的捕获路径会排除本应用窗口，
    * 且应用从任务栏/Dock 与 Alt+Tab/Cmd+Tab 中隐藏；用户自身屏幕上仍正常可见。

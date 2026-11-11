@@ -20,6 +20,7 @@ import { ModelSettingsStore, modelSettingsFilePath } from "./conversation/modelS
 import { loadDevDotEnv } from "./devEnv";
 import { registerAmbientIpc } from "./ipc/ambientIpc";
 import { registerWindowIpc } from "./ipc/windowIpc";
+import { registerSurfaceIpc } from "./surface/surfaceIpc";
 import { applyPendingUpdateOnLaunch } from "./updater/applyPendingUpdate";
 import { createMacSwapInstaller } from "./updater/macUpdateSwap";
 import { createUpdateController } from "./updater/updateController";
@@ -136,6 +137,7 @@ if (!app.requestSingleInstanceLock()) {
     // 读盘依赖 safeStorage 就绪；放在注册会话 IPC 之前，避免首次拉取设置时回退到默认值。
     await modelSettings.init();
     registerWindowIpc();
+    registerSurfaceIpc();
     registerCaptureIpc();
     if (__ANSWRA_FEATURE_INTERVIEW__) {
       const { registerInterviewIpc } = await import("./interview/interviewIpc");

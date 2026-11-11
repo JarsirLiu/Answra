@@ -5,7 +5,7 @@ import {
   type DesktopBridge,
   isAgentServiceDisconnectedError,
 } from "@answra/shared";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { AGENT_SERVICE_UNAVAILABLE_NOTICE } from "../components/chat";
 import { InterviewCapturePanel } from "../components/panels/InterviewCapturePanel";
 import type { InterviewCapturePort, InterviewCaptureState } from "./interviewCapture";
@@ -32,13 +32,18 @@ export function InterviewFeaturePanel({
   onClear,
   onClose,
 }: InterviewFeaturePanelProps) {
-  const { view, reconcileSnapshot, clearMessages } = useInterviewConversation(
+  const { view, reconcileSnapshot, clearMessages, cancel } = useInterviewConversation(
     platform,
     ActiveInterviewConversationId,
   );
   const [error, setError] = useState<string>();
   const lastMessage = view.messages.at(-1);
   const replyId = lastMessage?.role === "assistant" ? lastMessage.id : undefined;
+
+  const clearNow = useCallback((): void => {
+    setError(undefined);
+    void onClear(ActiveInterviewConversationId).catch(() => undefined);
+  }, [onClear]);
 
   useEffect(() => {
     if (replyId || view.activeRunId) setError(undefined);
@@ -83,10 +88,8 @@ export function InterviewFeaturePanel({
       error={error ?? view.error}
       onSendText={sendText}
       onStartRehearsal={platform?.sendInterviewMessage ? startRehearsal : undefined}
-      onClear={() => {
-        setError(undefined);
-        void onClear(ActiveInterviewConversationId).catch(() => undefined);
-      }}
+      onCancel={platform?.cancelConversationRun ? cancel : undefined}
+      onClear={clearNow}
       clearDisabledReason={view.messages.length === 0 ? "本场演练还没有对话" : undefined}
       onClose={onClose}
     />

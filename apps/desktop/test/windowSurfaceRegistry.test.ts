@@ -135,6 +135,22 @@ describe("window surface registry", () => {
     expect(reply.setFocusable).toHaveBeenLastCalledWith(true);
   });
 
+  it("keeps the declarative surface focusable normally and non-activating in stealth", () => {
+    const registry = createWindowSurfaceRegistry({
+      applyCaptureProtection: () => true,
+      platform: "win32",
+    });
+    registry.setStealthEnabled(false);
+    const surface = new MockWindow();
+    registry.register(surface as never, { role: "surface", captureProtection: "stealth-only" });
+
+    expect(surface.setFocusable).toHaveBeenLastCalledWith(true);
+    registry.setStealthEnabled(true);
+    expect(surface.setFocusable).toHaveBeenLastCalledWith(false);
+    registry.setStealthEnabled(false);
+    expect(surface.setFocusable).toHaveBeenLastCalledWith(true);
+  });
+
   it("reasserts the Windows non-activating policy after blur or hide only when it drifted", () => {
     const registry = createWindowSurfaceRegistry({
       applyCaptureProtection: () => true,

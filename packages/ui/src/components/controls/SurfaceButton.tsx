@@ -2,7 +2,7 @@ import type { ButtonHTMLAttributes } from "react";
 
 import "./SurfaceButton.css";
 
-export type SurfaceButtonVariant = "default" | "primary" | "quiet";
+export type SurfaceButtonVariant = "default" | "primary" | "quiet" | "danger";
 
 export interface SurfaceButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: SurfaceButtonVariant;

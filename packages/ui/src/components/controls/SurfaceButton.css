@@ -63,3 +63,14 @@
 .surface-control--quiet:hover {
   color: var(--ink);
 }
+
+/* 破坏性操作：警示色文字 + 淡警示底，避免整块实心红压过主操作。 */
+.surface-control--danger {
+  color: var(--danger);
+  background: var(--danger-wash);
+}
+
+.surface-control--danger:hover {
+  background: var(--danger-wash);
+  filter: brightness(0.96);
+}

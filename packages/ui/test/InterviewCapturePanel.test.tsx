@@ -129,7 +129,8 @@ describe("InterviewCapturePanel", () => {
     expect(input).toHaveValue("手动补充内容");
   });
 
-  it("disables sending while an assistant reply is streaming", () => {
+  it("replaces send with cancel while an assistant reply is streaming", () => {
+    const onCancel = vi.fn();
     render(
       <InterviewCapturePanel
         capture={capturePort()}
@@ -139,14 +140,19 @@ describe("InterviewCapturePanel", () => {
           { id: "run-1", role: "assistant", text: "正在回答", status: "streaming" },
         ]}
         onSendText={vi.fn(async () => undefined)}
+        onCancel={onCancel}
         onClose={vi.fn()}
       />,
     );
 
     const input = screen.getByRole("textbox", { name: "演练消息" });
     fireEvent.change(input, { target: { value: "补充内容" } });
-    expect(screen.getByRole("button", { name: "发送消息" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "发送消息" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "停止回复" }));
+
+    expect(onCancel).toHaveBeenCalledTimes(1);
     expect(input).not.toBeDisabled();
+    expect(input).toHaveValue("补充内容");
   });
 
   it("replaces the editor with mic levels and a single status row while listening", () => {

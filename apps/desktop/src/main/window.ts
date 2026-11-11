@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import {
   type AgentConnectionState,
   type AgentEventEnvelope,
@@ -10,12 +11,16 @@ import {
   type RegionSelection,
   type ReplyBarAction,
   type ReplyBarState,
+  SurfaceChannels,
+  type SurfacePresetId,
   WindowChannels,
 } from "@answra/shared";
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron";
 import { app, type BrowserWindow } from "electron";
 import { createMainWindowController } from "./mainWindowController";
 import { createReplyBarWindowController } from "./replyBarWindowController";
+import { createSurfaceService } from "./surface/surfaceService";
+import { createSurfaceStateStore } from "./surface/surfaceStateStore";
 import { getWindowCaptureDiagnostics } from "./windowCaptureProtection";
 import { createWindowStealthController } from "./windowStealthController";
 import { createWindowSurfaceRegistry, type WindowSurfaceDescriptor } from "./windowSurfaceRegistry";
@@ -23,7 +28,11 @@ import { createWindowSurfaceRegistry, type WindowSurfaceDescriptor } from "./win
 let windowController: ReturnType<typeof createMainWindowController>;
 let stealthController: ReturnType<typeof createWindowStealthController>;
 let replyBarController: ReturnType<typeof createReplyBarWindowController>;
+let surfaceService: ReturnType<typeof createSurfaceService>;
 const windowSurfaceRegistry = createWindowSurfaceRegistry();
+const surfaceStateStore = createSurfaceStateStore(() =>
+  join(app.getPath("appData"), "Answra", "surfaces", "state.json"),
+);
 
 export function registerWindowSurface(
   window: BrowserWindow,
@@ -45,7 +54,10 @@ function ensureControllers(): void {
   windowController = createMainWindowController({
     registerWindowSurface,
     prepareWindowToShow,
-    onClosed: () => replyBarController?.close(),
+    onClosed: () => {
+      replyBarController?.close();
+      surfaceService?.dismiss();
+    },
   });
   replyBarController = createReplyBarWindowController({
     getMainWindow: () => windowController.getWindow(),
@@ -58,6 +70,19 @@ function ensureControllers(): void {
     getMainWindow: () => windowController.getWindow(),
     applyWindowPolicies: (enabled) => windowSurfaceRegistry.setStealthEnabled(enabled),
     refreshWindowPolicies: (reason) => windowSurfaceRegistry.refresh(reason),
+  });
+  surfaceService = createSurfaceService({
+    registerWindowSurface,
+    prepareWindowToShow,
+    isStealthEnabled: () => stealthController.isEnabled(),
+    readPosition: () => surfaceStateStore.readPosition(),
+    writePosition: (position) => surfaceStateStore.writePosition(position),
+    forwardAction: (event) => {
+      const mainWindow = windowController.getWindow();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send(SurfaceChannels.ActionForwarded, event);
+      }
+    },
   });
 }
 
@@ -166,6 +191,31 @@ export function sendReplyBarState(): void {
   ensureControllers();
   replyBarController.sendState();
 }
+/** 产品代码按内置预设显示浮窗；返回是否通过校验并交给窗口宿主。 */
+export function showSurface(presetId: SurfacePresetId): { shown: boolean } {
+  ensureControllers();
+  return surfaceService.showPreset(presetId);
+}
+export function isSurfaceWindowFromSender(event: IpcMainEvent | IpcMainInvokeEvent): boolean {
+  ensureControllers();
+  return surfaceService.isFromSender(event);
+}
+export function sendSurfaceState(): void {
+  ensureControllers();
+  surfaceService.sendState();
+}
+export function dismissSurface(): void {
+  ensureControllers();
+  surfaceService.dismiss();
+}
+export function handleSurfaceAction(actionId: string): void {
+  ensureControllers();
+  surfaceService.handleAction(actionId);
+}
+export function resizeSurfaceWindow(size: ContentSize): void {
+  ensureControllers();
+  surfaceService.resize(size);
+}
 export function isWindowFromSender(
   window: BrowserWindow | undefined,
   event: IpcMainEvent | IpcMainInvokeEvent,
@@ -175,6 +225,7 @@ export function isWindowFromSender(
 export function applyStealth(value: boolean): void {
   ensureControllers();
   stealthController.apply(value);
+  surfaceService.sendState();
 }
 export function refreshStealthCaptureProtection(reason = "window-restore"): void {
   ensureControllers();

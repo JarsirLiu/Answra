@@ -123,6 +123,42 @@ describe("floating bar interview rehearsal", () => {
     await waitFor(() => expect(screen.queryByText("当前回复尚未完成")).not.toBeInTheDocument());
   });
 
+  it("cancels the active interview reply from the composer", async () => {
+    const bridge = createConversationBridge();
+    bridge.sendInterviewMessage.mockImplementationOnce(
+      async (conversationId: string, text: string) => ({
+        runId: "run-cancel",
+        snapshot: {
+          conversationId,
+          eventRevision: 1,
+          activeRunId: "run-cancel",
+          messages: [
+            { id: "user-cancel", role: "user", text, images: [], status: "complete" },
+            { id: "run-cancel", role: "assistant", text: "", images: [], status: "streaming" },
+          ],
+        },
+      }),
+    );
+    const capture = {
+      getState: () => ({ phase: "idle" as const }),
+      subscribe: () => () => undefined,
+      start: vi.fn(async () => undefined),
+      stop: vi.fn(async () => undefined),
+    };
+    render(<FloatingBarApp bridge={bridge} interviewCapture={capture} />);
+    fireEvent.click(screen.getByRole("button", { name: "对话" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "面试" }));
+    fireEvent.click(screen.getByRole("button", { name: "面试演练" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "演练消息" }), {
+      target: { value: "需要能取消的回答" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "停止回复" }));
+
+    expect(bridge.cancelConversationRun).toHaveBeenCalledWith("run-cancel");
+  });
+
   it("clears the manual-send error when the interview conversation is cleared", async () => {
     const bridge = createConversationBridge();
     const capture = {

@@ -2,7 +2,7 @@ import type { BrowserWindow } from "electron";
 import { setWindowCaptureProtection } from "./windowCaptureProtection";
 import { isNonActivatingPlatform } from "./windowInteractionPolicy";
 
-export type WindowRole = "main" | "reply-bar" | "selection-overlay";
+export type WindowRole = "main" | "reply-bar" | "surface" | "selection-overlay";
 export type CaptureProtectionPolicy = "stealth-only" | "always" | "never";
 export type WindowFocusEvent = {
   window: BrowserWindow;
@@ -42,6 +42,7 @@ interface ManagedWindow {
 const SURFACE_POLICIES: Record<WindowRole, SurfacePolicy> = {
   main: { alwaysOnTopLevel: "floating", nonActivating: "stealth" },
   "reply-bar": { alwaysOnTopLevel: "floating", nonActivating: "stealth" },
+  surface: { alwaysOnTopLevel: "floating", nonActivating: "stealth" },
   "selection-overlay": { alwaysOnTopLevel: "screen-saver", nonActivating: "always" },
 };
 
@@ -204,10 +205,13 @@ export function createWindowSurfaceRegistry(
     window.setAlwaysOnTop(true, policy.alwaysOnTopLevel);
     if (!isNonActivatingPlatform(options.platform ?? process.platform)) return;
     const nonActivating = isNonActivatingPolicy(policy);
-    // Main and reply surfaces are unfocusable for the entire stealth lifetime;
-    // this is the native backstop for the renderer text-input guard.
-    if (role === "main" || role === "reply-bar") window.setFocusable(!nonActivating);
-    else if (nonActivating) window.setFocusable(false);
+    // Main, reply, and declarative surfaces are unfocusable for the entire
+    // stealth lifetime; this is the native backstop for the renderer guard.
+    if (role === "main" || role === "reply-bar" || role === "surface") {
+      window.setFocusable(!nonActivating);
+    } else if (nonActivating) {
+      window.setFocusable(false);
+    }
   }
 
   function reassertNonActivating(window: BrowserWindow, role: WindowRole): void {

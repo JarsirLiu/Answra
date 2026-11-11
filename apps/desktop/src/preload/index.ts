@@ -20,6 +20,10 @@ import {
   type ReplyBarAction,
   type ReplyBarPlacement,
   type ReplyBarState,
+  type SurfaceActionEvent,
+  SurfaceChannels,
+  type SurfacePresetId,
+  type SurfaceWindowState,
   UpdateChannels,
   type UpdateStatus,
   WindowChannels,
@@ -71,6 +75,32 @@ const bridge: DesktopBridge = {
   },
   requestReplyBarState: () => {
     ipcRenderer.send(WindowChannels.ReplyBarReady);
+  },
+  showSurface: (presetId: SurfacePresetId) =>
+    ipcRenderer.invoke(SurfaceChannels.Show, { presetId }),
+  onSurfaceState: (listener: (state: SurfaceWindowState) => void) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, state: SurfaceWindowState) =>
+      listener(state);
+    ipcRenderer.on(SurfaceChannels.State, wrapped);
+    return () => ipcRenderer.removeListener(SurfaceChannels.State, wrapped);
+  },
+  requestSurfaceState: () => {
+    ipcRenderer.send(SurfaceChannels.Ready);
+  },
+  dismissSurface: () => {
+    ipcRenderer.send(SurfaceChannels.Dismiss);
+  },
+  sendSurfaceAction: (actionId: string) => {
+    ipcRenderer.send(SurfaceChannels.Action, { actionId });
+  },
+  fitSurface: (size: ContentSize) => {
+    ipcRenderer.send(SurfaceChannels.Fit, size);
+  },
+  onSurfaceAction: (listener: (event: SurfaceActionEvent) => void) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, event: SurfaceActionEvent) =>
+      listener(event);
+    ipcRenderer.on(SurfaceChannels.ActionForwarded, wrapped);
+    return () => ipcRenderer.removeListener(SurfaceChannels.ActionForwarded, wrapped);
   },
   setStealth: (value: boolean) => {
     ipcRenderer.send(WindowChannels.SetStealth, value);

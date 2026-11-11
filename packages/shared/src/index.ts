@@ -61,6 +61,10 @@ export {
   type ScreenshotFailure,
   type ScreenshotResult,
   type ScreenshotSuccess,
+  type SurfaceActionEvent,
+  type SurfaceChannelMap,
+  SurfaceChannels,
+  type SurfaceWindowState,
   type UpdateChannelMap,
   UpdateChannels,
   type UpdateInstallMode,
@@ -108,3 +112,4 @@ export {
   agentServiceDisconnectedError,
   isAgentServiceDisconnectedError,
 } from "./schema";
+export * from "./surfaces";

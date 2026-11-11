@@ -10,6 +10,7 @@ export * from "./channels/capture";
 export * from "./channels/connection";
 export * from "./channels/conversation";
 export * from "./channels/interview";
+export * from "./channels/surface";
 export * from "./channels/update";
 export * from "./channels/window";
 export * from "./channels/workspace";

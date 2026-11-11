@@ -1,4 +1,5 @@
 import type { ConversationSnapshot, DesktopBridge } from "@answra/shared";
+import { useCallback } from "react";
 import type { ConversationView } from "./conversationView";
 import { useConversationView } from "./useConversationView";
 
@@ -10,10 +11,14 @@ export function useInterviewConversation(
   view: ConversationView;
   reconcileSnapshot: (snapshot: ConversationSnapshot) => Promise<void>;
   clearMessages: () => void;
+  cancel: () => void;
 } {
   const { view, reconcileRunSnapshot, clear } = useConversationView(platform, conversationId, {
     enabled: __ANSWRA_FEATURE_INTERVIEW__,
     create: true,
   });
-  return { view, reconcileSnapshot: reconcileRunSnapshot, clearMessages: clear };
+  const cancel = useCallback(() => {
+    if (view.activeRunId) platform?.cancelConversationRun?.(view.activeRunId);
+  }, [platform, view.activeRunId]);
+  return { view, reconcileSnapshot: reconcileRunSnapshot, clearMessages: clear, cancel };
 }
