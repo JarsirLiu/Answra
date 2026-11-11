@@ -11,7 +11,7 @@ import { MemoryConversationStore } from "./core/transcript/memoryStore";
 import type { ConversationStore } from "./core/transcript/store";
 import { MemoryExecutionStore } from "./execution/memoryStore";
 import type { ExecutionStore } from "./execution/store";
-import { createInterviewRehearsalAgent } from "./interview/agent";
+import { createInterviewRehearsalAgent, INTERVIEW_REHEARSAL_AGENT_ID } from "./interview/agent";
 import { InterviewApplication } from "./interview/application";
 import type { InterviewDomainEvent } from "./interview/contracts";
 import { InterviewRuntime } from "./interview/runtime";
@@ -141,13 +141,25 @@ export function startAgentHost({
     agentRuntime,
     store,
     conversationAgent,
+    onSnapshot: async (snapshot) => emitConversationSnapshot(snapshot),
+    onTeamError: (error) => {
+      console.warn("[conversation][team] failed", {
+        error: error instanceof Error ? error.message : "unknown",
+      });
+    },
   });
-  const answer = new AnswerApplication({ agentRuntime, store, executor: answerAgent });
+  const answer = new AnswerApplication({
+    agentRuntime,
+    store,
+    executor: answerAgent,
+    authorAgentId: screenshotAnswerAgent.id,
+  });
 
   const interview = new InterviewApplication({
     agentRuntime,
     store,
     executor: interviewAgent,
+    authorAgentId: INTERVIEW_REHEARSAL_AGENT_ID,
     requestAccessToken: () => requestAccessToken({ forceRefresh: false }),
     onSnapshot: async (snapshot) => emitConversationSnapshot(snapshot),
     onTurnCommitted: (turn) => emitInterviewEvent({ type: "turn-committed", turn }),

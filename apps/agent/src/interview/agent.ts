@@ -20,6 +20,8 @@ export interface InterviewRehearsalInput {
   readFileState?: ReadFileStateMap;
 }
 
+export const INTERVIEW_REHEARSAL_AGENT_ID = agentId("interview.rehearsal");
+
 export function createInterviewRehearsalAgent({
   store,
   tools,
@@ -28,7 +30,14 @@ export function createInterviewRehearsalAgent({
   tools: ToolRegistry;
 }): AgentDefinition<InterviewRehearsalInput> {
   return {
-    id: agentId("interview.rehearsal"),
+    id: INTERVIEW_REHEARSAL_AGENT_ID,
+    identity: {
+      name: "面试演练官",
+      role: "rehearsal",
+      responsibility: "基于候选人档案进行面试演练，并给出可执行的改进建议。",
+      owns: ["interview-rehearsal"],
+    },
+    discovery: { visibleTo: { kind: "team", teamId: "interview" } },
     modelRoute: "chat",
     async prepare(input, signal, emitter) {
       const snapshot = await store.load(input.conversationId);

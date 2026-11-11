@@ -6,7 +6,7 @@ import type {
   ConversationSnapshot,
 } from "@answra/shared";
 import type { AgentEventEnvelope, AgentRunSnapshot } from "@answra/shared/schema";
-import type { AgentExecutor } from "../core/agent/definition";
+import type { AgentExecutor, AgentId } from "../core/agent/definition";
 import type { AgentRuntime } from "../core/agent/runtime";
 import { validateModelRequest } from "../core/model/requestContent";
 import { createUserMessage } from "../core/transcript/message";
@@ -16,17 +16,21 @@ export interface AnswerApplicationOptions {
   agentRuntime: AgentRuntime;
   store: ConversationStore;
   executor: AgentExecutor<ConversationSendRequest>;
+  /** 一次性答题的 assistant 消息归属；每次 run 都显式写入。 */
+  authorAgentId: AgentId;
 }
 
 export class AnswerApplication {
   private readonly agentRuntime: AgentRuntime;
   private readonly store: ConversationStore;
   private readonly executor: AgentExecutor<ConversationSendRequest>;
+  private readonly authorAgentId: AgentId;
 
-  constructor({ agentRuntime, store, executor }: AnswerApplicationOptions) {
+  constructor({ agentRuntime, store, executor, authorAgentId }: AnswerApplicationOptions) {
     this.agentRuntime = agentRuntime;
     this.store = store;
     this.executor = executor;
+    this.authorAgentId = authorAgentId;
   }
 
   async run(
@@ -45,6 +49,7 @@ export class AnswerApplication {
           runId,
           createUserMessage(randomUUID(), request),
           eventRevision,
+          this.authorAgentId,
         );
         return {
           input: request,

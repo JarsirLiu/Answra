@@ -13,7 +13,7 @@ import type {
   AgentRunRequest,
 } from "./definition";
 import { executeRun } from "./executeRun";
-import { AgentRegistry } from "./registry";
+import { AgentRegistry, type RegisteredAgentInfo } from "./registry";
 
 export interface AgentRuntimeOptions {
   executionStore: ExecutionStore;
@@ -37,7 +37,7 @@ export class AgentRuntime {
   }
 
   registerAgent<Input>(definition: AgentDefinition<Input>): AgentExecutor<Input> {
-    this.agentRegistry.register(definition.id);
+    this.agentRegistry.register(definition.id, definition.identity, definition.discovery);
     return {
       startRun: (request) => this.startRun(definition, request),
     };
@@ -45,6 +45,21 @@ export class AgentRuntime {
 
   requireAgent(id: AgentId): void {
     this.agentRegistry.require(id);
+  }
+
+  /** Team 目录使用：注册期校验通过的身份与发现策略。 */
+  getAgent(id: AgentId): RegisteredAgentInfo {
+    return this.agentRegistry.requireAgent(id);
+  }
+
+  /** 启动期校验 discovery 引用的 team/Agent 都存在。 */
+  assertDiscoveryReferences(teamIds: ReadonlySet<string>): void {
+    this.agentRegistry.assertDiscoveryReferences(teamIds);
+  }
+
+  /** 启动期校验团队入口与成员都已注册。 */
+  assertTeamMembers(entryAgentId: AgentId, memberAgentIds: readonly AgentId[]): void {
+    this.agentRegistry.assertTeamMembers(entryAgentId, memberAgentIds);
   }
 
   configureModelRoutes(routes: AgentModelRoutes): void {
@@ -118,6 +133,11 @@ export class AgentRuntime {
       tokenProvider: this.tokenProvider,
       controller,
     });
+    const result = done.then((outcome) =>
+      outcome === "completed" && definition.result
+        ? definition.result(setup.input, runId)
+        : undefined,
+    );
     void done.then(
       () => this.runs.finish(runId),
       (error: unknown) => {
@@ -129,7 +149,7 @@ export class AgentRuntime {
       },
     );
 
-    return { runId, eventRevision, prepared: setup.prepared, done };
+    return { runId, eventRevision, prepared: setup.prepared, result, done };
   }
 
   private requireRoutes(): AgentModelRoutes {

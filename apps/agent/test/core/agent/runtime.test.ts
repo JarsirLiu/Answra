@@ -89,6 +89,13 @@ describe("AgentRuntime static registration", () => {
 function createFailingDefinition(id: string): AgentDefinition<{ prompt: string }> {
   return {
     id: agentId(id),
+    identity: {
+      name: "测试 Agent",
+      role: "test",
+      responsibility: "测试用 Agent。",
+      owns: [],
+    },
+    discovery: { visibleTo: { kind: "bots", agentIds: [] } },
     modelRoute: "chat",
     prepare: vi.fn(async () => {
       throw new Error("prepare failed");

@@ -126,7 +126,9 @@ export type {
   AgentEventEnvelope,
   AgentExecutionEvent,
   AgentStreamEvent,
+  ConversationBot,
   ConversationMessagePart,
+  MessageAudience,
 } from "./schema";
 export {
   AGENT_CONNECTION_TARGET,

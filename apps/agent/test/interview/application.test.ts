@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { AgentExecutor, AgentRunRequest } from "../../src/core/agent/definition";
 import { MemoryConversationStore } from "../../src/core/transcript/memoryStore";
 import type { InterviewRehearsalInput } from "../../src/interview/agent";
+import { INTERVIEW_REHEARSAL_AGENT_ID } from "../../src/interview/agent";
 import { InterviewApplication } from "../../src/interview/application";
 import {
   type CommittedInterviewTurn,
@@ -37,6 +38,7 @@ function createHarness() {
         runId: "run-1",
         eventRevision: 0,
         prepared: prepared.prepared,
+        result: Promise.resolve(undefined),
         done: Promise.resolve("completed" as const),
       };
     }),
@@ -52,6 +54,7 @@ function createHarness() {
     agentRuntime,
     store,
     executor,
+    authorAgentId: INTERVIEW_REHEARSAL_AGENT_ID,
     requestAccessToken: vi.fn(async () => "token"),
     onSnapshot: async (snapshot) => {
       snapshots.push(snapshot);

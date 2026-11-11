@@ -23,6 +23,13 @@ const ANSWER_SYSTEM_PROMPT = [
 /** 独立注册的答题 Agent；输入只转成当前模型请求，不读取历史或授权工具。 */
 export const screenshotAnswerAgent: AgentDefinition<ConversationSendRequest> = {
   id: agentId("answer.screenshot"),
+  identity: {
+    name: "答题助手",
+    role: "answer",
+    responsibility: "根据截图或题目文本给出一次性答案。",
+    owns: ["screenshot-answer"],
+  },
+  discovery: { visibleTo: { kind: "bots", agentIds: [] } },
   modelRoute: "answer",
   async prepare(request) {
     const content = [

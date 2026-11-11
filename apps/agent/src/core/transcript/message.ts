@@ -7,6 +7,7 @@ export function createUserMessage(
   return {
     id,
     role: "user",
+    audience: { kind: "user" },
     text: request.text,
     images: request.images.map((image) => ({ ...image })),
     status: "complete",

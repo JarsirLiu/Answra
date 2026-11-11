@@ -37,6 +37,7 @@ function createTestRuntime({
     agentRuntime,
     store,
     executor: agentRuntime.registerAgent(screenshotAnswerAgent),
+    authorAgentId: screenshotAnswerAgent.id,
   });
   return Object.assign(runtime, { runAnswer: answer.run.bind(answer) });
 }
@@ -729,9 +730,9 @@ describe("ephemeral conversation runtime", () => {
     const inner = new MemoryConversationStore();
     const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
     const store: ConversationStore = {
-      create: async (conversationId) => {
+      create: async (conversationId, seed) => {
         await tick();
-        return inner.create(conversationId);
+        return inner.create(conversationId, seed);
       },
       clear: async (conversationId) => {
         await tick();
@@ -741,21 +742,45 @@ describe("ephemeral conversation runtime", () => {
         await tick();
         return inner.load(conversationId);
       },
-      beginRun: async (conversationId, runId, userMessage) => {
+      beginRun: async (conversationId, runId, userMessage, eventRevision, authorAgentId) => {
         await tick();
-        await inner.beginRun(conversationId, runId, userMessage);
+        await inner.beginRun(conversationId, runId, userMessage, eventRevision, authorAgentId);
       },
-      beginReplyRun: async (conversationId, runId) => {
+      beginReplyRun: async (conversationId, runId, eventRevision, authorAgentId) => {
         await tick();
-        return inner.beginReplyRun(conversationId, runId);
+        return inner.beginReplyRun(conversationId, runId, eventRevision, authorAgentId);
+      },
+      beginHandoffRun: async (conversationId, runId, targetAgentId, eventRevision) => {
+        await tick();
+        return inner.beginHandoffRun(conversationId, runId, targetAgentId, eventRevision);
+      },
+      appendHandoffMessage: async (conversationId, handoff) => {
+        await tick();
+        return inner.appendHandoffMessage(conversationId, handoff);
+      },
+      setActiveAgent: async (conversationId, agentId) => {
+        await tick();
+        await inner.setActiveAgent(conversationId, agentId);
       },
       appendUserMessage: async (conversationId, userMessage) => {
         await tick();
         return inner.appendUserMessage(conversationId, userMessage);
       },
-      beginEphemeralRun: async (conversationId, runId, userMessage) => {
+      beginEphemeralRun: async (
+        conversationId,
+        runId,
+        userMessage,
+        eventRevision,
+        authorAgentId,
+      ) => {
         await tick();
-        await inner.beginEphemeralRun(conversationId, runId, userMessage);
+        await inner.beginEphemeralRun(
+          conversationId,
+          runId,
+          userMessage,
+          eventRevision,
+          authorAgentId,
+        );
       },
       applyAgentEvent: async (conversationId, envelope) => {
         await tick();

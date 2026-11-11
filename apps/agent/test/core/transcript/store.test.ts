@@ -373,3 +373,215 @@ describe("memory conversation transcript store", () => {
     ).rejects.toThrow("事件不属于当前会话");
   });
 });
+
+describe("memory conversation team metadata and handoff", () => {
+  const seed = {
+    activeAgentId: "candidate",
+    participantAgentIds: ["candidate", "intake"],
+    bots: [
+      { id: "candidate", name: "候选人", role: "candidate" },
+      { id: "intake", name: "面试向导", role: "intake" },
+    ],
+  } as const;
+
+  it("seeds active Bot, participants and display identity", async () => {
+    const store = new MemoryConversationStore();
+    const snapshot = await store.create("team", seed);
+
+    expect(snapshot).toMatchObject({
+      activeAgentId: "candidate",
+      participantAgentIds: ["candidate", "intake"],
+      bots: [
+        { id: "candidate", name: "候选人", role: "candidate" },
+        { id: "intake", name: "面试向导", role: "intake" },
+      ],
+    });
+  });
+
+  it("attributes the user message and assistant placeholder to the speaking Bot", async () => {
+    const store = new MemoryConversationStore();
+    await store.create("team", seed);
+    await store.beginRun(
+      "team",
+      "run-1",
+      {
+        id: "user-1",
+        role: "user",
+        text: "帮我准备面试",
+        images: [],
+        status: "complete",
+      },
+      0,
+      "candidate",
+    );
+
+    const snapshot = await store.load("team");
+    expect(snapshot.activeAgentId).toBe("candidate");
+    expect(snapshot.messages[0]).toMatchObject({
+      role: "user",
+      audience: { kind: "user" },
+    });
+    expect(snapshot.messages[1]).toMatchObject({
+      role: "assistant",
+      authorAgentId: "candidate",
+      audience: { kind: "user" },
+      status: "streaming",
+    });
+  });
+
+  it("appends a handoff without advancing the event revision and claims it for the target", async () => {
+    const store = new MemoryConversationStore();
+    await store.create("team", seed);
+    await store.beginRun(
+      "team",
+      "run-1",
+      { id: "user-1", role: "user", text: "整理简历", images: [], status: "complete" },
+      4,
+      "candidate",
+    );
+    await store.applyAgentEvent(
+      "team",
+      eventEnvelope("team", "run-1", 5, {
+        type: "run-state-changed",
+        state: "completed",
+        attempt: 1,
+      }),
+    );
+    const before = await store.load("team");
+
+    const appended = await store.appendHandoffMessage("team", {
+      id: "handoff-1",
+      fromAgentId: "candidate",
+      toAgentId: "intake",
+      task: "简历缺项目指标，请接管整理",
+    });
+    expect(appended.eventRevision).toBe(before.eventRevision);
+    expect(appended.activeAgentId).toBe("intake");
+    expect(appended.messages.at(-1)).toMatchObject({
+      id: "handoff-1",
+      role: "assistant",
+      authorAgentId: "candidate",
+      audience: { kind: "bot", agentId: "intake" },
+      status: "complete",
+      parts: [],
+    });
+
+    const claimed = await store.beginHandoffRun("team", "run-2", "intake", 5);
+    expect(claimed).toMatchObject({ id: "handoff-1", text: "简历缺项目指标，请接管整理" });
+    const snapshot = await store.load("team");
+    expect(snapshot.activeRunId).toBe("run-2");
+    expect(snapshot.activeAgentId).toBe("intake");
+    expect(snapshot.eventRevision).toBe(before.eventRevision);
+    expect(snapshot.messages.at(-1)).toMatchObject({
+      id: "run-2",
+      authorAgentId: "intake",
+      audience: { kind: "user" },
+      status: "streaming",
+    });
+  });
+
+  it("rejects a handoff claim that is not addressed to the target", async () => {
+    const store = new MemoryConversationStore();
+    await store.create("team", seed);
+    await store.beginRun(
+      "team",
+      "run-1",
+      { id: "user-1", role: "user", text: "整理简历", images: [], status: "complete" },
+      0,
+      "candidate",
+    );
+    await store.applyAgentEvent(
+      "team",
+      eventEnvelope("team", "run-1", 1, {
+        type: "run-state-changed",
+        state: "completed",
+        attempt: 1,
+      }),
+    );
+    await store.appendHandoffMessage("team", {
+      id: "handoff-1",
+      fromAgentId: "candidate",
+      toAgentId: "intake",
+      task: "整理简历",
+    });
+
+    await expect(store.beginHandoffRun("team", "run-2", "candidate")).rejects.toThrow(
+      "没有可接管给当前 Bot 的交接消息",
+    );
+  });
+
+  it("validates handoff content and participants", async () => {
+    const store = new MemoryConversationStore();
+    await store.create("team", seed);
+
+    await expect(
+      store.appendHandoffMessage("team", {
+        id: "handoff-1",
+        fromAgentId: "candidate",
+        toAgentId: "candidate",
+        task: "x",
+      }),
+    ).rejects.toThrow("交接目标不能是当前 Bot");
+    await expect(
+      store.appendHandoffMessage("team", {
+        id: "handoff-2",
+        fromAgentId: "candidate",
+        toAgentId: "intake",
+        task: "   ",
+      }),
+    ).rejects.toThrow("交接内容无效或过长");
+    await expect(
+      store.appendHandoffMessage("team", {
+        id: "handoff-3",
+        fromAgentId: "candidate",
+        toAgentId: "outsider",
+        task: "整理简历",
+      }),
+    ).rejects.toThrow("Bot 不在当前会话参与者中");
+    await expect(
+      store.appendHandoffMessage("team", {
+        id: "handoff-4",
+        fromAgentId: "intake",
+        toAgentId: "candidate",
+        task: "越权交接",
+      }),
+    ).rejects.toThrow("交接来源必须是当前 Bot");
+  });
+
+  it("clears messages but restores the entry Bot and participants", async () => {
+    const store = new MemoryConversationStore();
+    await store.create("team", seed);
+    await store.beginRun(
+      "team",
+      "run-1",
+      { id: "user-1", role: "user", text: "整理简历", images: [], status: "complete" },
+      0,
+      "candidate",
+    );
+    await store.applyAgentEvent(
+      "team",
+      eventEnvelope("team", "run-1", 1, {
+        type: "run-state-changed",
+        state: "completed",
+        attempt: 1,
+      }),
+    );
+    await store.setActiveAgent("team", "intake");
+    await store.clear("team", 6);
+
+    const snapshot = await store.load("team");
+    expect(snapshot.messages).toEqual([]);
+    expect(snapshot.activeAgentId).toBe("candidate");
+    expect(snapshot.participantAgentIds).toEqual(["candidate", "intake"]);
+    expect(snapshot.bots).toHaveLength(2);
+    expect(snapshot.eventRevision).toBe(6);
+  });
+
+  it("rejects an unknown active Bot", async () => {
+    const store = new MemoryConversationStore();
+    await store.create("team", seed);
+    await expect(store.setActiveAgent("team", "outsider")).rejects.toThrow(
+      "Bot 不在当前会话参与者中",
+    );
+  });
+});

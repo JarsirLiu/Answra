@@ -52,7 +52,12 @@ export function startAnswerAgentHost({
       }),
   });
   const answerAgent = agentRuntime.registerAgent(screenshotAnswerAgent);
-  const answer = new AnswerApplication({ agentRuntime, store, executor: answerAgent });
+  const answer = new AnswerApplication({
+    agentRuntime,
+    store,
+    executor: answerAgent,
+    authorAgentId: screenshotAnswerAgent.id,
+  });
 
   function dispose(): void {
     if (disposed) return;

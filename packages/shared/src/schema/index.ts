@@ -10,12 +10,15 @@ export {
   isAgentServiceDisconnectedError,
 } from "./connection";
 export {
+  type ConversationBot,
   type ConversationMessage,
   type ConversationMessagePart,
   type ConversationSnapshot,
   conversationMessagePartSchema,
   conversationMessageSchema,
   conversationSnapshotSchema,
+  type MessageAudience,
+  messageAudienceSchema,
 } from "./conversation";
 export {
   type AgentDurableEvent,

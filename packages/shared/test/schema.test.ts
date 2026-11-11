@@ -9,6 +9,7 @@ import {
   agentStreamEventSchema,
   conversationMessagePartSchema,
   conversationMessageSchema,
+  conversationSnapshotSchema,
   editDiffDisplaySchema,
 } from "../src/schema";
 
@@ -185,6 +186,48 @@ describe("execution status schema", () => {
         status: "complete",
       }).status,
     ).toBe("complete");
+  });
+});
+
+describe("conversation message audience", () => {
+  it("round-trips a bot-authored message addressed to another bot", () => {
+    const message = {
+      id: "handoff-1",
+      role: "assistant",
+      authorAgentId: "candidate",
+      audience: { kind: "bot", agentId: "intake" },
+      text: "整理简历",
+      images: [],
+      status: "complete",
+    };
+
+    expect(conversationMessageSchema.parse(JSON.parse(JSON.stringify(message)))).toEqual(message);
+  });
+
+  it("keeps a legacy message without audience as user-visible", () => {
+    const parsed = conversationMessageSchema.parse({
+      id: "message-1",
+      role: "assistant",
+      text: "answer",
+      images: [],
+      status: "complete",
+    });
+
+    expect(parsed.audience).toBeUndefined();
+  });
+
+  it("carries the active bot and participants in the snapshot", () => {
+    const snapshot = {
+      conversationId: "conv-1",
+      eventRevision: 3,
+      messages: [],
+      activeAgentId: "intake",
+      participantAgentIds: ["candidate", "intake"],
+    };
+
+    expect(conversationSnapshotSchema.parse(JSON.parse(JSON.stringify(snapshot)))).toEqual(
+      snapshot,
+    );
   });
 });
 

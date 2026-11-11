@@ -1,23 +1,37 @@
-/** 进程内 transcript 仓储；不记录 Agent 事件事实或事件 journal。 */
+﻿/** 进程内 transcript 仓储；不记录 Agent 事件事实或事件 journal。 */
 import type {
   ConversationMessage,
   ConversationMessagePart,
   ConversationSnapshot,
 } from "@answra/shared";
 import type { AgentEventEnvelope, AgentStreamEvent, RunOutcome } from "@answra/shared/schema";
-import type { ConversationStore } from "./store";
+import type { ConversationSessionSeed, ConversationStore, HandoffMessageInput } from "./store";
 
-type Session = { snapshot: ConversationSnapshot };
+type Session = { snapshot: ConversationSnapshot; seed?: ConversationSessionSeed };
+
+const MAX_HANDOFF_TASK_CHARS = 32_000;
 
 export class MemoryConversationStore implements ConversationStore {
   private readonly sessions = new Map<string, Session>();
 
-  async create(conversationId: string): Promise<ConversationSnapshot> {
+  async create(
+    conversationId: string,
+    seed?: ConversationSessionSeed,
+  ): Promise<ConversationSnapshot> {
     const existing = this.sessions.get(conversationId);
-    if (existing) return cloneSnapshot(existing.snapshot);
-    const session = {
-      snapshot: { conversationId, eventRevision: 0, messages: [] },
-    } satisfies Session;
+    if (existing) {
+      if (seed) applySeed(existing, seed);
+      return cloneSnapshot(existing.snapshot);
+    }
+    const session: Session = {
+      snapshot: {
+        conversationId,
+        eventRevision: 0,
+        messages: [],
+        ...(seed ? seedSnapshot(seed) : {}),
+      },
+      ...(seed ? { seed: cloneSeed(seed) } : {}),
+    };
     this.sessions.set(conversationId, session);
     return cloneSnapshot(session.snapshot);
   }
@@ -33,6 +47,7 @@ export class MemoryConversationStore implements ConversationStore {
       conversationId,
       eventRevision: Math.max(session.snapshot.eventRevision, eventRevision),
       messages: [],
+      ...(session.seed ? seedSnapshot(session.seed) : {}),
     };
   }
 
@@ -41,28 +56,95 @@ export class MemoryConversationStore implements ConversationStore {
     runId: string,
     userMessage: ConversationMessage,
     eventRevision = 0,
+    authorAgentId?: string,
   ): Promise<void> {
-    this.beginMessages(conversationId, runId, userMessage, true, eventRevision);
+    this.beginMessages(conversationId, runId, userMessage, true, eventRevision, authorAgentId);
   }
 
   async beginReplyRun(
     conversationId: string,
     runId: string,
     eventRevision = 0,
+    authorAgentId?: string,
   ): Promise<ConversationMessage> {
     const session = this.requireSession(conversationId);
     if (session.snapshot.activeRunId) throw new Error("当前回复尚未完成");
     const last = session.snapshot.messages.at(-1);
     if (last?.role !== "user" || last.status !== "complete")
       throw new Error("没有可回复的用户消息");
-    const assistant = createAssistantMessage(runId);
+    const assistant = createAssistantMessage(runId, authorAgentId);
     session.snapshot = {
       ...session.snapshot,
       messages: [...session.snapshot.messages, assistant],
       activeRunId: runId,
       eventRevision: Math.max(session.snapshot.eventRevision, eventRevision),
+      ...(authorAgentId ? { activeAgentId: authorAgentId } : {}),
     };
     return cloneMessage(last);
+  }
+
+  async beginHandoffRun(
+    conversationId: string,
+    runId: string,
+    targetAgentId: string,
+    eventRevision = 0,
+  ): Promise<ConversationMessage> {
+    const session = this.requireSession(conversationId);
+    if (session.snapshot.activeRunId) throw new Error("当前回复尚未完成");
+    const last = session.snapshot.messages.at(-1);
+    if (
+      last?.role !== "assistant" ||
+      last.status !== "complete" ||
+      last.audience?.kind !== "bot" ||
+      last.audience.agentId !== targetAgentId
+    )
+      throw new Error("没有可接管给当前 Bot 的交接消息");
+    const assistant = createAssistantMessage(runId, targetAgentId);
+    session.snapshot = {
+      ...session.snapshot,
+      messages: [...session.snapshot.messages, assistant],
+      activeRunId: runId,
+      eventRevision: Math.max(session.snapshot.eventRevision, eventRevision),
+      activeAgentId: targetAgentId,
+    };
+    return cloneMessage(last);
+  }
+
+  async appendHandoffMessage(
+    conversationId: string,
+    handoff: HandoffMessageInput,
+  ): Promise<ConversationSnapshot> {
+    const session = this.requireSession(conversationId);
+    if (session.snapshot.activeRunId) throw new Error("当前回复尚未完成");
+    if (handoff.fromAgentId === handoff.toAgentId) throw new Error("交接目标不能是当前 Bot");
+    if (!handoff.task.trim() || handoff.task.length > MAX_HANDOFF_TASK_CHARS)
+      throw new Error("交接内容无效或过长");
+    if (session.snapshot.activeAgentId !== handoff.fromAgentId)
+      throw new Error("交接来源必须是当前 Bot");
+    assertParticipant(session, handoff.fromAgentId);
+    assertParticipant(session, handoff.toAgentId);
+    const message: ConversationMessage = {
+      id: handoff.id,
+      role: "assistant",
+      authorAgentId: handoff.fromAgentId,
+      audience: { kind: "bot", agentId: handoff.toAgentId },
+      text: handoff.task,
+      images: [],
+      status: "complete",
+      parts: [],
+    };
+    session.snapshot = {
+      ...session.snapshot,
+      messages: [...session.snapshot.messages, message],
+      activeAgentId: handoff.toAgentId,
+    };
+    return cloneSnapshot(session.snapshot);
+  }
+
+  async setActiveAgent(conversationId: string, agentId: string): Promise<void> {
+    const session = this.requireSession(conversationId);
+    assertParticipant(session, agentId);
+    session.snapshot = { ...session.snapshot, activeAgentId: agentId };
   }
 
   async appendUserMessage(
@@ -75,7 +157,7 @@ export class MemoryConversationStore implements ConversationStore {
       throw new Error("仅可追加已完成的用户消息");
     session.snapshot = {
       ...session.snapshot,
-      messages: [...session.snapshot.messages, cloneMessage(userMessage)],
+      messages: [...session.snapshot.messages, normalizeUserMessage(userMessage)],
     };
     return cloneSnapshot(session.snapshot);
   }
@@ -85,8 +167,9 @@ export class MemoryConversationStore implements ConversationStore {
     runId: string,
     userMessage: ConversationMessage,
     eventRevision = 0,
+    authorAgentId?: string,
   ): Promise<void> {
-    this.beginMessages(conversationId, runId, userMessage, false, eventRevision);
+    this.beginMessages(conversationId, runId, userMessage, false, eventRevision, authorAgentId);
   }
 
   async applyAgentEvent(conversationId: string, envelope: AgentEventEnvelope): Promise<void> {
@@ -165,6 +248,7 @@ export class MemoryConversationStore implements ConversationStore {
     userMessage: ConversationMessage,
     preserveHistory: boolean,
     eventRevision: number,
+    authorAgentId?: string,
   ): void {
     const session = this.requireSession(conversationId);
     if (session.snapshot.activeRunId) throw new Error("当前回复尚未完成");
@@ -174,10 +258,12 @@ export class MemoryConversationStore implements ConversationStore {
       eventRevision: Math.max(session.snapshot.eventRevision, eventRevision),
       messages: [
         ...(preserveHistory ? session.snapshot.messages.map(cloneMessage) : []),
-        cloneMessage(userMessage),
-        createAssistantMessage(runId),
+        normalizeUserMessage(userMessage),
+        createAssistantMessage(runId, authorAgentId),
       ],
       activeRunId: runId,
+      ...(session.seed ? seedSnapshot(session.seed) : {}),
+      ...(authorAgentId ? { activeAgentId: authorAgentId } : {}),
     };
   }
 
@@ -227,8 +313,57 @@ function runOutcomeForState(
   }
 }
 
-function createAssistantMessage(runId: string): ConversationMessage {
-  return { id: runId, role: "assistant", text: "", images: [], status: "streaming", parts: [] };
+function createAssistantMessage(runId: string, authorAgentId?: string): ConversationMessage {
+  return {
+    id: runId,
+    role: "assistant",
+    ...(authorAgentId ? { authorAgentId } : {}),
+    audience: { kind: "user" },
+    text: "",
+    images: [],
+    status: "streaming",
+    parts: [],
+  };
+}
+
+function normalizeUserMessage(message: ConversationMessage): ConversationMessage {
+  return { ...cloneMessage(message), audience: { kind: "user" } };
+}
+
+function seedSnapshot(
+  seed: ConversationSessionSeed,
+): Pick<ConversationSnapshot, "activeAgentId" | "participantAgentIds" | "bots"> {
+  return {
+    activeAgentId: seed.activeAgentId,
+    participantAgentIds: [...seed.participantAgentIds],
+    ...(seed.bots ? { bots: seed.bots.map((bot) => ({ ...bot })) } : {}),
+  };
+}
+
+function cloneSeed(seed: ConversationSessionSeed): ConversationSessionSeed {
+  return {
+    activeAgentId: seed.activeAgentId,
+    participantAgentIds: [...seed.participantAgentIds],
+    ...(seed.bots ? { bots: seed.bots.map((bot) => ({ ...bot })) } : {}),
+  };
+}
+
+function applySeed(session: Session, seed: ConversationSessionSeed): void {
+  session.seed = cloneSeed(seed);
+  session.snapshot = {
+    ...session.snapshot,
+    ...(!session.snapshot.activeAgentId ? { activeAgentId: seed.activeAgentId } : {}),
+    ...(!session.snapshot.participantAgentIds
+      ? { participantAgentIds: [...seed.participantAgentIds] }
+      : {}),
+    ...(!session.snapshot.bots && seed.bots ? { bots: seed.bots.map((bot) => ({ ...bot })) } : {}),
+  };
+}
+
+function assertParticipant(session: Session, agentId: string): void {
+  const participants = session.snapshot.participantAgentIds;
+  if (participants && !participants.includes(agentId))
+    throw new Error(`Bot 不在当前会话参与者中：${agentId}`);
 }
 
 function cloneSnapshot(snapshot: ConversationSnapshot): ConversationSnapshot {
