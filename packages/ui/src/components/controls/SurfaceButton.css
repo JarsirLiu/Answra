@@ -1,17 +1,23 @@
-/* 悬浮按钮的浏览器归零规则和产品控件令牌集中在此。 */
+/* 悬浮按钮的浏览器归零规则和产品控件令牌集中在此。
+   比例只有一个来源：--control-* 档；变体只换颜色，不改尺寸。 */
 .surface-control {
+  --control-height: var(--control-h-md);
+  --control-font-size: var(--control-font-md);
+  --control-pad-inline: var(--control-pad-md);
+
   appearance: none;
   -webkit-appearance: none;
-  min-width: var(--ctl-min-w);
-  height: var(--ctl-h);
+  min-width: var(--control-height);
+  height: var(--control-height);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: var(--ctl-gap);
-  padding: 0 var(--ctl-pad-x);
+  padding: 0 var(--control-pad-inline);
   border: 0;
   border-radius: var(--ctl-radius);
   font: inherit;
+  font-size: var(--control-font-size);
   line-height: 1;
   color: var(--icon);
   background: transparent;
@@ -21,6 +27,33 @@
     color 140ms ease-out,
     filter 140ms ease-out,
     transform 90ms ease-out;
+}
+
+.surface-control--xs {
+  --control-height: var(--control-h-xs);
+  --control-font-size: var(--control-font-xs);
+  --control-pad-inline: var(--control-pad-xs);
+}
+
+.surface-control--sm {
+  --control-height: var(--control-h-sm);
+  --control-font-size: var(--control-font-sm);
+  --control-pad-inline: var(--control-pad-sm);
+}
+
+.surface-control--lg {
+  --control-height: var(--control-h-lg);
+  --control-font-size: var(--control-font-lg);
+  --control-pad-inline: var(--control-pad-lg);
+}
+
+/* 图标按钮：只放图标，宽高同档，避免文字与图标挤在同一个尺寸里。 */
+.surface-control--icon {
+  width: var(--control-height);
+  min-width: var(--control-height);
+  flex: 0 0 var(--control-height);
+  padding: 0;
+  gap: 0;
 }
 
 .surface-control:hover {

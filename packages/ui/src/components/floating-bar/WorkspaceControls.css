@@ -2,40 +2,20 @@
 .utility-segment {
   flex: 0 0 auto;
 }
-.utility-action {
-  min-width: var(--ctl-min-w);
-  height: var(--ctl-h);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  padding: 0 5px;
-  border: 0;
-  border-radius: var(--ctl-radius);
-  color: var(--icon);
-  background: transparent;
-  transition: background 140ms ease-out;
-}
-.utility-action:hover,
-.utility-action.is-active {
-  color: var(--icon);
-  background: var(--hover);
-}
-/* 面板已打开的持续激活态：中性灰阶填充（比 hover 深一档），
-   不再用薄荷绿——强调色只留给主操作按钮，导航类激活态保持安静。 */
+/* 尺寸、图标尺寸、默认图标色和 hover 底色都由 SurfaceButton / IconButton
+   原语提供；这里只保留选中态、文本入口和破坏性关闭的语义。 */
 .utility-action.is-active {
   background: var(--field-strong);
 }
 .utility-action--destination {
   min-width: 0;
-  padding: 0 var(--ctl-pad-x);
   color: var(--ink);
 }
 .destination-label {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--ctl-gap);
   text-align: left;
 }
 .destination-label small {

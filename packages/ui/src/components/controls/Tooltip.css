@@ -6,7 +6,7 @@
   z-index: 1100;
   pointer-events: none;
   max-width: 240px;
-  padding: 4px 8px;
+  padding: var(--space-1) var(--space-2);
   border: 1px solid var(--glass-line);
   border-radius: var(--ctl-radius);
   background: var(--panel);

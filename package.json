@@ -23,7 +23,7 @@
     "notes:check": "node scripts/docs/check-notes.mjs",
     "notes:hint": "node scripts/docs/check-notes.mjs --warn",
     "docs:check": "pnpm notes:check",
-    "verify": "pnpm lint && pnpm notes:hint && pnpm typecheck && pnpm test && pnpm architecture:check",
+    "verify": "pnpm lint && pnpm notes:hint && pnpm typecheck && pnpm test && pnpm architecture:check && pnpm tokens:check",
     "dist:win": "pnpm --filter @answra/desktop dist:win",
     "dist:mac": "pnpm --filter @answra/desktop dist:mac",
     "release:win": "pnpm dist:win && node apps/desktop/scripts/upload-to-cos.mjs",

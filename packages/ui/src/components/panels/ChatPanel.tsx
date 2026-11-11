@@ -15,6 +15,7 @@ import {
   type ConversationViewMessage,
   partsContentKey,
 } from "../chat/conversationMessage";
+import { SurfaceButton } from "../controls/SurfaceButton";
 import { ConversationComposer } from "./ConversationComposer";
 import { PanelShell } from "./PanelShell";
 import "../chat/conversation.css";
@@ -112,15 +113,15 @@ export function ChatPanel({
       context={attachments.length ? "截图已添加，可补充问题" : undefined}
       headerAction={
         onClear ? (
-          <button
+          <SurfaceButton
             aria-label={clearDisabledReason ?? "清空对话历史"}
-            className="panel-header-action surface-control surface-control--quiet"
+            className="panel-header-action"
             disabled={Boolean(clearDisabledReason)}
             onClick={onClear}
-            type="button"
+            variant="quiet"
           >
             清空
-          </button>
+          </SurfaceButton>
         ) : undefined
       }
       onClose={onClose}

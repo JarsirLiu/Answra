@@ -14,10 +14,9 @@
   padding: 6px 6px 4px;
   border-bottom: 1px solid var(--glass-line-soft);
 }
+/* 尺寸、图标和 hover 外观由 IconButton 原语提供。 */
 .announcement-toolbar-button {
-  min-width: 25px;
-  height: 25px;
-  padding: 0;
+  flex: none;
 }
 .announcement-list {
   flex: 1;
@@ -83,26 +82,9 @@
   flex: 0 0 auto;
   color: var(--muted);
 }
+/* 外观由 SurfaceButton 原语提供，这里只把返回入口收在左侧。 */
 .announcement-back {
-  appearance: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 8px 6px;
-  border: 0;
-  border-radius: var(--ctl-radius);
-  color: var(--muted);
-  background: transparent;
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--font-sm);
-  transition:
-    background 140ms ease-out,
-    color 140ms ease-out;
-}
-.announcement-back:hover {
-  background: var(--hover);
-  color: var(--ink);
+  align-self: flex-start;
 }
 .announcement-detail {
   flex: 1;

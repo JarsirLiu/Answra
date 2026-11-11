@@ -58,10 +58,6 @@
   position: absolute;
   top: 2px;
   right: 2px;
-  width: 18px;
-  height: 18px;
-  min-width: 18px;
-  padding: 0;
   border-radius: 50%;
   background: var(--glass);
   color: var(--icon);
@@ -93,10 +89,6 @@
 
 /* 收起按钮：小圆 ×，与缩略图删除键同源观感 */
 .reply-close {
-  width: 24px;
-  min-width: 24px;
-  height: 24px;
-  padding: 0;
   border-radius: 50%;
   color: var(--muted);
 }
@@ -165,7 +157,7 @@
   color: var(--ink);
 }
 .reply-activity-ticker--tool .reply-activity-indicator {
-  color: var(--mint-text);
+  color: var(--muted);
 }
 .reply-activity-ticker--error .reply-activity-indicator {
   color: var(--danger);
@@ -240,7 +232,7 @@
   color: var(--ink);
 }
 .reply-activity-item--tool {
-  color: var(--mint-text);
+  color: var(--muted);
 }
 .reply-activity-item--status,
 .reply-activity-item--source {

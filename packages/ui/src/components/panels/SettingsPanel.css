@@ -46,9 +46,6 @@
    再小一档，与行内开关/滑块/数值的视觉重量对齐。 */
 .setting-action {
   min-width: 32px;
-  height: 22px;
-  padding: 0 8px;
-  font-size: var(--font-xs);
 }
 .setting-control {
   display: flex;
@@ -113,15 +110,7 @@
   top: 50%;
   right: 4px;
   translate: 0 -50%;
-  width: 26px;
-  height: 26px;
-  min-width: 26px;
-  padding: 0;
   border-radius: 5px;
-}
-.setting-secret-toggle svg {
-  width: 15px;
-  height: 15px;
 }
 .setting-model-footer {
   display: flex;
@@ -146,10 +135,7 @@
 }
 .setting-source-switch .setting-source-option {
   min-width: 0;
-  height: 24px;
-  padding: 0 10px;
   border-radius: 6px;
-  font-size: var(--font-xs);
   font-weight: var(--label-weight);
   color: var(--muted);
   background: transparent;

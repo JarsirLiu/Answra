@@ -2,6 +2,8 @@ import { Check, TriangleAlert, X } from "lucide-react";
 import { useEffect } from "react";
 import type { FloatingHostLayer } from "../../app/surfaceState";
 import { ICON_SM } from "../../tokens";
+import { IconButton } from "../controls/IconButton";
+import { SurfaceButton } from "../controls/SurfaceButton";
 import "./FloatingLayerHost.css";
 
 interface FloatingLayerHostProps {
@@ -33,39 +35,40 @@ export function FloatingLayerHost({
           <section className="floating-layer floating-notice" key={layer.id} role="alert">
             <TriangleAlert aria-hidden="true" size={ICON_SM} />
             <span className="floating-layer-message">{layer.message}</span>
-            <button
-              aria-label="关闭通知"
+            <IconButton
               className="floating-layer-close"
+              icon={X}
+              label="关闭通知"
               onClick={() => onDismiss(layer.id)}
-              type="button"
-            >
-              <X aria-hidden="true" size={ICON_SM} />
-            </button>
+              size="sm"
+            />
           </section>
         ) : (
           <section className="floating-layer floating-permission" key={layer.id} role="dialog">
             <strong>{layer.title}</strong>
             <p>{layer.description}</p>
             <div className="floating-permission-actions">
-              <button
+              <SurfaceButton
                 onClick={() => {
                   onPermissionDecision?.(layer.id, false);
                   onDismiss(layer.id);
                 }}
-                type="button"
+                size="md"
+                variant="quiet"
               >
                 {layer.cancelLabel}
-              </button>
-              <button
+              </SurfaceButton>
+              <SurfaceButton
                 onClick={() => {
                   onPermissionDecision?.(layer.id, true);
                   onDismiss(layer.id);
                 }}
-                type="button"
+                size="md"
+                variant="primary"
               >
                 <Check aria-hidden="true" size={ICON_SM} />
                 {layer.confirmLabel}
-              </button>
+              </SurfaceButton>
             </div>
           </section>
         ),

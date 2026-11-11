@@ -7,8 +7,14 @@ export type {
 export { INTERVIEW_INPUT_LEVEL_WINDOW } from "./app/interviewCapture";
 export { ReplyBarWindowApp } from "./app/ReplyBarWindowApp";
 export type { ConversationViewMessage } from "./components/chat/conversationMessage";
+export type { IconButtonProps } from "./components/controls/IconButton";
+export { IconButton } from "./components/controls/IconButton";
 export { RangeSlider } from "./components/controls/RangeSlider";
-export type { SurfaceButtonProps, SurfaceButtonVariant } from "./components/controls/SurfaceButton";
+export type {
+  SurfaceButtonProps,
+  SurfaceButtonSize,
+  SurfaceButtonVariant,
+} from "./components/controls/SurfaceButton";
 export { SurfaceButton } from "./components/controls/SurfaceButton";
 export { Switch } from "./components/controls/Switch";
 export type { RichTextComposerProps } from "./components/editor/RichTextComposer";

@@ -1,6 +1,7 @@
 import { FolderOpen, Settings, X } from "lucide-react";
 import type { Panel } from "../../model";
 import { ICON, ICON_STROKE } from "../../tokens";
+import { IconButton } from "../controls/IconButton";
 import { SurfaceButton } from "../controls/SurfaceButton";
 import { ChevronDownGlyph } from "../icons";
 import "./WorkspaceControls.css";
@@ -35,22 +36,18 @@ export function WorkspaceControls({ panel, onTogglePanel, onClose }: WorkspaceCo
           <ChevronDownGlyph className="destination-chevron" />
         </SurfaceButton>
       )}
-      <SurfaceButton
-        aria-label="打开设置"
+      <IconButton
         className={`utility-action${panel === "settings" ? " is-active" : ""}`}
+        icon={Settings}
+        label="打开设置"
         onClick={() => onTogglePanel("settings")}
-        type="button"
-      >
-        <Settings aria-hidden="true" size={ICON} strokeWidth={ICON_STROKE} />
-      </SurfaceButton>
-      <SurfaceButton
-        aria-label="关闭应用"
+      />
+      <IconButton
         className="utility-action utility-action--close"
+        icon={X}
+        label="关闭应用"
         onClick={onClose}
-        type="button"
-      >
-        <X aria-hidden="true" size={ICON} strokeWidth={ICON_STROKE} />
-      </SurfaceButton>
+      />
     </>
   );
 }

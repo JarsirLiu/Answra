@@ -166,7 +166,7 @@
 }
 .account-notice {
   margin: 0;
-  color: var(--mint-text);
+  color: var(--success);
   font-size: var(--font-xs);
 }
 .account-error {
@@ -180,12 +180,10 @@
 }
 .account-actions .account-signout {
   width: 100%;
-  height: 36px;
   justify-content: center;
   gap: 7px;
   border-radius: inherit;
   color: var(--danger);
-  font-size: var(--font-sm);
   font-weight: var(--label-weight);
 }
 .account-actions .account-signout:hover {
@@ -194,6 +192,4 @@
 }
 .account-actions .account-signin {
   width: 100%;
-  height: 36px;
-  font-size: var(--font-sm);
 }

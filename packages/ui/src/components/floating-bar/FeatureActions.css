@@ -9,35 +9,16 @@
   align-items: center;
   gap: var(--ctl-gap);
 }
-.feature-action {
-  min-width: var(--ctl-min-w);
-  height: var(--ctl-h);
-  display: grid;
-  place-items: center;
-  padding: 0 var(--ctl-pad-x);
-  border: 0;
-  border-radius: var(--ctl-radius);
-  color: var(--icon);
-  background: transparent;
-  transition:
-    background 140ms ease-out,
-    transform 90ms ease-out;
-}
-.feature-action:hover {
-  background: var(--hover);
-}
-.feature-action:active {
-  transform: translateY(1px);
-}
+/* 尺寸、图标尺寸和默认图标色都由 IconButton 原语提供；
+   这里只表达当前模式的状态，不再重复按钮基础样式。 */
 .feature-action--soon {
   /* 禁用占位：图标颜色不弱化，靠底色表达禁用 */
-  color: var(--icon);
   background: var(--field);
 }
 .feature-action--soon:hover {
   background: var(--field);
 }
 .feature-action.is-active {
-  color: var(--icon);
+  /* 选中态是表面填充，不是图标强调色 */
   background: var(--mint-wash);
 }

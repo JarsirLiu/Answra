@@ -29,6 +29,28 @@ const ISOLATED_VARIANT = path.join(
 const COLOR_LITERAL = /#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?)\(/gi;
 const RAW_TOKEN = /var\(--[a-z0-9-]+-(?:tint|base)\b/gi;
 const SURFACE_ALPHA = /\b(?:bg|border|text|ring|outline|shadow)-(?:glass|panel|paper)\/\d+/g;
+/** 控件尺寸必须走 --control-* / --space-* / --font-*，不能回到 px 字面量。 */
+const CONTROL_SIZE_LITERAL =
+  /\b(?:font-size|height|min-height|padding(?:-[a-z]+)?|gap|row-gap|column-gap)\s*:\s*[^;{}]*\b\d+(?:\.\d+)?px\b/gi;
+/** 品牌薄荷只允许做面；这里拦前景色（图标/文字/描边色）。 */
+const ACCENT_FOREGROUND =
+  /\b(?:color|fill|stroke|border-color)\s*:\s*[^;{}]*var\(--mint(?:-text|-deep)?\)/gi;
+
+const CONTROL_SIZE_ROOTS = [
+  path.join(UI_SRC, "components", "controls"),
+  path.join(UI_SRC, "components", "floating-bar"),
+];
+const ACTION_CHROME_FILES = new Set(
+  [
+    ["components", "panels", "PanelShell.css"],
+    ["components", "panels", "ReplyBar.css"],
+    ["components", "panels", "SettingsPanel.css"],
+    ["components", "panels", "AnnouncementList.css"],
+    ["components", "panels", "AccountPanel.css"],
+    ["components", "panels", "InterviewCapturePanel.css"],
+    ["components", "panels", "UpdateSettingsGroup.css"],
+  ].map((parts) => path.join(UI_SRC, ...parts)),
+);
 
 const errors = [];
 
@@ -45,6 +67,11 @@ function walk(directory, extensions) {
 
 function stripCssComments(text) {
   return text.replace(/\/\*[\s\S]*?\*\//g, "");
+}
+
+function isUnder(file, root) {
+  const relative = path.relative(root, file);
+  return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
 }
 
 function locate(text, pattern) {
@@ -72,6 +99,25 @@ function checkFile(file) {
     }
     if (rawHits.length > 0) {
       errors.push(`${relative}: 组件 CSS 不得直接引用原始令牌\n  ${rawHits.join("\n  ")}`);
+    }
+
+    const sizeGuarded = CONTROL_SIZE_ROOTS.some((root) => isUnder(file, root));
+    if (sizeGuarded) {
+      const sizeHits = locate(css, CONTROL_SIZE_LITERAL);
+      if (sizeHits.length > 0) {
+        errors.push(
+          `${relative}: 控件 CSS 不得出现尺寸字面量，请改用 --control-* / --space-* / --font-*\n  ${sizeHits.join("\n  ")}`,
+        );
+      }
+    }
+
+    if (sizeGuarded || ACTION_CHROME_FILES.has(file)) {
+      const accentHits = locate(css, ACCENT_FOREGROUND);
+      if (accentHits.length > 0) {
+        errors.push(
+          `${relative}: 薄荷绿只能做实底/填充，不得用作图标或文字前景色\n  ${accentHits.join("\n  ")}`,
+        );
+      }
     }
     return;
   }

@@ -2,6 +2,7 @@ import type { DesktopAnnouncement } from "@answra/shared";
 import { CheckCheck, ChevronLeft, ChevronRight, Eraser } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ICON, ICON_SM, ICON_STROKE } from "../../tokens";
+import { IconButton } from "../controls/IconButton";
 import { SurfaceButton } from "../controls/SurfaceButton";
 import { Tooltip } from "../controls/Tooltip";
 import "./AnnouncementList.css";
@@ -51,15 +52,15 @@ interface AnnouncementDetailProps {
 function AnnouncementDetail({ item, error, onBack }: AnnouncementDetailProps) {
   return (
     <div className="announcement-detail">
-      <button
+      <SurfaceButton
         aria-label="返回公告列表"
         className="announcement-back"
         onClick={onBack}
-        type="button"
+        variant="quiet"
       >
         <ChevronLeft aria-hidden="true" size={ICON} strokeWidth={ICON_STROKE} />
         全部公告
-      </button>
+      </SurfaceButton>
       {error && (
         <p className="announcement-error" role="alert">
           {error}
@@ -161,26 +162,26 @@ export function AnnouncementList({ announcements, onMarkRead }: AnnouncementList
       )}
       <div className="announcement-toolbar">
         <Tooltip label="全部已读">
-          <SurfaceButton
-            aria-label="全部标为已读"
+          <IconButton
             className="announcement-toolbar-button"
             disabled={allBusy || pendingUnread.length === 0}
+            icon={CheckCheck}
+            label="全部标为已读"
             onClick={() => void markAllRead()}
+            size="sm"
             variant="quiet"
-          >
-            <CheckCheck aria-hidden="true" size={ICON} strokeWidth={ICON_STROKE} />
-          </SurfaceButton>
+          />
         </Tooltip>
         <Tooltip label="清除已读">
-          <SurfaceButton
-            aria-label="清除已读公告"
+          <IconButton
             className="announcement-toolbar-button"
             disabled={clearableCount === 0}
+            icon={Eraser}
+            label="清除已读公告"
             onClick={clearRead}
+            size="sm"
             variant="quiet"
-          >
-            <Eraser aria-hidden="true" size={ICON} strokeWidth={ICON_STROKE} />
-          </SurfaceButton>
+          />
         </Tooltip>
       </div>
       <div className="announcement-list">

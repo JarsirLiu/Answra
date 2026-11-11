@@ -41,10 +41,30 @@
   --bar-h: 36px;
   --bar-radius: 11px;
   --bar-pad-x: 6px;
-  --ctl-h: 26px;
-  --ctl-min-w: 26px;
+  /* 控件比例档：高度/字号/图标/内边距必须成对取同一档，
+     组件不得单独改其中一项。md 是悬浮条与面板头部的默认档；
+     xs 只服务缩略图上的微型覆盖按钮，sm 服务紧凑工具条与设置行。 */
+  --control-h-xs: 18px;
+  --control-h-sm: 22px;
+  --control-h-md: 26px;
+  --control-h-lg: 32px;
+  --control-font-xs: var(--font-2xs);
+  --control-font-sm: var(--font-xs);
+  --control-font-md: var(--font-md);
+  --control-font-lg: var(--font-sm);
+  --control-icon-xs: 12px;
+  --control-icon-sm: 12px;
+  --control-icon-md: 14px;
+  --control-icon-lg: 17px;
+  --control-pad-xs: 0;
+  --control-pad-sm: 6px;
+  --control-pad-md: 7px;
+  --control-pad-lg: 10px;
+  /* 控件尺寸兼容别名：旧组件继续读 --ctl-*，取值统一来自 md 档。 */
+  --ctl-h: var(--control-h-md);
+  --ctl-min-w: var(--control-h-md);
   --ctl-radius: 7px;
-  --ctl-pad-x: 7px;
+  --ctl-pad-x: var(--control-pad-md);
   --ctl-gap: 4px;
   --seg-gap: 6px;
   --divider-h: 14px;

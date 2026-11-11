@@ -3,8 +3,8 @@
 .badge-control {
   display: inline-flex;
   align-items: center;
-  height: 18px;
-  padding: 0 8px;
+  height: var(--control-h-xs);
+  padding: 0 var(--space-2);
   border-radius: 999px;
   font-size: var(--font-xs);
   font-weight: var(--label-weight);

@@ -8,7 +8,7 @@
   height: var(--ctl-h);
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--ctl-gap);
   padding: 0 var(--ctl-pad-x);
   border: 0;
   border-radius: var(--ctl-radius);
@@ -30,26 +30,26 @@
 .mode-menu {
   position: absolute;
   z-index: 3;
-  top: calc(var(--bar-h) + 6px);
+  top: calc(var(--bar-h) + var(--space-1) + var(--space-1) / 2);
   left: 0;
   width: var(--menu-w);
   display: grid;
-  gap: 2px;
-  padding: 4px;
+  gap: calc(var(--space-1) / 2);
+  padding: var(--space-1);
   border: 1px solid var(--glass-line);
-  border-radius: calc(var(--ctl-radius) + 2px);
+  border-radius: calc(var(--ctl-radius) + var(--space-1) / 2);
   background: var(--panel);
   box-shadow: var(--shadow-pop);
 }
 .floating-bar-stack.is-menu-in-flow .mode-menu {
   position: static;
-  margin-top: 6px;
+  margin-top: calc(var(--space-1) + var(--space-1) / 2);
 }
 .mode-menu-item {
   height: var(--menu-item-h);
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   padding: 0 var(--ctl-pad-x);
   border: 0;
   border-radius: var(--ctl-radius);
@@ -64,8 +64,8 @@
   background: var(--hover);
 }
 .mode-menu-item.is-active {
-  color: var(--mint-text);
-  background: var(--mint-wash);
+  color: var(--ink);
+  background: var(--field-strong);
 }
 .mode-menu-check {
   flex: 0 0 auto;

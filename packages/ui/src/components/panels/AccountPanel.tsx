@@ -179,6 +179,7 @@ export function AccountPanel({
               className="account-signout"
               disabled={busy}
               onClick={onSignOut}
+              size="lg"
               variant="quiet"
             >
               <LogOut aria-hidden="true" size={ICON} />
@@ -190,6 +191,7 @@ export function AccountPanel({
             className="account-signin"
             disabled={busy}
             onClick={onSignIn}
+            size="lg"
             variant="primary"
           >
             登录

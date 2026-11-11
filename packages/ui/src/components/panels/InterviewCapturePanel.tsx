@@ -134,15 +134,15 @@ export function InterviewCapturePanel({
     <PanelShell
       headerAction={
         onClear ? (
-          <button
+          <SurfaceButton
             aria-label={clearDisabledReason ?? "清空对话历史"}
-            className="panel-header-action surface-control surface-control--quiet"
+            className="panel-header-action"
             disabled={Boolean(clearDisabledReason)}
             onClick={onClear}
-            type="button"
+            variant="quiet"
           >
             清空
-          </button>
+          </SurfaceButton>
         ) : undefined
       }
       title="面试演练"
@@ -203,6 +203,7 @@ export function InterviewCapturePanel({
                 <SurfaceButton
                   disabled={starting || replying || running}
                   onClick={startRehearsal}
+                  size="lg"
                   variant="primary"
                 >
                   {starting ? "正在开始…" : "开始面试演练"}

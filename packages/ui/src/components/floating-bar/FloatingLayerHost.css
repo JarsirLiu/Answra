@@ -3,15 +3,15 @@
   align-self: flex-end;
   width: min(420px, calc(100vw - 16px));
   display: grid;
-  gap: 6px;
-  margin-bottom: 8px;
+  gap: calc(var(--space-1) + var(--space-1) / 2);
+  margin-bottom: var(--space-2);
 }
 
 .floating-layer {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
+  gap: var(--space-2);
+  padding: var(--space-2) calc(var(--space-2) + var(--space-1) / 2);
   border: 1px solid var(--glass-line);
   border-radius: var(--bar-radius);
   color: var(--ink);
@@ -20,7 +20,8 @@
   font-size: var(--font-sm);
 }
 
-.floating-notice svg {
+/* 只给警示图标上色；关闭按钮的图标颜色由 IconButton 决定。 */
+.floating-notice > svg {
   flex: none;
   color: var(--danger);
 }
@@ -30,47 +31,24 @@
   min-width: 0;
 }
 
+/* 尺寸与图标由 IconButton 提供，这里只保留圆形外观和中性色。 */
 .floating-layer-close {
-  width: 28px;
-  height: 28px;
-  flex: none;
-  display: grid;
-  place-items: center;
-  border: 0;
   border-radius: 50%;
   color: var(--muted);
-  background: transparent;
-}
-
-.floating-layer-close:hover {
-  color: var(--ink);
-  background: var(--hover);
 }
 
 .floating-permission {
   display: block;
-  padding: 12px;
+  padding: var(--space-3);
 }
 
 .floating-permission p {
-  margin: 6px 0 12px;
+  margin: calc(var(--space-1) + var(--space-1) / 2) 0 var(--space-3);
   color: var(--muted);
 }
 
 .floating-permission-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 6px;
-}
-
-.floating-permission-actions button {
-  min-height: 28px;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 0 9px;
-  border: 1px solid var(--glass-line-soft);
-  border-radius: var(--ctl-radius);
-  color: var(--ink);
-  background: var(--hover);
+  gap: calc(var(--space-1) + var(--space-1) / 2);
 }

@@ -136,6 +136,7 @@ export function UpdateSettingsGroup({ bridge }: UpdateSettingsGroupProps) {
               className="setting-action"
               disabled={busy || !action.enabled}
               onClick={() => handleAction(action.kind)}
+              size="sm"
               variant={action.kind === "install" ? "primary" : "default"}
             >
               {action.label}

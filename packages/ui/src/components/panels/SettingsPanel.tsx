@@ -7,6 +7,7 @@ import type {
 } from "@answra/shared";
 import { Eye, EyeOff } from "lucide-react";
 import { useEffect, useState } from "react";
+import { IconButton } from "../controls/IconButton";
 import { RangeSlider } from "../controls/RangeSlider";
 import { SurfaceButton } from "../controls/SurfaceButton";
 import { Switch } from "../controls/Switch";
@@ -306,6 +307,7 @@ export function SettingsPanel({
                     aria-pressed={source === "local"}
                     className="setting-source-option"
                     onClick={() => setSource("local")}
+                    size="sm"
                   >
                     本地模型
                   </SurfaceButton>
@@ -313,6 +315,7 @@ export function SettingsPanel({
                     aria-pressed={source === "cloud"}
                     className="setting-source-option"
                     onClick={() => setSource("cloud")}
+                    size="sm"
                   >
                     云端订阅
                   </SurfaceButton>
@@ -352,15 +355,14 @@ export function SettingsPanel({
                         value={apiKey}
                       />
                       <Tooltip label={revealKey ? "隐藏" : "显示"}>
-                        <SurfaceButton
-                          aria-label={revealKey ? "隐藏密钥" : "显示密钥"}
+                        <IconButton
                           aria-pressed={revealKey}
                           className="setting-secret-toggle"
+                          icon={revealKey ? EyeOff : Eye}
+                          label={revealKey ? "隐藏密钥" : "显示密钥"}
                           onClick={() => setRevealKey((value) => !value)}
                           variant="quiet"
-                        >
-                          {revealKey ? <EyeOff /> : <Eye />}
-                        </SurfaceButton>
+                        />
                       </Tooltip>
                     </span>
                   </label>
@@ -381,6 +383,7 @@ export function SettingsPanel({
                         className="setting-action"
                         disabled={modelBusy}
                         onClick={() => void saveModelSettings()}
+                        size="sm"
                         variant="primary"
                       >
                         保存
@@ -390,6 +393,7 @@ export function SettingsPanel({
                           className="setting-action"
                           disabled={modelBusy}
                           onClick={() => void clearModelSettings()}
+                          size="sm"
                           variant="quiet"
                         >
                           清除

@@ -1,6 +1,6 @@
-import { X } from "lucide-react";
+﻿import { X } from "lucide-react";
 import type { ReactNode } from "react";
-import { ICON_SM } from "../../tokens";
+import { IconButton } from "../controls/IconButton";
 import "./PanelShell.css";
 
 export interface PanelTab {
@@ -62,9 +62,13 @@ export function PanelShell({
           </button>
         ))}
       </div>
-      <button aria-label="收起面板" className="panel-close" onClick={onClose} type="button">
-        <X aria-hidden="true" size={ICON_SM} />
-      </button>
+      <IconButton
+        className="panel-close"
+        icon={X}
+        label="收起面板"
+        onClick={onClose}
+        variant="quiet"
+      />
     </>
   );
   return (
@@ -79,9 +83,13 @@ export function PanelShell({
           <h1 className="panel-title">{title}</h1>
           {context && <div className="panel-context">{context}</div>}
           {headerAction}
-          <button aria-label="收起面板" className="panel-close" onClick={onClose} type="button">
-            <X aria-hidden="true" size={ICON_SM} />
-          </button>
+          <IconButton
+            className="panel-close"
+            icon={X}
+            label="收起面板"
+            onClick={onClose}
+            variant="quiet"
+          />
         </header>
       )}
       {children}

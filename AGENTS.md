@@ -63,9 +63,17 @@
 - 变量名只允许在 `packages/shared/src/env.ts` 定义一次；`.env.example` 逐项注明用途与是否 secret。
 - 运行时读取统一走类型化函数（如 `parseAnswraEnv`），禁止散落 `process.env.XXX`。
 
+## UI 原语与比例
+
+- 动作按钮只用 `SurfaceButton`（文字）或 `IconButton`（纯图标，`label` 必填）；菜单项、列表行、Tab 用各自的 row/tab 样式，不复制按钮原语。
+- 控件尺寸成对取 `--control-*` 的 `xs/sm/md/lg` 档，间距取 `--space-*`，字号取 `--font-*`；控件与悬浮条 CSS 禁止 `font-size/height/min-height/padding/gap` 的 px 字面量。
+- 图标默认 `--icon`，文字默认 `--ink`；`--mint` 只做面（主操作实底、进度、开关、滑杆、选中填充），不得用作图标、文字或描边前景色。
+- 每个面板/浮窗最多一个 `primary`；需要多个高优先级动作时降为 `default` 或 `quiet`。
+- 新控件先补原语、测试（`packages/ui/test/controlsContract.test.tsx`）和 Note，再写业务组件；契约来源见 `docs/notes/proposed/architecture/2026-11-11-ui-primitive-and-proportion-contract.md`。
+
 ## 质量门禁
 
-- `pnpm verify` = biome lint + 全包 typecheck + vitest + 架构守护；其中 Note 检查走 `pnpm notes:hint`（只提示、不阻断本地提交）；husky pre-push 自动执行。
+- `pnpm verify` = biome lint + 全包 typecheck + vitest + 架构守护 + `tokens:check`；其中 Note 检查走 `pnpm notes:hint`（只提示、不阻断本地提交）；husky pre-push 自动执行。
 - `pnpm notes:check`（严格）保留给 CI 与发布前：缺少配套 Note、Note 格式不完整或本地链接失效时失败。CI（`.github/workflows/ci.yml`）以 `--base` 比较目标分支执行严格模式。
 - 提交前自检与门禁执行要点（范围意图、Note 配对、全量门禁、diff 自审、秘密与工件、Conventional Commits）收编在 `.agents/skills/answra-code/SKILL.md` 终篇，不再单设 skill。
 - 写代码与评审的工程规范见 `.agents/skills/answra-code/SKILL.md`：前置条件闸门（事实不足必须停下并客观告知）、代码落层判断、契约与类型纪律、状态与行为的显式来源（禁推演状态）、防御性代码预算、魔法值清零、规模预算（函数/文件/目录）、co-location、可读性、并行模块纪律。

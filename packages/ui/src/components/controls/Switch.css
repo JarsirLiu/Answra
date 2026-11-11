@@ -18,7 +18,7 @@
   display: block;
   position: relative;
   width: 30px;
-  height: 18px;
+  height: var(--control-h-xs);
   border: 1px solid var(--edge-line);
   border-radius: 9px;
   background: var(--field-strong);
@@ -41,8 +41,8 @@
   position: absolute;
   top: 2px;
   left: 2px;
-  width: 12px;
-  height: 12px;
+  width: var(--control-icon-xs);
+  height: var(--control-icon-xs);
   border-radius: 50%;
   background: var(--icon);
   box-shadow: var(--shadow-ctl);

@@ -1,9 +1,8 @@
 import type { AgentConnectionState, ReplyBarActivity } from "@answra/shared";
 import { Camera, ChevronDown, ChevronUp, Send, Square, X } from "lucide-react";
 import type { RefObject } from "react";
-import { ICON, ICON_SM, ICON_STROKE } from "../../tokens";
 import { ConnectionNotice, formatConnectionNotice, ModelErrorNotice } from "../chat";
-import { SurfaceButton } from "../controls/SurfaceButton";
+import { IconButton } from "../controls/IconButton";
 import type { ChatAttachment } from "./ChatPanel";
 import { ReplyActivityTicker } from "./ReplyActivityTicker";
 import "./ReplyBar.css";
@@ -98,9 +97,10 @@ export function ReplyBar({
         />
         <div className="reply-actions reply-actions--stream">
           {showConversationToggle && (
-            <SurfaceButton
+            <IconButton
               aria-expanded={conversationExpanded}
-              aria-label={
+              icon={conversationExpanded ? ChevronDown : ChevronUp}
+              label={
                 conversationPinned
                   ? "取消固定并收起对话面板"
                   : conversationExpanded
@@ -108,37 +108,24 @@ export function ReplyBar({
                     : "展开对话面板"
               }
               onClick={onToggleConversation}
-              type="button"
-            >
-              {conversationExpanded ? (
-                <ChevronDown aria-hidden="true" size={ICON_SM} strokeWidth={ICON_STROKE} />
-              ) : (
-                <ChevronUp aria-hidden="true" size={ICON_SM} strokeWidth={ICON_STROKE} />
-              )}
-            </SurfaceButton>
+            />
           )}
           {/* 保持发送/停止键在关闭键左侧，流式内容不能挤压这组操作。
               与导航条图标同一中性语言（默认变体），不再用品牌薄荷实底。 */}
-          <SurfaceButton
-            aria-label="取消回复并返回发送"
+          <IconButton
             className="reply-stop"
+            icon={replyPending ? Square : Send}
+            iconProps={replyPending ? { fill: "currentColor" } : undefined}
+            label="取消回复并返回发送"
             onClick={replyPending || replyError ? onCancel : onClose}
-            type="button"
-          >
-            {replyPending ? (
-              <Square
-                aria-hidden="true"
-                fill="currentColor"
-                size={ICON_SM}
-                strokeWidth={ICON_STROKE}
-              />
-            ) : (
-              <Send aria-hidden="true" size={ICON_SM} strokeWidth={ICON_STROKE} />
-            )}
-          </SurfaceButton>
-          <SurfaceButton aria-label="收起回复条" className="reply-close" onClick={onClose}>
-            <X aria-hidden="true" size={ICON_SM} strokeWidth={ICON_STROKE} />
-          </SurfaceButton>
+          />
+          <IconButton
+            className="reply-close"
+            icon={X}
+            label="收起回复条"
+            onClick={onClose}
+            size="sm"
+          />
         </div>
       </section>
     );
@@ -156,9 +143,10 @@ export function ReplyBar({
         />
         <div className="reply-actions reply-actions--stream">
           {showConversationToggle && (
-            <SurfaceButton
+            <IconButton
               aria-expanded={conversationExpanded}
-              aria-label={
+              icon={conversationExpanded ? ChevronDown : ChevronUp}
+              label={
                 conversationPinned
                   ? "取消固定并收起对话面板"
                   : conversationExpanded
@@ -166,21 +154,16 @@ export function ReplyBar({
                     : "展开对话面板"
               }
               onClick={onToggleConversation}
-              type="button"
-            >
-              {conversationExpanded ? (
-                <ChevronDown aria-hidden="true" size={ICON_SM} strokeWidth={ICON_STROKE} />
-              ) : (
-                <ChevronUp aria-hidden="true" size={ICON_SM} strokeWidth={ICON_STROKE} />
-              )}
-            </SurfaceButton>
+            />
           )}
-          <SurfaceButton aria-label="继续截图" onClick={onScreenshot}>
-            <Camera aria-hidden="true" size={ICON_SM} strokeWidth={ICON_STROKE} />
-          </SurfaceButton>
-          <SurfaceButton aria-label="收起回复条" className="reply-close" onClick={onClose}>
-            <X aria-hidden="true" size={ICON_SM} strokeWidth={ICON_STROKE} />
-          </SurfaceButton>
+          <IconButton icon={Camera} label="继续截图" onClick={onScreenshot} />
+          <IconButton
+            className="reply-close"
+            icon={X}
+            label="收起回复条"
+            onClick={onClose}
+            size="sm"
+          />
         </div>
       </section>
     );
@@ -209,13 +192,13 @@ export function ReplyBar({
                 className="attachment-thumb-image"
                 src={att.previewUrl}
               />
-              <SurfaceButton
-                aria-label="移除截图"
+              <IconButton
                 className="attachment-remove"
+                icon={X}
+                label="移除截图"
                 onClick={() => onAttachmentRemove(att.id)}
-              >
-                <X aria-hidden="true" size={ICON_SM} strokeWidth={ICON_STROKE} />
-              </SurfaceButton>
+                size="xs"
+              />
             </div>
           ))}
         </fieldset>
@@ -227,9 +210,10 @@ export function ReplyBar({
       )}
       <div className="reply-actions">
         {showConversationToggle && (
-          <SurfaceButton
+          <IconButton
             aria-expanded={conversationExpanded}
-            aria-label={
+            icon={conversationExpanded ? ChevronDown : ChevronUp}
+            label={
               conversationPinned
                 ? "取消固定并收起对话面板"
                 : conversationExpanded
@@ -237,29 +221,23 @@ export function ReplyBar({
                   : "展开对话面板"
             }
             onClick={onToggleConversation}
-            type="button"
-          >
-            {conversationExpanded ? (
-              <ChevronDown aria-hidden="true" size={ICON_SM} strokeWidth={ICON_STROKE} />
-            ) : (
-              <ChevronUp aria-hidden="true" size={ICON_SM} strokeWidth={ICON_STROKE} />
-            )}
-          </SurfaceButton>
+          />
         )}
-        <SurfaceButton aria-label="继续截图" onClick={onScreenshot}>
-          <Camera aria-hidden="true" size={ICON} strokeWidth={ICON_STROKE} />
-        </SurfaceButton>
-        <SurfaceButton
-          aria-label="确认发送"
+        <IconButton icon={Camera} label="继续截图" onClick={onScreenshot} />
+        <IconButton
           className="reply-send"
           disabled={!draft.trim() && attachments.length === 0}
+          icon={Send}
+          label="确认发送"
           onClick={onSend}
-        >
-          <Send aria-hidden="true" size={ICON} strokeWidth={ICON_STROKE} />
-        </SurfaceButton>
-        <SurfaceButton aria-label="收起回复条" className="reply-close" onClick={onClose}>
-          <X aria-hidden="true" size={ICON_SM} strokeWidth={ICON_STROKE} />
-        </SurfaceButton>
+        />
+        <IconButton
+          className="reply-close"
+          icon={X}
+          label="收起回复条"
+          onClick={onClose}
+          size="sm"
+        />
       </div>
     </section>
   );
