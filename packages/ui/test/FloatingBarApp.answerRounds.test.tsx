@@ -161,6 +161,8 @@ describe("floating bar screenshot answer rounds", () => {
     expect(within(details).queryByText(/答案：D/)).not.toBeInTheDocument();
   });
 
+  // 工作区面板是懒加载模块：全量测试并行时会与冷启动 transform 叠加，
+  // 默认 5 秒用例超时可能先于 10 秒查询窗口到期，因此单独放宽。
   it("restores the panel that was open before entering screenshot reply workflow", async () => {
     const bridge = {
       close: vi.fn(),
@@ -182,9 +184,8 @@ describe("floating bar screenshot answer rounds", () => {
     expect(screen.queryByRole("heading", { name: "笔记本 / 资料" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "收起回复条" }));
-    // 工作区面板是懒加载模块；冷启动 transform 可能超过默认 1s 查询窗口。
     expect(
-      await screen.findByRole("heading", { name: "笔记本 / 资料" }, { timeout: 5000 }),
+      await screen.findByRole("heading", { name: "笔记本 / 资料" }, { timeout: 10_000 }),
     ).toBeInTheDocument();
-  });
+  }, 15_000);
 });
