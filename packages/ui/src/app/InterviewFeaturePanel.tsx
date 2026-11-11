@@ -1,97 +1,69 @@
+import { SurfaceButton } from "../components/controls/SurfaceButton";
+import { PanelShell } from "../components/panels/PanelShell";
+import { InterviewOnboardingPanel } from "../interview/onboarding/InterviewOnboardingPanel";
+import { useInterviewOnboarding } from "../interview/onboarding/useInterviewOnboarding";
+import "../interview/onboarding/onboarding.css";
 import {
-  ActiveInterviewConversationId,
-  type AgentConnectionState,
-  type ConversationSnapshot,
-  type DesktopBridge,
-  isAgentServiceDisconnectedError,
-} from "@answra/shared";
-import { useCallback, useEffect, useState } from "react";
-import { AGENT_SERVICE_UNAVAILABLE_NOTICE } from "../components/chat";
-import { InterviewCapturePanel } from "../components/panels/InterviewCapturePanel";
-import type { InterviewCapturePort, InterviewCaptureState } from "./interviewCapture";
-import { useInterviewConversation } from "./useInterviewConversation";
+  InterviewRehearsalPanel,
+  type InterviewRehearsalPanelProps,
+} from "./InterviewRehearsalPanel";
 
-const START_REHEARSAL_MESSAGE =
-  "开始面试演练。请先检查我的面试记忆和简历是否存在，再引导我补充信息；资料齐全后再开始提问。";
+/** 面试面板入口：先走首次引导，完成/跳过后才进入原有演练会话。 */
+export function InterviewFeaturePanel(props: InterviewRehearsalPanelProps) {
+  const onboarding = useInterviewOnboarding(props.platform);
 
-interface InterviewFeaturePanelProps {
-  platform: DesktopBridge | undefined;
-  capture: InterviewCapturePort | undefined;
-  state: InterviewCaptureState;
-  connection?: AgentConnectionState;
-  onClear: (conversationId: string) => Promise<ConversationSnapshot>;
-  onClose: () => void;
+  if (onboarding.loading) {
+    return <InterviewOnboardingNotice message="正在读取面试引导…" onClose={props.onClose} />;
+  }
+
+  if (onboarding.error && !onboarding.state) {
+    return (
+      <InterviewOnboardingNotice
+        message={onboarding.error}
+        onClose={props.onClose}
+        onRetry={onboarding.reload}
+      />
+    );
+  }
+
+  if (onboarding.state?.status === "pending") {
+    return (
+      <InterviewOnboardingPanel
+        error={onboarding.error}
+        onAddProject={onboarding.addProject}
+        onClose={props.onClose}
+        onComplete={onboarding.complete}
+        onImportResume={onboarding.importResume}
+        onPickResume={onboarding.pickResume}
+        onSkip={onboarding.skip}
+        onUpdate={onboarding.update}
+        state={onboarding.state}
+      />
+    );
+  }
+
+  return <InterviewRehearsalPanel {...props} />;
 }
 
-/** Owns the interview conversation projection, manual send, and clear flow for the panel. */
-export function InterviewFeaturePanel({
-  platform,
-  capture,
-  state,
-  connection,
-  onClear,
+function InterviewOnboardingNotice({
+  message,
   onClose,
-}: InterviewFeaturePanelProps) {
-  const { view, reconcileSnapshot, clearMessages, cancel } = useInterviewConversation(
-    platform,
-    ActiveInterviewConversationId,
-  );
-  const [error, setError] = useState<string>();
-  const lastMessage = view.messages.at(-1);
-  const replyId = lastMessage?.role === "assistant" ? lastMessage.id : undefined;
-
-  const clearNow = useCallback((): void => {
-    setError(undefined);
-    void onClear(ActiveInterviewConversationId).catch(() => undefined);
-  }, [onClear]);
-
-  useEffect(() => {
-    if (replyId || view.activeRunId) setError(undefined);
-  }, [replyId, view.activeRunId]);
-
-  useEffect(() => {
-    if (connection?.status !== "reconnecting" && connection?.status !== "unavailable") return;
-    // 链路断开后旧失败原因已过期：连接提示是唯一主因，重连成功后的空快照再清 transcript。
-    setError(undefined);
-    clearMessages();
-  }, [clearMessages, connection?.status]);
-
-  async function sendText(text: string): Promise<void> {
-    setError(undefined);
-    if (!platform?.sendInterviewMessage) throw new Error("当前版本不支持发送消息");
-    try {
-      const { snapshot } = await platform.sendInterviewMessage(ActiveInterviewConversationId, text);
-      await reconcileSnapshot(snapshot);
-    } catch (sendError) {
-      setError(
-        isAgentServiceDisconnectedError(sendError)
-          ? AGENT_SERVICE_UNAVAILABLE_NOTICE
-          : sendError instanceof Error
-            ? sendError.message
-            : "消息发送失败",
-      );
-      throw sendError;
-    }
-  }
-
-  function startRehearsal(): Promise<void> {
-    return sendText(START_REHEARSAL_MESSAGE);
-  }
-
+  onRetry,
+}: {
+  message: string;
+  onClose: () => void;
+  onRetry?: () => Promise<void>;
+}) {
   return (
-    <InterviewCapturePanel
-      capture={capture}
-      state={state}
-      messages={view.messages}
-      retry={view.retry}
-      connection={connection}
-      error={error ?? view.error}
-      onSendText={sendText}
-      onStartRehearsal={platform?.sendInterviewMessage ? startRehearsal : undefined}
-      onCancel={platform?.cancelConversationRun ? cancel : undefined}
-      onClear={clearNow}
-      clearDisabledReason={view.messages.length === 0 ? "本场演练还没有对话" : undefined}
-      onClose={onClose}
-    />
+    <PanelShell title="面试演练" variant="interview" onClose={onClose}>
+      <div className="interview-onboarding-notice" role="status">
+        <p>{message}</p>
+        {onRetry ? (
+          <SurfaceButton onClick={() => void onRetry()} variant="primary">
+            重新读取
+          </SurfaceButton>
+        ) : null}
+      </div>
+    </PanelShell>
   );
 }

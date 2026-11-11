@@ -56,6 +56,7 @@ if (userShellEnv.status === "loaded") {
 let ambientController: ReturnType<typeof createAmbientThemeController> | undefined;
 let stopInterview: () => Promise<void> = async () => undefined;
 let disposeInterview: () => void = () => undefined;
+let disposeInterviewOnboarding: () => void = () => undefined;
 let bindInterviewWindow: (window: BrowserWindow) => void = () => undefined;
 let getWorkspaceRoot: () => string | null = () => null;
 let disposeWorkspace: (() => void) | undefined;
@@ -141,9 +142,19 @@ if (!app.requestSingleInstanceLock()) {
     registerCaptureIpc();
     if (__ANSWRA_FEATURE_INTERVIEW__) {
       const { registerInterviewIpc } = await import("./interview/interviewIpc");
+      const { createInterviewOnboardingStore } = await import(
+        "./interview/interviewOnboardingStore"
+      );
+      const { registerInterviewOnboardingIpc } = await import("./interview/interviewOnboardingIpc");
+      const { pickInterviewResume } = await import("./interview/pickResumeFile");
       const interview = registerInterviewIpc(agentService);
+      const onboarding = registerInterviewOnboardingIpc({
+        store: createInterviewOnboardingStore({ dataRoot: interviewDataRoot }),
+        pickResumeFile: () => pickInterviewResume(getWindow() ?? null),
+      });
       stopInterview = () => interview.stopActive();
       disposeInterview = () => interview.dispose();
+      disposeInterviewOnboarding = () => onboarding.dispose();
       bindInterviewWindow = (window) => interview.bindWindow(window);
     }
     registerAmbientIpc((enabled) => ambientController?.setEnabled(enabled));
@@ -201,6 +212,7 @@ if (!app.requestSingleInstanceLock()) {
       .catch(() => undefined)
       .finally(() => agentService.stop());
     disposeInterview();
+    disposeInterviewOnboarding();
     disposeWorkspace?.();
   });
 

@@ -15,7 +15,10 @@ import {
   type DesktopBridge,
   type InterviewChange,
   InterviewChannels,
+  type InterviewOnboardingPatch,
   type InterviewPcmFrame,
+  type InterviewProjectAddRequest,
+  type InterviewResumeImportRequest,
   type RegionCaptureOptions,
   type ReplyBarAction,
   type ReplyBarPlacement,
@@ -184,6 +187,16 @@ const bridge: DesktopBridge = {
     ipcRenderer.on(InterviewChannels.Change, wrapped);
     return () => ipcRenderer.removeListener(InterviewChannels.Change, wrapped);
   },
+  getInterviewOnboardingState: () => ipcRenderer.invoke(InterviewChannels.OnboardingGetState),
+  pickInterviewResume: () => ipcRenderer.invoke(InterviewChannels.OnboardingPickResume),
+  importInterviewResume: (request: InterviewResumeImportRequest) =>
+    ipcRenderer.invoke(InterviewChannels.OnboardingImportResume, request),
+  updateInterviewOnboarding: (patch: InterviewOnboardingPatch) =>
+    ipcRenderer.invoke(InterviewChannels.OnboardingUpdate, patch),
+  addInterviewOnboardingProject: (request: InterviewProjectAddRequest) =>
+    ipcRenderer.invoke(InterviewChannels.OnboardingAddProject, request),
+  completeInterviewOnboarding: () => ipcRenderer.invoke(InterviewChannels.OnboardingComplete),
+  skipInterviewOnboarding: () => ipcRenderer.invoke(InterviewChannels.OnboardingSkip),
   getWorkspaceRoot: () => ipcRenderer.invoke(WorkspaceChannels.GetRoot),
   pickWorkspaceRoot: () => ipcRenderer.invoke(WorkspaceChannels.PickRoot),
   listWorkspaceTree: () => ipcRenderer.invoke(WorkspaceChannels.ListTree),

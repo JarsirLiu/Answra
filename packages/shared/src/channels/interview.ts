@@ -10,6 +10,13 @@ export const InterviewChannels = {
   AudioFrame: "answra:interview:audio-frame",
   AudioCredit: "answra:interview:audio-credit",
   Change: "answra:interview:change",
+  OnboardingGetState: "answra:interview:onboarding-get-state",
+  OnboardingPickResume: "answra:interview:onboarding-pick-resume",
+  OnboardingImportResume: "answra:interview:onboarding-import-resume",
+  OnboardingUpdate: "answra:interview:onboarding-update",
+  OnboardingAddProject: "answra:interview:onboarding-add-project",
+  OnboardingComplete: "answra:interview:onboarding-complete",
+  OnboardingSkip: "answra:interview:onboarding-skip",
 } as const;
 
 /** Bounds audio frames in flight while the Agent processes them in batches. */
@@ -37,6 +44,85 @@ export type InterviewChange =
   | { sessionId: string; type: "answer"; questionId: string; text: string }
   | { sessionId: string; type: "answer-ignored"; questionId: string }
   | { sessionId: string; type: "answer-stale"; questionId: string };
+
+export const INTERVIEW_ONBOARDING_STEPS = ["resume", "projects", "ready"] as const;
+export type InterviewOnboardingStep = (typeof INTERVIEW_ONBOARDING_STEPS)[number];
+
+export const INTERVIEW_ONBOARDING_STATUSES = ["pending", "completed", "skipped"] as const;
+export type InterviewOnboardingStatus = (typeof INTERVIEW_ONBOARDING_STATUSES)[number];
+
+export const INTERVIEW_RESUME_TEXT_MAX_CHARS = 200_000;
+export const INTERVIEW_RESUME_FILE_MAX_BYTES = 2_000_000;
+export const INTERVIEW_RESUME_FILE_NAME_MAX_LENGTH = 200;
+export const INTERVIEW_PROJECTS_MAX = 20;
+export const INTERVIEW_PROJECT_ID_MAX_LENGTH = 160;
+export const INTERVIEW_PROJECT_NAME_MAX_LENGTH = 120;
+export const INTERVIEW_PROJECT_ROLE_MAX_LENGTH = 80;
+export const INTERVIEW_PROJECT_PERIOD_MAX_LENGTH = 80;
+export const INTERVIEW_PROJECT_SUMMARY_MAX_LENGTH = 500;
+export const INTERVIEW_PROJECT_EVIDENCE_MAX_LENGTH = 1_000;
+export const INTERVIEW_TARGET_ROLE_MAX_LENGTH = 120;
+
+/** A project candidate extracted from the selected resume; evidence stays local to the panel. */
+export interface InterviewOnboardingProject {
+  id: string;
+  name: string;
+  role?: string;
+  period?: string;
+  summary?: string;
+  evidence?: string;
+}
+
+export interface InterviewOnboardingResume {
+  id: string;
+  fileName: string;
+  projects: InterviewOnboardingProject[];
+}
+
+export interface InterviewOnboardingState {
+  version: 1;
+  status: InterviewOnboardingStatus;
+  step: InterviewOnboardingStep;
+  resume: InterviewOnboardingResume | null;
+  selectedProjectIds: string[];
+  targetRole: string;
+  updatedAt: string;
+}
+
+/** Renderer may only change draft fields; importing a resume and finalizing stay separate. */
+export interface InterviewOnboardingPatch {
+  step?: InterviewOnboardingStep;
+  selectedProjectIds?: string[];
+  targetRole?: string;
+}
+
+export interface InterviewResumePickResult {
+  cancelled: boolean;
+  state: InterviewOnboardingState;
+}
+
+export interface InterviewResumeImportRequest {
+  fileName?: string;
+  text: string;
+}
+
+export interface InterviewProjectAddRequest {
+  name: string;
+  summary?: string;
+}
+
+export function isInterviewOnboardingStep(value: unknown): value is InterviewOnboardingStep {
+  return (
+    typeof value === "string" && (INTERVIEW_ONBOARDING_STEPS as readonly string[]).includes(value)
+  );
+}
+
+export function isInterviewOnboardingStatus(value: unknown): value is InterviewOnboardingStatus {
+  return (
+    typeof value === "string" &&
+    (INTERVIEW_ONBOARDING_STATUSES as readonly string[]).includes(value)
+  );
+}
 
 /** Binary PCM IPC DTO. Provider and Agent domain types do not cross into shared. */
 export interface InterviewPcmFrame {
@@ -68,6 +154,34 @@ export interface InterviewChannelMap {
     response: undefined;
   };
   [InterviewChannels.Change]: { request: undefined; response: undefined };
+  [InterviewChannels.OnboardingGetState]: {
+    request: undefined;
+    response: InterviewOnboardingState;
+  };
+  [InterviewChannels.OnboardingPickResume]: {
+    request: undefined;
+    response: InterviewResumePickResult;
+  };
+  [InterviewChannels.OnboardingImportResume]: {
+    request: InterviewResumeImportRequest;
+    response: InterviewOnboardingState;
+  };
+  [InterviewChannels.OnboardingUpdate]: {
+    request: InterviewOnboardingPatch;
+    response: InterviewOnboardingState;
+  };
+  [InterviewChannels.OnboardingAddProject]: {
+    request: InterviewProjectAddRequest;
+    response: InterviewOnboardingState;
+  };
+  [InterviewChannels.OnboardingComplete]: {
+    request: undefined;
+    response: InterviewOnboardingState;
+  };
+  [InterviewChannels.OnboardingSkip]: {
+    request: undefined;
+    response: InterviewOnboardingState;
+  };
 }
 
 export const ActiveExamConversationId = "active-exam-conversation";

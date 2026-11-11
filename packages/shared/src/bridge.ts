@@ -11,7 +11,12 @@ import type {
   ConversationSnapshot,
   DesktopAnnouncement,
   InterviewChange,
+  InterviewOnboardingPatch,
+  InterviewOnboardingState,
   InterviewPcmFrame,
+  InterviewProjectAddRequest,
+  InterviewResumeImportRequest,
+  InterviewResumePickResult,
   RegionCaptureOptions,
   ReplyBarAction,
   ReplyBarPlacement,
@@ -150,6 +155,27 @@ export interface DesktopBridge {
     listener: (credit: { sessionId: string; count: number }) => void,
   ) => () => void;
   onInterviewChange?: (listener: (change: InterviewChange) => void) => () => void;
+  // ---- 面试首次引导（面试面板内三步；浏览器预览/测试环境可未实现） ----
+  /** 读取首次引导状态；未实现时 UI 视为已完成，直接显示演练面板。 */
+  getInterviewOnboardingState?: () => Promise<InterviewOnboardingState>;
+  /** 主进程弹出系统文件框并导入 .md/.txt 简历；取消时 state 不变。 */
+  pickInterviewResume?: () => Promise<InterviewResumePickResult>;
+  /** 导入粘贴的简历文本；与文件选择共用解析和持久化路径。 */
+  importInterviewResume?: (
+    request: InterviewResumeImportRequest,
+  ) => Promise<InterviewOnboardingState>;
+  /** 保存步骤游标、项目选择和目标岗位；主进程只接受 pending 状态。 */
+  updateInterviewOnboarding?: (
+    patch: InterviewOnboardingPatch,
+  ) => Promise<InterviewOnboardingState>;
+  /** 手动添加简历里没有识别到的项目。 */
+  addInterviewOnboardingProject?: (
+    request: InterviewProjectAddRequest,
+  ) => Promise<InterviewOnboardingState>;
+  /** 完成引导；之后再次打开面试面板直接进入演练。 */
+  completeInterviewOnboarding?: () => Promise<InterviewOnboardingState>;
+  /** 稍后再说；不阻断面试入口，之后不再自动弹出引导。 */
+  skipInterviewOnboarding?: () => Promise<InterviewOnboardingState>;
   // ---- 本地工作区（合并笔记本与资料；浏览器预览/测试环境可未实现，调用方需判空） ----
   /** 读取缓存的上一工作区根目录；未选择过时 root 为 null。 */
   getWorkspaceRoot?: () => Promise<{ root: string | null }>;
