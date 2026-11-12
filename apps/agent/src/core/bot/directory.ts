@@ -19,8 +19,8 @@ export function visibleBots<Input, Policy>({
   for (const participant of participants) {
     if (participant === viewer || seen.has(participant)) continue;
     seen.add(participant);
-    const bot = catalog.find(participant);
-    if (!bot) continue;
+    // participants 来自已认领的会话种子；目录缺失表示恢复数据损坏，不能静默当作不可见。
+    const bot = catalog.require(participant);
     if (!canDiscover(bot, viewer, teams)) continue;
     visible.push(bot);
   }

@@ -100,6 +100,20 @@ describe("core bot directory", () => {
     ).toThrow("Bot 无法发现交接目标：a -> outsider");
   });
 
+  it("fails closed when a session participant is missing from the catalog", () => {
+    const directory = catalog([bot("a", { visibleTo: { kind: "team", teamId: "interview" } })]);
+    const presets = teams(["a"]);
+
+    expect(() =>
+      visibleBots({
+        participants: ["a", "missing"],
+        viewer: "a",
+        catalog: directory,
+        teams: presets.teams(),
+      }),
+    ).toThrow("Bot 未注册：missing");
+  });
+
   it("rejects handoff in a single-participant conversation", () => {
     const directory = catalog([
       bot("a", { visibleTo: { kind: "team", teamId: "conversation" } }),

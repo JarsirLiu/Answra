@@ -395,6 +395,14 @@ host         ──> 所有领域（只接线）
 - **后果**：同一会话的 Bot 归属只在创建时确定；已有会话重复 `create` 是幂等读取；`send` 的显式 `botId` 必须等于当前 `activeAgentId`；`chat-send` 缺省仍沿用当前 Bot。
 - **验证**：`AgentRegistry` 只测 ID 注册与团队入口/成员；Bot 目录测试覆盖全目录 discovery 悬空引用；store 测试覆盖重复 `create` 不覆盖 seed 且 `clear` 保留原 seed；会话测试覆盖不同 Bot selection、显式 `send(botId)` 与团队 send 的冲突拒绝。
 
+### 修复：可见目录对未知参与者 fail-closed（2026-11-12）
+
+- **问题**：`visibleBots` 对 `participantAgentIds` 中无法在目录解析的 ID 直接 `continue`，把损坏的会话种子伪装成“没有可见 Bot”；`assertCanHandoff` 随后只报“无法发现交接目标”，掩盖真实数据错误。
+- **决定**：会话参与者来自启动期校验过的 seed，目录缺失属于恢复数据损坏；`visibleBots` 改用 `catalog.require`，直接抛 `Bot 未注册：<id>`，不再继续查询。
+- **替代方案**：继续跳过未知参与者并让交接报权限错误（舍弃：无法区分“不可见”和“数据损坏”，排障会走向错误方向）；只在 `assertCanHandoff` 里预检（舍弃：`visibleBots` 的其他调用方仍会 fail-open，且形成第二份校验）。
+- **后果**：可见性查询不再容忍悬空 participant；`visibleBots` 调用方必须保证 participants 来自已校验的会话种子。
+- **验证**：`core bot directory` 新增未知参与者抛错用例；单参与者会话与正常 ACL 用例保持通过。
+
 ### 验证（2026-11-12）
 
 - 通过：`pnpm lint`、四包 `typecheck`、`pnpm architecture:check`、`pnpm tokens:check`、
