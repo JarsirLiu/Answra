@@ -56,7 +56,7 @@
 
 ## 后果与防回退
 
-- 新增平台（如 Linux）时只能加矩阵项 + 对应 `dist:*` 脚本，禁止另建 workflow，否则又回到多套发布入口。
+- 新增平台（如 Linux）时只能在 `prepare` 作业的平台表里加一项（`platform`/`os`/`script`）+ 对应 `dist:*` 脚本，禁止另建 workflow，否则又回到多套发布入口；矩阵为何由 `prepare` 输出见 [Release 工作流 job 级 if 引用 matrix 导致 workflow 无效](../bug-fix/2026-11-12-release-workflow-matrix-if-context.md)。
 - 任何安装包产物都必须能被 `upload-to-cos.mjs` 的文件集合覆盖（清单引用或 `.dmg`）；新增产物类型要同时改脚本，否则会出现"artifact 有、COS 没有"。
 - 清单引用的更新链路安装包（exe/zip/appimage）缺 `.blockmap` 时上传脚本硬失败，禁止回退为只提示；相关更新行为见 [双平台自动更新与未签名 mac 自动换装](../feature/2026-11-01-cross-platform-auto-update.md)。
 - 更新清单必须最后发布，不能让客户端先读到尚未就绪的新版本元数据；上传集合不得扩展为整个 `release/` 目录，以免引入无用文件与额外分发流量。

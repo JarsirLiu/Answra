@@ -35,20 +35,47 @@ permissions:
   contents: write
 
 jobs:
+  # job 级 if 拿不到 matrix 上下文，手动触发的平台筛选只能在矩阵生成前完成，
+  # 因此由 prepare 输出矩阵；标签触发时输出全平台。
+  prepare:
+    name: Resolve build matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.resolve.outputs.matrix }}
+    steps:
+      - name: Resolve platforms
+        id: resolve
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PLATFORM: ${{ inputs.platform }}
+        shell: bash
+        run: |
+          node --input-type=module -e '
+            import { appendFileSync } from "node:fs";
+            const platforms = [
+              { platform: "windows", os: "windows-latest", script: "dist:win" },
+              { platform: "macos", os: "macos-14", script: "dist:mac" },
+            ];
+            const requested = process.env.PLATFORM || "all";
+            const selected =
+              process.env.EVENT_NAME === "workflow_dispatch"
+                ? platforms.filter((entry) => requested === "all" || entry.platform === requested)
+                : platforms;
+            if (selected.length === 0) {
+              console.error(`::error::未知平台 ${requested}`);
+              process.exit(1);
+            }
+            appendFileSync(process.env.GITHUB_OUTPUT, `matrix=${JSON.stringify({ include: selected })}\n`);
+          '
+
   build:
     name: Build ${{ matrix.platform }}
+    needs: prepare
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - platform: windows
-            os: windows-latest
-            script: dist:win
-          - platform: macos
-            os: macos-14
-            script: dist:mac
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == matrix.platform }}
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
