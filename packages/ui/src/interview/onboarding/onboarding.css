@@ -1,11 +1,11 @@
 /* 面试引导 / 制作态：广告式独立卡片（不套 PanelShell）；尺寸走令牌或相对单位，
-   颜色只引用语义令牌。卡片高度固定，内容超出时在内部滚动。
+   颜色只引用语义令牌。引导三步与制作态统一固定高度，内容超出时在内部滚动。
    fit-content 窗口内禁止用 vh/vw 参与高度/宽度上报，否则窗口会被自身视口反向压缩。 */
 .interview-onboarding,
 .interview-avatar {
   margin-top: var(--space-2);
   width: min(var(--surface-w, 40rem), 40rem);
-  height: 34rem;
+  height: 26rem;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -471,15 +471,6 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
-}
-
-.interview-onboarding-hint {
-  color: var(--muted);
-  font-size: var(--font-xs);
-}
-
-.interview-onboarding-footer .interview-onboarding-hint {
-  margin-inline-start: auto;
 }
 
 .interview-onboarding-file {

@@ -136,7 +136,7 @@ describe("theme CSS integrity", () => {
     expect(card).not.toBe("");
     expect(card).not.toContain("100vh");
     expect(card).not.toContain("100vw");
-    expect(card).toContain("height: 34rem");
+    expect(card).toContain("height: 26rem");
     expect(card).toContain("width: min(var(--surface-w");
 
     const body = css.match(/\.interview-onboarding-body\s*\{([^}]*)\}/)?.[1] ?? "";

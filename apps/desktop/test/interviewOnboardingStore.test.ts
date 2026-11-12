@@ -103,6 +103,18 @@ describe("interview onboarding store", () => {
     expect(withManual.step).toBe("projects");
   });
 
+  it("advances steps without requiring an imported resume", async () => {
+    const { store } = await setup();
+
+    const advanced = await store.update({ step: "projects" });
+    expect(advanced).toMatchObject({ step: "projects", resume: null });
+    await expect(store.read()).resolves.toMatchObject({ step: "projects" });
+
+    await store.update({ step: "ready" });
+    await store.complete();
+    await expect(store.reopen()).resolves.toMatchObject({ status: "pending", step: "ready" });
+  });
+
   it("filters project ids that are not in the imported resume", async () => {
     const { store } = await setup();
     await store.importResume({

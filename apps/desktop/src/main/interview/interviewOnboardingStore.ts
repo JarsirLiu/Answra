@@ -169,7 +169,7 @@ export function createInterviewOnboardingStore({
     const next: InterviewOnboardingState = {
       ...current,
       status: "pending",
-      step: current.resume ? current.step : "resume",
+      step: current.step,
       updatedAt: now().toISOString(),
     };
     await writeState(next);
@@ -195,11 +195,8 @@ function applyPatch(
   patch: InterviewOnboardingPatch,
   date: Date,
 ): InterviewOnboardingState {
-  if (!current.resume) {
-    return { ...current, step: "resume", updatedAt: date.toISOString() };
-  }
   const step = isInterviewOnboardingStep(patch.step) ? patch.step : current.step;
-  const availableIds = new Set(current.resume.projects.map((project) => project.id));
+  const availableIds = new Set(current.resume?.projects.map((project) => project.id) ?? []);
   const selectedProjectIds =
     patch.selectedProjectIds === undefined
       ? current.selectedProjectIds
@@ -237,7 +234,7 @@ function coerceState(value: unknown): InterviewOnboardingState {
   return {
     version: STATE_VERSION,
     status: raw.status,
-    step: resume ? raw.step : "resume",
+    step: raw.step,
     resume,
     selectedProjectIds,
     targetRole:

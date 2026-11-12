@@ -138,7 +138,7 @@ export function InterviewOnboardingPanel({
     );
   }
 
-  /** 跳过当前步骤；没有简历时项目页无法成立，第一步跳过即结束整个引导。 */
+  /** 跳过当前步骤；没有简历时不提供跳过入口，避免一步结束整个引导。 */
   function skipStep(): Promise<void> {
     if (state.step === "resume") {
       if (!state.resume) return perform(onSkip);
@@ -240,23 +240,12 @@ export function InterviewOnboardingPanel({
 
             {!pasteOpen ? (
               <div className="interview-onboarding-actions">
-                <SurfaceButton
-                  disabled={busy}
-                  onClick={() => void (state.resume ? continueFromResume() : pickResume())}
-                  size="lg"
-                  variant="primary"
-                >
-                  {state.resume ? "继续选择项目" : "选择简历"}
+                <SurfaceButton disabled={busy} onClick={() => void pickResume()}>
+                  {state.resume ? "换一份简历" : "上传简历"}
                 </SurfaceButton>
-                {state.resume ? (
-                  <SurfaceButton disabled={busy} onClick={() => void pickResume()} variant="quiet">
-                    换一份简历
-                  </SurfaceButton>
-                ) : (
-                  <SurfaceButton onClick={() => setPasteOpen(true)} variant="quiet">
-                    粘贴文本
-                  </SurfaceButton>
-                )}
+                <SurfaceButton onClick={() => setPasteOpen(true)} variant="quiet">
+                  粘贴文本
+                </SurfaceButton>
               </div>
             ) : null}
           </div>
@@ -293,16 +282,18 @@ export function InterviewOnboardingPanel({
                   <FileSearch size={16} strokeWidth={1.8} />
                 </span>
               </span>
-              <strong>没识别到项目</strong>
-              <p>换份简历，或手动补一个。</p>
+              <strong>{state.resume ? "没识别到项目" : "还没有简历"}</strong>
+              <p>{state.resume ? "换份简历，或手动补一个。" : "上传一份简历后再挑项目。"}</p>
               <div className="interview-onboarding-empty__actions">
                 <SurfaceButton disabled={busy} onClick={() => void pickResume()} size="sm">
-                  换份简历
+                  {state.resume ? "换份简历" : "上传简历"}
                 </SurfaceButton>
-                <SurfaceButton onClick={() => setAddOpen(true)} size="sm" variant="primary">
-                  <Plus aria-hidden="true" size={14} />
-                  手动添加
-                </SurfaceButton>
+                {state.resume ? (
+                  <SurfaceButton onClick={() => setAddOpen(true)} size="sm">
+                    <Plus aria-hidden="true" size={14} />
+                    手动添加
+                  </SurfaceButton>
+                ) : null}
               </div>
             </div>
           ) : projects.length > 0 ? (
@@ -427,49 +418,52 @@ export function InterviewOnboardingPanel({
       ) : null}
 
       <footer className="interview-onboarding-footer">
-        {state.step === "resume" ? (
-          <>
-            <SurfaceButton disabled={busy} onClick={() => void skipStep()} variant="quiet">
-              {state.resume ? "跳过这一步" : "跳过引导"}
+        <div className="interview-onboarding-footer__group">
+          {state.step === "resume" ? null : (
+            <SurfaceButton
+              disabled={busy}
+              onClick={() => void (state.step === "projects" ? backToResume() : backToProjects())}
+              variant="quiet"
+            >
+              上一步
             </SurfaceButton>
-            <span className="interview-onboarding-hint">只保存在本机</span>
-          </>
+          )}
+          {state.step === "resume" && !state.resume ? null : (
+            <SurfaceButton disabled={busy} onClick={() => void skipStep()} variant="quiet">
+              {state.step === "ready" ? "跳过引导" : "跳过这一步"}
+            </SurfaceButton>
+          )}
+        </div>
+
+        {state.step === "resume" ? (
+          pasteOpen ? null : (
+            <SurfaceButton
+              disabled={busy}
+              onClick={() => void continueFromResume()}
+              size="lg"
+              variant="primary"
+            >
+              下一步
+            </SurfaceButton>
+          )
+        ) : state.step === "projects" ? (
+          <SurfaceButton
+            disabled={busy}
+            onClick={() => void continueFromProjects()}
+            size="lg"
+            variant="primary"
+          >
+            下一步
+          </SurfaceButton>
         ) : (
-          <>
-            <div className="interview-onboarding-footer__group">
-              <SurfaceButton
-                disabled={busy}
-                onClick={() => void (state.step === "projects" ? backToResume() : backToProjects())}
-                variant="quiet"
-              >
-                上一步
-              </SurfaceButton>
-              <SurfaceButton disabled={busy} onClick={() => void skipStep()} variant="quiet">
-                {state.step === "projects" ? "跳过这一步" : "跳过引导"}
-              </SurfaceButton>
-            </div>
-            {state.step === "projects" ? (
-              projects.length > 0 && !addOpen ? (
-                <SurfaceButton
-                  disabled={busy}
-                  onClick={() => void continueFromProjects()}
-                  size="lg"
-                  variant="primary"
-                >
-                  继续
-                </SurfaceButton>
-              ) : null
-            ) : (
-              <SurfaceButton
-                disabled={busy}
-                onClick={() => void complete()}
-                size="lg"
-                variant="primary"
-              >
-                开始制作面试分身
-              </SurfaceButton>
-            )}
-          </>
+          <SurfaceButton
+            disabled={busy}
+            onClick={() => void complete()}
+            size="lg"
+            variant="primary"
+          >
+            开始制作面试分身
+          </SurfaceButton>
         )}
       </footer>
     </section>
