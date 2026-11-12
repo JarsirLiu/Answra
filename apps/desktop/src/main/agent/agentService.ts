@@ -1,7 +1,9 @@
 import { AgentConnectionSupervisor, type InterviewWorkerEvent } from "@answra/agent";
 import type {
   AgentConnectionState,
+  BotSummary,
   ConversationModelConfig,
+  ConversationSelection,
   ConversationSendCommand,
   ConversationSendRequest,
   ConversationSnapshot,
@@ -94,7 +96,10 @@ export class AgentService {
   }
 
   async send(command: ConversationSendCommand): Promise<{ runId: string; snapshot: unknown }> {
-    if (!__ANSWRA_FEATURE_CHAT__ && command.operation === "chat.send") {
+    if (
+      !__ANSWRA_FEATURE_CHAT__ &&
+      (command.operation === "chat.send" || command.operation === "team.send")
+    ) {
       throw new Error("对话功能不包含在此安装包中");
     }
     validateSendRequest(command.request);
@@ -104,7 +109,12 @@ export class AgentService {
     // 来源由设置显式选择：本地端点不需要登录，云端订阅未登录时 resolveModel 抛统一失败码。
     const { config, accessToken } = await this.deps.resolveModel();
     await this.ensureConfigured(config);
-    const type = command.operation === "chat.send" ? "chat-send" : "answer-run";
+    const type =
+      command.operation === "chat.send"
+        ? "chat-send"
+        : command.operation === "team.send"
+          ? "team-send"
+          : "answer-run";
     return (await this.workerHost.request(type, { ...command, accessToken })) as {
       runId: string;
       snapshot: unknown;
@@ -141,6 +151,11 @@ export class AgentService {
       .catch((error: unknown) => console.warn("[agent-service] cancel failed", error));
   }
 
+  async listBots(): Promise<BotSummary[]> {
+    await this.start();
+    return (await this.workerHost.request("bot-list", {})) as BotSummary[];
+  }
+
   async getSnapshot(conversationId: string): Promise<ConversationSnapshot> {
     await this.start();
     this.trackConversation(conversationId);
@@ -149,10 +164,10 @@ export class AgentService {
     })) as ConversationSnapshot;
   }
 
-  async createConversation(conversationId: string) {
+  async createConversation(conversationId: string, selection?: ConversationSelection) {
     await this.start();
     this.trackConversation(conversationId);
-    return this.workerHost.request("create-conversation", { conversationId });
+    return this.workerHost.request("create-conversation", { conversationId, selection });
   }
 
   async clearConversation(conversationId: string): Promise<ConversationSnapshot> {

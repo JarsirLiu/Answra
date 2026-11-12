@@ -10,6 +10,7 @@ import {
   type ContentSize,
   ConversationChannels,
   type ConversationModelSettings,
+  type ConversationSelection,
   type ConversationSendCommand,
   type ConversationSnapshot,
   type DesktopBridge,
@@ -125,8 +126,9 @@ const bridge: DesktopBridge = {
   },
   getConversationSnapshot: (conversationId: string) =>
     ipcRenderer.invoke(ConversationChannels.GetSnapshot, { conversationId }),
-  createConversation: (conversationId: string) =>
-    ipcRenderer.invoke(ConversationChannels.Create, { conversationId }),
+  listBots: () => ipcRenderer.invoke(ConversationChannels.ListBots),
+  createConversation: (conversationId: string, selection?: ConversationSelection) =>
+    ipcRenderer.invoke(ConversationChannels.Create, { conversationId, selection }),
   clearConversationMessages: (conversationId: string) =>
     ipcRenderer.invoke(ConversationChannels.ClearMessages, { conversationId }),
   readConversationEvents: (conversationId: string, afterRevision: number) =>

@@ -4,6 +4,7 @@ import {
   authRequiredError,
   ConversationChannels,
   type ConversationModelSettingsView,
+  type ConversationSelection,
   type ConversationSendCommand,
 } from "@answra/shared";
 import { ipcMain } from "electron";
@@ -38,10 +39,20 @@ export interface ConversationIpcDeps {
 export function registerConversationIpc(service: AgentService, deps: ConversationIpcDeps): void {
   ipcMain.handle(ConversationChannels.Send, (event, payload: ConversationSendCommand) => {
     if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用方");
-    if (payload?.operation === "chat.send" && payload.profileId !== "general-chat")
-      throw new Error("对话能力配置无效");
-    if (payload?.operation !== "chat.send" && payload?.operation !== "answer.run")
+    if (
+      payload?.operation !== "chat.send" &&
+      payload?.operation !== "team.send" &&
+      payload?.operation !== "answer.run"
+    )
       throw new Error("AI 操作类型无效");
+    if (
+      payload.operation === "chat.send" &&
+      payload.botId !== undefined &&
+      !isValidId(payload.botId)
+    )
+      throw new Error("Bot 选择无效");
+    if (payload.operation === "team.send" && !isValidId(payload.teamId))
+      throw new Error("团队选择无效");
     // 云端来源需要登录：未登录返回统一失败码，由渲染层提示登录。
     // 本地来源不需要登录，未配置时由 service 给出配置提示。
     if (!deps.canSend()) throw authRequiredError();
@@ -61,15 +72,24 @@ export function registerConversationIpc(service: AgentService, deps: Conversatio
       return service.appendUserMessage(payload.conversationId, payload.text);
     },
   );
+  ipcMain.handle(ConversationChannels.ListBots, (event) => {
+    if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用方");
+    return service.listBots();
+  });
   ipcMain.handle(ConversationChannels.GetSnapshot, (event, payload: { conversationId: string }) => {
     if (!isValidConversationId(payload?.conversationId)) throw new Error("会话请求无效");
     if (!isConversationReadSender(event, payload.conversationId)) throw new Error("非法调用方");
     return service.getSnapshot(payload.conversationId);
   });
-  ipcMain.handle(ConversationChannels.Create, (event, payload: { conversationId: string }) => {
-    if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用方");
-    return service.createConversation(payload.conversationId);
-  });
+  ipcMain.handle(
+    ConversationChannels.Create,
+    (event, payload: { conversationId: string; selection?: ConversationSelection }) => {
+      if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用方");
+      if (payload.selection && !isValidSelection(payload.selection))
+        throw new Error("Bot 选择无效");
+      return service.createConversation(payload.conversationId, payload.selection);
+    },
+  );
   ipcMain.handle(
     ConversationChannels.ClearMessages,
     (event, payload: { conversationId: string }) => {
@@ -122,9 +142,17 @@ export function registerConversationIpc(service: AgentService, deps: Conversatio
 }
 
 function isValidConversationId(conversationId: unknown): conversationId is string {
-  return (
-    typeof conversationId === "string" && conversationId.length > 0 && conversationId.length <= 128
-  );
+  return isValidId(conversationId);
+}
+
+function isValidId(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 128;
+}
+
+function isValidSelection(selection: ConversationSelection): boolean {
+  if (selection.kind === "bot") return isValidId(selection.botId);
+  if (selection.kind === "team") return isValidId(selection.teamId);
+  return false;
 }
 
 /** 允许用户清空的常驻会话：多轮对话与面试。 */

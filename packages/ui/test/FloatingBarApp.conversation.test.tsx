@@ -25,7 +25,6 @@ describe("floating bar conversation", () => {
     await waitFor(() =>
       expect(bridge.sendConversationMessage).toHaveBeenCalledWith({
         operation: "chat.send",
-        profileId: "general-chat",
         conversationId: ActiveChatConversationId,
         request: { text: "我叫小明", images: [] },
       }),

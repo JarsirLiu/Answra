@@ -549,6 +549,15 @@ core          ──/-> conversation / interview
    - 更新 `.agents/skills/answra-vision/SKILL.md` 的多 Bot 编排状态（若仍描述为未实现）。
    - 全部完成并实机验证后，把本 Note 迁入 `implemented/architecture/`，补“后果与防回退”和“验证”。
 
+### 2026-11-12 更新
+
+- Bot 目录与会话选择已按
+  [Bot 目录与会话参与者选择](2026-11-12-bot-catalog-and-conversation-selection.md)
+  拆出：`conversation/team.ts`、`core/team/types.ts`、`core/team/directory.ts` 已删除；
+  `core/bot` 提供身份/发现目录与会话参与者可见性，`core/team/preset.ts` 只保留预置。
+- `chat.send` 的 `profileId` 已替换为可选 `botId`；`create-conversation` 支持 `selection`。
+- 下述差异中与团队装配、`profileId` 相关的条目已由新 Note 处理；其余仍待实施（真实交接结果产出、UI 投影、Interview 文本交接）。
+
 ### 当前实现与提案的差异（继续前先决定）
 
 - `core/team/registry.ts`、`core/team/context.ts` 尚未创建；当前团队装配在 `conversation/team.ts`，目录在 `core/team/directory.ts`。要么后续补通用 registry/context，要么在实现完成后修订本 Note 的代码落位。

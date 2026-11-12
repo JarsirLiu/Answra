@@ -1,4 +1,6 @@
 // Stable runtime schema entrypoint for domain contracts.
+
+export { type BotSummary, botSummarySchema } from "./bot";
 export {
   AGENT_CONNECTION_TARGET,
   AGENT_SERVICE_DISCONNECTED_CODE,

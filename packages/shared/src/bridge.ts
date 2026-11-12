@@ -7,6 +7,7 @@ import type {
   ContentSize,
   ConversationModelSettings,
   ConversationModelSettingsView,
+  ConversationSelection,
   ConversationSendCommand,
   ConversationSnapshot,
   DesktopAnnouncement,
@@ -31,6 +32,7 @@ import type {
   WorkspaceFileContent,
   WorkspaceNode,
 } from "./channels";
+import type { BotSummary } from "./schema";
 import type { SurfacePresetId } from "./surfaces";
 
 /**
@@ -109,7 +111,12 @@ export interface DesktopBridge {
   /** 按用户设置启停主进程变色龙屏幕采样。 */
   setAmbientFollow?: (value: boolean) => void;
   getConversationSnapshot?: (conversationId: string) => Promise<ConversationSnapshot>;
-  createConversation?: (conversationId: string) => Promise<ConversationSnapshot>;
+  /** Lists selectable Bots; absent in browser preview/test environments. */
+  listBots?: () => Promise<BotSummary[]>;
+  createConversation?: (
+    conversationId: string,
+    selection?: ConversationSelection,
+  ) => Promise<ConversationSnapshot>;
   /** 清空会话消息（仅空闲会话生效），返回清空后的权威 snapshot。 */
   clearConversationMessages?: (conversationId: string) => Promise<ConversationSnapshot>;
   readConversationEvents?: (

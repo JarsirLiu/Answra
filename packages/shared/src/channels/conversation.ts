@@ -1,4 +1,4 @@
-import type { AgentEventEnvelope, ConversationSnapshot } from "../schema";
+import type { AgentEventEnvelope, BotSummary, ConversationSnapshot } from "../schema";
 
 export type {
   AgentEventEnvelope,
@@ -24,6 +24,8 @@ export const ConversationChannels = {
   ClearConfig: "answra:conversation:clear-config",
   /** 清空会话消息（仅空闲会话生效；发布 snapshot change 通知所有订阅方）。 */
   ClearMessages: "answra:conversation:clear-messages",
+  /** 列出可用于新建会话的 Bot（只含身份，不含 prompt/工具）。 */
+  ListBots: "answra:conversation:list-bots",
   Event: "answra:conversation:event",
   /** Pushes the authoritative transcript snapshot after an Agent-owned transcript write. */
   SnapshotChanged: "answra:conversation:snapshot-changed",
@@ -139,7 +141,15 @@ export interface ConversationSendRequest {
 export interface ChatSendCommand {
   operation: "chat.send";
   conversationId: string;
-  profileId: "general-chat";
+  /** Bot to start with; absent means the conversation's active Bot or default entry. */
+  botId?: string;
+  request: ConversationSendRequest;
+}
+
+export interface TeamSendCommand {
+  operation: "team.send";
+  conversationId: string;
+  teamId: string;
   request: ConversationSendRequest;
 }
 
@@ -149,7 +159,12 @@ export interface AnswerRunCommand {
   request: ConversationSendRequest;
 }
 
-export type ConversationSendCommand = ChatSendCommand | AnswerRunCommand;
+export type ConversationSendCommand = ChatSendCommand | TeamSendCommand | AnswerRunCommand;
+
+/** New-conversation selection: one Bot or a predefined team. */
+export type ConversationSelection =
+  | { kind: "bot"; botId: string }
+  | { kind: "team"; teamId: string };
 
 export interface ConversationChannelMap {
   [ConversationChannels.Send]: {
@@ -166,7 +181,7 @@ export interface ConversationChannelMap {
     response: ConversationSnapshot;
   };
   [ConversationChannels.Create]: {
-    request: { conversationId: string };
+    request: { conversationId: string; selection?: ConversationSelection };
     response: ConversationSnapshot;
   };
   [ConversationChannels.ReadEvents]: {
@@ -189,6 +204,10 @@ export interface ConversationChannelMap {
   [ConversationChannels.ClearMessages]: {
     request: { conversationId: string };
     response: ConversationSnapshot;
+  };
+  [ConversationChannels.ListBots]: {
+    request: undefined;
+    response: BotSummary[];
   };
   [ConversationChannels.Event]: { request: undefined; response: undefined };
   [ConversationChannels.SnapshotChanged]: { request: undefined; response: ConversationSnapshot };

@@ -717,6 +717,59 @@ describe("agent worker host", () => {
     host.dispose();
   });
 
+  it("lists selectable Bots and creates a conversation from a Bot selection", async () => {
+    const harness = createHarness();
+    startAgentHost({
+      transport: harness.transport,
+      vad: silenceVadSource(),
+      recognizer: scriptedRecognizer("识别文本"),
+    });
+
+    harness.dispatch({ id: "bots-1", type: "bot-list" });
+    await vi.waitFor(() => expect(harness.responses()).toHaveLength(1));
+    expect(harness.responses()[0]).toMatchObject({
+      id: "bots-1",
+      ok: true,
+      value: [
+        expect.objectContaining({
+          id: "conversation.general",
+          name: "通用助手",
+          role: "general",
+        }),
+      ],
+    });
+
+    harness.dispatch({
+      id: "create-1",
+      type: "create-conversation",
+      conversationId: "selected",
+      selection: { kind: "bot", botId: "conversation.general" },
+    });
+    await vi.waitFor(() => expect(harness.responses()).toHaveLength(2));
+    expect(harness.responses()[1]).toMatchObject({
+      id: "create-1",
+      ok: true,
+      value: {
+        conversationId: "selected",
+        activeAgentId: "conversation.general",
+        participantAgentIds: ["conversation.general"],
+      },
+    });
+
+    harness.dispatch({
+      id: "create-2",
+      type: "create-conversation",
+      conversationId: "missing",
+      selection: { kind: "bot", botId: "missing" },
+    });
+    await vi.waitFor(() => expect(harness.responses()).toHaveLength(3));
+    expect(harness.responses()[2]).toMatchObject({
+      id: "create-2",
+      ok: false,
+      error: "Bot 未注册：missing",
+    });
+  });
+
   it("reports a command failure in the response frame instead of throwing", async () => {
     const harness = createHarness();
     startAgentHost({
@@ -729,7 +782,7 @@ describe("agent worker host", () => {
       id: "1",
       type: "chat-send",
       operation: "chat.send",
-      profileId: "general-chat",
+      botId: "conversation.general",
       conversationId: "missing",
       request: { text: "hi", images: [] },
       accessToken: "test-token",
@@ -760,7 +813,7 @@ describe("agent worker host", () => {
       id: "1",
       type: "chat-send",
       operation: "chat.send",
-      profileId: "general-chat",
+      botId: "conversation.general",
       conversationId: "c1",
       request: { text: "hi", images: [] },
       accessToken: "stale-token",

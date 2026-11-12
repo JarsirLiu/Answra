@@ -31,16 +31,21 @@
 | 目录 | 职责 | 约束 |
 | --- | --- | --- |
 | `src/host.ts` | Conversation/Interview worker 组合根：创建运行时、路由显式命令、连接面试领域 adapter | 只接线，不承载 VAD/ASR/turn 算法；Answer-only 入口位于 `src/answer/host.ts` |
+| `src/composition.ts` | 跨客户端组装入口：暴露 runtime、store、工具注册表、Bot 契约/目录/工厂与 Conversation Application | 不包含 worker 线协议、Electron 或 CLI 传输层；CLI 与其他客户端从这里按领域组装 Bot |
 | `src/client` | 平台无关连接客户端：worker host 端口、连接状态机、退避重试与状态快照 | 不依赖 Electron；不写 transcript 或 `AgentEventEnvelope`；desktop/CLI 只做 host 与传输适配 |
 | `src/worker` | 线协议 `AgentCommand` / `AgentFrame`，跨进程唯一契约 | 只放协议类型；命令/帧变更必须同步 desktop worker |
 | `src/core/run` | 跨领域进程内 run 取消与完成等待原语 | 不保存持久化 run 状态；不放产品策略 |
 | `src/core/agent` | 静态 Agent 注册、模型路由、AI SDK 执行与统一事件写入 | 不读写 transcript、不包含领域 prompt/工具授权；领域注入注册后的 executor |
+| `src/core/bot` | Bot 身份/发现契约、启动期不可变目录与会话参与者可见性校验 | 不持有 store、不创建 run、不 import 领域、不定义 prompt；独立助手与团队共用同一目录 |
+| `src/core/team` | 团队预置与交接任务校验 | 只描述预置成员；不持有 Bot 身份、执行器或 profile |
 | `src/core/transcript` | Conversation、Answer、Interview 共用的消息 transcript、活动 run 认领、恢复游标端口与内存适配器 | 不保存 Agent 事件、不包含领域产品策略；当前无磁盘持久化 |
 | `src/core/model` | AI SDK/provider 边界归一化、共享模型输入校验与 HTTP 重试原语 | 不放 Conversation profile 或 transcript 规则 |
 | `src/core/tool` | 跨领域工具契约、静态注册表与单次调用执行管理；通用工具在 `builtin/` | 不导入领域、不写工具事件；领域专属工具留在 `<domain>/tools/`，执行器只返回结果 |
 | `src/execution` | run/attempt/step 状态迁移规则、事件 envelope 工厂、进程内 store 和查询投影 | 跨包事件 payload 与状态词汇唯一来自 `packages/shared/src/schema/`；当前只实现进程内 store，不得声称已有 durable store 或恢复流程 |
+| `src/conversation/application.ts` | Conversation 唯一编排循环：按 Bot/团队选择创建会话、运行当前 Bot、执行交接链 | 只组合 catalog/store/run；不复制消息或 run 语义，不让 renderer 选择 Bot 之外的能力 |
 | `src/conversation/turn` | Conversation transcript 回合认领、模型上下文与应用事件回调 | 模型执行/run 生命周期由 `core/agent` 负责；不定义共享执行状态 schema |
 | `src/conversation/agent.ts`、`src/answer/agent.ts` | 各领域静态 Agent 定义，组装 prompt、上下文和授权工具 | 不接收 renderer 提供的任意 prompt 或工具实现 |
+| `src/conversation/bots` | Conversation Bot 工厂：把身份、执行器与 profile 装配成目录项 | 新增 Bot 不改会话编排；不接收 renderer 注入 prompt、工具或发现关系 |
 | `src/answer/application.ts` | 截图答题用例、一次性 transcript 清理和事件回调 | 不实现模型调用、重试或第二套事件 |
 | `src/conversation/profiles` | Conversation 内部提示词、上下文策略与工具授权清单 | 只声明授权 `ToolId[]`，不接收 renderer 提供的任意 prompt 或工具实现 |
 | `src/<domain>/tools` | 领域专属工具实现，实现 `core/tool` 契约 | 不执行桌面平台能力；不得由 desktop 反向 RPC 代执行 |
@@ -48,7 +53,7 @@
 | `src/interview/runtime.ts` | 面试媒体生命周期组合：连接 audio ingress、VAD、ASR、turn assembler/settler 与 InterviewApplication | 只编排领域端口，不定义 worker 协议或模型执行策略 |
 | 平台能力与工具 | 采集、键鼠注入、窗口、密钥等桌面平台实现留在 desktop；Agent 工具由 Agent 注册并在 Agent 进程执行 | desktop 可注入工作区根目录等授权上下文，不得代执行 Agent 工具或通过反向 RPC 提供工具能力 |
 
-入口规则：desktop 只从 `@answra/agent`（`exports` 的 `.`）导入；本包不产出独立构建产物，由 desktop 的 `build:electron` 一并 bundle。
+入口规则：desktop 只从 `@answra/agent`（`exports` 的 `.`）导入；CLI 或其他客户端组装领域 Bot 时使用 `@answra/agent/composition`，不得深导入。本包不产出独立构建产物，由 desktop 的 `build:electron` 一并 bundle。
 
 仓库根目录 `examples/vad-asr-eval/` 是独立的可选真实样本 VAD/ASR 评测 workspace：原句与链路转录并排供人工审阅，不生成回答；经 `@answra/agent/evaluation` 公开入口调用。它不在根 pnpm workspace 内，不参与根安装、`pnpm verify` 或 CI 测试；需在目录内单独 `pnpm install`，下载资产和 CSV 产物不入 Git。
 

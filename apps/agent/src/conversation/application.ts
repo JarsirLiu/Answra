@@ -2,14 +2,24 @@
 import { randomUUID } from "node:crypto";
 import type {
   ConversationModelConfig,
+  ConversationSelection,
   ConversationSendRequest,
   ConversationSnapshot,
 } from "@answra/shared";
 import type { AgentEventEnvelope, AgentRunSnapshot } from "@answra/shared/schema";
 import type { AgentExecutor, AgentId, AgentRunHandle } from "../core/agent/definition";
 import type { AgentRuntime } from "../core/agent/runtime";
+import { createBotCatalog } from "../core/bot/catalog";
+import type { BotSummary } from "../core/bot/contracts";
+import { assertCanHandoff } from "../core/bot/directory";
 import { validateModelRequest } from "../core/model/requestContent";
-import { assertCanHandoff, assertHandoffTask, assertTeamDefinition } from "../core/team/directory";
+import { assertHandoffTask } from "../core/team/handoff";
+import {
+  assertTeamPreset,
+  createTeamPresetCatalog,
+  type TeamPreset,
+  type TeamPresetCatalog,
+} from "../core/team/preset";
 import type { ReadFileStateMap } from "../core/tool";
 import { createUserMessage } from "../core/transcript/message";
 import type { ConversationSessionSeed, ConversationStore } from "../core/transcript/store";
@@ -21,22 +31,20 @@ import {
   GENERAL_DISCOVERY,
   GENERAL_IDENTITY,
 } from "./agent";
+import type { ConversationBot, ConversationBotCatalog } from "./bots/types";
 import { CHAT_PROFILES, type ChatProfileId } from "./profiles/registry";
-import {
-  type ConversationBot,
-  type ConversationTeam,
-  createConversationTeam,
-  createTeamCatalog,
-} from "./team";
 
 const MAX_USER_MESSAGE_CHARS = 32_000;
 
 export interface ConversationApplicationOptions {
   agentRuntime: AgentRuntime;
   store: ConversationStore;
+  /** 已装配的 Conversation Bot 目录；与 `conversationAgent` 二选一。 */
+  catalog?: ConversationBotCatalog;
+  /** 团队预置；缺省时把 conversation 入口 Bot 作为单成员团队。 */
+  presets?: readonly TeamPreset[];
+  /** 兼容旧调用的单 Agent 入口；传入后自动构造成单 Bot 目录。 */
   conversationAgent?: AgentExecutor<ConversationAgentInput>;
-  /** 已装配团队；缺省时用 conversationAgent 构造一个单成员 conversation 团队。 */
-  teams?: readonly ConversationTeam[];
   /** 每段 run 启动与交接写入后的权威 snapshot 推送。 */
   onSnapshot?: (snapshot: ConversationSnapshot) => void | Promise<void>;
   /** 后台交接链失败；不静默吞掉，也不伪造第二条 AI 消息。 */
@@ -46,9 +54,9 @@ export interface ConversationApplicationOptions {
 export class ConversationApplication {
   private readonly agentRuntime: AgentRuntime;
   private readonly store: ConversationStore;
-  private readonly teams: readonly ConversationTeam[];
-  private readonly teamCatalog: ReturnType<typeof createTeamCatalog>;
-  private readonly defaultTeam?: ConversationTeam;
+  private readonly catalog: ConversationBotCatalog;
+  private readonly presets: TeamPresetCatalog;
+  private readonly defaultBotId: AgentId;
   private readonly onSnapshot?: ConversationApplicationOptions["onSnapshot"];
   private readonly onTeamError?: ConversationApplicationOptions["onTeamError"];
   private readonly readFileStates = new Map<string, ReadFileStateMap>();
@@ -57,8 +65,9 @@ export class ConversationApplication {
   constructor({
     agentRuntime,
     store,
+    catalog,
+    presets = [],
     conversationAgent,
-    teams = [],
     onSnapshot,
     onTeamError,
   }: ConversationApplicationOptions) {
@@ -67,41 +76,25 @@ export class ConversationApplication {
     this.onSnapshot = onSnapshot;
     this.onTeamError = onTeamError;
 
-    const configured = [...teams];
-    if (
-      !configured.some((team) => team.definition.teamId === CONVERSATION_TEAM_ID) &&
-      conversationAgent
-    ) {
-      configured.push(
-        createConversationTeam({
-          teamId: CONVERSATION_TEAM_ID,
-          entryAgentId: CONVERSATION_AGENT_ID,
-          bots: [
-            {
-              agentId: CONVERSATION_AGENT_ID,
-              identity: GENERAL_IDENTITY,
-              discovery: GENERAL_DISCOVERY,
-              executor: conversationAgent,
-              profile: CHAT_PROFILES["general-chat"],
-            },
-          ],
-        }),
-      );
+    this.catalog = catalog ?? createLegacyCatalog(conversationAgent);
+    const presetInput = withConversationPreset(presets, this.catalog);
+    this.presets = createTeamPresetCatalog(presetInput);
+    for (const preset of this.presets.list()) {
+      assertTeamPreset(preset, this.catalog, this.presets.teams());
+      this.agentRuntime.assertTeamMembers(preset.entryBotId, preset.memberBotIds);
     }
-    this.teams = configured;
-    this.teamCatalog = createTeamCatalog(configured);
-    for (const team of configured) {
-      this.agentRuntime.assertTeamMembers(
-        team.definition.entryAgentId,
-        team.definition.memberAgentIds,
-      );
-      assertTeamDefinition(team.definition, this.teamCatalog);
-    }
-    this.defaultTeam = configured.find((team) => team.definition.teamId === CONVERSATION_TEAM_ID);
+    const defaultBotId =
+      this.presets.find(CONVERSATION_TEAM_ID)?.entryBotId ?? this.catalog.ids()[0];
+    if (!defaultBotId) throw new Error("Conversation Bot 目录为空");
+    this.defaultBotId = defaultBotId;
   }
 
   setWorkspaceRoot(root: string | null): void {
     this.workspaceRoot = root;
+  }
+
+  listBots(): readonly BotSummary[] {
+    return this.catalog.list();
   }
 
   getSnapshot(conversationId: string): Promise<ConversationSnapshot> {
@@ -116,8 +109,12 @@ export class ConversationApplication {
     return this.agentRuntime.readEvents(conversationId, revision);
   }
 
-  async createConversation(conversationId: string): Promise<ConversationSnapshot> {
-    await this.store.create(conversationId, this.defaultSeed());
+  /** 新建会话；selection 缺省使用 conversation 入口 Bot。 */
+  async createConversation(
+    conversationId: string,
+    selection?: ConversationSelection,
+  ): Promise<ConversationSnapshot> {
+    await this.store.create(conversationId, this.resolveSelection(selection));
     this.readFileStates.delete(conversationId);
     return this.loadRecoverySnapshot(conversationId);
   }
@@ -143,24 +140,43 @@ export class ConversationApplication {
     this.agentRuntime.configureModelRoutes({ chat: config.chat, answer: config.answer });
   }
 
-  /** `chat-send` 的迁移入口：使用 conversation 团队入口 Bot，响应保持首段 run。 */
+  /** 发送一条用户消息；botId 缺省时沿用会话 activeAgentId 或默认入口。 */
+  async send(
+    botId: string | undefined,
+    conversationId: string,
+    request: ConversationSendRequest,
+    accessToken: string,
+  ): Promise<{ runId: string; snapshot: ConversationSnapshot }> {
+    validateModelRequest(request);
+    const seed = this.resolveSelection(botId ? { kind: "bot", botId } : this.defaultSelection());
+    await this.store.create(conversationId, seed);
+    const snapshot = await this.loadRecoverySnapshot(conversationId);
+    const entry = this.requireBot(snapshot.activeAgentId ?? seed.activeAgentId);
+    const getAccessToken = async () => accessToken;
+    const handle = await this.startBot({
+      conversationId,
+      bot: entry,
+      trigger: { kind: "user", request },
+      getAccessToken,
+    });
+    void this.continueTeamTurn({
+      conversationId,
+      from: entry,
+      handle,
+      getAccessToken,
+    }).catch((error: unknown) => this.onTeamError?.(error));
+    return { runId: handle.runId, snapshot: handle.prepared };
+  }
+
+  /** `chat-send` 的迁移入口：profile 仅用于校验，Bot 由目录或会话决定。 */
   async sendChat(
     profileId: ChatProfileId,
     conversationId: string,
     request: ConversationSendRequest,
     accessToken: string,
   ): Promise<{ runId: string; snapshot: ConversationSnapshot }> {
-    const profile = CHAT_PROFILES[profileId];
-    if (!profile) throw new Error("未授权的对话能力配置");
-    validateModelRequest(request);
-    return this.startTeamTurn({
-      conversationId,
-      team: this.requireDefaultTeam(),
-      request,
-      getAccessToken: async () => accessToken,
-      waitForIdle: false,
-      profile,
-    });
+    if (!CHAT_PROFILES[profileId]) throw new Error("未授权的对话能力配置");
+    return this.send(undefined, conversationId, request, accessToken);
   }
 
   /** `team-send`：显式团队入口；等待整条交接链回到 idle 后返回最终 snapshot。 */
@@ -171,15 +187,26 @@ export class ConversationApplication {
     accessToken: string,
   ): Promise<{ runId: string; snapshot: ConversationSnapshot }> {
     validateModelRequest(request);
-    const team = this.teams.find((item) => item.definition.teamId === teamId);
-    if (!team) throw new Error(`团队未注册：${teamId}`);
-    return this.startTeamTurn({
+    const preset = this.presets.require(teamId);
+    await this.store.create(conversationId, this.seedForTeam(preset));
+    const snapshot = await this.loadRecoverySnapshot(conversationId);
+    const entry = this.requireBot(snapshot.activeAgentId ?? preset.entryBotId);
+    const participants = snapshot.participantAgentIds ?? preset.memberBotIds;
+    if (!participants.includes(entry.id)) throw new Error(`Bot 不属于当前会话参与者：${entry.id}`);
+    const getAccessToken = async () => accessToken;
+    const first = await this.startBot({
       conversationId,
-      team,
-      request,
-      getAccessToken: async () => accessToken,
-      waitForIdle: true,
+      bot: entry,
+      trigger: { kind: "user", request },
+      getAccessToken,
     });
+    await this.continueTeamTurn({
+      conversationId,
+      from: entry,
+      handle: first,
+      getAccessToken,
+    });
+    return { runId: first.runId, snapshot: await this.loadRecoverySnapshot(conversationId) };
   }
 
   async replyToLastUser(
@@ -189,68 +216,18 @@ export class ConversationApplication {
   ): Promise<{ runId: string; snapshot: ConversationSnapshot }> {
     const profile = CHAT_PROFILES[profileId];
     if (!profile) throw new Error("未授权的对话能力配置");
-    return this.replyWithProfile(profile, conversationId, getAccessToken);
-  }
-
-  private replyWithProfile(
-    profile: ConversationAgentProfile,
-    conversationId: string,
-    getAccessToken: () => Promise<string>,
-  ): Promise<{ runId: string; snapshot: ConversationSnapshot }> {
-    const team = this.requireDefaultTeam();
-    const bot = this.requireBot(team, team.definition.entryAgentId);
-    return this.startReplyRun({ conversationId, team, bot, profile, getAccessToken });
-  }
-
-  private async startTeamTurn({
-    conversationId,
-    team,
-    request,
-    getAccessToken,
-    waitForIdle,
-    profile,
-  }: {
-    conversationId: string;
-    team: ConversationTeam;
-    request: ConversationSendRequest;
-    getAccessToken: () => Promise<string>;
-    waitForIdle: boolean;
-    profile?: ConversationAgentProfile;
-  }): Promise<{ runId: string; snapshot: ConversationSnapshot }> {
-    const entry = this.requireBot(team, team.definition.entryAgentId);
-    await this.store.create(conversationId, this.seedFor(team));
-    const first = await this.startBot({
-      conversationId,
-      team,
-      bot: entry,
-      trigger: { kind: "user", request },
-      getAccessToken,
-      ...(profile ? { profile } : {}),
-    });
-    const loop = this.continueTeamTurn({
-      conversationId,
-      team,
-      from: entry,
-      handle: first,
-      getAccessToken,
-    });
-    if (!waitForIdle) {
-      void loop.catch((error: unknown) => this.onTeamError?.(error));
-      return { runId: first.runId, snapshot: first.prepared };
-    }
-    await loop;
-    return { runId: first.runId, snapshot: await this.loadRecoverySnapshot(conversationId) };
+    const snapshot = await this.store.load(conversationId);
+    const bot = this.requireBot(snapshot.activeAgentId ?? this.defaultBotId);
+    return this.startReplyRun({ conversationId, bot, profile, getAccessToken });
   }
 
   private async continueTeamTurn({
     conversationId,
-    team,
     from,
     handle,
     getAccessToken,
   }: {
     conversationId: string;
-    team: ConversationTeam;
     from: ConversationBot;
     handle: AgentRunHandle<ConversationSnapshot>;
     getAccessToken: () => Promise<string>;
@@ -263,18 +240,24 @@ export class ConversationApplication {
       const result = await currentHandle.result;
       if (!result) return;
       assertHandoffTask(result.task);
-      assertCanHandoff(team.definition, current.agentId, result.to, this.teamCatalog);
+      const snapshot = await this.loadRecoverySnapshot(conversationId);
+      assertCanHandoff({
+        participants: snapshot.participantAgentIds ?? [current.id],
+        from: current.id,
+        to: result.to,
+        catalog: this.catalog,
+        teams: this.presets.teams(),
+      });
       await this.store.appendHandoffMessage(conversationId, {
         id: randomUUID(),
-        fromAgentId: current.agentId,
+        fromAgentId: current.id,
         toAgentId: result.to,
         task: result.task,
       });
       await this.pushSnapshot(conversationId);
-      const next = this.requireBot(team, result.to);
+      const next = this.requireBot(result.to);
       currentHandle = await this.startBot({
         conversationId,
-        team,
         bot: next,
         trigger: { kind: "handoff" },
         getAccessToken,
@@ -285,20 +268,15 @@ export class ConversationApplication {
 
   private startBot({
     conversationId,
-    team,
     bot,
     trigger,
     getAccessToken,
-    profile,
   }: {
     conversationId: string;
-    team: ConversationTeam;
     bot: ConversationBot;
     trigger: { kind: "user"; request: ConversationSendRequest } | { kind: "handoff" };
     getAccessToken: () => Promise<string>;
-    profile?: ConversationAgentProfile;
   }): Promise<AgentRunHandle<ConversationSnapshot>> {
-    const activeProfile = profile ?? bot.profile;
     return bot.executor.startRun<ConversationSnapshot>({
       conversationId,
       getAccessToken,
@@ -307,35 +285,32 @@ export class ConversationApplication {
           trigger.kind === "user"
             ? trigger.request
             : {
-                text: (await this.claimHandoff(conversationId, runId, bot.agentId, eventRevision))
-                  .text,
+                text: (
+                  await this.store.beginHandoffRun(conversationId, runId, bot.id, eventRevision)
+                ).text,
                 images: [],
               };
         if (trigger.kind === "user") {
-          await this.store.create(conversationId, this.seedFor(team));
           await this.store.beginRun(
             conversationId,
             runId,
             createUserMessage(randomUUID(), request),
             eventRevision,
-            bot.agentId,
+            bot.id,
           );
         }
         const snapshot = await this.loadRecoverySnapshot(conversationId);
         await this.pushSnapshotValue(snapshot);
-        const agentNames = new Map(
-          [...team.bots.values()].map((member) => [member.agentId, member.identity.name]),
-        );
         return {
           input: {
             conversationId,
             runId,
             request,
-            profile: activeProfile,
+            profile: bot.policy,
             workspaceRoot: this.workspaceRoot,
             readFileState: this.getReadFileState(conversationId),
-            viewerAgentId: bot.agentId,
-            agentNames,
+            viewerAgentId: bot.id,
+            agentNames: new Map(this.catalog.list().map((member) => [member.id, member.name])),
           },
           prepared: snapshot,
         };
@@ -344,24 +319,13 @@ export class ConversationApplication {
     });
   }
 
-  private claimHandoff(
-    conversationId: string,
-    runId: string,
-    targetAgentId: string,
-    eventRevision: number,
-  ) {
-    return this.store.beginHandoffRun(conversationId, runId, targetAgentId, eventRevision);
-  }
-
   private startReplyRun({
     conversationId,
-    team,
     bot,
     profile,
     getAccessToken,
   }: {
     conversationId: string;
-    team: ConversationTeam;
     bot: ConversationBot;
     profile: ConversationAgentProfile;
     getAccessToken: () => Promise<string>;
@@ -375,13 +339,10 @@ export class ConversationApplication {
             conversationId,
             runId,
             eventRevision,
-            bot.agentId,
+            bot.id,
           );
           const snapshot = await this.loadRecoverySnapshot(conversationId);
           await this.pushSnapshotValue(snapshot);
-          const agentNames = new Map(
-            [...team.bots.values()].map((member) => [member.agentId, member.identity.name]),
-          );
           return {
             input: {
               conversationId,
@@ -390,8 +351,8 @@ export class ConversationApplication {
               profile,
               workspaceRoot: this.workspaceRoot,
               readFileState: this.getReadFileState(conversationId),
-              viewerAgentId: bot.agentId,
-              agentNames,
+              viewerAgentId: bot.id,
+              agentNames: new Map(this.catalog.list().map((member) => [member.id, member.name])),
             },
             prepared: snapshot,
           };
@@ -401,30 +362,37 @@ export class ConversationApplication {
       .then((handle) => ({ runId: handle.runId, snapshot: handle.prepared }));
   }
 
-  private requireDefaultTeam(): ConversationTeam {
-    if (!this.defaultTeam) throw new Error("Conversation Agent 未注册");
-    return this.defaultTeam;
+  private requireBot(agentId: string): ConversationBot {
+    return this.catalog.require(agentId);
   }
 
-  private requireBot(team: ConversationTeam, agentId: AgentId): ConversationBot {
-    const bot = team.bots.get(agentId);
-    if (!bot) throw new Error(`Bot 未注册：${agentId}`);
-    return bot;
+  private defaultSelection(): ConversationSelection {
+    return { kind: "bot", botId: this.defaultBotId };
   }
 
-  private defaultSeed(): ConversationSessionSeed | undefined {
-    return this.defaultTeam ? this.seedFor(this.defaultTeam) : undefined;
+  private resolveSelection(selection?: ConversationSelection): ConversationSessionSeed {
+    if (!selection) return this.seedForBot(this.defaultBotId);
+    if (selection.kind === "bot") return this.seedForBot(selection.botId);
+    return this.seedForTeam(this.presets.require(selection.teamId));
   }
 
-  private seedFor(team: ConversationTeam): ConversationSessionSeed {
+  private seedForBot(botId: string): ConversationSessionSeed {
+    const bot = this.requireBot(botId);
     return {
-      activeAgentId: team.definition.entryAgentId,
-      participantAgentIds: team.definition.memberAgentIds,
-      bots: [...team.bots.values()].map((bot) => ({
-        id: bot.agentId,
-        name: bot.identity.name,
-        role: bot.identity.role,
-      })),
+      activeAgentId: bot.id,
+      participantAgentIds: [bot.id],
+      bots: [{ id: bot.id, name: bot.identity.name, role: bot.identity.role }],
+    };
+  }
+
+  private seedForTeam(preset: TeamPreset): ConversationSessionSeed {
+    return {
+      activeAgentId: preset.entryBotId,
+      participantAgentIds: preset.memberBotIds,
+      bots: preset.memberBotIds.map((id) => {
+        const bot = this.requireBot(id);
+        return { id: bot.id, name: bot.identity.name, role: bot.identity.role };
+      }),
     };
   }
 
@@ -473,4 +441,36 @@ export class ConversationApplication {
     this.readFileStates.set(conversationId, state);
     return state;
   }
+}
+
+function createLegacyCatalog(
+  conversationAgent: AgentExecutor<ConversationAgentInput> | undefined,
+): ConversationBotCatalog {
+  if (!conversationAgent) throw new Error("Conversation Bot 目录未配置");
+  return createBotCatalog<ConversationAgentInput, ConversationAgentProfile>([
+    {
+      id: CONVERSATION_AGENT_ID,
+      identity: GENERAL_IDENTITY,
+      discovery: GENERAL_DISCOVERY,
+      domain: "conversation",
+      executor: conversationAgent,
+      policy: CHAT_PROFILES["general-chat"],
+    },
+  ]);
+}
+
+function withConversationPreset(
+  presets: readonly TeamPreset[],
+  catalog: ConversationBotCatalog,
+): readonly TeamPreset[] {
+  const general = catalog.find(CONVERSATION_AGENT_ID);
+  if (!general || presets.some((preset) => preset.teamId === CONVERSATION_TEAM_ID)) return presets;
+  return [
+    ...presets,
+    {
+      teamId: CONVERSATION_TEAM_ID,
+      entryBotId: general.id,
+      memberBotIds: [general.id],
+    },
+  ];
 }

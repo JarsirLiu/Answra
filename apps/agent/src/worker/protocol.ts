@@ -2,8 +2,10 @@ import type {
   AnswerRunCommand,
   ChatSendCommand,
   ConversationModelConfig,
+  ConversationSelection,
   ConversationSnapshot,
   InterviewPcmFrame,
+  TeamSendCommand,
 } from "@answra/shared";
 import type { AgentEventEnvelope } from "@answra/shared/schema";
 
@@ -126,12 +128,19 @@ export type AgentCommand =
   | { id: string; type: "interview-context"; root: string | null }
   | { id: string; type: "interview-message"; conversationId: string; text: string }
   | ({ id: string; type: "chat-send"; accessToken: string } & ChatSendCommand)
+  | ({ id: string; type: "team-send"; accessToken: string } & TeamSendCommand)
   | ({ id: string; type: "answer-run"; accessToken: string } & AnswerRunCommand)
   /** 宿主对 `token-request` 的回答：`accessToken` 与 `error` 二者必居其一。 */
   | { id: string; type: "token"; accessToken?: string; error?: string }
   | { id: string; type: "snapshot"; conversationId: string }
+  | { id: string; type: "bot-list" }
   | { id: string; type: "read-events"; conversationId: string; afterRevision: number }
-  | { id: string; type: "create-conversation"; conversationId: string }
+  | {
+      id: string;
+      type: "create-conversation";
+      conversationId: string;
+      selection?: ConversationSelection;
+    }
   | { id: string; type: "clear-conversation"; conversationId: string }
   | { id: string; type: "append-user-message"; conversationId: string; text: string }
   | { id: string; type: "cancel"; runId: string }

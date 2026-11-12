@@ -3,9 +3,10 @@ import { INTERVIEW_AUDIO_CREDIT_BATCH } from "@answra/shared";
 import type { AgentEventEnvelope } from "@answra/shared/schema";
 import { screenshotAnswerAgent } from "./answer/agent";
 import { AnswerApplication } from "./answer/application";
-import { createConversationAgentDefinition } from "./conversation/agent";
 import { ConversationApplication } from "./conversation/application";
+import { createConversationBots } from "./conversation/bots";
 import { AgentRuntime } from "./core/agent/runtime";
+import { createBotCatalog } from "./core/bot/catalog";
 import { createBuiltinToolRegistry } from "./core/tool";
 import { MemoryConversationStore } from "./core/transcript/memoryStore";
 import type { ConversationStore } from "./core/transcript/store";
@@ -124,12 +125,8 @@ export function startAgentHost({
   const tools = createBuiltinToolRegistry({
     ...(grepWorkerPath ? { workerPaths: { grep: grepWorkerPath } } : {}),
   });
-  const conversationAgent = agentRuntime.registerAgent(
-    createConversationAgentDefinition({
-      store,
-      tools,
-    }),
-  );
+  const conversationBots = createConversationBots({ agentRuntime, store, tools });
+  const conversationCatalog = createBotCatalog(conversationBots);
   const answerAgent = agentRuntime.registerAgent(screenshotAnswerAgent);
   const interviewAgent = agentRuntime.registerAgent(
     createInterviewRehearsalAgent({
@@ -140,7 +137,7 @@ export function startAgentHost({
   const runtime = new ConversationApplication({
     agentRuntime,
     store,
-    conversationAgent,
+    catalog: conversationCatalog,
     onSnapshot: async (snapshot) => emitConversationSnapshot(snapshot),
     onTeamError: (error) => {
       console.warn("[conversation][team] failed", {
@@ -303,8 +300,15 @@ export function startAgentHost({
       case "interview-message":
         return interview.sendText(command.conversationId, command.text);
       case "chat-send":
-        return runtime.sendChat(
-          command.profileId,
+        return runtime.send(
+          command.botId,
+          command.conversationId,
+          command.request,
+          command.accessToken,
+        );
+      case "team-send":
+        return runtime.sendTeamMessage(
+          command.teamId,
           command.conversationId,
           command.request,
           command.accessToken,
@@ -313,10 +317,12 @@ export function startAgentHost({
         return answer.run(command.conversationId, command.request, command.accessToken);
       case "snapshot":
         return runtime.getSnapshot(command.conversationId);
+      case "bot-list":
+        return runtime.listBots();
       case "read-events":
         return runtime.readEventsAfter(command.conversationId, command.afterRevision);
       case "create-conversation":
-        return runtime.createConversation(command.conversationId);
+        return runtime.createConversation(command.conversationId, command.selection);
       case "clear-conversation": {
         const snapshot = await runtime.clearConversation(command.conversationId);
         emitConversationSnapshot(snapshot);

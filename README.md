@@ -83,12 +83,15 @@ apps/desktop           Electron 桌面壳
   src/renderer         薄渲染层：仅挂载 <FloatingBarApp/>
 apps/agent             平台无关的 Agent 运行时（不依赖 Electron/React），由 desktop 的 utility process 拉起
   src/index.ts         公共入口：desktop worker 的唯一导入面
+  src/composition.ts   跨客户端组装入口：CLI 等客户端按领域组装 Bot 与 Conversation Application
   src/host.ts           Conversation/Interview worker 组合根：路由命令、连接领域模块
   src/client           平台无关连接状态机：worker host 端口、退避重试与状态快照
   src/worker            worker 线协议类型（main ↔ agent 命令与帧）
   src/answer/host.ts    Answer-only worker 组合入口
   src/answer/application.ts  截图答题一次性用例与 transcript 生命周期
   src/core/agent        静态 Agent 注册、AI SDK 执行与 run 生命周期
+  src/core/bot          Bot 身份/发现契约、启动期不可变目录与会话参与者可见性
+  src/core/team         团队预置与交接任务校验
   src/core/transcript   Conversation、Answer、Interview 共用的 transcript 端口与内存适配器
   src/core/run         进程内 run 取消与完成等待原语
   src/core/model       provider 适配、模型流归一化、图片输入与 HTTP 重试

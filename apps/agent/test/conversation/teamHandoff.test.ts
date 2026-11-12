@@ -3,8 +3,8 @@ import type { AgentEvent, AgentEventEnvelope } from "@answra/shared/schema";
 import { describe, expect, it, vi } from "vitest";
 import type { ConversationAgentInput } from "../../src/conversation/agent";
 import { ConversationApplication } from "../../src/conversation/application";
+import type { ConversationBot } from "../../src/conversation/bots/types";
 import { CHAT_PROFILES } from "../../src/conversation/profiles/registry";
-import { createConversationTeam } from "../../src/conversation/team";
 import type {
   AgentExecutor,
   AgentId,
@@ -14,6 +14,8 @@ import type {
 } from "../../src/core/agent/definition";
 import { agentId } from "../../src/core/agent/definition";
 import type { AgentRuntime } from "../../src/core/agent/runtime";
+import { createBotCatalog } from "../../src/core/bot/catalog";
+import type { TeamPreset } from "../../src/core/team/preset";
 import { MemoryConversationStore } from "../../src/core/transcript/memoryStore";
 
 const candidate = agentId("candidate");
@@ -131,36 +133,37 @@ function createHarness({
     onInput: (input) => inputs.push({ agentId: intake, input }),
   });
 
-  const team = createConversationTeam({
+  const candidateBot: ConversationBot = {
+    id: candidate,
+    identity: {
+      name: "候选人",
+      role: "candidate",
+      responsibility: "准备候选人材料。",
+      owns: ["candidate"],
+    },
+    discovery: { visibleTo: { kind: "team", teamId: "interview" } },
+    domain: "conversation",
+    executor: candidateExecutor,
+    policy: CHAT_PROFILES["general-chat"],
+  };
+  const intakeBot: ConversationBot = {
+    id: intake,
+    identity: {
+      name: "面试向导",
+      role: "intake",
+      responsibility: "接管会话并推进面试准备。",
+      owns: ["intake"],
+    },
+    discovery: { visibleTo: { kind: "team", teamId: "interview" } },
+    domain: "conversation",
+    executor: intakeExecutor,
+    policy: CHAT_PROFILES["general-chat"],
+  };
+  const preset: TeamPreset = {
     teamId: "interview",
-    entryAgentId: candidate,
-    bots: [
-      {
-        agentId: candidate,
-        identity: {
-          name: "候选人",
-          role: "candidate",
-          responsibility: "准备候选人材料。",
-          owns: ["candidate"],
-        },
-        discovery: { visibleTo: { kind: "team", teamId: "interview" } },
-        executor: candidateExecutor,
-        profile: CHAT_PROFILES["general-chat"],
-      },
-      {
-        agentId: intake,
-        identity: {
-          name: "面试向导",
-          role: "intake",
-          responsibility: "接管会话并推进面试准备。",
-          owns: ["intake"],
-        },
-        discovery: { visibleTo: { kind: "team", teamId: "interview" } },
-        executor: intakeExecutor,
-        profile: CHAT_PROFILES["general-chat"],
-      },
-    ],
-  });
+    entryBotId: candidate,
+    memberBotIds: [candidate, intake],
+  };
 
   const agentRuntime = {
     assertTeamMembers: vi.fn(),
@@ -177,7 +180,8 @@ function createHarness({
   const app = new ConversationApplication({
     agentRuntime,
     store,
-    teams: [team],
+    catalog: createBotCatalog([candidateBot, intakeBot]),
+    presets: [preset],
     onSnapshot: (snapshot) => {
       snapshots.push(snapshot);
     },

@@ -91,7 +91,6 @@ function useAiConversation(
           operation === "chat.send"
             ? {
                 operation,
-                profileId: "general-chat" as const,
                 conversationId: targetConversationId,
                 request: { text, images },
               }

@@ -1,11 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { agentId, type BotDiscovery, type BotIdentity } from "../../../src/core/agent/definition";
-import {
-  assertCanHandoff,
-  assertTeamDefinition,
-  visibleMembers,
-} from "../../../src/core/team/directory";
-import type { TeamCatalog, TeamDefinition } from "../../../src/core/team/types";
+import { createBotCatalog } from "../../../src/core/bot/catalog";
+import type { BotDescriptor } from "../../../src/core/bot/contracts";
+import { assertCanHandoff, visibleBots } from "../../../src/core/bot/directory";
+import { assertTeamPreset, createTeamPresetCatalog } from "../../../src/core/team/preset";
 
 const identity: BotIdentity = {
   name: "测试 Bot",
@@ -14,106 +12,174 @@ const identity: BotIdentity = {
   owns: ["test"],
 };
 
-function bot(discovery: BotDiscovery) {
-  return { identity, discovery };
-}
-
-function catalog(
-  agents: Record<string, ReturnType<typeof bot>>,
-  teams: Record<string, readonly string[]>,
-): TeamCatalog {
+function bot(id: string, discovery: BotDiscovery): BotDescriptor<unknown, unknown> {
   return {
-    require(id) {
-      const agent = agents[id];
-      if (!agent) throw new Error(`Bot 未注册：${id}`);
-      return agent;
+    id: agentId(id),
+    identity,
+    discovery,
+    domain: "conversation",
+    executor: {
+      startRun: async () => {
+        throw new Error("not used");
+      },
     },
-    isMember(teamId, id) {
-      return teams[teamId]?.includes(id) ?? false;
-    },
-    hasTeam(teamId) {
-      return teamId in teams;
-    },
+    policy: {},
   };
 }
 
-function team(members: readonly string[]): TeamDefinition {
-  return {
-    teamId: "interview",
-    entryAgentId: agentId(members[0] ?? "missing"),
-    memberAgentIds: members.map(agentId),
-  };
+function catalog(agents: readonly BotDescriptor<unknown, unknown>[]) {
+  return createBotCatalog(agents);
 }
 
-describe("core team directory", () => {
-  it("returns every other member visible to the viewer's team", () => {
-    const agents = {
-      a: bot({ visibleTo: { kind: "team", teamId: "interview" } }),
-      b: bot({ visibleTo: { kind: "team", teamId: "interview" } }),
-      c: bot({ visibleTo: { kind: "team", teamId: "interview" } }),
-    };
-    const definition = team(["a", "b", "c"]);
+function teams(members: readonly string[], teamId = "interview") {
+  return createTeamPresetCatalog([
+    {
+      teamId,
+      entryBotId: agentId(members[0] ?? "missing"),
+      memberBotIds: members.map(agentId),
+    },
+  ]);
+}
+
+describe("core bot directory", () => {
+  it("returns every other participant visible to the viewer's team", () => {
+    const directory = catalog([
+      bot("a", { visibleTo: { kind: "team", teamId: "interview" } }),
+      bot("b", { visibleTo: { kind: "team", teamId: "interview" } }),
+      bot("c", { visibleTo: { kind: "team", teamId: "interview" } }),
+    ]);
+    const presets = teams(["a", "b", "c"]);
 
     expect(
-      visibleMembers(definition, agentId("a"), catalog(agents, { interview: ["a", "b", "c"] })),
-    ).toEqual([
-      expect.objectContaining({ agentId: "b" }),
-      expect.objectContaining({ agentId: "c" }),
-    ]);
+      visibleBots({
+        participants: ["a", "b", "c"],
+        viewer: "a",
+        catalog: directory,
+        teams: presets.teams(),
+      }).map((member) => member.id),
+    ).toEqual(["b", "c"]);
   });
 
-  it("respects explicit Bot visibility and never includes the viewer", () => {
-    const agents = {
-      a: bot({ visibleTo: { kind: "team", teamId: "interview" } }),
-      b: bot({ visibleTo: { kind: "bots", agentIds: [agentId("a")] } }),
-      c: bot({ visibleTo: { kind: "bots", agentIds: [] } }),
-    };
-    const definition = team(["a", "b", "c"]);
-    const members = visibleMembers(
-      definition,
-      agentId("a"),
-      catalog(agents, { interview: ["a", "b", "c"] }),
-    );
+  it("requires both session participation and Bot discovery", () => {
+    const directory = catalog([
+      bot("a", { visibleTo: { kind: "team", teamId: "interview" } }),
+      bot("b", { visibleTo: { kind: "bots", agentIds: [agentId("a")] } }),
+      bot("c", { visibleTo: { kind: "team", teamId: "interview" } }),
+      bot("outsider", { visibleTo: { kind: "bots", agentIds: [agentId("a")] } }),
+    ]);
+    const presets = teams(["a", "b", "c"]);
 
-    expect(members.map((member) => member.agentId)).toEqual(["b"]);
+    const visible = visibleBots({
+      participants: ["a", "b", "c"],
+      viewer: "a",
+      catalog: directory,
+      teams: presets.teams(),
+    });
+    expect(visible.map((member) => member.id)).toEqual(["b", "c"]);
     expect(() =>
-      assertCanHandoff(
-        definition,
-        agentId("a"),
-        agentId("b"),
-        catalog(agents, { interview: ["a", "b", "c"] }),
-      ),
+      assertCanHandoff({
+        participants: ["a", "b", "c"],
+        from: agentId("a"),
+        to: agentId("b"),
+        catalog: directory,
+        teams: presets.teams(),
+      }),
     ).not.toThrow();
     expect(() =>
-      assertCanHandoff(
-        definition,
-        agentId("a"),
-        agentId("c"),
-        catalog(agents, { interview: ["a", "b", "c"] }),
-      ),
-    ).toThrow("Bot 无法发现交接目标：a -> c");
+      assertCanHandoff({
+        participants: ["a", "b", "c"],
+        from: agentId("a"),
+        to: agentId("outsider"),
+        catalog: directory,
+        teams: presets.teams(),
+      }),
+    ).toThrow("Bot 无法发现交接目标：a -> outsider");
   });
 
-  it("rejects invalid team definitions at startup", () => {
-    const agents = {
-      a: bot({ visibleTo: { kind: "team", teamId: "interview" } }),
-      b: bot({ visibleTo: { kind: "team", teamId: "missing" } }),
-      c: bot({ visibleTo: { kind: "bots", agentIds: [agentId("outsider")] } }),
-    };
-    const directory = catalog(agents, { interview: ["a", "b"] });
+  it("rejects handoff in a single-participant conversation", () => {
+    const directory = catalog([
+      bot("a", { visibleTo: { kind: "team", teamId: "conversation" } }),
+      bot("b", { visibleTo: { kind: "team", teamId: "conversation" } }),
+    ]);
+    const presets = teams(["a"], "conversation");
 
-    expect(() => assertTeamDefinition(team(["a", "a"]), directory)).toThrow("团队成员重复：a");
+    expect(
+      visibleBots({
+        participants: ["a"],
+        viewer: "a",
+        catalog: directory,
+        teams: presets.teams(),
+      }),
+    ).toEqual([]);
     expect(() =>
-      assertTeamDefinition({ ...team(["a"]), entryAgentId: agentId("missing") }, directory),
+      assertCanHandoff({
+        participants: ["a"],
+        from: agentId("a"),
+        to: agentId("b"),
+        catalog: directory,
+        teams: presets.teams(),
+      }),
+    ).toThrow("Bot 无法发现交接目标：a -> b");
+  });
+
+  it("validates team presets and discovery references at startup", () => {
+    const directory = catalog([
+      bot("a", { visibleTo: { kind: "team", teamId: "interview" } }),
+      bot("b", { visibleTo: { kind: "team", teamId: "missing" } }),
+      bot("c", { visibleTo: { kind: "bots", agentIds: [agentId("outsider")] } }),
+    ]);
+    const presets = teams(["a", "b"]);
+
+    expect(() =>
+      assertTeamPreset(
+        {
+          teamId: "interview",
+          entryBotId: agentId("a"),
+          memberBotIds: [agentId("a"), agentId("a")],
+        },
+        directory,
+        presets.teams(),
+      ),
+    ).toThrow("团队成员重复：a");
+    expect(() =>
+      assertTeamPreset(
+        { teamId: "interview", entryBotId: agentId("missing"), memberBotIds: [agentId("a")] },
+        directory,
+        presets.teams(),
+      ),
     ).toThrow("团队入口 Bot 未注册：missing");
-    expect(() => assertTeamDefinition(team(["a", "b"]), directory)).toThrow(
-      "发现关系引用了未注册的团队：missing",
-    );
-    expect(() => assertTeamDefinition(team(["a", "c"]), directory)).toThrow(
-      "发现关系引用了团队之外的 Bot：outsider",
-    );
-    expect(() => assertTeamDefinition(team(["a", "unknown"]), directory)).toThrow(
-      "Bot 未注册：unknown",
-    );
+    expect(() =>
+      assertTeamPreset(
+        {
+          teamId: "interview",
+          entryBotId: agentId("a"),
+          memberBotIds: [agentId("a"), agentId("b")],
+        },
+        directory,
+        presets.teams(),
+      ),
+    ).toThrow("发现关系引用了未注册的团队：missing");
+    expect(() =>
+      assertTeamPreset(
+        {
+          teamId: "interview",
+          entryBotId: agentId("a"),
+          memberBotIds: [agentId("a"), agentId("c")],
+        },
+        directory,
+        presets.teams(),
+      ),
+    ).toThrow("Bot 未注册：outsider");
+    expect(() =>
+      assertTeamPreset(
+        {
+          teamId: "interview",
+          entryBotId: agentId("a"),
+          memberBotIds: [agentId("a"), agentId("unknown")],
+        },
+        directory,
+        presets.teams(),
+      ),
+    ).toThrow("Bot 未注册：unknown");
   });
 });
