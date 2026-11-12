@@ -500,7 +500,7 @@ core          ──/-> conversation / interview
   - `appendHandoffMessage` 在 store 边界校验：空闲、来源等于当前 `activeAgentId`、`from != to`、目标参与者、任务长度；交接不推进 `eventRevision`。
   - `MemoryConversationStore` 的 seed、clone、恢复；用户消息 `audience=user`，assistant 占位写入 `authorAgentId` 与 `audience=user`。
 - 应用循环：
-  - `ConversationApplication.sendTeamMessage`、`sendChat` 单 Bot 别名、`startBot`、`continueTeamTurn`、`startReplyRun`、`onSnapshot`、`onTeamError`。
+  - `ConversationApplication.sendTeamMessage`、`sendChat` 单 Bot 别名、`startBot`、`continueTeamTurn`、`onSnapshot`、`onTeamError`。
   - 每段 run 启动后推送 snapshot；交接写入后推送 snapshot；`sendTeamMessage` 等整条链 idle 后返回。
   - `continueTeamTurn` 在 `done !== completed` 时停止；`result` 为空时停止；目标不可见或任务非法时把错误交给调用方。
 - 结果、身份与注册：
@@ -563,7 +563,7 @@ core          ──/-> conversation / interview
 - `core/team/registry.ts`、`core/team/context.ts` 尚未创建；当前团队装配在 `conversation/team.ts`，目录在 `core/team/directory.ts`。要么后续补通用 registry/context，要么在实现完成后修订本 Note 的代码落位。
 - `AgentRegistry` 当前保存 `identity`/`discovery`，未保存完整 `AgentDefinition`；团队校验通过 `assertTeamMembers` 加 `ConversationTeam` 目录完成。若坚持提案“存定义”，需要重构注册表并补测试。
 - `MemoryConversationStore.create` 对已存在会话会覆盖 `seed`（snapshot 只补缺失字段）；提案写的是“只补齐缺失”。需要决定：固定会话团队（不覆盖 seed），还是允许后续 `team-send` 切换团队并更新恢复入口。
-- `ConversationApplication.sendChat` / `replyToLastUser` 仍接受 `profileId`；这是迁移别名，UI 稳定后删除 renderer 选择语义。
+- `ConversationApplication.sendChat` 仍接受 `profileId` 作为迁移别名；`replyToLastUser` 已删除，因为无生产调用方且会绕过 Bot policy。
 - 交接前缀当前在 `core/transcript/projection.ts`，未放到 `core/team/context.ts`；若要保持单向依赖，不能简单让 projection 反向 import team。
 - `ConversationApplication.startTeamTurn` 对用户触发有重复 `store.create`（外层与 `startBot.prepareRun` 各一次）；无害但可收敛。
 - `appendHandoffMessage` 已加“来源等于当前 `activeAgentId`”校验；后续任何新 writer 必须继续在 store 边界维护归属不变量。

@@ -403,6 +403,14 @@ host         ──> 所有领域（只接线）
 - **后果**：可见性查询不再容忍悬空 participant；`visibleBots` 调用方必须保证 participants 来自已校验的会话种子。
 - **验证**：`core bot directory` 新增未知参与者抛错用例；单参与者会话与正常 ACL 用例保持通过。
 
+### 清理：删除绕过 Bot policy 的 replyToLastUser（2026-11-12）
+
+- **问题**：`ConversationApplication.replyToLastUser(profileId)` 接受调用方传入的 profile，并用它启动回复 run，而不是读取 `bot.policy`；生产代码没有调用方，只有测试覆盖。它让同一 Bot 可以被调用方替换 prompt/工具授权，破坏“Bot 身份包含策略”的边界。
+- **决定**：删除 `replyToLastUser` 与仅服务于它的 `startReplyRun`；`ConversationStore.beginReplyRun` 保留，Interview 的回复链路仍需要它。`sendChat` 继续作为迁移别名，但只校验 `profileId` 后转交 `send`，不再选择执行策略。
+- **替代方案**：保留方法并改为读取 `bot.policy`（舍弃：当前无真实调用方，保留会继续扩大公共 API 和重复 run 启动路径；未来有调用方时按 Bot policy 重新引入）；保留 profile 参数并只做告警（舍弃：策略边界仍然可绕过）。
+- **后果**：Conversation 侧只有 `send`/`sendTeamMessage` 两条执行入口，Bot 的 prompt/工具授权只能来自目录中的 `policy`；Interview 的 `beginReplyRun` 语义不变。
+- **验证**：删除 Conversation 侧 reply 测试；`core/transcript` 的 `beginReplyRun` 认领与错误测试继续覆盖 Interview 所需契约。
+
 ### 验证（2026-11-12）
 
 - 通过：`pnpm lint`、四包 `typecheck`、`pnpm architecture:check`、`pnpm tokens:check`、

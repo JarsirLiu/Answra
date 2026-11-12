@@ -1,7 +1,7 @@
 import { createServer, type Server } from "node:http";
 import { ActiveChatConversationId, ActiveExamConversationId } from "@answra/shared";
 import type { AgentEventEnvelope } from "@answra/shared/schema";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { screenshotAnswerAgent } from "../../src/answer/agent";
 import { AnswerApplication } from "../../src/answer/application";
 import { ConversationApplication } from "../../src/conversation/application";
@@ -201,74 +201,6 @@ describe("ephemeral conversation runtime", () => {
     expect(
       events.some((event) => event.event.type === "text-delta" && event.event.delta === "收到"),
     ).toBe(true);
-  });
-
-  it("replies to the last user message and resolves waitForRun after the run settles", async () => {
-    await runtime.createConversation("reply-conversation");
-    await runtime.appendUserMessage("reply-conversation", "请自我介绍");
-
-    const { runId } = await runtime.replyToLastUser(
-      "general-chat",
-      "reply-conversation",
-      async () => ACCESS_TOKEN,
-    );
-    await runtime.waitForRun(runId);
-
-    const snapshot = await runtime.getSnapshot("reply-conversation");
-    expect(
-      snapshot.messages.map((message) => [message.role, message.text, message.status]),
-    ).toEqual([
-      ["user", "请自我介绍", "complete"],
-      ["assistant", "收到", "complete"],
-    ]);
-    expect(snapshot.activeRunId).toBeUndefined();
-    expect(JSON.stringify(requests.at(-1)?.messages)).toContain("请自我介绍");
-  });
-
-  it("surfaces a reply token failure through the claimed run instead of rejecting the start", async () => {
-    await runtime.createConversation("reply-token-conversation");
-    await runtime.appendUserMessage("reply-token-conversation", "请自我介绍");
-    const getAccessToken = vi.fn(async () => {
-      throw new Error("令牌不可用");
-    });
-
-    const { runId } = await runtime.replyToLastUser(
-      "general-chat",
-      "reply-token-conversation",
-      getAccessToken,
-    );
-    await runtime.waitForRun(runId);
-
-    expect(getAccessToken).toHaveBeenCalledTimes(1);
-    const snapshot = await runtime.getSnapshot("reply-token-conversation");
-    expect(
-      snapshot.messages.map((message) => [message.role, message.text, message.status]),
-    ).toEqual([
-      ["user", "请自我介绍", "complete"],
-      ["assistant", "", "failed"],
-    ]);
-    const runEvents = streamEvents(changes, runId);
-    expect(runEvents.map((event) => event.event.type)).toEqual(["start", "error"]);
-    expect(runEvents[1]?.event).toMatchObject({ type: "error", errorText: "令牌不可用" });
-    expect(
-      changes.some(
-        (change) =>
-          change.runId === runId &&
-          change.event.type === "run-state-changed" &&
-          change.event.state === "failed",
-      ),
-    ).toBe(true);
-    expect(runtime.activeRunCount).toBe(0);
-  });
-
-  it("does not request a token when there is no user message to reply to", async () => {
-    await runtime.createConversation("empty-conversation");
-    const getAccessToken = vi.fn(async () => ACCESS_TOKEN);
-
-    await expect(
-      runtime.replyToLastUser("general-chat", "empty-conversation", getAccessToken),
-    ).rejects.toThrow("没有可回复的用户消息");
-    expect(getAccessToken).not.toHaveBeenCalled();
   });
 
   it("sets answer temperature and low reasoning effort without changing general chat", async () => {

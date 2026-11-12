@@ -22,11 +22,7 @@ import {
 import type { ReadFileStateMap } from "../core/tool";
 import { createUserMessage } from "../core/transcript/message";
 import type { ConversationSessionSeed, ConversationStore } from "../core/transcript/store";
-import {
-  CONVERSATION_AGENT_ID,
-  CONVERSATION_TEAM_ID,
-  type ConversationAgentProfile,
-} from "./agent";
+import { CONVERSATION_AGENT_ID, CONVERSATION_TEAM_ID } from "./agent";
 import type { ConversationBot, ConversationBotCatalog } from "./bots/types";
 import { CHAT_PROFILES, type ChatProfileId } from "./profiles/registry";
 
@@ -223,18 +219,6 @@ export class ConversationApplication {
     return { runId: first.runId, snapshot: await this.loadRecoverySnapshot(conversationId) };
   }
 
-  async replyToLastUser(
-    profileId: ChatProfileId,
-    conversationId: string,
-    getAccessToken: () => Promise<string>,
-  ): Promise<{ runId: string; snapshot: ConversationSnapshot }> {
-    const profile = CHAT_PROFILES[profileId];
-    if (!profile) throw new Error("未授权的对话能力配置");
-    const snapshot = await this.store.load(conversationId);
-    const bot = this.requireBot(snapshot.activeAgentId ?? this.defaultBotId);
-    return this.startReplyRun({ conversationId, bot, profile, getAccessToken });
-  }
-
   private async continueTeamTurn({
     conversationId,
     from,
@@ -331,49 +315,6 @@ export class ConversationApplication {
       },
       onEvent: (event) => this.applyRunEvent(conversationId, event),
     });
-  }
-
-  private startReplyRun({
-    conversationId,
-    bot,
-    profile,
-    getAccessToken,
-  }: {
-    conversationId: string;
-    bot: ConversationBot;
-    profile: ConversationAgentProfile;
-    getAccessToken: () => Promise<string>;
-  }): Promise<{ runId: string; snapshot: ConversationSnapshot }> {
-    return bot.executor
-      .startRun<ConversationSnapshot>({
-        conversationId,
-        getAccessToken,
-        prepareRun: async ({ runId, eventRevision }) => {
-          const target = await this.store.beginReplyRun(
-            conversationId,
-            runId,
-            eventRevision,
-            bot.id,
-          );
-          const snapshot = await this.loadRecoverySnapshot(conversationId);
-          await this.pushSnapshotValue(snapshot);
-          return {
-            input: {
-              conversationId,
-              runId,
-              request: { text: target.text, images: target.images },
-              profile,
-              workspaceRoot: this.workspaceRoot,
-              readFileState: this.getReadFileState(conversationId),
-              viewerAgentId: bot.id,
-              agentNames: new Map(this.catalog.list().map((member) => [member.id, member.name])),
-            },
-            prepared: snapshot,
-          };
-        },
-        onEvent: (event) => this.applyRunEvent(conversationId, event),
-      })
-      .then((handle) => ({ runId: handle.runId, snapshot: handle.prepared }));
   }
 
   private requireBot(agentId: string): ConversationBot {
