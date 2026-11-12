@@ -1,5 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { applyCliPackaging } from "./cli-packaging.mjs";
 import { resolveReleaseProfile } from "./release-profile.mjs";
 
 const manifest = await resolveReleaseProfile();
@@ -22,6 +23,8 @@ if (manifest.profile === "answer") {
     { from: "resources/asr", to: "asr", filter: ["**/*"] },
   ];
 }
+
+applyCliPackaging(config);
 
 const outputPath = `.release-audit/${manifest.profile}/electron-builder.json`;
 await writeFile(outputPath, `${JSON.stringify(config, null, 2)}\n`);

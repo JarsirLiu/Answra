@@ -13,6 +13,7 @@
     "dev:web:full": "vite --mode full --host 127.0.0.1 --port 5180 --strictPort",
     "build": "pnpm build:electron -- --profile=full && vite build --mode full",
     "build:answer": "pnpm build:electron -- --profile=answer && vite build --mode answer",
+    "build:cli": "pnpm --filter @answra/cli build",
     "build:electron": "node ./scripts/build-electron.mjs",
     "audit:packaged": "node ./scripts/audit-packaged-input.mjs",
     "vad:prepare": "node ./scripts/prepare-ten-vad.mjs",
@@ -20,9 +21,9 @@
     "typecheck": "tsc -p tsconfig.main.json && tsc -p tsconfig.preload.json && tsc -p tsconfig.renderer.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "dist:win": "pnpm build:answer && pnpm audit:packaged -- --profile=answer && node ./scripts/write-electron-builder-config.mjs --profile=answer && electron-builder --config .release-audit/answer/electron-builder.json --win nsis",
-    "dist:win:full": "pnpm vad:prepare && pnpm asr:prepare && pnpm build && pnpm audit:packaged -- --profile=full && node ./scripts/write-electron-builder-config.mjs --profile=full && electron-builder --config .release-audit/full/electron-builder.json --win nsis",
-    "dist:mac": "pnpm build:answer && pnpm audit:packaged -- --profile=answer && node ./scripts/write-electron-builder-config.mjs --profile=answer && electron-builder --config .release-audit/answer/electron-builder.json --mac --arm64 --x64",
+    "dist:win": "pnpm build:cli && pnpm build:answer && pnpm audit:packaged -- --profile=answer && node ./scripts/write-electron-builder-config.mjs --profile=answer && electron-builder --config .release-audit/answer/electron-builder.json --win nsis",
+    "dist:win:full": "pnpm build:cli && pnpm vad:prepare && pnpm asr:prepare && pnpm build && pnpm audit:packaged -- --profile=full && node ./scripts/write-electron-builder-config.mjs --profile=full && electron-builder --config .release-audit/full/electron-builder.json --win nsis",
+    "dist:mac": "pnpm build:cli && pnpm build:answer && pnpm audit:packaged -- --profile=answer && node ./scripts/write-electron-builder-config.mjs --profile=answer && electron-builder --config .release-audit/answer/electron-builder.json --mac --arm64 --x64",
     "icons": "node ./scripts/generate-icons.mjs"
   },
   "build": {

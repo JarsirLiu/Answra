@@ -111,6 +111,8 @@ export {
   AI_SERVICE_BASE_URL,
   ANSWRA_ENV,
   type AnswraEnv,
+  CLI_API_KEY,
+  CLI_MODEL,
   CLOUD_API_BASE_URL,
   CLOUD_SITE_BASE_URL,
   parseAnswraEnv,

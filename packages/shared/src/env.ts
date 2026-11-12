@@ -15,6 +15,12 @@ export type AnswraEnv = "development" | "production" | "test";
 /** 本地 AI 服务（Agent Runtime）的基础地址。 */
 export const AI_SERVICE_BASE_URL = "ANSWRA_AI_BASE_URL" as const;
 
+/** CLI 使用的模型 ID（OpenAI 兼容端点）。 */
+export const CLI_MODEL = "ANSWRA_MODEL" as const;
+
+/** CLI 使用的 API Key；本地 OpenAI 兼容端点可留空。 */
+export const CLI_API_KEY = "ANSWRA_API_KEY" as const;
+
 /**
  * 云端网关地址（云端模式的 API 根，如 `https://colorect.cloud`）。
  *

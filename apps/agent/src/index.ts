@@ -6,6 +6,8 @@
  *
  * 目录分层（按领域切分，新增领域平行加目录，减少并行开发的改动冲突）：
  *   host.ts                 Conversation/Interview worker composition root and command routing
+ *   composition.ts          跨客户端组装入口（CLI 等使用，不经 worker transport）
+ *   coding/                 CLI 编码领域：独立 Bot、prompt/policy 与单 Bot 会话用例
  *   worker/protocol.ts      worker 线协议（与 desktop main 之间的唯一契约）
  *   core/transcript/ 共享 transcript、快照恢复游标与仓储
  *   core/tool/            跨领域工具契约、静态注册表、执行器与通用工具

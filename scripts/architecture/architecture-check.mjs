@@ -166,7 +166,9 @@ function checkImports(pkg) {
           normalized.startsWith("apps/desktop/src/preload/") ||
           // 构建脚本只在打包期运行，不进入 renderer/preload 运行时产物。
           normalized.startsWith("apps/desktop/scripts/") ||
-          normalized.startsWith("apps/agent/src/");
+          normalized.startsWith("apps/agent/src/") ||
+          normalized.startsWith("apps/cli/src/") ||
+          normalized.startsWith("apps/cli/scripts/");
         if (!allowed) {
           errors.push(`${rel}: "${spec}" 仅允许在 apps/desktop 的 main/preload 中使用`);
         }

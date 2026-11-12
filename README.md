@@ -10,12 +10,14 @@
 - 对话回复为演示内容，尚未连接后端或 AI 模型。
 - Windows 面试语音试用接入会议系统声音与候选人麦克风，经本地 VAD/ASR 后在面板按说话方显示识别文本和 VAD 端点；当前不生成回答。
 - 隐身模式通过 Electron 窗口捕获保护请求系统排除应用表面；实际效果需按 Electron 和 Windows 版本验证。
+- CLI coding 模式（`answra code`）复用独立 `coding.engineer` Bot 与 coding 工具；当前提供 prompt/管道一次性执行，TUI 尚未接入。
 
 工程决策、功能方案、缺陷复盘和架构边界统一记录在[工程 Note](docs/README.md)。
 
 ## 环境要求
 
 - Node.js 22.13 或更新版本（pnpm 11.9 的最低要求）
+- CLI 产物运行时下限为 Node 20.9；安装包分发复用 Electron 29.4.6 内置 Node，不额外携带 Node sidecar
 - pnpm 11.9.0，建议通过 Corepack 管理
 - Windows 可运行原生 Electron 桌面窗口；其他平台可通过 `pnpm dev:web` 预览 renderer
 
@@ -40,7 +42,7 @@ pnpm verify   # lint + typecheck + test + architecture:check（Note 检查仅提
 pnpm build
 ```
 
-Windows 安装包通过 `pnpm dist:win` 构建，当前为未签名的 NSIS 安装包，不需要代码签名证书。
+Windows 安装包通过 `pnpm dist:win` 构建，当前为未签名的 NSIS 安装包，不需要代码签名证书。安装包会把 CLI bundle 放到 `resources/cli/main.cjs`，并在安装目录提供复用 `Answra.exe` 的 `answra.cmd`；该目录不会自动加入 PATH。
 
 ## 发版与分发
 
@@ -81,6 +83,13 @@ apps/desktop           Electron 桌面壳
   src/main/connection  Agent 连接状态 IPC、窗口广播与 Electron worker host 适配
   src/preload          contextBridge 桥（window.answra）
   src/renderer         薄渲染层：仅挂载 <FloatingBarApp/>
+apps/cli              独立终端宿主：coding Bot 的 CLI 入口、模型配置与非 TTY 流式输出
+  src/cli              命令分派、code 用例、依赖端口与 help/error
+  src/config           argv、环境变量、模型端点与工作区校验
+  src/session          单活动 run 的 CodingSession 用例
+  src/adapters         @answra/agent/composition 到 CLI 端口的映射
+  src/presentation     Agent 事件到文本/工具行的纯投影
+  src/transport        stdin/stdout/stderr 适配
 apps/agent             平台无关的 Agent 运行时（不依赖 Electron/React），由 desktop 的 utility process 拉起
   src/index.ts         公共入口：desktop worker 的唯一导入面
   src/composition.ts   跨客户端组装入口：CLI 等客户端按领域组装 Bot 与 Conversation Application
@@ -115,6 +124,10 @@ docs                   Note 索引
 | `pnpm dev:full` | 以 full Profile 启动开发窗口（含聊天与面试） |
 | `pnpm --filter @answra/desktop vad:prepare` | 下载并校验 TEN VAD 运行资源 |
 | `pnpm --filter @answra/desktop asr:prepare` | 下载并校验本地 Paraformer ASR 模型 |
+| `pnpm --filter @answra/cli build` | 构建 CLI bundle（`apps/cli/dist/main.cjs`） |
+| `pnpm --filter @answra/cli test` | CLI 配置、会话、呈现与命令分派测试 |
+| `pnpm --filter @answra/cli smoke:electron` | 构建后用 Electron 29.4.6 的 Node 跑 CLI 与本地假模型端点 smoke |
+| `node apps/cli/dist/main.cjs code "..."` | 以系统 Node 运行 CLI；也可用 `ELECTRON_RUN_AS_NODE=1` 复用 Electron 29.4.6 的 Node |
 | `pnpm build` | 全 workspace 构建（desktop: esbuild + vite） |
 | `pnpm typecheck` | 各包依次 `tsc --noEmit`（desktop 按进程分三个编译单元） |
 | `pnpm test` | 各包测试（ui 使用 vitest + jsdom） |

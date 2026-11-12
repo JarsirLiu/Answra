@@ -1,3 +1,20 @@
+/// <reference path="./types/pdfjs-dist-worker.d.ts" />
+/// <reference path="./types/word-extractor.d.ts" />
+
+export {
+  CODING_AGENT_ID,
+  CODING_DISCOVERY,
+  CODING_IDENTITY,
+  type CodingAgentInput,
+  createCodingAgentDefinition,
+} from "./coding/agent";
+export {
+  CodingApplication,
+  type CodingApplicationOptions,
+} from "./coding/application";
+export { type CodingBot, createCodingBot } from "./coding/bot";
+export { type CodingHost, type CodingHostOptions, startCodingHost } from "./coding/host";
+export { CODING_POLICY, type CodingPolicy } from "./coding/policy";
 export {
   CONVERSATION_AGENT_ID,
   CONVERSATION_TEAM_ID,

@@ -84,6 +84,27 @@ module.exports = async function auditPackagedApp(context) {
     violations.push(`app.asar 包含已由 bundle 覆盖的运行时依赖：${packageName}`);
   }
 
+  try {
+    await stat(join(resourcesDir, "cli", "main.cjs"));
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+      violations.push("安装包缺少 CLI bundle：resources/cli/main.cjs");
+    } else {
+      throw error;
+    }
+  }
+  if (context.electronPlatformName === "win32") {
+    try {
+      await stat(join(context.appOutDir, "answra.cmd"));
+    } catch (error) {
+      if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+        violations.push("Windows 安装包缺少 CLI shim：answra.cmd");
+      } else {
+        throw error;
+      }
+    }
+  }
+
   for (const resource of ["vad", "asr"]) {
     if (manifest.profile === "answer") {
       try {

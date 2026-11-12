@@ -12,7 +12,7 @@ export type {
 
 import type { BotDiscovery, BotIdentity } from "../agent/definition";
 
-export type BotDomain = "conversation" | "interview" | "answer";
+export type BotDomain = "conversation" | "interview" | "answer" | "coding";
 
 /** 领域装配单元：执行器和领域策略由领域提供，目录只负责查找。 */
 export interface BotDescriptor<Input, Policy> {

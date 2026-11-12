@@ -9,13 +9,14 @@
                                     ↑
 @answra/shared  ←  @answra/desktop(main / preload)
 @answra/shared  ←  @answra/agent  ←  @answra/desktop(main)
+                                  ←  @answra/cli
 ```
 
 - 依赖必须单向，禁止环（`pnpm architecture:check` 强制）。
 - 跨包导入只允许使用目标包 `package.json` `exports` 声明的入口；禁止深导入、禁止相对路径跨包（架构脚本强制）。
 - 新增共享能力时：类型/常量进 `shared`，纯 UI 进 `ui`，平台能力进 `desktop`，与平台无关的 Agent 运行时进 `agent`。
 - Agent 事件 payload 的唯一目录与 envelope 定义在 `packages/shared/src/schema/events.ts`；状态词汇/快照单独定义在 `status.ts`。`AgentDurableEvent` 仅规定未来适配器的事件资格，不代表已有持久化实现。
-- `apps/` 只放可启动单元（`desktop` 是 Electron 壳，`agent` 由 utility process 拉起并保留独立为常驻 sidecar 的可能）；纯库放 `packages/`。
+- `apps/` 只放可启动单元（`desktop` 是 Electron 壳，`agent` 由 utility process 拉起并保留独立为常驻 sidecar 的可能，`cli` 是独立终端宿主）；纯库放 `packages/`。
 
 ## 进程边界（apps/desktop）
 
@@ -47,15 +48,34 @@
 | `src/conversation/agent.ts`、`src/answer/agent.ts` | 各领域静态 Agent 定义，组装 prompt、上下文和授权工具 | 不接收 renderer 提供的任意 prompt 或工具实现 |
 | `src/conversation/bots` | Conversation Bot 工厂：把身份、执行器与 profile 装配成目录项 | 新增 Bot 不改会话编排；不接收 renderer 注入 prompt、工具或发现关系 |
 | `src/answer/application.ts` | 截图答题用例、一次性 transcript 清理和事件回调 | 不实现模型调用、重试或第二套事件 |
+| `src/coding` | CLI coding 领域：独立 Bot、prompt/policy、transcript 上下文、单 Bot 会话用例与 host 装配 | 不 import `conversation`/`interview`；不启动 VAD/ASR；不做 team/handoff |
 | `src/conversation/profiles` | Conversation 内部提示词、上下文策略与工具授权清单 | 只声明授权 `ToolId[]`，不接收 renderer 提供的任意 prompt 或工具实现 |
 | `src/<domain>/tools` | 领域专属工具实现，实现 `core/tool` 契约 | 不执行桌面平台能力；不得由 desktop 反向 RPC 代执行 |
 | `src/interview` | 语音采集后的转录、turn 与自动回复领域，包括 worker DTO adapter | 与 Conversation 保持平级，不把面试状态塞进会话目录；领域逻辑不放入 `worker/` |
 | `src/interview/runtime.ts` | 面试媒体生命周期组合：连接 audio ingress、VAD、ASR、turn assembler/settler 与 InterviewApplication | 只编排领域端口，不定义 worker 协议或模型执行策略 |
 | 平台能力与工具 | 采集、键鼠注入、窗口、密钥等桌面平台实现留在 desktop；Agent 工具由 Agent 注册并在 Agent 进程执行 | desktop 可注入工作区根目录等授权上下文，不得代执行 Agent 工具或通过反向 RPC 提供工具能力 |
 
-入口规则：desktop 只从 `@answra/agent`（`exports` 的 `.`）导入；CLI 或其他客户端组装领域 Bot 时使用 `@answra/agent/composition`，不得深导入。本包不产出独立构建产物，由 desktop 的 `build:electron` 一并 bundle。
+入口规则：desktop 只从 `@answra/agent`（`exports` 的 `.`）导入；CLI 或其他客户端组装领域 Bot 时使用 `@answra/agent/composition`，不得深导入。本包不产出独立构建产物，由 desktop 的 `build:electron` 或 CLI 的 `build` 一并 bundle。
 
 仓库根目录 `examples/vad-asr-eval/` 是独立的可选真实样本 VAD/ASR 评测 workspace：原句与链路转录并排供人工审阅，不生成回答；经 `@answra/agent/evaluation` 公开入口调用。它不在根 pnpm workspace 内，不参与根安装、`pnpm verify` 或 CI 测试；需在目录内单独 `pnpm install`，下载资产和 CSV 产物不入 Git。
+
+## CLI 入口（apps/cli）
+
+| 目录 | 职责 | 约束 |
+| --- | --- | --- |
+| `src/main.ts` | 可执行组合根：注入 process/env/stdin/stdout、SIGINT 与真实 Agent host | 只接线，不承载命令解析、会话状态机或呈现逻辑 |
+| `src/cli` | 顶层命令分派、`code` 用例、依赖端口、help/error | 只依赖端口，不 import Electron 或 desktop |
+| `src/config` | argv、环境变量、模型端点与工作区校验 | 不启动会话、不写事件 |
+| `src/session` | `CodingSession` 单活动 run 用例与窄宿主端口 | 不实现模型调用、TUI 或进程 I/O |
+| `src/adapters` | `@answra/agent/composition` 的 `CodingHost` 到 CLI 端口映射 | 不复制 Agent 运行时语义 |
+| `src/presentation` | Agent 事件到非 TTY 文本、工具行格式化 | 纯投影，不读写会话或进程 |
+| `src/transport` | stdin/stdout/stderr 适配 | 不定义业务行为 |
+
+- CLI 只从 `@answra/agent/composition` 组装 coding host，不使用 worker 线协议、不启动 VAD/ASR、不 import `conversation`/`interview` 领域。
+- CLI 运行时下限是 Node 20.9，构建 target 固定 `node20.9`；仓库开发、CI 与 pnpm 仍要求 Node >=22.13，两者不是同一个运行时。
+- 安装包分发可复用 Electron 29.4.6 的 Node 20.9（`ELECTRON_RUN_AS_NODE=1`）运行 CLI bundle，不新增 Node sidecar、不启动 GUI；不得为 CLI 升级 Electron 而绕过隐身验收。
+- 安装包通过 electron-builder `extraResources` 分发 `resources/cli/main.cjs`，Windows 的 `answra.cmd` 只复用同目录 `Answra.exe`；不新增 CLI 可执行文件，shim 不自动注册 PATH。
+- `apps/desktop` 的 Electron 29.4.6 是当前唯一通过捕获保护实测的基线；共享 `agent`/`shared` 代码必须保持 Node 20.9 兼容，desktop worker bundle 继续以 `node20.9` 为目标。
 
 ## IPC 约定（三层类型安全）
 
@@ -67,6 +87,7 @@
 
 - 变量名只允许在 `packages/shared/src/env.ts` 定义一次；`.env.example` 逐项注明用途与是否 secret。
 - 运行时读取统一走类型化函数（如 `parseAnswraEnv`），禁止散落 `process.env.XXX`。
+- CLI 复用 `ANSWRA_AI_BASE_URL`，并使用 `ANSWRA_MODEL`、`ANSWRA_API_KEY`；不得读取桌面 `safeStorage` 或云端 OAuth 凭据。
 
 ## UI 原语与比例
 

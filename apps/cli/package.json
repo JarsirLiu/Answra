@@ -1,0 +1,30 @@
+{
+  "name": "@answra/cli",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Answra CLI coding 宿主：独立 coding Bot 的终端入口与非 TTY 流式输出。",
+  "type": "module",
+  "bin": {
+    "answra": "./dist/main.cjs"
+  },
+  "engines": {
+    "node": ">=20.9.0"
+  },
+  "scripts": {
+    "build": "node ./scripts/build.mjs",
+    "start": "node ./dist/main.cjs",
+    "smoke:electron": "node ./scripts/build.mjs && node ./scripts/smoke-electron.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@answra/agent": "workspace:*",
+    "@answra/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "esbuild": "^0.27.2",
+    "typescript": "~5.9.3",
+    "vitest": "^5.0.3"
+  }
+}
