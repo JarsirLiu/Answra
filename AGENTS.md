@@ -72,10 +72,10 @@
 | `src/transport` | stdin/stdout/stderr 适配 | 不定义业务行为 |
 
 - CLI 只从 `@answra/agent/composition` 组装 coding host，不使用 worker 线协议、不启动 VAD/ASR、不 import `conversation`/`interview` 领域。
-- CLI 运行时下限是 Node 20.9，构建 target 固定 `node20.9`；仓库开发、CI 与 pnpm 仍要求 Node >=22.13，两者不是同一个运行时。
-- 安装包分发可复用 Electron 29.4.6 的 Node 20.9（`ELECTRON_RUN_AS_NODE=1`）运行 CLI bundle，不新增 Node sidecar、不启动 GUI；不得为 CLI 升级 Electron 而绕过隐身验收。
+- CLI 运行时目标为 Node >=22.13，构建 target 为 `node22.14`，与仓库开发、CI 与 pnpm 下限一致。
+- 安装包分发复用 Electron 35.0.0 的 Node 22.14（`ELECTRON_RUN_AS_NODE=1`）运行 CLI bundle，不新增 Node sidecar、不启动 GUI。
 - 安装包通过 electron-builder `extraResources` 分发 `resources/cli/main.cjs`，Windows 的 `answra.cmd` 只复用同目录 `Answra.exe`；不新增 CLI 可执行文件，shim 不自动注册 PATH。
-- `apps/desktop` 的 Electron 29.4.6 是当前唯一通过捕获保护实测的基线；共享 `agent`/`shared` 代码必须保持 Node 20.9 兼容，desktop worker bundle 继续以 `node20.9` 为目标。
+- `apps/desktop` 锁定 Electron 35.0.0（Node 22.14），捕获保护已在 Windows 11 实测通过；升级前按 `docs/notes/implemented/bug-fix/2026-10-11-electron-capture-protection-compatibility.md` 重跑系统截图/录屏验收。desktop worker 与 CLI bundle target 统一为 `node22.14`。
 
 ## IPC 约定（三层类型安全）
 

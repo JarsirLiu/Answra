@@ -103,7 +103,7 @@ const buildTargets = [
       entryPoints: [agentWorkerEntry],
       platform: "node",
       format: "cjs",
-      target: "node20.9",
+      target: "node22.14",
       metafile: true,
       define: {
         ...bundleOptions.define,
@@ -127,7 +127,7 @@ const buildTargets = [
             entryPoints: ["src/main/conversation/grepWorker.ts"],
             platform: "node",
             format: "cjs",
-            target: "node20.9",
+            target: "node22.14",
             metafile: true,
             external: ["electron", "koffi"],
             outfile: "out/main/conversation/grepWorker.cjs",

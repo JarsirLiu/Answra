@@ -116,7 +116,7 @@
     "@vitejs/plugin-react": "^6.1.2",
     "concurrently": "^10.0.6",
     "cos-nodejs-sdk-v5": "^2.14.5",
-    "electron": "29.4.6",
+    "electron": "35.0.0",
     "electron-builder": "^26.18.0",
     "esbuild": "^0.27.2",
     "png2icons": "^2.0.1",

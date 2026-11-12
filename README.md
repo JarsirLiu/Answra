@@ -17,7 +17,7 @@
 ## 环境要求
 
 - Node.js 22.13 或更新版本（pnpm 11.9 的最低要求）
-- CLI 产物运行时下限为 Node 20.9；安装包分发复用 Electron 29.4.6 内置 Node，不额外携带 Node sidecar
+- CLI 运行时目标为 Node 22.13；安装包复用 Electron 35.0.0 内置的 Node 22.14，不额外携带 Node sidecar
 - pnpm 11.9.0，建议通过 Corepack 管理
 - Windows 可运行原生 Electron 桌面窗口；其他平台可通过 `pnpm dev:web` 预览 renderer
 
@@ -126,8 +126,8 @@ docs                   Note 索引
 | `pnpm --filter @answra/desktop asr:prepare` | 下载并校验本地 Paraformer ASR 模型 |
 | `pnpm --filter @answra/cli build` | 构建 CLI bundle（`apps/cli/dist/main.cjs`） |
 | `pnpm --filter @answra/cli test` | CLI 配置、会话、呈现与命令分派测试 |
-| `pnpm --filter @answra/cli smoke:electron` | 构建后用 Electron 29.4.6 的 Node 跑 CLI 与本地假模型端点 smoke |
-| `node apps/cli/dist/main.cjs code "..."` | 以系统 Node 运行 CLI；也可用 `ELECTRON_RUN_AS_NODE=1` 复用 Electron 29.4.6 的 Node |
+| `pnpm --filter @answra/cli smoke:electron` | 构建后用 Electron 35.0.0 的 Node 22.14 跑 CLI 与本地假模型端点 smoke |
+| `node apps/cli/dist/main.cjs code "..."` | 以系统 Node 运行 CLI；也可用 `ELECTRON_RUN_AS_NODE=1` 复用 Electron 35.0.0 的 Node |
 | `pnpm build` | 全 workspace 构建（desktop: esbuild + vite） |
 | `pnpm typecheck` | 各包依次 `tsc --noEmit`（desktop 按进程分三个编译单元） |
 | `pnpm test` | 各包测试（ui 使用 vitest + jsdom） |

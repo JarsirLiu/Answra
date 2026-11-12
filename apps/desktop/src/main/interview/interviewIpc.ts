@@ -74,18 +74,19 @@ export function registerInterviewIpc(agent: AgentService) {
     (webContents, permission, callback, details) => {
       const window = getWindow();
       const trustedMainFrame = details.isMainFrame && window?.webContents === webContents;
+      const mediaTypes = "mediaTypes" in details ? details.mediaTypes : undefined;
       const isAuthorizedMicrophoneRequest =
         permission === "media" &&
         trustedMainFrame &&
-        details.mediaTypes?.length === 1 &&
-        details.mediaTypes[0] === "audio" &&
+        mediaTypes?.length === 1 &&
+        mediaTypes[0] === "audio" &&
         capture.allowsMicrophonePermission();
       const authorized = isAuthorizedMicrophoneRequest;
       if (!authorized && (permission === "media" || permission === "display-capture")) {
         console.warn("[interview] media permission denied", {
           permission,
           trustedMainFrame,
-          mediaTypes: details.mediaTypes,
+          mediaTypes,
           captureStarting: capture.allowsMicrophonePermission(),
         });
       }

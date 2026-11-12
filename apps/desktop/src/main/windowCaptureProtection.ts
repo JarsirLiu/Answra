@@ -1,8 +1,8 @@
 import os from "node:os";
 import type { BrowserWindow } from "electron";
 
-/** 避免 resize/show 生命周期重复刷屏；每个原生窗口只记录状态变化。 */
-const lastReportedState = new WeakMap<object, boolean>();
+/** Tracks the last applied flag per native window; Electron 35 dropped the read-back getter. */
+const appliedProtectionState = new WeakMap<object, boolean>();
 
 /** 只封装 OS 窗口捕获排除能力；任务栏/Dock 隐藏由窗口策略单独负责。 */
 export function isWindowCaptureProtectionSupported(
@@ -37,9 +37,10 @@ export function setWindowCaptureProtection(window: BrowserWindow, enabled: boole
     }
     // The getter confirms Chromium's window flag, not that every capture app honors it.
     const appliedState = reportedProtected ?? enabled;
-    if (lastReportedState.get(window) !== appliedState) {
+    const previousState = appliedProtectionState.get(window);
+    appliedProtectionState.set(window, appliedState);
+    if (previousState !== appliedState) {
       console.info("[window][capture-protection] state changed", result);
-      lastReportedState.set(window, appliedState);
     }
     return true;
   } catch (error) {
@@ -110,6 +111,12 @@ function readContentProtection(window: BrowserWindow): boolean | undefined {
  * 变色龙据此决定能否采样"正后方"的背景：隐身时窗口不进入捕获画面，
  * 窗口矩形内的像素就是它身后的真实背景。
  */
-export function isWindowCaptureProtected(window: BrowserWindow): boolean {
-  return readContentProtection(window) === true && isWindowCaptureProtectionSupported();
+export function isWindowCaptureProtected(
+  window: BrowserWindow,
+  platform: NodeJS.Platform = process.platform,
+  release = os.release(),
+): boolean {
+  const reportedProtected = readContentProtection(window);
+  const protectedState = reportedProtected ?? appliedProtectionState.get(window);
+  return protectedState === true && isWindowCaptureProtectionSupported(platform, release);
 }

@@ -15,8 +15,8 @@ await build({
   bundle: true,
   platform: "node",
   format: "cjs",
-  // 运行时下限跟桌面端 Electron 29 内嵌的 Node 20.9 对齐，便于安装包复用同一 Electron。
-  target: "node20.9",
+  // 运行时下限跟桌面端 Electron 35 内嵌的 Node 22.14 对齐，便于安装包复用同一 Electron。
+  target: "node22.14",
   sourcemap: false,
   legalComments: "eof",
   define: {

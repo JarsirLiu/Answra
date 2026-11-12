@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  isWindowCaptureProtected,
   isWindowCaptureProtectionSupported,
   setWindowCaptureProtection,
 } from "../src/main/windowCaptureProtection";
@@ -38,5 +39,17 @@ describe("window capture protection", () => {
     };
 
     expect(setWindowCaptureProtection(window as never, true)).toBe(false);
+  });
+
+  it("tracks the applied state when Electron does not expose the read-back getter", () => {
+    const window = {
+      setContentProtection: vi.fn(),
+    };
+
+    expect(setWindowCaptureProtection(window as never, true)).toBe(true);
+    expect(isWindowCaptureProtected(window as never, "win32", "10.0.22631")).toBe(true);
+
+    expect(setWindowCaptureProtection(window as never, false)).toBe(true);
+    expect(isWindowCaptureProtected(window as never, "win32", "10.0.22631")).toBe(false);
   });
 });
