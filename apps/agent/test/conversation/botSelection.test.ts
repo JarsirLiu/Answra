@@ -133,7 +133,13 @@ function createHarness({ result }: { result?: BotTurnResult }) {
     entryBotId: first,
     memberBotIds: [first],
   };
+  const dualPreset: TeamPreset = {
+    teamId: "dual",
+    entryBotId: first,
+    memberBotIds: [first, second],
+  };
   const agentRuntime = {
+    assertRegistered: vi.fn(),
     assertTeamMembers: vi.fn(),
     dispose: vi.fn(),
     cancel: vi.fn(),
@@ -148,7 +154,7 @@ function createHarness({ result }: { result?: BotTurnResult }) {
     agentRuntime,
     store,
     catalog: createBotCatalog([firstBot, secondBot]),
-    presets: [preset],
+    presets: [preset, dualPreset],
     onSnapshot: () => undefined,
     onTeamError: (error) => errors.push(error),
   });
@@ -169,7 +175,7 @@ describe("ConversationApplication Bot selection", () => {
     expect(snapshot.bots).toEqual([{ id: first, name: "第一个", role: "first" }]);
   });
 
-  it("keeps an existing conversation's active Bot when create is called again", async () => {
+  it("rejects a different selection without rewriting an existing conversation", async () => {
     const harness = createHarness({});
     await harness.app.createConversation(harness.conversationId, {
       kind: "bot",
@@ -177,14 +183,54 @@ describe("ConversationApplication Bot selection", () => {
     });
     await harness.app.send(first, harness.conversationId, { text: "你好", images: [] }, "token");
 
-    const snapshot = await harness.app.createConversation(harness.conversationId, {
-      kind: "bot",
-      botId: second,
-    });
+    await expect(
+      harness.app.createConversation(harness.conversationId, {
+        kind: "bot",
+        botId: second,
+      }),
+    ).rejects.toThrow("会话已存在且 Bot 参与者不同");
 
+    const snapshot = await harness.app.getSnapshot(harness.conversationId);
     expect(snapshot.activeAgentId).toBe(first);
     expect(snapshot.participantAgentIds).toEqual([first]);
     expect(harness.inputs.map((recorded) => recorded.agent)).toEqual([first]);
+  });
+
+  it("rejects an explicit Bot that differs from the conversation's active Bot", async () => {
+    const harness = createHarness({});
+    await harness.app.createConversation(harness.conversationId, {
+      kind: "bot",
+      botId: first,
+    });
+
+    await expect(
+      harness.app.send(second, harness.conversationId, { text: "你好", images: [] }, "token"),
+    ).rejects.toThrow("会话当前由 first 接待，不能直接切换到 second");
+
+    const snapshot = await harness.app.getSnapshot(harness.conversationId);
+    expect(snapshot.activeAgentId).toBe(first);
+    expect(snapshot.participantAgentIds).toEqual([first]);
+  });
+
+  it("rejects a team send that conflicts with the conversation's participants", async () => {
+    const harness = createHarness({});
+    await harness.app.createConversation(harness.conversationId, {
+      kind: "bot",
+      botId: first,
+    });
+
+    await expect(
+      harness.app.sendTeamMessage(
+        "dual",
+        harness.conversationId,
+        { text: "开始", images: [] },
+        "token",
+      ),
+    ).rejects.toThrow("会话已存在且 Bot 参与者不同");
+
+    const snapshot = await harness.app.getSnapshot(harness.conversationId);
+    expect(snapshot.activeAgentId).toBe(first);
+    expect(snapshot.participantAgentIds).toEqual([first]);
   });
 
   it("rejects a handoff from a single-participant conversation", async () => {

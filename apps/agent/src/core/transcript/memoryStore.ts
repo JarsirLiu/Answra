@@ -19,10 +19,8 @@ export class MemoryConversationStore implements ConversationStore {
     seed?: ConversationSessionSeed,
   ): Promise<ConversationSnapshot> {
     const existing = this.sessions.get(conversationId);
-    if (existing) {
-      if (seed) applySeed(existing, seed);
-      return cloneSnapshot(existing.snapshot);
-    }
+    // 已存在会话的 Bot 归属是既有事实；create 只做读取，不写入新 seed。
+    if (existing) return cloneSnapshot(existing.snapshot);
     const session: Session = {
       snapshot: {
         conversationId,
@@ -345,18 +343,6 @@ function cloneSeed(seed: ConversationSessionSeed): ConversationSessionSeed {
     activeAgentId: seed.activeAgentId,
     participantAgentIds: [...seed.participantAgentIds],
     ...(seed.bots ? { bots: seed.bots.map((bot) => ({ ...bot })) } : {}),
-  };
-}
-
-function applySeed(session: Session, seed: ConversationSessionSeed): void {
-  session.seed = cloneSeed(seed);
-  session.snapshot = {
-    ...session.snapshot,
-    ...(!session.snapshot.activeAgentId ? { activeAgentId: seed.activeAgentId } : {}),
-    ...(!session.snapshot.participantAgentIds
-      ? { participantAgentIds: [...seed.participantAgentIds] }
-      : {}),
-    ...(!session.snapshot.bots && seed.bots ? { bots: seed.bots.map((bot) => ({ ...bot })) } : {}),
   };
 }
 

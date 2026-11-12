@@ -4,9 +4,10 @@ import type { AgentEventEnvelope } from "@answra/shared/schema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { screenshotAnswerAgent } from "../../src/answer/agent";
 import { AnswerApplication } from "../../src/answer/application";
-import { createConversationAgentDefinition } from "../../src/conversation/agent";
 import { ConversationApplication } from "../../src/conversation/application";
+import { createConversationBot } from "../../src/conversation/bots";
 import { AgentRuntime } from "../../src/core/agent/runtime";
+import { createBotCatalog } from "../../src/core/bot/catalog";
 import { createBuiltinToolRegistry } from "../../src/core/tool";
 import { MemoryConversationStore } from "../../src/core/transcript/memoryStore";
 import type { ConversationStore } from "../../src/core/transcript/store";
@@ -26,12 +27,15 @@ function createTestRuntime({
     emitEvent,
     tokenProvider,
   });
+  const conversationBot = createConversationBot({
+    agentRuntime,
+    store,
+    tools: createBuiltinToolRegistry(),
+  });
   const runtime = new ConversationApplication({
     agentRuntime,
     store,
-    conversationAgent: agentRuntime.registerAgent(
-      createConversationAgentDefinition({ store, tools: createBuiltinToolRegistry() }),
-    ),
+    catalog: createBotCatalog([conversationBot]),
   });
   const answer = new AnswerApplication({
     agentRuntime,

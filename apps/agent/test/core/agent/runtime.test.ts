@@ -18,7 +18,7 @@ describe("AgentRuntime static registration", () => {
 
     runtime.registerAgent(definition);
     expect(() => runtime?.registerAgent(definition)).toThrow("Agent 已注册：test.agent");
-    expect(() => runtime?.requireAgent(agentId("missing.agent"))).toThrow(
+    expect(() => runtime?.assertRegistered([agentId("missing.agent")])).toThrow(
       "Agent 未注册：missing.agent",
     );
   });

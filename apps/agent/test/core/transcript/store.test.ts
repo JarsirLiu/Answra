@@ -398,6 +398,32 @@ describe("memory conversation team metadata and handoff", () => {
     });
   });
 
+  it("keeps an existing conversation's seed when create is called again", async () => {
+    const store = new MemoryConversationStore();
+    await store.create("team", seed);
+    await store.create("team", {
+      activeAgentId: "other",
+      participantAgentIds: ["other"],
+      bots: [{ id: "other", name: "其他", role: "other" }],
+    });
+
+    await expect(store.load("team")).resolves.toMatchObject({
+      activeAgentId: "candidate",
+      participantAgentIds: ["candidate", "intake"],
+      bots: [
+        { id: "candidate", name: "候选人", role: "candidate" },
+        { id: "intake", name: "面试向导", role: "intake" },
+      ],
+    });
+
+    await store.clear("team");
+    await expect(store.load("team")).resolves.toMatchObject({
+      activeAgentId: "candidate",
+      participantAgentIds: ["candidate", "intake"],
+      messages: [],
+    });
+  });
+
   it("attributes the user message and assistant placeholder to the speaking Bot", async () => {
     const store = new MemoryConversationStore();
     await store.create("team", seed);

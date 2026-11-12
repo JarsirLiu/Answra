@@ -13,7 +13,7 @@ import type {
   AgentRunRequest,
 } from "./definition";
 import { executeRun } from "./executeRun";
-import { AgentRegistry, type RegisteredAgentInfo } from "./registry";
+import { AgentRegistry } from "./registry";
 
 export interface AgentRuntimeOptions {
   executionStore: ExecutionStore;
@@ -37,24 +37,15 @@ export class AgentRuntime {
   }
 
   registerAgent<Input>(definition: AgentDefinition<Input>): AgentExecutor<Input> {
-    this.agentRegistry.register(definition.id, definition.identity, definition.discovery);
+    this.agentRegistry.register(definition.id);
     return {
       startRun: (request) => this.startRun(definition, request),
     };
   }
 
-  requireAgent(id: AgentId): void {
-    this.agentRegistry.require(id);
-  }
-
-  /** Team 目录使用：注册期校验通过的身份与发现策略。 */
-  getAgent(id: AgentId): RegisteredAgentInfo {
-    return this.agentRegistry.requireAgent(id);
-  }
-
-  /** 启动期校验 discovery 引用的 team/Agent 都存在。 */
-  assertDiscoveryReferences(teamIds: ReadonlySet<string>): void {
-    this.agentRegistry.assertDiscoveryReferences(teamIds);
+  /** 启动期校验目录里的每个 Bot 都有对应的执行注册。 */
+  assertRegistered(ids: readonly AgentId[]): void {
+    for (const id of ids) this.agentRegistry.require(id);
   }
 
   /** 启动期校验团队入口与成员都已注册。 */

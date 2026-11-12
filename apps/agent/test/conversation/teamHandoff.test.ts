@@ -166,6 +166,7 @@ function createHarness({
   };
 
   const agentRuntime = {
+    assertRegistered: vi.fn(),
     assertTeamMembers: vi.fn(),
     dispose: vi.fn(),
     cancel: vi.fn(),

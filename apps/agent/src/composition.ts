@@ -44,7 +44,11 @@ export {
   type BotTeamLookup,
   summarizeBot,
 } from "./core/bot/contracts";
-export { assertCanHandoff, visibleBots } from "./core/bot/directory";
+export {
+  assertBotDiscoveryReferences,
+  assertCanHandoff,
+  visibleBots,
+} from "./core/bot/directory";
 export { assertHandoffTask, MAX_HANDOFF_TASK_CHARS } from "./core/team/handoff";
 export {
   assertTeamPreset,

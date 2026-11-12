@@ -27,6 +27,28 @@ export function visibleBots<Input, Policy>({
   return visible;
 }
 
+/** 启动期校验目录内每个 Bot 的发现引用都能解析；不依赖具体领域。 */
+export function assertBotDiscoveryReferences<Input, Policy>({
+  catalog,
+  teams,
+}: {
+  catalog: BotCatalog<Input, Policy>;
+  teams: BotTeamLookup;
+}): void {
+  for (const id of catalog.ids()) {
+    const bot = catalog.require(id);
+    const visibility = bot.discovery.visibleTo;
+    if (visibility.kind === "team") {
+      if (!teams.hasTeam(visibility.teamId))
+        throw new Error(`Bot 的可见团队未注册：${id} -> ${visibility.teamId}`);
+      continue;
+    }
+    for (const target of visibility.agentIds) {
+      if (!catalog.find(target)) throw new Error(`Bot 的发现目标未注册：${id} -> ${target}`);
+    }
+  }
+}
+
 export function assertCanHandoff<Input, Policy>({
   participants,
   from,

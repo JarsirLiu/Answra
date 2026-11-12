@@ -222,7 +222,7 @@ sendTeam(conversationId, teamId, request, accessToken): Promise<{ runId; snapsho
 - `createConversation` 解析选择，写入 seed：
   - `{ kind: "bot" }` → `activeAgentId = botId`，`participantAgentIds = [botId]`。
   - `{ kind: "team" }` → 从预置解析 `entryBotId` 与 `memberBotIds`。
-  - 已存在的会话只补齐缺失 seed，不重置消息、`activeRunId` 或 `activeAgentId`。
+  - 已存在的会话不写入 seed，也不重置消息、`activeRunId`、`activeAgentId` 或 `participantAgentIds`；显式传入不同参与者时明确失败。
 - `send` 读取会话快照：
   - 未创建时按默认入口 Bot 创建；已创建时使用 `activeAgentId`，没有则用唯一参与者。
   - 启动入口 Bot 的 run，等待 `done`；`completed` 且存在交接结果时进入现有交接循环。
@@ -386,6 +386,14 @@ host         ──> 所有领域（只接线）
   传输层和 Electron 宿主生命周期绑在一起。
 - 新增 `test/composition.test.ts`：用公开入口组装内置 Bot 和客户端自定义 Bot，证明目录、会话 seed
   与 application 可直接复用。
+
+### 修复：单一 Bot 身份源与会话 seed 不可改写（2026-11-12）
+
+- **问题**：`AgentRuntime` 的 `AgentRegistry` 与 `BotCatalog` 各存一份 `identity`/`discovery`；`createLegacyCatalog` 还会用默认身份包装任意 executor。与此同时，`MemoryConversationStore.create` 对已存在会话重新应用 seed，`ConversationApplication.send` 每次发送都调用 `create`，导致 Bot 归属、participants 与后续 `clear` 可能被第二个 selection 改写。
+- **决定**：`AgentRegistry` 只保留可执行 Agent ID，`BotCatalog` 成为 Bot 身份与发现的唯一来源；删除 `conversationAgent`/`createLegacyCatalog` 兼容入口，目录必填；启动期校验全目录 discovery 引用和 runtime 注册。`ConversationStore.create` 对已存在会话只读取不写入；显式 Bot/团队选择与既有参与者冲突时抛出错误，禁止静默改写。
+- **替代方案**：保留 `AgentRegistry` 的 identity/discovery 作为并行源（舍弃：两份描述符必须人工同步，外部客户端可绕过，`listBots`/handoff/runtime 可能读到不同身份）；冲突 selection 静默忽略（舍弃：调用方无法判断选择是否生效）；继续在已存在会话上覆盖 seed（舍弃：会改变 clear 后的 Bot 与下一次 run 的 participants）。
+- **后果**：同一会话的 Bot 归属只在创建时确定；已有会话重复 `create` 是幂等读取；`send` 的显式 `botId` 必须等于当前 `activeAgentId`；`chat-send` 缺省仍沿用当前 Bot。
+- **验证**：`AgentRegistry` 只测 ID 注册与团队入口/成员；Bot 目录测试覆盖全目录 discovery 悬空引用；store 测试覆盖重复 `create` 不覆盖 seed 且 `clear` 保留原 seed；会话测试覆盖不同 Bot selection、显式 `send(botId)` 与团队 send 的冲突拒绝。
 
 ### 验证（2026-11-12）
 

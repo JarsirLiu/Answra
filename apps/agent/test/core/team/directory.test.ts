@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 import { agentId, type BotDiscovery, type BotIdentity } from "../../../src/core/agent/definition";
 import { createBotCatalog } from "../../../src/core/bot/catalog";
 import type { BotDescriptor } from "../../../src/core/bot/contracts";
-import { assertCanHandoff, visibleBots } from "../../../src/core/bot/directory";
+import {
+  assertBotDiscoveryReferences,
+  assertCanHandoff,
+  visibleBots,
+} from "../../../src/core/bot/directory";
 import { assertTeamPreset, createTeamPresetCatalog } from "../../../src/core/team/preset";
 
 const identity: BotIdentity = {
@@ -120,6 +124,20 @@ describe("core bot directory", () => {
         teams: presets.teams(),
       }),
     ).toThrow("Bot 无法发现交接目标：a -> b");
+  });
+
+  it("validates every catalog Bot's discovery reference at startup", () => {
+    const missingTeam = catalog([bot("a", { visibleTo: { kind: "team", teamId: "missing" } })]);
+    expect(() =>
+      assertBotDiscoveryReferences({ catalog: missingTeam, teams: teams(["a"]).teams() }),
+    ).toThrow("Bot 的可见团队未注册：a -> missing");
+
+    const missingBot = catalog([
+      bot("a", { visibleTo: { kind: "bots", agentIds: [agentId("missing")] } }),
+    ]);
+    expect(() =>
+      assertBotDiscoveryReferences({ catalog: missingBot, teams: teams(["a"]).teams() }),
+    ).toThrow("Bot 的发现目标未注册：a -> missing");
   });
 
   it("validates team presets and discovery references at startup", () => {

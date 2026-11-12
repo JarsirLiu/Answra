@@ -7,11 +7,10 @@ import type {
   ConversationSnapshot,
 } from "@answra/shared";
 import type { AgentEventEnvelope, AgentRunSnapshot } from "@answra/shared/schema";
-import type { AgentExecutor, AgentId, AgentRunHandle } from "../core/agent/definition";
+import type { AgentId, AgentRunHandle } from "../core/agent/definition";
 import type { AgentRuntime } from "../core/agent/runtime";
-import { createBotCatalog } from "../core/bot/catalog";
 import type { BotSummary } from "../core/bot/contracts";
-import { assertCanHandoff } from "../core/bot/directory";
+import { assertBotDiscoveryReferences, assertCanHandoff } from "../core/bot/directory";
 import { validateModelRequest } from "../core/model/requestContent";
 import { assertHandoffTask } from "../core/team/handoff";
 import {
@@ -26,10 +25,7 @@ import type { ConversationSessionSeed, ConversationStore } from "../core/transcr
 import {
   CONVERSATION_AGENT_ID,
   CONVERSATION_TEAM_ID,
-  type ConversationAgentInput,
   type ConversationAgentProfile,
-  GENERAL_DISCOVERY,
-  GENERAL_IDENTITY,
 } from "./agent";
 import type { ConversationBot, ConversationBotCatalog } from "./bots/types";
 import { CHAT_PROFILES, type ChatProfileId } from "./profiles/registry";
@@ -39,12 +35,10 @@ const MAX_USER_MESSAGE_CHARS = 32_000;
 export interface ConversationApplicationOptions {
   agentRuntime: AgentRuntime;
   store: ConversationStore;
-  /** 已装配的 Conversation Bot 目录；与 `conversationAgent` 二选一。 */
-  catalog?: ConversationBotCatalog;
+  /** 已装配的 Conversation Bot 目录；Bot 身份与发现的唯一来源。 */
+  catalog: ConversationBotCatalog;
   /** 团队预置；缺省时把 conversation 入口 Bot 作为单成员团队。 */
   presets?: readonly TeamPreset[];
-  /** 兼容旧调用的单 Agent 入口；传入后自动构造成单 Bot 目录。 */
-  conversationAgent?: AgentExecutor<ConversationAgentInput>;
   /** 每段 run 启动与交接写入后的权威 snapshot 推送。 */
   onSnapshot?: (snapshot: ConversationSnapshot) => void | Promise<void>;
   /** 后台交接链失败；不静默吞掉，也不伪造第二条 AI 消息。 */
@@ -67,7 +61,6 @@ export class ConversationApplication {
     store,
     catalog,
     presets = [],
-    conversationAgent,
     onSnapshot,
     onTeamError,
   }: ConversationApplicationOptions) {
@@ -76,13 +69,15 @@ export class ConversationApplication {
     this.onSnapshot = onSnapshot;
     this.onTeamError = onTeamError;
 
-    this.catalog = catalog ?? createLegacyCatalog(conversationAgent);
+    this.catalog = catalog;
     const presetInput = withConversationPreset(presets, this.catalog);
     this.presets = createTeamPresetCatalog(presetInput);
     for (const preset of this.presets.list()) {
       assertTeamPreset(preset, this.catalog, this.presets.teams());
       this.agentRuntime.assertTeamMembers(preset.entryBotId, preset.memberBotIds);
     }
+    assertBotDiscoveryReferences({ catalog: this.catalog, teams: this.presets.teams() });
+    this.agentRuntime.assertRegistered(this.catalog.ids());
     const defaultBotId =
       this.presets.find(CONVERSATION_TEAM_ID)?.entryBotId ?? this.catalog.ids()[0];
     if (!defaultBotId) throw new Error("Conversation Bot 目录为空");
@@ -109,12 +104,20 @@ export class ConversationApplication {
     return this.agentRuntime.readEvents(conversationId, revision);
   }
 
-  /** 新建会话；selection 缺省使用 conversation 入口 Bot。 */
+  /** 新建会话；selection 缺省使用 conversation 入口 Bot。已存在会话不接受不同参与者。 */
   async createConversation(
     conversationId: string,
     selection?: ConversationSelection,
   ): Promise<ConversationSnapshot> {
-    await this.store.create(conversationId, this.resolveSelection(selection));
+    const seed = this.resolveSelection(selection);
+    const snapshot = await this.store.create(conversationId, seed);
+    if (
+      selection &&
+      snapshot.participantAgentIds &&
+      !sameParticipants(snapshot.participantAgentIds, seed.participantAgentIds)
+    ) {
+      throw new Error("会话已存在且 Bot 参与者不同");
+    }
     this.readFileStates.delete(conversationId);
     return this.loadRecoverySnapshot(conversationId);
   }
@@ -140,7 +143,7 @@ export class ConversationApplication {
     this.agentRuntime.configureModelRoutes({ chat: config.chat, answer: config.answer });
   }
 
-  /** 发送一条用户消息；botId 缺省时沿用会话 activeAgentId 或默认入口。 */
+  /** 发送一条用户消息；botId 缺省时沿用会话 activeAgentId，显式 Bot 必须与当前接待者一致。 */
   async send(
     botId: string | undefined,
     conversationId: string,
@@ -148,10 +151,15 @@ export class ConversationApplication {
     accessToken: string,
   ): Promise<{ runId: string; snapshot: ConversationSnapshot }> {
     validateModelRequest(request);
-    const seed = this.resolveSelection(botId ? { kind: "bot", botId } : this.defaultSelection());
+    const requested = botId ? this.requireBot(botId) : undefined;
+    const seed = this.seedForBot((requested ?? this.requireBot(this.defaultBotId)).id);
     await this.store.create(conversationId, seed);
     const snapshot = await this.loadRecoverySnapshot(conversationId);
-    const entry = this.requireBot(snapshot.activeAgentId ?? seed.activeAgentId);
+    const activeAgentId = snapshot.activeAgentId ?? seed.activeAgentId;
+    if (requested && requested.id !== activeAgentId) {
+      throw new Error(`会话当前由 ${activeAgentId} 接待，不能直接切换到 ${requested.id}`);
+    }
+    const entry = this.requireBot(activeAgentId);
     const getAccessToken = async () => accessToken;
     const handle = await this.startBot({
       conversationId,
@@ -188,8 +196,14 @@ export class ConversationApplication {
   ): Promise<{ runId: string; snapshot: ConversationSnapshot }> {
     validateModelRequest(request);
     const preset = this.presets.require(teamId);
-    await this.store.create(conversationId, this.seedForTeam(preset));
-    const snapshot = await this.loadRecoverySnapshot(conversationId);
+    const seed = this.seedForTeam(preset);
+    const snapshot = await this.store.create(conversationId, seed);
+    if (
+      snapshot.participantAgentIds &&
+      !sameParticipants(snapshot.participantAgentIds, seed.participantAgentIds)
+    ) {
+      throw new Error("会话已存在且 Bot 参与者不同");
+    }
     const entry = this.requireBot(snapshot.activeAgentId ?? preset.entryBotId);
     const participants = snapshot.participantAgentIds ?? preset.memberBotIds;
     if (!participants.includes(entry.id)) throw new Error(`Bot 不属于当前会话参与者：${entry.id}`);
@@ -366,10 +380,6 @@ export class ConversationApplication {
     return this.catalog.require(agentId);
   }
 
-  private defaultSelection(): ConversationSelection {
-    return { kind: "bot", botId: this.defaultBotId };
-  }
-
   private resolveSelection(selection?: ConversationSelection): ConversationSessionSeed {
     if (!selection) return this.seedForBot(this.defaultBotId);
     if (selection.kind === "bot") return this.seedForBot(selection.botId);
@@ -443,22 +453,6 @@ export class ConversationApplication {
   }
 }
 
-function createLegacyCatalog(
-  conversationAgent: AgentExecutor<ConversationAgentInput> | undefined,
-): ConversationBotCatalog {
-  if (!conversationAgent) throw new Error("Conversation Bot 目录未配置");
-  return createBotCatalog<ConversationAgentInput, ConversationAgentProfile>([
-    {
-      id: CONVERSATION_AGENT_ID,
-      identity: GENERAL_IDENTITY,
-      discovery: GENERAL_DISCOVERY,
-      domain: "conversation",
-      executor: conversationAgent,
-      policy: CHAT_PROFILES["general-chat"],
-    },
-  ]);
-}
-
 function withConversationPreset(
   presets: readonly TeamPreset[],
   catalog: ConversationBotCatalog,
@@ -473,4 +467,10 @@ function withConversationPreset(
       memberBotIds: [general.id],
     },
   ];
+}
+
+function sameParticipants(left: readonly string[], right: readonly string[]): boolean {
+  if (left.length !== right.length) return false;
+  const ids = new Set(left);
+  return right.every((id) => ids.has(id));
 }
