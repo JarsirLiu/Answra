@@ -199,6 +199,7 @@ const bridge: DesktopBridge = {
     ipcRenderer.invoke(InterviewChannels.OnboardingAddProject, request),
   completeInterviewOnboarding: () => ipcRenderer.invoke(InterviewChannels.OnboardingComplete),
   skipInterviewOnboarding: () => ipcRenderer.invoke(InterviewChannels.OnboardingSkip),
+  reopenInterviewOnboarding: () => ipcRenderer.invoke(InterviewChannels.OnboardingReopen),
   getWorkspaceRoot: () => ipcRenderer.invoke(WorkspaceChannels.GetRoot),
   pickWorkspaceRoot: () => ipcRenderer.invoke(WorkspaceChannels.PickRoot),
   listWorkspaceTree: () => ipcRenderer.invoke(WorkspaceChannels.ListTree),

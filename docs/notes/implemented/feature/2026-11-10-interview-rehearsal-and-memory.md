@@ -73,6 +73,10 @@
 - `pnpm --filter @answra/ui typecheck`：通过。
 - `pnpm --filter @answra/agent exec vitest run test/interview/agent.test.ts test/interview/application.test.ts test/core/agent/toolStepLimit.test.ts`：通过；覆盖记忆路径存在但内容不注入、无私有根时的降级提示、文字发送走同一回复路径。
 - `pnpm --filter @answra/desktop exec vitest run test/agentService.test.ts test/interviewIpc.test.ts`：通过；覆盖 `InterviewChannels.Message` 转发与 `AgentService` 重连。
-- `pnpm --filter @answra/ui exec vitest run test/InterviewCapturePanel.test.tsx test/FloatingBarApp.interview.test.tsx`：通过；覆盖演练文案、文字发送、失败保留草稿、清空和断线清理。
+- `pnpm --filter @answra/ui exec vitest run test/InterviewCapturePanel.test.tsx test/FloatingBarApp.interview.test.tsx`：通过；覆盖演练文案、文字发送、失败保留草稿、清空和断线清理。（2026-11-12：这两个 UI 测试随演练面板移除已删除。）
 - `pnpm exec biome check`（本次改动文件）：通过。
 - 尚未实机验证：真实模型是否按提示主动读取简历、PDF/DOCX 中文路径、记忆写入后的 mtime 与变更记录、Windows 系统声音采集。未完成前不宣称面试模式可用。
+
+## 2026-11-12 变更：移除面试演练 UI
+
+产品方向调整为“面试引导 → 制作面试分身”，演练不再作为面试入口的落地页。本次删除 `InterviewRehearsalPanel`、`InterviewCapturePanel`、`useInterviewConversation`、renderer 侧 `InterviewAudioCapture` 及其测试，面试模式动作改为“面试分身”。main/agent 侧的 `interviewIpc`、`InterviewCaptureService` 与演练 Agent 保留为后续候选人 Bot 的平台能力，当前没有 UI 调用方；重新接入时不得恢复 `START_REHEARSAL_MESSAGE` 作为用户消息启动。详见[面试前引导与候选人档案首次使用流程](../../proposed/feature/2026-11-11-interview-onboarding-and-avatar.md)的 2026-11-12 调整。

@@ -1,84 +1,492 @@
-/* 面试首次引导：面板内的三步产品 chrome；所有尺寸走令牌或相对单位。 */
-.interview-onboarding {
+/* 面试引导 / 制作态：广告式独立卡片（不套 PanelShell）；尺寸走令牌或相对单位，
+   颜色只引用语义令牌。卡片高度固定，内容超出时在内部滚动。
+   fit-content 窗口内禁止用 vh/vw 参与高度/宽度上报，否则窗口会被自身视口反向压缩。 */
+.interview-onboarding,
+.interview-avatar {
+  margin-top: var(--space-2);
+  width: min(var(--surface-w, 40rem), 40rem);
+  height: 34rem;
   min-height: 0;
-  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  overflow-y: auto;
+  overflow: hidden;
+  border: 1px solid var(--glass-line);
+  border-radius: calc(var(--bar-radius) + 4px);
+  background: radial-gradient(circle at 88% -8%, var(--mint-wash), transparent 34%), var(--panel);
+  box-shadow: var(--shadow-pop);
+}
+
+.interview-onboarding-top {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4) 0;
 }
 
 .interview-onboarding-progress {
+  min-width: 0;
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-3);
-  color: var(--muted);
-  font-size: var(--font-xs);
-}
-
-.interview-onboarding-step {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
+  gap: var(--space-2);
+  margin-inline-end: auto;
 }
 
 .interview-onboarding-dot {
   width: 0.5rem;
   height: 0.5rem;
-  border-radius: 50%;
+  border-radius: 999px;
   background: var(--field-strong);
+  transition:
+    width 160ms ease-out,
+    background 160ms ease-out;
 }
 
-.interview-onboarding-step.is-done .interview-onboarding-dot {
+.interview-onboarding-dot.is-done {
   background: var(--mint);
 }
 
-.interview-onboarding-step.is-current {
-  color: var(--ink);
+.interview-onboarding-dot.is-current {
+  width: 1.1rem;
 }
 
-.interview-onboarding-body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.interview-onboarding-eyebrow {
-  margin: 0;
+.interview-onboarding-count {
   color: var(--muted);
   font-size: var(--font-xs);
 }
 
-.interview-onboarding-body h2 {
+/* ── 第 1 步：广告式主视觉 + 极短文案 ── */
+.interview-onboarding-hero {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  grid-template-rows: minmax(0, 1fr);
+  align-items: stretch;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-4) var(--space-3);
+}
+
+.interview-onboarding-art-slot {
+  order: 2;
+  min-width: 0;
+  min-height: 0;
+}
+
+.interview-onboarding-copy {
+  order: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: safe center;
+  gap: var(--space-3);
+  overflow-y: auto;
+}
+
+.interview-onboarding-art {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+  overflow: hidden;
+  border: 1px solid var(--glass-line-soft);
+  border-radius: var(--chat-card-radius);
+  background:
+    radial-gradient(circle at 18% 12%, var(--mint-wash-strong), transparent 42%),
+    linear-gradient(150deg, var(--paper), var(--field));
+  isolation: isolate;
+}
+
+.interview-onboarding-art__wash {
+  position: absolute;
+  border-radius: 46% 54% 58% 42% / 52% 44% 56% 48%;
+  background: var(--mint-wash);
+}
+
+.interview-onboarding-art__wash.is-one {
+  top: -14%;
+  left: -10%;
+  width: 64%;
+  height: 54%;
+  transform: rotate(-12deg);
+}
+
+.interview-onboarding-art__wash.is-two {
+  right: -12%;
+  bottom: -16%;
+  width: 58%;
+  height: 48%;
+  background: var(--mint-wash-strong);
+  transform: rotate(18deg);
+}
+
+.interview-onboarding-art__ring {
+  position: absolute;
+  top: 11%;
+  left: 9%;
+  width: 6.4rem;
+  height: 6.4rem;
+  border: 1px dashed var(--mint-line);
+  border-radius: 50%;
+}
+
+.interview-onboarding-art__avatar {
+  position: absolute;
+  top: 17%;
+  left: 14%;
+  width: 4.2rem;
+  height: 4.2rem;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--mint-line);
+  border-radius: 50%;
+  color: var(--mint-text);
+  background: var(--paper);
+  box-shadow: var(--shadow-ctl);
+}
+
+.interview-onboarding-art__avatar-badge {
+  position: absolute;
+  right: -0.1rem;
+  bottom: 0.1rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--mint-contrast);
+  background: var(--mint);
+  box-shadow: var(--shadow-ctl);
+}
+
+.interview-onboarding-art__sheet {
+  position: absolute;
+  right: 9%;
+  bottom: 11%;
+  width: 9rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-2) var(--space-2);
+  border: 1px solid var(--glass-line-soft);
+  border-radius: var(--chat-card-radius);
+  background: var(--paper);
+  box-shadow: var(--shadow-ctl);
+  transform: rotate(-5deg);
+}
+
+.interview-onboarding-art__tape {
+  position: absolute;
+  top: -0.55rem;
+  left: 50%;
+  width: 3.2rem;
+  height: 1.1rem;
+  border-radius: 999px;
+  background: var(--mint-wash-strong);
+  transform: translateX(-50%) rotate(3deg);
+}
+
+.interview-onboarding-art__sheet-badge {
+  width: 1.6rem;
+  height: 1.6rem;
+  display: grid;
+  place-items: center;
+  margin-bottom: var(--space-1);
+  border-radius: 50%;
+  color: var(--mint-text);
+  background: var(--mint-wash);
+}
+
+.interview-onboarding-art__line {
+  height: 0.35rem;
+  border-radius: 999px;
+  background: var(--field-strong);
+}
+
+.interview-onboarding-art__line.is-short {
+  width: 70%;
+}
+
+.interview-onboarding-art__line.is-shortest {
+  width: 45%;
+}
+
+.interview-onboarding-art__pill {
+  position: absolute;
+  width: 1.9rem;
+  height: 1.9rem;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--glass-line-soft);
+  border-radius: 50%;
+  color: var(--mint-text);
+  background: var(--paper);
+  box-shadow: var(--shadow-ctl);
+}
+
+.interview-onboarding-art__pill.is-project {
+  top: 17%;
+  right: 11%;
+}
+
+.interview-onboarding-art__pill.is-story {
+  left: 8%;
+  bottom: 12%;
+}
+
+.interview-onboarding-art__spark {
+  position: absolute;
+  border-radius: 50%;
+  background: var(--mint);
+  opacity: 0.6;
+}
+
+.interview-onboarding-art__spark.is-one {
+  top: 16%;
+  right: 20%;
+  width: 0.45rem;
+  height: 0.45rem;
+}
+
+.interview-onboarding-art__spark.is-two {
+  top: 54%;
+  left: 10%;
+  width: 0.3rem;
+  height: 0.3rem;
+}
+
+.interview-onboarding-art__spark.is-three {
+  right: 38%;
+  bottom: 8%;
+  width: 0.35rem;
+  height: 0.35rem;
+}
+
+/* ── 第 2、3 步：紧凑内容区，内部滚动 ── */
+.interview-onboarding-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4) var(--space-3);
+  overflow-y: auto;
+}
+
+.interview-onboarding-copy h1,
+.interview-onboarding-body h1 {
   margin: 0;
   color: var(--ink);
-  font-size: 1.35rem;
+  font-size: clamp(1.45rem, 4.2vw, 1.95rem);
   font-weight: var(--label-weight);
-  line-height: 1.25;
+  line-height: 1.18;
+  letter-spacing: -0.02em;
 }
 
 .interview-onboarding-lead {
   margin: 0;
   color: var(--muted);
   font-size: var(--font-sm);
-  line-height: 1.65;
+  line-height: 1.6;
 }
 
-.interview-onboarding-points {
-  margin: 0;
-  padding-inline-start: var(--space-4);
+/* ── 第 3 步：候选人档案海报 ── */
+.interview-onboarding-ready {
+  gap: var(--space-2);
+}
+
+.interview-onboarding-poster {
+  flex: 0 0 auto;
+  min-height: 8.5rem;
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--glass-line-soft);
+  border-radius: var(--chat-card-radius);
+  background:
+    radial-gradient(circle at 14% 18%, var(--mint-wash-strong), transparent 46%),
+    linear-gradient(145deg, var(--paper), var(--field));
+}
+
+.interview-onboarding-poster__art {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--mint-wash);
+}
+
+.interview-onboarding-poster__glow {
+  position: absolute;
+  inset: 12%;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--mint-wash-strong), transparent 70%);
+}
+
+.interview-onboarding-poster__ring {
+  position: absolute;
+  inset: 0;
+  border: 1px dashed var(--mint-line);
+  border-radius: 50%;
+}
+
+.interview-onboarding-poster__avatar {
+  position: relative;
+  width: 3.4rem;
+  height: 3.4rem;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--mint-line);
+  border-radius: 50%;
+  color: var(--mint-text);
+  background: var(--paper);
+  box-shadow: var(--shadow-ctl);
+}
+
+.interview-onboarding-poster__badge {
+  position: absolute;
+  right: 0.2rem;
+  bottom: 0.2rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--mint-contrast);
+  background: var(--mint);
+  box-shadow: var(--shadow-ctl);
+}
+
+.interview-onboarding-poster__spark {
+  position: absolute;
+  border-radius: 50%;
+  background: var(--mint);
+  opacity: 0.7;
+}
+
+.interview-onboarding-poster__spark.is-one {
+  top: 12%;
+  right: 18%;
+  width: 0.4rem;
+  height: 0.4rem;
+}
+
+.interview-onboarding-poster__spark.is-two {
+  left: 14%;
+  bottom: 16%;
+  width: 0.3rem;
+  height: 0.3rem;
+}
+
+.interview-onboarding-poster__body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.interview-onboarding-poster__eyebrow {
+  color: var(--mint-text);
+  font-size: var(--font-2xs);
+  font-weight: var(--label-weight);
+  letter-spacing: 0.08em;
+}
+
+.interview-onboarding-poster__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+}
+
+.interview-onboarding-poster__stat {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.interview-onboarding-poster__stat span {
   color: var(--muted);
+  font-size: var(--font-2xs);
+}
+
+.interview-onboarding-poster__stat strong {
+  max-width: 12rem;
+  overflow: hidden;
+  color: var(--ink);
   font-size: var(--font-sm);
-  line-height: 1.7;
+  font-weight: var(--label-weight);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.interview-onboarding-poster__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.interview-onboarding-poster__chip {
+  max-width: 10rem;
+  overflow: hidden;
+  padding: 0 var(--space-2);
+  border-radius: 999px;
+  background: var(--field);
+  color: var(--muted);
+  font-size: var(--font-2xs);
+  line-height: 1.8;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.interview-onboarding-poster__chip.is-empty {
+  border: 1px dashed var(--edge-line);
+  background: transparent;
+}
+
+.interview-onboarding-poster__chip.is-more {
+  color: var(--mint-text);
+  background: var(--mint-wash);
+}
+
+.interview-onboarding-footer {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4) var(--space-3);
+  border-top: 1px solid var(--glass-line-soft);
+  background: var(--panel);
+}
+
+.interview-onboarding-footer__group {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.interview-onboarding-hint {
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+
+.interview-onboarding-footer .interview-onboarding-hint {
+  margin-inline-start: auto;
 }
 
 .interview-onboarding-file {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-3);
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--glass-line-soft);
   border-radius: var(--chat-card-radius);
   background: var(--field);
@@ -211,6 +619,9 @@
 }
 
 .interview-project-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
   color: var(--muted);
 }
 
@@ -238,58 +649,148 @@
   white-space: pre-wrap;
 }
 
-.interview-onboarding-notice p {
-  margin: 0;
-}
-
 .interview-onboarding-empty {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
   padding: var(--space-4);
   border: 1px dashed var(--edge-line);
   border-radius: var(--chat-card-radius);
+  background: var(--field);
   color: var(--muted);
   font-size: var(--font-sm);
   line-height: 1.65;
   text-align: center;
 }
 
-.interview-onboarding-empty p {
-  margin: 0;
+.interview-onboarding-empty__art {
+  position: relative;
+  width: 8rem;
+  height: 4.6rem;
+  flex: 0 0 auto;
 }
 
-.interview-onboarding-empty p + p {
+.interview-onboarding-empty__ghost {
+  position: absolute;
+  width: 5.6rem;
+  height: 3.4rem;
+  border: 1px solid var(--glass-line-soft);
+  border-radius: var(--ctl-radius);
+  background: var(--paper);
+  box-shadow: var(--shadow-ctl);
+}
+
+.interview-onboarding-empty__ghost.is-back {
+  top: 0.4rem;
+  left: 1.6rem;
+  opacity: 0.55;
+  transform: rotate(-6deg);
+}
+
+.interview-onboarding-empty__ghost.is-front {
+  top: 1rem;
+  left: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+}
+
+.interview-onboarding-empty__line {
+  height: 0.35rem;
+  border-radius: 999px;
+  background: var(--field-strong);
+}
+
+.interview-onboarding-empty__line.is-short {
+  width: 55%;
+}
+
+.interview-onboarding-empty__lens {
+  position: absolute;
+  right: 0.2rem;
+  bottom: 0.2rem;
+  width: 2rem;
+  height: 2rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--mint-text);
+  background: var(--mint-wash);
+  box-shadow: var(--shadow-ctl);
+}
+
+.interview-onboarding-empty strong {
+  color: var(--ink);
+  font-size: var(--font-sm);
+  font-weight: var(--label-weight);
+}
+
+.interview-onboarding-empty p {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-xs);
+  line-height: 1.55;
+}
+
+.interview-onboarding-empty__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
   margin-top: var(--space-1);
 }
 
-.interview-onboarding-summary {
+.interview-onboarding-source {
+  min-width: 0;
   display: flex;
-  flex-direction: column;
+  align-items: center;
   gap: var(--space-2);
-  padding: var(--space-3);
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--glass-line-soft);
-  border-radius: var(--chat-card-radius);
+  border-radius: 999px;
   background: var(--field);
-}
-
-.interview-onboarding-summary div {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--space-3);
   color: var(--muted);
   font-size: var(--font-xs);
 }
 
-.interview-onboarding-summary strong {
-  color: var(--ink);
+.interview-onboarding-source span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.interview-onboarding-source strong {
+  flex: 0 0 auto;
+  color: var(--mint-text);
   font-weight: var(--label-weight);
-  text-align: right;
 }
 
-.interview-onboarding-summary ul {
-  margin: 0;
-  padding-inline-start: var(--space-4);
+.interview-project-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--space-2);
+  border-radius: 999px;
+  background: var(--field-strong);
+  color: var(--muted);
+  font-size: var(--font-2xs);
+  line-height: 1.8;
+}
+
+.interview-project-chip.is-quiet {
+  border: 1px solid var(--glass-line-soft);
+  background: transparent;
+}
+
+.interview-project-summary {
   color: var(--muted);
   font-size: var(--font-xs);
-  line-height: 1.65;
+  line-height: 1.55;
 }
 
 .interview-onboarding-field {
@@ -299,6 +800,7 @@
 }
 
 .interview-onboarding-error {
+  margin: 0 var(--space-4);
   padding: var(--space-2) var(--space-3);
   border-radius: var(--ctl-radius);
   color: var(--danger);
@@ -319,4 +821,54 @@
   color: var(--muted);
   font-size: var(--font-sm);
   text-align: center;
+}
+
+/* 窄窗口：主视觉压成顶部横幅，文案在下，保证页脚操作留在窗内。 */
+@media (max-width: 30rem) {
+  .interview-onboarding-hero {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 7.5rem minmax(0, 1fr);
+    gap: var(--space-2);
+    padding-bottom: var(--space-2);
+  }
+
+  .interview-onboarding-art-slot {
+    order: 1;
+    min-height: 0;
+  }
+
+  .interview-onboarding-copy {
+    order: 2;
+    gap: var(--space-2);
+    justify-content: flex-start;
+  }
+
+  .interview-onboarding-art__ring {
+    top: 10%;
+    left: 8%;
+    width: 5.4rem;
+    height: 5.4rem;
+  }
+
+  .interview-onboarding-art__avatar {
+    top: 16%;
+    left: 12%;
+    width: 3.6rem;
+    height: 3.6rem;
+  }
+
+  .interview-onboarding-art__sheet {
+    right: 8%;
+    bottom: 10%;
+    width: 7.5rem;
+  }
+
+  .interview-onboarding-art__pill.is-project {
+    top: 14%;
+    right: 9%;
+  }
+
+  .interview-onboarding-art__pill.is-story {
+    display: none;
+  }
 }

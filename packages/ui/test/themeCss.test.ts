@@ -126,6 +126,24 @@ describe("theme CSS integrity", () => {
     }
   });
 
+  it("keeps the interview cards out of fit-content viewport loops", () => {
+    // 面试卡片直接挂在 fit-content 的 .overlay-root 下；vh/vw 会反过来
+    // 由窗口尺寸决定卡片尺寸，形成“越滚越缩”的自引用回路。
+    const css = stripComments(
+      readFileSync(join(sourceRoot, "interview", "onboarding", "onboarding.css"), "utf8"),
+    );
+    const card = css.match(/\.interview-onboarding,\s*\.interview-avatar\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(card).not.toBe("");
+    expect(card).not.toContain("100vh");
+    expect(card).not.toContain("100vw");
+    expect(card).toContain("height: 34rem");
+    expect(card).toContain("width: min(var(--surface-w");
+
+    const body = css.match(/\.interview-onboarding-body\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(body).toContain("min-height: 0");
+    expect(body).toContain("overflow-y: auto");
+  });
+
   it("keeps announcement views inside the fixed panel, scrolled not stretched", () => {
     // 定高面板（560px 上限）必须由列表/详情自身滚动，任何一条根容器
     // 失去 min-height:0 / overflow-y 都会让窗口随公告内容无限变高。

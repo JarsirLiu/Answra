@@ -18,6 +18,7 @@ export interface InterviewOnboardingHandle {
   addProject: (request: InterviewProjectAddRequest) => Promise<void>;
   complete: () => Promise<void>;
   skip: () => Promise<void>;
+  reopen: () => Promise<void>;
 }
 
 /** 面试引导的唯一 renderer 状态入口；所有写操作都以主进程返回的快照为准。 */
@@ -123,6 +124,17 @@ export function useInterviewOnboarding(
     }
   }, [platform]);
 
+  const reopen = useCallback(async (): Promise<void> => {
+    setError(undefined);
+    if (!platform?.reopenInterviewOnboarding) throw new Error("当前版本不支持修改面试资料");
+    try {
+      setState(await platform.reopenInterviewOnboarding());
+    } catch (reopenError) {
+      setError(toMessage(reopenError, "打开面试资料失败"));
+      throw reopenError;
+    }
+  }, [platform]);
+
   return {
     state,
     loading,
@@ -134,6 +146,7 @@ export function useInterviewOnboarding(
     addProject,
     complete,
     skip,
+    reopen,
   };
 }
 

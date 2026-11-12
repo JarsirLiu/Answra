@@ -55,8 +55,7 @@ describe("floating bar navigation and shell", () => {
     fireEvent.click(screen.getByRole("menuitemradio", { name: "面试" }));
     const modeTrigger = screen.getByRole("button", { name: "面试" });
     expect(modeTrigger.querySelector("svg")?.classList.contains("lucide-audio-lines")).toBe(true);
-    fireEvent.click(screen.getByRole("button", { name: "面试演练" }));
-    expect(screen.getByRole("region", { name: "面试演练" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "面试分身" })).toBeInTheDocument();
   });
 
   it("renders every mode action as a plain icon button without a stuck tint", () => {

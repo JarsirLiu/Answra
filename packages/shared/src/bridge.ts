@@ -179,10 +179,12 @@ export interface DesktopBridge {
   addInterviewOnboardingProject?: (
     request: InterviewProjectAddRequest,
   ) => Promise<InterviewOnboardingState>;
-  /** 完成引导；之后再次打开面试面板直接进入演练。 */
+  /** 完成引导；之后再次打开面试面板进入面试分身制作态。 */
   completeInterviewOnboarding?: () => Promise<InterviewOnboardingState>;
-  /** 稍后再说；不阻断面试入口，之后不再自动弹出引导。 */
+  /** 跳过引导；不阻断面试入口，之后不再自动弹出引导。 */
   skipInterviewOnboarding?: () => Promise<InterviewOnboardingState>;
+  /** 从完成/跳过状态回到可编辑的引导步骤。 */
+  reopenInterviewOnboarding?: () => Promise<InterviewOnboardingState>;
   // ---- 本地工作区（合并笔记本与资料；浏览器预览/测试环境可未实现，调用方需判空） ----
   /** 读取缓存的上一工作区根目录；未选择过时 root 为 null。 */
   getWorkspaceRoot?: () => Promise<{ root: string | null }>;

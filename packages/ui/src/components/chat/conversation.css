@@ -1,4 +1,4 @@
-/* ── 对话消息区（ChatPanel / InterviewCapturePanel 共用） ────────── */
+/* ── 对话消息区（ChatPanel 等消息面共用） ────────── */
 .conversation-running {
   display: grid;
   place-items: center;

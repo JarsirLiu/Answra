@@ -44,6 +44,7 @@ function store(overrides: Partial<InterviewOnboardingStore> = {}): InterviewOnbo
     addProject: vi.fn(async () => state()),
     complete: vi.fn(async () => ({ ...state(), status: "completed" as const })),
     skip: vi.fn(async () => ({ ...state(), status: "skipped" as const })),
+    reopen: vi.fn(async () => state()),
     ...overrides,
   } as InterviewOnboardingStore;
 }
@@ -151,7 +152,7 @@ describe("interview onboarding IPC", () => {
     ipc.dispose();
   });
 
-  it("completes and skips through the store", async () => {
+  it("completes, skips, and reopens through the store", async () => {
     const onboarding = store();
     const ipc = registerInterviewOnboardingIpc({
       store: onboarding,
@@ -161,8 +162,10 @@ describe("interview onboarding IPC", () => {
 
     await handler(InterviewChannels.OnboardingComplete)(event);
     await handler(InterviewChannels.OnboardingSkip)(event);
+    await handler(InterviewChannels.OnboardingReopen)(event);
     expect(onboarding.complete).toHaveBeenCalledOnce();
     expect(onboarding.skip).toHaveBeenCalledOnce();
+    expect(onboarding.reopen).toHaveBeenCalledOnce();
     ipc.dispose();
   });
 });

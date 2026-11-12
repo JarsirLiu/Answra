@@ -22,7 +22,6 @@ import { useSurfaceWidth } from "../hooks/useSurfaceWidth";
 import { ANSWER_MODE, applyModeAvailability, MODES, type Mode, type ModeAction } from "../model";
 import { ChatFeaturePanel } from "./ChatFeaturePanel";
 import { InterviewFeaturePanel } from "./InterviewFeaturePanel";
-import type { InterviewCapturePort, InterviewCaptureState } from "./interviewCapture";
 import { useAppearanceController } from "./useAppearanceController";
 import { useConnectionState } from "./useConnectionState";
 import { useScreenshotAnswer } from "./useConversationChat";
@@ -41,7 +40,6 @@ const WorkspaceFeaturePanel = __ANSWRA_FEATURE_WORKSPACE__
 interface FloatingBarAppProps {
   /** 桌面平台桥；默认使用 preload 注入的 window.answra，测试可注入 mock。 */
   bridge?: DesktopBridge;
-  interviewCapture?: InterviewCapturePort;
 }
 
 /** 一次模型调用失败：统一提示的文案，以及是否要给出「去登录」按钮。 */
@@ -50,15 +48,12 @@ interface SendFailure {
   needsSignIn: boolean;
 }
 
-export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps) {
+export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
   // 默认桥由 desktop preload 注入（window.answra），浏览器预览与测试可传入 mock
   const platform = bridge ?? (globalThis as { answra?: DesktopBridge }).answra;
   const [mode, setMode] = useState<Mode>("conversation");
   const [announcements, setAnnouncements] = useState<DesktopAnnouncement[]>([]);
   const [authSignedIn, setAuthSignedIn] = useState(false);
-  const [interviewCaptureState, setInterviewCaptureState] = useState<InterviewCaptureState>(
-    interviewCapture?.getState() ?? { phase: "idle" },
-  );
   const surfaces = useSurfaceCoordinator();
   const { panel, floatingLayers, featureSlot } = surfaces;
   const replyPhase = featureSlot.kind === "reply" ? (featureSlot.phase ?? "composing") : "closed";
@@ -116,12 +111,6 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
       unsubscribe?.();
     };
   }, [platform]);
-  useEffect(() => {
-    if (!__ANSWRA_FEATURE_INTERVIEW__) return;
-    if (!interviewCapture) return;
-    setInterviewCaptureState(interviewCapture.getState());
-    return interviewCapture.subscribe(setInterviewCaptureState);
-  }, [interviewCapture]);
   useEffect(() => {
     if (!authSignedIn || !platform?.getAnnouncements) return;
     let cancelled = false;
@@ -265,7 +254,7 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
       if (featureSlot.kind === "reply") exitReply();
       else surfaces.openPanel("chat");
     }
-    if (action.id === "capture") surfaces.openPanel("interview");
+    if (action.id === "avatar") surfaces.openPanel("interview");
   }
 
   function handleModeChange(nextMode: Mode) {
@@ -273,6 +262,7 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
     if (featureSlot.kind === "reply") closeReplyBar();
     setMode(nextMode);
     if (nextMode === "conversation") surfaces.openPanel("chat");
+    else if (nextMode === "interview") surfaces.openPanel("interview");
     else if (panel === "chat" || panel === "interview") surfaces.openPanel("closed");
   }
 
@@ -342,14 +332,7 @@ export function FloatingBarApp({ bridge, interviewCapture }: FloatingBarAppProps
         )}
 
         {__ANSWRA_FEATURE_INTERVIEW__ && panel === "interview" && (
-          <InterviewFeaturePanel
-            platform={platform}
-            capture={interviewCapture}
-            state={interviewCaptureState}
-            connection={connection}
-            onClear={clearConversation}
-            onClose={() => surfaces.openPanel("closed")}
-          />
+          <InterviewFeaturePanel platform={platform} onClose={() => surfaces.openPanel("closed")} />
         )}
 
         {featureSlot.kind === "reply" ? (

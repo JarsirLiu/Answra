@@ -197,13 +197,69 @@
 
 本阶段只交付用户可见的前三步引导页，**不接面试向导 Bot，不生成候选人档案**。状态仍为提案，后续阶段继续沿用同一 Note。
 
-- 入口：`InterviewFeaturePanel` 先读取主进程状态；`pending` 时在面试面板内显示引导，`completed` / `skipped` 时直接进入原有演练面板。不新增原生窗口。
+- 入口：`InterviewFeaturePanel` 先读取主进程状态；`pending` 时在面试面板内显示引导，`completed` / `skipped` 时进入面试分身制作态（2026-11-12 第二次调整后不再进入演练）。不新增原生窗口。
 - 三步：`resume`（选择简历/粘贴文本）→ `projects`（勾选项目、全选/清空、手动添加）→ `ready`（确认简历、项目、目标岗位）。关闭面板保留当前步骤，重新打开继续。
 - 持久化：`appData/Answra/interview/onboarding.json` 只保存状态、步骤、项目摘要和选择；简历原文单独写入 `resumes/<id>.txt`。状态文件损坏时回退 `pending`，不阻塞启动。
 - 导入：主进程 `dialog` 只接受 `.md` / `.txt`，校验扩展名与大小；renderer 不传任意路径。粘贴文本走同一导入解析路径。
 - 项目提取：本阶段使用主进程内的启发式解析，只识别项目章节内的 Markdown 标题或明确的纯文本项目标题；识别不到时返回空列表，由 UI 提示手动添加，不伪造项目。
-- 第三步主按钮为“保存并进入面试演练”：当前版本只保存选择，不宣称已经制作档案；向导对话、`candidate-profile.json`、`profile.md` 投影、候选人/演练 Agent 拆分、PDF/DOCX 解析均未实施。
+- 第三步主按钮为“开始制作面试分身”：当前版本只保存选择并把状态置为 `completed`，交给后续 Bot 读取；不宣称已经制作档案。向导对话、`candidate-profile.json`、`profile.md` 投影、候选人/演练 Agent 拆分、PDF/DOCX 解析均未实施。
 - 验证：shared/UI/preload/renderer typecheck 与本次变更的 Biome 检查通过；新增 UI 5 项、desktop 16 项测试，覆盖入口分流、步骤恢复、项目选择、跳过/完成、状态文件损坏回退、IPC 来源与载荷校验、简历原文分离、旧简历清理和项目提取。未做 Windows 11 实机文件框与中文路径验证；仓库全量 `pnpm typecheck` / `pnpm lint` 仍被其他会话未完成的 `apps/agent` 与 `packages/shared/src/schema/index.ts` 改动阻断。
+
+## 2026-11-12 调整：广告式弹窗与“跳过这一步”
+
+第一阶段把引导直接铺在面试面板里，标题、说明和三条要点堆成一屏文字；用户反馈“文字没人想看”，且“稍后再说”实际是把整个引导标记为 `skipped` 并关掉，语义与行为不符。
+
+- **形态**：面试引导改为不套 `PanelShell` 的独立大卡，悬浮条下方呈现两栏（窄窗口收成顶部主视觉 + 下方文案）：左侧只保留一句标题、一句副文案、主 CTA 与“跳过这一步”，右侧是纯 DOM/CSS 主视觉（角色光环 + 悬浮简历卡）。删除三条要点列表和“面试准备 · 1 / 3”长说明；步骤进度改为三个圆点加 `1 / 3`。不新增原生窗口，也不引入位图资产。
+- **跳过语义**：`resume` 的“跳过这一步”进入 `projects`；`projects` 的“跳过这一步”进入 `ready`；`ready` 的“跳过引导”把整体状态置为 `skipped` 并进入制作态。右上角关闭仍只收起面板，保留当前步骤，下次打开继续。
+- **替代方案**：把“稍后再说”改名为“跳过引导”保留原行为（舍弃：用户已明确要“跳过这一步”）；新增独立原生弹窗窗口（暂缓：需要新窗口角色、IPC 与捕获保护，当前浮窗内独立大卡已能达到同样观感）；引入营销位图（舍弃：应用内没有图片资产，且跨项目拷图会引入授权与包体问题）。
+- **后果**：首次进入不再出现文字墙；跳过的每一步都可回退，最后一步才结束引导。关闭面板仍等于“稍后继续”，但不再被误标成跳过。
+- **验证**：`InterviewOnboardingPanel.test.tsx` 覆盖“简历步跳过 → 项目步 → 跳过 → 制作步 → 跳过引导 → 制作态”，以及原有完成/恢复/已完成后不再显示用例；`pnpm --filter @answra/ui typecheck` 与对应 vitest 通过。
+
+## 2026-11-12 调整：切换到面试模式才触发，止于“开始制作面试分身”
+
+用户进一步确认：引导只能在用户主动切换到面试模式时出现，不能随应用启动自动弹出；面试演练不是目标形态，应移除；最后一步是“开始制作面试分身”，把简历、项目和目标岗位交给后续 Bot，Bot 由用户后续接入。
+
+- **触发时机**：`FloatingBarApp.handleModeChange` 在 `nextMode === "interview"` 时直接打开面试面板；启动仍是 `conversation + closed`，`InterviewFeaturePanel` 只在面板打开后挂载并读取 onboarding。浏览器预览或测试没有 bridge 时只显示“当前版本不支持面试引导”，不伪造引导。
+- **移除演练**：删除 `InterviewRehearsalPanel`、`InterviewCapturePanel`、`useInterviewConversation`、renderer 侧 `InterviewAudioCapture` 及其测试；面试模式的功能动作从“面试演练”改为“面试分身”。main/agent 侧的音频采集能力暂留，等候选人 Bot 接入时再接回，不在本次删除。
+- **末步语义**：第三步标题和主按钮统一为“开始制作面试分身”。点击先保存 `step/selectedProjectIds/targetRole`，再调用 `completeInterviewOnboarding` 把状态置为 `completed`；`onboarding.json` + `resumes/<id>.txt` 是交给 Bot 的输入。Bot 尚未实现，renderer 不直接调用 Agent，也不伪造制作进度。
+- **完成/跳过态**：新增 `InterviewAvatarPanel`。`completed` 显示“面试分身制作中”，列出“读取简历 / 查看项目 / 整理面试文档”并明确“制作能力尚未接入”；`skipped` 显示“还没有面试资料”。两者都提供回到引导的入口。
+- **重新编辑**：新增 `interview:onboarding-reopen`，把 `completed/skipped` 置回 `pending`；有简历时停在原步骤，没有简历时回 `resume`。这样移除演练面板后，跳过或完成过的用户仍有明确下一步。
+- **替代方案**：保留演练面板但隐藏入口（舍弃：用户明确要求删掉）；应用启动自动弹引导（舍弃：用户明确要求只在切换面试模式时出现）；只在点击“面试演练”动作时打开（舍弃：切换模式本身就是触发条件）；在 renderer 里直接发 Agent 命令（舍弃：Agent 命令与端口尚未定义，先把持久化 seam 留清楚）。
+- **后果**：面试入口只剩“引导 → 制作态”两段；用户不切换面试模式就不会看到引导。Bot 接入时从 `completed` 状态和本机资料接手，不需要改 onboarding UI。
+- **验证**：`InterviewOnboardingPanel.test.tsx` 覆盖“启动不读取 onboarding、切换面试模式才出现”“完成 → 面试分身制作中”“逐步跳过 → 跳过引导 → 重新完善”；desktop store/IPC 覆盖 `reopen`；`pnpm --filter @answra/ui typecheck`、`pnpm --filter @answra/desktop typecheck`、相关 vitest 通过。
+
+## 2026-11-12 修复：无简历跳过无反应，制作态改为视觉优先
+
+用户反馈在第一步没有简历时点击“跳过这一步”没有任何反应；同时制作态是一屏文字行，和引导页的广告式主视觉不一致，要求“尽量图说话”。
+
+- **根因**：主进程 `applyPatch` 在没有 `resume` 时强制把 `step` 归回 `resume`，而 `InterviewOnboardingPanel.skipStep` 仍然调用 `update({ step: "projects" })`，返回的快照与当前完全相同，所以 UI 不动。项目页本身依赖简历项目，不能在没有简历时进入。
+- **决定**：没有简历时，第一步的按钮改为“跳过引导”，直接调用 `skipInterviewOnboarding` 进入 `skipped` 制作态；有简历时保持“跳过这一步 → projects → ready → 跳过引导”的分步语义。主进程的无简历归位约束保留，不放开一个无法操作的项目页。
+- **替代方案**：允许无简历进入 projects 并手动加项目（舍弃：需要给 `resume` 造合成容器，且 Bot 输入会缺少简历正文）；把无简历的 `step` 放宽到 `ready`（舍弃：最终页会在没有任何资料时允许“开始制作”，语义不成立）；按钮保持“跳过这一步”但静默结束引导（舍弃：标签与结果不符）。
+- **视觉**：`InterviewAvatarPanel` 不再套 `PanelShell`，改为和引导共用的广告式卡片外壳；顶部只留品牌点、状态胶囊和关闭，主体是主视觉、短标题、一句状态、三枚图标步骤、三枚资料胶囊和主操作。删除“你跳过了引导……”长句、三行 `dl` 摘要和“制作能力尚未接入；当前只保存了你的资料”长注，改为“制作能力接入中”状态点。完成态仍显示“面试分身制作中”和“修改资料”，跳过态显示“还没有面试资料”和“完善面试资料”。
+- **第二页**：项目步骤增加“文件名 + 项目数”来源胶囊、角色/周期胶囊和一句话摘要；空状态改为占位卡 + 放大镜主视觉，文案压成“没识别到项目 / 换份简历，或手动补一个。”，动作改为“换份简历 / 手动添加”。空状态撑满剩余高度、底部操作吸底；没有项目时隐藏“继续”，避免与“手动添加”争抢主按钮。
+- **测试**：新增“第一步无简历 → 跳过引导 → 还没有面试资料”和“项目页无项目 → 空状态主视觉 + 换简历/手动添加”用例；逐步跳过用例改为带简历，并验证 reopen 回到 `ready`；`pnpm --filter @answra/ui typecheck`、`pnpm --filter @answra/ui exec vitest run test/InterviewOnboardingPanel.test.tsx`、`pnpm tokens:check` 通过。
+
+## 2026-11-12 修复：页脚被挤出窗口，第一/三步改为薄荷海报
+
+用户反馈第一步“跳过这一步”被挤到页面下方，要求保证操作都在窗内；同时薄荷海报不够年轻清新，最后一步仍是纯文字摘要。
+
+- **页脚固定**：把三步的主/次操作从滚动内容区移到卡片底部固定 `footer`，内容区独立滚动；卡片移除 `25rem` 最小高度，窄窗第一步主视觉压到 `7.5rem`，避免页脚被内容顶出窗口。
+- **第一步海报**：主视觉改为薄荷渐变 + 有机色块 + 悬浮简历卡 + 机器人头像 + 项目/对话贴纸；头像从深薄荷实心圆改为纸色圆 + 薄荷描边，整体更轻、更清新。
+- **第三步海报**：新增 `InterviewReadyPoster` 替代两行摘要；海报内含头像、简历文件名、项目数量和项目胶囊，空项目时显示“还没有选项目，也可以直接制作”。
+- **验证**：`InterviewOnboardingPanel` 8 项、`FloatingBarApp.navigation` 9 项通过；UI typecheck、Biome、`tokens:check` 通过；恢复用例新增“候选人档案/项目名”断言。
+
+## 2026-11-12 修复：第三步海报被 flex 压扁，内容区不滚动
+
+用户反馈第三步“开始制作面试分身”页面的候选人档案海报被底部操作栏截断，页面没有滚动，内容直接消失。
+
+- **根因**：`.interview-onboarding-poster` 同时使用 `flex: 1` 和 `overflow: hidden`，在剩余高度不足时被压到 `min-height`；海报内部统计和项目胶囊超出自身高度后被裁掉，而内容区没有产生溢出，因此 `overflow-y: auto` 不出现滚动条。
+- **决定**：海报改为 `flex: 0 0 auto`，按内容自然高度参与布局，并移除自身 `overflow: hidden`；第三步内容区继续由 `.interview-onboarding-body` 的 `overflow-y: auto` 承担滚动。这样海报不再被压缩，内容超出时用户可滚动查看，底部操作栏仍固定在卡片底部。
+- **替代方案**：把第三步整页改成外层滚动（舍弃：会带动标题和底部操作栏一起滚动，回到页脚被挤出窗口的问题）；继续让海报 `flex: 1` 但只缩小字号（舍弃：项目多或窄窗时仍会裁切，且不可读）。
+- **验证**：第三步在 480px 高窗口下恢复内容区滚动；`InterviewOnboardingPanel` 8 项、UI typecheck、Biome、`tokens:check`、`notes:check` 通过。
+
+## 2026-11-12 提案：独立面试窗口
+
+用户反馈面试引导与主内容面板共用高度，导致笔记本看起来过长，并要求面试改为独立浮窗。新的窗口形态、IPC、焦点/隐身、截图与生命周期方案见[独立面试窗口](../architecture/2026-11-12-interview-window.md)。本文此前“不新增独立原生向导窗口”“首版复用面试面板”的暂缓决定待该提案评审后更新；评审前当前实现仍以主面板为准。
 
 ## 风险
 

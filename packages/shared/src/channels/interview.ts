@@ -17,6 +17,7 @@ export const InterviewChannels = {
   OnboardingAddProject: "answra:interview:onboarding-add-project",
   OnboardingComplete: "answra:interview:onboarding-complete",
   OnboardingSkip: "answra:interview:onboarding-skip",
+  OnboardingReopen: "answra:interview:onboarding-reopen",
 } as const;
 
 /** Bounds audio frames in flight while the Agent processes them in batches. */
@@ -179,6 +180,10 @@ export interface InterviewChannelMap {
     response: InterviewOnboardingState;
   };
   [InterviewChannels.OnboardingSkip]: {
+    request: undefined;
+    response: InterviewOnboardingState;
+  };
+  [InterviewChannels.OnboardingReopen]: {
     request: undefined;
     response: InterviewOnboardingState;
   };

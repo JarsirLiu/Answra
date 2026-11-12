@@ -33,15 +33,6 @@ function onboardingState(
   };
 }
 
-function capturePort() {
-  return {
-    getState: () => ({ phase: "idle" as const }),
-    subscribe: () => () => undefined,
-    start: vi.fn(async () => undefined),
-    stop: vi.fn(async () => undefined),
-  };
-}
-
 function createOnboardingBridge(initial: InterviewOnboardingState) {
   let current = initial;
   const bridge = createConversationBridge();
@@ -70,25 +61,45 @@ function createOnboardingBridge(initial: InterviewOnboardingState) {
       current = { ...current, status: "skipped" };
       return current;
     }),
+    reopenInterviewOnboarding: vi.fn(async () => {
+      current = {
+        ...current,
+        status: "pending",
+        step: current.resume ? current.step : "resume",
+      };
+      return current;
+    }),
   };
 }
 
 function openInterview() {
   fireEvent.click(screen.getByRole("button", { name: "对话" }));
   fireEvent.click(screen.getByRole("menuitemradio", { name: "面试" }));
-  fireEvent.click(screen.getByRole("button", { name: "面试演练" }));
 }
 
 describe("interview onboarding panel", () => {
   beforeEach(resetFloatingBarTestState);
 
-  it("opens the resume guide before the rehearsal panel", async () => {
+  it("does not open the guide until the user switches to interview mode", async () => {
     const bridge = createOnboardingBridge(onboardingState());
-    render(<FloatingBarApp bridge={bridge} interviewCapture={capturePort()} />);
+    render(<FloatingBarApp bridge={bridge} />);
+
+    expect(screen.queryByRole("heading", { name: "先让面试分身认识你" })).not.toBeInTheDocument();
+    expect(bridge.getInterviewOnboardingState).not.toHaveBeenCalled();
+
     openInterview();
 
     expect(await screen.findByRole("heading", { name: "先让面试分身认识你" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "开始面试演练" })).not.toBeInTheDocument();
+    expect(bridge.getInterviewOnboardingState).toHaveBeenCalledOnce();
+  });
+
+  it("opens the resume guide before the avatar panel", async () => {
+    const bridge = createOnboardingBridge(onboardingState());
+    render(<FloatingBarApp bridge={bridge} />);
+    openInterview();
+
+    expect(await screen.findByRole("heading", { name: "先让面试分身认识你" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "面试分身制作中" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "选择简历" }));
 
@@ -96,6 +107,27 @@ describe("interview onboarding panel", () => {
     expect(
       await screen.findByRole("heading", { name: "挑出你想重点讲的项目" }),
     ).toBeInTheDocument();
+  });
+
+  it("shows a visual empty state with short actions when the resume has no projects", async () => {
+    const bridge = createOnboardingBridge(
+      onboardingState({
+        step: "projects",
+        resume: { id: "resume-1", fileName: "空简历.md", projects: [] },
+      }),
+    );
+    render(<FloatingBarApp bridge={bridge} />);
+    openInterview();
+
+    expect(
+      await screen.findByRole("heading", { name: "挑出你想重点讲的项目" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("没识别到项目")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "换份简历" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "继续" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "手动添加" }));
+    expect(await screen.findByLabelText("项目名称")).toBeInTheDocument();
   });
 
   it("selects projects, saves the target role, and completes onboarding", async () => {
@@ -106,7 +138,7 @@ describe("interview onboarding panel", () => {
         selectedProjectIds: [projectA.id, projectB.id],
       }),
     );
-    render(<FloatingBarApp bridge={bridge} interviewCapture={capturePort()} />);
+    render(<FloatingBarApp bridge={bridge} />);
     openInterview();
 
     const checkboxes = await screen.findAllByRole("checkbox");
@@ -126,7 +158,7 @@ describe("interview onboarding panel", () => {
     fireEvent.change(screen.getByLabelText("目标岗位（可选）"), {
       target: { value: "高级前端工程师" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "保存并进入面试演练" }));
+    fireEvent.click(screen.getByRole("button", { name: "开始制作面试分身" }));
 
     await waitFor(() =>
       expect(bridge.updateInterviewOnboarding).toHaveBeenLastCalledWith({
@@ -136,18 +168,53 @@ describe("interview onboarding panel", () => {
       }),
     );
     expect(bridge.completeInterviewOnboarding).toHaveBeenCalledOnce();
-    expect(await screen.findByRole("button", { name: "开始面试演练" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "面试分身制作中" })).toBeInTheDocument();
   });
 
-  it("skips onboarding without blocking the rehearsal panel", async () => {
-    const bridge = createOnboardingBridge(onboardingState());
-    render(<FloatingBarApp bridge={bridge} interviewCapture={capturePort()} />);
+  it("skips one step at a time and reopens the guide from the avatar panel", async () => {
+    const bridge = createOnboardingBridge(
+      onboardingState({
+        resume: { id: "resume-1", fileName: "张三简历.md", projects: [projectA] },
+      }),
+    );
+    render(<FloatingBarApp bridge={bridge} />);
     openInterview();
 
-    fireEvent.click(await screen.findByRole("button", { name: "稍后再说" }));
+    fireEvent.click(await screen.findByRole("button", { name: "跳过这一步" }));
+    await waitFor(() =>
+      expect(bridge.updateInterviewOnboarding).toHaveBeenCalledWith({ step: "projects" }),
+    );
+    expect(
+      await screen.findByRole("heading", { name: "挑出你想重点讲的项目" }),
+    ).toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole("button", { name: "跳过这一步" }));
+    await waitFor(() =>
+      expect(bridge.updateInterviewOnboarding).toHaveBeenLastCalledWith({
+        step: "ready",
+        selectedProjectIds: [],
+      }),
+    );
+    expect(await screen.findByRole("heading", { name: "开始制作面试分身" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "跳过引导" }));
     await waitFor(() => expect(bridge.skipInterviewOnboarding).toHaveBeenCalledOnce());
-    expect(await screen.findByRole("button", { name: "开始面试演练" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "还没有面试资料" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "完善面试资料" }));
+    await waitFor(() => expect(bridge.reopenInterviewOnboarding).toHaveBeenCalledOnce());
+    expect(await screen.findByRole("heading", { name: "开始制作面试分身" })).toBeInTheDocument();
+  });
+
+  it("skips the whole guide from the resume step when no resume is selected", async () => {
+    const bridge = createOnboardingBridge(onboardingState());
+    render(<FloatingBarApp bridge={bridge} />);
+    openInterview();
+
+    fireEvent.click(await screen.findByRole("button", { name: "跳过引导" }));
+    await waitFor(() => expect(bridge.skipInterviewOnboarding).toHaveBeenCalledOnce());
+    expect(bridge.updateInterviewOnboarding).not.toHaveBeenCalled();
+    expect(await screen.findByRole("heading", { name: "还没有面试资料" })).toBeInTheDocument();
   });
 
   it("restores the saved step when the panel is reopened", async () => {
@@ -158,20 +225,22 @@ describe("interview onboarding panel", () => {
         selectedProjectIds: [projectA.id],
       }),
     );
-    render(<FloatingBarApp bridge={bridge} interviewCapture={capturePort()} />);
+    render(<FloatingBarApp bridge={bridge} />);
     openInterview();
 
     expect(await screen.findByRole("heading", { name: "开始制作面试分身" })).toBeInTheDocument();
+    expect(screen.getByText("候选人档案")).toBeInTheDocument();
     expect(screen.getByText("张三简历.md")).toBeInTheDocument();
     expect(screen.getByText("1 个")).toBeInTheDocument();
+    expect(screen.getByText(projectA.name)).toBeInTheDocument();
   });
 
   it("does not show onboarding after it has been completed", async () => {
     const bridge = createOnboardingBridge(onboardingState({ status: "completed", step: "ready" }));
-    render(<FloatingBarApp bridge={bridge} interviewCapture={capturePort()} />);
+    render(<FloatingBarApp bridge={bridge} />);
     openInterview();
 
-    expect(await screen.findByRole("button", { name: "开始面试演练" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "面试分身制作中" })).toBeInTheDocument();
     expect(screen.queryByText("先让面试分身认识你")).not.toBeInTheDocument();
   });
 });

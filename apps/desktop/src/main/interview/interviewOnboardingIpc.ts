@@ -71,6 +71,11 @@ export function registerInterviewOnboardingIpc({
     return store.skip();
   });
 
+  ipcMain.handle(InterviewChannels.OnboardingReopen, async (event) => {
+    assertSender(event);
+    return store.reopen();
+  });
+
   return {
     dispose(): void {
       ipcMain.removeHandler(InterviewChannels.OnboardingGetState);
@@ -80,6 +85,7 @@ export function registerInterviewOnboardingIpc({
       ipcMain.removeHandler(InterviewChannels.OnboardingAddProject);
       ipcMain.removeHandler(InterviewChannels.OnboardingComplete);
       ipcMain.removeHandler(InterviewChannels.OnboardingSkip);
+      ipcMain.removeHandler(InterviewChannels.OnboardingReopen);
     },
   };
 }

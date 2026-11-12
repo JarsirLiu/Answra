@@ -44,7 +44,7 @@ export const MODES: readonly ModeDefinition[] = [
     id: "interview",
     label: "面试",
     icon: AudioLines,
-    actions: [{ id: "capture", label: "面试演练", icon: AudioLines }],
+    actions: [{ id: "avatar", label: "面试分身", icon: AudioLines }],
   },
 ];
 
@@ -68,11 +68,11 @@ export function applyModeAvailability(
         ...mode,
         actions: [
           {
-            id: "capture",
-            label: "面试助手（暂不支持）",
+            id: "avatar",
+            label: "面试分身（暂不支持）",
             icon: AudioLines,
             disabled: true,
-            hint: "面试对话助手尚未开放，敬请期待",
+            hint: "面试分身尚未开放，敬请期待",
           },
         ],
       } satisfies ModeDefinition;

@@ -127,6 +127,21 @@ describe("interview onboarding store", () => {
     await expect(store.skip()).resolves.toMatchObject({ status: "completed" });
   });
 
+  it("reopens a completed or skipped guide from the saved step", async () => {
+    const { store } = await setup();
+    await store.importResume({
+      fileName: "resume.md",
+      text: "## 项目经历\n### 项目 A\n- 负责 A。\n",
+    });
+    await store.update({ step: "ready" });
+    await store.complete();
+
+    await expect(store.reopen()).resolves.toMatchObject({ status: "pending", step: "ready" });
+    await store.skip();
+    await expect(store.reopen()).resolves.toMatchObject({ status: "pending", step: "ready" });
+    await expect(store.reopen()).resolves.toMatchObject({ status: "pending" });
+  });
+
   it("falls back to pending when the state file is corrupted", async () => {
     const { root, store } = await setup();
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);

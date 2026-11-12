@@ -39,6 +39,7 @@ export interface InterviewOnboardingStore {
   addProject(request: InterviewProjectAddRequest): Promise<InterviewOnboardingState>;
   complete(): Promise<InterviewOnboardingState>;
   skip(): Promise<InterviewOnboardingState>;
+  reopen(): Promise<InterviewOnboardingState>;
 }
 
 /** 面试首次引导的唯一写入方；只保存步骤、项目摘要和目标岗位，不保存简历正文到状态文件。 */
@@ -162,6 +163,19 @@ export function createInterviewOnboardingStore({
     return next;
   }
 
+  async function reopen(): Promise<InterviewOnboardingState> {
+    const current = await read();
+    if (current.status === "pending") return current;
+    const next: InterviewOnboardingState = {
+      ...current,
+      status: "pending",
+      step: current.resume ? current.step : "resume",
+      updatedAt: now().toISOString(),
+    };
+    await writeState(next);
+    return next;
+  }
+
   async function writeState(state: InterviewOnboardingState): Promise<void> {
     await mkdir(dataRoot, { recursive: true });
     const tempPath = `${statePath}.${process.pid}.${Date.now()}.tmp`;
@@ -173,7 +187,7 @@ export function createInterviewOnboardingStore({
     }
   }
 
-  return { read, importResume, update, addProject, complete, skip };
+  return { read, importResume, update, addProject, complete, skip, reopen };
 }
 
 function applyPatch(
