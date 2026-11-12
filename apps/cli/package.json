@@ -8,7 +8,7 @@
     "answra": "./dist/main.cjs"
   },
   "engines": {
-    "node": ">=20.9.0"
+    "node": ">=22.13.0"
   },
   "scripts": {
     "build": "node ./scripts/build.mjs",
@@ -19,11 +19,16 @@
   },
   "dependencies": {
     "@answra/agent": "workspace:*",
-    "@answra/shared": "workspace:*"
+    "@answra/shared": "workspace:*",
+    "@answra/ui": "workspace:*",
+    "ink": "8.0.0",
+    "react": "19.3.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
+    "@types/react": "19.3.0",
     "esbuild": "^0.27.2",
+    "ink-testing-library": "4.0.0",
     "typescript": "~5.9.3",
     "vitest": "^5.0.3"
   }

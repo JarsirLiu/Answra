@@ -83,12 +83,13 @@ apps/desktop           Electron 桌面壳
   src/main/connection  Agent 连接状态 IPC、窗口广播与 Electron worker host 适配
   src/preload          contextBridge 桥（window.answra）
   src/renderer         薄渲染层：仅挂载 <FloatingBarApp/>
-apps/cli              独立终端宿主：coding Bot 的 CLI 入口、模型配置与非 TTY 流式输出
+apps/cli              独立终端宿主：coding Bot 的 CLI 入口、模型配置、TUI 与非 TTY 流式输出
   src/cli              命令分派、code 用例、依赖端口与 help/error
   src/config           argv、环境变量、模型端点与工作区校验
   src/session          单活动 run 的 CodingSession 用例
   src/adapters         @answra/agent/composition 到 CLI 端口的映射
   src/presentation     Agent 事件到文本/工具行的纯投影
+  src/tui              Ink TUI 组件、view store 与 AltScreen/ScrollBox 原语
   src/transport        stdin/stdout/stderr 适配
 apps/agent             平台无关的 Agent 运行时（不依赖 Electron/React），由 desktop 的 utility process 拉起
   src/index.ts         公共入口：desktop worker 的唯一导入面
@@ -127,7 +128,7 @@ docs                   Note 索引
 | `pnpm --filter @answra/cli build` | 构建 CLI bundle（`apps/cli/dist/main.cjs`） |
 | `pnpm --filter @answra/cli test` | CLI 配置、会话、呈现与命令分派测试 |
 | `pnpm --filter @answra/cli smoke:electron` | 构建后用 Electron 35.0.0 的 Node 22.14 跑 CLI 与本地假模型端点 smoke |
-| `node apps/cli/dist/main.cjs code "..."` | 以系统 Node 运行 CLI；也可用 `ELECTRON_RUN_AS_NODE=1` 复用 Electron 35.0.0 的 Node |
+| `node apps/cli/dist/main.cjs code "..."` | 以系统 Node 22.13+ 运行 CLI；也可用 `ELECTRON_RUN_AS_NODE=1` 复用 Electron 35.0.0 的 Node |
 | `pnpm build` | 全 workspace 构建（desktop: esbuild + vite） |
 | `pnpm typecheck` | 各包依次 `tsc --noEmit`（desktop 按进程分三个编译单元） |
 | `pnpm test` | 各包测试（ui 使用 vitest + jsdom） |

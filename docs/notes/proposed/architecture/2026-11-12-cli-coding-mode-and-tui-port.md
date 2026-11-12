@@ -14,7 +14,7 @@
 - `conversation` 域的 `ConversationApplication` 绑定 Bot 目录、team preset 和 handoff；CLI v1 不需要这些语义，直接复用会把桌面多 Bot 编排拖进来。
 - `createBuiltinToolRegistry`、Bot 工厂和 profile 没有从 `@answra/agent` 公开导出，CLI 无法自行组合会话。
 - 模型端点与凭据在 desktop main 的 `modelRouter.ts` / `modelSettings.ts` 中，依赖 Electron `safeStorage` 和云端 OAuth；CLI 没有独立来源。
-- 架构守护只允许 `apps/agent/src` 和 desktop main/preload 使用 `node:` 内置模块，新 CLI/TUI 会被判越界。
+- 架构守护最初只允许 `apps/agent/src` 和 desktop main/preload 使用 `node:` 内置模块；CLI 需要把 `apps/cli/src` 加入白名单。
 - Claude Code 的 TUI 基于 Ink 和自研 fork；`src/components` 是 React Compiler 产物，并深度耦合 `AppState`、analytics、keybindings 和 `bun:bundle`，不能直接粘贴。
 
 本提案先冻结 v1 范围：**一个独立的 coding 领域与 Bot、无 VAD、无审批、TUI 行为 1:1**。多 Bot、team 与自动交接明确后置。
@@ -23,7 +23,7 @@
 
 - 代码/模块：
   - `apps/cli/`（新增）：Node 入口、coding host 装配、模型配置、TUI 业务组件与非 TTY 降级。
-  - `packages/tui/`（新增）：Claude Code Ink fork 的终端渲染引擎移植，不含业务。
+  - `apps/cli/src/tui/`（新增）：TUI 组件、view store，以及上游 Ink 缺失的 `AlternateScreen` / `ScrollBox` 原语。
   - `apps/agent/src/coding/`（新增）：CLI 专属 coding 领域。
     - `agent.ts`：`CODING_AGENT_ID`、独立身份、发现与 `AgentDefinition`。
     - `policy.ts`：coding 专用 system prompt、工具授权与上下文策略。
@@ -35,11 +35,11 @@
   - `apps/agent/src/composition.ts`：公开 `startCodingHost` 与 `CodingApplication` 的最小类型。
   - `apps/agent/src/conversation/`：不修改；桌面对话的 prompt、profile 和上下文构建保持原样。
   - `packages/ui/package.json`、`packages/ui/src/app/conversationView.ts`、`packages/ui/src/app/conversationParts.ts`：增加 `./conversation-view` 纯投影子入口。
-  - `scripts/architecture/architecture-check.mjs`：把 `apps/cli/src`、`packages/tui/src` 加入 node 内置模块白名单。
+  - `scripts/architecture/architecture-check.mjs`：把 `apps/cli/src` 加入 node 内置模块白名单；TUI 原语先留在 `apps/cli/src/tui`，不新增 `packages/tui`。
   - `apps/desktop/scripts/cli-packaging.mjs`、`apps/desktop/resources/cli/answra.cmd`、`apps/desktop/scripts/audit-packaged-app.cjs`、`apps/desktop/package.json`：安装包分发 CLI bundle、Windows shim 与打包审计。
   - `AGENTS.md`、`README.md`：同步包结构、依赖方向、领域表与仓库结构表。
 - UI/进程/协议/持久化表面：
-  - 进程：开发/系统 Node 模式为独立 Node 进程；安装包分发复用 Electron 29.4.6 内置 Node 20.9（`ELECTRON_RUN_AS_NODE=1`），不启动 GUI/Chromium，不新增 Node sidecar，不新增本地监听。
+  - 进程：开发/系统 Node 模式为独立 Node 进程；安装包分发复用 Electron 35.0.0 内置 Node 22.14（`ELECTRON_RUN_AS_NODE=1`），不启动 GUI/Chromium，不新增 Node sidecar，不新增本地监听。
   - 协议：不复用 `AgentCommand` / `AgentFrame`。CLI 在进程内直接调用 `CodingApplication`；未来若 attach 桌面，再走 `AgentTransport`。
   - 持久化：v1 沿用内存 store，退出即丢；不承诺恢复。
   - UI：终端 UI 与 DOM UI 分离；只共享纯投影逻辑，不共享组件。
@@ -65,7 +65,7 @@
 
 ### 1. 定位：CLI 是第三个宿主，coding 是独立领域
 
-- `apps/cli` 是可启动单元；`packages/tui` 是纯终端渲染库。
+- `apps/cli` 是可启动单元，TUI 先作为 `apps/cli/src/tui` 内部模块，不提前抽包。
 - `coding` 是与 `conversation`、`interview`、`answer` 平级的新领域，拥有自己的 Bot、prompt、policy 和会话用例；不 import `conversation/*` 或 `interview/*`，不启动 VAD/ASR。
 - CLI 与 desktop 共享 `core/*`（Agent runtime、工具、transcript 与其投影）、事件与快照 schema；不共享 Electron、窗口和 DOM UI。
 - CLI 在进程内直接组合，不使用 worker 线协议；未来 attach 桌面时再通过 `AgentTransport` 复用现有连接域。
@@ -120,24 +120,19 @@ AgentRuntime(emitEvent -> CLI 事件队列)
 - 读取顺序：环境变量优先，CLI 参数覆盖；v1 不读桌面 `safeStorage`，不依赖登录态。
 - 云端订阅登录后置。明确不通过读取桌面加密配置文件来“借用”凭据。
 
-### 5. TUI：行为 1:1，代码不 1:1
+### 5. TUI：上游 Ink 8 + CLI 本地补齐缺失原语
 
-原则：移植 Ink 引擎行为，按 Claude Code 的布局和交互重写所需组件；不直接搬运 `src/components` 的 React Compiler 编译产物。
+原则：以 `ink@8.0.0` + React 19.3 为底座，不移植 Claude Code 的 Ink fork；只补上游没有、但 Claude Code 体验必需的原语，并按 Claude Code 的布局重写业务组件，不复制其 React Compiler 产物。
 
-引擎移植范围（`packages/tui`）：
+运行时前提：Electron 35.0.0（Node 22.14.0）已确认无捕获保护问题，Ink 8 的 Node >=22 要求不再阻塞 TUI。
 
-- 必须：`dom`、`reconciler`、`ink`、`root`、`renderer`、`output`、`frame`、`screen`、`styles`、`render-node-to-output`、`render-border`、`measure-text`、`layout`、Yoga 的 TypeScript port、`termio`、`cursor`、`focus`、`events`。
-- 组件：`Box`、`Text`、`ScrollBox`、`AlternateScreen`、`App`、`Spacer`、`Newline`、`StdinContext`、`TerminalSizeContext`。
-- Hooks：`useInput`、`useStdin`、`useApp`、`useTerminalSize`、`useAnimationFrame`。
+- 直接使用上游：`Box`、`Text`、`useInput`、`useApp`、`useStdout`、`Static`、`Transform`、focus 等导出。
+- CLI 本地补齐（`apps/cli/src/tui/primitives/`）：
+  - `AlternateScreen`：进入/退出 1049 缓冲区，`--no-alt-screen` 可关闭。
+  - `ScrollBox`：固定视口、尾部跟随、PgUp/PgDn 和滚轮；基于 `useStdout`、`measureElement` 与 ANSI 行裁剪。
+  - `TerminalSize`：统一终端宽高、换行与宽字符处理。
+- 不引入 `packages/tui`；当出现第二个终端宿主或这些原语被复用时再抽取。
 - 后置：搜索高亮、鼠标选择、bidi、hyperlink、tab 状态、terminal query、vim 模式。
-
-必须解耦的 Claude Code 内部依赖：
-
-- `ScrollBox` 的 `bootstrap/state.markScrollActivity` → 局部滚动状态。
-- `ThemeProvider` 的 `utils/config` / `systemTheme` → CLI 自己的 ANSI 主题上下文。
-- `bun:bundle` 的 `feature()` → 常量或构建期 define。
-- `react/compiler-runtime` → 组件使用普通 TSX；引擎文件去掉 `_c` 记忆化。
-- analytics 与 `utils/debug` → CLI 本地日志。
 
 v1 业务组件：
 
@@ -177,27 +172,29 @@ v1 业务组件：
 
 - `apps/agent/src/coding/` 已完成独立 `coding.engineer` Bot、policy、context、`CodingApplication` 与 `startCodingHost`；`@answra/agent/composition` 已公开该入口。
 - `apps/cli/` 已完成 `main`、`cli`、`config`、`session`、`adapters`、`presentation`、`transport` 分层；`answra code` 支持 prompt、非 TTY stdin、help/version、正确退出码。
-- CLI 产物构建目标固定 `node20.9`，runtime floor 为 Node 20.9；仓库开发/CI 仍是 Node >=22.13，两者不是同一运行时。
-- 当前没有 `packages/tui` 或 `--no-alt-screen`；TTY 无 prompt 会明确报“TUI 尚未接入”，不伪装成交互界面。
+- Electron 35.0.0 / Node 22.14 迁移已落地（`b25839d`）：desktop worker 与 CLI bundle target 均为 `node22.14`，捕获保护测试已更新。
+- 当前没有 TUI 代码或 `--no-alt-screen`；TTY 无 prompt 会明确报“TUI 尚未接入”，不伪装成交互界面。
 - CLI bundle 已接入 answer/full 安装包：`apps/desktop/scripts/cli-packaging.mjs` 注入 `extraResources`（`../cli/dist` → `resources/cli`）和 Windows `extraFiles`（`resources/cli/answra.cmd` → `answra.cmd`）；`dist:win`/`dist:mac` 先执行 `build:cli`。安装目录审计检查 `resources/cli/main.cjs` 与 Windows shim。
 
-运行时选择：
+运行时选择（2026-11-12 修订）：
 
-- 桌面继续锁定 Electron 29.4.6（Node 20.9、Chromium 122）。仓库已实测 39.0.0 和 44.7.0 出现捕获保护回归，29.4.6 是当前唯一通过的基线。
-- 第一个带 Node 22 的 Electron 是 35.0.0（Node 22.14.0、Chromium 134），但它未通过本仓库的 Windows 捕获 A/B；不能因为 CLI 需要 Node 22 就升级 Electron。
-- 安装包分发不新增 85MB Node 22 sidecar：CLI bundle 约 5.8MB，随安装包分发后由已安装的 `Answra.exe` 以 `ELECTRON_RUN_AS_NODE=1` 执行。已验证 Electron 29.4.6 的 Node v20.9.0 可运行 CLI bundle、访问本地 OpenAI-compatible SSE 端点并以 0 退出；打包后的 `release/win-unpacked/Answra.exe` 与 `resources/cli/main.cjs` 也通过同一 smoke。`pnpm --filter @answra/desktop dist:win` 已成功生成 NSIS，安装包内容包含 `answra.cmd` 与 `resources/cli/main.cjs`。
-- 若未来 CLI 真的需要 Node 22-only API，再单独评估 Node 22 sidecar 或 Electron 升级；两项都必须另建 Note，并分别承担体积和隐身回归成本。
+- Electron 35.0.0 已确认无捕获保护问题并锁定为桌面基线：Node 22.14.0、Chromium 134；39.0.0 / 44.7.0 的捕获回归不影响该选择。
+- CLI runtime floor 提升到 Node >=22.13，与仓库开发/CI/pnpm 下限一致；构建 target 为 `node22.14`，不再保留 Node 20.9 兼容分支。
+- TUI 使用 `ink@8.0.0`（Node >=22、React >=19.3）+ React 19.3；本变更已补齐依赖与 engines，TUI 代码随后落地。
+- 安装包仍不新增 Node sidecar：CLI bundle 约 5.8MB，由已安装的 Electron 35 `Answra.exe` 以 `ELECTRON_RUN_AS_NODE=1` 执行。
+- 仓库内已有 NSIS / `win-unpacked` 可能是迁移前产物，不能作为 Electron 35 验收；发版前必须重新执行 `dist:win`、安装包审计、打包态 smoke 与捕获保护验收。
 
 ## 模块边界
 
 - `apps/agent/src/coding`：CLI coding 领域；只 import `core/*` 与 `@answra/shared`，不 import `conversation/*`、`interview/*`、CLI 或 TUI。
 - `apps/agent/src/conversation`：桌面通用对话；保持现有 prompt、profile 和上下文构建，不新增 coding profile，不感知 CLI。
 - `apps/agent/src/core/transcript`：跨领域 transcript 与投影；不放领域 prompt、Bot 身份或工具授权。
-- `packages/tui`：终端布局、渲染、输入、ANSI、滚动与 alt-screen；不 import `@answra/agent`、`@answra/shared`，不含 coding 业务。
-- `apps/cli`：组合根、模型配置、view store、业务 TUI 组件与非 TTY 降级；可 import `@answra/agent/composition`、`@answra/shared`、`@answra/ui/conversation-view`。
+- `apps/cli/src/tui`：Ink 业务组件、view store、ANSI 主题、`AlternateScreen` / `ScrollBox` 等缺失原语；不 import `@answra/agent` 的领域实现，只通过 CLI 端口取数据。
+- `apps/cli`：组合根、模型配置与非 TTY 降级；可 import `@answra/agent/composition`、`@answra/shared`、`@answra/ui/conversation-view`、`ink`、`react`。
+- `packages/tui`：本提案不新增。只有出现第二个终端宿主或原语被复用时，才从 `apps/cli/src/tui` 抽取；抽取前不承担额外包边界。
 - `packages/ui`：DOM 业务 UI；只新增纯投影子入口，不 import Ink 或 CLI。
 - `packages/shared`：跨进程/跨宿主契约；新增 env 常量，不放 TUI 组件或 Ink 类型。
-- `scripts/architecture`：允许 `apps/cli/src`、`packages/tui/src` 使用 `node:`；仍禁止本地监听和 Electron 依赖。
+- `scripts/architecture`：允许 `apps/cli/src` 使用 `node:`；如果未来抽出 `packages/tui`，再单独放行其源码，仍禁止本地监听和 Electron 依赖。
 
 ## 曾考虑的替代方案
 
@@ -205,28 +202,30 @@ v1 业务组件：
 - **复用 `conversation.general` Bot，只换一个 coding prompt：** 舍弃。桌面通用 Bot 的身份、发现、profile 和 `ConversationApplication` 的 team/handoff 语义都是为悬浮条对话设计的；CLI 借用它会把未打磨的桌面策略和团队编排带进来，也无法独立演进。改为新增 `coding` 领域。
 - **把 coding profile 加进 `conversation/profiles/registry.ts`：** 舍弃。这样仍让 CLI 依赖 `conversation` 域的类型和用例，违背“CLI 自己的 Bot”；profile 注册表也会混入两个产品面的策略。
 - **CLI 通过 Electron utility process 启动桌面 worker：** 舍弃。违背“Agent 脱离桌面也能跑”，要求桌面常驻，CI/SSH 不可用，还会把模型凭据绑在 `safeStorage`。
-- **直接复制 Claude Code 的 `src/ink` 和 `src/components`：** 舍弃为 v1 方案。组件是 React Compiler 产物，耦合 `AppState`、analytics、`bun:bundle`，代码量大且维护不可控，还有版权风险。改为移植引擎行为并重写所需组件。
+- **直接复制 Claude Code 的 `src/ink` 和 `src/components`：** 舍弃。组件是 React Compiler 产物，耦合 `AppState`、analytics、`bun:bundle`，代码量大且维护不可控，还有版权风险。改为使用上游 Ink 8 并重写业务组件。
+- **继续移植 Claude Code 的完整 Ink fork：** 舍弃。Node 22 已解锁上游 `ink@8.0.0`，完整 fork 只剩 ScrollBox/AlternateScreen 等少量缺口；为这些缺口维护约 100 个引擎文件不划算。先在 `apps/cli/src/tui` 补原语，确实不够再抽包。
 - **先用纯 readline 文本 REPL：** 舍弃。用户明确要 Claude Code 的 TUI 观感；文本 REPL 无法验证全屏、滚动、工具卡和 diff 这些核心交互。
 - **把纯投影抽成新的 headless 包：** 暂不。CLI 是第二个消费者，抽取合理，但会同时改 `packages/ui` 的导入与测试；v1 先用 `./conversation-view` 子入口，等出现第三个消费者或边界变脏再抽。
 - **v1 直接做多 Bot、team 与自动交接：** 舍弃。真实交接结果产出尚未实现，且 CLI 首要是跑通 TUI；单 Bot 已能验证全部 TUI 交互。
 - **引入通用 TUI 框架（blessed/OpenTUI）：** 舍弃。目标是复刻 Claude Code 的 Ink 行为；换框架会重写滚动、布局、输入和渲染语义。
-- **为 CLI 升级 Electron 到带 Node 22 的版本：** 舍弃。Electron 35.0.0 才带 Node 22，但 39/44 已实测捕获保护回归；CLI 不应倒逼桌面放弃已验证的 29.4.6 隐身基线。
-- **随安装包再带一个 Node 22 sidecar：** 舍弃。约 85MB，且与现有“复用 Electron 内置 Node”的边界冲突；CLI 当前没有 Node 22-only API。
-- **安装包复用 Electron 二进制作为 Node 运行时：** 采用。`ELECTRON_RUN_AS_NODE=1` 只运行 Node 逻辑，不创建窗口；CLI bundle 约 5.8MB，不新增 sidecar。已在 Electron 29.4.6 / Node v20.9.0 上完成 CLI 与本地假模型端点 smoke。
+- **为 CLI 升级 Electron 到带 Node 22 的版本：** 采用。Electron 35.0.0 已确认无捕获保护问题，Node 22.14 同时满足 CLI、Ink 8 与仓库下限；39/44 的回归不影响该选择。
+- **继续锁 Electron 29.4.6 / Node 20.9：** 舍弃。用户已确认 35.0.0 可用；继续锁旧基线只会迫使 TUI 停留在 Ink 6.8，并让 CLI 与仓库/Ink 的 Node 下限继续分裂。
+- **随安装包再带一个 Node 22 sidecar：** 舍弃。约 85MB，且与现有“复用 Electron 内置 Node”的边界冲突；Electron 35 已自带 Node 22.14，不需要 sidecar。
+- **安装包复用 Electron 二进制作为 Node 运行时：** 采用。`ELECTRON_RUN_AS_NODE=1` 只运行 Node 逻辑，不创建窗口；CLI bundle 约 5.8MB，不新增 sidecar。迁移后 smoke 改用 Electron 35 / Node 22.14。
 
 ## 验收标准
 
 - 可观察结果：
-  - `answra code` 在系统 Node 20.9+ 或 Electron 29.4.6 Node 模式、无 VAD/ASR 资源的 Windows 11 + Windows Terminal 上启动。
+  - `answra code` 在系统 Node 22.13+ 或 Electron 35.0.0 Node 模式、无 VAD/ASR 资源的 Windows 11 + Windows Terminal 上启动。
   - 输入编码指令后，TUI 依次显示思考、文本、工具调用、工具输出和最终回复；Ctrl-C 能取消。
   - Edit 调用显示多 hunk diff；Read、Grep、RunCommand 有独立工具卡。
   - 非 TTY 或 `--no-alt-screen` 时退化为逐行流式输出，不崩溃。
 - 自动化验证：
-  - `pnpm --filter @answra/tui test`：布局、滚动、输入、ANSI 宽度与 alt-screen 状态。
-  - `pnpm --filter @answra/cli test`：命令语法、模型配置、工作区、会话状态机、事件呈现、版本一致性与非 TTY 降级；当前 39 个用例。
-  - `pnpm --filter @answra/cli smoke:electron`：构建后由 Electron 29.4.6 Node 模式执行 help/version/错误路径与本地假 SSE。
+  - `pnpm --filter @answra/cli test`：命令语法、模型配置、工作区、会话状态机、事件呈现、TUI view store、ANSI 宽度、alt-screen 状态、版本一致性与非 TTY 降级。
+  - `pnpm --filter @answra/cli smoke:electron`：构建后由 Electron 35.0.0 的 Node 22.14 执行 help/version/错误路径与本地假 SSE。
   - `pnpm --filter @answra/desktop test`：CLI `extraResources`/`extraFiles` 配置与 Windows shim 内容。
   - `pnpm --filter @answra/agent test`：`coding` 的 profile 授权、单 Bot 会话、取消与 transcript；`conversation` 既有测试保持不变。
+  - Electron 35 迁移：`pnpm --filter @answra/desktop dist:win`、安装包审计、打包态 smoke 与 Windows 捕获保护 A/B 重新通过。
   - `pnpm architecture:check`、`pnpm notes:check`、`pnpm verify` 通过。
 - 需要的实机验证：
   - Windows 11 + Windows Terminal：中文、宽字符、长输出滚动、工具卡展开、diff 渲染和 Ctrl-C。
@@ -234,14 +233,16 @@ v1 业务组件：
 
 ## 风险
 
-- Ink fork 的引擎移植是主要工作量；React 19 与 `react-reconciler` 版本对齐需要先做 spike，失败会阻塞 TUI。
+- 上游 Ink 8 没有 `ScrollBox` / `AlternateScreen`，CLI 需要自己补；先做 Windows Terminal 的最小 spike，验证固定视口、尾部跟随、resize 与 ANSI 行裁剪，失败再考虑抽取或换实现。
+- Electron 35 迁移已落地，但 capture、native addon、electron-updater 与打包链仍需在 TUI 合并后重跑 desktop 测试、`dist:win`、安装包审计与打包态 smoke，不能只依赖版本号和单测。
 - `coding` 会重复少量消息组装逻辑（历史投影 + 本轮输入）；v1 接受，避免把桌面对话的时间/工作区策略拉进 CLI。若两个领域继续收敛，再抽共享构建器。
 - `CodingApplication` 与 `ConversationApplication` 会出现小范围会话循环重复；v1 接受，避免把 team/handoff 语义带进 CLI。若两者继续分叉，再抽共享的单 Bot application 原语。
 - 终端能力差异大：旧 conhost、VS Code 集成终端、SSH 终端对 alt-screen、鼠标和宽字符支持不同；v1 只保证 Windows Terminal，其他环境走降级。
-- 版权与维护：Claude Code 是 Anthropic 还原源码，引擎与组件只能行为复刻，不能整段粘贴；引入 MIT 上游代码时必须保留声明并记录来源。
+- 版权与维护：Claude Code 是 Anthropic 还原源码，业务组件只能行为复刻，不能整段粘贴；上游 Ink 8 为 MIT，需保留声明并记录来源。
 - 无审批的 shell 是任意命令执行，与桌面现状一致，但 CLI 更容易被脚本化；后续审批必须单独写 Note。
 - 模型配置走环境变量会在 shell 历史和进程环境中暴露 key；v1 接受，后续做本地配置文件或 OS keychain。
 - 内存 transcript 退出即丢，用户可能误以为可恢复；启动文案和 `--help` 必须明确。
-- 放宽 `node:` 白名单会扩大平台依赖面；必须只放行 `apps/cli/src`、`apps/cli/scripts` 和 `packages/tui/src`，仍禁止本地监听与 Electron 依赖。
-- CLI 复用 Electron 29.4.6 的 Node 20.9 意味着 CLI 也继承该版本的维护期风险；Electron 升级必须另行完成 Windows 捕获 A/B，不能用 CLI 需求绕过。
+- 放宽 `node:` 白名单会扩大平台依赖面；必须只放行 `apps/cli/src`、`apps/cli/scripts`，未来抽出 `packages/tui` 时再单独放行；仍禁止本地监听与 Electron 依赖。
+- CLI 复用 Electron 35 的 Node 22.14 意味着 CLI 也继承该版本的维护期风险；后续升级仍必须完成 Windows 捕获 A/B，不能用 CLI 需求绕过。
+- 迁移后系统 Node 20.9 不再能运行 CLI；`--help`、README 与安装包说明必须明确 Node >=22.13，避免用户把旧 Node 环境的失败误判为 Agent 故障。
 - Windows shim 不自动注册 PATH；用户需使用安装目录内的 `answra.cmd` 或手动加入 PATH。macOS/Linux 当前只分发 CLI bundle，尚未提供 POSIX shim。
