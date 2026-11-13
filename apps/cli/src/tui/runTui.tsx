@@ -6,9 +6,8 @@ import type { ModelSettings } from "../model/ports";
 import type { CodingSession } from "../session/codingSession";
 import { App } from "./app/App";
 import type { TuiViewStore } from "./app/viewStore";
-import { TUI_HELP_LINES } from "./commands/help";
-import { handleModelCommand } from "./commands/modelCommand";
-import { parseTuiCommand, type TuiCommand } from "./commands/parse";
+import { dispatchTuiCommand, type TuiCommandDeps } from "./commands/dispatch";
+import { parseTuiCommand } from "./commands/parse";
 import { createClipboardWriter } from "./interaction/clipboard";
 import { createPointerInput } from "./interaction/pointerInput";
 import { createSelectionActions } from "./interaction/selectionActions";
@@ -71,9 +70,9 @@ export async function runInkTui({
   let exitTui: (() => void) | undefined;
 
   const submit = (text: string): void => {
-    const command = parseTuiCommand(text);
-    if (command) {
-      void handleCommand(command);
+    const invocation = parseTuiCommand(text);
+    if (invocation) {
+      void dispatchTuiCommand(invocation, commandDeps);
       return;
     }
     if (setupStep !== undefined) {
@@ -109,9 +108,13 @@ export async function runInkTui({
     store.setModelConfigured(true);
   };
 
-  const requireSession = (): CodingSession => {
-    if (session === undefined) throw new Error("尚未配置模型。");
-    return session;
+  const commandDeps: TuiCommandDeps = {
+    store,
+    modelSettings,
+    isBusy: () => busy,
+    getSession: () => session,
+    configureSession: ensureSession,
+    requestExit: () => exitTui?.(),
   };
 
   const handleSetup = async (text: string): Promise<void> => {
@@ -158,48 +161,6 @@ export async function runInkTui({
       store.setSetupStep(setupStep);
       store.fail(messageOf(error));
       store.setNotice(undefined);
-    }
-  };
-
-  const handleCommand = async (command: TuiCommand): Promise<void> => {
-    switch (command.kind) {
-      case "help":
-        store.setNotice(TUI_HELP_LINES);
-        return;
-      case "exit":
-        if (busy) {
-          store.setNotice(["当前运行中，先按 Esc 中断后再退出。"]);
-          return;
-        }
-        exitTui?.();
-        return;
-      case "clear":
-        if (busy) {
-          store.setNotice(["当前运行中，先按 Esc 中断后再清除会话。"]);
-          return;
-        }
-        try {
-          store.reset(await requireSession().clear());
-          store.setNotice(["会话已清除。"]);
-        } catch (error) {
-          store.fail(messageOf(error));
-        }
-        return;
-      case "model":
-        try {
-          await handleModelCommand(command.args, {
-            busy,
-            ...(session === undefined ? {} : { session }),
-            configureSession: ensureSession,
-            store,
-            modelSettings,
-          });
-        } catch (error) {
-          store.fail(messageOf(error));
-        }
-        return;
-      case "unknown":
-        store.setNotice([`未知命令：/${command.name}`, "输入 /help 查看可用命令。"]);
     }
   };
 

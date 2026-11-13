@@ -213,9 +213,12 @@ apps/cli/src/tui/
     selectionActions.ts
     clipboard.ts
   commands/
+    catalog.ts
     parse.ts
+    dispatch.ts
     help.ts
     modelCommand.ts
+    CommandPalette.tsx
 ```
 
 拆分理由：
@@ -224,7 +227,7 @@ apps/cli/src/tui/
 - `composer/` 只回答“用户怎么输入”，`inputLayout.ts` 与 `PromptInput` 同域演进。
 - `chrome/` 只放全局视觉与运行态，不放消息内容。
 - `interaction/` 只放终端交互原语；新增鼠标能力只改这里。
-- `commands/` 把类型、帮助、模型命令分开；`runTui.tsx` 只接线。
+- `commands/` 把目录、解析、分派、帮助、候选面板与模型命令分开；`runTui.tsx` 只接线。
 - 每个目录控制在 12 个文件以内；`transcript/tool/` 是工具展示的唯一落点，新增工具不改 transcript 其他文件。
 
 ### 桌面适配调整

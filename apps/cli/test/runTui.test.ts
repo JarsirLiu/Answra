@@ -234,6 +234,38 @@ describe("runInkTui", () => {
     store.dispose();
   });
 
+  it("reports unknown commands without sending a prompt", async () => {
+    const { session } = createSession();
+    const store = new TuiViewStore();
+    const { props, finish } = await start(session, store);
+
+    props.onSubmit("/missing");
+    await tick();
+
+    expect(session.send).not.toHaveBeenCalled();
+    expect(store.getSnapshot().notice).toEqual(["未知命令：/missing", "输入 /help 查看可用命令。"]);
+
+    finish();
+    store.dispose();
+  });
+
+  it("rejects clear while a run is active", async () => {
+    const { session } = createSession();
+    const store = new TuiViewStore();
+    const { props, finish } = await start(session, store);
+
+    props.onSubmit("first");
+    await tick();
+    props.onSubmit("/clear");
+    await tick();
+
+    expect(session.clear).not.toHaveBeenCalled();
+    expect(store.getSnapshot().notice).toEqual(["当前运行中，先按 Esc 中断后再清除会话。"]);
+
+    finish();
+    store.dispose();
+  });
+
   it("wires selection frame commits when the alternate screen is enabled", async () => {
     const { session } = createSession();
     const store = new TuiViewStore();

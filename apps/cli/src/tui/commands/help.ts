@@ -1,5 +1,8 @@
-/** TUI `/help` 文案；命令行来自 catalog，只放用户可见说明，不参与命令解析。 */
-import { TUI_COMMANDS } from "./catalog";
+/** TUI `/help` 文案；命令用法来自 catalog，本文件只负责对齐与排版。 */
+import stringWidth from "string-width";
+import { TUI_COMMANDS, tuiCommandHelpUsage } from "./catalog";
+
+const HELP_USAGE_COLUMN = 32;
 
 const TUI_HELP_FOOTER = [
   "输入 / 查看命令，Tab 补全；Enter 发送或排队。",
@@ -12,6 +15,14 @@ const TUI_HELP_FOOTER = [
 
 export const TUI_HELP_LINES: readonly string[] = [
   "本地命令：",
-  ...TUI_COMMANDS.flatMap((command) => command.helpLines),
+  ...TUI_COMMANDS.flatMap((command) => [
+    formatCommandLine(tuiCommandHelpUsage(command), command.summary),
+    ...(command.helpDetails ?? []).map((detail) => formatCommandLine(detail.usage, detail.summary)),
+  ]),
   ...TUI_HELP_FOOTER,
 ];
+
+function formatCommandLine(usage: string, summary: string): string {
+  const padding = Math.max(2, HELP_USAGE_COLUMN - stringWidth(usage));
+  return `  ${usage}${" ".repeat(padding)}${summary}`;
+}
