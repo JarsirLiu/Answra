@@ -1,4 +1,4 @@
-import type { AgentConnectionState } from "@answra/shared";
+import type { AgentConnectionState, ContextCompactionStatus } from "@answra/shared";
 import { render, screen } from "@testing-library/react";
 import { createRef } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -10,6 +10,7 @@ import { ChatPanel } from "../src/components/panels/ChatPanel";
 
 interface ChatRenderOptions {
   connection?: AgentConnectionState;
+  contextCompaction?: ContextCompactionStatus;
   error?: string;
   retry?: ConversationRetry;
 }
@@ -30,11 +31,83 @@ function renderChat(messages: ConversationViewMessage[], options: ChatRenderOpti
       stealth={false}
       streaming={false}
       connection={options.connection}
+      contextCompaction={options.contextCompaction}
       error={options.error}
       retry={options.retry}
     />,
   );
 }
+
+describe("ChatPanel context compaction", () => {
+  it("shows automatic compaction progress without a model error", () => {
+    renderChat([], {
+      contextCompaction: {
+        state: "summarizing",
+        trigger: "auto",
+        startedAt: "2026-11-13T10:00:00.000Z",
+        updatedAt: "2026-11-13T10:00:01.000Z",
+      },
+    });
+
+    expect(screen.getByText("正在压缩上下文…")).toBeInTheDocument();
+  });
+
+  it("shows the compaction result and failure independently", () => {
+    const { rerender } = render(
+      <ChatPanel
+        attachments={[]}
+        contextCompaction={{
+          state: "succeeded",
+          trigger: "auto",
+          startedAt: "2026-11-13T10:00:00.000Z",
+          updatedAt: "2026-11-13T10:00:01.000Z",
+          finishedAt: "2026-11-13T10:00:01.000Z",
+          summarizedMessages: 8,
+        }}
+        draft=""
+        fileInputRef={createRef<HTMLInputElement>()}
+        messages={[]}
+        onAttachmentChange={vi.fn()}
+        onAttachmentRemove={vi.fn()}
+        onCancel={vi.fn()}
+        onClose={vi.fn()}
+        onDraftChange={vi.fn()}
+        onSend={vi.fn()}
+        stealth={false}
+        streaming={false}
+      />,
+    );
+
+    expect(screen.getByText("上下文压缩完成（8 条消息）")).toBeInTheDocument();
+
+    rerender(
+      <ChatPanel
+        attachments={[]}
+        contextCompaction={{
+          state: "failed",
+          trigger: "auto",
+          startedAt: "2026-11-13T10:00:00.000Z",
+          updatedAt: "2026-11-13T10:00:01.000Z",
+          finishedAt: "2026-11-13T10:00:01.000Z",
+          errorText: "摘要模型不可用",
+        }}
+        draft=""
+        fileInputRef={createRef<HTMLInputElement>()}
+        messages={[]}
+        onAttachmentChange={vi.fn()}
+        onAttachmentRemove={vi.fn()}
+        onCancel={vi.fn()}
+        onClose={vi.fn()}
+        onDraftChange={vi.fn()}
+        onSend={vi.fn()}
+        stealth={false}
+        streaming={false}
+      />,
+    );
+
+    expect(screen.getByRole("alert")).toHaveTextContent("上下文压缩失败：摘要模型不可用");
+  });
+});
 
 describe("ChatPanel tool calls", () => {
   it("renders a compact tool row inline from message parts", () => {

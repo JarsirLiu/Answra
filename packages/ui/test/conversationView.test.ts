@@ -310,6 +310,27 @@ describe("conversation projection", () => {
     expect(next.error).toBeUndefined();
   });
 
+  it("carries context compaction state from the snapshot", () => {
+    const view = applyConversationSnapshot(EMPTY_CONVERSATION_VIEW, {
+      conversationId: CONVERSATION,
+      eventRevision: 3,
+      messages: [],
+      contextCompaction: {
+        state: "failed",
+        trigger: "auto",
+        startedAt: "2026-11-13T10:00:00.000Z",
+        updatedAt: "2026-11-13T10:00:01.000Z",
+        finishedAt: "2026-11-13T10:00:01.000Z",
+        errorText: "摘要模型不可用",
+      },
+    });
+
+    expect(view.contextCompaction).toMatchObject({
+      state: "failed",
+      errorText: "摘要模型不可用",
+    });
+  });
+
   it("ignores old revisions and other conversations", () => {
     const view: ConversationView = { eventRevision: 5, messages: [] };
     expect(applyAgentEvent(view, envelope(5, { type: "start" }))).toBe(view);

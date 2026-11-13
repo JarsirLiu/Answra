@@ -603,6 +603,42 @@ describe("memory conversation team metadata and handoff", () => {
     expect(snapshot.eventRevision).toBe(6);
   });
 
+  it("persists compaction state outside the transcript snapshot", async () => {
+    const store = new MemoryConversationStore();
+    await store.create("team", seed);
+    await store.saveContextState("team", {
+      checkpoints: [
+        {
+          summary: "旧摘要",
+          throughMessageId: "user-1",
+          createdAt: "2026-11-13T10:00:00.000Z",
+          messageCount: 2,
+        },
+      ],
+      compaction: {
+        state: "succeeded",
+        trigger: "auto",
+        startedAt: "2026-11-13T10:00:00.000Z",
+        updatedAt: "2026-11-13T10:00:01.000Z",
+        finishedAt: "2026-11-13T10:00:01.000Z",
+        summarizedMessages: 2,
+      },
+    });
+
+    expect(await store.loadContextState("team")).toMatchObject({
+      checkpoints: [{ summary: "旧摘要" }],
+      compaction: { state: "succeeded", summarizedMessages: 2 },
+    });
+    expect((await store.load("team")).contextCompaction).toMatchObject({
+      state: "succeeded",
+      summarizedMessages: 2,
+    });
+
+    await store.clear("team");
+    expect(await store.loadContextState("team")).toBeUndefined();
+    expect((await store.load("team")).contextCompaction).toBeUndefined();
+  });
+
   it("rejects an unknown active Bot", async () => {
     const store = new MemoryConversationStore();
     await store.create("team", seed);

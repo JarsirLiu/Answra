@@ -146,6 +146,7 @@ function useAiConversation(
     activeRunId: view.activeRunId,
     cancel,
     clearMessages,
+    contextCompaction: view.contextCompaction,
     reconcileSnapshot: reconcileRunSnapshot,
     messages: view.messages,
     replyError: sendError ?? view.error,

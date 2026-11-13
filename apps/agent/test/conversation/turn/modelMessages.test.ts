@@ -35,7 +35,10 @@ function legacyStore(messages: ConversationMessage[]): ConversationStore {
     eventRevision: 0,
     messages,
   };
-  return { load: async () => snapshot } as unknown as ConversationStore;
+  return {
+    load: async () => snapshot,
+    loadContextState: async () => undefined,
+  } as unknown as ConversationStore;
 }
 
 describe("conversation model messages", () => {

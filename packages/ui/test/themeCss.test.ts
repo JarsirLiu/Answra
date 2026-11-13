@@ -210,6 +210,7 @@ describe("theme CSS integrity", () => {
       "MessageActions.module.css",
       "MessageStream.module.css",
       "MessageTimeline.module.css",
+      "ContextCompactionNotice.module.css",
       "ModelErrorNotice.module.css",
       "TextResponse.module.css",
       "ThinkingReasoning.module.css",

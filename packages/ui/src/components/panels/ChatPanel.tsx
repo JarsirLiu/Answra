@@ -1,10 +1,11 @@
-import type { AgentConnectionState, DesktopBridge } from "@answra/shared";
+import type { AgentConnectionState, ContextCompactionStatus, DesktopBridge } from "@answra/shared";
 import { LoaderCircle, X } from "lucide-react";
 import { type RefObject, useRef } from "react";
 import { ICON_SM } from "../../tokens";
 import {
   AssistantMessage,
   ConnectionNotice,
+  ContextCompactionNotice,
   formatConnectionNotice,
   MessageStream,
   ModelErrorNotice,
@@ -44,6 +45,8 @@ interface ChatPanelProps {
   retry?: ConversationRetry;
   /** Agent worker 链路状态；与模型重试/错误互斥展示。 */
   connection?: AgentConnectionState;
+  /** 上下文摘要压缩生命周期；独立于模型 run 状态。 */
+  contextCompaction?: ContextCompactionStatus;
   /** 本轮思考耗时（毫秒），回答开始输出后冻结。 */
   thinkingMs?: number;
   /**
@@ -84,6 +87,7 @@ export function ChatPanel({
   sending = false,
   retry,
   connection,
+  contextCompaction,
   thinkingMs,
   error,
   onSignIn,
@@ -107,6 +111,7 @@ export function ChatPanel({
     retry ? `retry:${retry.attempt}/${retry.maxRetries}` : "",
     error ? `error:${error}` : "",
     connection ? `connection:${connection.revision}` : "",
+    contextCompaction ? `compaction:${contextCompaction.state}:${contextCompaction.updatedAt}` : "",
   ].join("|");
   return (
     <PanelShell
@@ -178,6 +183,7 @@ export function ChatPanel({
             )}
           </article>
         ))}
+        {contextCompaction && <ContextCompactionNotice status={contextCompaction} />}
         <ConnectionNotice state={connection} />
         {!connectionNotice && retry && <RetryNotice retry={retry} />}
         {!connectionNotice && error && <ModelErrorNotice message={error} onSignIn={onSignIn} />}
