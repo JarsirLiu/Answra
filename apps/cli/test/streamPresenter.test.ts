@@ -94,7 +94,7 @@ describe("stream presenter", () => {
     );
 
     expect(output.stdout).toBe(
-      "[tool] Read(src/a.ts)\n[tool] Read ok 12ms\n\n[tool] Edit(src/b.ts)\n[tool] Edit failed 3ms: permission denied\n",
+      "[tool] Read(src/a.ts)\n[tool] Read ok 12ms\n\n[tool] Update(src/b.ts)\n[tool] Update failed 3ms: permission denied\n",
     );
   });
 

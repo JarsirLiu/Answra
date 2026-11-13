@@ -127,6 +127,19 @@ function checkImports(pkg) {
     for (const match of code.matchAll(/(?:from|import)\s+["']([^"']+)["']/g)) {
       const spec = match[1];
 
+      // 6. 工具展示模型必须保持 host 无关：不得引入 React/DOM/Ink/图标/CSS/Agent 运行时。
+      if (
+        normalizedRel.startsWith("packages/ui/src/tool-presentation/") &&
+        (spec === "react" ||
+          spec === "react-dom" ||
+          spec === "ink" ||
+          spec === "lucide-react" ||
+          spec.endsWith(".css") ||
+          spec.startsWith("@answra/agent"))
+      ) {
+        errors.push(`${rel}: tool-presentation 必须保持 host 无关，禁止导入 "${spec}"`);
+      }
+
       // 7. remote 纯库必须保持平台/宿主无关：不得引入 React/DOM/Ink、Node、Electron 或其它应用。
       if (
         normalizedRel.startsWith("packages/remote/") &&

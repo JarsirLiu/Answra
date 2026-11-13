@@ -79,6 +79,7 @@ export const readTool = defineTool<ReadInput, ReadOutput>({
     resultBudget: { strategy: "truncate", maxModelChars: READ_FILE_MAX_BYTES },
   },
   inputSchema: READ_INPUT_SCHEMA,
+  exposeOutput: true,
   handler: (input, context) => executeRead(context, input),
   formatModelContent: formatReadOutput,
 });

@@ -277,6 +277,97 @@ describe("builtin workspace tools", () => {
     await expect(executeGrep(context(null), { pattern: "secret" })).rejects.toThrow("绝对路径");
   });
 
+  it("exposes structured builtin outputs while keeping the model text unchanged", () => {
+    const registry = createBuiltinToolRegistry();
+    const tools = registry.authorize(
+      [
+        toolId("workspace.read"),
+        toolId("workspace.grep"),
+        toolId("workspace.edit"),
+        toolId("workspace.run-command"),
+        toolId("workspace.write-stdin"),
+      ],
+      sessionContext(null),
+    );
+
+    expect(registry.list().every((entry) => entry.exposeOutput === true)).toBe(true);
+
+    const readOutput = {
+      type: "text" as const,
+      filePath: "a.ts",
+      content: "hello",
+      numLines: 1,
+      startLine: 1,
+      totalLines: 1,
+    };
+    expect(
+      tools.Read?.toModelOutput?.({ toolCallId: "read", input: {}, output: readOutput }),
+    ).toEqual({ type: "text", value: "1\thello" });
+
+    const grepOutput = {
+      type: "files_with_matches" as const,
+      files: ["a.ts"],
+      truncated: false,
+    };
+    expect(
+      tools.Grep?.toModelOutput?.({ toolCallId: "grep", input: {}, output: grepOutput }),
+    ).toEqual({ type: "text", value: "a.ts" });
+
+    const editOutput = {
+      type: "edited" as const,
+      filePath: "a.ts",
+      replacements: 1,
+      replaceAll: false,
+      lineEndings: "lf" as const,
+      sizeBytes: 1,
+      diff: {
+        hunks: [
+          {
+            oldStart: 1,
+            oldLines: 1,
+            newStart: 1,
+            newLines: 1,
+            lines: [{ kind: "added" as const, text: "x" }],
+          },
+        ],
+        additions: 1,
+        deletions: 0,
+        truncated: false,
+      },
+    };
+    expect(
+      tools.Edit?.toModelOutput?.({ toolCallId: "edit", input: {}, output: editOutput }),
+    ).toEqual({
+      type: "text",
+      value:
+        "The file a.ts has been updated successfully. Replaced 1 occurrence. No need to read it again to verify.",
+    });
+
+    const runOutput = {
+      kind: "result" as const,
+      result: {
+        stdout: "ok",
+        stderr: "",
+        outcome: { type: "exit" as const, exitCode: 0 },
+      },
+    };
+    expect(
+      tools.RunCommand?.toModelOutput?.({ toolCallId: "run", input: {}, output: runOutput }),
+    ).toEqual({ type: "text", value: "Exit code: 0\nok" });
+
+    const snapshot = {
+      status: "completed",
+      sessionId: "shell-1",
+      stdout: "ok",
+      stderr: "",
+      exitCode: 0,
+      outputTruncated: false,
+    };
+    expect(
+      tools.WriteStdin?.toModelOutput?.({ toolCallId: "stdin", input: {}, output: snapshot }),
+    ).toEqual({ type: "text", value: JSON.stringify(snapshot) });
+  });
+
   async function createRoot(): Promise<string> {
     const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "answra-agent-tools-")));
     roots.push(root);

@@ -184,6 +184,7 @@ export const grepTool = defineTool<GrepInput, GrepOutput>({
     },
   },
   inputSchema: GREP_INPUT_SCHEMA,
+  exposeOutput: true,
   handler: (input, context) => executeGrep(context, input),
   formatModelContent: formatGrepOutput,
 });

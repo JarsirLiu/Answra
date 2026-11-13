@@ -1,39 +1,50 @@
 import { describe, expect, it } from "vitest";
-import {
-  summarizeToolInput,
-  toolFinishLine,
-  toolLabel,
-  toolStartLine,
-} from "../src/presentation/toolLine";
+import { toolFinishLine, toolLabel, toolStartLine } from "../src/presentation/toolLine";
 
 describe("tool lines", () => {
   it("maps known tool names and preserves unknown names", () => {
     expect(toolLabel("workspace.read")).toBe("Read");
+    expect(toolLabel("Read")).toBe("Read");
+    expect(toolLabel("workspace.grep")).toBe("Search");
     expect(toolLabel("custom.tool")).toBe("custom.tool");
   });
 
   it("summarizes grep input with pattern and path", () => {
-    expect(summarizeToolInput("workspace.grep", { pattern: "needle", path: "src" })).toBe(
-      "needle in src",
-    );
     expect(
       toolStartLine({
         type: "tool-execution-started",
         toolCallId: "1",
         toolName: "workspace.grep",
+        input: { pattern: "needle", path: "src" },
+      }),
+    ).toBe('Search(pattern: "needle", path: "src")');
+    expect(
+      toolStartLine({
+        type: "tool-execution-started",
+        toolCallId: "1",
+        toolName: "Grep",
         input: { pattern: "needle" },
       }),
-    ).toBe("Grep(needle)");
+    ).toBe('Search(pattern: "needle")');
   });
 
-  it("joins command arrays and truncates long details", () => {
+  it("summarizes read and run-command inputs", () => {
     expect(
-      summarizeToolInput("workspace.run-command", {
-        command: ["pnpm", "vitest", "run"],
+      toolStartLine({
+        type: "tool-execution-started",
+        toolCallId: "1",
+        toolName: "workspace.read",
+        input: { file_path: "src/a.ts" },
       }),
-    ).toBe("pnpm vitest run");
-    const long = "x".repeat(100);
-    expect(summarizeToolInput("workspace.read", long)).toHaveLength(80);
+    ).toBe("Read(src/a.ts)");
+    expect(
+      toolStartLine({
+        type: "tool-execution-started",
+        toolCallId: "1",
+        toolName: "workspace.run-command",
+        input: { command: ["pnpm", "vitest", "run"] },
+      }),
+    ).toBe("Bash(pnpm vitest run)");
   });
 
   it("renders successful and failed finish lines", () => {
