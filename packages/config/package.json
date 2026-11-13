@@ -1,0 +1,23 @@
+{
+  "name": "@answra/config",
+  "version": "0.1.0",
+  "private": true,
+  "description": "桌面与 CLI 共享的非 secret 客户端模型配置：路径、校验与原子读写。",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@answra/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "typescript": "~5.9.3",
+    "vitest": "^5.0.3"
+  }
+}

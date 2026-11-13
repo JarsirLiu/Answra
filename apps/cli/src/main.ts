@@ -5,6 +5,7 @@ import process from "node:process";
 import { startCodingHost } from "@answra/agent/composition";
 import { createAgentCodingSessionHost } from "./adapters/agentCodingHost";
 import { runCli } from "./cli/runCli";
+import { loadSharedClientConfig } from "./config/sharedConfig";
 import { createProcessInput } from "./transport/input";
 import { createStreamOutput } from "./transport/output";
 import { createInkTuiRunner } from "./tui/runTui";
@@ -16,6 +17,7 @@ async function main(): Promise<void> {
       input: createProcessInput(process.stdin),
       output: createStreamOutput(process.stdout, process.stderr),
       cwd: process.cwd(),
+      loadSharedClientConfig,
       createSessionHost: ({ emitEvent, onSnapshot, workspaceRoot }) =>
         createAgentCodingSessionHost(startCodingHost({ emitEvent, onSnapshot, workspaceRoot })),
       createConversationId: randomUUID,

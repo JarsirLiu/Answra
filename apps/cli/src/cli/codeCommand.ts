@@ -13,7 +13,8 @@ type CodeOptions = Extract<CliOptions, { kind: "code" }>;
 
 export async function runCodeCommand(options: CodeOptions, deps: CliDependencies): Promise<number> {
   const workspaceRoot = await resolveWorkspaceRoot(options.cwd ?? deps.cwd);
-  const model = resolveModelConfig(options, deps.env);
+  const sharedConfig = await deps.loadSharedClientConfig();
+  const model = resolveModelConfig(options, deps.env, sharedConfig);
   const interactive = options.prompt === undefined && deps.input.isTTY;
   const text = (await resolvePrompt(options.prompt, deps)).trim();
   if (!interactive) {

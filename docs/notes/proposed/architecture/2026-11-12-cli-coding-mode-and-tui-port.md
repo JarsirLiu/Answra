@@ -117,8 +117,8 @@ AgentRuntime(emitEvent -> CLI 事件队列)
   - `ANSWRA_MODEL`：必填模型 ID。
   - `ANSWRA_API_KEY`：可选；本地 OpenAI 兼容端点可留空。
   - 复用现有 `ANSWRA_AI_BASE_URL`。
-- 读取顺序：环境变量优先，CLI 参数覆盖；v1 不读桌面 `safeStorage`，不依赖登录态。
-- 云端订阅登录后置。明确不通过读取桌面加密配置文件来“借用”凭据。
+- 读取顺序：CLI 参数 > 环境变量 > 桌面端共享的非 secret 本地模型配置（`@answra/config`）；v1 不读桌面 `safeStorage`，不依赖登录态。
+- 云端订阅登录后置。明确不通过读取桌面加密配置文件来“借用”凭据；共享配置只含 `baseUrl/model/answerModel`，API Key 仍由 CLI 自己提供。
 
 ### 5. TUI：上游 Ink 8 + CLI 本地补齐缺失原语
 

@@ -19,9 +19,13 @@ export const CLI_HELP = `Answra CLI
   -v, --version         显示版本
 
 环境变量:
-  ANSWRA_AI_BASE_URL    OpenAI 兼容端点（必填）
-  ANSWRA_MODEL          模型 ID（必填）
-  ANSWRA_API_KEY        API Key（可留空）
+  ANSWRA_AI_BASE_URL    OpenAI 兼容端点（与共享配置二选一）
+  ANSWRA_MODEL          模型 ID（与共享配置二选一）
+  ANSWRA_API_KEY        API Key（可留空；不读取桌面端加密密钥）
+
+共享配置:
+  未传 --base-url/--model 且环境变量为空时，读取桌面端「设置 → 模型」保存的本地模型配置。
+  API Key 不共享；需要鉴权时请单独设置 ANSWRA_API_KEY 或 --api-key。
 
 输入:
   提供 prompt 时作为单条消息发送并退出。

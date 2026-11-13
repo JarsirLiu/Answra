@@ -107,6 +107,7 @@
     "7zip-bin": "5.2.0",
     "@electron/asar": "3.4.1",
     "@answra/agent": "workspace:*",
+    "@answra/config": "workspace:*",
     "@answra/shared": "workspace:*",
     "@answra/ui": "workspace:*",
     "@resvg/resvg-js": "^2.6.2",

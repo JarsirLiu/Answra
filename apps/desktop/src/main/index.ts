@@ -1,5 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { sharedConfigPath } from "@answra/config";
 import { app, BrowserWindow, shell } from "electron";
 import { AgentService } from "./agent/agentService";
 import { createAmbientThemeController } from "./ambient";
@@ -16,7 +17,11 @@ import { configureChromiumCompatibility } from "./chromiumCompatibility";
 import { registerConnectionIpc } from "./connection/connectionIpc";
 import { registerConversationIpc } from "./conversation/conversationIpc";
 import { ModelRouter } from "./conversation/modelRouter";
-import { ModelSettingsStore, modelSettingsFilePath } from "./conversation/modelSettings";
+import {
+  ModelSettingsStore,
+  modelSettingsFilePath,
+  modelSettingsSecretPath,
+} from "./conversation/modelSettings";
 import { loadDevDotEnv } from "./devEnv";
 import { registerAmbientIpc } from "./ipc/ambientIpc";
 import { registerWindowIpc } from "./ipc/windowIpc";
@@ -63,8 +68,9 @@ let disposeWorkspace: (() => void) | undefined;
 let updateController: ReturnType<typeof createUpdateController> | undefined;
 let disposeUpdateIpc: (() => void) | undefined;
 const configDir = app.getPath("userData");
+const answraDataRoot = join(app.getPath("appData"), "Answra");
 // 面试记忆是用户可见数据，不能依赖 Electron 由 package name 派生的 userData 目录名。
-const interviewDataRoot = join(app.getPath("appData"), "Answra", "interview");
+const interviewDataRoot = join(answraDataRoot, "interview");
 mkdirSync(interviewDataRoot, { recursive: true });
 
 const authService = new AuthService({
@@ -79,7 +85,11 @@ const authService = new AuthService({
 });
 
 // 模型调用的端点与令牌都来自登录态：这里传惰性闭包，登录/刷新后自动生效，无需重启。
-const modelSettings = new ModelSettingsStore(modelSettingsFilePath(configDir));
+const modelSettings = new ModelSettingsStore({
+  configPath: sharedConfigPath(answraDataRoot),
+  legacyPath: modelSettingsFilePath(configDir),
+  secretPath: modelSettingsSecretPath(configDir),
+});
 const modelRouter = new ModelRouter({
   store: modelSettings,
   localAvailable: !app.isPackaged,

@@ -1,4 +1,5 @@
 /** CLI 应用层依赖端口；main.ts 注入真实实现，测试注入 fake。 */
+import type { ClientConfig } from "@answra/config";
 import type { ConversationSnapshot } from "@answra/shared";
 import type { AgentEventEnvelope } from "@answra/shared/schema";
 import type { CodingSessionHost } from "../session/codingSession";
@@ -17,6 +18,7 @@ export interface CliDependencies {
   input: InputPort;
   output: OutputPort;
   cwd: string;
+  loadSharedClientConfig(): Promise<ClientConfig | null>;
   createSessionHost(options: SessionHostOptions): CodingSessionHost;
   createConversationId(): string;
   onInterrupt(handler: () => void): () => void;

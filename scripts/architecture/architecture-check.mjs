@@ -168,7 +168,10 @@ function checkImports(pkg) {
           normalized.startsWith("apps/desktop/scripts/") ||
           normalized.startsWith("apps/agent/src/") ||
           normalized.startsWith("apps/cli/src/") ||
-          normalized.startsWith("apps/cli/scripts/");
+          normalized.startsWith("apps/cli/scripts/") ||
+          // 共享客户端配置是 Node-only 库，只允许 desktop main 与 CLI 消费；
+          // renderer/preload 仍禁止 node 内置。
+          normalized.startsWith("packages/config/src/");
         if (!allowed) {
           errors.push(`${rel}: "${spec}" 仅允许在 apps/desktop 的 main/preload 中使用`);
         }

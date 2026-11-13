@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@answra/agent": "workspace:*",
+    "@answra/config": "workspace:*",
     "@answra/shared": "workspace:*",
     "@answra/ui": "workspace:*",
     "ink": "8.0.0",

@@ -1,3 +1,4 @@
+import type { ClientConfig } from "@answra/config";
 import type { ConversationSendRequest, ConversationSnapshot } from "@answra/shared";
 import type { AgentEvent, AgentEventEnvelope } from "@answra/shared/schema";
 import { describe, expect, it, vi } from "vitest";
@@ -82,6 +83,7 @@ function createDependencies(
     input: createInput(""),
     output: createOutput(),
     cwd: process.cwd(),
+    loadSharedClientConfig: vi.fn(async () => null),
     createSessionHost: vi.fn(({ emitEvent }) => {
       const send = host.send;
       host.send = vi.fn(async (conversationId, request, token) => {
@@ -141,6 +143,40 @@ describe("runCli", () => {
       expect.objectContaining({ workspaceRoot: process.cwd() }),
     );
     expect(cleanup).toHaveBeenCalledTimes(1);
+    expect(deps.output).toMatchObject({ stdout: "hi\n", stderr: "" });
+  });
+
+  it("falls back to the desktop shared local model config", async () => {
+    const shared: ClientConfig = {
+      version: 1,
+      model: {
+        source: "cloud",
+        local: {
+          baseUrl: "http://127.0.0.1:1234/v1",
+          chatModel: "shared-model",
+          answerModel: "shared-answer",
+        },
+      },
+    };
+    const deps = createDependencies({
+      env: {},
+      loadSharedClientConfig: vi.fn(async () => shared),
+    });
+
+    await expect(runCli(["code", "hello"], deps)).resolves.toBe(0);
+    const host = (
+      deps.createSessionHost as unknown as {
+        mock: { results: Array<{ value: CodingSessionHost }> };
+      }
+    ).mock.results[0]?.value;
+    expect(host?.configure).toHaveBeenCalledWith({
+      chat: { baseUrl: "http://127.0.0.1:1234/v1", model: "shared-model", auth: "local" },
+      answer: {
+        baseUrl: "http://127.0.0.1:1234/v1",
+        model: "shared-answer",
+        auth: "local",
+      },
+    });
     expect(deps.output).toMatchObject({ stdout: "hi\n", stderr: "" });
   });
 

@@ -11,7 +11,7 @@ CLI 只有 `build`、`start` 与 `smoke:electron`：本地要用 TUI 必须先�
 - 代码/模块：根 `package.json`（新增 `dev:cli`）、`apps/cli/package.json`（新增 `dev` 与仅开发依赖 `tsx`）、`pnpm-lock.yaml`。
 - 工程流程：`pnpm dev:cli` 直接运行 CLI 源码；TTY 下进入 Ink TUI。
 - 不涉及：`apps/cli/src/**` 运行时源码、esbuild 构建脚本、发布 bundle 与安装包。
-- 相关 Note：[桌面端开发态加载仓库根 .env](2026-10-19-desktop-dev-dotenv.md)、[CLI coding 模式与 TUI 移植](../../proposed/architecture/2026-11-12-cli-coding-mode-and-tui-port.md)。
+- 相关 Note：[桌面端开发态加载仓库根 .env](2026-10-19-desktop-dev-dotenv.md)、[CLI coding 模式与 TUI 移植](../../proposed/architecture/2026-11-12-cli-coding-mode-and-tui-port.md)、[桌面端与 CLI 共享本地模型配置](../architecture/2026-11-13-shared-client-model-config.md)。
 
 ## 决定
 
@@ -32,7 +32,7 @@ CLI 只有 `build`、`start` 与 `smoke:electron`：本地要用 TUI 必须先�
 pnpm dev:cli
 ```
 
-需要模型配置时，在仓库根 `.env` 写入 `ANSWRA_AI_BASE_URL`、`ANSWRA_MODEL`、`ANSWRA_API_KEY`（参考 `.env.example`），或继续用 shell 环境变量/命令行参数覆盖。发布与 smoke 仍走 `pnpm --filter @answra/cli build` / `smoke:electron`。
+CLI 会优先读取 `--base-url` / `--model`、`ANSWRA_*` 环境变量，其次读取桌面端共享的 `Answra/config.json` 本地模型配置。只有共享配置不满足时才需要在仓库根 `.env` 写入 `ANSWRA_AI_BASE_URL`、`ANSWRA_MODEL`；需要鉴权时仍单独提供 `ANSWRA_API_KEY`（参考 `.env.example`）。发布与 smoke 仍走 `pnpm --filter @answra/cli build` / `smoke:electron`。
 
 ## 曾考虑的替代方案
 
@@ -41,7 +41,7 @@ pnpm dev:cli
 - **`tsx watch`：** 舍弃作为默认入口。它适合普通 CLI，但会在保存文件时打断正在运行的 TUI；需要热重启时开发者可显式使用，不把它作为 `dev:cli` 的默认行为。
 - **Node `--experimental-strip-types` / `process.loadEnvFile`：** 舍弃。源码大量无扩展名导入，原生类型剥离不提供 bundler 式解析；把 `.env` 读取写进 `src/main.ts` 又会让生产入口产生开发态副作用。
 - **把 `tsx` 放到根依赖：** 舍弃。只有 CLI 开发需要，放在包内能明确依赖边界，也避免其他包误用第二套 TypeScript 执行器。
-- **开发态直接读桌面端 `conversation-model.json`：** 舍弃。密钥由 Electron `safeStorage` 加密，CLI 直接解密需要平台专属实现并扩大密钥暴露面，属于独立决策。
+- **开发态直接解密桌面端 `conversation-model.json`：** 舍弃。密钥由 Electron `safeStorage` 加密，CLI 直接解密需要平台专属实现并扩大密钥暴露面；后续共享配置只迁移非 secret 字段，密钥仍不共享。
 
 ## 后果与防回退
 

@@ -77,6 +77,7 @@ packages/shared        跨进程契约：IPC 频道常量 + ChannelMap 类型、
   src/schema/events.ts Agent 全量事件目录与唯一 envelope；delta 不属于 durable 候选
   src/schema/status.ts Agent run/step 状态词汇与快照
   src/schema/connection.ts Agent 连接状态词汇与稳定失败码（桌面/CLI 共用）
+packages/config        Node-only 共享客户端配置：非 secret 本地模型地址/模型 ID、原子读写与迁移
 packages/ui            悬浮条与面板的全部业务 UI（React），含组件测试
 apps/desktop           Electron 桌面壳
   src/main             主进程：窗口管理、按领域拆分的 IPC handler
@@ -85,7 +86,7 @@ apps/desktop           Electron 桌面壳
   src/renderer         薄渲染层：仅挂载 <FloatingBarApp/>
 apps/cli              独立终端宿主：coding Bot 的 CLI 入口、模型配置、TUI 与非 TTY 流式输出
   src/cli              命令分派、code 用例、依赖端口与 help/error
-  src/config           argv、环境变量、模型端点与工作区校验
+  src/config           argv、环境变量、共享模型配置与工作区校验
   src/session          单活动 run 的 CodingSession 用例
   src/adapters         @answra/agent/composition 到 CLI 端口的映射
   src/presentation     Agent 事件到文本/工具行的纯投影
