@@ -1,4 +1,23 @@
 export {
+  type CreateRemoteCredentialRecordOptions,
+  type CreateRemoteHostAccessKeyRecordOptions,
+  createRemoteCredentialRecord,
+  createRemoteHostAccessKeyRecord,
+  type GeneratedRemoteAccessKey,
+  type GenerateRemoteAccessKeyOptions,
+  generateRemoteAccessKey,
+  hashRemoteAccessKeySecret,
+  isRemoteHostAccessKeyActive,
+  type ParsedRemoteAccessKey,
+  parseRemoteAccessKey,
+  REMOTE_ACCESS_KEY_DEFAULT_DAYS,
+  REMOTE_ACCESS_KEY_MAX_DAYS,
+  REMOTE_ACCESS_KEY_MIN_DAYS,
+  REMOTE_ACCESS_KEY_VERSION,
+  type RemoteCredentialRecord,
+  type RemoteHostAccessKeyRecord,
+} from "./access/accessKey";
+export {
   RemoteControllerSession,
   type RemoteControllerSessionOptions,
   type RemoteControllerState,
@@ -12,6 +31,7 @@ export {
   type RemoteHostSessionOptions,
 } from "./host/remoteHostSession";
 export type { RemoteCredentialStore } from "./ports/credentialStore";
+export type { RemoteHostKeyStore } from "./ports/hostKeyStore";
 export type {
   RemoteLink,
   RemoteLinkState,

@@ -21,3 +21,4 @@ export {
   createFakeModelConfig,
   createFakeModelSettingsView,
 } from "./fixtures";
+export { createMemoryCredentialStore, createMemoryHostKeyStore } from "./memoryStores";
