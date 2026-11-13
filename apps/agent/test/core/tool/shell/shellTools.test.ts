@@ -105,32 +105,81 @@ async function waitForPath(filePath: string, timeoutMs = 3_000): Promise<void> {
   }
 }
 
+const PROCESS_TREE_TIMEOUT_MIN_MS = 2_000;
+const PROCESS_TREE_START_MARGIN_MS = 2_000;
+const PROCESS_TREE_START_WAIT_MS = 15_000;
+const PROCESS_TREE_EXIT_WAIT_MS = 5_000;
+const PROCESS_TREE_RELEASE_OBSERVE_MS = 1_000;
+
 /**
- * 父进程启动一个孙进程，孙进程延迟写 marker；父进程写 started 后常驻。
- * 超时/取消后 marker 仍出现，说明只杀了根进程而没有收割进程树。
+ * 父进程启动一个孙进程；孙进程写 started 后等待 release，收到 release 再写 marker。
+ * 超时/取消后先等孙进程退出，再写 release；如果 marker 仍出现，说明进程树没有收割完。
  */
-async function writeProcessTree(
-  workspace: string,
-): Promise<{ command: string; started: string; marker: string }> {
+async function writeProcessTree(workspace: string): Promise<{
+  command: string;
+  started: string;
+  childPid: string;
+  release: string;
+  marker: string;
+}> {
   const started = path.join(workspace, "started.txt");
+  const childPid = path.join(workspace, "child.pid");
+  const release = path.join(workspace, "release.txt");
   const marker = path.join(workspace, "leaked.txt");
   const child = path.join(workspace, "child.cjs");
   const parent = path.join(workspace, "parent.cjs");
   await fs.writeFile(
     child,
-    `setTimeout(() => require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'leaked'), 2_500)`,
+    [
+      "const { existsSync, writeFileSync } = require('node:fs')",
+      `writeFileSync(${JSON.stringify(started)}, 'started')`,
+      "const timer = setInterval(() => {",
+      `  if (!existsSync(${JSON.stringify(release)})) return`,
+      "  clearInterval(timer)",
+      `  writeFileSync(${JSON.stringify(marker)}, 'leaked')`,
+      "}, 25)",
+    ].join("\n"),
   );
   await fs.writeFile(
     parent,
     [
       "const { spawn } = require('node:child_process')",
       "const { writeFileSync } = require('node:fs')",
-      `spawn(process.execPath, [${JSON.stringify(child)}], { stdio: 'ignore' })`,
-      `writeFileSync(${JSON.stringify(started)}, 'started')`,
-      "setTimeout(() => {}, 5_000)",
+      `const child = spawn(process.execPath, [${JSON.stringify(child)}], { stdio: 'ignore' })`,
+      `writeFileSync(${JSON.stringify(childPid)}, String(child.pid))`,
+      "setTimeout(() => {}, 30_000)",
     ].join("\n"),
   );
-  return { command: nodeCommand(parent), started, marker };
+  return { command: nodeCommand(parent), started, childPid, release, marker };
+}
+
+async function releaseProcessTree(childPidPath: string, release: string): Promise<boolean> {
+  const pid = Number.parseInt(await fs.readFile(childPidPath, "utf8"), 10);
+  const exited = await waitForProcessExit(pid, PROCESS_TREE_EXIT_WAIT_MS);
+  await fs.writeFile(release, "release", "utf8");
+  await new Promise((resolve) => setTimeout(resolve, PROCESS_TREE_RELEASE_OBSERVE_MS));
+  return exited;
+}
+
+async function waitForProcessExit(pid: number, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!processExists(pid)) return true;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return !processExists(pid);
+}
+
+function processExists(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error: unknown) {
+    if (error instanceof Error && "code" in error) {
+      if ((error as NodeJS.ErrnoException).code === "ESRCH") return false;
+    }
+    throw error;
+  }
 }
 
 describe("RunCommand", { timeout: 30_000 }, () => {
@@ -330,30 +379,39 @@ describe("RunCommand", { timeout: 30_000 }, () => {
 
   it("terminates the whole process tree on timeout", async () => {
     const root = await createRoot();
-    const { command, started, marker } = await writeProcessTree(root);
+    const { command, started, childPid, release, marker } = await writeProcessTree(root);
     const tools = createTools();
-    const result = await execute(tools, { command, timeoutMs: 1_000 }, root);
+    const warmupStartedAt = Date.now();
+    await execute(tools, { command: "echo ready" }, root);
+    const startupMs = Date.now() - warmupStartedAt;
+    const timeoutMs = Math.max(
+      PROCESS_TREE_TIMEOUT_MIN_MS,
+      startupMs + PROCESS_TREE_START_MARGIN_MS,
+    );
+
+    const pending = execute(tools, { command, timeoutMs }, root);
+    await waitForPath(started, timeoutMs);
+    const result = await pending;
 
     expect(modelText(result)).toContain("Command timed out");
-    await waitForPath(started);
-    await new Promise((resolve) => setTimeout(resolve, 2_500));
+    expect(await releaseProcessTree(childPid, release)).toBe(true);
     expect(await pathExists(marker)).toBe(false);
-  }, 10_000);
+  }, 30_000);
 
   it("terminates the whole process tree when the run is cancelled", async () => {
     const root = await createRoot();
-    const { command, started, marker } = await writeProcessTree(root);
+    const { command, started, childPid, release, marker } = await writeProcessTree(root);
     const tools = createTools();
     const controller = new AbortController();
     const pending = execute(tools, { command }, root, controller.signal);
-    await waitForPath(started);
+    await waitForPath(started, PROCESS_TREE_START_WAIT_MS);
     controller.abort();
     const result = await pending;
 
     expect(result).toMatchObject({ success: false, error: { code: "aborted" } });
-    await new Promise((resolve) => setTimeout(resolve, 2_500));
+    expect(await releaseProcessTree(childPid, release)).toBe(true);
     expect(await pathExists(marker)).toBe(false);
-  }, 10_000);
+  }, 30_000);
 
   it("cleans the PowerShell error wrapper without losing the message", async () => {
     if (process.platform !== "win32") return;
