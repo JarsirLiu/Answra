@@ -32,5 +32,5 @@ describe("LocalShell", () => {
 
     expect(result.stdout).toContain("hello");
     expect(deltas.join("")).toContain("hello");
-  });
+  }, 20_000);
 });

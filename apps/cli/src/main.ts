@@ -7,6 +7,7 @@ import { createAgentCodingSessionHost } from "./adapters/agentCodingHost";
 import { runCli } from "./cli/runCli";
 import { createProcessInput } from "./transport/input";
 import { createStreamOutput } from "./transport/output";
+import { createInkTuiRunner } from "./tui/runTui";
 
 async function main(): Promise<void> {
   try {
@@ -15,9 +16,10 @@ async function main(): Promise<void> {
       input: createProcessInput(process.stdin),
       output: createStreamOutput(process.stdout, process.stderr),
       cwd: process.cwd(),
-      createSessionHost: ({ emitEvent, workspaceRoot }) =>
-        createAgentCodingSessionHost(startCodingHost({ emitEvent, workspaceRoot })),
+      createSessionHost: ({ emitEvent, onSnapshot, workspaceRoot }) =>
+        createAgentCodingSessionHost(startCodingHost({ emitEvent, onSnapshot, workspaceRoot })),
       createConversationId: randomUUID,
+      runTui: createInkTuiRunner(),
       onInterrupt: (handler) => {
         const onSigint = (): void => handler();
         process.on("SIGINT", onSigint);

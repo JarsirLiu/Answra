@@ -10,6 +10,7 @@
   "scripts": {
     "bootstrap": "node scripts/bootstrap.mjs",
     "dev": "pnpm --filter @answra/desktop dev",
+    "dev:cli": "pnpm --filter @answra/cli dev",
     "dev:full": "pnpm --filter @answra/desktop dev:full",
     "dev:web": "pnpm --filter @answra/desktop dev:web",
     "dev:web:full": "pnpm --filter @answra/desktop dev:web:full",

@@ -17,6 +17,7 @@ function createHost(overrides: Partial<CodingSessionHost> = {}): CodingSessionHo
   return {
     configure: vi.fn(),
     createConversation: vi.fn(async () => snapshot),
+    clearConversation: vi.fn(async () => snapshot),
     send: vi.fn(async () => ({ runId: "run-1" })),
     cancel: vi.fn(),
     waitForRun: vi.fn(async () => {}),
@@ -54,6 +55,26 @@ describe("CodingSession", () => {
     expect(order).toEqual(["configure", "create"]);
     expect(host.configure).toHaveBeenCalledWith(model);
     expect(host.createConversation).toHaveBeenCalledWith("conversation-1");
+  });
+
+  it("clears the conversation and caches the returned snapshot", async () => {
+    const cleared = { ...snapshot, eventRevision: 5 };
+    const host = createHost({ clearConversation: vi.fn(async () => cleared) });
+    const session = createSession(host);
+    await session.open();
+
+    await expect(session.clear()).resolves.toBe(cleared);
+    expect(host.clearConversation).toHaveBeenCalledWith("conversation-1");
+  });
+
+  it("rejects clearing while a run is active", async () => {
+    const host = createHost();
+    const session = createSession(host);
+    await session.open();
+    await session.send("hello");
+
+    await expect(session.clear()).rejects.toThrowError("上一轮尚未结束。");
+    expect(host.clearConversation).not.toHaveBeenCalled();
   });
 
   it("sends one text-only request and tracks the active run", async () => {

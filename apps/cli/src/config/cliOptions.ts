@@ -13,6 +13,7 @@ export type CliOptions =
       model?: string;
       apiKey?: string;
       prompt?: string;
+      altScreen?: boolean;
     };
 
 /**
@@ -30,6 +31,7 @@ export function parseCliOptions(argv: readonly string[]): CliOptions {
   let model: string | undefined;
   let apiKey: string | undefined;
   let prompt: string | undefined;
+  let altScreen: boolean | undefined;
   let optionsEnded = false;
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -46,6 +48,11 @@ export function parseCliOptions(argv: readonly string[]): CliOptions {
     if (!optionsEnded && token.startsWith("-")) {
       const option = parseOptionToken(token);
       if (!isKnownOption(option.name)) throw new CliUsageError(`未知选项：${option.name}`);
+      if (option.name === "--no-alt-screen") {
+        if (option.inlineValue !== undefined) throw new CliUsageError("--no-alt-screen 不接受值。");
+        altScreen = false;
+        continue;
+      }
       const parsed = readOptionValue(argv, index, option.name, option.inlineValue);
       index = parsed.nextIndex;
       switch (option.name) {
@@ -82,6 +89,7 @@ export function parseCliOptions(argv: readonly string[]): CliOptions {
     ...(model === undefined ? {} : { model }),
     ...(apiKey === undefined ? {} : { apiKey }),
     ...(prompt === undefined ? {} : { prompt }),
+    ...(altScreen === undefined ? {} : { altScreen }),
   };
 }
 
@@ -91,8 +99,16 @@ function parseOptionToken(token: string): { name: string; inlineValue?: string }
   return { name: token.slice(0, equalsIndex), inlineValue: token.slice(equalsIndex + 1) };
 }
 
-function isKnownOption(name: string): name is "--cwd" | "--base-url" | "--model" | "--api-key" {
-  return name === "--cwd" || name === "--base-url" || name === "--model" || name === "--api-key";
+function isKnownOption(
+  name: string,
+): name is "--cwd" | "--base-url" | "--model" | "--api-key" | "--no-alt-screen" {
+  return (
+    name === "--cwd" ||
+    name === "--base-url" ||
+    name === "--model" ||
+    name === "--api-key" ||
+    name === "--no-alt-screen"
+  );
 }
 
 function readOptionValue(

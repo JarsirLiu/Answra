@@ -64,6 +64,7 @@ function createDependencies(
   const host: CodingSessionHost = {
     configure: vi.fn(),
     createConversation: vi.fn(async () => snapshot),
+    clearConversation: vi.fn(async () => snapshot),
     send: vi.fn(async (_conversationId, request) => {
       sent.push(request);
       return { runId: "run-1" };
@@ -92,6 +93,7 @@ function createDependencies(
     }),
     createConversationId: vi.fn(() => "conversation-1"),
     onInterrupt: vi.fn(() => vi.fn()),
+    runTui: vi.fn(async () => 0),
     ...depsOverrides,
   };
   return dependencies;
@@ -150,11 +152,22 @@ describe("runCli", () => {
     expect(sent).toEqual([{ text: "from stdin", images: [] }]);
   });
 
-  it("rejects a TTY invocation without a prompt", async () => {
+  it("starts the TUI for a TTY invocation without a prompt", async () => {
     const deps = createDependencies({ input: createInput("", true) });
 
-    await expect(runCli(["code"], deps)).resolves.toBe(2);
-    expect((deps.output as OutputPort & { stderr: string }).stderr).toContain("TUI 尚未接入");
-    expect(deps.createSessionHost).not.toHaveBeenCalled();
+    await expect(runCli(["code"], deps)).resolves.toBe(0);
+    expect(deps.runTui).toHaveBeenCalledWith(
+      expect.objectContaining({ altScreen: true, workspaceRoot: process.cwd() }),
+    );
+    expect(deps.createSessionHost).toHaveBeenCalledWith(
+      expect.objectContaining({ onSnapshot: expect.any(Function) }),
+    );
+  });
+
+  it("passes --no-alt-screen to the TUI runner", async () => {
+    const deps = createDependencies({ input: createInput("", true) });
+
+    await expect(runCli(["code", "--no-alt-screen"], deps)).resolves.toBe(0);
+    expect(deps.runTui).toHaveBeenCalledWith(expect.objectContaining({ altScreen: false }));
   });
 });

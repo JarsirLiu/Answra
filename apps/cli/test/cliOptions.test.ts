@@ -38,6 +38,14 @@ describe("parseCliOptions", () => {
     });
   });
 
+  it("parses --no-alt-screen as a valueless flag", () => {
+    expect(parseCliOptions(["code", "--no-alt-screen"])).toEqual({
+      kind: "code",
+      altScreen: false,
+    });
+    expectUsageError(["code", "--no-alt-screen=true"], "--no-alt-screen 不接受值。");
+  });
+
   it("treats tokens after -- as positional prompt text", () => {
     expect(parseCliOptions(["code", "--", "--not-an-option"])).toEqual({
       kind: "code",

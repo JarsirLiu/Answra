@@ -23,6 +23,6 @@ describe("CLI packaging", () => {
     const shim = await readFile(resolve("resources/cli/answra.cmd"), "utf8");
     expect(shim).toContain('set "ELECTRON_RUN_AS_NODE=1"');
     expect(shim).toContain('"%~dp0Answra.exe"');
-    expect(shim).toContain('"%~dp0resources\\cli\\main.cjs"');
+    expect(shim).toContain('"%~dp0resources\\cli\\main.mjs"');
   });
 });

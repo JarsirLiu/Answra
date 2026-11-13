@@ -9,6 +9,7 @@ import type {
 export interface CodingSessionHost {
   configure(model: ConversationModelConfig): void;
   createConversation(conversationId: string): Promise<ConversationSnapshot>;
+  clearConversation(conversationId: string): Promise<ConversationSnapshot>;
   send(
     conversationId: string,
     request: ConversationSendRequest,
@@ -34,6 +35,7 @@ export class CodingSession {
   private readonly accessToken: string;
   private opened = false;
   private closed = false;
+  private snapshot?: ConversationSnapshot;
   private sending = false;
   private activeRunId?: string;
 
@@ -44,12 +46,23 @@ export class CodingSession {
     this.accessToken = accessToken;
   }
 
-  async open(): Promise<void> {
+  async open(): Promise<ConversationSnapshot> {
     if (this.closed) throw new Error("会话已关闭。");
-    if (this.opened) return;
+    if (this.snapshot !== undefined) return this.snapshot;
     this.host.configure(this.model);
-    await this.host.createConversation(this.conversationId);
+    const snapshot = await this.host.createConversation(this.conversationId);
+    this.snapshot = snapshot;
     this.opened = true;
+    return snapshot;
+  }
+
+  async clear(): Promise<ConversationSnapshot> {
+    if (this.closed) throw new Error("会话已关闭。");
+    if (!this.opened) throw new Error("会话尚未打开。");
+    if (this.activeRunId !== undefined || this.sending) throw new Error("上一轮尚未结束。");
+    const snapshot = await this.host.clearConversation(this.conversationId);
+    this.snapshot = snapshot;
+    return snapshot;
   }
 
   async send(text: string): Promise<string> {

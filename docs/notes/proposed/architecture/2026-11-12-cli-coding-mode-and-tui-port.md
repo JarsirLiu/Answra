@@ -17,13 +17,13 @@
 - 架构守护最初只允许 `apps/agent/src` 和 desktop main/preload 使用 `node:` 内置模块；CLI 需要把 `apps/cli/src` 加入白名单。
 - Claude Code 的 TUI 基于 Ink 和自研 fork；`src/components` 是 React Compiler 产物，并深度耦合 `AppState`、analytics、keybindings 和 `bun:bundle`，不能直接粘贴。
 
-本提案先冻结 v1 范围：**一个独立的 coding 领域与 Bot、无 VAD、无审批、TUI 行为 1:1**。多 Bot、team 与自动交接明确后置。
+本提案先冻结 v1 范围：**一个独立的 coding 领域与 Bot、无 VAD、无审批、TUI 核心布局与交互对齐 Claude Code**。多 Bot、team、自动交接以及审批 UI、选择/搜索等高级 TUI 能力明确后置。v1.1 已补最小的本地 slash 命令与运行中排队，但没有自动补全、审批或消息选择。
 
 ## 涉及范围
 
 - 代码/模块：
   - `apps/cli/`（新增）：Node 入口、coding host 装配、模型配置、TUI 业务组件与非 TTY 降级。
-  - `apps/cli/src/tui/`（新增）：TUI 组件、view store，以及上游 Ink 缺失的 `AlternateScreen` / `ScrollBox` 原语。
+  - `apps/cli/src/tui/`（新增）：TUI 组件、view store 与虚拟 transcript/输入原语；备用屏幕使用 Ink 原生 `alternateScreen`。
   - `apps/agent/src/coding/`（新增）：CLI 专属 coding 领域。
     - `agent.ts`：`CODING_AGENT_ID`、独立身份、发现与 `AgentDefinition`。
     - `policy.ts`：coding 专用 system prompt、工具授权与上下文策略。
@@ -122,26 +122,26 @@ AgentRuntime(emitEvent -> CLI 事件队列)
 
 ### 5. TUI：上游 Ink 8 + CLI 本地补齐缺失原语
 
-原则：以 `ink@8.0.0` + React 19.3 为底座，不移植 Claude Code 的 Ink fork；只补上游没有、但 Claude Code 体验必需的原语，并按 Claude Code 的布局重写业务组件，不复制其 React Compiler 产物。
+原则：以 `ink@8.0.0` + React 19.3 为底座，不移植 Claude Code 的 Ink fork；只补上游没有、但 Claude Code 体验必需的原语，并按 Claude Code 的布局重写业务组件，不复制其 React Compiler 产物。Ink 8 自带 `alternateScreen`、`useWindowSize`、`useBoxMetrics`、`contentOffsetY`，不再自研 AltScreen/终端尺寸层。
 
 运行时前提：Electron 35.0.0（Node 22.14.0）已确认无捕获保护问题，Ink 8 的 Node >=22 要求不再阻塞 TUI。
 
-- 直接使用上游：`Box`、`Text`、`useInput`、`useApp`、`useStdout`、`Static`、`Transform`、focus 等导出。
-- CLI 本地补齐（`apps/cli/src/tui/primitives/`）：
-  - `AlternateScreen`：进入/退出 1049 缓冲区，`--no-alt-screen` 可关闭。
-  - `ScrollBox`：固定视口、尾部跟随、PgUp/PgDn 和滚轮；基于 `useStdout`、`measureElement` 与 ANSI 行裁剪。
-  - `TerminalSize`：统一终端宽高、换行与宽字符处理。
+- 直接使用上游：`render({ alternateScreen })`、`Box`、`Text`、`useInput`、`useApp`、`useWindowSize`、`useBoxMetrics`、`Static`、`Transform`、focus 等导出。
+- CLI 本地补齐（`apps/cli/src/tui/components/`）：
+  - `VirtualTranscript`：固定视口、尾部跟随、PgUp/PgDn、可见消息测量与窗口裁剪；不使用全量 `contentOffsetY` 平移。
+  - `TextInput` / `inputLayout`：按 grapheme 与显示宽度换行，限制输入可视行数。
+  - `wheelInput`：在 Ink 前过滤 SGR/X10 滚轮序列；仅全屏模式启用鼠标 tracking。
 - 不引入 `packages/tui`；当出现第二个终端宿主或这些原语被复用时再抽取。
-- 后置：搜索高亮、鼠标选择、bidi、hyperlink、tab 状态、terminal query、vim 模式。
+- 后置：搜索高亮、拖拽选择、hover、bidi、hyperlink、tab 状态、terminal query、vim 模式。
 
 v1 业务组件：
 
-- `App` / `AlternateScreen` 全屏布局；`Transcript` / `MessageRow` / `Message`。
-- `Markdown`：正文、代码块、表格、链接。
-- `PromptInput`：多行输入、历史、Enter 提交、Esc/Ctrl-C 取消；v1 不做 slash 自动补全。
+- `App` 全屏布局；`Transcript` / `MessageRow` / `MessageResponse`。
+- `MarkdownText`：正文、标题、列表、引用、代码块、内联代码与链接。
+- `PromptInput`：多行输入、历史、Enter 提交（运行中排队）、Shift+Enter 或 `\` + Enter 换行、Esc/Ctrl-C 取消；本地 `/help`、`/clear`、`/exit` 由 TUI 直接处理，v1 不做 slash 自动补全。
 - `StatusLine`：模型、cwd、当前 Bot、运行态。
 - `Spinner` 与工具运行状态。
-- `Diff`：直接消费 `EditOutput.diff` 的 `EditDiffDisplay`，不在终端重新计算。
+- `ToolCard`/`Diff`：直接消费 `EditOutput.diff` 的 `EditDiffDisplay`，不在终端重新计算。
 
 投影复用：
 
@@ -151,9 +151,9 @@ v1 业务组件：
 
 ### 6. 终端与平台
 
-- 支持 Windows Terminal / ConPTY；提供 `--no-alt-screen` 和“非 TTY 纯流式输出”降级。
-- 旧 conhost 的 VT、鼠标与宽字符能力不保证；验收环境固定为 Windows 11 + Windows Terminal。
-- 键盘：Enter 提交；Shift+Enter 换行（终端不支持时用 Ctrl+J）；Esc 取消当前 run；Ctrl-C 首次取消、再次退出。
+- 支持 Windows Terminal / ConPTY 与 VS Code 集成终端；提供 `--no-alt-screen` 和“非 TTY 纯流式输出”降级。
+- 旧 conhost 的 VT、鼠标与宽字符能力不保证；验收优先使用 VS Code 集成终端，并保留 Windows Terminal 兼容验证。
+- 键盘：Enter 提交，运行中提交进入 TUI 队列；Shift+Enter 换行，终端不发送 shift 修饰时用 `\` + Enter；Esc 取消当前 run；空闲时 Ctrl-C 首次清空输入并提示，再次退出；运行中 Ctrl-C 取消当前 run。
 - 输出被重定向时不写 ANSI 控制序列，退化为逐行文本。
 
 ### 7. 明确不做
@@ -168,20 +168,24 @@ v1 业务组件：
 
 ## 实现进度与运行时下限
 
-截至 2026-11-12，CLI 入口与非 TTY 一次性链路已经落地，TUI 尚未开始：
+截至 2026-11-13，CLI 入口、非 TTY 一次性链路与 Ink TUI 首版已经落地，尚未完成 Windows Terminal 实机与安装包验收：
 
 - `apps/agent/src/coding/` 已完成独立 `coding.engineer` Bot、policy、context、`CodingApplication` 与 `startCodingHost`；`@answra/agent/composition` 已公开该入口。
 - `apps/cli/` 已完成 `main`、`cli`、`config`、`session`、`adapters`、`presentation`、`transport` 分层；`answra code` 支持 prompt、非 TTY stdin、help/version、正确退出码。
 - Electron 35.0.0 / Node 22.14 迁移已落地（`b25839d`）：desktop worker 与 CLI bundle target 均为 `node22.14`，捕获保护测试已更新。
-- 当前没有 TUI 代码或 `--no-alt-screen`；TTY 无 prompt 会明确报“TUI 尚未接入”，不伪装成交互界面。
-- CLI bundle 已接入 answer/full 安装包：`apps/desktop/scripts/cli-packaging.mjs` 注入 `extraResources`（`../cli/dist` → `resources/cli`）和 Windows `extraFiles`（`resources/cli/answra.cmd` → `answra.cmd`）；`dist:win`/`dist:mac` 先执行 `build:cli`。安装目录审计检查 `resources/cli/main.cjs` 与 Windows shim。
+- TUI 已实现 `theme`、`TuiViewStore`、`App`、`Transcript`、`VirtualTranscript`、`MessageRow`、`MessageResponse`、`MarkdownText`、`ToolCard`、`Spinner`、`PromptInput`、`TextInput`、`inputLayout`、`StatusLine`；TTY 无 prompt 进入 TUI，`--no-alt-screen` 关闭备用屏幕。虚拟滚动、宽字符输入与按键归属的后续重建见 [CLI TUI 对话交互重建](../../implemented/architecture/2026-11-13-cli-tui-conversation-interaction-rebuild.md)。
+- TUI 队列在 `runTui` 内串行 drain：运行中 Enter 只入队并显示 `N queued`，取消会清空队列；`/help` 显示本地帮助，`/clear` 调用 `CodingSession.clear()` 清空内存 transcript，`/exit` 通过 `useApp().exit` 退出；空闲 Ctrl-C 首次清空输入并提示，再次退出。
+- 验证证据（2026-11-13）：`pnpm --filter @answra/cli test` 77 个测试通过，覆盖排队、取消清队列、`/help`、`/clear`、Ctrl-C 提示、session clear、虚拟窗口、PgUp/滚轮滚动、宽字符输入与思考折叠；`pnpm verify` 曾全仓通过。为消除 Windows 并行负载下两个 shell 测试的偶发超时，只放宽了 `localShell` 流式测试与 `sessions` 完成窗口的测试时限，未改运行时行为。
+- 事件链路：`CodingHost.onSnapshot` → `TuiViewStore.applySnapshot`，`emitEvent` → 16ms 批量 `applyAgentEvent`；`CodingSession.open()` 返回初始 snapshot 且幂等。
+- CLI bundle 因 Ink 8/yoga-layout 的 top-level await 改为 ESM `dist/main.mjs`；esbuild CJS 无法打包，`react-devtools-core` 在非 DEV 构建中用本地 stub 替代。
+- CLI bundle 已接入 answer/full 安装包：`apps/desktop/scripts/cli-packaging.mjs` 注入 `extraResources`（`../cli/dist` → `resources/cli`）和 Windows `extraFiles`（`resources/cli/answra.cmd` → `answra.cmd`）；`dist:win`/`dist:mac` 先执行 `build:cli`。安装目录审计检查 `resources/cli/main.mjs` 与 Windows shim。
 
-运行时选择（2026-11-12 修订）：
+运行时选择（2026-11-13 修订）：
 
 - Electron 35.0.0 已确认无捕获保护问题并锁定为桌面基线：Node 22.14.0、Chromium 134；39.0.0 / 44.7.0 的捕获回归不影响该选择。
 - CLI runtime floor 提升到 Node >=22.13，与仓库开发/CI/pnpm 下限一致；构建 target 为 `node22.14`，不再保留 Node 20.9 兼容分支。
-- TUI 使用 `ink@8.0.0`（Node >=22、React >=19.3）+ React 19.3；本变更已补齐依赖与 engines，TUI 代码随后落地。
-- 安装包仍不新增 Node sidecar：CLI bundle 约 5.8MB，由已安装的 Electron 35 `Answra.exe` 以 `ELECTRON_RUN_AS_NODE=1` 执行。
+- TUI 使用 `ink@8.0.0`（Node >=22、React >=19.3）+ React 19.3；ESM 是硬约束，不以 CJS 兼容层伪装。
+- 安装包仍不新增 Node sidecar：CLI bundle 约 7.5MB，由已安装的 Electron 35 `Answra.exe` 以 `ELECTRON_RUN_AS_NODE=1` 执行 `.mjs`。
 - 仓库内已有 NSIS / `win-unpacked` 可能是迁移前产物，不能作为 Electron 35 验收；发版前必须重新执行 `dist:win`、安装包审计、打包态 smoke 与捕获保护验收。
 
 ## 模块边界
@@ -189,7 +193,7 @@ v1 业务组件：
 - `apps/agent/src/coding`：CLI coding 领域；只 import `core/*` 与 `@answra/shared`，不 import `conversation/*`、`interview/*`、CLI 或 TUI。
 - `apps/agent/src/conversation`：桌面通用对话；保持现有 prompt、profile 和上下文构建，不新增 coding profile，不感知 CLI。
 - `apps/agent/src/core/transcript`：跨领域 transcript 与投影；不放领域 prompt、Bot 身份或工具授权。
-- `apps/cli/src/tui`：Ink 业务组件、view store、ANSI 主题、`AlternateScreen` / `ScrollBox` 等缺失原语；不 import `@answra/agent` 的领域实现，只通过 CLI 端口取数据。
+- `apps/cli/src/tui`：Ink 8 业务组件、view store、主题与虚拟 transcript/输入原语；备用屏幕用 Ink 原生 `alternateScreen`；不 import `@answra/agent` 的领域实现，只通过 CLI 端口取数据。
 - `apps/cli`：组合根、模型配置与非 TTY 降级；可 import `@answra/agent/composition`、`@answra/shared`、`@answra/ui/conversation-view`、`ink`、`react`。
 - `packages/tui`：本提案不新增。只有出现第二个终端宿主或原语被复用时，才从 `apps/cli/src/tui` 抽取；抽取前不承担额外包边界。
 - `packages/ui`：DOM 业务 UI；只新增纯投影子入口，不 import Ink 或 CLI。
@@ -203,7 +207,7 @@ v1 业务组件：
 - **把 coding profile 加进 `conversation/profiles/registry.ts`：** 舍弃。这样仍让 CLI 依赖 `conversation` 域的类型和用例，违背“CLI 自己的 Bot”；profile 注册表也会混入两个产品面的策略。
 - **CLI 通过 Electron utility process 启动桌面 worker：** 舍弃。违背“Agent 脱离桌面也能跑”，要求桌面常驻，CI/SSH 不可用，还会把模型凭据绑在 `safeStorage`。
 - **直接复制 Claude Code 的 `src/ink` 和 `src/components`：** 舍弃。组件是 React Compiler 产物，耦合 `AppState`、analytics、`bun:bundle`，代码量大且维护不可控，还有版权风险。改为使用上游 Ink 8 并重写业务组件。
-- **继续移植 Claude Code 的完整 Ink fork：** 舍弃。Node 22 已解锁上游 `ink@8.0.0`，完整 fork 只剩 ScrollBox/AlternateScreen 等少量缺口；为这些缺口维护约 100 个引擎文件不划算。先在 `apps/cli/src/tui` 补原语，确实不够再抽包。
+- **继续移植 Claude Code 的完整 Ink fork：** 舍弃。Node 22 已解锁上游 `ink@8.0.0`，完整 fork 只剩 ScrollBox 等少量缺口；为这些缺口维护约 100 个引擎文件不划算。先在 `apps/cli/src/tui` 补原语，确实不够再抽包。
 - **先用纯 readline 文本 REPL：** 舍弃。用户明确要 Claude Code 的 TUI 观感；文本 REPL 无法验证全屏、滚动、工具卡和 diff 这些核心交互。
 - **把纯投影抽成新的 headless 包：** 暂不。CLI 是第二个消费者，抽取合理，但会同时改 `packages/ui` 的导入与测试；v1 先用 `./conversation-view` 子入口，等出现第三个消费者或边界变脏再抽。
 - **v1 直接做多 Bot、team 与自动交接：** 舍弃。真实交接结果产出尚未实现，且 CLI 首要是跑通 TUI；单 Bot 已能验证全部 TUI 交互。
@@ -216,32 +220,34 @@ v1 业务组件：
 ## 验收标准
 
 - 可观察结果：
-  - `answra code` 在系统 Node 22.13+ 或 Electron 35.0.0 Node 模式、无 VAD/ASR 资源的 Windows 11 + Windows Terminal 上启动。
+  - `answra code` 在系统 Node 22.13+ 或 Electron 35.0.0 Node 模式、无 VAD/ASR 资源的 VS Code 集成终端上启动。
   - 输入编码指令后，TUI 依次显示思考、文本、工具调用、工具输出和最终回复；Ctrl-C 能取消。
   - Edit 调用显示多 hunk diff；Read、Grep、RunCommand 有独立工具卡。
-  - 非 TTY 或 `--no-alt-screen` 时退化为逐行流式输出，不崩溃。
+  - 非 TTY 时退化为逐行流式输出；`--no-alt-screen` 仍运行 TUI，只保留主屏滚动记录。
 - 自动化验证：
-  - `pnpm --filter @answra/cli test`：命令语法、模型配置、工作区、会话状态机、事件呈现、TUI view store、ANSI 宽度、alt-screen 状态、版本一致性与非 TTY 降级。
+  - `pnpm --filter @answra/cli test`：命令语法、模型配置、工作区、会话状态机、事件呈现、TUI view store、输入提交/换行、运行中排队与取消、`/help`/`/clear`/`/exit`、transcript 错误、`--no-alt-screen`、版本一致性与非 TTY 降级。
   - `pnpm --filter @answra/cli smoke:electron`：构建后由 Electron 35.0.0 的 Node 22.14 执行 help/version/错误路径与本地假 SSE。
   - `pnpm --filter @answra/desktop test`：CLI `extraResources`/`extraFiles` 配置与 Windows shim 内容。
   - `pnpm --filter @answra/agent test`：`coding` 的 profile 授权、单 Bot 会话、取消与 transcript；`conversation` 既有测试保持不变。
   - Electron 35 迁移：`pnpm --filter @answra/desktop dist:win`、安装包审计、打包态 smoke 与 Windows 捕获保护 A/B 重新通过。
   - `pnpm architecture:check`、`pnpm notes:check`、`pnpm verify` 通过。
 - 需要的实机验证：
-  - Windows 11 + Windows Terminal：中文、宽字符、长输出滚动、工具卡展开、diff 渲染和 Ctrl-C。
+  - VS Code 集成终端：中文、宽字符、长输出滚动、PgUp/PgDn、输入光标、工具卡展开、diff 渲染、Ctrl+O 与 Ctrl-C；Windows Terminal 作为兼容环境复验。
   - 非 TTY（管道）下输出可被重定向，不泄漏 ANSI 控制序列。
 
 ## 风险
 
-- 上游 Ink 8 没有 `ScrollBox` / `AlternateScreen`，CLI 需要自己补；先做 Windows Terminal 的最小 spike，验证固定视口、尾部跟随、resize 与 ANSI 行裁剪，失败再考虑抽取或换实现。
+- 上游 Ink 8 没有原生的鼠标滚轮事件；当前由 `wheelInput` 在 stdin 前过滤 SGR/X10 序列，再把滚轮映射到 `VirtualTranscript`。仍需在 VS Code 集成终端实机验证滚轮、长输出、resize、宽字符与 ANSI 裁剪。
+- Ink 8/yoga-layout 的 top-level await 迫使 CLI 输出 ESM；`main.mjs`、Windows shim、安装包审计与 Electron Node 模式必须同步验证，不能回退到 CJS bundle。
 - Electron 35 迁移已落地，但 capture、native addon、electron-updater 与打包链仍需在 TUI 合并后重跑 desktop 测试、`dist:win`、安装包审计与打包态 smoke，不能只依赖版本号和单测。
 - `coding` 会重复少量消息组装逻辑（历史投影 + 本轮输入）；v1 接受，避免把桌面对话的时间/工作区策略拉进 CLI。若两个领域继续收敛，再抽共享构建器。
 - `CodingApplication` 与 `ConversationApplication` 会出现小范围会话循环重复；v1 接受，避免把 team/handoff 语义带进 CLI。若两者继续分叉，再抽共享的单 Bot application 原语。
-- 终端能力差异大：旧 conhost、VS Code 集成终端、SSH 终端对 alt-screen、鼠标和宽字符支持不同；v1 只保证 Windows Terminal，其他环境走降级。
+- 终端能力差异大：旧 conhost、VS Code 集成终端、SSH 终端对 alt-screen、鼠标和宽字符支持不同；v1 优先验证 VS Code 集成终端，Windows Terminal 兼容验证，其他环境走降级。
 - 版权与维护：Claude Code 是 Anthropic 还原源码，业务组件只能行为复刻，不能整段粘贴；上游 Ink 8 为 MIT，需保留声明并记录来源。
 - 无审批的 shell 是任意命令执行，与桌面现状一致，但 CLI 更容易被脚本化；后续审批必须单独写 Note。
 - 模型配置走环境变量会在 shell 历史和进程环境中暴露 key；v1 接受，后续做本地配置文件或 OS keychain。
 - 内存 transcript 退出即丢，用户可能误以为可恢复；启动文案和 `--help` 必须明确。
+- 运行中排队只存在 TUI 进程内，不写入 transcript 或持久化；取消会清空队列，退出即丢。若未来要支持跨重启队列，必须单独设计 store 契约，不能把这个数组当会话状态。
 - 放宽 `node:` 白名单会扩大平台依赖面；必须只放行 `apps/cli/src`、`apps/cli/scripts`，未来抽出 `packages/tui` 时再单独放行；仍禁止本地监听与 Electron 依赖。
 - CLI 复用 Electron 35 的 Node 22.14 意味着 CLI 也继承该版本的维护期风险；后续升级仍必须完成 Windows 捕获 A/B，不能用 CLI 需求绕过。
 - 迁移后系统 Node 20.9 不再能运行 CLI；`--help`、README 与安装包说明必须明确 Node >=22.13，避免用户把旧 Node 环境的失败误判为 Agent 故障。

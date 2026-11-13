@@ -19,6 +19,11 @@ import {
 } from "./conversationParts";
 import { projectReplyActivity } from "./replyActivity";
 
+export type {
+  ConversationRetry,
+  ConversationViewMessage,
+} from "../components/chat/conversationMessage";
+
 export interface ConversationView {
   eventRevision: number;
   messages: ConversationViewMessage[];

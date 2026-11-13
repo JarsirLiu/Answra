@@ -69,13 +69,13 @@
 | `src/session` | `CodingSession` 单活动 run 用例与窄宿主端口 | 不实现模型调用、TUI 或进程 I/O |
 | `src/adapters` | `@answra/agent/composition` 的 `CodingHost` 到 CLI 端口映射 | 不复制 Agent 运行时语义 |
 | `src/presentation` | Agent 事件到非 TTY 文本、工具行格式化 | 纯投影，不读写会话或进程 |
-| `src/tui` | Ink TUI 组件、view store 与 `AlternateScreen` / `ScrollBox` 原语 | 不 import Electron/desktop；不承载命令解析或 Agent runtime |
+| `src/tui` | Ink 8 TUI 组件、view store、本地 slash 命令与虚拟 transcript/宽字符输入原语；备用屏幕用 Ink 原生 `alternateScreen` | 不 import Electron/desktop；不承载 Agent 命令分派或 runtime；运行中提交的 prompt 只在 TUI 队列内排队 |
 | `src/transport` | stdin/stdout/stderr 适配 | 不定义业务行为 |
 
 - CLI 只从 `@answra/agent/composition` 组装 coding host，不使用 worker 线协议、不启动 VAD/ASR、不 import `conversation`/`interview` 领域。
 - CLI 运行时目标为 Node >=22.13，构建 target 为 `node22.14`，与仓库开发、CI 与 pnpm 下限一致。
 - 安装包分发复用 Electron 35.0.0 的 Node 22.14（`ELECTRON_RUN_AS_NODE=1`）运行 CLI bundle，不新增 Node sidecar、不启动 GUI。
-- 安装包通过 electron-builder `extraResources` 分发 `resources/cli/main.cjs`，Windows 的 `answra.cmd` 只复用同目录 `Answra.exe`；不新增 CLI 可执行文件，shim 不自动注册 PATH。
+- CLI 使用 ESM（`dist/main.mjs`）：Ink 8 与 yoga-layout 含 top-level await，不能打成 CJS；安装包通过 electron-builder `extraResources` 分发 `resources/cli/main.mjs`，Windows 的 `answra.cmd` 只复用同目录 `Answra.exe`；不新增 CLI 可执行文件，shim 不自动注册 PATH。
 - `apps/desktop` 锁定 Electron 35.0.0（Node 22.14），捕获保护已在 Windows 11 实测通过；升级前按 `docs/notes/implemented/bug-fix/2026-10-11-electron-capture-protection-compatibility.md` 重跑系统截图/录屏验收。desktop worker 与 CLI bundle target 统一为 `node22.14`。
 
 ## IPC 约定（三层类型安全）

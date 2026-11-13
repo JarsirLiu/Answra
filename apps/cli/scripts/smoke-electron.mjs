@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const desktopRoot = resolve(appRoot, "../desktop");
 const electronBinary = process.env.ANSWRA_ELECTRON_BIN ?? defaultElectronBinary();
-const cliBundle = process.env.ANSWRA_CLI_BUNDLE ?? join(appRoot, "dist/main.cjs");
+const cliBundle = process.env.ANSWRA_CLI_BUNDLE ?? join(appRoot, "dist/main.mjs");
 const smokeTimeoutMs = 20_000;
 
 function defaultElectronBinary() {

@@ -5,7 +5,7 @@ import { build } from "esbuild";
 
 const appRoot = path.resolve(import.meta.dirname, "..");
 const outDir = path.join(appRoot, "dist");
-const outfile = path.join(outDir, "main.cjs");
+const outfile = path.join(outDir, "main.mjs");
 
 await rm(outDir, { recursive: true, force: true });
 await build({
@@ -14,16 +14,17 @@ await build({
   outfile,
   bundle: true,
   platform: "node",
-  format: "cjs",
+  format: "esm",
   // 运行时下限跟桌面端 Electron 35 内嵌的 Node 22.14 对齐，便于安装包复用同一 Electron。
   target: "node22.14",
+  alias: {
+    "react-devtools-core": path.join(appRoot, "scripts/react-devtools-stub.mjs"),
+  },
+  banner: {
+    js: 'import { createRequire as __createRequire } from "node:module";\nconst require = __createRequire(import.meta.url);',
+  },
   sourcemap: false,
   legalComments: "eof",
-  define: {
-    // ripgrep 的 ESM 入口在模块加载期用 import.meta.url 计算未使用的 rgPath；
-    // 注入稳定的 file URL，避免打包后启动即 Invalid URL（与 desktop 打包同一处理）。
-    "import.meta.url": JSON.stringify("file:///C:/__answra__/cli.mjs"),
-  },
   logLevel: "info",
 });
 

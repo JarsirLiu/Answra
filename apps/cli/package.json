@@ -5,14 +5,15 @@
   "description": "Answra CLI coding 宿主：独立 coding Bot 的终端入口与非 TTY 流式输出。",
   "type": "module",
   "bin": {
-    "answra": "./dist/main.cjs"
+    "answra": "./dist/main.mjs"
   },
   "engines": {
     "node": ">=22.13.0"
   },
   "scripts": {
     "build": "node ./scripts/build.mjs",
-    "start": "node ./dist/main.cjs",
+    "dev": "node --import tsx --env-file-if-exists=../../.env src/main.ts code",
+    "start": "node ./dist/main.mjs",
     "smoke:electron": "node ./scripts/build.mjs && node ./scripts/smoke-electron.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
@@ -22,13 +23,15 @@
     "@answra/shared": "workspace:*",
     "@answra/ui": "workspace:*",
     "ink": "8.0.0",
-    "react": "19.3.0"
+    "react": "19.3.0",
+    "string-width": "^8.3.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
     "@types/react": "19.3.0",
     "esbuild": "^0.27.2",
     "ink-testing-library": "4.0.0",
+    "tsx": "^4.23.15",
     "typescript": "~5.9.3",
     "vitest": "^5.0.3"
   }

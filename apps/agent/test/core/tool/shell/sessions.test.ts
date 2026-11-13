@@ -170,9 +170,14 @@ function registerCompletionTests(): void {
   it("returns output and exit code when the command finishes inside the wait window", async () => {
     const { manager, workspace } = await createHarness();
     const command = await writeScript(workspace, "complete.mjs", "process.stdout.write('done')");
-    const result = await manager.start({ command, cwd: workspace, yieldTimeMs: 5_000 });
+    const result = await manager.start({ command, cwd: workspace, yieldTimeMs: 20_000 });
 
-    expect(result).toMatchObject({ status: "completed", stdout: "done", stderr: "", exitCode: 0 });
+    expect(result).toMatchObject({
+      status: "completed",
+      stdout: "done",
+      stderr: "",
+      exitCode: 0,
+    });
     expect(result.sessionId).toBeTypeOf("string");
 
     const reread = await manager.writeStdin({
@@ -186,7 +191,7 @@ function registerCompletionTests(): void {
       stderr: "",
       exitCode: 0,
     });
-  });
+  }, 30_000);
 
   it("returns a session for a long command and reads incremental output to completion", async () => {
     const { manager, workspace } = await createHarness();

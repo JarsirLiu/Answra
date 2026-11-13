@@ -85,10 +85,10 @@ module.exports = async function auditPackagedApp(context) {
   }
 
   try {
-    await stat(join(resourcesDir, "cli", "main.cjs"));
+    await stat(join(resourcesDir, "cli", "main.mjs"));
   } catch (error) {
     if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
-      violations.push("安装包缺少 CLI bundle：resources/cli/main.cjs");
+      violations.push("安装包缺少 CLI bundle：resources/cli/main.mjs");
     } else {
       throw error;
     }
