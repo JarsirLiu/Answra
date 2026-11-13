@@ -2,7 +2,12 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { executeToolCall, type ToolContext, type ToolResult } from "../../../../src/core/tool";
+import {
+  executeToolCall,
+  isToolHandlerFailure,
+  type ToolContext,
+  type ToolResult,
+} from "../../../../src/core/tool";
 import type {
   ShellSessionSnapshot,
   ShellYieldTimePolicy,
@@ -146,7 +151,7 @@ describe("RunCommand", { timeout: 30_000 }, () => {
     const command =
       process.platform === "win32"
         ? "$fi = Get-Item 'state.txt'\nWrite-Host ('Length: ' + $fi.Length)"
-        : "value=$(wc -c < state.txt)\nprintf 'Length: %s' \"$value\"";
+        : "value=$(wc -c < state.txt)\nprintf 'Length: %d' \"$value\"";
     const result = await execute(tools, { command }, root);
 
     expect(modelText(result)).toContain("Length: 10");
@@ -235,7 +240,12 @@ describe("RunCommand", { timeout: 30_000 }, () => {
     const deadline = Date.now() + 15_000;
     while (snapshot.status === "running") {
       if (Date.now() >= deadline) throw new Error("会话未在测试期限内完成。");
-      snapshot = await tools.writeStdin.handler({ sessionId, yieldTimeMs: 1_000 }, context(root));
+      const result = await tools.writeStdin.handler(
+        { sessionId, yieldTimeMs: 1_000 },
+        context(root),
+      );
+      if (isToolHandlerFailure(result)) throw new Error(result.message);
+      snapshot = result;
       stdout.push(snapshot.stdout);
     }
     expect(snapshot).toMatchObject({ status: "completed", exitCode: 0 });

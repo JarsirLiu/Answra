@@ -106,14 +106,14 @@ describe("Grep tool", () => {
     expect(formatGrepOutput(onlyMatching)).toBe("a.txt:2:needle");
   });
 
-  it("normalizes Windows paths and accepts absolute in-workspace paths", async () => {
+  it("normalizes native paths and accepts absolute in-workspace paths", async () => {
     const root = await createRoot();
     await fs.mkdir(path.join(root, "src", "nested"), { recursive: true });
     await fs.writeFile(path.join(root, "src", "nested", "a.ts"), "needle");
 
     const relative = await executeGrep(context(root), {
       pattern: "needle",
-      path: "src\\nested/",
+      path: process.platform === "win32" ? "src\\nested/" : "src/nested/",
       output_mode: "content",
     });
     const absolute = await executeGrep(context(root), {

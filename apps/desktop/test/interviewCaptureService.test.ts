@@ -1,6 +1,16 @@
 import type { InterviewPcmFrame } from "@answra/shared";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { InterviewCaptureService } from "../src/main/interview/interviewCaptureService";
+
+const originalPlatform = process.platform;
+
+beforeEach(() => {
+  Object.defineProperty(process, "platform", { value: "win32" });
+});
+
+afterEach(() => {
+  Object.defineProperty(process, "platform", { value: originalPlatform });
+});
 
 function createAgent() {
   return {

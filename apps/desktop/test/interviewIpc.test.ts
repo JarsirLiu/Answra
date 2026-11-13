@@ -1,5 +1,7 @@
 import { ActiveInterviewConversationId, InterviewChannels } from "@answra/shared";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const originalPlatform = process.platform;
 
 const harness = vi.hoisted(() => {
   const handlers = new Map<string, (...args: unknown[]) => unknown>();
@@ -75,7 +77,12 @@ import type { AgentService } from "../src/main/conversation/agentService";
 import { registerInterviewIpc } from "../src/main/interview/interviewIpc";
 
 describe("interview IPC", () => {
+  beforeEach(() => {
+    Object.defineProperty(process, "platform", { value: "win32" });
+  });
+
   afterEach(() => {
+    Object.defineProperty(process, "platform", { value: originalPlatform });
     harness.handlers.clear();
     harness.listeners.clear();
     harness.displayHandler = undefined;
