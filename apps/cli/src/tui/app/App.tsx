@@ -1,17 +1,24 @@
 /** TUI 根布局：滚动 transcript + 活动行 + Claude 式输入框/状态行。 */
-import { Box, useApp, useInput, useWindowSize } from "ink";
+import { contextCompactionLabel } from "@answra/ui/conversation-view";
+import { Box, Text, useApp, useInput, useWindowSize } from "ink";
 import { useEffect, useState, useSyncExternalStore } from "react";
+import { Spinner } from "../chrome/Spinner";
+import { StatusLine } from "../chrome/StatusLine";
+import { PromptInput } from "../composer/PromptInput";
 import type { PointerSource } from "../interaction/pointerInput";
 import type { TuiSelectionStore } from "../interaction/selectionStore";
-import type { TuiViewStore } from "../viewStore";
-import { PromptInput } from "./PromptInput";
-import { SelectionContext } from "./SelectableText";
-import { Spinner } from "./Spinner";
-import { StatusLine } from "./StatusLine";
-import { VirtualTranscript } from "./VirtualTranscript";
+import type { TuiSetupStep } from "../modelSetup";
+import { SelectionContext } from "../transcript/SelectableText";
+import { VirtualTranscript } from "../transcript/VirtualTranscript";
+import type { TuiViewStore } from "./viewStore";
 
 const NO_SUBSCRIBE = () => () => {};
 const ZERO_VERSION = () => 0;
+const SETUP_HINTS: Record<TuiSetupStep, string> = {
+  "base-url": "输入 base URL，Enter 继续 · Ctrl-C 两次退出",
+  "api-key": "输入 API Key，Enter 继续；本地端点可留空",
+  "model-id": "输入模型 ID，Enter 完成",
+};
 
 export function App({
   store,
@@ -42,6 +49,8 @@ export function App({
   const { exit } = useApp();
   const { rows } = useWindowSize();
   const busy = state.phase !== "idle";
+  const compaction = state.view.contextCompaction;
+  const compactionLabel = compaction ? contextCompactionLabel(compaction) : "";
   const [expandThinking, setExpandThinking] = useState(false);
   useSyncExternalStore(
     selectionStore?.subscribe ?? NO_SUBSCRIBE,
@@ -86,15 +95,34 @@ export function App({
       <Box flexDirection="column" height={rows} width="100%">
         <VirtualTranscript
           expandThinking={expandThinking}
-          footer={busy ? <Spinner phase={state.phase} queued={state.queued} /> : undefined}
+          footer={
+            busy ? (
+              <Spinner phase={state.phase} queued={state.queued} />
+            ) : compactionLabel ? (
+              <Box paddingX={1}>
+                <Text color={compaction?.state === "failed" ? "red" : "gray"} wrap="truncate">
+                  {compactionLabel}
+                </Text>
+              </Box>
+            ) : undefined
+          }
           localError={state.localError}
+          modelConfigured={state.modelConfigured}
           notice={state.notice}
           onScroll={onClearSelection}
           pointerSource={pointerSource}
+          setupStep={state.setupStep}
           view={state.view}
           workspaceRoot={workspaceRoot}
         />
-        <PromptInput busy={busy} onSubmit={onSubmit} selectionActive={hasSelection} />
+        <PromptInput
+          allowEmptySubmit={state.setupStep === "api-key"}
+          busy={busy}
+          idleHint={state.setupStep === undefined ? undefined : SETUP_HINTS[state.setupStep]}
+          onSubmit={onSubmit}
+          secret={state.setupStep === "api-key"}
+          selectionActive={hasSelection}
+        />
         <StatusLine
           botName={botName}
           model={state.modelLabel}

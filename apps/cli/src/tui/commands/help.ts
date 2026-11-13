@@ -1,11 +1,4 @@
-/** TUI 本地 slash 命令解析；不触达 Agent 运行时。 */
-export type TuiCommand =
-  | { kind: "help" }
-  | { kind: "clear" }
-  | { kind: "exit" }
-  | { kind: "model"; args: readonly string[] }
-  | { kind: "unknown"; name: string };
-
+/** TUI `/help` 文案；只放用户可见说明，不参与命令解析。 */
 export const TUI_HELP_LINES = [
   "本地命令：",
   "  /help                      显示本帮助",
@@ -20,23 +13,3 @@ export const TUI_HELP_LINES = [
   "--no-alt-screen 下不接管鼠标，使用终端原生选择/复制。",
   "其他输入会发送给 coding agent。",
 ] as const;
-
-export function parseTuiCommand(text: string): TuiCommand | undefined {
-  const trimmed = text.trim();
-  if (!trimmed.startsWith("/")) return undefined;
-  const parts = trimmed.slice(1).split(/\s+/).filter(Boolean);
-  const name = parts[0]?.toLowerCase() ?? "";
-  switch (name) {
-    case "help":
-      return { kind: "help" };
-    case "clear":
-      return { kind: "clear" };
-    case "exit":
-    case "quit":
-      return { kind: "exit" };
-    case "model":
-      return { kind: "model", args: parts.slice(1) };
-    default:
-      return { kind: "unknown", name };
-  }
-}

@@ -1,7 +1,7 @@
 /** 终端输入投影：按显示宽度换行，保持宽字符/emoji 光标对齐，并限制可视行数。 */
 import { Box, Text } from "ink";
 import type { ReactNode } from "react";
-import { layoutInput } from "../interaction/inputLayout";
+import { layoutInput } from "./inputLayout";
 
 export function TextInput({
   value,
@@ -9,14 +9,17 @@ export function TextInput({
   placeholder,
   maxVisibleLines,
   columns,
+  secret = false,
 }: {
   value: string;
   cursor: number;
   placeholder: string;
   maxVisibleLines: number;
   columns: number;
+  secret?: boolean;
 }) {
-  if (value.length === 0) {
+  const displayValue = secret ? "•".repeat(value.length) : value;
+  if (displayValue.length === 0) {
     const hint = layoutInput(placeholder, 0, columns, 1)
       .lines[0]?.tokens.map((token) => token.text)
       .join("");
@@ -30,7 +33,7 @@ export function TextInput({
     );
   }
 
-  const layout = layoutInput(value, cursor, columns, maxVisibleLines);
+  const layout = layoutInput(displayValue, cursor, columns, maxVisibleLines);
   const endLine = layout.startLine + layout.visibleLineCount;
   return (
     <Box flexDirection="column" width="100%">

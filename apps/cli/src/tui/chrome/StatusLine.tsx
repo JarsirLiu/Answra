@@ -1,6 +1,6 @@
 /** 底部状态行：按列宽分配 Bot/模型、工作区与 run 阶段，窄终端只截断不换行。 */
 import { Box, Text, useWindowSize } from "ink";
-import type { TuiRunPhase } from "../viewStore";
+import type { TuiRunPhase } from "../app/viewStore";
 
 const PHASE_WIDTH = 12;
 const MIN_PATH_WIDTH = 8;

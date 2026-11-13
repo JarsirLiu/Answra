@@ -92,7 +92,7 @@ apps/cli              独立终端宿主：coding Bot 的 CLI 入口、模型配
   src/session          单活动 run 的 CodingSession 用例
   src/adapters         @answra/config 共享文件实现与 @answra/agent/composition 端口映射
   src/presentation     Agent 事件与模型摘要到文本/工具行的纯投影
-  src/tui              Ink 8 TUI 组件、view store 与虚拟 transcript；interaction/ 放输入布局/指针/选区/剪贴板原语
+  src/tui              TUI 组合根：app/ 根布局与 view store，transcript/ 虚拟列表与工具展示，composer/ 输入，chrome/ 状态行，commands/ slash 命令，interaction/ 指针/选区/剪贴板
   src/transport        stdin/stdout/stderr 适配
 apps/agent             平台无关的 Agent 运行时（不依赖 Electron/React），由 desktop 的 utility process 拉起
   src/index.ts         公共入口：desktop worker 的唯一导入面

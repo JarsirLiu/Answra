@@ -1,7 +1,7 @@
 import type { ConversationSnapshot } from "@answra/shared";
 import type { AgentEventEnvelope } from "@answra/shared/schema";
 import { describe, expect, it, vi } from "vitest";
-import { TuiViewStore } from "../src/tui/viewStore";
+import { TuiViewStore } from "../src/tui/app/viewStore";
 
 const snapshot: ConversationSnapshot = {
   conversationId: "conversation-1",

@@ -11,6 +11,7 @@ import {
   useState,
 } from "react";
 import type { PointerSource } from "../interaction/pointerInput";
+import type { TuiSetupStep } from "../modelSetup";
 import { MessageRow } from "./MessageRow";
 import { TranscriptTail, Welcome } from "./Transcript";
 import {
@@ -45,6 +46,8 @@ export function VirtualTranscript({
   localError,
   notice,
   workspaceRoot,
+  modelConfigured,
+  setupStep,
   expandThinking,
   footer,
   pointerSource,
@@ -54,6 +57,8 @@ export function VirtualTranscript({
   localError?: string;
   notice?: readonly string[];
   workspaceRoot: string;
+  modelConfigured?: boolean;
+  setupStep?: TuiSetupStep;
   expandThinking: boolean;
   footer?: ReactNode;
   pointerSource?: PointerSource;
@@ -163,7 +168,11 @@ export function VirtualTranscript({
   if (view.messages.length === 0) {
     return (
       <Box flexBasis={0} flexDirection="column" flexGrow={1} minHeight={0} overflow="hidden">
-        <Welcome workspaceRoot={workspaceRoot} />
+        <Welcome
+          modelConfigured={modelConfigured}
+          setupStep={setupStep}
+          workspaceRoot={workspaceRoot}
+        />
         <TranscriptTail localError={localError} notice={notice} view={view} />
         {footer}
       </Box>

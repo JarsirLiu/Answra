@@ -20,7 +20,7 @@ CLI 已经能读取桌面端写入的共享 `config.json`（`@answra/config`）�
   - `apps/cli/src/cli/configCommand.ts`：`answra config show|set|unset` 用例。
   - `apps/cli/src/config/cliOptions.ts`：新增 `config` 的 argv 语法；不读写文件。
   - `apps/cli/src/session/codingSession.ts`：新增 `setModel()` 窄端口。
-  - `apps/cli/src/tui/commands.ts`、`tui/modelCommand.ts`、`tui/viewStore.ts`：`/model` 解析、执行与状态行标签。
+  - `apps/cli/src/tui/commands/parse.ts`、`commands/modelCommand.ts`、`app/viewStore.ts`：`/model` 解析、执行与状态行标签。
   - `apps/cli/src/presentation/modelSummary.ts`：模型摘要纯文本投影。
   - `packages/config/src/localModel.ts`：桌面与 CLI 共用的 normalize/merge 纯函数；桌面 `resolveLocal` 已改为复用。
   - 测试：`apps/cli/test/modelSettings.test.ts`、`runCli.test.ts`、`codingSession.test.ts`、`commands.test.ts`、`runTui.test.ts`、`packages/config/test/localModel.test.ts`。
@@ -59,10 +59,10 @@ apps/cli/src/
   presentation/
     modelSummary.ts           # config show 文本
   tui/
-    commands.ts               # /model 语法
-    modelCommand.ts           # /model 执行
+    commands/parse.ts         # /model 语法
+    commands/modelCommand.ts  # /model 执行
     runTui.tsx                # 只编排
-    viewStore.ts              # modelLabel
+    app/viewStore.ts          # modelLabel
 ```
 
 `packages/config` 只增加纯函数模块 `localModel.ts`，不新增第二个持久化实现。
@@ -86,9 +86,9 @@ session -X-> 配置持久化
 - `ModelSettingsSnapshot`：`source`、`local`、`configured`，供 `config show` 与 `/model` 展示。
 - `ModelSettingsStore`：`read()` / `write()`，只做共享文件 I/O，不解释优先级或 source。
 - `ModelSettings`：`resolve()` / `snapshot()` / `addLocal()` / `switchChatModel()` / `clearLocal()`。
-- `resolve()` 返回 `ConversationModelConfig`，不返回 access token；凭据由命令层从 `ANSWRA_API_KEY` 或 `--api-key` 注入会话。
+- `resolve()` 返回 `ConversationModelConfig`，不返回 access token；凭据由命令层从 `ANSWRA_API_KEY` / `--api-key` 或 TUI 内存输入注入会话。
 - `addLocal` 校验后写入共享本地模型并把 `source` 置为 `local`；`switchChatModel` 只替换 chat 模型并保留端点与 answer 模型；`clearLocal` 清空 `model.local` 并把 `source` 置回 `cloud`，不删除文件。
-- 优先级保持：flag > env > 共享 `model.local`，逐字段回退；`--api-key` / `ANSWRA_API_KEY` 只参与凭据解析。
+- 优先级保持：flag > env > 共享 `model.local`，逐字段回退；凭据由 TUI 显式输入覆盖启动 token，否则沿用 `--api-key` / `ANSWRA_API_KEY`。
 
 ### 命令表面
 
@@ -101,7 +101,7 @@ session -X-> 配置持久化
 
 - 不新增 `apps/cli/src/utils/`、`services/`、`core/` 或通用 DI/命令框架。
 - 不做 `profiles[]`、`--profile`、`/v1/models` 自动发现和云端登录。
-- 不把 API Key、OAuth token 或任何可解密 secret 写进共享配置。
+- 不把 API Key、OAuth token 或任何可解密 secret 写进共享配置；TUI 内输入的 API Key 也只保留在进程内存。
 - 不让 `tui/` 直接写文件，不让 `session/` 知道配置路径，不让 `config/` 承载持久化。
 - 不做会话内 cloud/local 来源切换；`/model` 只操作本地模型。
 
@@ -133,7 +133,7 @@ session -X-> 配置持久化
 - `addLocal` 把 `source` 置为 local 会改变开发态桌面的当前来源；打包版仍按既有门禁把 local 折叠为 cloud。两个客户端对 source 的解释由 `packages/config` 的共享形状约束。
 - `CodingSession.setModel()` 在运行中直接拒绝，不改变当前 run 的端点；`/model` 也先检查 TUI 忙碌状态。
 - `/model add` 采用空格分隔参数，v1 只接受标准 URL 和模型 ID；包含空格的路径式参数需要后续参数语法。
-- `config` 子命令与 `/model` 必须同步 `apps/cli/src/cli/help.ts` 和 `commands.ts` 的稳定文案，避免文档与行为漂移。
+- `config` 子命令与 `/model` 必须同步 `apps/cli/src/cli/help.ts` 和 `apps/cli/src/tui/commands/parse.ts` 的稳定文案，避免文档与行为漂移。
 - `answerModel` 在共享保存时由 `mergeLocalModel` 保留；`addLocal` 未提供 answer 模型时不写该字段，解析时回退到 chat 模型，避免沿用另一个端点上的旧值。
 
 ## 验证

@@ -1,8 +1,8 @@
 /** Claude 风格活动行：旋转 glyph、随机动词、耗时与中断提示；只投影 run 阶段。 */
 import { Box, Text } from "ink";
 import { useEffect, useState } from "react";
-import { SPINNER_FRAMES, TUI_THEME } from "../theme";
-import type { TuiRunPhase } from "../viewStore";
+import type { TuiRunPhase } from "../app/viewStore";
+import { SPINNER_FRAMES, TUI_THEME } from "./theme";
 
 const VERBS = [
   "Accomplishing",

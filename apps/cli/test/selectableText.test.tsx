@@ -1,8 +1,8 @@
 import { Box } from "ink";
 import { render } from "ink-testing-library";
 import { describe, expect, it } from "vitest";
-import { SelectableText, SelectionContext } from "../src/tui/components/SelectableText";
 import { TuiSelectionStore } from "../src/tui/interaction/selectionStore";
+import { SelectableText, SelectionContext } from "../src/tui/transcript/SelectableText";
 
 function nextFrame(ms = 20): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

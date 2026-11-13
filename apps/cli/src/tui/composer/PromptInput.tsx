@@ -1,6 +1,7 @@
 /** Claude 风格输入框：底部边框、宽字符光标、历史浏览、Enter 提交与多行换行。 */
 import { Box, Text, useApp, useInput, usePaste, useWindowSize } from "ink";
 import { useEffect, useRef, useState } from "react";
+import { POINTER, TUI_THEME } from "../chrome/theme";
 import {
   endOfLineOffset,
   moveCursorVertically,
@@ -8,8 +9,7 @@ import {
   previousGraphemeOffset,
   previousWordOffset,
   startOfLineOffset,
-} from "../interaction/inputLayout";
-import { POINTER, TUI_THEME } from "../theme";
+} from "./inputLayout";
 import { TextInput } from "./TextInput";
 
 const CONTROL_HINT = "Enter 发送 · Shift+Enter 或 \\ + Enter 换行 · Esc 取消 · Ctrl-C 两次退出";
@@ -27,10 +27,16 @@ export function PromptInput({
   busy,
   onSubmit,
   selectionActive = false,
+  idleHint,
+  secret = false,
+  allowEmptySubmit = false,
 }: {
   busy: boolean;
   onSubmit: (text: string) => void;
   selectionActive?: boolean;
+  idleHint?: string;
+  secret?: boolean;
+  allowEmptySubmit?: boolean;
 }) {
   const { exit } = useApp();
   const { columns: windowColumns, rows } = useWindowSize();
@@ -67,8 +73,8 @@ export function PromptInput({
 
   const submit = () => {
     const text = draft.value.trim();
-    if (text.length === 0) return;
-    setHistory((current) => [...current, text]);
+    if (text.length === 0 && !allowEmptySubmit) return;
+    if (!secret) setHistory((current) => [...current, text]);
     historyIndex.current = -1;
     savedDraft.current = "";
     setExitArmed(false);
@@ -77,7 +83,7 @@ export function PromptInput({
   };
 
   const browse = (direction: -1 | 1) => {
-    if (history.length === 0) return;
+    if (secret || history.length === 0) return;
     if (direction === -1) {
       if (historyIndex.current === -1) {
         savedDraft.current = draft.value;
@@ -192,7 +198,7 @@ export function PromptInput({
     ? "运行中，Enter 排队 · Esc 取消 · Ctrl-C 取消"
     : exitArmed
       ? "再按一次 Ctrl-C 退出"
-      : CONTROL_HINT;
+      : (idleHint ?? CONTROL_HINT);
   return (
     <Box flexDirection="column" marginTop={1} width="100%">
       <Box
@@ -211,6 +217,7 @@ export function PromptInput({
             cursor={draft.cursor}
             maxVisibleLines={maxVisibleLines}
             placeholder={placeholder}
+            secret={secret}
             value={draft.value}
           />
         </Box>

@@ -7,7 +7,7 @@ import {
   previousGraphemeOffset,
   previousWordOffset,
   startOfLineOffset,
-} from "../src/tui/interaction/inputLayout";
+} from "../src/tui/composer/inputLayout";
 
 describe("input layout", () => {
   it("keeps wide characters and emoji on the right column", () => {

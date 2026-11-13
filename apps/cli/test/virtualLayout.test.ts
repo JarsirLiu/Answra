@@ -5,7 +5,7 @@ import {
   estimateMessageHeight,
   findVirtualWindow,
   maxScrollTop,
-} from "../src/tui/components/virtualLayout";
+} from "../src/tui/transcript/virtualLayout";
 
 describe("virtual transcript layout", () => {
   it("estimates wrapped lines using display width", () => {
@@ -25,6 +25,35 @@ describe("virtual transcript layout", () => {
     expect(bottom.startIndex).toBeGreaterThan(0);
     expect(bottom.endIndex).toBe(40);
     expect(bottom.offsetWithin).toBeLessThanOrEqual(2);
+  });
+
+  it("counts a collapsed read/search group as one row", () => {
+    const read = (id: string, path: string) => ({
+      id,
+      kind: "tool" as const,
+      toolCallId: id,
+      toolName: "Read",
+      state: "completed" as const,
+      input: { file_path: path },
+      output: {
+        type: "text",
+        filePath: path,
+        content: "x",
+        numLines: 1,
+        startLine: 1,
+        totalLines: 1,
+      },
+    });
+    const message = {
+      id: "assistant-1",
+      role: "assistant" as const,
+      text: "",
+      status: "complete" as const,
+      images: [],
+      parts: [read("tool-1", "src/a.ts"), read("tool-2", "src/b.ts")],
+    };
+    expect(estimateMessageHeight(message, 80, false)).toBe(2);
+    expect(estimateMessageHeight(message, 80, true)).toBeGreaterThan(2);
   });
 
   it("falls back to estimates until a row has been measured", () => {

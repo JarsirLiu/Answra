@@ -7,6 +7,7 @@ import {
   type ConversationView,
   EMPTY_CONVERSATION_VIEW,
 } from "@answra/ui/conversation-view";
+import type { TuiSetupStep } from "../modelSetup";
 
 const TUI_EVENT_BATCH_MS = 16;
 const TUI_EVENT_QUEUE_MAX = 2_048;
@@ -18,6 +19,8 @@ export interface TuiState {
   phase: TuiRunPhase;
   queued: number;
   modelLabel: string;
+  modelConfigured: boolean;
+  setupStep?: TuiSetupStep;
   localError?: string;
   notice?: readonly string[];
 }
@@ -31,6 +34,7 @@ export class TuiViewStore {
     phase: "idle",
     queued: 0,
     modelLabel: "",
+    modelConfigured: false,
   };
   private readonly listeners = new Set<Listener>();
   private pending: AgentEventEnvelope[] = [];
@@ -101,6 +105,16 @@ export class TuiViewStore {
   setModelLabel(modelLabel: string): void {
     if (this.state.modelLabel === modelLabel) return;
     this.setState({ ...this.state, modelLabel });
+  }
+
+  setModelConfigured(modelConfigured: boolean): void {
+    if (this.state.modelConfigured === modelConfigured) return;
+    this.setState({ ...this.state, modelConfigured });
+  }
+
+  setSetupStep(setupStep: TuiSetupStep | undefined): void {
+    if (this.state.setupStep === setupStep) return;
+    this.setState({ ...this.state, setupStep });
   }
 
   setNotice(lines: readonly string[] | undefined): void {

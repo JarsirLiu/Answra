@@ -3,9 +3,9 @@ import type { ReactElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ModelSettings } from "../src/model/ports";
 import type { CodingSession } from "../src/session/codingSession";
-import { TUI_HELP_LINES } from "../src/tui/commands";
+import { TuiViewStore } from "../src/tui/app/viewStore";
+import { TUI_HELP_LINES } from "../src/tui/commands/help";
 import { runInkTui } from "../src/tui/runTui";
-import { TuiViewStore } from "../src/tui/viewStore";
 
 const { renderMock } = vi.hoisted(() => ({ renderMock: vi.fn() }));
 
@@ -119,6 +119,39 @@ async function start(
     model: "test-model",
     workspaceRoot: "D:\\workspace",
     altScreen,
+  });
+  await tick();
+  if (!props || !options || !finish) throw new Error("TUI did not render");
+  return { props, options, finish };
+}
+
+async function startUnconfigured(
+  store: TuiViewStore,
+  modelSettings: ModelSettings,
+  createSession: (model: ConversationModelConfig, accessToken?: string) => CodingSession,
+): Promise<RenderResult> {
+  let props: AppProps | undefined;
+  let options: Record<string, unknown> | undefined;
+  let finish: (() => void) | undefined;
+  renderMock.mockImplementation(
+    (element: ReactElement<AppProps>, renderOptions: Record<string, unknown>) => {
+      props = element.props;
+      options = renderOptions;
+      return {
+        waitUntilExit: () =>
+          new Promise<void>((resolve) => {
+            finish = resolve;
+          }),
+      };
+    },
+  );
+  void runInkTui({
+    createSession,
+    store,
+    modelSettings,
+    botName: "coding.engineer",
+    workspaceRoot: "D:\\workspace",
+    altScreen: false,
   });
   await tick();
   if (!props || !options || !finish) throw new Error("TUI did not render");
@@ -281,6 +314,107 @@ describe("runInkTui", () => {
       answerModel: "added-answer",
     });
     expect(store.getSnapshot().modelLabel).toBe("added-model");
+
+    finish();
+    store.dispose();
+  });
+
+  it("walks through base URL, API key, and model ID before creating the session", async () => {
+    const store = new TuiViewStore();
+    const modelSettings = createModelSettings();
+    const { session } = createSession();
+    const create = vi.fn(() => session);
+    const { props, finish } = await startUnconfigured(store, modelSettings, create);
+
+    expect(store.getSnapshot()).toMatchObject({
+      modelConfigured: false,
+      setupStep: "base-url",
+      notice: ["1/3  Base URL", "输入 OpenAI 兼容端点，例如 http://127.0.0.1:11434/v1"],
+    });
+
+    props.onSubmit("http://127.0.0.1:9999/v1");
+    await tick();
+    expect(store.getSnapshot()).toMatchObject({
+      setupStep: "api-key",
+      notice: ["2/3  API Key", "输入内容已隐藏；本地端点可留空。"],
+    });
+
+    props.onSubmit("sk-test");
+    await tick();
+    expect(store.getSnapshot()).toMatchObject({
+      setupStep: "model-id",
+      notice: ["3/3  模型 ID", "输入模型 ID，例如 qwen2.5-coder:7b"],
+    });
+
+    props.onSubmit("qwen");
+    await tick();
+
+    expect(modelSettings.addLocal).toHaveBeenCalledWith({
+      baseUrl: "http://127.0.0.1:9999/v1",
+      chatModel: "qwen",
+    });
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({ chat: expect.objectContaining({ model: "added-model" }) }),
+      "sk-test",
+    );
+    expect(session.open).toHaveBeenCalledTimes(1);
+    expect(store.getSnapshot()).toMatchObject({
+      modelConfigured: true,
+      setupStep: undefined,
+      modelLabel: "added-model",
+      notice: [
+        "模型已配置：added-model",
+        "API Key 仅在本次会话内存中使用；重启后请重新输入或设置 ANSWRA_API_KEY。",
+        "现在可以输入任务开始会话。",
+      ],
+    });
+
+    finish();
+    store.dispose();
+  });
+
+  it("allows an empty API key for local endpoints", async () => {
+    const store = new TuiViewStore();
+    const modelSettings = createModelSettings();
+    const { session } = createSession();
+    const create = vi.fn(() => session);
+    const { props, finish } = await startUnconfigured(store, modelSettings, create);
+
+    props.onSubmit("http://127.0.0.1:9999/v1");
+    await tick();
+    props.onSubmit("");
+    await tick();
+    props.onSubmit("qwen");
+    await tick();
+
+    expect(create).toHaveBeenCalledWith(expect.anything(), undefined);
+    expect(store.getSnapshot()).toMatchObject({ modelConfigured: true, setupStep: undefined });
+
+    finish();
+    store.dispose();
+  });
+
+  it("creates the session from /model add when no model is configured", async () => {
+    const store = new TuiViewStore();
+    const modelSettings = createModelSettings();
+    const { session } = createSession();
+    const create = vi.fn(() => session);
+    const { props, finish } = await startUnconfigured(store, modelSettings, create);
+
+    props.onSubmit("/model add http://127.0.0.1:9999/v1 added-model");
+    await tick();
+
+    expect(modelSettings.addLocal).toHaveBeenCalledWith({
+      baseUrl: "http://127.0.0.1:9999/v1",
+      chatModel: "added-model",
+    });
+    expect(create).toHaveBeenCalledWith(expect.anything(), undefined);
+    expect(session.open).toHaveBeenCalledTimes(1);
+    expect(store.getSnapshot()).toMatchObject({
+      modelConfigured: true,
+      setupStep: undefined,
+      modelLabel: "added-model",
+    });
 
     finish();
     store.dispose();

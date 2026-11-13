@@ -76,12 +76,18 @@
 | `src/session` | `CodingSession` 单活动 run 用例与窄宿主端口 | 不实现模型调用、TUI 或进程 I/O |
 | `src/adapters` | `@answra/config` 共享文件实现、`@answra/agent/composition` 的 `CodingHost` 到 CLI 端口映射 | 不复制 Agent 运行时语义，不承载模型合并规则 |
 | `src/presentation` | Agent 事件到非 TTY 文本、工具行与模型摘要格式化 | 纯投影，不读写会话或进程 |
-| `src/tui` | Ink 8 TUI 组件、view store、本地 slash 命令（含 `/model`）与虚拟 transcript/宽字符输入原语；备用屏幕用 Ink 原生 `alternateScreen` | 不 import Electron/desktop 或 `@answra/config`；不承载 Agent 命令分派或 runtime；运行中提交的 prompt 只在 TUI 队列内排队 |
-| `src/tui/interaction` | 终端交互原语：输入布局、指针解析、选区 store/action 与剪贴板输出 | 不 import `components`/`runTui`；不解析 Ink 组件；指针/选区状态只由 store 写 |
+| `src/tui` | TUI 组合根：`runTui.tsx` 只接线；备用屏幕用 Ink 原生 `alternateScreen` | 不 import Electron/desktop 或 `@answra/config`；不承载 Agent 命令分派或 runtime；运行中提交的 prompt 只在 TUI 队列内排队 |
+| `src/tui/app` | 根布局与 view store：snapshot/事件 -> TuiState | store 是唯一 writer；不解析工具输出 |
+| `src/tui/transcript` | 虚拟 transcript、消息行、Markdown、选区文本与高度估算 | 只处理消息顺序、虚拟化与滚动；工具语义只走 `transcript/tool/` |
+| `src/tui/transcript/tool` | 工具展示适配：`ToolCall`、详情、连续 read/search/list 折叠组 | 只消费 `@answra/ui/tool-presentation`；不重新解析工具输出或判断 Agent 事件 |
+| `src/tui/composer` | 输入框、宽字符/光标布局、历史与粘贴 | 不读写 transcript 或工具状态 |
+| `src/tui/chrome` | 状态行、Spinner 与主题 | 不持有会话或工具状态 |
+| `src/tui/commands` | 本地 slash 命令解析、帮助与 `/model` | 不承载 Agent 命令分派或 runtime |
+| `src/tui/interaction` | 终端交互原语：指针解析、选区 store/action 与剪贴板输出 | 不 import `transcript`/`composer`/`runTui`；不解析 Ink 组件；指针/选区状态只由 store 写 |
 | `src/transport` | stdin/stdout/stderr 适配 | 不定义业务行为 |
 
 - CLI 只从 `@answra/agent/composition` 组装 coding host，不使用 worker 线协议、不启动 VAD/ASR、不 import `conversation`/`interview` 领域。
-- CLI 模型配置只从 `@answra/config` 读取文件实现与纯合并函数；`src/model` 不碰文件路径，真实读写由 `main.ts` 注入 `src/adapters/sharedModelStore.ts`。API Key 只走环境变量/参数，不进入共享文件。
+- CLI 模型配置只从 `@answra/config` 读取文件实现与纯合并函数；`src/model` 不碰文件路径，真实读写由 `main.ts` 注入 `src/adapters/sharedModelStore.ts`。API Key 只走环境变量/参数或 TUI 内存输入，不进入共享文件。
 - CLI 运行时目标为 Node >=22.13，构建 target 为 `node22.14`，与仓库开发、CI 与 pnpm 下限一致。
 - 安装包分发复用 Electron 35.0.0 的 Node 22.14（`ELECTRON_RUN_AS_NODE=1`）运行 CLI bundle，不新增 Node sidecar、不启动 GUI。
 - CLI 使用 ESM（`dist/main.mjs`）：Ink 8 与 yoga-layout 含 top-level await，不能打成 CJS；安装包通过 electron-builder `extraResources` 分发 `resources/cli/main.mjs`，Windows 的 `answra.cmd` 只复用同目录 `Answra.exe`；不新增 CLI 可执行文件，shim 不自动注册 PATH。

@@ -1,7 +1,7 @@
 /** Claude 风格 assistant 缩进：左侧圆点 + 两列内容，避免与工具行混排。 */
 import { Box, Text } from "ink";
 import type { ReactNode } from "react";
-import { BLACK_CIRCLE, TUI_THEME } from "../theme";
+import { BLACK_CIRCLE, TUI_THEME } from "../chrome/theme";
 
 export function MessageResponse({ children, dim }: { children: ReactNode; dim?: boolean }) {
   return (

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseTuiCommand } from "../src/tui/commands";
+import { parseTuiCommand } from "../src/tui/commands/parse";
 
 describe("parseTuiCommand", () => {
   it("parses local commands with surrounding whitespace", () => {

@@ -1,5 +1,9 @@
 import type { ClientConfig } from "@answra/config";
-import type { ConversationSendRequest, ConversationSnapshot } from "@answra/shared";
+import type {
+  ConversationModelConfig,
+  ConversationSendRequest,
+  ConversationSnapshot,
+} from "@answra/shared";
 import type { AgentEvent, AgentEventEnvelope } from "@answra/shared/schema";
 import { describe, expect, it, vi } from "vitest";
 import type { CliDependencies } from "../src/cli/dependencies";
@@ -71,16 +75,19 @@ function envelope(event: AgentEvent): AgentEventEnvelope {
 function createDependencies(
   overrides: Partial<CliDependencies> & {
     sent?: ConversationSendRequest[];
+    tokens?: string[];
   } = {},
 ): CliDependencies {
-  const { sent: sentOverride, ...depsOverrides } = overrides;
+  const { sent: sentOverride, tokens: tokensOverride, ...depsOverrides } = overrides;
   const sent = sentOverride ?? [];
+  const tokens = tokensOverride ?? [];
   const host: CodingSessionHost = {
     configure: vi.fn(),
     createConversation: vi.fn(async () => snapshot),
     clearConversation: vi.fn(async () => snapshot),
-    send: vi.fn(async (_conversationId, request) => {
+    send: vi.fn(async (_conversationId, request, token) => {
       sent.push(request);
+      tokens.push(token);
       return { runId: "run-1" };
     }),
     cancel: vi.fn(),
@@ -141,6 +148,37 @@ describe("runCli", () => {
     expect((deps.output as OutputPort & { stderr: string }).stderr).toContain(
       "缺少 ANSWRA_AI_BASE_URL",
     );
+  });
+
+  it("starts interactive model setup instead of failing when config is missing", async () => {
+    const deps = createDependencies({ env: {}, input: createInput("", true) });
+
+    await expect(runCli(["code"], deps)).resolves.toBe(0);
+
+    expect(deps.runTui).toHaveBeenCalledWith(
+      expect.objectContaining({ createSession: expect.any(Function) }),
+    );
+    const options = vi.mocked(deps.runTui).mock.calls[0]?.[0];
+    expect(options?.session).toBeUndefined();
+    expect(deps.createSessionHost).not.toHaveBeenCalled();
+  });
+
+  it("uses the API key entered in the TUI for the new session", async () => {
+    const tokens: string[] = [];
+    const deps = createDependencies({ env: {}, input: createInput("", true), tokens });
+    await expect(runCli(["code"], deps)).resolves.toBe(0);
+
+    const options = vi.mocked(deps.runTui).mock.calls[0]?.[0];
+    const model: ConversationModelConfig = {
+      chat: { baseUrl: "http://127.0.0.1:9999/v1", model: "qwen", auth: "local" },
+      answer: { baseUrl: "http://127.0.0.1:9999/v1", model: "qwen", auth: "local" },
+    };
+    const session = options?.createSession?.(model, "sk-entered");
+    await session?.open();
+    await session?.send("hello");
+
+    expect(tokens).toEqual(["sk-entered"]);
+    session?.close();
   });
 
   it("runs a one-shot request from a positional prompt", async () => {

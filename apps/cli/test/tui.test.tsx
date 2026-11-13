@@ -1,11 +1,11 @@
 import { render } from "ink-testing-library";
 import { describe, expect, it, vi } from "vitest";
-import { App } from "../src/tui/components/App";
-import { PromptInput } from "../src/tui/components/PromptInput";
-import { Transcript } from "../src/tui/components/Transcript";
+import { App } from "../src/tui/app/App";
+import { TuiViewStore } from "../src/tui/app/viewStore";
+import { PromptInput } from "../src/tui/composer/PromptInput";
 import type { PointerEvent } from "../src/tui/interaction/pointerInput";
 import { TuiSelectionStore } from "../src/tui/interaction/selectionStore";
-import { TuiViewStore } from "../src/tui/viewStore";
+import { Transcript, Welcome } from "../src/tui/transcript/Transcript";
 
 function nextFrame(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
@@ -29,6 +29,32 @@ function wheelEvent(direction: -1 | 1): PointerEvent {
 }
 
 describe("TUI components", () => {
+  it("shows model onboarding on the welcome page when no model is configured", async () => {
+    const instance = render(<Welcome modelConfigured={false} workspaceRoot="D:\\workspace" />);
+    await nextFrame();
+
+    const frame = instance.lastFrame();
+    expect(frame).toContain("尚未配置模型");
+    expect(frame).toContain("3 步");
+    expect(frame).toContain("Base URL");
+    expect(frame).toContain("API Key");
+    expect(frame).toContain("模型 ID");
+    instance.unmount();
+  });
+
+  it("marks completed model setup steps in the welcome checklist", async () => {
+    const instance = render(
+      <Welcome modelConfigured={false} setupStep="model-id" workspaceRoot="D:\\workspace" />,
+    );
+    await nextFrame();
+
+    const frame = instance.lastFrame();
+    expect(frame).toContain("✓ Base URL");
+    expect(frame).toContain("✓ API Key");
+    expect(frame).toContain("○ 模型 ID");
+    instance.unmount();
+  });
+
   it("submits trimmed prompt text and clears the input", async () => {
     const onSubmit = vi.fn();
     const instance = render(<PromptInput busy={false} onSubmit={onSubmit} />);
@@ -40,6 +66,32 @@ describe("TUI components", () => {
 
     expect(onSubmit).toHaveBeenCalledWith("hello");
     expect(instance.lastFrame()).not.toContain("hello");
+    instance.unmount();
+  });
+
+  it("masks secret input, keeps it out of history, and allows empty submit", async () => {
+    const onSubmit = vi.fn();
+    const instance = render(
+      <PromptInput allowEmptySubmit busy={false} onSubmit={onSubmit} secret />,
+    );
+
+    instance.stdin.write("sk-secret");
+    await nextFrame();
+    const frame = instance.lastFrame();
+    expect(frame).not.toContain("sk-secret");
+    expect(frame).toContain("•");
+
+    instance.stdin.write("\r");
+    await nextFrame();
+    expect(onSubmit).toHaveBeenCalledWith("sk-secret");
+
+    instance.stdin.write("\u001b[A");
+    await nextFrame();
+    expect(instance.lastFrame()).not.toContain("sk-secret");
+
+    instance.stdin.write("\r");
+    await nextFrame();
+    expect(onSubmit).toHaveBeenLastCalledWith("");
     instance.unmount();
   });
 
@@ -105,6 +157,31 @@ describe("TUI components", () => {
     expect(instance.lastFrame()).toContain("Answra Code");
     expect(instance.lastFrame()).toContain("❯");
     expect(instance.lastFrame()).toContain("coding.engineer");
+    instance.unmount();
+    store.dispose();
+  });
+
+  it("shows the API key setup hint and masks the input", async () => {
+    const store = new TuiViewStore();
+    store.initialize({ conversationId: "conversation-1", eventRevision: 0, messages: [] });
+    store.setModelConfigured(false);
+    store.setSetupStep("api-key");
+    const instance = render(
+      <App
+        botName="coding.engineer"
+        onCancel={vi.fn()}
+        onSubmit={vi.fn()}
+        store={store}
+        workspaceRoot="D:\\workspace"
+      />,
+    );
+    await nextFrame();
+
+    expect(instance.lastFrame()).toContain("输入 API Key");
+    instance.stdin.write("sk-secret");
+    await nextFrame();
+    expect(instance.lastFrame()).not.toContain("sk-secret");
+    expect(instance.lastFrame()).toContain("•");
     instance.unmount();
     store.dispose();
   });
@@ -471,6 +548,296 @@ describe("TUI components", () => {
 
     instance.unmount();
     store.dispose();
+  });
+
+  it("renders Read as a Claude-style summary without file contents", async () => {
+    const instance = render(
+      <Transcript
+        view={{
+          eventRevision: 0,
+          messages: [
+            {
+              id: "assistant-1",
+              role: "assistant",
+              text: "",
+              status: "complete",
+              images: [],
+              parts: [
+                {
+                  id: "tool-1",
+                  kind: "tool",
+                  toolCallId: "call-1",
+                  toolName: "Read",
+                  state: "completed",
+                  input: { file_path: "src/a.ts" },
+                  output: {
+                    type: "text",
+                    filePath: "src/a.ts",
+                    content: "SECRET_CONTENT",
+                    numLines: 42,
+                    startLine: 1,
+                    totalLines: 42,
+                  },
+                },
+              ],
+            },
+          ],
+        }}
+        workspaceRoot="D:\\workspace"
+      />,
+    );
+    await nextFrame();
+
+    const frame = instance.lastFrame();
+    expect(frame).toContain("Read(src/a.ts)");
+    expect(frame).toContain("Read 42 lines");
+    expect(frame).not.toContain("SECRET_CONTENT");
+    instance.unmount();
+  });
+
+  it("keeps Grep matches collapsed until Ctrl+O expands the tool", async () => {
+    const view = {
+      eventRevision: 0,
+      messages: [
+        {
+          id: "assistant-1",
+          role: "assistant" as const,
+          text: "",
+          status: "complete" as const,
+          images: [],
+          parts: [
+            {
+              id: "tool-1",
+              kind: "tool" as const,
+              toolCallId: "call-1",
+              toolName: "Grep",
+              state: "completed" as const,
+              input: { pattern: "needle", path: "src" },
+              output: {
+                type: "content",
+                files: [
+                  {
+                    path: "src/a.ts",
+                    lines: [{ lineNumber: 3, text: "needle found", kind: "match" }],
+                  },
+                ],
+                totalMatches: 1,
+                shownMatches: 1,
+                truncated: false,
+                lineNumbers: true,
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    const collapsed = render(<Transcript view={view} workspaceRoot="D:\\workspace" />);
+    await nextFrame();
+    expect(collapsed.lastFrame()).toContain('Search(pattern: "needle", path: "src")');
+    expect(collapsed.lastFrame()).toContain("Found 1 line");
+    expect(collapsed.lastFrame()).toContain("ctrl+o to expand");
+    expect(collapsed.lastFrame()).not.toContain("needle found");
+    collapsed.unmount();
+
+    const expanded = render(
+      <Transcript expandThinking view={view} workspaceRoot="D:\\workspace" />,
+    );
+    await nextFrame();
+    expect(expanded.lastFrame()).toContain("needle found");
+    expanded.unmount();
+  });
+
+  it("renders RunCommand output under the result gutter", async () => {
+    const instance = render(
+      <Transcript
+        view={{
+          eventRevision: 0,
+          messages: [
+            {
+              id: "assistant-1",
+              role: "assistant",
+              text: "",
+              status: "complete",
+              images: [],
+              parts: [
+                {
+                  id: "tool-1",
+                  kind: "tool",
+                  toolCallId: "call-1",
+                  toolName: "RunCommand",
+                  state: "completed",
+                  input: { command: "pnpm test" },
+                  output: {
+                    kind: "result",
+                    result: {
+                      stdout: "all tests passed",
+                      stderr: "",
+                      outcome: { type: "exit", exitCode: 0 },
+                    },
+                  },
+                },
+              ],
+            },
+          ],
+        }}
+        workspaceRoot="D:\\workspace"
+      />,
+    );
+    await nextFrame();
+
+    const frame = instance.lastFrame();
+    expect(frame).toContain("Bash(pnpm test)");
+    expect(frame).toContain("Done");
+    expect(frame).toContain("all tests passed");
+    instance.unmount();
+  });
+
+  it("renders Edit as Update with a condensed diff", async () => {
+    const instance = render(
+      <Transcript
+        view={{
+          eventRevision: 0,
+          messages: [
+            {
+              id: "assistant-1",
+              role: "assistant",
+              text: "",
+              status: "complete",
+              images: [],
+              parts: [
+                {
+                  id: "tool-1",
+                  kind: "tool",
+                  toolCallId: "call-1",
+                  toolName: "Edit",
+                  state: "completed",
+                  input: { file_path: "src/a.ts", old_string: "old", new_string: "new" },
+                  output: {
+                    type: "edited",
+                    filePath: "src/a.ts",
+                    replacements: 1,
+                    replaceAll: false,
+                    diff: {
+                      hunks: [
+                        {
+                          oldStart: 1,
+                          oldLines: 2,
+                          newStart: 1,
+                          newLines: 2,
+                          lines: [
+                            { kind: "context", text: "keep" },
+                            { kind: "removed", text: "old" },
+                            { kind: "added", text: "new" },
+                          ],
+                        },
+                      ],
+                      additions: 1,
+                      deletions: 1,
+                      truncated: false,
+                    },
+                  },
+                },
+              ],
+            },
+          ],
+        }}
+        workspaceRoot="D:\\workspace"
+      />,
+    );
+    await nextFrame();
+
+    const frame = instance.lastFrame();
+    expect(frame).toContain("Update(src/a.ts)");
+    expect(frame).toContain("Added 1 line, removed 1 line");
+    expect(frame).toContain("+1 -1");
+    expect(frame).toContain("-old");
+    expect(frame).toContain("+new");
+    instance.unmount();
+  });
+
+  it("groups consecutive Read and Grep calls into one row until Ctrl+O", async () => {
+    const view = {
+      eventRevision: 0,
+      messages: [
+        {
+          id: "assistant-1",
+          role: "assistant" as const,
+          text: "",
+          status: "complete" as const,
+          images: [],
+          parts: [
+            {
+              id: "tool-1",
+              kind: "tool" as const,
+              toolCallId: "call-1",
+              toolName: "Read",
+              state: "completed" as const,
+              input: { file_path: "src/a.ts" },
+              output: {
+                type: "text",
+                filePath: "src/a.ts",
+                content: "a",
+                numLines: 10,
+                startLine: 1,
+                totalLines: 10,
+              },
+            },
+            {
+              id: "tool-2",
+              kind: "tool" as const,
+              toolCallId: "call-2",
+              toolName: "Read",
+              state: "completed" as const,
+              input: { file_path: "src/b.ts" },
+              output: {
+                type: "text",
+                filePath: "src/b.ts",
+                content: "b",
+                numLines: 20,
+                startLine: 1,
+                totalLines: 20,
+              },
+            },
+            {
+              id: "tool-3",
+              kind: "tool" as const,
+              toolCallId: "call-3",
+              toolName: "Grep",
+              state: "completed" as const,
+              input: { pattern: "needle", path: "src" },
+              output: {
+                type: "content",
+                files: [
+                  {
+                    path: "src/a.ts",
+                    lines: [{ lineNumber: 3, text: "needle found", kind: "match" }],
+                  },
+                ],
+                totalMatches: 1,
+                shownMatches: 1,
+                truncated: false,
+                lineNumbers: true,
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    const collapsed = render(<Transcript view={view} workspaceRoot="D:\\workspace" />);
+    await nextFrame();
+    expect(collapsed.lastFrame()).toContain("Read 2 files, searched 1 pattern");
+    expect(collapsed.lastFrame()).not.toContain("Read(src/a.ts)");
+    collapsed.unmount();
+
+    const expanded = render(
+      <Transcript expandThinking view={view} workspaceRoot="D:\\workspace" />,
+    );
+    await nextFrame();
+    expect(expanded.lastFrame()).toContain("Read(src/a.ts)");
+    expect(expanded.lastFrame()).toContain('Search(pattern: "needle", path: "src")');
+    expanded.unmount();
   });
 
   it("renders the welcome state and transcript errors", async () => {

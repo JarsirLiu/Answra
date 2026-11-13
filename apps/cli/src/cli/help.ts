@@ -31,7 +31,8 @@ code 选项:
   运行 answra config set 写入桌面端「设置 → 模型」使用的同一份本地模型配置；
   运行 answra config unset 只清除本地模型字段，不删除文件。
   未传 --base-url/--model 且环境变量为空时，读取该共享配置。
-  API Key 不共享；需要鉴权时请单独设置 ANSWRA_API_KEY 或 --api-key。
+  API Key 不共享；首次 TTY 启动缺少模型时会依次询问 base URL、API Key、模型 ID。
+  TUI 输入的 API Key 只保留在本次进程内存；长期使用请设置 ANSWRA_API_KEY 或 --api-key。
 
 输入:
   提供 prompt 时作为单条消息发送并退出。

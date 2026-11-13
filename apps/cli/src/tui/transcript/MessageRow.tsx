@@ -3,10 +3,12 @@ import type { ConversationMessagePart } from "@answra/shared";
 import type { ConversationViewMessage } from "@answra/ui/conversation-view";
 import { Box, Text } from "ink";
 import { memo } from "react";
-import { TUI_THEME } from "../theme";
+import { BLACK_CIRCLE, TUI_THEME } from "../chrome/theme";
 import { MarkdownText } from "./MarkdownText";
 import { MessageResponse } from "./MessageResponse";
-import { ToolCard } from "./ToolCard";
+import { SelectableText } from "./SelectableText";
+import { groupMessageParts, type ToolGroup } from "./tool/groupToolCalls";
+import { ToolCall, ToolLoader } from "./tool/ToolCall";
 
 export const MessageRow = memo(function MessageRow({
   message,
@@ -49,14 +51,43 @@ function renderParts(
       </MessageResponse>
     );
   }
-  return parts.map((part) => (
-    <PartRow
-      expandThinking={expandThinking}
-      key={part.id}
-      part={part}
-      showReasoning={showReasoning}
-    />
-  ));
+  return groupMessageParts(parts).map((part) =>
+    part.kind === "tool-group" ? (
+      <ToolGroupRow expandThinking={expandThinking} group={part} key={part.id} />
+    ) : (
+      <PartRow
+        expandThinking={expandThinking}
+        key={part.id}
+        part={part}
+        showReasoning={showReasoning}
+      />
+    ),
+  );
+}
+
+function ToolGroupRow({ group, expandThinking }: { group: ToolGroup; expandThinking: boolean }) {
+  return (
+    <Box flexDirection="column" marginTop={1} width="100%">
+      <Box flexDirection="row" width="100%">
+        <Box flexShrink={0} width={2}>
+          {group.running ? (
+            <ToolLoader />
+          ) : (
+            <Text color={group.failed ? TUI_THEME.error : TUI_THEME.text}>{BLACK_CIRCLE}</Text>
+          )}
+        </Box>
+        <SelectableText>
+          <Text bold color={group.failed ? TUI_THEME.error : TUI_THEME.text}>
+            {group.label}
+          </Text>
+          {!expandThinking && group.expandable ? <Text dimColor> (ctrl+o to expand)</Text> : null}
+        </SelectableText>
+      </Box>
+      {expandThinking
+        ? group.parts.map((part) => <ToolCall expanded key={part.id} nested part={part} />)
+        : null}
+    </Box>
+  );
 }
 
 function PartRow({
@@ -93,5 +124,5 @@ function PartRow({
       </Box>
     );
   }
-  return <ToolCard expanded={expandThinking} part={part} />;
+  return <ToolCall expanded={expandThinking} part={part} />;
 }

@@ -8,10 +8,11 @@ import {
 } from "@answra/shared";
 import type { CliOptions } from "../config/cliOptions";
 import { resolveWorkspaceRoot } from "../config/workspace";
+import { MissingModelConfigError } from "../model/errors";
 import type { ModelOverrides } from "../model/ports";
 import { createStreamPresenter } from "../presentation/streamPresenter";
 import { CodingSession } from "../session/codingSession";
-import { TuiViewStore } from "../tui/viewStore";
+import { TuiViewStore } from "../tui/app/viewStore";
 import type { CliDependencies } from "./dependencies";
 import { CliUsageError } from "./errors";
 
@@ -19,15 +20,28 @@ type CodeOptions = Extract<CliOptions, { kind: "code" }>;
 
 export async function runCodeCommand(options: CodeOptions, deps: CliDependencies): Promise<number> {
   const workspaceRoot = await resolveWorkspaceRoot(options.cwd ?? deps.cwd);
-  const model = await deps.modelSettings.resolve(modelOverrides(options, deps));
   const accessToken = (options.apiKey ?? deps.env[CLI_API_KEY] ?? "").trim();
   const interactive = options.prompt === undefined && deps.input.isTTY;
   const text = (await resolvePrompt(options.prompt, deps)).trim();
   if (!interactive) {
     if (text.length === 0) throw new CliUsageError("没有可发送的输入。");
+    const model = await deps.modelSettings.resolve(modelOverrides(options, deps));
     return runOnce(text, workspaceRoot, model, accessToken, deps);
   }
+  const model = await resolveInteractiveModel(options, deps);
   return runInteractive(workspaceRoot, model, accessToken, options.altScreen !== false, deps);
+}
+
+async function resolveInteractiveModel(
+  options: CodeOptions,
+  deps: CliDependencies,
+): Promise<ConversationModelConfig | undefined> {
+  try {
+    return await deps.modelSettings.resolve(modelOverrides(options, deps));
+  } catch (error) {
+    if (error instanceof MissingModelConfigError) return undefined;
+    throw error;
+  }
 }
 
 function modelOverrides(options: CodeOptions, deps: CliDependencies): readonly ModelOverrides[] {
@@ -73,41 +87,55 @@ async function runOnce(
 
 async function runInteractive(
   workspaceRoot: string,
-  model: ConversationModelConfig,
+  initialModel: ConversationModelConfig | undefined,
   accessToken: string,
   altScreen: boolean,
   deps: CliDependencies,
 ): Promise<number> {
   const store = new TuiViewStore();
-  const host = deps.createSessionHost({
-    emitEvent: (event) => store.applyEvent(event),
-    onSnapshot: (snapshot) => store.applySnapshot(snapshot),
-    workspaceRoot,
-  });
-  const session = new CodingSession({
-    host,
-    conversationId: deps.createConversationId(),
-    model,
-    accessToken,
-  });
-  const removeInterrupt = deps.onInterrupt(() => {
-    session.cancel();
-  });
+  let session: CodingSession | undefined;
+  let removeInterrupt: (() => void) | undefined;
+
+  const createSession = (
+    model: ConversationModelConfig,
+    accessTokenOverride?: string,
+  ): CodingSession => {
+    const host = deps.createSessionHost({
+      emitEvent: (event) => store.applyEvent(event),
+      onSnapshot: (snapshot) => store.applySnapshot(snapshot),
+      workspaceRoot,
+    });
+    const next = new CodingSession({
+      host,
+      conversationId: deps.createConversationId(),
+      model,
+      accessToken: accessTokenOverride ?? accessToken,
+    });
+    removeInterrupt?.();
+    removeInterrupt = deps.onInterrupt(() => next.cancel());
+    session = next;
+    return next;
+  };
+
+  const initial =
+    initialModel === undefined
+      ? undefined
+      : { session: createSession(initialModel), model: initialModel.chat.model };
 
   try {
     return await deps.runTui({
-      session,
+      ...(initial ?? {}),
+      createSession,
       store,
       modelSettings: deps.modelSettings,
       botName: "coding.engineer",
-      model: model.chat.model,
       workspaceRoot,
       altScreen,
     });
   } finally {
-    removeInterrupt();
+    removeInterrupt?.();
     store.dispose();
-    session.close();
+    session?.close();
   }
 }
 

@@ -1,6 +1,7 @@
 /** 模型解析优先级：调用方按 flag → env 顺序传入覆盖，逐字段取首个非空值，最后回退共享配置。 */
 import { type LocalModelConfig, normalizeBaseUrl } from "@answra/config";
 import { AI_SERVICE_BASE_URL, CLI_MODEL, type ConversationModelConfig } from "@answra/shared";
+import { MissingModelConfigError } from "./errors";
 import type { ModelOverrides } from "./ports";
 
 export function resolveLocalModel(
@@ -44,6 +45,6 @@ function optionalText(value: string | undefined): string | undefined {
 
 function requiredText(value: string | undefined, message: string): string {
   const text = optionalText(value);
-  if (text === undefined) throw new Error(`${message}。`);
+  if (text === undefined) throw new MissingModelConfigError(`${message}。`);
   return text;
 }

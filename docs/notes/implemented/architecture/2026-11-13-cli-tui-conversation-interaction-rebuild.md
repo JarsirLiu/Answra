@@ -16,12 +16,12 @@ CLI TUI 已经能启动并完成单轮对话，但在 VS Code 集成终端中的
 ## 涉及范围
 
 - 代码/模块：
-  - `apps/cli/src/tui/components/VirtualTranscript.tsx`（新增）：视口测量、虚拟列表、跟随/滚动。
-  - `apps/cli/src/tui/components/TextInput.tsx`（新增）：宽字符/换行/视口感知的输入投影。
-  - `apps/cli/src/tui/components/inputLayout.ts`（新增）：纯文本布局与光标定位，供测试直接覆盖。
-  - `apps/cli/src/tui/wheelInput.ts`（新增）：终端 SGR/X10 滚轮事件解析，并把非滚轮输入原样转交 Ink。
-  - `apps/cli/src/tui/components/App.tsx`、`Transcript.tsx`、`MessageRow.tsx`、`MarkdownText.tsx`、`ToolCard.tsx`、`StatusLine.tsx`、`PromptInput.tsx`：接入上述原语。
-  - `apps/cli/test/tui.test.tsx`、`apps/cli/test/inputLayout.test.ts`、`apps/cli/test/wheelInput.test.ts`（新增）：行为与布局测试。
+  - `apps/cli/src/tui/transcript/VirtualTranscript.tsx`（新增）：视口测量、虚拟列表、跟随/滚动。
+  - `apps/cli/src/tui/composer/TextInput.tsx`（新增）：宽字符/换行/视口感知的输入投影。
+  - `apps/cli/src/tui/composer/inputLayout.ts`（新增）：纯文本布局与光标定位，供测试直接覆盖。
+  - `apps/cli/src/tui/interaction/pointerInput.ts`（新增）：终端 SGR/X10 滚轮事件解析，并把非滚轮输入原样转交 Ink。
+  - `apps/cli/src/tui/app/App.tsx`、`transcript/Transcript.tsx`、`transcript/MessageRow.tsx`、`transcript/MarkdownText.tsx`、`transcript/tool/ToolCall.tsx`、`chrome/StatusLine.tsx`、`composer/PromptInput.tsx`：接入上述原语。
+  - `apps/cli/test/tui.test.tsx`、`apps/cli/test/inputLayout.test.ts`、`apps/cli/test/pointerInput.test.ts`（新增）：行为与布局测试。
 - UI/进程/协议/持久化表面：
   - 仍使用 `ink@8.0.0` + React 19.3，不引入 Claude Code 的 Ink fork。
   - 仍使用 `alternateScreen`、`useWindowSize`、`useBoxMetrics`、`measureElement`、`usePaste`。
@@ -43,7 +43,7 @@ CLI TUI 已经能启动并完成单轮对话，但在 VS Code 集成终端中的
   - 跟随状态与偏移合并为单一 `{ top, following }` state；在底部时直接派生 `scrollTop = maxScrollTop`，用户 PgUp/滚轮上移后退出跟随，回到底部时恢复。
   - 旧实现用 `useRef` 保存 `following`，而 `scrollTop` 在底部保持 0。一次 stdin chunk 内的连续滚轮事件最终回到 0 时，React 会认为 state 未变化而跳过重绘，表现为运行中滚不动；现在 `following` 变化本身会触发提交。
   - 视口宽度或 `expandThinking` 变化时清空高度缓存并重新测量。
-- `MessageRow`、`MarkdownText`、`ToolCard` 使用 `memo`；`MarkdownText` 用 `useMemo` 缓存解析结果。
+- `MessageRow`、`MarkdownText`、`ToolCall` 使用 `memo`；`MarkdownText` 用 `useMemo` 缓存解析结果。
 - 保留 `Transcript` 作为非虚拟内容投影，供测试和未来小面板使用；生产 TUI 走 `VirtualTranscript`。
 
 ### 2. 输入框
@@ -68,7 +68,7 @@ CLI TUI 已经能启动并完成单轮对话，但在 VS Code 集成终端中的
 - Home/End 只归 `PromptInput`，用于输入光标；`VirtualTranscript` 不再处理 Home/End。
 - `VirtualTranscript` 只处理 PgUp/PgDn，这两键不被输入框消费。
 - App 继续只处理 Ctrl+O、运行中 Esc、运行中 Ctrl+C；PromptInput 处理空闲 Ctrl+C、Esc 清空和编辑键。
-- 全屏 TUI 启用最小鼠标 tracking（`1000` + `1006`）：`runTui` 在 Ink 前插入一个 stdin 代理，`wheelInput` 解析 SGR/X10 滚轮事件并只把非鼠标字节转交 Ink；鼠标 tracking 关闭时回退到终端原生滚动。
+- 全屏 TUI 启用最小鼠标 tracking（`1000` + `1006`）：`runTui` 在 Ink 前插入一个 stdin 代理，`pointerInput` 解析 SGR/X10 滚轮事件并只把非鼠标字节转交 Ink；鼠标 tracking 关闭时回退到终端原生滚动。
 - 滚轮每次移动 3 行，PgUp/PgDn 仍按半屏移动；任意上滚立即退出底部跟随，滚回底部恢复跟随。
 - 鼠标 tracking 会接管终端拖选；需要复制时使用终端自身的“按住 Shift 拖选”转义。该限制写进 Note，不伪装成原生选择。
 
@@ -116,7 +116,7 @@ CLI TUI 已经能启动并完成单轮对话，但在 VS Code 集成终端中的
 - `layoutInput` 是光标列宽的唯一来源；禁止在 `PromptInput`/`TextInput` 里重新用 `value.length` 或 `slice(cursor + 1)` 计算光标。
 - 思考折叠只保留当前 turn 的最后一条 assistant 思考；Ctrl+O 是 transcript 展开开关，不再新增第二套“只展开思考”的状态。
 - 鼠标滚轮只在 `alternateScreen` 模式启用；`--no-alt-screen` 保留终端原生 scrollback 与原生滚轮，不得把两套滚动行为混在一起。
-- `wheelInput` 是 stdin 的唯一前置过滤器；新增鼠标能力（点击、拖选、hover）必须扩展这里，不能让原始 SGR 序列绕过过滤器进入 Ink 或输入框。
+- `pointerInput` 是 stdin 的唯一前置过滤器；新增鼠标能力（点击、拖选、hover）必须扩展这里，不能让原始 SGR 序列绕过过滤器进入 Ink 或输入框。
 - 虚拟列表的高度缓存以 `measureKey` 失效；新增会影响消息高度的 prop 时必须同时进入 `measureKey`，否则滚动位置会使用旧高度。
 
 ## 验证
@@ -124,7 +124,7 @@ CLI TUI 已经能启动并完成单轮对话，但在 VS Code 集成终端中的
 - 2026-11-13：`pnpm --filter @answra/cli test` 通过，15 个测试文件、88 个测试；新增覆盖：
   - `test/inputLayout.test.ts`：宽字符、emoji、换行、grapheme 移动、光标可视窗口、按显示行上下移动、短行夹取、Home/End 视觉行边界。
   - `test/virtualLayout.test.ts`：高度估算、可视窗口、底部偏移。
-  - `test/wheelInput.test.ts`：SGR/X10 滚轮解析、跨 chunk 序列、鼠标 tracking 启停。
+  - `test/pointerInput.test.ts`：SGR/X10 滚轮解析、跨 chunk 序列、鼠标 tracking 启停。
   - `test/tui.test.tsx`：底部跟随、PgUp 与滚轮滚动、运行中连续滚轮、流式追加时保持历史位置、Home/End 不抢 transcript、思考折叠与历史隐藏。
 - 2026-11-13：输入布局上下移动修复了重复叠加行起始偏移的问题；宽字符/短行边界测试与 `pnpm --filter @answra/cli typecheck` 通过。
 - 2026-11-13：`pnpm --filter @answra/cli build` 与 `node apps/cli/dist/main.mjs --version` 通过。

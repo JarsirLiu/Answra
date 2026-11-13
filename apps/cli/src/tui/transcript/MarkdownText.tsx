@@ -1,7 +1,7 @@
 /** 终端 Markdown 投影：标题、列表、引用、内联代码/粗体与围栏代码；不做终端重排。 */
 import { Box, Text } from "ink";
 import { memo, type ReactNode, useMemo } from "react";
-import { TUI_THEME } from "../theme";
+import { TUI_THEME } from "../chrome/theme";
 import { SelectableText } from "./SelectableText";
 
 type LineVariant = "text" | "heading" | "list" | "quote" | "rule";
