@@ -11,7 +11,9 @@ export {
 } from "./fakeRemoteLink";
 export {
   createFakeSignalingPair,
+  createFakeSignalingServer,
   type FakeSignalingPair,
+  type FakeSignalingServer,
   flushFakeSignaling,
 } from "./fakeSignaling";
 export {

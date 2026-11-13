@@ -119,6 +119,7 @@ describe("remote frame schema", () => {
       "remote-unreachable",
       "key-expired",
       "key-revoked",
+      "room-conflict",
     ]) {
       expect(
         remoteErrorSchema.parse({ code, message: "remote failure", retryable: false }),
@@ -146,7 +147,7 @@ describe("remote frame schema", () => {
 });
 
 describe("signaling frame schema", () => {
-  it("round-trips room join and WebRTC negotiation frames", () => {
+  it("round-trips room join, acknowledgement and rejection frames", () => {
     const join = {
       type: "join",
       roomId: "room-1",
@@ -154,14 +155,31 @@ describe("signaling frame schema", () => {
       role: "controller",
       protocolVersion: 1,
     } as const;
-    const offer = { type: "offer", fromPeerId: "controller-1", sdp: "v=0" } as const;
+    const joined = {
+      type: "joined",
+      roomId: "room-1",
+      peerId: "controller-1",
+      role: "controller",
+      peers: [{ peerId: "host-1", role: "host" }],
+    } as const;
+    const rejected = {
+      type: "join-rejected",
+      error: { code: "room-conflict", message: "room already has a host", retryable: false },
+    } as const;
+
+    expect(signalingFrameSchema.parse(join)).toEqual(join);
+    expect(signalingFrameSchema.parse(joined)).toEqual(joined);
+    expect(signalingFrameSchema.parse(rejected)).toEqual(rejected);
+  });
+
+  it("round-trips WebRTC negotiation frames", () => {
+    const offer = { type: "offer", fromPeerId: "host-1", sdp: "v=0" } as const;
     const candidate = {
       type: "ice-candidate",
       fromPeerId: "controller-1",
       candidate: { candidate: "candidate:1", sdpMid: "0", sdpMLineIndex: 0 },
     } as const;
 
-    expect(signalingFrameSchema.parse(join)).toEqual(join);
     expect(signalingFrameSchema.parse(offer)).toEqual(offer);
     expect(signalingFrameSchema.parse(candidate)).toEqual(candidate);
   });

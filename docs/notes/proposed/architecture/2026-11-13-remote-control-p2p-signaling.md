@@ -240,6 +240,11 @@ interface HostModelSettingsPort {
 - `HostCommandPort` 定义在 `packages/remote/src/host/hostPort.ts`；桌面用 `AgentService` 适配实现，CLI host 用 `CodingApplication` 适配实现，CLI controller 用 `RemoteCodingSessionHost` 适配回现有 `CodingSessionHost`。
 - `HostSendCommand` 不包含 `accessToken`；模型配置和云端凭据只由 host 本地解析。远程 controller 不得把自己的模型 API key、cwd 或时区发给 host。
 - `packages/remote` 还定义 `RemoteLink`（send/receive/close/state）、`SignalingChannel`、`RemoteCredentialStore` 三个端口；WebRTC、WebSocket、OS keychain 的真实实现由 `apps/cli` / `apps/desktop` 注入。
+- 信令状态机 `RemoteSignalingSession` 已落地在 `packages/remote/src/signaling/`，只依赖 `SignalingChannel` 和注入的 `RemoteSignalingTimers`：`join`/`joined`/`join-rejected` 确认房间，`peer-joined`/`peer-left` 维护唯一对端，join 超时返回 `timeout`。计时段落不直接使用 `setTimeout`，CLI 在组合根注入 Node 计时器。
+- `joined` 必须携带房间内已有 `peers` 快照；`join-rejected` 携带稳定错误。这样 host 先加入、controller 后加入时，双方都能从确认帧得知对端；关闭“只有 `peer-joined`、host 无法确认自己是否加入成功”的歧义。
+- 同一房间最多一个 host 和一个 controller。重复 host 返回新增稳定码 `room-conflict`，重复 controller 返回 `controller-busy`；客户端收到重复对端或同角色对端时 fail-closed，不静默忽略，避免两个输入源。
+- `offer`/`answer` 方向固定：host 只发 offer，controller 只发 answer，且 answer 必须晚于远端 offer。ICE 必须晚于本地描述和远端描述；当前首版不做 SDP renegotiation，第二次 offer/answer 直接拒绝。信令层只拒绝顺序错误，不生成或解析 SDP；ICE 缓冲/应用仍属于 `apps/cli/src/remote/transport/`。
+- 规模取舍：`remoteSignalingSession.ts` 约 450 行，事件订阅 fanout 与状态迁移先保持同文件；R6 接入真实 transport、出现第二个消费者后再抽事件总线，避免当前为行数把一次状态迁移拆成跨文件跳转。
 - `RemoteFrame` 只承载序列化后的命令、snapshot、事件和 ack；不出现 `accessToken`、worker 生命周期、Electron/DOM 类型。
 - 访问密钥只进入 DataChannel 建立后的独立 auth handshake；不进入信令帧、常规 `RemoteFrame`、日志或错误文案。host 校验 `keyId + secret + expiresAt + sessionId` 后才签发 controller lease。
 - `RemoteHello`/capabilities 明确 `protocolVersion`、`role`、`sessionId`、`capabilities`（如 `coding`、`multi-bot`）。CLI 不声明 `answer`/`interview`，网页按能力隐藏入口。
@@ -352,7 +357,7 @@ interface HostModelSettingsPort {
 1. **阶段 0：契约与骨架。** 已落地：`packages/shared/src/schema/remote/`、`packages/remote/src/{host,ports,protocol,testing}/`，覆盖帧/命令/模型设置/信令 schema、`HostCommandPort`、传输与凭据端口、fake link/signaling/host port、稳定错误码；不建 WebRTC、不接网络。
 2. **阶段 1：远程会话核心。** 已落地：`RemoteHostSession` 与 `RemoteControllerSession` 通过 fake link 完成握手、命令 requestId 关联、host snapshot/event 推送、`/model` snapshot/add/switch/clear、send/cancel/clear 与 list/select bot；不接 CLI、TUI 或真实网络。
 3. **阶段 2：CLI 两端适配。** R3 + R4 适配器已落地：`CodingApplication` 映射成 `HostCommandPort`，`RemoteControllerSession` 映射成 `CodingSessionHost` 与 `RemoteModelSettings`；fake link 覆盖命令、模型设置、run 等待与 unsupported team send，不改 TUI 语义。`remote host`/`attach` 命令仍是后续接线点。
-4. **阶段 3：信令与访问密钥。** key 命令、本地存储与 host 侧 auth handshake 已落地（`key create/list/revoke/set/show/forget`、7/30 天、host 存 hash、controller 存受保护文件、`auth` / `auth-error` 校验撤销/过期/session）；R5 仍需接 AnswraSite（可用本地 fake signaling 先测），把 key-only attach、轮换撤销与过期断连接入真实链路；`remote host`/`attach` 与 WebRTC 直连仍待 R5/R6；不设配对码。
+4. **阶段 3：信令与访问密钥。** key 命令、本地存储、host 侧 auth handshake 与纯库信令状态机已落地（`key create/list/revoke/set/show/forget`、7/30 天、host 存 hash、controller 存受保护文件、`auth` / `auth-error` 校验撤销/过期/session；`joined` / `join-rejected`、单 peer、重复角色、join 超时与 offer/answer/ICE 方向）；AnswraSite 真实 room/presence/SDP 路由仍未接，fake signaling server 只证明客户端状态机；`remote host`/`attach` 与 WebRTC 直连仍待 R5/R6；不设配对码。
 5. **阶段 4：P2P 直连。** R6 接真实 WebRTC DataChannel，做 loopback 与家庭 NAT/IPv6 实机；不配置 TURN，记录 UDP 被封/对称 NAT 的失败矩阵。
 6. **阶段 5：健壮性。** 重连、背压、慢 consumer、lease、密钥过期、host 退出；补架构守护和 TUI 端集成测试。
 7. **阶段 6：桌面与多 Bot。** 复用 host/controller 契约；桌面 IPC/UI 与 CLI 多 Bot capability 分别落地，不复制远程状态机。

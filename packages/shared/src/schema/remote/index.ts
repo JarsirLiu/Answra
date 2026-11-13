@@ -68,5 +68,11 @@ export {
   type RemoteIceCandidate,
   remoteIceCandidateSchema,
   type SignalingFrame,
+  type SignalingJoined,
+  type SignalingJoinRejected,
+  type SignalingPeer,
   signalingFrameSchema,
+  signalingJoinedFrameSchema,
+  signalingJoinRejectedFrameSchema,
+  signalingPeerSchema,
 } from "./signaling";

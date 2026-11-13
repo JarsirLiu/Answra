@@ -10,6 +10,24 @@ export const remoteIceCandidateSchema = z.strictObject({
   usernameFragment: z.string().optional(),
 });
 
+export const signalingPeerSchema = z.strictObject({
+  peerId: z.string(),
+  role: remoteRoleSchema,
+});
+
+export const signalingJoinedFrameSchema = z.strictObject({
+  type: z.literal("joined"),
+  roomId: z.string(),
+  peerId: z.string(),
+  role: remoteRoleSchema,
+  peers: z.array(signalingPeerSchema),
+});
+
+export const signalingJoinRejectedFrameSchema = z.strictObject({
+  type: z.literal("join-rejected"),
+  error: remoteErrorSchema,
+});
+
 export const signalingFrameSchema = z.discriminatedUnion("type", [
   z.strictObject({
     type: z.literal("join"),
@@ -18,6 +36,8 @@ export const signalingFrameSchema = z.discriminatedUnion("type", [
     role: remoteRoleSchema,
     protocolVersion: remoteProtocolVersionSchema,
   }),
+  signalingJoinedFrameSchema,
+  signalingJoinRejectedFrameSchema,
   z.strictObject({
     type: z.literal("peer-joined"),
     peerId: z.string(),
@@ -49,4 +69,7 @@ export const signalingFrameSchema = z.discriminatedUnion("type", [
 ]);
 
 export type RemoteIceCandidate = z.infer<typeof remoteIceCandidateSchema>;
+export type SignalingPeer = z.infer<typeof signalingPeerSchema>;
+export type SignalingJoined = z.infer<typeof signalingJoinedFrameSchema>;
+export type SignalingJoinRejected = z.infer<typeof signalingJoinRejectedFrameSchema>;
 export type SignalingFrame = z.infer<typeof signalingFrameSchema>;

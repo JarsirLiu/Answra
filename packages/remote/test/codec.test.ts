@@ -1,3 +1,4 @@
+import type { SignalingFrame } from "@answra/shared/schema";
 import { describe, expect, it } from "vitest";
 import {
   decodeRemoteFrame,
@@ -75,6 +76,18 @@ describe("signaling frame codec", () => {
       role: "host",
       protocolVersion: 1,
     } as const;
+
+    expect(decodeSignalingFrame(encodeSignalingFrame(frame))).toEqual(frame);
+  });
+
+  it("round-trips a joined acknowledgement with existing peers", () => {
+    const frame: SignalingFrame = {
+      type: "joined",
+      roomId: "room-1",
+      peerId: "controller-1",
+      role: "controller",
+      peers: [{ peerId: "host-1", role: "host" }],
+    };
 
     expect(decodeSignalingFrame(encodeSignalingFrame(frame))).toEqual(frame);
   });

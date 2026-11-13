@@ -6,6 +6,7 @@ export const remoteErrorCodeSchema = z.enum([
   "unauthorized",
   "session-mismatch",
   "controller-busy",
+  "room-conflict",
   "run-active",
   "invalid-frame",
   "invalid-command",

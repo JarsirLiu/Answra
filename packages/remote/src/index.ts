@@ -48,3 +48,11 @@ export {
   encodeSignalingFrame,
 } from "./protocol/codec";
 export { RemoteOperationError, remoteError, toRemoteError } from "./protocol/errors";
+export {
+  REMOTE_SIGNALING_JOIN_TIMEOUT_MS,
+  type RemoteSignalingJoined,
+  type RemoteSignalingSessionOptions,
+  type RemoteSignalingState,
+  type RemoteSignalingTimers,
+} from "./signaling/contracts";
+export { RemoteSignalingSession } from "./signaling/remoteSignalingSession";
