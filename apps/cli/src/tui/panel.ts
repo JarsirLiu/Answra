@@ -14,5 +14,5 @@ export interface TuiPanelHandlers {
   saveConfig(input: ConfigSaveInput): Promise<void>;
   loadModels(): Promise<ModelPickerData>;
   selectModel(model: string): Promise<void>;
-  close(): void;
+  close(reason?: "saved" | "dismissed"): void;
 }

@@ -77,6 +77,13 @@ export function maskApiKey(value: string): string {
   return `••••${text.slice(-4)}`;
 }
 
+/** 编辑态掩码保留原长度，确保光标位置与完整 key 一致。 */
+export function maskApiKeyForInput(value: string): string {
+  if (value.length === 0) return "";
+  if (value.length <= 8) return "•".repeat(value.length);
+  return `${"•".repeat(value.length - 4)}${value.slice(-4)}`;
+}
+
 export function validateConfigForm(values: ConfigFormValues): string | undefined {
   if (values.baseUrl.trim() === "") return "请填写 Base URL。";
   if (values.chatModel.trim() === "") return "请填写 Chat 模型 ID。";

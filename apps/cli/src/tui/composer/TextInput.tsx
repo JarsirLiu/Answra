@@ -10,6 +10,7 @@ export function TextInput({
   maxVisibleLines,
   columns,
   secret = false,
+  secretMask,
   selectionStart,
   selectionEnd,
 }: {
@@ -19,13 +20,14 @@ export function TextInput({
   maxVisibleLines: number;
   columns: number;
   secret?: boolean;
+  secretMask?: (value: string) => string;
   selectionStart?: number;
   selectionEnd?: number;
 }) {
   const inputRef = useRef<DOMElement | null>(null);
   const measured = useBoxMetrics(inputRef);
   const { setCursorPosition } = useCursor();
-  const displayValue = secret ? "•".repeat(value.length) : value;
+  const displayValue = secret ? (secretMask?.(value) ?? "•".repeat(value.length)) : value;
   const layout =
     displayValue.length === 0
       ? undefined

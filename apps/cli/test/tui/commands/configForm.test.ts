@@ -6,8 +6,9 @@ import {
   configFormFromData,
   configSaveInput,
   maskApiKey,
+  maskApiKeyForInput,
   validateConfigForm,
-} from "../src/tui/commands/configForm";
+} from "../../../src/tui/commands/configForm";
 
 describe("configForm", () => {
   it("projects saved config into editable values without a second key source", () => {
@@ -62,6 +63,8 @@ describe("configForm", () => {
     expect(configApiKeyLabel("sk-existing", "")).toBe("将清除");
     expect(maskApiKey("sk-existing-1234")).toBe("••••1234");
     expect(maskApiKey("short")).toBe("••••");
+    expect(maskApiKeyForInput("sk-existing-1234")).toBe(`${"•".repeat(12)}1234`);
+    expect(maskApiKeyForInput("short")).toBe("•••••");
   });
 
   it("requires a base URL and chat model but leaves URL validation to model settings", () => {

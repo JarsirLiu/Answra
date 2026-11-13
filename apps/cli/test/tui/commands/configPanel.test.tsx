@@ -1,9 +1,13 @@
 import { render } from "ink-testing-library";
 import { describe, expect, it, vi } from "vitest";
-import { ConfigPanel } from "../src/tui/commands/ConfigPanel";
+import { ConfigPanel } from "../../../src/tui/commands/ConfigPanel";
 
 function tick(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+function settle(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 20));
 }
 
 function basePanel(
@@ -16,7 +20,7 @@ function basePanel(
     }>;
     loadModels: () => Promise<{ current: string; models: readonly string[]; error?: string }>;
     save: (input: unknown) => Promise<void>;
-    close: () => void;
+    close: (reason?: "saved" | "dismissed") => void;
   }> = {},
 ) {
   return {
@@ -50,7 +54,7 @@ describe("ConfigPanel", () => {
     expect(frame).toContain("qwen");
     expect(frame).toContain("Answer 模型");
     expect(frame).toContain("qwen-vl");
-    expect(frame).toContain("›");
+    expect(frame).not.toContain("›");
     expect(frame).not.toContain("sk-existing-1234");
     instance.unmount();
   });
@@ -68,11 +72,28 @@ describe("ConfigPanel", () => {
 
     instance.stdin.write("\r");
     await tick();
-    expect(instance.lastFrame()).toContain("Enter 修改 · Ctrl+S 保存 · / 搜索 · Esc 取消");
+    expect(instance.lastFrame()).toContain("Ctrl+R 显示/隐藏 Key");
     instance.stdin.write("\r");
     await tick();
 
     expect(instance.lastFrame()).toContain("Ctrl+R 显示/隐藏");
+    instance.unmount();
+  });
+
+  it("opens the focused row with Right arrow and ignores Space", async () => {
+    const props = basePanel();
+    const instance = render(<ConfigPanel {...props} />);
+    await tick();
+
+    instance.stdin.write("\u001b[B");
+    await tick();
+    instance.stdin.write("\u001b[C");
+    await tick();
+    expect(instance.lastFrame()).toContain("Enter 确认 · Esc 取消编辑");
+
+    instance.stdin.write(" ");
+    await tick();
+    expect(instance.lastFrame()).toContain("Enter 确认 · Esc 取消编辑");
     instance.unmount();
   });
 
@@ -85,6 +106,7 @@ describe("ConfigPanel", () => {
     await tick();
     instance.stdin.write("\u001b[B");
     await tick();
+    expect(instance.lastFrame()).toContain("Ctrl+R 显示/隐藏 Key");
     instance.stdin.write("\r");
     await tick();
     instance.stdin.write("\u0015");
@@ -102,7 +124,26 @@ describe("ConfigPanel", () => {
       answerModel: "qwen-vl",
       apiKey: { kind: "set", value: "sk-new" },
     });
-    expect(props.close).toHaveBeenCalledTimes(1);
+    expect(props.close).toHaveBeenCalledWith("saved");
+    instance.unmount();
+  });
+
+  it("can reveal the saved API key with Ctrl+R from the list", async () => {
+    const props = basePanel();
+    const instance = render(<ConfigPanel {...props} />);
+    await tick();
+
+    instance.stdin.write("\r");
+    await tick();
+    instance.stdin.write("\u001b[B");
+    await tick();
+    instance.stdin.write("\u0012");
+    await tick();
+    expect(instance.lastFrame()).toContain("sk-existing-1234");
+
+    instance.stdin.write("\u001b[B");
+    await tick();
+    expect(instance.lastFrame()).not.toContain("sk-existing-1234");
     instance.unmount();
   });
 
@@ -117,10 +158,26 @@ describe("ConfigPanel", () => {
     await tick();
     instance.stdin.write("\r");
     await tick();
+    expect(instance.lastFrame()).not.toContain("sk-existing-1234");
+
     instance.stdin.write("\u0012");
     await tick();
-
     expect(instance.lastFrame()).toContain("sk-existing-1234");
+    instance.unmount();
+  });
+
+  it("closes with the dismissed reason when Escape leaves the list", async () => {
+    const props = basePanel();
+    const instance = render(<ConfigPanel {...props} />);
+    await tick();
+
+    instance.stdin.write("\r");
+    await settle();
+    expect(instance.lastFrame()).toContain("Enter/→ 修改");
+    instance.stdin.write("\u001b");
+    await settle();
+
+    expect(props.close).toHaveBeenCalledWith("dismissed");
     instance.unmount();
   });
 

@@ -34,6 +34,7 @@ export function PromptInput({
   selectionActive = false,
   idleHint,
   secret = false,
+  secretMask,
   allowEmptySubmit = false,
   active = true,
   commandsEnabled = true,
@@ -56,6 +57,7 @@ export function PromptInput({
   selectionActive?: boolean;
   idleHint?: string;
   secret?: boolean;
+  secretMask?: (value: string) => string;
   allowEmptySubmit?: boolean;
   active?: boolean;
   commandsEnabled?: boolean;
@@ -401,6 +403,7 @@ export function PromptInput({
             maxVisibleLines={maxVisibleLines}
             placeholder={placeholder}
             secret={secret}
+            secretMask={secretMask}
             selectionEnd={selection?.end}
             selectionStart={selection?.start}
             value={draft.value}

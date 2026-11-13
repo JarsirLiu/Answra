@@ -3,7 +3,7 @@ import {
   configPanelFooter,
   displayConfigValue,
   filterConfigRows,
-} from "../src/tui/commands/configPresentation";
+} from "../../../src/tui/commands/configPresentation";
 
 const values = {
   baseUrl: "http://127.0.0.1:1234/v1",
@@ -82,6 +82,16 @@ describe("configPresentation", () => {
         editing: undefined,
         searching: false,
       }),
-    ).toBe("Enter 修改 · Ctrl+S 保存 · / 搜索 · Esc 取消");
+    ).toBe("Enter/→ 修改 · Ctrl+S 保存 · / 搜索 · Esc 取消");
+    expect(
+      configPanelFooter({
+        busy: false,
+        loaded: true,
+        submenu: false,
+        editing: undefined,
+        searching: false,
+        selectedField: "apiKey",
+      }),
+    ).toBe("Enter/→ 修改 · Ctrl+R 显示/隐藏 Key · Ctrl+S 保存 · / 搜索 · Esc 取消");
   });
 });

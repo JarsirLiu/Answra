@@ -3,11 +3,16 @@ import { Box, Text, useWindowSize } from "ink";
 import { POINTER, TUI_THEME } from "../chrome/theme";
 import { PromptInput } from "../composer/PromptInput";
 import { SearchBox } from "../composer/SearchBox";
-import type { ConfigField, ConfigFormValues, ConfigPanelData } from "./configForm";
+import {
+  type ConfigField,
+  type ConfigFormValues,
+  type ConfigPanelData,
+  maskApiKeyForInput,
+} from "./configForm";
 import { type ConfigRowSpec, displayConfigValue } from "./configPresentation";
 
-const CONFIG_LABEL_COLUMNS = 34;
-const CONFIG_EDITOR_CHROME_COLUMNS = CONFIG_LABEL_COLUMNS + 6;
+const CONFIG_LABEL_COLUMNS = 44;
+const CONFIG_PANEL_PADDING_COLUMNS = 4;
 
 export function ConfigList({
   data,
@@ -37,7 +42,7 @@ export function ConfigList({
   onUpdate(field: ConfigField, value: string): void;
 }) {
   const { columns } = useWindowSize();
-  const editorColumns = Math.max(1, columns - CONFIG_EDITOR_CHROME_COLUMNS);
+  const valueColumns = Math.max(1, columns - CONFIG_LABEL_COLUMNS - CONFIG_PANEL_PADDING_COLUMNS);
   return (
     <Box flexDirection="column">
       <SearchBox isFocused={searchMode} placeholder="搜索设置…" query={query} />
@@ -54,13 +59,13 @@ export function ConfigList({
                 </Text>
               </Box>
               {isEditing ? (
-                <Box flexGrow={1}>
+                <Box width={valueColumns}>
                   <PromptInput
                     key={row.field}
                     active
                     allowEmptySubmit
                     busy={false}
-                    columns={editorColumns}
+                    columns={valueColumns}
                     commandsEnabled={false}
                     exitOnCtrlC={false}
                     historyEnabled={false}
@@ -75,24 +80,18 @@ export function ConfigList({
                     }}
                     onToggleSecret={row.field === "apiKey" ? onToggleSecret : undefined}
                     secret={row.field === "apiKey" && !revealApiKey}
+                    secretMask={row.field === "apiKey" ? maskApiKeyForInput : undefined}
                     showBorder={false}
                     showHints={false}
                     showPointer={false}
                   />
                 </Box>
               ) : (
-                <>
-                  <Box flexGrow={1} flexShrink={1} marginRight={1}>
-                    <Text
-                      color={focused ? TUI_THEME.suggestion : undefined}
-                      dimColor={!focused}
-                      wrap="truncate"
-                    >
-                      {displayConfigValue(row.field, values, data, revealApiKey)}
-                    </Text>
-                  </Box>
-                  <Text dimColor>›</Text>
-                </>
+                <Box width={valueColumns}>
+                  <Text color={focused ? TUI_THEME.suggestion : undefined} wrap="truncate">
+                    {displayConfigValue(row.field, values, data, revealApiKey)}
+                  </Text>
+                </Box>
               )}
             </Box>
           );

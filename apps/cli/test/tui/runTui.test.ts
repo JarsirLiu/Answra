@@ -2,13 +2,13 @@ import type { ModelCredentialStore } from "@answra/credentials";
 import type { ConversationModelConfig, ConversationSnapshot } from "@answra/shared";
 import type { ReactElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ModelCatalog } from "../src/model/catalog";
-import type { ModelSettings } from "../src/model/ports";
-import type { CodingSession } from "../src/session/codingSession";
-import { TuiViewStore } from "../src/tui/app/viewStore";
-import { TUI_HELP_LINES } from "../src/tui/commands/help";
-import type { TuiPanelHandlers } from "../src/tui/panel";
-import { runInkTui } from "../src/tui/runTui";
+import type { ModelCatalog } from "../../src/model/catalog";
+import type { ModelSettings } from "../../src/model/ports";
+import type { CodingSession } from "../../src/session/codingSession";
+import { TuiViewStore } from "../../src/tui/app/viewStore";
+import { TUI_HELP_LINES } from "../../src/tui/commands/help";
+import type { TuiPanelHandlers } from "../../src/tui/panel";
+import { runInkTui } from "../../src/tui/runTui";
 
 const { renderMock } = vi.hoisted(() => ({ renderMock: vi.fn() }));
 
@@ -424,7 +424,11 @@ describe("runInkTui", () => {
     expect(session.setAccessToken).toHaveBeenCalledWith("new-key");
     expect(store.getSnapshot()).toMatchObject({
       modelLabel: "added-model",
-      notice: ["模型配置已更新：added-model", "API Key 已保存到系统凭据库。", "已应用到当前会话。"],
+      notice: [
+        "Set baseUrl to http://127.0.0.1:9999/v1",
+        "Set chatModel to saved-model",
+        "Set API key",
+      ],
     });
 
     finish();
@@ -451,10 +455,41 @@ describe("runInkTui", () => {
     expect(modelCredentials.clear).not.toHaveBeenCalled();
     expect(session.setAccessToken).toHaveBeenCalledWith("stored-key");
     expect(store.getSnapshot().notice).toEqual([
-      "模型配置已更新：added-model",
-      "API Key 未修改。",
-      "已应用到当前会话。",
+      "Set baseUrl to http://127.0.0.1:9999/v1",
+      "Set chatModel to saved-model",
     ]);
+
+    finish();
+    store.dispose();
+  });
+
+  it("dismisses an unchanged config with the Claude Code message", async () => {
+    const { session } = createSession();
+    const store = new TuiViewStore();
+    const modelSettings = createModelSettings();
+    const { props, finish } = await start(session, store, false, modelSettings);
+
+    await props.panelHandlers.saveConfig({
+      baseUrl: "http://127.0.0.1:1234/v1",
+      chatModel: "test-model",
+      apiKey: { kind: "keep" },
+    });
+
+    expect(store.getSnapshot().notice).toEqual(["Config dialog dismissed"]);
+
+    finish();
+    store.dispose();
+  });
+
+  it("reports dismissal when the config panel closes without saving", async () => {
+    const { session } = createSession();
+    const store = new TuiViewStore();
+    const { props, finish } = await start(session, store);
+
+    props.panelHandlers.close("dismissed");
+
+    expect(store.getSnapshot().panel).toBeUndefined();
+    expect(store.getSnapshot().notice).toEqual(["Config dialog dismissed"]);
 
     finish();
     store.dispose();

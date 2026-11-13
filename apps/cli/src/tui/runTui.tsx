@@ -165,6 +165,7 @@ export async function runInkTui({
       };
     },
     saveConfig: async (input) => {
+      const before = await modelSettings.snapshot();
       const model = await modelSettings.addLocal({
         baseUrl: input.baseUrl,
         chatModel: input.chatModel,
@@ -190,15 +191,19 @@ export async function runInkTui({
       store.setModelLabel(model.chat.model);
       store.setModelConfigured(true);
       store.setSetupStep(undefined);
-      store.setNotice([
-        `模型配置已更新：${model.chat.model}`,
-        input.apiKey.kind === "set"
-          ? "API Key 已保存到系统凭据库。"
-          : input.apiKey.kind === "clear"
-            ? "API Key 已清除。"
-            : "API Key 未修改。",
-        "已应用到当前会话。",
-      ]);
+      const changes: string[] = [];
+      if (before.local.baseUrl !== input.baseUrl) {
+        changes.push(`Set baseUrl to ${input.baseUrl}`);
+      }
+      if (before.local.chatModel !== input.chatModel) {
+        changes.push(`Set chatModel to ${input.chatModel}`);
+      }
+      if ((before.local.answerModel ?? "") !== (input.answerModel ?? "")) {
+        changes.push(`Set answerModel to ${input.answerModel ?? "(none)"}`);
+      }
+      if (input.apiKey.kind === "set") changes.push("Set API key");
+      else if (input.apiKey.kind === "clear") changes.push("Cleared API key");
+      store.setNotice(changes.length === 0 ? ["Config dialog dismissed"] : changes);
     },
     loadModels: async () => {
       const snapshot = await modelSettings.snapshot();
@@ -235,7 +240,10 @@ export async function runInkTui({
       store.setSetupStep(undefined);
       store.setNotice([`已切换模型：${model.chat.model}`]);
     },
-    close: () => store.setPanel(undefined),
+    close: (reason) => {
+      store.setPanel(undefined);
+      if (reason === "dismissed") store.setNotice(["Config dialog dismissed"]);
+    },
   };
 
   const handleSetup = async (text: string): Promise<void> => {

@@ -31,7 +31,7 @@ export function ConfigPanel({
   load(): Promise<ConfigPanelData>;
   loadModels(): Promise<ModelPickerData>;
   save(input: ConfigSaveInput): Promise<void>;
-  close(): void;
+  close(reason?: "saved" | "dismissed"): void;
 }) {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [searchMode, setSearchMode] = useState(true);
@@ -61,6 +61,10 @@ export function ConfigPanel({
   const rows = filterConfigRows(query);
   const selectedRow = rows[Math.min(index, Math.max(0, rows.length - 1))];
 
+  useEffect(() => {
+    if (selectedRow?.field !== "apiKey") setRevealApiKey(false);
+  }, [selectedRow?.field]);
+
   const updateValue = (field: ConfigField, value: string): void => {
     setState((current) =>
       current.kind === "ready"
@@ -82,7 +86,7 @@ export function ConfigPanel({
     try {
       await save(configSaveInput(values, state.data.apiKey));
       setBusy(false);
-      close();
+      close("saved");
     } catch (cause) {
       setBusy(false);
       setError(messageOf(cause));
@@ -91,6 +95,7 @@ export function ConfigPanel({
 
   const openField = (field: ConfigField): void => {
     setError(undefined);
+    setRevealApiKey(false);
     if (field === "chatModel" || field === "answerModel") {
       setSubmenu(field);
       return;
@@ -102,7 +107,7 @@ export function ConfigPanel({
     (input, key) => {
       if (busy) return;
       if (state.kind !== "ready") {
-        if (key.escape) close();
+        if (key.escape) close("dismissed");
         return;
       }
       if (editing !== undefined || submenu !== undefined) return;
@@ -138,7 +143,7 @@ export function ConfigPanel({
         return;
       }
       if (key.escape) {
-        close();
+        close("dismissed");
         return;
       }
       if (key.upArrow) {
@@ -155,15 +160,17 @@ export function ConfigPanel({
         setIndex(0);
         return;
       }
+      if (key.ctrl && input === "r" && selectedRow?.field === "apiKey") {
+        setRevealApiKey((value) => !value);
+        return;
+      }
       if (key.ctrl && input === "s") {
         void persist(state.values);
         return;
       }
-      if (key.return && selectedRow !== undefined) {
+      if ((key.return || key.rightArrow) && selectedRow !== undefined) {
         openField(selectedRow.field);
-        return;
       }
-      if (input === " " && selectedRow !== undefined) openField(selectedRow.field);
     },
     { isActive: editing === undefined && submenu === undefined && !busy },
   );
@@ -174,6 +181,7 @@ export function ConfigPanel({
     submenu: submenu !== undefined,
     editing,
     searching: searchMode,
+    selectedField: selectedRow?.field,
   });
 
   return (
@@ -195,6 +203,7 @@ export function ConfigPanel({
             onCancelEdit={() => {
               setEditing(undefined);
               setError(undefined);
+              setRevealApiKey(false);
             }}
             onToggleSecret={() => setRevealApiKey((value) => !value)}
             onUpdate={updateValue}

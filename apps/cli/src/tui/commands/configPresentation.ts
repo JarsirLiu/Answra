@@ -62,6 +62,7 @@ export function configPanelFooter(input: {
   readonly submenu: boolean;
   readonly editing: ConfigField | undefined;
   readonly searching: boolean;
+  readonly selectedField?: ConfigField;
 }): string {
   if (input.busy) return "正在保存…";
   if (!input.loaded) return "Esc 关闭";
@@ -72,5 +73,8 @@ export function configPanelFooter(input: {
       : "Enter 确认 · Esc 取消编辑";
   }
   if (input.searching) return "输入筛选 · Enter/↓ 进入列表 · Esc 清除";
-  return "Enter 修改 · Ctrl+S 保存 · / 搜索 · Esc 取消";
+  if (input.selectedField === "apiKey") {
+    return "Enter/→ 修改 · Ctrl+R 显示/隐藏 Key · Ctrl+S 保存 · / 搜索 · Esc 取消";
+  }
+  return "Enter/→ 修改 · Ctrl+S 保存 · / 搜索 · Esc 取消";
 }
