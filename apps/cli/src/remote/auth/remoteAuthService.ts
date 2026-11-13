@@ -47,6 +47,8 @@ export interface RemoteAuthDependencies {
   store: ServiceAuthStore;
   device: () => Promise<AuthDeviceDescriptor>;
   promptCode: (label: string) => Promise<string>;
+  siteBaseUrl?: string;
+  apiBaseUrl?: string;
   fetch?: typeof fetch;
   now?: () => number;
 }
@@ -55,6 +57,8 @@ export class RemoteAuthService implements RemoteAuthPort {
   private readonly store: ServiceAuthStore;
   private readonly device: () => Promise<AuthDeviceDescriptor>;
   private readonly promptCode: (label: string) => Promise<string>;
+  private readonly siteBaseUrl: string;
+  private readonly apiBaseUrl: string;
   private readonly fetchImpl: typeof fetch;
   private readonly now: () => number;
 
@@ -62,6 +66,8 @@ export class RemoteAuthService implements RemoteAuthPort {
     this.store = deps.store;
     this.device = deps.device;
     this.promptCode = deps.promptCode;
+    this.siteBaseUrl = deps.siteBaseUrl ?? REMOTE_SERVICE_BASE_URL;
+    this.apiBaseUrl = deps.apiBaseUrl ?? REMOTE_SERVICE_BASE_URL;
     this.fetchImpl = deps.fetch ?? fetch;
     this.now = deps.now ?? Date.now;
   }
@@ -71,6 +77,7 @@ export class RemoteAuthService implements RemoteAuthPort {
     const state = createAuthState();
     const device = await this.device();
     const url = buildCliAuthorizeUrl({
+      siteBaseUrl: this.siteBaseUrl,
       state,
       codeChallenge: challenge,
       device,
@@ -170,7 +177,7 @@ export class RemoteAuthService implements RemoteAuthPort {
     }
     let response: Response;
     try {
-      response = await this.fetchImpl(`${REMOTE_SERVICE_BASE_URL}${path}`, {
+      response = await this.fetchImpl(new URL(path, this.apiBaseUrl).toString(), {
         method: options.method,
         headers,
         ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),

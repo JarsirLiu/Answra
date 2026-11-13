@@ -7,12 +7,15 @@ import {
 import type { CliOptions } from "../config/cliOptions";
 import type { CliDependencies, RemoteKeyDependencies } from "./dependencies";
 import { CliUsageError } from "./errors";
+import { runRemoteAttachCommand, runRemoteHostCommand } from "./remoteSessionCommands";
 
 type RemoteOptions = Extract<CliOptions, { kind: "remote" }>;
 
 export const REMOTE_HELP = `Answra Remote
 
 用法:
+  answra remote host [--key-id <keyId>] [--cwd <目录>]
+  answra remote attach [--no-alt-screen]
   answra remote key create [--days 7|30] [--label <名称>]
   answra remote key list
   answra remote key revoke <keyId>
@@ -22,6 +25,8 @@ export const REMOTE_HELP = `Answra Remote
   answra remote --help
 
 命令:
+  host         在 host 上启动常驻会话，等待 controller 接入
+  attach       作为 controller 连接 host，并进入远程 coding TUI
   key create   在 host 上生成访问密钥；密钥只显示一次
   key list     列出 host 上的密钥状态，不显示 secret
   key revoke   撤销 host 上的密钥
@@ -30,6 +35,7 @@ export const REMOTE_HELP = `Answra Remote
   key forget   删除本机保存的 controller 密钥
 
 说明:
+  host 默认使用最近创建且仍有效的访问密钥；可用 --key-id 指定。
   访问密钥只通过终端输入，不接受命令行参数，不写入 shell 历史。
   host 密钥文件只保存 secret 的哈希；controller 保存完整 key 以便重连。
   remote host/attach 还需要先运行 answra auth login 获取服务准入凭据。
@@ -49,6 +55,11 @@ export async function runRemoteCommand(
 
   const now = remote.now?.() ?? new Date();
   switch (options.action) {
+    case "host":
+      await runRemoteHostCommand(options, remote, deps, now);
+      return 0;
+    case "attach":
+      return await runRemoteAttachCommand(options, remote, deps, now);
     case "key-create":
       requireInteractive(deps, "remote key create");
       await createKey(options, remote, deps, now);

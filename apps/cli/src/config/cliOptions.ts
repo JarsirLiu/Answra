@@ -34,6 +34,8 @@ export type CliOptions =
       label?: string;
     }
   | { kind: "remote"; action: "key-revoke"; keyId: string }
+  | { kind: "remote"; action: "host"; keyId?: string; cwd?: string }
+  | { kind: "remote"; action: "attach"; altScreen?: boolean }
   | {
       kind: "code";
       cwd?: string;
@@ -193,8 +195,12 @@ function parseRemoteCommand(args: readonly string[]): CliOptions {
     if (token === "-h" || token === "--help") return { kind: "remote", action: "help" };
     if (token === "-v" || token === "--version") return { kind: "version" };
   }
+  if (args[0] === "host") return parseRemoteHost(args.slice(1));
+  if (args[0] === "attach") return parseRemoteAttach(args.slice(1));
   if (args[0] !== "key") {
-    throw new CliUsageError("缺少 remote key 子命令（create|list|revoke|set|show|forget）。");
+    throw new CliUsageError(
+      "缺少 remote 子命令（host|attach|key）；remote key 子命令为 create|list|revoke|set|show|forget。",
+    );
   }
   const action = args[1];
   if (action === undefined) throw new CliUsageError("缺少 remote key 子命令。");
@@ -214,6 +220,60 @@ function parseRemoteCommand(args: readonly string[]): CliOptions {
     default:
       throw new CliUsageError(`未知 remote key 子命令：${action}`);
   }
+}
+
+function parseRemoteHost(args: readonly string[]): CliOptions {
+  let keyId: string | undefined;
+  let cwd: string | undefined;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const token = args[index];
+    if (token === undefined) continue;
+    if (!token.startsWith("-")) {
+      throw new CliUsageError(`remote host 不接受位置参数：${token}`);
+    }
+    const option = parseOptionToken(token);
+    if (option.name !== "--key-id" && option.name !== "--cwd") {
+      throw new CliUsageError(`未知选项：${option.name}`);
+    }
+    const parsed = readOptionValue(args, index, option.name, option.inlineValue);
+    index = parsed.nextIndex;
+    if (option.name === "--key-id") keyId = parsed.value;
+    else cwd = parsed.value;
+  }
+
+  return {
+    kind: "remote",
+    action: "host",
+    ...(keyId === undefined ? {} : { keyId }),
+    ...(cwd === undefined ? {} : { cwd }),
+  };
+}
+
+function parseRemoteAttach(args: readonly string[]): CliOptions {
+  let altScreen: boolean | undefined;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const token = args[index];
+    if (token === undefined) continue;
+    if (!token.startsWith("-")) {
+      throw new CliUsageError(`remote attach 不接受位置参数：${token}`);
+    }
+    const option = parseOptionToken(token);
+    if (option.name !== "--no-alt-screen") {
+      throw new CliUsageError(`未知选项：${option.name}`);
+    }
+    if (option.inlineValue !== undefined) {
+      throw new CliUsageError("--no-alt-screen 不接受值。");
+    }
+    altScreen = false;
+  }
+
+  return {
+    kind: "remote",
+    action: "attach",
+    ...(altScreen === undefined ? {} : { altScreen }),
+  };
 }
 
 function parseRemoteKeyCreate(args: readonly string[]): CliOptions {

@@ -213,7 +213,7 @@ GET /api/v1/remote/signaling?ticket=<一次性 ticket>
 
 ### 3. 两端形态
 
-- **家里 CLI host**：使用独立的 `answra remote host` 子命令，不把远程模式塞进 `answra code`。host 启动现有 `startCodingHost`，生成远程访问密钥（默认 7 天、最小 7 天），出站连接 AnswraSite 信令；收到 controller 后提供 `RemoteHostSession`。不显示配对码，也不要求逐次确认；首次使用需要账号设备登录换取服务准入 ticket，之后用设备 token 刷新。
+- **家里 CLI host**：使用独立的 `answra remote host` 子命令，不把远程模式塞进 `answra code`。host 选择已有的有效远程访问密钥（默认最近创建，可用 `--key-id` 指定；密钥由 `remote key create` 生成，默认 7 天、最小 7 天），启动现有 `startCodingHost`，出站连接 AnswraSite 信令；收到 controller 后提供 `RemoteHostSession`。不显示配对码，也不要求逐次确认；首次使用需要账号设备登录换取服务准入 ticket，之后用设备 token 刷新。
 - **公司 CLI controller**：使用 `answra remote attach`，采用 key-only attach；只要密钥有效、host 在线且信令可达即可直接连接，不需要配对码。服务准入登录只证明“是 Answra 客户端”，不替代访问密钥；远程授权仍由 host 的访问密钥完成。它用远程实现的 `CodingSessionHost` 驱动现有 TUI；TUI 不感知传输，也不把公司机器的模型配置或 API key 发给 host。`/model` 与 `config` 的 host 语义全部回到家里 host：查看/切换/新增/清空本地模型、改 base URL 都由 host 执行；公司端只持有视图。API key 仍是 host 本地 secret，不从公司端上传，也不在公司端展示。
 - **桌面**：复用现有登录、`AgentService` 与安全存储，作为第二 host；renderer 不直接持有网络 peer，远程网络代码留在 main。CLI 不复制桌面 UI，也不要求桌面常驻。
 - **浏览器**：使用同一 `RemoteFrame` 与 capability 协商；不是首版必需，但架构不能把 CLI 锁死成唯一 controller。
@@ -295,7 +295,7 @@ interface HostModelSettingsPort {
 - host 必须显式开启远程模式，并本地显示“远程已连接”、controller 标识、密钥剩余时间和断开/撤销入口。远程 shell 等同本机 shell，key-only 不能省略 host 侧状态与撤销。
 - 首版一个 active controller；其他连接只读或拒绝，避免两个输入源同时 send/select/handoff。多 controller 共享控制另立提案。
 - 密钥泄露等同于 host 远程执行权限；默认一周窗口、每设备独立密钥、host 可见和可撤销是首版安全边界。不要通过 argv 传 key，使用交互输入、密钥文件或 keychain。
-- CLI 首版已落地 key 管理命令与 host 侧 key 校验，尚未接信令、WebRTC 与 `remote host`/`attach` 命令：
+- CLI 首版已落地 key 管理命令、host 侧 key 校验，以及 `remote host` / `remote attach` 到信令、WebRTC、host/controller 会话的组合接线；本地 compose 的真实服务端链路已验证，公网 NAT/网络矩阵仍未实机验证：
   - `answra remote key create [--days 7|30] [--label <name>]` 在 host 生成 `answra1.<roomId>.<keyId>.<secret>`，只打印一次；secret 为 32 字节随机值。
   - `answra remote key list` / `revoke <keyId>` 管理 host 记录；`key set` 在 controller 遮罩输入并保存完整 key；`key show` / `forget` 只管理本机摘要。
   - host 记录保存 SHA-256 secret hash、`roomId/keyId/createdAt/expiresAt/label/lastUsedAt/revokedAt`，不保存明文 secret；CLI 当前落到 `Answra/remote/host-keys.json`（0600）。
@@ -303,7 +303,9 @@ interface HostModelSettingsPort {
   - `key create` 要求交互 TTY，避免密钥进入日志；`key set` 支持 TTY 遮罩输入或 stdin 管道；key 不接受 argv，不进入 shell 历史。
   - 应用层 handshake 已落地 `auth` / `auth-error` 帧：controller 在 `hello` 后发送 `roomId/keyId/secret/sessionId`，host 校验记录、room 绑定、secret hash、撤销、过期和 session 后才发 `welcome` 并签发 lease；失败返回 `unauthorized` / `key-expired` / `key-revoked` / `session-mismatch`，不会提前把命令交给 host。
   - access key 不出现在 signaling、`hello`、command、日志或普通错误文案里；只存在于 DataChannel 建立后的独立 `auth` 帧。
-  - CLI 侧 `CodingApplication -> HostCommandPort`、`RemoteControllerSession -> CodingSessionHost` 与 `RemoteModelSettings` 适配器已落地，并用 fake link 覆盖命令、模型设置和 run 等待；`remote host`/`attach` 命令接线仍与信令/传输一起落地。
+  - CLI 侧 `CodingApplication -> HostCommandPort`、`RemoteControllerSession -> CodingSessionHost` 与 `RemoteModelSettings` 适配器已落地，并用 fake link 覆盖命令、模型设置和 run 等待。
+  - `remote host` 已接线：选择有效 host key、解析 workspace、注入模型访问令牌、启动 `startRemoteHost`、Ctrl-C 停止并释放 host；`remote attach` 已接线：读取 controller 凭据、换取 ticket、建立 WebRTC、校验 host 模型、用远程 `CodingSessionHost` 进入现有 TUI。两者在 `apps/cli/src/cli/remoteSessionCommands.ts`，命令解析与分派仍在 `remoteCommand.ts`。
+  - `remote attach` 的 `/config` 禁止写本机模型 Key，`/model` 当前不列 host 目录（空 catalog），需后续补 host 模型目录命令；这不改变 TUI 端口。
 
 ### 6. 多 Bot 的位置
 
@@ -416,10 +418,10 @@ interface HostModelSettingsPort {
 
 1. **阶段 0：契约与骨架。** 已落地：`packages/shared/src/schema/remote/`、`packages/remote/src/{host,ports,protocol,testing}/`，覆盖帧/命令/模型设置/信令 schema、`HostCommandPort`、传输与凭据端口、fake link/signaling/host port、稳定错误码；不建 WebRTC、不接网络。
 2. **阶段 1：远程会话核心。** 已落地：`RemoteHostSession` 与 `RemoteControllerSession` 通过 fake link 完成握手、命令 requestId 关联、host snapshot/event 推送、`/model` snapshot/add/switch/clear、send/cancel/clear 与 list/select bot；不接 CLI、TUI 或真实网络。
-3. **阶段 2：CLI 两端适配。** R3 + R4 适配器已落地：`CodingApplication` 映射成 `HostCommandPort`，`RemoteControllerSession` 映射成 `CodingSessionHost` 与 `RemoteModelSettings`；fake link 覆盖命令、模型设置、run 等待与 unsupported team send，不改 TUI 语义。`remote host`/`attach` 命令仍是后续接线点。
-4. **阶段 3：信令与访问密钥。** key 命令、本地存储、host 侧 auth handshake 与纯库信令状态机已落地（`key create/list/revoke/set/show/forget`、7/30 天、host 存 hash、controller 存受保护文件、`auth` / `auth-error` 校验撤销/过期/session；`joined` / `join-rejected`、单 peer、重复角色、join 超时与 offer/answer/ICE 方向）；AnswraSite 真实 room/presence/SDP 路由仍未接，fake signaling server 只证明客户端状态机；`remote host`/`attach` 与 WebRTC 直连仍待 R5/R6；不设配对码。
-5. **阶段 3.5：服务准入。** CLI 首次设备登录、token 刷新、`signaling-ticket` 换取与 WS ticket 握手；官方服务端拒绝无 ticket 连接。官方客户端固定官方端点，不提供自定义 URL 或匿名模式；自建端点不在首版支持范围。
-6. **阶段 4：P2P 直连。** 已落地 WebSocket 信令适配与 `NodeWebRtcLink`，真实 loopback DataChannel 通过 fake signaling 状态机测试；构建已 externalize 并复制 `node-datachannel`、当前平台二进制、`detect-libc`。`node-datachannel` 在 `createDataChannel` / `setRemoteDescription` 后自动推进协商，不能再手调 `setLocalDescription`（会触发原生崩溃）。家庭 NAT/IPv6 实机与 UDP 封锁/对称 NAT 失败矩阵仍未验证；不配置 TURN。
+3. **阶段 2：CLI 两端适配。** R3 + R4 适配器已落地：`CodingApplication` 映射成 `HostCommandPort`，`RemoteControllerSession` 映射成 `CodingSessionHost` 与 `RemoteModelSettings`；fake link 覆盖命令、模型设置、run 等待与 unsupported team send，不改 TUI 语义。`remote host` / `remote attach` 命令行接线也已落地，测试用 fake signaling/link/host 覆盖启动、停止、attach 和拒绝路径。
+4. **阶段 3：信令与访问密钥。** key 命令、本地存储、host 侧 auth handshake 与纯库信令状态机已落地（`key create/list/revoke/set/show/forget`、7/30 天、host 存 hash、controller 存受保护文件、`auth` / `auth-error` 校验撤销/过期/session；`joined` / `join-rejected`、单 peer、重复角色、join 超时与 offer/answer/ICE 方向）；AnswraSite 的 room/presence/SDP 路由已接，并在本地 compose 通过真实 WebSocket 联调；`remote host`/`attach` 已能走真实 WebRTC 适配；不设配对码。
+5. **阶段 3.5：服务准入。** CLI 首次设备登录、token 刷新、`signaling-ticket` 换取与 WS ticket 握手；官方服务端拒绝无 ticket 连接。打包版和生产环境固定官方端点；开发态只允许 loopback http 覆盖 `ANSWRA_CLOUD_API_BASE_URL` / `ANSWRA_CLOUD_SITE_BASE_URL`，且回调 origin 必须与网关 `SERVER_FRONTEND_URL` 一致。官方客户端仍不开放任意第三方域名或匿名模式。
+6. **阶段 4：P2P 直连。** 已落地 WebSocket 信令适配与 `NodeWebRtcLink`；本地 compose 已跑通真实 ticket -> WebSocket `join` -> WebRTC DataChannel -> controller `welcome`/模型设置，关闭后进程自然退出；构建已 externalize 并复制 `node-datachannel`、当前平台二进制、`detect-libc`。`node-datachannel` 在 `createDataChannel` / `setRemoteDescription` 后自动推进协商，不能再手调 `setLocalDescription`（会触发原生崩溃）。家庭 NAT/IPv6 实机与 UDP 封锁/对称 NAT 失败矩阵仍未验证；不配置 TURN。
 7. **阶段 4.5：弱网恢复。** 实现 §7.1 的三层恢复：信令退避重连与 ticket 刷新、WebRTC `connectionId` 重建、应用 snapshot/revision 追平、ping/pong 与 `interrupted/reconnecting` 状态；这是首版验收项，不是可选的后续增强。
 8. **阶段 5：健壮性。** 背压、慢 consumer、lease、密钥过期、host 退出；补架构守护和 TUI 端集成测试。
 9. **阶段 6：桌面与多 Bot。** 复用 host/controller 契约；桌面 IPC/UI 与 CLI 多 Bot capability 分别落地，不复制远程状态机。

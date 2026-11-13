@@ -8,12 +8,17 @@ import { createAgentCodingSessionHost } from "./adapters/agentCodingHost";
 import { createOpenAiModelCatalog } from "./adapters/openAiModelCatalog";
 import { createSharedModelStore } from "./adapters/sharedModelStore";
 import { runCli } from "./cli/runCli";
+import { isPackagedCliRuntime, resolveCliCloudEndpoints } from "./config/cloudEndpoints";
 import { ModelSettingsService } from "./model/settingsService";
 import { resolveCliDeviceDescriptor } from "./remote/auth/deviceInfo";
 import { createKeychainServiceAuthStore } from "./remote/auth/keychainServiceAuthStore";
 import { RemoteAuthService } from "./remote/auth/remoteAuthService";
 import { createFileRemoteCredentialStore } from "./remote/credentials/fileRemoteCredentialStore";
 import { createFileRemoteHostKeyStore } from "./remote/credentials/fileRemoteHostKeyStore";
+import { createRemoteCodingHost } from "./remote/host/commandPort";
+import { createNodeSignalingTimers } from "./remote/signaling/nodeTimers";
+import { createRemoteSignalingService } from "./remote/signaling/remoteSignalingService";
+import { NodeWebRtcLink } from "./remote/transport/nodeWebRtcLink";
 import { createProcessInput } from "./transport/input";
 import { openSystemBrowser } from "./transport/openBrowser";
 import { createStreamOutput } from "./transport/output";
@@ -23,25 +28,42 @@ import { createInkTuiRunner } from "./tui/runTui";
 async function main(): Promise<void> {
   try {
     const modelSettings = new ModelSettingsService(createSharedModelStore());
+    const modelCredentials = createSystemModelCredentialStore();
     const promptSecret = createProcessSecretPrompt(process.stdin, process.stdout);
+    const endpoints = resolveCliCloudEndpoints(process.env, {
+      isPackaged: isPackagedCliRuntime(),
+    });
+    const remoteAuth = new RemoteAuthService({
+      store: createKeychainServiceAuthStore(),
+      device: () => resolveCliDeviceDescriptor(),
+      promptCode: promptSecret,
+      siteBaseUrl: endpoints.siteBaseUrl,
+      apiBaseUrl: endpoints.apiBaseUrl,
+    });
     process.exitCode = await runCli(process.argv.slice(2), {
       env: process.env,
       input: createProcessInput(process.stdin),
       output: createStreamOutput(process.stdout, process.stderr),
       cwd: process.cwd(),
       modelSettings,
-      modelCredentials: createSystemModelCredentialStore(),
+      modelCredentials,
       modelCatalog: createOpenAiModelCatalog(),
       remoteKeys: {
         hostKeys: createFileRemoteHostKeyStore(),
         credentials: createFileRemoteCredentialStore(),
         promptSecret,
       },
-      remoteAuth: new RemoteAuthService({
-        store: createKeychainServiceAuthStore(),
-        device: () => resolveCliDeviceDescriptor(),
-        promptCode: promptSecret,
-      }),
+      remoteAuth,
+      remoteRuntime: {
+        signaling: createRemoteSignalingService({
+          baseUrl: endpoints.apiBaseUrl,
+          getAccessToken: () => remoteAuth.getAccessToken(),
+        }),
+        timers: createNodeSignalingTimers(),
+        createLink: (options) => new NodeWebRtcLink(options),
+        createId: randomUUID,
+      },
+      createRemoteHost: createRemoteCodingHost,
       openBrowser: openSystemBrowser,
       createSessionHost: ({ emitEvent, onSnapshot, workspaceRoot }) =>
         createAgentCodingSessionHost(startCodingHost({ emitEvent, onSnapshot, workspaceRoot })),

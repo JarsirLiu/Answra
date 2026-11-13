@@ -7,6 +7,8 @@ export const CLI_HELP = `Answra CLI
   answra config set --base-url <URL> --model <ID> [--answer-model <ID>] [--api-key <KEY>]
   answra config unset
   answra auth <login|status|logout>
+  answra remote host [--key-id <keyId>] [--cwd <目录>]
+  answra remote attach [--no-alt-screen]
   answra remote key <create|list|revoke|set|show|forget>
   answra --help
   answra --version
@@ -15,7 +17,7 @@ export const CLI_HELP = `Answra CLI
   code     启动独立 coding Bot 的编码会话；TTY 下进入交互 TUI
   config   查看或保存桌面端与 CLI 共享的本地模型配置
   auth     登录 Answra 账号；远程 host/attach 的服务准入凭据
-  remote   管理远程访问密钥；运行 answra remote --help 查看详情
+  remote   启动远程 host、连接 controller 或管理访问密钥；运行 answra remote --help 查看详情
 
 code 选项:
   --cwd <目录>          工作区根目录，默认当前目录

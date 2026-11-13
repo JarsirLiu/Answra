@@ -6,6 +6,8 @@ import type { AgentEventEnvelope } from "@answra/shared/schema";
 import type { ModelCatalog } from "../model/catalog";
 import type { ModelSettings } from "../model/ports";
 import type { RemoteAuthPort } from "../remote/auth/remoteAuthService";
+import type { RemoteCodingHost, RemoteCodingHostOptions } from "../remote/host/commandPort";
+import type { RemoteRuntimeDependencies } from "../remote/runtimeDependencies";
 import type { CodingSessionHost } from "../session/codingSession";
 import type { InputPort } from "../transport/input";
 import type { OpenBrowser } from "../transport/openBrowser";
@@ -39,5 +41,7 @@ export interface CliDependencies {
   runTui: TuiRunner;
   remoteKeys?: RemoteKeyDependencies;
   remoteAuth?: RemoteAuthPort;
+  remoteRuntime?: RemoteRuntimeDependencies;
+  createRemoteHost?(options: RemoteCodingHostOptions): RemoteCodingHost;
   openBrowser?: OpenBrowser;
 }

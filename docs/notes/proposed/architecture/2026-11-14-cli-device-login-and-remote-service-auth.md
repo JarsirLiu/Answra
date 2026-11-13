@@ -17,7 +17,15 @@ CLI 已具备远程信令适配、WebRTC 传输和 host/controller 会话状态�
 - 站点/网关前置：AnswraSite 需要提供 CLI 授权页与手动回调展示页，并把回调地址加入授权 allowlist；网关复用现有 `POST /api/v1/auth/desktop/exchange`、`POST /api/v1/auth/refresh`、`POST /api/v1/auth/logout`。
 - 相关 Note：[远程控制 P2P 信令](./2026-11-13-remote-control-p2p-signaling.md)、[桌面端账号登录与凭据](../../implemented/feature/2026-10-17-desktop-account-login-and-credentials.md)。
 
-## 决定
+## 模块边界
+
+- `apps/cli/src/config/cloudEndpoints.ts`：只解析开发态 API/站点地址与生产回退，不发起网络请求。
+- `apps/cli/src/remote/auth/`：PKCE、设备描述、token 交换/刷新、keychain 存储和登录态；不携带模型 API key，不读取桌面 `safeStorage`。
+- `apps/cli/src/remote/signaling/remoteSignalingService.ts`：只把 access token 换成一次性 ticket；不解释账号权限或远程访问密钥。
+- `apps/cli/src/main.ts`：组合根，把解析后的 `apiBaseUrl` / `siteBaseUrl` 注入 auth 与 signaling；业务模块不读环境变量。
+- AnswraSite：只做授权页、回调页、exchange/refresh/logout 与 ticket 签发；不保存 CLI token、不接触远程访问密钥 secret。
+
+## 提案
 
 ### 登录流程
 
@@ -33,12 +41,13 @@ CLI 已具备远程信令适配、WebRTC 传输和 host/controller 会话状态�
 
 ### 端点与站点契约
 
-- 官方站点/网关固定为 `https://colorect.cloud`，CLI 不提供自定义域名覆盖。
-- 授权页：`https://colorect.cloud/{locale}/cli/authorize`。
-- 手动回调展示页：`https://colorect.cloud/cli/authorize/callback`。
+- 官方站点/网关固定为 `https://colorect.cloud`。打包版或 `ANSWRA_ENV=production` 时忽略所有地址覆盖。
+- 开发态允许 `ANSWRA_CLOUD_API_BASE_URL` / `ANSWRA_CLOUD_SITE_BASE_URL` 覆盖，但只接受 `http:` 且 host 为 `127.0.0.1` 或 `localhost`；其他值静默回退官方地址，不能借此连接任意第三方域名。
+- 授权页：`{siteBaseUrl}/{locale}/cli/authorize`；授权回调：`{siteBaseUrl}/{locale}/cli/authorize/callback`。生产为 `https://colorect.cloud/{locale}/cli/authorize/callback`。
 - 授权页参数沿用桌面端：`state`、`code_challenge`、`code_challenge_method=S256`、`redirect_uri`、`device_id`、`device_name`、`os`。
 - 站点在用户同意后，将 `code` 与 `state` 交给手动回调页；回调页只展示一次性授权码，不写日志、不持久化。
 - 网关沿用现有 token 契约：`device_access_token` / `device_refresh_token` / `expires_in`，兼容 `access_token` / `refresh_token`；成功信封为 `{ code: 0, data }`。
+- 本地联调时 `ANSWRA_CLOUD_SITE_BASE_URL` 与网关 `SERVER_FRONTEND_URL` 必须使用完全相同的 origin（`localhost` 与 `127.0.0.1` 不可混用），否则回调精确 allowlist 会拒绝。
 
 ### 凭据与设备
 
@@ -70,13 +79,21 @@ answra auth logout
 
 - CLI 登录态与桌面登录态相互独立；同一账号可以在两个设备上分别授权、分别撤销。
 - `ANSWRA_REMOTE_SERVICE_TOKEN` 不再是正式路径；若保留只允许作为测试注入，不进入用户文档。
-- 站点必须实现 CLI 授权页/手动回调页并 allowlist `https://colorect.cloud/cli/authorize/callback`；未部署前只能做 fake 测试，不能声称真实登录可用。
+- 站点必须实现 CLI 授权页/手动回调页并 allowlist `https://colorect.cloud/{locale}/cli/authorize/callback` 与本地开发 origin 的同一路径；未部署前只能做 fake 测试，不能声称真实登录可用。
 - 登录只解决服务准入；控制某台 host 仍必须持有该 host 的远程访问密钥。
 
-## 验证
+## 验收标准
 
-- PKCE 向量与 `state` 一次性校验测试。
-- fake store/fetch 下：登录成功写 keychain、缺失或错误 `state` 拒绝、exchange 失败不覆盖旧凭据、过期自动刷新、401 清凭据、5xx 保留凭据、logout 清本地并尽力 revoke。
-- `answra auth login/status/logout` 命令测试；未登录运行远程命令时提示登录。
-- `pnpm --filter @answra/cli typecheck`、`test`、`build`、`pnpm architecture:check`。
-- 待站点部署后实机验证：Windows/macOS 浏览器授权、终端粘贴、刷新、撤销和多设备登录。
+- 可观察结果：`answra auth login` 打开授权页，粘贴 `code#state` 后登录成功；`remote host` / `remote attach` 未登录时提示先登录，登录后能用同一账号换取 `signaling-ticket`。
+- 本地开发：设置 `ANSWRA_CLOUD_SITE_BASE_URL=http://localhost:3100`、`ANSWRA_CLOUD_API_BASE_URL=http://localhost:8080` 后，授权页、回调页和 exchange 都指向本地；打包版或生产环境忽略覆盖。
+- 自动化验证：PKCE 向量与 `state` 一次性校验；fake store/fetch 下登录成功写 keychain、缺失或错误 `state` 拒绝、exchange 失败不覆盖旧凭据、过期自动刷新、401 清凭据、5xx 保留凭据、logout 清本地并尽力 revoke。
+- 自动化验证：`cloudEndpoints` 覆盖本地 loopback、非法 host、打包版与生产回退；`remoteAuthService` 断言本地站点授权 URL、回调 URL 和 API 请求都使用注入地址。
+- 自动化验证：`answra auth login/status/logout` 命令测试；未登录运行远程命令时提示登录；`pnpm --filter @answra/cli typecheck`、`test`、`build`、`pnpm architecture:check`。
+- 需要的实机验证：站点部署后验证 Windows/macOS 浏览器授权、终端粘贴、刷新、撤销和多设备登录。
+- 本地联调（2026-11-14）：本地 compose 下 `POST /api/v1/remote/signaling-ticket` 换取成功；host/controller 各用一张 ticket 完成真实 WebSocket `join` 和 WebRTC DataChannel 建立，controller 收到 host 的 `workspaceRoot` 与模型设置。网关原回调 allowlist 只接受无 locale 的 `/cli/authorize/callback`，已扩展为同时接受 `/{locale}/cli/authorize/callback`（单个 2–5 位小写 locale），并补正向/反向 Go 测试；重建网关后 `/health` 正常。
+
+## 风险
+
+- 本地覆盖若把 `localhost` 与 `127.0.0.1` 混用，会因网关精确回调 allowlist 失败；联调环境必须统一 origin。
+- 开发态覆盖只保护官方构建不连第三方地址，不能防止本机用户主动把 loopback 服务换成恶意实现；这是开发便利与安全边界之间的有意取舍。
+- 登录只证明服务准入，不替代 host 访问密钥；keychain 不可用时必须失败，不能回退明文或共享配置。
