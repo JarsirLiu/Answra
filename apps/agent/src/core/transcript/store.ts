@@ -1,6 +1,7 @@
 /** 跨领域 transcript 仓储端口；只定义消息与会话元数据，不绑定具体存储实现。 */
 import type { ConversationBot, ConversationMessage, ConversationSnapshot } from "@answra/shared";
 import type { AgentEventEnvelope } from "@answra/shared/schema";
+import type { ContextState } from "./contextState";
 
 /** Team metadata attached to a conversation; identities stay in the Agent registry. */
 export interface ConversationSessionSeed {
@@ -70,4 +71,7 @@ export interface ConversationStore {
   ): Promise<void>;
   /** Consume the canonical event envelope to update recoverable message content and status. */
   applyAgentEvent(conversationId: string, envelope: AgentEventEnvelope): Promise<void>;
+  /** 读取上下文检查点与压缩生命周期；与 transcript 消息分开保存，避免 UI snapshot 携带摘要正文。 */
+  loadContextState(conversationId: string): Promise<ContextState | undefined>;
+  saveContextState(conversationId: string, state: ContextState): Promise<void>;
 }

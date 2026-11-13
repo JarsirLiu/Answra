@@ -1,4 +1,11 @@
 /** 通用压缩参数；只描述预算差异，不携带任何领域提示词。 */
+/** 首版所有领域共用的保守预算；后续由模型能力端点下发后替换。 */
+export const DEFAULT_COMPACTION_PROFILE: CompactionProfile = {
+  retainRecentMessages: 12,
+  minimumMessagesToSummarize: 4,
+  triggerTokens: 96_000,
+};
+
 export interface CompactionProfile {
   /** 最近 N 条消息保持原样，不参与摘要。 */
   retainRecentMessages: number;

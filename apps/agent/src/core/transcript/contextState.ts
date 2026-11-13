@@ -1,5 +1,5 @@
 /** transcript 的上下文检查点事实；不调用模型，也不定义摘要策略。 */
-import type { ConversationMessage } from "@answra/shared";
+import type { ContextCompactionStatus, ConversationMessage } from "@answra/shared";
 
 /** 一次已完成摘要的边界；summary 是 synthetic user message 的正文。 */
 export interface ContextCheckpoint {
@@ -13,6 +13,8 @@ export interface ContextCheckpoint {
 
 export interface ContextState {
   checkpoints: readonly ContextCheckpoint[];
+  /** 最近一次压缩生命周期；快照只投影这一字段，检查点正文留在 store。 */
+  compaction?: ContextCompactionStatus;
 }
 
 export function latestCheckpoint(state: ContextState | undefined): ContextCheckpoint | undefined {

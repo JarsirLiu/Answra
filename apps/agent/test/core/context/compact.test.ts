@@ -27,7 +27,7 @@ describe("context compaction", () => {
       async () => "## 当前目标\n继续实现压缩",
     );
 
-    const state = await compactContext({
+    const result = await compactContext({
       messages: [message("m1", "旧需求"), message("m2", "保留需求")],
       state: undefined,
       profile: PROFILE,
@@ -40,7 +40,8 @@ describe("context compaction", () => {
     expect(prompt).toContain(CONTEXT_SUMMARY_PROMPT);
     expect(prompt).toContain("旧需求");
     expect(prompt).not.toContain("保留需求");
-    expect(state).toEqual({
+    expect(result?.summarizedMessages).toBe(1);
+    expect(result?.state).toEqual({
       checkpoints: [
         {
           summary: "## 当前目标\n继续实现压缩",
@@ -57,7 +58,7 @@ describe("context compaction", () => {
       async () => "更新后的摘要",
     );
 
-    const state = await compactContext({
+    const result = await compactContext({
       messages: [
         message("m1", "已压缩一"),
         message("m2", "已压缩二"),
@@ -82,9 +83,9 @@ describe("context compaction", () => {
     expect(prompt).toContain("旧摘要正文");
     expect(prompt).toContain("新消息");
     expect(prompt).not.toContain("已压缩一");
-    expect(state?.checkpoints).toHaveLength(2);
-    expect(state?.checkpoints.at(-1)?.throughMessageId).toBe("m3");
-    expect(state?.checkpoints.at(-1)?.messageCount).toBe(3);
+    expect(result?.state.checkpoints).toHaveLength(2);
+    expect(result?.state.checkpoints.at(-1)?.throughMessageId).toBe("m3");
+    expect(result?.state.checkpoints.at(-1)?.messageCount).toBe(3);
   });
 
   it("returns undefined without calling the model when no compaction is needed", async () => {
@@ -92,14 +93,14 @@ describe("context compaction", () => {
       async () => "不应调用",
     );
 
-    const state = await compactContext({
+    const result = await compactContext({
       messages: [message("m1", "短消息")],
       state: undefined,
       profile: { ...PROFILE, triggerTokens: 100 },
       generate,
     });
 
-    expect(state).toBeUndefined();
+    expect(result).toBeUndefined();
     expect(generate).not.toHaveBeenCalled();
   });
 

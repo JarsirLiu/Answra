@@ -1,7 +1,9 @@
 /** 将 Conversation 请求和仓储历史转换成 AI SDK 模型上下文。 */
 import type { ConversationSendRequest } from "@answra/shared";
 import type { ModelMessage } from "ai";
+import { projectContextMessages } from "../../core/context/projection";
 import { parseDataUrl } from "../../core/model/imageInput";
+import { latestCheckpoint } from "../../core/transcript/contextState";
 import { projectConversationMessages } from "../../core/transcript/projection";
 import type { ConversationStore } from "../../core/transcript/store";
 import { buildTimeReminder } from "./timeReminder";
@@ -34,10 +36,15 @@ export async function buildModelMessages({
     }),
   ];
   const messages: ModelMessage[] = includeHistory
-    ? projectConversationMessages({
+    ? projectContextMessages({
         messages: (await store.load(conversationId)).messages,
-        ...(viewerAgentId ? { viewerAgentId } : {}),
-        ...(agentNames ? { agentNames } : {}),
+        checkpoint: latestCheckpoint(await store.loadContextState(conversationId)),
+        project: (tail) =>
+          projectConversationMessages({
+            messages: tail,
+            ...(viewerAgentId ? { viewerAgentId } : {}),
+            ...(agentNames ? { agentNames } : {}),
+          }),
       })
     : [{ role: "user", content }];
   if (injectTime) appendTimeReminder(messages);

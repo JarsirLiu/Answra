@@ -1,10 +1,12 @@
 /** 面试演练 Agent：组装演练提示、记忆路径、工作区上下文与授权工具。 */
-import type { ModelMessage } from "ai";
 import { buildWorkspaceSystemContext } from "../conversation/turn/workspaceContext";
 import type { AgentDefinition } from "../core/agent/definition";
 import { agentId } from "../core/agent/definition";
 import { createToolStepLimit } from "../core/agent/toolStepLimit";
+import { projectContextMessages } from "../core/context/projection";
 import type { ReadFileStateMap, ToolRegistry } from "../core/tool";
+import { latestCheckpoint } from "../core/transcript/contextState";
+import { projectConversationMessages } from "../core/transcript/projection";
 import type { ConversationStore } from "../core/transcript/store";
 import {
   buildInterviewMemorySystemContext,
@@ -41,9 +43,11 @@ export function createInterviewRehearsalAgent({
     modelRoute: "chat",
     async prepare(input, signal, emitter) {
       const snapshot = await store.load(input.conversationId);
-      const messages: ModelMessage[] = snapshot.messages
-        .filter((message) => message.status !== "streaming")
-        .map((message) => ({ role: message.role, content: message.text }));
+      const messages = projectContextMessages({
+        messages: snapshot.messages,
+        checkpoint: latestCheckpoint(await store.loadContextState(input.conversationId)),
+        project: (tail) => projectConversationMessages({ messages: tail }),
+      });
       const toolSet = tools.authorize(INTERVIEW_REHEARSAL_TOOLS, {
         signal,
         workspaceRoot: input.workspaceRoot,

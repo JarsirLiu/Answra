@@ -2,6 +2,7 @@
 import type {
   AgentEventEnvelope,
   AgentStreamEvent,
+  ContextCompactionStatus,
   ConversationMessage,
   ConversationMessagePart,
   ConversationSnapshot,
@@ -19,6 +20,8 @@ import {
 } from "./conversationParts";
 import { projectReplyActivity } from "./replyActivity";
 
+export { contextCompactionLabel } from "./contextCompaction";
+
 export type {
   ConversationRetry,
   ConversationViewMessage,
@@ -31,6 +34,7 @@ export interface ConversationView {
   retry?: ConversationRetry;
   retryRunId?: string;
   error?: string;
+  contextCompaction?: ContextCompactionStatus;
 }
 
 export const EMPTY_CONVERSATION_VIEW: ConversationView = { eventRevision: 0, messages: [] };
@@ -54,7 +58,12 @@ export function applyConversationSnapshot(
   options: ConversationProjectionOptions = {},
 ): ConversationView {
   if (options.retainCapturedRound && snapshot.messages.length === 0 && view.messages.length > 0)
-    return { ...view, eventRevision: snapshot.eventRevision, activeRunId: undefined };
+    return {
+      ...view,
+      eventRevision: snapshot.eventRevision,
+      activeRunId: undefined,
+      contextCompaction: snapshot.contextCompaction,
+    };
   const prior = new Map(view.messages.map((message) => [message.id, message]));
   const keepRetry =
     snapshot.activeRunId !== undefined && snapshot.activeRunId === view.retryRunId && view.retry;
@@ -66,6 +75,7 @@ export function applyConversationSnapshot(
     activeRunId: snapshot.activeRunId,
     retry: keepRetry ? view.retry : undefined,
     retryRunId: keepRetry ? view.retryRunId : undefined,
+    contextCompaction: snapshot.contextCompaction,
     // A snapshot is the server's current conversation truth. Do not carry a
     // terminal error from the previous run into a cleared or resumed view.
     error: undefined,

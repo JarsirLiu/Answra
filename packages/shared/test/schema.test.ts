@@ -229,6 +229,24 @@ describe("conversation message audience", () => {
       snapshot,
     );
   });
+
+  it("round-trips the context compaction lifecycle in the snapshot", () => {
+    const snapshot = {
+      conversationId: "conv-1",
+      eventRevision: 4,
+      messages: [],
+      contextCompaction: {
+        state: "summarizing",
+        trigger: "auto",
+        startedAt: "2026-11-13T10:00:00.000Z",
+        updatedAt: "2026-11-13T10:00:01.000Z",
+      },
+    };
+
+    expect(conversationSnapshotSchema.parse(JSON.parse(JSON.stringify(snapshot)))).toEqual(
+      snapshot,
+    );
+  });
 });
 
 describe("agent connection schema", () => {

@@ -2,6 +2,7 @@ import type { AgentEventEnvelope, BotSummary, ConversationSnapshot } from "../sc
 
 export type {
   AgentEventEnvelope,
+  ContextCompactionStatus,
   ConversationMessage,
   ConversationSnapshot,
 } from "../schema";

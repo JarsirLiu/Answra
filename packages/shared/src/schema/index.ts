@@ -55,6 +55,12 @@ export {
   agentRunStateSchema,
   agentToolCallStateSchema,
   agentUsageSchema,
+  type ContextCompactionState,
+  type ContextCompactionStatus,
+  type ContextCompactionTrigger,
+  contextCompactionSchema,
+  contextCompactionStateSchema,
+  contextCompactionTriggerSchema,
   type RunOutcome,
   runOutcomeSchema,
 } from "./status";

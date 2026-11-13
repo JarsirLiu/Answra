@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { agentMessageStateSchema, agentPartStateSchema, agentToolCallStateSchema } from "./status";
+import {
+  agentMessageStateSchema,
+  agentPartStateSchema,
+  agentToolCallStateSchema,
+  contextCompactionSchema,
+} from "./status";
 
 /** Conversation transcript messages and snapshots; event facts live in events.ts. */
 const textPartSchema = z.strictObject({
@@ -67,6 +72,8 @@ export const conversationSnapshotSchema = z.strictObject({
   participantAgentIds: z.array(z.string()).optional(),
   /** Display identity for the participants; UI uses it for author and current-Bot labels. */
   bots: z.array(conversationBotSchema).optional(),
+  /** 最近一次上下文摘要压缩状态；缺省表示从未压缩或尚未触发。 */
+  contextCompaction: contextCompactionSchema.optional(),
 });
 
 /** One persisted content event; seq is per run and revision is per session. */

@@ -14,6 +14,11 @@ export interface SummaryGeneratorInput {
 
 export type SummaryGenerator = (input: SummaryGeneratorInput) => Promise<string>;
 
+export interface CompactionResult {
+  state: ContextState;
+  summarizedMessages: number;
+}
+
 export async function compactContext({
   messages,
   state,
@@ -21,6 +26,8 @@ export async function compactContext({
   generate,
   signal,
   now = () => new Date(),
+  onStarted,
+  onSummarizing,
 }: {
   messages: readonly ConversationMessage[];
   state: ContextState | undefined;
@@ -28,14 +35,18 @@ export async function compactContext({
   generate: SummaryGenerator;
   signal?: AbortSignal;
   now?: () => Date;
-}): Promise<ContextState | undefined> {
+  onStarted?: () => Promise<void>;
+  onSummarizing?: () => Promise<void>;
+}): Promise<CompactionResult | undefined> {
   const previous = latestCheckpoint(state);
   const plan = planCompaction({ messages, checkpoint: previous, profile });
   if (!plan) return undefined;
+  await onStarted?.();
   const prompt = buildSummaryPrompt({
     ...(previous ? { previousSummary: previous.summary } : {}),
     transcript: renderMessagesForSummary(plan.messagesToSummarize),
   });
+  await onSummarizing?.();
   const summary = (await generate({ prompt, ...(signal ? { signal } : {}) })).trim();
   if (!summary) throw new Error("上下文摘要为空");
   const checkpoint = createCheckpoint({
@@ -44,7 +55,13 @@ export async function compactContext({
     summarized: plan.messagesToSummarize,
     now,
   });
-  return { checkpoints: [...(state?.checkpoints ?? []), checkpoint] };
+  return {
+    state: {
+      ...(state ?? { checkpoints: [] }),
+      checkpoints: [...(state?.checkpoints ?? []), checkpoint],
+    },
+    summarizedMessages: plan.messagesToSummarize.length,
+  };
 }
 
 function createCheckpoint({

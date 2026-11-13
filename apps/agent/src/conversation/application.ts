@@ -11,6 +11,8 @@ import type { AgentId, AgentRunHandle } from "../core/agent/definition";
 import type { AgentRuntime } from "../core/agent/runtime";
 import type { BotSummary } from "../core/bot/contracts";
 import { assertBotDiscoveryReferences, assertCanHandoff } from "../core/bot/directory";
+import { ContextCompactor } from "../core/context/compaction/compactor";
+import { DEFAULT_COMPACTION_PROFILE } from "../core/context/compaction/profile";
 import { validateModelRequest } from "../core/model/requestContent";
 import { assertHandoffTask } from "../core/team/handoff";
 import {
@@ -47,6 +49,7 @@ export class ConversationApplication {
   private readonly catalog: ConversationBotCatalog;
   private readonly presets: TeamPresetCatalog;
   private readonly defaultBotId: AgentId;
+  private readonly contextCompactor: ContextCompactor;
   private readonly onSnapshot?: ConversationApplicationOptions["onSnapshot"];
   private readonly onTeamError?: ConversationApplicationOptions["onTeamError"];
   private readonly readFileStates = new Map<string, ReadFileStateMap>();
@@ -64,6 +67,17 @@ export class ConversationApplication {
     this.store = store;
     this.onSnapshot = onSnapshot;
     this.onTeamError = onTeamError;
+    this.contextCompactor = new ContextCompactor({
+      store,
+      profile: DEFAULT_COMPACTION_PROFILE,
+      generate: ({ prompt, accessToken, signal }) =>
+        agentRuntime.generateText({
+          prompt,
+          accessToken,
+          ...(signal ? { signal } : {}),
+        }),
+      ...(onSnapshot ? { onSnapshot } : {}),
+    });
 
     this.catalog = catalog;
     const presetInput = withConversationPreset(presets, this.catalog);
@@ -279,6 +293,7 @@ export class ConversationApplication {
       conversationId,
       getAccessToken,
       prepareRun: async ({ runId, eventRevision }) => {
+        await this.contextCompactor.prepare({ conversationId, getAccessToken });
         const request =
           trigger.kind === "user"
             ? trigger.request

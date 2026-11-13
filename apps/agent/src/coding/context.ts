@@ -2,7 +2,9 @@
 import os from "node:os";
 import type { ConversationSendRequest } from "@answra/shared";
 import type { ModelMessage } from "ai";
+import { projectContextMessages } from "../core/context/projection";
 import { resolveShellRuntime } from "../core/tool";
+import { latestCheckpoint } from "../core/transcript/contextState";
 import { projectConversationMessages } from "../core/transcript/projection";
 import type { ConversationStore } from "../core/transcript/store";
 
@@ -19,7 +21,11 @@ export async function buildCodingMessages({
 }): Promise<ModelMessage[]> {
   if (!includeHistory) return [userMessage(request)];
   const snapshot = await store.load(conversationId);
-  return projectConversationMessages({ messages: snapshot.messages });
+  return projectContextMessages({
+    messages: snapshot.messages,
+    checkpoint: latestCheckpoint(await store.loadContextState(conversationId)),
+    project: (tail) => projectConversationMessages({ messages: tail }),
+  });
 }
 
 function userMessage(request: ConversationSendRequest): ModelMessage {

@@ -70,6 +70,25 @@ export const agentUsageSchema = z.strictObject({
     })
     .optional(),
 });
+/** 上下文摘要压缩的独立生命周期；不复用 Agent run 状态。 */
+export const contextCompactionStateSchema = z.enum([
+  "idle",
+  "started",
+  "summarizing",
+  "failed",
+  "succeeded",
+]);
+export const contextCompactionTriggerSchema = z.enum(["auto", "manual"]);
+export const contextCompactionSchema = z.strictObject({
+  state: contextCompactionStateSchema,
+  trigger: contextCompactionTriggerSchema,
+  startedAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  finishedAt: z.string().datetime().optional(),
+  /** 本次摘要覆盖的消息数；成功时写入，便于 UI 解释压缩范围。 */
+  summarizedMessages: z.number().int().nonnegative().optional(),
+  errorText: z.string().optional(),
+});
 export const agentRunSnapshotSchema = z.strictObject({
   runId: z.string(),
   state: agentRunStateSchema,
@@ -88,3 +107,6 @@ export type AgentPartKind = z.infer<typeof agentPartKindSchema>;
 export type AgentFinishReason = z.infer<typeof agentFinishReasonSchema>;
 export type AgentUsage = z.infer<typeof agentUsageSchema>;
 export type AgentRunSnapshot = z.infer<typeof agentRunSnapshotSchema>;
+export type ContextCompactionState = z.infer<typeof contextCompactionStateSchema>;
+export type ContextCompactionTrigger = z.infer<typeof contextCompactionTriggerSchema>;
+export type ContextCompactionStatus = z.infer<typeof contextCompactionSchema>;

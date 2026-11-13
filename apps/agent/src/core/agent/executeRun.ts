@@ -1,5 +1,4 @@
 /** 执行已注册 Agent 的 AI SDK 流、HTTP 重试与 run 终态；不读取或写入 transcript。 */
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { ConversationCapabilityEndpoint } from "@answra/shared";
 import type { RunOutcome } from "@answra/shared/schema";
 import {
@@ -11,8 +10,8 @@ import {
 import type { ExecutionStore } from "../../execution/store";
 import { consumeModelStream } from "../model/consumeStream";
 import { summarizeModelError } from "../model/errorSummary";
-import { createAuthorizedFetch, createLocalFetch } from "../model/providerFetch";
-import { createRetryingFetch, RATE_LIMIT_RETRY_POLICY } from "../model/retryFetch";
+import { createModelProvider } from "../model/provider";
+import { RATE_LIMIT_RETRY_POLICY } from "../model/retryFetch";
 import type { AgentDefinition, AgentRunRequest } from "./definition";
 import { createExecutionJournal } from "./streamJournal";
 
@@ -62,30 +61,24 @@ export async function executeRun<Input, Prepared>({
     await journal.notify(await executionStore.transition(runId, "running"));
     logRunStarted({ runId, agentId: definition.id, endpoint });
 
-    const baseFetch =
-      endpoint.auth === "local"
-        ? createLocalFetch(accessToken)
-        : createAuthorizedFetch(accessToken, tokenProvider);
-    const provider = createOpenAICompatible({
-      name: "answra",
-      baseURL: endpoint.baseUrl,
-      apiKey: accessToken || "local",
-      fetch: createRetryingFetch(baseFetch, {
-        runId,
-        onRetry: async (retry) => {
-          await journal.notify(await executionStore.scheduleRetry(runId, retry));
-          await journal.append({
-            type: "retry",
-            kind: retry.kind,
-            attempt: retry.attempt,
-            maxRetries: retry.maxRetries,
-            delayMs: retry.delayMs,
-          });
-        },
-        onRetryResume: async () => {
-          await journal.notify(await executionStore.resumeRetry(runId));
-        },
-      }),
+    const provider = createModelProvider({
+      endpoint,
+      accessToken,
+      tokenProvider,
+      runId,
+      onRetry: async (retry) => {
+        await journal.notify(await executionStore.scheduleRetry(runId, retry));
+        await journal.append({
+          type: "retry",
+          kind: retry.kind,
+          attempt: retry.attempt,
+          maxRetries: retry.maxRetries,
+          delayMs: retry.delayMs,
+        });
+      },
+      onRetryResume: async () => {
+        await journal.notify(await executionStore.resumeRetry(runId));
+      },
     });
 
     const result = streamText({

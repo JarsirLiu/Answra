@@ -8,6 +8,8 @@ import type {
 import type { AgentEventEnvelope } from "@answra/shared/schema";
 import type { AgentRunHandle } from "../core/agent/definition";
 import type { AgentRuntime } from "../core/agent/runtime";
+import { ContextCompactor } from "../core/context/compaction/compactor";
+import { DEFAULT_COMPACTION_PROFILE } from "../core/context/compaction/profile";
 import { validateModelRequest } from "../core/model/requestContent";
 import type { ReadFileStateMap } from "../core/tool";
 import { createUserMessage } from "../core/transcript/message";
@@ -26,6 +28,7 @@ export class CodingApplication {
   private readonly agentRuntime: AgentRuntime;
   private readonly store: ConversationStore;
   private readonly bot: CodingBot;
+  private readonly contextCompactor: ContextCompactor;
   private readonly onSnapshot?: CodingApplicationOptions["onSnapshot"];
   private readonly readFileStates = new Map<string, ReadFileStateMap>();
   private workspaceRoot: string | null = null;
@@ -36,6 +39,17 @@ export class CodingApplication {
     this.store = store;
     this.bot = bot;
     this.onSnapshot = onSnapshot;
+    this.contextCompactor = new ContextCompactor({
+      store,
+      profile: DEFAULT_COMPACTION_PROFILE,
+      generate: ({ prompt, accessToken, signal }) =>
+        agentRuntime.generateText({
+          prompt,
+          accessToken,
+          ...(signal ? { signal } : {}),
+        }),
+      ...(onSnapshot ? { onSnapshot } : {}),
+    });
   }
 
   setWorkspaceRoot(root: string | null): void {
@@ -111,6 +125,7 @@ export class CodingApplication {
       conversationId,
       getAccessToken,
       prepareRun: async ({ runId, eventRevision }) => {
+        await this.contextCompactor.prepare({ conversationId, getAccessToken });
         await this.store.beginRun(
           conversationId,
           runId,

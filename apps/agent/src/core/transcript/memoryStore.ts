@@ -5,9 +5,14 @@ import type {
   ConversationSnapshot,
 } from "@answra/shared";
 import type { AgentEventEnvelope, AgentStreamEvent, RunOutcome } from "@answra/shared/schema";
+import type { ContextState } from "./contextState";
 import type { ConversationSessionSeed, ConversationStore, HandoffMessageInput } from "./store";
 
-type Session = { snapshot: ConversationSnapshot; seed?: ConversationSessionSeed };
+type Session = {
+  snapshot: ConversationSnapshot;
+  seed?: ConversationSessionSeed;
+  contextState?: ContextState;
+};
 
 const MAX_HANDOFF_TASK_CHARS = 32_000;
 
@@ -20,7 +25,7 @@ export class MemoryConversationStore implements ConversationStore {
   ): Promise<ConversationSnapshot> {
     const existing = this.sessions.get(conversationId);
     // 已存在会话的 Bot 归属是既有事实；create 只做读取，不写入新 seed。
-    if (existing) return cloneSnapshot(existing.snapshot);
+    if (existing) return snapshotOf(existing);
     const session: Session = {
       snapshot: {
         conversationId,
@@ -31,16 +36,17 @@ export class MemoryConversationStore implements ConversationStore {
       ...(seed ? { seed: cloneSeed(seed) } : {}),
     };
     this.sessions.set(conversationId, session);
-    return cloneSnapshot(session.snapshot);
+    return snapshotOf(session);
   }
 
   async load(conversationId: string): Promise<ConversationSnapshot> {
-    return cloneSnapshot(this.requireSession(conversationId).snapshot);
+    return snapshotOf(this.requireSession(conversationId));
   }
 
   async clear(conversationId: string, eventRevision = 0): Promise<void> {
     const session = this.sessions.get(conversationId);
     if (!session || session.snapshot.activeRunId) return;
+    session.contextState = undefined;
     session.snapshot = {
       conversationId,
       eventRevision: Math.max(session.snapshot.eventRevision, eventRevision),
@@ -170,6 +176,17 @@ export class MemoryConversationStore implements ConversationStore {
     this.beginMessages(conversationId, runId, userMessage, false, eventRevision, authorAgentId);
   }
 
+  async loadContextState(conversationId: string): Promise<ContextState | undefined> {
+    const state = this.requireSession(conversationId).contextState;
+    return state ? cloneContextState(state) : undefined;
+  }
+
+  async saveContextState(conversationId: string, state: ContextState): Promise<void> {
+    const session = this.requireSession(conversationId);
+    if (session.snapshot.activeRunId) throw new Error("当前回复尚未完成");
+    session.contextState = cloneContextState(state);
+  }
+
   async applyAgentEvent(conversationId: string, envelope: AgentEventEnvelope): Promise<void> {
     const { event, runId, aggregateRevision } = envelope;
     const session = this.requireSession(conversationId);
@@ -251,6 +268,7 @@ export class MemoryConversationStore implements ConversationStore {
     const session = this.requireSession(conversationId);
     if (session.snapshot.activeRunId) throw new Error("当前回复尚未完成");
     if (userMessage.role !== "user") throw new Error("run 必须从用户消息开始");
+    if (!preserveHistory) session.contextState = undefined;
     session.snapshot = {
       conversationId,
       eventRevision: Math.max(session.snapshot.eventRevision, eventRevision),
@@ -350,6 +368,21 @@ function assertParticipant(session: Session, agentId: string): void {
   const participants = session.snapshot.participantAgentIds;
   if (participants && !participants.includes(agentId))
     throw new Error(`Bot 不在当前会话参与者中：${agentId}`);
+}
+
+function snapshotOf(session: Session): ConversationSnapshot {
+  const compaction = session.contextState?.compaction;
+  return cloneSnapshot({
+    ...session.snapshot,
+    ...(compaction ? { contextCompaction: { ...compaction } } : {}),
+  });
+}
+
+function cloneContextState(state: ContextState): ContextState {
+  return {
+    checkpoints: state.checkpoints.map((checkpoint) => ({ ...checkpoint })),
+    ...(state.compaction ? { compaction: { ...state.compaction } } : {}),
+  };
 }
 
 function cloneSnapshot(snapshot: ConversationSnapshot): ConversationSnapshot {

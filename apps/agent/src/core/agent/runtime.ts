@@ -1,7 +1,9 @@
 /** 静态 Agent 注册、模型路由、run 取消/等待和 Execution 查询的稳定运行时入口。 */
 import { randomUUID } from "node:crypto";
 import type { AgentEventEnvelope, AgentRunSnapshot, RunOutcome } from "@answra/shared/schema";
+import { generateText as generateModelText } from "ai";
 import type { ExecutionStore } from "../../execution/store";
+import { createModelProvider } from "../model/provider";
 import { validateEndpoint } from "../model/providerFetch";
 import { RunRegistry } from "../run/registry";
 import type {
@@ -60,6 +62,31 @@ export class AgentRuntime {
       chat: { ...routes.chat },
       answer: { ...routes.answer },
     };
+  }
+
+  /** 内部文本任务（上下文摘要等）：复用鉴权与重试，但不注册 Agent、不产生 run 事件。 */
+  async generateText({
+    prompt,
+    accessToken,
+    signal,
+  }: {
+    prompt: string;
+    accessToken: string;
+    signal?: AbortSignal;
+  }): Promise<string> {
+    const endpoint = this.requireRoutes().chat;
+    const provider = createModelProvider({
+      endpoint,
+      accessToken,
+      tokenProvider: this.tokenProvider,
+    });
+    const result = await generateModelText({
+      model: provider(endpoint.model),
+      prompt,
+      ...(signal ? { abortSignal: signal } : {}),
+      maxRetries: 0,
+    });
+    return result.text;
   }
 
   cancel(runId: string): void {

@@ -251,6 +251,7 @@ export function useConversationView(
       retry: undefined,
       retryRunId: undefined,
       error: undefined,
+      contextCompaction: undefined,
     };
     viewRef.current = next;
     setView(next);
