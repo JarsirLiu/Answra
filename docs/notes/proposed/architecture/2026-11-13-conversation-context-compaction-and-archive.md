@@ -53,6 +53,7 @@ Conversation、CLI coding、Interview 等所有使用 transcript 的领域，每
   - [Conversation 工具步数上限与终态](../../implemented/bug-fix/2026-11-10-conversation-step-limit-and-terminal.md)
   - [Conversation 编排拆分与 Bot 边界收敛](2026-11-12-conversation-orchestration-decomposition.md)
   - [CLI Coding 模式与 TUI 移植](2026-11-12-cli-coding-mode-and-tui-port.md)
+  - [256k 上下文预算与旧工具结果清理](2026-11-13-context-budget-and-tool-result-clearing.md)
   - [产品方向与 Agent 底座](2026-10-20-product-direction-and-agent-foundation.md)
 
 ## 提案
@@ -367,7 +368,7 @@ ConversationRunCoordinator / CodingApplication / InterviewApplication
 - 桌面 `ConversationView`、`ChatPanel` 与 CLI TUI footer 只显示开始、完成、失败三个状态，不显示摘要正文或思考内容。
 - 测试覆盖阈值、保留尾段、checkpoint 去重、summary 注入、单 prompt、三状态迁移、状态快照、失败回退与 UI 投影；schema 明确拒绝已移除的 `summarizing`。
 
-尚未落地：`/compact` 手动入口、工具结果清理、reactive compact、archive。当前自动触发使用固定保守预算（96k），模型能力端点下发 `contextWindow` 后应替换。
+尚未落地：`/compact` 手动入口、工具结果清理、reactive compact、archive。当前自动触发使用固定保守预算（96k）；256k 窗口、预算公式和重复工具结果清理的细化提案见[256k 上下文预算与旧工具结果清理](2026-11-13-context-budget-and-tool-result-clearing.md)，本 Note 的预算与工具清理部分以该提案为准。
 
 ## 模块边界
 
