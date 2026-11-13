@@ -7,7 +7,16 @@ import { TuiViewStore } from "../src/tui/app/viewStore";
 import { PromptInput } from "../src/tui/composer/PromptInput";
 import type { PointerEvent } from "../src/tui/interaction/pointerInput";
 import { TuiSelectionStore } from "../src/tui/interaction/selectionStore";
+import type { TuiPanelHandlers } from "../src/tui/panel";
 import { Transcript, Welcome } from "../src/tui/transcript/Transcript";
+
+const PANEL_HANDLERS: TuiPanelHandlers = {
+  loadConfig: async () => ({ baseUrl: "", chatModel: "", apiKey: "" }),
+  saveConfig: async () => {},
+  loadModels: async () => ({ current: "", models: [] }),
+  selectModel: async () => {},
+  close: () => {},
+};
 
 function nextFrame(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
@@ -381,6 +390,7 @@ describe("TUI components", () => {
         onCancel={vi.fn()}
         onSubmit={vi.fn()}
         store={store}
+        panelHandlers={PANEL_HANDLERS}
         workspaceRoot="D:\\workspace"
       />,
     );
@@ -404,6 +414,7 @@ describe("TUI components", () => {
         onCancel={vi.fn()}
         onSubmit={vi.fn()}
         store={store}
+        panelHandlers={PANEL_HANDLERS}
         workspaceRoot="D:\\workspace"
       />,
     );
@@ -429,6 +440,7 @@ describe("TUI components", () => {
         onCancel={onCancel}
         onSubmit={vi.fn()}
         store={store}
+        panelHandlers={PANEL_HANDLERS}
         workspaceRoot="D:\\workspace"
       />,
     );
@@ -474,6 +486,7 @@ describe("TUI components", () => {
         onCancel={vi.fn()}
         onSubmit={vi.fn()}
         store={store}
+        panelHandlers={PANEL_HANDLERS}
         workspaceRoot="D:\\workspace"
       />,
     );
@@ -513,6 +526,7 @@ describe("TUI components", () => {
         onCancel={vi.fn()}
         onSubmit={vi.fn()}
         store={store}
+        panelHandlers={PANEL_HANDLERS}
         pointerSource={pointer}
         workspaceRoot="D:\\workspace"
       />,
@@ -566,6 +580,7 @@ describe("TUI components", () => {
         onCancel={vi.fn()}
         onSubmit={vi.fn()}
         store={store}
+        panelHandlers={PANEL_HANDLERS}
         pointerSource={pointer}
         workspaceRoot="D:\\workspace"
       />,
@@ -635,6 +650,7 @@ describe("TUI components", () => {
         onCancel={vi.fn()}
         onSubmit={vi.fn()}
         store={store}
+        panelHandlers={PANEL_HANDLERS}
         workspaceRoot="D:\\workspace"
       />,
     );
@@ -701,6 +717,7 @@ describe("TUI components", () => {
         onCancel={vi.fn()}
         onSubmit={vi.fn()}
         store={store}
+        panelHandlers={PANEL_HANDLERS}
         workspaceRoot="D:\\workspace"
       />,
     );
@@ -738,6 +755,7 @@ describe("TUI components", () => {
         onSubmit={vi.fn()}
         selectionStore={selectionStore}
         store={store}
+        panelHandlers={PANEL_HANDLERS}
         workspaceRoot="D:\\workspace"
       />,
     );
@@ -771,6 +789,7 @@ describe("TUI components", () => {
         onSelectAll={onSelectAll}
         onSubmit={vi.fn()}
         store={store}
+        panelHandlers={PANEL_HANDLERS}
         workspaceRoot="D:\\workspace"
       />,
     );
@@ -797,6 +816,7 @@ describe("TUI components", () => {
         onSubmit={vi.fn()}
         pointerSource={pointer}
         store={store}
+        panelHandlers={PANEL_HANDLERS}
         workspaceRoot="D:\\workspace"
       />,
     );

@@ -20,6 +20,7 @@ describe("parseTuiCommand", () => {
   it("parses local commands with surrounding whitespace", () => {
     expect(parseTuiCommand("  /help ")).toMatchObject({ command: { kind: "help" }, args: [] });
     expect(parseTuiCommand("/clear")).toMatchObject({ command: { kind: "clear" }, args: [] });
+    expect(parseTuiCommand("/config")).toMatchObject({ command: { kind: "config" }, args: [] });
     expect(parseTuiCommand("/quit")).toMatchObject({ command: { kind: "exit" }, args: [] });
   });
 
@@ -49,9 +50,11 @@ describe("parseTuiCommand", () => {
     expect(suggestTuiCommands("").map((command) => command.name)).toEqual([
       "help",
       "clear",
+      "config",
       "model",
       "exit",
     ]);
+    expect(suggestTuiCommands("co").map((command) => command.name)).toEqual(["config"]);
     expect(suggestTuiCommands("mo").map((command) => command.name)).toEqual(["model"]);
     expect(suggestTuiCommands("qu").map((command) => command.name)).toEqual(["exit"]);
     expect(suggestTuiCommands("zzz")).toEqual([]);
@@ -60,6 +63,7 @@ describe("parseTuiCommand", () => {
   it("completes command names and leaves room for arguments", () => {
     expect(completeTuiCommand(requireCommand("help"))).toBe("/help");
     expect(completeTuiCommand(requireCommand("clear"))).toBe("/clear");
+    expect(completeTuiCommand(requireCommand("config"))).toBe("/config");
     expect(completeTuiCommand(requireCommand("model"))).toBe("/model ");
     expect(completeTuiCommand(requireCommand("quit"))).toBe("/exit");
   });
@@ -82,5 +86,6 @@ describe("parseTuiCommand", () => {
         expect(helpText).toContain(detail.summary);
       }
     }
+    expect(helpText).not.toContain("/model add");
   });
 });

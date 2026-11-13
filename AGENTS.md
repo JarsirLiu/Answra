@@ -75,23 +75,23 @@
 | `src/main.ts` | 可执行组合根：注入 process/env/stdin/stdout、SIGINT 与真实 Agent host | 只接线，不承载命令解析、会话状态机或呈现逻辑 |
 | `src/cli` | 顶层命令分派、`code`/`config`/`remote` 用例、依赖端口、help/error | 只依赖端口，不 import Electron 或 desktop |
 | `src/config` | argv 语法与工作区校验 | 不读写配置、不启动会话、不写事件 |
-| `src/model` | CLI 模型设置域：选择、优先级、应用服务与持久化端口 | 不 import `tui`/`cli`/`adapters`，不碰 `node:fs`、Ink 或终端输出 |
+| `src/model` | CLI 模型设置域：选择、优先级、应用服务、持久化端口与模型目录端口 | 不 import `tui`/`cli`/`adapters`，不碰 `node:fs`、Ink 或终端输出 |
 | `src/session` | `CodingSession` 单活动 run 用例与窄宿主端口 | 不实现模型调用、TUI 或进程 I/O |
-| `src/adapters` | `@answra/config` 共享文件实现、`@answra/agent/composition` 的 `CodingHost` 到 CLI 端口映射 | 不复制 Agent 运行时语义，不承载模型合并规则 |
+| `src/adapters` | `@answra/config` 共享文件实现、OpenAI 兼容 `/models` 模型目录、`@answra/agent/composition` 的 `CodingHost` 到 CLI 端口映射 | 不复制 Agent 运行时语义，不承载模型合并规则 |
 | `src/remote` | 远程 host/controller 适配与 CLI 本地密钥存储 | 不实现信令/WebRTC 状态机；key 不进共享 config；TUI 不 import |
 | `src/presentation` | Agent 事件到非 TTY 文本、工具行与模型摘要格式化 | 纯投影，不读写会话或进程 |
 | `src/tui` | TUI 组合根：`runTui.tsx` 只接线；备用屏幕用 Ink 原生 `alternateScreen` | 不 import Electron/desktop 或 `@answra/config`；不承载 Agent 命令分派或 runtime；运行中提交的 prompt 只在 TUI 队列内排队 |
 | `src/tui/app` | 根布局与 view store：snapshot/事件 -> TuiState | store 是唯一 writer；不解析工具输出 |
 | `src/tui/transcript` | 虚拟 transcript、消息行、Markdown、选区文本与高度估算 | 只处理消息顺序、虚拟化与滚动；工具语义只走 `transcript/tool/` |
 | `src/tui/transcript/tool` | 工具展示适配：`ToolCall`、详情、连续 read/search/list 折叠组 | 只消费 `@answra/ui/tool-presentation`；不重新解析工具输出或判断 Agent 事件 |
-| `src/tui/composer` | 输入框、宽字符/光标布局、历史与粘贴 | 不读写 transcript 或工具状态 |
-| `src/tui/chrome` | 状态行、Spinner 与主题 | 不持有会话或工具状态 |
-| `src/tui/commands` | 本地 slash 命令目录、解析、分派、帮助、候选面板与 `/model` | 不承载 Agent 命令分派或 runtime |
+| `src/tui/composer` | 输入框、搜索框、宽字符/光标布局、历史与粘贴 | 不读写 transcript 或工具状态 |
+| `src/tui/chrome` | 状态行、Spinner、主题与面板外框 | 不持有会话或工具状态 |
+| `src/tui/commands` | 本地 slash 命令目录、解析、分派、帮助、候选面板、`/config` 可搜索设置列表与 `/model` 选择器 | 不承载 Agent 命令分派或 runtime |
 | `src/tui/interaction` | 终端交互原语：指针解析、选区 store/action 与剪贴板输出 | 不 import `transcript`/`composer`/`runTui`；不解析 Ink 组件；指针/选区状态只由 store 写 |
 | `src/transport` | stdin/stdout/stderr 适配 | 不定义业务行为 |
 
 - CLI 只从 `@answra/agent/composition` 组装 coding host，不使用 worker 线协议、不启动 VAD/ASR、不 import `conversation`/`interview` 领域。
-- CLI 模型配置只从 `@answra/config` 读取文件实现与纯合并函数；`src/model` 不碰文件路径，真实读写由 `main.ts` 注入 `src/adapters/sharedModelStore.ts`。API Key 只走环境变量/参数或 `@answra/credentials` 的 OS keychain（TUI 非空输入写入 keychain），不进入共享文件；keychain 不可用时 fail-closed。
+- CLI 模型配置只从 `@answra/config` 读取文件实现与纯合并函数；`src/model` 不碰文件路径，真实读写由 `main.ts` 注入 `src/adapters/sharedModelStore.ts`。模型列表只经 `ModelCatalog` 端口与 `src/adapters/openAiModelCatalog.ts` 访问当前端点。API Key 只走环境变量/参数或 `@answra/credentials` 的 OS keychain（TUI 的 `/config` 从 keychain 回填、默认掩码、`Ctrl+R` 显示/隐藏；未修改时不重写），不进入共享文件；keychain 不可用时 fail-closed。
 - CLI 远程 key 只经 `answra remote key` 交互输入，不接受 argv；host 记录只存 secret 哈希，controller 存完整 key 的受保护文件，均不进入共享模型配置。
 - CLI 运行时目标为 Node >=22.13，构建 target 为 `node22.14`，与仓库开发、CI 与 pnpm 下限一致。
 - 安装包分发复用 Electron 35.0.0 的 Node 22.14（`ELECTRON_RUN_AS_NODE=1`）运行 CLI bundle，不新增 Node sidecar、不启动 GUI。

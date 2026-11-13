@@ -2,6 +2,7 @@
 import type { ModelCredentialStore } from "@answra/credentials";
 import type { ConversationModelConfig } from "@answra/shared";
 import { render } from "ink";
+import type { ModelCatalog } from "../model/catalog";
 import type { ModelSettings } from "../model/ports";
 import type { CodingSession } from "../session/codingSession";
 import { App } from "./app/App";
@@ -13,6 +14,7 @@ import { createPointerInput } from "./interaction/pointerInput";
 import { createSelectionActions } from "./interaction/selectionActions";
 import { TuiSelectionStore } from "./interaction/selectionStore";
 import type { TuiSetupStep } from "./modelSetup";
+import type { TuiPanel, TuiPanelHandlers } from "./panel";
 
 export type TuiSessionFactory = (
   model: ConversationModelConfig,
@@ -26,6 +28,7 @@ export interface TuiRunOptions {
   store: TuiViewStore;
   modelSettings: ModelSettings;
   modelCredentials: ModelCredentialStore;
+  modelCatalog: ModelCatalog;
   botName: string;
   workspaceRoot: string;
   altScreen: boolean;
@@ -44,6 +47,7 @@ export async function runInkTui({
   store,
   modelSettings,
   modelCredentials,
+  modelCatalog,
   botName,
   workspaceRoot,
   altScreen,
@@ -108,6 +112,14 @@ export async function runInkTui({
     store.setModelConfigured(true);
   };
 
+  const openPanel = (panel: TuiPanel): void => {
+    if (busy) {
+      store.setNotice(["当前运行中，先按 Esc 中断后再修改模型配置。"]);
+      return;
+    }
+    store.setPanel(panel);
+  };
+
   const commandDeps: TuiCommandDeps = {
     store,
     modelSettings,
@@ -115,6 +127,94 @@ export async function runInkTui({
     getSession: () => session,
     configureSession: ensureSession,
     requestExit: () => exitTui?.(),
+    openPanel,
+  };
+
+  const panelHandlers: TuiPanelHandlers = {
+    loadConfig: async () => {
+      const snapshot = await modelSettings.snapshot();
+      const apiKey = await modelCredentials.read();
+      return {
+        baseUrl: snapshot.local.baseUrl,
+        chatModel: snapshot.local.chatModel,
+        ...(snapshot.local.answerModel === undefined
+          ? {}
+          : { answerModel: snapshot.local.answerModel }),
+        apiKey: apiKey ?? "",
+      };
+    },
+    saveConfig: async (input) => {
+      const model = await modelSettings.addLocal({
+        baseUrl: input.baseUrl,
+        chatModel: input.chatModel,
+        ...(input.answerModel === undefined ? {} : { answerModel: input.answerModel }),
+      });
+      let accessToken: string;
+      if (input.apiKey.kind === "set") {
+        await modelCredentials.write(input.apiKey.value);
+        accessToken = input.apiKey.value;
+      } else if (input.apiKey.kind === "clear") {
+        await modelCredentials.clear();
+        accessToken = "";
+      } else {
+        accessToken = (await modelCredentials.read()) ?? "";
+      }
+      if (session === undefined) {
+        await ensureSession(model, accessToken);
+      } else {
+        session.setModel(model);
+        session.setAccessToken(accessToken);
+      }
+      store.clearError();
+      store.setModelLabel(model.chat.model);
+      store.setModelConfigured(true);
+      store.setSetupStep(undefined);
+      store.setNotice([
+        `模型配置已更新：${model.chat.model}`,
+        input.apiKey.kind === "set"
+          ? "API Key 已保存到系统凭据库。"
+          : input.apiKey.kind === "clear"
+            ? "API Key 已清除。"
+            : "API Key 未修改。",
+        "已应用到当前会话。",
+      ]);
+    },
+    loadModels: async () => {
+      const snapshot = await modelSettings.snapshot();
+      const current = snapshot.local.chatModel;
+      if (!snapshot.configured || snapshot.local.baseUrl.trim() === "") {
+        return {
+          current,
+          models: [],
+          error: "尚未配置本地模型，请先打开 /config。",
+        };
+      }
+      try {
+        const apiKey = (await modelCredentials.read()) ?? undefined;
+        const models = await modelCatalog.list({
+          baseUrl: snapshot.local.baseUrl,
+          ...(apiKey === undefined ? {} : { apiKey }),
+        });
+        return { current, models };
+      } catch (error) {
+        return { current, models: [], error: messageOf(error) };
+      }
+    },
+    selectModel: async (modelId) => {
+      if (busy) throw new Error("当前运行中，先按 Esc 中断后再切换模型。");
+      const model = await modelSettings.switchChatModel(modelId);
+      if (session === undefined) {
+        await ensureSession(model);
+      } else {
+        session.setModel(model);
+      }
+      store.clearError();
+      store.setModelLabel(model.chat.model);
+      store.setModelConfigured(true);
+      store.setSetupStep(undefined);
+      store.setNotice([`已切换模型：${model.chat.model}`]);
+    },
+    close: () => store.setPanel(undefined),
   };
 
   const handleSetup = async (text: string): Promise<void> => {
@@ -231,6 +331,7 @@ export async function runInkTui({
         onExitReady={registerExit}
         onSelectAll={selectionActions?.selectAllAndCopy}
         onSubmit={submit}
+        panelHandlers={panelHandlers}
         pointerSource={pointer?.source}
         selectionStore={selectionStore}
         store={store}

@@ -5,6 +5,7 @@ import process from "node:process";
 import { startCodingHost } from "@answra/agent/composition";
 import { createSystemModelCredentialStore } from "@answra/credentials";
 import { createAgentCodingSessionHost } from "./adapters/agentCodingHost";
+import { createOpenAiModelCatalog } from "./adapters/openAiModelCatalog";
 import { createSharedModelStore } from "./adapters/sharedModelStore";
 import { runCli } from "./cli/runCli";
 import { ModelSettingsService } from "./model/settingsService";
@@ -30,6 +31,7 @@ async function main(): Promise<void> {
       cwd: process.cwd(),
       modelSettings,
       modelCredentials: createSystemModelCredentialStore(),
+      modelCatalog: createOpenAiModelCatalog(),
       remoteKeys: {
         hostKeys: createFileRemoteHostKeyStore(),
         credentials: createFileRemoteCredentialStore(),

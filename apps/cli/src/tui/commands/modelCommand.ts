@@ -1,17 +1,15 @@
 /** TUI `/model` 执行：只依赖 ModelSettings、会话端口与视图 store。 */
 import type { ConversationModelConfig } from "@answra/shared";
 import type { ModelSettings } from "../../model/ports";
-import { modelSummaryLines } from "../../presentation/modelSummary";
 import type { CodingSession } from "../../session/codingSession";
 import type { TuiViewStore } from "../app/viewStore";
-
-const ADD_MIN_ARGS = 2;
-const ADD_MAX_ARGS = 3;
+import type { TuiPanel } from "../panel";
 
 export interface ModelCommandDeps {
   readonly busy: boolean;
   readonly session?: Pick<CodingSession, "setModel">;
   readonly configureSession?: (model: ConversationModelConfig) => Promise<void>;
+  readonly openPanel: (panel: TuiPanel) => void;
   readonly store: TuiViewStore;
   readonly modelSettings: ModelSettings;
 }
@@ -22,32 +20,17 @@ export async function handleModelCommand(
 ): Promise<void> {
   const [action, ...rest] = args;
   if (action === undefined) {
-    deps.store.setNotice(modelSummaryLines(await deps.modelSettings.snapshot()));
+    requireIdle(deps);
+    deps.openPanel("model");
     return;
   }
   if (action === "add") {
     requireIdle(deps);
-    await addLocal(rest, deps);
-    return;
+    throw new Error("已改用 /config 修改完整模型配置。");
   }
   if (rest.length > 0) throw new Error("用法：/model <ID>。");
   requireIdle(deps);
   await applyModel(await deps.modelSettings.switchChatModel(action), deps);
-}
-
-async function addLocal(args: readonly string[], deps: ModelCommandDeps): Promise<void> {
-  if (args.length < ADD_MIN_ARGS || args.length > ADD_MAX_ARGS) {
-    throw new Error("用法：/model add <base-url> <model-id> [answer-model]。");
-  }
-  const [baseUrl, chatModel, answerModel] = args;
-  await applyModel(
-    await deps.modelSettings.addLocal({
-      baseUrl: baseUrl ?? "",
-      chatModel: chatModel ?? "",
-      ...(answerModel === undefined ? {} : { answerModel }),
-    }),
-    deps,
-  );
 }
 
 async function applyModel(model: ConversationModelConfig, deps: ModelCommandDeps): Promise<void> {

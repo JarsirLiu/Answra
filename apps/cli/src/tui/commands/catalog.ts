@@ -1,5 +1,5 @@
 /** TUI 本地命令目录：帮助、slash 解析与输入补全的唯一元数据来源；不触达 Agent 运行时。 */
-export type TuiCommandKind = "help" | "clear" | "exit" | "model";
+export type TuiCommandKind = "help" | "clear" | "config" | "exit" | "model";
 
 export interface TuiCommandHelpDetail {
   readonly usage: string;
@@ -30,15 +30,18 @@ export const TUI_COMMANDS: readonly TuiCommandSpec[] = [
     summary: "清空当前会话 transcript",
   },
   {
+    kind: "config",
+    name: "config",
+    summary: "编辑本地模型配置",
+    helpUsage: "/config",
+  },
+  {
     kind: "model",
     name: "model",
-    summary: "显示当前模型设置",
+    summary: "选择或切换模型",
     argumentHint: "<ID>",
     helpUsage: "/model",
-    helpDetails: [
-      { usage: "/model <ID>", summary: "切换并保存 chat 模型" },
-      { usage: "/model add <URL> <ID> [ANSWER]", summary: "添加本地模型并切换" },
-    ],
+    helpDetails: [{ usage: "/model <ID>", summary: "切换并保存 chat 模型" }],
   },
   {
     kind: "exit",

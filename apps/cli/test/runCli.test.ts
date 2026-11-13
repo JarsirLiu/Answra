@@ -122,6 +122,7 @@ function createDependencies(
     cwd: process.cwd(),
     modelSettings: createModelSettings(),
     modelCredentials: createModelCredentials(),
+    modelCatalog: { list: vi.fn(async () => []) },
     createSessionHost: vi.fn(({ emitEvent }) => {
       const send = host.send;
       host.send = vi.fn(async (conversationId, request, token) => {

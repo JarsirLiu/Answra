@@ -32,7 +32,7 @@ export class CodingSession {
   private readonly host: CodingSessionHost;
   private readonly conversationId: string;
   private model: ConversationModelConfig;
-  private readonly accessToken: string;
+  private accessToken: string;
   private opened = false;
   private closed = false;
   private snapshot?: ConversationSnapshot;
@@ -73,6 +73,12 @@ export class CodingSession {
     }
     this.host.configure(model);
     this.model = model;
+  }
+
+  /** 更新下一次 send 使用的 API Key；活动 run 已发送的 token 不受影响。 */
+  setAccessToken(accessToken: string): void {
+    if (this.closed) throw new Error("会话已关闭。");
+    this.accessToken = accessToken;
   }
 
   async send(text: string): Promise<string> {

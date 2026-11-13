@@ -58,8 +58,8 @@ code 选项:
   Ctrl+O 展开/收起思考与工具输出；PgUp/PgDn 或滚轮滚动 transcript。
   Home/End 只移动输入光标；Up/Down 浏览输入历史。
   全屏下滚轮/鼠标由 TUI 接管；复制请用终端原生选择（必要时按住 Shift）。
-  本地命令: /help、/clear、/model、/exit（/quit 同义）。
-  /model 显示当前设置；/model <ID> 切换并保存；/model add <URL> <ID> [ANSWER] 添加本地模型。
+  本地命令: /help、/clear、/config、/model、/exit（/quit 同义）。
+  /config 打开模型配置面板；/model 打开模型选择器；/model <ID> 直接切换并保存。
 
 说明:
   会话只保存在内存中，进程退出后不恢复。

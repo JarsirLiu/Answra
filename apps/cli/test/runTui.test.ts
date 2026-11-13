@@ -2,10 +2,12 @@ import type { ModelCredentialStore } from "@answra/credentials";
 import type { ConversationModelConfig, ConversationSnapshot } from "@answra/shared";
 import type { ReactElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ModelCatalog } from "../src/model/catalog";
 import type { ModelSettings } from "../src/model/ports";
 import type { CodingSession } from "../src/session/codingSession";
 import { TuiViewStore } from "../src/tui/app/viewStore";
 import { TUI_HELP_LINES } from "../src/tui/commands/help";
+import type { TuiPanelHandlers } from "../src/tui/panel";
 import { runInkTui } from "../src/tui/runTui";
 
 const { renderMock } = vi.hoisted(() => ({ renderMock: vi.fn() }));
@@ -26,6 +28,7 @@ interface AppProps {
   onCopySelection?: () => void;
   onSelectAll?: () => void;
   onClearSelection?: () => void;
+  panelHandlers: TuiPanelHandlers;
 }
 
 interface RenderResult {
@@ -61,6 +64,12 @@ function createModelCredentials(initial: string | null = null): ModelCredentialS
     }),
     current: () => apiKey,
   };
+}
+
+function createModelCatalog(
+  models: readonly string[] = ["test-model", "next-model"],
+): ModelCatalog {
+  return { list: vi.fn(async () => models) };
 }
 
 function createModelSettings(): ModelSettings {
@@ -102,6 +111,7 @@ function createSession() {
     cancel: vi.fn(),
     clear: vi.fn(async () => snapshot),
     setModel: vi.fn(),
+    setAccessToken: vi.fn(),
     close: vi.fn(),
   } as unknown as CodingSession;
   return { session, sent, waits };
@@ -113,6 +123,7 @@ async function start(
   altScreen = false,
   modelSettings = createModelSettings(),
   modelCredentials = createModelCredentials(),
+  modelCatalog = createModelCatalog(),
 ): Promise<RenderResult> {
   let props: AppProps | undefined;
   let options: Record<string, unknown> | undefined;
@@ -134,6 +145,7 @@ async function start(
     store,
     modelSettings,
     modelCredentials,
+    modelCatalog,
     botName: "coding.engineer",
     model: "test-model",
     workspaceRoot: "D:\\workspace",
@@ -149,6 +161,7 @@ async function startUnconfigured(
   modelSettings: ModelSettings,
   createSession: (model: ConversationModelConfig, accessToken?: string) => CodingSession,
   modelCredentials = createModelCredentials(),
+  modelCatalog = createModelCatalog(),
 ): Promise<RenderResult> {
   let props: AppProps | undefined;
   let options: Record<string, unknown> | undefined;
@@ -170,6 +183,7 @@ async function startUnconfigured(
     store,
     modelSettings,
     modelCredentials,
+    modelCatalog,
     botName: "coding.engineer",
     workspaceRoot: "D:\\workspace",
     altScreen: false,
@@ -323,7 +337,7 @@ describe("runInkTui", () => {
     store.dispose();
   });
 
-  it("shows the current model and switches it while idle", async () => {
+  it("opens the model picker and switches a model while idle", async () => {
     const { session } = createSession();
     const store = new TuiViewStore();
     const modelSettings = createModelSettings();
@@ -331,14 +345,9 @@ describe("runInkTui", () => {
 
     props.onSubmit("/model");
     await tick();
-    expect(store.getSnapshot().notice).toEqual([
-      "source: local",
-      "baseUrl: http://127.0.0.1:1234/v1",
-      "chatModel: test-model",
-      "answerModel: ",
-      "configured: true",
-    ]);
+    expect(store.getSnapshot().panel).toBe("model");
 
+    props.panelHandlers.close();
     props.onSubmit("/model next-model");
     await tick();
     expect(modelSettings.switchChatModel).toHaveBeenCalledWith("next-model");
@@ -352,7 +361,7 @@ describe("runInkTui", () => {
     store.dispose();
   });
 
-  it("adds a local model from /model add", async () => {
+  it("redirects /model add to /config", async () => {
     const { session } = createSession();
     const store = new TuiViewStore();
     const modelSettings = createModelSettings();
@@ -361,12 +370,145 @@ describe("runInkTui", () => {
     props.onSubmit("/model add http://127.0.0.1:9999/v1 added-model added-answer");
     await tick();
 
+    expect(modelSettings.addLocal).not.toHaveBeenCalled();
+    expect(store.getSnapshot().localError).toBe("已改用 /config 修改完整模型配置。");
+
+    finish();
+    store.dispose();
+  });
+
+  it("loads and saves model config with keychain updates", async () => {
+    const { session } = createSession();
+    const store = new TuiViewStore();
+    const modelSettings = createModelSettings();
+    const modelCredentials = createModelCredentials("old-key");
+    const { props, finish } = await start(session, store, false, modelSettings, modelCredentials);
+
+    const data = await props.panelHandlers.loadConfig();
+    expect(data).toMatchObject({
+      baseUrl: "http://127.0.0.1:1234/v1",
+      chatModel: "test-model",
+      apiKey: "old-key",
+    });
+
+    await props.panelHandlers.saveConfig({
+      baseUrl: "http://127.0.0.1:9999/v1",
+      chatModel: "saved-model",
+      apiKey: { kind: "set", value: "new-key" },
+    });
+
     expect(modelSettings.addLocal).toHaveBeenCalledWith({
       baseUrl: "http://127.0.0.1:9999/v1",
-      chatModel: "added-model",
-      answerModel: "added-answer",
+      chatModel: "saved-model",
     });
-    expect(store.getSnapshot().modelLabel).toBe("added-model");
+    expect(modelCredentials.write).toHaveBeenCalledWith("new-key");
+    expect(session.setModel).toHaveBeenCalledWith(modelConfig("added-model"));
+    expect(session.setAccessToken).toHaveBeenCalledWith("new-key");
+    expect(store.getSnapshot()).toMatchObject({
+      modelLabel: "added-model",
+      notice: ["模型配置已更新：added-model", "API Key 已保存到系统凭据库。", "已应用到当前会话。"],
+    });
+
+    finish();
+    store.dispose();
+  });
+
+  it("does not rewrite an unchanged API key when saving other fields", async () => {
+    const { session } = createSession();
+    const store = new TuiViewStore();
+    const modelSettings = createModelSettings();
+    const modelCredentials = createModelCredentials("stored-key");
+    const { props, finish } = await start(session, store, false, modelSettings, modelCredentials);
+
+    const data = await props.panelHandlers.loadConfig();
+    expect(data.apiKey).toBe("stored-key");
+
+    await props.panelHandlers.saveConfig({
+      baseUrl: "http://127.0.0.1:9999/v1",
+      chatModel: "saved-model",
+      apiKey: { kind: "keep" },
+    });
+
+    expect(modelCredentials.write).not.toHaveBeenCalled();
+    expect(modelCredentials.clear).not.toHaveBeenCalled();
+    expect(session.setAccessToken).toHaveBeenCalledWith("stored-key");
+    expect(store.getSnapshot().notice).toEqual([
+      "模型配置已更新：added-model",
+      "API Key 未修改。",
+      "已应用到当前会话。",
+    ]);
+
+    finish();
+    store.dispose();
+  });
+
+  it("loads models and applies a selection", async () => {
+    const { session } = createSession();
+    const store = new TuiViewStore();
+    const modelSettings = createModelSettings();
+    const modelCatalog = createModelCatalog(["test-model", "other-model"]);
+    const { props, finish } = await start(
+      session,
+      store,
+      false,
+      modelSettings,
+      createModelCredentials(),
+      modelCatalog,
+    );
+
+    await expect(props.panelHandlers.loadModels()).resolves.toEqual({
+      current: "test-model",
+      models: ["test-model", "other-model"],
+    });
+    await props.panelHandlers.selectModel("other-model");
+    expect(modelSettings.switchChatModel).toHaveBeenCalledWith("other-model");
+    expect(session.setModel).toHaveBeenCalledWith(modelConfig("other-model"));
+    expect(store.getSnapshot().modelLabel).toBe("other-model");
+
+    finish();
+    store.dispose();
+  });
+
+  it("keeps the current model when the catalog fails", async () => {
+    const { session } = createSession();
+    const store = new TuiViewStore();
+    const modelSettings = createModelSettings();
+    const modelCatalog: ModelCatalog = {
+      list: vi.fn(async () => {
+        throw new Error("HTTP 404");
+      }),
+    };
+    const { props, finish } = await start(
+      session,
+      store,
+      false,
+      modelSettings,
+      createModelCredentials(),
+      modelCatalog,
+    );
+
+    await expect(props.panelHandlers.loadModels()).resolves.toEqual({
+      current: "test-model",
+      models: [],
+      error: "HTTP 404",
+    });
+
+    finish();
+    store.dispose();
+  });
+
+  it("refuses to open a panel while a run is active", async () => {
+    const { session } = createSession();
+    const store = new TuiViewStore();
+    const { props, finish } = await start(session, store);
+
+    props.onSubmit("first");
+    await tick();
+    props.onSubmit("/config");
+    await tick();
+
+    expect(store.getSnapshot().panel).toBeUndefined();
+    expect(store.getSnapshot().notice).toEqual(["当前运行中，先按 Esc 中断后再修改模型配置。"]);
 
     finish();
     store.dispose();
@@ -461,21 +603,28 @@ describe("runInkTui", () => {
     store.dispose();
   });
 
-  it("creates the session from /model add when no model is configured", async () => {
+  it("opens /config and creates the session after saving when no model is configured", async () => {
     const store = new TuiViewStore();
     const modelSettings = createModelSettings();
     const { session } = createSession();
     const create = vi.fn(() => session);
     const { props, finish } = await startUnconfigured(store, modelSettings, create);
 
-    props.onSubmit("/model add http://127.0.0.1:9999/v1 added-model");
+    props.onSubmit("/config");
     await tick();
+    expect(store.getSnapshot().panel).toBe("config");
+
+    await props.panelHandlers.saveConfig({
+      baseUrl: "http://127.0.0.1:9999/v1",
+      chatModel: "added-model",
+      apiKey: { kind: "keep" },
+    });
 
     expect(modelSettings.addLocal).toHaveBeenCalledWith({
       baseUrl: "http://127.0.0.1:9999/v1",
       chatModel: "added-model",
     });
-    expect(create).toHaveBeenCalledWith(expect.anything(), undefined);
+    expect(create).toHaveBeenCalledWith(expect.anything(), "");
     expect(session.open).toHaveBeenCalledTimes(1);
     expect(store.getSnapshot()).toMatchObject({
       modelConfigured: true,

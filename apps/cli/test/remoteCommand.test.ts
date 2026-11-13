@@ -76,6 +76,7 @@ function createDependencies(
       write: async () => {},
       clear: async () => {},
     },
+    modelCatalog: { list: async () => [] },
     remoteKeys,
     createSessionHost: () => host,
     createConversationId: () => "conversation-1",

@@ -3,6 +3,7 @@ import type { ModelCredentialStore } from "@answra/credentials";
 import type { RemoteCredentialStore, RemoteHostKeyStore } from "@answra/remote";
 import type { ConversationSnapshot } from "@answra/shared";
 import type { AgentEventEnvelope } from "@answra/shared/schema";
+import type { ModelCatalog } from "../model/catalog";
 import type { ModelSettings } from "../model/ports";
 import type { RemoteAuthPort } from "../remote/auth/remoteAuthService";
 import type { CodingSessionHost } from "../session/codingSession";
@@ -31,6 +32,7 @@ export interface CliDependencies {
   cwd: string;
   modelSettings: ModelSettings;
   modelCredentials: ModelCredentialStore;
+  modelCatalog: ModelCatalog;
   createSessionHost(options: SessionHostOptions): CodingSessionHost;
   createConversationId(): string;
   onInterrupt(handler: () => void): () => void;

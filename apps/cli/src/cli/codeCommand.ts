@@ -8,6 +8,7 @@ import {
 } from "@answra/shared";
 import type { CliOptions } from "../config/cliOptions";
 import { resolveWorkspaceRoot } from "../config/workspace";
+import { resolveModelAccessToken } from "../model/accessToken";
 import { MissingModelConfigError } from "../model/errors";
 import type { ModelOverrides } from "../model/ports";
 import { createStreamPresenter } from "../presentation/streamPresenter";
@@ -58,8 +59,7 @@ async function resolveAccessToken(
   explicitAccessToken: string,
   deps: CliDependencies,
 ): Promise<string> {
-  if (explicitAccessToken !== "") return explicitAccessToken;
-  return (await deps.modelCredentials.read()) ?? "";
+  return resolveModelAccessToken(explicitAccessToken, deps.modelCredentials);
 }
 
 async function runOnce(
@@ -140,6 +140,7 @@ async function runInteractive(
       store,
       modelSettings: deps.modelSettings,
       modelCredentials: deps.modelCredentials,
+      modelCatalog: deps.modelCatalog,
       botName: "coding.engineer",
       workspaceRoot,
       altScreen,

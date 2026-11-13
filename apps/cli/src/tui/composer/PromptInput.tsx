@@ -40,9 +40,12 @@ export function PromptInput({
   historyEnabled = true,
   showHints = true,
   showBorder = true,
+  showPointer = true,
   marginTop = 1,
   exitOnCtrlC = true,
   initialValue = "",
+  columns: columnsOverride,
+  maxVisibleLines: maxVisibleLinesOverride,
   onEscape,
   onToggleSecret,
   onCommandPaletteChange,
@@ -59,9 +62,12 @@ export function PromptInput({
   historyEnabled?: boolean;
   showHints?: boolean;
   showBorder?: boolean;
+  showPointer?: boolean;
   marginTop?: number;
   exitOnCtrlC?: boolean;
   initialValue?: string;
+  columns?: number;
+  maxVisibleLines?: number;
   onEscape?: () => void;
   onToggleSecret?: () => void;
   onCommandPaletteChange?: (open: boolean) => void;
@@ -69,7 +75,7 @@ export function PromptInput({
 }) {
   const { exit } = useApp();
   const { columns: windowColumns, rows } = useWindowSize();
-  const columns = Math.max(1, windowColumns - PROMPT_CHROME_COLUMNS);
+  const columns = Math.max(1, columnsOverride ?? windowColumns - PROMPT_CHROME_COLUMNS);
   const [draft, setDraft] = useState<Draft>({
     value: initialValue,
     cursor: initialValue.length,
@@ -82,10 +88,9 @@ export function PromptInput({
   const historyIndex = useRef(-1);
   const savedDraft = useRef("");
   const exitTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const maxVisibleLines = Math.max(
-    MIN_INPUT_LINES,
-    Math.min(MAX_INPUT_LINES, Math.floor(rows / 2) - 3),
-  );
+  const maxVisibleLines =
+    maxVisibleLinesOverride ??
+    Math.max(MIN_INPUT_LINES, Math.min(MAX_INPUT_LINES, Math.floor(rows / 2) - 3));
   const commandPrefix = commandsEnabled && !secret ? tuiCommandPrefix(draft.value) : undefined;
   const suggestions = commandPrefix === undefined ? [] : suggestTuiCommands(commandPrefix);
   const paletteOpen = !paletteDismissed && suggestions.length > 0;
@@ -384,9 +389,11 @@ export function PromptInput({
           : { paddingX: 0 })}
         width="100%"
       >
-        <Box flexShrink={0} marginRight={1}>
-          <Text color={busy ? TUI_THEME.inactive : TUI_THEME.text}>{POINTER}</Text>
-        </Box>
+        {showPointer ? (
+          <Box flexShrink={0} marginRight={1}>
+            <Text color={busy ? TUI_THEME.inactive : TUI_THEME.text}>{POINTER}</Text>
+          </Box>
+        ) : null}
         <Box flexGrow={1} flexShrink={1}>
           <TextInput
             columns={columns}

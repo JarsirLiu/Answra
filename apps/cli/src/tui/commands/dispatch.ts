@@ -3,6 +3,7 @@ import type { ConversationModelConfig } from "@answra/shared";
 import type { ModelSettings } from "../../model/ports";
 import type { CodingSession } from "../../session/codingSession";
 import type { TuiViewStore } from "../app/viewStore";
+import type { TuiPanel } from "../panel";
 import type { TuiCommandKind } from "./catalog";
 import { TUI_HELP_LINES } from "./help";
 import { handleModelCommand } from "./modelCommand";
@@ -15,6 +16,7 @@ export interface TuiCommandDeps {
   readonly getSession: () => CodingSession | undefined;
   readonly configureSession: (model: ConversationModelConfig) => Promise<void>;
   readonly requestExit: () => void;
+  readonly openPanel: (panel: TuiPanel) => void;
 }
 
 type TuiCommandHandler = (args: readonly string[], deps: TuiCommandDeps) => void | Promise<void>;
@@ -22,6 +24,7 @@ type TuiCommandHandler = (args: readonly string[], deps: TuiCommandDeps) => void
 const handlers = {
   help: handleHelp,
   clear: handleClear,
+  config: handleConfig,
   exit: handleExit,
   model: handleModel,
 } satisfies Record<TuiCommandKind, TuiCommandHandler>;
@@ -43,6 +46,18 @@ export async function dispatchTuiCommand(
 
 function handleHelp(_args: readonly string[], deps: TuiCommandDeps): void {
   deps.store.setNotice(TUI_HELP_LINES);
+}
+
+function handleConfig(args: readonly string[], deps: TuiCommandDeps): void {
+  if (args.length > 0) {
+    deps.store.setNotice(["/config 不接受参数。"]);
+    return;
+  }
+  if (deps.isBusy()) {
+    deps.store.setNotice(["当前运行中，先按 Esc 中断后再修改模型配置。"]);
+    return;
+  }
+  deps.openPanel("config");
 }
 
 function handleExit(_args: readonly string[], deps: TuiCommandDeps): void {
@@ -70,6 +85,7 @@ async function handleModel(args: readonly string[], deps: TuiCommandDeps): Promi
     busy: deps.isBusy(),
     ...(session === undefined ? {} : { session }),
     configureSession: deps.configureSession,
+    openPanel: deps.openPanel,
     store: deps.store,
     modelSettings: deps.modelSettings,
   });

@@ -4,10 +4,13 @@ import { Box, Text, useApp, useInput, useWindowSize } from "ink";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { Spinner } from "../chrome/Spinner";
 import { StatusLine } from "../chrome/StatusLine";
+import { ConfigPanel } from "../commands/ConfigPanel";
+import { ModelPicker } from "../commands/ModelPicker";
 import { PromptInput } from "../composer/PromptInput";
 import type { PointerSource } from "../interaction/pointerInput";
 import type { TuiSelectionStore } from "../interaction/selectionStore";
 import type { TuiSetupStep } from "../modelSetup";
+import type { TuiPanelHandlers } from "../panel";
 import { SelectionContext } from "../transcript/SelectableText";
 import { VirtualTranscript } from "../transcript/VirtualTranscript";
 import type { TuiViewStore } from "./viewStore";
@@ -33,6 +36,7 @@ export function App({
   onCopyText,
   onSelectAll,
   onClearSelection,
+  panelHandlers,
 }: {
   store: TuiViewStore;
   botName: string;
@@ -46,6 +50,7 @@ export function App({
   onCopyText?: (text: string) => void;
   onSelectAll?: () => void;
   onClearSelection?: () => void;
+  panelHandlers: TuiPanelHandlers;
 }) {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
   const { exit } = useApp();
@@ -65,34 +70,41 @@ export function App({
     onExitReady?.(exit);
   }, [exit, onExitReady]);
 
-  useInput((input, key) => {
-    if (commandPaletteOpen && key.escape) return;
-    const shortcut = input.toLowerCase();
-    if (
-      onCopySelection !== undefined &&
-      ((key.ctrl && key.shift && shortcut === "c") || (key.super && shortcut === "c"))
-    ) {
-      onCopySelection();
-      return;
-    }
-    if (onSelectAll !== undefined && key.ctrl && key.shift && shortcut === "a") {
-      onSelectAll();
-      return;
-    }
-    if (onClearSelection !== undefined && key.escape && hasSelection) {
-      onClearSelection();
-      return;
-    }
-    if (key.ctrl && input === "o") {
-      setExpandThinking((value) => !value);
-      return;
-    }
-    if (key.ctrl && input === "c" && busy) {
-      onCancel();
-      return;
-    }
-    if (key.escape && busy) onCancel();
-  });
+  useEffect(() => {
+    if (state.panel !== undefined) setCommandPaletteOpen(false);
+  }, [state.panel]);
+
+  useInput(
+    (input, key) => {
+      if (commandPaletteOpen && key.escape) return;
+      const shortcut = input.toLowerCase();
+      if (
+        onCopySelection !== undefined &&
+        ((key.ctrl && key.shift && shortcut === "c") || (key.super && shortcut === "c"))
+      ) {
+        onCopySelection();
+        return;
+      }
+      if (onSelectAll !== undefined && key.ctrl && key.shift && shortcut === "a") {
+        onSelectAll();
+        return;
+      }
+      if (onClearSelection !== undefined && key.escape && hasSelection) {
+        onClearSelection();
+        return;
+      }
+      if (key.ctrl && input === "o") {
+        setExpandThinking((value) => !value);
+        return;
+      }
+      if (key.ctrl && input === "c" && busy) {
+        onCancel();
+        return;
+      }
+      if (key.escape && busy) onCancel();
+    },
+    { isActive: state.panel === undefined },
+  );
 
   return (
     <SelectionContext.Provider value={selectionStore}>
@@ -119,16 +131,31 @@ export function App({
           view={state.view}
           workspaceRoot={workspaceRoot}
         />
-        <PromptInput
-          allowEmptySubmit={state.setupStep === "api-key"}
-          busy={busy}
-          idleHint={state.setupStep === undefined ? undefined : SETUP_HINTS[state.setupStep]}
-          onCommandPaletteChange={setCommandPaletteOpen}
-          onCopyText={onCopyText}
-          onSubmit={onSubmit}
-          secret={state.setupStep === "api-key"}
-          selectionActive={hasSelection}
-        />
+        {state.panel === "config" ? (
+          <ConfigPanel
+            close={panelHandlers.close}
+            load={panelHandlers.loadConfig}
+            loadModels={panelHandlers.loadModels}
+            save={panelHandlers.saveConfig}
+          />
+        ) : state.panel === "model" ? (
+          <ModelPicker
+            close={panelHandlers.close}
+            load={panelHandlers.loadModels}
+            select={panelHandlers.selectModel}
+          />
+        ) : (
+          <PromptInput
+            allowEmptySubmit={state.setupStep === "api-key"}
+            busy={busy}
+            idleHint={state.setupStep === undefined ? undefined : SETUP_HINTS[state.setupStep]}
+            onCommandPaletteChange={setCommandPaletteOpen}
+            onCopyText={onCopyText}
+            onSubmit={onSubmit}
+            secret={state.setupStep === "api-key"}
+            selectionActive={hasSelection}
+          />
+        )}
         <StatusLine
           botName={botName}
           model={state.modelLabel}

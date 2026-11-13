@@ -8,6 +8,7 @@ import {
   EMPTY_CONVERSATION_VIEW,
 } from "@answra/ui/conversation-view";
 import type { TuiSetupStep } from "../modelSetup";
+import type { TuiPanel } from "../panel";
 
 const TUI_EVENT_BATCH_MS = 16;
 const TUI_EVENT_QUEUE_MAX = 2_048;
@@ -23,6 +24,7 @@ export interface TuiState {
   setupStep?: TuiSetupStep;
   localError?: string;
   notice?: readonly string[];
+  panel?: TuiPanel;
 }
 
 type Listener = () => void;
@@ -119,6 +121,16 @@ export class TuiViewStore {
 
   setNotice(lines: readonly string[] | undefined): void {
     this.setState({ ...this.state, notice: lines });
+  }
+
+  clearError(): void {
+    if (this.state.localError === undefined) return;
+    this.setState({ ...this.state, localError: undefined });
+  }
+
+  setPanel(panel: TuiPanel | undefined): void {
+    if (this.state.panel === panel) return;
+    this.setState({ ...this.state, panel });
   }
 
   flush(): void {
