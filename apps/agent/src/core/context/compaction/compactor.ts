@@ -6,7 +6,6 @@ import { compactContext, type SummaryGeneratorInput } from "./compact";
 import {
   markContextCompactionFailed,
   markContextCompactionSucceeded,
-  markContextCompactionSummarizing,
   startContextCompaction,
 } from "./lifecycle";
 import type { CompactionProfile } from "./profile";
@@ -85,12 +84,6 @@ export class ContextCompactor {
           };
           await this.persist(conversationId, state);
         },
-        onSummarizing: async () => {
-          const status = state.compaction;
-          if (!status) throw new Error("上下文压缩状态未开始");
-          state = { ...state, compaction: markContextCompactionSummarizing(status, this.now) };
-          await this.persist(conversationId, state);
-        },
       });
       if (!result) return false;
       const status = state.compaction;
@@ -125,7 +118,7 @@ export class ContextCompactor {
     error: unknown,
   ): Promise<void> {
     const status = state.compaction;
-    if (!status || (status.state !== "started" && status.state !== "summarizing")) {
+    if (status?.state !== "started") {
       console.warn("[context-compaction] failed before lifecycle started", {
         conversationId,
         error: errorText(error),

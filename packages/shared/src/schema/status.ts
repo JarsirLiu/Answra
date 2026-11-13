@@ -71,13 +71,7 @@ export const agentUsageSchema = z.strictObject({
     .optional(),
 });
 /** 上下文摘要压缩的独立生命周期；不复用 Agent run 状态。 */
-export const contextCompactionStateSchema = z.enum([
-  "idle",
-  "started",
-  "summarizing",
-  "failed",
-  "succeeded",
-]);
+export const contextCompactionStateSchema = z.enum(["idle", "started", "failed", "succeeded"]);
 export const contextCompactionTriggerSchema = z.enum(["auto", "manual"]);
 export const contextCompactionSchema = z.strictObject({
   state: contextCompactionStateSchema,

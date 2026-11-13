@@ -7,6 +7,7 @@ import {
   agentExecutionEventSchema,
   agentRunSnapshotSchema,
   agentStreamEventSchema,
+  contextCompactionStateSchema,
   conversationMessagePartSchema,
   conversationMessageSchema,
   conversationSnapshotSchema,
@@ -236,7 +237,7 @@ describe("conversation message audience", () => {
       eventRevision: 4,
       messages: [],
       contextCompaction: {
-        state: "summarizing",
+        state: "started",
         trigger: "auto",
         startedAt: "2026-11-13T10:00:00.000Z",
         updatedAt: "2026-11-13T10:00:01.000Z",
@@ -246,6 +247,10 @@ describe("conversation message audience", () => {
     expect(conversationSnapshotSchema.parse(JSON.parse(JSON.stringify(snapshot)))).toEqual(
       snapshot,
     );
+  });
+
+  it("does not accept the removed summarizing compaction state", () => {
+    expect(contextCompactionStateSchema.safeParse("summarizing").success).toBe(false);
   });
 });
 

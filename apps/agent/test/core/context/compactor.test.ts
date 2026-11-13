@@ -29,7 +29,7 @@ async function preparedStore(): Promise<MemoryConversationStore> {
 }
 
 describe("ContextCompactor", () => {
-  it("publishes started, summarizing, and succeeded snapshots", async () => {
+  it("publishes started and succeeded snapshots", async () => {
     const store = await preparedStore();
     const snapshots: ConversationSnapshot[] = [];
     const compactor = new ContextCompactor({
@@ -50,7 +50,6 @@ describe("ContextCompactor", () => {
     expect(compacted).toBe(true);
     expect(snapshots.map((snapshot) => snapshot.contextCompaction?.state)).toEqual([
       "started",
-      "summarizing",
       "succeeded",
     ]);
     expect((await store.load("conversation-1")).contextCompaction).toMatchObject({
@@ -83,7 +82,6 @@ describe("ContextCompactor", () => {
     expect(compacted).toBe(false);
     expect(snapshots.map((snapshot) => snapshot.contextCompaction?.state)).toEqual([
       "started",
-      "summarizing",
       "failed",
     ]);
     expect((await store.load("conversation-1")).contextCompaction).toMatchObject({

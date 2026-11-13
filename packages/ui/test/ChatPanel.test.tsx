@@ -42,14 +42,14 @@ describe("ChatPanel context compaction", () => {
   it("shows automatic compaction progress without a model error", () => {
     renderChat([], {
       contextCompaction: {
-        state: "summarizing",
+        state: "started",
         trigger: "auto",
         startedAt: "2026-11-13T10:00:00.000Z",
-        updatedAt: "2026-11-13T10:00:01.000Z",
+        updatedAt: "2026-11-13T10:00:00.000Z",
       },
     });
 
-    expect(screen.getByText("正在压缩上下文…")).toBeInTheDocument();
+    expect(screen.getByText("开始自动压缩上下文…")).toBeInTheDocument();
   });
 
   it("shows the compaction result and failure independently", () => {

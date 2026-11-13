@@ -3,7 +3,6 @@ import {
   canTransitionContextCompaction,
   markContextCompactionFailed,
   markContextCompactionSucceeded,
-  markContextCompactionSummarizing,
   startContextCompaction,
 } from "../../../src/core/context/compaction/lifecycle";
 
@@ -12,11 +11,9 @@ const NOW = () => new Date("2026-11-13T10:00:00.000Z");
 describe("context compaction lifecycle", () => {
   it("moves auto compaction from start to success", () => {
     const started = startContextCompaction({ previous: undefined, trigger: "auto", now: NOW });
-    const summarizing = markContextCompactionSummarizing(started, NOW);
-    const succeeded = markContextCompactionSucceeded(summarizing, 12, NOW);
+    const succeeded = markContextCompactionSucceeded(started, 12, NOW);
 
     expect(started.state).toBe("started");
-    expect(summarizing.state).toBe("summarizing");
     expect(succeeded).toMatchObject({
       state: "succeeded",
       trigger: "auto",
@@ -48,8 +45,10 @@ describe("context compaction lifecycle", () => {
     expect(startContextCompaction({ previous, trigger: "auto", now: NOW }).state).toBe("started");
   });
 
-  it("rejects overlapping or terminal-to-terminal transitions", () => {
-    expect(canTransitionContextCompaction("started", "succeeded")).toBe(false);
+  it("allows started to finish once and rejects overlapping or terminal-to-terminal transitions", () => {
+    expect(canTransitionContextCompaction("started", "succeeded")).toBe(true);
+    expect(canTransitionContextCompaction("started", "failed")).toBe(true);
+    expect(canTransitionContextCompaction("started", "started")).toBe(false);
     expect(canTransitionContextCompaction("failed", "succeeded")).toBe(false);
     expect(() =>
       startContextCompaction({

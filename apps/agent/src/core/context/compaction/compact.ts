@@ -27,7 +27,6 @@ export async function compactContext({
   signal,
   now = () => new Date(),
   onStarted,
-  onSummarizing,
 }: {
   messages: readonly ConversationMessage[];
   state: ContextState | undefined;
@@ -36,7 +35,6 @@ export async function compactContext({
   signal?: AbortSignal;
   now?: () => Date;
   onStarted?: () => Promise<void>;
-  onSummarizing?: () => Promise<void>;
 }): Promise<CompactionResult | undefined> {
   const previous = latestCheckpoint(state);
   const plan = planCompaction({ messages, checkpoint: previous, profile });
@@ -46,7 +44,6 @@ export async function compactContext({
     ...(previous ? { previousSummary: previous.summary } : {}),
     transcript: renderMessagesForSummary(plan.messagesToSummarize),
   });
-  await onSummarizing?.();
   const summary = (await generate({ prompt, ...(signal ? { signal } : {}) })).trim();
   if (!summary) throw new Error("上下文摘要为空");
   const checkpoint = createCheckpoint({

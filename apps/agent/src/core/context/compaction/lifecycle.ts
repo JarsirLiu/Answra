@@ -7,8 +7,7 @@ import type {
 
 const ALLOWED_TRANSITIONS: Record<ContextCompactionState, readonly ContextCompactionState[]> = {
   idle: ["started"],
-  started: ["summarizing", "failed"],
-  summarizing: ["succeeded", "failed"],
+  started: ["succeeded", "failed"],
   failed: ["started"],
   succeeded: ["started"],
 };
@@ -33,14 +32,6 @@ export function startContextCompaction({
   assertTransition(from, "started");
   const at = now().toISOString();
   return { state: "started", trigger, startedAt: at, updatedAt: at };
-}
-
-export function markContextCompactionSummarizing(
-  status: ContextCompactionStatus,
-  now: () => Date,
-): ContextCompactionStatus {
-  assertTransition(status.state, "summarizing");
-  return { ...status, state: "summarizing", updatedAt: now().toISOString() };
 }
 
 export function markContextCompactionSucceeded(

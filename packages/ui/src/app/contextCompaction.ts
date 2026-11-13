@@ -7,8 +7,6 @@ export function contextCompactionLabel(status: ContextCompactionStatus): string 
       return "";
     case "started":
       return status.trigger === "auto" ? "开始自动压缩上下文…" : "开始压缩上下文…";
-    case "summarizing":
-      return "正在压缩上下文…";
     case "failed":
       return `上下文压缩失败：${status.errorText ?? "未知错误"}；继续使用原历史。`;
     case "succeeded":
