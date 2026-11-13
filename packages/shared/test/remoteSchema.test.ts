@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   remoteCommandSchema,
+  remoteErrorSchema,
   remoteFrameSchema,
   remoteModelSettingsViewSchema,
   signalingFrameSchema,
@@ -95,6 +96,19 @@ describe("remote frame schema", () => {
         apiKey: "secret",
       }).success,
     ).toBe(false);
+  });
+
+  it("round-trips remote lifecycle and access-key errors", () => {
+    for (const code of [
+      "remote-disconnected",
+      "remote-unreachable",
+      "key-expired",
+      "key-revoked",
+    ]) {
+      expect(
+        remoteErrorSchema.parse({ code, message: "remote failure", retryable: false }),
+      ).toEqual({ code, message: "remote failure", retryable: false });
+    }
   });
 
   it("parses host commands without access tokens", () => {
