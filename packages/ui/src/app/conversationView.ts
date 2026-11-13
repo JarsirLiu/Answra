@@ -20,12 +20,11 @@ import {
 } from "./conversationParts";
 import { projectReplyActivity } from "./replyActivity";
 
-export { contextCompactionLabel } from "./contextCompaction";
-
 export type {
   ConversationRetry,
   ConversationViewMessage,
 } from "../components/chat/conversationMessage";
+export { contextCompactionLabel } from "./contextCompaction";
 
 export interface ConversationView {
   eventRevision: number;

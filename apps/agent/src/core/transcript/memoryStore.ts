@@ -142,7 +142,7 @@ export class MemoryConversationStore implements ConversationStore {
       messages: [...session.snapshot.messages, message],
       activeAgentId: handoff.toAgentId,
     };
-    return cloneSnapshot(session.snapshot);
+    return snapshotOf(session);
   }
 
   async setActiveAgent(conversationId: string, agentId: string): Promise<void> {
@@ -163,7 +163,7 @@ export class MemoryConversationStore implements ConversationStore {
       ...session.snapshot,
       messages: [...session.snapshot.messages, normalizeUserMessage(userMessage)],
     };
-    return cloneSnapshot(session.snapshot);
+    return snapshotOf(session);
   }
 
   async beginEphemeralRun(

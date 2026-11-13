@@ -160,7 +160,7 @@ Provider 返回 prompt-too-long / 413 时，允许一次 reactive compact：
 
 - 摘要是一次内部模型调用：禁止工具，限制输出长度，低温度，输入和输出都有上限。
 - 复用现有端点、凭据、重试和取消语义；不在领域层直接重写 `streamText` 或 `createOpenAICompatible`。
-- 摘要调用不经过 `AgentRuntime` / `ExecutionStore` 的注册 run 路径，避免污染用户可见 run、Bot 目录和事件流；需要进度时用独立的上下文状态回调。
+- 摘要调用复用 `AgentRuntime.generateText` 的鉴权/重试边界，但不注册为 Agent、不进入 `ExecutionStore` 的 run 路径，避免污染用户可见 run、Bot 目录和事件流；进度用独立的上下文状态与 snapshot 推送。
 - 摘要失败时保留上一份可用 checkpoint，并降级为“保留最近完整轮次”的确定性裁剪；向用户显示降级提示，不静默丢历史。
 - 摘要请求本身也可能超限；需要“截断最旧完整 API 轮次后重试”的受控逻辑，不能直接失败或无限重试。
 
@@ -170,12 +170,10 @@ checkpoint 是真实状态，不是一条普通 transcript 消息。建议形状
 
 ```ts
 interface ContextCheckpoint {
-  id: string;
   summary: string;
   throughMessageId: string;
-  throughSeq: number;
-  sourceMessageCount: number;
   createdAt: string;
+  messageCount: number;
 }
 ```
 
@@ -185,6 +183,36 @@ interface ContextCheckpoint {
 - 多次压缩生成多个 checkpoint，模型上下文取最近 checkpoint + active 尾段；不要把摘要摘要成一份无限漂移的全局文本；
 - 保留段起点必须能通过 API 的 tool 配对校验，不能以孤立 `tool_result` 开头；
 - 当前用户请求在压缩完成后才追加，不能被摘要吞掉。
+
+#### 压缩状态显示
+
+摘要压缩需要用户可见状态，但**不复用 `AgentRunState` 或 `AgentEventEnvelope`**：它不是用户可见 Bot 回复，也不是注册 Agent run。
+
+独立状态机：
+
+```text
+idle -> started -> summarizing -> succeeded
+                         └──────-> failed
+succeeded/failed -> started（下一次压缩）
+```
+
+```ts
+interface ContextCompactionStatus {
+  state: "idle" | "started" | "summarizing" | "failed" | "succeeded";
+  trigger: "auto" | "manual";
+  startedAt: string;
+  updatedAt: string;
+  finishedAt?: string;
+  summarizedMessages?: number;
+  errorText?: string;
+}
+```
+
+- `ConversationSnapshot` 增加可选 `contextCompaction`；缺省表示从未压缩或已清空。
+- `ContextCompactor` 在每次迁移后写入 `ConversationStore` 的上下文状态，并推送 snapshot；UI 据此显示“开始自动压缩上下文 / 正在压缩上下文 / 压缩失败 / 压缩完成”。
+- checkpoint 正文只留在 store，不进入 snapshot；snapshot 只带状态和计数。
+- 成功或失败状态保留到下一次压缩或用户清空会话，作为最近一次压缩结果，不做无来源的定时清除。
+- 未来若需要压缩遥测或事件回放，另加独立压缩事件；不要把 `compacting` 塞进现有 run 状态迁移表。
 
 ### 5. Phase 2：旧上下文切分与归档
 
@@ -321,19 +349,23 @@ ConversationRunCoordinator / CodingApplication / InterviewApplication
 
 ## 当前落地进度
 
-已落地 Phase 1b 的通用核心，尚未接入任何领域运行时：
+已落地 Phase 1b 的通用核心与自动触发：
 
 - `core/context/compaction/prompt.ts`：唯一通用摘要提示词；所有领域复用，不可覆盖。
 - `core/context/compaction/profile.ts`：只描述保留量、最少摘要量和触发 token。
 - `core/context/compaction/plan.ts`：按完整消息边界选择旧消息，保留最近尾段。
 - `core/context/compaction/transcript.ts`：把 transcript 渲染成摘要输入。
 - `core/context/compaction/compact.ts`：摘要生成、空结果 fail-closed、检查点追加。
-- `core/transcript/contextState.ts`：checkpoint 事实、边界查找与 stale checkpoint 处理。
+- `core/context/compaction/lifecycle.ts`：独立的 started/summarizing/succeeded/failed 状态迁移。
+- `core/context/compaction/compactor.ts`：自动触发、状态持久化、snapshot 推送、失败回退。
+- `core/transcript/contextState.ts` 与 `ConversationStore`：checkpoint 和压缩状态持久化，snapshot 只投影状态。
 - `core/context/projection.ts`：把摘要作为 synthetic user message 注入，只投影检查点之后的尾段。
-- `core/context/tokenEstimate.ts`：不依赖 provider 的保守 token 估算。
-- `test/core/context/`：阈值、保留尾段、checkpoint 去重、summary 注入、单 prompt 与失败回退测试。
+- `core/model/provider.ts` 与 `AgentRuntime.generateText`：复用鉴权/重试的内部摘要模型调用。
+- Conversation、Coding、Interview 的 `prepareRun` 在 `beginRun` 前接入同一 `ContextCompactor`。
+- 桌面 `ConversationView`、`ChatPanel` 与 CLI TUI footer 显示压缩状态。
+- 测试覆盖阈值、保留尾段、checkpoint 去重、summary 注入、单 prompt、状态迁移、状态快照、失败回退与 UI 投影。
 
-尚未落地：`ConversationStore` 的上下文状态持久化、`core/model/generateText`、自动触发接线、`/compact`、工具结果清理、archive。因此当前没有用户可见行为变化。
+尚未落地：`/compact` 手动入口、工具结果清理、reactive compact、archive。当前自动触发使用固定保守预算（96k），模型能力端点下发 `contextWindow` 后应替换。
 
 ## 模块边界
 
@@ -372,6 +404,7 @@ ConversationRunCoordinator / CodingApplication / InterviewApplication
   - 长会话在达到预算前完成压缩，下一次请求不再超过模型窗口。
   - 当前用户请求不会被摘要；最近完整轮次和工具配对保持可回放。
   - 压缩失败时仍有可用的最近上下文，并显示明确降级提示。
+  - 压缩状态按 started → summarizing → succeeded/failed 推送 snapshot；失败不阻断本轮，也不进入 Agent run 状态机。
   - 压缩请求保持 system/tools/model 前缀不变，只追加 user message；压缩后 system prompt 不变。
   - Phase 2 后 active snapshot 的消息数/token 有界；archive 可查看，重启后仍存在。
   - Phase 3 后 Agent 能按需检索 archive；删除 archive 后 UI、索引和摘要引用状态一致。

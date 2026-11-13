@@ -83,6 +83,7 @@ export class AgentRuntime {
     const result = await generateModelText({
       model: provider(endpoint.model),
       prompt,
+      temperature: 0,
       ...(signal ? { abortSignal: signal } : {}),
       maxRetries: 0,
     });

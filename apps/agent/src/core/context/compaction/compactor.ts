@@ -109,7 +109,14 @@ export class ContextCompactor {
   private async persist(conversationId: string, state: ContextState): Promise<void> {
     await this.store.saveContextState(conversationId, state);
     if (!this.onSnapshot) return;
-    await this.onSnapshot(await this.store.load(conversationId));
+    try {
+      await this.onSnapshot(await this.store.load(conversationId));
+    } catch (error) {
+      console.error("[context-compaction] snapshot publish failed", {
+        conversationId,
+        error: errorText(error),
+      });
+    }
   }
 
   private async recordFailure(
