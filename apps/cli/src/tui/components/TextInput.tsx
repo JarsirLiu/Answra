@@ -1,5 +1,5 @@
 /** 终端输入投影：按显示宽度换行，保持宽字符/emoji 光标对齐，并限制可视行数。 */
-import { Box, Text, useWindowSize } from "ink";
+import { Box, Text } from "ink";
 import type { ReactNode } from "react";
 import { layoutInput } from "./inputLayout";
 
@@ -8,15 +8,14 @@ export function TextInput({
   cursor,
   placeholder,
   maxVisibleLines,
+  columns,
 }: {
   value: string;
   cursor: number;
   placeholder: string;
   maxVisibleLines: number;
+  columns: number;
 }) {
-  const { columns: windowColumns } = useWindowSize();
-  const columns = Math.max(1, windowColumns - 4);
-
   if (value.length === 0) {
     const hint = layoutInput(placeholder, 0, columns, 1)
       .lines[0]?.tokens.map((token) => token.text)

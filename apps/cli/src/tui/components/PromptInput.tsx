@@ -2,13 +2,21 @@
 import { Box, Text, useApp, useInput, usePaste, useWindowSize } from "ink";
 import { useEffect, useRef, useState } from "react";
 import { POINTER, TUI_THEME } from "../theme";
-import { nextGraphemeOffset, previousGraphemeOffset, previousWordOffset } from "./inputLayout";
+import {
+  endOfLineOffset,
+  moveCursorVertically,
+  nextGraphemeOffset,
+  previousGraphemeOffset,
+  previousWordOffset,
+  startOfLineOffset,
+} from "./inputLayout";
 import { TextInput } from "./TextInput";
 
 const CONTROL_HINT = "Enter 发送 · Shift+Enter 或 \\ + Enter 换行 · Esc 取消 · Ctrl-C 两次退出";
 const EXIT_ARM_MS = 2_000;
 const MIN_INPUT_LINES = 3;
 const MAX_INPUT_LINES = 8;
+const PROMPT_CHROME_COLUMNS = 4;
 
 interface Draft {
   readonly value: string;
@@ -23,7 +31,8 @@ export function PromptInput({
   onSubmit: (text: string) => void;
 }) {
   const { exit } = useApp();
-  const { rows } = useWindowSize();
+  const { columns: windowColumns, rows } = useWindowSize();
+  const columns = Math.max(1, windowColumns - PROMPT_CHROME_COLUMNS);
   const [draft, setDraft] = useState<Draft>({ value: "", cursor: 0 });
   const [history, setHistory] = useState<string[]>([]);
   const [exitArmed, setExitArmed] = useState(false);
@@ -52,7 +61,7 @@ export function PromptInput({
     }));
   };
 
-  usePaste((text) => insert(text));
+  usePaste((text) => insert(text.replace(/\r\n?/g, "\n")));
 
   const submit = () => {
     const text = draft.value.trim();
@@ -84,6 +93,7 @@ export function PromptInput({
   };
 
   useInput((input, key) => {
+    if (key.ctrl && key.shift) return;
     if (key.ctrl && input === "c") {
       if (busy) return;
       if (exitArmed) {
@@ -124,19 +134,25 @@ export function PromptInput({
       return;
     }
     if (key.upArrow) {
-      browse(-1);
+      if (key.shift) return;
+      const target = moveCursorVertically(draft.value, draft.cursor, columns, -1);
+      if (target === undefined) browse(-1);
+      else replace(draft.value, target);
       return;
     }
     if (key.downArrow) {
-      browse(1);
+      if (key.shift) return;
+      const target = moveCursorVertically(draft.value, draft.cursor, columns, 1);
+      if (target === undefined) browse(1);
+      else replace(draft.value, target);
       return;
     }
     if (key.home || (key.ctrl && input === "a")) {
-      replace(draft.value, 0);
+      replace(draft.value, startOfLineOffset(draft.value, draft.cursor, columns));
       return;
     }
     if (key.end || (key.ctrl && input === "e")) {
-      replace(draft.value, draft.value.length);
+      replace(draft.value, endOfLineOffset(draft.value, draft.cursor, columns));
       return;
     }
     if (key.ctrl && input === "u") {
@@ -188,6 +204,7 @@ export function PromptInput({
         </Box>
         <Box flexGrow={1} flexShrink={1}>
           <TextInput
+            columns={columns}
             cursor={draft.cursor}
             maxVisibleLines={maxVisibleLines}
             placeholder={placeholder}

@@ -28,6 +28,7 @@ CLI TUI 已经能启动并完成单轮对话，但在 VS Code 集成终端中的
   - 不新增持久化、协议或 Agent 语义。
 - 相关 Note：
   - [CLI Coding 模式与终端 UI 移植](../../proposed/architecture/2026-11-12-cli-coding-mode-and-tui-port.md)
+  - [CLI 输入光标导航与对话鼠标选区（提案）](../../proposed/feature/2026-11-13-cli-input-navigation-and-transcript-selection.md)
   - [CLI dev 脚本](../process/2026-11-13-cli-dev-script.md)
 
 ## 决定
@@ -54,8 +55,11 @@ CLI TUI 已经能启动并完成单轮对话，但在 VS Code 集成终端中的
 - `TextInput` 只负责把 `layoutInput` 的结果渲染成 `<Text>`，光标用反色 grapheme 或反色空格。
 - `PromptInput`：
   - 左右移动、Backspace、Delete 按 grapheme 处理。
+  - 上下方向键在显示行之间移动并保持显示列；已在首/末显示行时回落为历史浏览。
+  - Home/End 按视觉行边界移动；光标已在行首时 Home 退到上一显示行行首，不再依赖逻辑换行。
+  - Shift+方向键不消费，避免与终端选择/未来扩展冲突。
   - 输入区最多显示 `maxVisibleLines` 行，随 `useWindowSize().rows` 计算，长输入不再顶掉 transcript。
-  - 通过 `usePaste` 接收 bracketed paste，多行粘贴只插入一次状态。
+  - 通过 `usePaste` 接收 bracketed paste，多行粘贴只插入一次状态；CRLF/CR 统一为 LF。
   - Enter 提交，Shift+Enter 换行，反斜杠续行继续保留；运行中 Enter 排队语义不变。
 - `runTui` 打开 Ink 的 `kittyKeyboard` auto/disambiguate，终端支持时提高 Shift+Enter 等组合键的区分度；不支持时仍保留反斜杠续行。
 
@@ -95,7 +99,7 @@ CLI TUI 已经能启动并完成单轮对话，但在 VS Code 集成终端中的
 - 可观察结果：
   - 40 条以上消息时，初始视口只渲染底部可见窗口，按 PgUp 能看到上方消息，PgDn 回到底部并恢复跟随。
   - 输入中文、emoji、长文本时，光标跟随正确，输入区不超过最大可视行数。
-  - 在输入框按 Home/End 不再改变 transcript 滚动位置。
+  - 多行输入按上下键在显示行之间移动，Home/End 作用于当前视觉行；在输入框按 Home/End 不改变 transcript 滚动位置。
   - Ctrl+O 展开/收起当前思考与工具完整输出，历史思考在折叠态不重复堆叠。
   - 窄终端下状态行不换行、不挤压输入框。
 - 自动化验证：
@@ -117,12 +121,12 @@ CLI TUI 已经能启动并完成单轮对话，但在 VS Code 集成终端中的
 
 ## 验证
 
-- 2026-11-13：`pnpm --filter @answra/cli test` 通过，15 个测试文件、78 个测试；新增覆盖：
-  - `test/inputLayout.test.ts`：宽字符、emoji、换行、grapheme 移动、光标可视窗口。
+- 2026-11-13：`pnpm --filter @answra/cli test` 通过，15 个测试文件、88 个测试；新增覆盖：
+  - `test/inputLayout.test.ts`：宽字符、emoji、换行、grapheme 移动、光标可视窗口、按显示行上下移动、短行夹取、Home/End 视觉行边界。
   - `test/virtualLayout.test.ts`：高度估算、可视窗口、底部偏移。
   - `test/wheelInput.test.ts`：SGR/X10 滚轮解析、跨 chunk 序列、鼠标 tracking 启停。
   - `test/tui.test.tsx`：底部跟随、PgUp 与滚轮滚动、运行中连续滚轮、流式追加时保持历史位置、Home/End 不抢 transcript、思考折叠与历史隐藏。
-- 2026-11-13：`pnpm --filter @answra/cli typecheck` 通过。
+- 2026-11-13：输入布局上下移动修复了重复叠加行起始偏移的问题；宽字符/短行边界测试与 `pnpm --filter @answra/cli typecheck` 通过。
 - 2026-11-13：`pnpm --filter @answra/cli build` 与 `node apps/cli/dist/main.mjs --version` 通过。
 - 2026-11-13：`pnpm lint`、`pnpm architecture:check`、`pnpm tokens:check`、`pnpm notes:check` 通过。
 - 2026-11-13：全仓并行 `pnpm verify` 在既有 `@answra/ui` 用例上出现 4 个 5s 超时/未及时渲染；`pnpm --filter @answra/ui test` 单独执行 43 文件、300 测试通过，本轮未改 `packages/ui` 运行代码。该抖动与 TUI 改动无直接关系，但全仓门禁仍需在低负载下复跑确认。
