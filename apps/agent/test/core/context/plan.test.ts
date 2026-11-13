@@ -7,8 +7,9 @@ import type { ContextCheckpoint } from "../../../src/core/transcript/contextStat
 const PROFILE: CompactionProfile = {
   retainRecentMessages: 2,
   minimumMessagesToSummarize: 2,
-  triggerTokens: 10,
 };
+
+const TRIGGER_TOKENS = 10;
 
 function message(
   id: string,
@@ -39,7 +40,8 @@ describe("context compaction plan", () => {
       planCompaction({
         messages: [message("m1", "短")],
         checkpoint: undefined,
-        profile: { ...PROFILE, triggerTokens: 100 },
+        profile: PROFILE,
+        triggerTokens: 100,
       }),
     ).toBeUndefined();
   });
@@ -54,7 +56,12 @@ describe("context compaction plan", () => {
       message("m6", "第三轮回答", "assistant"),
     ];
 
-    const plan = planCompaction({ messages, checkpoint: undefined, profile: PROFILE });
+    const plan = planCompaction({
+      messages,
+      checkpoint: undefined,
+      profile: PROFILE,
+      triggerTokens: TRIGGER_TOKENS,
+    });
 
     expect(plan?.messagesToSummarize.map((item) => item.id)).toEqual(["m1", "m2", "m3", "m4"]);
     expect(plan?.retainedMessages.map((item) => item.id)).toEqual(["m5", "m6"]);
@@ -73,7 +80,8 @@ describe("context compaction plan", () => {
     const plan = planCompaction({
       messages,
       checkpoint: checkpoint("m2"),
-      profile: { ...PROFILE, triggerTokens: 1 },
+      profile: PROFILE,
+      triggerTokens: 1,
     });
 
     expect(plan?.messagesToSummarize.map((item) => item.id)).toEqual(["m3", "m4"]);
@@ -85,7 +93,8 @@ describe("context compaction plan", () => {
       planCompaction({
         messages: [message("m1", "新消息")],
         checkpoint: checkpoint("missing"),
-        profile: { ...PROFILE, triggerTokens: 1 },
+        profile: PROFILE,
+        triggerTokens: 1,
       }),
     ).toBeUndefined();
   });

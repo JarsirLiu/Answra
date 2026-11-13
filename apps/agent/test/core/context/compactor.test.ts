@@ -7,8 +7,9 @@ import { MemoryConversationStore } from "../../../src/core/transcript/memoryStor
 const PROFILE: CompactionProfile = {
   retainRecentMessages: 1,
   minimumMessagesToSummarize: 1,
-  triggerTokens: 1,
 };
+
+const TRIGGER_TOKENS = 750;
 
 function message(id: string, text: string): ConversationMessage {
   return {
@@ -29,7 +30,7 @@ async function preparedStore(): Promise<MemoryConversationStore> {
 }
 
 describe("ContextCompactor", () => {
-  it("publishes started and succeeded snapshots", async () => {
+  it("uses the prepared final-request token estimate and publishes lifecycle snapshots", async () => {
     const store = await preparedStore();
     const snapshots: ConversationSnapshot[] = [];
     const compactor = new ContextCompactor({
@@ -45,6 +46,8 @@ describe("ContextCompactor", () => {
     const compacted = await compactor.prepare({
       conversationId: "conversation-1",
       getAccessToken: async () => "token",
+      triggerTokens: TRIGGER_TOKENS,
+      contextTokens: TRIGGER_TOKENS,
     });
 
     expect(compacted).toBe(true);
@@ -77,6 +80,8 @@ describe("ContextCompactor", () => {
     const compacted = await compactor.prepare({
       conversationId: "conversation-1",
       getAccessToken: async () => "token",
+      triggerTokens: TRIGGER_TOKENS,
+      contextTokens: TRIGGER_TOKENS,
     });
 
     expect(compacted).toBe(false);
@@ -96,12 +101,16 @@ describe("ContextCompactor", () => {
     const generate = vi.fn(async () => "不应调用");
     const compactor = new ContextCompactor({
       store,
-      profile: { ...PROFILE, triggerTokens: 100_000 },
+      profile: PROFILE,
       generate,
     });
 
     await expect(
-      compactor.prepare({ conversationId: "conversation-1", getAccessToken }),
+      compactor.prepare({
+        conversationId: "conversation-1",
+        getAccessToken,
+        triggerTokens: TRIGGER_TOKENS,
+      }),
     ).resolves.toBe(false);
 
     expect(getAccessToken).not.toHaveBeenCalled();

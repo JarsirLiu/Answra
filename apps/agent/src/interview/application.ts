@@ -6,6 +6,7 @@ import type { AgentExecutor, AgentId } from "../core/agent/definition";
 import type { AgentRuntime } from "../core/agent/runtime";
 import { ContextCompactor } from "../core/context/compaction/compactor";
 import { DEFAULT_COMPACTION_PROFILE } from "../core/context/compaction/profile";
+import { ContextPreparation } from "../core/context/preparation";
 import type { ReadFileStateMap } from "../core/tool";
 import { createUserMessage } from "../core/transcript/message";
 import type { ConversationStore } from "../core/transcript/store";
@@ -33,6 +34,7 @@ export class InterviewApplication {
   private readonly requestAccessToken: () => Promise<string>;
   private readonly onSnapshot: (snapshot: ConversationSnapshot) => Promise<void>;
   private readonly contextCompactor: ContextCompactor;
+  private readonly contextPreparation: ContextPreparation;
   private readonly replyLoop: InterviewReplyLoop;
   private readonly readFileStates = new Map<string, ReadFileStateMap>();
   private workspaceRoot: string | null = null;
@@ -56,6 +58,7 @@ export class InterviewApplication {
         }),
       onSnapshot: options.onSnapshot,
     });
+    this.contextPreparation = new ContextPreparation({ compactor: this.contextCompactor });
     this.replyLoop = new InterviewReplyLoop({
       ports: {
         appendUserTurn: (conversationId, turns, text) =>
@@ -156,11 +159,14 @@ export class InterviewApplication {
     const handle = await this.executor.startRun<ConversationSnapshot>({
       conversationId,
       getAccessToken: this.requestAccessToken,
-      prepareRun: async ({ runId, eventRevision }) => {
-        await this.contextCompactor.prepare({
+      prepareContext: (modelRequest, rebuild) =>
+        this.contextPreparation.prepareRequest({
           conversationId,
           getAccessToken: this.requestAccessToken,
-        });
+          modelRequest,
+          rebuild,
+        }),
+      prepareRun: async ({ runId, eventRevision }) => {
         await this.store.beginReplyRun(conversationId, runId, eventRevision, this.authorAgentId);
         const snapshot = await this.loadRecoverySnapshot(conversationId);
         await this.onSnapshot(snapshot);

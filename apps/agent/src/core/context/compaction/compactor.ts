@@ -29,6 +29,10 @@ export interface ContextCompactionRequest {
   getAccessToken: () => Promise<string>;
   signal?: AbortSignal;
   trigger?: ContextCompactionTrigger;
+  /** 摘要压缩触发点；由 ContextPreparation 按真实模型请求预算传入。 */
+  triggerTokens: number;
+  /** 最终模型请求的保守 token 估算；缺省时回退到 transcript 估算。 */
+  contextTokens?: number;
 }
 
 export class ContextCompactor {
@@ -52,12 +56,14 @@ export class ContextCompactor {
     this.now = now;
   }
 
-  /** 在发起 run 之前压缩旧上下文；无需压缩或压缩失败时返回 false，不阻断本轮。 */
+  /** 执行摘要压缩；无需压缩或压缩失败时返回 false。 */
   async prepare({
     conversationId,
     getAccessToken,
     signal,
     trigger = "auto",
+    triggerTokens,
+    contextTokens,
   }: ContextCompactionRequest): Promise<boolean> {
     const snapshot = await this.store.load(conversationId);
     let state = (await this.store.loadContextState(conversationId)) ?? { checkpoints: [] };
@@ -66,6 +72,8 @@ export class ContextCompactor {
         messages: snapshot.messages,
         state,
         profile: this.profile,
+        triggerTokens,
+        ...(contextTokens === undefined ? {} : { contextTokens }),
         signal,
         now: this.now,
         generate: async (input) =>

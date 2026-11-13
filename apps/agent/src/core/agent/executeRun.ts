@@ -12,7 +12,12 @@ import { consumeModelStream } from "../model/consumeStream";
 import { summarizeModelError } from "../model/errorSummary";
 import { createModelProvider } from "../model/provider";
 import { RATE_LIMIT_RETRY_POLICY } from "../model/retryFetch";
-import type { AgentDefinition, AgentRunRequest } from "./definition";
+import type {
+  AgentDefinition,
+  AgentModelRequest,
+  AgentRunRequest,
+  AgentToolOutputEmitter,
+} from "./definition";
 import { createExecutionJournal } from "./streamJournal";
 
 /** 单次工具调用实时输出的字符上限，避免长命令把事件日志撑爆。 */
@@ -55,8 +60,12 @@ export async function executeRun<Input, Prepared>({
 
     const accessToken = await request.getAccessToken();
     const liveOutput = createLiveToolOutputRelay(journal);
-    const modelRequest = await definition.prepare(input, controller.signal, {
-      toolOutput: liveOutput.emit,
+    const modelRequest = await prepareModelRequest({
+      definition,
+      request,
+      input,
+      signal: controller.signal,
+      emitter: { toolOutput: liveOutput.emit },
     });
     await journal.notify(await executionStore.transition(runId, "running"));
     logRunStarted({ runId, agentId: definition.id, endpoint });
@@ -162,6 +171,24 @@ export async function executeRun<Input, Prepared>({
   }
 
   return outcome;
+}
+
+export async function prepareModelRequest<Input>({
+  definition,
+  request,
+  input,
+  signal,
+  emitter,
+}: {
+  definition: AgentDefinition<Input>;
+  request: AgentRunRequest<Input, unknown>;
+  input: Input;
+  signal: AbortSignal;
+  emitter: AgentToolOutputEmitter;
+}): Promise<AgentModelRequest> {
+  const modelRequest = await definition.prepare(input, signal, emitter);
+  if (!request.prepareContext) return modelRequest;
+  return request.prepareContext(modelRequest, () => definition.prepare(input, signal, emitter));
 }
 
 export function runOutcome(

@@ -14,16 +14,22 @@ export function planCompaction({
   messages,
   checkpoint,
   profile,
+  triggerTokens,
+  contextTokens,
 }: {
   messages: readonly ConversationMessage[];
   checkpoint: ContextCheckpoint | undefined;
   profile: CompactionProfile;
+  triggerTokens: number;
+  /** 最终模型请求的估算值；缺省时退回摘要 + checkpoint 后消息的旧估算。 */
+  contextTokens?: number;
 }): CompactionPlan | undefined {
   const pending = messagesAfterCheckpoint(messages, checkpoint);
   if (!pending) return undefined;
-  const contextTokens =
+  const estimatedTokens =
+    contextTokens ??
     estimateTextTokens(checkpoint?.summary ?? "") + estimateMessagesTokens(pending);
-  if (contextTokens < profile.triggerTokens) return undefined;
+  if (estimatedTokens < triggerTokens) return undefined;
   const summarizeCount = pending.length - profile.retainRecentMessages;
   if (summarizeCount < profile.minimumMessagesToSummarize) return undefined;
   return {

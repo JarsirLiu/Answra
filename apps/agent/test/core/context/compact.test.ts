@@ -10,8 +10,9 @@ import { CONTEXT_SUMMARY_PROMPT } from "../../../src/core/context/compaction/pro
 const PROFILE: CompactionProfile = {
   retainRecentMessages: 1,
   minimumMessagesToSummarize: 1,
-  triggerTokens: 1,
 };
+
+const TRIGGER_TOKENS = 1;
 
 function message(
   id: string,
@@ -31,6 +32,7 @@ describe("context compaction", () => {
       messages: [message("m1", "旧需求"), message("m2", "保留需求")],
       state: undefined,
       profile: PROFILE,
+      triggerTokens: TRIGGER_TOKENS,
       generate,
       now: () => new Date("2026-11-13T10:00:00.000Z"),
     });
@@ -76,6 +78,7 @@ describe("context compaction", () => {
         ],
       },
       profile: PROFILE,
+      triggerTokens: TRIGGER_TOKENS,
       generate,
     });
 
@@ -96,7 +99,8 @@ describe("context compaction", () => {
     const result = await compactContext({
       messages: [message("m1", "短消息")],
       state: undefined,
-      profile: { ...PROFILE, triggerTokens: 100 },
+      profile: PROFILE,
+      triggerTokens: 100,
       generate,
     });
 
@@ -110,6 +114,7 @@ describe("context compaction", () => {
         messages: [message("m1", "旧需求"), message("m2", "保留需求")],
         state: undefined,
         profile: PROFILE,
+        triggerTokens: TRIGGER_TOKENS,
         generate: async () => "   ",
       }),
     ).rejects.toThrow("上下文摘要为空");

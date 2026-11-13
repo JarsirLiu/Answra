@@ -87,6 +87,14 @@ export interface AgentRunRequest<Input, Prepared> {
   getAccessToken: () => Promise<string>;
   /** Builds domain state and model input before the first AgentEvent is appended. */
   prepareRun: (run: AgentRunPrepared) => Promise<{ input: Input; prepared: Prepared }>;
+  /**
+   * 在模型请求组装后、发送前执行上下文准备。
+   * 需要重建时通过 rebuild 重新组装，返回真正要发送的最终模型请求。
+   */
+  prepareContext?: (
+    modelRequest: AgentModelRequest,
+    rebuild: () => Promise<AgentModelRequest>,
+  ) => Promise<AgentModelRequest>;
   /** Called in event order after each envelope is appended to ExecutionStore. */
   onEvent: (event: AgentEventEnvelope) => Promise<void>;
 }

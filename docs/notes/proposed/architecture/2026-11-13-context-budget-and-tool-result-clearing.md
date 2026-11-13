@@ -4,7 +4,7 @@
 
 ## 问题
 
-当前自动压缩使用固定预算：`triggerTokens: 96_000`、保留最近 12 条消息、至少摘要 4 条（`apps/agent/src/core/context/compaction/profile.ts:3`）。这个数字只计算“最新 checkpoint 摘要 + checkpoint 之后的消息”（`apps/agent/src/core/context/compaction/plan.ts:24`），不包含 system prompt、工具 schema、当前请求文本和当前请求图片，也不代表模型的总上下文窗口。
+提案前自动压缩使用固定预算：`triggerTokens: 96_000`、保留最近 12 条消息、至少摘要 4 条（原 `apps/agent/src/core/context/compaction/profile.ts`）。这个数字只计算“最新 checkpoint 摘要 + checkpoint 之后的消息”（`apps/agent/src/core/context/compaction/plan.ts`），不包含 system prompt、工具 schema、当前请求文本和当前请求图片，也不代表模型的总上下文窗口。
 
 同时，当前 token 估算和真实模型投影不一致（`apps/agent/src/core/context/tokenEstimate.ts:19`）：
 
@@ -24,11 +24,11 @@ Conversation 和 Coding 的长会话还会积累大量重复的 `read`、`grep`�
 - 代码/模块：
   - `apps/agent/src/core/context/budget.ts`（新增）：上下文窗口、输出预留、固定开销、触发阈值和硬上限的纯计算。
   - `apps/agent/src/core/context/toolResults.ts`（新增）：重复工具结果识别、占位替换、节省量计算。
-  - `apps/agent/src/core/context/prepare.ts`（新增）：按“估算 -> 清理 -> 压缩 -> 再估算 -> 兜底”的顺序编排。
+  - `apps/agent/src/core/context/preparation.ts`（新增）：按“估算 -> 清理（后续） -> 压缩 -> 重建 -> 兜底裁剪”的顺序编排。
   - `apps/agent/src/core/context/tokenEstimate.ts`：从原始 transcript 估算改为估算最终 `ModelMessage[]`、system、tools 和当前请求图片。
   - `apps/agent/src/core/context/compaction/*`：继续只负责摘要压缩，不接管工具结果清理。
   - `apps/agent/src/core/transcript/contextState.ts`：保存可选的 usage 锚点、清理尝试水位和清理遥测；不保存工具结果正文副本。
-  - `apps/agent/src/conversation/application.ts`、`apps/agent/src/coding/application.ts`、`apps/agent/src/interview/application.ts`：在 `beginRun` 前把当前请求和上下文状态交给 `ContextPreparation`。
+  - `apps/agent/src/conversation/application.ts`、`apps/agent/src/coding/application.ts`、`apps/agent/src/interview/application.ts`：在 `definition.prepare()` 生成 draft 后、发送前把最终模型请求交给 `ContextPreparation`；需要重建时通过回调重新组装。
   - `packages/shared/src/schema/`：只在需要 UI 展示时增加上下文占用/清理状态 DTO；预算公式和清理策略不进入 shared。
   - `packages/config/src/`、云端模型能力端点：保存或下发非 secret 的 `contextWindow`、`maxOutputTokens`、可选的图片估算规则。
   - `apps/desktop/src/main/`、`apps/cli/src/`：模型能力配置、自动压缩/自动清理开关、上下文占用展示。
@@ -98,24 +98,19 @@ pruneAt - pruneTarget = minPruneSaving
 预算不能继续估算原始 `ConversationMessage[]`。`ContextBudget` 应接收最终请求形状：
 
 ```ts
-interface ContextBudgetInput {
+interface AgentModelRequest {
   system: string;
   messages: ModelMessage[];
-  tools?: Record<string, unknown>;
-  pendingRequest: {
-    text: string;
-    images: readonly ConversationImage[];
-  };
-  usageAnchor?: ContextUsageAnchor;
+  tools?: ToolSet;
 }
 ```
 
 估算顺序：
 
-1. 用 `projectConversationMessages`、`projectContextMessages` 生成真实 `ModelMessage[]`。
-2. 计算 system、工具 schema、消息、图片和当前请求的 token。
+1. 用 `definition.prepare()` 生成真实 `AgentModelRequest`；`beginRun` 后的当前请求已经进入消息尾部。
+2. 计算 system、工具 schema、消息和图片；当前请求不再单独加一次。
 3. 图片默认按 2,000 token/张起步，后续按 provider 规则和分辨率校准；不能再沿用固定 1,024 且不区分截图大小。
-4. 如果存在上一轮成功 run 的 `usage.inputTokens`，并且模型、system、tools 和投影指纹未变化，用 `usageAnchor + 新增消息估算` 作为基准；否则全量估算。
+4. 首版先做保守全量估算；后续再用上一轮成功 run 的 `usage.inputTokens` 作为锚点校准。
 5. 压缩或工具清理改变投影后，立即丢弃 usage 锚点，重新全量估算。
 
 `usage.inputTokens` 是校准依据，不是压缩触发前的唯一来源；provider 不返回 usage 时允许只用保守估算。
@@ -175,26 +170,28 @@ saved >= 132_000
 
 ### 5. 编排顺序
 
-`ContextPreparation` 在 `beginRun` 前执行：
+`ContextPreparation` 在 `prepareRun` / `beginRun` 之后、模型请求发送前执行：
 
 ```text
-读取 snapshot + context state + 当前请求
-  -> 生成真实模型投影并估算
-  -> >= 172k：计算重复工具结果
+definition.prepare()
+  -> draft AgentModelRequest
+  -> 估算 system + tools + messages（当前请求已在尾部）
+  -> >= 172k：计算重复工具结果（第二阶段）
        -> 净节省 >= 132k：应用投影替换，重新估算
-  -> >= compactAt：调用现有摘要压缩，重新估算
+  -> >= compactAt：调用现有摘要压缩
+       -> 检查点变化后重新 definition.prepare()
   -> 仍 >= inputLimit：裁剪最旧完整轮次/工具对
   -> 当前请求本身超过 inputLimit：明确报错，不发送
-  -> 进入 beginRun
+  -> streamText()
 ```
 
 工具结果清理不需要模型调用；摘要压缩继续由现有 `ContextCompactor` 执行。两者失败都不能静默让请求超过窗口。
 
 ### 6. 与现有摘要压缩的关系
 
-- `ContextCompactor` 继续只负责 checkpoint 和摘要，不吸收预算、工具清理或图片策略。
-- `ContextPreparation` 是唯一编排入口；领域 application 只传 snapshot、context state、当前请求和 profile。
-- 压缩仍然发生在当前用户消息写入 store 之前；当前请求只进入预算，不参与摘要。
+- `ContextCompactor` 只负责 checkpoint 和摘要；预算、触发点、重建和硬兜底由 `ContextPreparation` 负责。
+- `ContextPreparation` 是唯一编排入口；领域 application 只传最终 draft、`rebuild` 回调和 conversation id。
+- 压缩发生在 `beginRun` 之后；当前用户消息已在 snapshot 尾部，按保留策略不参与摘要。
 - 压缩后上下文应回到 `postCompactTarget` 附近；如果摘要 + 保留尾段仍超过 `inputLimit`，进入确定性裁剪。
 - 摘要渲染必须补充图片处理：至少保留图片名称/描述，或把原图保留到 archive；不能像当前 `renderMessagesForSummary` 一样直接忽略。
 
@@ -216,11 +213,22 @@ saved >= 132_000
 - 不按模型名猜窗口，不把阈值写死在 `profile.ts` 的默认常量里。
 - 不向用户暴露新的中间状态概念。
 
+### 9. 当前实现进度（2026-11-13）
+
+第一阶段“让压缩看到最终模型请求”已落地：
+
+- `budget.ts`、`tokenEstimate.ts`、`preparation.ts` 已新增；`CompactionProfile` 不再持有 `triggerTokens`。
+- `AgentRunRequest.prepareContext` 在 `definition.prepare()` 之后执行；检查点变化后通过 `rebuild()` 重新组装请求。
+- `ContextPreparation` 负责估算最终请求、调用 `ContextCompactor`、重建请求和硬兜底裁剪；当前请求本身超限时抛 `ContextLimitExceededError`。
+- `ContextCompactor` 只接收 `triggerTokens`/`contextTokens`，不再持有预算或执行硬兜底。
+- Conversation、Coding、Interview 已接入同一条 `prepareContext` 路径。
+- 尚未实现：172k 重复工具结果清理、usage 锚点、自动压缩/清理开关、上下文占用展示、archive/SQLite。
+
 ## 模块边界
 
 - `core/context/budget.ts`：纯预算公式、阈值和 usage 锚点校验；不读文件、不读 store、不 import 领域。
 - `core/context/toolResults.ts`：纯候选识别、指纹、占位替换和节省量计算；可清理工具清单由领域 profile 注入，core 不出现 `if (coding)`。
-- `core/context/prepare.ts`：编排预算、清理、压缩和硬兜底；不实现摘要 prompt、不实现领域上下文装配。
+- `core/context/preparation.ts`：编排预算、清理（后续）、压缩、重建和硬兜底；不实现摘要 prompt、不实现领域上下文装配。
 - `core/context/tokenEstimate.ts`：只做估算；同时支持文本、工具结果、图片和模型消息形状。
 - `core/context/compaction/*`：只做摘要、检查点和生命周期；不负责工具清理。
 - `core/transcript/contextState.ts`：保存 checkpoint、压缩状态、可选 usage 锚点和清理尝试水位；不保存工具结果副本，不定义清理策略。

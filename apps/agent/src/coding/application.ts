@@ -10,6 +10,7 @@ import type { AgentRunHandle } from "../core/agent/definition";
 import type { AgentRuntime } from "../core/agent/runtime";
 import { ContextCompactor } from "../core/context/compaction/compactor";
 import { DEFAULT_COMPACTION_PROFILE } from "../core/context/compaction/profile";
+import { ContextPreparation } from "../core/context/preparation";
 import { validateModelRequest } from "../core/model/requestContent";
 import type { ReadFileStateMap } from "../core/tool";
 import { createUserMessage } from "../core/transcript/message";
@@ -29,6 +30,7 @@ export class CodingApplication {
   private readonly store: ConversationStore;
   private readonly bot: CodingBot;
   private readonly contextCompactor: ContextCompactor;
+  private readonly contextPreparation: ContextPreparation;
   private readonly onSnapshot?: CodingApplicationOptions["onSnapshot"];
   private readonly readFileStates = new Map<string, ReadFileStateMap>();
   private workspaceRoot: string | null = null;
@@ -50,6 +52,7 @@ export class CodingApplication {
         }),
       ...(onSnapshot ? { onSnapshot } : {}),
     });
+    this.contextPreparation = new ContextPreparation({ compactor: this.contextCompactor });
   }
 
   setWorkspaceRoot(root: string | null): void {
@@ -124,8 +127,14 @@ export class CodingApplication {
     return this.bot.executor.startRun<ConversationSnapshot>({
       conversationId,
       getAccessToken,
+      prepareContext: (modelRequest, rebuild) =>
+        this.contextPreparation.prepareRequest({
+          conversationId,
+          getAccessToken,
+          modelRequest,
+          rebuild,
+        }),
       prepareRun: async ({ runId, eventRevision }) => {
-        await this.contextCompactor.prepare({ conversationId, getAccessToken });
         await this.store.beginRun(
           conversationId,
           runId,

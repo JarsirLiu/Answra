@@ -23,6 +23,8 @@ export async function compactContext({
   messages,
   state,
   profile,
+  triggerTokens,
+  contextTokens,
   generate,
   signal,
   now = () => new Date(),
@@ -31,13 +33,21 @@ export async function compactContext({
   messages: readonly ConversationMessage[];
   state: ContextState | undefined;
   profile: CompactionProfile;
+  triggerTokens: number;
+  contextTokens?: number;
   generate: SummaryGenerator;
   signal?: AbortSignal;
   now?: () => Date;
   onStarted?: () => Promise<void>;
 }): Promise<CompactionResult | undefined> {
   const previous = latestCheckpoint(state);
-  const plan = planCompaction({ messages, checkpoint: previous, profile });
+  const plan = planCompaction({
+    messages,
+    checkpoint: previous,
+    profile,
+    triggerTokens,
+    ...(contextTokens === undefined ? {} : { contextTokens }),
+  });
   if (!plan) return undefined;
   await onStarted?.();
   const prompt = buildSummaryPrompt({
