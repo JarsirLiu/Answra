@@ -20,6 +20,19 @@ export const remoteHelloSchema = z.strictObject({
   capabilities: remoteCapabilitiesSchema,
 });
 
+export const remoteAuthSchema = z.strictObject({
+  type: z.literal("auth"),
+  sessionId: z.string(),
+  roomId: z.string(),
+  keyId: z.string(),
+  secret: z.string(),
+});
+
+export const remoteAuthErrorFrameSchema = z.strictObject({
+  type: z.literal("auth-error"),
+  error: remoteErrorSchema,
+});
+
 export const remoteWelcomeSchema = z.strictObject({
   type: z.literal("welcome"),
   protocolVersion: remoteProtocolVersionSchema,
@@ -71,6 +84,8 @@ export const remoteCloseFrameSchema = z.strictObject({
 
 export const remoteFrameSchema = z.discriminatedUnion("type", [
   remoteHelloSchema,
+  remoteAuthSchema,
+  remoteAuthErrorFrameSchema,
   remoteWelcomeSchema,
   remoteCommandFrameSchema,
   remoteCommandOkFrameSchema,
@@ -82,6 +97,8 @@ export const remoteFrameSchema = z.discriminatedUnion("type", [
 ]);
 
 export type RemoteHello = z.infer<typeof remoteHelloSchema>;
+export type RemoteAuth = z.infer<typeof remoteAuthSchema>;
+export type RemoteAuthErrorFrame = z.infer<typeof remoteAuthErrorFrameSchema>;
 export type RemoteWelcome = z.infer<typeof remoteWelcomeSchema>;
 export type RemoteCommandFrame = z.infer<typeof remoteCommandFrameSchema>;
 export type RemoteCommandOkFrame = z.infer<typeof remoteCommandOkFrameSchema>;

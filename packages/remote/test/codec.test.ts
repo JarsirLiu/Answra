@@ -17,6 +17,18 @@ describe("remote frame codec", () => {
     expect(decodeRemoteFrame(encodeRemoteFrame(frame))).toEqual(frame);
   });
 
+  it("round-trips the dedicated access-key auth frame", () => {
+    const frame = {
+      type: "auth",
+      sessionId: "session-1",
+      roomId: "0123456789abcdef0123456789abcdef",
+      keyId: "0123456789abcdef",
+      secret: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    } as const;
+
+    expect(decodeRemoteFrame(encodeRemoteFrame(frame))).toEqual(frame);
+  });
+
   it("rejects malformed or unsupported frames at the boundary", () => {
     expect(() => decodeRemoteFrame("{not-json")).toThrow();
     expect(() =>

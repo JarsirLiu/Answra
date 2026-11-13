@@ -4,29 +4,51 @@ import type {
   RemoteWelcome,
 } from "@answra/shared/schema";
 import { describe, expect, it } from "vitest";
-import { RemoteControllerSession, RemoteHostSession } from "../src";
+import {
+  createRemoteCredentialRecord,
+  createRemoteHostAccessKeyRecord,
+  generateRemoteAccessKey,
+  RemoteControllerSession,
+  RemoteHostSession,
+} from "../src";
 import {
   createFakeAgentEvent,
   createFakeConversationSnapshot,
   createFakeHostCommandPort,
   createFakeModelConfig,
   createFakeRemoteLinkPair,
+  createMemoryHostKeyStore,
   flushFakeRemoteLink,
 } from "../src/testing";
 
-function createSessions() {
+const NOW = new Date("2026-11-13T00:00:00.000Z");
+
+async function createSessions(
+  options: { credentialKey?: string; hostNow?: Date; revokedAt?: string } = {},
+) {
+  const generated = generateRemoteAccessKey({ now: NOW });
+  const record = {
+    ...(await createRemoteHostAccessKeyRecord(generated)),
+    ...(options.revokedAt === undefined ? {} : { revokedAt: options.revokedAt }),
+  };
+  const credential = createRemoteCredentialRecord(options.credentialKey ?? generated.key, {
+    savedAt: NOW,
+  });
   const hostPort = createFakeHostCommandPort();
   const link = createFakeRemoteLinkPair();
   const host = new RemoteHostSession({
     host: hostPort,
     link: link.host,
+    hostKeys: createMemoryHostKeyStore([record]),
     hostId: "host-1",
     workspaceRoot: "D:/workspace",
+    now: () => options.hostNow ?? NOW,
   });
   const controller = new RemoteControllerSession({
     link: link.controller,
     sessionId: "session-1",
     peerId: "controller-1",
+    credential,
   });
   return { controller, host, hostPort, link };
 }
@@ -41,7 +63,7 @@ function chatSend(conversationId: string) {
 
 describe("remote host/controller sessions", () => {
   it("handshakes and exposes host capabilities and model settings", async () => {
-    const { controller, host, link } = createSessions();
+    const { controller, host, link } = await createSessions();
 
     const welcome: RemoteWelcome = await controller.connect();
 
@@ -64,7 +86,7 @@ describe("remote host/controller sessions", () => {
   });
 
   it("routes conversation, send, cancel and bot commands to the host port", async () => {
-    const { controller, host, hostPort, link } = createSessions();
+    const { controller, host, hostPort, link } = await createSessions();
     await controller.connect();
 
     const created = await controller.createConversation("conversation-2");
@@ -94,7 +116,7 @@ describe("remote host/controller sessions", () => {
   });
 
   it("maps model settings and model application to the host", async () => {
-    const { controller, host, hostPort, link } = createSessions();
+    const { controller, host, hostPort, link } = await createSessions();
     await controller.connect();
 
     expect((await controller.settings().snapshot()).configured).toBe(true);
@@ -124,7 +146,7 @@ describe("remote host/controller sessions", () => {
   });
 
   it("streams host snapshots and events after welcome", async () => {
-    const { controller, host, hostPort, link } = createSessions();
+    const { controller, host, hostPort, link } = await createSessions();
     await controller.connect();
 
     const snapshots: ConversationSnapshot[] = [];
@@ -153,7 +175,7 @@ describe("remote host/controller sessions", () => {
   });
 
   it("rejects commands after the controller closes", async () => {
-    const { controller, host, link } = createSessions();
+    const { controller, host, link } = await createSessions();
     await controller.connect();
 
     controller.close();
@@ -168,7 +190,7 @@ describe("remote host/controller sessions", () => {
   });
 
   it("returns a stable command error when the host command fails", async () => {
-    const { controller, host, hostPort, link } = createSessions();
+    const { controller, host, hostPort, link } = await createSessions();
     hostPort.send = async () => {
       throw new Error("host failure");
     };
@@ -181,5 +203,53 @@ describe("remote host/controller sessions", () => {
     controller.close();
     host.close();
     link.disconnect();
+  });
+
+  it("does not route commands before authentication", async () => {
+    const { host, hostPort, link } = await createSessions();
+
+    link.controller.send({
+      type: "hello",
+      protocolVersion: 1,
+      role: "controller",
+      sessionId: "session-1",
+      peerId: "controller-1",
+      capabilities: ["coding"],
+    });
+    link.controller.send({
+      type: "command",
+      requestId: "request-1",
+      command: { type: "send", command: chatSend("conversation-1") },
+    });
+    await flushFakeRemoteLink();
+
+    expect(hostPort.sentCommands).toEqual([]);
+    host.close();
+    link.disconnect();
+  });
+
+  it("rejects a wrong key before sending welcome", async () => {
+    const wrongKey = generateRemoteAccessKey({ now: NOW }).key;
+    const { controller, host, link } = await createSessions({ credentialKey: wrongKey });
+
+    await expect(controller.connect()).rejects.toMatchObject({ code: "unauthorized" });
+    expect(controller.state()).toBe("closed");
+
+    host.close();
+    link.disconnect();
+  });
+
+  it("rejects revoked and expired keys with stable codes", async () => {
+    const revoked = await createSessions({ revokedAt: NOW.toISOString() });
+    await expect(revoked.controller.connect()).rejects.toMatchObject({ code: "key-revoked" });
+    revoked.host.close();
+    revoked.link.disconnect();
+
+    const expired = await createSessions({
+      hostNow: new Date("2026-11-21T00:00:00.000Z"),
+    });
+    await expect(expired.controller.connect()).rejects.toMatchObject({ code: "key-expired" });
+    expired.host.close();
+    expired.link.disconnect();
   });
 });

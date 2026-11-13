@@ -32,6 +32,15 @@ describe("remote frame schema", () => {
     } as const;
     expect(remoteFrameSchema.parse(hello)).toEqual(hello);
 
+    const auth = {
+      type: "auth",
+      sessionId: "session-1",
+      roomId: "0123456789abcdef0123456789abcdef",
+      keyId: "0123456789abcdef",
+      secret: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    } as const;
+    expect(remoteFrameSchema.parse(auth)).toEqual(auth);
+
     const welcome = {
       type: "welcome",
       protocolVersion: 1,
@@ -51,6 +60,12 @@ describe("remote frame schema", () => {
 
     const commandOk = { type: "command-ok", requestId: "request-1", value: { runId: "run-1" } };
     expect(remoteFrameSchema.parse(commandOk)).toEqual(commandOk);
+
+    const authError = {
+      type: "auth-error",
+      error: { code: "unauthorized", message: "remote access key is not valid", retryable: false },
+    } as const;
+    expect(remoteFrameSchema.parse(authError)).toEqual(authError);
 
     const snapshot = {
       type: "snapshot",

@@ -28,6 +28,8 @@ export {
   remoteEventBatchSchema,
 } from "./events";
 export {
+  type RemoteAuth,
+  type RemoteAuthErrorFrame,
   type RemoteCloseFrame,
   type RemoteCommandErrorFrame,
   type RemoteCommandFrame,
@@ -38,6 +40,8 @@ export {
   type RemoteHello,
   type RemoteSnapshotFrame,
   type RemoteWelcome,
+  remoteAuthErrorFrameSchema,
+  remoteAuthSchema,
   remoteCloseFrameSchema,
   remoteCommandErrorFrameSchema,
   remoteCommandFrameSchema,

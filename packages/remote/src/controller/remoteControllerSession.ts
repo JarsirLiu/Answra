@@ -14,6 +14,7 @@ import {
   type RemoteSendCommand,
   type RemoteWelcome,
 } from "@answra/shared/schema";
+import { parseRemoteAccessKey, type RemoteCredentialRecord } from "../access/accessKey";
 import type { HostModelSettingsPort } from "../host/hostPort";
 import type { RemoteLink } from "../ports/remoteLink";
 import type { Unsubscribe } from "../ports/subscription";
@@ -25,6 +26,7 @@ export interface RemoteControllerSessionOptions {
   link: RemoteLink;
   sessionId: string;
   peerId: string;
+  credential: RemoteCredentialRecord;
   capabilities?: readonly RemoteCapability[];
 }
 
@@ -38,6 +40,8 @@ export class RemoteControllerSession {
   private readonly link: RemoteLink;
   private readonly sessionId: string;
   private readonly peerId: string;
+  private readonly credential: RemoteCredentialRecord;
+  private readonly credentialSecret: string;
   private readonly controllerCapabilities: readonly RemoteCapability[];
   private readonly pending = new Map<string, PendingCommand>();
   private readonly unsubscribers: Unsubscribe[] = [];
@@ -58,11 +62,14 @@ export class RemoteControllerSession {
     link,
     sessionId,
     peerId,
+    credential,
     capabilities = ["coding", "model-settings"],
   }: RemoteControllerSessionOptions) {
     this.link = link;
     this.sessionId = sessionId;
     this.peerId = peerId;
+    this.credential = credential;
+    this.credentialSecret = parseRemoteAccessKey(credential.key).secret;
     this.controllerCapabilities = capabilities;
     this.settingsPort = {
       snapshot: () => this.settingsSnapshot(),
@@ -245,6 +252,13 @@ export class RemoteControllerSession {
         peerId: this.peerId,
         capabilities: [...this.controllerCapabilities],
       });
+      this.link.send({
+        type: "auth",
+        sessionId: this.sessionId,
+        roomId: this.credential.roomId,
+        keyId: this.credential.keyId,
+        secret: this.credentialSecret,
+      });
     } catch {
       this.finishClose(remoteError("transport-closed", "failed to send remote hello"));
       this.link.close();
@@ -254,6 +268,10 @@ export class RemoteControllerSession {
   private handleFrame(frame: RemoteFrame): void {
     if (this.closed) return;
     switch (frame.type) {
+      case "auth-error":
+        this.finishClose(remoteError(frame.error.code, frame.error.message, frame.error.retryable));
+        this.link.close();
+        return;
       case "welcome":
         this.acceptWelcome(frame);
         return;
