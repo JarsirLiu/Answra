@@ -295,7 +295,7 @@ const summary = formatSummaryLine(presentation); // 纯文本、无 ANSI
 - 不新建 `packages/tui`：目前只有 CLI 一个终端宿主，Ink 原语没有第二个消费者；等出现第二个终端宿主或原语被复用时再抽取。
 - 不把展示模型放进 `packages/shared`：它不是跨进程契约，而是 UI 语义；shared 继续只放事件、状态词汇与跨进程 schema。
 - 不复制 Claude Code 的 `CollapsedReadSearchContent`、`MessageResponse` 等实现：只复刻行为与布局，不引入 `AppState`、feature flag、React Compiler 产物。
-- 不在阶段 1 做审批 UI、消息操作、自动补全、任务面板；这些是独立能力，另立 Note。
+- 不在阶段 1 做审批 UI、消息操作、任务面板；这些是独立能力，另立 Note。内置 slash 命令候选与 Tab 补全已另立 [CLI slash 命令候选与 Tab 补全](../../implemented/feature/2026-11-13-cli-slash-command-palette.md)。
 - 不让 CLI 解析任意 ANSI/正则猜测工具语义；结构化输出优先，字符串只作旧数据回退。
 
 ## 模块边界

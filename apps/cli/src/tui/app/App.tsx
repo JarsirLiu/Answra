@@ -52,6 +52,7 @@ export function App({
   const compaction = state.view.contextCompaction;
   const compactionLabel = compaction ? contextCompactionLabel(compaction) : "";
   const [expandThinking, setExpandThinking] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   useSyncExternalStore(
     selectionStore?.subscribe ?? NO_SUBSCRIBE,
     selectionStore?.getVersion ?? ZERO_VERSION,
@@ -63,6 +64,7 @@ export function App({
   }, [exit, onExitReady]);
 
   useInput((input, key) => {
+    if (commandPaletteOpen && key.escape) return;
     const shortcut = input.toLowerCase();
     if (
       onCopySelection !== undefined &&
@@ -119,6 +121,7 @@ export function App({
           allowEmptySubmit={state.setupStep === "api-key"}
           busy={busy}
           idleHint={state.setupStep === undefined ? undefined : SETUP_HINTS[state.setupStep]}
+          onCommandPaletteChange={setCommandPaletteOpen}
           onSubmit={onSubmit}
           secret={state.setupStep === "api-key"}
           selectionActive={hasSelection}

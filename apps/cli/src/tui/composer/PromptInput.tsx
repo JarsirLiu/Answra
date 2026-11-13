@@ -2,6 +2,8 @@
 import { Box, Text, useApp, useInput, usePaste, useWindowSize } from "ink";
 import { useEffect, useRef, useState } from "react";
 import { POINTER, TUI_THEME } from "../chrome/theme";
+import { CommandPalette } from "../commands/CommandPalette";
+import { completeTuiCommand, suggestTuiCommands, tuiCommandPrefix } from "../commands/catalog";
 import {
   endOfLineOffset,
   moveCursorVertically,
@@ -30,6 +32,7 @@ export function PromptInput({
   idleHint,
   secret = false,
   allowEmptySubmit = false,
+  onCommandPaletteChange,
 }: {
   busy: boolean;
   onSubmit: (text: string) => void;
@@ -37,6 +40,7 @@ export function PromptInput({
   idleHint?: string;
   secret?: boolean;
   allowEmptySubmit?: boolean;
+  onCommandPaletteChange?: (open: boolean) => void;
 }) {
   const { exit } = useApp();
   const { columns: windowColumns, rows } = useWindowSize();
@@ -44,6 +48,8 @@ export function PromptInput({
   const [draft, setDraft] = useState<Draft>({ value: "", cursor: 0 });
   const [history, setHistory] = useState<string[]>([]);
   const [exitArmed, setExitArmed] = useState(false);
+  const [paletteSelection, setPaletteSelection] = useState(0);
+  const [paletteDismissed, setPaletteDismissed] = useState(false);
   const historyIndex = useRef(-1);
   const savedDraft = useRef("");
   const exitTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -51,8 +57,18 @@ export function PromptInput({
     MIN_INPUT_LINES,
     Math.min(MAX_INPUT_LINES, Math.floor(rows / 2) - 3),
   );
+  const commandPrefix = tuiCommandPrefix(draft.value);
+  const suggestions =
+    secret || commandPrefix === undefined ? [] : suggestTuiCommands(commandPrefix);
+  const paletteOpen = !paletteDismissed && suggestions.length > 0;
+  const selectedCommand =
+    suggestions[Math.min(paletteSelection, Math.max(0, suggestions.length - 1))];
 
   useEffect(() => () => clearTimeout(exitTimer.current), []);
+
+  useEffect(() => {
+    onCommandPaletteChange?.(paletteOpen);
+  }, [onCommandPaletteChange, paletteOpen]);
 
   const replace = (next: string, nextCursor: number) => {
     setDraft({
@@ -61,8 +77,16 @@ export function PromptInput({
     });
   };
 
+  const edit = (next: string, nextCursor: number) => {
+    setPaletteDismissed(false);
+    setPaletteSelection(0);
+    replace(next, nextCursor);
+  };
+
   const insert = (text: string) => {
     setExitArmed(false);
+    setPaletteDismissed(false);
+    setPaletteSelection(0);
     setDraft((current) => ({
       value: current.value.slice(0, current.cursor) + text + current.value.slice(current.cursor),
       cursor: current.cursor + text.length,
@@ -78,6 +102,7 @@ export function PromptInput({
     historyIndex.current = -1;
     savedDraft.current = "";
     setExitArmed(false);
+    setPaletteDismissed(false);
     replace("", 0);
     onSubmit(text);
   };
@@ -97,6 +122,7 @@ export function PromptInput({
     }
     const next =
       historyIndex.current === -1 ? savedDraft.current : (history[historyIndex.current] ?? "");
+    setPaletteSelection(0);
     replace(next, next.length);
   };
 
@@ -114,6 +140,36 @@ export function PromptInput({
       exitTimer.current = setTimeout(() => setExitArmed(false), EXIT_ARM_MS);
       return;
     }
+    if (paletteOpen) {
+      if (key.upArrow) {
+        setPaletteSelection((current) => Math.max(0, current - 1));
+        return;
+      }
+      if (key.downArrow) {
+        setPaletteSelection((current) => Math.min(suggestions.length - 1, current + 1));
+        return;
+      }
+      if (key.tab) {
+        if (selectedCommand !== undefined) {
+          const completed = completeTuiCommand(selectedCommand);
+          setPaletteDismissed(true);
+          replace(completed, completed.length);
+        }
+        return;
+      }
+      if (key.escape) {
+        setPaletteDismissed(true);
+        return;
+      }
+      if (key.return && !key.shift && selectedCommand !== undefined) {
+        const completed = completeTuiCommand(selectedCommand);
+        if (draft.value.trim() !== completed.trimEnd()) {
+          setPaletteDismissed(true);
+          replace(completed, completed.length);
+          return;
+        }
+      }
+    }
     if (key.escape) {
       if (selectionActive) return;
       if (!busy && draft.value.length > 0) replace("", 0);
@@ -125,7 +181,7 @@ export function PromptInput({
         return;
       }
       if (draft.value[draft.cursor - 1] === "\\") {
-        replace(
+        edit(
           `${draft.value.slice(0, draft.cursor - 1)}\n${draft.value.slice(draft.cursor)}`,
           draft.cursor,
         );
@@ -165,32 +221,39 @@ export function PromptInput({
       return;
     }
     if (key.ctrl && input === "u") {
-      replace(draft.value.slice(draft.cursor), 0);
+      edit(draft.value.slice(draft.cursor), 0);
       return;
     }
     if (key.ctrl && input === "k") {
-      replace(draft.value.slice(0, draft.cursor), draft.cursor);
+      edit(draft.value.slice(0, draft.cursor), draft.cursor);
       return;
     }
     if (key.ctrl && input === "w") {
       const before = previousWordOffset(draft.value, draft.cursor);
-      replace(draft.value.slice(0, before) + draft.value.slice(draft.cursor), before);
+      edit(draft.value.slice(0, before) + draft.value.slice(draft.cursor), before);
       return;
     }
     if (key.backspace) {
       if (draft.cursor === 0) return;
       const before = previousGraphemeOffset(draft.value, draft.cursor);
-      replace(draft.value.slice(0, before) + draft.value.slice(draft.cursor), before);
+      edit(draft.value.slice(0, before) + draft.value.slice(draft.cursor), before);
       return;
     }
     if (key.delete) {
       if (draft.cursor >= draft.value.length) return;
       const after = nextGraphemeOffset(draft.value, draft.cursor);
-      replace(draft.value.slice(0, draft.cursor) + draft.value.slice(after), draft.cursor);
+      edit(draft.value.slice(0, draft.cursor) + draft.value.slice(after), draft.cursor);
       return;
     }
     if (input.startsWith("\u001b")) return;
-    if (key.ctrl || key.escape || key.tab || key.pageUp || key.pageDown) return;
+    if (key.tab) {
+      if (suggestions.length > 0) {
+        setPaletteDismissed(false);
+        setPaletteSelection(0);
+      }
+      return;
+    }
+    if (key.ctrl || key.escape || key.pageUp || key.pageDown) return;
     if (input.length > 0) insert(input);
   });
 
@@ -201,6 +264,9 @@ export function PromptInput({
       : (idleHint ?? CONTROL_HINT);
   return (
     <Box flexDirection="column" marginTop={1} width="100%">
+      {paletteOpen ? (
+        <CommandPalette commands={suggestions} selectedIndex={paletteSelection} />
+      ) : null}
       <Box
         borderBottom
         borderColor={busy ? TUI_THEME.inactive : TUI_THEME.promptBorder}

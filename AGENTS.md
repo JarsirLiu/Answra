@@ -86,7 +86,7 @@
 | `src/tui/transcript/tool` | 工具展示适配：`ToolCall`、详情、连续 read/search/list 折叠组 | 只消费 `@answra/ui/tool-presentation`；不重新解析工具输出或判断 Agent 事件 |
 | `src/tui/composer` | 输入框、宽字符/光标布局、历史与粘贴 | 不读写 transcript 或工具状态 |
 | `src/tui/chrome` | 状态行、Spinner 与主题 | 不持有会话或工具状态 |
-| `src/tui/commands` | 本地 slash 命令解析、帮助与 `/model` | 不承载 Agent 命令分派或 runtime |
+| `src/tui/commands` | 本地 slash 命令目录、解析、帮助、候选面板与 `/model` | 不承载 Agent 命令分派或 runtime |
 | `src/tui/interaction` | 终端交互原语：指针解析、选区 store/action 与剪贴板输出 | 不 import `transcript`/`composer`/`runTui`；不解析 Ink 组件；指针/选区状态只由 store 写 |
 | `src/transport` | stdin/stdout/stderr 适配 | 不定义业务行为 |
 

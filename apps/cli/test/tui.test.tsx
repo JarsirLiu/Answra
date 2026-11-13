@@ -96,6 +96,79 @@ describe("TUI components", () => {
     instance.unmount();
   });
 
+  it("shows slash command candidates and completes the selected command with Tab", async () => {
+    const onSubmit = vi.fn();
+    const instance = render(<PromptInput busy={false} onSubmit={onSubmit} />);
+
+    instance.stdin.write("/");
+    await nextFrame();
+    expect(instance.lastFrame()).toContain("/help");
+    expect(instance.lastFrame()).toContain("显示本帮助");
+
+    instance.stdin.write("\t");
+    await nextFrame();
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(instance.lastFrame()).not.toContain("显示本帮助");
+
+    instance.stdin.write("\r");
+    await nextFrame();
+    expect(onSubmit).toHaveBeenCalledWith("/help");
+    instance.unmount();
+  });
+
+  it("moves the command selection before completing it", async () => {
+    const onSubmit = vi.fn();
+    const instance = render(<PromptInput busy={false} onSubmit={onSubmit} />);
+
+    instance.stdin.write("/");
+    await nextFrame();
+    instance.stdin.write("\u001b[B");
+    await nextFrame();
+    instance.stdin.write("\t");
+    await nextFrame();
+
+    instance.stdin.write("\r");
+    await nextFrame();
+    expect(onSubmit).toHaveBeenCalledWith("/clear");
+    instance.unmount();
+  });
+
+  it("completes a command prefix with Enter before submitting it", async () => {
+    const onSubmit = vi.fn();
+    const instance = render(<PromptInput busy={false} onSubmit={onSubmit} />);
+
+    instance.stdin.write("/mo");
+    await nextFrame();
+    instance.stdin.write("\r");
+    await nextFrame();
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(instance.lastFrame()).toContain("/model");
+
+    instance.stdin.write("qwen");
+    await nextFrame();
+    instance.stdin.write("\r");
+    await nextFrame();
+    expect(onSubmit).toHaveBeenCalledWith("/model qwen");
+    instance.unmount();
+  });
+
+  it("dismisses the command palette with Escape and reopens it with Tab", async () => {
+    const instance = render(<PromptInput busy={false} onSubmit={vi.fn()} />);
+
+    instance.stdin.write("/");
+    await nextFrame();
+    expect(instance.lastFrame()).toContain("显示本帮助");
+
+    instance.stdin.write("\x1b[27u");
+    await nextFrame();
+    expect(instance.lastFrame()).not.toContain("显示本帮助");
+
+    instance.stdin.write("\t");
+    await nextFrame();
+    expect(instance.lastFrame()).toContain("显示本帮助");
+    instance.unmount();
+  });
+
   it("supports backslash continuation for multiline input", async () => {
     const onSubmit = vi.fn();
     const instance = render(<PromptInput busy={false} onSubmit={onSubmit} />);
@@ -183,6 +256,35 @@ describe("TUI components", () => {
     await nextFrame();
     expect(instance.lastFrame()).not.toContain("sk-secret");
     expect(instance.lastFrame()).toContain("•");
+    instance.unmount();
+    store.dispose();
+  });
+
+  it("closes the command palette without cancelling the active run on Escape", async () => {
+    const store = new TuiViewStore();
+    store.initialize({ conversationId: "conversation-1", eventRevision: 0, messages: [] });
+    store.beginRun();
+    const onCancel = vi.fn();
+    const instance = render(
+      <App
+        botName="coding.engineer"
+        onCancel={onCancel}
+        onSubmit={vi.fn()}
+        store={store}
+        workspaceRoot="D:\\workspace"
+      />,
+    );
+    await nextFrame();
+
+    instance.stdin.write("/");
+    await nextFrame();
+    expect(instance.lastFrame()).toContain("显示本帮助");
+
+    instance.stdin.write("\x1b[27u");
+    await nextFrame();
+    expect(instance.lastFrame()).not.toContain("显示本帮助");
+    expect(onCancel).not.toHaveBeenCalled();
+
     instance.unmount();
     store.dispose();
   });

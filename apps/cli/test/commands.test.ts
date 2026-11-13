@@ -1,5 +1,18 @@
 import { describe, expect, it } from "vitest";
+import {
+  completeTuiCommand,
+  findTuiCommand,
+  suggestTuiCommands,
+  TUI_COMMANDS,
+  tuiCommandPrefix,
+} from "../src/tui/commands/catalog";
 import { parseTuiCommand } from "../src/tui/commands/parse";
+
+function requireCommand(name: string) {
+  const command = findTuiCommand(name);
+  if (command === undefined) throw new Error(`missing command: ${name}`);
+  return command;
+}
 
 describe("parseTuiCommand", () => {
   it("parses local commands with surrounding whitespace", () => {
@@ -25,5 +38,36 @@ describe("parseTuiCommand", () => {
   it("leaves normal prompts untouched", () => {
     expect(parseTuiCommand("fix the bug")).toBeUndefined();
     expect(parseTuiCommand("/path/to/file")).toEqual({ kind: "unknown", name: "path/to/file" });
+  });
+
+  it("suggests every local command and filters by name or alias", () => {
+    expect(suggestTuiCommands("").map((command) => command.name)).toEqual([
+      "help",
+      "clear",
+      "model",
+      "exit",
+    ]);
+    expect(suggestTuiCommands("mo").map((command) => command.name)).toEqual(["model"]);
+    expect(suggestTuiCommands("qu").map((command) => command.name)).toEqual(["exit"]);
+    expect(suggestTuiCommands("zzz")).toEqual([]);
+  });
+
+  it("completes command names and leaves room for arguments", () => {
+    expect(completeTuiCommand(requireCommand("help"))).toBe("/help");
+    expect(completeTuiCommand(requireCommand("clear"))).toBe("/clear");
+    expect(completeTuiCommand(requireCommand("model"))).toBe("/model ");
+    expect(completeTuiCommand(requireCommand("quit"))).toBe("/exit");
+  });
+
+  it("only treats a leading slash without whitespace as a command prefix", () => {
+    expect(tuiCommandPrefix("/")).toBe("");
+    expect(tuiCommandPrefix("/mo")).toBe("mo");
+    expect(tuiCommandPrefix("/model qwen")).toBeUndefined();
+    expect(tuiCommandPrefix(" /model")).toBeUndefined();
+    expect(tuiCommandPrefix("fix")).toBeUndefined();
+  });
+
+  it("keeps every command in the help catalog", () => {
+    expect(TUI_COMMANDS.every((command) => command.helpLines.length > 0)).toBe(true);
   });
 });

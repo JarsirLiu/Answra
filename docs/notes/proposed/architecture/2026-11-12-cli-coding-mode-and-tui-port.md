@@ -17,7 +17,7 @@
 - 架构守护最初只允许 `apps/agent/src` 和 desktop main/preload 使用 `node:` 内置模块；CLI 需要把 `apps/cli/src` 加入白名单。
 - Claude Code 的 TUI 基于 Ink 和自研 fork；`src/components` 是 React Compiler 产物，并深度耦合 `AppState`、analytics、keybindings 和 `bun:bundle`，不能直接粘贴。
 
-本提案先冻结 v1 范围：**一个独立的 coding 领域与 Bot、无 VAD、无审批、TUI 核心布局与交互对齐 Claude Code**。多 Bot、team、自动交接以及审批 UI、选择/搜索等高级 TUI 能力明确后置。v1.1 已补最小的本地 slash 命令与运行中排队，但没有自动补全、审批或消息选择。
+本提案先冻结 v1 范围：**一个独立的 coding 领域与 Bot、无 VAD、无审批、TUI 核心布局与交互对齐 Claude Code**。多 Bot、team、自动交接以及审批 UI、选择/搜索等高级 TUI 能力明确后置。v1.1 已补最小的本地 slash 命令与运行中排队；2026-11-13 又补了内置命令候选面板与 Tab 补全（见 [CLI slash 命令候选与 Tab 补全](../../implemented/feature/2026-11-13-cli-slash-command-palette.md)），但仍没有自定义命令、审批或消息选择。
 
 ## 涉及范围
 
@@ -138,7 +138,7 @@ v1 业务组件：
 
 - `App` 全屏布局；`Transcript` / `MessageRow` / `MessageResponse`。
 - `MarkdownText`：正文、标题、列表、引用、代码块、内联代码与链接。
-- `PromptInput`：多行输入、历史、Enter 提交（运行中排队）、Shift+Enter 或 `\` + Enter 换行、Esc/Ctrl-C 取消；本地 `/help`、`/clear`、`/exit` 由 TUI 直接处理，v1 不做 slash 自动补全。
+- `PromptInput`：多行输入、历史、Enter 提交（运行中排队）、Shift+Enter 或 `\` + Enter 换行、Esc/Ctrl-C 取消；本地 `/help`、`/clear`、`/exit` 由 TUI 直接处理。内置命令候选与 Tab 补全已由 [CLI slash 命令候选与 Tab 补全](../../implemented/feature/2026-11-13-cli-slash-command-palette.md) 补齐。
 - `StatusLine`：模型、cwd、当前 Bot、运行态。
 - `Spinner` 与工具运行状态。
 - `ToolCard`/`Diff`：直接消费 `EditOutput.diff` 的 `EditDiffDisplay`，不在终端重新计算。
