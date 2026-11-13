@@ -38,11 +38,12 @@ macOS 选区沿用 Windows 已有的捕获期全局 Escape 注册，并在 final
 
 - 平台：macOS 15.6、Apple Silicon、Electron 29.4.6，使用 Answer 打包版和独立临时 userData。
 - 用户实机：2026-11-12 反馈“两个桌面都可见”；2026-11-13 明确确认“全屏桌面悬浮条可见，中文候选和选字也正常”。
+- 用户补充验收：2026-11-13 使用 Mac 测试版验证全屏截图、框选期间切换桌面后反馈“都可以”。这两项已取得实机通过反馈。
 - 原生自动化：设置面板、工作区目录选择对话框、临时文档英文编辑及中文粘贴保存可用。旧版本复现未点击选区时 Escape 无效；修复后连续两轮未点击先按 Escape 均取消并恢复主窗口。
 - 构建：Answer renderer/main/preload 编译、打包输入和最终 app.asar 审计、Apple Silicon app 临时签名校验通过。
 - 自动化回归：六个相关 desktop 测试文件 41 项通过、1 项 Windows 专用测试跳过；FloatingBarApp 54 项通过。覆盖主窗口平台类型、选区复用与 bounds 更新、成功/取消/失败清理、快捷键注册失败及失败后重试。
 - 完整门禁：`pnpm verify` 通过，shared 11、Agent 409、UI 298、desktop 290 项通过，desktop 3 项按已有条件跳过；Biome、全包类型检查及架构检查通过。测试平台修正见 [Mac 验证门禁的测试平台假设](../testing/2026-11-12-macos-validation-portability.md)。
-- 验证边界：未完整实测全屏截图成功、框选期间切换 Space、回复流式输出及隐身模式的全部交叉组合；未实测 Windows/Linux 或其他 Mac 机型。上述结果不代表这些矩阵已全部通过。
+- 验证边界：未完整实测回复流式输出及隐身模式的全部交叉组合；未实测 Windows/Linux 或其他 Mac 机型。上述结果不代表这些矩阵已全部通过。
 
 ## 依据
 
