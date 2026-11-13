@@ -256,6 +256,12 @@ interface HostModelSettingsPort {
 - host 必须显式开启远程模式，并本地显示“远程已连接”、controller 标识、密钥剩余时间和断开/撤销入口。远程 shell 等同本机 shell，key-only 不能省略 host 侧状态与撤销。
 - 首版一个 active controller；其他连接只读或拒绝，避免两个输入源同时 send/select/handoff。多 controller 共享控制另立提案。
 - 密钥泄露等同于 host 远程执行权限；默认一周窗口、每设备独立密钥、host 可见和可撤销是首版安全边界。不要通过 argv 传 key，使用交互输入、密钥文件或 keychain。
+- CLI 首版已落地 key 管理命令，尚未接信令与 host 校验：
+  - `answra remote key create [--days 7|30] [--label <name>]` 在 host 生成 `answra1.<roomId>.<keyId>.<secret>`，只打印一次；secret 为 32 字节随机值。
+  - `answra remote key list` / `revoke <keyId>` 管理 host 记录；`key set` 在 controller 遮罩输入并保存完整 key；`key show` / `forget` 只管理本机摘要。
+  - host 记录保存 SHA-256 secret hash、`roomId/keyId/createdAt/expiresAt/label/lastUsedAt/revokedAt`，不保存明文 secret；CLI 当前落到 `Answra/remote/host-keys.json`（0600）。
+  - controller 当前落到 `Answra/remote/controller.json`（0600）保存完整 key；OS keychain 适配仍是后续工作，Windows 下 0600 不能等同于 ACL 隔离。
+  - `key create` 要求交互 TTY，避免密钥进入日志；`key set` 支持 TTY 遮罩输入或 stdin 管道；key 不接受 argv，不进入 shell 历史。
 
 ### 6. 多 Bot 的位置
 
@@ -343,7 +349,7 @@ interface HostModelSettingsPort {
 1. **阶段 0：契约与骨架。** 已落地：`packages/shared/src/schema/remote/`、`packages/remote/src/{host,ports,protocol,testing}/`，覆盖帧/命令/模型设置/信令 schema、`HostCommandPort`、传输与凭据端口、fake link/signaling/host port、稳定错误码；不建 WebRTC、不接网络。
 2. **阶段 1：远程会话核心。** 已落地：`RemoteHostSession` 与 `RemoteControllerSession` 通过 fake link 完成握手、命令 requestId 关联、host snapshot/event 推送、`/model` snapshot/add/switch/clear、send/cancel/clear 与 list/select bot；不接 CLI、TUI 或真实网络。
 3. **阶段 2：CLI 两端适配。** R3 + R4 把 `CodingApplication` 映射成 `HostCommandPort`，把 `RemoteControllerSession` 映射成 `CodingSessionHost` 驱动现有 TUI；仍用 fake link，覆盖 `/model` 和命令归属，不改 TUI 语义。
-4. **阶段 3：信令与访问密钥。** R5 接 AnswraSite（可用本地 fake signaling 先测），落地 key-only attach、7 天有效期、轮换与撤销；不设配对码。
+4. **阶段 3：信令与访问密钥。** key 命令与本地存储已落地（`key create/list/revoke/set/show/forget`、7/30 天、host 存 hash、controller 存受保护文件）；R5 仍需接 AnswraSite（可用本地 fake signaling 先测），把 key-only attach、host 校验、轮换撤销与过期断连接入真实链路；不设配对码。
 5. **阶段 4：P2P 直连。** R6 接真实 WebRTC DataChannel，做 loopback 与家庭 NAT/IPv6 实机；不配置 TURN，记录 UDP 被封/对称 NAT 的失败矩阵。
 6. **阶段 5：健壮性。** 重连、背压、慢 consumer、lease、密钥过期、host 退出；补架构守护和 TUI 端集成测试。
 7. **阶段 6：桌面与多 Bot。** 复用 host/controller 契约；桌面 IPC/UI 与 CLI 多 Bot capability 分别落地，不复制远程状态机。

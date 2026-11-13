@@ -7,8 +7,11 @@ import { createAgentCodingSessionHost } from "./adapters/agentCodingHost";
 import { createSharedModelStore } from "./adapters/sharedModelStore";
 import { runCli } from "./cli/runCli";
 import { ModelSettingsService } from "./model/settingsService";
+import { createFileRemoteCredentialStore } from "./remote/credentials/fileRemoteCredentialStore";
+import { createFileRemoteHostKeyStore } from "./remote/credentials/fileRemoteHostKeyStore";
 import { createProcessInput } from "./transport/input";
 import { createStreamOutput } from "./transport/output";
+import { createProcessSecretPrompt } from "./transport/secretPrompt";
 import { createInkTuiRunner } from "./tui/runTui";
 
 async function main(): Promise<void> {
@@ -20,6 +23,11 @@ async function main(): Promise<void> {
       output: createStreamOutput(process.stdout, process.stderr),
       cwd: process.cwd(),
       modelSettings,
+      remoteKeys: {
+        hostKeys: createFileRemoteHostKeyStore(),
+        credentials: createFileRemoteCredentialStore(),
+        promptSecret: createProcessSecretPrompt(process.stdin, process.stdout),
+      },
       createSessionHost: ({ emitEvent, onSnapshot, workspaceRoot }) =>
         createAgentCodingSessionHost(startCodingHost({ emitEvent, onSnapshot, workspaceRoot })),
       createConversationId: randomUUID,

@@ -1,4 +1,5 @@
 /** CLI 应用层依赖端口；main.ts 注入真实实现，测试注入 fake。 */
+import type { RemoteCredentialStore, RemoteHostKeyStore } from "@answra/remote";
 import type { ConversationSnapshot } from "@answra/shared";
 import type { AgentEventEnvelope } from "@answra/shared/schema";
 import type { ModelSettings } from "../model/ports";
@@ -13,6 +14,13 @@ export interface SessionHostOptions {
   workspaceRoot: string;
 }
 
+export interface RemoteKeyDependencies {
+  hostKeys: RemoteHostKeyStore;
+  credentials: RemoteCredentialStore;
+  promptSecret(label: string): Promise<string>;
+  now?(): Date;
+}
+
 export interface CliDependencies {
   env: Readonly<Record<string, string | undefined>>;
   input: InputPort;
@@ -23,4 +31,5 @@ export interface CliDependencies {
   createConversationId(): string;
   onInterrupt(handler: () => void): () => void;
   runTui: TuiRunner;
+  remoteKeys?: RemoteKeyDependencies;
 }

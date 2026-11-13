@@ -3,6 +3,7 @@ import { CliUsageError } from "../cli/errors";
 
 const CODE_COMMAND = "code";
 const CONFIG_COMMAND = "config";
+const REMOTE_COMMAND = "remote";
 
 export type CliOptions =
   | { kind: "help" }
@@ -16,6 +17,18 @@ export type CliOptions =
       model: string;
       answerModel?: string;
     }
+  | { kind: "remote"; action: "help" }
+  | { kind: "remote"; action: "key-list" }
+  | { kind: "remote"; action: "key-set" }
+  | { kind: "remote"; action: "key-show" }
+  | { kind: "remote"; action: "key-forget" }
+  | {
+      kind: "remote";
+      action: "key-create";
+      days?: number;
+      label?: string;
+    }
+  | { kind: "remote"; action: "key-revoke"; keyId: string }
   | {
       kind: "code";
       cwd?: string;
@@ -84,6 +97,7 @@ export function parseCliOptions(argv: readonly string[]): CliOptions {
 
     if (command === undefined) {
       if (token === CONFIG_COMMAND) return parseConfigCommand(argv.slice(index + 1));
+      if (token === REMOTE_COMMAND) return parseRemoteCommand(argv.slice(index + 1));
       if (token !== CODE_COMMAND) throw new CliUsageError(`未知命令：${token}`);
       command = token;
       continue;
@@ -152,6 +166,66 @@ function parseConfigCommand(args: readonly string[]): CliOptions {
   }
   if (action === "set") return parseConfigSet(args.slice(1));
   throw new CliUsageError(`未知 config 子命令：${action}`);
+}
+
+function parseRemoteCommand(args: readonly string[]): CliOptions {
+  for (const token of args) {
+    if (token === "-h" || token === "--help") return { kind: "remote", action: "help" };
+    if (token === "-v" || token === "--version") return { kind: "version" };
+  }
+  if (args[0] !== "key") {
+    throw new CliUsageError("缺少 remote key 子命令（create|list|revoke|set|show|forget）。");
+  }
+  const action = args[1];
+  if (action === undefined) throw new CliUsageError("缺少 remote key 子命令。");
+  const rest = args.slice(2);
+  switch (action) {
+    case "create":
+      return parseRemoteKeyCreate(rest);
+    case "list":
+    case "set":
+    case "show":
+    case "forget":
+      if (rest.length > 0) throw new CliUsageError(`remote key ${action} 不接受参数。`);
+      return { kind: "remote", action: `key-${action}` };
+    case "revoke":
+      if (rest.length !== 1) throw new CliUsageError("remote key revoke 需要 keyId。");
+      return { kind: "remote", action: "key-revoke", keyId: rest[0] as string };
+    default:
+      throw new CliUsageError(`未知 remote key 子命令：${action}`);
+  }
+}
+
+function parseRemoteKeyCreate(args: readonly string[]): CliOptions {
+  let days: number | undefined;
+  let label: string | undefined;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const token = args[index];
+    if (token === undefined) continue;
+    if (!token.startsWith("-"))
+      throw new CliUsageError(`remote key create 不接受位置参数：${token}`);
+    const option = parseOptionToken(token);
+    if (option.name !== "--days" && option.name !== "--label") {
+      throw new CliUsageError(`未知选项：${option.name}`);
+    }
+    const parsed = readOptionValue(args, index, option.name, option.inlineValue);
+    index = parsed.nextIndex;
+    if (option.name === "--days") {
+      const value = Number(parsed.value);
+      if (!Number.isInteger(value)) throw new CliUsageError("--days 必须是整数。");
+      days = value;
+    } else {
+      label = parsed.value;
+    }
+  }
+
+  return {
+    kind: "remote",
+    action: "key-create",
+    ...(days === undefined ? {} : { days }),
+    ...(label === undefined ? {} : { label }),
+  };
 }
 
 function parseConfigSet(args: readonly string[]): CliOptions {

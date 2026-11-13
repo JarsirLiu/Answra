@@ -70,11 +70,12 @@
 | 目录 | 职责 | 约束 |
 | --- | --- | --- |
 | `src/main.ts` | 可执行组合根：注入 process/env/stdin/stdout、SIGINT 与真实 Agent host | 只接线，不承载命令解析、会话状态机或呈现逻辑 |
-| `src/cli` | 顶层命令分派、`code`/`config` 用例、依赖端口、help/error | 只依赖端口，不 import Electron 或 desktop |
+| `src/cli` | 顶层命令分派、`code`/`config`/`remote` 用例、依赖端口、help/error | 只依赖端口，不 import Electron 或 desktop |
 | `src/config` | argv 语法与工作区校验 | 不读写配置、不启动会话、不写事件 |
 | `src/model` | CLI 模型设置域：选择、优先级、应用服务与持久化端口 | 不 import `tui`/`cli`/`adapters`，不碰 `node:fs`、Ink 或终端输出 |
 | `src/session` | `CodingSession` 单活动 run 用例与窄宿主端口 | 不实现模型调用、TUI 或进程 I/O |
 | `src/adapters` | `@answra/config` 共享文件实现、`@answra/agent/composition` 的 `CodingHost` 到 CLI 端口映射 | 不复制 Agent 运行时语义，不承载模型合并规则 |
+| `src/remote` | 远程 host/controller 适配与 CLI 本地密钥存储 | 不实现信令/WebRTC 状态机；key 不进共享 config；TUI 不 import |
 | `src/presentation` | Agent 事件到非 TTY 文本、工具行与模型摘要格式化 | 纯投影，不读写会话或进程 |
 | `src/tui` | TUI 组合根：`runTui.tsx` 只接线；备用屏幕用 Ink 原生 `alternateScreen` | 不 import Electron/desktop 或 `@answra/config`；不承载 Agent 命令分派或 runtime；运行中提交的 prompt 只在 TUI 队列内排队 |
 | `src/tui/app` | 根布局与 view store：snapshot/事件 -> TuiState | store 是唯一 writer；不解析工具输出 |
@@ -88,6 +89,7 @@
 
 - CLI 只从 `@answra/agent/composition` 组装 coding host，不使用 worker 线协议、不启动 VAD/ASR、不 import `conversation`/`interview` 领域。
 - CLI 模型配置只从 `@answra/config` 读取文件实现与纯合并函数；`src/model` 不碰文件路径，真实读写由 `main.ts` 注入 `src/adapters/sharedModelStore.ts`。API Key 只走环境变量/参数或 TUI 内存输入，不进入共享文件。
+- CLI 远程 key 只经 `answra remote key` 交互输入，不接受 argv；host 记录只存 secret 哈希，controller 存完整 key 的受保护文件，均不进入共享模型配置。
 - CLI 运行时目标为 Node >=22.13，构建 target 为 `node22.14`，与仓库开发、CI 与 pnpm 下限一致。
 - 安装包分发复用 Electron 35.0.0 的 Node 22.14（`ELECTRON_RUN_AS_NODE=1`）运行 CLI bundle，不新增 Node sidecar、不启动 GUI。
 - CLI 使用 ESM（`dist/main.mjs`）：Ink 8 与 yoga-layout 含 top-level await，不能打成 CJS；安装包通过 electron-builder `extraResources` 分发 `resources/cli/main.mjs`，Windows 的 `answra.cmd` 只复用同目录 `Answra.exe`；不新增 CLI 可执行文件，shim 不自动注册 PATH。

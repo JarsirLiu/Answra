@@ -123,4 +123,52 @@ describe("parseCliOptions", () => {
   it("gives help priority inside config commands", () => {
     expect(parseCliOptions(["config", "set", "--help"])).toEqual({ kind: "help" });
   });
+
+  it("parses remote key commands", () => {
+    expect(
+      parseCliOptions(["remote", "key", "create", "--days", "7", "--label", "office"]),
+    ).toEqual({ kind: "remote", action: "key-create", days: 7, label: "office" });
+    expect(parseCliOptions(["remote", "key", "create"])).toEqual({
+      kind: "remote",
+      action: "key-create",
+    });
+    expect(parseCliOptions(["remote", "key", "list"])).toEqual({
+      kind: "remote",
+      action: "key-list",
+    });
+    expect(parseCliOptions(["remote", "key", "revoke", "abc"])).toEqual({
+      kind: "remote",
+      action: "key-revoke",
+      keyId: "abc",
+    });
+    expect(parseCliOptions(["remote", "key", "set"])).toEqual({
+      kind: "remote",
+      action: "key-set",
+    });
+    expect(parseCliOptions(["remote", "key", "show"])).toEqual({
+      kind: "remote",
+      action: "key-show",
+    });
+    expect(parseCliOptions(["remote", "key", "forget"])).toEqual({
+      kind: "remote",
+      action: "key-forget",
+    });
+    expect(parseCliOptions(["remote", "--help"])).toEqual({
+      kind: "remote",
+      action: "help",
+    });
+  });
+
+  it("rejects invalid remote key commands", () => {
+    expect(() => parseCliOptions(["remote"])).toThrowError(CliUsageError);
+    expect(() => parseCliOptions(["remote", "other"])).toThrowError(CliUsageError);
+    expect(() => parseCliOptions(["remote", "key"])).toThrowError(CliUsageError);
+    expect(() => parseCliOptions(["remote", "key", "other"])).toThrowError(CliUsageError);
+    expect(() => parseCliOptions(["remote", "key", "list", "extra"])).toThrowError(CliUsageError);
+    expect(() => parseCliOptions(["remote", "key", "revoke"])).toThrowError(CliUsageError);
+    expect(() => parseCliOptions(["remote", "key", "create", "--days", "x"])).toThrowError(
+      CliUsageError,
+    );
+    expect(() => parseCliOptions(["remote", "key", "create", "--bad"])).toThrowError(CliUsageError);
+  });
 });

@@ -6,6 +6,7 @@ import { runConfigCommand } from "./configCommand";
 import type { CliDependencies } from "./dependencies";
 import { CliUsageError } from "./errors";
 import { CLI_HELP } from "./help";
+import { runRemoteCommand } from "./remoteCommand";
 
 export async function runCli(argv: readonly string[], deps: CliDependencies): Promise<number> {
   let options: ReturnType<typeof parseCliOptions>;
@@ -26,6 +27,7 @@ export async function runCli(argv: readonly string[], deps: CliDependencies): Pr
 
   try {
     if (options.kind === "config") return await runConfigCommand(options, deps);
+    if (options.kind === "remote") return await runRemoteCommand(options, deps);
     return await runCodeCommand(options, deps);
   } catch (error) {
     return reportError(deps, error);

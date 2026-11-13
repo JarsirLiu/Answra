@@ -6,12 +6,14 @@ export const CLI_HELP = `Answra CLI
   answra config show
   answra config set --base-url <URL> --model <ID> [--answer-model <ID>]
   answra config unset
+  answra remote key <create|list|revoke|set|show|forget>
   answra --help
   answra --version
 
 命令:
   code     启动独立 coding Bot 的编码会话；TTY 下进入交互 TUI
   config   查看或保存桌面端与 CLI 共享的本地模型配置
+  remote   管理远程访问密钥；运行 answra remote --help 查看详情
 
 code 选项:
   --cwd <目录>          工作区根目录，默认当前目录
@@ -33,6 +35,12 @@ code 选项:
   未传 --base-url/--model 且环境变量为空时，读取该共享配置。
   API Key 不共享；首次 TTY 启动缺少模型时会依次询问 base URL、API Key、模型 ID。
   TUI 输入的 API Key 只保留在本次进程内存；长期使用请设置 ANSWRA_API_KEY 或 --api-key。
+
+远程访问密钥:
+  host 上运行 answra remote key create 生成，默认 7 天、只显示一次；
+  controller 上运行 answra remote key set 粘贴并保存到本机；
+  key list/show 只显示 keyId 与过期时间，不显示 secret；
+  key revoke 撤销 host 密钥，key forget 删除本机 controller 密钥。
 
 输入:
   提供 prompt 时作为单条消息发送并退出。

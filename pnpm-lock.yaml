@@ -63,6 +63,9 @@ importers:
       '@answra/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@answra/remote':
+        specifier: workspace:*
+        version: link:../../packages/remote
       '@answra/shared':
         specifier: workspace:*
         version: link:../../packages/shared
