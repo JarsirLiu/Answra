@@ -11,10 +11,21 @@ export interface ContextCheckpoint {
   messageCount: number;
 }
 
+/** 成功 run 首个 step 的实际输入 token 与同一请求的保守估算。 */
+export interface ContextUsageAnchor {
+  /** provider 返回的首个 step 输入 token。 */
+  inputTokens: number;
+  /** 产生该 step 的最终请求在发送前的保守估算。 */
+  estimatedTokens: number;
+  createdAt: string;
+}
+
 export interface ContextState {
   checkpoints: readonly ContextCheckpoint[];
   /** 最近一次压缩生命周期；快照只投影这一字段，检查点正文留在 store。 */
   compaction?: ContextCompactionStatus;
+  /** 最近一次成功 run 的 usage 校准锚点；投影变化或 run 失败后失效。 */
+  usageAnchor?: ContextUsageAnchor;
 }
 
 export function latestCheckpoint(state: ContextState | undefined): ContextCheckpoint | undefined {

@@ -80,7 +80,10 @@ export class ConversationApplication {
         }),
       ...(onSnapshot ? { onSnapshot } : {}),
     });
-    this.contextPreparation = new ContextPreparation({ compactor: this.contextCompactor });
+    this.contextPreparation = new ContextPreparation({
+      compactor: this.contextCompactor,
+      contextStateStore: store,
+    });
 
     this.catalog = catalog;
     const presetInput = withConversationPreset(presets, this.catalog);
@@ -295,12 +298,13 @@ export class ConversationApplication {
     return bot.executor.startRun<ConversationSnapshot>({
       conversationId,
       getAccessToken,
-      prepareContext: (modelRequest, rebuild) =>
+      prepareContext: (modelRequest, rebuild, signal) =>
         this.contextPreparation.prepareRequest({
           conversationId,
           getAccessToken,
           modelRequest,
           rebuild,
+          signal,
         }),
       prepareRun: async ({ runId, eventRevision }) => {
         const request =
@@ -382,6 +386,7 @@ export class ConversationApplication {
 
   private async applyRunEvent(conversationId: string, envelope: AgentEventEnvelope): Promise<void> {
     await this.store.applyAgentEvent(conversationId, envelope);
+    await this.contextPreparation.recordRunEvent(conversationId, envelope.event);
   }
 
   cancel(runId: string): void {

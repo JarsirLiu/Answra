@@ -58,7 +58,10 @@ export class InterviewApplication {
         }),
       onSnapshot: options.onSnapshot,
     });
-    this.contextPreparation = new ContextPreparation({ compactor: this.contextCompactor });
+    this.contextPreparation = new ContextPreparation({
+      compactor: this.contextCompactor,
+      contextStateStore: options.store,
+    });
     this.replyLoop = new InterviewReplyLoop({
       ports: {
         appendUserTurn: (conversationId, turns, text) =>
@@ -159,12 +162,13 @@ export class InterviewApplication {
     const handle = await this.executor.startRun<ConversationSnapshot>({
       conversationId,
       getAccessToken: this.requestAccessToken,
-      prepareContext: (modelRequest, rebuild) =>
+      prepareContext: (modelRequest, rebuild, signal) =>
         this.contextPreparation.prepareRequest({
           conversationId,
           getAccessToken: this.requestAccessToken,
           modelRequest,
           rebuild,
+          signal,
         }),
       prepareRun: async ({ runId, eventRevision }) => {
         await this.store.beginReplyRun(conversationId, runId, eventRevision, this.authorAgentId);
@@ -192,6 +196,7 @@ export class InterviewApplication {
 
   private async applyRunEvent(conversationId: string, envelope: AgentEventEnvelope): Promise<void> {
     await this.store.applyAgentEvent(conversationId, envelope);
+    await this.contextPreparation.recordRunEvent(conversationId, envelope.event);
   }
 
   private getReadFileState(conversationId: string): ReadFileStateMap {

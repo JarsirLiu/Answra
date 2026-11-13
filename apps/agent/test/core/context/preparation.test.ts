@@ -10,6 +10,7 @@ import type { CompactionProfile } from "../../../src/core/context/compaction/pro
 import { ContextPreparation } from "../../../src/core/context/preparation";
 import type { ToolResultPruningPolicy } from "../../../src/core/context/pruning/policy";
 import { PRUNED_TOOL_RESULT_TEXT } from "../../../src/core/context/pruning/prune";
+import { estimateContextRequestTokens } from "../../../src/core/context/tokenEstimate";
 import { READ_TOOL_NAME } from "../../../src/core/tool/toolNames";
 import { MemoryConversationStore } from "../../../src/core/transcript/memoryStore";
 
@@ -96,6 +97,7 @@ function preparation(
   });
   return new ContextPreparation({
     compactor,
+    contextStateStore: store,
     budget: options.budget ?? SMALL_BUDGET,
     ...(options.toolResultPruning ? { toolResultPruning: options.toolResultPruning } : {}),
   });
@@ -248,5 +250,145 @@ describe("ContextPreparation", () => {
     expect(result.messages.map(toolText)).toEqual(
       Array.from({ length: 5 }, () => PRUNED_TOOL_RESULT_TEXT),
     );
+  });
+
+  it("uses the usage anchor to reach the prune trigger below the raw estimate", async () => {
+    const store = await preparedStore();
+    const messages = Array.from({ length: 3 }, (_, index) =>
+      toolResult("r".repeat(400), `call-${index}`),
+    );
+    const request = { system: "x".repeat(600), messages };
+    const estimatedTokens = estimateContextRequestTokens(request);
+    await store.saveContextState("conversation-1", {
+      checkpoints: [],
+      usageAnchor: {
+        inputTokens: estimatedTokens * 2,
+        estimatedTokens,
+        createdAt: "2026-11-14T10:00:00.000Z",
+      },
+    });
+
+    const result = await preparation(store, {
+      budget: PRUNE_ONLY_BUDGET,
+      toolResultPruning: NO_PROTECTION,
+    }).prepareRequest({
+      conversationId: "conversation-1",
+      getAccessToken: async () => "token",
+      modelRequest: request,
+      rebuild: async () => {
+        throw new Error("不应重建");
+      },
+    });
+
+    expect(result.messages.map(toolText)).toEqual(
+      Array.from({ length: 3 }, () => PRUNED_TOOL_RESULT_TEXT),
+    );
+  });
+
+  it("saves the first-step usage as the next anchor after a completed run", async () => {
+    const store = await preparedStore();
+    const preparationInstance = preparation(store, { budget: PRUNE_ONLY_BUDGET });
+    const result = await preparationInstance.prepareRequest({
+      conversationId: "conversation-1",
+      getAccessToken: async () => "token",
+      modelRequest: { system: "", messages: [{ role: "user", content: "hi" }] },
+      rebuild: async () => {
+        throw new Error("不应重建");
+      },
+    });
+
+    await preparationInstance.recordRunEvent("conversation-1", {
+      type: "step-finished",
+      stepId: "step-0",
+      index: 0,
+      state: "completed",
+      usage: { inputTokens: 123, outputTokens: 1 },
+    });
+    await preparationInstance.recordRunEvent("conversation-1", {
+      type: "run-state-changed",
+      state: "completed",
+      attempt: 1,
+    });
+
+    expect(await store.loadContextState("conversation-1")).toMatchObject({
+      usageAnchor: {
+        inputTokens: 123,
+        estimatedTokens: estimateContextRequestTokens(result),
+      },
+    });
+  });
+
+  it("ignores usage from later steps so a previous anchor stays valid", async () => {
+    const store = await preparedStore();
+    const previousAnchor = {
+      inputTokens: 500,
+      estimatedTokens: 400,
+      createdAt: "2026-11-14T10:00:00.000Z",
+    };
+    await store.saveContextState("conversation-1", {
+      checkpoints: [],
+      usageAnchor: previousAnchor,
+    });
+    const preparationInstance = preparation(store, { budget: PRUNE_ONLY_BUDGET });
+    await preparationInstance.prepareRequest({
+      conversationId: "conversation-1",
+      getAccessToken: async () => "token",
+      modelRequest: { system: "", messages: [{ role: "user", content: "hi" }] },
+      rebuild: async () => {
+        throw new Error("不应重建");
+      },
+    });
+
+    await preparationInstance.recordRunEvent("conversation-1", {
+      type: "step-finished",
+      stepId: "step-1",
+      index: 1,
+      state: "completed",
+      usage: { inputTokens: 999, outputTokens: 1 },
+    });
+    await preparationInstance.recordRunEvent("conversation-1", {
+      type: "run-state-changed",
+      state: "completed",
+      attempt: 1,
+    });
+
+    expect((await store.loadContextState("conversation-1"))?.usageAnchor).toEqual(previousAnchor);
+  });
+
+  it("clears a stale anchor when a projection-changing run completes without usage", async () => {
+    const store = await preparedStore();
+    const messages = Array.from({ length: 3 }, (_, index) =>
+      toolResult("r".repeat(400), `call-${index}`),
+    );
+    const request = { system: "x".repeat(600), messages };
+    const estimatedTokens = estimateContextRequestTokens(request);
+    await store.saveContextState("conversation-1", {
+      checkpoints: [],
+      usageAnchor: {
+        inputTokens: estimatedTokens * 2,
+        estimatedTokens,
+        createdAt: "2026-11-14T10:00:00.000Z",
+      },
+    });
+    const preparationInstance = preparation(store, {
+      budget: PRUNE_ONLY_BUDGET,
+      toolResultPruning: NO_PROTECTION,
+    });
+
+    await preparationInstance.prepareRequest({
+      conversationId: "conversation-1",
+      getAccessToken: async () => "token",
+      modelRequest: request,
+      rebuild: async () => {
+        throw new Error("不应重建");
+      },
+    });
+    await preparationInstance.recordRunEvent("conversation-1", {
+      type: "run-state-changed",
+      state: "completed",
+      attempt: 1,
+    });
+
+    expect((await store.loadContextState("conversation-1"))?.usageAnchor).toBeUndefined();
   });
 });

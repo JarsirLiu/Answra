@@ -188,7 +188,11 @@ export async function prepareModelRequest<Input>({
 }): Promise<AgentModelRequest> {
   const modelRequest = await definition.prepare(input, signal, emitter);
   if (!request.prepareContext) return modelRequest;
-  return request.prepareContext(modelRequest, () => definition.prepare(input, signal, emitter));
+  return request.prepareContext(
+    modelRequest,
+    () => definition.prepare(input, signal, emitter),
+    signal,
+  );
 }
 
 export function runOutcome(

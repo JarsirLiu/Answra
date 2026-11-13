@@ -32,6 +32,14 @@ async function preparedStore(): Promise<MemoryConversationStore> {
 describe("ContextCompactor", () => {
   it("uses the prepared final-request token estimate and publishes lifecycle snapshots", async () => {
     const store = await preparedStore();
+    await store.saveContextState("conversation-1", {
+      checkpoints: [],
+      usageAnchor: {
+        inputTokens: 900,
+        estimatedTokens: 600,
+        createdAt: "2026-11-14T10:00:00.000Z",
+      },
+    });
     const snapshots: ConversationSnapshot[] = [];
     const compactor = new ContextCompactor({
       store,
@@ -61,6 +69,61 @@ describe("ContextCompactor", () => {
       summarizedMessages: 1,
       finishedAt: "2026-11-13T10:00:00.000Z",
     });
+    expect((await store.loadContextState("conversation-1"))?.usageAnchor).toBeUndefined();
+  });
+
+  it("persists a checkpoint while the conversation still has an active run", async () => {
+    const store = await preparedStore();
+    await store.beginRun("conversation-1", "run-1", message("m3", "当前请求"));
+    const compactor = new ContextCompactor({
+      store,
+      profile: PROFILE,
+      generate: async () => "压缩后的摘要",
+    });
+
+    const compacted = await compactor.prepare({
+      conversationId: "conversation-1",
+      getAccessToken: async () => "token",
+      triggerTokens: TRIGGER_TOKENS,
+      contextTokens: TRIGGER_TOKENS,
+    });
+
+    expect(compacted).toBe(true);
+    expect((await store.load("conversation-1")).activeRunId).toBe("run-1");
+    expect((await store.loadContextState("conversation-1"))?.checkpoints.at(-1)).toMatchObject({
+      summary: "压缩后的摘要",
+      throughMessageId: "m3",
+    });
+  });
+
+  it("records an aborted summary as failure and keeps the transcript unchanged", async () => {
+    const store = await preparedStore();
+    const controller = new AbortController();
+    const messagesBefore = (await store.load("conversation-1")).messages;
+    const compactor = new ContextCompactor({
+      store,
+      profile: PROFILE,
+      generate: async ({ signal }) => {
+        expect(signal).toBe(controller.signal);
+        controller.abort();
+        throw new DOMException("aborted", "AbortError");
+      },
+    });
+
+    const compacted = await compactor.prepare({
+      conversationId: "conversation-1",
+      getAccessToken: async () => "token",
+      triggerTokens: TRIGGER_TOKENS,
+      contextTokens: TRIGGER_TOKENS,
+      signal: controller.signal,
+    });
+
+    expect(compacted).toBe(false);
+    expect((await store.loadContextState("conversation-1"))?.checkpoints).toEqual([]);
+    expect((await store.load("conversation-1")).contextCompaction).toMatchObject({
+      state: "failed",
+    });
+    expect((await store.load("conversation-1")).messages).toEqual(messagesBefore);
   });
 
   it("publishes failure without blocking the caller", async () => {

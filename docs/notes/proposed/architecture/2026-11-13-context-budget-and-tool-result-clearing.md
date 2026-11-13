@@ -26,8 +26,9 @@ Conversation 和 Coding 的长会话还会积累大量旧的 `read`、`grep`、`
   - `apps/agent/src/core/context/pruning/policy.ts`（新增）：可清理工具名、最近结果/消息保护条数和默认策略。
   - `apps/agent/src/core/context/pruning/prune.ts`（新增）：旧工具结果候选识别、占位替换、节省量计算。
   - `apps/agent/src/core/tool/toolNames.ts`（新增）：内置工具对模型暴露的固定名称，供工具定义与清理策略共用。
-  - `apps/agent/src/core/context/preparation.ts`：按“估算 -> 清理 -> 压缩 -> 重建 -> 再清理 -> 兜底裁剪”的顺序编排。
-  - `apps/agent/src/core/context/tokenEstimate.ts`：从原始 transcript 估算改为估算最终 `ModelMessage[]`、system、tools 和当前请求图片。
+  - `apps/agent/src/core/context/preparation.ts`：按“锚点校准 -> 估算 -> 清理 -> 压缩 -> 重建 -> 再清理 -> 兜底裁剪”的顺序编排。
+  - `apps/agent/src/core/context/usageAnchor.ts`（新增）：记录成功 run 首个 step 的 usage，计算校准比例，并在投影变化后失效。
+  - `apps/agent/src/core/context/tokenEstimate.ts`：从原始 transcript 估算改为估算最终 `ModelMessage[]`、system、tools 和当前请求图片，并提供锚点校准。
   - `apps/agent/src/core/context/compaction/*`：继续只负责摘要压缩，不接管工具结果清理。
   - `apps/agent/src/core/transcript/contextState.ts`：保存可选的 usage 锚点；不保存清理状态，也不保存工具结果正文副本。
   - `apps/agent/src/conversation/application.ts`、`apps/agent/src/coding/application.ts`、`apps/agent/src/interview/application.ts`：在 `definition.prepare()` 生成 draft 后、发送前把最终模型请求交给 `ContextPreparation`；需要重建时通过回调重新组装。
@@ -175,6 +176,7 @@ saved >= 132_000
 ```text
 definition.prepare()
   -> draft AgentModelRequest
+  -> 有成功 run 的 usage 锚点时，按实际/估算比例校准（第三阶段）
   -> 估算 system + tools + messages（当前请求已在尾部）
   -> >= 172k：选择并清理最旧工具结果（第二阶段）
        -> 净节省 >= 132k：应用投影替换，重新估算
@@ -195,6 +197,7 @@ definition.prepare()
 - `ContextPreparation` 是唯一编排入口；领域 application 只传最终 draft、`rebuild` 回调和 conversation id。
 - 压缩发生在 `beginRun` 之后；当前用户消息已在 snapshot 尾部，按保留策略不参与摘要。
 - 压缩后上下文应回到 `postCompactTarget` 附近；如果摘要 + 保留尾段仍超过 `inputLimit`，进入确定性裁剪。
+- 摘要输入只包含用户与助手的可见正文；`reasoning`、工具调用输入/输出/错误不进入摘要，摘要 prompt 不得要求模型补写未显示内容。
 - 摘要渲染必须补充图片处理：至少保留图片名称/描述，或把原图保留到 archive；不能像当前 `renderMessagesForSummary` 一样直接忽略。
 
 ### 7. 控制面与可观察性
@@ -228,7 +231,11 @@ definition.prepare()
 - `ContextCompactor` 只接收 `triggerTokens`/`contextTokens`，不再持有预算或执行硬兜底。
 - Conversation、Coding、Interview 已接入同一条 `prepareContext` 路径。
 - 第二阶段已按 Claude Code 对照修订并落地：清理对象从“重复工具结果”改为“旧工具结果”，新增 `core/tool/toolNames.ts`、`core/context/pruning/policy.ts`、`core/context/pruning/prune.ts`；`ContextPreparation` 在压缩前和重建后各清理一次。不引入 `error-text`，不清 thinking，不持久化清理水位。
-- 尚未实现：usage 锚点、自动压缩/清理开关、上下文占用展示、archive/SQLite。
+- 第三阶段 usage 锚点已落地：`ContextState.usageAnchor` 保存成功 run **首个 step** 的 `usage.inputTokens` 与同一请求的保守估算；`ContextPreparation` 用两者比例校准下一次阈值判断。prune、compact 或 trim 改变投影后，当前请求立即改用全量估算；成功 run 重新记录锚点，失败、中断或缺少 usage 时清理已失效锚点。锚点只校准估算，不替代保守估算，不改变 256k/216k/172k/40k/132k 预算值。
+- 摘要输入已收窄为正文：`renderMessagesForSummary` 只读取 `ConversationMessage.text`，不读取 `parts` 中的 `reasoning`、工具调用输入/输出/错误，也不使用 `message.reasoning`。`text` 是 transcript schema 必填的可见正文，不是旧格式回退；摘要模型只看到用户与助手的正文，避免把内部思考固化成 checkpoint。
+- 压缩写入已允许在活动 run 内保存 `ContextState`：此前 `MemoryConversationStore.saveContextState` 的 `activeRunId` 守卫会让真实自动压缩在 `beginRun` 之后必然失败。`prepareContext` 现在接收 run 的 `AbortSignal`，摘要生成被取消时记录 `failed`、不产生 checkpoint，原始 transcript 保持不变。
+- 存储边界保持 `ConversationStore` / `ExecutionStore` 端口：当前仍是内存 adapter，checkpoint、压缩状态和 usage 锚点都经 `ConversationStore.loadContextState/saveContextState` 保存；SQLite adapter 接入时不需要改压缩或锚点逻辑。SQLite 本身仍未实现，按 [可切换的内存与 SQLite 存储边界](2026-11-08-switchable-memory-sqlite-storage.md) 单独推进。
+- 尚未实现：自动压缩/清理开关、上下文占用展示、archive/SQLite。
 
 ## 模块边界
 
@@ -236,9 +243,10 @@ definition.prepare()
 - `core/tool/toolNames.ts`：只放工具对模型暴露的固定名称；不 import 工具实现、registry 或平台模块。
 - `core/context/pruning/policy.ts`：可清理工具名、最近结果/消息保护条数和默认策略；不承载 token 阈值。
 - `core/context/pruning/prune.ts`：纯候选识别、受保护窗口计算、占位替换和净节省计算；不读 store、不调模型、不改 transcript。
-- `core/context/preparation.ts`：编排预算、两阶段旧工具结果清理、压缩、重建和硬兜底；不实现摘要 prompt、不实现领域上下文装配。
-- `core/context/tokenEstimate.ts`：只做估算；同时支持文本、工具结果、图片和模型消息形状。
-- `core/context/compaction/*`：只做摘要、检查点和生命周期；不负责工具清理。
+- `core/context/preparation.ts`：编排预算、锚点校准、两阶段旧工具结果清理、压缩、重建和硬兜底；不实现摘要 prompt、不实现领域上下文装配。
+- `core/context/usageAnchor.ts`：记录成功 run 首个 step 的 usage、计算校准比例、在投影变化或 run 失败后清理锚点；不读取 transcript 正文、不调用模型。
+- `core/context/tokenEstimate.ts`：只做估算和锚点校准；同时支持文本、工具结果、图片和模型消息形状。
+- `core/context/compaction/*`：只做摘要、检查点和生命周期；不负责工具清理；成功压缩会丢弃旧 usage 锚点。
 - `core/transcript/contextState.ts`：保存 checkpoint、压缩状态和可选 usage 锚点；不保存清理水位或工具结果副本。
 - `core/transcript/projection.ts`、`core/context/projection.ts`：继续是模型消息投影的唯一入口；工具清理通过替换副本参与，不复制投影逻辑。
 - `conversation/`、`coding/`、`interview/`：只提供 `ContextPolicy`/`CompactionProfile` 和当前请求，不实现第二套预算或清理。
@@ -275,6 +283,9 @@ definition.prepare()
   - 预算公式覆盖 256k、固定开销变化、输出预留变化和硬上限。
   - 估算覆盖 system、tools、assistant parts、工具状态、图片、当前请求，证明不再重复计数。
   - 工具清理覆盖最旧优先、白名单、最近结果保护、最近消息保护、占位文本净节省、131,999/132,000 边界、幂等和失败结果仅替换模型侧文本。
+  - usage 锚点覆盖成功 run 首个 step 记录、后续 step 忽略、实际/估算比例校准、失败或缺少 usage 时清理，以及 prune/compact/trim 改变投影后失效。
+  - 摘要输入覆盖只渲染 `ConversationMessage.text`、忽略 `parts` 中的 reasoning 与工具细节、忽略独立的 `message.reasoning`。
+  - 活动 run 内压缩检查点可写入；摘要取消记为 `failed`，不产生 checkpoint，原始 transcript 不变。
   - 编排覆盖“清理后低于压缩线”“清理后仍需压缩”“压缩重建后再次清理”“压缩失败回退”“硬上限裁剪/报错”。
   - 工具名常量覆盖内置 registry 中存在 `Read`/`Grep`/`RunCommand`，防止白名单拼写漂移。
   - `pnpm notes:check`、`pnpm verify`。
@@ -290,7 +301,8 @@ definition.prepare()
 - 清理会改变 prompt 前缀并可能造成一次 cache miss；如果 provider 的缓存折扣很高，132k token 节省不一定等于成本节省，需要后续按真实价格校准。
 - `compactAt` 与 `inputLimit` 重合，触发点没有额外余量，安全裕量完全依赖 12k `safetyTokens`；估算误差超过该值时必须由硬兜底裁剪接管，不能继续发送。
 - 固定开销和图片估算仍可能偏差；256k 窗口的 provider 语义（总窗口还是输入窗口）必须确认，不能假设所有模型一致。
-- 当前 store 仍是进程内实现，usage 锚点重启后会丢失；这不影响本提案的输入预算，但不能宣称持久恢复。
+- 当前 store 仍是进程内实现，usage 锚点重启后会丢失；这不影响本提案的输入预算，但不能宣称持久恢复。切换 SQLite 时 checkpoint、压缩状态和 usage 锚点必须随 `ConversationStore` 一起恢复。
+- 摘要输入只保留可见正文后，旧工具结果中的关键错误、路径和命令输出不会进入新 checkpoint；transcript 仍保留原文，但摘要模型可能丢失这些事实。若实际影响任务连续性，需要另立“工具事实摘要”决策，不能重新把 reasoning 或工具正文偷偷塞回摘要。
 - 摘要渲染目前忽略图片；如果不在本提案中补图片描述或 archive，压缩仍可能丢失旧图片信息。
 - 工具结果可能包含敏感内容；清理只减少模型输入，不减少 transcript 存储或审计面，存储清理仍需独立 Note。
 - 预算和清理横跨 Agent、desktop、CLI 和模型能力配置；如果各宿主各自维护默认值，会重新出现“不由用户控制”的漂移。

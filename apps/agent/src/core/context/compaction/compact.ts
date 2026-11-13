@@ -62,10 +62,12 @@ export async function compactContext({
     summarized: plan.messagesToSummarize,
     now,
   });
+  // 摘要改变模型投影，旧 usage 锚点不再对应当前上下文。
+  const { usageAnchor: _usageAnchor, ...base } = state ?? { checkpoints: [] };
   return {
     state: {
-      ...(state ?? { checkpoints: [] }),
-      checkpoints: [...(state?.checkpoints ?? []), checkpoint],
+      ...base,
+      checkpoints: [...base.checkpoints, checkpoint],
     },
     summarizedMessages: plan.messagesToSummarize.length,
   };

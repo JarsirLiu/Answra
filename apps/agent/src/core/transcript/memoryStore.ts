@@ -183,7 +183,7 @@ export class MemoryConversationStore implements ConversationStore {
 
   async saveContextState(conversationId: string, state: ContextState): Promise<void> {
     const session = this.requireSession(conversationId);
-    if (session.snapshot.activeRunId) throw new Error("当前回复尚未完成");
+    // 上下文检查点是独立元数据；摘要压缩必须在活动 run 内完成写入。
     session.contextState = cloneContextState(state);
   }
 
@@ -382,6 +382,7 @@ function cloneContextState(state: ContextState): ContextState {
   return {
     checkpoints: state.checkpoints.map((checkpoint) => ({ ...checkpoint })),
     ...(state.compaction ? { compaction: { ...state.compaction } } : {}),
+    ...(state.usageAnchor ? { usageAnchor: { ...state.usageAnchor } } : {}),
   };
 }
 

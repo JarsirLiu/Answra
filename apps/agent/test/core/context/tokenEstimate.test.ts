@@ -1,6 +1,7 @@
 import type { ConversationMessage } from "@answra/shared";
 import { describe, expect, it } from "vitest";
 import {
+  calibrateContextTokens,
   estimateContextRequestTokens,
   estimateMessageTokens,
 } from "../../../src/core/context/tokenEstimate";
@@ -95,5 +96,18 @@ describe("context token estimate", () => {
     });
 
     expect(failed).toBeLessThan(completed);
+  });
+
+  it("calibrates a raw estimate with the last successful run usage", () => {
+    const anchor = {
+      inputTokens: 300,
+      estimatedTokens: 200,
+      createdAt: "2026-11-14T10:00:00.000Z",
+    };
+
+    expect(calibrateContextTokens(100, anchor)).toBe(150);
+    expect(calibrateContextTokens(100, { ...anchor, inputTokens: 100 })).toBe(50);
+    expect(calibrateContextTokens(100, undefined)).toBe(100);
+    expect(calibrateContextTokens(100, { ...anchor, estimatedTokens: 0 })).toBe(100);
   });
 });

@@ -52,7 +52,10 @@ export class CodingApplication {
         }),
       ...(onSnapshot ? { onSnapshot } : {}),
     });
-    this.contextPreparation = new ContextPreparation({ compactor: this.contextCompactor });
+    this.contextPreparation = new ContextPreparation({
+      compactor: this.contextCompactor,
+      contextStateStore: store,
+    });
   }
 
   setWorkspaceRoot(root: string | null): void {
@@ -127,12 +130,13 @@ export class CodingApplication {
     return this.bot.executor.startRun<ConversationSnapshot>({
       conversationId,
       getAccessToken,
-      prepareContext: (modelRequest, rebuild) =>
+      prepareContext: (modelRequest, rebuild, signal) =>
         this.contextPreparation.prepareRequest({
           conversationId,
           getAccessToken,
           modelRequest,
           rebuild,
+          signal,
         }),
       prepareRun: async ({ runId, eventRevision }) => {
         await this.store.beginRun(
@@ -175,6 +179,7 @@ export class CodingApplication {
 
   private async applyRunEvent(conversationId: string, envelope: AgentEventEnvelope): Promise<void> {
     await this.store.applyAgentEvent(conversationId, envelope);
+    await this.contextPreparation.recordRunEvent(conversationId, envelope.event);
   }
 
   private getReadFileState(conversationId: string): ReadFileStateMap {

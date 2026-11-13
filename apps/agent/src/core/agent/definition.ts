@@ -94,6 +94,7 @@ export interface AgentRunRequest<Input, Prepared> {
   prepareContext?: (
     modelRequest: AgentModelRequest,
     rebuild: () => Promise<AgentModelRequest>,
+    signal: AbortSignal,
   ) => Promise<AgentModelRequest>;
   /** Called in event order after each envelope is appended to ExecutionStore. */
   onEvent: (event: AgentEventEnvelope) => Promise<void>;

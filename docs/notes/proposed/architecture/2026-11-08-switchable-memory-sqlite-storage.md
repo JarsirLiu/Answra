@@ -95,6 +95,9 @@ schema 版本和事务规则。进程边界不等于数据分叉。
 - 全部领域共享的 `AgentEventEnvelope` 事实事件（不包含高频 delta，沿用现有
   durable 资格）；
 - transcript message/part 的完整内容与 `eventRevision`；
+- `ContextState`：checkpoint、压缩生命周期和 usage 锚点，随同一
+  `ConversationStore` 端口持久化；SQLite adapter 必须实现
+  `loadContextState/saveContextState`，压缩逻辑不感知后端；
 - 必要的运行索引（conversation、run、attempt、sequence、aggregateRevision）。
 
 数据库按应用/用户配置定位，不按 Chat、Interview、Answer 各建一份。是否长期保留

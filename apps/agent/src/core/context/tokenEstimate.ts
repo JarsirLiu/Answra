@@ -2,6 +2,7 @@
 
 import type { ConversationMessage } from "@answra/shared";
 import type { ModelMessage, ToolResultPart, ToolSet } from "ai";
+import type { ContextUsageAnchor } from "../transcript/contextState";
 import type { ContextModelRequest } from "./budget";
 
 const ASCII_CHARS_PER_TOKEN = 4;
@@ -49,6 +50,20 @@ export function estimateContextRequestTokens(request: ContextModelRequest): numb
     request.messages.reduce((total, message) => total + estimateModelMessageTokens(message), 0) +
     (request.tools ? estimateToolsTokens(request.tools) : 0)
   );
+}
+
+/**
+ * 用上一轮成功 run 的实际/估算比例校准当前估算。
+ * 锚点缺失或数值无效时回退保守估算；锚点只用于发送前的阈值判断。
+ */
+export function calibrateContextTokens(
+  estimatedTokens: number,
+  anchor: ContextUsageAnchor | undefined,
+): number {
+  if (!anchor || estimatedTokens <= 0 || anchor.inputTokens <= 0 || anchor.estimatedTokens <= 0) {
+    return estimatedTokens;
+  }
+  return Math.max(1, Math.round((estimatedTokens * anchor.inputTokens) / anchor.estimatedTokens));
 }
 
 function estimateModelMessageTokens(message: ModelMessage): number {

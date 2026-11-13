@@ -22,12 +22,15 @@ export function pruneOldToolResults({
   request,
   targetTokens,
   policy,
+  estimateTokens = estimateContextRequestTokens,
 }: {
   request: ContextModelRequest;
   targetTokens: number;
   policy: ToolResultPruningPolicy;
+  /** 可选估算器；调用方用它把 usage 锚点校准应用到候选选择和节省量。 */
+  estimateTokens?: (request: ContextModelRequest) => number;
 }): ToolResultPruningResult {
-  const beforeTokens = estimateContextRequestTokens(request);
+  const beforeTokens = estimateTokens(request);
   const candidates = eligibleCandidates(request.messages, policy);
   if (candidates.length === 0 || beforeTokens <= targetTokens) {
     return { request, prunedCount: 0, savedTokens: 0 };
@@ -42,7 +45,7 @@ export function pruneOldToolResults({
     if (!replaced) continue;
     messages = replaced;
     prunedCount += 1;
-    currentTokens = estimateContextRequestTokens({ ...request, messages });
+    currentTokens = estimateTokens({ ...request, messages });
   }
 
   if (prunedCount === 0) return { request, prunedCount: 0, savedTokens: 0 };
