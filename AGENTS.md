@@ -12,12 +12,15 @@
                                   ←  @answra/cli
 @answra/shared  ←  @answra/config  ←  @answra/desktop(main)
                                    ←  @answra/cli
+@answra/shared  ←  @answra/remote  ←  @answra/cli
+                                   ←  @answra/desktop(main)
 ```
 
 - 依赖必须单向，禁止环（`pnpm architecture:check` 强制）。
 - 跨包导入只允许使用目标包 `package.json` `exports` 声明的入口；禁止深导入、禁止相对路径跨包（架构脚本强制）。
 - 新增共享能力时：类型/常量进 `shared`，纯 UI 进 `ui`，平台能力进 `desktop`，与平台无关的 Agent 运行时进 `agent`；跨桌面/CLI 的非 secret 客户端配置进 `config`。
 - `@answra/config` 是 Node-only 客户端配置库：只存本地模型地址/模型 ID 等非 secret 字段；API Key 与登录令牌仍由各客户端的 secret 存储负责，CLI 不得解密桌面 `safeStorage` 文件。
+- `@answra/remote` 是平台无关的远程连接核心：只放远程帧编解码、host/controller 端口、配对/信令状态机与 fake ports；只能依赖 `@answra/shared`，不得 import Electron/Node/React/Ink/Agent/CLI/desktop。WebRTC、WebSocket、OS keychain 由各宿主适配。
 - Agent 事件 payload 的唯一目录与 envelope 定义在 `packages/shared/src/schema/events.ts`；状态词汇/快照单独定义在 `status.ts`。`AgentDurableEvent` 仅规定未来适配器的事件资格，不代表已有持久化实现。
 - `apps/` 只放可启动单元（`desktop` 是 Electron 壳，`agent` 由 utility process 拉起并保留独立为常驻 sidecar 的可能，`cli` 是独立终端宿主）；纯库放 `packages/`。
 

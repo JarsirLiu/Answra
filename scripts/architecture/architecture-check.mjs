@@ -127,6 +127,23 @@ function checkImports(pkg) {
     for (const match of code.matchAll(/(?:from|import)\s+["']([^"']+)["']/g)) {
       const spec = match[1];
 
+      // 7. remote 纯库必须保持平台/宿主无关：不得引入 React/DOM/Ink、Node、Electron 或其它应用。
+      if (
+        normalizedRel.startsWith("packages/remote/") &&
+        (spec === "react" ||
+          spec === "react-dom" ||
+          spec === "ink" ||
+          spec === "electron" ||
+          spec.startsWith("node:") ||
+          spec.startsWith("@answra/agent") ||
+          spec.startsWith("@answra/cli") ||
+          spec.startsWith("@answra/desktop") ||
+          spec.startsWith("@answra/config") ||
+          spec.startsWith("@answra/ui"))
+      ) {
+        errors.push(`${rel}: packages/remote 必须保持平台无关，禁止导入 "${spec}"`);
+      }
+
       // 1. workspace 包导入：必须是该包 exports 声明的入口
       if (spec.startsWith("@answra/")) {
         imports.add(spec);

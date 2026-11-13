@@ -1,0 +1,93 @@
+import { z } from "zod";
+import { conversationSnapshotSchema } from "../conversation";
+import { agentEventEnvelopeSchema } from "../events";
+import {
+  remoteCapabilitiesSchema,
+  remoteProtocolVersionSchema,
+  remoteRoleSchema,
+} from "./capabilities";
+import { remoteCommandSchema } from "./commands";
+import { remoteErrorSchema } from "./errors";
+import { remoteEventBatchSchema } from "./events";
+import { remoteModelSettingsViewSchema } from "./modelSettings";
+
+export const remoteHelloSchema = z.strictObject({
+  type: z.literal("hello"),
+  protocolVersion: remoteProtocolVersionSchema,
+  role: remoteRoleSchema,
+  sessionId: z.string(),
+  peerId: z.string(),
+  capabilities: remoteCapabilitiesSchema,
+});
+
+export const remoteWelcomeSchema = z.strictObject({
+  type: z.literal("welcome"),
+  protocolVersion: remoteProtocolVersionSchema,
+  sessionId: z.string(),
+  hostId: z.string(),
+  leaseId: z.string(),
+  capabilities: remoteCapabilitiesSchema,
+  workspaceRoot: z.string(),
+  modelSettings: remoteModelSettingsViewSchema.optional(),
+});
+
+export const remoteCommandFrameSchema = z.strictObject({
+  type: z.literal("command"),
+  requestId: z.string(),
+  command: remoteCommandSchema,
+});
+
+export const remoteCommandOkFrameSchema = z.strictObject({
+  type: z.literal("command-ok"),
+  requestId: z.string(),
+  value: z.unknown().optional(),
+});
+
+export const remoteCommandErrorFrameSchema = z.strictObject({
+  type: z.literal("command-error"),
+  requestId: z.string(),
+  error: remoteErrorSchema,
+});
+
+export const remoteSnapshotFrameSchema = z.strictObject({
+  type: z.literal("snapshot"),
+  snapshot: conversationSnapshotSchema,
+});
+
+export const remoteEventFrameSchema = z.strictObject({
+  type: z.literal("event"),
+  event: agentEventEnvelopeSchema,
+});
+
+export const remoteEventsFrameSchema = z.strictObject({
+  type: z.literal("events"),
+  batch: remoteEventBatchSchema,
+});
+
+export const remoteCloseFrameSchema = z.strictObject({
+  type: z.literal("close"),
+  reason: z.string().optional(),
+});
+
+export const remoteFrameSchema = z.discriminatedUnion("type", [
+  remoteHelloSchema,
+  remoteWelcomeSchema,
+  remoteCommandFrameSchema,
+  remoteCommandOkFrameSchema,
+  remoteCommandErrorFrameSchema,
+  remoteSnapshotFrameSchema,
+  remoteEventFrameSchema,
+  remoteEventsFrameSchema,
+  remoteCloseFrameSchema,
+]);
+
+export type RemoteHello = z.infer<typeof remoteHelloSchema>;
+export type RemoteWelcome = z.infer<typeof remoteWelcomeSchema>;
+export type RemoteCommandFrame = z.infer<typeof remoteCommandFrameSchema>;
+export type RemoteCommandOkFrame = z.infer<typeof remoteCommandOkFrameSchema>;
+export type RemoteCommandErrorFrame = z.infer<typeof remoteCommandErrorFrameSchema>;
+export type RemoteSnapshotFrame = z.infer<typeof remoteSnapshotFrameSchema>;
+export type RemoteEventFrame = z.infer<typeof remoteEventFrameSchema>;
+export type RemoteEventsFrame = z.infer<typeof remoteEventsFrameSchema>;
+export type RemoteCloseFrame = z.infer<typeof remoteCloseFrameSchema>;
+export type RemoteFrame = z.infer<typeof remoteFrameSchema>;

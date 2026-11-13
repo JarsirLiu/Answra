@@ -143,4 +143,5 @@ export {
   agentServiceDisconnectedError,
   isAgentServiceDisconnectedError,
 } from "./schema";
+export * from "./schema/remote";
 export * from "./surfaces";
