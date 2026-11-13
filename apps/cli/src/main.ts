@@ -3,6 +3,7 @@
 import { randomUUID } from "node:crypto";
 import process from "node:process";
 import { startCodingHost } from "@answra/agent/composition";
+import { createSystemModelCredentialStore } from "@answra/credentials";
 import { createAgentCodingSessionHost } from "./adapters/agentCodingHost";
 import { createSharedModelStore } from "./adapters/sharedModelStore";
 import { runCli } from "./cli/runCli";
@@ -23,6 +24,7 @@ async function main(): Promise<void> {
       output: createStreamOutput(process.stdout, process.stderr),
       cwd: process.cwd(),
       modelSettings,
+      modelCredentials: createSystemModelCredentialStore(),
       remoteKeys: {
         hostKeys: createFileRemoteHostKeyStore(),
         credentials: createFileRemoteCredentialStore(),

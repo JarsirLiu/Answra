@@ -1,3 +1,4 @@
+import type { ModelCredentialStore } from "@answra/credentials";
 import type { ConversationModelConfig, ConversationSnapshot } from "@answra/shared";
 import type { ReactElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -43,6 +44,22 @@ function modelConfig(model: string): ConversationModelConfig {
   return {
     chat: { baseUrl: "http://127.0.0.1:1234/v1", model, auth: "local" },
     answer: { baseUrl: "http://127.0.0.1:1234/v1", model, auth: "local" },
+  };
+}
+
+function createModelCredentials(initial: string | null = null): ModelCredentialStore & {
+  current(): string | null;
+} {
+  let apiKey = initial;
+  return {
+    read: vi.fn(async () => apiKey),
+    write: vi.fn(async (value: string) => {
+      apiKey = value;
+    }),
+    clear: vi.fn(async () => {
+      apiKey = null;
+    }),
+    current: () => apiKey,
   };
 }
 
@@ -95,6 +112,7 @@ async function start(
   store: TuiViewStore,
   altScreen = false,
   modelSettings = createModelSettings(),
+  modelCredentials = createModelCredentials(),
 ): Promise<RenderResult> {
   let props: AppProps | undefined;
   let options: Record<string, unknown> | undefined;
@@ -115,6 +133,7 @@ async function start(
     session,
     store,
     modelSettings,
+    modelCredentials,
     botName: "coding.engineer",
     model: "test-model",
     workspaceRoot: "D:\\workspace",
@@ -129,6 +148,7 @@ async function startUnconfigured(
   store: TuiViewStore,
   modelSettings: ModelSettings,
   createSession: (model: ConversationModelConfig, accessToken?: string) => CodingSession,
+  modelCredentials = createModelCredentials(),
 ): Promise<RenderResult> {
   let props: AppProps | undefined;
   let options: Record<string, unknown> | undefined;
@@ -149,6 +169,7 @@ async function startUnconfigured(
     createSession,
     store,
     modelSettings,
+    modelCredentials,
     botName: "coding.engineer",
     workspaceRoot: "D:\\workspace",
     altScreen: false,
@@ -322,28 +343,34 @@ describe("runInkTui", () => {
   it("walks through base URL, API key, and model ID before creating the session", async () => {
     const store = new TuiViewStore();
     const modelSettings = createModelSettings();
+    const modelCredentials = createModelCredentials();
     const { session } = createSession();
     const create = vi.fn(() => session);
-    const { props, finish } = await startUnconfigured(store, modelSettings, create);
+    const { props, finish } = await startUnconfigured(
+      store,
+      modelSettings,
+      create,
+      modelCredentials,
+    );
 
     expect(store.getSnapshot()).toMatchObject({
       modelConfigured: false,
       setupStep: "base-url",
-      notice: ["1/3  Base URL", "输入 OpenAI 兼容端点，例如 http://127.0.0.1:11434/v1"],
+      notice: undefined,
     });
 
     props.onSubmit("http://127.0.0.1:9999/v1");
     await tick();
     expect(store.getSnapshot()).toMatchObject({
       setupStep: "api-key",
-      notice: ["2/3  API Key", "输入内容已隐藏；本地端点可留空。"],
+      notice: undefined,
     });
 
     props.onSubmit("sk-test");
     await tick();
     expect(store.getSnapshot()).toMatchObject({
       setupStep: "model-id",
-      notice: ["3/3  模型 ID", "输入模型 ID，例如 qwen2.5-coder:7b"],
+      notice: undefined,
     });
 
     props.onSubmit("qwen");
@@ -353,6 +380,7 @@ describe("runInkTui", () => {
       baseUrl: "http://127.0.0.1:9999/v1",
       chatModel: "qwen",
     });
+    expect(modelCredentials.write).toHaveBeenCalledWith("sk-test");
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({ chat: expect.objectContaining({ model: "added-model" }) }),
       "sk-test",
@@ -364,7 +392,7 @@ describe("runInkTui", () => {
       modelLabel: "added-model",
       notice: [
         "模型已配置：added-model",
-        "API Key 仅在本次会话内存中使用；重启后请重新输入或设置 ANSWRA_API_KEY。",
+        "API Key 已保存到系统凭据库。",
         "现在可以输入任务开始会话。",
       ],
     });
@@ -373,12 +401,18 @@ describe("runInkTui", () => {
     store.dispose();
   });
 
-  it("allows an empty API key for local endpoints", async () => {
+  it("uses the saved keychain key when the API key step is empty", async () => {
     const store = new TuiViewStore();
     const modelSettings = createModelSettings();
+    const modelCredentials = createModelCredentials("stored-key");
     const { session } = createSession();
     const create = vi.fn(() => session);
-    const { props, finish } = await startUnconfigured(store, modelSettings, create);
+    const { props, finish } = await startUnconfigured(
+      store,
+      modelSettings,
+      create,
+      modelCredentials,
+    );
 
     props.onSubmit("http://127.0.0.1:9999/v1");
     await tick();
@@ -387,7 +421,8 @@ describe("runInkTui", () => {
     props.onSubmit("qwen");
     await tick();
 
-    expect(create).toHaveBeenCalledWith(expect.anything(), undefined);
+    expect(modelCredentials.write).not.toHaveBeenCalled();
+    expect(create).toHaveBeenCalledWith(expect.anything(), "stored-key");
     expect(store.getSnapshot()).toMatchObject({ modelConfigured: true, setupStep: undefined });
 
     finish();

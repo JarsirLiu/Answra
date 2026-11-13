@@ -10,35 +10,40 @@ import {
   readClientConfig,
   writeClientConfig,
 } from "@answra/config";
+import { createSystemModelCredentialStore, type ModelCredentialStore } from "@answra/credentials";
 import type {
   ConversationModelSettings,
   ConversationModelSettingsView,
   ConversationModelSource,
 } from "@answra/shared";
-import { ModelSecretStore } from "./modelSecret";
+import { decryptLegacyApiKey, ModelSecretStore } from "./modelSecret";
 
 /**
- * 模型来源设置：非 secret 字段写共享 `Answra/config.json`，API Key 只写
- * `userData/conversation-model-key.json` 的 safeStorage 密文。
+ * 模型来源设置：非 secret 字段写共享 `Answra/config.json`，API Key 写 OS keychain。
  *
- * CLI 读取同一份共享文件；密钥不共享，CLI 使用自己的环境变量或参数。
+ * 旧版 `userData/conversation-model-key.json` 与 `conversation-model.json.encryptedKey`
+ * 只在启动时迁移；迁移成功即删除旧文件。
  */
 
 export const MODEL_SETTINGS_FILE = "conversation-model.json";
 export const MODEL_SECRET_FILE = "conversation-model-key.json";
 
-/** 内存里的合并视图：共享配置 + 仅桌面可解的密钥。 */
+/** 内存里的合并视图：共享配置；API Key 不进入这个结构。 */
 export interface StoredModelSettings {
   source: ConversationModelSource;
   baseUrl: string;
   model: string;
   answerModel?: string;
+}
+
+interface LegacyStoredModelSettings extends StoredModelSettings {
   encryptedKey?: string;
 }
 
 export interface ModelSettingsStorePaths {
   readonly configPath: string;
   readonly legacyPath: string;
+  /** 旧版 safeStorage 密文路径；迁移完成后删除。 */
   readonly secretPath: string;
 }
 
@@ -92,16 +97,18 @@ export function toView(
 export class ModelSettingsStore {
   private current: StoredModelSettings = defaultModelSettings();
   private ready?: Promise<void>;
-  private readonly secret: ModelSecretStore;
+  private readonly legacySecret: ModelSecretStore;
 
-  constructor(private readonly paths: ModelSettingsStorePaths) {
-    this.secret = new ModelSecretStore(paths.secretPath);
+  constructor(
+    private readonly paths: ModelSettingsStorePaths,
+    private readonly secret: ModelCredentialStore = createSystemModelCredentialStore(),
+  ) {
+    this.legacySecret = new ModelSecretStore(paths.secretPath);
   }
 
   /**
-   * 首次调用时读盘。`safeStorage.isEncryptionAvailable()` 只有 app ready 之后才为真：
-   * 若在构造期（模块加载时）读盘会误判为不可用而直接返回默认值，导致已保存配置
-   * 每次重启都「消失」，故把读盘延迟到 init。
+   * 首次调用时读盘。读盘依赖 app ready 后的 safeStorage 迁移能力，
+   * 因此把读盘延迟到 init，避免模块加载时误判为不可用。
    */
   init(): Promise<void> {
     if (!this.ready) this.ready = this.load();
@@ -119,25 +126,30 @@ export class ModelSettingsStore {
       version: CLIENT_CONFIG_VERSION,
       model: { source: settings.source, local },
     };
+    if (settings.source === "cloud") {
+      await this.secret.clear();
+    } else if (settings.apiKey) {
+      await this.secret.write(settings.apiKey);
+    }
     await writeClientConfig(this.paths.configPath, config);
-    await this.secret.save(settings.source === "local" ? settings.apiKey : undefined);
-    this.current = storedSettings(config, this.secret.encryptedKey());
+    this.current = storedSettings(config);
   }
 
   async clear(): Promise<void> {
     await this.init();
+    await this.secret.clear();
     await Promise.all([
       rm(this.paths.configPath, { force: true }),
       rm(this.paths.legacyPath, { force: true }),
-      this.secret.remove(),
+      this.legacySecret.remove(),
     ]);
     this.current = defaultModelSettings();
   }
 
-  /** 仅在渲染层点开明文时调用；无 Key 时返回 null。 */
+  /** 仅在渲染层点开明文时调用；没有 Key 时返回 null。 */
   async revealApiKey(): Promise<string | null> {
     await this.init();
-    return this.secret.reveal();
+    return this.secret.read();
   }
 
   private resolveLocal(settings: ConversationModelSettings): LocalModelConfig {
@@ -156,25 +168,22 @@ export class ModelSettingsStore {
   }
 
   private async load(): Promise<void> {
-    await this.secret.init();
     const shared = await readClientConfig(this.paths.configPath).catch((error: unknown) => {
       console.warn("[model-settings] 共享配置无法读取，按默认云端处理", error);
       return null;
     });
     const legacy = await this.readLegacy();
     const config = await this.migrateLegacy(shared, legacy);
-    this.current = storedSettings(config, this.secret.encryptedKey());
+    this.current = storedSettings(config);
   }
 
   private async migrateLegacy(
     shared: ClientConfig | null,
-    legacy: StoredModelSettings | null,
+    legacy: LegacyStoredModelSettings | null,
   ): Promise<ClientConfig> {
-    if (legacy === null) return shared ?? defaultClientConfig();
     let config = shared;
     let configReady = shared !== null;
-    let secretReady = this.secret.encryptedKey() !== undefined || legacy.encryptedKey === undefined;
-    if (config === null) {
+    if (config === null && legacy !== null) {
       try {
         config = parseClientConfig(legacyConfig(legacy));
         await writeClientConfig(this.paths.configPath, config);
@@ -183,23 +192,44 @@ export class ModelSettingsStore {
         console.warn("[model-settings] 旧配置迁移失败，保留旧文件", error);
       }
     }
-    if (legacy.encryptedKey !== undefined && this.secret.encryptedKey() === undefined) {
+
+    let secretReady = true;
+    let legacyKey: string | null = null;
+    try {
+      legacyKey = await this.readLegacyApiKey(legacy);
+    } catch (error) {
+      secretReady = false;
+      console.warn("[model-settings] 旧 API Key 迁移失败，保留旧文件", error);
+    }
+    if (legacyKey !== null && secretReady) {
       try {
-        await this.secret.importEncryptedKey(legacy.encryptedKey);
-        secretReady = true;
+        const existing = await this.secret.read();
+        if (existing === null) await this.secret.write(legacyKey);
       } catch (error) {
-        console.warn("[model-settings] 旧 API Key 迁移失败，保留旧文件", error);
+        secretReady = false;
+        console.warn("[model-settings] 旧 API Key 写入系统凭据库失败，保留旧文件", error);
       }
     }
+
     if (configReady && secretReady) {
-      await rm(this.paths.legacyPath, { force: true }).catch((error: unknown) => {
+      await Promise.all([
+        rm(this.paths.legacyPath, { force: true }),
+        this.legacySecret.remove(),
+      ]).catch((error: unknown) => {
         console.warn("[model-settings] 旧配置文件删除失败", error);
       });
     }
     return config ?? defaultClientConfig();
   }
 
-  private async readLegacy(): Promise<StoredModelSettings | null> {
+  private async readLegacyApiKey(legacy: LegacyStoredModelSettings | null): Promise<string | null> {
+    await this.legacySecret.init();
+    const fromSecretFile = await this.legacySecret.reveal();
+    if (fromSecretFile !== null) return fromSecretFile;
+    return legacy?.encryptedKey ? decryptLegacyApiKey(legacy.encryptedKey) : null;
+  }
+
+  private async readLegacy(): Promise<LegacyStoredModelSettings | null> {
     let raw: string;
     try {
       raw = await readFile(this.paths.legacyPath, "utf8");
@@ -209,7 +239,7 @@ export class ModelSettingsStore {
       return null;
     }
     try {
-      const parsed = JSON.parse(raw) as Partial<StoredModelSettings>;
+      const parsed = JSON.parse(raw) as Partial<LegacyStoredModelSettings>;
       return {
         source: parsed.source === "local" ? "local" : "cloud",
         baseUrl: typeof parsed.baseUrl === "string" ? parsed.baseUrl : "",
@@ -238,16 +268,12 @@ function legacyConfig(settings: StoredModelSettings): ClientConfig {
   };
 }
 
-function storedSettings(
-  config: ClientConfig,
-  encryptedKey: string | undefined,
-): StoredModelSettings {
+function storedSettings(config: ClientConfig): StoredModelSettings {
   return {
     source: config.model.source,
     baseUrl: config.model.local.baseUrl,
     model: config.model.local.chatModel,
     ...(config.model.local.answerModel ? { answerModel: config.model.local.answerModel } : {}),
-    ...(encryptedKey ? { encryptedKey } : {}),
   };
 }
 

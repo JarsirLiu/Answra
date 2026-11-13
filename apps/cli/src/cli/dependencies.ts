@@ -1,4 +1,5 @@
 /** CLI 应用层依赖端口；main.ts 注入真实实现，测试注入 fake。 */
+import type { ModelCredentialStore } from "@answra/credentials";
 import type { RemoteCredentialStore, RemoteHostKeyStore } from "@answra/remote";
 import type { ConversationSnapshot } from "@answra/shared";
 import type { AgentEventEnvelope } from "@answra/shared/schema";
@@ -27,6 +28,7 @@ export interface CliDependencies {
   output: OutputPort;
   cwd: string;
   modelSettings: ModelSettings;
+  modelCredentials: ModelCredentialStore;
   createSessionHost(options: SessionHostOptions): CodingSessionHost;
   createConversationId(): string;
   onInterrupt(handler: () => void): () => void;

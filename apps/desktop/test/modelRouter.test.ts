@@ -25,7 +25,10 @@ import {
   validateModelSettings,
 } from "../src/main/conversation/modelSettings";
 
-function createFakeStore(initial = defaultModelSettings()): ModelSettingsStorePort & {
+function createFakeStore(
+  initial = defaultModelSettings(),
+  apiKey: string | null = null,
+): ModelSettingsStorePort & {
   current: () => ReturnType<typeof defaultModelSettings>;
 } {
   let current = initial;
@@ -44,8 +47,7 @@ function createFakeStore(initial = defaultModelSettings()): ModelSettingsStorePo
     clear: vi.fn(async () => {
       current = defaultModelSettings();
     }),
-    // 真实存储经 safeStorage 加解密，这里用同一 `enc:` 约定模拟解密。
-    revealApiKey: vi.fn(async () => current.encryptedKey?.replace(/^enc:/, "") ?? null),
+    revealApiKey: vi.fn(async () => apiKey),
   };
 }
 
@@ -73,13 +75,15 @@ describe("model router source selection", () => {
   });
 
   it("resolves the local endpoint with the saved key and no login", async () => {
-    const store = createFakeStore({
-      source: "local",
-      baseUrl: "http://127.0.0.1:1234/v1",
-      model: "local-model",
-      answerModel: "answer-model",
-      encryptedKey: "enc:local-key",
-    });
+    const store = createFakeStore(
+      {
+        source: "local",
+        baseUrl: "http://127.0.0.1:1234/v1",
+        model: "local-model",
+        answerModel: "answer-model",
+      },
+      "local-key",
+    );
     const router = createRouter(store);
 
     await expect(router.resolve()).resolves.toEqual({
@@ -93,12 +97,14 @@ describe("model router source selection", () => {
   });
 
   it("falls back to the chat model for answer when answerModel is empty", async () => {
-    const store = createFakeStore({
-      source: "local",
-      baseUrl: "http://127.0.0.1:1234/v1",
-      model: "local-model",
-      encryptedKey: "enc:local-key",
-    });
+    const store = createFakeStore(
+      {
+        source: "local",
+        baseUrl: "http://127.0.0.1:1234/v1",
+        model: "local-model",
+      },
+      "local-key",
+    );
     const resolved = await createRouter(store).resolve();
     expect(resolved.config.answer.model).toBe("local-model");
   });
@@ -124,12 +130,14 @@ describe("model router source selection", () => {
   });
 
   it("ignores the local source in packaged builds and uses the cloud", async () => {
-    const store = createFakeStore({
-      source: "local",
-      baseUrl: "http://127.0.0.1:1234/v1",
-      model: "local-model",
-      encryptedKey: "enc:local-key",
-    });
+    const store = createFakeStore(
+      {
+        source: "local",
+        baseUrl: "http://127.0.0.1:1234/v1",
+        model: "local-model",
+      },
+      "local-key",
+    );
     const router = createRouter(store, false);
     expect(router.getView().source).toBe("cloud");
     await expect(router.resolve()).resolves.toMatchObject({ accessToken: "cloud-token" });

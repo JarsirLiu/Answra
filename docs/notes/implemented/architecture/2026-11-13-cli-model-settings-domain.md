@@ -23,11 +23,13 @@ CLI 已经能读取桌面端写入的共享 `config.json`（`@answra/config`）�
   - `apps/cli/src/tui/commands/parse.ts`、`commands/modelCommand.ts`、`app/viewStore.ts`：`/model` 解析、执行与状态行标签。
   - `apps/cli/src/presentation/modelSummary.ts`：模型摘要纯文本投影。
   - `packages/config/src/localModel.ts`：桌面与 CLI 共用的 normalize/merge 纯函数；桌面 `resolveLocal` 已改为复用。
-  - 测试：`apps/cli/test/modelSettings.test.ts`、`runCli.test.ts`、`codingSession.test.ts`、`commands.test.ts`、`runTui.test.ts`、`packages/config/test/localModel.test.ts`。
+  - `packages/credentials`：CLI 与桌面共享的本地模型 API Key keychain 读写。
+  - 测试：`apps/cli/test/modelSettings.test.ts`、`runCli.test.ts`、`codingSession.test.ts`、`commands.test.ts`、`runTui.test.ts`、`packages/config/test/localModel.test.ts`、`packages/credentials/test/credentials.test.ts`。
   - `AGENTS.md` 与 `README.md`：登记 `apps/cli/src/model` 的职责和禁止项。
-- 持久化表面：仍只有 `%APPDATA%\Answra\config.json`（Windows）等共享非 secret 文件；没有新增 CLI 私有配置文件，不写 API Key。
+- 持久化表面：非 secret 模型字段仍只有 `%APPDATA%\Answra\config.json`（Windows）等共享文件；API Key 只写 `@answra/credentials` 的 OS keychain，没有新增 CLI 私有 secret 文件。
 - 相关 Note：
   - [桌面端与 CLI 共享本地模型配置](2026-11-13-shared-client-model-config.md)
+  - [本地模型 API Key 共享 OS keychain](2026-11-13-shared-model-api-key-keychain.md)
   - [CLI Coding 模式与终端 UI 提案](../../proposed/architecture/2026-11-12-cli-coding-mode-and-tui-port.md)
   - [产品方向与 Agent 底座](../../proposed/architecture/2026-10-20-product-direction-and-agent-foundation.md)
 
@@ -86,9 +88,9 @@ session -X-> 配置持久化
 - `ModelSettingsSnapshot`：`source`、`local`、`configured`，供 `config show` 与 `/model` 展示。
 - `ModelSettingsStore`：`read()` / `write()`，只做共享文件 I/O，不解释优先级或 source。
 - `ModelSettings`：`resolve()` / `snapshot()` / `addLocal()` / `switchChatModel()` / `clearLocal()`。
-- `resolve()` 返回 `ConversationModelConfig`，不返回 access token；凭据由命令层从 `ANSWRA_API_KEY` / `--api-key` 或 TUI 内存输入注入会话。
+- `resolve()` 返回 `ConversationModelConfig`，不返回 access token；凭据由命令层从 `ANSWRA_API_KEY` / `--api-key` 或 `@answra/credentials` 的 OS keychain 读取后注入会话。
 - `addLocal` 校验后写入共享本地模型并把 `source` 置为 `local`；`switchChatModel` 只替换 chat 模型并保留端点与 answer 模型；`clearLocal` 清空 `model.local` 并把 `source` 置回 `cloud`，不删除文件。
-- 优先级保持：flag > env > 共享 `model.local`，逐字段回退；凭据由 TUI 显式输入覆盖启动 token，否则沿用 `--api-key` / `ANSWRA_API_KEY`。
+- 模型字段优先级保持：flag > env > 共享 `model.local`，逐字段回退；凭据优先级为 `--api-key` / `ANSWRA_API_KEY` > keychain，TUI 非空输入写入 keychain。
 
 ### 命令表面
 
@@ -101,7 +103,7 @@ session -X-> 配置持久化
 
 - 不新增 `apps/cli/src/utils/`、`services/`、`core/` 或通用 DI/命令框架。
 - 不做 `profiles[]`、`--profile`、`/v1/models` 自动发现和云端登录。
-- 不把 API Key、OAuth token 或任何可解密 secret 写进共享配置；TUI 内输入的 API Key 也只保留在进程内存。
+- 不把 API Key、OAuth token 或任何可解密 secret 写进共享配置；本地模型 API Key 只写 OS keychain，keychain 不可用时 fail-closed。
 - 不让 `tui/` 直接写文件，不让 `session/` 知道配置路径，不让 `config/` 承载持久化。
 - 不做会话内 cloud/local 来源切换；`/model` 只操作本地模型。
 
@@ -142,6 +144,7 @@ session -X-> 配置持久化
 - `pnpm --filter @answra/cli test`：覆盖逐字段优先级、缺失配置报错、`config show/set/unset`、`/model` 查询/切换/添加/运行中拒绝，以及 `CodingSession.setModel` 的关闭与运行中拒绝。
 - `pnpm --filter @answra/desktop test -- modelSettings`：证明桌面本地字段行为在改用共享纯函数后未改变。
 - `pnpm typecheck`、`pnpm architecture:check`、`pnpm lint`、`pnpm notes:check` 必须通过。
-- 2026-11-13：`pnpm verify` 通过：lint、全包 typecheck、全部测试（CLI 20 个文件/136 个测试，desktop 52/325，packages/config 9）、architecture、tokens。
-- 2026-11-13：`pnpm --filter @answra/cli build` 通过；在临时 `APPDATA` 下用构建产物依次执行 `config set/show/unset`，写入的 `Answra/config.json` 只含 `version/model.source/model.local`，`config unset` 后 `source` 回到 cloud、本地字段清空。
+- 2026-11-13：`pnpm --filter @answra/cli test` 通过 25 个文件/167 个测试；`pnpm --filter @answra/credentials test` 通过 5 个测试；`pnpm --filter @answra/desktop test -- modelSettings modelRouter` 通过 22 个测试。
+- 2026-11-13：`pnpm --filter @answra/cli build` 通过；keyring 平台包已复制到 `dist/node_modules/@napi-rs/`；在临时 `APPDATA` 下用构建产物依次执行 `config set/show/unset`，写入的 `Answra/config.json` 只含 `version/model.source/model.local`，`config unset` 后 `source` 回到 cloud、本地字段清空。
+- 待完成：全量 `pnpm verify` 与打包后 Electron/CLI 实机验证。
 - 实机验证：Windows 上桌面 dev 写入配置后启动 `pnpm dev:cli`，确认共享文件路径一致；打包版桌面仍按既有门禁把 local 折叠为 cloud。

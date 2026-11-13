@@ -2,8 +2,9 @@
 import type { ConversationView } from "@answra/ui/conversation-view";
 import { Box, Text } from "ink";
 import { TUI_THEME } from "../chrome/theme";
-import { setupChecklist, type TuiSetupStep } from "../modelSetup";
+import type { TuiSetupStep } from "../modelSetup";
 import { MessageRow } from "./MessageRow";
+import { ModelSetupPanel } from "./ModelSetupPanel";
 
 export function Transcript({
   view,
@@ -53,17 +54,13 @@ export function Welcome({
       <Text bold color={TUI_THEME.claude}>
         ⏺ Welcome to Answra Code!
       </Text>
-      <Box marginTop={1} flexDirection="column">
-        <Text dimColor>{workspaceRoot}</Text>
-        {modelConfigured ? (
-          <Text dimColor>输入任务开始会话。工具会直接在当前工作区执行。</Text>
-        ) : (
-          <Text color={TUI_THEME.warning}>尚未配置模型，请按下方提示完成设置。</Text>
-        )}
-      </Box>
-      <Box flexDirection="column" marginTop={1}>
-        {modelConfigured ? (
-          <>
+      {modelConfigured ? (
+        <>
+          <Box marginTop={1} flexDirection="column">
+            <Text dimColor>{workspaceRoot}</Text>
+            <Text dimColor>输入任务开始会话。工具会直接在当前工作区执行。</Text>
+          </Box>
+          <Box flexDirection="column" marginTop={1}>
             <Text>
               <Text bold>1.</Text> 描述目标，让 Agent 自己搜索、阅读并修改代码
             </Text>
@@ -74,22 +71,11 @@ export function Welcome({
               <Text bold>3.</Text> Enter 发送或排队，Ctrl+O 展开思考与工具输出，PgUp/PgDn
               滚动；/help 查看命令
             </Text>
-          </>
-        ) : (
-          <>
-            <Text dimColor>模型配置（3 步）</Text>
-            {setupChecklist(setupStep).map((item) => (
-              <Text key={item.label} color={item.done ? TUI_THEME.success : TUI_THEME.inactive}>
-                {item.done ? "✓" : "○"} {item.label} {item.done ? "已完成" : "待填写"}
-              </Text>
-            ))}
-            <Text dimColor>
-              API Key 仅用于本次会话，不写入配置文件；留空则读取 ANSWRA_API_KEY。
-            </Text>
-            <Text dimColor>也可以使用 /model add &lt;base-url&gt; &lt;model-id&gt;。</Text>
-          </>
-        )}
-      </Box>
+          </Box>
+        </>
+      ) : (
+        <ModelSetupPanel step={setupStep} />
+      )}
     </Box>
   );
 }

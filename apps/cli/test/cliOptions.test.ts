@@ -92,6 +92,8 @@ describe("parseCliOptions", () => {
         "qwen",
         "--answer-model",
         "qwen-vl",
+        "--api-key",
+        "sk-config",
       ]),
     ).toEqual({
       kind: "config",
@@ -99,6 +101,7 @@ describe("parseCliOptions", () => {
       baseUrl: "http://127.0.0.1:1234/v1",
       model: "qwen",
       answerModel: "qwen-vl",
+      apiKey: "sk-config",
     });
   });
 

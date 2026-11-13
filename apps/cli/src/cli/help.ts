@@ -4,7 +4,7 @@ export const CLI_HELP = `Answra CLI
 用法：
   answra code [选项] [prompt]
   answra config show
-  answra config set --base-url <URL> --model <ID> [--answer-model <ID>]
+  answra config set --base-url <URL> --model <ID> [--answer-model <ID>] [--api-key <KEY>]
   answra config unset
   answra remote key <create|list|revoke|set|show|forget>
   answra --help
@@ -19,7 +19,7 @@ code 选项:
   --cwd <目录>          工作区根目录，默认当前目录
   --base-url <URL>      OpenAI 兼容端点，覆盖 ANSWRA_AI_BASE_URL
   --model <ID>          模型 ID，覆盖 ANSWRA_MODEL
-  --api-key <KEY>       API Key，覆盖 ANSWRA_API_KEY；建议改用环境变量
+  --api-key <KEY>       API Key，覆盖环境变量与系统凭据库；不写入配置文件
   --no-alt-screen       不使用终端备用屏幕，保留主屏滚动记录
   -h, --help            显示帮助
   -v, --version         显示版本
@@ -27,14 +27,15 @@ code 选项:
 环境变量:
   ANSWRA_AI_BASE_URL    OpenAI 兼容端点（与共享配置二选一）
   ANSWRA_MODEL          模型 ID（与共享配置二选一）
-  ANSWRA_API_KEY        API Key（可留空；不读取桌面端加密密钥）
+  ANSWRA_API_KEY        API Key（可留空；不写入共享配置）
 
 共享配置:
   运行 answra config set 写入桌面端「设置 → 模型」使用的同一份本地模型配置；
   运行 answra config unset 只清除本地模型字段，不删除文件。
   未传 --base-url/--model 且环境变量为空时，读取该共享配置。
-  API Key 不共享；首次 TTY 启动缺少模型时会依次询问 base URL、API Key、模型 ID。
-  TUI 输入的 API Key 只保留在本次进程内存；长期使用请设置 ANSWRA_API_KEY 或 --api-key。
+  API Key 存 OS keychain（Windows Credential Manager / macOS Keychain / Linux Secret Service），
+  桌面端与 CLI 共用；可用 answra config set --api-key 或首次 TTY 引导写入。
+  TUI 输入 API Key 后保存到系统凭据库；空输入沿用已保存的 Key。
 
 远程访问密钥:
   host 上运行 answra remote key create 生成，默认 7 天、只显示一次；

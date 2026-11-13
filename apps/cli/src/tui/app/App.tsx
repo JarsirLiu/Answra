@@ -15,9 +15,9 @@ import type { TuiViewStore } from "./viewStore";
 const NO_SUBSCRIBE = () => () => {};
 const ZERO_VERSION = () => 0;
 const SETUP_HINTS: Record<TuiSetupStep, string> = {
-  "base-url": "输入 base URL，Enter 继续 · Ctrl-C 两次退出",
-  "api-key": "输入 API Key，Enter 继续；本地端点可留空",
-  "model-id": "输入模型 ID，Enter 完成",
+  "base-url": "输入 Base URL，例如 http://127.0.0.1:11434/v1 · Enter 继续",
+  "api-key": "输入 API Key，本地端点可留空 · Enter 继续",
+  "model-id": "输入模型 ID，例如 qwen2.5-coder:7b · Enter 完成",
 };
 
 export function App({

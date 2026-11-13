@@ -10,7 +10,7 @@ config.afterPack = resolve("scripts/after-pack.cjs");
 
 if (manifest.profile === "answer") {
   config.extraResources = [];
-  config.asarUnpack = [];
+  config.asarUnpack = ["**/node_modules/@napi-rs/keyring*/**"];
   config.files.push("!**/node_modules/sherpa-onnx-node/**", "!**/node_modules/sherpa-onnx-*/**");
 } else {
   config.appId = "dev.answra.desktop.internal";

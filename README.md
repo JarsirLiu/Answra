@@ -78,6 +78,7 @@ packages/shared        跨进程契约：IPC 频道常量 + ChannelMap 类型、
   src/schema/status.ts Agent run/step 状态词汇与快照
   src/schema/connection.ts Agent 连接状态词汇与稳定失败码（桌面/CLI 共用）
 packages/config        Node-only 共享客户端配置：非 secret 本地模型地址/模型 ID、原子读写与迁移
+packages/credentials   Node-only 共享 OS 凭据：本地模型 API Key 的 keychain 读写，fail-closed
 packages/remote        平台无关远程连接核心：帧/信令 schema、host/controller 会话、访问密钥、稳定错误码与 fake ports
 packages/ui            悬浮条与面板的全部业务 UI（React），含组件测试
 apps/desktop           Electron 桌面壳
@@ -90,7 +91,7 @@ apps/cli              独立终端宿主：coding Bot 的 CLI 入口、模型配
   src/config           argv 语法与工作区校验；不读写配置
   src/model            CLI 模型设置域：选择、优先级与应用服务端口
   src/session          单活动 run 的 CodingSession 用例
-  src/adapters         @answra/config 共享文件实现与 @answra/agent/composition 端口映射
+  src/adapters         @answra/config 共享文件实现与 @answra/agent/composition 端口映射；keychain 由 main 注入
   src/remote           远程 host/controller 适配与 CLI 本地密钥存储
   src/presentation     Agent 事件与模型摘要到文本/工具行的纯投影
   src/tui              TUI 组合根：app/ 根布局与 view store，transcript/ 虚拟列表与工具展示，composer/ 输入，chrome/ 状态行，commands/ slash 命令，interaction/ 指针/选区/剪贴板

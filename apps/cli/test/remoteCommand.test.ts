@@ -71,6 +71,11 @@ function createDependencies(
     output,
     cwd: process.cwd(),
     modelSettings: new ModelSettingsService(store),
+    modelCredentials: {
+      read: async () => null,
+      write: async () => {},
+      clear: async () => {},
+    },
     remoteKeys,
     createSessionHost: () => host,
     createConversationId: () => "conversation-1",

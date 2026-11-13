@@ -34,15 +34,14 @@ describe("TUI components", () => {
     await nextFrame();
 
     const frame = instance.lastFrame();
-    expect(frame).toContain("尚未配置模型");
-    expect(frame).toContain("3 步");
+    expect(frame).toContain("模型配置");
     expect(frame).toContain("Base URL");
     expect(frame).toContain("API Key");
     expect(frame).toContain("模型 ID");
     instance.unmount();
   });
 
-  it("marks completed model setup steps in the welcome checklist", async () => {
+  it("shows all model setup rows and highlights the current step", async () => {
     const instance = render(
       <Welcome modelConfigured={false} setupStep="model-id" workspaceRoot="D:\\workspace" />,
     );
@@ -51,7 +50,9 @@ describe("TUI components", () => {
     const frame = instance.lastFrame();
     expect(frame).toContain("✓ Base URL");
     expect(frame).toContain("✓ API Key");
-    expect(frame).toContain("○ 模型 ID");
+    expect(frame).toContain("❯ 模型 ID");
+    expect(frame).not.toContain("已完成");
+    expect(frame).not.toContain("待填写");
     instance.unmount();
   });
 

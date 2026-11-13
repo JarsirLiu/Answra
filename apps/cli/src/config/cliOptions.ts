@@ -16,6 +16,7 @@ export type CliOptions =
       baseUrl: string;
       model: string;
       answerModel?: string;
+      apiKey?: string;
     }
   | { kind: "remote"; action: "help" }
   | { kind: "remote"; action: "key-list" }
@@ -232,6 +233,7 @@ function parseConfigSet(args: readonly string[]): CliOptions {
   let baseUrl: string | undefined;
   let model: string | undefined;
   let answerModel: string | undefined;
+  let apiKey: string | undefined;
 
   for (let index = 0; index < args.length; index += 1) {
     const token = args[index];
@@ -243,7 +245,8 @@ function parseConfigSet(args: readonly string[]): CliOptions {
     if (
       option.name !== "--base-url" &&
       option.name !== "--model" &&
-      option.name !== "--answer-model"
+      option.name !== "--answer-model" &&
+      option.name !== "--api-key"
     ) {
       throw new CliUsageError(`未知选项：${option.name}`);
     }
@@ -259,6 +262,9 @@ function parseConfigSet(args: readonly string[]): CliOptions {
       case "--answer-model":
         answerModel = parsed.value;
         break;
+      case "--api-key":
+        apiKey = parsed.value;
+        break;
     }
   }
 
@@ -271,5 +277,6 @@ function parseConfigSet(args: readonly string[]): CliOptions {
     baseUrl,
     model,
     ...(answerModel === undefined ? {} : { answerModel }),
+    ...(apiKey === undefined ? {} : { apiKey }),
   };
 }

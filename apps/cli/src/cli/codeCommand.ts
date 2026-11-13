@@ -20,15 +20,18 @@ type CodeOptions = Extract<CliOptions, { kind: "code" }>;
 
 export async function runCodeCommand(options: CodeOptions, deps: CliDependencies): Promise<number> {
   const workspaceRoot = await resolveWorkspaceRoot(options.cwd ?? deps.cwd);
-  const accessToken = (options.apiKey ?? deps.env[CLI_API_KEY] ?? "").trim();
+  const explicitAccessToken = (options.apiKey ?? deps.env[CLI_API_KEY] ?? "").trim();
   const interactive = options.prompt === undefined && deps.input.isTTY;
   const text = (await resolvePrompt(options.prompt, deps)).trim();
   if (!interactive) {
     if (text.length === 0) throw new CliUsageError("没有可发送的输入。");
     const model = await deps.modelSettings.resolve(modelOverrides(options, deps));
+    const accessToken = await resolveAccessToken(explicitAccessToken, deps);
     return runOnce(text, workspaceRoot, model, accessToken, deps);
   }
   const model = await resolveInteractiveModel(options, deps);
+  const accessToken =
+    model === undefined ? explicitAccessToken : await resolveAccessToken(explicitAccessToken, deps);
   return runInteractive(workspaceRoot, model, accessToken, options.altScreen !== false, deps);
 }
 
@@ -49,6 +52,14 @@ function modelOverrides(options: CodeOptions, deps: CliDependencies): readonly M
     { baseUrl: options.baseUrl, chatModel: options.model },
     { baseUrl: deps.env[AI_SERVICE_BASE_URL], chatModel: deps.env[CLI_MODEL] },
   ];
+}
+
+async function resolveAccessToken(
+  explicitAccessToken: string,
+  deps: CliDependencies,
+): Promise<string> {
+  if (explicitAccessToken !== "") return explicitAccessToken;
+  return (await deps.modelCredentials.read()) ?? "";
 }
 
 async function runOnce(
@@ -128,6 +139,7 @@ async function runInteractive(
       createSession,
       store,
       modelSettings: deps.modelSettings,
+      modelCredentials: deps.modelCredentials,
       botName: "coding.engineer",
       workspaceRoot,
       altScreen,

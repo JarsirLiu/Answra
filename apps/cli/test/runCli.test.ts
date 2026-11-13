@@ -1,4 +1,5 @@
 import type { ClientConfig } from "@answra/config";
+import type { ModelCredentialStore } from "@answra/credentials";
 import type {
   ConversationModelConfig,
   ConversationSendRequest,
@@ -34,6 +35,22 @@ function createInput(value: string, isTTY = false): InputPort {
   return {
     isTTY,
     readAll: vi.fn(async () => value),
+  };
+}
+
+function createModelCredentials(initial: string | null = null): ModelCredentialStore & {
+  current(): string | null;
+} {
+  let apiKey = initial;
+  return {
+    read: vi.fn(async () => apiKey),
+    write: vi.fn(async (value: string) => {
+      apiKey = value;
+    }),
+    clear: vi.fn(async () => {
+      apiKey = null;
+    }),
+    current: () => apiKey,
   };
 }
 
@@ -104,6 +121,7 @@ function createDependencies(
     output: createOutput(),
     cwd: process.cwd(),
     modelSettings: createModelSettings(),
+    modelCredentials: createModelCredentials(),
     createSessionHost: vi.fn(({ emitEvent }) => {
       const send = host.send;
       host.send = vi.fn(async (conversationId, request, token) => {
@@ -195,6 +213,34 @@ describe("runCli", () => {
     );
     expect(cleanup).toHaveBeenCalledTimes(1);
     expect(deps.output).toMatchObject({ stdout: "hi\n", stderr: "" });
+  });
+
+  it("uses the keychain key when no flag or env key is set", async () => {
+    const tokens: string[] = [];
+    const modelCredentials = createModelCredentials("stored-key");
+    const deps = createDependencies({
+      env: {
+        ANSWRA_AI_BASE_URL: "http://127.0.0.1:1234/v1",
+        ANSWRA_MODEL: "test-model",
+      },
+      modelCredentials,
+      tokens,
+    });
+
+    await expect(runCli(["code", "hello"], deps)).resolves.toBe(0);
+
+    expect(tokens).toEqual(["stored-key"]);
+  });
+
+  it("prefers the env key over the keychain key", async () => {
+    const tokens: string[] = [];
+    const modelCredentials = createModelCredentials("stored-key");
+    const deps = createDependencies({ modelCredentials, tokens });
+
+    await expect(runCli(["code", "hello"], deps)).resolves.toBe(0);
+
+    expect(tokens).toEqual(["test-key"]);
+    expect(modelCredentials.read).not.toHaveBeenCalled();
   });
 
   it("falls back to the desktop shared local model config", async () => {
@@ -292,7 +338,31 @@ describe("runCli", () => {
     });
   });
 
-  it("clears the shared local model on config unset", async () => {
+  it("saves the API key from config set into the keychain", async () => {
+    const modelSettings = createModelSettings();
+    const modelCredentials = createModelCredentials();
+    const deps = createDependencies({ env: {}, modelSettings, modelCredentials });
+
+    await expect(
+      runCli(
+        [
+          "config",
+          "set",
+          "--base-url",
+          "http://127.0.0.1:1234/v1",
+          "--model",
+          "qwen",
+          "--api-key",
+          "sk-config",
+        ],
+        deps,
+      ),
+    ).resolves.toBe(0);
+
+    expect(modelCredentials.current()).toBe("sk-config");
+  });
+
+  it("clears the shared local model and keychain on config unset", async () => {
     const modelSettings = createModelSettings({
       version: 1,
       model: {
@@ -300,10 +370,12 @@ describe("runCli", () => {
         local: { baseUrl: "http://127.0.0.1:1234/v1", chatModel: "qwen" },
       },
     });
-    const deps = createDependencies({ env: {}, modelSettings });
+    const modelCredentials = createModelCredentials("old-key");
+    const deps = createDependencies({ env: {}, modelSettings, modelCredentials });
 
     await expect(runCli(["config", "unset"], deps)).resolves.toBe(0);
     expect(deps.output).toMatchObject({ stdout: "已清除共享本地模型配置。\n" });
+    expect(modelCredentials.current()).toBeNull();
 
     const showDeps = createDependencies({ env: {}, modelSettings, output: createOutput() });
     await expect(runCli(["config", "show"], showDeps)).resolves.toBe(0);

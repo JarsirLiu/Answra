@@ -1,4 +1,5 @@
 /** Ink TUI 运行器：挂载 App，驱动 CodingSession 的排队发送、等待与取消。 */
+import type { ModelCredentialStore } from "@answra/credentials";
 import type { ConversationModelConfig } from "@answra/shared";
 import { render } from "ink";
 import type { ModelSettings } from "../model/ports";
@@ -14,15 +15,6 @@ import { createSelectionActions } from "./interaction/selectionActions";
 import { TuiSelectionStore } from "./interaction/selectionStore";
 import type { TuiSetupStep } from "./modelSetup";
 
-const MODEL_SETUP_BASE_URL = [
-  "1/3  Base URL",
-  "输入 OpenAI 兼容端点，例如 http://127.0.0.1:11434/v1",
-] as const;
-
-const MODEL_SETUP_API_KEY = ["2/3  API Key", "输入内容已隐藏；本地端点可留空。"] as const;
-
-const MODEL_SETUP_MODEL_ID = ["3/3  模型 ID", "输入模型 ID，例如 qwen2.5-coder:7b"] as const;
-
 export type TuiSessionFactory = (
   model: ConversationModelConfig,
   accessToken?: string,
@@ -34,6 +26,7 @@ export interface TuiRunOptions {
   createSession?: TuiSessionFactory;
   store: TuiViewStore;
   modelSettings: ModelSettings;
+  modelCredentials: ModelCredentialStore;
   botName: string;
   workspaceRoot: string;
   altScreen: boolean;
@@ -51,6 +44,7 @@ export async function runInkTui({
   createSession,
   store,
   modelSettings,
+  modelCredentials,
   botName,
   workspaceRoot,
   altScreen,
@@ -63,7 +57,7 @@ export async function runInkTui({
   if (session === undefined) {
     store.setModelConfigured(false);
     store.setSetupStep(setupStep);
-    store.setNotice(MODEL_SETUP_BASE_URL);
+    store.setNotice(undefined);
   } else {
     store.initialize(await session.open());
     store.setModelLabel(initialModel ?? "");
@@ -87,12 +81,17 @@ export async function runInkTui({
       return;
     }
     if (session === undefined) {
-      store.setNotice(MODEL_SETUP_BASE_URL);
+      store.setNotice(undefined);
       return;
     }
     queue.push(text);
     store.setQueued(queue.length);
     void drain();
+  };
+
+  const resolveAccessToken = async (override?: string): Promise<string | undefined> => {
+    if (override !== undefined && override !== "") return override;
+    return (await modelCredentials.read()) ?? undefined;
   };
 
   const ensureSession = async (
@@ -101,7 +100,8 @@ export async function runInkTui({
   ): Promise<void> => {
     if (session !== undefined) return;
     if (createSession === undefined) throw new Error("当前 TUI 未提供会话工厂。");
-    const next = createSession(model, accessToken);
+    const token = accessToken === undefined ? await resolveAccessToken() : accessToken;
+    const next = createSession(model, token);
     store.initialize(await next.open());
     session = next;
     setupStep = undefined;
@@ -118,34 +118,37 @@ export async function runInkTui({
     if (setupStep === undefined) return;
     const value = text.trim();
     if (setupStep === "base-url") {
-      if (value === "") {
-        store.setNotice(MODEL_SETUP_BASE_URL);
-        return;
-      }
+      if (value === "") return;
       setupBaseUrl = value;
       setupStep = "api-key";
       store.setSetupStep(setupStep);
-      store.setNotice(MODEL_SETUP_API_KEY);
       return;
     }
     if (setupStep === "api-key") {
       setupApiKey = value;
       setupStep = "model-id";
       store.setSetupStep(setupStep);
-      store.setNotice(MODEL_SETUP_MODEL_ID);
       return;
     }
-    if (value === "") {
-      store.setNotice(MODEL_SETUP_MODEL_ID);
-      return;
-    }
+    if (value === "") return;
     try {
+      if (setupApiKey !== "") {
+        try {
+          await modelCredentials.write(setupApiKey);
+        } catch (error) {
+          store.fail(messageOf(error));
+          return;
+        }
+      }
       const model = await modelSettings.addLocal({ baseUrl: setupBaseUrl, chatModel: value });
-      await ensureSession(model, setupApiKey === "" ? undefined : setupApiKey);
+      const accessToken = setupApiKey !== "" ? setupApiKey : ((await resolveAccessToken()) ?? "");
+      await ensureSession(model, accessToken);
       store.setModelLabel(model.chat.model);
       store.setNotice([
         `模型已配置：${model.chat.model}`,
-        "API Key 仅在本次会话内存中使用；重启后请重新输入或设置 ANSWRA_API_KEY。",
+        setupApiKey !== ""
+          ? "API Key 已保存到系统凭据库。"
+          : "已使用系统凭据库中的 API Key（如已保存）。",
         "现在可以输入任务开始会话。",
       ]);
     } catch (error) {
@@ -154,7 +157,7 @@ export async function runInkTui({
       setupApiKey = "";
       store.setSetupStep(setupStep);
       store.fail(messageOf(error));
-      store.setNotice(MODEL_SETUP_BASE_URL);
+      store.setNotice(undefined);
     }
   };
 
@@ -207,7 +210,7 @@ export async function runInkTui({
     if (text === undefined) return;
     const activeSession = session;
     if (activeSession === undefined) {
-      store.setNotice(MODEL_SETUP_BASE_URL);
+      store.setNotice(undefined);
       return;
     }
     busy = true;

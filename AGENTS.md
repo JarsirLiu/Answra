@@ -12,14 +12,17 @@
                                   ←  @answra/cli
 @answra/shared  ←  @answra/config  ←  @answra/desktop(main)
                                    ←  @answra/cli
+@answra/credentials  ←  @answra/desktop(main)
+                     ←  @answra/cli
 @answra/shared  ←  @answra/remote  ←  @answra/cli
                                    ←  @answra/desktop(main)
 ```
 
 - 依赖必须单向，禁止环（`pnpm architecture:check` 强制）。
 - 跨包导入只允许使用目标包 `package.json` `exports` 声明的入口；禁止深导入、禁止相对路径跨包（架构脚本强制）。
-- 新增共享能力时：类型/常量进 `shared`，纯 UI 进 `ui`，平台能力进 `desktop`，与平台无关的 Agent 运行时进 `agent`；跨桌面/CLI 的非 secret 客户端配置进 `config`。
-- `@answra/config` 是 Node-only 客户端配置库：只存本地模型地址/模型 ID 等非 secret 字段；API Key 与登录令牌仍由各客户端的 secret 存储负责，CLI 不得解密桌面 `safeStorage` 文件。
+- 新增共享能力时：类型/常量进 `shared`，纯 UI 进 `ui`，平台能力进 `desktop`，与平台无关的 Agent 运行时进 `agent`；跨桌面/CLI 的非 secret 客户端配置进 `config`，共享本地模型 API Key 进 `credentials`。
+- `@answra/config` 是 Node-only 客户端配置库：只存本地模型地址/模型 ID 等非 secret 字段；API Key 由 `@answra/credentials` 写入 OS keychain，登录令牌仍由桌面 `safeStorage` 负责，CLI 不得解密桌面 `safeStorage` 文件。
+- `@answra/credentials` 是 Node-only OS 凭据库：只封装本地模型 API Key 的 keychain 读写，不读写 `config.json`、不依赖 Electron/CLI/Agent；keychain 不可用时 fail-closed，不回退明文。桌面 main 与 CLI 共用固定 service/account。
 - `@answra/remote` 是平台无关的远程连接核心：只放远程帧编解码、host/controller 端口、配对/信令状态机与 fake ports；只能依赖 `@answra/shared`，不得 import Electron/Node/React/Ink/Agent/CLI/desktop。WebRTC、WebSocket、OS keychain 由各宿主适配。
 - Agent 事件 payload 的唯一目录与 envelope 定义在 `packages/shared/src/schema/events.ts`；状态词汇/快照单独定义在 `status.ts`。`AgentDurableEvent` 仅规定未来适配器的事件资格，不代表已有持久化实现。
 - `apps/` 只放可启动单元（`desktop` 是 Electron 壳，`agent` 由 utility process 拉起并保留独立为常驻 sidecar 的可能，`cli` 是独立终端宿主）；纯库放 `packages/`。
@@ -88,7 +91,7 @@
 | `src/transport` | stdin/stdout/stderr 适配 | 不定义业务行为 |
 
 - CLI 只从 `@answra/agent/composition` 组装 coding host，不使用 worker 线协议、不启动 VAD/ASR、不 import `conversation`/`interview` 领域。
-- CLI 模型配置只从 `@answra/config` 读取文件实现与纯合并函数；`src/model` 不碰文件路径，真实读写由 `main.ts` 注入 `src/adapters/sharedModelStore.ts`。API Key 只走环境变量/参数或 TUI 内存输入，不进入共享文件。
+- CLI 模型配置只从 `@answra/config` 读取文件实现与纯合并函数；`src/model` 不碰文件路径，真实读写由 `main.ts` 注入 `src/adapters/sharedModelStore.ts`。API Key 只走环境变量/参数或 `@answra/credentials` 的 OS keychain（TUI 非空输入写入 keychain），不进入共享文件；keychain 不可用时 fail-closed。
 - CLI 远程 key 只经 `answra remote key` 交互输入，不接受 argv；host 记录只存 secret 哈希，controller 存完整 key 的受保护文件，均不进入共享模型配置。
 - CLI 运行时目标为 Node >=22.13，构建 target 为 `node22.14`，与仓库开发、CI 与 pnpm 下限一致。
 - 安装包分发复用 Electron 35.0.0 的 Node 22.14（`ELECTRON_RUN_AS_NODE=1`）运行 CLI bundle，不新增 Node sidecar、不启动 GUI。

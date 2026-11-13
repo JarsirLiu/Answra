@@ -21,9 +21,11 @@
   "dependencies": {
     "@answra/agent": "workspace:*",
     "@answra/config": "workspace:*",
+    "@answra/credentials": "workspace:*",
     "@answra/remote": "workspace:*",
     "@answra/shared": "workspace:*",
     "@answra/ui": "workspace:*",
+    "@napi-rs/keyring": "2.1.2",
     "ink": "8.0.0",
     "react": "19.3.0",
     "string-width": "^8.3.0"

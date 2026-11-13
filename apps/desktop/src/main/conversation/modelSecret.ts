@@ -1,4 +1,8 @@
-/** 桌面本地模型 API Key 的 safeStorage 密文存储；共享配置只存非 secret 字段。 */
+/**
+ * 旧版桌面本地模型 API Key 的 safeStorage 密文读取器。
+ *
+ * 新密钥统一存 OS keychain；这个模块只用于启动时迁移旧文件，不再写入新密钥。
+ */
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { safeStorage } from "electron";
@@ -7,6 +11,13 @@ const SECRET_FILE_MODE = 0o600;
 
 interface StoredModelSecret {
   readonly encryptedKey: string;
+}
+
+export function decryptLegacyApiKey(encryptedKey: string): string {
+  if (!safeStorage.isEncryptionAvailable()) {
+    throw new Error("系统安全存储不可用，无法迁移 API Key");
+  }
+  return safeStorage.decryptString(Buffer.from(encryptedKey, "base64"));
 }
 
 export class ModelSecretStore {
@@ -53,10 +64,7 @@ export class ModelSecretStore {
     await this.init();
     const encrypted = this.current?.encryptedKey;
     if (!encrypted) return null;
-    if (!safeStorage.isEncryptionAvailable()) {
-      throw new Error("系统安全存储不可用，无法读取 API Key");
-    }
-    return safeStorage.decryptString(Buffer.from(encrypted, "base64"));
+    return decryptLegacyApiKey(encrypted);
   }
 
   private async persist(secret: StoredModelSecret): Promise<void> {
@@ -69,7 +77,6 @@ export class ModelSecretStore {
   }
 
   private async load(): Promise<void> {
-    if (!safeStorage.isEncryptionAvailable()) return;
     let raw: string;
     try {
       raw = await readFile(this.filePath, "utf8");

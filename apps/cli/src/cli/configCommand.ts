@@ -14,6 +14,13 @@ export async function runConfigCommand(
       deps.output.write(formatModelSummary(await deps.modelSettings.snapshot()));
       return 0;
     case "set": {
+      if (options.apiKey !== undefined) {
+        if (options.apiKey.trim() === "") {
+          await deps.modelCredentials.clear();
+        } else {
+          await deps.modelCredentials.write(options.apiKey);
+        }
+      }
       const model = await deps.modelSettings.addLocal({
         baseUrl: options.baseUrl,
         chatModel: options.model,
@@ -23,6 +30,7 @@ export async function runConfigCommand(
       return 0;
     }
     case "unset":
+      await deps.modelCredentials.clear();
       await deps.modelSettings.clearLocal();
       deps.output.write("已清除共享本地模型配置。\n");
       return 0;

@@ -37,6 +37,7 @@
     ],
     "removePackageScripts": true,
     "asarUnpack": [
+      "**/node_modules/@napi-rs/keyring*/**",
       "**/node_modules/sherpa-onnx-node/**",
       "**/node_modules/sherpa-onnx-win-*/**",
       "**/node_modules/sherpa-onnx-darwin-*/**",
@@ -99,6 +100,7 @@
     }
   },
   "dependencies": {
+    "@napi-rs/keyring": "2.1.2",
     "electron-updater": "^6.6.4",
     "koffi": "^3.3.3",
     "sherpa-onnx-node": "1.13.8"
@@ -108,6 +110,7 @@
     "@electron/asar": "3.4.1",
     "@answra/agent": "workspace:*",
     "@answra/config": "workspace:*",
+    "@answra/credentials": "workspace:*",
     "@answra/shared": "workspace:*",
     "@answra/ui": "workspace:*",
     "@resvg/resvg-js": "^2.6.2",
