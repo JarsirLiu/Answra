@@ -5,6 +5,7 @@ import path from "node:path";
 import type { JSONSchema7 } from "ai";
 import { defineTool, type ToolContext, toolId } from "../contracts";
 import { ToolExecutionError } from "../executor/result";
+import { READ_TOOL_NAME } from "../toolNames";
 import { readDocumentText } from "./documents/documentText";
 import { createReadFileStateKey, isCachedReadFresh } from "./readFileState";
 import {
@@ -68,7 +69,7 @@ const READ_INPUT_SCHEMA: JSONSchema7 = {
 export const readTool = defineTool<ReadInput, ReadOutput>({
   id: toolId("workspace.read"),
   metadata: {
-    name: "Read",
+    name: READ_TOOL_NAME,
     description: READ_TOOL_DESCRIPTION,
     readOnly: true,
     destructive: false,

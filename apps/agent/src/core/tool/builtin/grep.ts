@@ -6,6 +6,7 @@ import type { JSONSchema7 } from "ai";
 import { ripgrep } from "ripgrep";
 import { defineTool, type ToolContext, toolId } from "../contracts";
 import { ToolExecutionError } from "../executor/result";
+import { GREP_TOOL_NAME } from "../toolNames";
 import {
   formatGrepOutput,
   GREP_DEFAULT_HEAD_LIMIT,
@@ -169,7 +170,7 @@ const GREP_INPUT_SCHEMA: JSONSchema7 = {
 export const grepTool = defineTool<GrepInput, GrepOutput>({
   id: toolId("workspace.grep"),
   metadata: {
-    name: "Grep",
+    name: GREP_TOOL_NAME,
     description: GREP_TOOL_DESCRIPTION,
     readOnly: true,
     destructive: false,

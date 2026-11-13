@@ -13,6 +13,13 @@ import { executeGrep } from "../../../src/core/tool/builtin/grep";
 import { formatGrepOutput } from "../../../src/core/tool/builtin/grepOutput";
 import { executeRead } from "../../../src/core/tool/builtin/read";
 import { formatReadOutput } from "../../../src/core/tool/builtin/readOutput";
+import {
+  EDIT_TOOL_NAME,
+  GREP_TOOL_NAME,
+  READ_TOOL_NAME,
+  RUN_COMMAND_TOOL_NAME,
+  WRITE_STDIN_TOOL_NAME,
+} from "../../../src/core/tool/toolNames";
 
 function context(
   workspaceRoot: string | null,
@@ -48,13 +55,13 @@ describe("builtin workspace tools", () => {
     const tools = registry.authorize([toolId("workspace.read")], sessionContext(null));
 
     expect(registry.list().map(({ id, metadata }) => [id, metadata.name])).toEqual([
-      ["workspace.read", "Read"],
-      ["workspace.grep", "Grep"],
-      ["workspace.edit", "Edit"],
-      ["workspace.run-command", "RunCommand"],
-      ["workspace.write-stdin", "WriteStdin"],
+      ["workspace.read", READ_TOOL_NAME],
+      ["workspace.grep", GREP_TOOL_NAME],
+      ["workspace.edit", EDIT_TOOL_NAME],
+      ["workspace.run-command", RUN_COMMAND_TOOL_NAME],
+      ["workspace.write-stdin", WRITE_STDIN_TOOL_NAME],
     ]);
-    expect(Object.keys(tools)).toEqual(["Read"]);
+    expect(Object.keys(tools)).toEqual([READ_TOOL_NAME]);
   });
 
   it("reads bounded line ranges and searches matching content inside the Agent process", async () => {

@@ -12,6 +12,7 @@ import {
   toolId,
 } from "../../contracts";
 import { ToolExecutionError } from "../../executor/result";
+import { RUN_COMMAND_TOOL_NAME, WRITE_STDIN_TOOL_NAME } from "../../toolNames";
 import { LocalShell, type ShellOutputResult } from "./localShell";
 import {
   ShellSessionManager,
@@ -162,7 +163,7 @@ export function createShellTools(options: ShellToolsOptions = {}): ShellTools {
     runCommand: defineTool<RunCommandInput, RunCommandOutput>({
       id: toolId("workspace.run-command"),
       metadata: {
-        name: "RunCommand",
+        name: RUN_COMMAND_TOOL_NAME,
         description: RUN_COMMAND_DESCRIPTION,
         readOnly: false,
         destructive: true,
@@ -186,7 +187,7 @@ export function createShellTools(options: ShellToolsOptions = {}): ShellTools {
     writeStdin: defineTool<WriteStdinInput, ShellSessionSnapshot>({
       id: toolId("workspace.write-stdin"),
       metadata: {
-        name: "WriteStdin",
+        name: WRITE_STDIN_TOOL_NAME,
         description: WRITE_STDIN_DESCRIPTION,
         readOnly: false,
         destructive: true,

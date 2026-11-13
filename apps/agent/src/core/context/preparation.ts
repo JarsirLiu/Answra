@@ -1,4 +1,4 @@
-/** 最终模型请求的上下文准备编排：摘要压缩、重建与硬兜底裁剪。 */
+/** 最终模型请求的上下文准备编排：旧工具结果清理、摘要压缩、重建与硬兜底裁剪。 */
 import type { ContextCompactionTrigger } from "@answra/shared";
 import type { ModelMessage } from "ai";
 import {
@@ -10,11 +10,18 @@ import {
   resolveContextBudget,
 } from "./budget";
 import type { ContextCompactor } from "./compaction/compactor";
+import {
+  assertToolResultPruningPolicy,
+  DEFAULT_TOOL_RESULT_PRUNING_POLICY,
+  type ToolResultPruningPolicy,
+} from "./pruning/policy";
+import { pruneOldToolResults } from "./pruning/prune";
 import { estimateContextRequestTokens } from "./tokenEstimate";
 
 export interface ContextPreparationOptions {
   compactor: ContextCompactor;
   budget?: ContextBudgetPolicy;
+  toolResultPruning?: ToolResultPruningPolicy;
 }
 
 export interface ContextPreparationRequest {
@@ -26,14 +33,21 @@ export interface ContextPreparationRequest {
   trigger?: ContextCompactionTrigger;
 }
 
-/** 唯一编排入口：压缩只看最终请求，压缩后重建，仍超限时确定性裁剪。 */
+/** 唯一编排入口：压缩只看最终请求，压缩后重建并再次清理，仍超限时确定性裁剪。 */
 export class ContextPreparation {
   private readonly compactor: ContextCompactor;
   private readonly budget: ResolvedContextBudget;
+  private readonly toolResultPruning: ToolResultPruningPolicy;
 
-  constructor({ compactor, budget = DEFAULT_CONTEXT_BUDGET_POLICY }: ContextPreparationOptions) {
+  constructor({
+    compactor,
+    budget = DEFAULT_CONTEXT_BUDGET_POLICY,
+    toolResultPruning = DEFAULT_TOOL_RESULT_PRUNING_POLICY,
+  }: ContextPreparationOptions) {
+    assertToolResultPruningPolicy(toolResultPruning);
     this.compactor = compactor;
     this.budget = resolveContextBudget(budget);
+    this.toolResultPruning = toolResultPruning;
   }
 
   async prepareRequest({
@@ -44,17 +58,37 @@ export class ContextPreparation {
     signal,
     trigger,
   }: ContextPreparationRequest): Promise<ContextModelRequest> {
-    const contextTokens = estimateContextRequestTokens(modelRequest);
+    const beforeTokens = estimateContextRequestTokens(modelRequest);
+    const initial = this.pruneIfWorthwhile(modelRequest, beforeTokens);
     const changed = await this.compactor.prepare({
       conversationId,
       getAccessToken,
       triggerTokens: this.budget.compactAt,
-      contextTokens,
+      contextTokens: initial.tokens,
       ...(signal === undefined ? {} : { signal }),
       ...(trigger === undefined ? {} : { trigger }),
     });
-    const current = changed ? await rebuild() : modelRequest;
-    return trimContextRequest(current, this.budget);
+    if (!changed) return trimContextRequest(initial.request, this.budget);
+
+    const rebuilt = await rebuild();
+    const rebuiltTokens = estimateContextRequestTokens(rebuilt);
+    const final = this.pruneIfWorthwhile(rebuilt, rebuiltTokens);
+    return trimContextRequest(final.request, this.budget);
+  }
+
+  /** 只有达到清理触发点且净节省达到门槛时才替换请求；重建后重复同一判断。 */
+  private pruneIfWorthwhile(
+    request: ContextModelRequest,
+    tokens: number,
+  ): { request: ContextModelRequest; tokens: number } {
+    if (tokens < this.budget.pruneAt) return { request, tokens };
+    const result = pruneOldToolResults({
+      request,
+      targetTokens: this.budget.pruneTarget,
+      policy: this.toolResultPruning,
+    });
+    if (result.savedTokens < this.budget.minPruneSaving) return { request, tokens };
+    return { request: result.request, tokens: tokens - result.savedTokens };
   }
 }
 

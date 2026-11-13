@@ -3,6 +3,7 @@ import type { EditDiffDisplay } from "@answra/shared/schema";
 import type { JSONSchema7 } from "ai";
 import { defineTool, type ToolContext, type ToolHandlerFailure, toolId } from "../contracts";
 import { ToolExecutionError } from "../executor/result";
+import { EDIT_TOOL_NAME } from "../toolNames";
 import { buildEditDisplayDiff } from "./editDisplayDiff";
 import { replaceEditText } from "./editMatch";
 import {
@@ -83,7 +84,7 @@ const EDIT_INPUT_SCHEMA: JSONSchema7 = {
 export const editTool = defineTool<EditInput, EditOutput>({
   id: toolId("workspace.edit"),
   metadata: {
-    name: "Edit",
+    name: EDIT_TOOL_NAME,
     description: EDIT_TOOL_DESCRIPTION,
     readOnly: false,
     destructive: false,
