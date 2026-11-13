@@ -200,6 +200,71 @@ describe("TUI components", () => {
     store.dispose();
   }, 45_000);
 
+  it("keeps a manually scrolled history while a run streams", async () => {
+    const store = new TuiViewStore();
+    const wheel = createWheelSource();
+    let messages = Array.from({ length: 20 }, (_, index) => ({
+      id: `assistant-${index}`,
+      role: "assistant" as const,
+      text: `line-${index}`,
+      status: "complete" as const,
+      images: [],
+      parts: [
+        {
+          id: `part-${index}`,
+          kind: "text" as const,
+          text: `line-${index}`,
+          state: "completed" as const,
+        },
+      ],
+    }));
+    store.initialize({ conversationId: "conversation-1", eventRevision: 0, messages });
+    const instance = render(
+      <App
+        botName="coding.engineer"
+        model="test-model"
+        onCancel={vi.fn()}
+        onSubmit={vi.fn()}
+        store={store}
+        wheelSource={wheel}
+        workspaceRoot="D:\\workspace"
+      />,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    store.beginRun();
+
+    for (let index = 0; index < 20; index += 1) wheel.emit(-1);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(instance.lastFrame()).toContain("line-0");
+
+    for (let revision = 1; revision <= 3; revision += 1) {
+      const index = 20 + revision - 1;
+      messages = [
+        ...messages,
+        {
+          id: `assistant-${index}`,
+          role: "assistant",
+          text: `line-${index}`,
+          status: "complete",
+          images: [],
+          parts: [{ id: `part-${index}`, kind: "text", text: `line-${index}`, state: "completed" }],
+        },
+      ];
+      store.applySnapshot({
+        conversationId: "conversation-1",
+        eventRevision: revision,
+        messages,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    expect(instance.lastFrame()).toContain("line-0");
+    expect(instance.lastFrame()).not.toContain("line-22");
+    instance.unmount();
+    store.dispose();
+  }, 60_000);
+
   it("collapses thinking until Ctrl+O expands it", async () => {
     const store = new TuiViewStore();
     store.initialize({

@@ -39,7 +39,8 @@ CLI TUI 已经能启动并完成单轮对话，但在 VS Code 集成终端中的
   - 用 `measureElement` 对已渲染消息逐项测量高度，缓存 `messageId -> height`。
   - 未测量消息使用基于列宽和文本行数的估算高度，估算只影响滚动位置，不改变最终渲染内容。
   - 只渲染与 `[scrollTop, scrollTop + viewportHeight]` 相交的消息，附加一屏 overscan；上方未渲染内容不再进入 Yoga 布局。
-  - 跟随状态用 `following` 表示；在底部时直接派生 `scrollTop = maxScrollTop`，用户 PgUp 后退出跟随，PgDn 回到底部时恢复。
+  - 跟随状态与偏移合并为单一 `{ top, following }` state；在底部时直接派生 `scrollTop = maxScrollTop`，用户 PgUp/滚轮上移后退出跟随，回到底部时恢复。
+  - 旧实现用 `useRef` 保存 `following`，而 `scrollTop` 在底部保持 0。一次 stdin chunk 内的连续滚轮事件最终回到 0 时，React 会认为 state 未变化而跳过重绘，表现为运行中滚不动；现在 `following` 变化本身会触发提交。
   - 视口宽度或 `expandThinking` 变化时清空高度缓存并重新测量。
 - `MessageRow`、`MarkdownText`、`ToolCard` 使用 `memo`；`MarkdownText` 用 `useMemo` 缓存解析结果。
 - 保留 `Transcript` 作为非虚拟内容投影，供测试和未来小面板使用；生产 TUI 走 `VirtualTranscript`。
@@ -98,9 +99,8 @@ CLI TUI 已经能启动并完成单轮对话，但在 VS Code 集成终端中的
   - Ctrl+O 展开/收起当前思考与工具完整输出，历史思考在折叠态不重复堆叠。
   - 窄终端下状态行不换行、不挤压输入框。
 - 自动化验证：
-  - `pnpm --filter @answra/cli test`：新增输入布局、虚拟窗口、按键归属、展开语义与滚轮序列解析测试。
+  - `pnpm --filter @answra/cli test`：新增输入布局、虚拟窗口、按键归属、展开语义、滚轮序列解析与运行中滚动测试。
   - `pnpm --filter @answra/cli typecheck`。
-  - `pnpm verify`。
 - 需要的实机验证：
   - VS Code 集成终端：长会话滚动、PgUp/PgDn、滚轮、Shift+Enter、Ctrl+O、中文/emoji 输入、窗口 resize。
   - 滚轮必须实机确认；未验证前不得把本 Note 当作滚轮已验收的依据。
@@ -117,11 +117,11 @@ CLI TUI 已经能启动并完成单轮对话，但在 VS Code 集成终端中的
 
 ## 验证
 
-- 2026-11-13：`pnpm --filter @answra/cli test` 通过，15 个测试文件、77 个测试；新增覆盖：
+- 2026-11-13：`pnpm --filter @answra/cli test` 通过，15 个测试文件、78 个测试；新增覆盖：
   - `test/inputLayout.test.ts`：宽字符、emoji、换行、grapheme 移动、光标可视窗口。
   - `test/virtualLayout.test.ts`：高度估算、可视窗口、底部偏移。
   - `test/wheelInput.test.ts`：SGR/X10 滚轮解析、跨 chunk 序列、鼠标 tracking 启停。
-  - `test/tui.test.tsx`：底部跟随、PgUp 与滚轮滚动、Home/End 不抢 transcript、思考折叠与历史隐藏。
+  - `test/tui.test.tsx`：底部跟随、PgUp 与滚轮滚动、运行中连续滚轮、流式追加时保持历史位置、Home/End 不抢 transcript、思考折叠与历史隐藏。
 - 2026-11-13：`pnpm --filter @answra/cli typecheck` 通过。
 - 2026-11-13：`pnpm --filter @answra/cli build` 与 `node apps/cli/dist/main.mjs --version` 通过。
 - 2026-11-13：`pnpm lint`、`pnpm architecture:check`、`pnpm tokens:check`、`pnpm notes:check` 通过。

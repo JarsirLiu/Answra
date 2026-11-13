@@ -31,6 +31,11 @@ interface MeasuredHeights {
   readonly values: ReadonlyMap<string, number>;
 }
 
+interface ScrollState {
+  readonly top: number;
+  readonly following: boolean;
+}
+
 type VirtualItem =
   | { readonly kind: "message"; readonly id: string; readonly message: ConversationViewMessage }
   | { readonly kind: "footer"; readonly id: "__footer__"; readonly node: ReactNode };
@@ -60,8 +65,7 @@ export function VirtualTranscript({
     key: layoutKey,
     values: new Map(),
   }));
-  const [scrollTop, setScrollTop] = useState(0);
-  const following = useRef(true);
+  const [scroll, setScroll] = useState<ScrollState>({ top: 0, following: true });
   const measuredValues = measured.key === layoutKey ? measured.values : EMPTY_HEIGHTS;
 
   const items = useMemo<VirtualItem[]>(() => {
@@ -89,7 +93,7 @@ export function VirtualTranscript({
   const totalHeight = offsets[offsets.length - 1] ?? 0;
   const viewportHeight = viewport.hasMeasured ? Math.max(1, viewport.clientHeight) : 1;
   const maxOffset = maxScrollTop(totalHeight, viewportHeight);
-  const currentOffset = following.current ? maxOffset : Math.min(scrollTop, maxOffset);
+  const currentOffset = scroll.following ? maxOffset : Math.min(scroll.top, maxOffset);
   const virtualWindow = findVirtualWindow(offsets, currentOffset, viewportHeight, OVERSCAN_LINES);
 
   const handleMeasure = useCallback(
@@ -107,25 +111,34 @@ export function VirtualTranscript({
 
   useInput((_input, key) => {
     if (key.pageUp) {
-      following.current = false;
-      setScrollTop(Math.max(0, currentOffset - Math.max(1, viewportHeight - 1)));
+      setScroll((current) => {
+        const top = Math.max(0, baseOffset(current, maxOffset) - pageStep(viewportHeight));
+        if (!current.following && current.top === top) return current;
+        return { top, following: false };
+      });
       return;
     }
     if (key.pageDown) {
-      const next = Math.min(maxOffset, currentOffset + Math.max(1, viewportHeight - 1));
-      following.current = next >= maxOffset;
-      setScrollTop(next);
+      setScroll((current) => {
+        const top = Math.min(maxOffset, baseOffset(current, maxOffset) + pageStep(viewportHeight));
+        const following = top >= maxOffset;
+        if (current.following === following && current.top === top) return current;
+        return { top, following };
+      });
     }
   });
 
   useEffect(() => {
     if (wheelSource === undefined) return;
     return wheelSource.subscribe((direction) => {
-      setScrollTop((current) => {
-        const base = following.current ? maxOffset : current;
-        const next = Math.max(0, Math.min(maxOffset, base + direction * WHEEL_SCROLL_LINES));
-        following.current = next >= maxOffset;
-        return next;
+      setScroll((current) => {
+        const top = Math.max(
+          0,
+          Math.min(maxOffset, baseOffset(current, maxOffset) + direction * WHEEL_SCROLL_LINES),
+        );
+        const following = top >= maxOffset;
+        if (current.following === following && current.top === top) return current;
+        return { top, following };
       });
     });
   }, [maxOffset, wheelSource]);
@@ -209,6 +222,14 @@ function MeasuredItem({
       {children}
     </Box>
   );
+}
+
+function baseOffset(scroll: ScrollState, maxOffset: number): number {
+  return scroll.following ? maxOffset : Math.min(scroll.top, maxOffset);
+}
+
+function pageStep(viewportHeight: number): number {
+  return Math.max(1, viewportHeight - 1);
 }
 
 function lastThinkingId(messages: readonly ConversationViewMessage[]): string | undefined {
