@@ -2,6 +2,7 @@
 import { Box, Text } from "ink";
 import { memo, type ReactNode, useMemo } from "react";
 import { TUI_THEME } from "../theme";
+import { SelectableText } from "./SelectableText";
 
 type LineVariant = "text" | "heading" | "list" | "quote" | "rule";
 
@@ -28,9 +29,9 @@ export const MarkdownText = memo(function MarkdownText({
         block.kind === "code" ? (
           <CodeBlock block={block} dimColor={dimColor} key={block.id} />
         ) : (
-          <Text {...variantProps(block.variant, dimColor)} key={block.id}>
+          <SelectableText {...variantProps(block.variant, dimColor)} key={block.id}>
             {block.text.length === 0 ? " " : inline(block.text, dimColor)}
-          </Text>
+          </SelectableText>
         ),
       )}
     </Box>
@@ -47,12 +48,12 @@ function CodeBlock({
   return (
     <Box flexDirection="column" marginY={1} paddingLeft={1}>
       {block.language === undefined || block.language.length === 0 ? null : (
-        <Text dimColor>{block.language}</Text>
+        <SelectableText dimColor>{block.language}</SelectableText>
       )}
       {block.lines.map((line) => (
-        <Text color={TUI_THEME.codeBlock} dimColor={dimColor} key={line.id}>
+        <SelectableText color={TUI_THEME.codeBlock} dimColor={dimColor} key={line.id}>
           {line.text.length === 0 ? " " : line.text}
-        </Text>
+        </SelectableText>
       ))}
     </Box>
   );

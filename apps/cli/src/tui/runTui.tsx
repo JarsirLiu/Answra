@@ -3,8 +3,11 @@ import { render } from "ink";
 import type { CodingSession } from "../session/codingSession";
 import { parseTuiCommand, TUI_HELP_LINES, type TuiCommand } from "./commands";
 import { App } from "./components/App";
+import { createClipboardWriter } from "./interaction/clipboard";
+import { createPointerInput } from "./interaction/pointerInput";
+import { createSelectionActions } from "./interaction/selectionActions";
+import { TuiSelectionStore } from "./interaction/selectionStore";
 import type { TuiViewStore } from "./viewStore";
-import { createWheelInput } from "./wheelInput";
 
 export interface TuiRunOptions {
   session: CodingSession;
@@ -117,31 +120,47 @@ export async function runInkTui({
     exitTui = exit;
   };
 
-  const wheel = altScreen ? createWheelInput(process.stdin, process.stdout) : undefined;
+  const selectionStore = altScreen ? new TuiSelectionStore() : undefined;
+  const clipboard = altScreen ? createClipboardWriter(process.stdout) : undefined;
+  const selectionActions =
+    selectionStore === undefined || clipboard === undefined
+      ? undefined
+      : createSelectionActions(selectionStore, clipboard);
+  const pointer = altScreen ? createPointerInput(process.stdin, process.stdout) : undefined;
+  const unsubscribePointer = pointer?.source.subscribe((event) =>
+    selectionActions?.handlePointer(event),
+  );
+
   try {
     const instance = render(
       <App
         botName={botName}
         model={model}
         onCancel={cancel}
+        onClearSelection={selectionActions?.clear}
+        onCopySelection={selectionActions?.copy}
         onExitReady={registerExit}
+        onSelectAll={selectionActions?.selectAllAndCopy}
         onSubmit={submit}
+        pointerSource={pointer?.source}
+        selectionStore={selectionStore}
         store={store}
-        wheelSource={wheel?.source}
         workspaceRoot={workspaceRoot}
       />,
       {
-        ...(wheel === undefined ? {} : { stdin: wheel.stdin }),
+        ...(pointer === undefined ? {} : { stdin: pointer.stdin }),
         alternateScreen: altScreen,
         exitOnCtrlC: false,
         incrementalRendering: true,
         kittyKeyboard: { mode: "auto", flags: ["disambiguateEscapeCodes"] },
         maxFps: 30,
+        ...(selectionStore === undefined ? {} : { onRender: () => selectionStore.commitFrame() }),
       },
     );
     await instance.waitUntilExit();
   } finally {
-    wheel?.dispose();
+    unsubscribePointer?.();
+    pointer?.dispose();
   }
   return 0;
 }

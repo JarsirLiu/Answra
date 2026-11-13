@@ -1,7 +1,6 @@
 /** Claude 风格输入框：底部边框、宽字符光标、历史浏览、Enter 提交与多行换行。 */
 import { Box, Text, useApp, useInput, usePaste, useWindowSize } from "ink";
 import { useEffect, useRef, useState } from "react";
-import { POINTER, TUI_THEME } from "../theme";
 import {
   endOfLineOffset,
   moveCursorVertically,
@@ -9,7 +8,8 @@ import {
   previousGraphemeOffset,
   previousWordOffset,
   startOfLineOffset,
-} from "./inputLayout";
+} from "../interaction/inputLayout";
+import { POINTER, TUI_THEME } from "../theme";
 import { TextInput } from "./TextInput";
 
 const CONTROL_HINT = "Enter 发送 · Shift+Enter 或 \\ + Enter 换行 · Esc 取消 · Ctrl-C 两次退出";
@@ -26,9 +26,11 @@ interface Draft {
 export function PromptInput({
   busy,
   onSubmit,
+  selectionActive = false,
 }: {
   busy: boolean;
   onSubmit: (text: string) => void;
+  selectionActive?: boolean;
 }) {
   const { exit } = useApp();
   const { columns: windowColumns, rows } = useWindowSize();
@@ -107,6 +109,7 @@ export function PromptInput({
       return;
     }
     if (key.escape) {
+      if (selectionActive) return;
       if (!busy && draft.value.length > 0) replace("", 0);
       return;
     }

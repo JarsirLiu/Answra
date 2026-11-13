@@ -5,6 +5,7 @@ import { Box, Text } from "ink";
 import { memo, useEffect, useState } from "react";
 import { summarizeToolInput, toolLabel } from "../../presentation/toolLine";
 import { BLACK_CIRCLE, SPINNER_FRAMES, TUI_THEME } from "../theme";
+import { SelectableText } from "./SelectableText";
 
 type ToolPart = Extract<ConversationMessagePart, { kind: "tool" }>;
 
@@ -49,17 +50,21 @@ export const ToolCard = memo(function ToolCard({
             <Text color={failed ? TUI_THEME.error : TUI_THEME.text}>{BLACK_CIRCLE}</Text>
           )}
         </Box>
-        <Text bold color={failed ? TUI_THEME.error : TUI_THEME.text}>
-          {label}
-        </Text>
-        {detail === undefined ? null : <Text dimColor>({detail})</Text>}
-        {failed ? <Text color={TUI_THEME.error}> · {STATE_LABELS[part.state]}</Text> : null}
+        <SelectableText>
+          <Text bold color={failed ? TUI_THEME.error : TUI_THEME.text}>
+            {label}
+          </Text>
+          {detail === undefined ? null : <Text dimColor>({detail})</Text>}
+          {failed ? <Text color={TUI_THEME.error}> · {STATE_LABELS[part.state]}</Text> : null}
+        </SelectableText>
       </Box>
       {diff === undefined ? null : <DiffView diff={diff} expanded={expanded} />}
       {output === undefined ? null : <OutputView expanded={expanded} output={output} />}
       {part.errorText === undefined ? null : (
         <Box paddingLeft={2}>
-          <Text color={TUI_THEME.error}>{clip(part.errorText, expanded ? 4_000 : 600)}</Text>
+          <SelectableText color={TUI_THEME.error}>
+            {clip(part.errorText, expanded ? 4_000 : 600)}
+          </SelectableText>
         </Box>
       )}
     </Box>
@@ -84,11 +89,11 @@ function DiffView({ diff, expanded }: { diff: EditDiffDisplay; expanded: boolean
     <Box flexDirection="column" paddingLeft={2} marginTop={1}>
       {lines.map((line) =>
         line.kind === "hunk" ? (
-          <Text color={TUI_THEME.suggestion} key={line.id}>
+          <SelectableText color={TUI_THEME.suggestion} key={line.id}>
             {line.text}
-          </Text>
+          </SelectableText>
         ) : (
-          <Text
+          <SelectableText
             backgroundColor={
               line.kind === "added"
                 ? TUI_THEME.diffAdded
@@ -111,10 +116,10 @@ function DiffView({ diff, expanded }: { diff: EditDiffDisplay; expanded: boolean
             >
               {line.text.length === 0 ? " " : line.text}
             </Text>
-          </Text>
+          </SelectableText>
         ),
       )}
-      {diff.truncated ? <Text dimColor>… diff truncated</Text> : null}
+      {diff.truncated ? <SelectableText dimColor>… diff truncated</SelectableText> : null}
     </Box>
   );
 }
@@ -125,11 +130,13 @@ function OutputView({ output, expanded }: { output: string; expanded: boolean })
   return (
     <Box flexDirection="column" paddingLeft={2}>
       {lines.slice(0, limit).map((line) => (
-        <Text dimColor key={line.id}>
+        <SelectableText dimColor key={line.id}>
           {line.text.length === 0 ? " " : line.text}
-        </Text>
+        </SelectableText>
       ))}
-      {lines.length > limit ? <Text dimColor>… {lines.length - limit} more lines</Text> : null}
+      {lines.length > limit ? (
+        <SelectableText dimColor>… {lines.length - limit} more lines</SelectableText>
+      ) : null}
     </Box>
   );
 }

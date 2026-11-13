@@ -10,7 +10,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { WheelSource } from "../wheelInput";
+import type { PointerSource } from "../interaction/pointerInput";
 import { MessageRow } from "./MessageRow";
 import { TranscriptTail, Welcome } from "./Transcript";
 import {
@@ -47,7 +47,8 @@ export function VirtualTranscript({
   workspaceRoot,
   expandThinking,
   footer,
-  wheelSource,
+  pointerSource,
+  onScroll,
 }: {
   view: ConversationView;
   localError?: string;
@@ -55,7 +56,8 @@ export function VirtualTranscript({
   workspaceRoot: string;
   expandThinking: boolean;
   footer?: ReactNode;
-  wheelSource?: WheelSource;
+  pointerSource?: PointerSource;
+  onScroll?: () => void;
 }) {
   const viewportRef = useRef<DOMElement>(null);
   const viewport = useBoxMetrics(viewportRef);
@@ -111,6 +113,7 @@ export function VirtualTranscript({
 
   useInput((_input, key) => {
     if (key.pageUp) {
+      onScroll?.();
       setScroll((current) => {
         const top = Math.max(0, baseOffset(current, maxOffset) - pageStep(viewportHeight));
         if (!current.following && current.top === top) return current;
@@ -119,6 +122,7 @@ export function VirtualTranscript({
       return;
     }
     if (key.pageDown) {
+      onScroll?.();
       setScroll((current) => {
         const top = Math.min(maxOffset, baseOffset(current, maxOffset) + pageStep(viewportHeight));
         const following = top >= maxOffset;
@@ -129,19 +133,32 @@ export function VirtualTranscript({
   });
 
   useEffect(() => {
-    if (wheelSource === undefined) return;
-    return wheelSource.subscribe((direction) => {
+    if (pointerSource === undefined) return;
+    return pointerSource.subscribe((event) => {
+      if (event.kind !== "wheel") return;
+      onScroll?.();
       setScroll((current) => {
         const top = Math.max(
           0,
-          Math.min(maxOffset, baseOffset(current, maxOffset) + direction * WHEEL_SCROLL_LINES),
+          Math.min(
+            maxOffset,
+            baseOffset(current, maxOffset) + event.direction * WHEEL_SCROLL_LINES,
+          ),
         );
         const following = top >= maxOffset;
         if (current.following === following && current.top === top) return current;
         return { top, following };
       });
     });
-  }, [maxOffset, wheelSource]);
+  }, [maxOffset, onScroll, pointerSource]);
+
+  const previousMessages = useRef(view.messages);
+  useEffect(() => {
+    if (previousMessages.current === view.messages) return;
+    previousMessages.current = view.messages;
+    // 内容变化会移动已登记行的屏幕坐标，旧选区必须失效。
+    onScroll?.();
+  }, [view.messages, onScroll]);
 
   if (view.messages.length === 0) {
     return (

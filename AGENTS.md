@@ -73,6 +73,7 @@
 | `src/adapters` | `@answra/agent/composition` 的 `CodingHost` 到 CLI 端口映射 | 不复制 Agent 运行时语义 |
 | `src/presentation` | Agent 事件到非 TTY 文本、工具行格式化 | 纯投影，不读写会话或进程 |
 | `src/tui` | Ink 8 TUI 组件、view store、本地 slash 命令与虚拟 transcript/宽字符输入原语；备用屏幕用 Ink 原生 `alternateScreen` | 不 import Electron/desktop；不承载 Agent 命令分派或 runtime；运行中提交的 prompt 只在 TUI 队列内排队 |
+| `src/tui/interaction` | 终端交互原语：输入布局、指针解析、选区 store/action 与剪贴板输出 | 不 import `components`/`runTui`；不解析 Ink 组件；指针/选区状态只由 store 写 |
 | `src/transport` | stdin/stdout/stderr 适配 | 不定义业务行为 |
 
 - CLI 只从 `@answra/agent/composition` 组装 coding host，不使用 worker 线协议、不启动 VAD/ASR、不 import `conversation`/`interview` 领域。

@@ -20,10 +20,15 @@ vi.mock("ink", () => ({
 interface AppProps {
   onSubmit: (text: string) => void;
   onCancel: () => void;
+  selectionStore?: unknown;
+  onCopySelection?: () => void;
+  onSelectAll?: () => void;
+  onClearSelection?: () => void;
 }
 
 interface RenderResult {
   props: AppProps;
+  options: Record<string, unknown>;
   finish: () => void;
 }
 
@@ -59,29 +64,37 @@ function createSession() {
   return { session, sent, waits };
 }
 
-async function start(session: CodingSession, store: TuiViewStore): Promise<RenderResult> {
+async function start(
+  session: CodingSession,
+  store: TuiViewStore,
+  altScreen = false,
+): Promise<RenderResult> {
   let props: AppProps | undefined;
+  let options: Record<string, unknown> | undefined;
   let finish: (() => void) | undefined;
-  renderMock.mockImplementation((element: ReactElement<AppProps>) => {
-    props = element.props;
-    return {
-      waitUntilExit: () =>
-        new Promise<void>((resolve) => {
-          finish = resolve;
-        }),
-    };
-  });
+  renderMock.mockImplementation(
+    (element: ReactElement<AppProps>, renderOptions: Record<string, unknown>) => {
+      props = element.props;
+      options = renderOptions;
+      return {
+        waitUntilExit: () =>
+          new Promise<void>((resolve) => {
+            finish = resolve;
+          }),
+      };
+    },
+  );
   void runInkTui({
     session,
     store,
     botName: "coding.engineer",
     model: "test-model",
     workspaceRoot: "D:\\workspace",
-    altScreen: false,
+    altScreen,
   });
   await tick();
-  if (!props || !finish) throw new Error("TUI did not render");
-  return { props, finish };
+  if (!props || !options || !finish) throw new Error("TUI did not render");
+  return { props, options, finish };
 }
 
 describe("runInkTui", () => {
@@ -134,6 +147,40 @@ describe("runInkTui", () => {
       notice: ["会话已清除。"],
       view: { eventRevision: 0, messages: [] },
     });
+
+    finish();
+    store.dispose();
+  });
+
+  it("wires selection frame commits when the alternate screen is enabled", async () => {
+    const { session } = createSession();
+    const store = new TuiViewStore();
+    const { props, options, finish } = await start(session, store, true);
+
+    expect(options.alternateScreen).toBe(true);
+    expect(typeof options.onRender).toBe("function");
+    expect(props.selectionStore).toBeDefined();
+    expect(props.onCopySelection).toBeTypeOf("function");
+    expect(props.onSelectAll).toBeTypeOf("function");
+    expect(props.onClearSelection).toBeTypeOf("function");
+    const onRender = options.onRender as (metrics: { renderTime: number }) => void;
+    expect(() => onRender({ renderTime: 1 })).not.toThrow();
+
+    finish();
+    store.dispose();
+  });
+
+  it("keeps terminal-native selection and copy outside the alternate screen", async () => {
+    const { session } = createSession();
+    const store = new TuiViewStore();
+    const { props, options, finish } = await start(session, store);
+
+    expect(options.alternateScreen).toBe(false);
+    expect(options.onRender).toBeUndefined();
+    expect(props.selectionStore).toBeUndefined();
+    expect(props.onCopySelection).toBeUndefined();
+    expect(props.onSelectAll).toBeUndefined();
+    expect(props.onClearSelection).toBeUndefined();
 
     finish();
     store.dispose();

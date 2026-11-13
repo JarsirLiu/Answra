@@ -28,7 +28,7 @@ CLI TUI 已经能启动并完成单轮对话，但在 VS Code 集成终端中的
   - 不新增持久化、协议或 Agent 语义。
 - 相关 Note：
   - [CLI Coding 模式与终端 UI 移植](../../proposed/architecture/2026-11-12-cli-coding-mode-and-tui-port.md)
-  - [CLI 输入光标导航与对话鼠标选区（提案）](../../proposed/feature/2026-11-13-cli-input-navigation-and-transcript-selection.md)
+  - [CLI 输入光标导航与对话鼠标选区](../feature/2026-11-13-cli-input-navigation-and-transcript-selection.md)
   - [CLI dev 脚本](../process/2026-11-13-cli-dev-script.md)
 
 ## 决定

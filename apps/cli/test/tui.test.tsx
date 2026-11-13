@@ -3,23 +3,29 @@ import { describe, expect, it, vi } from "vitest";
 import { App } from "../src/tui/components/App";
 import { PromptInput } from "../src/tui/components/PromptInput";
 import { Transcript } from "../src/tui/components/Transcript";
+import type { PointerEvent } from "../src/tui/interaction/pointerInput";
+import { TuiSelectionStore } from "../src/tui/interaction/selectionStore";
 import { TuiViewStore } from "../src/tui/viewStore";
 
 function nextFrame(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-function createWheelSource() {
-  const listeners = new Set<(direction: -1 | 1) => void>();
+function createPointerSource() {
+  const listeners = new Set<(event: PointerEvent) => void>();
   return {
-    subscribe(listener: (direction: -1 | 1) => void) {
+    subscribe(listener: (event: PointerEvent) => void) {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    emit(direction: -1 | 1) {
-      for (const listener of listeners) listener(direction);
+    emit(event: PointerEvent) {
+      for (const listener of listeners) listener(event);
     },
   };
+}
+
+function wheelEvent(direction: -1 | 1): PointerEvent {
+  return { kind: "wheel", direction, point: { row: 0, col: 0 } };
 }
 
 describe("TUI components", () => {
@@ -145,7 +151,7 @@ describe("TUI components", () => {
 
   it("scrolls the transcript with PgUp and the mouse wheel while Home/End stay with the input", async () => {
     const store = new TuiViewStore();
-    const wheel = createWheelSource();
+    const pointer = createPointerSource();
     store.initialize({
       conversationId: "conversation-1",
       eventRevision: 0,
@@ -172,7 +178,7 @@ describe("TUI components", () => {
         onCancel={vi.fn()}
         onSubmit={vi.fn()}
         store={store}
-        wheelSource={wheel}
+        pointerSource={pointer}
         workspaceRoot="D:\\workspace"
       />,
     );
@@ -188,11 +194,11 @@ describe("TUI components", () => {
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(instance.lastFrame()).not.toContain("line-19");
 
-    for (let index = 0; index < 20; index += 1) wheel.emit(1);
+    for (let index = 0; index < 20; index += 1) pointer.emit(wheelEvent(1));
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(instance.lastFrame()).toContain("line-19");
 
-    for (let index = 0; index < 20; index += 1) wheel.emit(-1);
+    for (let index = 0; index < 20; index += 1) pointer.emit(wheelEvent(-1));
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(instance.lastFrame()).toContain("line-0");
 
@@ -202,7 +208,7 @@ describe("TUI components", () => {
 
   it("keeps a manually scrolled history while a run streams", async () => {
     const store = new TuiViewStore();
-    const wheel = createWheelSource();
+    const pointer = createPointerSource();
     let messages = Array.from({ length: 20 }, (_, index) => ({
       id: `assistant-${index}`,
       role: "assistant" as const,
@@ -226,14 +232,14 @@ describe("TUI components", () => {
         onCancel={vi.fn()}
         onSubmit={vi.fn()}
         store={store}
-        wheelSource={wheel}
+        pointerSource={pointer}
         workspaceRoot="D:\\workspace"
       />,
     );
     await new Promise((resolve) => setTimeout(resolve, 200));
     store.beginRun();
 
-    for (let index = 0; index < 20; index += 1) wheel.emit(-1);
+    for (let index = 0; index < 20; index += 1) pointer.emit(wheelEvent(-1));
     await new Promise((resolve) => setTimeout(resolve, 300));
     expect(instance.lastFrame()).toContain("line-0");
 
@@ -377,6 +383,101 @@ describe("TUI components", () => {
 
     expect(instance.lastFrame()).toContain("old thought");
     expect(instance.lastFrame()).toContain("new thought");
+    instance.unmount();
+    store.dispose();
+  });
+
+  it("copies the active selection with Ctrl+Shift+C and clears it with Escape", async () => {
+    const store = new TuiViewStore();
+    store.initialize({ conversationId: "conversation-1", eventRevision: 0, messages: [] });
+    const selectionStore = new TuiSelectionStore();
+    selectionStore.registerLine({ row: 0, left: 0, text: "hello" });
+    selectionStore.commitFrame();
+    selectionStore.begin({ row: 0, col: 0 });
+    selectionStore.extend({ row: 0, col: 4 });
+    const onCopy = vi.fn();
+    const onClear = vi.fn();
+    const instance = render(
+      <App
+        botName="coding.engineer"
+        model="test-model"
+        onCancel={vi.fn()}
+        onClearSelection={onClear}
+        onCopySelection={onCopy}
+        onSubmit={vi.fn()}
+        selectionStore={selectionStore}
+        store={store}
+        workspaceRoot="D:\\workspace"
+      />,
+    );
+    await nextFrame();
+    onClear.mockClear();
+
+    instance.stdin.write("\x1b[99;6u");
+    await nextFrame();
+    expect(onCopy).toHaveBeenCalledTimes(1);
+
+    instance.stdin.write("\x1b[67;6u");
+    await nextFrame();
+    expect(onCopy).toHaveBeenCalledTimes(2);
+
+    instance.stdin.write("\x1b[27u");
+    await nextFrame();
+    expect(onClear).toHaveBeenCalledTimes(1);
+
+    instance.unmount();
+    store.dispose();
+  });
+
+  it("selects all visible transcript lines with Ctrl+Shift+A", async () => {
+    const store = new TuiViewStore();
+    store.initialize({ conversationId: "conversation-1", eventRevision: 0, messages: [] });
+    const onSelectAll = vi.fn();
+    const instance = render(
+      <App
+        botName="coding.engineer"
+        model="test-model"
+        onCancel={vi.fn()}
+        onSelectAll={onSelectAll}
+        onSubmit={vi.fn()}
+        store={store}
+        workspaceRoot="D:\\workspace"
+      />,
+    );
+    await nextFrame();
+
+    instance.stdin.write("\x1b[97;6u");
+    await nextFrame();
+    expect(onSelectAll).toHaveBeenCalledTimes(1);
+
+    instance.unmount();
+    store.dispose();
+  });
+
+  it("clears the selection when the transcript scrolls", async () => {
+    const store = new TuiViewStore();
+    store.initialize({ conversationId: "conversation-1", eventRevision: 0, messages: [] });
+    const pointer = createPointerSource();
+    const onClear = vi.fn();
+    const instance = render(
+      <App
+        botName="coding.engineer"
+        model="test-model"
+        onCancel={vi.fn()}
+        onClearSelection={onClear}
+        onSubmit={vi.fn()}
+        pointerSource={pointer}
+        store={store}
+        workspaceRoot="D:\\workspace"
+      />,
+    );
+    await nextFrame();
+    onClear.mockClear();
+
+    pointer.emit(wheelEvent(1));
+    await nextFrame();
+    expect(onClear).toHaveBeenCalledTimes(1);
+
     instance.unmount();
     store.dispose();
   });

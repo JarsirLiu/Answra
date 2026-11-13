@@ -33,3 +33,6 @@ apps/desktop/native/rime-data/rime-deps.7z
 apps/agent/examples/vad-asr-eval/models/
 apps/agent/examples/vad-asr-eval/data/
 apps/agent/examples/vad-asr-eval/out/
+
+# Local read-only Claude Code reference tree used for behavior porting; not source, not committed.
+Claude-Code/

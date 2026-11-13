@@ -1,7 +1,7 @@
 /** 终端输入投影：按显示宽度换行，保持宽字符/emoji 光标对齐，并限制可视行数。 */
 import { Box, Text } from "ink";
 import type { ReactNode } from "react";
-import { layoutInput } from "./inputLayout";
+import { layoutInput } from "../interaction/inputLayout";
 
 export function TextInput({
   value,
