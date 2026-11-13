@@ -2,7 +2,7 @@
   "name": "@answra/remote",
   "version": "0.1.0",
   "private": true,
-  "description": "平台无关的远程连接与会话契约：协议、host/controller 端口、配对与传输适配边界。",
+  "description": "平台无关的远程连接与会话契约：协议、host/controller 会话、访问密钥与传输适配边界。",
   "type": "module",
   "sideEffects": false,
   "exports": {

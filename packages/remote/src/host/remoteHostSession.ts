@@ -1,0 +1,211 @@
+import {
+  REMOTE_PROTOCOL_VERSION,
+  type RemoteCommand,
+  type RemoteFrame,
+  type RemoteHello,
+  type RemoteModelSettingsView,
+} from "@answra/shared/schema";
+import type { RemoteLink } from "../ports/remoteLink";
+import type { Unsubscribe } from "../ports/subscription";
+import { RemoteOperationError, remoteError, toRemoteError } from "../protocol/errors";
+import type { HostCommandPort } from "./hostPort";
+
+export interface RemoteHostSessionOptions {
+  host: HostCommandPort;
+  link: RemoteLink;
+  hostId: string;
+  workspaceRoot: string;
+  leaseId?: string;
+}
+
+let leaseSequence = 0;
+
+/** host 侧远程会话：校验握手、路由命令并把 host 事实流推给 controller。 */
+export class RemoteHostSession {
+  private readonly host: HostCommandPort;
+  private readonly link: RemoteLink;
+  private readonly hostId: string;
+  private readonly workspaceRoot: string;
+  private readonly leaseId: string;
+  private readonly unsubscribers: Unsubscribe[] = [];
+  private activeSessionId?: string;
+  private welcomed = false;
+  private closed = false;
+
+  constructor({ host, link, hostId, workspaceRoot, leaseId }: RemoteHostSessionOptions) {
+    this.host = host;
+    this.link = link;
+    this.hostId = hostId;
+    this.workspaceRoot = workspaceRoot;
+    leaseSequence += 1;
+    this.leaseId = leaseId ?? `lease-${leaseSequence}`;
+
+    this.unsubscribers.push(
+      this.link.onFrame((frame) => {
+        this.handleFrame(frame);
+      }),
+    );
+    this.unsubscribers.push(
+      this.link.onState((state) => {
+        if (state === "closed") this.cleanup();
+      }),
+    );
+    this.unsubscribers.push(
+      this.host.onSnapshot((snapshot) => {
+        if (this.welcomed) this.send({ type: "snapshot", snapshot });
+      }),
+    );
+    this.unsubscribers.push(
+      this.host.onEvent((event) => {
+        if (this.welcomed) this.send({ type: "event", event });
+      }),
+    );
+  }
+
+  close(): void {
+    if (this.closed) return;
+    this.closed = true;
+    this.cleanup();
+    this.link.close();
+  }
+
+  private handleFrame(frame: RemoteFrame): void {
+    if (this.closed) return;
+    switch (frame.type) {
+      case "hello":
+        void this.acceptHello(frame);
+        return;
+      case "command":
+        void this.handleCommand(frame.requestId, frame.command);
+        return;
+      case "close":
+        this.close();
+        return;
+      default:
+        return;
+    }
+  }
+
+  private async acceptHello(hello: RemoteHello): Promise<void> {
+    if (hello.role !== "controller") {
+      this.link.close("invalid-handshake");
+      return;
+    }
+    if (this.activeSessionId !== undefined && this.activeSessionId !== hello.sessionId) {
+      this.send({ type: "close", reason: "controller-busy" });
+      return;
+    }
+
+    this.activeSessionId = hello.sessionId;
+    const modelSettings = await this.readModelSettings();
+    if (this.closed) return;
+
+    this.welcomed = true;
+    this.send({
+      type: "welcome",
+      protocolVersion: REMOTE_PROTOCOL_VERSION,
+      sessionId: hello.sessionId,
+      hostId: this.hostId,
+      leaseId: this.leaseId,
+      capabilities: [...this.host.capabilities()],
+      workspaceRoot: this.workspaceRoot,
+      ...(modelSettings === undefined ? {} : { modelSettings }),
+    });
+  }
+
+  private async handleCommand(requestId: string, command: RemoteCommand): Promise<void> {
+    if (!this.welcomed) {
+      this.send({
+        type: "command-error",
+        requestId,
+        error: remoteError("session-mismatch", "remote session is not ready"),
+      });
+      return;
+    }
+
+    try {
+      const value = await this.execute(command);
+      if (this.closed) return;
+      this.send(
+        value === undefined
+          ? { type: "command-ok", requestId }
+          : { type: "command-ok", requestId, value },
+      );
+    } catch (error) {
+      if (this.closed) return;
+      this.send({ type: "command-error", requestId, error: toRemoteError(error) });
+    }
+  }
+
+  private async execute(command: RemoteCommand): Promise<unknown> {
+    switch (command.type) {
+      case "create-conversation":
+        return this.host.createConversation(command.conversationId, command.selection);
+      case "clear-conversation":
+        return this.host.clearConversation(command.conversationId);
+      case "send":
+        return this.host.send(command.command);
+      case "cancel":
+        this.host.cancel(command.runId);
+        return undefined;
+      case "snapshot":
+        return this.host.snapshot(command.conversationId);
+      case "read-events":
+        return this.host.readEvents(command.conversationId, command.afterRevision);
+      case "list-bots":
+        return this.requireListBots()();
+      case "select-bot":
+        return this.requireSelectBot()(command.conversationId, command.botId);
+      case "apply-model":
+        this.host.applyModel(command.config);
+        return undefined;
+      case "settings-snapshot":
+        return this.host.settings().snapshot();
+      case "settings-add-local":
+        return this.host.settings().addLocal(command.input);
+      case "settings-switch-chat-model":
+        return this.host.settings().switchChatModel(command.chatModel);
+      case "settings-clear-local":
+        return this.host.settings().clearLocal();
+    }
+  }
+
+  private requireListBots(): NonNullable<HostCommandPort["listBots"]> {
+    if (this.host.listBots === undefined) {
+      throw new RemoteOperationError(remoteError("invalid-command", "list-bots is unsupported"));
+    }
+    return this.host.listBots.bind(this.host);
+  }
+
+  private requireSelectBot(): NonNullable<HostCommandPort["selectBot"]> {
+    if (this.host.selectBot === undefined) {
+      throw new RemoteOperationError(remoteError("invalid-command", "select-bot is unsupported"));
+    }
+    return this.host.selectBot.bind(this.host);
+  }
+
+  private async readModelSettings(): Promise<RemoteModelSettingsView | undefined> {
+    try {
+      return await this.host.settings().snapshot();
+    } catch {
+      return undefined;
+    }
+  }
+
+  private send(frame: RemoteFrame): void {
+    if (this.closed) return;
+    try {
+      this.link.send(frame);
+    } catch {
+      this.cleanup();
+    }
+  }
+
+  private cleanup(): void {
+    this.closed = true;
+    this.welcomed = false;
+    this.activeSessionId = undefined;
+    for (const unsubscribe of this.unsubscribers) unsubscribe();
+    this.unsubscribers.length = 0;
+  }
+}

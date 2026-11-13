@@ -340,12 +340,13 @@ interface HostModelSettingsPort {
 
 分阶段落地：
 
-1. **阶段 0：契约与骨架。** 已落地：`packages/shared/src/schema/remote/`、`packages/remote/src/{host,ports,protocol,testing}/`，覆盖帧/命令/模型设置/信令 schema、`HostCommandPort`、传输与凭据端口、fake link/signaling/host port；不建 WebRTC、不接网络。
-2. **阶段 1：内存两端。** R3 + R4 用 fake link 跑通“host 收到命令 → Agent 执行 → controller 更新 TUI”，并覆盖 `/model` snapshot/add/switch/clear、send/cancel/clear 与命令归属；不做真实公网。
-3. **阶段 2：信令与访问密钥。** R5 接 AnswraSite（可用本地 fake signaling 先测），落地 key-only attach、7 天有效期、轮换与撤销；不设配对码。
-4. **阶段 3：P2P 直连。** R6 接真实 WebRTC DataChannel，做 loopback 与家庭 NAT/IPv6 实机；不配置 TURN，记录 UDP 被封/对称 NAT 的失败矩阵。
-5. **阶段 4：健壮性。** 重连、背压、慢 consumer、lease、密钥过期、host 退出；补架构守护和 `remote-unreachable`/`key-expired` 稳定错误码。
-6. **阶段 5：桌面与多 Bot。** 复用 host/controller 契约；桌面 IPC/UI 与 CLI 多 Bot capability 分别落地，不复制远程状态机。
+1. **阶段 0：契约与骨架。** 已落地：`packages/shared/src/schema/remote/`、`packages/remote/src/{host,ports,protocol,testing}/`，覆盖帧/命令/模型设置/信令 schema、`HostCommandPort`、传输与凭据端口、fake link/signaling/host port、稳定错误码；不建 WebRTC、不接网络。
+2. **阶段 1：远程会话核心。** 已落地：`RemoteHostSession` 与 `RemoteControllerSession` 通过 fake link 完成握手、命令 requestId 关联、host snapshot/event 推送、`/model` snapshot/add/switch/clear、send/cancel/clear 与 list/select bot；不接 CLI、TUI 或真实网络。
+3. **阶段 2：CLI 两端适配。** R3 + R4 把 `CodingApplication` 映射成 `HostCommandPort`，把 `RemoteControllerSession` 映射成 `CodingSessionHost` 驱动现有 TUI；仍用 fake link，覆盖 `/model` 和命令归属，不改 TUI 语义。
+4. **阶段 3：信令与访问密钥。** R5 接 AnswraSite（可用本地 fake signaling 先测），落地 key-only attach、7 天有效期、轮换与撤销；不设配对码。
+5. **阶段 4：P2P 直连。** R6 接真实 WebRTC DataChannel，做 loopback 与家庭 NAT/IPv6 实机；不配置 TURN，记录 UDP 被封/对称 NAT 的失败矩阵。
+6. **阶段 5：健壮性。** 重连、背压、慢 consumer、lease、密钥过期、host 退出；补架构守护和 TUI 端集成测试。
+7. **阶段 6：桌面与多 Bot。** 复用 host/controller 契约；桌面 IPC/UI 与 CLI 多 Bot capability 分别落地，不复制远程状态机。
 
 ## 曾考虑的替代方案
 
@@ -381,7 +382,7 @@ interface HostModelSettingsPort {
 - 自动化验证：
   - `packages/shared`：`RemoteFrame`/`SignalingFrame` 版本化、命令/事件/错误 schema 往返与拒绝未知版本；`remote-unreachable`、`key-expired` 等稳定错误码可序列化。
   - `packages/remote`：fake link + `HostCommandPort` 的 send/cancel/snapshot/readEvents、乱序 revision、重复 requestId、controller lease、重连与背压；密钥过期/撤销与 key-only 授权；不得出现平台依赖。
-  - `packages/remote/test`：host 与 controller 通过 fake link 互连，证明同一 `RemoteFrame` 契约可独立演进。
+  - `packages/remote/test/session.test.ts`：host/controller 通过 fake link 完成握手、命令关联、`/model`、snapshot/event 推送与关闭语义；证明同一 `RemoteFrame` 契约可独立演进。
   - `apps/cli`：远程 `CodingSessionHost` 驱动现有 TUI 的测试，证明 TUI 未因远程分叉；密钥轮换/撤销、host 状态展示；host 适配只映射 `CodingApplication`。
   - `apps/cli`：`RemoteModelSettings` 的 snapshot/add/switch/clear 全部落到 host fake；断言公司本地 `ModelSettingsStore` 未被写；断言 API key 不出现在任何 frame。
   - `apps/cli`：命令归属表逐项测试：host 命令走远程，controller-local 命令不发送，`answra config` 不隐式改 host，`answra remote config` 才改 host。

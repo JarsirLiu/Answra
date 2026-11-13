@@ -1,7 +1,16 @@
+export {
+  RemoteControllerSession,
+  type RemoteControllerSessionOptions,
+  type RemoteControllerState,
+} from "./controller/remoteControllerSession";
 export type {
   HostCommandPort,
   HostModelSettingsPort,
 } from "./host/hostPort";
+export {
+  RemoteHostSession,
+  type RemoteHostSessionOptions,
+} from "./host/remoteHostSession";
 export type { RemoteCredentialStore } from "./ports/credentialStore";
 export type {
   RemoteLink,
@@ -18,3 +27,4 @@ export {
   encodeRemoteFrame,
   encodeSignalingFrame,
 } from "./protocol/codec";
+export { RemoteOperationError, remoteError, toRemoteError } from "./protocol/errors";
