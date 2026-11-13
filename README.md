@@ -86,10 +86,11 @@ apps/desktop           Electron 桌面壳
   src/renderer         薄渲染层：仅挂载 <FloatingBarApp/>
 apps/cli              独立终端宿主：coding Bot 的 CLI 入口、模型配置、TUI 与非 TTY 流式输出
   src/cli              命令分派、code 用例、依赖端口与 help/error
-  src/config           argv、环境变量、共享模型配置与工作区校验
+  src/config           argv 语法与工作区校验；不读写配置
+  src/model            CLI 模型设置域：选择、优先级与应用服务端口
   src/session          单活动 run 的 CodingSession 用例
-  src/adapters         @answra/agent/composition 到 CLI 端口的映射
-  src/presentation     Agent 事件到文本/工具行的纯投影
+  src/adapters         @answra/config 共享文件实现与 @answra/agent/composition 端口映射
+  src/presentation     Agent 事件与模型摘要到文本/工具行的纯投影
   src/tui              Ink 8 TUI 组件、view store 与虚拟 transcript；interaction/ 放输入布局/指针/选区/剪贴板原语
   src/transport        stdin/stdout/stderr 适配
 apps/agent             平台无关的 Agent 运行时（不依赖 Electron/React），由 desktop 的 utility process 拉起

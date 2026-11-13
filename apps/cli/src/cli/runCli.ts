@@ -2,6 +2,7 @@
 import { parseCliOptions } from "../config/cliOptions";
 import { CLI_VERSION } from "../version";
 import { runCodeCommand } from "./codeCommand";
+import { runConfigCommand } from "./configCommand";
 import type { CliDependencies } from "./dependencies";
 import { CliUsageError } from "./errors";
 import { CLI_HELP } from "./help";
@@ -24,6 +25,7 @@ export async function runCli(argv: readonly string[], deps: CliDependencies): Pr
   }
 
   try {
+    if (options.kind === "config") return await runConfigCommand(options, deps);
     return await runCodeCommand(options, deps);
   } catch (error) {
     return reportError(deps, error);

@@ -5,6 +5,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { CliDependencies } from "../src/cli/dependencies";
 import { CLI_HELP } from "../src/cli/help";
 import { runCli } from "../src/cli/runCli";
+import type { ModelSettingsStore } from "../src/model/ports";
+import { ModelSettingsService } from "../src/model/settingsService";
 import type { CodingSessionHost } from "../src/session/codingSession";
 import type { InputPort } from "../src/transport/input";
 import type { OutputPort } from "../src/transport/output";
@@ -29,6 +31,17 @@ function createInput(value: string, isTTY = false): InputPort {
     isTTY,
     readAll: vi.fn(async () => value),
   };
+}
+
+function createModelSettings(initial: ClientConfig | null = null): ModelSettingsService {
+  let config = initial;
+  const store: ModelSettingsStore = {
+    read: vi.fn(async () => config),
+    write: vi.fn(async (next) => {
+      config = next;
+    }),
+  };
+  return new ModelSettingsService(store);
 }
 
 const snapshot: ConversationSnapshot = {
@@ -83,7 +96,7 @@ function createDependencies(
     input: createInput(""),
     output: createOutput(),
     cwd: process.cwd(),
-    loadSharedClientConfig: vi.fn(async () => null),
+    modelSettings: createModelSettings(),
     createSessionHost: vi.fn(({ emitEvent }) => {
       const send = host.send;
       host.send = vi.fn(async (conversationId, request, token) => {
@@ -160,7 +173,7 @@ describe("runCli", () => {
     };
     const deps = createDependencies({
       env: {},
-      loadSharedClientConfig: vi.fn(async () => shared),
+      modelSettings: createModelSettings(shared),
     });
 
     await expect(runCli(["code", "hello"], deps)).resolves.toBe(0);
@@ -205,5 +218,59 @@ describe("runCli", () => {
 
     await expect(runCli(["code", "--no-alt-screen"], deps)).resolves.toBe(0);
     expect(deps.runTui).toHaveBeenCalledWith(expect.objectContaining({ altScreen: false }));
+  });
+
+  it("saves and shows the shared local model without secrets", async () => {
+    const modelSettings = createModelSettings();
+    const setDeps = createDependencies({ env: {}, modelSettings });
+
+    await expect(
+      runCli(
+        [
+          "config",
+          "set",
+          "--base-url",
+          "http://127.0.0.1:1234/v1/",
+          "--model",
+          " qwen ",
+          "--answer-model",
+          "qwen-vl",
+        ],
+        setDeps,
+      ),
+    ).resolves.toBe(0);
+    expect(setDeps.output).toMatchObject({ stdout: "已保存本地模型：qwen\n", stderr: "" });
+
+    const showDeps = createDependencies({
+      env: {},
+      modelSettings,
+      output: createOutput(),
+    });
+    await expect(runCli(["config", "show"], showDeps)).resolves.toBe(0);
+    expect(showDeps.output).toMatchObject({
+      stdout:
+        "source: local\nbaseUrl: http://127.0.0.1:1234/v1\nchatModel: qwen\nanswerModel: qwen-vl\nconfigured: true\n",
+      stderr: "",
+    });
+  });
+
+  it("clears the shared local model on config unset", async () => {
+    const modelSettings = createModelSettings({
+      version: 1,
+      model: {
+        source: "local",
+        local: { baseUrl: "http://127.0.0.1:1234/v1", chatModel: "qwen" },
+      },
+    });
+    const deps = createDependencies({ env: {}, modelSettings });
+
+    await expect(runCli(["config", "unset"], deps)).resolves.toBe(0);
+    expect(deps.output).toMatchObject({ stdout: "已清除共享本地模型配置。\n" });
+
+    const showDeps = createDependencies({ env: {}, modelSettings, output: createOutput() });
+    await expect(runCli(["config", "show"], showDeps)).resolves.toBe(0);
+    expect(showDeps.output).toMatchObject({
+      stdout: "source: cloud\nbaseUrl: \nchatModel: \nanswerModel: \nconfigured: false\n",
+    });
   });
 });

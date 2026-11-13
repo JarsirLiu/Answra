@@ -18,10 +18,10 @@
 - `apps/desktop/src/main/conversation/modelSettings.ts`：改为共享配置 + 桌面密钥存储 + 旧文件迁移。
 - `apps/desktop/src/main/conversation/modelSecret.ts`：`safeStorage` 密文密钥存储。
 - `apps/desktop/src/main/index.ts`：组合根注入共享配置路径与旧路径。
-- `apps/cli/src/config/modelConfig.ts`、`sharedConfig.ts`、`cli/codeCommand.ts`、`cli/dependencies.ts`、`main.ts`：参数/环境变量优先，其次共享本地模型。
+- `apps/cli/src/model/`、`adapters/sharedModelStore.ts`、`cli/configCommand.ts`、`cli/codeCommand.ts`、`cli/dependencies.ts`、`main.ts`：参数/环境变量优先，其次共享本地模型；CLI 通过同一共享文件写入本地模型。
 - `apps/cli/src/cli/help.ts`：说明共享配置与密钥边界。
 - `AGENTS.md`、`scripts/architecture/architecture-check.mjs`：登记新包与 Node-only 边界。
-- 测试：`packages/config/test/config.test.ts`、`apps/desktop/test/modelSettings.test.ts`、`apps/cli/test/modelConfig.test.ts`、`apps/cli/test/runCli.test.ts`。
+- 测试：`packages/config/test/config.test.ts`、`localModel.test.ts`、`apps/desktop/test/modelSettings.test.ts`、`apps/cli/test/modelSettings.test.ts`、`apps/cli/test/runCli.test.ts`。
 
 ## 决定
 
@@ -50,7 +50,7 @@
 ```
 
 - `source` 是桌面端当前来源，保留给未来 CLI 云端登录使用。
-- `local` 始终保留用户配置的本地端点；桌面端切到云端不会清掉它，CLI 目前只消费这一块。
+- `local` 始终保留用户配置的本地端点；桌面端切到云端不会清掉它。CLI 读取这一块，并可通过 `answra config set/unset` 或 TUI `/model` 写入同一字段。
 - 文件不包含 API Key、登录令牌或任何可解密 secret。写入使用临时文件 + rename，权限 0600。
 
 ### 密钥仍按客户端保存
@@ -68,7 +68,7 @@
   > 报错
 ```
 
-- CLI 本次只把共享配置解析为 `auth: "local"`；`source: "cloud"` 不触发云端调用，也不会被误当成可用本地端点。
+- CLI 本次只把共享配置解析为 `auth: "local"`；`source: "cloud"` 不触发云端调用，也不会被误当成可用本地端点。CLI 写入时把 `source` 置为 `local`，`config unset` 置回 `cloud`。
 - 未来 CLI 云端登录实现后，再读取 `source` 与账号 token；本次不预埋 token 或云端分支。
 - CLI 的 `answer` 路由在共享配置下使用 `answerModel`，命令行覆盖模型时两路都用覆盖值，避免 chat/answer 不一致。
 
@@ -107,9 +107,9 @@
 
 ## 验证
 
-- 2026-11-13：`pnpm --filter @answra/config test` 通过，5 个测试覆盖路径解析、原子读写、缺失文件、版本/端点校验。
+- 2026-11-13：`pnpm --filter @answra/config test` 通过，9 个测试覆盖路径解析、原子读写、缺失文件、版本/端点校验与共享 local 字段合并。
 - 2026-11-13：`pnpm --filter @answra/desktop test` 通过，52 个测试文件、325 个测试；其中 4 个 `ModelSettingsStore` 测试覆盖共享写入、密钥密文、云端切换保留本地端点、旧文件迁移与清理，`modelRouter` 15 个测试保持通过。
-- 2026-11-13：`pnpm --filter @answra/cli test` 通过，15 个测试文件、88 个测试；8 个模型配置测试覆盖共享回退、逐字段覆盖与空环境变量占位回退，9 个 `runCli` 测试覆盖共享配置实际进入会话配置。
+- 2026-11-13：`pnpm --filter @answra/cli test` 通过，20 个测试文件、136 个测试；模型优先级、`config show/set/unset`、TUI `/model` 与 `CodingSession.setModel` 均有覆盖。CLI 写入共享文件的边界见 [CLI 本地模型设置域与目录边界](2026-11-13-cli-model-settings-domain.md)。
 - 2026-11-13：`@answra/config`、`@answra/desktop`、`@answra/cli` typecheck 通过；`pnpm architecture:check` 通过（6 个 workspace 包）。
 - 2026-11-13：`pnpm lint` 通过（632 files）、`pnpm notes:check` 通过、`pnpm tokens:check` 通过；`pnpm --filter @answra/cli build` 通过。
 - 2026-11-13：`pnpm --filter @answra/ui test` 单独执行通过（43 个文件、300 个测试）。全仓并行 `pnpm verify` 仍在既有 `@answra/ui` 用例上出现 4 个 5s 超时；失败文件单独重跑 13/13 通过，本轮未改 UI 运行代码。

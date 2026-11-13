@@ -3,13 +3,17 @@ export const CLI_HELP = `Answra CLI
 
 用法：
   answra code [选项] [prompt]
+  answra config show
+  answra config set --base-url <URL> --model <ID> [--answer-model <ID>]
+  answra config unset
   answra --help
   answra --version
 
 命令:
-  code    启动独立 coding Bot 的编码会话；TTY 下进入交互 TUI
+  code     启动独立 coding Bot 的编码会话；TTY 下进入交互 TUI
+  config   查看或保存桌面端与 CLI 共享的本地模型配置
 
-选项:
+code 选项:
   --cwd <目录>          工作区根目录，默认当前目录
   --base-url <URL>      OpenAI 兼容端点，覆盖 ANSWRA_AI_BASE_URL
   --model <ID>          模型 ID，覆盖 ANSWRA_MODEL
@@ -24,7 +28,9 @@ export const CLI_HELP = `Answra CLI
   ANSWRA_API_KEY        API Key（可留空；不读取桌面端加密密钥）
 
 共享配置:
-  未传 --base-url/--model 且环境变量为空时，读取桌面端「设置 → 模型」保存的本地模型配置。
+  运行 answra config set 写入桌面端「设置 → 模型」使用的同一份本地模型配置；
+  运行 answra config unset 只清除本地模型字段，不删除文件。
+  未传 --base-url/--model 且环境变量为空时，读取该共享配置。
   API Key 不共享；需要鉴权时请单独设置 ANSWRA_API_KEY 或 --api-key。
 
 输入:
@@ -35,7 +41,8 @@ export const CLI_HELP = `Answra CLI
   Ctrl+O 展开/收起思考与工具输出；PgUp/PgDn 或滚轮滚动 transcript。
   Home/End 只移动输入光标；Up/Down 浏览输入历史。
   全屏下滚轮/鼠标由 TUI 接管；复制请用终端原生选择（必要时按住 Shift）。
-  本地命令: /help、/clear、/exit（/quit 同义）。
+  本地命令: /help、/clear、/model、/exit（/quit 同义）。
+  /model 显示当前设置；/model <ID> 切换并保存；/model add <URL> <ID> [ANSWER] 添加本地模型。
 
 说明:
   会话只保存在内存中，进程退出后不恢复。

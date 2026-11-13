@@ -1,6 +1,7 @@
-import type { ConversationSnapshot } from "@answra/shared";
+import type { ConversationModelConfig, ConversationSnapshot } from "@answra/shared";
 import type { ReactElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ModelSettings } from "../src/model/ports";
 import type { CodingSession } from "../src/session/codingSession";
 import { TUI_HELP_LINES } from "../src/tui/commands";
 import { runInkTui } from "../src/tui/runTui";
@@ -38,6 +39,30 @@ const snapshot: ConversationSnapshot = {
   messages: [],
 };
 
+function modelConfig(model: string): ConversationModelConfig {
+  return {
+    chat: { baseUrl: "http://127.0.0.1:1234/v1", model, auth: "local" },
+    answer: { baseUrl: "http://127.0.0.1:1234/v1", model, auth: "local" },
+  };
+}
+
+function createModelSettings(): ModelSettings {
+  return {
+    resolve: vi.fn(async () => modelConfig("test-model")),
+    snapshot: vi.fn(async () => ({
+      source: "local" as const,
+      local: {
+        baseUrl: "http://127.0.0.1:1234/v1",
+        chatModel: "test-model",
+      },
+      configured: true,
+    })),
+    addLocal: vi.fn(async () => modelConfig("added-model")),
+    switchChatModel: vi.fn(async (model) => modelConfig(model)),
+    clearLocal: vi.fn(async () => {}),
+  };
+}
+
 function tick(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
@@ -59,6 +84,7 @@ function createSession() {
     ),
     cancel: vi.fn(),
     clear: vi.fn(async () => snapshot),
+    setModel: vi.fn(),
     close: vi.fn(),
   } as unknown as CodingSession;
   return { session, sent, waits };
@@ -68,6 +94,7 @@ async function start(
   session: CodingSession,
   store: TuiViewStore,
   altScreen = false,
+  modelSettings = createModelSettings(),
 ): Promise<RenderResult> {
   let props: AppProps | undefined;
   let options: Record<string, unknown> | undefined;
@@ -87,6 +114,7 @@ async function start(
   void runInkTui({
     session,
     store,
+    modelSettings,
     botName: "coding.engineer",
     model: "test-model",
     workspaceRoot: "D:\\workspace",
@@ -205,6 +233,73 @@ describe("runInkTui", () => {
     await tick();
     expect(session.send).toHaveBeenCalledTimes(1);
     expect(store.getSnapshot().phase).toBe("idle");
+    finish();
+    store.dispose();
+  });
+
+  it("shows the current model and switches it while idle", async () => {
+    const { session } = createSession();
+    const store = new TuiViewStore();
+    const modelSettings = createModelSettings();
+    const { props, finish } = await start(session, store, false, modelSettings);
+
+    props.onSubmit("/model");
+    await tick();
+    expect(store.getSnapshot().notice).toEqual([
+      "source: local",
+      "baseUrl: http://127.0.0.1:1234/v1",
+      "chatModel: test-model",
+      "answerModel: ",
+      "configured: true",
+    ]);
+
+    props.onSubmit("/model next-model");
+    await tick();
+    expect(modelSettings.switchChatModel).toHaveBeenCalledWith("next-model");
+    expect(session.setModel).toHaveBeenCalledWith(modelConfig("next-model"));
+    expect(store.getSnapshot()).toMatchObject({
+      modelLabel: "next-model",
+      notice: ["已切换模型：next-model"],
+    });
+
+    finish();
+    store.dispose();
+  });
+
+  it("adds a local model from /model add", async () => {
+    const { session } = createSession();
+    const store = new TuiViewStore();
+    const modelSettings = createModelSettings();
+    const { props, finish } = await start(session, store, false, modelSettings);
+
+    props.onSubmit("/model add http://127.0.0.1:9999/v1 added-model added-answer");
+    await tick();
+
+    expect(modelSettings.addLocal).toHaveBeenCalledWith({
+      baseUrl: "http://127.0.0.1:9999/v1",
+      chatModel: "added-model",
+      answerModel: "added-answer",
+    });
+    expect(store.getSnapshot().modelLabel).toBe("added-model");
+
+    finish();
+    store.dispose();
+  });
+
+  it("rejects model changes while a run is active", async () => {
+    const { session } = createSession();
+    const store = new TuiViewStore();
+    const modelSettings = createModelSettings();
+    const { props, finish } = await start(session, store, false, modelSettings);
+
+    props.onSubmit("first");
+    await tick();
+    props.onSubmit("/model next-model");
+    await tick();
+
+    expect(modelSettings.switchChatModel).not.toHaveBeenCalled();
+    expect(store.getSnapshot().localError).toBe("当前运行中，先按 Esc 中断后再切换模型。");
+
     finish();
     store.dispose();
   });

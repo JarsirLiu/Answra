@@ -9,8 +9,17 @@ describe("parseTuiCommand", () => {
   });
 
   it("reports unknown slash commands", () => {
-    expect(parseTuiCommand("/model")).toEqual({ kind: "unknown", name: "model" });
+    expect(parseTuiCommand("/unknown")).toEqual({ kind: "unknown", name: "unknown" });
     expect(parseTuiCommand("/")).toEqual({ kind: "unknown", name: "" });
+  });
+
+  it("parses model commands and their arguments", () => {
+    expect(parseTuiCommand("/model")).toEqual({ kind: "model", args: [] });
+    expect(parseTuiCommand("/model qwen")).toEqual({ kind: "model", args: ["qwen"] });
+    expect(parseTuiCommand(" /model add http://127.0.0.1:1234/v1 qwen qwen-vl ")).toEqual({
+      kind: "model",
+      args: ["add", "http://127.0.0.1:1234/v1", "qwen", "qwen-vl"],
+    });
   });
 
   it("leaves normal prompts untouched", () => {

@@ -1,8 +1,14 @@
 /** `answra code` 应用用例：配置、输入、宿主、会话与呈现的接线，不含协议实现。 */
 
+import {
+  AI_SERVICE_BASE_URL,
+  CLI_API_KEY,
+  CLI_MODEL,
+  type ConversationModelConfig,
+} from "@answra/shared";
 import type { CliOptions } from "../config/cliOptions";
-import { resolveModelConfig } from "../config/modelConfig";
 import { resolveWorkspaceRoot } from "../config/workspace";
+import type { ModelOverrides } from "../model/ports";
 import { createStreamPresenter } from "../presentation/streamPresenter";
 import { CodingSession } from "../session/codingSession";
 import { TuiViewStore } from "../tui/viewStore";
@@ -13,21 +19,29 @@ type CodeOptions = Extract<CliOptions, { kind: "code" }>;
 
 export async function runCodeCommand(options: CodeOptions, deps: CliDependencies): Promise<number> {
   const workspaceRoot = await resolveWorkspaceRoot(options.cwd ?? deps.cwd);
-  const sharedConfig = await deps.loadSharedClientConfig();
-  const model = resolveModelConfig(options, deps.env, sharedConfig);
+  const model = await deps.modelSettings.resolve(modelOverrides(options, deps));
+  const accessToken = (options.apiKey ?? deps.env[CLI_API_KEY] ?? "").trim();
   const interactive = options.prompt === undefined && deps.input.isTTY;
   const text = (await resolvePrompt(options.prompt, deps)).trim();
   if (!interactive) {
     if (text.length === 0) throw new CliUsageError("没有可发送的输入。");
-    return runOnce(text, workspaceRoot, model, deps);
+    return runOnce(text, workspaceRoot, model, accessToken, deps);
   }
-  return runInteractive(workspaceRoot, model, options.altScreen !== false, deps);
+  return runInteractive(workspaceRoot, model, accessToken, options.altScreen !== false, deps);
+}
+
+function modelOverrides(options: CodeOptions, deps: CliDependencies): readonly ModelOverrides[] {
+  return [
+    { baseUrl: options.baseUrl, chatModel: options.model },
+    { baseUrl: deps.env[AI_SERVICE_BASE_URL], chatModel: deps.env[CLI_MODEL] },
+  ];
 }
 
 async function runOnce(
   text: string,
   workspaceRoot: string,
-  model: ReturnType<typeof resolveModelConfig>,
+  model: ConversationModelConfig,
+  accessToken: string,
   deps: CliDependencies,
 ): Promise<number> {
   const presenter = createStreamPresenter(deps.output);
@@ -38,8 +52,8 @@ async function runOnce(
   const session = new CodingSession({
     host,
     conversationId: deps.createConversationId(),
-    model: model.config,
-    accessToken: model.accessToken,
+    model,
+    accessToken,
   });
   const removeInterrupt = deps.onInterrupt(() => {
     session.cancel();
@@ -59,7 +73,8 @@ async function runOnce(
 
 async function runInteractive(
   workspaceRoot: string,
-  model: ReturnType<typeof resolveModelConfig>,
+  model: ConversationModelConfig,
+  accessToken: string,
   altScreen: boolean,
   deps: CliDependencies,
 ): Promise<number> {
@@ -72,8 +87,8 @@ async function runInteractive(
   const session = new CodingSession({
     host,
     conversationId: deps.createConversationId(),
-    model: model.config,
-    accessToken: model.accessToken,
+    model,
+    accessToken,
   });
   const removeInterrupt = deps.onInterrupt(() => {
     session.cancel();
@@ -83,8 +98,9 @@ async function runInteractive(
     return await deps.runTui({
       session,
       store,
+      modelSettings: deps.modelSettings,
       botName: "coding.engineer",
-      model: model.config.chat.model,
+      model: model.chat.model,
       workspaceRoot,
       altScreen,
     });

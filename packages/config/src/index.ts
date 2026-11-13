@@ -8,6 +8,11 @@ export {
   type LocalModelConfig,
 } from "./contracts";
 export {
+  type LocalModelPatch,
+  mergeLocalModel,
+  normalizeLocalModel,
+} from "./localModel";
+export {
   type DefaultConfigDirOptions,
   resolveDefaultConfigDir,
   resolveDefaultConfigPath,

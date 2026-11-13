@@ -16,7 +16,6 @@ const ZERO_VERSION = () => 0;
 export function App({
   store,
   botName,
-  model,
   workspaceRoot,
   onSubmit,
   onCancel,
@@ -29,7 +28,6 @@ export function App({
 }: {
   store: TuiViewStore;
   botName: string;
-  model: string;
   workspaceRoot: string;
   onSubmit: (text: string) => void;
   onCancel: () => void;
@@ -99,7 +97,7 @@ export function App({
         <PromptInput busy={busy} onSubmit={onSubmit} selectionActive={hasSelection} />
         <StatusLine
           botName={botName}
-          model={model}
+          model={state.modelLabel}
           phase={state.phase}
           workspaceRoot={workspaceRoot}
         />

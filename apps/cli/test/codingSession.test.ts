@@ -7,6 +7,11 @@ const model: ConversationModelConfig = {
   answer: { baseUrl: "http://127.0.0.1:1234/v1", model: "answer", auth: "local" },
 };
 
+const nextModel: ConversationModelConfig = {
+  chat: { baseUrl: "http://127.0.0.1:1234/v1", model: "next-chat", auth: "local" },
+  answer: { baseUrl: "http://127.0.0.1:1234/v1", model: "next-answer", auth: "local" },
+};
+
 const snapshot: ConversationSnapshot = {
   conversationId: "conversation-1",
   eventRevision: 0,
@@ -146,5 +151,32 @@ describe("CodingSession", () => {
     expect(host.dispose).toHaveBeenCalledTimes(1);
     await expect(session.open()).rejects.toThrowError("会话已关闭。");
     await expect(session.send("after")).rejects.toThrowError("会话已关闭。");
+  });
+
+  it("reconfigures the host when the model changes while idle", async () => {
+    const host = createHost();
+    const session = createSession(host);
+    await session.open();
+
+    session.setModel(nextModel);
+
+    expect(host.configure).toHaveBeenCalledWith(nextModel);
+  });
+
+  it("rejects switching models while a run is active", async () => {
+    const host = createHost();
+    const session = createSession(host);
+    await session.open();
+    await session.send("hello");
+
+    expect(() => session.setModel(nextModel)).toThrowError("当前运行中，不能切换模型。");
+    expect(host.configure).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects switching models after close", async () => {
+    const session = createSession(createHost());
+    session.close();
+
+    expect(() => session.setModel(nextModel)).toThrowError("会话已关闭。");
   });
 });

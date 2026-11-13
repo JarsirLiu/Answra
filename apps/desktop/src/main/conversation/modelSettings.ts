@@ -5,6 +5,7 @@ import {
   type ClientConfig,
   defaultClientConfig,
   type LocalModelConfig,
+  mergeLocalModel,
   parseClientConfig,
   readClientConfig,
   writeClientConfig,
@@ -140,21 +141,18 @@ export class ModelSettingsStore {
   }
 
   private resolveLocal(settings: ConversationModelSettings): LocalModelConfig {
-    const baseUrl = settings.baseUrl.replace(/\/+$/, "");
-    const chatModel = settings.model;
-    const answerModel = settings.answerModel ?? this.current.answerModel;
-    if (baseUrl || chatModel) {
-      return {
-        baseUrl,
-        chatModel,
-        ...(answerModel ? { answerModel } : {}),
-      };
-    }
-    return {
-      baseUrl: this.current.baseUrl,
-      chatModel: this.current.model,
-      ...(answerModel ? { answerModel } : {}),
-    };
+    return mergeLocalModel(
+      {
+        baseUrl: this.current.baseUrl,
+        chatModel: this.current.model,
+        ...(this.current.answerModel ? { answerModel: this.current.answerModel } : {}),
+      },
+      {
+        baseUrl: settings.baseUrl,
+        chatModel: settings.model,
+        ...(settings.answerModel === undefined ? {} : { answerModel: settings.answerModel }),
+      },
+    );
   }
 
   private async load(): Promise<void> {

@@ -31,7 +31,7 @@ export interface CodingSessionOptions {
 export class CodingSession {
   private readonly host: CodingSessionHost;
   private readonly conversationId: string;
-  private readonly model: ConversationModelConfig;
+  private model: ConversationModelConfig;
   private readonly accessToken: string;
   private opened = false;
   private closed = false;
@@ -63,6 +63,16 @@ export class CodingSession {
     const snapshot = await this.host.clearConversation(this.conversationId);
     this.snapshot = snapshot;
     return snapshot;
+  }
+
+  /** 会话内切换模型；运行中的 run 保持原端点，拒绝切换而不是重建 run。 */
+  setModel(model: ConversationModelConfig): void {
+    if (this.closed) throw new Error("会话已关闭。");
+    if (this.activeRunId !== undefined || this.sending) {
+      throw new Error("当前运行中，不能切换模型。");
+    }
+    this.host.configure(model);
+    this.model = model;
   }
 
   async send(text: string): Promise<string> {

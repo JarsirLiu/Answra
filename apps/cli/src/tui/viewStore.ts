@@ -17,6 +17,7 @@ export interface TuiState {
   view: ConversationView;
   phase: TuiRunPhase;
   queued: number;
+  modelLabel: string;
   localError?: string;
   notice?: readonly string[];
 }
@@ -29,6 +30,7 @@ export class TuiViewStore {
     view: EMPTY_CONVERSATION_VIEW,
     phase: "idle",
     queued: 0,
+    modelLabel: "",
   };
   private readonly listeners = new Set<Listener>();
   private pending: AgentEventEnvelope[] = [];
@@ -94,6 +96,11 @@ export class TuiViewStore {
   setQueued(count: number): void {
     if (this.state.queued === count) return;
     this.setState({ ...this.state, queued: count });
+  }
+
+  setModelLabel(modelLabel: string): void {
+    if (this.state.modelLabel === modelLabel) return;
+    this.setState({ ...this.state, modelLabel });
   }
 
   setNotice(lines: readonly string[] | undefined): void {

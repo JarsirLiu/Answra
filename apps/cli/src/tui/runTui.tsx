@@ -1,5 +1,6 @@
 /** Ink TUI 运行器：挂载 App，驱动 CodingSession 的排队发送、等待与取消。 */
 import { render } from "ink";
+import type { ModelSettings } from "../model/ports";
 import type { CodingSession } from "../session/codingSession";
 import { parseTuiCommand, TUI_HELP_LINES, type TuiCommand } from "./commands";
 import { App } from "./components/App";
@@ -7,11 +8,13 @@ import { createClipboardWriter } from "./interaction/clipboard";
 import { createPointerInput } from "./interaction/pointerInput";
 import { createSelectionActions } from "./interaction/selectionActions";
 import { TuiSelectionStore } from "./interaction/selectionStore";
+import { handleModelCommand } from "./modelCommand";
 import type { TuiViewStore } from "./viewStore";
 
 export interface TuiRunOptions {
   session: CodingSession;
   store: TuiViewStore;
+  modelSettings: ModelSettings;
   botName: string;
   model: string;
   workspaceRoot: string;
@@ -27,12 +30,14 @@ export function createInkTuiRunner(): TuiRunner {
 export async function runInkTui({
   session,
   store,
+  modelSettings,
   botName,
   model,
   workspaceRoot,
   altScreen,
 }: TuiRunOptions): Promise<number> {
   store.initialize(await session.open());
+  store.setModelLabel(model);
   const queue: string[] = [];
   let busy = false;
   let cancelRequested = false;
@@ -69,6 +74,13 @@ export async function runInkTui({
         try {
           store.reset(await session.clear());
           store.setNotice(["会话已清除。"]);
+        } catch (error) {
+          store.fail(messageOf(error));
+        }
+        return;
+      case "model":
+        try {
+          await handleModelCommand(command.args, { busy, session, store, modelSettings });
         } catch (error) {
           store.fail(messageOf(error));
         }
@@ -135,7 +147,6 @@ export async function runInkTui({
     const instance = render(
       <App
         botName={botName}
-        model={model}
         onCancel={cancel}
         onClearSelection={selectionActions?.clear}
         onCopySelection={selectionActions?.copy}

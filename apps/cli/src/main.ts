@@ -4,20 +4,22 @@ import { randomUUID } from "node:crypto";
 import process from "node:process";
 import { startCodingHost } from "@answra/agent/composition";
 import { createAgentCodingSessionHost } from "./adapters/agentCodingHost";
+import { createSharedModelStore } from "./adapters/sharedModelStore";
 import { runCli } from "./cli/runCli";
-import { loadSharedClientConfig } from "./config/sharedConfig";
+import { ModelSettingsService } from "./model/settingsService";
 import { createProcessInput } from "./transport/input";
 import { createStreamOutput } from "./transport/output";
 import { createInkTuiRunner } from "./tui/runTui";
 
 async function main(): Promise<void> {
   try {
+    const modelSettings = new ModelSettingsService(createSharedModelStore());
     process.exitCode = await runCli(process.argv.slice(2), {
       env: process.env,
       input: createProcessInput(process.stdin),
       output: createStreamOutput(process.stdout, process.stderr),
       cwd: process.cwd(),
-      loadSharedClientConfig,
+      modelSettings,
       createSessionHost: ({ emitEvent, onSnapshot, workspaceRoot }) =>
         createAgentCodingSessionHost(startCodingHost({ emitEvent, onSnapshot, workspaceRoot })),
       createConversationId: randomUUID,

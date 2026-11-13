@@ -76,4 +76,51 @@ describe("parseCliOptions", () => {
   it("rejects more than one prompt", () => {
     expectUsageError(["code", "one", "two"], "只接受一个 prompt 位置参数。");
   });
+
+  it("parses config show and unset", () => {
+    expect(parseCliOptions(["config", "show"])).toEqual({ kind: "config", action: "show" });
+    expect(parseCliOptions(["config", "unset"])).toEqual({ kind: "config", action: "unset" });
+  });
+
+  it("parses config set options in separate and inline forms", () => {
+    expect(
+      parseCliOptions([
+        "config",
+        "set",
+        "--base-url=http://127.0.0.1:1234/v1",
+        "--model",
+        "qwen",
+        "--answer-model",
+        "qwen-vl",
+      ]),
+    ).toEqual({
+      kind: "config",
+      action: "set",
+      baseUrl: "http://127.0.0.1:1234/v1",
+      model: "qwen",
+      answerModel: "qwen-vl",
+    });
+  });
+
+  it("rejects invalid config commands and options", () => {
+    expectUsageError(["config"], "缺少 config 子命令（show|set|unset）。");
+    expectUsageError(["config", "other"], "未知 config 子命令：other");
+    expectUsageError(["config", "show", "extra"], "config show 不接受参数。");
+    expectUsageError(
+      ["config", "set", "--model", "qwen"],
+      "config set 需要 --base-url 和 --model。",
+    );
+    expectUsageError(
+      ["config", "set", "--base-url", "http://127.0.0.1:1234/v1", "--model", "qwen", "extra"],
+      "config set 不接受位置参数：extra",
+    );
+    expectUsageError(
+      ["config", "set", "--base-url", "http://127.0.0.1:1234/v1", "--model", "qwen", "--bad"],
+      "未知选项：--bad",
+    );
+  });
+
+  it("gives help priority inside config commands", () => {
+    expect(parseCliOptions(["config", "set", "--help"])).toEqual({ kind: "help" });
+  });
 });

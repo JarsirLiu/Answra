@@ -94,7 +94,6 @@ describe("TUI components", () => {
     const instance = render(
       <App
         botName="coding.engineer"
-        model="test-model"
         onCancel={vi.fn()}
         onSubmit={vi.fn()}
         store={store}
@@ -134,7 +133,6 @@ describe("TUI components", () => {
     const instance = render(
       <App
         botName="coding.engineer"
-        model="test-model"
         onCancel={vi.fn()}
         onSubmit={vi.fn()}
         store={store}
@@ -174,7 +172,6 @@ describe("TUI components", () => {
     const instance = render(
       <App
         botName="coding.engineer"
-        model="test-model"
         onCancel={vi.fn()}
         onSubmit={vi.fn()}
         store={store}
@@ -228,7 +225,6 @@ describe("TUI components", () => {
     const instance = render(
       <App
         botName="coding.engineer"
-        model="test-model"
         onCancel={vi.fn()}
         onSubmit={vi.fn()}
         store={store}
@@ -298,7 +294,6 @@ describe("TUI components", () => {
     const instance = render(
       <App
         botName="coding.engineer"
-        model="test-model"
         onCancel={vi.fn()}
         onSubmit={vi.fn()}
         store={store}
@@ -365,7 +360,6 @@ describe("TUI components", () => {
     const instance = render(
       <App
         botName="coding.engineer"
-        model="test-model"
         onCancel={vi.fn()}
         onSubmit={vi.fn()}
         store={store}
@@ -400,7 +394,6 @@ describe("TUI components", () => {
     const instance = render(
       <App
         botName="coding.engineer"
-        model="test-model"
         onCancel={vi.fn()}
         onClearSelection={onClear}
         onCopySelection={onCopy}
@@ -436,7 +429,6 @@ describe("TUI components", () => {
     const instance = render(
       <App
         botName="coding.engineer"
-        model="test-model"
         onCancel={vi.fn()}
         onSelectAll={onSelectAll}
         onSubmit={vi.fn()}
@@ -462,7 +454,6 @@ describe("TUI components", () => {
     const instance = render(
       <App
         botName="coding.engineer"
-        model="test-model"
         onCancel={vi.fn()}
         onClearSelection={onClear}
         onSubmit={vi.fn()}
