@@ -9,6 +9,7 @@ import {
 } from "@answra/ui/conversation-view";
 import type { TuiSetupStep } from "../modelSetup";
 import type { TuiPanel } from "../panel";
+import type { TuiCompactionBoundary } from "../transcript/compactionBoundary";
 
 const TUI_EVENT_BATCH_MS = 16;
 const TUI_EVENT_QUEUE_MAX = 2_048;
@@ -17,6 +18,10 @@ export type TuiRunPhase = "idle" | "running" | "cancelling";
 
 export interface TuiState {
   view: ConversationView;
+  /** 压缩边界来自 conversation snapshot，只用于 TUI 展示。 */
+  compactionBoundaries: readonly TuiCompactionBoundary[];
+  /** 手动 `/compact` 正在等待首帧 snapshot；与 run phase 分开。 */
+  compactionActive: boolean;
   phase: TuiRunPhase;
   queued: number;
   modelLabel: string;
@@ -33,6 +38,8 @@ type Listener = () => void;
 export class TuiViewStore {
   private state: TuiState = {
     view: EMPTY_CONVERSATION_VIEW,
+    compactionBoundaries: [],
+    compactionActive: false,
     phase: "idle",
     queued: 0,
     modelLabel: "",
@@ -56,6 +63,8 @@ export class TuiViewStore {
     this.setState({
       ...this.state,
       view: applyConversationSnapshot(EMPTY_CONVERSATION_VIEW, snapshot),
+      compactionBoundaries: boundariesFromSnapshot(snapshot, []),
+      compactionActive: false,
       localError: undefined,
     });
   }
@@ -67,6 +76,7 @@ export class TuiViewStore {
     this.setState({
       ...this.state,
       view: applyConversationSnapshot(this.state.view, snapshot),
+      compactionBoundaries: boundariesFromSnapshot(snapshot, this.state.compactionBoundaries),
       localError: undefined,
     });
   }
@@ -93,6 +103,8 @@ export class TuiViewStore {
     this.setState({
       ...this.state,
       view: applyConversationSnapshot(EMPTY_CONVERSATION_VIEW, snapshot),
+      compactionBoundaries: [],
+      compactionActive: false,
       queued: 0,
       localError: undefined,
       notice: undefined,
@@ -147,6 +159,16 @@ export class TuiViewStore {
     this.setState({ ...this.state, view });
   }
 
+  beginCompaction(): void {
+    this.flush();
+    this.setState({ ...this.state, compactionActive: true, localError: undefined });
+  }
+
+  finishCompaction(): void {
+    this.flush();
+    this.setState({ ...this.state, compactionActive: false });
+  }
+
   beginRun(): void {
     this.flush();
     this.setState({ ...this.state, phase: "running", localError: undefined, notice: undefined });
@@ -186,4 +208,23 @@ export class TuiViewStore {
     this.state = next;
     for (const listener of this.listeners) listener();
   }
+}
+
+function boundariesFromSnapshot(
+  snapshot: ConversationSnapshot,
+  current: readonly TuiCompactionBoundary[],
+): readonly TuiCompactionBoundary[] {
+  if (snapshot.contextCompactionBoundaries !== undefined) {
+    return snapshot.contextCompactionBoundaries.map((boundary) => ({
+      id: boundary.id,
+      afterMessageId: boundary.throughMessageId,
+    }));
+  }
+  // 兼容尚未携带边界列表的旧 snapshot：只在成功状态出现时补一条。
+  const next = snapshot.contextCompaction;
+  if (next?.state !== "succeeded") return current;
+  const id = `compaction:${next.finishedAt ?? next.updatedAt}`;
+  if (current.some((boundary) => boundary.id === id)) return current;
+  const afterMessageId = snapshot.messages.at(-1)?.id;
+  return [...current, { id, ...(afterMessageId === undefined ? {} : { afterMessageId }) }];
 }

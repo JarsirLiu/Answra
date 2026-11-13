@@ -2,6 +2,7 @@
 export const TUI_THEME = {
   claude: "#d77757",
   claudeShimmer: "#f59575",
+  compaction: "#5769f7",
   text: "#ffffff",
   inverseText: "#000000",
   inactive: "#999999",

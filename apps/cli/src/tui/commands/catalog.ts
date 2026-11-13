@@ -1,5 +1,5 @@
 /** TUI 本地命令目录：帮助、slash 解析与输入补全的唯一元数据来源；不触达 Agent 运行时。 */
-export type TuiCommandKind = "help" | "clear" | "config" | "exit" | "model";
+export type TuiCommandKind = "help" | "clear" | "compact" | "config" | "exit" | "model";
 
 export interface TuiCommandHelpDetail {
   readonly usage: string;
@@ -28,6 +28,12 @@ export const TUI_COMMANDS: readonly TuiCommandSpec[] = [
     kind: "clear",
     name: "clear",
     summary: "清空当前会话 transcript",
+  },
+  {
+    kind: "compact",
+    name: "compact",
+    summary: "压缩当前会话上下文",
+    helpUsage: "/compact",
   },
   {
     kind: "config",

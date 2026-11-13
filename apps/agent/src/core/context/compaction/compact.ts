@@ -25,6 +25,7 @@ export async function compactContext({
   profile,
   triggerTokens,
   contextTokens,
+  force = false,
   generate,
   signal,
   now = () => new Date(),
@@ -35,6 +36,8 @@ export async function compactContext({
   profile: CompactionProfile;
   triggerTokens: number;
   contextTokens?: number;
+  /** 手动压缩跳过触发点判断。 */
+  force?: boolean;
   generate: SummaryGenerator;
   signal?: AbortSignal;
   now?: () => Date;
@@ -46,6 +49,7 @@ export async function compactContext({
     checkpoint: previous,
     profile,
     triggerTokens,
+    force,
     ...(contextTokens === undefined ? {} : { contextTokens }),
   });
   if (!plan) return undefined;

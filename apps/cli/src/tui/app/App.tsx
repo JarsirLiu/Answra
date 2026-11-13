@@ -1,9 +1,9 @@
 /** TUI 根布局：滚动 transcript + 活动行 + Claude 式输入框/状态行。 */
-import { contextCompactionLabel } from "@answra/ui/conversation-view";
 import { Box, Text, useApp, useInput, useWindowSize } from "ink";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { Spinner } from "../chrome/Spinner";
 import { StatusLine } from "../chrome/StatusLine";
+import { TUI_THEME } from "../chrome/theme";
 import { ConfigPanel } from "../commands/ConfigPanel";
 import { ModelPicker } from "../commands/ModelPicker";
 import { PromptInput } from "../composer/PromptInput";
@@ -11,6 +11,7 @@ import type { PointerSource } from "../interaction/pointerInput";
 import type { TuiSelectionStore } from "../interaction/selectionStore";
 import type { TuiSetupStep } from "../modelSetup";
 import type { TuiPanelHandlers } from "../panel";
+import { COMPACTION_FAILURE_TEXT, COMPACTION_SPINNER_MESSAGE } from "../transcript/compactionText";
 import { SelectionContext } from "../transcript/SelectableText";
 import { VirtualTranscript } from "../transcript/VirtualTranscript";
 import type { TuiViewStore } from "./viewStore";
@@ -55,9 +56,10 @@ export function App({
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
   const { exit } = useApp();
   const { rows } = useWindowSize();
-  const busy = state.phase !== "idle";
   const compaction = state.view.contextCompaction;
-  const compactionLabel = compaction ? contextCompactionLabel(compaction) : "";
+  const compacting = state.compactionActive || compaction?.state === "started";
+  const busy = state.phase !== "idle" || compacting;
+  const compactionFailed = compaction?.state === "failed";
   const [expandThinking, setExpandThinking] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   useSyncExternalStore(
@@ -110,15 +112,26 @@ export function App({
     <SelectionContext.Provider value={selectionStore}>
       <Box flexDirection="column" height={rows} width="100%">
         <VirtualTranscript
+          compactionBoundaries={state.compactionBoundaries}
           expandThinking={expandThinking}
           footer={
-            busy ? (
-              <Spinner phase={state.phase} queued={state.queued} />
-            ) : compactionLabel ? (
-              <Box paddingX={1}>
-                <Text color={compaction?.state === "failed" ? "red" : "gray"} wrap="truncate">
-                  {compactionLabel}
-                </Text>
+            busy || compactionFailed ? (
+              <Box flexDirection="column">
+                {compactionFailed ? (
+                  <Box paddingX={1}>
+                    <Text color={TUI_THEME.error} wrap="truncate">
+                      {COMPACTION_FAILURE_TEXT}
+                    </Text>
+                  </Box>
+                ) : null}
+                {busy ? (
+                  <Spinner
+                    color={compacting ? TUI_THEME.compaction : undefined}
+                    message={compacting ? COMPACTION_SPINNER_MESSAGE : undefined}
+                    phase={state.phase}
+                    queued={state.queued}
+                  />
+                ) : null}
               </Box>
             ) : undefined
           }

@@ -78,7 +78,8 @@ describe("ChatPanel context compaction", () => {
       />,
     );
 
-    expect(screen.getByText("上下文压缩完成（8 条消息）")).toBeInTheDocument();
+    expect(screen.getByText("上下文压缩完成")).toBeInTheDocument();
+    expect(screen.queryByText(/条消息/)).not.toBeInTheDocument();
 
     rerender(
       <ChatPanel

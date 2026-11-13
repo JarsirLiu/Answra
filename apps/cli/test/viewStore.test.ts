@@ -80,6 +80,95 @@ describe("TuiViewStore", () => {
     store.dispose();
   });
 
+  it("adds one CLI compaction boundary when a snapshot reports success", () => {
+    const store = new TuiViewStore();
+    const message = {
+      id: "message-1",
+      role: "user" as const,
+      text: "question",
+      images: [],
+      status: "complete" as const,
+    };
+    const base: ConversationSnapshot = {
+      conversationId: "conversation-1",
+      eventRevision: 3,
+      messages: [message],
+      contextCompaction: {
+        state: "started",
+        trigger: "auto",
+        startedAt: "2026-11-14T10:00:00.000Z",
+        updatedAt: "2026-11-14T10:00:00.000Z",
+      },
+    };
+    store.initialize(base);
+
+    store.applySnapshot({
+      ...base,
+      eventRevision: 4,
+      contextCompaction: {
+        state: "succeeded",
+        trigger: "auto",
+        startedAt: "2026-11-14T10:00:00.000Z",
+        updatedAt: "2026-11-14T10:00:01.000Z",
+        finishedAt: "2026-11-14T10:00:01.000Z",
+      },
+    });
+    store.applySnapshot({
+      ...base,
+      eventRevision: 5,
+      contextCompaction: {
+        state: "succeeded",
+        trigger: "auto",
+        startedAt: "2026-11-14T10:00:00.000Z",
+        updatedAt: "2026-11-14T10:00:01.000Z",
+        finishedAt: "2026-11-14T10:00:01.000Z",
+      },
+    });
+
+    expect(store.getSnapshot().compactionBoundaries).toEqual([
+      {
+        id: "compaction:2026-11-14T10:00:01.000Z",
+        afterMessageId: "message-1",
+      },
+    ]);
+
+    store.reset({ conversationId: "conversation-1", eventRevision: 6, messages: [] });
+    expect(store.getSnapshot().compactionBoundaries).toEqual([]);
+    store.dispose();
+  });
+
+  it("restores compact boundaries from a conversation snapshot", () => {
+    const store = new TuiViewStore();
+    store.initialize({
+      conversationId: "conversation-1",
+      eventRevision: 2,
+      messages: [
+        {
+          id: "message-1",
+          role: "user",
+          text: "question",
+          images: [],
+          status: "complete",
+        },
+      ],
+      contextCompactionBoundaries: [
+        {
+          id: "compaction:2026-11-14T10:00:01.000Z:message-1",
+          throughMessageId: "message-1",
+          createdAt: "2026-11-14T10:00:01.000Z",
+        },
+      ],
+    });
+
+    expect(store.getSnapshot().compactionBoundaries).toEqual([
+      {
+        id: "compaction:2026-11-14T10:00:01.000Z:message-1",
+        afterMessageId: "message-1",
+      },
+    ]);
+    store.dispose();
+  });
+
   it("tracks phase and local errors separately from transcript state", () => {
     const store = new TuiViewStore();
 

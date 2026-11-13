@@ -23,6 +23,7 @@ function createHost(overrides: Partial<CodingSessionHost> = {}): CodingSessionHo
     configure: vi.fn(),
     createConversation: vi.fn(async () => snapshot),
     clearConversation: vi.fn(async () => snapshot),
+    compactConversation: vi.fn(async () => ({ compacted: true, snapshot })),
     send: vi.fn(async () => ({ runId: "run-1" })),
     cancel: vi.fn(),
     waitForRun: vi.fn(async () => {}),
@@ -70,6 +71,24 @@ describe("CodingSession", () => {
 
     await expect(session.clear()).resolves.toBe(cleared);
     expect(host.clearConversation).toHaveBeenCalledWith("conversation-1");
+  });
+
+  it("delegates manual compaction and caches the returned snapshot", async () => {
+    const compactedSnapshot = { ...snapshot, eventRevision: 3 };
+    const host = createHost({
+      compactConversation: vi.fn(async () => ({
+        compacted: true,
+        snapshot: compactedSnapshot,
+      })),
+    });
+    const session = createSession(host);
+    await session.open();
+
+    await expect(session.compact()).resolves.toEqual({
+      compacted: true,
+      snapshot: compactedSnapshot,
+    });
+    expect(host.compactConversation).toHaveBeenCalledWith("conversation-1", "token", undefined);
   });
 
   it("rejects clearing while a run is active", async () => {

@@ -12,6 +12,8 @@ import {
 } from "react";
 import type { PointerSource } from "../interaction/pointerInput";
 import type { TuiSetupStep } from "../modelSetup";
+import { CompactionBoundaryRow } from "./CompactionBoundaryRow";
+import type { TuiCompactionBoundary } from "./compactionBoundary";
 import { MessageRow } from "./MessageRow";
 import { TranscriptTail, Welcome } from "./Transcript";
 import {
@@ -24,6 +26,7 @@ import {
 
 const OVERSCAN_LINES = 60;
 const FOOTER_ESTIMATE_LINES = 3;
+const COMPACTION_BOUNDARY_ESTIMATE_LINES = 3;
 const WHEEL_SCROLL_LINES = 3;
 const EMPTY_HEIGHTS: ReadonlyMap<string, number> = new Map();
 
@@ -39,10 +42,12 @@ interface ScrollState {
 
 type VirtualItem =
   | { readonly kind: "message"; readonly id: string; readonly message: ConversationViewMessage }
+  | { readonly kind: "compaction-boundary"; readonly id: string }
   | { readonly kind: "footer"; readonly id: "__footer__"; readonly node: ReactNode };
 
 export function VirtualTranscript({
   view,
+  compactionBoundaries = [],
   localError,
   notice,
   workspaceRoot,
@@ -54,6 +59,7 @@ export function VirtualTranscript({
   onScroll,
 }: {
   view: ConversationView;
+  compactionBoundaries?: readonly TuiCompactionBoundary[];
   localError?: string;
   notice?: readonly string[];
   workspaceRoot: string;
@@ -76,13 +82,11 @@ export function VirtualTranscript({
   const measuredValues = measured.key === layoutKey ? measured.values : EMPTY_HEIGHTS;
 
   const items = useMemo<VirtualItem[]>(() => {
-    const messageItems = view.messages.map(
-      (message): VirtualItem => ({ kind: "message", id: message.id, message }),
-    );
+    const messageItems = mergeCompactionBoundaries(view.messages, compactionBoundaries);
     return footer === undefined
       ? messageItems
       : [...messageItems, { kind: "footer", id: "__footer__", node: footer }];
-  }, [view.messages, footer]);
+  }, [view.messages, compactionBoundaries, footer]);
 
   const lastThinkingMessageId = useMemo(() => lastThinkingId(view.messages), [view.messages]);
   const heights = useMemo(
@@ -92,7 +96,9 @@ export function VirtualTranscript({
           measuredValues.get(item.id) ??
           (item.kind === "message"
             ? estimateMessageHeight(item.message, columns, expandThinking)
-            : FOOTER_ESTIMATE_LINES),
+            : item.kind === "compaction-boundary"
+              ? COMPACTION_BOUNDARY_ESTIMATE_LINES
+              : FOOTER_ESTIMATE_LINES),
       ),
     [items, measuredValues, columns, expandThinking],
   );
@@ -157,13 +163,16 @@ export function VirtualTranscript({
     });
   }, [maxOffset, onScroll, pointerSource]);
 
-  const previousMessages = useRef(view.messages);
+  const previousLayout = useRef({ messages: view.messages, boundaries: compactionBoundaries });
   useEffect(() => {
-    if (previousMessages.current === view.messages) return;
-    previousMessages.current = view.messages;
-    // 内容变化会移动已登记行的屏幕坐标，旧选区必须失效。
+    const previous = previousLayout.current;
+    if (previous.messages === view.messages && previous.boundaries === compactionBoundaries) {
+      return;
+    }
+    previousLayout.current = { messages: view.messages, boundaries: compactionBoundaries };
+    // 内容或压缩边界变化会移动已登记行的屏幕坐标，旧选区必须失效。
     onScroll?.();
-  }, [view.messages, onScroll]);
+  }, [view.messages, compactionBoundaries, onScroll]);
 
   if (view.messages.length === 0) {
     return (
@@ -206,7 +215,9 @@ export function VirtualTranscript({
               measureKey={
                 item.kind === "message"
                   ? `${columns}:${expandThinking}:${showReasoning}:${messageMeasureKey(item.message)}`
-                  : `footer:${columns}`
+                  : item.kind === "compaction-boundary"
+                    ? `compaction-boundary:${columns}`
+                    : `footer:${columns}`
               }
               onMeasure={handleMeasure}
             >
@@ -216,6 +227,8 @@ export function VirtualTranscript({
                   message={item.message}
                   showReasoning={showReasoning}
                 />
+              ) : item.kind === "compaction-boundary" ? (
+                <CompactionBoundaryRow />
               ) : (
                 item.node
               )}
@@ -248,6 +261,40 @@ function MeasuredItem({
       {children}
     </Box>
   );
+}
+
+function mergeCompactionBoundaries(
+  messages: readonly ConversationViewMessage[],
+  boundaries: readonly TuiCompactionBoundary[],
+): VirtualItem[] {
+  const leading: TuiCompactionBoundary[] = [];
+  const after = new Map<string, TuiCompactionBoundary[]>();
+  for (const boundary of boundaries) {
+    if (boundary.afterMessageId === undefined) {
+      leading.push(boundary);
+      continue;
+    }
+    const anchored = after.get(boundary.afterMessageId);
+    if (anchored === undefined) after.set(boundary.afterMessageId, [boundary]);
+    else anchored.push(boundary);
+  }
+
+  const items: VirtualItem[] = leading.map(boundaryItem);
+  for (const message of messages) {
+    items.push({ kind: "message", id: message.id, message });
+    const anchored = after.get(message.id);
+    if (anchored === undefined) continue;
+    after.delete(message.id);
+    for (const boundary of anchored) items.push(boundaryItem(boundary));
+  }
+  for (const anchored of after.values()) {
+    for (const boundary of anchored) items.push(boundaryItem(boundary));
+  }
+  return items;
+}
+
+function boundaryItem(boundary: TuiCompactionBoundary): VirtualItem {
+  return { kind: "compaction-boundary", id: boundary.id };
 }
 
 function baseOffset(scroll: ScrollState, maxOffset: number): number {

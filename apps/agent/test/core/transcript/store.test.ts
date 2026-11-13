@@ -39,6 +39,38 @@ describe("memory conversation transcript store", () => {
     expect(snapshot.activeRunId).toBeUndefined();
   });
 
+  it("projects checkpoint boundaries into the snapshot without summary text", async () => {
+    const store = new MemoryConversationStore();
+    await store.create("compacted");
+    await store.appendUserMessage("compacted", {
+      id: "user-1",
+      role: "user",
+      text: "question",
+      images: [],
+      status: "complete",
+    });
+    await store.saveContextState("compacted", {
+      checkpoints: [
+        {
+          summary: "private summary",
+          throughMessageId: "user-1",
+          createdAt: "2026-11-14T10:00:01.000Z",
+          messageCount: 1,
+        },
+      ],
+    });
+
+    const snapshot = await store.load("compacted");
+    expect(snapshot.contextCompactionBoundaries).toEqual([
+      {
+        id: "compaction:2026-11-14T10:00:01.000Z:user-1",
+        throughMessageId: "user-1",
+        createdAt: "2026-11-14T10:00:01.000Z",
+      },
+    ]);
+    expect(JSON.stringify(snapshot)).not.toContain("private summary");
+  });
+
   it("claims a reply run for the last user message without duplicating it", async () => {
     const store = new MemoryConversationStore();
     await store.create("interview");

@@ -110,6 +110,7 @@ function createSession() {
     ),
     cancel: vi.fn(),
     clear: vi.fn(async () => snapshot),
+    compact: vi.fn(async () => ({ compacted: true, snapshot })),
     setModel: vi.fn(),
     setAccessToken: vi.fn(),
     close: vi.fn(),
@@ -243,6 +244,23 @@ describe("runInkTui", () => {
       notice: ["会话已清除。"],
       view: { eventRevision: 0, messages: [] },
     });
+
+    finish();
+    store.dispose();
+  });
+
+  it("runs manual compaction without sending a prompt", async () => {
+    const { session } = createSession();
+    const store = new TuiViewStore();
+    const { props, finish } = await start(session, store);
+
+    props.onSubmit("/compact");
+    await tick();
+    await tick();
+
+    expect(session.compact).toHaveBeenCalledTimes(1);
+    expect(session.send).not.toHaveBeenCalled();
+    expect(store.getSnapshot()).toMatchObject({ compactionActive: false, phase: "idle" });
 
     finish();
     store.dispose();

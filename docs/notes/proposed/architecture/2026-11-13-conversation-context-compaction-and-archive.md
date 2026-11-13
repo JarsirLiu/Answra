@@ -8,9 +8,9 @@ Conversation、CLI coding、Interview 等所有使用 transcript 的领域，每
 
 - `apps/agent/src/conversation/turn/modelMessages.ts:36` 从 `ConversationStore` 读取全部消息并交给 `projectConversationMessages`；
 - `apps/agent/src/coding/context.ts:21` 同样读取完整 snapshot；
-- `ConversationStore` 目前只有进程内实现（`apps/agent/src/core/transcript/memoryStore.ts:14`），没有上下文预算、摘要、归档或恢复能力。
+- `ConversationStore` 在提案时只有进程内实现（`apps/agent/src/core/transcript/memoryStore.ts:14`），没有上下文预算、摘要、归档或恢复能力。现已增加 checkpoint、压缩状态和 usage 锚点，但仍无 archive、重启恢复和 SQLite adapter。
 
-结果是会话越长，模型输入越大，最终一定撞到 provider 的上下文窗口。当前也没有 `contextWindow` 配置；`finish` 事件虽然带 `usage.inputTokens`（`apps/agent/src/core/model/streamEvents.ts:161`），但没有地方用它提前触发压缩。
+结果是会话越长，模型输入越大，最终一定撞到 provider 的上下文窗口。提案时也没有 `contextWindow` 配置；`finish` 事件虽然带 `usage.inputTokens`（`apps/agent/src/core/model/streamEvents.ts:161`），但没有地方用它提前触发压缩。现在成功 run 的首个 step usage 已作为估算校准锚点，`contextWindow` 仍未进入客户端配置或模型能力字段。
 
 用户需要的是**一个可长期使用的会话**，而不是每次满了就新建会话：
 
@@ -143,8 +143,8 @@ autoCompactThreshold = effectiveWindow - safetyBuffer
 `safetyBuffer` 需要配置，不要散落魔法数。参考 Claude Code 的量级：摘要输出预留约 20k，安全 buffer 约 13k；Answra 应根据实际 provider 校准。
 
 - 优先使用上一次成功 run 的 `usage.inputTokens` 作为权威基数，再加上本轮新增输入的保守估算；provider 不返回 usage 时使用字符估算并留更大余量。
-- 在下一次 run 启动前、且会话空闲时检查预算。达到阈值就触发，不等到 provider 报错。
-- 保留最近的完整轮次；不要摘要当前用户请求。压缩应发生在 `beginRun` 之前，当前请求随后再追加。
+- 在 `beginRun` 后、模型请求发送前检查预算。达到阈值就触发，不等到 provider 报错。
+- 保留最近的完整轮次；当前用户请求已经进入 draft，必须留在保留尾段，不能进入摘要。压缩后通过 `rebuild()` 重新装配请求。
 - 压缩边界只能落在完整 assistant 消息或完整 tool-call/tool-result 对上，不能拆开 `core/transcript/projection.ts` 中的配对。
 - 连续压缩失败要有熔断，避免每轮都调用注定失败的摘要请求。
 
@@ -183,7 +183,7 @@ interface ContextCheckpoint {
 - synthetic message 使用明确的续接文案（“会话从上一段压缩上下文继续……”），不显示为用户真的说过的话；
 - 多次压缩生成多个 checkpoint，模型上下文取最近 checkpoint + active 尾段；不要把摘要摘要成一份无限漂移的全局文本；
 - 保留段起点必须能通过 API 的 tool 配对校验，不能以孤立 `tool_result` 开头；
-- 当前用户请求在压缩完成后才追加，不能被摘要吞掉。
+- 当前用户请求已进入 draft；压缩只处理保留尾段之前的消息，`rebuild()` 后当前请求仍在尾部，不能被摘要吞掉。
 
 #### 压缩状态显示
 
@@ -308,16 +308,24 @@ apps/agent/src/
 
 ### 8. 调用位置与并行拆分
 
-压缩调用应放在会话用例发起 run 之前：
+已决定采用 run 内 `prepareContext`，而不是 `beginRun` 前的独立检查：
 
 ```text
-ConversationRunCoordinator / CodingApplication / InterviewApplication
-  -> contextCompactor.prepare(conversationId, pendingRequest)
-  -> beginRun
-  -> AgentDefinition.prepare（只装配已压缩后的上下文）
+Conversation / Coding / Interview application
+  -> store.beginRun / beginReplyRun / beginHandoffRun(...)
+  -> AgentDefinition.prepare() 生成最终 AgentModelRequest（当前请求已在尾部）
+  -> ContextPreparation.prepareRequest(...)
+       -> usage 校准 -> 清理 -> 摘要 -> rebuild -> 再清理 -> 硬兜底
+  -> streamText()
 ```
 
-不要放进 `AgentDefinition.prepare`：那里已经在 run 生命周期内，摘要调用会形成嵌套模型调用，并且当前用户消息可能已经写入 store，容易把本轮请求摘要掉。
+原因：
+
+- 预算必须看到最终请求的 system、tools、当前请求和图片，`beginRun` 前拿不到这些；
+- 摘要要复用 run 的取消信号，并在活动 run 内写 `ContextState`；
+- 当前请求由保留最近完整轮次的规则保护；摘要调用不注册为 Agent run，不产生第二套 run 事件。
+
+不要放进 `AgentDefinition.prepare` 内部直接调用摘要：`prepare` 只负责装配 draft，预算、清理、摘要、重建和裁剪统一由 `ContextPreparation` 编排，避免领域重复实现和摘要吞掉当前请求。
 
 建议按以下工作流并行：
 
@@ -352,7 +360,7 @@ ConversationRunCoordinator / CodingApplication / InterviewApplication
 
 ## 当前落地进度
 
-已落地 Phase 1b 的通用核心与自动触发：
+已落地 Phase 1a/1b 的模型侧核心与自动触发：
 
 - `core/context/compaction/prompt.ts`：唯一通用摘要提示词；所有领域复用，不可覆盖。
 - `core/context/compaction/profile.ts`：只描述保留量、最少摘要量和触发 token。
@@ -361,14 +369,17 @@ ConversationRunCoordinator / CodingApplication / InterviewApplication
 - `core/context/compaction/compact.ts`：摘要生成、空结果 fail-closed、检查点追加。
 - `core/context/compaction/lifecycle.ts`：独立的 started/succeeded/failed 状态迁移。
 - `core/context/compaction/compactor.ts`：自动触发、状态持久化、snapshot 推送、失败回退。
-- `core/transcript/contextState.ts` 与 `ConversationStore`：checkpoint 和压缩状态持久化，snapshot 只投影状态。
+- `core/transcript/contextState.ts` 与 `ConversationStore`：checkpoint、压缩状态和 usage 锚点持久化；snapshot 投影 `contextCompaction` 与只含 `throughMessageId/createdAt` 的 `contextCompactionBoundaries`，不携带摘要正文。
 - `core/context/projection.ts`：把摘要作为 synthetic user message 注入，只投影检查点之后的尾段。
 - `core/model/provider.ts` 与 `AgentRuntime.generateText`：复用鉴权/重试的内部摘要模型调用。
-- Conversation、Coding、Interview 的 `prepareRun` 在 `beginRun` 前接入同一 `ContextCompactor`。
-- 桌面 `ConversationView`、`ChatPanel` 与 CLI TUI footer 只显示开始、完成、失败三个状态，不显示摘要正文或思考内容。
-- 测试覆盖阈值、保留尾段、checkpoint 去重、summary 注入、单 prompt、三状态迁移、状态快照、失败回退与 UI 投影；schema 明确拒绝已移除的 `summarizing`。
+- Conversation、Coding、Interview 的 `prepareRun` 先写活动 run（`beginRun` / `beginHandoffRun` / `beginReplyRun`），再由 `prepareContext` 调用同一 `ContextCompactor`；checkpoint 变化后通过 `rebuild()` 重新装配最终请求。
+- `ContextPreparation` 已接入最终请求预算、usage 锚点、旧工具结果清理、摘要压缩、重建后二次清理和硬兜底裁剪。
+- 桌面 `ChatPanel` 的 `ContextCompactionNotice` 显示开始、完成、失败三个状态，不显示摘要正文、思考内容或消息条数；CLI TUI 对齐 Claude Code：压缩中蓝色 Spinner 固定 `Compacting conversation…`，成功后显示 dim 边界 `✻ Conversation compacted (ctrl+o for history)`，失败显示 `Error compacting conversation`，且失败提示不被运行中 Spinner 覆盖。`ctrl+o` 仍是现有的展开/收起思考与工具输出，不新增第二个历史面板。
+- CLI `/compact` 已接入同一 `ContextCompactor`：`force` 跳过上下文触发点但仍遵守保留尾段和最少摘要消息数；运行中拒绝；取消通过 `AbortSignal` 记录为 `failed`；没有可摘要消息时提示而不是伪成功。
+- CLI 压缩边界来自 snapshot 的 checkpoint 列表，可被 `initialize`/重连回放；边界行可选中复制，边界插入会使旧选区失效。跨进程重启恢复仍取决于持久化 store，当前 `MemoryConversationStore` 不提供。
+- 测试覆盖阈值、保留尾段、checkpoint 去重、summary 注入、单 prompt、三状态迁移、状态快照、失败回退、边界回放、强制手动压缩、CLI Spinner/边界/命令与 UI 投影；schema 明确拒绝已移除的 `summarizing`。
 
-尚未落地：`/compact` 手动入口、工具结果清理、reactive compact、archive。当前自动触发使用固定保守预算（96k）；256k 窗口、预算公式和重复工具结果清理的细化提案见[256k 上下文预算与旧工具结果清理](2026-11-13-context-budget-and-tool-result-clearing.md)，本 Note 的预算与工具清理部分以该提案为准。
+尚未落地：自动压缩/清理开关、上下文占用与阈值展示、工具清理结果/跳过原因展示、`postCompactTarget` 软目标、摘要中的图片处理、连续摘要失败熔断、provider 超限后的单次 reactive compact、摘要请求自身超限的截断重试、archive/SQLite，以及依赖持久化 store 的跨进程重启恢复。当前自动触发已使用 256k 窗口、216k 压缩点和 172k/40k/132k 工具清理预算，不再是 96k；预算与工具清理的细化规则见[256k 上下文预算与旧工具结果清理](2026-11-13-context-budget-and-tool-result-clearing.md)。
 
 ## 模块边界
 

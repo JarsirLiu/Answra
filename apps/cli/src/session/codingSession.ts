@@ -10,6 +10,11 @@ export interface CodingSessionHost {
   configure(model: ConversationModelConfig): void;
   createConversation(conversationId: string): Promise<ConversationSnapshot>;
   clearConversation(conversationId: string): Promise<ConversationSnapshot>;
+  compactConversation?(
+    conversationId: string,
+    accessToken: string,
+    signal?: AbortSignal,
+  ): Promise<{ compacted: boolean; snapshot: ConversationSnapshot }>;
   send(
     conversationId: string,
     request: ConversationSendRequest,
@@ -63,6 +68,29 @@ export class CodingSession {
     const snapshot = await this.host.clearConversation(this.conversationId);
     this.snapshot = snapshot;
     return snapshot;
+  }
+
+  async compact(
+    signal?: AbortSignal,
+  ): Promise<{ compacted: boolean; snapshot: ConversationSnapshot }> {
+    if (this.closed) throw new Error("会话已关闭。");
+    if (!this.opened) throw new Error("会话尚未打开。");
+    if (this.activeRunId !== undefined || this.sending) throw new Error("上一轮尚未结束。");
+    if (this.host.compactConversation === undefined) {
+      throw new Error("当前宿主不支持手动压缩。");
+    }
+    this.sending = true;
+    try {
+      const result = await this.host.compactConversation(
+        this.conversationId,
+        this.accessToken,
+        signal,
+      );
+      this.snapshot = result.snapshot;
+      return result;
+    } finally {
+      this.sending = false;
+    }
   }
 
   /** 会话内切换模型；运行中的 run 保持原端点，拒绝切换而不是重建 run。 */

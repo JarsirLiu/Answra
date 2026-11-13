@@ -33,6 +33,8 @@ export interface ContextCompactionRequest {
   triggerTokens: number;
   /** 最终模型请求的保守 token 估算；缺省时回退到 transcript 估算。 */
   contextTokens?: number;
+  /** 手动压缩跳过触发点判断，但仍保留最少消息数与保留尾段约束。 */
+  force?: boolean;
 }
 
 export class ContextCompactor {
@@ -64,6 +66,7 @@ export class ContextCompactor {
     trigger = "auto",
     triggerTokens,
     contextTokens,
+    force,
   }: ContextCompactionRequest): Promise<boolean> {
     const snapshot = await this.store.load(conversationId);
     let state = (await this.store.loadContextState(conversationId)) ?? { checkpoints: [] };
@@ -73,6 +76,7 @@ export class ContextCompactor {
         state,
         profile: this.profile,
         triggerTokens,
+        force: force === true,
         ...(contextTokens === undefined ? {} : { contextTokens }),
         signal,
         now: this.now,

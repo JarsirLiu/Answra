@@ -75,6 +75,23 @@ export class CodingApplication {
     return this.store.load(conversationId);
   }
 
+  async compactConversation(
+    conversationId: string,
+    accessToken: string,
+    signal?: AbortSignal,
+  ): Promise<{ compacted: boolean; snapshot: ConversationSnapshot }> {
+    if (this.agentRuntime.activeRunCount > 0) throw new Error("上一轮尚未结束");
+    const compacted = await this.contextCompactor.prepare({
+      conversationId,
+      getAccessToken: async () => accessToken,
+      trigger: "manual",
+      triggerTokens: 0,
+      force: true,
+      ...(signal === undefined ? {} : { signal }),
+    });
+    return { compacted, snapshot: await this.store.load(conversationId) };
+  }
+
   getSnapshot(conversationId: string): Promise<ConversationSnapshot> {
     return this.store.load(conversationId);
   }

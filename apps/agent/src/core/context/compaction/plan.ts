@@ -16,6 +16,7 @@ export function planCompaction({
   profile,
   triggerTokens,
   contextTokens,
+  force = false,
 }: {
   messages: readonly ConversationMessage[];
   checkpoint: ContextCheckpoint | undefined;
@@ -23,13 +24,15 @@ export function planCompaction({
   triggerTokens: number;
   /** 最终模型请求的估算值；缺省时退回摘要 + checkpoint 后消息的旧估算。 */
   contextTokens?: number;
+  /** 手动压缩跳过触发点判断，但仍要求满足最少可摘要消息数。 */
+  force?: boolean;
 }): CompactionPlan | undefined {
   const pending = messagesAfterCheckpoint(messages, checkpoint);
   if (!pending) return undefined;
   const estimatedTokens =
     contextTokens ??
     estimateTextTokens(checkpoint?.summary ?? "") + estimateMessagesTokens(pending);
-  if (estimatedTokens < triggerTokens) return undefined;
+  if (!force && estimatedTokens < triggerTokens) return undefined;
   const summarizeCount = pending.length - profile.retainRecentMessages;
   if (summarizeCount < profile.minimumMessagesToSummarize) return undefined;
   return {

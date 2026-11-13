@@ -202,6 +202,8 @@ definition.prepare()
 
 ### 7. 控制面与可观察性
 
+这里的“控制面”只指用户可控制、可观察的表面：非 secret 的模型能力配置、自动压缩/自动清理开关、只读的预算与占用展示，以及手动操作入口；不是新的执行路径、调度器或存储层。
+
 - 桌面模型设置增加“自动压缩”“自动清理旧工具结果”以及只读的 256k 窗口展示。
 - CLI 增加等价的设置展示和状态行，不新增第二套模型配置来源。
 - 上下文明细至少包含：system/tools 固定开销、历史消息、当前请求、图片、压缩 buffer、剩余空间。
@@ -235,7 +237,8 @@ definition.prepare()
 - 摘要输入已收窄为正文：`renderMessagesForSummary` 只读取 `ConversationMessage.text`，不读取 `parts` 中的 `reasoning`、工具调用输入/输出/错误，也不使用 `message.reasoning`。`text` 是 transcript schema 必填的可见正文，不是旧格式回退；摘要模型只看到用户与助手的正文，避免把内部思考固化成 checkpoint。
 - 压缩写入已允许在活动 run 内保存 `ContextState`：此前 `MemoryConversationStore.saveContextState` 的 `activeRunId` 守卫会让真实自动压缩在 `beginRun` 之后必然失败。`prepareContext` 现在接收 run 的 `AbortSignal`，摘要生成被取消时记录 `failed`、不产生 checkpoint，原始 transcript 保持不变。
 - 存储边界保持 `ConversationStore` / `ExecutionStore` 端口：当前仍是内存 adapter，checkpoint、压缩状态和 usage 锚点都经 `ConversationStore.loadContextState/saveContextState` 保存；SQLite adapter 接入时不需要改压缩或锚点逻辑。SQLite 本身仍未实现，按 [可切换的内存与 SQLite 存储边界](2026-11-08-switchable-memory-sqlite-storage.md) 单独推进。
-- 尚未实现：自动压缩/清理开关、上下文占用展示、archive/SQLite。
+- CLI 手动 `/compact` 已接入 `CodingApplication.compactConversation`：复用同一 `ContextCompactor`，`force` 跳过预算触发点但仍保留最近尾段和最少摘要消息数；运行中拒绝，取消通过 `AbortSignal` 记录 `failed`。CLI 同时在 snapshot 中回放成功摘要边界，TUI 显示 Claude 风格 Spinner/边界/失败文案。
+- 尚未实现：模型能力配置（`contextWindow`、`maxOutputTokens`、图片估算规则）、自动压缩/清理开关、上下文占用与阈值展示、工具清理结果/跳过原因展示、`postCompactTarget` 软目标、摘要中的图片处理、连续摘要失败熔断、provider 超限后的单次 reactive compact、摘要请求自身超限的截断重试，以及 archive/SQLite。当前预算仍是代码默认值，桌面和 CLI 仍没有完整控制面；跨进程恢复仍依赖未实现的持久化 store。
 
 ## 模块边界
 

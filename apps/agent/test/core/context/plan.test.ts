@@ -46,6 +46,33 @@ describe("context compaction plan", () => {
     ).toBeUndefined();
   });
 
+  it("skips the budget gate only when compaction is forced", () => {
+    const messages = [
+      message("m1", "旧消息"),
+      message("m2", "旧回复", "assistant"),
+      message("m3", "保留消息一"),
+      message("m4", "保留消息二", "assistant"),
+    ];
+
+    expect(
+      planCompaction({
+        messages,
+        checkpoint: undefined,
+        profile: PROFILE,
+        triggerTokens: 100,
+      }),
+    ).toBeUndefined();
+    expect(
+      planCompaction({
+        messages,
+        checkpoint: undefined,
+        profile: PROFILE,
+        triggerTokens: 100,
+        force: true,
+      })?.messagesToSummarize.map((item) => item.id),
+    ).toEqual(["m1", "m2"]);
+  });
+
   it("summarizes the oldest messages and retains the configured tail", () => {
     const messages = [
       message("m1", "第一轮需求"),

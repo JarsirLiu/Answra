@@ -83,6 +83,13 @@ export const contextCompactionSchema = z.strictObject({
   summarizedMessages: z.number().int().nonnegative().optional(),
   errorText: z.string().optional(),
 });
+/** 已成功摘要的边界；只暴露边界位置，不向 UI 暴露摘要正文。 */
+export const contextCompactionBoundarySchema = z.strictObject({
+  id: z.string(),
+  /** 摘要覆盖的最后一条 transcript 消息；边界显示在它之后。 */
+  throughMessageId: z.string(),
+  createdAt: z.string().datetime(),
+});
 export const agentRunSnapshotSchema = z.strictObject({
   runId: z.string(),
   state: agentRunStateSchema,
@@ -104,3 +111,4 @@ export type AgentRunSnapshot = z.infer<typeof agentRunSnapshotSchema>;
 export type ContextCompactionState = z.infer<typeof contextCompactionStateSchema>;
 export type ContextCompactionTrigger = z.infer<typeof contextCompactionTriggerSchema>;
 export type ContextCompactionStatus = z.infer<typeof contextCompactionSchema>;
+export type ContextCompactionBoundary = z.infer<typeof contextCompactionBoundarySchema>;

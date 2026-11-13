@@ -49,7 +49,18 @@ const VERBS = [
 
 const FRAME_MS = 120;
 
-export function Spinner({ phase, queued }: { phase: TuiRunPhase; queued: number }) {
+export function Spinner({
+  phase,
+  queued,
+  message,
+  color = TUI_THEME.claude,
+}: {
+  phase: TuiRunPhase;
+  queued: number;
+  /** 覆盖随机动词的固定文案；不包含结尾省略号。 */
+  message?: string;
+  color?: string;
+}) {
   const [frame, setFrame] = useState(0);
   const [elapsed, setElapsed] = useState(0);
   const [verb] = useState(() => sampleVerb());
@@ -64,12 +75,13 @@ export function Spinner({ phase, queued }: { phase: TuiRunPhase; queued: number 
   }, [startedAt]);
 
   const glyph = phase === "cancelling" ? "·" : SPINNER_FRAMES[frame];
+  const label = phase === "cancelling" ? "Stopping" : (message ?? verb);
   return (
     <Box flexDirection="row" marginTop={1} width="100%">
       <Box flexShrink={0} width={2}>
-        <Text color={TUI_THEME.claude}>{glyph}</Text>
+        <Text color={color}>{glyph}</Text>
       </Box>
-      <Text color={TUI_THEME.claude}>{phase === "cancelling" ? "Stopping…" : `${verb}…`}</Text>
+      <Text color={color}>{`${label}…`}</Text>
       <Text dimColor>
         {" "}
         ({elapsed}s · {phase === "cancelling" ? "waiting for tools to stop" : "esc to interrupt"})

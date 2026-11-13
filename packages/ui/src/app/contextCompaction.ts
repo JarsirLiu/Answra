@@ -10,8 +10,6 @@ export function contextCompactionLabel(status: ContextCompactionStatus): string 
     case "failed":
       return `上下文压缩失败：${status.errorText ?? "未知错误"}；继续使用原历史。`;
     case "succeeded":
-      return status.summarizedMessages === undefined
-        ? "上下文压缩完成"
-        : `上下文压缩完成（${status.summarizedMessages} 条消息）`;
+      return "上下文压缩完成";
   }
 }

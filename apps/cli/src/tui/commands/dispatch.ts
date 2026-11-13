@@ -14,6 +14,7 @@ export interface TuiCommandDeps {
   readonly modelSettings: ModelSettings;
   readonly isBusy: () => boolean;
   readonly getSession: () => CodingSession | undefined;
+  readonly compactConversation: () => Promise<{ compacted: boolean; failed: boolean }>;
   readonly configureSession: (model: ConversationModelConfig) => Promise<void>;
   readonly requestExit: () => void;
   readonly openPanel: (panel: TuiPanel) => void;
@@ -24,6 +25,7 @@ type TuiCommandHandler = (args: readonly string[], deps: TuiCommandDeps) => void
 const handlers = {
   help: handleHelp,
   clear: handleClear,
+  compact: handleCompact,
   config: handleConfig,
   exit: handleExit,
   model: handleModel,
@@ -77,6 +79,23 @@ async function handleClear(_args: readonly string[], deps: TuiCommandDeps): Prom
   if (session === undefined) throw new Error("尚未配置模型。");
   deps.store.reset(await session.clear());
   deps.store.setNotice(["会话已清除。"]);
+}
+
+async function handleCompact(args: readonly string[], deps: TuiCommandDeps): Promise<void> {
+  if (args.length > 0) {
+    deps.store.setNotice(["/compact 不接受参数。"]);
+    return;
+  }
+  if (deps.isBusy()) {
+    deps.store.setNotice(["当前运行中，先按 Esc 中断后再压缩会话。"]);
+    return;
+  }
+  const result = await deps.compactConversation();
+  if (!result.compacted && !result.failed) {
+    deps.store.setNotice(["没有足够的旧消息可压缩。"]);
+    return;
+  }
+  deps.store.setNotice(undefined);
 }
 
 async function handleModel(args: readonly string[], deps: TuiCommandDeps): Promise<void> {

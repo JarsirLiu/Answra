@@ -131,6 +131,7 @@ export type {
   AgentExecutionEvent,
   AgentStreamEvent,
   BotSummary,
+  ContextCompactionBoundary,
   ContextCompactionState,
   ContextCompactionStatus,
   ContextCompactionTrigger,

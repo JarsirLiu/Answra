@@ -71,6 +71,7 @@ export async function runInkTui({
   const queue: string[] = [];
   let busy = false;
   let cancelRequested = false;
+  let compactAbort: AbortController | undefined;
   let exitTui: (() => void) | undefined;
 
   const submit = (text: string): void => {
@@ -120,11 +121,31 @@ export async function runInkTui({
     store.setPanel(panel);
   };
 
+  const compactConversation = async (): Promise<{ compacted: boolean; failed: boolean }> => {
+    if (busy || store.getSnapshot().compactionActive) throw new Error("上一轮尚未结束。");
+    const activeSession = session;
+    if (activeSession === undefined) throw new Error("尚未配置模型。");
+    const controller = new AbortController();
+    compactAbort = controller;
+    store.beginCompaction();
+    try {
+      const result = await activeSession.compact(controller.signal);
+      return {
+        compacted: result.compacted,
+        failed: result.snapshot.contextCompaction?.state === "failed",
+      };
+    } finally {
+      if (compactAbort === controller) compactAbort = undefined;
+      store.finishCompaction();
+    }
+  };
+
   const commandDeps: TuiCommandDeps = {
     store,
     modelSettings,
-    isBusy: () => busy,
+    isBusy: () => busy || store.getSnapshot().compactionActive,
     getSession: () => session,
+    compactConversation,
     configureSession: ensureSession,
     requestExit: () => exitTui?.(),
     openPanel,
@@ -299,6 +320,10 @@ export async function runInkTui({
   };
 
   const cancel = (): void => {
+    if (compactAbort !== undefined) {
+      compactAbort.abort();
+      return;
+    }
     if (!busy) return;
     cancelRequested = true;
     queue.length = 0;

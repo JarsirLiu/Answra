@@ -5,7 +5,7 @@ import type {
   ConversationSnapshot,
 } from "@answra/shared";
 import type { AgentEventEnvelope, AgentStreamEvent, RunOutcome } from "@answra/shared/schema";
-import type { ContextState } from "./contextState";
+import { type ContextState, compactionBoundaries } from "./contextState";
 import type { ConversationSessionSeed, ConversationStore, HandoffMessageInput } from "./store";
 
 type Session = {
@@ -372,9 +372,11 @@ function assertParticipant(session: Session, agentId: string): void {
 
 function snapshotOf(session: Session): ConversationSnapshot {
   const compaction = session.contextState?.compaction;
+  const boundaries = compactionBoundaries(session.contextState);
   return cloneSnapshot({
     ...session.snapshot,
     ...(compaction ? { contextCompaction: { ...compaction } } : {}),
+    ...(boundaries.length > 0 ? { contextCompactionBoundaries: boundaries } : {}),
   });
 }
 
@@ -387,7 +389,17 @@ function cloneContextState(state: ContextState): ContextState {
 }
 
 function cloneSnapshot(snapshot: ConversationSnapshot): ConversationSnapshot {
-  return { ...snapshot, messages: snapshot.messages.map(cloneMessage) };
+  return {
+    ...snapshot,
+    messages: snapshot.messages.map(cloneMessage),
+    ...(snapshot.contextCompactionBoundaries === undefined
+      ? {}
+      : {
+          contextCompactionBoundaries: snapshot.contextCompactionBoundaries.map((boundary) => ({
+            ...boundary,
+          })),
+        }),
+  };
 }
 
 function cloneMessage(message: ConversationMessage): ConversationMessage {

@@ -1,5 +1,9 @@
 /** transcript 的上下文检查点事实；不调用模型，也不定义摘要策略。 */
-import type { ContextCompactionStatus, ConversationMessage } from "@answra/shared";
+import type {
+  ContextCompactionBoundary,
+  ContextCompactionStatus,
+  ConversationMessage,
+} from "@answra/shared";
 
 /** 一次已完成摘要的边界；summary 是 synthetic user message 的正文。 */
 export interface ContextCheckpoint {
@@ -40,4 +44,13 @@ export function messagesAfterCheckpoint(
   if (!checkpoint) return [...messages];
   const index = messages.findIndex((message) => message.id === checkpoint.throughMessageId);
   return index < 0 ? undefined : messages.slice(index + 1);
+}
+
+/** 只把检查点边界投影给 UI；摘要正文仍留在 store 内。 */
+export function compactionBoundaries(state: ContextState | undefined): ContextCompactionBoundary[] {
+  return (state?.checkpoints ?? []).map((checkpoint) => ({
+    id: `compaction:${checkpoint.createdAt}:${checkpoint.throughMessageId}`,
+    throughMessageId: checkpoint.throughMessageId,
+    createdAt: checkpoint.createdAt,
+  }));
 }
