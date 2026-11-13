@@ -4,7 +4,7 @@ import type { ConversationSendRequest } from "@answra/shared";
 import type { ModelMessage } from "ai";
 import { projectContextMessages } from "../core/context/projection";
 import { resolveShellRuntime } from "../core/tool";
-import { latestCheckpoint } from "../core/transcript/contextState";
+import { latestCheckpoint } from "../core/transcript/contextCheckpoint";
 import { projectConversationMessages } from "../core/transcript/projection";
 import type { ConversationStore } from "../core/transcript/store";
 

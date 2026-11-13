@@ -1,7 +1,9 @@
 /** 选择可摘要的旧消息与保留尾段；只按完整 transcript 消息切分。 */
 import type { ConversationMessage } from "@answra/shared";
-import type { ContextCheckpoint } from "../../transcript/contextState";
-import { messagesAfterCheckpoint } from "../../transcript/contextState";
+import {
+  type ContextCheckpoint,
+  messagesAfterCheckpoint,
+} from "../../transcript/contextCheckpoint";
 import { estimateMessagesTokens, estimateTextTokens } from "../tokenEstimate";
 import type { CompactionProfile } from "./profile";
 

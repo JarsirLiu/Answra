@@ -1,7 +1,7 @@
 import type { ConversationMessage } from "@answra/shared";
 import { describe, expect, it } from "vitest";
 import { projectContextMessages } from "../../../src/core/context/projection";
-import type { ContextCheckpoint } from "../../../src/core/transcript/contextState";
+import type { ContextCheckpoint } from "../../../src/core/transcript/contextCheckpoint";
 
 function message(id: string, text: string): ConversationMessage {
   return { id, role: "user", text, images: [], status: "complete" };

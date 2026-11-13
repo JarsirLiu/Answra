@@ -2,7 +2,7 @@ import type { ConversationMessage } from "@answra/shared";
 import { describe, expect, it } from "vitest";
 import { planCompaction } from "../../../src/core/context/compaction/plan";
 import type { CompactionProfile } from "../../../src/core/context/compaction/profile";
-import type { ContextCheckpoint } from "../../../src/core/transcript/contextState";
+import type { ContextCheckpoint } from "../../../src/core/transcript/contextCheckpoint";
 
 const PROFILE: CompactionProfile = {
   retainRecentMessages: 2,

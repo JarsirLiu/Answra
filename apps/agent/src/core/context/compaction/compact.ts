@@ -1,7 +1,7 @@
 /** 通用摘要压缩用例：读取检查点、选择旧消息、调用模型并写回新检查点。 */
 import type { ConversationMessage } from "@answra/shared";
-import type { ContextCheckpoint, ContextState } from "../../transcript/contextState";
-import { latestCheckpoint } from "../../transcript/contextState";
+import { type ContextCheckpoint, latestCheckpoint } from "../../transcript/contextCheckpoint";
+import type { ContextState } from "../../transcript/contextState";
 import { planCompaction } from "./plan";
 import type { CompactionProfile } from "./profile";
 import { buildSummaryPrompt } from "./prompt";

@@ -248,25 +248,32 @@ packages/shared
 apps/agent/src/
 ├─ core/
 │  ├─ agent/                       AgentDefinition、runtime、executeRun；不读 transcript
-│  ├─ model/
-│  │  ├─ tokenEstimate.ts          新增：字符/usage 估算
-│  │  ├─ generateText.ts           新增：内部模型任务，复用鉴权/重试/取消
-│  │  └─ ...                       现有 provider、stream 归一化
+│  ├─ model/                       provider、stream 归一化；不放压缩策略
 │  ├─ transcript/
 │  │  ├─ store.ts                  transcript 端口
 │  │  ├─ memoryStore.ts            当前内存实现
 │  │  ├─ projection.ts             原始消息投影
-│  │  └─ contextState.ts           新增：checkpoint、archivedThrough、上下文状态端口
-│  └─ context/                     新增：跨领域上下文预算与压缩
-│     ├─ budget.ts                 窗口、预留输出、阈值、usage 判定
+│  │  ├─ contextState.ts           ContextState、usage 锚点类型
+│  │  ├─ contextCheckpoint.ts      checkpoint 类型、最新检查点与尾段选择
+│  │  └─ contextBoundary.ts        只含边界的 UI 投影；不携带摘要正文
+│  └─ context/                     跨领域上下文预算与压缩
+│     ├─ budget.ts                 窗口、预留输出、阈值
+│     ├─ tokenEstimate.ts          字符/usage 估算与锚点校准
+│     ├─ usageAnchor.ts            成功 run 首步 usage 锚点生命周期
+│     ├─ preparation.ts            唯一最终请求编排入口
+│     ├─ trim.ts                   超硬上限的完整轮次裁剪
 │     ├─ projection.ts             checkpoint-aware 模型上下文
+│     ├─ pruning/
+│     │  ├─ policy.ts              可清理工具与保护窗口
+│     │  └─ prune.ts               纯旧工具结果替换与净节省计算
 │     └─ compaction/
-│        ├─ profile.ts             CompactionProfile 契约：保留量、工具、阈值
-│        ├─ plan.ts                选段、保留量、工具配对边界
+│        ├─ profile.ts             CompactionProfile 契约：保留量、最少摘要量
+│        ├─ plan.ts                按完整消息边界选段
+│        ├─ transcript.ts          摘要输入只取可见正文
 │        ├─ prompt.ts              唯一摘要提示词；所有领域共用，不可覆盖
-│        ├─ toolResults.ts         清旧工具结果，不调用模型
-│        ├─ summary.ts             构造摘要请求并调用 core/model
-│        └─ compact.ts             读状态 -> 计划 -> 摘要 -> 写 checkpoint
+│        ├─ compact.ts             计划 -> 摘要 -> 写 checkpoint
+│        ├─ lifecycle.ts           独立压缩生命周期
+│        └─ compactor.ts           状态持久化、snapshot 推送、失败回退
 ├─ execution/                      run/event 状态；不承载压缩逻辑
 ├─ conversation/
 │  ├─ context/                     由 turn/ 重命名：模型上下文装配
@@ -331,12 +338,12 @@ Conversation / Coding / Interview application
 
 | 工作流 | 目录 | 交付 |
 | --- | --- | --- |
-| A 通用上下文核心 | `core/context/`、`core/model/tokenEstimate.ts` | 预算、选段、工具配对、纯函数测试 |
-| B 模型任务 | `core/model/generateText.ts`、`core/context/compaction/summary.ts` | 摘要调用、缓存、重试、取消 |
-| C Conversation adapter | `conversation/context/`、`conversation/compaction/` | 领域 profile、桌面状态 |
-| D Coding adapter | `coding/context/`、`coding/compaction/` | Coding profile、CLI `/compact` |
-| E Interview adapter | `interview/context/`、`interview/compaction/` | 实时上下文接入与 profile |
-| F 存储/归档 | `core/transcript/contextState.ts`、未来 `storage/` | checkpoint 持久化、archive |
+| A 通用上下文核心 | `core/context/`（`budget`、`tokenEstimate`、`usageAnchor`、`preparation`、`trim`、`pruning/`） | 预算、清理、裁剪、编排与纯函数测试 |
+| B 模型任务 | `core/model/`、`core/context/compaction/` | 摘要调用、状态、重试、取消 |
+| C Conversation adapter | `conversation/application.ts`、`conversation/turn/` | 领域接线与桌面状态 |
+| D Coding adapter | `coding/application.ts`、`coding/context.ts` | Coding 接线与 CLI `/compact` |
+| E Interview adapter | `interview/application.ts`、`interview/agent.ts` | 实时上下文接入 |
+| F 存储/归档 | `core/transcript/contextState.ts`、`contextCheckpoint.ts`、`contextBoundary.ts`、未来 `storage/` | checkpoint 持久化、边界投影、archive |
 | G 集成 | `host.ts`、`composition.ts`、`AGENTS.md` | 接线、架构守护、Note |
 
 ### 9. 迁移顺序
@@ -369,14 +376,15 @@ Conversation / Coding / Interview application
 - `core/context/compaction/compact.ts`：摘要生成、空结果 fail-closed、检查点追加。
 - `core/context/compaction/lifecycle.ts`：独立的 started/succeeded/failed 状态迁移。
 - `core/context/compaction/compactor.ts`：自动触发、状态持久化、snapshot 推送、失败回退。
-- `core/transcript/contextState.ts` 与 `ConversationStore`：checkpoint、压缩状态和 usage 锚点持久化；snapshot 投影 `contextCompaction` 与只含 `throughMessageId/createdAt` 的 `contextCompactionBoundaries`，不携带摘要正文。
+- `core/transcript/contextState.ts` 与 `ConversationStore`：保存 checkpoint、压缩状态和 usage 锚点；checkpoint 选段在 `contextCheckpoint.ts`，UI 边界投影在 `contextBoundary.ts`，摘要正文不下发。
 - `core/context/projection.ts`：把摘要作为 synthetic user message 注入，只投影检查点之后的尾段。
 - `core/model/provider.ts` 与 `AgentRuntime.generateText`：复用鉴权/重试的内部摘要模型调用。
 - Conversation、Coding、Interview 的 `prepareRun` 先写活动 run（`beginRun` / `beginHandoffRun` / `beginReplyRun`），再由 `prepareContext` 调用同一 `ContextCompactor`；checkpoint 变化后通过 `rebuild()` 重新装配最终请求。
-- `ContextPreparation` 已接入最终请求预算、usage 锚点、旧工具结果清理、摘要压缩、重建后二次清理和硬兜底裁剪。
+- `ContextPreparation` 已接入最终请求预算、usage 锚点、旧工具结果清理、摘要压缩、重建后二次清理和硬兜底裁剪；硬兜底裁剪独立在 `core/context/trim.ts`，不反向依赖编排。
 - 桌面 `ChatPanel` 的 `ContextCompactionNotice` 显示开始、完成、失败三个状态，不显示摘要正文、思考内容或消息条数；CLI TUI 对齐 Claude Code：压缩中蓝色 Spinner 固定 `Compacting conversation…`，成功后显示 dim 边界 `✻ Conversation compacted (ctrl+o for history)`，失败显示 `Error compacting conversation`，且失败提示不被运行中 Spinner 覆盖。`ctrl+o` 仍是现有的展开/收起思考与工具输出，不新增第二个历史面板。
 - CLI `/compact` 已接入同一 `ContextCompactor`：`force` 跳过上下文触发点但仍遵守保留尾段和最少摘要消息数；运行中拒绝；取消通过 `AbortSignal` 记录为 `failed`；没有可摘要消息时提示而不是伪成功。
 - CLI 压缩边界来自 snapshot 的 checkpoint 列表，可被 `initialize`/重连回放；边界行可选中复制，边界插入会使旧选区失效。跨进程重启恢复仍取决于持久化 store，当前 `MemoryConversationStore` 不提供。
+- 压缩相关 CLI TUI 测试已按关注点拆分：`tui.compaction`、`tui.composer`、`tui.render`、`tui.transcript`、`tui.thinking`、`tui.toolPresentation`，共享 `tuiTestHarness`，避免单个测试文件承载所有交互。
 - 测试覆盖阈值、保留尾段、checkpoint 去重、summary 注入、单 prompt、三状态迁移、状态快照、失败回退、边界回放、强制手动压缩、CLI Spinner/边界/命令与 UI 投影；schema 明确拒绝已移除的 `summarizing`。
 
 尚未落地：自动压缩/清理开关、上下文占用与阈值展示、工具清理结果/跳过原因展示、`postCompactTarget` 软目标、摘要中的图片处理、连续摘要失败熔断、provider 超限后的单次 reactive compact、摘要请求自身超限的截断重试、archive/SQLite，以及依赖持久化 store 的跨进程重启恢复。当前自动触发已使用 256k 窗口、216k 压缩点和 172k/40k/132k 工具清理预算，不再是 96k；预算与工具清理的细化规则见[256k 上下文预算与旧工具结果清理](2026-11-13-context-budget-and-tool-result-clearing.md)。

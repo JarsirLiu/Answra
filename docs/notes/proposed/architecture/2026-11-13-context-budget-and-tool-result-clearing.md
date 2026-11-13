@@ -246,11 +246,11 @@ definition.prepare()
 - `core/tool/toolNames.ts`：只放工具对模型暴露的固定名称；不 import 工具实现、registry 或平台模块。
 - `core/context/pruning/policy.ts`：可清理工具名、最近结果/消息保护条数和默认策略；不承载 token 阈值。
 - `core/context/pruning/prune.ts`：纯候选识别、受保护窗口计算、占位替换和净节省计算；不读 store、不调模型、不改 transcript。
-- `core/context/preparation.ts`：编排预算、锚点校准、两阶段旧工具结果清理、压缩、重建和硬兜底；不实现摘要 prompt、不实现领域上下文装配。
+- `core/context/preparation.ts`：编排预算、锚点校准、两阶段旧工具结果清理、压缩和重建；硬兜底裁剪在 `core/context/trim.ts`；不实现摘要 prompt、不实现领域上下文装配。
 - `core/context/usageAnchor.ts`：记录成功 run 首个 step 的 usage、计算校准比例、在投影变化或 run 失败后清理锚点；不读取 transcript 正文、不调用模型。
 - `core/context/tokenEstimate.ts`：只做估算和锚点校准；同时支持文本、工具结果、图片和模型消息形状。
 - `core/context/compaction/*`：只做摘要、检查点和生命周期；不负责工具清理；成功压缩会丢弃旧 usage 锚点。
-- `core/transcript/contextState.ts`：保存 checkpoint、压缩状态和可选 usage 锚点；不保存清理水位或工具结果副本。
+- `core/transcript/contextState.ts`：只保存上下文状态类型；checkpoint 类型与选段在 `contextCheckpoint.ts`，压缩边界投影在 `contextBoundary.ts`；不保存清理水位或工具结果副本。
 - `core/transcript/projection.ts`、`core/context/projection.ts`：继续是模型消息投影的唯一入口；工具清理通过替换副本参与，不复制投影逻辑。
 - `conversation/`、`coding/`、`interview/`：只提供 `ContextPolicy`/`CompactionProfile` 和当前请求，不实现第二套预算或清理。
 - `packages/shared`：只提供 UI 需要的设置和状态 DTO；不包含阈值公式、prompt 或存储实现。

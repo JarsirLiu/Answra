@@ -5,7 +5,8 @@ import type {
   ConversationSnapshot,
 } from "@answra/shared";
 import type { AgentEventEnvelope, AgentStreamEvent, RunOutcome } from "@answra/shared/schema";
-import { type ContextState, compactionBoundaries } from "./contextState";
+import { compactionBoundaries } from "./contextBoundary";
+import type { ContextState } from "./contextState";
 import type { ConversationSessionSeed, ConversationStore, HandoffMessageInput } from "./store";
 
 type Session = {

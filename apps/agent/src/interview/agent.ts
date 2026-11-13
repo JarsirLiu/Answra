@@ -5,7 +5,7 @@ import { agentId } from "../core/agent/definition";
 import { createToolStepLimit } from "../core/agent/toolStepLimit";
 import { projectContextMessages } from "../core/context/projection";
 import type { ReadFileStateMap, ToolRegistry } from "../core/tool";
-import { latestCheckpoint } from "../core/transcript/contextState";
+import { latestCheckpoint } from "../core/transcript/contextCheckpoint";
 import { projectConversationMessages } from "../core/transcript/projection";
 import type { ConversationStore } from "../core/transcript/store";
 import {

@@ -1,11 +1,9 @@
 /** 最终模型请求的上下文准备编排：usage 校准、旧工具结果清理、摘要压缩、重建与硬兜底裁剪。 */
 import type { ContextCompactionTrigger } from "@answra/shared";
 import type { AgentEvent } from "@answra/shared/schema";
-import type { ModelMessage } from "ai";
 import type { ContextUsageAnchor } from "../transcript/contextState";
 import {
   type ContextBudgetPolicy,
-  ContextLimitExceededError,
   type ContextModelRequest,
   DEFAULT_CONTEXT_BUDGET_POLICY,
   type ResolvedContextBudget,
@@ -19,6 +17,7 @@ import {
 } from "./pruning/policy";
 import { pruneOldToolResults } from "./pruning/prune";
 import { calibrateContextTokens, estimateContextRequestTokens } from "./tokenEstimate";
+import { trimContextRequest } from "./trim";
 import { type ContextStateStore, ContextUsageAnchorTracker } from "./usageAnchor";
 
 export interface ContextPreparationOptions {
@@ -137,40 +136,4 @@ export class ContextPreparation {
       changed: true,
     };
   }
-}
-
-/**
- * 压缩后仍达到输入硬上限时，删除最旧完整轮次直到低于上限。
- * 当前请求本身过大、没有可删除的旧轮次时抛出，不发送静默截断的请求。
- */
-export function trimContextRequest(
-  request: ContextModelRequest,
-  budget: ResolvedContextBudget,
-): ContextModelRequest {
-  let messages = request.messages;
-  while (estimateContextRequestTokens({ ...request, messages }) >= budget.inputLimit) {
-    const trimmed = dropOldestTurn(messages);
-    if (!trimmed) {
-      throw new ContextLimitExceededError({
-        estimatedTokens: estimateContextRequestTokens({ ...request, messages }),
-        inputLimit: budget.inputLimit,
-      });
-    }
-    messages = trimmed;
-  }
-  return messages === request.messages ? request : { ...request, messages };
-}
-
-/**
- * 丢弃第一轮到下一轮 user 消息之间的全部消息，包括 assistant 和 tool pair。
- * 只剩当前这一轮 user 消息时返回 undefined，避免删掉当前请求。
- */
-function dropOldestTurn(messages: readonly ModelMessage[]): ModelMessage[] | undefined {
-  const firstUser = messages.findIndex((message) => message.role === "user");
-  if (firstUser < 0) return undefined;
-  const nextUser = messages.findIndex(
-    (message, index) => index > firstUser && message.role === "user",
-  );
-  if (nextUser < 0) return undefined;
-  return messages.slice(nextUser);
 }
