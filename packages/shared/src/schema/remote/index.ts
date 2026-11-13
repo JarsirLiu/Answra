@@ -65,6 +65,18 @@ export {
   remoteModelSourceSchema,
 } from "./modelSettings";
 export {
+  REMOTE_DATA_CHANNEL_LABEL,
+  REMOTE_DATA_CHANNEL_PROTOCOL,
+  REMOTE_SERVICE_BASE_URL,
+  REMOTE_SIGNALING_MAX_FRAME_BYTES,
+  REMOTE_SIGNALING_PATH,
+  REMOTE_SIGNALING_SUBPROTOCOL,
+  REMOTE_SIGNALING_TICKET_PATH,
+  REMOTE_SIGNALING_TICKET_TTL_SECONDS,
+  type RemoteSignalingTicket,
+  remoteSignalingTicketSchema,
+} from "./service";
+export {
   type RemoteIceCandidate,
   remoteIceCandidateSchema,
   type SignalingFrame,

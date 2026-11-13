@@ -4,8 +4,10 @@ import type { RemoteCredentialStore, RemoteHostKeyStore } from "@answra/remote";
 import type { ConversationSnapshot } from "@answra/shared";
 import type { AgentEventEnvelope } from "@answra/shared/schema";
 import type { ModelSettings } from "../model/ports";
+import type { RemoteAuthPort } from "../remote/auth/remoteAuthService";
 import type { CodingSessionHost } from "../session/codingSession";
 import type { InputPort } from "../transport/input";
+import type { OpenBrowser } from "../transport/openBrowser";
 import type { OutputPort } from "../transport/output";
 import type { TuiRunner } from "../tui/runTui";
 
@@ -34,4 +36,6 @@ export interface CliDependencies {
   onInterrupt(handler: () => void): () => void;
   runTui: TuiRunner;
   remoteKeys?: RemoteKeyDependencies;
+  remoteAuth?: RemoteAuthPort;
+  openBrowser?: OpenBrowser;
 }

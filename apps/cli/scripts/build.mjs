@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { chmod, cp, mkdir, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -17,7 +18,7 @@ await build({
   bundle: true,
   platform: "node",
   format: "esm",
-  external: ["@napi-rs/keyring"],
+  external: ["@napi-rs/keyring", "node-datachannel"],
   // 运行时下限跟桌面端 Electron 35 内嵌的 Node 22.14 对齐，便于安装包复用同一 Electron。
   target: "node22.14",
   alias: {
@@ -31,28 +32,49 @@ await build({
   logLevel: "info",
 });
 
-await copyKeyringPackages();
+await copyNativePackages();
 if (process.platform !== "win32") await chmod(outfile, 0o755);
 
-async function copyKeyringPackages() {
-  const keyringManifestPath = require.resolve("@napi-rs/keyring/package.json");
-  const keyringRequire = createRequire(keyringManifestPath);
-  const keyringManifest = keyringRequire(keyringManifestPath);
+async function copyNativePackages() {
+  await copyNativePackage("@napi-rs/keyring");
+  await copyNativePackage("node-datachannel");
+}
+
+/**
+ * 原生包不能被 esbuild 打进 bundle：复制包本身、当前平台可解析的可选二进制
+ * 以及普通依赖，保持 pnpm 的隔离布局在发布目录仍然成立。
+ */
+async function copyNativePackage(name) {
+  const entry = require.resolve(name);
+  const packageRoot = findPackageRoot(entry);
+  const manifestPath = path.join(packageRoot, "package.json");
+  const packageRequire = createRequire(manifestPath);
+  const manifest = packageRequire(manifestPath);
   const packageNames = [
-    "@napi-rs/keyring",
-    ...Object.keys(keyringManifest.optionalDependencies ?? {}),
+    name,
+    ...Object.keys(manifest.dependencies ?? {}),
+    ...Object.keys(manifest.optionalDependencies ?? {}),
   ];
-  await mkdir(path.join(outDir, "node_modules", "@napi-rs"), { recursive: true });
-  for (const name of packageNames) {
-    let manifestPath;
+
+  for (const packageName of packageNames) {
+    let resolvedEntry;
     try {
-      manifestPath = keyringRequire.resolve(`${name}/package.json`);
+      resolvedEntry = packageRequire.resolve(packageName);
     } catch {
       continue;
     }
-    await cp(path.dirname(manifestPath), path.join(outDir, "node_modules", name), {
-      recursive: true,
-      dereference: true,
-    });
+    const sourceRoot = findPackageRoot(resolvedEntry);
+    const destination = path.join(outDir, "node_modules", packageName);
+    await mkdir(path.dirname(destination), { recursive: true });
+    await cp(sourceRoot, destination, { recursive: true, dereference: true });
   }
+}
+
+function findPackageRoot(entry) {
+  let directory = path.dirname(entry);
+  while (directory !== path.dirname(directory)) {
+    if (existsSync(path.join(directory, "package.json"))) return directory;
+    directory = path.dirname(directory);
+  }
+  throw new Error(`could not find package root for ${entry}`);
 }

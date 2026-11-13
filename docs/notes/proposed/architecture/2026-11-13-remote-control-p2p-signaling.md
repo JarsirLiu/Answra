@@ -29,7 +29,7 @@
   - `apps/agent/src/`：不新增 `remote/` 目录。Agent 只暴露 `CodingApplication` / `AgentService` 能力，远程映射由宿主适配层完成。
   - `apps/desktop/src/main/remote/`（第二阶段）：桌面 host 服务、IPC 与 P2P 适配；复用 `AgentService`，renderer 不接触网络。
   - `packages/config/src/`：只增加非 secret 的信令端点/远程开关；远程 key 仍由各宿主凭据存储负责。
-  - `AnswraSite`（仓外）：登录、房间、presence、SDP/ICE 信令；不存业务消息，不接触访问密钥的 secret。
+  - `AnswraSite`（仓外）：账号/设备服务准入、房间、presence、SDP/ICE 信令；不存业务消息，不接触访问密钥的 secret。官方公网服务要求服务准入；官方客户端不提供自建端点配置。
 - UI/进程/协议/持久化表面：
   - 进程：家里 CLI/桌面为 host；公司 CLI/浏览器为 controller。host 出站连接信令，不开公网监听。
   - 协议：新增 `RemoteFrame` 与 `HostCommandPort`；不复用 worker 线协议。
@@ -177,10 +177,44 @@ UI / 外部
 - P2P 无法建立时显式失败为 `remote-unreachable`，并保留 ICE 诊断；绝不自动改成转发，也绝不回退到 controller 本机 Agent。
 - 不采用“服务器 L7 消息转发但不存储”：它仍占带宽，也仍能观察或篡改明文边界；与目标不一致。
 
+#### 2.1 AnswraSite 信令服务契约与服务准入
+
+公网信令端点不是“有密钥才能用”，而是“先证明是 Answra 客户端，再证明持有远程访问密钥”；两层必须分开：
+
+- **服务准入**：账号设备登录/短期 ticket，解决“谁都能拿服务器当免费房间和信令中转”的滥用问题。
+- **远程授权**：访问密钥，解决“controller 是否有权控制这台 host”的授权问题；服务端始终不接触 secret。
+
+匿名公网端点不可接受：即使只转发 SDP/ICE，也会被当作免费 WebSocket 房间/信令中转，消耗连接数、CPU、心跳和运维成本，并可能被用于穿透企业网络或做其他服务的信令。第三方可以自行开发/托管端点，但官方客户端首版不提供端点配置，也不连接非官方端点。
+
+建议契约：
+
+```text
+POST /api/v1/remote/signaling-ticket
+  Authorization: Bearer <账号设备 token>
+  -> { "ticket": "<一次性随机值>", "expiresAt": "<ISO-8601>" }
+
+GET /api/v1/remote/signaling?ticket=<一次性 ticket>
+  Upgrade: websocket
+  Sec-WebSocket-Protocol: answra.remote.signaling.v1
+```
+
+- 长期账号 token 不放进 WebSocket URL；CLI 先换一次性、60 秒有效的 ticket，再连接；ticket 只允许使用一次。浏览器 controller 走同一 ticket 流程。
+- 服务端在握手阶段校验 ticket、账号状态、设备/IP 速率；握手失败直接 HTTP 401/429，不建立 WebSocket。
+- `join` 仍是第一个应用帧：`{ protocolVersion: 1, type: "join", roomId, role, peerId }`；服务端从 ticket 绑定账号，不信任客户端声明的账号。
+- 服务端只接受 `join` / `offer` / `answer` / `ice` 四种客户端帧；其他帧一律关闭连接。不提供聊天、文件或任意二进制转发。
+- 房间内最多一个 host、一个 controller；重复 host 返回 `room-conflict`，重复 controller 返回 `controller-busy`，非法 `roomId`/角色/`peerId` 返回 `join-rejected`。
+- 服务端在转发 `offer` / `answer` / `ice` 时重写 `fromPeerId`，只发给房间内唯一对端；没有对端时拒绝或丢弃并计数。
+- 限制：单帧 64 KiB、单连接 20 帧/秒、握手/join 10 次/分钟/IP；单账号最多 10 个活跃房间、20 个并发连接；单 IP 最多 20 个并发连接。超限返回 429 或关闭码 1008。
+- 生命周期：host WebSocket 断开后进入 `host-suspended`，房间保留 120 秒；期间 controller 收到 `peer-left` 但保持房间和自身连接，host 可用同一房间重新 `join`，服务端再向 controller 发 `peer-joined`。120 秒内未恢复才关闭房间。controller 断开后保留 60 秒 controller 槽位，host 继续等待；显式 `close` 或超时才释放。房间在双方都离开且宽限期结束后删除。
+- 心跳：服务端每 30 秒 ping，90 秒无 pong 关闭；客户端不得依赖业务帧保活。断线宽限期由服务端计时，不因一次心跳丢失立即销毁房间。
+- 日志只记录账号/房间哈希、角色、连接时长、错误码、字节数；不记录 SDP、ICE candidate、访问密钥、prompt、事件或工具输出。保留期与访问权限按站点现有隐私策略执行。
+- 服务端容量瓶颈按“并发 WebSocket + 房间状态 + 心跳”估算，不按业务流量估算；因为不承载 TURN/业务转发，单连接的带宽成本很低，但不能因此开放匿名房间。
+- 首版客户端固定官方信令端点，不提供 `--signal-url`、环境变量或共享配置覆盖；第三方自建端点不在官方客户端支持范围内，由第三方自行 fork/开发。开发与测试通过注入 `SignalingChannel` 和 fake signaling 完成，不把可配置端点暴露给最终用户。
+
 ### 3. 两端形态
 
-- **家里 CLI host**：使用独立的 `answra remote host` 子命令，不把远程模式塞进 `answra code`。host 启动现有 `startCodingHost`，生成远程访问密钥（默认 7 天、最小 7 天），出站连接 AnswraSite 信令；收到 controller 后提供 `RemoteHostSession`。不显示配对码，也不要求逐次确认。
-- **公司 CLI controller**：使用 `answra remote attach`，采用 key-only attach；只要密钥有效、host 在线且信令可达即可直接连接，不需要配对码。它用远程实现的 `CodingSessionHost` 驱动现有 TUI；TUI 不感知传输，也不把公司机器的模型配置或 API key 发给 host。`/model` 与 `config` 的 host 语义全部回到家里 host：查看/切换/新增/清空本地模型、改 base URL 都由 host 执行；公司端只持有视图。API key 仍是 host 本地 secret，不从公司端上传，也不在公司端展示。
+- **家里 CLI host**：使用独立的 `answra remote host` 子命令，不把远程模式塞进 `answra code`。host 启动现有 `startCodingHost`，生成远程访问密钥（默认 7 天、最小 7 天），出站连接 AnswraSite 信令；收到 controller 后提供 `RemoteHostSession`。不显示配对码，也不要求逐次确认；首次使用需要账号设备登录换取服务准入 ticket，之后用设备 token 刷新。
+- **公司 CLI controller**：使用 `answra remote attach`，采用 key-only attach；只要密钥有效、host 在线且信令可达即可直接连接，不需要配对码。服务准入登录只证明“是 Answra 客户端”，不替代访问密钥；远程授权仍由 host 的访问密钥完成。它用远程实现的 `CodingSessionHost` 驱动现有 TUI；TUI 不感知传输，也不把公司机器的模型配置或 API key 发给 host。`/model` 与 `config` 的 host 语义全部回到家里 host：查看/切换/新增/清空本地模型、改 base URL 都由 host 执行；公司端只持有视图。API key 仍是 host 本地 secret，不从公司端上传，也不在公司端展示。
 - **桌面**：复用现有登录、`AgentService` 与安全存储，作为第二 host；renderer 不直接持有网络 peer，远程网络代码留在 main。CLI 不复制桌面 UI，也不要求桌面常驻。
 - **浏览器**：使用同一 `RemoteFrame` 与 capability 协商；不是首版必需，但架构不能把 CLI 锁死成唯一 controller。
 
@@ -287,6 +321,29 @@ interface HostModelSettingsPort {
 - 远程断开必须显式失败为 `remote-disconnected` / `remote-unreachable`，禁止静默回退到公司本机 Agent；否则用户以为在操作家里机器，实际在公司执行工具。
 - host 退出或休眠，远程会话结束；跨 host 重启恢复需要本地持久化事件日志，另立 Note，不在本提案伪造服务端恢复。
 
+#### 7.1 弱网、网络切换与临时中断
+
+弱网不能按“断一次就结束会话”实现；但 P2P 网络切换也不可能做到零中断。目标是：**Agent 继续在 host 跑，controller 自动恢复 UI 和事件流；短时丢包/切网不销毁会话，长时失联才显式失败。**
+
+恢复分三层，各自有独立状态和预算：
+
+| 层 | 触发 | 行为 | 失败 |
+| --- | --- | --- | --- |
+| L1 信令 WebSocket | 网络切换、代理断开、心跳超时 | 指数退避重连（1/2/4/8/16/30 秒，±20% 抖动），刷新 access token 并换新 ticket，重新 `join` 同一房间 | 120 秒仍失败：`remote-unreachable` |
+| L2 WebRTC 数据面 | `disconnected`、ICE 失败、DataChannel 半开 | 先等 15 秒 ICE 自愈；未恢复则关闭旧 PeerConnection，用新 `connectionId` 重新 offer/answer；服务端只转发信令 | 连续 3 次重建失败或 120 秒：`remote-unreachable` |
+| L3 应用会话 | 新 DataChannel 建立 | controller 重新 `hello` + `auth`；host 生成新 sessionId/lease；controller 请求 snapshot，并按 `afterRevision` 补事件 | 授权失败/版本不兼容：终止，不重试 |
+
+- DataChannel 不能只看 `onClosed`；必须加应用层 `ping` / `pong` 心跳（5 秒间隔，连续 3 次丢失进入 `interrupted`），因为半开连接可能既不触发 close 也不送业务帧。
+- 客户端连接状态扩展为 `connecting | open | interrupted | reconnecting | closed`；`interrupted` 和 `reconnecting` 是临时态，不销毁 transcript，不把 TUI 踢回本地模式。
+- 网络切换时不做“续用旧 candidate”；旧连接直接废弃，新连接用新 `connectionId`。`offer` / `answer` / `ice-candidate` 带 `connectionId`，双方丢弃旧 generation 的 SDP/ICE；服务端只按房间转发，不解析。
+- 当前 `RemoteSignalingNegotiation` 的“只允许一次 offer/answer”要扩展为“同一 peer 可在 `connectionId` 变化时重启协商”；旧 generation 的迟到 answer/ICE 必须丢弃，不能触发第二次状态迁移。
+- controller 在临时断线期间的已发命令不自动重放；in-flight `requestId` 以 `remote-disconnected`（`retryable: true`）失败，由用户显式重发。若后续要做自动重放，host 必须按 `requestId` 去重并返回同一结果。
+- controller 断线重连后只信任 host 的 snapshot + revision；不把本地旧事件覆盖新状态。TUI 显示“重连中”，发送按钮/输入提交暂时禁用，但保留用户草稿。
+- host 仍持有唯一 Agent run；controller 断线不取消 run，工具和 shell 继续执行。host 的事件流在内存中保留并按 revision 追平；慢 consumer 触发合批/降级，不阻塞 Agent。
+- 信令服务端保留房间宽限期：host 120 秒、controller 60 秒。网络切换导致双方同时掉线时，先恢复的一方重新 `join`，另一方恢复后收到 `joined` peers 快照或 `peer-joined`；超时才关闭房间。
+- 网络切换后如果 NAT/防火墙不再允许 P2P，仍按 `remote-unreachable` 失败；不允许因为弱网切到服务器 relay 或本机 Agent。
+- 休眠/唤醒单独处理：唤醒后先重建信令和 WebRTC；host 进程若已退出，controller 直接报 `remote-disconnected`，不做无限重试。
+
 ### 8. 网络与本地监听边界
 
 - 家里 host 只做出站：到 AnswraSite 的 HTTPS/WSS 信令，以及 WebRTC 的 STUN/ICE 连接；不开 HTTP/WS 监听端口。
@@ -304,6 +361,8 @@ interface HostModelSettingsPort {
 - 不做服务端 transcript、消息历史、工具输出存储或 replay。
 - 不做服务端 Bot 路由、prompt 注入或工具执行。
 - 不设配对码；首版只有 key-only attach。
+- 不开放匿名公网信令房间；官方服务要求账号设备准入。
+- 首版官方客户端不支持自建/自定义信令端点；第三方自建由第三方自行开发。
 - 不配置 TURN、不做服务器 relay、不做 L7 转发兜底。
 - 不把远程 key 当模型 API key，不共享桌面 `safeStorage`。
 - 不把模型 API key 放进远程配置 frame，不把 `answra config` 静默重定向到 host。
@@ -342,7 +401,8 @@ interface HostModelSettingsPort {
 | R3 CLI host 适配 | `apps/cli/src/remote/host/**`、`apps/cli/src/remote/credentials/**` | R0、R1 | TUI、controller |
 | R4 CLI controller 适配 | `apps/cli/src/remote/controller/**`、`apps/cli/src/config/remoteOptions.ts`、`apps/cli/src/cli/remoteCommand.ts` | R0、R2 | TUI 组件、host |
 | R5 信令与访问密钥 | `packages/remote/src/{access,signaling}/**`、`apps/cli/src/remote/signaling/**`、`apps/cli/src/remote/credentials/**` | R0 | WebRTC、Agent、TUI |
-| R6 P2P 传输 | `apps/cli/src/remote/transport/**` | R0 | host/controller 状态机、Agent |
+| R5b 服务准入 | `apps/cli/src/remote/signaling/**`、CLI 登录/ticket 适配、AnswraSite ticket 端点 | R5 | 远程访问密钥、Agent、TUI |
+| R6 P2P 传输 | `apps/cli/src/remote/transport/**`、`apps/cli/scripts/build.mjs` | R0 | host/controller 状态机、Agent |
 | R7 桌面 host + IPC | `apps/desktop/src/main/{remote,ipc}/**`、`packages/shared/src/channels/remote.ts`、preload | R0、R1、R3 的适配模式 | renderer 网络、CLI |
 | R8 验收与安全 | 测试、网络矩阵、威胁模型、文档 | 各流接口 | 不改业务实现 |
 
@@ -358,9 +418,11 @@ interface HostModelSettingsPort {
 2. **阶段 1：远程会话核心。** 已落地：`RemoteHostSession` 与 `RemoteControllerSession` 通过 fake link 完成握手、命令 requestId 关联、host snapshot/event 推送、`/model` snapshot/add/switch/clear、send/cancel/clear 与 list/select bot；不接 CLI、TUI 或真实网络。
 3. **阶段 2：CLI 两端适配。** R3 + R4 适配器已落地：`CodingApplication` 映射成 `HostCommandPort`，`RemoteControllerSession` 映射成 `CodingSessionHost` 与 `RemoteModelSettings`；fake link 覆盖命令、模型设置、run 等待与 unsupported team send，不改 TUI 语义。`remote host`/`attach` 命令仍是后续接线点。
 4. **阶段 3：信令与访问密钥。** key 命令、本地存储、host 侧 auth handshake 与纯库信令状态机已落地（`key create/list/revoke/set/show/forget`、7/30 天、host 存 hash、controller 存受保护文件、`auth` / `auth-error` 校验撤销/过期/session；`joined` / `join-rejected`、单 peer、重复角色、join 超时与 offer/answer/ICE 方向）；AnswraSite 真实 room/presence/SDP 路由仍未接，fake signaling server 只证明客户端状态机；`remote host`/`attach` 与 WebRTC 直连仍待 R5/R6；不设配对码。
-5. **阶段 4：P2P 直连。** R6 接真实 WebRTC DataChannel，做 loopback 与家庭 NAT/IPv6 实机；不配置 TURN，记录 UDP 被封/对称 NAT 的失败矩阵。
-6. **阶段 5：健壮性。** 重连、背压、慢 consumer、lease、密钥过期、host 退出；补架构守护和 TUI 端集成测试。
-7. **阶段 6：桌面与多 Bot。** 复用 host/controller 契约；桌面 IPC/UI 与 CLI 多 Bot capability 分别落地，不复制远程状态机。
+5. **阶段 3.5：服务准入。** CLI 首次设备登录、token 刷新、`signaling-ticket` 换取与 WS ticket 握手；官方服务端拒绝无 ticket 连接。官方客户端固定官方端点，不提供自定义 URL 或匿名模式；自建端点不在首版支持范围。
+6. **阶段 4：P2P 直连。** 已落地 WebSocket 信令适配与 `NodeWebRtcLink`，真实 loopback DataChannel 通过 fake signaling 状态机测试；构建已 externalize 并复制 `node-datachannel`、当前平台二进制、`detect-libc`。`node-datachannel` 在 `createDataChannel` / `setRemoteDescription` 后自动推进协商，不能再手调 `setLocalDescription`（会触发原生崩溃）。家庭 NAT/IPv6 实机与 UDP 封锁/对称 NAT 失败矩阵仍未验证；不配置 TURN。
+7. **阶段 4.5：弱网恢复。** 实现 §7.1 的三层恢复：信令退避重连与 ticket 刷新、WebRTC `connectionId` 重建、应用 snapshot/revision 追平、ping/pong 与 `interrupted/reconnecting` 状态；这是首版验收项，不是可选的后续增强。
+8. **阶段 5：健壮性。** 背压、慢 consumer、lease、密钥过期、host 退出；补架构守护和 TUI 端集成测试。
+9. **阶段 6：桌面与多 Bot。** 复用 host/controller 契约；桌面 IPC/UI 与 CLI 多 Bot capability 分别落地，不复制远程状态机。
 
 ## 曾考虑的替代方案
 
@@ -368,6 +430,7 @@ interface HostModelSettingsPort {
 - **家里 CLI 开公网 WebSocket/HTTP 端口：** 舍弃。需要 NAT/端口映射/TLS，暴露面大，且违反本地监听约束。
 - **服务器 L7 转发但不存消息：** 舍弃作为默认方案。虽然不托管，但仍承载全部流量，并让服务端进入明文/可篡改边界。
 - **服务器 TURN/relay 兜底：** 舍弃。能提高手机流量和企业网络的可达性，但会重新引入服务器带宽成本；首版接受这些网络不可直连，并以 `remote-unreachable` 显式失败。
+- **公网信令完全匿名：** 舍弃。即使不转发业务，任何人都能把 AnswraSite 当免费 WebSocket 房间/信令中转，滥用连接数、CPU、心跳和运维容量；用账号设备服务准入 + 严格配额隔离，访问密钥仍只负责远程授权。
 - **一次性配对码：** 舍弃。用户要求拿密钥直接访问；配对码只增加一步，不构成额外安全边界。用高熵密钥、7 天有效期、host 可见和可撤销替代。
 - **Tailscale/frp/SSH 隧道：** 不作为产品地基。它们能解决可达性，但把部署、账号和带宽成本转嫁给用户/运维；可作为高级用户兜底。
 - **只做桌面远程，不做 CLI host：** 舍弃。用户明确要在公司用自己的 CLI 连接家里 CLI；桌面可以是第二 host，但不能替代 CLI。
@@ -388,18 +451,26 @@ interface HostModelSettingsPort {
   - 远程 `/model` 可查看、切换、新增、清空 host 的模型配置；操作写入 host，不写公司本地；`baseUrl` 由 host 网络解析，错误在 host 侧显式返回。
   - 远程 `/model` 不返回、不展示、不接受 API key；`answra config` 在公司机器上仍只改本地，显式 `answra remote config` 才改 host。
   - 工作区、时间、shell 和工具结果来自家里 host；公司端不把自身 cwd/时区注入 Agent。
-  - 服务端只看到登录/房间/信令/presence 元数据，看不到访问密钥 secret、prompt、回复、工具输出或 transcript。
+  - 官方服务端拒绝无 ticket/无设备 token 的 WebSocket，拒绝匿名开房；官方客户端只连接官方端点。
+  - 服务端只看到账号/房间/信令/presence 元数据，看不到访问密钥 secret、prompt、回复、工具输出或 transcript。
+  - 超过单账号房间数、单 IP 连接数、帧率或帧大小限制时，服务端返回 429 或关闭码 1008，不能无限占用房间和连接。
   - 密钥默认 7 天且最小 7 天；到期后新连接返回 `key-expired`，活动连接断开；host 可轮换和撤销。
   - host 可显示远程连接状态、密钥剩余时间并撤销密钥；撤销后新连接失败，已连接 controller 被断开。
   - P2P 失败时显式返回 `remote-unreachable`，不配置 TURN、不转发、不回退本机 Agent。
   - host 退出后远程会话结束；重连只在 host 存活期间通过 snapshot + event cursor 恢复。
+  - 网络切换或 15 秒内短时断网后，controller 自动回到 `open`，看到断开期间的 host 事件；Agent run 不因 controller 断线而取消。
+  - 信令 WebSocket 断开后指数退避重连并重新 ticket/rejoin；120 秒内恢复不销毁房间，超过预算才 `remote-unreachable`。
+  - DataChannel 半开时通过应用层 ping/pong 在 15 秒内进入 `interrupted` 并重建；旧 `connectionId` 的迟到 SDP/ICE 不会污染新连接。
 - 自动化验证：
   - `packages/shared`：`RemoteFrame`/`SignalingFrame` 版本化、命令/事件/错误 schema 往返与拒绝未知版本；`remote-unreachable`、`key-expired` 等稳定错误码可序列化。
   - `packages/remote`：fake link + `HostCommandPort` 的 send/cancel/snapshot/readEvents、乱序 revision、重复 requestId、controller lease、重连与背压；密钥过期/撤销与 key-only 授权；不得出现平台依赖。
+  - `packages/remote`：信令重连抖动/上限、`peer-left` 后宽限期内 rejoin、旧 `connectionId` SDP/ICE 丢弃、断线期间 in-flight 命令 `retryable` 失败、重连后 snapshot + `readEvents(afterRevision)` 追平。
+  - `apps/cli`：WebRTC loopback 下模拟断网/恢复，断言 `interrupted -> reconnecting -> open` 且 host run 未取消；模拟超过 120 秒断言 `remote-unreachable`。
   - `packages/remote/test/session.test.ts`：host/controller 通过 fake link 完成握手、命令关联、`/model`、snapshot/event 推送与关闭语义；证明同一 `RemoteFrame` 契约可独立演进。
   - `apps/cli`：远程 `CodingSessionHost` 驱动现有 TUI 的测试，证明 TUI 未因远程分叉；密钥轮换/撤销、host 状态展示；host 适配只映射 `CodingApplication`。
   - `apps/cli`：`RemoteModelSettings` 的 snapshot/add/switch/clear 全部落到 host fake；断言公司本地 `ModelSettingsStore` 未被写；断言 API key 不出现在任何 frame。
   - `apps/cli`：命令归属表逐项测试：host 命令走远程，controller-local 命令不发送，`answra config` 不隐式改 host，`answra remote config` 才改 host。
+  - `apps/cli`：服务准入测试：无 ticket 被拒绝、ticket 只能用一次/会过期、账号 token 不进 WebSocket URL、官方客户端不暴露自定义端点参数。
   - `apps/desktop`：`AgentService` host 适配与 main 侧 peer 生命周期；renderer 不接触 peer。
   - 架构检查：远程代码无 `createServer(` / `.listen(`；`packages/remote` 只 import `@answra/shared`；`apps/cli/src/tui` 不 import `@answra/remote`；renderer 不 import `@answra/remote`。
   - `pnpm verify` 全绿。
@@ -413,7 +484,7 @@ interface HostModelSettingsPort {
 
 - **“密钥就行”不成立：** 还需要 host 在线、信令可达、NAT/防火墙允许 WebRTC。公司网络可能只允许 443/TCP，手机流量/公共 Wi-Fi 也常因 CGNAT/对称 NAT 失败；没有 TURN 时这些用户无法远程，密钥无法解决。
 - **远程 shell 是高风险面：** key-only 下密钥泄露等于家里机器命令执行权限，且有效期内可直接连接。首版必须 host 显式开启、默认一周有效期、每设备独立密钥、可撤销，并限制 active controller；后续需要工具审批或命令白名单。
-- **WebRTC 依赖与打包：** CLI 是 Node/Electron Node 模式，需要评估纯 TS 或原生 WebRTC 库的体积、ABI、Windows 打包和升级；不能把未经打包验证的库直接进发布链。
+- **WebRTC 依赖与打包：** 首版选用 `node-datachannel`，它是原生模块；CLI 是 Node/Electron Node 模式，必须把平台二进制和可选依赖复制进 `resources/cli/node_modules`，并验证 Electron 35（Node 22.14）ABI。不能只在本机安装后直接进发布链；若打包失败，再评估纯 TS WebRTC 库。
 - **纯库被平台依赖污染：** `packages/remote` 一旦 import `node:`、Electron、Ink 或 WebRTC 实现，浏览器/未来 controller 就无法复用，CLI bundle 也会被动变大；必须用架构守护和单测扫描禁止。
 - **host 适配漂移：** CLI `CodingApplication` 与 desktop `AgentService` 各自映射 `HostCommandPort`，可能在错误码、snapshot 顺序或 capability 上分叉；两个适配器必须跑同一套 contract test。
 - **TUI 并行冲突：** CLI TUI 正在独立重构；远程 controller 只能实现 `CodingSessionHost`，不得为了远程改 `tui/**`，否则远程 PR 会与 TUI PR 互相冲突并模糊行为变化。
@@ -423,10 +494,14 @@ interface HostModelSettingsPort {
 - **命令归属漂移：** “CLI 全部命令可远程”容易把所有顶层进程命令也透明转发；必须维护 host/controller/host-only 三类清单，新增命令先定归属再上协议。
 - **静默本地回退：** 远程断开时不得自动切到本机 Agent 执行 prompt；必须显式失败为 `remote-disconnected`/`remote-unreachable`，避免用户以为在操作家里机器却在公司机器执行工具。
 - **无中继的可达性缺口：** 不配置 TURN 意味着部分公司网络和手机流量用户无法使用；这是有意的成本取舍，必须通过诊断文案和 `remote-unreachable` 明确暴露，不能承诺“所有用户都能连”。
+- **弱网恢复不是无损：** 网络切换必然造成短暂中断，正在传输的 DataChannel 帧可能丢失，in-flight 命令可能失败；产品只能保证 host 的 Agent run 不中断、控制器自动重连并用 snapshot/revision 追平，不能宣称“零断线”或“命令绝不丢”。
+- **重连风暴：** 大量客户端同时掉线后按相同节奏重连会冲击信令服务；必须用抖动、单账号/单 IP 限额、服务端排队和 ticket 频率限制，不能只做固定间隔重试。
 - **CLI 密钥存储：** CLI 不能使用桌面 `safeStorage`；首版需明确 OS keychain 或受保护文件的实现与权限，不能把 7 天有效期的 remote key 明文写进共享配置或日志。
 - **当前无持久化：** host 退出即丢 transcript/run；远程体验在 host 生命周期内成立，不能宣称可恢复。跨重启恢复需要本地事件日志。
 - **多 controller 并发：** 两个端同时 send/select/handoff 可能改变会话顺序；host 必须串行化并定义 lease，否则会出现第二个事实源。
 - **信令服务可用性：** 即使不传消息，登录/房间/ICE 不可用也会阻断新连接；需要房间 TTL、重试和降级提示，但不能把失败误报成模型错误。信令成本瓶颈是并发连接与心跳，不是业务带宽。
+- **匿名信令滥用：** 公网匿名房间会被当成免费 WebSocket 房间/信令中转，消耗连接数、CPU、心跳和运维容量，并可能被用于穿透企业网络。官方服务必须用账号设备服务准入、单账号/单 IP 配额、帧率和房间 TTL 限制；官方客户端不提供匿名/自建端点开关。
+- **服务准入与远程授权混淆：** 登录只证明“是 Answra 客户端”，不能替代访问密钥；任何持有账号的人仍不能控制别人的 host。反过来，访问密钥也不能绕过服务端配额。
 - **服务端元数据仍可见：** 房间、设备、连接时间、IP/ICE candidate 等元数据仍经过网站；如果要求连元数据都不暴露，需要额外隐私设计。
 - **本地监听约束：** WebRTC 的 UDP socket 虽不是 HTTP 服务，但会触发“第二个本地客户端/外部连接”的架构复核；本 Note 只允许出站 P2P 与信令，不允许新增监听。
 - **CLI 多 Bot 尚未落地：** 远程协议只预留 capability 与通用命令，不能在 CLI 多 Bot 语义未定时提前固化 team/handoff 远程形状。

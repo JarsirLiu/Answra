@@ -6,6 +6,7 @@ export const CLI_HELP = `Answra CLI
   answra config show
   answra config set --base-url <URL> --model <ID> [--answer-model <ID>] [--api-key <KEY>]
   answra config unset
+  answra auth <login|status|logout>
   answra remote key <create|list|revoke|set|show|forget>
   answra --help
   answra --version
@@ -13,6 +14,7 @@ export const CLI_HELP = `Answra CLI
 命令:
   code     启动独立 coding Bot 的编码会话；TTY 下进入交互 TUI
   config   查看或保存桌面端与 CLI 共享的本地模型配置
+  auth     登录 Answra 账号；远程 host/attach 的服务准入凭据
   remote   管理远程访问密钥；运行 answra remote --help 查看详情
 
 code 选项:
@@ -36,6 +38,11 @@ code 选项:
   API Key 存 OS keychain（Windows Credential Manager / macOS Keychain / Linux Secret Service），
   桌面端与 CLI 共用；可用 answra config set --api-key 或首次 TTY 引导写入。
   TUI 输入 API Key 后保存到系统凭据库；空输入沿用已保存的 Key。
+
+账号登录:
+  运行 answra auth login 打开 AnswraSite 授权页；把浏览器显示的 code#state 粘贴回终端。
+  登录凭据只保存在 OS keychain；answra auth logout 撤销并删除本机登录态。
+  远程 host/attach 需要登录；控制 host 还需要该 host 的远程访问密钥。
 
 远程访问密钥:
   host 上运行 answra remote key create 生成，默认 7 天、只显示一次；

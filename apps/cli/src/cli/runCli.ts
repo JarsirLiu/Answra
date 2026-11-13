@@ -1,6 +1,7 @@
 /** 顶层命令分派：解析 argv、处理 help/version，再把 code 交给应用用例。 */
 import { parseCliOptions } from "../config/cliOptions";
 import { CLI_VERSION } from "../version";
+import { runAuthCommand } from "./authCommand";
 import { runCodeCommand } from "./codeCommand";
 import { runConfigCommand } from "./configCommand";
 import type { CliDependencies } from "./dependencies";
@@ -26,6 +27,7 @@ export async function runCli(argv: readonly string[], deps: CliDependencies): Pr
   }
 
   try {
+    if (options.kind === "auth") return await runAuthCommand(options, deps);
     if (options.kind === "config") return await runConfigCommand(options, deps);
     if (options.kind === "remote") return await runRemoteCommand(options, deps);
     return await runCodeCommand(options, deps);

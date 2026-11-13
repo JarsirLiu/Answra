@@ -32,6 +32,7 @@ export const REMOTE_HELP = `Answra Remote
 说明:
   访问密钥只通过终端输入，不接受命令行参数，不写入 shell 历史。
   host 密钥文件只保存 secret 的哈希；controller 保存完整 key 以便重连。
+  remote host/attach 还需要先运行 answra auth login 获取服务准入凭据。
 `;
 
 export async function runRemoteCommand(

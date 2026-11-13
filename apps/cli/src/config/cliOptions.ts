@@ -1,6 +1,7 @@
 /** `answra` 的命令行语法解析：只负责 argv -> 选项，不读取环境变量或文件系统。 */
 import { CliUsageError } from "../cli/errors";
 
+const AUTH_COMMAND = "auth";
 const CODE_COMMAND = "code";
 const CONFIG_COMMAND = "config";
 const REMOTE_COMMAND = "remote";
@@ -18,6 +19,9 @@ export type CliOptions =
       answerModel?: string;
       apiKey?: string;
     }
+  | { kind: "auth"; action: "login" }
+  | { kind: "auth"; action: "status" }
+  | { kind: "auth"; action: "logout" }
   | { kind: "remote"; action: "help" }
   | { kind: "remote"; action: "key-list" }
   | { kind: "remote"; action: "key-set" }
@@ -97,6 +101,7 @@ export function parseCliOptions(argv: readonly string[]): CliOptions {
     }
 
     if (command === undefined) {
+      if (token === AUTH_COMMAND) return parseAuthCommand(argv.slice(index + 1));
       if (token === CONFIG_COMMAND) return parseConfigCommand(argv.slice(index + 1));
       if (token === REMOTE_COMMAND) return parseRemoteCommand(argv.slice(index + 1));
       if (token !== CODE_COMMAND) throw new CliUsageError(`未知命令：${token}`);
@@ -150,6 +155,20 @@ function readOptionValue(
   const next = argv[index + 1];
   if (next === undefined || next.startsWith("--")) throw new CliUsageError(`选项 ${name} 缺少值。`);
   return { value: next, nextIndex: index + 1 };
+}
+
+function parseAuthCommand(args: readonly string[]): CliOptions {
+  for (const token of args) {
+    if (token === "-h" || token === "--help") return { kind: "help" };
+    if (token === "-v" || token === "--version") return { kind: "version" };
+  }
+  const action = args[0];
+  if (action === undefined) throw new CliUsageError("缺少 auth 子命令（login|status|logout）。");
+  if (args.length > 1) throw new CliUsageError(`auth ${action} 不接受参数。`);
+  if (action === "login" || action === "status" || action === "logout") {
+    return { kind: "auth", action };
+  }
+  throw new CliUsageError(`未知 auth 子命令：${action}`);
 }
 
 function parseConfigCommand(args: readonly string[]): CliOptions {

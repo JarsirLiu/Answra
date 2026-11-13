@@ -27,6 +27,7 @@
     "@answra/ui": "workspace:*",
     "@napi-rs/keyring": "2.1.2",
     "ink": "8.0.0",
+    "node-datachannel": "0.33.6",
     "react": "19.3.0",
     "string-width": "^8.3.0"
   },
