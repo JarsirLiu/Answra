@@ -24,6 +24,17 @@ export interface InputLayout {
   readonly hiddenBelow: number;
 }
 
+export interface CellPosition {
+  readonly x: number;
+  readonly y: number;
+}
+
+/** 把可视光标行列换算成相对 Ink 输出原点的终端单元格；上方省略号占用一行。 */
+export function cursorCellAt(layout: InputLayout, origin: CellPosition): CellPosition {
+  const row = layout.cursorLine - layout.startLine + (layout.hiddenAbove > 0 ? 1 : 0);
+  return { x: origin.x + layout.cursorColumn, y: origin.y + row };
+}
+
 const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
 export function previousGraphemeOffset(value: string, cursor: number): number {
@@ -46,6 +57,11 @@ export function previousWordOffset(value: string, cursor: number): number {
   const before = value.slice(0, cursor);
   const match = before.match(/\s*\S+$/);
   return match === null ? 0 : cursor - match[0].length;
+}
+
+/** 当前内容占用的视觉行数；用于区分单行输入与真正的多行/软换行输入。 */
+export function inputVisualLineCount(value: string, cursor: number, columns: number): number {
+  return measureInput(value, cursor, columns).lines.length;
 }
 
 /** 多行输入中按显示行上下移动光标；目标行不存在时返回 undefined，调用方回退到历史浏览。 */

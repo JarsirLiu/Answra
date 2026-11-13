@@ -1,3 +1,5 @@
+import { EventEmitter } from "node:events";
+import { render as inkRender } from "ink";
 import { render } from "ink-testing-library";
 import { describe, expect, it, vi } from "vitest";
 import { App } from "../src/tui/app/App";
@@ -9,6 +11,57 @@ import { Transcript, Welcome } from "../src/tui/transcript/Transcript";
 
 function nextFrame(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+class CursorProbeStdout extends EventEmitter {
+  readonly isTTY = true;
+  readonly columns = 80;
+  readonly rows = 24;
+  readonly chunks: string[] = [];
+  write = (data: string, encodingOrCallback?: unknown, callback?: () => void) => {
+    this.chunks.push(String(data));
+    if (typeof encodingOrCallback === "function") encodingOrCallback();
+    else callback?.();
+    return true;
+  };
+}
+
+class CursorProbeStdin extends EventEmitter {
+  readonly isTTY = true;
+  private data: string | null = null;
+  write = (data: string) => {
+    this.data = data;
+    this.emit("readable");
+    this.emit("data", data);
+  };
+  setRawMode() {}
+  setEncoding() {}
+  resume() {}
+  pause() {}
+  ref() {}
+  unref() {}
+  read = () => {
+    const data = this.data;
+    this.data = null;
+    return data;
+  };
+}
+
+const ESC = String.fromCharCode(27);
+
+/** 取最后一次 cursorTo + show 序列的列号，验证真实终端光标被停到输入框。 */
+function lastParkedCursorColumn(raw: string): number | undefined {
+  const segments = raw.split(`${ESC}[?25h`);
+  for (let index = segments.length - 2; index >= 0; index -= 1) {
+    const segment = segments[index] ?? "";
+    const start = segment.lastIndexOf(`${ESC}[`);
+    if (start === -1) continue;
+    const token = segment.slice(start + ESC.length + 1);
+    if (!token.endsWith("G")) continue;
+    const column = Number(token.slice(0, -1));
+    if (Number.isInteger(column)) return column - 1;
+  }
+  return undefined;
 }
 
 function createPointerSource() {
@@ -56,6 +109,36 @@ describe("TUI components", () => {
     instance.unmount();
   });
 
+  it("parks the real terminal cursor at the input caret for IME", async () => {
+    const stdout = new CursorProbeStdout();
+    const stdin = new CursorProbeStdin();
+    const instance = inkRender(<PromptInput busy={false} onSubmit={vi.fn()} />, {
+      stdout: stdout as unknown as NodeJS.WriteStream,
+      stdin: stdin as unknown as NodeJS.ReadStream,
+      interactive: true,
+      alternateScreen: true,
+      exitOnCtrlC: false,
+      patchConsole: false,
+      incrementalRendering: true,
+      maxFps: 60,
+    });
+
+    await nextFrame();
+    await instance.waitUntilRenderFlush();
+    stdin.write("a");
+    await nextFrame();
+    await instance.waitUntilRenderFlush();
+    const afterAscii = lastParkedCursorColumn(stdout.chunks.join(""));
+    stdin.write("中");
+    await nextFrame();
+    await instance.waitUntilRenderFlush();
+    const afterWide = lastParkedCursorColumn(stdout.chunks.join(""));
+
+    expect(afterAscii).toBeDefined();
+    expect(afterWide).toBe((afterAscii ?? 0) + 2);
+    instance.unmount();
+  });
+
   it("submits trimmed prompt text and clears the input", async () => {
     const onSubmit = vi.fn();
     const instance = render(<PromptInput busy={false} onSubmit={onSubmit} />);
@@ -67,6 +150,81 @@ describe("TUI components", () => {
 
     expect(onSubmit).toHaveBeenCalledWith("hello");
     expect(instance.lastFrame()).not.toContain("hello");
+    instance.unmount();
+  });
+
+  it("selects all with Ctrl+A and cuts the selection to the clipboard", async () => {
+    const onCopyText = vi.fn();
+    const instance = render(
+      <PromptInput busy={false} onCopyText={onCopyText} onSubmit={vi.fn()} />,
+    );
+
+    instance.stdin.write("hello 世界");
+    await nextFrame();
+    instance.stdin.write("\u0001");
+    await nextFrame();
+    instance.stdin.write("\u0018");
+    await nextFrame();
+
+    expect(onCopyText).toHaveBeenCalledWith("hello 世界");
+    expect(instance.lastFrame()).not.toContain("hello");
+    instance.unmount();
+  });
+
+  it("replaces the selection when typing or deleting", async () => {
+    const instance = render(<PromptInput busy={false} onSubmit={vi.fn()} />);
+
+    instance.stdin.write("abc");
+    await nextFrame();
+    instance.stdin.write("\u0001");
+    await nextFrame();
+    instance.stdin.write("z");
+    await nextFrame();
+    expect(instance.lastFrame()).toContain("z");
+    expect(instance.lastFrame()).not.toContain("abc");
+
+    instance.stdin.write("\u0001");
+    await nextFrame();
+    instance.stdin.write("\u007f");
+    await nextFrame();
+    expect(instance.lastFrame()).not.toContain("z");
+    instance.unmount();
+  });
+
+  it("moves to the start and end of a single visual line before browsing history", async () => {
+    const instance = render(<PromptInput busy={false} onSubmit={vi.fn()} />);
+
+    instance.stdin.write("abc");
+    await nextFrame();
+    instance.stdin.write("\u001b[A");
+    await nextFrame();
+    instance.stdin.write("!");
+    await nextFrame();
+    expect(instance.lastFrame()).toContain("!abc");
+
+    instance.stdin.write("\u001b[B");
+    await nextFrame();
+    instance.stdin.write("?");
+    await nextFrame();
+    expect(instance.lastFrame()).toContain("!abc?");
+    instance.unmount();
+  });
+
+  it("browses history only after the single-line cursor reaches the start", async () => {
+    const instance = render(<PromptInput busy={false} onSubmit={vi.fn()} />);
+
+    instance.stdin.write("first");
+    await nextFrame();
+    instance.stdin.write("\r");
+    await nextFrame();
+    instance.stdin.write("abc");
+    await nextFrame();
+    instance.stdin.write("\u001b[A");
+    await nextFrame();
+    instance.stdin.write("\u001b[A");
+    await nextFrame();
+
+    expect(instance.lastFrame()).toContain("first");
     instance.unmount();
   });
 

@@ -169,8 +169,8 @@ Ink onRender → store.commitFrame（唯一帧提交点）
   - 新增 `startOfLineOffset` / `endOfLineOffset`：当前显示行边界；已在行首时 `Home` 退到上一行行首，对齐 Claude Code。
   - 宽字符/emoji 继续用 `Intl.Segmenter` + `string-width`，目标列落在宽字符中间时吸附到 grapheme 起点。
 - `PromptInput`：
-  - `↑/↓` 先尝试显示行移动；只有没有相邻显示行时才浏览历史。
-  - `Home/End`、`Ctrl+A/Ctrl+E` 使用显示行边界；整段首尾不再借用这两个键。
+  - `↑/↓` 先尝试显示行移动；单行输入时先到整段开头/末尾，已在边界才浏览历史；多行输入没有相邻显示行时直接浏览历史（2026-11-14 起）。
+  - `Home/End`、`Ctrl+E` 使用显示行边界；`Ctrl+A` 在 2026-11-14 改为全选输入内容，不再借用为行首。
   - 列宽只在 `PromptInput` 计算一次（终端列宽减去输入框装饰列），传给 `TextInput` 与导航函数，保证渲染和光标移动同源。
   - `usePaste` 插入前把 `\r\n?` 归一化为 `\n`。
   - `Ctrl+Shift+*` 不进入输入框的 Ctrl+C 退出/清空路径，避免与复制快捷键抢占。

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  cursorCellAt,
   endOfLineOffset,
+  inputVisualLineCount,
   layoutInput,
   moveCursorVertically,
   nextGraphemeOffset,
@@ -70,5 +72,28 @@ describe("input layout", () => {
   it("keeps wide characters on grapheme boundaries when moving horizontally", () => {
     expect(moveCursorVertically("中文\nab", 5, 80, -1)).toBe(1);
     expect(startOfLineOffset("中文中文", 2, 2)).toBe(1);
+  });
+
+  it("maps the cursor cell onto the Ink output origin", () => {
+    const layout = layoutInput("abcdef", 6, 2, 2);
+    expect(cursorCellAt(layout, { x: 3, y: 10 })).toEqual({ x: 5, y: 12 });
+  });
+
+  it("adds the hidden-above ellipsis row to the cursor cell", () => {
+    const layout = layoutInput("abcd", 4, 1, 2);
+    expect(layout.hiddenAbove).toBe(2);
+    expect(cursorCellAt(layout, { x: 3, y: 10 })).toEqual({ x: 4, y: 12 });
+  });
+
+  it("uses display width for wide-character cursor columns", () => {
+    const layout = layoutInput("中文a", 1, 80, 3);
+    expect(layout.cursorColumn).toBe(2);
+    expect(cursorCellAt(layout, { x: 3, y: 0 })).toEqual({ x: 5, y: 0 });
+  });
+
+  it("counts visual lines for single-line and wrapped input", () => {
+    expect(inputVisualLineCount("abc", 3, 80)).toBe(1);
+    expect(inputVisualLineCount("abc", 3, 2)).toBe(2);
+    expect(inputVisualLineCount("a\nb", 3, 80)).toBe(2);
   });
 });

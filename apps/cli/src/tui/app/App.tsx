@@ -30,6 +30,7 @@ export function App({
   pointerSource,
   selectionStore,
   onCopySelection,
+  onCopyText,
   onSelectAll,
   onClearSelection,
 }: {
@@ -42,6 +43,7 @@ export function App({
   pointerSource?: PointerSource;
   selectionStore?: TuiSelectionStore;
   onCopySelection?: () => void;
+  onCopyText?: (text: string) => void;
   onSelectAll?: () => void;
   onClearSelection?: () => void;
 }) {
@@ -122,6 +124,7 @@ export function App({
           busy={busy}
           idleHint={state.setupStep === undefined ? undefined : SETUP_HINTS[state.setupStep]}
           onCommandPaletteChange={setCommandPaletteOpen}
+          onCopyText={onCopyText}
           onSubmit={onSubmit}
           secret={state.setupStep === "api-key"}
           selectionActive={hasSelection}

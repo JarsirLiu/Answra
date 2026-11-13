@@ -212,11 +212,9 @@ export async function runInkTui({
   };
 
   const selectionStore = altScreen ? new TuiSelectionStore() : undefined;
-  const clipboard = altScreen ? createClipboardWriter(process.stdout) : undefined;
+  const clipboard = createClipboardWriter(process.stdout);
   const selectionActions =
-    selectionStore === undefined || clipboard === undefined
-      ? undefined
-      : createSelectionActions(selectionStore, clipboard);
+    selectionStore === undefined ? undefined : createSelectionActions(selectionStore, clipboard);
   const pointer = altScreen ? createPointerInput(process.stdin, process.stdout) : undefined;
   const unsubscribePointer = pointer?.source.subscribe((event) =>
     selectionActions?.handlePointer(event),
@@ -229,6 +227,7 @@ export async function runInkTui({
         onCancel={cancel}
         onClearSelection={selectionActions?.clear}
         onCopySelection={selectionActions?.copy}
+        onCopyText={clipboard.write}
         onExitReady={registerExit}
         onSelectAll={selectionActions?.selectAllAndCopy}
         onSubmit={submit}
