@@ -3,6 +3,7 @@ import { render } from "ink-testing-library";
 import { describe, expect, it } from "vitest";
 import { TuiSelectionStore } from "../../../src/tui/interaction/selectionStore";
 import { SelectableText, SelectionContext } from "../../../src/tui/transcript/SelectableText";
+import { Welcome } from "../../../src/tui/transcript/Transcript";
 
 function nextFrame(ms = 20): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -69,6 +70,22 @@ describe("SelectableText", () => {
     expect(store.hasLine(0)).toBe(true);
     expect(store.hasLine(1)).toBe(true);
     expect(store.getSelectedText()).toBe("ab\ncd");
+    instance.unmount();
+  });
+
+  it("registers welcome text so the welcome page can be selected and copied", async () => {
+    const store = new TuiSelectionStore();
+    const instance = render(
+      <SelectionContext.Provider value={store}>
+        <Welcome modelConfigured workspaceRoot={"D:\\workspace"} />
+      </SelectionContext.Provider>,
+    );
+    await nextFrame();
+    store.commitFrame();
+    store.selectAll();
+
+    expect(store.getSelectedText()).toContain("欢迎使用 Answra Code");
+    expect(store.getSelectedText()).toContain("D:\\workspace");
     instance.unmount();
   });
 });

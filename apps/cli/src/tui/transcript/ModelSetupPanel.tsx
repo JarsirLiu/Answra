@@ -1,16 +1,17 @@
 /** 模型配置面板：用 Claude 式列表同时展示 Base URL、API Key 与模型 ID 的进度。 */
-import { Box, Text } from "ink";
+import { Box } from "ink";
 import { POINTER, TUI_THEME } from "../chrome/theme";
 import { setupChecklist, type TuiSetupChecklistItem, type TuiSetupStep } from "../modelSetup";
+import { SelectableText } from "./SelectableText";
 
 const INDICATOR_COLUMNS = 2;
 
 export function ModelSetupPanel({ step }: { step?: TuiSetupStep }) {
   return (
     <Box flexDirection="column" marginTop={1}>
-      <Text bold color={TUI_THEME.text}>
+      <SelectableText bold color={TUI_THEME.text}>
         模型配置
-      </Text>
+      </SelectableText>
       {setupChecklist(step).map((item) => (
         <SetupRow item={item} key={item.label} />
       ))}
@@ -23,11 +24,11 @@ function SetupRow({ item }: { item: TuiSetupChecklistItem }) {
   return (
     <Box flexDirection="row" paddingLeft={1}>
       <Box flexShrink={0} width={INDICATOR_COLUMNS}>
-        <Text color={stateColor(item.state)}>{indicator(item.state)}</Text>
+        <SelectableText color={stateColor(item.state)}>{indicator(item.state)}</SelectableText>
       </Box>
-      <Text bold={current} color={stateColor(item.state)}>
+      <SelectableText bold={current} color={stateColor(item.state)}>
         {item.label}
-      </Text>
+      </SelectableText>
     </Box>
   );
 }

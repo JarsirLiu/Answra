@@ -5,6 +5,7 @@ import { TUI_THEME } from "../chrome/theme";
 import type { TuiSetupStep } from "../modelSetup";
 import { MessageRow } from "./MessageRow";
 import { ModelSetupPanel } from "./ModelSetupPanel";
+import { SelectableText } from "./SelectableText";
 
 export function Transcript({
   view,
@@ -58,26 +59,26 @@ export function Welcome({
 }) {
   return (
     <Box flexDirection="column" marginTop={1}>
-      <Text bold color={TUI_THEME.claude}>
-        ⏺ Welcome to Answra Code!
-      </Text>
+      <SelectableText bold color={TUI_THEME.claude}>
+        ⏺ 欢迎使用 Answra Code！
+      </SelectableText>
       {modelConfigured ? (
         <>
           <Box marginTop={1} flexDirection="column">
-            <Text dimColor>{workspaceRoot}</Text>
-            <Text dimColor>输入任务开始会话。工具会直接在当前工作区执行。</Text>
+            <SelectableText dimColor>{workspaceRoot}</SelectableText>
+            <SelectableText dimColor>输入任务开始会话。工具会直接在当前工作区执行。</SelectableText>
           </Box>
           <Box flexDirection="column" marginTop={1}>
-            <Text>
+            <SelectableText>
               <Text bold>1.</Text> 描述目标，让 Agent 自己搜索、阅读并修改代码
-            </Text>
-            <Text>
+            </SelectableText>
+            <SelectableText>
               <Text bold>2.</Text> 按 Esc 中断当前运行，Ctrl-C 两次退出
-            </Text>
-            <Text>
+            </SelectableText>
+            <SelectableText>
               <Text bold>3.</Text> Enter 发送或排队，Ctrl+O 展开思考与工具输出，PgUp/PgDn
               滚动；/help 查看命令
-            </Text>
+            </SelectableText>
           </Box>
         </>
       ) : (
@@ -101,23 +102,27 @@ export function TranscriptTail({
       {notice === undefined ? null : (
         <Box flexDirection="column" marginTop={1}>
           {notice.map((line) => (
-            <Text key={line} color={TUI_THEME.suggestion}>
+            <SelectableText key={line} color={TUI_THEME.suggestion}>
               {line}
-            </Text>
+            </SelectableText>
           ))}
         </Box>
       )}
       {view.retry === undefined ? null : (
         <Box flexDirection="row" marginTop={1}>
-          <Text color={TUI_THEME.warning}>retry </Text>
-          <Text dimColor>
+          <SelectableText color={TUI_THEME.warning}>retry </SelectableText>
+          <SelectableText dimColor>
             {view.retry.attempt}/{view.retry.maxRetries}
             {view.retry.finished ? " failed" : "…"}
-          </Text>
+          </SelectableText>
         </Box>
       )}
-      {view.error === undefined ? null : <Text color={TUI_THEME.error}>{view.error}</Text>}
-      {localError === undefined ? null : <Text color={TUI_THEME.error}>{localError}</Text>}
+      {view.error === undefined ? null : (
+        <SelectableText color={TUI_THEME.error}>{view.error}</SelectableText>
+      )}
+      {localError === undefined ? null : (
+        <SelectableText color={TUI_THEME.error}>{localError}</SelectableText>
+      )}
     </>
   );
 }
