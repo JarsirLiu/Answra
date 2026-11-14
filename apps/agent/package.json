@@ -25,7 +25,8 @@
     "ai": "6.0.303",
     "pdfjs-dist": "4.10.38",
     "ripgrep": "0.3.1",
-    "word-extractor": "1.0.4"
+    "word-extractor": "1.0.4",
+    "zod": "4.6.5"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
