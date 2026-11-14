@@ -38,6 +38,7 @@ vi.mock("../src/main/window", () => ({
 
 import {
   ActiveChatConversationId,
+  ActiveExamConversationId,
   AUTH_REQUIRED_CODE,
   ConversationChannels,
   MANUAL_COMPACTION_INSTRUCTIONS_MAX_CHARS,
@@ -52,6 +53,8 @@ const service = {
   send: vi.fn(),
   cancel: vi.fn(),
   clearConversation: vi.fn().mockResolvedValue(undefined),
+  createConversation: vi.fn().mockResolvedValue(undefined),
+  createAnswerConversation: vi.fn().mockResolvedValue(undefined),
   compactConversation: vi.fn().mockResolvedValue({
     result: { status: "compacted" },
     snapshot: { conversationId: ActiveChatConversationId, eventRevision: 1, messages: [] },
@@ -115,6 +118,8 @@ describe("conversation IPC read access for reply renderer", () => {
     service.readEvents.mockClear();
     service.send.mockClear();
     service.clearConversation.mockClear();
+    service.createConversation.mockClear();
+    service.createAnswerConversation.mockClear();
     service.compactConversation.mockClear();
     modelSettings.getView.mockClear();
     modelSettings.save.mockClear();
@@ -205,6 +210,15 @@ describe("conversation IPC read access for reply renderer", () => {
     expect(service.send).not.toHaveBeenCalled();
   });
 
+  it("routes the one-shot answer conversation to the answer application", async () => {
+    const create = getHandler(ConversationChannels.Create);
+    await expect(
+      create({ sender: { id: "main" } }, { conversationId: ActiveExamConversationId }),
+    ).resolves.toBeUndefined();
+    expect(service.createAnswerConversation).toHaveBeenCalledWith(ActiveExamConversationId);
+    expect(service.createConversation).not.toHaveBeenCalled();
+  });
+
   it("forwards the service change subscription to the window broadcaster", () => {
     expect(shared.onEvent).toHaveBeenCalledWith(shared.send);
     expect(shared.onSnapshot).toHaveBeenCalledWith(shared.sendSnapshot);
@@ -284,6 +298,8 @@ describe("conversation IPC model settings", () => {
     service.readEvents.mockClear();
     service.send.mockClear();
     service.clearConversation.mockClear();
+    service.createConversation.mockClear();
+    service.createAnswerConversation.mockClear();
     service.compactConversation.mockClear();
     modelSettings.getView.mockClear();
     modelSettings.save.mockClear();

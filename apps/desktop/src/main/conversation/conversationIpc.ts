@@ -1,5 +1,6 @@
 import {
   ActiveChatConversationId,
+  ActiveExamConversationId,
   ActiveInterviewConversationId,
   authRequiredError,
   ConversationChannels,
@@ -106,6 +107,9 @@ export function registerConversationIpc(service: AgentService, deps: Conversatio
       if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用方");
       if (payload.selection && !isValidSelection(payload.selection))
         throw new Error("Bot 选择无效");
+      if (payload.conversationId === ActiveExamConversationId) {
+        return service.createAnswerConversation(payload.conversationId);
+      }
       return service.createConversation(payload.conversationId, payload.selection);
     },
   );
@@ -129,7 +133,7 @@ export function registerConversationIpc(service: AgentService, deps: Conversatio
       if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用");
       if (
         !isValidConversationId(payload?.conversationId) ||
-        !COMPACTABLE_CONVERSATION_IDS.has(payload.conversationId)
+        !isChatConversationId(payload.conversationId)
       ) {
         throw new Error("会话请求无效");
       }
@@ -196,19 +200,24 @@ function isValidSelection(selection: ConversationSelection): boolean {
 }
 
 /** 手动压缩当前只开放给常驻对话；面试与一次性截图会话不进入。 */
-const COMPACTABLE_CONVERSATION_IDS = new Set<string>([ActiveChatConversationId]);
+const CHAT_CONVERSATION_PREFIX = "chat-";
+
+function isChatConversationId(conversationId: string): boolean {
+  return (
+    conversationId === ActiveChatConversationId ||
+    conversationId.startsWith(CHAT_CONVERSATION_PREFIX)
+  );
+}
 
 /** 允许用户清空的常驻会话：多轮对话与面试。 */
-const CLEARABLE_CONVERSATION_IDS = new Set<string>([
-  ActiveChatConversationId,
-  ActiveInterviewConversationId,
-]);
+const CLEARABLE_CONVERSATION_IDS = new Set<string>([ActiveInterviewConversationId]);
 
 /** 截图答题轮次使用的一次性会话前缀；失败轮由用户关闭回复条时显式释放。 */
 const SCREENSHOT_CONVERSATION_PREFIX = "screenshot-";
 
 function isClearableConversationId(conversationId: string): boolean {
   return (
+    isChatConversationId(conversationId) ||
     CLEARABLE_CONVERSATION_IDS.has(conversationId) ||
     conversationId.startsWith(SCREENSHOT_CONVERSATION_PREFIX)
   );

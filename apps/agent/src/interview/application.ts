@@ -122,7 +122,10 @@ export class InterviewApplication {
   }
 
   async createConversation(conversationId: string): Promise<ConversationSnapshot> {
-    await this.store.create(conversationId);
+    await this.store.create(conversationId, undefined, {
+      scope: "interview",
+      ...(this.workspaceRoot ? { workspaceRoot: this.workspaceRoot } : {}),
+    });
     this.readFileStates.delete(conversationId);
     return this.loadRecoverySnapshot(conversationId);
   }

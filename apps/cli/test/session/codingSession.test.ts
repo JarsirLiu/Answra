@@ -22,6 +22,9 @@ function createHost(overrides: Partial<CodingSessionHost> = {}): CodingSessionHo
   return {
     configure: vi.fn(),
     createConversation: vi.fn(async () => snapshot),
+    getSnapshot: vi.fn(async () => snapshot),
+    listSessions: vi.fn(async () => []),
+    deleteSession: vi.fn(async () => {}),
     clearConversation: vi.fn(async () => snapshot),
     compactConversation: vi.fn(async () => ({
       result: { status: "compacted" as const },
@@ -182,7 +185,7 @@ describe("CodingSession", () => {
     session.close();
     session.close();
 
-    expect(host.dispose).toHaveBeenCalledTimes(1);
+    expect(host.dispose).not.toHaveBeenCalled();
     await expect(session.open()).rejects.toThrowError("会话已关闭。");
     await expect(session.send("after")).rejects.toThrowError("会话已关闭。");
   });
@@ -212,5 +215,77 @@ describe("CodingSession", () => {
     session.close();
 
     expect(() => session.setModel(nextModel)).toThrowError("会话已关闭。");
+  });
+
+  it("starts a new conversation with an injected id", async () => {
+    const nextSnapshot = { ...snapshot, conversationId: "conversation-2" };
+    const host = createHost({
+      createConversation: vi.fn(async (conversationId: string) => ({
+        ...nextSnapshot,
+        conversationId,
+      })),
+    });
+    const session = new CodingSession({
+      host,
+      conversationId: "conversation-1",
+      createConversationId: () => "conversation-2",
+      model,
+      accessToken: "token",
+    });
+    await session.open();
+
+    await expect(session.startNewConversation()).resolves.toMatchObject({
+      conversationId: "conversation-2",
+    });
+    expect(host.createConversation).toHaveBeenLastCalledWith("conversation-2");
+    expect(session.currentConversationId).toBe("conversation-2");
+  });
+
+  it("resumes a conversation and lists sessions", async () => {
+    const resumed = { ...snapshot, conversationId: "conversation-old" };
+    const summaries = [
+      {
+        conversationId: "conversation-old",
+        scope: "coding" as const,
+        title: "旧会话",
+        messageCount: 2,
+        createdAt: "2026-11-14T00:00:00.000Z",
+        updatedAt: "2026-11-14T01:00:00.000Z",
+      },
+    ];
+    const host = createHost({
+      getSnapshot: vi.fn(async () => resumed),
+      listSessions: vi.fn(async () => summaries),
+    });
+    const session = createSession(host);
+    await session.open();
+
+    await expect(session.resume("conversation-old")).resolves.toBe(resumed);
+    expect(session.currentConversationId).toBe("conversation-old");
+    await expect(session.listSessions()).resolves.toEqual(summaries);
+  });
+
+  it("deletes the current conversation and starts a new one", async () => {
+    const nextSnapshot = { ...snapshot, conversationId: "conversation-3" };
+    const host = createHost({
+      createConversation: vi.fn(async (conversationId: string) => ({
+        ...nextSnapshot,
+        conversationId,
+      })),
+    });
+    const session = new CodingSession({
+      host,
+      conversationId: "conversation-1",
+      createConversationId: () => "conversation-3",
+      model,
+      accessToken: "token",
+    });
+    await session.open();
+
+    await expect(session.deleteSession("conversation-1")).resolves.toMatchObject({
+      conversationId: "conversation-3",
+    });
+    expect(host.deleteSession).toHaveBeenCalledWith("conversation-1");
+    expect(host.createConversation).toHaveBeenLastCalledWith("conversation-3");
   });
 });

@@ -74,7 +74,16 @@ export {
   type TeamPresetCatalog,
 } from "./core/team/preset";
 export * from "./core/tool";
+export type {
+  ConversationSessionCatalog,
+  ConversationSessionQuery,
+} from "./core/transcript/catalog";
 export { MemoryConversationStore } from "./core/transcript/memoryStore";
-export type { ConversationSessionSeed, ConversationStore } from "./core/transcript/store";
+export { FileConversationStore } from "./core/transcript/persistence/fileConversationStore";
+export type {
+  ConversationSessionMetadata,
+  ConversationSessionSeed,
+  ConversationStore,
+} from "./core/transcript/store";
 export { MemoryExecutionStore } from "./execution/memoryStore";
 export type { ExecutionStore } from "./execution/store";

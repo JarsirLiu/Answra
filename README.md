@@ -77,12 +77,14 @@ packages/shared        跨进程契约：IPC 频道常量 + ChannelMap 类型、
   src/schema/events.ts Agent 全量事件目录与唯一 envelope；delta 不属于 durable 候选
   src/schema/status.ts Agent run/step 状态词汇与快照
   src/schema/connection.ts Agent 连接状态词汇与稳定失败码（桌面/CLI 共用）
+  src/schema/session.ts 会话历史 scope、摘要与查询类型（桌面/CLI 共用）
 packages/config        Node-only 共享客户端配置：非 secret 本地模型地址/模型 ID、原子读写与迁移
 packages/credentials   Node-only 共享 OS 凭据：本地模型 API Key 的 keychain 读写，fail-closed
 packages/remote        平台无关远程连接核心：帧/信令 schema、host/controller 会话、访问密钥、稳定错误码与 fake ports
 packages/ui            悬浮条与面板的全部业务 UI（React），含组件测试
 apps/desktop           Electron 桌面壳
   src/main             主进程：窗口管理、按领域拆分的 IPC handler
+  src/main/conversation 对话 IPC、会话历史 IPC、worker 注入与文件 store 装配
   src/main/connection  Agent 连接状态 IPC、窗口广播与 Electron worker host 适配
   src/preload          contextBridge 桥（window.answra）
   src/renderer         薄渲染层：仅挂载 <FloatingBarApp/>
@@ -90,7 +92,7 @@ apps/cli              独立终端宿主：coding Bot 的 CLI 入口、模型配
   src/cli              命令分派、code/config/remote 用例、依赖端口与 help/error
   src/config           argv 语法与工作区校验；不读写配置
   src/model            CLI 模型设置域：选择、优先级与应用服务端口
-  src/session          单活动 run 的 CodingSession 用例
+  src/session          单活动 run 的 CodingSession 用例：新建/恢复/列表/删除
   src/adapters         @answra/config 共享文件实现与 @answra/agent/composition 端口映射；keychain 由 main 注入
   src/remote           远程 host/controller 适配与 CLI 本地密钥存储
   src/presentation     Agent 事件与模型摘要到文本/工具行的纯投影
@@ -107,7 +109,7 @@ apps/agent             平台无关的 Agent 运行时（不依赖 Electron/Reac
   src/core/agent        静态 Agent 注册、AI SDK 执行与 run 生命周期
   src/core/bot          Bot 身份/发现契约、启动期不可变目录与会话参与者可见性
   src/core/team         团队预置与交接任务校验
-  src/core/transcript   Conversation、Answer、Interview 共用的 transcript 端口与内存适配器
+  src/core/transcript   Conversation、Answer、Interview 共用的 transcript 端口、内存与文件适配器；answer 仅内存
   src/core/run         进程内 run 取消与完成等待原语
   src/core/model       provider 适配、模型流归一化、图片输入与 HTTP 重试
   src/execution        run/attempt/step 事件、状态、进程内 store 和投影

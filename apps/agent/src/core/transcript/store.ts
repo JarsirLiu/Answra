@@ -1,5 +1,10 @@
 /** 跨领域 transcript 仓储端口；只定义消息与会话元数据，不绑定具体存储实现。 */
-import type { ConversationBot, ConversationMessage, ConversationSnapshot } from "@answra/shared";
+import type {
+  ConversationBot,
+  ConversationMessage,
+  ConversationSessionScope,
+  ConversationSnapshot,
+} from "@answra/shared";
 import type { AgentEventEnvelope } from "@answra/shared/schema";
 import type { ContextState } from "./contextState";
 
@@ -9,6 +14,17 @@ export interface ConversationSessionSeed {
   participantAgentIds: readonly string[];
   bots?: readonly ConversationBot[];
 }
+
+/** 宿主写入的会话分类；不进入消息正文，也不由 conversationId 前缀推断。 */
+export interface ConversationSessionMetadata {
+  scope: ConversationSessionScope;
+  workspaceRoot?: string;
+  title?: string;
+}
+
+export type ConversationStoreMutation =
+  | { kind: "created" | "changed" | "run-started" | "run-finished" }
+  | { kind: "event"; event: AgentEventEnvelope };
 
 export interface HandoffMessageInput {
   id: string;
@@ -22,7 +38,11 @@ export interface HandoffMessageInput {
  * 约束会话消息、活动回合认领、Bot 归属和事件恢复游标；不指定内存或磁盘实现。
  */
 export interface ConversationStore {
-  create(conversationId: string, seed?: ConversationSessionSeed): Promise<ConversationSnapshot>;
+  create(
+    conversationId: string,
+    seed?: ConversationSessionSeed,
+    metadata?: ConversationSessionMetadata,
+  ): Promise<ConversationSnapshot>;
   /**
    * 仅空闲清理：会话没有活动 run 时才清空消息；仍有活动 run 时 no-op。
    * 清空并记录覆盖到的事件 revision；UI 由发起操作的一方清理本地投影。

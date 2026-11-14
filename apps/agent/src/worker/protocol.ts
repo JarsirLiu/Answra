@@ -8,6 +8,7 @@ import type {
   TeamSendCommand,
 } from "@answra/shared";
 import type { AgentEventEnvelope } from "@answra/shared/schema";
+import type { ConversationSessionQuery } from "../core/transcript/catalog";
 
 export interface InterviewWorkerTranscriptChunk {
   utteranceId: string;
@@ -134,6 +135,8 @@ export type AgentCommand =
   | { id: string; type: "token"; accessToken?: string; error?: string }
   | { id: string; type: "snapshot"; conversationId: string }
   | { id: string; type: "bot-list" }
+  | { id: string; type: "session-list"; query?: ConversationSessionQuery }
+  | { id: string; type: "session-delete"; conversationId: string }
   | { id: string; type: "read-events"; conversationId: string; afterRevision: number }
   | {
       id: string;
@@ -141,6 +144,7 @@ export type AgentCommand =
       conversationId: string;
       selection?: ConversationSelection;
     }
+  | { id: string; type: "create-answer-conversation"; conversationId: string }
   | { id: string; type: "clear-conversation"; conversationId: string }
   | {
       id: string;

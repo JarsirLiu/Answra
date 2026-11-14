@@ -1,5 +1,9 @@
 /** TUI 本地命令分派：按 catalog kind 注册 handler；不承载会话队列或 Agent 运行时。 */
-import type { ConversationModelConfig, ManualCompactionResult } from "@answra/shared";
+import type {
+  ConversationModelConfig,
+  ConversationSessionSummary,
+  ManualCompactionResult,
+} from "@answra/shared";
 import type { ModelSettings } from "../../model/ports";
 import type { RemoteAuthPort } from "../../remote/auth/remoteAuthService";
 import type { CodingSession } from "../../session/codingSession";
@@ -34,6 +38,10 @@ type TuiCommandHandler = (args: readonly string[], deps: TuiCommandDeps) => void
 const handlers = {
   help: handleHelp,
   clear: handleClear,
+  new: handleNew,
+  sessions: handleSessions,
+  resume: handleResume,
+  delete: handleDelete,
   compact: handleCompact,
   config: handleConfig,
   exit: handleExit,
@@ -81,6 +89,100 @@ function handleExit(_args: readonly string[], deps: TuiCommandDeps): void {
     return;
   }
   deps.requestExit();
+}
+
+async function handleNew(args: readonly string[], deps: TuiCommandDeps): Promise<void> {
+  if (args.length > 0) {
+    deps.store.setNotice(["/new 不接受参数。"]);
+    return;
+  }
+  if (deps.isBusy()) {
+    deps.store.setNotice(["当前运行中，先按 Esc 中断后再新建会话。"]);
+    return;
+  }
+  const session = deps.getSession();
+  if (session === undefined) throw new Error("尚未配置模型。");
+  deps.store.reset(await session.startNewConversation());
+  deps.store.setNotice(["已新建会话。"]);
+}
+
+async function handleSessions(args: readonly string[], deps: TuiCommandDeps): Promise<void> {
+  if (args.length > 0) {
+    deps.store.setNotice(["/sessions 不接受参数。"]);
+    return;
+  }
+  const session = deps.getSession();
+  if (session === undefined) throw new Error("尚未配置模型。");
+  const sessions = await session.listSessions();
+  if (sessions.length === 0) {
+    deps.store.setNotice(["当前 workspace 还没有历史会话。"]);
+    return;
+  }
+  deps.store.setNotice([
+    "历史会话：",
+    ...sessions.map((item) =>
+      sessionLine(item, item.conversationId === session.currentConversationId),
+    ),
+    "使用 /resume <ID 或唯一前缀> 继续；/delete <完整 ID> 删除。",
+  ]);
+}
+
+async function handleResume(args: readonly string[], deps: TuiCommandDeps): Promise<void> {
+  if (args.length !== 1) {
+    deps.store.setNotice(["用法：/resume <ID 或唯一前缀>"]);
+    return;
+  }
+  if (deps.isBusy()) {
+    deps.store.setNotice(["当前运行中，先按 Esc 中断后再恢复会话。"]);
+    return;
+  }
+  const session = deps.getSession();
+  if (session === undefined) throw new Error("尚未配置模型。");
+  const query = args[0] ?? "";
+  const sessions = await session.listSessions();
+  const exact = sessions.find((item) => item.conversationId === query);
+  const matches = exact
+    ? [exact]
+    : sessions.filter((item) => item.conversationId.startsWith(query));
+  if (matches.length === 0) {
+    deps.store.setNotice([`没有匹配的会话：${query}`]);
+    return;
+  }
+  if (matches.length > 1) {
+    deps.store.setNotice([
+      `会话前缀不唯一：${query}`,
+      ...matches.slice(0, 5).map((item) => sessionLine(item, false)),
+    ]);
+    return;
+  }
+  const target = matches[0];
+  if (target === undefined) return;
+  deps.store.reset(await session.resume(target.conversationId));
+  deps.store.setNotice([`已恢复会话：${target.conversationId}`]);
+}
+
+async function handleDelete(args: readonly string[], deps: TuiCommandDeps): Promise<void> {
+  if (args.length !== 1) {
+    deps.store.setNotice(["用法：/delete <完整会话 ID>"]);
+    return;
+  }
+  if (deps.isBusy()) {
+    deps.store.setNotice(["当前运行中，先按 Esc 中断后再删除会话。"]);
+    return;
+  }
+  const session = deps.getSession();
+  if (session === undefined) throw new Error("尚未配置模型。");
+  const conversationId = args[0] ?? "";
+  const sessions = await session.listSessions();
+  if (!sessions.some((item) => item.conversationId === conversationId)) {
+    deps.store.setNotice([`没有匹配的会话：${conversationId}`]);
+    return;
+  }
+  const next = await session.deleteSession(conversationId);
+  if (next !== undefined) deps.store.reset(next);
+  deps.store.setNotice([
+    next === undefined ? `已删除会话：${conversationId}` : "已删除当前会话并新建会话。",
+  ]);
 }
 
 async function handleClear(_args: readonly string[], deps: TuiCommandDeps): Promise<void> {
@@ -187,6 +289,11 @@ async function handleRemote(args: readonly string[], deps: TuiCommandDeps): Prom
     "连接码会持久保存，直到在 host 上撤销。",
     `撤销命令：answra remote key revoke ${remote.keyId}`,
   ]);
+}
+
+function sessionLine(item: ConversationSessionSummary, active: boolean): string {
+  const stamp = item.updatedAt.slice(0, 16).replace("T", " ");
+  return `${item.conversationId}  ${stamp}  ${item.title}${active ? "  [当前]" : ""}`;
 }
 
 function messageOf(error: unknown): string {

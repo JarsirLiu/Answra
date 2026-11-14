@@ -12,7 +12,7 @@ import { resolveModelAccessToken } from "../model/accessToken";
 import { MissingModelConfigError } from "../model/errors";
 import type { ModelOverrides } from "../model/ports";
 import { createStreamPresenter } from "../presentation/streamPresenter";
-import { CodingSession } from "../session/codingSession";
+import { CodingSession, type CodingSessionHost } from "../session/codingSession";
 import { TuiViewStore } from "../tui/app/viewStore";
 import type { CliDependencies } from "./dependencies";
 import { CliUsageError } from "./errors";
@@ -78,8 +78,10 @@ async function runOnce(
   const session = new CodingSession({
     host,
     conversationId: deps.createConversationId(),
+    createConversationId: deps.createConversationId,
     model,
     accessToken,
+    workspaceRoot,
   });
   const removeInterrupt = deps.onInterrupt(() => {
     session.cancel();
@@ -93,6 +95,7 @@ async function runOnce(
   } finally {
     removeInterrupt();
     session.close();
+    host.dispose();
     presenter.finish();
   }
 }
@@ -106,22 +109,29 @@ async function runInteractive(
 ): Promise<number> {
   const store = new TuiViewStore();
   let session: CodingSession | undefined;
+  let host: CodingSessionHost | undefined;
   let removeInterrupt: (() => void) | undefined;
+
+  const ensureHost = (): CodingSessionHost => {
+    host ??= deps.createSessionHost({
+      emitEvent: (event) => store.applyEvent(event),
+      onSnapshot: (snapshot) => store.applySnapshot(snapshot),
+      workspaceRoot,
+    });
+    return host;
+  };
 
   const createSession = (
     model: ConversationModelConfig,
     accessTokenOverride?: string,
   ): CodingSession => {
-    const host = deps.createSessionHost({
-      emitEvent: (event) => store.applyEvent(event),
-      onSnapshot: (snapshot) => store.applySnapshot(snapshot),
-      workspaceRoot,
-    });
     const next = new CodingSession({
-      host,
+      host: ensureHost(),
       conversationId: deps.createConversationId(),
+      createConversationId: deps.createConversationId,
       model,
       accessToken: accessTokenOverride ?? accessToken,
+      workspaceRoot,
     });
     removeInterrupt?.();
     removeInterrupt = deps.onInterrupt(() => next.cancel());
@@ -159,6 +169,7 @@ async function runInteractive(
     removeInterrupt?.();
     store.dispose();
     session?.close();
+    host?.dispose();
   }
 }
 

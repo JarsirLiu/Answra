@@ -20,6 +20,16 @@ describe("parseTuiCommand", () => {
   it("parses local commands with surrounding whitespace", () => {
     expect(parseTuiCommand("  /help ")).toMatchObject({ command: { kind: "help" }, args: [] });
     expect(parseTuiCommand("/clear")).toMatchObject({ command: { kind: "clear" }, args: [] });
+    expect(parseTuiCommand("/new")).toMatchObject({ command: { kind: "new" }, args: [] });
+    expect(parseTuiCommand("/sessions")).toMatchObject({ command: { kind: "sessions" }, args: [] });
+    expect(parseTuiCommand("/resume abc")).toMatchObject({
+      command: { kind: "resume" },
+      args: ["abc"],
+    });
+    expect(parseTuiCommand("/delete abc")).toMatchObject({
+      command: { kind: "delete" },
+      args: ["abc"],
+    });
     expect(parseTuiCommand("/compact")).toMatchObject({ command: { kind: "compact" }, args: [] });
     expect(parseTuiCommand("/compact 保留迁移决定")).toMatchObject({
       command: { kind: "compact" },
@@ -55,6 +65,10 @@ describe("parseTuiCommand", () => {
     expect(suggestTuiCommands("").map((command) => command.name)).toEqual([
       "help",
       "clear",
+      "new",
+      "sessions",
+      "resume",
+      "delete",
       "compact",
       "config",
       "model",

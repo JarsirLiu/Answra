@@ -1,6 +1,8 @@
 import type {
   AgentEventEnvelope,
   BotSummary,
+  ConversationSessionScope,
+  ConversationSessionSummary,
   ConversationSnapshot,
   ManualCompactionResult,
 } from "../schema";
@@ -9,6 +11,8 @@ export type {
   AgentEventEnvelope,
   ContextCompactionStatus,
   ConversationMessage,
+  ConversationSessionScope,
+  ConversationSessionSummary,
   ConversationSnapshot,
 } from "../schema";
 
@@ -36,6 +40,10 @@ export const ConversationChannels = {
   Compact: "answra:conversation:compact",
   /** 列出可用于新建会话的 Bot（只含身份，不含 prompt/工具）。 */
   ListBots: "answra:conversation:list-bots",
+  /** 列出已落盘的会话摘要；按 scope 隔离，不返回消息正文。 */
+  ListSessions: "answra:conversation:list-sessions",
+  /** 删除一个已落盘会话；活动 run 中的会话拒绝删除。 */
+  DeleteSession: "answra:conversation:delete-session",
   Event: "answra:conversation:event",
   /** Pushes the authoritative transcript snapshot after an Agent-owned transcript write. */
   SnapshotChanged: "answra:conversation:snapshot-changed",
@@ -259,6 +267,14 @@ export interface ConversationChannelMap {
   [ConversationChannels.ListBots]: {
     request: undefined;
     response: BotSummary[];
+  };
+  [ConversationChannels.ListSessions]: {
+    request: { scope?: ConversationSessionScope } | undefined;
+    response: readonly ConversationSessionSummary[];
+  };
+  [ConversationChannels.DeleteSession]: {
+    request: { conversationId: string };
+    response: undefined;
   };
   [ConversationChannels.Event]: { request: undefined; response: undefined };
   [ConversationChannels.SnapshotChanged]: { request: undefined; response: ConversationSnapshot };

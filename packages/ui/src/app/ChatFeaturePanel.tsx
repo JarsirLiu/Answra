@@ -1,6 +1,5 @@
 import type { AgentConnectionState, ConversationSnapshot, DesktopBridge } from "@answra/shared";
 import {
-  ActiveChatConversationId,
   AUTH_REQUIRED_NOTICE,
   isAgentServiceDisconnectedError,
   isAuthRequiredError,
@@ -8,6 +7,7 @@ import {
 import { type ChangeEvent, type RefObject, useEffect, useState } from "react";
 import { AGENT_SERVICE_UNAVAILABLE_NOTICE } from "../components/chat";
 import { type ChatAttachment, ChatPanel } from "../components/panels/ChatPanel";
+import { useChatSessions } from "./useChatSessions";
 import { useGeneralChat } from "./useConversationChat";
 
 interface ChatFeaturePanelProps {
@@ -48,7 +48,8 @@ export function ChatFeaturePanel({
   onVote,
   onSent,
 }: ChatFeaturePanelProps) {
-  const conversation = useGeneralChat(bridge, ActiveChatConversationId);
+  const sessions = useChatSessions(bridge);
+  const conversation = useGeneralChat(bridge, sessions.activeConversationId);
   const [failure, setFailure] = useState<{ message: string; needsSignIn: boolean }>();
   const [compactNotice, setCompactNotice] = useState<string>();
   useEffect(() => {
@@ -105,7 +106,7 @@ export function ChatFeaturePanel({
   async function clearConversation(): Promise<void> {
     if (!bridge?.clearConversationMessages) return;
     try {
-      const snapshot = await onConversationCleared(ActiveChatConversationId);
+      const snapshot = await onConversationCleared(sessions.activeConversationId);
       conversation.clearMessages();
       await conversation.reconcileSnapshot(snapshot);
       setFailure(undefined);
@@ -119,7 +120,7 @@ export function ChatFeaturePanel({
     setCompactNotice(undefined);
     try {
       const { result, snapshot } = await bridge.compactConversation(
-        ActiveChatConversationId,
+        sessions.activeConversationId,
         instructions,
       );
       await conversation.reconcileSnapshot(snapshot);
@@ -136,6 +137,45 @@ export function ChatFeaturePanel({
       }
     } catch (error) {
       setCompactNotice(error instanceof Error ? error.message : "上下文压缩失败。");
+    }
+  }
+
+  async function startNewConversation(): Promise<void> {
+    if (conversation.activeRunId || conversation.sendPending) return;
+    setFailure(undefined);
+    setCompactNotice(undefined);
+    try {
+      await sessions.newConversation();
+      conversation.clearMessages();
+    } catch (cause) {
+      setFailure({
+        message: cause instanceof Error ? cause.message : "新建会话失败",
+        needsSignIn: false,
+      });
+    }
+  }
+
+  function resumeConversation(conversationId: string): void {
+    if (conversation.activeRunId || conversation.sendPending) return;
+    setFailure(undefined);
+    setCompactNotice(undefined);
+    conversation.clearMessages();
+    sessions.resumeConversation(conversationId);
+  }
+
+  async function deleteConversation(conversationId: string): Promise<void> {
+    if (conversation.activeRunId || conversation.sendPending) return;
+    setFailure(undefined);
+    setCompactNotice(undefined);
+    const wasActive = conversationId === sessions.activeConversationId;
+    try {
+      await sessions.deleteConversation(conversationId);
+      if (wasActive) conversation.clearMessages();
+    } catch (cause) {
+      setFailure({
+        message: cause instanceof Error ? cause.message : "删除会话失败",
+        needsSignIn: false,
+      });
     }
   }
 
@@ -192,6 +232,15 @@ export function ChatFeaturePanel({
             ? "暂无可清空的对话"
             : undefined
       }
+      sessions={sessions.sessions}
+      activeConversationId={sessions.activeConversationId}
+      historyError={sessions.error}
+      historyDisabledReason={
+        conversation.activeRunId || conversation.sendPending ? "回复完成后才能切换会话" : undefined
+      }
+      onNewConversation={() => void startNewConversation()}
+      onResumeConversation={resumeConversation}
+      onDeleteConversation={deleteConversation}
     />
   );
 }

@@ -127,6 +127,9 @@ const bridge: DesktopBridge = {
   getConversationSnapshot: (conversationId: string) =>
     ipcRenderer.invoke(ConversationChannels.GetSnapshot, { conversationId }),
   listBots: () => ipcRenderer.invoke(ConversationChannels.ListBots),
+  listConversationSessions: (query) => ipcRenderer.invoke(ConversationChannels.ListSessions, query),
+  deleteConversationSession: (conversationId: string) =>
+    ipcRenderer.invoke(ConversationChannels.DeleteSession, { conversationId }),
   createConversation: (conversationId: string, selection?: ConversationSelection) =>
     ipcRenderer.invoke(ConversationChannels.Create, { conversationId, selection }),
   clearConversationMessages: (conversationId: string) =>

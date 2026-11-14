@@ -7,6 +7,8 @@ import type {
   ConversationSendCommand,
   ConversationSendRequest,
   ConversationSendResponse,
+  ConversationSessionScope,
+  ConversationSessionSummary,
   ConversationSnapshot,
   InterviewPcmFrame,
   ManualCompactionResult,
@@ -181,6 +183,21 @@ export class AgentService {
     return (await this.workerHost.request("bot-list", {})) as BotSummary[];
   }
 
+  async listConversationSessions(query?: {
+    scope?: ConversationSessionScope;
+  }): Promise<readonly ConversationSessionSummary[]> {
+    await this.start();
+    return (await this.workerHost.request("session-list", {
+      ...(query === undefined ? {} : { query }),
+    })) as readonly ConversationSessionSummary[];
+  }
+
+  async deleteConversationSession(conversationId: string): Promise<void> {
+    await this.start();
+    await this.workerHost.request("session-delete", { conversationId });
+    this.knownConversationIds.delete(conversationId);
+  }
+
   async getSnapshot(conversationId: string): Promise<ConversationSnapshot> {
     await this.start();
     this.trackConversation(conversationId);
@@ -193,6 +210,12 @@ export class AgentService {
     await this.start();
     this.trackConversation(conversationId);
     return this.workerHost.request("create-conversation", { conversationId, selection });
+  }
+
+  async createAnswerConversation(conversationId: string) {
+    await this.start();
+    this.trackConversation(conversationId);
+    return this.workerHost.request("create-answer-conversation", { conversationId });
   }
 
   async clearConversation(conversationId: string): Promise<ConversationSnapshot> {

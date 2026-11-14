@@ -36,6 +36,12 @@ export {
 } from "./events";
 export * from "./remote";
 export {
+  type ConversationSessionScope,
+  type ConversationSessionSummary,
+  conversationSessionScopeSchema,
+  conversationSessionSummarySchema,
+} from "./session";
+export {
   type AgentFinishReason,
   type AgentMessageState,
   type AgentPartKind,

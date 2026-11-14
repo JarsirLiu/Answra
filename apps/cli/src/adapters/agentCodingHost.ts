@@ -6,6 +6,18 @@ export function createAgentCodingSessionHost(host: CodingHost): CodingSessionHos
   return {
     configure: (model) => host.runtime.configure(model),
     createConversation: (conversationId) => host.runtime.createConversation(conversationId),
+    getSnapshot: (conversationId) => host.runtime.getSnapshot(conversationId),
+    listSessions: async (workspaceRoot) => {
+      if (!host.catalog) throw new Error("当前宿主不支持会话历史。");
+      return host.catalog.list({
+        scope: "coding",
+        ...(workspaceRoot === undefined ? {} : { workspaceRoot }),
+      });
+    },
+    deleteSession: async (conversationId) => {
+      if (!host.catalog) throw new Error("当前宿主不支持会话历史。");
+      return host.catalog.delete(conversationId);
+    },
     clearConversation: (conversationId) => host.runtime.clearConversation(conversationId),
     compactConversation: (conversationId, accessToken, options) =>
       host.runtime.compactConversation(conversationId, accessToken, options),

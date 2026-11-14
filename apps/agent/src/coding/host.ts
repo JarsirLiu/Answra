@@ -3,6 +3,7 @@ import type { ConversationSnapshot } from "@answra/shared";
 import type { AgentEventEnvelope } from "@answra/shared/schema";
 import { AgentRuntime } from "../core/agent/runtime";
 import { createBuiltinToolRegistry } from "../core/tool";
+import type { ConversationSessionCatalog } from "../core/transcript/catalog";
 import { MemoryConversationStore } from "../core/transcript/memoryStore";
 import type { ConversationStore } from "../core/transcript/store";
 import { MemoryExecutionStore } from "../execution/memoryStore";
@@ -15,6 +16,7 @@ export interface CodingHostOptions {
   onSnapshot?: (snapshot: ConversationSnapshot) => void | Promise<void>;
   tokenProvider?: (options: { forceRefresh: boolean }) => Promise<string>;
   store?: ConversationStore;
+  catalog?: ConversationSessionCatalog;
   executionStore?: ExecutionStore;
   workspaceRoot?: string | null;
   /** 宿主注入的 Grep WASI worker 脚本路径；缺省时在 Agent 进程内执行。 */
@@ -23,6 +25,7 @@ export interface CodingHostOptions {
 
 export interface CodingHost {
   runtime: CodingApplication;
+  catalog?: ConversationSessionCatalog;
   dispose(): void;
 }
 
@@ -31,6 +34,7 @@ export function startCodingHost({
   onSnapshot,
   tokenProvider,
   store = new MemoryConversationStore(),
+  catalog,
   executionStore = new MemoryExecutionStore(),
   workspaceRoot = null,
   grepWorkerPath,
@@ -46,6 +50,7 @@ export function startCodingHost({
   let disposed = false;
   return {
     runtime,
+    ...(catalog ? { catalog } : {}),
     dispose() {
       if (disposed) return;
       disposed = true;

@@ -124,6 +124,8 @@ export function startAnswerAgentHost({
         return answer.readEventsAfter(command.conversationId, command.afterRevision);
       case "create-conversation":
         return answer.createConversation(command.conversationId);
+      case "create-answer-conversation":
+        return answer.createConversation(command.conversationId);
       case "clear-conversation": {
         const snapshot = await answer.clearConversation(command.conversationId);
         transport.send({ version: 1, type: "conversation-snapshot", snapshot });
@@ -134,6 +136,9 @@ export function startAnswerAgentHost({
       case "cancel":
         answer.cancel(command.runId);
         return undefined;
+      case "session-list":
+      case "session-delete":
+        throw new Error("会话历史不包含在此安装包中");
       case "ping":
         return undefined;
       case "interview-start":

@@ -10,6 +10,8 @@ import type {
   ConversationSelection,
   ConversationSendCommand,
   ConversationSendResponse,
+  ConversationSessionScope,
+  ConversationSessionSummary,
   ConversationSnapshot,
   DesktopAnnouncement,
   InterviewChange,
@@ -57,7 +59,7 @@ export interface DesktopBridge {
   interviewAvailable?: boolean;
   /** 上报外壳内容尺寸，主进程据此调整窗口大小。 */
   fitContent: (size: ContentSize) => void;
-  /** 关闭应用窗口。 */
+  /** 退出应用；悬浮条是唯一入口，不保留后台进程或托盘。 */
   close: () => void;
   /** Syncs task state to the separately protected reply window. */
   setReplyBarState?: (state: ReplyBarState | null) => void;
@@ -114,6 +116,12 @@ export interface DesktopBridge {
   getConversationSnapshot?: (conversationId: string) => Promise<ConversationSnapshot>;
   /** Lists selectable Bots; absent in browser preview/test environments. */
   listBots?: () => Promise<BotSummary[]>;
+  /** 列出已落盘会话摘要；scope 缺省由宿主决定。 */
+  listConversationSessions?: (query?: {
+    scope?: ConversationSessionScope;
+  }) => Promise<readonly ConversationSessionSummary[]>;
+  /** 删除一个已落盘会话；活动 run 中的会话由宿主拒绝。 */
+  deleteConversationSession?: (conversationId: string) => Promise<void>;
   createConversation?: (
     conversationId: string,
     selection?: ConversationSelection,

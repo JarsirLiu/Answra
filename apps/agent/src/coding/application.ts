@@ -20,7 +20,11 @@ import { ContextPreparation } from "../core/context/preparation";
 import { validateModelRequest } from "../core/model/requestContent";
 import type { ReadFileStateMap } from "../core/tool";
 import { createUserMessage } from "../core/transcript/message";
-import type { ConversationSessionSeed, ConversationStore } from "../core/transcript/store";
+import type {
+  ConversationSessionMetadata,
+  ConversationSessionSeed,
+  ConversationStore,
+} from "../core/transcript/store";
 import type { CodingAgentInput } from "./agent";
 import type { CodingBot } from "./bot";
 
@@ -74,8 +78,15 @@ export class CodingApplication {
     this.workspaceRoot = root;
   }
 
+  private sessionMetadata(): ConversationSessionMetadata {
+    return {
+      scope: "coding",
+      ...(this.workspaceRoot ? { workspaceRoot: this.workspaceRoot } : {}),
+    };
+  }
+
   async createConversation(conversationId: string): Promise<ConversationSnapshot> {
-    await this.store.create(conversationId, this.seed());
+    await this.store.create(conversationId, this.seed(), this.sessionMetadata());
     this.readFileStates.delete(conversationId);
     return this.store.load(conversationId);
   }
@@ -127,7 +138,7 @@ export class CodingApplication {
     validateModelRequest(request);
     if (!request.text.trim()) throw new Error("消息内容不能为空");
     if (request.images.length > 0) throw new Error("CLI coding 暂不支持图片输入");
-    await this.store.create(conversationId, this.seed());
+    await this.store.create(conversationId, this.seed(), this.sessionMetadata());
     const getAccessToken = async () => accessToken;
     const queue = this.queueFor(conversationId);
     const accepted = await queue.enqueue(async (): Promise<ConversationQueueStartResult> => {

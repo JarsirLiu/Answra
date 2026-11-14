@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 /** CLI 可执行入口：只负责把 process 依赖注入应用层并设置退出码。 */
 import { randomUUID } from "node:crypto";
+import { join } from "node:path";
 import process from "node:process";
-import { startCodingHost } from "@answra/agent/composition";
+import { FileConversationStore, startCodingHost } from "@answra/agent/composition";
+import { resolveDefaultConfigDir } from "@answra/config";
 import { createSystemModelCredentialStore } from "@answra/credentials";
 import { createAgentCodingSessionHost } from "./adapters/agentCodingHost";
 import { createOpenAiModelCatalog } from "./adapters/openAiModelCatalog";
@@ -30,6 +32,9 @@ async function main(): Promise<void> {
   try {
     const modelSettings = new ModelSettingsService(createSharedModelStore());
     const modelCredentials = createSystemModelCredentialStore();
+    const sessionStore = new FileConversationStore(
+      join(resolveDefaultConfigDir(), "cli", "sessions"),
+    );
     const promptSecret = createProcessSecretPrompt(process.stdin, process.stdout);
     const endpoints = resolveCliCloudEndpoints(process.env, {
       isPackaged: isPackagedCliRuntime(),
@@ -68,7 +73,15 @@ async function main(): Promise<void> {
       createRemoteHost: createRemoteCodingHost,
       openBrowser: openSystemBrowser,
       createSessionHost: ({ emitEvent, onSnapshot, workspaceRoot }) =>
-        createAgentCodingSessionHost(startCodingHost({ emitEvent, onSnapshot, workspaceRoot })),
+        createAgentCodingSessionHost(
+          startCodingHost({
+            emitEvent,
+            onSnapshot,
+            workspaceRoot,
+            store: sessionStore,
+            catalog: sessionStore,
+          }),
+        ),
       createConversationId: randomUUID,
       runTui: createInkTuiRunner(),
       onInterrupt: (handler) => {

@@ -22,6 +22,7 @@ import {
   modelSettingsFilePath,
   modelSettingsSecretPath,
 } from "./conversation/modelSettings";
+import { registerConversationSessionIpc } from "./conversation/sessionIpc";
 import { loadDevDotEnv } from "./devEnv";
 import { registerAmbientIpc } from "./ipc/ambientIpc";
 import { registerWindowIpc } from "./ipc/windowIpc";
@@ -172,6 +173,7 @@ if (!app.requestSingleInstanceLock()) {
       canSend: () => modelRouter.canSend(),
       modelSettings: modelRouter,
     });
+    registerConversationSessionIpc(agentService);
     registerConnectionIpc(agentService);
     registerAuthIpc(authService);
     const startAgent = () => {

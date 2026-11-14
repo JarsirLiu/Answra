@@ -11,4 +11,7 @@ if (typeof vadResourceRoot !== "string" || vadResourceRoot.length === 0)
 const asrResourceRoot = process.argv[3];
 if (typeof asrResourceRoot !== "string" || asrResourceRoot.length === 0)
   throw new Error("Agent worker 缺少 ASR 资源目录启动参数");
-startAgentWorker(parentPort, { vadResourceRoot, asrResourceRoot });
+const sessionsRoot = process.argv[4];
+if (typeof sessionsRoot !== "string" || sessionsRoot.length === 0)
+  throw new Error("Agent worker 缺少会话目录启动参数");
+startAgentWorker(parentPort, { vadResourceRoot, asrResourceRoot, sessionsRoot });

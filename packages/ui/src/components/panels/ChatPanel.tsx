@@ -4,6 +4,7 @@ import type {
   ContextCompactionStatus,
   ContextPruningStatus,
   ContextUsage,
+  ConversationSessionSummary,
   DesktopBridge,
 } from "@answra/shared";
 import { MANUAL_COMPACTION_INSTRUCTIONS_MAX_CHARS } from "@answra/shared";
@@ -29,6 +30,7 @@ import {
   partsContentKey,
 } from "../chat/conversationMessage";
 import { SurfaceButton } from "../controls/SurfaceButton";
+import { ChatHistoryPanel } from "./ChatHistoryPanel";
 import { ConversationComposer } from "./ConversationComposer";
 import { PanelShell } from "./PanelShell";
 import "../chat/conversation.css";
@@ -91,6 +93,13 @@ interface ChatPanelProps {
   compactDisabledReason?: string;
   /** 清空不可用的原因（活动回复进行中/没有消息）；设置即禁用按钮并以 title 提示。 */
   clearDisabledReason?: string;
+  sessions?: readonly ConversationSessionSummary[];
+  activeConversationId?: string;
+  historyError?: string;
+  historyDisabledReason?: string;
+  onNewConversation?: () => void;
+  onResumeConversation?: (conversationId: string) => void;
+  onDeleteConversation?: (conversationId: string) => Promise<void>;
   onClose: () => void;
   bridge?: DesktopBridge;
   stealth: boolean;
@@ -123,6 +132,13 @@ export function ChatPanel({
   onVote,
   onClear,
   clearDisabledReason,
+  sessions,
+  activeConversationId,
+  historyError,
+  historyDisabledReason,
+  onNewConversation,
+  onResumeConversation,
+  onDeleteConversation,
   onCompact,
   compactDisabledReason,
   onClose,
@@ -133,6 +149,7 @@ export function ChatPanel({
   const compactInputId = useId();
   const [compactFormOpen, setCompactFormOpen] = useState(false);
   const [compactInstructions, setCompactInstructions] = useState("");
+  const [historyOpen, setHistoryOpen] = useState(false);
   const connectionNotice = formatConnectionNotice(connection);
   const timeline = mergeCompactionBoundaries(messages, compactionBoundaries);
 
@@ -169,8 +186,31 @@ export function ChatPanel({
     <PanelShell
       context={attachments.length ? "截图已添加，可补充问题" : undefined}
       headerAction={
-        onClear || onCompact ? (
+        onClear || onCompact || sessions !== undefined || onNewConversation ? (
           <div className="panel-header-action chat-panel-header-actions">
+            {sessions !== undefined && (
+              <SurfaceButton
+                aria-label={historyOpen ? "返回对话" : "查看会话历史"}
+                disabled={Boolean(historyDisabledReason) && !historyOpen}
+                onClick={() => setHistoryOpen((open) => !open)}
+                variant="quiet"
+              >
+                {historyOpen ? "返回" : "历史"}
+              </SurfaceButton>
+            )}
+            {onNewConversation && (
+              <SurfaceButton
+                aria-label="新建对话"
+                disabled={Boolean(historyDisabledReason)}
+                onClick={() => {
+                  setHistoryOpen(false);
+                  onNewConversation();
+                }}
+                variant="quiet"
+              >
+                新对话
+              </SurfaceButton>
+            )}
             {onCompact && (
               <SurfaceButton
                 aria-label={compactDisabledReason ?? "压缩上下文"}
@@ -227,111 +267,135 @@ export function ChatPanel({
           </div>
         </form>
       ) : null}
-      <MessageStream
-        ariaLabel="对话消息"
-        contentKey={contentKey}
-        viewportClassName="conversation conversation--chat"
-      >
-        {timeline.map((item) => {
-          if (item.kind === "compaction") {
-            return <CompactionBoundaryCard boundary={item.boundary} key={item.id} />;
-          }
-          const message = item.message;
-          return (
-            <article className={`chat-message chat-message--${message.role}`} key={item.id}>
-              {message.role === "user" ? (
-                <div className="message-content">
-                  {message.images?.map((image, index) => (
-                    // biome-ignore lint/suspicious/noArrayIndexKey: 持久化消息只带图片内容，没有稳定 id
-                    <figure className="message-attachment" key={`${message.id}-${index}`}>
-                      <img alt="用户添加的截图" src={image.dataUrl} />
-                    </figure>
-                  ))}
-                  {message.text}
-                </div>
-              ) : (
-                <>
-                  {message.waitingForStream && (
-                    <div aria-label="回复运行中" className="conversation-running" role="status">
-                      <LoaderCircle
-                        aria-hidden="true"
-                        className="conversation-running-icon"
-                        size={15}
-                      />
-                    </div>
-                  )}
-                  <AssistantMessage
-                    caret={
-                      message.status === "streaming" &&
-                      message.id === messages.at(-1)?.id &&
-                      Boolean(message.text)
-                    }
-                    content={message.text}
-                    onFork={onFork}
-                    onReply={() => {
-                      composerInputRef.current?.focus();
-                    }}
-                    onVote={onVote}
-                    parts={message.parts}
-                    reasoning={message.reasoning}
-                    streaming={message.status === "streaming" && message.id === messages.at(-1)?.id}
-                    thinking={message.thinking === true}
-                    thinkingMs={thinkingMs}
-                  />
-                </>
-              )}
-            </article>
-          );
-        })}
-        {compactNotice && (
-          <div className="chat-panel-compact-notice" role="status">
-            {compactNotice}
-          </div>
-        )}
-        {contextCompaction && <ContextCompactionNotice status={contextCompaction} />}
-        {contextPruning && <ContextPruningNotice status={contextPruning} />}
-        {contextUsage && <ContextUsageNotice usage={contextUsage} />}
-        <ConnectionNotice state={connection} />
-        {!connectionNotice && retry && <RetryNotice retry={retry} />}
-        {!connectionNotice && error && <ModelErrorNotice message={error} onSignIn={onSignIn} />}
-      </MessageStream>
-      <ConversationComposer
-        inputLabel="补充问题"
-        inputRef={composerInputRef}
-        onAddAttachment={() => fileInputRef.current?.click()}
-        onPasteImages={(files) => {
-          if (files[0]) onAttachmentChange(files[0]);
-        }}
-        onStop={onCancel}
-        onSubmit={onSend}
-        onValueChange={onDraftChange}
-        placeholder={attachments.length ? "补充问题或说明…" : "输入问题，或先从模式功能添加截图…"}
-        streaming={streaming}
-        disabled={sending}
-        submitDisabled={!draft.trim() && attachments.length === 0}
-        value={draft}
-      >
-        <input
-          accept="image/*"
-          aria-label="选择截图图片"
-          className="file-input-hidden"
-          onChange={(event) => {
-            onAttachmentChange(event.target.files?.[0] ?? null);
-            event.target.value = "";
+      {historyOpen ? (
+        <ChatHistoryPanel
+          activeConversationId={activeConversationId ?? ""}
+          disabledReason={historyDisabledReason}
+          error={historyError}
+          onDelete={onDeleteConversation ?? (async () => {})}
+          onResume={(conversationId) => {
+            setHistoryOpen(false);
+            onResumeConversation?.(conversationId);
           }}
-          ref={fileInputRef}
-          type="file"
+          sessions={sessions ?? []}
         />
-        {attachments.map((att) => (
-          <div className="attachment-preview" key={att.id}>
-            <img alt="待发送截图预览" src={att.previewUrl} />
-            <span>{att.name}</span>
-            <button aria-label="移除截图" onClick={() => onAttachmentRemove(att.id)} type="button">
-              <X aria-hidden="true" size={ICON_SM} />
-            </button>
-          </div>
-        ))}
-      </ConversationComposer>
+      ) : (
+        <>
+          <MessageStream
+            ariaLabel="对话消息"
+            contentKey={contentKey}
+            viewportClassName="conversation conversation--chat"
+          >
+            {timeline.map((item) => {
+              if (item.kind === "compaction") {
+                return <CompactionBoundaryCard boundary={item.boundary} key={item.id} />;
+              }
+              const message = item.message;
+              return (
+                <article className={`chat-message chat-message--${message.role}`} key={item.id}>
+                  {message.role === "user" ? (
+                    <div className="message-content">
+                      {message.images?.map((image, index) => (
+                        // biome-ignore lint/suspicious/noArrayIndexKey: 持久化消息只带图片内容，没有稳定 id
+                        <figure className="message-attachment" key={`${message.id}-${index}`}>
+                          <img alt="用户添加的截图" src={image.dataUrl} />
+                        </figure>
+                      ))}
+                      {message.text}
+                    </div>
+                  ) : (
+                    <>
+                      {message.waitingForStream && (
+                        <div aria-label="回复运行中" className="conversation-running" role="status">
+                          <LoaderCircle
+                            aria-hidden="true"
+                            className="conversation-running-icon"
+                            size={15}
+                          />
+                        </div>
+                      )}
+                      <AssistantMessage
+                        caret={
+                          message.status === "streaming" &&
+                          message.id === messages.at(-1)?.id &&
+                          Boolean(message.text)
+                        }
+                        content={message.text}
+                        onFork={onFork}
+                        onReply={() => {
+                          composerInputRef.current?.focus();
+                        }}
+                        onVote={onVote}
+                        parts={message.parts}
+                        reasoning={message.reasoning}
+                        streaming={
+                          message.status === "streaming" && message.id === messages.at(-1)?.id
+                        }
+                        thinking={message.thinking === true}
+                        thinkingMs={thinkingMs}
+                      />
+                    </>
+                  )}
+                </article>
+              );
+            })}
+            {compactNotice && (
+              <div className="chat-panel-compact-notice" role="status">
+                {compactNotice}
+              </div>
+            )}
+            {contextCompaction && <ContextCompactionNotice status={contextCompaction} />}
+            {contextPruning && <ContextPruningNotice status={contextPruning} />}
+            {contextUsage && <ContextUsageNotice usage={contextUsage} />}
+            <ConnectionNotice state={connection} />
+            {!connectionNotice && retry && <RetryNotice retry={retry} />}
+            {!connectionNotice && error && <ModelErrorNotice message={error} onSignIn={onSignIn} />}
+          </MessageStream>
+          <ConversationComposer
+            inputLabel="补充问题"
+            inputRef={composerInputRef}
+            onAddAttachment={() => fileInputRef.current?.click()}
+            onPasteImages={(files) => {
+              if (files[0]) onAttachmentChange(files[0]);
+            }}
+            onStop={onCancel}
+            onSubmit={onSend}
+            onValueChange={onDraftChange}
+            placeholder={
+              attachments.length ? "补充问题或说明…" : "输入问题，或先从模式功能添加截图…"
+            }
+            streaming={streaming}
+            disabled={sending}
+            submitDisabled={!draft.trim() && attachments.length === 0}
+            value={draft}
+          >
+            <input
+              accept="image/*"
+              aria-label="选择截图图片"
+              className="file-input-hidden"
+              onChange={(event) => {
+                onAttachmentChange(event.target.files?.[0] ?? null);
+                event.target.value = "";
+              }}
+              ref={fileInputRef}
+              type="file"
+            />
+            {attachments.map((att) => (
+              <div className="attachment-preview" key={att.id}>
+                <img alt="待发送截图预览" src={att.previewUrl} />
+                <span>{att.name}</span>
+                <button
+                  aria-label="移除截图"
+                  onClick={() => onAttachmentRemove(att.id)}
+                  type="button"
+                >
+                  <X aria-hidden="true" size={ICON_SM} />
+                </button>
+              </div>
+            ))}
+          </ConversationComposer>
+        </>
+      )}
     </PanelShell>
   );
 }

@@ -43,7 +43,7 @@ export class AnswerApplication {
       conversationId,
       getAccessToken: async () => accessToken,
       prepareRun: async ({ runId, eventRevision }) => {
-        await this.store.create(conversationId);
+        await this.store.create(conversationId, undefined, { scope: "answer" });
         await this.store.beginEphemeralRun(
           conversationId,
           runId,
@@ -74,7 +74,7 @@ export class AnswerApplication {
   }
 
   async createConversation(conversationId: string): Promise<ConversationSnapshot> {
-    await this.store.create(conversationId);
+    await this.store.create(conversationId, undefined, { scope: "answer" });
     return this.getSnapshot(conversationId);
   }
 

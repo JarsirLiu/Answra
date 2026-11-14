@@ -8,7 +8,7 @@ import type {
   RecognizerSource,
   TenVadSource,
 } from "@answra/agent";
-import { startAgentHost } from "@answra/agent";
+import { FileConversationStore, startAgentHost } from "@answra/agent";
 import { createParaformerRecognizerModule } from "../interview/asrRecognizer";
 import { createTenVadFileSource } from "../interview/tenVadResources";
 
@@ -18,6 +18,8 @@ export interface AgentWorkerOptions {
   vadResourceRoot?: string;
   /** 由 AgentService 解析的本地 ASR 模型资源目录（resources/asr）。 */
   asrResourceRoot?: string;
+  /** 桌面会话历史根目录；缺省使用内存 store。 */
+  sessionsRoot?: string;
   /** 测试注入：绕过从磁盘加载预编译资源。 */
   vad?: TenVadSource;
   /** 测试注入：绕过从磁盘加载本地模型。 */
@@ -44,10 +46,15 @@ export function startAgentWorker(
   const recognizer = createRecognizer(options?.recognizer, options?.asrResourceRoot ?? "");
   const grepWorkerPath =
     typeof __dirname === "string" ? path.join(__dirname, "grepWorker.cjs") : undefined;
+  const sessionStore =
+    options?.sessionsRoot === undefined
+      ? undefined
+      : new FileConversationStore(options.sessionsRoot);
   return startAgentHost({
     transport,
     vad,
     recognizer,
+    ...(sessionStore ? { store: sessionStore, catalog: sessionStore } : {}),
     ...(grepWorkerPath && existsSync(grepWorkerPath) ? { grepWorkerPath } : {}),
   });
 }

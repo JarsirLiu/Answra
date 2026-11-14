@@ -36,8 +36,17 @@ export {
   DEFAULT_AGENT_CONNECTION_POLICY,
 } from "./client/connection";
 export { ConversationApplication } from "./conversation/application";
+export type {
+  ConversationSessionCatalog,
+  ConversationSessionQuery,
+} from "./core/transcript/catalog";
 export { MemoryConversationStore } from "./core/transcript/memoryStore";
-export type { ConversationStore } from "./core/transcript/store";
+export { FileConversationStore } from "./core/transcript/persistence/fileConversationStore";
+export type {
+  ConversationSessionMetadata,
+  ConversationSessionSeed,
+  ConversationStore,
+} from "./core/transcript/store";
 export { MemoryExecutionStore } from "./execution/memoryStore";
 export type { ExecutionStore } from "./execution/store";
 export type { AgentHost, AgentHostOptions, AgentTransport } from "./host";

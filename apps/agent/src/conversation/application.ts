@@ -26,7 +26,11 @@ import {
 } from "../core/team/preset";
 import type { ReadFileStateMap } from "../core/tool";
 import { createUserMessage } from "../core/transcript/message";
-import type { ConversationSessionSeed, ConversationStore } from "../core/transcript/store";
+import type {
+  ConversationSessionMetadata,
+  ConversationSessionSeed,
+  ConversationStore,
+} from "../core/transcript/store";
 import { CONVERSATION_AGENT_ID, CONVERSATION_TEAM_ID, type ConversationAgentInput } from "./agent";
 import type { ConversationBot, ConversationBotCatalog } from "./bots/types";
 import { CHAT_PROFILES, type ChatProfileId } from "./profiles/registry";
@@ -115,6 +119,13 @@ export class ConversationApplication {
     this.workspaceRoot = root;
   }
 
+  private sessionMetadata(): ConversationSessionMetadata {
+    return {
+      scope: "conversation",
+      ...(this.workspaceRoot ? { workspaceRoot: this.workspaceRoot } : {}),
+    };
+  }
+
   listBots(): readonly BotSummary[] {
     return this.catalog.list();
   }
@@ -137,7 +148,7 @@ export class ConversationApplication {
     selection?: ConversationSelection,
   ): Promise<ConversationSnapshot> {
     const seed = this.resolveSelection(selection);
-    const snapshot = await this.store.create(conversationId, seed);
+    const snapshot = await this.store.create(conversationId, seed, this.sessionMetadata());
     if (
       selection &&
       snapshot.participantAgentIds &&
@@ -208,7 +219,7 @@ export class ConversationApplication {
     validateModelRequest(request);
     const requested = botId ? this.requireBot(botId) : undefined;
     const seed = this.seedForBot((requested ?? this.requireBot(this.defaultBotId)).id);
-    await this.store.create(conversationId, seed);
+    await this.store.create(conversationId, seed, this.sessionMetadata());
     const getAccessToken = async () => accessToken;
     const queue = this.queueFor(conversationId);
     const accepted = await queue.enqueue(async (): Promise<ConversationQueueStartResult> => {
@@ -276,7 +287,7 @@ export class ConversationApplication {
     validateModelRequest(request);
     const preset = this.presets.require(teamId);
     const seed = this.seedForTeam(preset);
-    await this.store.create(conversationId, seed);
+    await this.store.create(conversationId, seed, this.sessionMetadata());
     const getAccessToken = async () => accessToken;
     const queue = this.queueFor(conversationId);
     const accepted = await queue.enqueue(async (): Promise<ConversationQueueStartResult> => {

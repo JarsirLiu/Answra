@@ -2,6 +2,10 @@
 export type TuiCommandKind =
   | "help"
   | "clear"
+  | "new"
+  | "sessions"
+  | "resume"
+  | "delete"
   | "compact"
   | "config"
   | "exit"
@@ -38,6 +42,28 @@ export const TUI_COMMANDS: readonly TuiCommandSpec[] = [
     kind: "clear",
     name: "clear",
     summary: "清空当前会话 transcript",
+  },
+  {
+    kind: "new",
+    name: "new",
+    summary: "新建会话并回到欢迎页",
+  },
+  {
+    kind: "sessions",
+    name: "sessions",
+    summary: "列出当前 workspace 的历史会话",
+  },
+  {
+    kind: "resume",
+    name: "resume",
+    summary: "恢复历史会话",
+    argumentHint: "<ID|前缀>",
+  },
+  {
+    kind: "delete",
+    name: "delete",
+    summary: "删除历史会话",
+    argumentHint: "<ID>",
   },
   {
     kind: "compact",

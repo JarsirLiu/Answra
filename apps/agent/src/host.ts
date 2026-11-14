@@ -8,6 +8,7 @@ import { createConversationBots } from "./conversation/bots";
 import { AgentRuntime } from "./core/agent/runtime";
 import { createBotCatalog } from "./core/bot/catalog";
 import { createBuiltinToolRegistry } from "./core/tool";
+import type { ConversationSessionCatalog } from "./core/transcript/catalog";
 import { MemoryConversationStore } from "./core/transcript/memoryStore";
 import type { ConversationStore } from "./core/transcript/store";
 import { MemoryExecutionStore } from "./execution/memoryStore";
@@ -37,6 +38,7 @@ export interface AgentTransport {
 export interface AgentHostOptions {
   transport: AgentTransport;
   store?: ConversationStore;
+  catalog?: ConversationSessionCatalog;
   executionStore?: ExecutionStore;
   /**
    * 面试 VAD 的资源来源（预编译 TEN VAD wasm 由 desktop 组合根读盘后注入）。
@@ -76,6 +78,7 @@ const TOKEN_REQUEST_TIMEOUT_MS = 10_000;
 export function startAgentHost({
   transport,
   store = new MemoryConversationStore(),
+  catalog,
   executionStore = new MemoryExecutionStore(),
   vad,
   recognizer,
@@ -319,10 +322,18 @@ export function startAgentHost({
         return runtime.getSnapshot(command.conversationId);
       case "bot-list":
         return runtime.listBots();
+      case "session-list":
+        if (!catalog) throw new Error("会话历史不可用");
+        return catalog.list(command.query);
+      case "session-delete":
+        if (!catalog) throw new Error("会话历史不可用");
+        return catalog.delete(command.conversationId);
       case "read-events":
         return runtime.readEventsAfter(command.conversationId, command.afterRevision);
       case "create-conversation":
         return runtime.createConversation(command.conversationId, command.selection);
+      case "create-answer-conversation":
+        return answer.createConversation(command.conversationId);
       case "clear-conversation": {
         const snapshot = await runtime.clearConversation(command.conversationId);
         emitConversationSnapshot(snapshot);

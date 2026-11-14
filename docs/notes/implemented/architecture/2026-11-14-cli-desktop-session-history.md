@@ -1,8 +1,8 @@
 # Note：CLI 与桌面独立会话历史：新建、恢复、列表与删除
 
-状态：提案
+状态：已实施
 
-当前阶段：契约冻结，代码未实现。本文先固定跨包契约、目录归属和生命周期语义；在并行压缩/登录/远程改动稳定前不落实现代码。
+当前阶段：CLI 与桌面各自使用独立文件根目录；CLI 已提供 `/new`、`/sessions`、`/resume`、`/delete`，桌面 chat 已提供“新对话”和历史列表。`answer` 会话只保留在 worker 内存，不读盘、不落盘，也不进入历史。
 
 ## 问题
 
@@ -26,7 +26,7 @@ CLI coding 和桌面 conversation 目前都只有进程内 transcript：
   - `apps/cli/src/tui/commands/*`、`apps/cli/src/tui/runTui.tsx`：`/new`、`/sessions`、`/resume`、`/delete` 与视图重置。
   - `apps/desktop/src/main/conversation/sessionIpc.ts`（新增）：会话历史 IPC handler，避免与发送/压缩 handler 并行冲突。
   - `apps/desktop/src/main/agent/agentService.ts`、`agentWorkerHost.ts`、`worker.ts`、`workerTransport.ts`：worker 命令、启动参数与文件 store 注入。
-  - `packages/ui/src/app/useChatSessions.ts`（新增）、`ChatFeaturePanel.tsx`、`FloatingBarApp.tsx`、`ChatPanel.tsx`、`ChatHistoryPanel.tsx`（新增）：动态 chat 会话、历史列表与新建/恢复/删除入口。
+  - `packages/ui/src/app/useChatSessions.ts`（新增）、`ChatFeaturePanel.tsx`、`ChatPanel.tsx`、`ChatHistoryPanel.tsx`（新增）：动态 chat 会话、历史列表与新建/恢复/删除入口。
 - UI/进程/协议/持久化表面：
   - CLI：新增 `/new`、`/sessions`、`/resume <id>`、`/delete <id>`；`/clear` 语义不变。
   - 桌面：chat 新增“历史”“新对话”，历史列表支持恢复和删除；截图答题与面试在 v1 不新增历史入口。
@@ -36,11 +36,11 @@ CLI coding 和桌面 conversation 目前都只有进程内 transcript：
 - 相关 Note：
   - [共享 transcript 仓储归属](../../implemented/architecture/2026-11-08-core-transcript-store.md)
   - [后端拥有会话与内存仓储](../../implemented/architecture/2026-10-12-conversation-memory-store-port.md)
-  - [CLI Coding 模式与 TUI 移植](2026-11-12-cli-coding-mode-and-tui-port.md)
-  - [多 Bot 同会话注册、发现与交接](2026-11-11-multi-bot-session-registry-and-handoff.md)
-  - [产品方向与 Agent 底座](2026-10-20-product-direction-and-agent-foundation.md)
+  - [CLI Coding 模式与 TUI 移植](../../proposed/architecture/2026-11-12-cli-coding-mode-and-tui-port.md)
+  - [多 Bot 同会话注册、发现与交接](../../proposed/architecture/2026-11-11-multi-bot-session-registry-and-handoff.md)
+  - [产品方向与 Agent 底座](../../proposed/architecture/2026-10-20-product-direction-and-agent-foundation.md)
 
-## 契约
+## 决定
 
 以下契约冻结后，CLI、桌面和 Agent 可以并行实现；任何字段或语义变更必须同时更新本文与共享类型。
 
@@ -53,8 +53,9 @@ type ConversationSessionScope = "coding" | "conversation" | "answer" | "intervie
 ```
 
 - `scope` 由宿主在创建会话时显式写入，不由 `conversationId` 前缀推断。
-- CLI 只创建和列出 `coding`；桌面 chat 只创建和列出 `conversation`；截图答题为 `answer`；面试为 `interview`。
+- CLI 只创建和列出 `coding`；桌面 chat 只创建和列出 `conversation`；截图答题为 `answer`，只在当前 worker 内存中存活，不读盘、不落盘；面试为 `interview`。
 - 历史列表必须按 scope 过滤；删除也必须校验目标 scope，禁止 renderer 通过 chat IPC 删除 coding/answer/interview 会话。
+- `FileConversationStore` 对 `answer` scope 直接走内存，不创建、读取、列出或删除任何会话文件；worker 重启即丢失。
 - `/clear` 清空当前 conversation，`conversationId` 不变。
 - `/new` 和桌面“新对话”生成新 `conversationId`，旧 conversation 保留在磁盘。
 - 新建、恢复、删除都只允许在目标会话空闲时执行；活动 run 中拒绝并提示先取消。
@@ -238,7 +239,7 @@ packages/ui/src/
 - `CodingApplication` / `ConversationApplication` 继续是会话编排唯一入口；不直接读写文件。
 - TUI/renderer 只消费 snapshot/event 投影，不拥有 transcript，不写消息文件。
 
-## 提案
+## 实现
 
 ### 1. CLI 落地
 
@@ -261,18 +262,18 @@ packages/ui/src/
   - 新会话生成 `chat-<uuid>`。
   - active ID 存 renderer localStorage；启动时优先恢复存储值。
   - 列表、新建、恢复、删除都通过 bridge，不直接访问 worker 或文件。
-- `ChatFeaturePanel` 接收当前 `conversationId`，不再内部固定 `ActiveChatConversationId`；`FloatingBarApp` 把 `useChatSessions` 的 active ID 传入。
+- `ChatFeaturePanel` 通过 `useChatSessions` 获取 active `conversationId`，不再内部固定 `ActiveChatConversationId`；`ChatPanel` 只负责 chat/history 视图切换。
 - `ChatPanel` 增加内部视图状态 `chat | history`，不新增 `OverlayMode`，不改窗口路由。
 - 历史列表展示 title、updatedAt、messageCount，标记 active；恢复和删除都只在当前 chat 空闲时可用。
 - 删除当前会话时，先删除文件，再生成新的 `chat-<uuid>` 并清空投影；删除非当前会话只刷新列表。
 - `conversationIpc` 的 clear/compact 白名单增加 `ActiveChatConversationId` 和 `chat-` 前缀；其他 ID 仍拒绝。主窗口仍接收全部事件，renderer 按 active ID 过滤，不需要改事件路由。
-- 截图答题保持一次性会话；面试保持现有领域会话。两者在 v1 不提供“新对话”和历史列表。
+- 截图答题保持一次性会话，并且只在 worker 内存中存活，不读盘、不落盘；面试保持现有领域会话。两者在 v1 不提供“新对话”和历史列表。
 
 ### 3. 并行改动纪律
 
-- 契约实现会触碰与并行压缩/登录/远程改动相同的共享文件：`packages/shared/src/schema/index.ts`、`packages/shared/src/index.ts`、`packages/shared/src/channels/conversation.ts`、`packages/shared/src/bridge.ts`、`ChatPanel.tsx`、`ChatFeaturePanel.tsx`。
-- 在这些改动稳定前，只维护本文契约，不落实现；落实现时必须逐文件 rebase，保持增量，不覆盖并行改动。
-- 本次先回滚了此前未完成的 shared/agent 半成品，只保留本文；避免 `MemoryConversationStore` 处于不可编译状态。
+- 本次实现触碰了与并行压缩/登录/远程改动相同的共享文件：`packages/shared/src/schema/index.ts`、`packages/shared/src/index.ts`、`packages/shared/src/channels/conversation.ts`、`packages/shared/src/bridge.ts`、`ChatPanel.tsx`、`ChatFeaturePanel.tsx`。
+- 实现时按文件保留增量，不覆盖并行改动；提交时只暂存会话历史相关 hunk。
+- 曾回滚此前未完成的 shared/agent 半成品，只保留本文契约，避免 `MemoryConversationStore` 处于不可编译状态；本次实现已重新落地。
 
 ## 模块边界
 
@@ -304,6 +305,14 @@ packages/ui/src/
 - 自动化：`pnpm notes:check`、CLI/agent/desktop 相关测试、全仓 `pnpm verify`。
 - 实机：Windows 11 上 CLI `/new`、`/sessions`、`/resume`、`/delete`，桌面“新对话”、历史恢复/删除、重启后加载、异常退出后的 interrupted 展示。
 
+## 后果与防回退
+
+- CLI 与桌面各自拥有文件根目录；新增宿主不得复用另一宿主的目录，也不得让 TUI/renderer 直接写文件。
+- 历史列表和删除必须经过 `ConversationSessionCatalog`；IPC 只暴露 `conversation` scope，删除前必须校验摘要 scope。
+- `answer` scope 永远不落盘；`FileConversationStore` 的写穿、加载和删除路径都必须保持该豁免，防止把一次性答题内容写进用户历史。
+- 恢复只以 snapshot 为事实来源，不引入 Agent 事件 journal；若未来需要精确回放，必须另立 Note。
+- 新增会话字段或命令必须同时更新 `packages/shared/src/schema/session.ts`、worker 协议、bridge 和对应测试。
+
 ## 风险
 
 - transcript 可能包含代码、路径和工具输出中的敏感信息；v1 只依赖用户目录权限，不加密。文件权限和清理策略需要后续单独决策。
@@ -312,12 +321,20 @@ packages/ui/src/
 - 桌面 `chat-` ID 白名单扩大了可清空/压缩范围，必须严格校验 ID 格式，避免路径穿越或跨会话操作。
 - CLI remote host 与本地 TUI 若共用文件根会并发写坏数据；v1 明确隔离或保持内存。
 - 历史列表会让用户看到旧会话；删除是破坏性操作，必须二次确认，并明确“删除当前会话后新建”的行为。
-- 共享文件与并行改动重叠，契约落实现前必须 rebase；否则容易覆盖压缩/登录/远程功能。
+- 共享文件与并行改动重叠，后续修改必须先逐文件 rebase；否则容易覆盖压缩/登录/远程功能。
 
-## 实施顺序
+## 验证
 
-1. 冻结并评审本文契约；并行改动稳定后，先补共享类型、频道、bridge 和 worker 命令。
-2. `FileConversationStore` + 文件格式 + 恢复归一化 + catalog 测试。
-3. CLI 单 host 生命周期 + `CodingSession` 新建/恢复/列表/删除 + TUI 命令与测试。
-4. 桌面动态 chat conversation ID + worker 注入独立 store + 历史列表 UI + IPC 测试。
-5. 更新 `AGENTS.md`、README 仓库结构表和相关 Note；执行 `pnpm verify` 与 Windows 11 实机验收。
+1. 共享类型、频道、bridge、worker 命令已落地。
+2. `FileConversationStore`、文件格式、恢复归一化与 catalog 测试已落地；`answer` scope 不落盘。
+3. CLI 单 host 生命周期、`CodingSession` 新建/恢复/列表/删除与 TUI 命令已落地。
+4. 桌面动态 chat conversation ID、worker 独立 store、历史列表 UI 与 IPC 已落地。
+5. `AGENTS.md`、README 与本文已同步；完整 `pnpm verify` 和 Windows 11 实机验收待执行。
+
+验证证据：
+
+- `pnpm --filter @answra/agent test -- fileConversationStore.test.ts`：5 项通过。
+- `pnpm --filter @answra/cli test -- test/session/codingSession.test.ts test/tui/commands/commands.test.ts`：24 项通过。
+- `pnpm --filter @answra/desktop test -- conversationIpc.test.ts`：15 项通过。
+- `pnpm --filter @answra/ui test -- ChatHistoryPanel.test.tsx useChatSessions.test.tsx`：5 项通过。
+- `@answra/agent`、`@answra/shared`、`@answra/cli`、`@answra/ui`、`@answra/desktop` typecheck 已通过。

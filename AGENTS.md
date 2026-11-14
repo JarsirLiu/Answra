@@ -31,7 +31,7 @@
 
 | 目录 | 职责 | 约束 |
 | --- | --- | --- |
-| `src/main` | 窗口管理、生命周期、按领域拆分的 IPC handler（`src/main/ipc/*Ipc.ts`、`src/main/connection/*Ipc.ts`） | 可用 electron / node 内置模块 |
+| `src/main` | 窗口管理、生命周期、按领域拆分的 IPC handler（`src/main/ipc/*Ipc.ts`、`src/main/connection/*Ipc.ts`、`src/main/conversation/sessionIpc.ts`） | 可用 electron / node 内置模块 |
 | `src/main/connection` | Agent worker 连接状态 IPC、窗口广播与 Electron worker host 适配 | 状态机与重试策略在 `@answra/agent`，不得在 desktop 复制连接语义 |
 | `src/preload` | `contextBridge` 暴露唯一 `window.answra` API 面 | 只做转发，不放业务逻辑 |
 | `src/renderer` | 薄壳：挂载 `<FloatingBarApp/>` | 禁止 import electron / node 模块 |
@@ -48,7 +48,7 @@
 | `src/core/agent` | 静态 Agent 注册、模型路由、AI SDK 执行与统一事件写入 | 不读写 transcript、不包含领域 prompt/工具授权；领域注入注册后的 executor |
 | `src/core/bot` | Bot 身份/发现契约、启动期不可变目录与会话参与者可见性校验 | 不持有 store、不创建 run、不 import 领域、不定义 prompt；独立助手与团队共用同一目录 |
 | `src/core/team` | 团队预置与交接任务校验 | 只描述预置成员；不持有 Bot 身份、执行器或 profile |
-| `src/core/transcript` | Conversation、Answer、Interview 共用的消息 transcript、活动 run 认领、恢复游标端口与内存适配器 | 不保存 Agent 事件、不包含领域产品策略；当前无磁盘持久化 |
+| `src/core/transcript` | Conversation、Answer、Interview 共用的消息 transcript、活动 run 认领、恢复游标端口、内存与文件适配器 | 不保存 Agent 事件、不包含领域产品策略；文件适配器按 scope 持久化，`answer` 只走内存、不读盘不落盘 |
 | `src/core/model` | AI SDK/provider 边界归一化、共享模型输入校验与 HTTP 重试原语 | 不放 Conversation profile 或 transcript 规则 |
 | `src/core/tool` | 跨领域工具契约、静态注册表与单次调用执行管理；通用工具在 `builtin/` | 不导入领域、不写工具事件；领域专属工具留在 `<domain>/tools/`，执行器只返回结果 |
 | `src/execution` | run/attempt/step 状态迁移规则、事件 envelope 工厂、进程内 store 和查询投影 | 跨包事件 payload 与状态词汇唯一来自 `packages/shared/src/schema/`；当前只实现进程内 store，不得声称已有 durable store 或恢复流程 |
@@ -56,7 +56,7 @@
 | `src/conversation/turn` | Conversation transcript 回合认领、模型上下文与应用事件回调 | 模型执行/run 生命周期由 `core/agent` 负责；不定义共享执行状态 schema |
 | `src/conversation/agent.ts`、`src/answer/agent.ts` | 各领域静态 Agent 定义，组装 prompt、上下文和授权工具 | 不接收 renderer 提供的任意 prompt 或工具实现 |
 | `src/conversation/bots` | Conversation Bot 工厂：把身份、执行器与 profile 装配成目录项 | 新增 Bot 不改会话编排；不接收 renderer 注入 prompt、工具或发现关系 |
-| `src/answer/application.ts` | 截图答题用例、一次性 transcript 清理和事件回调 | 不实现模型调用、重试或第二套事件 |
+| `src/answer/application.ts` | 截图答题用例、一次性 transcript 清理和事件回调 | 不实现模型调用、重试或第二套事件；答题会话只在内存，不持久化 |
 | `src/coding` | CLI coding 领域：独立 Bot、prompt/policy、transcript 上下文、单 Bot 会话用例与 host 装配 | 不 import `conversation`/`interview`；不启动 VAD/ASR；不做 team/handoff |
 | `src/conversation/profiles` | Conversation 内部提示词、上下文策略与工具授权清单 | 只声明授权 `ToolId[]`，不接收 renderer 提供的任意 prompt 或工具实现 |
 | `src/<domain>/tools` | 领域专属工具实现，实现 `core/tool` 契约 | 不执行桌面平台能力；不得由 desktop 反向 RPC 代执行 |
@@ -76,7 +76,7 @@
 | `src/cli` | 顶层命令分派、`code`/`config`/`remote` 用例、依赖端口、help/error | 只依赖端口，不 import Electron 或 desktop |
 | `src/config` | argv 语法与工作区校验 | 不读写配置、不启动会话、不写事件 |
 | `src/model` | CLI 模型设置域：选择、优先级、应用服务、持久化端口与模型目录端口 | 不 import `tui`/`cli`/`adapters`，不碰 `node:fs`、Ink 或终端输出 |
-| `src/session` | `CodingSession` 单活动 run 用例与窄宿主端口 | 不实现模型调用、TUI 或进程 I/O |
+| `src/session` | `CodingSession` 单活动 run 用例、新建/恢复/列表/删除与窄宿主端口 | 不实现模型调用、TUI 或进程 I/O |
 | `src/adapters` | `@answra/config` 共享文件实现、OpenAI 兼容 `/models` 模型目录、`@answra/agent/composition` 的 `CodingHost` 到 CLI 端口映射 | 不复制 Agent 运行时语义，不承载模型合并规则 |
 | `src/remote` | 远程 host/controller 适配与 CLI 本地密钥存储 | 不实现信令/WebRTC 状态机；key 不进共享 config；TUI 不 import |
 | `src/presentation` | Agent 事件到非 TTY 文本、工具行与模型摘要格式化 | 纯投影，不读写会话或进程 |
@@ -86,13 +86,14 @@
 | `src/tui/transcript/tool` | 工具展示适配：`ToolCall`、详情、连续 read/search/list 折叠组 | 只消费 `@answra/ui/tool-presentation`；不重新解析工具输出或判断 Agent 事件 |
 | `src/tui/composer` | 输入框、搜索框、宽字符/光标布局、历史与粘贴 | 不读写 transcript 或工具状态 |
 | `src/tui/chrome` | 状态行、Spinner、主题与面板外框 | 不持有会话或工具状态 |
-| `src/tui/commands` | 本地 slash 命令目录、解析、分派、帮助、候选面板、`/config` 可搜索设置列表与 `/model` 选择器 | 不承载 Agent 命令分派或 runtime |
+| `src/tui/commands` | 本地 slash 命令目录、解析、分派、帮助、候选面板、`/config` 可搜索设置列表、`/model` 选择器与会话历史命令 | 不承载 Agent 命令分派或 runtime |
 | `src/tui/interaction` | 终端交互原语：指针解析、选区 store/action 与剪贴板输出 | 不 import `transcript`/`composer`/`runTui`；不解析 Ink 组件；指针/选区状态只由 store 写 |
 | `src/transport` | stdin/stdout/stderr 适配 | 不定义业务行为 |
 
 - CLI 只从 `@answra/agent/composition` 组装 coding host，不使用 worker 线协议、不启动 VAD/ASR、不 import `conversation`/`interview` 领域。
 - CLI 模型配置只从 `@answra/config` 读取文件实现与纯合并函数；`src/model` 不碰文件路径，真实读写由 `main.ts` 注入 `src/adapters/sharedModelStore.ts`。模型列表只经 `ModelCatalog` 端口与 `src/adapters/openAiModelCatalog.ts` 访问当前端点。API Key 只走环境变量/参数或 `@answra/credentials` 的 OS keychain（TUI 的 `/config` 从 keychain 回填、默认掩码、`Ctrl+R` 显示/隐藏；未修改时不重写），不进入共享文件；keychain 不可用时 fail-closed。
 - CLI 远程 key 只经 `answra remote key` 交互输入，不接受 argv；host 记录只存 secret 哈希，controller 存完整 key 的受保护文件，均不进入共享模型配置。
+- CLI 会话历史由 `main.ts` 注入 `FileConversationStore(resolveDefaultConfigDir()/cli/sessions)`；`src/session` 只切会话，`/new`、`/sessions`、`/resume`、`/delete` 走 `CodingSession` 与 catalog，host 由 `runInteractive` 统一 dispose。
 - CLI 运行时目标为 Node >=22.13，构建 target 为 `node22.14`，与仓库开发、CI 与 pnpm 下限一致。
 - 安装包分发复用 Electron 35.0.0 的 Node 22.14（`ELECTRON_RUN_AS_NODE=1`）运行 CLI bundle，不新增 Node sidecar、不启动 GUI。
 - CLI 使用 ESM（`dist/main.mjs`）：Ink 8 与 yoga-layout 含 top-level await，不能打成 CJS；安装包通过 electron-builder `extraResources` 分发 `resources/cli/main.mjs`，Windows 的 `answra.cmd` 只复用同目录 `Answra.exe`；不新增 CLI 可执行文件，shim 不自动注册 PATH。

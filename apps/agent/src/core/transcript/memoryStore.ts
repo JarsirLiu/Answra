@@ -7,26 +7,39 @@ import type {
 import type { AgentEventEnvelope, AgentStreamEvent, RunOutcome } from "@answra/shared/schema";
 import { compactionBoundaries } from "./contextBoundary";
 import type { ContextState } from "./contextState";
-import type { ConversationSessionSeed, ConversationStore, HandoffMessageInput } from "./store";
+import type {
+  ConversationSessionMetadata,
+  ConversationSessionSeed,
+  ConversationStore,
+  ConversationStoreMutation,
+  HandoffMessageInput,
+} from "./store";
 
-type Session = {
+export interface ConversationSessionRecord {
   snapshot: ConversationSnapshot;
   seed?: ConversationSessionSeed;
   contextState?: ContextState;
-};
+  metadata?: ConversationSessionMetadata;
+  createdAt: string;
+  updatedAt: string;
+}
+
+type Session = ConversationSessionRecord;
 
 const MAX_HANDOFF_TASK_CHARS = 32_000;
 
 export class MemoryConversationStore implements ConversationStore {
-  private readonly sessions = new Map<string, Session>();
+  protected readonly sessions = new Map<string, Session>();
 
   async create(
     conversationId: string,
     seed?: ConversationSessionSeed,
+    metadata?: ConversationSessionMetadata,
   ): Promise<ConversationSnapshot> {
     const existing = this.sessions.get(conversationId);
     // 已存在会话的 Bot 归属是既有事实；create 只做读取，不写入新 seed。
     if (existing) return snapshotOf(existing);
+    const now = new Date().toISOString();
     const session: Session = {
       snapshot: {
         conversationId,
@@ -35,8 +48,12 @@ export class MemoryConversationStore implements ConversationStore {
         ...(seed ? seedSnapshot(seed) : {}),
       },
       ...(seed ? { seed: cloneSeed(seed) } : {}),
+      ...(metadata ? { metadata: cloneMetadata(metadata) } : {}),
+      createdAt: now,
+      updatedAt: now,
     };
     this.sessions.set(conversationId, session);
+    await this.afterMutation(conversationId, { kind: "created" });
     return snapshotOf(session);
   }
 
@@ -54,6 +71,7 @@ export class MemoryConversationStore implements ConversationStore {
       messages: [],
       ...(session.seed ? seedSnapshot(session.seed) : {}),
     };
+    await this.afterMutation(conversationId, { kind: "changed" });
   }
 
   async beginRun(
@@ -64,6 +82,7 @@ export class MemoryConversationStore implements ConversationStore {
     authorAgentId?: string,
   ): Promise<void> {
     this.beginMessages(conversationId, runId, userMessage, true, eventRevision, authorAgentId);
+    await this.afterMutation(conversationId, { kind: "run-started" });
   }
 
   async beginReplyRun(
@@ -85,6 +104,7 @@ export class MemoryConversationStore implements ConversationStore {
       eventRevision: Math.max(session.snapshot.eventRevision, eventRevision),
       ...(authorAgentId ? { activeAgentId: authorAgentId } : {}),
     };
+    await this.afterMutation(conversationId, { kind: "run-started" });
     return cloneMessage(last);
   }
 
@@ -112,6 +132,7 @@ export class MemoryConversationStore implements ConversationStore {
       eventRevision: Math.max(session.snapshot.eventRevision, eventRevision),
       activeAgentId: targetAgentId,
     };
+    await this.afterMutation(conversationId, { kind: "run-started" });
     return cloneMessage(last);
   }
 
@@ -143,6 +164,7 @@ export class MemoryConversationStore implements ConversationStore {
       messages: [...session.snapshot.messages, message],
       activeAgentId: handoff.toAgentId,
     };
+    await this.afterMutation(conversationId, { kind: "changed" });
     return snapshotOf(session);
   }
 
@@ -150,6 +172,7 @@ export class MemoryConversationStore implements ConversationStore {
     const session = this.requireSession(conversationId);
     assertParticipant(session, agentId);
     session.snapshot = { ...session.snapshot, activeAgentId: agentId };
+    await this.afterMutation(conversationId, { kind: "changed" });
   }
 
   async appendUserMessage(
@@ -164,6 +187,7 @@ export class MemoryConversationStore implements ConversationStore {
       ...session.snapshot,
       messages: [...session.snapshot.messages, normalizeUserMessage(userMessage)],
     };
+    await this.afterMutation(conversationId, { kind: "changed" });
     return snapshotOf(session);
   }
 
@@ -175,6 +199,7 @@ export class MemoryConversationStore implements ConversationStore {
     authorAgentId?: string,
   ): Promise<void> {
     this.beginMessages(conversationId, runId, userMessage, false, eventRevision, authorAgentId);
+    await this.afterMutation(conversationId, { kind: "run-started" });
   }
 
   async loadContextState(conversationId: string): Promise<ContextState | undefined> {
@@ -186,6 +211,7 @@ export class MemoryConversationStore implements ConversationStore {
     const session = this.requireSession(conversationId);
     // 上下文检查点是独立元数据；摘要压缩必须在活动 run 内完成写入。
     session.contextState = cloneContextState(state);
+    await this.afterMutation(conversationId, { kind: "changed" });
   }
 
   async applyAgentEvent(conversationId: string, envelope: AgentEventEnvelope): Promise<void> {
@@ -197,6 +223,7 @@ export class MemoryConversationStore implements ConversationStore {
       const outcome = runOutcomeForState(event.state);
       if (outcome) {
         this.finishRun(conversationId, runId, outcome, aggregateRevision);
+        await this.afterMutation(conversationId, { kind: "run-finished" });
         return;
       }
       if (session.snapshot.activeRunId === runId)
@@ -284,11 +311,42 @@ export class MemoryConversationStore implements ConversationStore {
     };
   }
 
+  protected async afterMutation(
+    conversationId: string,
+    _mutation: ConversationStoreMutation,
+  ): Promise<void> {
+    const session = this.sessions.get(conversationId);
+    if (session) session.updatedAt = new Date().toISOString();
+  }
+
+  protected restoreSession(record: ConversationSessionRecord): void {
+    this.sessions.set(record.snapshot.conversationId, cloneRecord(record));
+  }
+
   private requireSession(conversationId: string): Session {
     const session = this.sessions.get(conversationId);
     if (!session) throw new Error("会话不存在");
     return session;
   }
+}
+
+function cloneMetadata(metadata: ConversationSessionMetadata): ConversationSessionMetadata {
+  return {
+    scope: metadata.scope,
+    ...(metadata.workspaceRoot === undefined ? {} : { workspaceRoot: metadata.workspaceRoot }),
+    ...(metadata.title === undefined ? {} : { title: metadata.title }),
+  };
+}
+
+function cloneRecord(record: ConversationSessionRecord): ConversationSessionRecord {
+  return {
+    snapshot: cloneSnapshot(record.snapshot),
+    ...(record.seed ? { seed: cloneSeed(record.seed) } : {}),
+    ...(record.contextState ? { contextState: cloneContextState(record.contextState) } : {}),
+    ...(record.metadata ? { metadata: cloneMetadata(record.metadata) } : {}),
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  };
 }
 
 function settleInterruptedParts(

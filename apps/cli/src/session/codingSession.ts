@@ -1,7 +1,9 @@
 /** CLI coding 的单 Bot 会话用例：打开、发送、等待与取消；不涉及 TUI 或进程 I/O。 */
+import { randomUUID } from "node:crypto";
 import type {
   ConversationModelConfig,
   ConversationSendRequest,
+  ConversationSessionSummary,
   ConversationSnapshot,
   ManualCompactionResult,
 } from "@answra/shared";
@@ -16,6 +18,9 @@ export interface ManualCompactionOptions {
 export interface CodingSessionHost {
   configure(model: ConversationModelConfig): void;
   createConversation(conversationId: string): Promise<ConversationSnapshot>;
+  getSnapshot?(conversationId: string): Promise<ConversationSnapshot>;
+  listSessions?(workspaceRoot?: string): Promise<readonly ConversationSessionSummary[]>;
+  deleteSession?(conversationId: string): Promise<void>;
   clearConversation(conversationId: string): Promise<ConversationSnapshot>;
   compactConversation?(
     conversationId: string,
@@ -35,14 +40,18 @@ export interface CodingSessionHost {
 export interface CodingSessionOptions {
   host: CodingSessionHost;
   conversationId: string;
+  createConversationId?: () => string;
   model: ConversationModelConfig;
   accessToken: string;
+  workspaceRoot?: string;
 }
 
 /** 单活动 run 状态机；并发发送在进入 Agent 之前即被拒绝。 */
 export class CodingSession {
   private readonly host: CodingSessionHost;
-  private readonly conversationId: string;
+  private readonly createConversationId: () => string;
+  private readonly workspaceRoot?: string;
+  private conversationId: string;
   private model: ConversationModelConfig;
   private accessToken: string;
   private opened = false;
@@ -51,11 +60,24 @@ export class CodingSession {
   private sending = false;
   private activeRunId?: string;
 
-  constructor({ host, conversationId, model, accessToken }: CodingSessionOptions) {
+  constructor({
+    host,
+    conversationId,
+    createConversationId,
+    model,
+    accessToken,
+    workspaceRoot,
+  }: CodingSessionOptions) {
     this.host = host;
     this.conversationId = conversationId;
+    this.createConversationId = createConversationId ?? randomUUID;
+    this.workspaceRoot = workspaceRoot;
     this.model = model;
     this.accessToken = accessToken;
+  }
+
+  get currentConversationId(): string {
+    return this.conversationId;
   }
 
   async open(): Promise<ConversationSnapshot> {
@@ -66,6 +88,46 @@ export class CodingSession {
     this.snapshot = snapshot;
     this.opened = true;
     return snapshot;
+  }
+
+  async startNewConversation(): Promise<ConversationSnapshot> {
+    this.requireIdle("新建会话");
+    const conversationId = this.createConversationId();
+    const snapshot = await this.host.createConversation(conversationId);
+    this.conversationId = conversationId;
+    this.snapshot = snapshot;
+    this.opened = true;
+    return snapshot;
+  }
+
+  async resume(conversationId: string): Promise<ConversationSnapshot> {
+    this.requireIdle("恢复会话");
+    if (this.host.getSnapshot === undefined) throw new Error("当前宿主不支持恢复会话。");
+    const snapshot = await this.host.getSnapshot(conversationId);
+    this.conversationId = conversationId;
+    this.snapshot = snapshot;
+    this.opened = true;
+    return snapshot;
+  }
+
+  listSessions(): Promise<readonly ConversationSessionSummary[]> {
+    if (this.host.listSessions === undefined) throw new Error("当前宿主不支持会话历史。");
+    return this.host.listSessions(this.workspaceRoot);
+  }
+
+  async deleteSession(conversationId: string): Promise<ConversationSnapshot | undefined> {
+    this.requireIdle("删除会话");
+    if (this.host.deleteSession === undefined) throw new Error("当前宿主不支持会话历史。");
+    await this.host.deleteSession(conversationId);
+    if (conversationId !== this.conversationId) return undefined;
+    return this.startNewConversation();
+  }
+
+  private requireIdle(action: string): void {
+    if (this.closed) throw new Error("会话已关闭。");
+    if (!this.opened) throw new Error("会话尚未打开。");
+    if (this.activeRunId !== undefined || this.sending)
+      throw new Error(`上一轮尚未结束，不能${action}。`);
   }
 
   async clear(): Promise<ConversationSnapshot> {
@@ -152,6 +214,5 @@ export class CodingSession {
   close(): void {
     if (this.closed) return;
     this.closed = true;
-    this.host.dispose();
   }
 }

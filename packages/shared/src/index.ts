@@ -57,6 +57,8 @@ export {
   type ConversationSendRequest,
   type ConversationSendResponse,
   type ConversationSendResult,
+  type ConversationSessionScope,
+  type ConversationSessionSummary,
   type ConversationSnapshot,
   DesktopCapability,
   INTERVIEW_AUDIO_CREDIT_BATCH,
