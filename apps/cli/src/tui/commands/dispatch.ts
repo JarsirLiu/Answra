@@ -1,6 +1,7 @@
 /** TUI 本地命令分派：按 catalog kind 注册 handler；不承载会话队列或 Agent 运行时。 */
 import type { ConversationModelConfig } from "@answra/shared";
 import type { ModelSettings } from "../../model/ports";
+import type { RemoteAuthPort } from "../../remote/auth/remoteAuthService";
 import type { CodingSession } from "../../session/codingSession";
 import type { TuiViewStore } from "../app/viewStore";
 import type { TuiPanel } from "../panel";
@@ -18,6 +19,8 @@ export interface TuiCommandDeps {
   readonly configureSession: (model: ConversationModelConfig) => Promise<void>;
   readonly requestExit: () => void;
   readonly openPanel: (panel: TuiPanel) => void;
+  readonly remoteAuth?: RemoteAuthPort;
+  readonly login: () => Promise<void>;
 }
 
 type TuiCommandHandler = (args: readonly string[], deps: TuiCommandDeps) => void | Promise<void>;
@@ -29,6 +32,9 @@ const handlers = {
   config: handleConfig,
   exit: handleExit,
   model: handleModel,
+  login: handleLogin,
+  logout: handleLogout,
+  status: handleStatus,
 } satisfies Record<TuiCommandKind, TuiCommandHandler>;
 
 export async function dispatchTuiCommand(
@@ -108,6 +114,38 @@ async function handleModel(args: readonly string[], deps: TuiCommandDeps): Promi
     store: deps.store,
     modelSettings: deps.modelSettings,
   });
+}
+
+async function handleLogin(_args: readonly string[], deps: TuiCommandDeps): Promise<void> {
+  if (deps.remoteAuth === undefined) {
+    deps.store.setNotice(["当前环境未配置账号登录。"]);
+    return;
+  }
+  await deps.login();
+}
+
+async function handleLogout(_args: readonly string[], deps: TuiCommandDeps): Promise<void> {
+  if (deps.remoteAuth === undefined) {
+    deps.store.setNotice(["当前环境未配置账号登录。"]);
+    return;
+  }
+  const status = await deps.remoteAuth.logout();
+  deps.store.setAuthStatus(status);
+  deps.store.setNotice(["已退出登录。"]);
+}
+
+async function handleStatus(args: readonly string[], deps: TuiCommandDeps): Promise<void> {
+  if (args.length > 0) {
+    deps.store.setNotice(["/status 不接受参数。"]);
+    return;
+  }
+  if (deps.remoteAuth === undefined) {
+    deps.store.setNotice(["当前环境未配置账号登录。"]);
+    return;
+  }
+  const status = await deps.remoteAuth.status();
+  deps.store.setAuthStatus(status);
+  deps.openPanel("status");
 }
 
 function messageOf(error: unknown): string {

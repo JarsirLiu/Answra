@@ -42,7 +42,9 @@ code 选项:
   TUI 输入 API Key 后保存到系统凭据库；空输入沿用已保存的 Key。
 
 账号登录:
-  运行 answra auth login 打开 AnswraSite 授权页；把浏览器显示的 code#state 粘贴回终端。
+  运行 answra auth login 打开 AnswraSite 授权页；浏览器完成授权后会自动返回 CLI。
+  如果浏览器无法返回 CLI，登录会超时并明确提示重新发起授权。
+  TUI 内可使用 /login、/status、/logout 完成同一套流程；登录状态只显示账号，不显示令牌。
   登录凭据只保存在 OS keychain；answra auth logout 撤销并删除本机登录态。
   远程 host/attach 需要登录；控制 host 还需要该 host 的远程访问密钥。
 

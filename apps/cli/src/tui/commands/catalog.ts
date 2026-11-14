@@ -1,5 +1,14 @@
 /** TUI 本地命令目录：帮助、slash 解析与输入补全的唯一元数据来源；不触达 Agent 运行时。 */
-export type TuiCommandKind = "help" | "clear" | "compact" | "config" | "exit" | "model";
+export type TuiCommandKind =
+  | "help"
+  | "clear"
+  | "compact"
+  | "config"
+  | "exit"
+  | "model"
+  | "login"
+  | "logout"
+  | "status";
 
 export interface TuiCommandHelpDetail {
   readonly usage: string;
@@ -49,6 +58,9 @@ export const TUI_COMMANDS: readonly TuiCommandSpec[] = [
     helpUsage: "/model",
     helpDetails: [{ usage: "/model <ID>", summary: "切换并保存 chat 模型" }],
   },
+  { kind: "login", name: "login", summary: "打开浏览器登录 Answra 账号" },
+  { kind: "logout", name: "logout", summary: "退出 Answra 账号" },
+  { kind: "status", name: "status", summary: "查看账号登录状态" },
   {
     kind: "exit",
     name: "exit",

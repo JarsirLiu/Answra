@@ -1,4 +1,4 @@
-/** CLI 账号设备登录：PKCE 手动回填、token 刷新与 keychain 登录态。 */
+/** CLI 账号设备登录：网站 OAuth、一次性回调接收、token 刷新与 keychain 登录态。 */
 import { REMOTE_SERVICE_BASE_URL } from "@answra/shared/schema";
 import { createAuthState, createPkceChallenge } from "./pkce";
 import type { ServiceAuthRecord, ServiceAuthStore } from "./serviceAuthStore";
@@ -11,6 +11,7 @@ import {
 const EXPIRY_SKEW_MS = 60_000;
 const REQUEST_TIMEOUT_MS = 15_000;
 const FALLBACK_EXPIRES_IN = 3600;
+const AUTH_CALLBACK_TIMEOUT_MS = 5 * 60_000;
 
 export class RemoteAuthRequiredError extends Error {
   constructor(message = "请先运行 `answra auth login` 登录。") {
@@ -34,6 +35,13 @@ export interface RemoteAuthStatus {
 
 export interface RemoteAuthOptions {
   onAuthorizeUrl?: (url: string) => void | Promise<void>;
+  promptCode?: (label: string) => Promise<string>;
+}
+
+export interface AuthorizationCallbackReceiver {
+  readonly redirectUri: string;
+  wait(): Promise<string>;
+  close(): Promise<void> | void;
 }
 
 export interface RemoteAuthPort {
@@ -51,6 +59,7 @@ export interface RemoteAuthDependencies {
   apiBaseUrl?: string;
   fetch?: typeof fetch;
   now?: () => number;
+  createAuthorizationCallback?: () => Promise<AuthorizationCallbackReceiver>;
 }
 
 export class RemoteAuthService implements RemoteAuthPort {
@@ -61,6 +70,7 @@ export class RemoteAuthService implements RemoteAuthPort {
   private readonly apiBaseUrl: string;
   private readonly fetchImpl: typeof fetch;
   private readonly now: () => number;
+  private readonly createAuthorizationCallback?: () => Promise<AuthorizationCallbackReceiver>;
 
   constructor(deps: RemoteAuthDependencies) {
     this.store = deps.store;
@@ -70,27 +80,40 @@ export class RemoteAuthService implements RemoteAuthPort {
     this.apiBaseUrl = deps.apiBaseUrl ?? REMOTE_SERVICE_BASE_URL;
     this.fetchImpl = deps.fetch ?? fetch;
     this.now = deps.now ?? Date.now;
+    this.createAuthorizationCallback = deps.createAuthorizationCallback;
   }
 
-  async login({ onAuthorizeUrl }: RemoteAuthOptions = {}): Promise<RemoteAuthStatus> {
+  async login({ onAuthorizeUrl, promptCode }: RemoteAuthOptions = {}): Promise<RemoteAuthStatus> {
     const { verifier, challenge } = createPkceChallenge();
     const state = createAuthState();
     const device = await this.device();
+    const callback =
+      this.createAuthorizationCallback === undefined
+        ? undefined
+        : await this.createAuthorizationCallback();
     const url = buildCliAuthorizeUrl({
       siteBaseUrl: this.siteBaseUrl,
+      ...(callback === undefined ? {} : { redirectUri: callback.redirectUri }),
       state,
       codeChallenge: challenge,
       device,
     });
 
-    await onAuthorizeUrl?.(url);
-    const input = await this.promptCode("粘贴浏览器中的授权码（code#state）> ");
-    const { code } = parseAuthorizationCodeInput(input, state);
-    const tokens = await this.exchange(code, verifier, device);
-    const account = await this.fetchAccount(tokens.accessToken).catch(() => null);
-    const record: ServiceAuthRecord = { ...tokens, account };
-    await this.store.write(record);
-    return statusFrom(record);
+    try {
+      await onAuthorizeUrl?.(url);
+      const input =
+        callback === undefined
+          ? await (promptCode ?? this.promptCode)("等待浏览器完成登录…")
+          : await waitForCallback(callback);
+      const { code } = parseAuthorizationCodeInput(input, state);
+      const tokens = await this.exchange(code, verifier, device);
+      const account = await this.fetchAccount(tokens.accessToken).catch(() => null);
+      const record: ServiceAuthRecord = { ...tokens, account };
+      await this.store.write(record);
+      return statusFrom(record);
+    } finally {
+      await callback?.close();
+    }
   }
 
   async status(): Promise<RemoteAuthStatus> {
@@ -200,6 +223,24 @@ export class RemoteAuthService implements RemoteAuthPort {
       throw new ServiceAuthHttpError(response.status, path, `登录服务返回 HTTP ${response.status}`);
     }
     return unwrapEnvelope(payload, response.status, path);
+  }
+}
+
+async function waitForCallback(callback: AuthorizationCallbackReceiver): Promise<string> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      callback.wait(),
+      new Promise<string>((_, reject) => {
+        timeout = setTimeout(
+          () =>
+            reject(new RemoteAuthTransientError("登录等待超时，请重新运行 `answra auth login`。")),
+          AUTH_CALLBACK_TIMEOUT_MS,
+        );
+      }),
+    ]);
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout);
   }
 }
 

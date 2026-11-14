@@ -10,8 +10,7 @@ export function createAgentCodingSessionHost(host: CodingHost): CodingSessionHos
     compactConversation: (conversationId, accessToken, signal) =>
       host.runtime.compactConversation(conversationId, accessToken, signal),
     send: async (conversationId, request, accessToken) => {
-      const { runId } = await host.runtime.send(conversationId, request, accessToken);
-      return { runId };
+      return host.runtime.send(conversationId, request, accessToken);
     },
     cancel: (runId) => host.runtime.cancel(runId),
     waitForRun: (runId) => host.runtime.waitForRun(runId),

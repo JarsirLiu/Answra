@@ -86,10 +86,18 @@ export function VirtualTranscript({
 
   const items = useMemo<VirtualItem[]>(() => {
     const messageItems = mergeCompactionBoundaries(view.messages, compactionBoundaries);
-    return footer === undefined
-      ? messageItems
-      : [...messageItems, { kind: "footer", id: "__footer__", node: footer }];
-  }, [view.messages, compactionBoundaries, footer]);
+    const tail = <TranscriptTail localError={localError} notice={notice} view={view} />;
+    const tailNode =
+      footer === undefined ? (
+        tail
+      ) : (
+        <>
+          {tail}
+          {footer}
+        </>
+      );
+    return [...messageItems, { kind: "footer", id: "__footer__", node: tailNode }];
+  }, [view, compactionBoundaries, footer, localError, notice]);
 
   const lastThinkingMessageId = useMemo(() => lastThinkingId(view.messages), [view.messages]);
   const heights = useMemo(

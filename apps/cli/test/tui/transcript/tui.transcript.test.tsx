@@ -6,6 +6,39 @@ import { TuiSelectionStore } from "../../../src/tui/interaction/selectionStore";
 import { createPointerSource, nextFrame, PANEL_HANDLERS, wheelEvent } from "../tuiTestHarness";
 
 describe("TUI transcript interaction", () => {
+  it("shows command feedback after a conversation already has messages", async () => {
+    const store = new TuiViewStore();
+    store.initialize({
+      conversationId: "conversation-1",
+      eventRevision: 0,
+      messages: [
+        {
+          id: "assistant-1",
+          role: "assistant",
+          text: "先前的回答",
+          status: "complete",
+          images: [],
+          parts: [{ id: "part-1", kind: "text", text: "先前的回答", state: "completed" }],
+        },
+      ],
+    });
+    store.setNotice(["登录成功（user@example.com）。"]);
+    const instance = render(
+      <App
+        botName="coding.engineer"
+        onCancel={vi.fn()}
+        onSubmit={vi.fn()}
+        panelHandlers={PANEL_HANDLERS}
+        store={store}
+        workspaceRoot="D:\\workspace"
+      />,
+    );
+    await nextFrame();
+    expect(instance.lastFrame()).toContain("登录成功（user@example.com）。");
+    instance.unmount();
+    store.dispose();
+  });
+
   it("keeps the latest transcript line visible in a short viewport", async () => {
     const store = new TuiViewStore();
     store.initialize({

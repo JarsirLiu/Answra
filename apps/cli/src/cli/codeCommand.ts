@@ -144,6 +144,8 @@ async function runInteractive(
       botName: "coding.engineer",
       workspaceRoot,
       altScreen,
+      remoteAuth: deps.remoteAuth,
+      openBrowser: deps.openBrowser,
     });
   } finally {
     removeInterrupt?.();

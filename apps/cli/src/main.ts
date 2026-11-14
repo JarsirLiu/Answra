@@ -12,6 +12,7 @@ import { isPackagedCliRuntime, resolveCliCloudEndpoints } from "./config/cloudEn
 import { ModelSettingsService } from "./model/settingsService";
 import { resolveCliDeviceDescriptor } from "./remote/auth/deviceInfo";
 import { createKeychainServiceAuthStore } from "./remote/auth/keychainServiceAuthStore";
+import { createLocalAuthorizationCallback } from "./remote/auth/localAuthCallback";
 import { RemoteAuthService } from "./remote/auth/remoteAuthService";
 import { createFileRemoteCredentialStore } from "./remote/credentials/fileRemoteCredentialStore";
 import { createFileRemoteHostKeyStore } from "./remote/credentials/fileRemoteHostKeyStore";
@@ -39,6 +40,7 @@ async function main(): Promise<void> {
       promptCode: promptSecret,
       siteBaseUrl: endpoints.siteBaseUrl,
       apiBaseUrl: endpoints.apiBaseUrl,
+      createAuthorizationCallback: createLocalAuthorizationCallback,
     });
     process.exitCode = await runCli(process.argv.slice(2), {
       env: process.env,

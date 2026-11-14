@@ -96,6 +96,16 @@ export interface AgentRunRequest<Input, Prepared> {
     rebuild: () => Promise<AgentModelRequest>,
     signal: AbortSignal,
   ) => Promise<AgentModelRequest>;
+  /**
+   * provider 明确报上下文超限时的单次兜底；返回 undefined 表示放弃恢复。
+   * 调用方保证每个 run 最多调用一次，且只在尚未产生模型内容时调用。
+   */
+  recoverContext?: (
+    modelRequest: AgentModelRequest,
+    rebuild: () => Promise<AgentModelRequest>,
+    error: unknown,
+    signal: AbortSignal,
+  ) => Promise<AgentModelRequest | undefined>;
   /** Called in event order after each envelope is appended to ExecutionStore. */
   onEvent: (event: AgentEventEnvelope) => Promise<void>;
 }

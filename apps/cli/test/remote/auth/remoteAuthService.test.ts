@@ -102,4 +102,63 @@ describe("RemoteAuthService", () => {
     expect(() => parseAuthorizationCodeInput("abc#other", "xyz")).toThrow("state 不匹配");
     expect(() => parseAuthorizationCodeInput("abc", "xyz")).toThrow("授权码格式无效");
   });
+
+  it("uses an automatic callback receiver when one is provided", async () => {
+    const store = createStore();
+    let callbackClosed = false;
+    let callbackWaited = false;
+    let authorizeUrl = "";
+    const service = new RemoteAuthService({
+      store,
+      device: async () => ({ id: "device-1", name: "devbox", os: "win32" }),
+      promptCode: async () => {
+        throw new Error("manual prompt must not be used");
+      },
+      createAuthorizationCallback: async () => ({
+        redirectUri: "http://127.0.0.1:43210/auth/callback",
+        wait: async () => {
+          callbackWaited = true;
+          return `code-2#${new URL(authorizeUrl).searchParams.get("state")}`;
+        },
+        close: () => {
+          callbackClosed = true;
+        },
+      }),
+      fetch: (async (input: string | URL | Request) => {
+        const url =
+          typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        if (url.endsWith("/api/v1/auth/desktop/exchange")) {
+          return new Response(
+            JSON.stringify({
+              code: 0,
+              data: {
+                device_access_token: "access-token",
+                device_refresh_token: "refresh-token",
+                expires_in: 3600,
+              },
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(JSON.stringify({ code: 0, data: { email: "dev@example.com" } }), {
+          status: 200,
+        });
+      }) as typeof fetch,
+      now: () => NOW,
+    });
+
+    await expect(
+      service.login({
+        onAuthorizeUrl: (url) => {
+          authorizeUrl = url;
+          const page = new URL(url);
+          expect(page.searchParams.get("redirect_uri")).toBe(
+            "http://127.0.0.1:43210/auth/callback",
+          );
+        },
+      }),
+    ).resolves.toMatchObject({ signedIn: true, account: "dev@example.com" });
+    expect(callbackWaited).toBe(true);
+    expect(callbackClosed).toBe(true);
+  });
 });

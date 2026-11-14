@@ -6,6 +6,7 @@ import { StatusLine } from "../chrome/StatusLine";
 import { TUI_THEME } from "../chrome/theme";
 import { ConfigPanel } from "../commands/ConfigPanel";
 import { ModelPicker } from "../commands/ModelPicker";
+import { StatusPanel } from "../commands/StatusPanel";
 import { PromptInput } from "../composer/PromptInput";
 import type { PointerSource } from "../interaction/pointerInput";
 import type { TuiSelectionStore } from "../interaction/selectionStore";
@@ -162,6 +163,15 @@ export function App({
             close={panelHandlers.close}
             load={panelHandlers.loadModels}
             select={panelHandlers.selectModel}
+          />
+        ) : state.panel === "status" ? (
+          <StatusPanel
+            account={state.authAccount}
+            authAvailable={state.authAvailable}
+            close={() => panelHandlers.close("status")}
+            model={state.modelLabel}
+            signedIn={state.authSignedIn}
+            workspaceRoot={workspaceRoot}
           />
         ) : (
           <PromptInput

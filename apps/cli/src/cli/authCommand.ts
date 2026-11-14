@@ -17,12 +17,14 @@ export async function runAuthCommand(
   if (options.action === "login") {
     const status = await auth.login({
       onAuthorizeUrl: async (url) => {
-        deps.output.write(`在浏览器打开以下地址登录：\n${url}\n\n`);
-        if (deps.openBrowser === undefined) return;
+        deps.output.write("正在打开浏览器，请在 Answra 网站完成登录……\n");
+        if (deps.openBrowser === undefined) {
+          throw new Error("当前环境无法自动打开浏览器。");
+        }
         try {
           await deps.openBrowser(url);
         } catch {
-          deps.output.write("无法自动打开浏览器，请手动访问上面的地址。\n");
+          throw new Error("无法自动打开浏览器，请检查系统默认浏览器后重试。");
         }
       },
     });

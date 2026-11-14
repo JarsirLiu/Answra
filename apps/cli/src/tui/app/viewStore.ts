@@ -26,6 +26,9 @@ export interface TuiState {
   queued: number;
   modelLabel: string;
   modelConfigured: boolean;
+  authAvailable: boolean;
+  authSignedIn: boolean;
+  authAccount?: string;
   setupStep?: TuiSetupStep;
   localError?: string;
   notice?: readonly string[];
@@ -44,6 +47,8 @@ export class TuiViewStore {
     queued: 0,
     modelLabel: "",
     modelConfigured: false,
+    authAvailable: false,
+    authSignedIn: false,
   };
   private readonly listeners = new Set<Listener>();
   private pending: AgentEventEnvelope[] = [];
@@ -124,6 +129,17 @@ export class TuiViewStore {
   setModelConfigured(modelConfigured: boolean): void {
     if (this.state.modelConfigured === modelConfigured) return;
     this.setState({ ...this.state, modelConfigured });
+  }
+
+  setAuthAvailable(authAvailable: boolean): void {
+    if (this.state.authAvailable === authAvailable) return;
+    this.setState({ ...this.state, authAvailable });
+  }
+
+  setAuthStatus(status: { signedIn: boolean; account: string | null }): void {
+    const account = status.account ?? undefined;
+    if (this.state.authSignedIn === status.signedIn && this.state.authAccount === account) return;
+    this.setState({ ...this.state, authSignedIn: status.signedIn, authAccount: account });
   }
 
   setSetupStep(setupStep: TuiSetupStep | undefined): void {

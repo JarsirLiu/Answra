@@ -4,7 +4,9 @@ import type { ConversationModelConfig } from "@answra/shared";
 import { render } from "ink";
 import type { ModelCatalog } from "../model/catalog";
 import type { ModelSettings } from "../model/ports";
+import type { RemoteAuthPort } from "../remote/auth/remoteAuthService";
 import type { CodingSession } from "../session/codingSession";
+import type { OpenBrowser } from "../transport/openBrowser";
 import { App } from "./app/App";
 import type { TuiViewStore } from "./app/viewStore";
 import { dispatchTuiCommand, type TuiCommandDeps } from "./commands/dispatch";
@@ -32,6 +34,8 @@ export interface TuiRunOptions {
   botName: string;
   workspaceRoot: string;
   altScreen: boolean;
+  remoteAuth?: RemoteAuthPort;
+  openBrowser?: OpenBrowser;
 }
 
 export type TuiRunner = (options: TuiRunOptions) => Promise<number>;
@@ -51,6 +55,8 @@ export async function runInkTui({
   botName,
   workspaceRoot,
   altScreen,
+  remoteAuth,
+  openBrowser,
 }: TuiRunOptions): Promise<number> {
   let session = initialSession;
   let setupStep: TuiSetupStep | undefined = session === undefined ? "base-url" : undefined;
@@ -68,13 +74,23 @@ export async function runInkTui({
     store.setSetupStep(undefined);
   }
 
+  store.setAuthAvailable(remoteAuth !== undefined);
+  if (remoteAuth !== undefined) store.setAuthStatus(await remoteAuth.status());
+
   const queue: string[] = [];
   let busy = false;
   let cancelRequested = false;
   let compactAbort: AbortController | undefined;
   let exitTui: (() => void) | undefined;
+  let authCodeResolver: ((value: string) => void) | undefined;
 
   const submit = (text: string): void => {
+    if (authCodeResolver !== undefined) {
+      const resolve = authCodeResolver;
+      authCodeResolver = undefined;
+      resolve(text);
+      return;
+    }
     const invocation = parseTuiCommand(text);
     if (invocation) {
       void dispatchTuiCommand(invocation, commandDeps);
@@ -91,6 +107,36 @@ export async function runInkTui({
     queue.push(text);
     store.setQueued(queue.length);
     void drain();
+  };
+
+  const login = async (): Promise<void> => {
+    if (remoteAuth === undefined) return;
+    if (busy) {
+      store.setNotice(["当前运行中，先按 Esc 中断后再登录。"]);
+      return;
+    }
+    store.setNotice(["正在打开浏览器登录 Answra 账号……"]);
+    const status = await remoteAuth.login({
+      onAuthorizeUrl: async (url) => {
+        if (openBrowser !== undefined) {
+          try {
+            await openBrowser(url);
+            store.setNotice(["浏览器已打开，请在 Answra 网站完成登录；完成后 CLI 会自动继续。"]);
+          } catch {
+            store.setNotice(["无法自动打开浏览器，请检查系统默认浏览器后重新运行 /login。"]);
+          }
+        } else {
+          store.setNotice(["请在浏览器完成 Answra 登录；完成后 CLI 会自动继续。"]);
+        }
+      },
+      promptCode: async (label) =>
+        new Promise<string>((resolve) => {
+          authCodeResolver = resolve;
+          store.setNotice([label]);
+        }),
+    });
+    store.setAuthStatus(status);
+    store.setNotice(undefined);
   };
 
   const resolveAccessToken = async (override?: string): Promise<string | undefined> => {
@@ -149,6 +195,8 @@ export async function runInkTui({
     configureSession: ensureSession,
     requestExit: () => exitTui?.(),
     openPanel,
+    remoteAuth,
+    login,
   };
 
   const panelHandlers: TuiPanelHandlers = {
@@ -241,8 +289,14 @@ export async function runInkTui({
       store.setNotice([`已切换模型：${model.chat.model}`]);
     },
     close: (reason) => {
+      const panel = store.getSnapshot().panel;
       store.setPanel(undefined);
-      if (reason === "dismissed") store.setNotice(["Config dialog dismissed"]);
+      if (
+        reason === "dismissed" &&
+        (panel === undefined || panel === "config" || panel === "model")
+      ) {
+        store.setNotice(["Config dialog dismissed"]);
+      }
     },
   };
 

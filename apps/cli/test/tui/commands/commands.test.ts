@@ -54,10 +54,14 @@ describe("parseTuiCommand", () => {
       "compact",
       "config",
       "model",
+      "login",
+      "logout",
+      "status",
       "exit",
     ]);
     expect(suggestTuiCommands("co").map((command) => command.name)).toEqual(["compact", "config"]);
     expect(suggestTuiCommands("mo").map((command) => command.name)).toEqual(["model"]);
+    expect(suggestTuiCommands("log").map((command) => command.name)).toEqual(["login", "logout"]);
     expect(suggestTuiCommands("qu").map((command) => command.name)).toEqual(["exit"]);
     expect(suggestTuiCommands("zzz")).toEqual([]);
   });
