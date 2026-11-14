@@ -37,7 +37,9 @@ export interface ContextPreparationRequest {
   rebuild: () => Promise<ContextModelRequest>;
   signal?: AbortSignal;
   trigger?: ContextCompactionTrigger;
-  /** 状态已写入 store 后通知宿主推送 snapshot；失败不影响本轮模型请求。 */
+  /** provider 已报上下文超限时强制压缩，跳过普通触发阈值。 */
+  forceCompact?: boolean;
+  /** 状态已写入 store 后通知宿主推�?snapshot；失败不影响本轮模型请求�?*/
   onStatus?: () => void | Promise<void>;
 }
 
@@ -79,6 +81,7 @@ export class ContextPreparation {
     rebuild,
     signal,
     trigger,
+    forceCompact = false,
     onStatus,
   }: ContextPreparationRequest): Promise<ContextModelRequest> {
     const budget = this.resolveBudget();
@@ -95,6 +98,7 @@ export class ContextPreparation {
       contextTokens: initial.tokens,
       ...(signal === undefined ? {} : { signal }),
       ...(trigger === undefined ? {} : { trigger }),
+      ...(forceCompact ? { force: true } : {}),
     });
 
     let final: ContextModelRequest;
@@ -107,14 +111,19 @@ export class ContextPreparation {
       const rebuiltTokens = estimateContextRequestTokens(rebuilt);
       const rebuiltPruned = this.pruneIfWorthwhile(rebuilt, rebuiltTokens, undefined, budget);
       projectionChanged = projectionChanged || rebuiltPruned.changed;
-      final = trimContextRequest(rebuiltPruned.request, budget);
+      final = trimContextRequest(rebuiltPruned.request, budget, {
+        targetTokens: budget.postCompactTarget,
+        preserveLeadingMessages: 1,
+      });
       projectionChanged = projectionChanged || final !== rebuiltPruned.request;
       finalPruning = {
         prunedCount: rebuiltPruned.prunedCount,
         savedTokens: rebuiltPruned.savedTokens,
       };
     } else {
-      final = trimContextRequest(initial.request, budget);
+      final = trimContextRequest(initial.request, budget, {
+        ...(forceCompact ? { targetTokens: budget.postCompactTarget } : {}),
+      });
       projectionChanged = projectionChanged || final !== initial.request;
     }
 
@@ -156,6 +165,13 @@ export class ContextPreparation {
   }
 
   /** 消费 run 事件：首步 usage 成功后写入锚点，失败或投影变化后清理。 */
+  /** provider 超限后的唯一兜底入口：强制压缩并按软目标裁剪，调用方只允许重试一次。 */
+  recoverRequest(
+    request: Omit<ContextPreparationRequest, "forceCompact">,
+  ): Promise<ContextModelRequest> {
+    return this.prepareRequest({ ...request, forceCompact: true });
+  }
+
   async recordRunEvent(conversationId: string, event: AgentEvent): Promise<void> {
     await this.usageAnchors.recordRunEvent(conversationId, event);
   }

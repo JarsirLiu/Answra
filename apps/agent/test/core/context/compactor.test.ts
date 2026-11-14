@@ -158,6 +158,70 @@ describe("ContextCompactor", () => {
     });
   });
 
+  it("trips the failure breaker after three consecutive failures and allows manual bypass", async () => {
+    const store = await preparedStore();
+    const generate = vi.fn(async () => {
+      throw new Error("摘要失败");
+    });
+    const compactor = new ContextCompactor({
+      store,
+      profile: PROFILE,
+      generate,
+      now: () => new Date("2026-11-14T10:00:00.000Z"),
+    });
+    const prepare = () =>
+      compactor.prepare({
+        conversationId: "conversation-1",
+        getAccessToken: async () => "token",
+        triggerTokens: TRIGGER_TOKENS,
+        contextTokens: TRIGGER_TOKENS,
+      });
+
+    await expect(prepare()).resolves.toBe(false);
+    await expect(prepare()).resolves.toBe(false);
+    await expect(prepare()).resolves.toBe(false);
+    expect(generate).toHaveBeenCalledTimes(3);
+
+    await expect(prepare()).resolves.toBe(false);
+    expect(generate).toHaveBeenCalledTimes(3);
+
+    await expect(
+      compactor.prepare({
+        conversationId: "conversation-1",
+        getAccessToken: async () => "token",
+        triggerTokens: TRIGGER_TOKENS,
+        contextTokens: TRIGGER_TOKENS,
+        bypassFailureBreaker: true,
+      }),
+    ).resolves.toBe(false);
+    expect(generate).toHaveBeenCalledTimes(4);
+  });
+
+  it("clears the failure count after a successful compaction", async () => {
+    const store = await preparedStore();
+    const generate = vi
+      .fn<() => Promise<string>>()
+      .mockRejectedValueOnce(new Error("失败一"))
+      .mockRejectedValueOnce(new Error("失败二"))
+      .mockResolvedValueOnce("成功摘要");
+    const compactor = new ContextCompactor({ store, profile: PROFILE, generate });
+    const prepare = () =>
+      compactor.prepare({
+        conversationId: "conversation-1",
+        getAccessToken: async () => "token",
+        triggerTokens: TRIGGER_TOKENS,
+        contextTokens: TRIGGER_TOKENS,
+      });
+
+    await prepare();
+    await prepare();
+    await expect(prepare()).resolves.toBe(true);
+
+    expect(
+      (await store.loadContextState("conversation-1"))?.compactionFailureCount,
+    ).toBeUndefined();
+  });
+
   it("does not request a token when no compaction is needed", async () => {
     const store = await preparedStore();
     const getAccessToken = vi.fn(async () => "token");

@@ -18,6 +18,7 @@ describe("context budget", () => {
       pruneAt: 172_000,
       pruneTarget: 40_000,
       minPruneSaving: 132_000,
+      postCompactTarget: 120_000,
     });
   });
 
@@ -33,6 +34,7 @@ describe("context budget", () => {
       pruneAt: 86_000,
       pruneTarget: 20_000,
       minPruneSaving: 66_000,
+      postCompactTarget: 60_000,
     });
   });
 

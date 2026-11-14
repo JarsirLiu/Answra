@@ -1,11 +1,14 @@
 /** 通用摘要压缩用例：读取检查点、选择旧消息、调用模型并写回新检查点。 */
 import type { ConversationMessage } from "@answra/shared";
+import { isContextOverflowError } from "../../model/contextOverflow";
 import { type ContextCheckpoint, latestCheckpoint } from "../../transcript/contextCheckpoint";
 import type { ContextState } from "../../transcript/contextState";
 import { planCompaction } from "./plan";
 import type { CompactionProfile } from "./profile";
 import { buildSummaryPrompt } from "./prompt";
-import { renderMessagesForSummary } from "./transcript";
+import { dropOldestSummaryTurn, renderMessagesForSummary } from "./transcript";
+
+const MAX_SUMMARY_OVERFLOW_RETRIES = 3;
 
 export interface SummaryGeneratorInput {
   prompt: string;
@@ -54,11 +57,29 @@ export async function compactContext({
   });
   if (!plan) return undefined;
   await onStarted?.();
-  const prompt = buildSummaryPrompt({
-    ...(previous ? { previousSummary: previous.summary } : {}),
-    transcript: renderMessagesForSummary(plan.messagesToSummarize),
-  });
-  const summary = (await generate({ prompt, ...(signal ? { signal } : {}) })).trim();
+  let messagesToSummarize = [...plan.messagesToSummarize];
+  let omittedMessages = 0;
+  let overflowRetries = 0;
+  let summary: string;
+  for (;;) {
+    const prompt = buildSummaryPrompt({
+      ...(previous ? { previousSummary: previous.summary } : {}),
+      transcript: renderMessagesForSummary(messagesToSummarize),
+      omittedMessages,
+    });
+    try {
+      summary = (await generate({ prompt, ...(signal ? { signal } : {}) })).trim();
+      break;
+    } catch (error) {
+      if (!isContextOverflowError(error)) throw error;
+      if (overflowRetries >= MAX_SUMMARY_OVERFLOW_RETRIES) throw error;
+      const truncated = dropOldestSummaryTurn(messagesToSummarize);
+      if (!truncated) throw error;
+      overflowRetries += 1;
+      omittedMessages += messagesToSummarize.length - truncated.length;
+      messagesToSummarize = truncated;
+    }
+  }
   if (!summary) throw new Error("上下文摘要为空");
   const checkpoint = createCheckpoint({
     summary,

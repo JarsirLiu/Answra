@@ -108,6 +108,58 @@ describe("context compaction", () => {
     expect(generate).not.toHaveBeenCalled();
   });
 
+  it("drops the oldest complete turn when the summary request overflows", async () => {
+    const generate = vi
+      .fn<(input: SummaryGeneratorInput) => Promise<string>>()
+      .mockRejectedValueOnce(new Error("prompt is too long: 200000 tokens > 128000 maximum"))
+      .mockResolvedValueOnce("截断后的摘要");
+
+    const result = await compactContext({
+      messages: [
+        message("m1", "第一轮"),
+        message("m2", "第一轮回复", "assistant"),
+        message("m3", "第二轮"),
+        message("m4", "第二轮回复", "assistant"),
+        message("m5", "保留消息"),
+      ],
+      state: undefined,
+      profile: { retainRecentMessages: 1, minimumMessagesToSummarize: 1 },
+      triggerTokens: TRIGGER_TOKENS,
+      generate,
+    });
+
+    expect(generate).toHaveBeenCalledTimes(2);
+    const retryPrompt = generate.mock.calls[1]?.[0]?.prompt ?? "";
+    expect(retryPrompt).toContain("已省略最早的 2 条消息");
+    expect(retryPrompt).not.toContain("第一轮");
+    expect(result?.state.checkpoints.at(-1)?.summary).toBe("截断后的摘要");
+  });
+
+  it("stops retrying after the bounded overflow attempts", async () => {
+    const generate = vi.fn<(input: SummaryGeneratorInput) => Promise<string>>(async () => {
+      throw new Error("prompt is too long");
+    });
+
+    await expect(
+      compactContext({
+        messages: [
+          message("m1", "一"),
+          message("m2", "二"),
+          message("m3", "三"),
+          message("m4", "四"),
+          message("m5", "五"),
+          message("m6", "六"),
+        ],
+        state: undefined,
+        profile: { retainRecentMessages: 1, minimumMessagesToSummarize: 1 },
+        triggerTokens: TRIGGER_TOKENS,
+        generate,
+      }),
+    ).rejects.toThrow("prompt is too long");
+
+    expect(generate).toHaveBeenCalledTimes(4);
+  });
+
   it("fails closed when the model returns an empty summary", async () => {
     await expect(
       compactContext({

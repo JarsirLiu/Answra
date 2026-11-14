@@ -28,6 +28,7 @@ const SMALL_BUDGET: ContextBudgetPolicy = {
   pruneAt: 500,
   pruneTarget: 100,
   minPruneSaving: 400,
+  postCompactTarget: 800,
 };
 
 const MODEL_REQUEST = {
@@ -50,6 +51,7 @@ const PRUNE_ONLY_BUDGET: ContextBudgetPolicy = {
   pruneAt: 500,
   pruneTarget: 100,
   minPruneSaving: 400,
+  postCompactTarget: 2_000,
 };
 
 const REBUILD_BUDGET: ContextBudgetPolicy = {
@@ -61,6 +63,7 @@ const REBUILD_BUDGET: ContextBudgetPolicy = {
   pruneAt: 500,
   pruneTarget: 100,
   minPruneSaving: 400,
+  postCompactTarget: 2_000,
 };
 
 function message(id: string, text: string): ConversationMessage {

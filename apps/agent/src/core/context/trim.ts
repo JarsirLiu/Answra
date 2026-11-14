@@ -10,17 +10,26 @@ import { estimateContextRequestTokens } from "./tokenEstimate";
 export function trimContextRequest(
   request: ContextModelRequest,
   budget: ResolvedContextBudget,
+  options: { targetTokens?: number; preserveLeadingMessages?: number } = {},
 ): ContextModelRequest {
+  const targetTokens = options.targetTokens ?? budget.inputLimit;
+  const preserved = Math.max(
+    0,
+    Math.min(options.preserveLeadingMessages ?? 0, request.messages.length),
+  );
+  const prefix = request.messages.slice(0, preserved);
   let messages = request.messages;
-  while (estimateContextRequestTokens({ ...request, messages }) >= budget.inputLimit) {
-    const trimmed = dropOldestTurn(messages);
-    if (!trimmed) {
-      throw new ContextLimitExceededError({
-        estimatedTokens: estimateContextRequestTokens({ ...request, messages }),
-        inputLimit: budget.inputLimit,
-      });
-    }
-    messages = trimmed;
+  while (estimateContextRequestTokens({ ...request, messages }) >= targetTokens) {
+    const trimmed = dropOldestTurn(messages.slice(preserved));
+    if (!trimmed) break;
+    messages = [...prefix, ...trimmed];
+  }
+  const estimatedTokens = estimateContextRequestTokens({ ...request, messages });
+  if (estimatedTokens >= budget.inputLimit) {
+    throw new ContextLimitExceededError({
+      estimatedTokens,
+      inputLimit: budget.inputLimit,
+    });
   }
   return messages === request.messages ? request : { ...request, messages };
 }

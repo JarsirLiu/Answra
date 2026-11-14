@@ -19,6 +19,8 @@ export interface ContextBudgetPolicy {
   pruneTarget: number;
   /** 一次清理必须达到的最小净节省。 */
   minPruneSaving: number;
+  /** 摘要压缩后的软目标；仍超限时先裁到该目标，再受输入硬上限约束。 */
+  postCompactTarget: number;
 }
 
 /** 解析后的硬上限与触发点；业务只消费这些派生值。 */
@@ -35,6 +37,7 @@ export interface ResolvedContextBudget {
   pruneAt: number;
   pruneTarget: number;
   minPruneSaving: number;
+  postCompactTarget: number;
 }
 
 const BASE_CONTEXT_WINDOW = 256_000;
@@ -43,6 +46,7 @@ const BASE_SAFETY_TOKENS = 12_000;
 const BASE_FIXED_OVERHEAD_TOKENS = 8_000;
 const BASE_PRUNE_AT = 172_000;
 const BASE_PRUNE_TARGET = 40_000;
+const BASE_POST_COMPACT_TARGET = 120_000;
 
 /** 按模型窗口等比缩放预算；256k 时得到首版基准值，小窗口不会沿用固定 172k 触发点。 */
 export function contextBudgetPolicyForWindow(contextWindow: number): ContextBudgetPolicy {
@@ -65,6 +69,10 @@ export function contextBudgetPolicyForWindow(contextWindow: number): ContextBudg
     pruneAt,
     pruneTarget,
     minPruneSaving: Math.max(0, pruneAt - pruneTarget),
+    postCompactTarget: Math.max(
+      1,
+      Math.floor((contextWindow * BASE_POST_COMPACT_TARGET) / BASE_CONTEXT_WINDOW),
+    ),
   };
 }
 
@@ -89,6 +97,7 @@ export function resolveContextBudget(
   assertPositiveInteger(policy.pruneAt, "pruneAt");
   assertNonNegativeInteger(policy.pruneTarget, "pruneTarget");
   assertNonNegativeInteger(policy.minPruneSaving, "minPruneSaving");
+  assertPositiveInteger(policy.postCompactTarget, "postCompactTarget");
 
   const inputLimit =
     policy.contextWindow -
@@ -113,6 +122,7 @@ export function resolveContextBudget(
     pruneAt: policy.pruneAt,
     pruneTarget: policy.pruneTarget,
     minPruneSaving: policy.minPruneSaving,
+    postCompactTarget: Math.min(policy.postCompactTarget, inputLimit),
   };
 }
 

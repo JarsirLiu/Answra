@@ -12,6 +12,7 @@ const BUDGET = resolveContextBudget({
   pruneAt: 500,
   pruneTarget: 100,
   minPruneSaving: 400,
+  postCompactTarget: 1_200,
 });
 
 function message(role: "user" | "assistant", content: string): ModelMessage {
@@ -32,6 +33,25 @@ describe("context trimming", () => {
     const result = trimContextRequest(request, BUDGET);
 
     expect(result.messages).toEqual([message("user", "c".repeat(4_000))]);
+  });
+
+  it("trims to a soft target while preserving the leading summary message", () => {
+    const request = {
+      system: "",
+      messages: [
+        message("user", "summary"),
+        message("user", "a".repeat(4_000)),
+        message("assistant", "b".repeat(4_000)),
+        message("user", "current"),
+      ],
+    };
+
+    const result = trimContextRequest(request, BUDGET, {
+      targetTokens: 1_200,
+      preserveLeadingMessages: 1,
+    });
+
+    expect(result.messages).toEqual([message("user", "summary"), message("user", "current")]);
   });
 
   it("fails closed when the current request alone exceeds the input limit", () => {

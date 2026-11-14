@@ -62,6 +62,21 @@ describe("context summary transcript", () => {
     expect(transcript).not.toContain("### 助手\n\n");
   });
 
+  it("keeps image names and media types without rendering image bytes", () => {
+    const transcript = renderMessagesForSummary([
+      {
+        id: "u1",
+        role: "user",
+        text: "看这张图",
+        images: [{ name: "screen.png", dataUrl: "data:image/png;base64,AAAA" }],
+        status: "complete",
+      },
+    ]);
+
+    expect(transcript).toContain("[图片：screen.png（image/png）]");
+    expect(transcript).not.toContain("AAAA");
+  });
+
   it("omits messages without a visible body", () => {
     const transcript = renderMessagesForSummary([
       {

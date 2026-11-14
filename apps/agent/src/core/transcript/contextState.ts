@@ -21,4 +21,8 @@ export interface ContextState {
   usage?: ContextUsage;
   /** 最近一次实际应用的旧工具结果清理；下一次请求未清理时清除。 */
   pruning?: ContextPruningStatus;
+  /** 连续压缩失败次数；成功后清除，用于自动熔断。 */
+  compactionFailureCount?: number;
+  /** 熔断解除时间；到期后允许自动压缩再次尝试。 */
+  compactionRetryAt?: string;
 }
