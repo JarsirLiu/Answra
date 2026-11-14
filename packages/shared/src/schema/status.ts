@@ -109,7 +109,7 @@ export const contextCompactionBoundarySchema = z.strictObject({
   /** 摘要覆盖的最后一条 transcript 消息；边界显示在它之后。 */
   throughMessageId: z.string(),
   createdAt: z.string().datetime(),
-  /** synthetic user message 使用的摘要正文；只在用户展开边界时展示。 */
+  /** synthetic user message 使用的摘要正文；随边界下发并只在展开时展示。 */
   summary: z.string(),
   /** 截至该边界的累计摘要消息数。 */
   summarizedMessages: z.number().int().nonnegative(),

@@ -10,3 +10,11 @@ export interface TuiCompactionBoundary {
   /** 本次手动压缩附带的一次性摘要指令。 */
   readonly instructions?: string;
 }
+
+/**
+ * Answra 没有 partial compact；手动指令是 Claude `summarizeMetadata` 分支的对应证据。
+ * 无指令的自动/手动压缩走 Claude 的 `Compact summary` 默认分支。
+ */
+export function hasCompactionMetadata(boundary: TuiCompactionBoundary): boolean {
+  return boundary.instructions !== undefined;
+}

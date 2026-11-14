@@ -77,7 +77,7 @@ export const conversationSnapshotSchema = z.strictObject({
   bots: z.array(conversationBotSchema).optional(),
   /** 最近一次上下文摘要压缩状态；缺省表示从未压缩或尚未触发。 */
   contextCompaction: contextCompactionSchema.optional(),
-  /** 已成功摘要的边界；可随 snapshot 回放，不包含摘要正文。 */
+  /** 已成功摘要的边界；可随 snapshot 回放，携带摘要正文供边界展开。 */
   contextCompactionBoundaries: z.array(contextCompactionBoundarySchema).optional(),
   /** 最近一次模型请求的上下文占用与阈值；缺省表示尚未准备过请求。 */
   contextUsage: contextUsageSchema.optional(),

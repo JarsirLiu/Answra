@@ -5,7 +5,7 @@ import { TuiViewStore } from "../../../src/tui/app/viewStore";
 import { nextFrame, PANEL_HANDLERS } from "../tuiTestHarness";
 
 describe("TUI thinking", () => {
-  it("collapses thinking until Ctrl+O expands it", async () => {
+  it("collapses thinking until Ctrl+O enters the detailed transcript", async () => {
     const store = new TuiViewStore();
     store.initialize({
       conversationId: "conversation-1",
@@ -52,7 +52,7 @@ describe("TUI thinking", () => {
     store.dispose();
   });
 
-  it("shows only the latest turn's thinking until Ctrl+O expands history", async () => {
+  it("shows only the latest turn's thinking until Ctrl+O shows the full transcript", async () => {
     const store = new TuiViewStore();
     store.initialize({
       conversationId: "conversation-1",

@@ -3,8 +3,9 @@ import type { ConversationMessagePart } from "@answra/shared";
 import type { ConversationViewMessage } from "@answra/ui/conversation-view";
 import { isToolRunning, presentToolCall } from "@answra/ui/tool-presentation";
 import stringWidth from "string-width";
-import type { TuiCompactionBoundary } from "./compactionBoundary";
+import { hasCompactionMetadata, type TuiCompactionBoundary } from "./compactionBoundary";
 import {
+  COMPACTION_SUMMARY_FALLBACK_HINT,
   COMPACTION_SUMMARY_HINT,
   compactionContextText,
   compactionSummaryCountText,
@@ -75,6 +76,9 @@ export function estimateCompactionBoundaryHeight(
     COMPACTION_SUMMARY_MARGIN_LINES +
     COMPACTION_SUMMARY_HEADER_LINES;
   if (expanded) return base + countTextLines(boundary.summary, width);
+  if (!hasCompactionMetadata(boundary)) {
+    return base + countTextLines(COMPACTION_SUMMARY_FALLBACK_HINT, width);
+  }
   let height = base;
   if (boundary.summarizedMessages !== undefined) {
     height += countTextLines(compactionSummaryCountText(boundary.summarizedMessages), width);

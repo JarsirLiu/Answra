@@ -9,6 +9,7 @@
  * - useFollowLatest：跟随滚动控制器（供自定义视口复用）
  */
 export { AssistantMessage } from "./AssistantMessage";
+export { CompactionBoundaryCard } from "./CompactionBoundaryCard";
 export {
   AGENT_SERVICE_UNAVAILABLE_NOTICE,
   ConnectionNotice,

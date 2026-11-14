@@ -1,15 +1,18 @@
 import type {
   AgentConnectionState,
+  ContextCompactionBoundary,
   ContextCompactionStatus,
   ContextPruningStatus,
   ContextUsage,
   DesktopBridge,
 } from "@answra/shared";
+import { MANUAL_COMPACTION_INSTRUCTIONS_MAX_CHARS } from "@answra/shared";
 import { LoaderCircle, X } from "lucide-react";
-import { type RefObject, useRef } from "react";
+import { type FormEvent, type RefObject, useId, useRef, useState } from "react";
 import { ICON_SM } from "../../tokens";
 import {
   AssistantMessage,
+  CompactionBoundaryCard,
   ConnectionNotice,
   ContextCompactionNotice,
   ContextPruningNotice,
@@ -19,6 +22,7 @@ import {
   ModelErrorNotice,
   RetryNotice,
 } from "../chat";
+import { mergeCompactionBoundaries } from "../chat/compactionBoundaries";
 import {
   type ConversationRetry,
   type ConversationViewMessage,
@@ -55,6 +59,10 @@ interface ChatPanelProps {
   connection?: AgentConnectionState;
   /** 上下文摘要压缩生命周期；独立于模型 run 状态。 */
   contextCompaction?: ContextCompactionStatus;
+  /** 已成功摘要的边界；按 throughMessageId 插入消息流。 */
+  compactionBoundaries?: readonly ContextCompactionBoundary[];
+  /** 手动压缩的即时反馈；成功结果仍以 snapshot 状态展示。 */
+  compactNotice?: string;
   /** 最近一次模型请求的上下文占用与阈值。 */
   contextUsage?: ContextUsage;
   /** 最近一次实际应用的旧工具结果清理。 */
@@ -77,6 +85,10 @@ interface ChatPanelProps {
   onVote?: (vote: "up" | "down" | null) => void;
   /** 清空对话历史（经网关链路归零，所有订阅方同步）；缺省不显示清空入口。 */
   onClear?: () => void;
+  /** 手动压缩上下文；可附带一次性摘要指令，缺省不显示压缩入口。 */
+  onCompact?: (instructions?: string) => void;
+  /** 手动压缩不可用的原因；设置即禁用按钮并用 title 提示。 */
+  compactDisabledReason?: string;
   /** 清空不可用的原因（活动回复进行中/没有消息）；设置即禁用按钮并以 title 提示。 */
   clearDisabledReason?: string;
   onClose: () => void;
@@ -100,6 +112,8 @@ export function ChatPanel({
   retry,
   connection,
   contextCompaction,
+  compactionBoundaries,
+  compactNotice,
   contextUsage,
   contextPruning,
   thinkingMs,
@@ -109,12 +123,30 @@ export function ChatPanel({
   onVote,
   onClear,
   clearDisabledReason,
+  onCompact,
+  compactDisabledReason,
   onClose,
   bridge: _bridge,
   stealth: _stealth,
 }: ChatPanelProps) {
   const composerInputRef = useRef<HTMLTextAreaElement>(null);
+  const compactInputId = useId();
+  const [compactFormOpen, setCompactFormOpen] = useState(false);
+  const [compactInstructions, setCompactInstructions] = useState("");
   const connectionNotice = formatConnectionNotice(connection);
+  const timeline = mergeCompactionBoundaries(messages, compactionBoundaries);
+
+  function closeCompactForm(): void {
+    setCompactFormOpen(false);
+    setCompactInstructions("");
+  }
+
+  function submitCompaction(event: FormEvent<HTMLFormElement>): void {
+    event.preventDefault();
+    const instructions = compactInstructions.trim();
+    closeCompactForm();
+    onCompact?.(instructions || undefined);
+  }
   // 内容指纹：消息增减/正文与思维链流式增长都会变化，驱动 MessageStream 自动跟随；
   // 失败提示也算本轮结果，出现时要能滚到可见位置。
   const contentKey = [
@@ -126,6 +158,10 @@ export function ChatPanel({
     error ? `error:${error}` : "",
     connection ? `connection:${connection.revision}` : "",
     contextCompaction ? `compaction:${contextCompaction.state}:${contextCompaction.updatedAt}` : "",
+    ...(compactionBoundaries ?? []).map(
+      (boundary) =>
+        `boundary:${boundary.id}:${boundary.summary.length}:${boundary.instructions?.length ?? 0}`,
+    ),
     contextUsage ? `usage:${contextUsage.usedTokens}:${contextUsage.updatedAt}` : "",
     contextPruning ? `pruning:${contextPruning.updatedAt}` : "",
   ].join("|");
@@ -133,72 +169,125 @@ export function ChatPanel({
     <PanelShell
       context={attachments.length ? "截图已添加，可补充问题" : undefined}
       headerAction={
-        onClear ? (
-          <SurfaceButton
-            aria-label={clearDisabledReason ?? "清空对话历史"}
-            className="panel-header-action"
-            disabled={Boolean(clearDisabledReason)}
-            onClick={onClear}
-            variant="quiet"
-          >
-            清空
-          </SurfaceButton>
+        onClear || onCompact ? (
+          <div className="panel-header-action chat-panel-header-actions">
+            {onCompact && (
+              <SurfaceButton
+                aria-label={compactDisabledReason ?? "压缩上下文"}
+                disabled={Boolean(compactDisabledReason)}
+                onClick={() => setCompactFormOpen(true)}
+                variant="quiet"
+              >
+                压缩
+              </SurfaceButton>
+            )}
+            {onClear && (
+              <SurfaceButton
+                aria-label={clearDisabledReason ?? "清空对话历史"}
+                disabled={Boolean(clearDisabledReason)}
+                onClick={onClear}
+                variant="quiet"
+              >
+                清空
+              </SurfaceButton>
+            )}
+          </div>
         ) : undefined
       }
       onClose={onClose}
       title="AI 对话"
       variant="chat"
     >
+      {compactFormOpen && onCompact ? (
+        <form className="chat-panel-compact-form" onSubmit={submitCompaction}>
+          <label className="chat-panel-compact-label" htmlFor={compactInputId}>
+            摘要指令（可选）
+          </label>
+          <textarea
+            id={compactInputId}
+            maxLength={MANUAL_COMPACTION_INSTRUCTIONS_MAX_CHARS}
+            onChange={(event) => setCompactInstructions(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") closeCompactForm();
+            }}
+            placeholder="告诉摘要重点保留什么，例如：保留数据库迁移决定和未完成事项。"
+            rows={2}
+            value={compactInstructions}
+          />
+          <div className="chat-panel-compact-actions">
+            <span className="chat-panel-compact-count">
+              {compactInstructions.length}/{MANUAL_COMPACTION_INSTRUCTIONS_MAX_CHARS}
+            </span>
+            <SurfaceButton onClick={closeCompactForm} size="sm" variant="quiet">
+              取消
+            </SurfaceButton>
+            <SurfaceButton size="sm" type="submit">
+              开始压缩
+            </SurfaceButton>
+          </div>
+        </form>
+      ) : null}
       <MessageStream
         ariaLabel="对话消息"
         contentKey={contentKey}
         viewportClassName="conversation conversation--chat"
       >
-        {messages.map((message) => (
-          <article className={`chat-message chat-message--${message.role}`} key={message.id}>
-            {message.role === "user" ? (
-              <div className="message-content">
-                {message.images?.map((image, index) => (
-                  // biome-ignore lint/suspicious/noArrayIndexKey: 持久化消息只带图片内容，没有稳定 id
-                  <figure className="message-attachment" key={`${message.id}-${index}`}>
-                    <img alt="用户添加的截图" src={image.dataUrl} />
-                  </figure>
-                ))}
-                {message.text}
-              </div>
-            ) : (
-              <>
-                {message.waitingForStream && (
-                  <div aria-label="回复运行中" className="conversation-running" role="status">
-                    <LoaderCircle
-                      aria-hidden="true"
-                      className="conversation-running-icon"
-                      size={15}
-                    />
-                  </div>
-                )}
-                <AssistantMessage
-                  caret={
-                    message.status === "streaming" &&
-                    message.id === messages.at(-1)?.id &&
-                    Boolean(message.text)
-                  }
-                  content={message.text}
-                  onFork={onFork}
-                  onReply={() => {
-                    composerInputRef.current?.focus();
-                  }}
-                  onVote={onVote}
-                  parts={message.parts}
-                  reasoning={message.reasoning}
-                  streaming={message.status === "streaming" && message.id === messages.at(-1)?.id}
-                  thinking={message.thinking === true}
-                  thinkingMs={thinkingMs}
-                />
-              </>
-            )}
-          </article>
-        ))}
+        {timeline.map((item) => {
+          if (item.kind === "compaction") {
+            return <CompactionBoundaryCard boundary={item.boundary} key={item.id} />;
+          }
+          const message = item.message;
+          return (
+            <article className={`chat-message chat-message--${message.role}`} key={item.id}>
+              {message.role === "user" ? (
+                <div className="message-content">
+                  {message.images?.map((image, index) => (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: 持久化消息只带图片内容，没有稳定 id
+                    <figure className="message-attachment" key={`${message.id}-${index}`}>
+                      <img alt="用户添加的截图" src={image.dataUrl} />
+                    </figure>
+                  ))}
+                  {message.text}
+                </div>
+              ) : (
+                <>
+                  {message.waitingForStream && (
+                    <div aria-label="回复运行中" className="conversation-running" role="status">
+                      <LoaderCircle
+                        aria-hidden="true"
+                        className="conversation-running-icon"
+                        size={15}
+                      />
+                    </div>
+                  )}
+                  <AssistantMessage
+                    caret={
+                      message.status === "streaming" &&
+                      message.id === messages.at(-1)?.id &&
+                      Boolean(message.text)
+                    }
+                    content={message.text}
+                    onFork={onFork}
+                    onReply={() => {
+                      composerInputRef.current?.focus();
+                    }}
+                    onVote={onVote}
+                    parts={message.parts}
+                    reasoning={message.reasoning}
+                    streaming={message.status === "streaming" && message.id === messages.at(-1)?.id}
+                    thinking={message.thinking === true}
+                    thinkingMs={thinkingMs}
+                  />
+                </>
+              )}
+            </article>
+          );
+        })}
+        {compactNotice && (
+          <div className="chat-panel-compact-notice" role="status">
+            {compactNotice}
+          </div>
+        )}
         {contextCompaction && <ContextCompactionNotice status={contextCompaction} />}
         {contextPruning && <ContextPruningNotice status={contextPruning} />}
         {contextUsage && <ContextUsageNotice usage={contextUsage} />}

@@ -207,6 +207,7 @@ describe("theme CSS integrity", () => {
     // 写死色值会绕过 [data-theme] 与变色龙，深浅色下固定配色会与面板分叉。
     for (const file of [
       "AssistantMessage.module.css",
+      "CompactionBoundaryCard.module.css",
       "MessageActions.module.css",
       "MessageStream.module.css",
       "MessageTimeline.module.css",

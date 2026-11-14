@@ -1,5 +1,5 @@
 import type { ContextCompactionStatus } from "@answra/shared";
-import { CircleCheck, LoaderCircle, TriangleAlert } from "lucide-react";
+import { CircleCheck, CircleSlash, LoaderCircle, TriangleAlert } from "lucide-react";
 import { contextCompactionLabel } from "../../app/contextCompaction";
 import { ICON_SM } from "../../tokens";
 import styles from "./ContextCompactionNotice.module.css";
@@ -27,5 +27,6 @@ export function ContextCompactionNotice({ status }: ContextCompactionNoticeProps
 function Icon({ state }: { state: ContextCompactionStatus["state"] }) {
   if (state === "succeeded") return <CircleCheck aria-hidden="true" size={ICON_SM} />;
   if (state === "failed") return <TriangleAlert aria-hidden="true" size={ICON_SM} />;
+  if (state === "aborted") return <CircleSlash aria-hidden="true" size={ICON_SM} />;
   return <LoaderCircle aria-hidden="true" className={styles.spinner} size={ICON_SM} />;
 }

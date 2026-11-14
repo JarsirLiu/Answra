@@ -57,7 +57,7 @@ export function VirtualTranscript({
   workspaceRoot,
   modelConfigured,
   setupStep,
-  expandThinking,
+  transcriptMode,
   expandedToolIds,
   footer,
   pointerSource,
@@ -70,7 +70,7 @@ export function VirtualTranscript({
   workspaceRoot: string;
   modelConfigured?: boolean;
   setupStep?: TuiSetupStep;
-  expandThinking: boolean;
+  transcriptMode: boolean;
   expandedToolIds?: ReadonlySet<string>;
   footer?: ReactNode;
   pointerSource?: PointerSource;
@@ -80,7 +80,7 @@ export function VirtualTranscript({
   const viewport = useBoxMetrics(viewportRef);
   const { columns } = useWindowSize();
   const expandedKey = expandedToolIds === undefined ? "" : [...expandedToolIds].sort().join(",");
-  const layoutKey = `${columns}:${expandThinking}:${expandedKey}`;
+  const layoutKey = `${columns}:${transcriptMode}:${expandedKey}`;
   const [measured, setMeasured] = useState<MeasuredHeights>(() => ({
     key: layoutKey,
     values: new Map(),
@@ -110,12 +110,12 @@ export function VirtualTranscript({
         (item) =>
           measuredValues.get(item.id) ??
           (item.kind === "message"
-            ? estimateMessageHeight(item.message, columns, expandThinking, expandedToolIds)
+            ? estimateMessageHeight(item.message, columns, transcriptMode, expandedToolIds)
             : item.kind === "compaction-boundary"
-              ? estimateCompactionBoundaryHeight(item.boundary, columns, expandThinking)
+              ? estimateCompactionBoundaryHeight(item.boundary, columns, transcriptMode)
               : FOOTER_ESTIMATE_LINES),
       ),
-    [items, measuredValues, columns, expandThinking, expandedToolIds],
+    [items, measuredValues, columns, transcriptMode, expandedToolIds],
   );
   const offsets = useMemo(() => buildOffsets(heights), [heights]);
   const totalHeight = offsets[offsets.length - 1] ?? 0;
@@ -222,16 +222,16 @@ export function VirtualTranscript({
         {items.slice(virtualWindow.startIndex, virtualWindow.endIndex).map((item) => {
           const showReasoning =
             item.kind === "message" &&
-            (expandThinking || item.message.id === lastThinkingMessageId);
+            (transcriptMode || item.message.id === lastThinkingMessageId);
           return (
             <MeasuredItem
               id={item.id}
               key={item.id}
               measureKey={
                 item.kind === "message"
-                  ? `${columns}:${expandThinking}:${expandedKey}:${showReasoning}:${messageMeasureKey(item.message)}`
+                  ? `${columns}:${transcriptMode}:${expandedKey}:${showReasoning}:${messageMeasureKey(item.message)}`
                   : item.kind === "compaction-boundary"
-                    ? `compaction-boundary:${columns}:${expandThinking}:${item.boundary.summary?.length ?? 0}:${item.boundary.instructions?.length ?? 0}`
+                    ? `compaction-boundary:${columns}:${transcriptMode}:${item.boundary.summary?.length ?? 0}:${item.boundary.summarizedMessages ?? 0}:${item.boundary.instructions?.length ?? 0}`
                     : `footer:${columns}`
               }
               onMeasure={handleMeasure}
@@ -239,12 +239,12 @@ export function VirtualTranscript({
               {item.kind === "message" ? (
                 <MessageRow
                   expandedToolIds={expandedToolIds}
-                  expandThinking={expandThinking}
+                  expandThinking={transcriptMode}
                   message={item.message}
                   showReasoning={showReasoning}
                 />
               ) : item.kind === "compaction-boundary" ? (
-                <CompactionBoundaryRow boundary={item.boundary} expanded={expandThinking} />
+                <CompactionBoundaryRow boundary={item.boundary} expanded={transcriptMode} />
               ) : (
                 item.node
               )}

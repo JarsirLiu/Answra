@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildOffsets,
   countTextLines,
+  estimateCompactionBoundaryHeight,
   estimateMessageHeight,
   findVirtualWindow,
   maxScrollTop,
@@ -54,6 +55,28 @@ describe("virtual transcript layout", () => {
     };
     expect(estimateMessageHeight(message, 80, false)).toBe(2);
     expect(estimateMessageHeight(message, 80, true)).toBeGreaterThan(2);
+  });
+
+  it("reserves metadata lines only for the Compact summary metadata branch", () => {
+    const boundary = {
+      id: "compaction-1",
+      summary: "## 当前目标\n继续实现压缩",
+      summarizedMessages: 8,
+    };
+    const autoHeight = estimateCompactionBoundaryHeight(boundary, 80, false);
+    const manualHeight = estimateCompactionBoundaryHeight(
+      { ...boundary, instructions: "重点保留数据库迁移决定" },
+      80,
+      false,
+    );
+    expect(manualHeight).toBeGreaterThan(autoHeight);
+    expect(
+      estimateCompactionBoundaryHeight(
+        { ...boundary, instructions: "重点保留数据库迁移决定" },
+        80,
+        true,
+      ),
+    ).toBe(estimateCompactionBoundaryHeight(boundary, 80, true));
   });
 
   it("falls back to estimates until a row has been measured", () => {

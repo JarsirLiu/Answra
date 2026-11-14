@@ -59,7 +59,7 @@ code 选项:
   TTY 下省略 prompt 进入全屏 TUI；非 TTY 从 stdin 读取全部内容。
   TUI: Enter 发送；运行中 Enter 排队；Shift+Enter 或 \\ + Enter 换行。
   Esc 取消当前运行；Ctrl-C 首次清空输入并提示，再次退出。
-  Ctrl+O 展开/收起思考与工具输出；PgUp/PgDn 或滚轮滚动 transcript。
+  Ctrl+O 切换详细 transcript，展开思考、工具输出与压缩摘要；PgUp/PgDn 或滚轮滚动。
   Home/End 只移动输入光标；Up/Down 浏览输入历史。
   全屏下滚轮/鼠标由 TUI 接管；复制请用终端原生选择（必要时按住 Shift）。
   本地命令: /help、/clear、/config、/model、/exit（/quit 同义）。

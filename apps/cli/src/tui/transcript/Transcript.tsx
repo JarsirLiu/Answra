@@ -76,7 +76,7 @@ export function Welcome({
               <Text bold>2.</Text> 按 Esc 中断当前运行，Ctrl-C 两次退出
             </SelectableText>
             <SelectableText>
-              <Text bold>3.</Text> Enter 发送或排队，Ctrl+O 展开思考与工具输出，PgUp/PgDn
+              <Text bold>3.</Text> Enter 发送或排队，Ctrl+O 切换详细 transcript，PgUp/PgDn
               滚动；/help 查看命令
             </SelectableText>
           </Box>

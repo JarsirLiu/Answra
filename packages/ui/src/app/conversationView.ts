@@ -2,6 +2,7 @@
 import type {
   AgentEventEnvelope,
   AgentStreamEvent,
+  ContextCompactionBoundary,
   ContextCompactionStatus,
   ContextPruningStatus,
   ContextUsage,
@@ -42,6 +43,7 @@ export interface ConversationView {
   retryRunId?: string;
   error?: string;
   contextCompaction?: ContextCompactionStatus;
+  contextCompactionBoundaries?: readonly ContextCompactionBoundary[];
   contextUsage?: ContextUsage;
   contextPruning?: ContextPruningStatus;
 }
@@ -72,6 +74,7 @@ export function applyConversationSnapshot(
       eventRevision: snapshot.eventRevision,
       activeRunId: undefined,
       contextCompaction: snapshot.contextCompaction,
+      contextCompactionBoundaries: snapshot.contextCompactionBoundaries,
       contextUsage: snapshot.contextUsage,
       contextPruning: snapshot.contextPruning,
     };
@@ -87,6 +90,7 @@ export function applyConversationSnapshot(
     retry: keepRetry ? view.retry : undefined,
     retryRunId: keepRetry ? view.retryRunId : undefined,
     contextCompaction: snapshot.contextCompaction,
+    contextCompactionBoundaries: snapshot.contextCompactionBoundaries,
     contextUsage: snapshot.contextUsage,
     contextPruning: snapshot.contextPruning,
     // A snapshot is the server's current conversation truth. Do not carry a

@@ -1,10 +1,11 @@
 import type {
   AgentConnectionState,
+  ContextCompactionBoundary,
   ContextCompactionStatus,
   ContextPruningStatus,
   ContextUsage,
 } from "@answra/shared";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { createRef } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type {
@@ -16,10 +17,12 @@ import { ChatPanel } from "../src/components/panels/ChatPanel";
 interface ChatRenderOptions {
   connection?: AgentConnectionState;
   contextCompaction?: ContextCompactionStatus;
+  compactionBoundaries?: readonly ContextCompactionBoundary[];
   contextUsage?: ContextUsage;
   contextPruning?: ContextPruningStatus;
   error?: string;
   retry?: ConversationRetry;
+  onCompact?: (instructions?: string) => void;
 }
 
 function renderChat(messages: ConversationViewMessage[], options: ChatRenderOptions = {}): void {
@@ -39,10 +42,12 @@ function renderChat(messages: ConversationViewMessage[], options: ChatRenderOpti
       streaming={false}
       connection={options.connection}
       contextCompaction={options.contextCompaction}
+      compactionBoundaries={options.compactionBoundaries}
       contextUsage={options.contextUsage}
       contextPruning={options.contextPruning}
       error={options.error}
       retry={options.retry}
+      onCompact={options.onCompact}
     />,
   );
 }
@@ -143,6 +148,65 @@ describe("ChatPanel context compaction", () => {
         (content) => content.includes("45k") && content.includes("216k") && content.includes("21%"),
       ),
     ).toBeInTheDocument();
+  });
+
+  it("sends optional summary instructions before compacting", () => {
+    const onCompact = vi.fn();
+    renderChat([], { onCompact });
+
+    fireEvent.click(screen.getByRole("button", { name: "压缩上下文" }));
+    fireEvent.change(screen.getByLabelText("摘要指令（可选）"), {
+      target: { value: "  保留数据库迁移决定  " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "开始压缩" }));
+
+    expect(onCompact).toHaveBeenCalledWith("保留数据库迁移决定");
+  });
+
+  it("allows compacting without instructions", () => {
+    const onCompact = vi.fn();
+    renderChat([], { onCompact });
+
+    fireEvent.click(screen.getByRole("button", { name: "压缩上下文" }));
+    fireEvent.click(screen.getByRole("button", { name: "开始压缩" }));
+
+    expect(onCompact).toHaveBeenCalledWith(undefined);
+  });
+
+  it("shows the compaction boundary metadata and expands its summary", () => {
+    renderChat(
+      [
+        {
+          id: "message-1",
+          role: "user",
+          text: "question",
+          status: "complete",
+          images: [],
+        },
+      ],
+      {
+        compactionBoundaries: [
+          {
+            id: "compaction-1",
+            throughMessageId: "message-1",
+            createdAt: "2026-11-14T10:00:00.000Z",
+            summary: "## 当前目标\n继续实现压缩",
+            summarizedMessages: 8,
+            instructions: "保留数据库迁移决定",
+          },
+        ],
+      },
+    );
+
+    expect(screen.getByText("上下文已压缩")).toBeInTheDocument();
+    expect(screen.getByText("已摘要 8 条消息")).toBeInTheDocument();
+    expect(screen.getByText("摘要重点：“保留数据库迁移决定”")).toBeInTheDocument();
+    expect(screen.queryByText(/继续实现压缩/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "展开摘要" }));
+
+    expect(screen.getByText(/继续实现压缩/)).toBeInTheDocument();
+    expect(screen.queryByText("已摘要 8 条消息")).not.toBeInTheDocument();
   });
 });
 

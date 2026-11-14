@@ -162,6 +162,7 @@ function useAiConversation(
     cancel,
     clearMessages,
     contextCompaction: view.contextCompaction,
+    contextCompactionBoundaries: view.contextCompactionBoundaries,
     contextUsage: view.contextUsage,
     contextPruning: view.contextPruning,
     reconcileSnapshot: reconcileRunSnapshot,

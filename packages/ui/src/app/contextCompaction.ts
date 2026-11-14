@@ -11,5 +11,7 @@ export function contextCompactionLabel(status: ContextCompactionStatus): string 
       return `上下文压缩失败：${status.errorText ?? "未知错误"}；继续使用原历史。`;
     case "succeeded":
       return "上下文压缩完成";
+    case "aborted":
+      return "上下文压缩已取消";
   }
 }
