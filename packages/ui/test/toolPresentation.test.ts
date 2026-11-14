@@ -214,9 +214,9 @@ describe("tool presentation", () => {
       action: "run",
       category: "command",
       primary: "pnpm test",
-      resultLine: "Done",
       expandable: true,
     });
+    expect(success.resultLine).toBeUndefined();
     expect(success.details[0]).toMatchObject({ text: "ok", wrap: false });
 
     expect(

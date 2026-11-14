@@ -54,6 +54,7 @@ export function VirtualTranscript({
   modelConfigured,
   setupStep,
   expandThinking,
+  expandedToolIds,
   footer,
   pointerSource,
   onScroll,
@@ -66,6 +67,7 @@ export function VirtualTranscript({
   modelConfigured?: boolean;
   setupStep?: TuiSetupStep;
   expandThinking: boolean;
+  expandedToolIds?: ReadonlySet<string>;
   footer?: ReactNode;
   pointerSource?: PointerSource;
   onScroll?: () => void;
@@ -73,7 +75,8 @@ export function VirtualTranscript({
   const viewportRef = useRef<DOMElement>(null);
   const viewport = useBoxMetrics(viewportRef);
   const { columns } = useWindowSize();
-  const layoutKey = `${columns}:${expandThinking}`;
+  const expandedKey = expandedToolIds === undefined ? "" : [...expandedToolIds].sort().join(",");
+  const layoutKey = `${columns}:${expandThinking}:${expandedKey}`;
   const [measured, setMeasured] = useState<MeasuredHeights>(() => ({
     key: layoutKey,
     values: new Map(),
@@ -95,12 +98,12 @@ export function VirtualTranscript({
         (item) =>
           measuredValues.get(item.id) ??
           (item.kind === "message"
-            ? estimateMessageHeight(item.message, columns, expandThinking)
+            ? estimateMessageHeight(item.message, columns, expandThinking, expandedToolIds)
             : item.kind === "compaction-boundary"
               ? COMPACTION_BOUNDARY_ESTIMATE_LINES
               : FOOTER_ESTIMATE_LINES),
       ),
-    [items, measuredValues, columns, expandThinking],
+    [items, measuredValues, columns, expandThinking, expandedToolIds],
   );
   const offsets = useMemo(() => buildOffsets(heights), [heights]);
   const totalHeight = offsets[offsets.length - 1] ?? 0;
@@ -214,7 +217,7 @@ export function VirtualTranscript({
               key={item.id}
               measureKey={
                 item.kind === "message"
-                  ? `${columns}:${expandThinking}:${showReasoning}:${messageMeasureKey(item.message)}`
+                  ? `${columns}:${expandThinking}:${expandedKey}:${showReasoning}:${messageMeasureKey(item.message)}`
                   : item.kind === "compaction-boundary"
                     ? `compaction-boundary:${columns}`
                     : `footer:${columns}`
@@ -223,6 +226,7 @@ export function VirtualTranscript({
             >
               {item.kind === "message" ? (
                 <MessageRow
+                  expandedToolIds={expandedToolIds}
                   expandThinking={expandThinking}
                   message={item.message}
                   showReasoning={showReasoning}

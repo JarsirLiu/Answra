@@ -15,6 +15,7 @@ import { ContextPruningNotice } from "../transcript/ContextPruningNotice";
 import { COMPACTION_FAILURE_TEXT, COMPACTION_SPINNER_MESSAGE } from "../transcript/compactionText";
 import { SelectionContext } from "../transcript/SelectableText";
 import { VirtualTranscript } from "../transcript/VirtualTranscript";
+import { createToolExpansionState, toggleAllTools } from "./expansion";
 import type { TuiViewStore } from "./viewStore";
 
 const NO_SUBSCRIBE = () => () => {};
@@ -61,7 +62,7 @@ export function App({
   const compacting = state.compactionActive || compaction?.state === "started";
   const busy = state.phase !== "idle" || compacting;
   const compactionFailed = compaction?.state === "failed";
-  const [expandThinking, setExpandThinking] = useState(false);
+  const [expansion, setExpansion] = useState(createToolExpansionState);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   useSyncExternalStore(
     selectionStore?.subscribe ?? NO_SUBSCRIBE,
@@ -97,7 +98,7 @@ export function App({
         return;
       }
       if (key.ctrl && input === "o") {
-        setExpandThinking((value) => !value);
+        setExpansion(toggleAllTools);
         return;
       }
       if (key.ctrl && input === "c" && busy) {
@@ -114,7 +115,8 @@ export function App({
       <Box flexDirection="column" height={rows} width="100%">
         <VirtualTranscript
           compactionBoundaries={state.compactionBoundaries}
-          expandThinking={expandThinking}
+          expandedToolIds={expansion.expandedIds}
+          expandThinking={expansion.all}
           footer={
             busy || compactionFailed || state.view.contextPruning ? (
               <Box flexDirection="column">

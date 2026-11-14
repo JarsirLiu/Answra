@@ -1,22 +1,26 @@
 /** 虚拟 transcript 的纯布局计算：高度估算、前缀偏移和可视窗口；不依赖 Ink/React。 */
 import type { ConversationMessagePart } from "@answra/shared";
 import type { ConversationViewMessage } from "@answra/ui/conversation-view";
-import { presentToolCall } from "@answra/ui/tool-presentation";
+import { isToolRunning, presentToolCall } from "@answra/ui/tool-presentation";
 import stringWidth from "string-width";
-import { groupMessageParts, type ToolGroup } from "./tool/groupToolCalls";
+import { groupMessageParts, type ToolGroup } from "./tool/groups/groupToolCalls";
+import {
+  TOOL_EXPANDED_DIFF_LINES,
+  TOOL_EXPANDED_TEXT_LINES,
+  TOOL_PREVIEW_DIFF_LINES,
+  TOOL_PREVIEW_TEXT_LINES,
+  TOOL_RUNNING_TAIL_LINES,
+} from "./tool/toolLayout";
 
 const MIN_MESSAGE_HEIGHT = 1;
 const TOOL_HEADER_LINES = 1;
 const TOOL_RESULT_LINES = 1;
-const TOOL_PREVIEW_TEXT_LINES = 5;
-const TOOL_PREVIEW_DIFF_LINES = 12;
-const TOOL_EXPANDED_TEXT_LINES = 200;
-const TOOL_EXPANDED_DIFF_LINES = 400;
 
 export function estimateMessageHeight(
   message: ConversationViewMessage,
   columns: number,
   expandThinking: boolean,
+  expandedToolIds?: ReadonlySet<string>,
 ): number {
   const width = Math.max(8, columns - 2);
   if (message.role === "user") return countTextLines(message.text, width) + 1;
@@ -25,7 +29,11 @@ export function estimateMessageHeight(
   let height = 1;
   for (const part of groupMessageParts(parts)) {
     if (part.kind === "tool-group") {
-      height += estimateToolGroupHeight(part, width, expandThinking);
+      height += estimateToolGroupHeight(
+        part,
+        width,
+        expandThinking || expandedToolIds?.has(part.id) === true,
+      );
       continue;
     }
     if (part.kind === "text") {
@@ -36,7 +44,11 @@ export function estimateMessageHeight(
       height += expandThinking ? countTextLines(part.text, width) + 1 : 1;
       continue;
     }
-    height += estimateToolHeight(part, width, expandThinking);
+    height += estimateToolHeight(
+      part,
+      width,
+      expandThinking || expandedToolIds?.has(part.id) === true,
+    );
   }
   return Math.max(MIN_MESSAGE_HEIGHT, height);
 }
@@ -137,7 +149,11 @@ function estimateToolHeight(part: ToolPartShape, width: number, expanded: boolea
     title: part.title,
   });
   let height = TOOL_HEADER_LINES;
-  if (presentation.resultLine !== undefined || presentation.errorText !== undefined) {
+  if (
+    presentation.resultLine !== undefined ||
+    presentation.errorText !== undefined ||
+    (presentation.expandable && !expanded)
+  ) {
     height += TOOL_RESULT_LINES;
   }
   if (presentation.details.length === 0) return height;
@@ -145,14 +161,23 @@ function estimateToolHeight(part: ToolPartShape, width: number, expanded: boolea
 
   for (const detail of presentation.details) {
     if (detail.kind === "text") {
-      const limit = expanded ? TOOL_EXPANDED_TEXT_LINES : TOOL_PREVIEW_TEXT_LINES;
+      const runningTail = isToolRunning(presentation.state) && presentation.category === "command";
+      const limit = expanded
+        ? TOOL_EXPANDED_TEXT_LINES
+        : runningTail
+          ? TOOL_RUNNING_TAIL_LINES
+          : TOOL_PREVIEW_TEXT_LINES;
+      const lineCount = detail.text.split("\n").length;
       height += Math.min(limit, countTextLines(detail.text, width));
       if (detail.label !== undefined) height += 1;
+      if (lineCount > limit || detail.truncated) height += 1;
       continue;
     }
     if (detail.kind === "diff") {
       const lines = detail.diff.hunks.reduce((total, hunk) => total + 1 + hunk.lines.length, 0);
-      height += Math.min(expanded ? TOOL_EXPANDED_DIFF_LINES : TOOL_PREVIEW_DIFF_LINES, lines);
+      const limit = expanded ? TOOL_EXPANDED_DIFF_LINES : TOOL_PREVIEW_DIFF_LINES;
+      height += Math.min(limit, lines);
+      if (lines > limit || detail.diff.truncated) height += 1;
       continue;
     }
     height += 1;

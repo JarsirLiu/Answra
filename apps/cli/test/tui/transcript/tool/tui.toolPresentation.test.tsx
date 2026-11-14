@@ -4,7 +4,7 @@ import { Transcript } from "../../../../src/tui/transcript/Transcript";
 import { nextFrame } from "../../tuiTestHarness";
 
 describe("TUI tool presentation", () => {
-  it("renders Read as a Claude-style summary without file contents", async () => {
+  it("renders Read as a compact summary without file contents", async () => {
     const instance = render(
       <Transcript
         view={{
@@ -142,7 +142,7 @@ describe("TUI tool presentation", () => {
 
     const frame = instance.lastFrame();
     expect(frame).toContain("Bash(pnpm test)");
-    expect(frame).toContain("Done");
+    expect(frame).not.toContain("Done");
     expect(frame).toContain("all tests passed");
     instance.unmount();
   });
@@ -281,7 +281,7 @@ describe("TUI tool presentation", () => {
 
     const collapsed = render(<Transcript view={view} workspaceRoot="D:\\workspace" />);
     await nextFrame();
-    expect(collapsed.lastFrame()).toContain("Read 2 files, searched 1 pattern");
+    expect(collapsed.lastFrame()).toContain("Searched 1 pattern, read 2 files");
     expect(collapsed.lastFrame()).not.toContain("Read(src/a.ts)");
     collapsed.unmount();
 
@@ -291,6 +291,144 @@ describe("TUI tool presentation", () => {
     await nextFrame();
     expect(expanded.lastFrame()).toContain("Read(src/a.ts)");
     expect(expanded.lastFrame()).toContain('Search(pattern: "needle", path: "src")');
+    expanded.unmount();
+  });
+
+  it("shows a hidden line count for long tool output", async () => {
+    const output = ["line 1", "line 2", "line 3", "line 4", "line 5", "line 6"].join("\n");
+    const instance = render(
+      <Transcript
+        view={{
+          eventRevision: 0,
+          messages: [
+            {
+              id: "assistant-1",
+              role: "assistant",
+              text: "",
+              status: "complete",
+              images: [],
+              parts: [
+                {
+                  id: "tool-1",
+                  kind: "tool",
+                  toolCallId: "call-1",
+                  toolName: "RunCommand",
+                  state: "completed",
+                  input: { command: "printf lines" },
+                  output: {
+                    kind: "result",
+                    result: {
+                      stdout: output,
+                      stderr: "",
+                      outcome: { type: "exit", exitCode: 0 },
+                    },
+                  },
+                },
+              ],
+            },
+          ],
+        }}
+        workspaceRoot="D:\\workspace"
+      />,
+    );
+    await nextFrame();
+
+    const frame = instance.lastFrame();
+    expect(frame).toContain("line 1");
+    expect(frame).toContain("line 3");
+    expect(frame).not.toContain("line 4");
+    expect(frame).toContain("… +3 lines");
+    instance.unmount();
+  });
+
+  it("renders a running group in present tense with the current target", async () => {
+    const instance = render(
+      <Transcript
+        view={{
+          eventRevision: 0,
+          messages: [
+            {
+              id: "assistant-1",
+              role: "assistant",
+              text: "",
+              status: "streaming",
+              images: [],
+              parts: [
+                {
+                  id: "tool-1",
+                  kind: "tool",
+                  toolCallId: "call-1",
+                  toolName: "Read",
+                  state: "running",
+                  input: { file_path: "src/a.ts" },
+                },
+                {
+                  id: "tool-2",
+                  kind: "tool",
+                  toolCallId: "call-2",
+                  toolName: "Grep",
+                  state: "running",
+                  input: { pattern: "needle", path: "src" },
+                },
+              ],
+            },
+          ],
+        }}
+        workspaceRoot="D:\\workspace"
+      />,
+    );
+    await nextFrame();
+
+    expect(instance.lastFrame()).toContain("Searching 1 pattern, reading 1 file · needle");
+    instance.unmount();
+  });
+
+  it("expands one tool by id without expanding the whole transcript", async () => {
+    const view = {
+      eventRevision: 0,
+      messages: [
+        {
+          id: "assistant-1",
+          role: "assistant" as const,
+          text: "",
+          status: "complete" as const,
+          images: [],
+          parts: [
+            {
+              id: "tool-1",
+              kind: "tool" as const,
+              toolCallId: "call-1",
+              toolName: "Grep",
+              state: "completed" as const,
+              input: { pattern: "needle", path: "src" },
+              output: {
+                type: "content",
+                files: [
+                  {
+                    path: "src/a.ts",
+                    lines: [{ lineNumber: 3, text: "needle found", kind: "match" }],
+                  },
+                ],
+                totalMatches: 1,
+                shownMatches: 1,
+                truncated: false,
+                lineNumbers: true,
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    const expanded = render(
+      <Transcript
+        expandedToolIds={new Set(["tool-1"])}
+        view={view}
+        workspaceRoot="D:\\workspace"
+      />,
+    );
+    await nextFrame();
+    expect(expanded.lastFrame()).toContain("needle found");
     expanded.unmount();
   });
 

@@ -1,15 +1,6 @@
-/** Claude-style tool summary used by the TUI and the non-TTY presenter. */
-import type { ToolAction, ToolPresentation } from "@answra/ui/tool-presentation";
-
-const ACTION_LABELS: Readonly<Record<ToolAction, string>> = {
-  read: "Read",
-  search: "Search",
-  edit: "Update",
-  create: "Create",
-  write: "Write",
-  run: "Bash",
-  other: "Tool",
-};
+/** Tool summary shared by the TUI and the non-TTY presenter. */
+import type { ToolPresentation } from "@answra/ui/tool-presentation";
+import { actionLabel } from "./toolLabels";
 
 export interface ToolSummary {
   readonly label: string;
@@ -23,7 +14,7 @@ export function summarizePresentation(presentation: ToolPresentation): ToolSumma
     case "edit":
     case "create":
       return {
-        label: ACTION_LABELS[presentation.action],
+        label: actionLabel(presentation.action),
         target: joinPath(presentation.secondary, presentation.primary),
         ...(presentation.meta ? { extra: ` ${presentation.meta}` } : {}),
       };
@@ -31,17 +22,17 @@ export function summarizePresentation(presentation: ToolPresentation): ToolSumma
       const parts = [`pattern: "${presentation.primary}"`];
       if (presentation.secondary) parts.push(`path: "${presentation.secondary}"`);
       if (presentation.meta) parts.push(presentation.meta);
-      return { label: ACTION_LABELS.search, target: parts.join(", ") };
+      return { label: actionLabel("search"), target: parts.join(", ") };
     }
     case "run":
       return {
-        label: ACTION_LABELS.run,
+        label: actionLabel("run"),
         target: presentation.primary,
         ...(presentation.secondary ? { extra: ` in ${presentation.secondary}` } : {}),
       };
     case "write":
       return {
-        label: ACTION_LABELS.write,
+        label: actionLabel("write"),
         target: presentation.primary,
         ...(presentation.secondary ? { extra: ` · ${presentation.secondary}` } : {}),
       };

@@ -14,6 +14,7 @@ export function Transcript({
   modelConfigured = true,
   setupStep,
   expandThinking,
+  expandedToolIds,
 }: {
   view: ConversationView;
   localError?: string;
@@ -22,6 +23,7 @@ export function Transcript({
   modelConfigured?: boolean;
   setupStep?: TuiSetupStep;
   expandThinking?: boolean;
+  expandedToolIds?: ReadonlySet<string>;
 }) {
   return (
     <Box flexDirection="column">
@@ -33,7 +35,12 @@ export function Transcript({
         />
       ) : null}
       {view.messages.map((message) => (
-        <MessageRow key={message.id} expandThinking={expandThinking} message={message} />
+        <MessageRow
+          expandedToolIds={expandedToolIds}
+          expandThinking={expandThinking}
+          key={message.id}
+          message={message}
+        />
       ))}
       <TranscriptTail localError={localError} notice={notice} view={view} />
     </Box>

@@ -89,7 +89,7 @@ function resultLineFor(
   return undefined;
 }
 
-function sessionResultLine(snapshot: ShellSnapshot): string {
+function sessionResultLine(snapshot: ShellSnapshot): string | undefined {
   switch (snapshot.status) {
     case "running":
       return "Running…";
@@ -104,14 +104,18 @@ function sessionResultLine(snapshot: ShellSnapshot): string {
   }
 }
 
-function resultResultLine(result: ShellResult): string {
+function resultResultLine(result: ShellResult): string | undefined {
   if (result.timeout) return "Timed out";
   return exitLine(result.exitCode, result.stdout, result.stderr);
 }
 
-function exitLine(exitCode: number | null | undefined, stdout: string, stderr: string): string {
+function exitLine(
+  exitCode: number | null | undefined,
+  stdout: string,
+  stderr: string,
+): string | undefined {
   if (stdout.length === 0 && stderr.length === 0) return "(No output)";
-  if (exitCode === 0 || exitCode === null || exitCode === undefined) return "Done";
+  if (exitCode === 0 || exitCode === null || exitCode === undefined) return undefined;
   return `Exit code ${exitCode}`;
 }
 

@@ -1,23 +1,25 @@
-/** Claude 风格 transcript 行：user 背景块，assistant 圆点缩进，工具卡保持自身 glyph。 */
+/** transcript 行：user 背景块，assistant 圆点缩进，工具卡保持自身 glyph。 */
 import type { ConversationMessagePart } from "@answra/shared";
 import type { ConversationViewMessage } from "@answra/ui/conversation-view";
 import { Box, Text } from "ink";
 import { memo } from "react";
-import { BLACK_CIRCLE, TUI_THEME } from "../chrome/theme";
+import { TUI_THEME } from "../chrome/theme";
 import { MarkdownText } from "./MarkdownText";
 import { MessageResponse } from "./MessageResponse";
-import { SelectableText } from "./SelectableText";
-import { groupMessageParts, type ToolGroup } from "./tool/groupToolCalls";
-import { ToolCall, ToolLoader } from "./tool/ToolCall";
+import { groupMessageParts } from "./tool/groups/groupToolCalls";
+import { ToolGroupRow } from "./tool/groups/ToolGroupRow";
+import { ToolCall } from "./tool/ToolCall";
 
 export const MessageRow = memo(function MessageRow({
   message,
   expandThinking = false,
   showReasoning = true,
+  expandedToolIds,
 }: {
   message: ConversationViewMessage;
   expandThinking?: boolean;
   showReasoning?: boolean;
+  expandedToolIds?: ReadonlySet<string>;
 }) {
   if (message.role === "user") {
     return (
@@ -33,7 +35,7 @@ export const MessageRow = memo(function MessageRow({
   }
   return (
     <Box flexDirection="column" marginTop={1} width="100%">
-      {renderParts(message, expandThinking, showReasoning)}
+      {renderParts(message, expandThinking, showReasoning, expandedToolIds)}
     </Box>
   );
 });
@@ -42,6 +44,7 @@ function renderParts(
   message: ConversationViewMessage,
   expandThinking: boolean,
   showReasoning: boolean,
+  expandedToolIds: ReadonlySet<string> | undefined,
 ) {
   const parts = message.parts ?? [];
   if (parts.length === 0) {
@@ -53,10 +56,15 @@ function renderParts(
   }
   return groupMessageParts(parts).map((part) =>
     part.kind === "tool-group" ? (
-      <ToolGroupRow expandThinking={expandThinking} group={part} key={part.id} />
+      <ToolGroupRow
+        expanded={expandThinking || expandedToolIds?.has(part.id) === true}
+        group={part}
+        key={part.id}
+      />
     ) : (
       <PartRow
         expandThinking={expandThinking}
+        expandedToolIds={expandedToolIds}
         key={part.id}
         part={part}
         showReasoning={showReasoning}
@@ -65,39 +73,16 @@ function renderParts(
   );
 }
 
-function ToolGroupRow({ group, expandThinking }: { group: ToolGroup; expandThinking: boolean }) {
-  return (
-    <Box flexDirection="column" marginTop={1} width="100%">
-      <Box flexDirection="row" width="100%">
-        <Box flexShrink={0} width={2}>
-          {group.running ? (
-            <ToolLoader />
-          ) : (
-            <Text color={group.failed ? TUI_THEME.error : TUI_THEME.text}>{BLACK_CIRCLE}</Text>
-          )}
-        </Box>
-        <SelectableText>
-          <Text bold color={group.failed ? TUI_THEME.error : TUI_THEME.text}>
-            {group.label}
-          </Text>
-          {!expandThinking && group.expandable ? <Text dimColor> (ctrl+o to expand)</Text> : null}
-        </SelectableText>
-      </Box>
-      {expandThinking
-        ? group.parts.map((part) => <ToolCall expanded key={part.id} nested part={part} />)
-        : null}
-    </Box>
-  );
-}
-
 function PartRow({
   part,
   expandThinking,
   showReasoning,
+  expandedToolIds,
 }: {
   part: ConversationMessagePart;
   expandThinking: boolean;
   showReasoning: boolean;
+  expandedToolIds: ReadonlySet<string> | undefined;
 }) {
   if (part.kind === "text") {
     return (
@@ -124,5 +109,7 @@ function PartRow({
       </Box>
     );
   }
-  return <ToolCall expanded={expandThinking} part={part} />;
+  return (
+    <ToolCall expanded={expandThinking || expandedToolIds?.has(part.id) === true} part={part} />
+  );
 }

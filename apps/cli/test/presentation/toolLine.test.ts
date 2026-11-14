@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { toolFinishLine, toolLabel, toolStartLine } from "../../src/presentation/toolLine";
+import { toolLabel } from "../../src/presentation/toolLabels";
+import { toolFinishLine, toolStartLine } from "../../src/presentation/toolLine";
 
 describe("tool lines", () => {
   it("maps known tool names and preserves unknown names", () => {
