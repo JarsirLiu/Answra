@@ -37,6 +37,11 @@ const bundledOnlyPackages = new Set([
   "vscode-icons-js",
 ]);
 const bundledOnlyPrefixes = ["prosemirror-", "rehype-", "remark-"];
+/**
+ * 原生 external 依赖：由 esbuild external + electron-builder asarUnpack 提供，
+ * 必须出现在 app.asar.unpacked，不能按 bundled-only 拒绝。
+ */
+const nativeRuntimePackages = /^@napi-rs\/keyring(?:-|$)/;
 
 function runtimePackageName(entry) {
   return /(?:^|\/)node_modules\/((?:@[^/]+\/)?[^/]+)\//.exec(entry)?.[1];
@@ -72,6 +77,7 @@ module.exports = async function auditPackagedApp(context) {
     }
     const packageName = runtimePackageName(entry);
     if (!packageName) continue;
+    if (nativeRuntimePackages.test(packageName)) continue;
     if (
       bundledOnlyPackages.has(packageName) ||
       bundledOnlyScopes.some((scope) => packageName.startsWith(scope)) ||
@@ -82,6 +88,18 @@ module.exports = async function auditPackagedApp(context) {
   }
   for (const packageName of bundledRuntimePackages) {
     violations.push(`app.asar 包含已由 bundle 覆盖的运行时依赖：${packageName}`);
+  }
+
+  for (const dependency of ["@napi-rs/keyring"]) {
+    try {
+      await stat(join(resourcesDir, "app.asar.unpacked", "node_modules", dependency));
+    } catch (error) {
+      if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+        violations.push(`安装包缺少 unpacked 原生依赖：${dependency}`);
+        continue;
+      }
+      throw error;
+    }
   }
 
   try {
