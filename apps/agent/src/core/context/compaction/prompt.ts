@@ -1,4 +1,4 @@
-/** 所有领域共用的唯一摘要提示词；调用方不得覆盖或追加领域提示。 */
+/** 所有领域共用的唯一摘要提示词；领域不得覆盖；手动用户指令由 buildSummaryPrompt 统一追加。 */
 export const CONTEXT_SUMMARY_PROMPT = [
   "你负责压缩一段 AI 会话，供后续继续工作。",
   "只输出摘要正文，不调用工具，不写代码块，不解释你在做什么。",
@@ -19,10 +19,13 @@ export function buildSummaryPrompt({
   previousSummary,
   transcript,
   omittedMessages = 0,
+  instructions,
 }: {
   previousSummary?: string;
   transcript: string;
   omittedMessages?: number;
+  /** 用户手动 `/compact` 附带的一次性摘要偏好；不得覆盖基础事实与隐私约束。 */
+  instructions?: string;
 }): string {
   return [
     CONTEXT_SUMMARY_PROMPT,
@@ -38,6 +41,13 @@ export function buildSummaryPrompt({
       : undefined,
     "## 待压缩会话",
     transcript,
+    instructions
+      ? [
+          "## 用户附加摘要指令",
+          instructions,
+          "这些指令只影响摘要重点、详略和格式；仍必须遵守上面的只输出摘要、事实准确、不编造和隐私约束。",
+        ].join("\n")
+      : undefined,
   ]
     .filter((section): section is string => section !== undefined)
     .join("\n\n");

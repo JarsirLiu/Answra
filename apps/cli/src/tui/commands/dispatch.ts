@@ -1,5 +1,5 @@
 /** TUI 本地命令分派：按 catalog kind 注册 handler；不承载会话队列或 Agent 运行时。 */
-import type { ConversationModelConfig } from "@answra/shared";
+import type { ConversationModelConfig, ManualCompactionResult } from "@answra/shared";
 import type { ModelSettings } from "../../model/ports";
 import type { RemoteAuthPort } from "../../remote/auth/remoteAuthService";
 import type { CodingSession } from "../../session/codingSession";
@@ -15,7 +15,7 @@ export interface TuiCommandDeps {
   readonly modelSettings: ModelSettings;
   readonly isBusy: () => boolean;
   readonly getSession: () => CodingSession | undefined;
-  readonly compactConversation: () => Promise<{ compacted: boolean; failed: boolean }>;
+  readonly compactConversation: (instructions?: string) => Promise<ManualCompactionResult>;
   readonly configureSession: (model: ConversationModelConfig) => Promise<void>;
   readonly requestExit: () => void;
   readonly openPanel: (panel: TuiPanel) => void;
@@ -88,17 +88,26 @@ async function handleClear(_args: readonly string[], deps: TuiCommandDeps): Prom
 }
 
 async function handleCompact(args: readonly string[], deps: TuiCommandDeps): Promise<void> {
-  if (args.length > 0) {
-    deps.store.setNotice(["/compact 不接受参数。"]);
-    return;
-  }
   if (deps.isBusy()) {
     deps.store.setNotice(["当前运行中，先按 Esc 中断后再压缩会话。"]);
     return;
   }
-  const result = await deps.compactConversation();
-  if (!result.compacted && !result.failed) {
-    deps.store.setNotice(["没有足够的旧消息可压缩。"]);
+  const instructions = args.join(" ").trim();
+  const result = await deps.compactConversation(instructions || undefined);
+  if (result.status === "skipped") {
+    deps.store.setNotice([
+      result.reason === "insufficient-messages"
+        ? "没有足够的旧消息可压缩。"
+        : "当前没有可压缩的上下文。",
+    ]);
+    return;
+  }
+  if (result.status === "aborted") {
+    deps.store.setNotice(["已取消压缩。"]);
+    return;
+  }
+  if (result.status === "failed") {
+    deps.store.fail(result.errorText ?? "上下文压缩失败。");
     return;
   }
   deps.store.setNotice(undefined);

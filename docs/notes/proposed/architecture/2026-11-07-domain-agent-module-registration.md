@@ -127,7 +127,7 @@ interface AgentRuntimePort {
 | `core/agent/runtime.ts` | 提供静态注册、模型路由、run 取消/等待、事件查询与 store 通知；`AgentExecutor.startRun` 先等待领域准备再执行。 | 已新增 |
 | `core/agent/executeRun.ts` | `executeRun` 调用 AI SDK、消费模型流、执行工具循环、写现有事件并结束 run；不写 transcript。 | 已从 `conversation/turn/executeTurn.ts` 拆出 |
 | `core/agent/streamJournal.ts` | `createExecutionJournal` 串行追加现有 AgentEvent 到 ExecutionStore、维护诊断 metrics，并等待领域事件回调；不更新消息文本。 | 已从 `conversation/turn/streamJournal.ts` 拆出 |
-| `core/model/consumeStream.ts` | `consumeModelStream` 消费 AI SDK `fullStream` 并交给事件 writer。 | 保留；被 AgentRuntime 使用 |
+| `core/agent/modelAttempt.ts` | `consumeModelAttempt` 消费 AI SDK `fullStream`，缓冲内容前生命周期并返回单次尝试终态；由 `executeRun` 使用。 | 取代原 `core/model/consumeStream.ts` |
 | `core/model/streamEvents.ts` | `normalizeStreamPart`、`normalizeWarning` 将 AI SDK 类型归一为 shared 事件。 | 保留 |
 | `core/model/retryFetch.ts` | `createRetryingFetch` 执行 HTTP 限流/服务错误自动重试。 | 保留 |
 | `core/model/providerFetch.ts` | `validateEndpoint`、`createAuthorizedFetch`、`createLocalFetch` 处理 provider 请求边界与认证。 | 已从 `conversation/turn/endpointFetch.ts` 迁移 |

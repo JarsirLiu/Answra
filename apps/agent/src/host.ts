@@ -328,6 +328,10 @@ export function startAgentHost({
         emitConversationSnapshot(snapshot);
         return snapshot;
       }
+      case "compact-conversation":
+        return runtime.compactConversation(command.conversationId, command.accessToken, {
+          ...(command.instructions === undefined ? {} : { instructions: command.instructions }),
+        });
       case "append-user-message":
         return runtime.appendUserMessage(command.conversationId, command.text);
       case "cancel":

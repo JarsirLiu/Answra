@@ -50,6 +50,7 @@ function createScriptedExecutor({
   revision,
   sequence,
   onInput,
+  onRequest,
 }: {
   conversationId: string;
   text: string;
@@ -57,11 +58,13 @@ function createScriptedExecutor({
   revision: { value: number };
   sequence: { value: number };
   onInput: (input: ConversationAgentInput) => void;
+  onRequest: (request: AgentRunRequest<ConversationAgentInput, unknown>) => void;
 }): AgentExecutor<ConversationAgentInput> {
   return {
     async startRun<Prepared>(
       request: AgentRunRequest<ConversationAgentInput, Prepared>,
     ): Promise<AgentRunHandle<Prepared>> {
+      onRequest(request);
       const runId = `run-${++sequence.value}`;
       const prepared = await request.prepareRun({
         runId,
@@ -97,6 +100,9 @@ function createScriptedExecutor({
         done: Promise.resolve("completed" as const),
       };
     },
+    prepare: async () => {
+      throw new Error("not used");
+    },
   };
 }
 
@@ -115,6 +121,7 @@ function createHarness({
   const sequence = { value: 0 };
   const inputs: RecordedInput[] = [];
   const snapshots: ConversationSnapshot[] = [];
+  const requests: Array<AgentRunRequest<ConversationAgentInput, unknown>> = [];
 
   const candidateExecutor = createScriptedExecutor({
     conversationId,
@@ -123,6 +130,7 @@ function createHarness({
     revision,
     sequence,
     onInput: (input) => inputs.push({ agentId: candidate, input }),
+    onRequest: (request) => requests.push(request),
   });
   const intakeExecutor = createScriptedExecutor({
     conversationId,
@@ -131,6 +139,7 @@ function createHarness({
     revision,
     sequence,
     onInput: (input) => inputs.push({ agentId: intake, input }),
+    onRequest: (request) => requests.push(request),
   });
 
   const candidateBot: ConversationBot = {
@@ -188,7 +197,7 @@ function createHarness({
     },
   });
 
-  return { app, store, conversationId, inputs, snapshots };
+  return { app, store, conversationId, inputs, snapshots, requests };
 }
 
 describe("ConversationApplication team handoff", () => {
@@ -253,6 +262,20 @@ describe("ConversationApplication team handoff", () => {
     expect(harness.inputs.map((recorded) => recorded.agentId)).toEqual([candidate, intake]);
     expect(harness.inputs[1]?.input.request.text).toBe("请接管整理并继续追问。");
     expect(harness.snapshots.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("wires provider overflow recovery into the existing Bot run", async () => {
+    const harness = createHarness({ candidateResult: undefined });
+
+    await harness.app.sendTeamMessage(
+      "interview",
+      harness.conversationId,
+      { text: "帮我准备面试", images: [] },
+      "token",
+    );
+
+    expect(harness.requests).toHaveLength(1);
+    expect(harness.requests[0]?.recoverContext).toBeTypeOf("function");
   });
 
   it("rejects an invisible handoff target without writing a handoff record", async () => {

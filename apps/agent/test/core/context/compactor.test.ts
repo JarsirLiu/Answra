@@ -58,7 +58,7 @@ describe("ContextCompactor", () => {
       contextTokens: TRIGGER_TOKENS,
     });
 
-    expect(compacted).toBe(true);
+    expect(compacted.status).toBe("compacted");
     expect(snapshots.map((snapshot) => snapshot.contextCompaction?.state)).toEqual([
       "started",
       "succeeded",
@@ -88,7 +88,7 @@ describe("ContextCompactor", () => {
       contextTokens: TRIGGER_TOKENS,
     });
 
-    expect(compacted).toBe(true);
+    expect(compacted.status).toBe("compacted");
     expect((await store.load("conversation-1")).activeRunId).toBe("run-1");
     expect((await store.loadContextState("conversation-1"))?.checkpoints.at(-1)).toMatchObject({
       summary: "压缩后的摘要",
@@ -96,7 +96,7 @@ describe("ContextCompactor", () => {
     });
   });
 
-  it("records an aborted summary as failure and keeps the transcript unchanged", async () => {
+  it("records cancellation as aborted and keeps the transcript unchanged", async () => {
     const store = await preparedStore();
     const controller = new AbortController();
     const messagesBefore = (await store.load("conversation-1")).messages;
@@ -118,10 +118,10 @@ describe("ContextCompactor", () => {
       signal: controller.signal,
     });
 
-    expect(compacted).toBe(false);
+    expect(compacted).toEqual({ status: "aborted" });
     expect((await store.loadContextState("conversation-1"))?.checkpoints).toEqual([]);
     expect((await store.load("conversation-1")).contextCompaction).toMatchObject({
-      state: "failed",
+      state: "aborted",
     });
     expect((await store.load("conversation-1")).messages).toEqual(messagesBefore);
   });
@@ -147,7 +147,7 @@ describe("ContextCompactor", () => {
       contextTokens: TRIGGER_TOKENS,
     });
 
-    expect(compacted).toBe(false);
+    expect(compacted).toMatchObject({ status: "failed" });
     expect(snapshots.map((snapshot) => snapshot.contextCompaction?.state)).toEqual([
       "started",
       "failed",
@@ -177,12 +177,15 @@ describe("ContextCompactor", () => {
         contextTokens: TRIGGER_TOKENS,
       });
 
-    await expect(prepare()).resolves.toBe(false);
-    await expect(prepare()).resolves.toBe(false);
-    await expect(prepare()).resolves.toBe(false);
+    await expect(prepare()).resolves.toMatchObject({ status: "failed" });
+    await expect(prepare()).resolves.toMatchObject({ status: "failed" });
+    await expect(prepare()).resolves.toMatchObject({ status: "failed" });
     expect(generate).toHaveBeenCalledTimes(3);
 
-    await expect(prepare()).resolves.toBe(false);
+    await expect(prepare()).resolves.toEqual({
+      status: "skipped",
+      reason: "breaker-open",
+    });
     expect(generate).toHaveBeenCalledTimes(3);
 
     await expect(
@@ -193,7 +196,7 @@ describe("ContextCompactor", () => {
         contextTokens: TRIGGER_TOKENS,
         bypassFailureBreaker: true,
       }),
-    ).resolves.toBe(false);
+    ).resolves.toMatchObject({ status: "failed" });
     expect(generate).toHaveBeenCalledTimes(4);
   });
 
@@ -215,7 +218,7 @@ describe("ContextCompactor", () => {
 
     await prepare();
     await prepare();
-    await expect(prepare()).resolves.toBe(true);
+    await expect(prepare()).resolves.toMatchObject({ status: "compacted" });
 
     expect(
       (await store.loadContextState("conversation-1"))?.compactionFailureCount,
@@ -238,7 +241,7 @@ describe("ContextCompactor", () => {
         getAccessToken,
         triggerTokens: TRIGGER_TOKENS,
       }),
-    ).resolves.toBe(false);
+    ).resolves.toEqual({ status: "skipped", reason: "below-threshold" });
 
     expect(getAccessToken).not.toHaveBeenCalled();
     expect(generate).not.toHaveBeenCalled();

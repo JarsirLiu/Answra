@@ -42,6 +42,7 @@ export class AgentRuntime {
     this.agentRegistry.register(definition.id);
     return {
       startRun: (request) => this.startRun(definition, request),
+      prepare: (input, signal) => definition.prepare(input, signal),
     };
   }
 

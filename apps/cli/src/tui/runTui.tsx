@@ -1,6 +1,6 @@
 /** Ink TUI 运行器：挂载 App，驱动 CodingSession 的排队发送、等待与取消。 */
 import type { ModelCredentialStore } from "@answra/credentials";
-import type { ConversationModelConfig } from "@answra/shared";
+import type { ConversationModelConfig, ManualCompactionResult } from "@answra/shared";
 import { render } from "ink";
 import type { ModelCatalog } from "../model/catalog";
 import type { ModelSettings } from "../model/ports";
@@ -167,7 +167,7 @@ export async function runInkTui({
     store.setPanel(panel);
   };
 
-  const compactConversation = async (): Promise<{ compacted: boolean; failed: boolean }> => {
+  const compactConversation = async (instructions?: string): Promise<ManualCompactionResult> => {
     if (busy || store.getSnapshot().compactionActive) throw new Error("上一轮尚未结束。");
     const activeSession = session;
     if (activeSession === undefined) throw new Error("尚未配置模型。");
@@ -175,11 +175,11 @@ export async function runInkTui({
     compactAbort = controller;
     store.beginCompaction();
     try {
-      const result = await activeSession.compact(controller.signal);
-      return {
-        compacted: result.compacted,
-        failed: result.snapshot.contextCompaction?.state === "failed",
-      };
+      const { result } = await activeSession.compact({
+        signal: controller.signal,
+        ...(instructions === undefined ? {} : { instructions }),
+      });
+      return result;
     } finally {
       if (compactAbort === controller) compactAbort = undefined;
       store.finishCompaction();

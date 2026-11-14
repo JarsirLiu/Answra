@@ -143,6 +143,7 @@ export type {
   ContextUsage,
   ConversationBot,
   ConversationMessagePart,
+  ManualCompactionResult,
   MessageAudience,
 } from "./schema";
 export {
@@ -152,6 +153,7 @@ export {
   type AgentConnectionState,
   agentServiceDisconnectedError,
   isAgentServiceDisconnectedError,
+  MANUAL_COMPACTION_INSTRUCTIONS_MAX_CHARS,
 } from "./schema";
 export * from "./schema/remote";
 export * from "./surfaces";

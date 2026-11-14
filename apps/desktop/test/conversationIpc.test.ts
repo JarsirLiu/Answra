@@ -36,7 +36,12 @@ vi.mock("../src/main/window", () => ({
   sendConversationSnapshot: shared.sendSnapshot,
 }));
 
-import { AUTH_REQUIRED_CODE, ConversationChannels } from "@answra/shared";
+import {
+  ActiveChatConversationId,
+  AUTH_REQUIRED_CODE,
+  ConversationChannels,
+  MANUAL_COMPACTION_INSTRUCTIONS_MAX_CHARS,
+} from "@answra/shared";
 import { registerConversationIpc } from "../src/main/conversation/conversationIpc";
 
 const service = {
@@ -47,6 +52,10 @@ const service = {
   send: vi.fn(),
   cancel: vi.fn(),
   clearConversation: vi.fn().mockResolvedValue(undefined),
+  compactConversation: vi.fn().mockResolvedValue({
+    result: { status: "compacted" },
+    snapshot: { conversationId: ActiveChatConversationId, eventRevision: 1, messages: [] },
+  }),
   onEvent: shared.onEvent,
   onSnapshot: shared.onSnapshot,
 };
@@ -106,11 +115,36 @@ describe("conversation IPC read access for reply renderer", () => {
     service.readEvents.mockClear();
     service.send.mockClear();
     service.clearConversation.mockClear();
+    service.compactConversation.mockClear();
     modelSettings.getView.mockClear();
     modelSettings.save.mockClear();
     modelSettings.clear.mockClear();
     modelSettings.revealApiKey.mockClear();
     register();
+  });
+
+  it("passes one-shot compaction instructions and rejects overlong input", async () => {
+    const compact = getHandler(ConversationChannels.Compact);
+    await expect(
+      compact(
+        { sender: { id: "main" } },
+        { conversationId: ActiveChatConversationId, instructions: "保留迁移决定" },
+      ),
+    ).resolves.toMatchObject({ result: { status: "compacted" } });
+    expect(service.compactConversation).toHaveBeenCalledWith(
+      ActiveChatConversationId,
+      "保留迁移决定",
+    );
+
+    await expect(() =>
+      compact(
+        { sender: { id: "main" } },
+        {
+          conversationId: ActiveChatConversationId,
+          instructions: "x".repeat(MANUAL_COMPACTION_INSTRUCTIONS_MAX_CHARS + 1),
+        },
+      ),
+    ).toThrow("压缩指令无效或过长");
   });
 
   it("allows the reply renderer to read only the active conversation", async () => {
@@ -250,6 +284,7 @@ describe("conversation IPC model settings", () => {
     service.readEvents.mockClear();
     service.send.mockClear();
     service.clearConversation.mockClear();
+    service.compactConversation.mockClear();
     modelSettings.getView.mockClear();
     modelSettings.save.mockClear();
     modelSettings.clear.mockClear();

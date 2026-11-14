@@ -33,7 +33,7 @@ import type {
   WorkspaceFileContent,
   WorkspaceNode,
 } from "./channels";
-import type { BotSummary } from "./schema";
+import type { BotSummary, ManualCompactionResult } from "./schema";
 import type { SurfacePresetId } from "./surfaces";
 
 /**
@@ -120,6 +120,11 @@ export interface DesktopBridge {
   ) => Promise<ConversationSnapshot>;
   /** 清空会话消息（仅空闲会话生效），返回清空后的权威 snapshot。 */
   clearConversationMessages?: (conversationId: string) => Promise<ConversationSnapshot>;
+  /** 手动压缩空闲会话的上下文，返回显式结果与权威 snapshot。 */
+  compactConversation?: (
+    conversationId: string,
+    instructions?: string,
+  ) => Promise<{ result: ManualCompactionResult; snapshot: ConversationSnapshot }>;
   readConversationEvents?: (
     conversationId: string,
     afterRevision: number,

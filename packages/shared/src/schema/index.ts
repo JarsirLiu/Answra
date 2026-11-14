@@ -67,6 +67,8 @@ export {
   contextCompactionTriggerSchema,
   contextPruningSchema,
   contextUsageSchema,
+  MANUAL_COMPACTION_INSTRUCTIONS_MAX_CHARS,
+  type ManualCompactionResult,
   type RunOutcome,
   runOutcomeSchema,
 } from "./status";

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   canTransitionContextCompaction,
+  markContextCompactionAborted,
   markContextCompactionFailed,
   markContextCompactionSucceeded,
   startContextCompaction,
@@ -33,6 +34,18 @@ describe("context compaction lifecycle", () => {
     });
   });
 
+  it("records cancellation without turning it into a failure", () => {
+    const started = startContextCompaction({ previous: undefined, trigger: "manual", now: NOW });
+    const aborted = markContextCompactionAborted(started, NOW);
+
+    expect(aborted).toMatchObject({
+      state: "aborted",
+      trigger: "manual",
+      finishedAt: "2026-11-13T10:00:00.000Z",
+    });
+    expect(aborted.errorText).toBeUndefined();
+  });
+
   it("allows a new attempt after success or failure", () => {
     const previous = {
       state: "succeeded" as const,
@@ -48,6 +61,7 @@ describe("context compaction lifecycle", () => {
   it("allows started to finish once and rejects overlapping or terminal-to-terminal transitions", () => {
     expect(canTransitionContextCompaction("started", "succeeded")).toBe(true);
     expect(canTransitionContextCompaction("started", "failed")).toBe(true);
+    expect(canTransitionContextCompaction("started", "aborted")).toBe(true);
     expect(canTransitionContextCompaction("started", "started")).toBe(false);
     expect(canTransitionContextCompaction("failed", "succeeded")).toBe(false);
     expect(() =>

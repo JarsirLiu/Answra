@@ -8,6 +8,8 @@ export interface ContextCheckpoint {
   createdAt: string;
   /** 摘要覆盖的累计消息数，用于诊断和后续归档。 */
   messageCount: number;
+  /** 手动压缩附带的一次性摘要指令；自动压缩不产生。 */
+  instructions?: string;
 }
 
 export function latestCheckpoint(

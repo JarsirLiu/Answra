@@ -249,6 +249,28 @@ describe("conversation message audience", () => {
     );
   });
 
+  it("round-trips compaction boundaries with summary and manual instructions", () => {
+    const snapshot = {
+      conversationId: "conv-1",
+      eventRevision: 5,
+      messages: [],
+      contextCompactionBoundaries: [
+        {
+          id: "compaction:2026-11-14T10:00:01.000Z:message-1",
+          throughMessageId: "message-1",
+          createdAt: "2026-11-14T10:00:01.000Z",
+          summary: "## 当前目标\n继续实现压缩",
+          summarizedMessages: 8,
+          instructions: "保留数据库迁移决定",
+        },
+      ],
+    };
+
+    expect(conversationSnapshotSchema.parse(JSON.parse(JSON.stringify(snapshot)))).toEqual(
+      snapshot,
+    );
+  });
+
   it("does not accept the removed summarizing compaction state", () => {
     expect(contextCompactionStateSchema.safeParse("summarizing").success).toBe(false);
   });

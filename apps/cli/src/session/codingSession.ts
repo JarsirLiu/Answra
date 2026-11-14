@@ -3,7 +3,14 @@ import type {
   ConversationModelConfig,
   ConversationSendRequest,
   ConversationSnapshot,
+  ManualCompactionResult,
 } from "@answra/shared";
+
+/** 手动压缩的可选输入；指令只影响本次摘要，不写入会话或配置。 */
+export interface ManualCompactionOptions {
+  signal?: AbortSignal;
+  instructions?: string;
+}
 
 /** 会话用例所需的最小宿主端口；由 adapters 映射到 @answra/agent/composition。 */
 export interface CodingSessionHost {
@@ -13,8 +20,8 @@ export interface CodingSessionHost {
   compactConversation?(
     conversationId: string,
     accessToken: string,
-    signal?: AbortSignal,
-  ): Promise<{ compacted: boolean; snapshot: ConversationSnapshot }>;
+    options?: ManualCompactionOptions,
+  ): Promise<{ result: ManualCompactionResult; snapshot: ConversationSnapshot }>;
   send(
     conversationId: string,
     request: ConversationSendRequest,
@@ -71,8 +78,8 @@ export class CodingSession {
   }
 
   async compact(
-    signal?: AbortSignal,
-  ): Promise<{ compacted: boolean; snapshot: ConversationSnapshot }> {
+    options: ManualCompactionOptions = {},
+  ): Promise<{ result: ManualCompactionResult; snapshot: ConversationSnapshot }> {
     if (this.closed) throw new Error("会话已关闭。");
     if (!this.opened) throw new Error("会话尚未打开。");
     if (this.activeRunId !== undefined || this.sending) throw new Error("上一轮尚未结束。");
@@ -84,7 +91,7 @@ export class CodingSession {
       const result = await this.host.compactConversation(
         this.conversationId,
         this.accessToken,
-        signal,
+        options,
       );
       this.snapshot = result.snapshot;
       return result;

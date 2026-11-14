@@ -1,4 +1,9 @@
-import type { AgentEventEnvelope, BotSummary, ConversationSnapshot } from "../schema";
+import type {
+  AgentEventEnvelope,
+  BotSummary,
+  ConversationSnapshot,
+  ManualCompactionResult,
+} from "../schema";
 
 export type {
   AgentEventEnvelope,
@@ -27,6 +32,8 @@ export const ConversationChannels = {
   ClearConfig: "answra:conversation:clear-config",
   /** 清空会话消息（仅空闲会话生效；发布 snapshot change 通知所有订阅方）。 */
   ClearMessages: "answra:conversation:clear-messages",
+  /** 手动压缩上下文（仅空闲且队列为空的会话生效）。 */
+  Compact: "answra:conversation:compact",
   /** 列出可用于新建会话的 Bot（只含身份，不含 prompt/工具）。 */
   ListBots: "answra:conversation:list-bots",
   Event: "answra:conversation:event",
@@ -244,6 +251,10 @@ export interface ConversationChannelMap {
   [ConversationChannels.ClearMessages]: {
     request: { conversationId: string };
     response: ConversationSnapshot;
+  };
+  [ConversationChannels.Compact]: {
+    request: { conversationId: string; instructions?: string };
+    response: { result: ManualCompactionResult; snapshot: ConversationSnapshot };
   };
   [ConversationChannels.ListBots]: {
     request: undefined;

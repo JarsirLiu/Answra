@@ -142,6 +142,13 @@ export type AgentCommand =
       selection?: ConversationSelection;
     }
   | { id: string; type: "clear-conversation"; conversationId: string }
+  | {
+      id: string;
+      type: "compact-conversation";
+      conversationId: string;
+      accessToken: string;
+      instructions?: string;
+    }
   | { id: string; type: "append-user-message"; conversationId: string; text: string }
   | { id: string; type: "cancel"; runId: string }
   | { id: string; type: "wait-queue"; conversationId: string; queueId: string }

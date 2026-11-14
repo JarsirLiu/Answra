@@ -88,7 +88,11 @@ export function normalizeStreamPart(
     case "tool-result":
       return { type: "tool-result", toolCallId: part.toolCallId, output: part.output };
     case "tool-error":
-      return { type: "tool-error", toolCallId: part.toolCallId, errorText: errorText(part.error) };
+      return {
+        type: "tool-error",
+        toolCallId: part.toolCallId,
+        errorText: modelErrorText(part.error),
+      };
     case "tool-output-denied":
       return {
         type: "tool-output-denied",
@@ -113,7 +117,7 @@ export function normalizeStreamPart(
     case "finish-step":
       return stepFinished(context.stepIndex, part);
     case "error":
-      return { type: "error", errorText: errorText(part.error) };
+      return { type: "error", errorText: modelErrorText(part.error) };
     case "raw":
       return undefined;
     default:
@@ -199,7 +203,7 @@ function normalizeUsage(usage: FinishPart["totalUsage"] | FinishStepPart["usage"
   };
 }
 
-function errorText(error: unknown): string {
+export function modelErrorText(error: unknown): string {
   return error instanceof Error
     ? error.message
     : typeof error === "string"

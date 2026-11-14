@@ -21,6 +21,10 @@ describe("parseTuiCommand", () => {
     expect(parseTuiCommand("  /help ")).toMatchObject({ command: { kind: "help" }, args: [] });
     expect(parseTuiCommand("/clear")).toMatchObject({ command: { kind: "clear" }, args: [] });
     expect(parseTuiCommand("/compact")).toMatchObject({ command: { kind: "compact" }, args: [] });
+    expect(parseTuiCommand("/compact 保留迁移决定")).toMatchObject({
+      command: { kind: "compact" },
+      args: ["保留迁移决定"],
+    });
     expect(parseTuiCommand("/config")).toMatchObject({ command: { kind: "config" }, args: [] });
     expect(parseTuiCommand("/quit")).toMatchObject({ command: { kind: "exit" }, args: [] });
   });
@@ -69,7 +73,7 @@ describe("parseTuiCommand", () => {
   it("completes command names and leaves room for arguments", () => {
     expect(completeTuiCommand(requireCommand("help"))).toBe("/help");
     expect(completeTuiCommand(requireCommand("clear"))).toBe("/clear");
-    expect(completeTuiCommand(requireCommand("compact"))).toBe("/compact");
+    expect(completeTuiCommand(requireCommand("compact"))).toBe("/compact ");
     expect(completeTuiCommand(requireCommand("config"))).toBe("/config");
     expect(completeTuiCommand(requireCommand("model"))).toBe("/model ");
     expect(completeTuiCommand(requireCommand("quit"))).toBe("/exit");

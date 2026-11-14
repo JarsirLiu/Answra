@@ -75,6 +75,69 @@ describe("TUI compaction", () => {
     store.dispose();
   });
 
+  it("expands the summary and message count with Ctrl+O", async () => {
+    const store = new TuiViewStore();
+    store.initialize({
+      conversationId: "conversation-1",
+      eventRevision: 1,
+      messages: [
+        {
+          id: "message-1",
+          role: "user",
+          text: "question",
+          images: [],
+          status: "complete",
+        },
+      ],
+      contextCompactionBoundaries: [
+        {
+          id: "compaction:2026-11-14T10:00:01.000Z:message-1",
+          throughMessageId: "message-1",
+          createdAt: "2026-11-14T10:00:01.000Z",
+          summary: "## 当前目标\n继续实现压缩",
+          summarizedMessages: 8,
+          instructions: "重点保留数据库迁移决定",
+        },
+      ],
+    });
+    const stdout = new CursorProbeStdout();
+    const stdin = new CursorProbeStdin();
+    const instance = inkRender(
+      <App
+        botName="coding.engineer"
+        onCancel={vi.fn()}
+        onSubmit={vi.fn()}
+        store={store}
+        panelHandlers={PANEL_HANDLERS}
+        workspaceRoot="D:\\workspace"
+      />,
+      {
+        stdout: stdout as unknown as NodeJS.WriteStream,
+        stdin: stdin as unknown as NodeJS.ReadStream,
+        interactive: true,
+        alternateScreen: true,
+        exitOnCtrlC: false,
+        patchConsole: false,
+        incrementalRendering: true,
+        maxFps: 60,
+      },
+    );
+    await nextFrame();
+    await instance.waitUntilRenderFlush();
+
+    expect(stdout.chunks.join("")).not.toContain("Summarized 8 messages");
+    stdin.write("\u000f");
+    await nextFrame();
+    await instance.waitUntilRenderFlush();
+
+    const frame = stdout.chunks.join("");
+    expect(frame).toContain("Summarized 8 messages up to this point");
+    expect(frame).toContain("重点保留数据库迁移决定");
+    expect(frame).toContain("继续实现压缩");
+    instance.unmount();
+    store.dispose();
+  });
+
   it("keeps the Claude compaction failure visible while a run is active", async () => {
     const store = new TuiViewStore();
     store.initialize({

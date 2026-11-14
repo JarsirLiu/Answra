@@ -4,10 +4,12 @@ import type { ContextState } from "../../transcript/contextState";
 import type { ConversationStore } from "../../transcript/store";
 import { compactContext, type SummaryGeneratorInput } from "./compact";
 import {
+  markContextCompactionAborted,
   markContextCompactionFailed,
   markContextCompactionSucceeded,
   startContextCompaction,
 } from "./lifecycle";
+import type { CompactionSkipReason } from "./plan";
 import type { CompactionProfile } from "./profile";
 
 export interface ContextSummaryRequest extends SummaryGeneratorInput {
@@ -27,6 +29,12 @@ export interface ContextCompactorOptions {
 const COMPACTION_FAILURE_LIMIT = 3;
 const COMPACTION_RETRY_COOLDOWN_MS = 5 * 60_000;
 
+export type ContextCompactionOutcome =
+  | { status: "compacted"; summarizedMessages: number }
+  | { status: "skipped"; reason: CompactionSkipReason | "breaker-open" }
+  | { status: "failed"; errorText: string }
+  | { status: "aborted" };
+
 export interface ContextCompactionRequest {
   conversationId: string;
   getAccessToken: () => Promise<string>;
@@ -38,6 +46,8 @@ export interface ContextCompactionRequest {
   contextTokens?: number;
   /** 手动压缩跳过触发点判断，但仍保留最少消息数与保留尾段约束。 */
   force?: boolean;
+  /** 手动压缩的一次性摘要偏好；自动与超限兜底不传。 */
+  instructions?: string;
   /** 手动操作可越过失败熔断；自动与超限兜底不得越过。 */
   bypassFailureBreaker?: boolean;
 }
@@ -63,7 +73,7 @@ export class ContextCompactor {
     this.now = now;
   }
 
-  /** 执行摘要压缩；无需压缩或压缩失败时返回 false。 */
+  /** 执行摘要压缩；跳过、失败与取消都以显式结果返回。 */
   async prepare({
     conversationId,
     getAccessToken,
@@ -72,11 +82,14 @@ export class ContextCompactor {
     triggerTokens,
     contextTokens,
     force,
+    instructions,
     bypassFailureBreaker = false,
-  }: ContextCompactionRequest): Promise<boolean> {
+  }: ContextCompactionRequest): Promise<ContextCompactionOutcome> {
     const snapshot = await this.store.load(conversationId);
     let state = (await this.store.loadContextState(conversationId)) ?? { checkpoints: [] };
-    if (!bypassFailureBreaker && this.isFailureBreakerOpen(state)) return false;
+    if (!bypassFailureBreaker && this.isFailureBreakerOpen(state)) {
+      return { status: "skipped", reason: "breaker-open" };
+    }
     try {
       const result = await compactContext({
         messages: snapshot.messages,
@@ -85,6 +98,7 @@ export class ContextCompactor {
         triggerTokens,
         force: force === true,
         ...(contextTokens === undefined ? {} : { contextTokens }),
+        ...(instructions === undefined ? {} : { instructions }),
         signal,
         now: this.now,
         generate: async (input) =>
@@ -104,7 +118,7 @@ export class ContextCompactor {
           await this.persist(conversationId, state);
         },
       });
-      if (!result) return false;
+      if (result.status === "skipped") return result;
       const status = state.compaction;
       if (!status) throw new Error("上下文压缩状态未开启");
       const {
@@ -116,10 +130,16 @@ export class ContextCompactor {
         ...successState,
         compaction: markContextCompactionSucceeded(status, result.summarizedMessages, this.now),
       });
-      return true;
+      return { status: "compacted", summarizedMessages: result.summarizedMessages };
     } catch (error) {
-      await this.recordFailure(conversationId, state, error);
-      return false;
+      if (isAbortError(error)) {
+        await this.recordAborted(conversationId, state);
+        return { status: "aborted" };
+      }
+      await this.recordFailure(conversationId, state, error, {
+        countFailure: trigger !== "manual",
+      });
+      return { status: "failed", errorText: errorText(error) };
     }
   }
 
@@ -147,6 +167,7 @@ export class ContextCompactor {
     conversationId: string,
     state: ContextState,
     error: unknown,
+    { countFailure }: { countFailure: boolean },
   ): Promise<void> {
     const status = state.compaction;
     if (status?.state !== "started") {
@@ -161,13 +182,11 @@ export class ContextCompactor {
       compactionRetryAt: previousRetryAt,
       ...base
     } = state;
-    const aborted = isAbortError(error);
-    const failureCount = aborted ? previousFailureCount : (previousFailureCount ?? 0) + 1;
-    const retryAt = aborted
-      ? previousRetryAt
-      : failureCount !== undefined && failureCount >= COMPACTION_FAILURE_LIMIT
+    const failureCount = countFailure ? (previousFailureCount ?? 0) + 1 : previousFailureCount;
+    const retryAt =
+      countFailure && failureCount !== undefined && failureCount >= COMPACTION_FAILURE_LIMIT
         ? new Date(this.now().getTime() + COMPACTION_RETRY_COOLDOWN_MS).toISOString()
-        : undefined;
+        : previousRetryAt;
     const failed = {
       ...base,
       ...(failureCount === undefined ? {} : { compactionFailureCount: failureCount }),
@@ -178,6 +197,22 @@ export class ContextCompactor {
       await this.persist(conversationId, failed);
     } catch (persistError) {
       console.error("[context-compaction] failed to persist failure state", {
+        conversationId,
+        error: errorText(persistError),
+      });
+    }
+  }
+
+  private async recordAborted(conversationId: string, state: ContextState): Promise<void> {
+    const status = state.compaction;
+    if (status?.state !== "started") return;
+    try {
+      await this.persist(conversationId, {
+        ...state,
+        compaction: markContextCompactionAborted(status, this.now),
+      });
+    } catch (persistError) {
+      console.error("[context-compaction] failed to persist aborted state", {
         conversationId,
         error: errorText(persistError),
       });

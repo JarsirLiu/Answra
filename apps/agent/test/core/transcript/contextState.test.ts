@@ -42,12 +42,19 @@ describe("context checkpoints", () => {
 });
 
 describe("context boundaries", () => {
-  it("projects only the boundary identity without the summary body", () => {
-    expect(compactionBoundaries({ checkpoints: [checkpoint("m2", "不可下发")] })).toEqual([
+  it("projects the summary and message count for transcript display", () => {
+    expect(
+      compactionBoundaries({
+        checkpoints: [{ ...checkpoint("m2", "可展示摘要"), instructions: "保留迁移决定" }],
+      }),
+    ).toEqual([
       {
         id: "compaction:2026-11-14T10:00:00.000Z:m2",
         throughMessageId: "m2",
         createdAt: "2026-11-14T10:00:00.000Z",
+        summary: "可展示摘要",
+        summarizedMessages: 2,
+        instructions: "保留迁移决定",
       },
     ]);
   });

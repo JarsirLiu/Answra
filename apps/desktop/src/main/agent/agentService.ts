@@ -9,6 +9,7 @@ import type {
   ConversationSendResponse,
   ConversationSnapshot,
   InterviewPcmFrame,
+  ManualCompactionResult,
 } from "@answra/shared";
 import type { AgentEventEnvelope } from "@answra/shared/schema";
 import type { ResolvedModel } from "../conversation/modelRouter";
@@ -200,6 +201,22 @@ export class AgentService {
     return (await this.workerHost.request("clear-conversation", {
       conversationId,
     })) as ConversationSnapshot;
+  }
+
+  async compactConversation(
+    conversationId: string,
+    instructions?: string,
+  ): Promise<{ result: ManualCompactionResult; snapshot: ConversationSnapshot }> {
+    await this.start();
+    this.trackConversation(conversationId);
+    await this.workerHost.request("workspace-context", { root: this.deps.getWorkspaceRoot() });
+    const { config, accessToken } = await this.deps.resolveModel();
+    await this.ensureConfigured(config);
+    return (await this.workerHost.request("compact-conversation", {
+      conversationId,
+      accessToken,
+      ...(instructions === undefined ? {} : { instructions }),
+    })) as { result: ManualCompactionResult; snapshot: ConversationSnapshot };
   }
 
   async readEvents(conversationId: string, afterRevision: number) {

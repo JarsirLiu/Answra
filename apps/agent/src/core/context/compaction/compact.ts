@@ -3,7 +3,7 @@ import type { ConversationMessage } from "@answra/shared";
 import { isContextOverflowError } from "../../model/contextOverflow";
 import { type ContextCheckpoint, latestCheckpoint } from "../../transcript/contextCheckpoint";
 import type { ContextState } from "../../transcript/contextState";
-import { planCompaction } from "./plan";
+import { type CompactionSkipReason, decideCompaction } from "./plan";
 import type { CompactionProfile } from "./profile";
 import { buildSummaryPrompt } from "./prompt";
 import { dropOldestSummaryTurn, renderMessagesForSummary } from "./transcript";
@@ -17,10 +17,13 @@ export interface SummaryGeneratorInput {
 
 export type SummaryGenerator = (input: SummaryGeneratorInput) => Promise<string>;
 
-export interface CompactionResult {
-  state: ContextState;
-  summarizedMessages: number;
-}
+export type CompactionAttempt =
+  | {
+      status: "compacted";
+      state: ContextState;
+      summarizedMessages: number;
+    }
+  | { status: "skipped"; reason: CompactionSkipReason };
 
 export async function compactContext({
   messages,
@@ -29,6 +32,7 @@ export async function compactContext({
   triggerTokens,
   contextTokens,
   force = false,
+  instructions,
   generate,
   signal,
   now = () => new Date(),
@@ -41,13 +45,15 @@ export async function compactContext({
   contextTokens?: number;
   /** 手动压缩跳过触发点判断。 */
   force?: boolean;
+  /** 手动压缩的一次性摘要偏好；自动与超限恢复不传。 */
+  instructions?: string;
   generate: SummaryGenerator;
   signal?: AbortSignal;
   now?: () => Date;
   onStarted?: () => Promise<void>;
-}): Promise<CompactionResult | undefined> {
+}): Promise<CompactionAttempt> {
   const previous = latestCheckpoint(state);
-  const plan = planCompaction({
+  const decision = decideCompaction({
     messages,
     checkpoint: previous,
     profile,
@@ -55,7 +61,8 @@ export async function compactContext({
     force,
     ...(contextTokens === undefined ? {} : { contextTokens }),
   });
-  if (!plan) return undefined;
+  if (decision.status === "skip") return { status: "skipped", reason: decision.reason };
+  const plan = decision.plan;
   await onStarted?.();
   let messagesToSummarize = [...plan.messagesToSummarize];
   let omittedMessages = 0;
@@ -66,6 +73,7 @@ export async function compactContext({
       ...(previous ? { previousSummary: previous.summary } : {}),
       transcript: renderMessagesForSummary(messagesToSummarize),
       omittedMessages,
+      ...(instructions ? { instructions } : {}),
     });
     try {
       summary = (await generate({ prompt, ...(signal ? { signal } : {}) })).trim();
@@ -85,11 +93,13 @@ export async function compactContext({
     summary,
     previous,
     summarized: plan.messagesToSummarize,
+    ...(instructions ? { instructions } : {}),
     now,
   });
   // 摘要改变模型投影，旧 usage 锚点不再对应当前上下文。
   const { usageAnchor: _usageAnchor, ...base } = state ?? { checkpoints: [] };
   return {
+    status: "compacted",
     state: {
       ...base,
       checkpoints: [...base.checkpoints, checkpoint],
@@ -102,11 +112,13 @@ function createCheckpoint({
   summary,
   previous,
   summarized,
+  instructions,
   now,
 }: {
   summary: string;
   previous: ContextCheckpoint | undefined;
   summarized: readonly ConversationMessage[];
+  instructions?: string;
   now: () => Date;
 }): ContextCheckpoint {
   const last = summarized.at(-1);
@@ -116,5 +128,6 @@ function createCheckpoint({
     throughMessageId: last.id,
     createdAt: now().toISOString(),
     messageCount: (previous?.messageCount ?? 0) + summarized.length,
+    ...(instructions ? { instructions } : {}),
   };
 }

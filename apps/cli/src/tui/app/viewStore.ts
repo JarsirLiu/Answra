@@ -234,6 +234,9 @@ function boundariesFromSnapshot(
     return snapshot.contextCompactionBoundaries.map((boundary) => ({
       id: boundary.id,
       afterMessageId: boundary.throughMessageId,
+      summary: boundary.summary,
+      summarizedMessages: boundary.summarizedMessages,
+      ...(boundary.instructions === undefined ? {} : { instructions: boundary.instructions }),
     }));
   }
   // 兼容尚未携带边界列表的旧 snapshot：只在成功状态出现时补一条。

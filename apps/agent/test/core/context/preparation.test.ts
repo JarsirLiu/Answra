@@ -1,11 +1,14 @@
-import type { ConversationMessage } from "@answra/shared";
+import { type ConversationMessage, MANUAL_COMPACTION_INSTRUCTIONS_MAX_CHARS } from "@answra/shared";
 import type { ModelMessage } from "ai";
 import { describe, expect, it, vi } from "vitest";
 import {
   type ContextBudgetPolicy,
   ContextLimitExceededError,
 } from "../../../src/core/context/budget";
-import { ContextCompactor } from "../../../src/core/context/compaction/compactor";
+import {
+  ContextCompactor,
+  type ContextSummaryGenerator,
+} from "../../../src/core/context/compaction/compactor";
 import type { CompactionProfile } from "../../../src/core/context/compaction/profile";
 import { ContextPreparation } from "../../../src/core/context/preparation";
 import type { ToolResultPruningPolicy } from "../../../src/core/context/pruning/policy";
@@ -88,16 +91,18 @@ function preparation(
   store: MemoryConversationStore,
   options: {
     profile?: CompactionProfile;
-    generate?: () => Promise<string>;
+    generate?: ContextSummaryGenerator;
     budget?: ContextBudgetPolicy;
     contextWindow?: () => number | undefined;
     toolResultPruning?: ToolResultPruningPolicy;
+    now?: () => Date;
   } = {},
 ): ContextPreparation {
   const compactor = new ContextCompactor({
     store,
     profile: options.profile ?? PROFILE,
     generate: options.generate ?? (async () => "压缩后的摘要"),
+    ...(options.now ? { now: options.now } : {}),
   });
   const budget = options.budget ?? (options.contextWindow === undefined ? SMALL_BUDGET : undefined);
   return new ContextPreparation({
@@ -476,5 +481,212 @@ describe("ContextPreparation", () => {
     });
 
     expect((await store.loadContextState("conversation-1"))?.pruning).toBeUndefined();
+  });
+
+  it("compacts on demand below the automatic threshold and reports refreshed usage", async () => {
+    const store = await preparedStore();
+    const generate = vi.fn(async () => "手动压缩摘要");
+    const rebuilt = { system: "small", messages: [] };
+    const rebuild = vi.fn(async () => rebuilt);
+
+    const result = await preparation(store, { generate }).compactNow({
+      conversationId: "conversation-1",
+      getAccessToken: async () => "token",
+      modelRequest: { system: "small", messages: [] },
+      rebuild,
+    });
+
+    expect(result).toEqual({
+      status: "compacted",
+      usage: expect.objectContaining({
+        usedTokens: estimateContextRequestTokens(rebuilt),
+      }),
+    });
+    expect(generate).toHaveBeenCalledOnce();
+    expect(rebuild).toHaveBeenCalledOnce();
+    expect((await store.load("conversation-1")).messages).toHaveLength(2);
+    expect((await store.loadContextState("conversation-1"))?.compaction).toMatchObject({
+      state: "succeeded",
+      trigger: "manual",
+    });
+  });
+
+  it("passes one-shot manual instructions into the summary prompt", async () => {
+    const store = await preparedStore();
+    const generate = vi.fn<ContextSummaryGenerator>(async () => "偏重迁移决定的摘要");
+
+    const result = await preparation(store, { generate }).compactNow({
+      conversationId: "conversation-1",
+      getAccessToken: async () => "token",
+      modelRequest: { system: "small", messages: [] },
+      rebuild: async () => ({ system: "small", messages: [] }),
+      compactionInstructions: "  重点保留数据库迁移决定  ",
+    });
+
+    expect(result.status).toBe("compacted");
+    const prompt = generate.mock.calls[0]?.[0]?.prompt ?? "";
+    expect(prompt).toContain("重点保留数据库迁移决定");
+    expect(prompt).not.toContain("  重点保留数据库迁移决定  ");
+    expect((await store.loadContextState("conversation-1"))?.checkpoints.at(-1)?.instructions).toBe(
+      "重点保留数据库迁移决定",
+    );
+  });
+
+  it("fails closed before calling the model when manual instructions are too long", async () => {
+    const store = await preparedStore();
+    const generate = vi.fn(async () => "不应调用");
+
+    await expect(
+      preparation(store, { generate }).compactNow({
+        conversationId: "conversation-1",
+        getAccessToken: async () => "token",
+        modelRequest: { system: "small", messages: [] },
+        rebuild: async () => ({ system: "small", messages: [] }),
+        compactionInstructions: "x".repeat(MANUAL_COMPACTION_INSTRUCTIONS_MAX_CHARS + 1),
+      }),
+    ).rejects.toThrow(`压缩指令不能超过 ${MANUAL_COMPACTION_INSTRUCTIONS_MAX_CHARS} 个字符`);
+    expect(generate).not.toHaveBeenCalled();
+    expect((await store.loadContextState("conversation-1"))?.compaction).toBeUndefined();
+  });
+
+  it("returns the rebuilt request only when provider recovery actually compacts", async () => {
+    const store = await preparedStore();
+    const rebuilt = { system: "small", messages: [] };
+
+    const result = await preparation(store).recoverRequest({
+      conversationId: "conversation-1",
+      getAccessToken: async () => "token",
+      modelRequest: { system: "small", messages: [] },
+      rebuild: async () => rebuilt,
+    });
+
+    expect(result).toEqual(rebuilt);
+    expect((await store.loadContextState("conversation-1"))?.compaction).toMatchObject({
+      state: "succeeded",
+      trigger: "auto",
+    });
+  });
+
+  it("declines provider recovery when the automatic failure breaker is open", async () => {
+    const store = await preparedStore();
+    const retryAt = "2026-11-14T10:05:00.000Z";
+    await store.saveContextState("conversation-1", {
+      checkpoints: [],
+      compactionFailureCount: 3,
+      compactionRetryAt: retryAt,
+    });
+    const generate = vi.fn(async () => "不应调用");
+
+    const result = await preparation(store, {
+      generate,
+      now: () => new Date("2026-11-14T10:00:00.000Z"),
+    }).recoverRequest({
+      conversationId: "conversation-1",
+      getAccessToken: async () => "token",
+      modelRequest: { system: "small", messages: [] },
+      rebuild: async () => ({ system: "small", messages: [] }),
+    });
+
+    expect(result).toBeUndefined();
+    expect(generate).not.toHaveBeenCalled();
+  });
+
+  it("declines provider recovery and counts the failure when compaction fails", async () => {
+    const store = await preparedStore();
+    const generate = vi.fn(async () => {
+      throw new Error("摘要失败");
+    });
+
+    const result = await preparation(store, { generate }).recoverRequest({
+      conversationId: "conversation-1",
+      getAccessToken: async () => "token",
+      modelRequest: { system: "small", messages: [] },
+      rebuild: async () => ({ system: "small", messages: [] }),
+    });
+
+    expect(result).toBeUndefined();
+    expect(await store.loadContextState("conversation-1")).toMatchObject({
+      compactionFailureCount: 1,
+      compaction: { state: "failed", trigger: "auto" },
+    });
+  });
+
+  it("skips manual compaction when there are not enough messages to summarize", async () => {
+    const store = new MemoryConversationStore();
+    await store.create("conversation-1");
+    await store.appendUserMessage("conversation-1", message("m1", "只有一条"));
+    const generate = vi.fn(async () => "不应调用");
+
+    await expect(
+      preparation(store, { generate }).compactNow({
+        conversationId: "conversation-1",
+        getAccessToken: async () => "token",
+        modelRequest: { system: "small", messages: [] },
+        rebuild: async () => {
+          throw new Error("不应重建");
+        },
+      }),
+    ).resolves.toEqual({ status: "skipped", reason: "insufficient-messages" });
+
+    expect(generate).not.toHaveBeenCalled();
+    expect((await store.loadContextState("conversation-1"))?.compaction).toBeUndefined();
+  });
+
+  it("bypasses the automatic failure breaker without counting a manual failure", async () => {
+    const store = await preparedStore();
+    const retryAt = "2026-11-14T10:05:00.000Z";
+    await store.saveContextState("conversation-1", {
+      checkpoints: [],
+      compactionFailureCount: 3,
+      compactionRetryAt: retryAt,
+    });
+    const generate = vi.fn(async () => {
+      throw new Error("摘要失败");
+    });
+
+    await expect(
+      preparation(store, {
+        generate,
+        now: () => new Date("2026-11-14T10:00:00.000Z"),
+      }).compactNow({
+        conversationId: "conversation-1",
+        getAccessToken: async () => "token",
+        modelRequest: { system: "small", messages: [] },
+        rebuild: async () => ({ system: "small", messages: [] }),
+      }),
+    ).resolves.toEqual({ status: "failed", errorText: "摘要失败", usage: expect.any(Object) });
+
+    expect(generate).toHaveBeenCalledOnce();
+    expect(await store.loadContextState("conversation-1")).toMatchObject({
+      compactionFailureCount: 3,
+      compactionRetryAt: retryAt,
+      compaction: { state: "failed", trigger: "manual" },
+    });
+  });
+
+  it("reports an aborted manual compaction without counting a failure", async () => {
+    const store = await preparedStore();
+    const controller = new AbortController();
+    const generate = vi.fn(async () => {
+      controller.abort();
+      throw new DOMException("aborted", "AbortError");
+    });
+
+    await expect(
+      preparation(store, { generate }).compactNow({
+        conversationId: "conversation-1",
+        getAccessToken: async () => "token",
+        modelRequest: { system: "small", messages: [] },
+        rebuild: async () => ({ system: "small", messages: [] }),
+        signal: controller.signal,
+      }),
+    ).resolves.toEqual({ status: "aborted" });
+
+    expect(await store.loadContextState("conversation-1")).toMatchObject({
+      compaction: { state: "aborted", trigger: "manual" },
+    });
+    expect(
+      (await store.loadContextState("conversation-1"))?.compactionFailureCount,
+    ).toBeUndefined();
   });
 });

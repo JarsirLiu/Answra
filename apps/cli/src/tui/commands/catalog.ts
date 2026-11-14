@@ -41,8 +41,9 @@ export const TUI_COMMANDS: readonly TuiCommandSpec[] = [
   {
     kind: "compact",
     name: "compact",
-    summary: "压缩当前会话上下文",
-    helpUsage: "/compact",
+    summary: "压缩当前会话上下文，可附加摘要指令",
+    argumentHint: "[instructions]",
+    helpUsage: "/compact [instructions]",
   },
   {
     kind: "config",

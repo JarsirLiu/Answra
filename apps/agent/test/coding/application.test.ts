@@ -2,6 +2,13 @@ import { createServer, type Server } from "node:http";
 import { CODING_AGENT_ID, type CodingHost, startCodingHost } from "@answra/agent/composition";
 import type { AgentEventEnvelope } from "@answra/shared/schema";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { CodingAgentInput } from "../../src/coding/agent";
+import { CodingApplication } from "../../src/coding/application";
+import type { CodingBot } from "../../src/coding/bot";
+import { CODING_POLICY } from "../../src/coding/policy";
+import type { AgentExecutor, AgentRunRequest } from "../../src/core/agent/definition";
+import type { AgentRuntime } from "../../src/core/agent/runtime";
+import { MemoryConversationStore } from "../../src/core/transcript/memoryStore";
 
 type RecordedRequest = {
   messages: Array<{ role: string; content: unknown }>;
@@ -148,5 +155,51 @@ describe("CLI coding host", () => {
 
     const final = await host.runtime.getSnapshot("coding-cancel");
     expect(final.messages.at(-1)?.status).toBe("interrupted");
+  });
+});
+
+describe("CodingApplication context recovery wiring", () => {
+  it("wires provider overflow recovery into the coding run", async () => {
+    const store = new MemoryConversationStore();
+    const requests: Array<AgentRunRequest<CodingAgentInput, unknown>> = [];
+    const executor: AgentExecutor<CodingAgentInput> = {
+      async startRun<Prepared>(request: AgentRunRequest<CodingAgentInput, Prepared>) {
+        requests.push(request);
+        const prepared = await request.prepareRun({ runId: "coding-run", eventRevision: 0 });
+        return {
+          runId: "coding-run",
+          eventRevision: 0,
+          prepared: prepared.prepared,
+          result: Promise.resolve(undefined),
+          done: Promise.resolve("completed" as const),
+        };
+      },
+      prepare: async () => ({ system: "", messages: [] }),
+    };
+    const bot: CodingBot = {
+      id: CODING_AGENT_ID,
+      identity: {
+        name: "Coding assistant",
+        role: "coding",
+        responsibility: "Verify recovery wiring.",
+        owns: ["coding"],
+      },
+      discovery: { visibleTo: { kind: "bots", agentIds: [CODING_AGENT_ID] } },
+      domain: "coding",
+      executor,
+      policy: CODING_POLICY,
+    };
+    const agentRuntime = {
+      waitForRun: async () => undefined,
+      cancel: () => undefined,
+      chatContextWindow: () => undefined,
+    } as unknown as AgentRuntime;
+    const app = new CodingApplication({ agentRuntime, store, bot });
+
+    await app.createConversation("coding-wiring");
+    await app.send("coding-wiring", { text: "hello", images: [] }, "token");
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.recoverContext).toBeTypeOf("function");
   });
 });

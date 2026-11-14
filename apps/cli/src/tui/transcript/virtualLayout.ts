@@ -3,6 +3,7 @@ import type { ConversationMessagePart } from "@answra/shared";
 import type { ConversationViewMessage } from "@answra/ui/conversation-view";
 import { isToolRunning, presentToolCall } from "@answra/ui/tool-presentation";
 import stringWidth from "string-width";
+import type { TuiCompactionBoundary } from "./compactionBoundary";
 import { groupMessageParts, type ToolGroup } from "./tool/groups/groupToolCalls";
 import {
   TOOL_EXPANDED_DIFF_LINES,
@@ -15,6 +16,7 @@ import {
 const MIN_MESSAGE_HEIGHT = 1;
 const TOOL_HEADER_LINES = 1;
 const TOOL_RESULT_LINES = 1;
+const COMPACTION_BOUNDARY_BASE_LINES = 3;
 
 export function estimateMessageHeight(
   message: ConversationViewMessage,
@@ -51,6 +53,21 @@ export function estimateMessageHeight(
     );
   }
   return Math.max(MIN_MESSAGE_HEIGHT, height);
+}
+
+export function estimateCompactionBoundaryHeight(
+  boundary: TuiCompactionBoundary,
+  columns: number,
+  expanded: boolean,
+): number {
+  if (!expanded || boundary.summary === undefined) return COMPACTION_BOUNDARY_BASE_LINES;
+  const width = Math.max(8, columns - 2);
+  let height = COMPACTION_BOUNDARY_BASE_LINES + 1;
+  if (boundary.summarizedMessages !== undefined) height += 1;
+  if (boundary.instructions !== undefined) {
+    height += countTextLines(`Context: “${boundary.instructions}”`, width);
+  }
+  return height + countTextLines(boundary.summary, width) + 1;
 }
 
 export function countTextLines(text: string, columns: number): number {

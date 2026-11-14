@@ -26,6 +26,9 @@ function bot(id: string, discovery: BotDiscovery): BotDescriptor<unknown, unknow
       startRun: async () => {
         throw new Error("not used");
       },
+      prepare: async () => {
+        throw new Error("not used");
+      },
     },
     policy: {},
   };

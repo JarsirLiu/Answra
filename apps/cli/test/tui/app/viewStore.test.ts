@@ -156,6 +156,9 @@ describe("TuiViewStore", () => {
           id: "compaction:2026-11-14T10:00:01.000Z:message-1",
           throughMessageId: "message-1",
           createdAt: "2026-11-14T10:00:01.000Z",
+          summary: "压缩后的摘要",
+          summarizedMessages: 8,
+          instructions: "保留迁移决定",
         },
       ],
     });
@@ -164,6 +167,9 @@ describe("TuiViewStore", () => {
       {
         id: "compaction:2026-11-14T10:00:01.000Z:message-1",
         afterMessageId: "message-1",
+        summary: "压缩后的摘要",
+        summarizedMessages: 8,
+        instructions: "保留迁移决定",
       },
     ]);
     store.dispose();

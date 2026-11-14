@@ -87,6 +87,9 @@ function executor({
         done: Promise.resolve("completed" as const),
       };
     },
+    prepare: async () => {
+      throw new Error("not used");
+    },
   };
 }
 

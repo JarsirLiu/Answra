@@ -42,8 +42,10 @@ describe("context compaction", () => {
     expect(prompt).toContain(CONTEXT_SUMMARY_PROMPT);
     expect(prompt).toContain("旧需求");
     expect(prompt).not.toContain("保留需求");
-    expect(result?.summarizedMessages).toBe(1);
-    expect(result?.state).toEqual({
+    expect(result.status).toBe("compacted");
+    if (result.status !== "compacted") throw new Error("expected compaction");
+    expect(result.summarizedMessages).toBe(1);
+    expect(result.state).toEqual({
       checkpoints: [
         {
           summary: "## 当前目标\n继续实现压缩",
@@ -53,6 +55,29 @@ describe("context compaction", () => {
         },
       ],
     });
+  });
+
+  it("appends one-shot manual instructions without replacing the base prompt", async () => {
+    const generate = vi.fn<(input: SummaryGeneratorInput) => Promise<string>>(
+      async () => "偏重迁移决定的摘要",
+    );
+
+    const result = await compactContext({
+      messages: [message("m1", "旧需求"), message("m2", "保留需求")],
+      state: undefined,
+      profile: PROFILE,
+      triggerTokens: TRIGGER_TOKENS,
+      instructions: "重点保留数据库迁移决定",
+      generate,
+    });
+
+    const prompt = generate.mock.calls[0]?.[0]?.prompt ?? "";
+    expect(prompt).toContain(CONTEXT_SUMMARY_PROMPT);
+    expect(prompt).toContain("## 用户附加摘要指令");
+    expect(prompt).toContain("重点保留数据库迁移决定");
+    expect(prompt.indexOf("## 待压缩会话")).toBeLessThan(prompt.indexOf("## 用户附加摘要指令"));
+    if (result.status !== "compacted") throw new Error("expected compaction");
+    expect(result.state.checkpoints.at(-1)?.instructions).toBe("重点保留数据库迁移决定");
   });
 
   it("merges the previous summary into the next checkpoint", async () => {
@@ -86,12 +111,13 @@ describe("context compaction", () => {
     expect(prompt).toContain("旧摘要正文");
     expect(prompt).toContain("新消息");
     expect(prompt).not.toContain("已压缩一");
-    expect(result?.state.checkpoints).toHaveLength(2);
-    expect(result?.state.checkpoints.at(-1)?.throughMessageId).toBe("m3");
-    expect(result?.state.checkpoints.at(-1)?.messageCount).toBe(3);
+    if (result.status !== "compacted") throw new Error("expected compaction");
+    expect(result.state.checkpoints).toHaveLength(2);
+    expect(result.state.checkpoints.at(-1)?.throughMessageId).toBe("m3");
+    expect(result.state.checkpoints.at(-1)?.messageCount).toBe(3);
   });
 
-  it("returns undefined without calling the model when no compaction is needed", async () => {
+  it("returns a skip reason without calling the model when no compaction is needed", async () => {
     const generate = vi.fn<(input: SummaryGeneratorInput) => Promise<string>>(
       async () => "不应调用",
     );
@@ -104,7 +130,7 @@ describe("context compaction", () => {
       generate,
     });
 
-    expect(result).toBeUndefined();
+    expect(result).toEqual({ status: "skipped", reason: "below-threshold" });
     expect(generate).not.toHaveBeenCalled();
   });
 
@@ -132,7 +158,8 @@ describe("context compaction", () => {
     const retryPrompt = generate.mock.calls[1]?.[0]?.prompt ?? "";
     expect(retryPrompt).toContain("已省略最早的 2 条消息");
     expect(retryPrompt).not.toContain("第一轮");
-    expect(result?.state.checkpoints.at(-1)?.summary).toBe("截断后的摘要");
+    if (result.status !== "compacted") throw new Error("expected compaction");
+    expect(result.state.checkpoints.at(-1)?.summary).toBe("截断后的摘要");
   });
 
   it("stops retrying after the bounded overflow attempts", async () => {

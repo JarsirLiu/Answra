@@ -12,14 +12,16 @@ export interface CompactionPlan {
   retainedMessages: readonly ConversationMessage[];
 }
 
-export function planCompaction({
-  messages,
-  checkpoint,
-  profile,
-  triggerTokens,
-  contextTokens,
-  force = false,
-}: {
+export type CompactionSkipReason =
+  | "below-threshold"
+  | "insufficient-messages"
+  | "checkpoint-invalid";
+
+export type CompactionPlanDecision =
+  | { status: "plan"; plan: CompactionPlan }
+  | { status: "skip"; reason: CompactionSkipReason };
+
+interface CompactionPlanInput {
   messages: readonly ConversationMessage[];
   checkpoint: ContextCheckpoint | undefined;
   profile: CompactionProfile;
@@ -28,17 +30,32 @@ export function planCompaction({
   contextTokens?: number;
   /** 手动压缩跳过触发点判断，但仍要求满足最少可摘要消息数。 */
   force?: boolean;
-}): CompactionPlan | undefined {
-  const pending = messagesAfterCheckpoint(messages, checkpoint);
-  if (!pending) return undefined;
+}
+
+/** 决定是否压缩以及跳过原因；调用方不得再自行复制这套判定。 */
+export function decideCompaction(input: CompactionPlanInput): CompactionPlanDecision {
+  const pending = messagesAfterCheckpoint(input.messages, input.checkpoint);
+  if (!pending) return { status: "skip", reason: "checkpoint-invalid" };
   const estimatedTokens =
-    contextTokens ??
-    estimateTextTokens(checkpoint?.summary ?? "") + estimateMessagesTokens(pending);
-  if (!force && estimatedTokens < triggerTokens) return undefined;
-  const summarizeCount = pending.length - profile.retainRecentMessages;
-  if (summarizeCount < profile.minimumMessagesToSummarize) return undefined;
+    input.contextTokens ??
+    estimateTextTokens(input.checkpoint?.summary ?? "") + estimateMessagesTokens(pending);
+  if (!input.force && estimatedTokens < input.triggerTokens) {
+    return { status: "skip", reason: "below-threshold" };
+  }
+  const summarizeCount = pending.length - input.profile.retainRecentMessages;
+  if (summarizeCount < input.profile.minimumMessagesToSummarize) {
+    return { status: "skip", reason: "insufficient-messages" };
+  }
   return {
-    messagesToSummarize: pending.slice(0, summarizeCount),
-    retainedMessages: pending.slice(summarizeCount),
+    status: "plan",
+    plan: {
+      messagesToSummarize: pending.slice(0, summarizeCount),
+      retainedMessages: pending.slice(summarizeCount),
+    },
   };
+}
+
+export function planCompaction(input: CompactionPlanInput): CompactionPlan | undefined {
+  const decision = decideCompaction(input);
+  return decision.status === "plan" ? decision.plan : undefined;
 }

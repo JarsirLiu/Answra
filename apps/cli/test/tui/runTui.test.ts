@@ -110,7 +110,7 @@ function createSession() {
     ),
     cancel: vi.fn(),
     clear: vi.fn(async () => snapshot),
-    compact: vi.fn(async () => ({ compacted: true, snapshot })),
+    compact: vi.fn(async () => ({ result: { status: "compacted" as const }, snapshot })),
     setModel: vi.fn(),
     setAccessToken: vi.fn(),
     close: vi.fn(),
@@ -259,8 +259,31 @@ describe("runInkTui", () => {
     await tick();
 
     expect(session.compact).toHaveBeenCalledTimes(1);
+    expect(session.compact).toHaveBeenCalledWith(
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
     expect(session.send).not.toHaveBeenCalled();
     expect(store.getSnapshot()).toMatchObject({ compactionActive: false, phase: "idle" });
+
+    finish();
+    store.dispose();
+  });
+
+  it("passes /compact arguments as one-shot summary instructions", async () => {
+    const { session } = createSession();
+    const store = new TuiViewStore();
+    const { props, finish } = await start(session, store);
+
+    props.onSubmit("/compact 重点保留数据库迁移决定");
+    await tick();
+    await tick();
+
+    expect(session.compact).toHaveBeenCalledWith(
+      expect.objectContaining({
+        instructions: "重点保留数据库迁移决定",
+      }),
+    );
+    expect(session.send).not.toHaveBeenCalled();
 
     finish();
     store.dispose();

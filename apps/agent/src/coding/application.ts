@@ -5,6 +5,7 @@ import type {
   ConversationSendRequest,
   ConversationSendResult,
   ConversationSnapshot,
+  ManualCompactionResult,
 } from "@answra/shared";
 import type { AgentEventEnvelope } from "@answra/shared/schema";
 import {
@@ -20,7 +21,10 @@ import { validateModelRequest } from "../core/model/requestContent";
 import type { ReadFileStateMap } from "../core/tool";
 import { createUserMessage } from "../core/transcript/message";
 import type { ConversationSessionSeed, ConversationStore } from "../core/transcript/store";
+import type { CodingAgentInput } from "./agent";
 import type { CodingBot } from "./bot";
+
+const MANUAL_COMPACTION_AGENT_RUN = "manual-compaction";
 
 export interface CodingApplicationOptions {
   agentRuntime: AgentRuntime;
@@ -87,18 +91,24 @@ export class CodingApplication {
   async compactConversation(
     conversationId: string,
     accessToken: string,
-    signal?: AbortSignal,
-  ): Promise<{ compacted: boolean; snapshot: ConversationSnapshot }> {
+    { signal, instructions }: { signal?: AbortSignal; instructions?: string } = {},
+  ): Promise<{ result: ManualCompactionResult; snapshot: ConversationSnapshot }> {
     if (this.agentRuntime.activeRunCount > 0) throw new Error("上一轮尚未结束");
-    const compacted = await this.contextCompactor.prepare({
+    if (this.hasQueuedMessages(conversationId)) throw new Error("仍有排队消息");
+    const controller = new AbortController();
+    const abortSignal = signal ?? controller.signal;
+    const input = this.manualCompactionInput(conversationId);
+    const modelRequest = await this.bot.executor.prepare(input, abortSignal);
+    const result = await this.contextPreparation.compactNow({
       conversationId,
       getAccessToken: async () => accessToken,
-      trigger: "manual",
-      triggerTokens: 0,
-      force: true,
-      ...(signal === undefined ? {} : { signal }),
+      modelRequest,
+      rebuild: () => this.bot.executor.prepare(input, abortSignal),
+      signal: abortSignal,
+      ...(instructions === undefined ? {} : { compactionInstructions: instructions }),
+      onStatus: async () => this.pushSnapshotValue(await this.store.load(conversationId)),
     });
-    return { compacted, snapshot: await this.store.load(conversationId) };
+    return { result, snapshot: await this.store.load(conversationId) };
   }
 
   getSnapshot(conversationId: string): Promise<ConversationSnapshot> {
@@ -197,6 +207,22 @@ export class CodingApplication {
     return this.agentRuntime.activeRunCount;
   }
 
+  private manualCompactionInput(conversationId: string): CodingAgentInput {
+    return {
+      conversationId,
+      runId: MANUAL_COMPACTION_AGENT_RUN,
+      request: { text: "", images: [] },
+      policy: this.bot.policy,
+      workspaceRoot: this.workspaceRoot,
+      readFileState: this.getReadFileState(conversationId),
+    };
+  }
+
+  private hasQueuedMessages(conversationId: string): boolean {
+    const queue = this.queues.get(conversationId);
+    return queue?.activeQueueId !== undefined || (queue?.queuedCount ?? 0) > 0;
+  }
+
   private startRun({
     conversationId,
     request,
@@ -211,6 +237,15 @@ export class CodingApplication {
       getAccessToken,
       prepareContext: (modelRequest, rebuild, signal) =>
         this.contextPreparation.prepareRequest({
+          conversationId,
+          getAccessToken,
+          modelRequest,
+          rebuild,
+          signal,
+          onStatus: async () => this.pushSnapshotValue(await this.store.load(conversationId)),
+        }),
+      recoverContext: (modelRequest, rebuild, _error, signal) =>
+        this.contextPreparation.recoverRequest({
           conversationId,
           getAccessToken,
           modelRequest,

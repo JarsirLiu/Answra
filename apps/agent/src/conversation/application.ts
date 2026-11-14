@@ -6,6 +6,7 @@ import type {
   ConversationSendRequest,
   ConversationSendResult,
   ConversationSnapshot,
+  ManualCompactionResult,
 } from "@answra/shared";
 import type { AgentEventEnvelope, AgentRunSnapshot } from "@answra/shared/schema";
 import type { AgentId, AgentRunHandle } from "../core/agent/definition";
@@ -26,7 +27,7 @@ import {
 import type { ReadFileStateMap } from "../core/tool";
 import { createUserMessage } from "../core/transcript/message";
 import type { ConversationSessionSeed, ConversationStore } from "../core/transcript/store";
-import { CONVERSATION_AGENT_ID, CONVERSATION_TEAM_ID } from "./agent";
+import { CONVERSATION_AGENT_ID, CONVERSATION_TEAM_ID, type ConversationAgentInput } from "./agent";
 import type { ConversationBot, ConversationBotCatalog } from "./bots/types";
 import { CHAT_PROFILES, type ChatProfileId } from "./profiles/registry";
 import {
@@ -36,6 +37,7 @@ import {
 } from "./queue/conversationQueue";
 
 const MAX_USER_MESSAGE_CHARS = 32_000;
+const MANUAL_COMPACTION_AGENT_RUN = "manual-compaction";
 
 export interface ConversationApplicationOptions {
   agentRuntime: AgentRuntime;
@@ -154,6 +156,33 @@ export class ConversationApplication {
     await this.store.clear(conversationId, eventRevision);
     this.readFileStates.delete(conversationId);
     return this.loadRecoverySnapshot(conversationId);
+  }
+
+  /** 手动压缩当前会话；不追加用户消息，也不创建 Agent run。 */
+  async compactConversation(
+    conversationId: string,
+    accessToken: string,
+    { signal, instructions }: { signal?: AbortSignal; instructions?: string } = {},
+  ): Promise<{ result: ManualCompactionResult; snapshot: ConversationSnapshot }> {
+    if (this.agentRuntime.activeRunCount > 0) throw new Error("上一轮尚未结束");
+    if (this.hasQueuedMessages(conversationId)) throw new Error("仍有排队消息");
+    const snapshot = await this.loadRecoverySnapshot(conversationId);
+    const bot = this.requireBot(snapshot.activeAgentId ?? this.defaultBotId);
+    if (!bot.policy.includeHistory) throw new Error("当前 Bot 不保留历史，无法压缩");
+    const controller = new AbortController();
+    const abortSignal = signal ?? controller.signal;
+    const input = this.manualCompactionInput(conversationId, bot);
+    const modelRequest = await bot.executor.prepare(input, abortSignal);
+    const result = await this.contextPreparation.compactNow({
+      conversationId,
+      getAccessToken: async () => accessToken,
+      modelRequest,
+      rebuild: () => bot.executor.prepare(input, abortSignal),
+      signal: abortSignal,
+      ...(instructions === undefined ? {} : { compactionInstructions: instructions }),
+      onStatus: () => this.pushSnapshot(conversationId),
+    });
+    return { result, snapshot: await this.loadRecoverySnapshot(conversationId) };
   }
 
   async appendUserMessage(conversationId: string, text: string): Promise<ConversationSnapshot> {
@@ -345,6 +374,27 @@ export class ConversationApplication {
     }
   }
 
+  private manualCompactionInput(
+    conversationId: string,
+    bot: ConversationBot,
+  ): ConversationAgentInput {
+    return {
+      conversationId,
+      runId: MANUAL_COMPACTION_AGENT_RUN,
+      request: { text: "", images: [] },
+      profile: bot.policy,
+      workspaceRoot: this.workspaceRoot,
+      readFileState: this.getReadFileState(conversationId),
+      viewerAgentId: bot.id,
+      agentNames: new Map(this.catalog.list().map((member) => [member.id, member.name])),
+    };
+  }
+
+  private hasQueuedMessages(conversationId: string): boolean {
+    const queue = this.queues.get(conversationId);
+    return queue?.activeQueueId !== undefined || (queue?.queuedCount ?? 0) > 0;
+  }
+
   private startBot({
     conversationId,
     bot,
@@ -361,6 +411,15 @@ export class ConversationApplication {
       getAccessToken,
       prepareContext: (modelRequest, rebuild, signal) =>
         this.contextPreparation.prepareRequest({
+          conversationId,
+          getAccessToken,
+          modelRequest,
+          rebuild,
+          signal,
+          onStatus: () => this.pushSnapshot(conversationId),
+        }),
+      recoverContext: (modelRequest, rebuild, _error, signal) =>
+        this.contextPreparation.recoverRequest({
           conversationId,
           getAccessToken,
           modelRequest,

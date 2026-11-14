@@ -99,6 +99,7 @@ export interface AgentRunRequest<Input, Prepared> {
   /**
    * provider 明确报上下文超限时的单次兜底；返回 undefined 表示放弃恢复。
    * 调用方保证每个 run 最多调用一次，且只在尚未产生模型内容时调用。
+   * 恢复在同一 run 内重试，不写 transcript、不启动新 run、不转移 Bot。
    */
   recoverContext?: (
     modelRequest: AgentModelRequest,
@@ -123,6 +124,8 @@ export interface AgentExecutor<Input> {
   startRun<Prepared = void>(
     request: AgentRunRequest<Input, Prepared>,
   ): Promise<AgentRunHandle<Prepared>>;
+  /** 只读模型请求投影；不创建 run、不写 ExecutionStore、不执行工具。 */
+  prepare(input: Input, signal: AbortSignal): Promise<AgentModelRequest>;
 }
 
 export type AgentModelRoutes = Readonly<Record<AgentModelRoute, ConversationCapabilityEndpoint>>;

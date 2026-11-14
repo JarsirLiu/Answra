@@ -71,7 +71,13 @@ export const agentUsageSchema = z.strictObject({
     .optional(),
 });
 /** 上下文摘要压缩的独立生命周期；不复用 Agent run 状态。 */
-export const contextCompactionStateSchema = z.enum(["idle", "started", "failed", "succeeded"]);
+export const contextCompactionStateSchema = z.enum([
+  "idle",
+  "started",
+  "failed",
+  "succeeded",
+  "aborted",
+]);
 export const contextCompactionTriggerSchema = z.enum(["auto", "manual"]);
 export const contextCompactionSchema = z.strictObject({
   state: contextCompactionStateSchema,
@@ -83,12 +89,32 @@ export const contextCompactionSchema = z.strictObject({
   summarizedMessages: z.number().int().nonnegative().optional(),
   errorText: z.string().optional(),
 });
-/** 已成功摘要的边界；只暴露边界位置，不向 UI 暴露摘要正文。 */
+/** 手动压缩指令的一次性输入上限；超出时在 IPC/Agent 入口 fail-closed。 */
+export const MANUAL_COMPACTION_INSTRUCTIONS_MAX_CHARS = 4_000;
+
+/** 手动压缩的显式结果；CLI 与桌面共用，不靠 snapshot 状态猜失败原因。 */
+export interface ManualCompactionResult {
+  status: "compacted" | "skipped" | "failed" | "aborted";
+  /** 跳过原因；只有 status 为 skipped 时出现。 */
+  reason?: "insufficient-messages" | "below-threshold" | "breaker-open" | "checkpoint-invalid";
+  /** 成功压缩后重新计算的上下文占用。 */
+  usage?: ContextUsage;
+  /** 失败原因；status 为 failed 时出现。 */
+  errorText?: string;
+}
+
+/** 已成功摘要的边界；可回放给 transcript 展示摘要正文。 */
 export const contextCompactionBoundarySchema = z.strictObject({
   id: z.string(),
   /** 摘要覆盖的最后一条 transcript 消息；边界显示在它之后。 */
   throughMessageId: z.string(),
   createdAt: z.string().datetime(),
+  /** synthetic user message 使用的摘要正文；只在用户展开边界时展示。 */
+  summary: z.string(),
+  /** 截至该边界的累计摘要消息数。 */
+  summarizedMessages: z.number().int().nonnegative(),
+  /** 本次手动压缩附带的一次性摘要指令；自动压缩不产生。 */
+  instructions: z.string().optional(),
 });
 /** 当前模型请求的估算占用和关键预算阈值；只用于 UI 解释，不参与压缩决策。 */
 export const contextUsageSchema = z.strictObject({

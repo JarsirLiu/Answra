@@ -42,6 +42,9 @@ function createHarness() {
         done: Promise.resolve("completed" as const),
       };
     }),
+    prepare: vi.fn(async () => {
+      throw new Error("not used");
+    }),
   };
   const agentRuntime = {
     cancel: vi.fn(),

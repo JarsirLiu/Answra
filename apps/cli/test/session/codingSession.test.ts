@@ -23,7 +23,10 @@ function createHost(overrides: Partial<CodingSessionHost> = {}): CodingSessionHo
     configure: vi.fn(),
     createConversation: vi.fn(async () => snapshot),
     clearConversation: vi.fn(async () => snapshot),
-    compactConversation: vi.fn(async () => ({ compacted: true, snapshot })),
+    compactConversation: vi.fn(async () => ({
+      result: { status: "compacted" as const },
+      snapshot,
+    })),
     send: vi.fn(async () => ({ runId: "run-1" })),
     cancel: vi.fn(),
     waitForRun: vi.fn(async () => {}),
@@ -77,7 +80,7 @@ describe("CodingSession", () => {
     const compactedSnapshot = { ...snapshot, eventRevision: 3 };
     const host = createHost({
       compactConversation: vi.fn(async () => ({
-        compacted: true,
+        result: { status: "compacted" as const },
         snapshot: compactedSnapshot,
       })),
     });
@@ -85,10 +88,22 @@ describe("CodingSession", () => {
     await session.open();
 
     await expect(session.compact()).resolves.toEqual({
-      compacted: true,
+      result: { status: "compacted" },
       snapshot: compactedSnapshot,
     });
-    expect(host.compactConversation).toHaveBeenCalledWith("conversation-1", "token", undefined);
+    expect(host.compactConversation).toHaveBeenCalledWith("conversation-1", "token", {});
+  });
+
+  it("passes one-shot summary instructions to the host", async () => {
+    const host = createHost();
+    const session = createSession(host);
+    await session.open();
+
+    await session.compact({ instructions: "保留数据库迁移决定" });
+
+    expect(host.compactConversation).toHaveBeenCalledWith("conversation-1", "token", {
+      instructions: "保留数据库迁移决定",
+    });
   });
 
   it("rejects clearing while a run is active", async () => {

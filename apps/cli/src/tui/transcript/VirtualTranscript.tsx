@@ -18,6 +18,7 @@ import { MessageRow } from "./MessageRow";
 import { TranscriptTail, Welcome } from "./Transcript";
 import {
   buildOffsets,
+  estimateCompactionBoundaryHeight,
   estimateMessageHeight,
   findVirtualWindow,
   maxScrollTop,
@@ -26,7 +27,6 @@ import {
 
 const OVERSCAN_LINES = 60;
 const FOOTER_ESTIMATE_LINES = 3;
-const COMPACTION_BOUNDARY_ESTIMATE_LINES = 3;
 const WHEEL_SCROLL_LINES = 3;
 const EMPTY_HEIGHTS: ReadonlyMap<string, number> = new Map();
 
@@ -42,7 +42,11 @@ interface ScrollState {
 
 type VirtualItem =
   | { readonly kind: "message"; readonly id: string; readonly message: ConversationViewMessage }
-  | { readonly kind: "compaction-boundary"; readonly id: string }
+  | {
+      readonly kind: "compaction-boundary";
+      readonly id: string;
+      readonly boundary: TuiCompactionBoundary;
+    }
   | { readonly kind: "footer"; readonly id: "__footer__"; readonly node: ReactNode };
 
 export function VirtualTranscript({
@@ -108,7 +112,7 @@ export function VirtualTranscript({
           (item.kind === "message"
             ? estimateMessageHeight(item.message, columns, expandThinking, expandedToolIds)
             : item.kind === "compaction-boundary"
-              ? COMPACTION_BOUNDARY_ESTIMATE_LINES
+              ? estimateCompactionBoundaryHeight(item.boundary, columns, expandThinking)
               : FOOTER_ESTIMATE_LINES),
       ),
     [items, measuredValues, columns, expandThinking, expandedToolIds],
@@ -227,7 +231,7 @@ export function VirtualTranscript({
                 item.kind === "message"
                   ? `${columns}:${expandThinking}:${expandedKey}:${showReasoning}:${messageMeasureKey(item.message)}`
                   : item.kind === "compaction-boundary"
-                    ? `compaction-boundary:${columns}`
+                    ? `compaction-boundary:${columns}:${expandThinking}:${item.boundary.summary?.length ?? 0}:${item.boundary.instructions?.length ?? 0}`
                     : `footer:${columns}`
               }
               onMeasure={handleMeasure}
@@ -240,7 +244,7 @@ export function VirtualTranscript({
                   showReasoning={showReasoning}
                 />
               ) : item.kind === "compaction-boundary" ? (
-                <CompactionBoundaryRow />
+                <CompactionBoundaryRow boundary={item.boundary} expanded={expandThinking} />
               ) : (
                 item.node
               )}
@@ -306,7 +310,7 @@ function mergeCompactionBoundaries(
 }
 
 function boundaryItem(boundary: TuiCompactionBoundary): VirtualItem {
-  return { kind: "compaction-boundary", id: boundary.id };
+  return { kind: "compaction-boundary", id: boundary.id, boundary };
 }
 
 function baseOffset(scroll: ScrollState, maxOffset: number): number {

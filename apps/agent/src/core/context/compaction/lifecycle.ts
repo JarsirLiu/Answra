@@ -7,9 +7,10 @@ import type {
 
 const ALLOWED_TRANSITIONS: Record<ContextCompactionState, readonly ContextCompactionState[]> = {
   idle: ["started"],
-  started: ["succeeded", "failed"],
+  started: ["succeeded", "failed", "aborted"],
   failed: ["started"],
   succeeded: ["started"],
+  aborted: ["started"],
 };
 
 export function canTransitionContextCompaction(
@@ -48,6 +49,15 @@ export function markContextCompactionSucceeded(
     finishedAt: at,
     summarizedMessages,
   };
+}
+
+export function markContextCompactionAborted(
+  status: ContextCompactionStatus,
+  now: () => Date,
+): ContextCompactionStatus {
+  assertTransition(status.state, "aborted");
+  const at = now().toISOString();
+  return { ...status, state: "aborted", updatedAt: at, finishedAt: at };
 }
 
 export function markContextCompactionFailed(

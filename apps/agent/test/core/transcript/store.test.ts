@@ -39,7 +39,7 @@ describe("memory conversation transcript store", () => {
     expect(snapshot.activeRunId).toBeUndefined();
   });
 
-  it("projects checkpoint boundaries into the snapshot without summary text", async () => {
+  it("projects checkpoint boundaries with summary text for transcript display", async () => {
     const store = new MemoryConversationStore();
     await store.create("compacted");
     await store.appendUserMessage("compacted", {
@@ -56,6 +56,7 @@ describe("memory conversation transcript store", () => {
           throughMessageId: "user-1",
           createdAt: "2026-11-14T10:00:01.000Z",
           messageCount: 1,
+          instructions: "保留迁移决定",
         },
       ],
     });
@@ -66,9 +67,11 @@ describe("memory conversation transcript store", () => {
         id: "compaction:2026-11-14T10:00:01.000Z:user-1",
         throughMessageId: "user-1",
         createdAt: "2026-11-14T10:00:01.000Z",
+        summary: "private summary",
+        summarizedMessages: 1,
+        instructions: "保留迁移决定",
       },
     ]);
-    expect(JSON.stringify(snapshot)).not.toContain("private summary");
   });
 
   it("claims a reply run for the last user message without duplicating it", async () => {

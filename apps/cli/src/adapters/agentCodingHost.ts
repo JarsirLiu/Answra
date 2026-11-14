@@ -7,8 +7,8 @@ export function createAgentCodingSessionHost(host: CodingHost): CodingSessionHos
     configure: (model) => host.runtime.configure(model),
     createConversation: (conversationId) => host.runtime.createConversation(conversationId),
     clearConversation: (conversationId) => host.runtime.clearConversation(conversationId),
-    compactConversation: (conversationId, accessToken, signal) =>
-      host.runtime.compactConversation(conversationId, accessToken, signal),
+    compactConversation: (conversationId, accessToken, options) =>
+      host.runtime.compactConversation(conversationId, accessToken, options),
     send: async (conversationId, request, accessToken) => {
       return host.runtime.send(conversationId, request, accessToken);
     },

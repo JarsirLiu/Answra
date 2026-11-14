@@ -1,5 +1,11 @@
 /** 最终模型请求的上下文准备编排：usage 校准、旧工具结果清理、摘要压缩、重建与硬兜底裁剪。 */
-import type { ContextCompactionTrigger, ContextPruningStatus, ContextUsage } from "@answra/shared";
+import {
+  type ContextCompactionTrigger,
+  type ContextPruningStatus,
+  type ContextUsage,
+  MANUAL_COMPACTION_INSTRUCTIONS_MAX_CHARS,
+  type ManualCompactionResult,
+} from "@answra/shared";
 import type { AgentEvent } from "@answra/shared/schema";
 import type { ContextUsageAnchor } from "../transcript/contextState";
 import {
@@ -39,8 +45,23 @@ export interface ContextPreparationRequest {
   trigger?: ContextCompactionTrigger;
   /** provider 已报上下文超限时强制压缩，跳过普通触发阈值。 */
   forceCompact?: boolean;
+  /** 手动操作可越过失败熔断；自动与 provider 超限恢复不得越过。 */
+  bypassFailureBreaker?: boolean;
+  /** 手动 `/compact` 的一次性摘要偏好；自动与恢复路径不传。 */
+  compactionInstructions?: string;
   /** 状态已写入 store 后通知宿主推�?snapshot；失败不影响本轮模型请求�?*/
   onStatus?: () => void | Promise<void>;
+}
+
+export type ManualCompactionRequest = Omit<
+  ContextPreparationRequest,
+  "forceCompact" | "trigger" | "bypassFailureBreaker"
+>;
+
+interface PreparedContext {
+  request: ContextModelRequest;
+  compaction: Awaited<ReturnType<ContextCompactor["prepare"]>>;
+  usage: ContextUsage;
 }
 
 /** 唯一编排入口：压缩只看最终请求，压缩后重建并再次清理，仍超限时确定性裁剪。 */
@@ -74,7 +95,24 @@ export class ContextPreparation {
     });
   }
 
-  async prepareRequest({
+  async prepareRequest(input: ContextPreparationRequest): Promise<ContextModelRequest> {
+    return (await this.prepare(input)).request;
+  }
+
+  /** 手动压缩：强制触发、绕过失败熔断，并在压缩后刷新 usage。 */
+  async compactNow(input: ManualCompactionRequest): Promise<ManualCompactionResult> {
+    const instructions = normalizeCompactionInstructions(input.compactionInstructions);
+    const prepared = await this.prepare({
+      ...input,
+      ...(instructions === undefined ? {} : { compactionInstructions: instructions }),
+      forceCompact: true,
+      trigger: "manual",
+      bypassFailureBreaker: true,
+    });
+    return manualCompactionResult(prepared.compaction, prepared.usage);
+  }
+
+  private async prepare({
     conversationId,
     getAccessToken,
     modelRequest,
@@ -82,8 +120,10 @@ export class ContextPreparation {
     signal,
     trigger,
     forceCompact = false,
+    bypassFailureBreaker = false,
+    compactionInstructions,
     onStatus,
-  }: ContextPreparationRequest): Promise<ContextModelRequest> {
+  }: ContextPreparationRequest): Promise<PreparedContext> {
     const budget = this.resolveBudget();
     const anchor = await this.usageAnchors.load(conversationId);
     const rawBeforeTokens = estimateContextRequestTokens(modelRequest);
@@ -91,7 +131,7 @@ export class ContextPreparation {
     const initial = this.pruneIfWorthwhile(modelRequest, beforeTokens, anchor, budget);
     let projectionChanged = initial.changed;
 
-    const compacted = await this.compactor.prepare({
+    const compaction = await this.compactor.prepare({
       conversationId,
       getAccessToken,
       triggerTokens: budget.compactAt,
@@ -99,13 +139,16 @@ export class ContextPreparation {
       ...(signal === undefined ? {} : { signal }),
       ...(trigger === undefined ? {} : { trigger }),
       ...(forceCompact ? { force: true } : {}),
+      ...(bypassFailureBreaker ? { bypassFailureBreaker: true } : {}),
+      ...(compactionInstructions === undefined ? {} : { instructions: compactionInstructions }),
     });
 
     let final: ContextModelRequest;
-    let finalPruning = compacted
-      ? { prunedCount: 0, savedTokens: 0 }
-      : { prunedCount: initial.prunedCount, savedTokens: initial.savedTokens };
-    if (compacted) {
+    let finalPruning =
+      compaction.status === "compacted"
+        ? { prunedCount: 0, savedTokens: 0 }
+        : { prunedCount: initial.prunedCount, savedTokens: initial.savedTokens };
+    if (compaction.status === "compacted") {
       projectionChanged = true;
       const rebuilt = await rebuild();
       const rebuiltTokens = estimateContextRequestTokens(rebuilt);
@@ -161,15 +204,19 @@ export class ContextPreparation {
         });
       }
     }
-    return final;
+    return { request: final, compaction, usage };
   }
 
   /** 消费 run 事件：首步 usage 成功后写入锚点，失败或投影变化后清理。 */
-  /** provider 超限后的唯一兜底入口：强制压缩并按软目标裁剪，调用方只允许重试一次。 */
-  recoverRequest(
+  /**
+   * provider 超限后的唯一兜底入口：强制压缩并按软目标裁剪。
+   * 只有真正完成压缩才返回可重试请求；熔断、失败、取消都返回 undefined。
+   */
+  async recoverRequest(
     request: Omit<ContextPreparationRequest, "forceCompact">,
-  ): Promise<ContextModelRequest> {
-    return this.prepareRequest({ ...request, forceCompact: true });
+  ): Promise<ContextModelRequest | undefined> {
+    const prepared = await this.prepare({ ...request, forceCompact: true });
+    return prepared.compaction.status === "compacted" ? prepared.request : undefined;
   }
 
   async recordRunEvent(conversationId: string, event: AgentEvent): Promise<void> {
@@ -242,6 +289,31 @@ export class ContextPreparation {
       savedTokens: result.savedTokens,
     };
   }
+}
+
+function manualCompactionResult(
+  compaction: PreparedContext["compaction"],
+  usage: ContextUsage,
+): ManualCompactionResult {
+  switch (compaction.status) {
+    case "compacted":
+      return { status: "compacted", usage };
+    case "skipped":
+      return { status: "skipped", reason: compaction.reason };
+    case "failed":
+      return { status: "failed", errorText: compaction.errorText, usage };
+    case "aborted":
+      return { status: "aborted" };
+  }
+}
+
+function normalizeCompactionInstructions(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+  if (trimmed.length > MANUAL_COMPACTION_INSTRUCTIONS_MAX_CHARS) {
+    throw new Error(`压缩指令不能超过 ${MANUAL_COMPACTION_INSTRUCTIONS_MAX_CHARS} 个字符`);
+  }
+  return trimmed;
 }
 
 function errorText(error: unknown): string {

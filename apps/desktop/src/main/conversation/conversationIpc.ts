@@ -6,6 +6,7 @@ import {
   type ConversationModelSettingsView,
   type ConversationSelection,
   type ConversationSendCommand,
+  MANUAL_COMPACTION_INSTRUCTIONS_MAX_CHARS,
 } from "@answra/shared";
 import { ipcMain } from "electron";
 import type { AgentService } from "../agent/agentService";
@@ -123,6 +124,27 @@ export function registerConversationIpc(service: AgentService, deps: Conversatio
     },
   );
   ipcMain.handle(
+    ConversationChannels.Compact,
+    (event, payload: { conversationId: string; instructions?: string }) => {
+      if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用");
+      if (
+        !isValidConversationId(payload?.conversationId) ||
+        !COMPACTABLE_CONVERSATION_IDS.has(payload.conversationId)
+      ) {
+        throw new Error("会话请求无效");
+      }
+      if (
+        payload.instructions !== undefined &&
+        (typeof payload.instructions !== "string" ||
+          payload.instructions.length > MANUAL_COMPACTION_INSTRUCTIONS_MAX_CHARS)
+      ) {
+        throw new Error("压缩指令无效或过长");
+      }
+      if (!deps.canSend()) throw authRequiredError();
+      return service.compactConversation(payload.conversationId, payload.instructions);
+    },
+  );
+  ipcMain.handle(
     ConversationChannels.ReadEvents,
     (event, payload: { conversationId: string; afterRevision: number }) => {
       if (
@@ -172,6 +194,9 @@ function isValidSelection(selection: ConversationSelection): boolean {
   if (selection.kind === "team") return isValidId(selection.teamId);
   return false;
 }
+
+/** 手动压缩当前只开放给常驻对话；面试与一次性截图会话不进入。 */
+const COMPACTABLE_CONVERSATION_IDS = new Set<string>([ActiveChatConversationId]);
 
 /** 允许用户清空的常驻会话：多轮对话与面试。 */
 const CLEARABLE_CONVERSATION_IDS = new Set<string>([

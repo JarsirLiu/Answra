@@ -172,6 +172,15 @@ export class InterviewApplication {
           signal,
           onStatus: async () => this.onSnapshot(await this.loadRecoverySnapshot(conversationId)),
         }),
+      recoverContext: (modelRequest, rebuild, _error, signal) =>
+        this.contextPreparation.recoverRequest({
+          conversationId,
+          getAccessToken: this.requestAccessToken,
+          modelRequest,
+          rebuild,
+          signal,
+          onStatus: async () => this.onSnapshot(await this.loadRecoverySnapshot(conversationId)),
+        }),
       prepareRun: async ({ runId, eventRevision }) => {
         await this.store.beginReplyRun(conversationId, runId, eventRevision, this.authorAgentId);
         const snapshot = await this.loadRecoverySnapshot(conversationId);

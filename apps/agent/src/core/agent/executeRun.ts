@@ -1,6 +1,6 @@
 /** 执行已注册 Agent 的 AI SDK 流、HTTP 重试与 run 终态；不读取或写入 transcript。 */
 import type { ConversationCapabilityEndpoint } from "@answra/shared";
-import type { RunOutcome } from "@answra/shared/schema";
+import type { AgentEvent, RunOutcome } from "@answra/shared/schema";
 import {
   type OnToolCallFinishEvent,
   type OnToolCallStartEvent,
@@ -8,7 +8,7 @@ import {
   type ToolSet,
 } from "ai";
 import type { ExecutionStore } from "../../execution/store";
-import { consumeModelStream } from "../model/consumeStream";
+import { isContextOverflowError } from "../model/contextOverflow";
 import { summarizeModelError } from "../model/errorSummary";
 import { createModelProvider } from "../model/provider";
 import { RATE_LIMIT_RETRY_POLICY } from "../model/retryFetch";
@@ -18,6 +18,7 @@ import type {
   AgentRunRequest,
   AgentToolOutputEmitter,
 } from "./definition";
+import { consumeModelAttempt, createModelAttemptSink } from "./modelAttempt";
 import { createExecutionJournal } from "./streamJournal";
 
 /** 单次工具调用实时输出的字符上限，避免长命令把事件日志撑爆。 */
@@ -60,7 +61,7 @@ export async function executeRun<Input, Prepared>({
 
     const accessToken = await request.getAccessToken();
     const liveOutput = createLiveToolOutputRelay(journal);
-    const modelRequest = await prepareModelRequest({
+    let modelRequest = await prepareModelRequest({
       definition,
       request,
       input,
@@ -90,67 +91,141 @@ export async function executeRun<Input, Prepared>({
       },
     });
 
-    const result = streamText({
-      model: provider(endpoint.model),
-      ...modelRequest,
-      abortSignal: controller.signal,
-      maxRetries: 0,
-      onError: ({ error }) => {
-        console.error("[agent][run] provider error", {
-          runId,
-          ...summarizeModelError(error),
-        });
-      },
-      onFinish: ({ finishReason: reason, text, reasoningText, toolCalls, usage, totalUsage }) => {
-        finishReason = reason;
-        console.info("[agent][run] model finished", {
-          runId,
-          finishReason: reason,
-          textLength: text.length,
-          reasoningLength: reasoningText?.length ?? 0,
-          toolCallCount: toolCalls.length,
-          usage,
-          totalUsage,
-        });
-      },
-      experimental_onToolCallStart: async (event: OnToolCallStartEvent<ToolSet>) => {
-        await journal.append({
-          type: "tool-execution-started",
-          toolCallId: event.toolCall.toolCallId,
-          toolName: event.toolCall.toolName,
-          input: event.toolCall.input,
-          ...(event.stepNumber === undefined ? {} : { stepNumber: event.stepNumber }),
-        });
-      },
-      experimental_onToolCallFinish: async (event: OnToolCallFinishEvent<ToolSet>) => {
-        await liveOutput.flush();
-        const common = {
-          type: "tool-execution-finished" as const,
-          toolCallId: event.toolCall.toolCallId,
-          toolName: event.toolCall.toolName,
-          input: event.toolCall.input,
-          durationMs: event.durationMs,
-          ...(event.stepNumber === undefined ? {} : { stepNumber: event.stepNumber }),
-        };
-        await journal.append(
-          event.success
-            ? { ...common, result: { success: true, output: event.output } }
-            : { ...common, result: { success: false, errorText: errorText(event.error) } },
-        );
-      },
-    });
+    let contextRecovered = false;
+    for (;;) {
+      const attempt = createModelAttemptSink(journal);
+      const attemptLiveOutput = createLiveToolOutputRelay(attempt);
+      let failure: { error: unknown; errorText: string } | undefined;
 
-    await consumeModelStream(result.fullStream, journal.append);
-    // The SDK can report a provider/network error and then close without a finish
-    // event. That error is already the authoritative terminal fact; only synthesize
-    // the diagnostic when the stream ended without either success or failure.
-    if (
-      !journal.metrics.finished &&
-      !journal.metrics.failed &&
-      !journal.metrics.aborted &&
-      !controller.signal.aborted
-    ) {
-      await journal.append({ type: "error", errorText: "模型流未提供终态" });
+      try {
+        const result = streamText({
+          model: provider(endpoint.model),
+          ...modelRequest,
+          abortSignal: controller.signal,
+          maxRetries: 0,
+          onError: ({ error }) => {
+            console.error("[agent][run] provider error", {
+              runId,
+              ...summarizeModelError(error),
+            });
+          },
+          onFinish: ({
+            finishReason: reason,
+            text,
+            reasoningText,
+            toolCalls,
+            usage,
+            totalUsage,
+          }) => {
+            finishReason = reason;
+            console.info("[agent][run] model finished", {
+              runId,
+              finishReason: reason,
+              textLength: text.length,
+              reasoningLength: reasoningText?.length ?? 0,
+              toolCallCount: toolCalls.length,
+              usage,
+              totalUsage,
+            });
+          },
+          experimental_onToolCallStart: async (event: OnToolCallStartEvent<ToolSet>) => {
+            await attempt.append({
+              type: "tool-execution-started",
+              toolCallId: event.toolCall.toolCallId,
+              toolName: event.toolCall.toolName,
+              input: event.toolCall.input,
+              ...(event.stepNumber === undefined ? {} : { stepNumber: event.stepNumber }),
+            });
+          },
+          experimental_onToolCallFinish: async (event: OnToolCallFinishEvent<ToolSet>) => {
+            await attemptLiveOutput.flush();
+            const common = {
+              type: "tool-execution-finished" as const,
+              toolCallId: event.toolCall.toolCallId,
+              toolName: event.toolCall.toolName,
+              input: event.toolCall.input,
+              durationMs: event.durationMs,
+              ...(event.stepNumber === undefined ? {} : { stepNumber: event.stepNumber }),
+            };
+            await attempt.append(
+              event.success
+                ? { ...common, result: { success: true, output: event.output } }
+                : { ...common, result: { success: false, errorText: errorText(event.error) } },
+            );
+          },
+        });
+
+        const resultAttempt = await consumeModelAttempt(result.fullStream, attempt);
+        if (resultAttempt.kind === "finished") break;
+        if (resultAttempt.kind === "aborted") {
+          await attemptLiveOutput.flush();
+          await attempt.flush();
+          break;
+        }
+        failure = { error: resultAttempt.error, errorText: resultAttempt.errorText };
+      } catch (error) {
+        failure = { error, errorText: errorText(error) };
+      }
+
+      if (controller.signal.aborted) {
+        await attemptLiveOutput.flush();
+        await attempt.flush();
+        break;
+      }
+
+      if (
+        failure !== undefined &&
+        !contextRecovered &&
+        !attempt.hasContent &&
+        request.recoverContext !== undefined &&
+        isContextOverflowError(failure.error)
+      ) {
+        console.info("[agent][run] context overflow detected; attempting one recovery", {
+          runId,
+          ...summarizeModelError(failure.error),
+        });
+        let recoveredRequest: AgentModelRequest | undefined;
+        try {
+          recoveredRequest = await request.recoverContext(
+            modelRequest,
+            () =>
+              prepareModelRequest({
+                definition,
+                request,
+                input,
+                signal: controller.signal,
+                emitter: { toolOutput: attemptLiveOutput.emit },
+              }),
+            failure.error,
+            controller.signal,
+          );
+        } catch (recoveryError) {
+          console.warn("[agent][run] context recovery failed", {
+            runId,
+            ...summarizeModelError(recoveryError),
+          });
+        }
+        if (recoveredRequest !== undefined && !controller.signal.aborted) {
+          attempt.discard();
+          contextRecovered = true;
+          modelRequest = recoveredRequest;
+          continue;
+        }
+        if (controller.signal.aborted) {
+          await attemptLiveOutput.flush();
+          await attempt.flush();
+          break;
+        }
+      }
+
+      await attemptLiveOutput.flush();
+      await attempt.flush();
+      await journal.append({
+        type: "error",
+        errorText: failure?.errorText ?? "模型流未提供终态",
+      });
+      if (failure) logRunFailed(runId, startedAt, failure.error);
+      break;
     }
   } catch (error) {
     logRunFailed(runId, startedAt, error);
@@ -218,7 +293,7 @@ function errorText(error: unknown): string {
  * terminal event. Deltas are capped per tool call; the final result still carries
  * the full (budgeted) output.
  */
-function createLiveToolOutputRelay(journal: ReturnType<typeof createExecutionJournal>) {
+function createLiveToolOutputRelay(writer: { append(event: AgentEvent): Promise<void> }) {
   let chain: Promise<void> = Promise.resolve();
   const emittedChars = new Map<string, number>();
   return {
@@ -230,7 +305,7 @@ function createLiveToolOutputRelay(journal: ReturnType<typeof createExecutionJou
       const chunk = delta.length > room ? delta.slice(0, room) : delta;
       emittedChars.set(toolCallId, emitted + chunk.length);
       chain = chain
-        .then(() => journal.append({ type: "tool-output-delta", toolCallId, delta: chunk }))
+        .then(() => writer.append({ type: "tool-output-delta", toolCallId, delta: chunk }))
         .catch(() => undefined);
     },
     flush(): Promise<void> {
