@@ -215,7 +215,7 @@ interface ContextCompactionStatus {
 ```
 
 - `ConversationSnapshot` 增加可选 `contextCompaction`；缺省表示从未压缩或已清空。
-- `ContextCompactor` 在每次迁移后写入 `ConversationStore` 的上下文状态，并推送 snapshot；UI 显示“开始压缩上下文 / 压缩失败 / 压缩完成 / 压缩已取消”。摘要不流式展示；CLI 在用户展开压缩边界时展示最终摘要、累计消息数与手动指令，桌面仍只显示状态。
+- `ContextCompactor` 在每次迁移后写入 `ConversationStore` 的上下文状态，并推送 snapshot；UI 显示“开始压缩上下文 / 压缩失败 / 压缩完成 / 压缩已取消”。摘要不流式展示；CLI 折叠态显示累计消息数、手动指令与展开提示，展开后显示最终摘要正文；桌面仍只显示状态。
 - `started` 覆盖整个摘要调用过程；没有独立 `summarizing` 状态，因为中间文本不展示时它与 `started` 对用户没有区别。
 - checkpoint 正文留在 store，并通过压缩边界投影进入 snapshot 供 CLI 展开；普通 `snapshot.messages` 不包含 summary 消息。
 - 当前只有一个 transcript 消息列表；checkpoint 属于 `ContextState`，不是消息，也不写入 `snapshot.messages`。synthetic user message 只在模型投影时临时生成。
@@ -426,7 +426,7 @@ Conversation / Coding / Interview application
 - `core/model/provider.ts` 与 `AgentRuntime.generateText`：复用鉴权/重试的内部摘要模型调用。
 - Conversation、Coding、Interview 的 `prepareRun` 先写活动 run（`beginRun` / `beginHandoffRun` / `beginReplyRun`），再由 `prepareContext` 调用同一 `ContextCompactor`；checkpoint 变化后通过 `rebuild()` 重新装配最终请求。
 - `ContextPreparation` 已接入最终请求预算、usage 锚点、旧工具结果清理、摘要压缩、重建后二次清理和硬兜底裁剪；硬兜底裁剪独立在 `core/context/trim.ts`，不反向依赖编排。
-- 桌面 `ChatPanel` 的 `ContextCompactionNotice` 显示开始、完成、失败三个状态，不显示摘要正文、思考内容或消息条数；CLI TUI 对齐 Claude Code：压缩中蓝色 Spinner 固定 `Compacting conversation…`，成功后显示 dim 边界 `✻ Conversation compacted (ctrl+o for history)`，失败显示 `Error compacting conversation`，且失败提示不被运行中 Spinner 覆盖。`ctrl+o` 展开思考、工具输出与压缩摘要，不新增第二个历史面板。
+- 桌面 `ChatPanel` 的 `ContextCompactionNotice` 显示开始、完成、失败三个状态，不显示摘要正文、思考内容或消息条数；CLI TUI 对齐 Claude Code：压缩中蓝色 Spinner 固定 `Compacting conversation…`，成功后依次显示 dim 边界 `✻ Conversation compacted (ctrl+o for history)` 和摘要块 `Summarized conversation` / `Summarized N messages up to this point` / `Context: “…”` / `(ctrl+o to expand history)`，展开后只显示摘要正文；失败显示 `Error compacting conversation`，且失败提示不被运行中 Spinner 覆盖。`ctrl+o` 展开思考、工具输出与压缩摘要，不新增第二个历史面板。
 - CLI `/compact [instructions]` 已经过 `ContextPreparation.compactNow`：一次性指令只影响本次摘要 prompt，不写入会话或配置；`force` 跳过上下文触发点但仍遵守保留尾段和最少摘要消息数；运行中拒绝；取消通过 `AbortSignal` 记录为 `aborted`；没有可摘要消息时提示而不是伪成功。具体实现见[手动压缩的自定义摘要指令与摘要展示](../../implemented/feature/2026-11-14-manual-compaction-instructions-and-summary.md)。
 - CLI 压缩边界来自 snapshot 的 checkpoint 列表，可被 `initialize`/重连回放；边界行可选中复制，边界插入会使旧选区失效。跨进程重启恢复仍取决于持久化 store，当前 `MemoryConversationStore` 不提供。
 - 压缩相关 CLI TUI 测试已按关注点拆分：`tui.compaction`、`tui.composer`、`tui.render`、`tui.transcript`、`tui.thinking`、`tui.toolPresentation`，共享 `tuiTestHarness`，避免单个测试文件承载所有交互。

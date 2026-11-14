@@ -4,6 +4,11 @@ import type { ConversationViewMessage } from "@answra/ui/conversation-view";
 import { isToolRunning, presentToolCall } from "@answra/ui/tool-presentation";
 import stringWidth from "string-width";
 import type { TuiCompactionBoundary } from "./compactionBoundary";
+import {
+  COMPACTION_SUMMARY_HINT,
+  compactionContextText,
+  compactionSummaryCountText,
+} from "./compactionText";
 import { groupMessageParts, type ToolGroup } from "./tool/groups/groupToolCalls";
 import {
   TOOL_EXPANDED_DIFF_LINES,
@@ -17,6 +22,9 @@ const MIN_MESSAGE_HEIGHT = 1;
 const TOOL_HEADER_LINES = 1;
 const TOOL_RESULT_LINES = 1;
 const COMPACTION_BOUNDARY_BASE_LINES = 3;
+const COMPACTION_SUMMARY_MARGIN_LINES = 1;
+const COMPACTION_SUMMARY_HEADER_LINES = 1;
+const COMPACTION_SUMMARY_INDENT = 4;
 
 export function estimateMessageHeight(
   message: ConversationViewMessage,
@@ -60,14 +68,21 @@ export function estimateCompactionBoundaryHeight(
   columns: number,
   expanded: boolean,
 ): number {
-  if (!expanded || boundary.summary === undefined) return COMPACTION_BOUNDARY_BASE_LINES;
-  const width = Math.max(8, columns - 2);
-  let height = COMPACTION_BOUNDARY_BASE_LINES + 1;
-  if (boundary.summarizedMessages !== undefined) height += 1;
-  if (boundary.instructions !== undefined) {
-    height += countTextLines(`Context: “${boundary.instructions}”`, width);
+  if (boundary.summary === undefined) return COMPACTION_BOUNDARY_BASE_LINES;
+  const width = Math.max(8, columns - COMPACTION_SUMMARY_INDENT);
+  const base =
+    COMPACTION_BOUNDARY_BASE_LINES +
+    COMPACTION_SUMMARY_MARGIN_LINES +
+    COMPACTION_SUMMARY_HEADER_LINES;
+  if (expanded) return base + countTextLines(boundary.summary, width);
+  let height = base;
+  if (boundary.summarizedMessages !== undefined) {
+    height += countTextLines(compactionSummaryCountText(boundary.summarizedMessages), width);
   }
-  return height + countTextLines(boundary.summary, width) + 1;
+  if (boundary.instructions !== undefined) {
+    height += countTextLines(compactionContextText(boundary.instructions), width);
+  }
+  return height + countTextLines(COMPACTION_SUMMARY_HINT, width);
 }
 
 export function countTextLines(text: string, columns: number): number {

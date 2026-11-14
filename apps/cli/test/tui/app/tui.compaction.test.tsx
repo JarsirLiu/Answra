@@ -75,7 +75,7 @@ describe("TUI compaction", () => {
     store.dispose();
   });
 
-  it("expands the summary and message count with Ctrl+O", async () => {
+  it("shows Claude-style summary metadata before expanding the summary with Ctrl+O", async () => {
     const store = new TuiViewStore();
     store.initialize({
       conversationId: "conversation-1",
@@ -125,14 +125,18 @@ describe("TUI compaction", () => {
     await nextFrame();
     await instance.waitUntilRenderFlush();
 
-    expect(stdout.chunks.join("")).not.toContain("Summarized 8 messages");
+    const collapsed = stdout.chunks.join("");
+    expect(collapsed).toContain("Summarized conversation");
+    expect(collapsed).toContain("Summarized 8 messages up to this point");
+    expect(collapsed).toContain("Context: “重点保留数据库迁移决定”");
+    expect(collapsed).toContain("(ctrl+o to expand history)");
+    expect(collapsed).not.toContain("继续实现压缩");
+
     stdin.write("\u000f");
     await nextFrame();
     await instance.waitUntilRenderFlush();
 
     const frame = stdout.chunks.join("");
-    expect(frame).toContain("Summarized 8 messages up to this point");
-    expect(frame).toContain("重点保留数据库迁移决定");
     expect(frame).toContain("继续实现压缩");
     instance.unmount();
     store.dispose();
