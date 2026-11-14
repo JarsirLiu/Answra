@@ -23,6 +23,7 @@ export interface ConversationQueueCompletion {
   queueId: string;
   runId?: string;
   outcome: ConversationQueueOutcome;
+  failure?: { error: unknown };
 }
 
 export interface ConversationQueueStart {
@@ -137,7 +138,7 @@ export class ConversationQueue {
       });
       void started.completion.then(
         (outcome) => this.finishActive(item, outcome),
-        () => this.finishActive(item, "failed"),
+        (error: unknown) => this.finishActive(item, "failed", { failure: { error } }),
       );
       return {
         queueId: item.queueId,
@@ -155,8 +156,12 @@ export class ConversationQueue {
     }
   }
 
-  private async finishActive(item: QueueItem, outcome: ConversationQueueOutcome): Promise<void> {
-    item.resolve({ queueId: item.queueId, runId: item.runId, outcome });
+  private async finishActive(
+    item: QueueItem,
+    outcome: ConversationQueueOutcome,
+    failure?: { failure: { error: unknown } },
+  ): Promise<void> {
+    item.resolve({ queueId: item.queueId, runId: item.runId, outcome, ...failure });
     this.completed.set(item.queueId, item.completion);
     if (this.active?.queueId !== item.queueId) return;
     this.active = undefined;
@@ -182,11 +187,11 @@ export class ConversationQueue {
       });
       void started.completion.then(
         (outcome) => this.finishActive(next, outcome),
-        () => this.finishActive(next, "failed"),
+        (error: unknown) => this.finishActive(next, "failed", { failure: { error } }),
       );
-    } catch {
-      next.rejectStart(new Error("队列消息启动失败"));
-      await this.finishActive(next, "failed");
+    } catch (error) {
+      next.rejectStart(error);
+      await this.finishActive(next, "failed", { failure: { error } });
     }
   }
 

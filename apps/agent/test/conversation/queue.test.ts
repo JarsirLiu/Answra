@@ -62,6 +62,20 @@ describe("ConversationQueue", () => {
     expect(queue.activeQueueId).toBe(firstQueueId(queue));
     activeDone.resolve("completed");
   });
+
+  it("preserves a failed run error for the owning application", async () => {
+    const queue = new ConversationQueue();
+    const failed = Promise.reject(new Error("handoff target is not visible"));
+    const accepted = await queue.enqueue(async () => ({
+      runId: "run-1",
+      snapshot: { conversationId: "conversation-1", eventRevision: 1, messages: [] },
+      completion: failed,
+    }));
+
+    const completion = await queue.wait(accepted.queueId);
+    expect(completion.outcome).toBe("failed");
+    expect(completion.failure?.error).toEqual(new Error("handoff target is not visible"));
+  });
 });
 
 function firstQueueId(queue: ConversationQueue): string {

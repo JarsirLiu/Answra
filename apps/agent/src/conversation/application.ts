@@ -294,6 +294,7 @@ export class ConversationApplication {
     const queue = this.queueFor(conversationId);
     const accepted = await this.enqueueTeamMessage(teamId, conversationId, request, accessToken);
     const completion = await queue.wait(accepted.queueId);
+    if (completion.failure !== undefined) throw completion.failure.error;
     const snapshot = await this.loadRecoverySnapshot(conversationId);
     if (!completion.runId) throw new Error("团队回合未启动");
     return { runId: completion.runId, snapshot };

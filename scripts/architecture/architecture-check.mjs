@@ -26,9 +26,7 @@ const errors = [];
 const depGraph = new Map();
 
 /**
- * 本地监听的唯一白名单：开发态 OAuth 环回回调。
- * 每个断言都必须出现在文件里，保证例外本身不会退化成生产监听
- * （只绑 127.0.0.1、打包版直接拒绝）。
+ * 本地监听白名单仅用于一次性 OAuth 环回回调；新增场景需单独 Note。
  */
 const LOCAL_LISTENER_EXCEPTIONS = new Map([
   [
@@ -36,6 +34,15 @@ const LOCAL_LISTENER_EXCEPTIONS = new Map([
     {
       "只绑定 127.0.0.1": /LOOPBACK_HOST\s*=\s*"127\.0\.0\.1"/,
       打包版禁用: /app\.isPackaged/,
+    },
+  ],
+  [
+    "apps/cli/src/remote/auth/localAuthCallback.ts",
+    {
+      "只绑定 127.0.0.1": /server\.listen\(0,\s*["']127\.0\.0\.1["']/,
+      动态分配端口: /server\.listen\(0,/,
+      "固定 OAuth 回调路径": /const CALLBACK_PATH = ["']\/auth\/callback["']/,
+      登录结束关闭监听: /close:\s*async\s*\(\)\s*=>/,
     },
   ],
 ]);
@@ -108,7 +115,7 @@ function checkImports(pkg) {
     // 4. 禁止在 src 里开启本地监听：进程间通信走 IPC / 管道 / utilityProcess，
     //    自建 server 会引入端口占用、被页面或其它进程探测、防火墙与签名负担，
     //    与"隐身"定位冲突。引入前先在 Note 里给出触发条件（见 docs/notes）。
-    //    唯一例外：开发态 OAuth 环回回调（打包版必须关闭，见下方断言）。
+    //    受控例外仅限桌面开发态与 CLI 的一次性 OAuth 环回回调，见白名单断言。
     if (/\bcreateServer\s*\(|\.listen\s*\(/.test(code)) {
       const exception = LOCAL_LISTENER_EXCEPTIONS.get(rel.replaceAll("\\", "/"));
       if (!exception) {
