@@ -12,7 +12,7 @@ export const WindowChannels = {
    * 尺寸决策在渲染器（ResizeObserver 测量胶囊/面板），主进程只做 clamp 与落位。
    */
   FitContent: "answra:window:fit-content",
-  /** 关闭应用窗口。 */
+  /** 退出应用：悬浮条即应用唯一入口，不存在托盘驻留。 */
   Close: "answra:window:close",
   /** 切换会议隐身：排除系统支持的捕获路径，并从任务栏/Dock、Alt+Tab/Cmd+Tab 隐藏。 */
   SetStealth: "answra:window:set-stealth",

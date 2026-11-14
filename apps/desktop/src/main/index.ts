@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { sharedConfigPath } from "@answra/config";
-import { app, BrowserWindow, shell } from "electron";
+import { app, type BrowserWindow, shell } from "electron";
 import { AgentService } from "./agent/agentService";
 import { createAmbientThemeController } from "./ambient";
 import { registerAuthIpc } from "./auth/authIpc";
@@ -26,13 +26,14 @@ import { registerConversationSessionIpc } from "./conversation/sessionIpc";
 import { loadDevDotEnv } from "./devEnv";
 import { registerAmbientIpc } from "./ipc/ambientIpc";
 import { registerWindowIpc } from "./ipc/windowIpc";
+import { activateMainWindow } from "./mainWindowActivation";
 import { registerSurfaceIpc } from "./surface/surfaceIpc";
 import { applyPendingUpdateOnLaunch } from "./updater/applyPendingUpdate";
 import { createMacSwapInstaller } from "./updater/macUpdateSwap";
 import { createUpdateController } from "./updater/updateController";
 import { registerUpdateIpc } from "./updater/updateIpc";
 import { applyUserShellEnv } from "./userShellEnv";
-import { createMainWindow, getWindow, sendAuthStatus } from "./window";
+import { createMainWindow, getWindow, prepareWindowToShow, sendAuthStatus } from "./window";
 import { registerWorkspaceSchemePrivileges } from "./workspace/scheme";
 
 // 必须在 app ready 前配置，避免 Chromium 先按 HDR 10-bit 输出初始化采集链。
@@ -68,6 +69,7 @@ let getWorkspaceRoot: () => string | null = () => null;
 let disposeWorkspace: (() => void) | undefined;
 let updateController: ReturnType<typeof createUpdateController> | undefined;
 let disposeUpdateIpc: (() => void) | undefined;
+let quitting = false;
 const configDir = app.getPath("userData");
 const answraDataRoot = join(app.getPath("appData"), "Answra");
 // 面试记忆是用户可见数据，不能依赖 Electron 由 package name 派生的 userData 目录名。
@@ -131,7 +133,7 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   registerAuthLifecycle({
     onCallbackUrl: (url) => routeAuthCallback(url),
-    onSecondInstance: () => getWindow()?.focus(),
+    onSecondInstance: () => activateOrCreateMainWindow(),
   });
 
   app.whenReady().then(async () => {
@@ -209,7 +211,8 @@ if (!app.requestSingleInstanceLock()) {
         : {}),
     });
     disposeUpdateIpc = registerUpdateIpc(updateController);
-    createManagedMainWindow();
+    // 第二次启动可能在启动等待期间已经重建主窗口，不能重复创建。
+    if (!getWindow()) createManagedMainWindow();
     void authService
       .restore()
       .catch((error) => console.warn("[auth] 登录态恢复失败", error))
@@ -217,6 +220,8 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.on("before-quit", () => {
+    if (quitting) return;
+    quitting = true;
     disposeUpdateIpc?.();
     updateController?.dispose();
     authService.dispose();
@@ -228,9 +233,7 @@ if (!app.requestSingleInstanceLock()) {
     disposeWorkspace?.();
   });
 
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createManagedMainWindow();
-  });
+  app.on("activate", () => activateOrCreateMainWindow());
 
   app.on("window-all-closed", () => app.quit());
 }
@@ -243,5 +246,19 @@ function createManagedMainWindow(): void {
   window.once("closed", () => {
     controller.dispose();
     if (ambientController === controller) ambientController = undefined;
+    // Windows/Linux 没有托盘：主窗口关闭即退出。隐藏的复用窗口（截图 overlay、surface）
+    // 仍然存在，不能依赖 window-all-closed 触发退出。
+    if (process.platform !== "darwin" && !quitting) app.quit();
+  });
+}
+
+/** 单实例复用与 macOS dock 激活的唯一入口：主窗口被关闭后不能再静默 focus 一个不存在的窗口。 */
+function activateOrCreateMainWindow(): void {
+  if (!app.isReady() || quitting) return;
+  activateMainWindow({
+    getWindow,
+    prepareWindowToShow,
+    createWindow: createManagedMainWindow,
+    log: (message, details) => console.warn(message, details),
   });
 }

@@ -4,7 +4,7 @@ import {
   type ReplyBarState,
   WindowChannels,
 } from "@answra/shared";
-import { ipcMain } from "electron";
+import { app, ipcMain } from "electron";
 import {
   applyStealth,
   getWindow,
@@ -33,7 +33,9 @@ export function registerWindowIpc(): void {
   ipcMain.on(WindowChannels.Close, (event) => {
     const window = getWindow();
     if (!isWindowFromSender(window, event)) return;
-    window?.close();
+    // 「关闭应用」是退出而非仅关窗：复用窗口（截图 overlay / surface）仍然存在，
+    // 只 close() 主窗口会留下无界面的后台进程，并让后续启动被单实例锁挡掉。
+    app.quit();
   });
 
   ipcMain.on(WindowChannels.SetStealth, (event, value: boolean) => {

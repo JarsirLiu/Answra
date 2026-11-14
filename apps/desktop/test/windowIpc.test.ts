@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const shared = vi.hoisted(() => ({
   handlers: {} as Record<string, (...args: unknown[]) => unknown>,
+  quit: vi.fn(),
   setReplyBarWindowState: vi.fn(),
   resizeReplyBarWindow: vi.fn(),
   sendReplyBarAction: vi.fn(),
@@ -9,6 +10,7 @@ const shared = vi.hoisted(() => ({
 }));
 
 vi.mock("electron", () => ({
+  app: { quit: shared.quit },
   ipcMain: {
     on: (channel: string, listener: (...args: unknown[]) => unknown) => {
       shared.handlers[channel] = listener;
@@ -48,6 +50,7 @@ const validState = {
 describe("detached reply window IPC", () => {
   beforeEach(() => {
     shared.handlers = {};
+    shared.quit.mockClear();
     shared.setReplyBarWindowState.mockClear();
     shared.resizeReplyBarWindow.mockClear();
     shared.sendReplyBarAction.mockClear();
@@ -90,5 +93,23 @@ describe("detached reply window IPC", () => {
     shared.handlers[WindowChannels.ReplyBarReady]({ sender: "main" });
     shared.handlers[WindowChannels.ReplyBarReady]({ sender: "reply" });
     expect(shared.sendReplyBarState).toHaveBeenCalledOnce();
+  });
+});
+
+describe("main window close IPC", () => {
+  beforeEach(() => {
+    shared.handlers = {};
+    shared.quit.mockClear();
+    registerWindowIpc();
+  });
+
+  it("quits the app instead of only closing the main window", () => {
+    shared.handlers[WindowChannels.Close]({ sender: "main" });
+    expect(shared.quit).toHaveBeenCalledOnce();
+  });
+
+  it("ignores close requests from other windows", () => {
+    shared.handlers[WindowChannels.Close]({ sender: "reply" });
+    expect(shared.quit).not.toHaveBeenCalled();
   });
 });
