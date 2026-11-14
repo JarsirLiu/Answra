@@ -67,6 +67,8 @@ import {
 } from "../src/main/capture/selectionWindow";
 import { createWindowSurfaceRegistry } from "../src/main/windowSurfaceRegistry";
 
+const originalPlatform = process.platform;
+
 describe("selectionWindow capture protection", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -78,6 +80,7 @@ describe("selectionWindow capture protection", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    Object.defineProperty(process, "platform", { value: originalPlatform });
   });
 
   function createPolicyHost(stealth: boolean) {
@@ -133,34 +136,40 @@ describe("selectionWindow capture protection", () => {
     expect(window.setOpacity).toHaveBeenLastCalledWith(1);
   });
 
-  it("hides and reuses the overlay after selection instead of closing its native window", async () => {
-    const host = createPolicyHost(false);
-    createSelectionWindows(undefined, false, host, "win32");
-    const window = state.windows[0];
-    await Promise.resolve();
-    await vi.advanceTimersByTimeAsync(60);
+  it.each(["darwin", "win32"] as const)(
+    "hides and reuses the native overlay on %s",
+    async (platform) => {
+      Object.defineProperty(process, "platform", { value: platform });
+      const host = createPolicyHost(false);
+      createSelectionWindows(undefined, false, host, platform);
+      const window = state.windows[0];
+      expect(window.options.type).toBe(platform === "darwin" ? "panel" : undefined);
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(60);
 
-    hideSelectionWindows();
-    expect(window.hide).toHaveBeenCalledOnce();
-    if (process.platform === "win32") {
-      expect(window.setOpacity).toHaveBeenLastCalledWith(0);
-      expect(window.setOpacity.mock.invocationCallOrder.at(-1)).toBeLessThan(
-        window.hide.mock.invocationCallOrder[0],
-      );
-    }
-    expect(window.close).not.toHaveBeenCalled();
-    expect(getActiveSelectionWindows()).toEqual([]);
+      hideSelectionWindows();
+      expect(window.hide).toHaveBeenCalledOnce();
+      if (process.platform === "win32") {
+        expect(window.setOpacity).toHaveBeenLastCalledWith(0);
+        expect(window.setOpacity.mock.invocationCallOrder.at(-1)).toBeLessThan(
+          window.hide.mock.invocationCallOrder[0],
+        );
+      }
+      expect(window.close).not.toHaveBeenCalled();
+      expect(getActiveSelectionWindows()).toEqual([]);
 
-    createSelectionWindows("#ffffff", false, host, "win32");
-    await Promise.resolve();
-    await vi.advanceTimersByTimeAsync(60);
+      state.displays = [{ bounds: { x: 0, y: 0, width: 1440, height: 900 }, id: 1 }];
+      createSelectionWindows("#ffffff", false, host, platform);
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(60);
 
-    expect(state.windows).toHaveLength(1);
-    expect(state.windows[0]).toBe(window);
-    expect(window.loadFile).toHaveBeenCalledTimes(2);
-    expect(window.showInactive).toHaveBeenCalledTimes(2);
-    expect(window.setBounds).toHaveBeenCalledOnce();
-  });
+      expect(state.windows).toHaveLength(1);
+      expect(state.windows[0]).toBe(window);
+      expect(window.loadFile).toHaveBeenCalledTimes(2);
+      expect(window.showInactive).toHaveBeenCalledTimes(2);
+      expect(window.setBounds).toHaveBeenCalledWith({ x: 0, y: 0, width: 1440, height: 900 });
+    },
+  );
 
   it("creates one overlay spanning the virtual desktop including negative display origins", () => {
     state.displays = [

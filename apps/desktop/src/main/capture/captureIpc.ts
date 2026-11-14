@@ -116,10 +116,9 @@ async function runRegionCapture(
         if (pendingCapture && getActiveSelectionWindows().length === 0) pendingCapture(null);
       });
     }
-    if (process.platform === "win32") {
-      // The Windows selection overlay is intentionally non-activating, so its
-      // DOM keydown handler cannot receive Escape. Scope the global shortcut
-      // to the active capture session and always unregister it in finally.
+    if (process.platform === "win32" || process.platform === "darwin") {
+      // Non-activating Windows and macOS overlays may not receive DOM Escape.
+      // Scope the global shortcut to this capture and release it in finally.
       escapeShortcutRegistered = globalShortcut.register("Escape", () => {
         pendingCapture?.(null);
       });

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const electronState = vi.hoisted(() => ({
   windows: [] as Array<{
@@ -56,9 +56,20 @@ vi.mock("../src/main/windowForeground", () => ({
 
 import { createMainWindowController } from "../src/main/mainWindowController";
 
-describe("main window initial display", () => {
+const originalPlatform = process.platform;
+
+describe.each([
+  { platform: "darwin", windowType: "panel", focusable: undefined },
+  { platform: "win32", windowType: undefined, focusable: false },
+  { platform: "linux", windowType: undefined, focusable: undefined },
+])("main window initial display on $platform", ({ platform, windowType, focusable }) => {
   beforeEach(() => {
     electronState.windows = [];
+    Object.defineProperty(process, "platform", { value: platform });
+  });
+
+  afterEach(() => {
+    Object.defineProperty(process, "platform", { value: originalPlatform });
   });
 
   it("shows the first window without activating it", () => {
@@ -73,9 +84,8 @@ describe("main window initial display", () => {
 
     expect(window.showInactive).toHaveBeenCalledOnce();
     expect(window.show).not.toHaveBeenCalled();
-    expect(electronState.windows[0].options.focusable).toBe(
-      process.platform === "win32" ? false : undefined,
-    );
+    expect(electronState.windows[0].options.type).toBe(windowType);
+    expect(electronState.windows[0].options.focusable).toBe(focusable);
   });
 
   it("keeps the window hidden when its registered surface is not ready", () => {

@@ -200,7 +200,7 @@ describe("RunCommand", { timeout: 30_000 }, () => {
     const command =
       process.platform === "win32"
         ? "$fi = Get-Item 'state.txt'\nWrite-Host ('Length: ' + $fi.Length)"
-        : "value=$(wc -c < state.txt)\nprintf 'Length: %s' \"$value\"";
+        : "value=$(wc -c < state.txt)\nprintf 'Length: %d' \"$value\"";
     const result = await execute(tools, { command }, root);
 
     expect(modelText(result)).toContain("Length: 10");

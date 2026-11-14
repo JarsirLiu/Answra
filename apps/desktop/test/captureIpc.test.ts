@@ -109,6 +109,7 @@ vi.mock("../src/main/capture/captureService", () => {
 });
 
 import { CaptureChannels } from "@answra/shared";
+import { globalShortcut } from "electron";
 import { registerCaptureIpc } from "../src/main/capture/captureIpc";
 import {
   captureDisplay,
@@ -123,6 +124,8 @@ import {
   setReplyBarAnchor,
 } from "../src/main/window";
 
+const originalPlatform = process.platform;
+
 const VALID_SELECTION = {
   displayId: 1,
   rect: { height: 10, width: 10, x: 0, y: 0 },
@@ -133,6 +136,7 @@ describe("captureIpc 区域截图编排", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+    Object.defineProperty(process, "platform", { value: originalPlatform });
   });
 
   beforeEach(() => {
@@ -197,53 +201,79 @@ describe("captureIpc 区域截图编排", () => {
     expect(createSelectionWindows).toHaveBeenCalledWith(undefined, true, expect.any(Object));
   });
 
-  it.skipIf(process.platform !== "win32")(
-    "registers Escape for the active Windows capture and unregisters after cancellation",
-    async () => {
-      const { globalShortcut } = await import("electron");
+  it.each(["darwin", "win32"])(
+    "registers Escape during capture on %s and releases it after cancellation",
+    async (platform) => {
+      Object.defineProperty(process, "platform", { value: platform });
       const start = shared.handlers[CaptureChannels.StartRegionCapture]({}, {});
-      expect(globalShortcut.register).toHaveBeenCalledWith("Escape", expect.any(Function));
+      try {
+        expect(globalShortcut.register).toHaveBeenCalledWith("Escape", expect.any(Function));
+        shared.escapeHandler?.();
 
-      shared.escapeHandler?.();
-      const result = await start;
-
-      expect(result).toEqual({ ok: false, reason: "cancelled" });
-      expect(globalShortcut.unregister).toHaveBeenCalledWith("Escape");
+        expect(await start).toEqual({ ok: false, reason: "cancelled" });
+        expect(globalShortcut.unregister).toHaveBeenCalledWith("Escape");
+        expect(shared.fakeWindow.isVisible()).toBe(true);
+        expect(hideSelectionWindows).toHaveBeenCalled();
+      } finally {
+        shared.handlers[CaptureChannels.RegionCancelled]({
+          sender: shared.fakeOverlay.webContents,
+        });
+        await start;
+      }
     },
   );
 
-  it("keeps the protected Windows main window visible during capture", async () => {
-    shared.stealthEnabled = true;
-    vi.mocked(captureDisplay).mockImplementation(async () => {
-      expect(shared.fakeWindow.isVisible()).toBe(process.platform === "win32");
-      return { image: {}, scaleFactor: 1 };
-    });
-    vi.mocked(cropToDataUrl).mockReturnValue({
-      dataUrl: "data:image/png;base64,QUJD",
-      height: 10,
-      ok: true,
-      width: 10,
-    });
+  it("allows overlay cancellation on macOS when Escape registration is unavailable", async () => {
+    Object.defineProperty(process, "platform", { value: "darwin" });
+    vi.mocked(globalShortcut.register).mockReturnValueOnce(false);
 
     const start = shared.handlers[CaptureChannels.StartRegionCapture]({}, {});
-    shared.handlers[CaptureChannels.RegionSelected](
-      { sender: shared.fakeOverlay.webContents },
-      VALID_SELECTION,
-    );
-    await start;
+    shared.handlers[CaptureChannels.RegionCancelled]({ sender: shared.fakeOverlay.webContents });
 
+    expect(await start).toEqual({ ok: false, reason: "cancelled" });
+    expect(globalShortcut.register).toHaveBeenCalledWith("Escape", expect.any(Function));
+    expect(globalShortcut.unregister).not.toHaveBeenCalled();
     expect(shared.fakeWindow.isVisible()).toBe(true);
-    if (process.platform === "win32") {
-      expect(prepareWindowCaptureProtection).toHaveBeenCalledWith(shared.fakeWindow);
-      expect(prepareWindowToShow).not.toHaveBeenCalledWith(shared.fakeWindow);
-      expect(shared.fakeWindow.showInactive).not.toHaveBeenCalled();
-    } else {
-      expect(prepareWindowToShow).not.toHaveBeenCalledWith(shared.fakeWindow);
-      expect(prepareWindowToShow.mock.invocationCallOrder[0]).toBeLessThan(
-        shared.fakeWindow.showInactive.mock.invocationCallOrder.at(-1) ?? Infinity,
-      );
-    }
   });
+
+  it.each(["darwin", "win32", "linux"])(
+    "applies the capture visibility and restoration policy on %s",
+    async (platform) => {
+      Object.defineProperty(process, "platform", { value: platform });
+      shared.stealthEnabled = true;
+      vi.mocked(captureDisplay).mockImplementation(async () => {
+        expect(shared.fakeWindow.isVisible()).toBe(process.platform === "win32");
+        return { image: {}, scaleFactor: 1 };
+      });
+      vi.mocked(cropToDataUrl).mockReturnValue({
+        dataUrl: "data:image/png;base64,QUJD",
+        height: 10,
+        ok: true,
+        width: 10,
+      });
+
+      const start = shared.handlers[CaptureChannels.StartRegionCapture]({}, {});
+      shared.handlers[CaptureChannels.RegionSelected](
+        { sender: shared.fakeOverlay.webContents },
+        VALID_SELECTION,
+      );
+      await start;
+
+      expect(shared.fakeWindow.isVisible()).toBe(true);
+      if (platform === "linux") expect(globalShortcut.unregister).not.toHaveBeenCalled();
+      else expect(globalShortcut.unregister).toHaveBeenCalledWith("Escape");
+      if (process.platform === "win32") {
+        expect(prepareWindowCaptureProtection).toHaveBeenCalledWith(shared.fakeWindow);
+        expect(prepareWindowToShow).not.toHaveBeenCalledWith(shared.fakeWindow);
+        expect(shared.fakeWindow.showInactive).not.toHaveBeenCalled();
+      } else {
+        expect(prepareWindowToShow).toHaveBeenCalledWith(shared.fakeWindow);
+        expect(prepareWindowToShow.mock.invocationCallOrder[0]).toBeLessThan(
+          shared.fakeWindow.showInactive.mock.invocationCallOrder.at(-1) ?? Infinity,
+        );
+      }
+    },
+  );
 
   it("waits for desktop composition after hiding the overlay before capture", async () => {
     vi.useFakeTimers();
@@ -311,22 +341,33 @@ describe("captureIpc 区域截图编排", () => {
     expect(result).toEqual({ ok: false, reason: "cancelled" });
   });
 
-  it("maps a capture failure to its reason", async () => {
-    vi.mocked(captureDisplay).mockRejectedValue(
-      new ScreenCaptureError("permission", "no permission"),
-    );
+  it.each(["darwin", "win32"])(
+    "restores the capture session after a failure on %s",
+    async (platform) => {
+      Object.defineProperty(process, "platform", { value: platform });
+      vi.mocked(captureDisplay).mockRejectedValue(
+        new ScreenCaptureError("permission", "no permission"),
+      );
 
-    const start = shared.handlers[CaptureChannels.StartRegionCapture]({}, {});
-    shared.handlers[CaptureChannels.RegionSelected](
-      { sender: shared.fakeOverlay.webContents },
-      VALID_SELECTION,
-    );
-    const result = (await start) as { message?: string; ok: boolean; reason?: string };
+      const start = shared.handlers[CaptureChannels.StartRegionCapture]({}, {});
+      shared.handlers[CaptureChannels.RegionSelected](
+        { sender: shared.fakeOverlay.webContents },
+        VALID_SELECTION,
+      );
+      const result = (await start) as { message?: string; ok: boolean; reason?: string };
 
-    expect(result.ok).toBe(false);
-    expect(result.reason).toBe("permission");
-    expect(result.message).toBe("no permission");
-  });
+      expect(result.ok).toBe(false);
+      expect(result.reason).toBe("permission");
+      expect(result.message).toBe("no permission");
+      expect(shared.fakeWindow.isVisible()).toBe(true);
+      expect(hideSelectionWindows).toHaveBeenCalled();
+      expect(globalShortcut.unregister).toHaveBeenCalledWith("Escape");
+
+      const retry = shared.handlers[CaptureChannels.StartRegionCapture]({}, {});
+      shared.escapeHandler?.();
+      expect(await retry).toEqual({ ok: false, reason: "cancelled" });
+    },
+  );
 
   it("rejects calls from an illegal sender", async () => {
     vi.mocked(isWindowFromSender).mockReturnValue(false);
