@@ -64,6 +64,11 @@ export class AgentRuntime {
     };
   }
 
+  /** 当前 chat 端点的非 secret 上下文窗口；未声明时由领域使用内部保守预算。 */
+  chatContextWindow(): number | undefined {
+    return this.routes?.chat.contextWindow;
+  }
+
   /** 内部文本任务（上下文摘要等）：复用鉴权与重试，但不注册 Agent、不产生 run 事件。 */
   async generateText({
     prompt,

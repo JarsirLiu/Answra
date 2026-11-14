@@ -30,11 +30,11 @@ Conversation 和 Coding 的长会话还会积累大量旧的 `read`、`grep`、`
   - `apps/agent/src/core/context/usageAnchor.ts`（新增）：记录成功 run 首个 step 的 usage，计算校准比例，并在投影变化后失效。
   - `apps/agent/src/core/context/tokenEstimate.ts`：从原始 transcript 估算改为估算最终 `ModelMessage[]`、system、tools 和当前请求图片，并提供锚点校准。
   - `apps/agent/src/core/context/compaction/*`：继续只负责摘要压缩，不接管工具结果清理。
-  - `apps/agent/src/core/transcript/contextState.ts`：保存可选的 usage 锚点；不保存清理状态，也不保存工具结果正文副本。
+  - `apps/agent/src/core/transcript/contextState.ts`：保存可选的 usage 锚点、最近一次请求占用和最近一次清理反馈；不保存清理水位，也不保存工具结果正文副本。
   - `apps/agent/src/conversation/application.ts`、`apps/agent/src/coding/application.ts`、`apps/agent/src/interview/application.ts`：在 `definition.prepare()` 生成 draft 后、发送前把最终模型请求交给 `ContextPreparation`；需要重建时通过回调重新组装。
   - `packages/shared/src/schema/`：只在需要 UI 展示时增加上下文占用/清理状态 DTO；预算公式和清理策略不进入 shared。
   - `packages/config/src/`、云端模型能力端点：保存或下发非 secret 的 `contextWindow`、`maxOutputTokens`、可选的图片估算规则。
-  - `apps/desktop/src/main/`、`apps/cli/src/`：模型能力配置、自动压缩/自动清理开关、上下文占用展示。
+  - `apps/desktop/src/main/`、`apps/cli/src/`：模型能力字段、上下文占用与清理反馈展示。
 - UI/进程/协议/持久化表面：
   - 桌面和 CLI 显示“当前上下文 / 上限 / 触发点 / 清理阈值”，不显示“待处理消息”。
   - 工具结果清理只改变模型投影，不删除 transcript、不改 UI 历史。
@@ -51,7 +51,7 @@ Conversation 和 Coding 的长会话还会积累大量旧的 `read`、`grep`、`
 ### 1. 产品规则：只暴露用户能理解的控制面
 
 - 最大上下文固定为 `256_000`，但来源必须是模型能力字段或本地模型配置，不能按模型名猜。
-- 自动摘要压缩和自动工具结果清理分别是两个开关。
+- 自动摘要压缩和自动工具结果清理默认开启；2026-11-14 产品决定不提供用户开关，避免把内部预算策略暴露成配置负担。
 - 自动清理旧工具结果的触发上下文是 `172_000`，清理后目标上下文是 `40_000`；两者都显示在控制面中，不能只藏在代码默认值里。
 - 主界面只展示“当前占用 / 上限 / 摘要触发点 / 清理触发点”，内部保留量、最少摘要条数等放在高级设置。
 - 删除“待处理消息”这一用户概念。代码内部可以继续叫 `messagesAfterCheckpoint`，Note、UI 和错误文案中不得把它包装成用户需要理解的新对象。
@@ -202,7 +202,7 @@ definition.prepare()
 
 ### 7. 控制面与可观察性
 
-这里的“控制面”只指用户可控制、可观察的表面：非 secret 的模型能力配置、自动压缩/自动清理开关、只读的预算与占用展示，以及手动操作入口；不是新的执行路径、调度器或存储层。
+这里的“控制面”只指用户可观察的表面：非 secret 的模型能力字段、只读的预算与占用展示、清理结果反馈，以及手动操作入口；不是新的执行路径、调度器或存储层。自动压缩与自动清理保持默认开启，不提供用户开关。
 
 - 桌面模型设置增加“自动压缩”“自动清理旧工具结果”以及只读的 256k 窗口展示。
 - CLI 增加等价的设置展示和状态行，不新增第二套模型配置来源。
@@ -238,7 +238,9 @@ definition.prepare()
 - 压缩写入已允许在活动 run 内保存 `ContextState`：此前 `MemoryConversationStore.saveContextState` 的 `activeRunId` 守卫会让真实自动压缩在 `beginRun` 之后必然失败。`prepareContext` 现在接收 run 的 `AbortSignal`，摘要生成被取消时记录 `failed`、不产生 checkpoint，原始 transcript 保持不变。
 - 存储边界保持 `ConversationStore` / `ExecutionStore` 端口：当前仍是内存 adapter，checkpoint、压缩状态和 usage 锚点都经 `ConversationStore.loadContextState/saveContextState` 保存；SQLite adapter 接入时不需要改压缩或锚点逻辑。SQLite 本身仍未实现，按 [可切换的内存与 SQLite 存储边界](2026-11-08-switchable-memory-sqlite-storage.md) 单独推进。
 - CLI 手动 `/compact` 已接入 `CodingApplication.compactConversation`：复用同一 `ContextCompactor`，`force` 跳过预算触发点但仍保留最近尾段和最少摘要消息数；运行中拒绝，取消通过 `AbortSignal` 记录 `failed`。CLI 同时在 snapshot 中回放成功摘要边界，TUI 显示 Claude 风格 Spinner/边界/失败文案。
-- 尚未实现：模型能力配置（`contextWindow`、`maxOutputTokens`、图片估算规则）、自动压缩/清理开关、上下文占用与阈值展示、工具清理结果/跳过原因展示、`postCompactTarget` 软目标、摘要中的图片处理、连续摘要失败熔断、provider 超限后的单次 reactive compact、摘要请求自身超限的截断重试，以及 archive/SQLite。当前预算仍是代码默认值，桌面和 CLI 仍没有完整控制面；跨进程恢复仍依赖未实现的持久化 store。
+- 模型窗口已改为可选端点能力：`ConversationCapabilityEndpoint.contextWindow` 由云端能力目录透传，桌面认证持久化保留；缺失时仍回退 256k 基准预算。客户端不增加手动窗口配置。
+- 上下文占用与最近一次工具清理已进入 snapshot：`contextUsage`（当前估算/输入上限/清理与压缩阈值）和 `contextPruning`（清理数量与节省 token）由 `ContextPreparation` 写入 `ContextState`；桌面 `ChatPanel` 与 CLI 状态行/尾部提示展示。
+- 自动压缩与自动清理保持默认开启，不提供用户开关（2026-11-14 产品决定）；`postCompactTarget`、图片摘要、连续失败熔断、provider 超限兜底和摘要请求超限重试仍未实现。
 
 ## 模块边界
 
@@ -250,7 +252,7 @@ definition.prepare()
 - `core/context/usageAnchor.ts`：记录成功 run 首个 step 的 usage、计算校准比例、在投影变化或 run 失败后清理锚点；不读取 transcript 正文、不调用模型。
 - `core/context/tokenEstimate.ts`：只做估算和锚点校准；同时支持文本、工具结果、图片和模型消息形状。
 - `core/context/compaction/*`：只做摘要、检查点和生命周期；不负责工具清理；成功压缩会丢弃旧 usage 锚点。
-- `core/transcript/contextState.ts`：只保存上下文状态类型；checkpoint 类型与选段在 `contextCheckpoint.ts`，压缩边界投影在 `contextBoundary.ts`；不保存清理水位或工具结果副本。
+- `core/transcript/contextState.ts`：只保存上下文状态类型；checkpoint 类型与选段在 `contextCheckpoint.ts`，压缩边界投影在 `contextBoundary.ts`；保存最近一次 `contextUsage`/`contextPruning` 反馈，不保存清理水位或工具结果副本。
 - `core/transcript/projection.ts`、`core/context/projection.ts`：继续是模型消息投影的唯一入口；工具清理通过替换副本参与，不复制投影逻辑。
 - `conversation/`、`coding/`、`interview/`：只提供 `ContextPolicy`/`CompactionProfile` 和当前请求，不实现第二套预算或清理。
 - `packages/shared`：只提供 UI 需要的设置和状态 DTO；不包含阈值公式、prompt 或存储实现。
@@ -281,7 +283,7 @@ definition.prepare()
   - 172k 触发时，按旧到新清理 `Read`/`Grep`/`RunCommand` 结果；保留最近 5 个可清理结果和最近 12 条模型消息；净节省不足 132k 时投影不变。
   - 不清理 `Edit`、`WriteStdin` 等非白名单结果，不清 assistant 文本、用户文本或 thinking。
   - 工具结果清理后 transcript 和 UI 历史不变，tool-call/tool-result 配对完整。
-  - 自动清理开关、上下文占用和跳过原因属于后续控制面，本阶段只交付 core 行为。
+  - 上下文占用、阈值与清理结果已进入 snapshot；自动清理没有用户开关，跳过原因只保留在 core 内部判断。
 - 自动化验证：
   - 预算公式覆盖 256k、固定开销变化、输出预留变化和硬上限。
   - 估算覆盖 system、tools、assistant parts、工具状态、图片、当前请求，证明不再重复计数。

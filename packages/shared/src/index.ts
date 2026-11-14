@@ -135,6 +135,8 @@ export type {
   ContextCompactionState,
   ContextCompactionStatus,
   ContextCompactionTrigger,
+  ContextPruningStatus,
+  ContextUsage,
   ConversationBot,
   ConversationMessagePart,
   MessageAudience,

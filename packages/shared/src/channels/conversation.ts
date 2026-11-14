@@ -86,6 +86,11 @@ export interface ConversationCapabilityEndpoint {
    * API Key，不触发登录、不刷新令牌。缺省按 `cloud` 处理。
    */
   auth?: "cloud" | "local";
+  /**
+   * 模型总上下文窗口；由服务端能力目录或端点元数据提供，非 secret。
+   * 缺省时使用内部保守预算，不向用户暴露手动配置。
+   */
+  contextWindow?: number;
 }
 
 /**

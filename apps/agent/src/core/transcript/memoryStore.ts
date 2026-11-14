@@ -378,6 +378,10 @@ function snapshotOf(session: Session): ConversationSnapshot {
     ...session.snapshot,
     ...(compaction ? { contextCompaction: { ...compaction } } : {}),
     ...(boundaries.length > 0 ? { contextCompactionBoundaries: boundaries } : {}),
+    ...(session.contextState?.usage ? { contextUsage: { ...session.contextState.usage } } : {}),
+    ...(session.contextState?.pruning
+      ? { contextPruning: { ...session.contextState.pruning } }
+      : {}),
   });
 }
 
@@ -386,6 +390,8 @@ function cloneContextState(state: ContextState): ContextState {
     checkpoints: state.checkpoints.map((checkpoint) => ({ ...checkpoint })),
     ...(state.compaction ? { compaction: { ...state.compaction } } : {}),
     ...(state.usageAnchor ? { usageAnchor: { ...state.usageAnchor } } : {}),
+    ...(state.usage ? { usage: { ...state.usage } } : {}),
+    ...(state.pruning ? { pruning: { ...state.pruning } } : {}),
   };
 }
 

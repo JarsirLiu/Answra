@@ -10,7 +10,7 @@ Conversation、CLI coding、Interview 等所有使用 transcript 的领域，每
 - `apps/agent/src/coding/context.ts:21` 同样读取完整 snapshot；
 - `ConversationStore` 在提案时只有进程内实现（`apps/agent/src/core/transcript/memoryStore.ts:14`），没有上下文预算、摘要、归档或恢复能力。现已增加 checkpoint、压缩状态和 usage 锚点，但仍无 archive、重启恢复和 SQLite adapter。
 
-结果是会话越长，模型输入越大，最终一定撞到 provider 的上下文窗口。提案时也没有 `contextWindow` 配置；`finish` 事件虽然带 `usage.inputTokens`（`apps/agent/src/core/model/streamEvents.ts:161`），但没有地方用它提前触发压缩。现在成功 run 的首个 step usage 已作为估算校准锚点，`contextWindow` 仍未进入客户端配置或模型能力字段。
+结果是会话越长，模型输入越大，最终一定撞到 provider 的上下文窗口。提案时也没有 `contextWindow` 配置；`finish` 事件虽然带 `usage.inputTokens`（`apps/agent/src/core/model/streamEvents.ts:161`），但没有地方用它提前触发压缩。现在成功 run 的首个 step usage 已作为估算校准锚点，`contextWindow` 已作为可选模型能力字段进入端点契约，缺失时回退 256k。
 
 用户需要的是**一个可长期使用的会话**，而不是每次满了就新建会话：
 
@@ -38,7 +38,7 @@ Conversation、CLI coding、Interview 等所有使用 transcript 的领域，每
   - `apps/agent/src/coding/`：拆分 context 与 compaction；Coding 只提供领域 profile，与 Conversation 共用同一压缩核心。
   - `apps/agent/src/interview/`：独立 `context/` 与 `compaction/`，不再 import `conversation/turn`；按实时场景分阶段启用同一压缩核心。
   - `apps/agent/src/execution/`：保持 run/event 事实流；摘要调用不注册为 Agent run。
-  - `apps/desktop/src/main/`、`apps/cli/src/`：`contextWindow` 配置、压缩状态、归档查看与删除入口。
+  - `apps/desktop/src/main/`、`apps/cli/src/`：`contextWindow` 能力字段、压缩状态、上下文占用反馈、归档查看与删除入口。
   - `packages/shared/src/schema/`：只在 UI 需要时增加压缩/归档 DTO；不包含存储实现或 prompt。
   - 未来的 `apps/agent/src/storage/`：统一存储 backend、SQLite 连接、事务和迁移。
 - UI/进程/协议/持久化表面：
@@ -387,7 +387,9 @@ Conversation / Coding / Interview application
 - 压缩相关 CLI TUI 测试已按关注点拆分：`tui.compaction`、`tui.composer`、`tui.render`、`tui.transcript`、`tui.thinking`、`tui.toolPresentation`，共享 `tuiTestHarness`，避免单个测试文件承载所有交互。
 - 测试覆盖阈值、保留尾段、checkpoint 去重、summary 注入、单 prompt、三状态迁移、状态快照、失败回退、边界回放、强制手动压缩、CLI Spinner/边界/命令与 UI 投影；schema 明确拒绝已移除的 `summarizing`。
 
-尚未落地：自动压缩/清理开关、上下文占用与阈值展示、工具清理结果/跳过原因展示、`postCompactTarget` 软目标、摘要中的图片处理、连续摘要失败熔断、provider 超限后的单次 reactive compact、摘要请求自身超限的截断重试、archive/SQLite，以及依赖持久化 store 的跨进程重启恢复。当前自动触发已使用 256k 窗口、216k 压缩点和 172k/40k/132k 工具清理预算，不再是 96k；预算与工具清理的细化规则见[256k 上下文预算与旧工具结果清理](2026-11-13-context-budget-and-tool-result-clearing.md)。
+已落地上下文占用与工具清理反馈：`ContextPreparation` 将最终请求的 `contextUsage` 和实际应用的 `contextPruning` 写入 `ContextState`，snapshot 投影到桌面 `ChatPanel` 和 CLI 状态行/尾部提示；模型窗口可从端点 `contextWindow` 派生，缺失时回退 256k。自动压缩与自动清理保持默认开启，不提供用户开关（2026-11-14 产品决定）。
+
+尚未落地：`postCompactTarget` 软目标、摘要中的图片处理、连续摘要失败熔断、provider 超限后的单次 reactive compact、摘要请求自身超限的截断重试、archive/SQLite，以及依赖持久化 store 的跨进程重启恢复。当前自动触发已使用 256k 窗口、216k 压缩点和 172k/40k/132k 工具清理预算，不再是 96k；预算与工具清理的细化规则见[256k 上下文预算与旧工具结果清理](2026-11-13-context-budget-and-tool-result-clearing.md)。
 
 ## 模块边界
 
@@ -448,7 +450,7 @@ Conversation / Coding / Interview application
 ## 风险
 
 - 摘要质量不足或多次压缩漂移，会丢失关键约束；用分段 checkpoint、保留最近完整轮次和可检索 archive 降低依赖。
-- `contextWindow` 配置错误会导致过早压缩或仍然溢出；需要保守阈值、provider usage 校准和显式用户配置。
+- `contextWindow` 来自端点能力字段；字段错误会导致过早压缩或仍然溢出。需要保守阈值、provider usage 校准和端点字段校验，不依赖用户手动配置。
 - 摘要调用增加延迟与 token 成本；必须只在该会话空闲时触发，并允许取消和失败回退。
 - 缓存假设不稳定：不同 provider 的缓存键可能包含 tools、system、model 或消息前缀；保留 system/tools 不变是必要条件，不是充分条件。不要把“用户消息注入”当成零缓存影响。
 - 归档工具结果压缩可能损失后续检索所需细节；使用无损压缩、预览和明确保留策略，避免默认有损。

@@ -237,6 +237,7 @@ export class AuthService {
       baseUrl: `${origin}${declared.path.slice(0, -CHAT_COMPLETIONS_SUFFIX.length)}`,
       model: declared.model || capabilityId,
       auth: "cloud",
+      ...(declared.contextWindow === undefined ? {} : { contextWindow: declared.contextWindow }),
     };
   }
 
@@ -642,8 +643,20 @@ function readProfileEndpoints(value: unknown): AuthCapabilityEndpoint[] {
       typeof endpoint.model !== "string"
     )
       return [];
-    return [{ id: endpoint.id, path: endpoint.path, model: endpoint.model }];
+    const contextWindow = readPositiveInteger(endpoint.context_window ?? endpoint.contextWindow);
+    return [
+      {
+        id: endpoint.id,
+        path: endpoint.path,
+        model: endpoint.model,
+        ...(contextWindow === undefined ? {} : { contextWindow }),
+      },
+    ];
   });
+}
+
+function readPositiveInteger(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined;
 }
 
 /**

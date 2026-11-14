@@ -90,6 +90,23 @@ export const contextCompactionBoundarySchema = z.strictObject({
   throughMessageId: z.string(),
   createdAt: z.string().datetime(),
 });
+/** 当前模型请求的估算占用和关键预算阈值；只用于 UI 解释，不参与压缩决策。 */
+export const contextUsageSchema = z.strictObject({
+  contextWindow: z.number().int().positive(),
+  usedTokens: z.number().int().nonnegative(),
+  inputLimit: z.number().int().positive(),
+  compactAt: z.number().int().positive(),
+  pruneAt: z.number().int().nonnegative(),
+  pruneTarget: z.number().int().nonnegative(),
+  updatedAt: z.string().datetime(),
+});
+/** 最近一次实际应用的旧工具结果清理；跳过时不产生状态。 */
+export const contextPruningSchema = z.strictObject({
+  trigger: contextCompactionTriggerSchema,
+  prunedCount: z.number().int().positive(),
+  savedTokens: z.number().int().nonnegative(),
+  updatedAt: z.string().datetime(),
+});
 export const agentRunSnapshotSchema = z.strictObject({
   runId: z.string(),
   state: agentRunStateSchema,
@@ -112,3 +129,5 @@ export type ContextCompactionState = z.infer<typeof contextCompactionStateSchema
 export type ContextCompactionTrigger = z.infer<typeof contextCompactionTriggerSchema>;
 export type ContextCompactionStatus = z.infer<typeof contextCompactionSchema>;
 export type ContextCompactionBoundary = z.infer<typeof contextCompactionBoundarySchema>;
+export type ContextUsage = z.infer<typeof contextUsageSchema>;
+export type ContextPruningStatus = z.infer<typeof contextPruningSchema>;

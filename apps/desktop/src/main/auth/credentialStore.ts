@@ -28,6 +28,8 @@ export interface AuthCapabilityEndpoint {
   id: string;
   path: string;
   model: string;
+  /** 服务端声明的模型总上下文窗口；缺省时客户端使用保守预算。 */
+  contextWindow?: number;
 }
 
 /** 凭据 + 服务端下发的账号画像（画像非 secret，但一并加密保存以免多一份明文文件）。 */
@@ -125,6 +127,15 @@ function parseEndpoints(value: unknown): AuthCapabilityEndpoint[] {
       typeof endpoint.model !== "string"
     )
       return [];
-    return [{ id: endpoint.id, path: endpoint.path, model: endpoint.model }];
+    return [
+      {
+        id: endpoint.id,
+        path: endpoint.path,
+        model: endpoint.model,
+        ...(typeof endpoint.contextWindow === "number" && endpoint.contextWindow > 0
+          ? { contextWindow: endpoint.contextWindow }
+          : {}),
+      },
+    ];
   });
 }

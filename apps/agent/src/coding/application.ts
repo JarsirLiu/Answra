@@ -55,6 +55,7 @@ export class CodingApplication {
     this.contextPreparation = new ContextPreparation({
       compactor: this.contextCompactor,
       contextStateStore: store,
+      contextWindow: () => this.agentRuntime.chatContextWindow(),
     });
   }
 
@@ -154,6 +155,7 @@ export class CodingApplication {
           modelRequest,
           rebuild,
           signal,
+          onStatus: async () => this.pushSnapshotValue(await this.store.load(conversationId)),
         }),
       prepareRun: async ({ runId, eventRevision }) => {
         await this.store.beginRun(

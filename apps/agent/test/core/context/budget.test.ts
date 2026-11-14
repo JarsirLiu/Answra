@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  contextBudgetPolicyForWindow,
   DEFAULT_CONTEXT_BUDGET_POLICY,
   resolveContextBudget,
 } from "../../../src/core/context/budget";
@@ -17,6 +18,21 @@ describe("context budget", () => {
       pruneAt: 172_000,
       pruneTarget: 40_000,
       minPruneSaving: 132_000,
+    });
+  });
+
+  it("scales prune and compaction thresholds down with the model window", () => {
+    expect(resolveContextBudget(contextBudgetPolicyForWindow(128_000))).toMatchObject({
+      contextWindow: 128_000,
+      maxOutputTokens: 10_000,
+      safetyTokens: 6_000,
+      fixedOverheadTokens: 4_000,
+      compactionBuffer: 20_000,
+      inputLimit: 108_000,
+      compactAt: 108_000,
+      pruneAt: 86_000,
+      pruneTarget: 20_000,
+      minPruneSaving: 66_000,
     });
   });
 

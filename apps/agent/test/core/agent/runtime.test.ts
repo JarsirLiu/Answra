@@ -23,6 +23,19 @@ describe("AgentRuntime static registration", () => {
     );
   });
 
+  it("exposes the configured chat context window", () => {
+    runtime = new AgentRuntime({
+      executionStore: new MemoryExecutionStore(),
+      emitEvent: () => undefined,
+    });
+    runtime.configureModelRoutes({
+      chat: { baseUrl: "http://localhost:1234/v1", model: "chat", contextWindow: 128_000 },
+      answer: { baseUrl: "http://localhost:1234/v1", model: "answer" },
+    });
+
+    expect(runtime.chatContextWindow()).toBe(128_000);
+  });
+
   it("waits for the domain event callback and publishes the run cursor before its first event", async () => {
     const observed: string[] = [];
     const emitted: AgentEventEnvelope[] = [];

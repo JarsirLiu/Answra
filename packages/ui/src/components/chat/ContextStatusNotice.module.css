@@ -1,0 +1,17 @@
+.notice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--chat-meta);
+  font-size: var(--font-xs);
+  line-height: 1.4;
+}
+
+.notice svg {
+  flex: none;
+}
+
+.text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

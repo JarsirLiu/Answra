@@ -5,6 +5,8 @@ import {
   agentToolCallStateSchema,
   contextCompactionBoundarySchema,
   contextCompactionSchema,
+  contextPruningSchema,
+  contextUsageSchema,
 } from "./status";
 
 /** Conversation transcript messages and snapshots; event facts live in events.ts. */
@@ -77,6 +79,10 @@ export const conversationSnapshotSchema = z.strictObject({
   contextCompaction: contextCompactionSchema.optional(),
   /** 已成功摘要的边界；可随 snapshot 回放，不包含摘要正文。 */
   contextCompactionBoundaries: z.array(contextCompactionBoundarySchema).optional(),
+  /** 最近一次模型请求的上下文占用与阈值；缺省表示尚未准备过请求。 */
+  contextUsage: contextUsageSchema.optional(),
+  /** 最近一次实际应用的旧工具结果清理；缺省表示最近一次请求未清理。 */
+  contextPruning: contextPruningSchema.optional(),
 });
 
 /** One persisted content event; seq is per run and revision is per session. */

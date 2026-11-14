@@ -1,4 +1,10 @@
-import type { AgentConnectionState, ContextCompactionStatus, DesktopBridge } from "@answra/shared";
+import type {
+  AgentConnectionState,
+  ContextCompactionStatus,
+  ContextPruningStatus,
+  ContextUsage,
+  DesktopBridge,
+} from "@answra/shared";
 import { LoaderCircle, X } from "lucide-react";
 import { type RefObject, useRef } from "react";
 import { ICON_SM } from "../../tokens";
@@ -6,6 +12,8 @@ import {
   AssistantMessage,
   ConnectionNotice,
   ContextCompactionNotice,
+  ContextPruningNotice,
+  ContextUsageNotice,
   formatConnectionNotice,
   MessageStream,
   ModelErrorNotice,
@@ -47,6 +55,10 @@ interface ChatPanelProps {
   connection?: AgentConnectionState;
   /** 上下文摘要压缩生命周期；独立于模型 run 状态。 */
   contextCompaction?: ContextCompactionStatus;
+  /** 最近一次模型请求的上下文占用与阈值。 */
+  contextUsage?: ContextUsage;
+  /** 最近一次实际应用的旧工具结果清理。 */
+  contextPruning?: ContextPruningStatus;
   /** 本轮思考耗时（毫秒），回答开始输出后冻结。 */
   thinkingMs?: number;
   /**
@@ -88,6 +100,8 @@ export function ChatPanel({
   retry,
   connection,
   contextCompaction,
+  contextUsage,
+  contextPruning,
   thinkingMs,
   error,
   onSignIn,
@@ -112,6 +126,8 @@ export function ChatPanel({
     error ? `error:${error}` : "",
     connection ? `connection:${connection.revision}` : "",
     contextCompaction ? `compaction:${contextCompaction.state}:${contextCompaction.updatedAt}` : "",
+    contextUsage ? `usage:${contextUsage.usedTokens}:${contextUsage.updatedAt}` : "",
+    contextPruning ? `pruning:${contextPruning.updatedAt}` : "",
   ].join("|");
   return (
     <PanelShell
@@ -184,6 +200,8 @@ export function ChatPanel({
           </article>
         ))}
         {contextCompaction && <ContextCompactionNotice status={contextCompaction} />}
+        {contextPruning && <ContextPruningNotice status={contextPruning} />}
+        {contextUsage && <ContextUsageNotice usage={contextUsage} />}
         <ConnectionNotice state={connection} />
         {!connectionNotice && retry && <RetryNotice retry={retry} />}
         {!connectionNotice && error && <ModelErrorNotice message={error} onSignIn={onSignIn} />}

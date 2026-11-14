@@ -87,6 +87,7 @@ function preparation(
     profile?: CompactionProfile;
     generate?: () => Promise<string>;
     budget?: ContextBudgetPolicy;
+    contextWindow?: () => number | undefined;
     toolResultPruning?: ToolResultPruningPolicy;
   } = {},
 ): ContextPreparation {
@@ -95,10 +96,12 @@ function preparation(
     profile: options.profile ?? PROFILE,
     generate: options.generate ?? (async () => "压缩后的摘要"),
   });
+  const budget = options.budget ?? (options.contextWindow === undefined ? SMALL_BUDGET : undefined);
   return new ContextPreparation({
     compactor,
     contextStateStore: store,
-    budget: options.budget ?? SMALL_BUDGET,
+    ...(budget === undefined ? {} : { budget }),
+    ...(options.contextWindow === undefined ? {} : { contextWindow: options.contextWindow }),
     ...(options.toolResultPruning ? { toolResultPruning: options.toolResultPruning } : {}),
   });
 }
@@ -390,5 +393,85 @@ describe("ContextPreparation", () => {
     });
 
     expect((await store.loadContextState("conversation-1"))?.usageAnchor).toBeUndefined();
+  });
+
+  it("uses the endpoint context window when no fixed budget is provided", async () => {
+    const store = await preparedStore();
+    const generate = vi.fn(async () => "压缩后的摘要");
+
+    const result = await preparation(store, {
+      contextWindow: () => 10_000,
+      generate,
+    }).prepareRequest({
+      conversationId: "conversation-1",
+      getAccessToken: async () => "token",
+      modelRequest: { system: "x".repeat(40_000), messages: [] },
+      rebuild: async () => ({ system: "small", messages: [] }),
+    });
+
+    expect(generate).toHaveBeenCalledOnce();
+    expect(result).toEqual({ system: "small", messages: [] });
+  });
+
+  it("persists the final request usage and applied pruning for snapshots", async () => {
+    const store = await preparedStore();
+    const onStatus = vi.fn();
+    const messages = Array.from({ length: 6 }, (_, index) =>
+      toolResult("r".repeat(400), `call-${index}`),
+    );
+
+    const result = await preparation(store, { toolResultPruning: NO_PROTECTION }).prepareRequest({
+      conversationId: "conversation-1",
+      getAccessToken: async () => "token",
+      modelRequest: { system: "", messages },
+      rebuild: async () => {
+        throw new Error("不应重建");
+      },
+      onStatus,
+    });
+
+    const state = await store.loadContextState("conversation-1");
+    const snapshot = await store.load("conversation-1");
+    expect(state?.usage).toMatchObject({
+      usedTokens: estimateContextRequestTokens(result),
+      inputLimit: 800,
+      compactAt: 750,
+      pruneAt: 500,
+      pruneTarget: 100,
+    });
+    expect(state?.pruning).toMatchObject({ trigger: "auto", prunedCount: expect.any(Number) });
+    expect(state?.pruning?.savedTokens).toBeGreaterThan(0);
+    expect(snapshot.contextUsage).toEqual(state?.usage);
+    expect(snapshot.contextPruning).toEqual(state?.pruning);
+    expect(onStatus).toHaveBeenCalledOnce();
+  });
+
+  it("clears a previous pruning status when the next request does not prune", async () => {
+    const store = await preparedStore();
+    const messages = Array.from({ length: 6 }, (_, index) =>
+      toolResult("r".repeat(400), `call-${index}`),
+    );
+    const preparationInstance = preparation(store, { toolResultPruning: NO_PROTECTION });
+
+    await preparationInstance.prepareRequest({
+      conversationId: "conversation-1",
+      getAccessToken: async () => "token",
+      modelRequest: { system: "", messages },
+      rebuild: async () => {
+        throw new Error("不应重建");
+      },
+    });
+    expect((await store.loadContextState("conversation-1"))?.pruning).toBeDefined();
+
+    await preparationInstance.prepareRequest({
+      conversationId: "conversation-1",
+      getAccessToken: async () => "token",
+      modelRequest: { system: "", messages: [] },
+      rebuild: async () => {
+        throw new Error("不应重建");
+      },
+    });
+
+    expect((await store.loadContextState("conversation-1"))?.pruning).toBeUndefined();
   });
 });

@@ -11,6 +11,7 @@ import type { PointerSource } from "../interaction/pointerInput";
 import type { TuiSelectionStore } from "../interaction/selectionStore";
 import type { TuiSetupStep } from "../modelSetup";
 import type { TuiPanelHandlers } from "../panel";
+import { ContextPruningNotice } from "../transcript/ContextPruningNotice";
 import { COMPACTION_FAILURE_TEXT, COMPACTION_SPINNER_MESSAGE } from "../transcript/compactionText";
 import { SelectionContext } from "../transcript/SelectableText";
 import { VirtualTranscript } from "../transcript/VirtualTranscript";
@@ -115,7 +116,7 @@ export function App({
           compactionBoundaries={state.compactionBoundaries}
           expandThinking={expandThinking}
           footer={
-            busy || compactionFailed ? (
+            busy || compactionFailed || state.view.contextPruning ? (
               <Box flexDirection="column">
                 {compactionFailed ? (
                   <Box paddingX={1}>
@@ -123,6 +124,9 @@ export function App({
                       {COMPACTION_FAILURE_TEXT}
                     </Text>
                   </Box>
+                ) : null}
+                {!busy && state.view.contextPruning ? (
+                  <ContextPruningNotice status={state.view.contextPruning} />
                 ) : null}
                 {busy ? (
                   <Spinner
@@ -171,6 +175,7 @@ export function App({
         )}
         <StatusLine
           botName={botName}
+          contextUsage={state.view.contextUsage}
           model={state.modelLabel}
           phase={state.phase}
           workspaceRoot={workspaceRoot}

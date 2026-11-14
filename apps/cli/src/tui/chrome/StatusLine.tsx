@@ -1,4 +1,6 @@
-/** 底部状态行：按列宽分配 Bot/模型、工作区与 run 阶段，窄终端只截断不换行。 */
+/** 底部状态行：按列宽分配 Bot/模型、上下文、工作区与 run 阶段，窄终端只截断不换行。 */
+import type { ContextUsage } from "@answra/shared";
+import { formatContextTokens } from "@answra/ui/conversation-view";
 import { Box, Text, useWindowSize } from "ink";
 import type { TuiRunPhase } from "../app/viewStore";
 
@@ -17,20 +19,28 @@ export function StatusLine({
   model,
   workspaceRoot,
   phase,
+  contextUsage,
 }: {
   botName: string;
   model: string;
   workspaceRoot: string;
   phase: TuiRunPhase;
+  contextUsage?: ContextUsage;
 }) {
   const { columns } = useWindowSize();
   const pathWidth = Math.max(MIN_PATH_WIDTH, Math.min(MAX_PATH_WIDTH, Math.floor(columns * 0.32)));
   const leftWidth = Math.max(8, columns - pathWidth - PHASE_WIDTH);
+  const context = contextUsage
+    ? `ctx ${formatContextTokens(contextUsage.usedTokens)}/${formatContextTokens(
+        contextUsage.inputLimit,
+      )}`
+    : undefined;
   return (
     <Box flexDirection="row" width="100%">
       <Box flexShrink={0} width={leftWidth}>
         <Text dimColor wrap="truncate">
           {botName} · {model}
+          {context ? ` · ${context}` : ""}
         </Text>
       </Box>
       <Box flexGrow={1} justifyContent="flex-end" minWidth={0}>

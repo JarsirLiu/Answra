@@ -126,6 +126,8 @@ export function ChatFeaturePanel({
       fileInputRef={fileInputRef}
       connection={connection}
       contextCompaction={conversation.contextCompaction}
+      contextUsage={conversation.contextUsage}
+      contextPruning={conversation.contextPruning}
       streaming={Boolean(conversation.activeRunId)}
       sending={conversation.sendPending && !conversation.activeRunId}
       retry={conversation.retry}

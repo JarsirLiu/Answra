@@ -61,6 +61,7 @@ export class InterviewApplication {
     this.contextPreparation = new ContextPreparation({
       compactor: this.contextCompactor,
       contextStateStore: options.store,
+      contextWindow: () => options.agentRuntime.chatContextWindow(),
     });
     this.replyLoop = new InterviewReplyLoop({
       ports: {
@@ -169,6 +170,7 @@ export class InterviewApplication {
           modelRequest,
           rebuild,
           signal,
+          onStatus: async () => this.onSnapshot(await this.loadRecoverySnapshot(conversationId)),
         }),
       prepareRun: async ({ runId, eventRevision }) => {
         await this.store.beginReplyRun(conversationId, runId, eventRevision, this.authorAgentId);

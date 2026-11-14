@@ -331,6 +331,32 @@ describe("conversation projection", () => {
     });
   });
 
+  it("carries context usage and pruning state from the snapshot", () => {
+    const view = applyConversationSnapshot(EMPTY_CONVERSATION_VIEW, {
+      conversationId: CONVERSATION,
+      eventRevision: 3,
+      messages: [],
+      contextUsage: {
+        contextWindow: 256_000,
+        usedTokens: 45_000,
+        inputLimit: 216_000,
+        compactAt: 216_000,
+        pruneAt: 172_000,
+        pruneTarget: 40_000,
+        updatedAt: "2026-11-14T10:00:00.000Z",
+      },
+      contextPruning: {
+        trigger: "auto",
+        prunedCount: 2,
+        savedTokens: 30_000,
+        updatedAt: "2026-11-14T10:00:00.000Z",
+      },
+    });
+
+    expect(view.contextUsage).toMatchObject({ usedTokens: 45_000, inputLimit: 216_000 });
+    expect(view.contextPruning).toMatchObject({ prunedCount: 2, savedTokens: 30_000 });
+  });
+
   it("ignores old revisions and other conversations", () => {
     const view: ConversationView = { eventRevision: 5, messages: [] };
     expect(applyAgentEvent(view, envelope(5, { type: "start" }))).toBe(view);

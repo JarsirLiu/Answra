@@ -222,6 +222,7 @@ describe("AuthService.handleCallbackUrl", () => {
                 kind: "text",
                 path: "/api/v1/desktop/chat/completions",
                 model: "text.chat",
+                context_window: 128_000,
               },
               { id: "voice.interview" },
             ],
@@ -289,7 +290,12 @@ describe("AuthService.handleCallbackUrl", () => {
       capabilities: ["text.chat", "voice.interview"],
       // 只有形状完整的端点声明会被保留：客户端据此取调用路径，残缺项直接丢弃。
       endpoints: [
-        { id: "text.chat", path: "/api/v1/desktop/chat/completions", model: "text.chat" },
+        {
+          id: "text.chat",
+          path: "/api/v1/desktop/chat/completions",
+          model: "text.chat",
+          contextWindow: 128_000,
+        },
       ],
     });
     expect(saved).toBeNull();

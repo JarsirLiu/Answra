@@ -37,17 +37,39 @@ export interface ResolvedContextBudget {
   minPruneSaving: number;
 }
 
-/** 256k 窗口的首版产品预算：20k 输出 + 12k 安全余量 + 8k 固定开销，压缩点在 216k。 */
-export const DEFAULT_CONTEXT_BUDGET_POLICY: ContextBudgetPolicy = {
-  contextWindow: 256_000,
-  maxOutputTokens: 20_000,
-  safetyTokens: 12_000,
-  fixedOverheadTokens: 8_000,
-  compactionBuffer: 40_000,
-  pruneAt: 172_000,
-  pruneTarget: 40_000,
-  minPruneSaving: 132_000,
-};
+const BASE_CONTEXT_WINDOW = 256_000;
+const BASE_MAX_OUTPUT_TOKENS = 20_000;
+const BASE_SAFETY_TOKENS = 12_000;
+const BASE_FIXED_OVERHEAD_TOKENS = 8_000;
+const BASE_PRUNE_AT = 172_000;
+const BASE_PRUNE_TARGET = 40_000;
+
+/** 按模型窗口等比缩放预算；256k 时得到首版基准值，小窗口不会沿用固定 172k 触发点。 */
+export function contextBudgetPolicyForWindow(contextWindow: number): ContextBudgetPolicy {
+  assertPositiveInteger(contextWindow, "contextWindow");
+  const scale = Math.min(1, contextWindow / BASE_CONTEXT_WINDOW);
+  const maxOutputTokens = Math.max(1, Math.floor(BASE_MAX_OUTPUT_TOKENS * scale));
+  const safetyTokens = Math.max(0, Math.floor(BASE_SAFETY_TOKENS * scale));
+  const fixedOverheadTokens = Math.max(0, Math.floor(BASE_FIXED_OVERHEAD_TOKENS * scale));
+  const pruneAt = Math.max(1, Math.floor((contextWindow * BASE_PRUNE_AT) / BASE_CONTEXT_WINDOW));
+  const pruneTarget = Math.max(
+    0,
+    Math.floor((contextWindow * BASE_PRUNE_TARGET) / BASE_CONTEXT_WINDOW),
+  );
+  return {
+    contextWindow,
+    maxOutputTokens,
+    safetyTokens,
+    fixedOverheadTokens,
+    compactionBuffer: maxOutputTokens + safetyTokens + fixedOverheadTokens,
+    pruneAt,
+    pruneTarget,
+    minPruneSaving: Math.max(0, pruneAt - pruneTarget),
+  };
+}
+
+/** 256k 窗口的基准预算；端点未声明 contextWindow 时使用。 */
+export const DEFAULT_CONTEXT_BUDGET_POLICY = contextBudgetPolicyForWindow(BASE_CONTEXT_WINDOW);
 
 /** 估算后的最终请求；system/tools 已包含在估算内，不重复加 fixedOverheadTokens。 */
 export interface ContextModelRequest {

@@ -147,6 +147,8 @@ function useAiConversation(
     cancel,
     clearMessages,
     contextCompaction: view.contextCompaction,
+    contextUsage: view.contextUsage,
+    contextPruning: view.contextPruning,
     reconcileSnapshot: reconcileRunSnapshot,
     messages: view.messages,
     replyError: sendError ?? view.error,

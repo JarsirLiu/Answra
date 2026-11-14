@@ -13,6 +13,12 @@ export function validateEndpoint(endpoint: ConversationCapabilityEndpoint): void
   ) {
     throw new Error("云端模型端点无效");
   }
+  if (
+    endpoint.contextWindow !== undefined &&
+    (!Number.isInteger(endpoint.contextWindow) || endpoint.contextWindow < 1)
+  ) {
+    throw new Error("模型上下文窗口无效");
+  }
 }
 
 /** 云端请求遇到 401 时向宿主刷新一次令牌，并将最终认证失败归一化。 */

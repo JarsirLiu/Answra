@@ -3,6 +3,8 @@ import type {
   AgentEventEnvelope,
   AgentStreamEvent,
   ContextCompactionStatus,
+  ContextPruningStatus,
+  ContextUsage,
   ConversationMessage,
   ConversationMessagePart,
   ConversationSnapshot,
@@ -25,6 +27,12 @@ export type {
   ConversationViewMessage,
 } from "../components/chat/conversationMessage";
 export { contextCompactionLabel } from "./contextCompaction";
+export {
+  contextPruningLabel,
+  contextUsageLabel,
+  contextUsagePercent,
+  formatContextTokens,
+} from "./contextUsage";
 
 export interface ConversationView {
   eventRevision: number;
@@ -34,6 +42,8 @@ export interface ConversationView {
   retryRunId?: string;
   error?: string;
   contextCompaction?: ContextCompactionStatus;
+  contextUsage?: ContextUsage;
+  contextPruning?: ContextPruningStatus;
 }
 
 export const EMPTY_CONVERSATION_VIEW: ConversationView = { eventRevision: 0, messages: [] };
@@ -62,6 +72,8 @@ export function applyConversationSnapshot(
       eventRevision: snapshot.eventRevision,
       activeRunId: undefined,
       contextCompaction: snapshot.contextCompaction,
+      contextUsage: snapshot.contextUsage,
+      contextPruning: snapshot.contextPruning,
     };
   const prior = new Map(view.messages.map((message) => [message.id, message]));
   const keepRetry =
@@ -75,6 +87,8 @@ export function applyConversationSnapshot(
     retry: keepRetry ? view.retry : undefined,
     retryRunId: keepRetry ? view.retryRunId : undefined,
     contextCompaction: snapshot.contextCompaction,
+    contextUsage: snapshot.contextUsage,
+    contextPruning: snapshot.contextPruning,
     // A snapshot is the server's current conversation truth. Do not carry a
     // terminal error from the previous run into a cleared or resumed view.
     error: undefined,

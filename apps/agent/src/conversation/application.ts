@@ -83,6 +83,7 @@ export class ConversationApplication {
     this.contextPreparation = new ContextPreparation({
       compactor: this.contextCompactor,
       contextStateStore: store,
+      contextWindow: () => this.agentRuntime.chatContextWindow(),
     });
 
     this.catalog = catalog;
@@ -305,6 +306,7 @@ export class ConversationApplication {
           modelRequest,
           rebuild,
           signal,
+          onStatus: () => this.pushSnapshot(conversationId),
         }),
       prepareRun: async ({ runId, eventRevision }) => {
         const request =
