@@ -1,3 +1,4 @@
+import type { ConversationQueueCompletion, ConversationSendResult } from "@answra/shared";
 import {
   type AgentEventEnvelope,
   type BotSummary,
@@ -155,9 +156,22 @@ export class RemoteControllerSession {
     return value as AgentEventEnvelope[];
   }
 
-  async send(command: RemoteSendCommand): Promise<{ runId: string }> {
+  async send(command: RemoteSendCommand): Promise<ConversationSendResult> {
     const value = await this.sendCommand({ type: "send", command });
-    return value as { runId: string };
+    return value as ConversationSendResult;
+  }
+
+  async waitQueue(conversationId: string, queueId: string): Promise<ConversationQueueCompletion> {
+    const value = await this.sendCommand({ type: "wait-queue", conversationId, queueId });
+    return value as ConversationQueueCompletion;
+  }
+
+  async waitQueueStart(
+    conversationId: string,
+    queueId: string,
+  ): Promise<{ queueId: string; runId: string; snapshot: ConversationSnapshot }> {
+    const value = await this.sendCommand({ type: "wait-queue-start", conversationId, queueId });
+    return value as { queueId: string; runId: string; snapshot: ConversationSnapshot };
   }
 
   async cancel(runId: string): Promise<void> {

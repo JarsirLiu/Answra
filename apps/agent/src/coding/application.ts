@@ -3,9 +3,14 @@ import { randomUUID } from "node:crypto";
 import type {
   ConversationModelConfig,
   ConversationSendRequest,
+  ConversationSendResult,
   ConversationSnapshot,
 } from "@answra/shared";
 import type { AgentEventEnvelope } from "@answra/shared/schema";
+import {
+  ConversationQueue,
+  type ConversationQueueStartResult,
+} from "../conversation/queue/conversationQueue";
 import type { AgentRunHandle } from "../core/agent/definition";
 import type { AgentRuntime } from "../core/agent/runtime";
 import { ContextCompactor } from "../core/context/compaction/compactor";
@@ -33,6 +38,8 @@ export class CodingApplication {
   private readonly contextPreparation: ContextPreparation;
   private readonly onSnapshot?: CodingApplicationOptions["onSnapshot"];
   private readonly readFileStates = new Map<string, ReadFileStateMap>();
+  private readonly queues = new Map<string, ConversationQueue>();
+  private readonly runConversations = new Map<string, string>();
   private workspaceRoot: string | null = null;
 
   constructor({ agentRuntime, store, bot, onSnapshot }: CodingApplicationOptions) {
@@ -70,6 +77,7 @@ export class CodingApplication {
   }
 
   async clearConversation(conversationId: string): Promise<ConversationSnapshot> {
+    this.queues.get(conversationId)?.cancelPending();
     const eventRevision = await this.agentRuntime.getConversationRevision(conversationId);
     await this.store.clear(conversationId, eventRevision);
     this.readFileStates.delete(conversationId);
@@ -101,18 +109,40 @@ export class CodingApplication {
     return this.agentRuntime.readEvents(conversationId, revision);
   }
 
-  async send(
+  async enqueue(
     conversationId: string,
     request: ConversationSendRequest,
     accessToken: string,
-  ): Promise<{ runId: string; snapshot: ConversationSnapshot }> {
+  ): Promise<ConversationSendResult> {
     validateModelRequest(request);
     if (!request.text.trim()) throw new Error("消息内容不能为空");
     if (request.images.length > 0) throw new Error("CLI coding 暂不支持图片输入");
     await this.store.create(conversationId, this.seed());
     const getAccessToken = async () => accessToken;
-    const handle = await this.startRun({ conversationId, request, getAccessToken });
-    return { runId: handle.runId, snapshot: handle.prepared };
+    const queue = this.queueFor(conversationId);
+    const accepted = await queue.enqueue(async (): Promise<ConversationQueueStartResult> => {
+      const handle = await this.startRun({ conversationId, request, getAccessToken });
+      this.runConversations.set(handle.runId, conversationId);
+      const completion = this.agentRuntime.waitForRun(handle.runId).then(async () => {
+        this.runConversations.delete(handle.runId);
+        return "completed" as const;
+      });
+      return { runId: handle.runId, snapshot: handle.prepared, completion };
+    });
+    return accepted;
+  }
+
+  async send(
+    conversationId: string,
+    request: ConversationSendRequest,
+    accessToken: string,
+  ): Promise<{ runId: string; snapshot: ConversationSnapshot }> {
+    const accepted = await this.enqueue(conversationId, request, accessToken);
+    if (accepted.status === "started") {
+      return { runId: accepted.runId, snapshot: accepted.snapshot };
+    }
+    const started = await this.queueFor(conversationId).waitForStart(accepted.queueId);
+    return { runId: started.runId, snapshot: started.snapshot };
   }
 
   configure(config: ConversationModelConfig): void {
@@ -120,7 +150,21 @@ export class CodingApplication {
   }
 
   cancel(runId: string): void {
+    const conversationId = this.runConversations.get(runId);
+    if (conversationId !== undefined) this.queueFor(conversationId).cancelPending();
     this.agentRuntime.cancel(runId);
+  }
+
+  waitForQueue(conversationId: string, queueId: string) {
+    return this.requireQueue(conversationId).wait(queueId);
+  }
+
+  waitForQueueStart(conversationId: string, queueId: string) {
+    return this.requireQueue(conversationId).waitForStart(queueId);
+  }
+
+  getQueuePosition(conversationId: string, queueId: string): number | undefined {
+    return this.queues.get(conversationId)?.position(queueId);
   }
 
   waitForRun(runId: string): Promise<void> {
@@ -128,8 +172,25 @@ export class CodingApplication {
   }
 
   dispose(): void {
+    for (const queue of this.queues.values()) queue.dispose();
+    this.queues.clear();
+    this.runConversations.clear();
     this.readFileStates.clear();
     this.agentRuntime.dispose();
+  }
+
+  private queueFor(conversationId: string): ConversationQueue {
+    const existing = this.queues.get(conversationId);
+    if (existing) return existing;
+    const queue = new ConversationQueue();
+    this.queues.set(conversationId, queue);
+    return queue;
+  }
+
+  private requireQueue(conversationId: string): ConversationQueue {
+    const queue = this.queues.get(conversationId);
+    if (!queue) throw new Error("会话队列不存在");
+    return queue;
   }
 
   get activeRunCount(): number {

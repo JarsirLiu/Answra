@@ -110,7 +110,19 @@ export function createFakeHostCommandPort(
     async send(command) {
       sentCommands.push(command);
       runSequence += 1;
-      return { runId: `run-${runSequence}` };
+      return {
+        queueId: `queue-${runSequence}`,
+        status: "started",
+        position: 0,
+        runId: `run-${runSequence}`,
+        snapshot: currentSnapshot,
+      };
+    },
+    async waitQueue(_conversationId, queueId) {
+      return { queueId, runId: `run-${runSequence}`, outcome: "completed" };
+    },
+    async waitQueueStart(_conversationId, queueId) {
+      return { queueId, runId: `run-${runSequence}`, snapshot: currentSnapshot };
     },
     cancel(runId) {
       cancelledRunIds.push(runId);

@@ -300,14 +300,14 @@ export function startAgentHost({
       case "interview-message":
         return interview.sendText(command.conversationId, command.text);
       case "chat-send":
-        return runtime.send(
+        return runtime.enqueue(
           command.botId,
           command.conversationId,
           command.request,
           command.accessToken,
         );
       case "team-send":
-        return runtime.sendTeamMessage(
+        return runtime.enqueueTeamMessage(
           command.teamId,
           command.conversationId,
           command.request,
@@ -333,6 +333,10 @@ export function startAgentHost({
       case "cancel":
         runtime.cancel(command.runId);
         return undefined;
+      case "wait-queue":
+        return runtime.waitForQueue(command.conversationId, command.queueId);
+      case "queue-position":
+        return runtime.getQueuePosition(command.conversationId, command.queueId);
       case "ping":
         return undefined;
       // shutdown/token 在上面就被拦下：不发响应帧。

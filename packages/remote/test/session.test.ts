@@ -92,11 +92,12 @@ describe("remote host/controller sessions", () => {
     const created = await controller.createConversation("conversation-2");
     expect(created).toMatchObject({ conversationId: "conversation-2", messages: [] });
 
-    const { runId } = await controller.send(chatSend("conversation-2"));
-    expect(runId).toBe("run-1");
+    const result = await controller.send(chatSend("conversation-2"));
+    expect(result).toMatchObject({ status: "started", runId: "run-1", position: 0 });
     expect(hostPort.sentCommands).toEqual([chatSend("conversation-2")]);
 
-    await controller.cancel(runId);
+    if (result.status !== "started") throw new Error("expected started result");
+    await controller.cancel(result.runId);
     expect(hostPort.cancelledRunIds).toEqual(["run-1"]);
 
     const cleared = await controller.clearConversation("conversation-2");

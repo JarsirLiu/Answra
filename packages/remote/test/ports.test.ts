@@ -82,12 +82,12 @@ describe("fake host command port", () => {
     });
     expect(view).toMatchObject({ source: "local", configured: true });
 
-    const { runId } = await host.send({
+    const result = await host.send({
       operation: "chat.send",
       conversationId: "conversation-1",
       request: { text: "hello", images: [] },
     });
-    expect(runId).toBe("run-1");
+    expect(result).toMatchObject({ status: "started", runId: "run-1", position: 0 });
     expect(host.sentCommands).toHaveLength(1);
 
     const event = createFakeAgentEvent(2);

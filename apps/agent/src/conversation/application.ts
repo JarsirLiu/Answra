@@ -4,6 +4,7 @@ import type {
   ConversationModelConfig,
   ConversationSelection,
   ConversationSendRequest,
+  ConversationSendResult,
   ConversationSnapshot,
 } from "@answra/shared";
 import type { AgentEventEnvelope, AgentRunSnapshot } from "@answra/shared/schema";
@@ -28,6 +29,11 @@ import type { ConversationSessionSeed, ConversationStore } from "../core/transcr
 import { CONVERSATION_AGENT_ID, CONVERSATION_TEAM_ID } from "./agent";
 import type { ConversationBot, ConversationBotCatalog } from "./bots/types";
 import { CHAT_PROFILES, type ChatProfileId } from "./profiles/registry";
+import {
+  ConversationQueue,
+  type ConversationQueueOutcome,
+  type ConversationQueueStartResult,
+} from "./queue/conversationQueue";
 
 const MAX_USER_MESSAGE_CHARS = 32_000;
 
@@ -55,6 +61,8 @@ export class ConversationApplication {
   private readonly onSnapshot?: ConversationApplicationOptions["onSnapshot"];
   private readonly onTeamError?: ConversationApplicationOptions["onTeamError"];
   private readonly readFileStates = new Map<string, ReadFileStateMap>();
+  private readonly queues = new Map<string, ConversationQueue>();
+  private readonly runConversations = new Map<string, string>();
   private workspaceRoot: string | null = null;
 
   constructor({
@@ -141,6 +149,7 @@ export class ConversationApplication {
 
   /** 用户显式清空会话；仓储只允许清空空闲会话，并返回清空后的 snapshot。 */
   async clearConversation(conversationId: string): Promise<ConversationSnapshot> {
+    this.queues.get(conversationId)?.cancelPending();
     const eventRevision = await this.agentRuntime.getConversationRevision(conversationId);
     await this.store.clear(conversationId, eventRevision);
     this.readFileStates.delete(conversationId);
@@ -161,36 +170,60 @@ export class ConversationApplication {
   }
 
   /** 发送一条用户消息；botId 缺省时沿用会话 activeAgentId，显式 Bot 必须与当前接待者一致。 */
+  async enqueue(
+    botId: string | undefined,
+    conversationId: string,
+    request: ConversationSendRequest,
+    accessToken: string,
+  ): Promise<ConversationSendResult> {
+    validateModelRequest(request);
+    const requested = botId ? this.requireBot(botId) : undefined;
+    const seed = this.seedForBot((requested ?? this.requireBot(this.defaultBotId)).id);
+    await this.store.create(conversationId, seed);
+    const getAccessToken = async () => accessToken;
+    const queue = this.queueFor(conversationId);
+    const accepted = await queue.enqueue(async (): Promise<ConversationQueueStartResult> => {
+      const snapshot = await this.loadRecoverySnapshot(conversationId);
+      const activeAgentId = snapshot.activeAgentId ?? seed.activeAgentId;
+      if (requested && requested.id !== activeAgentId) {
+        throw new Error(`会话当前由 ${activeAgentId} 接待，不能直接切换到 ${requested.id}`);
+      }
+      const entry = this.requireBot(activeAgentId);
+      const handle = await this.startBot({
+        conversationId,
+        bot: entry,
+        trigger: { kind: "user", request },
+        getAccessToken,
+      });
+      this.runConversations.set(handle.runId, conversationId);
+      const completion = this.continueTeamTurn({
+        conversationId,
+        from: entry,
+        handle,
+        getAccessToken,
+      })
+        .catch((error: unknown) => {
+          this.onTeamError?.(error);
+          throw error;
+        })
+        .finally(() => this.runConversations.delete(handle.runId));
+      return { runId: handle.runId, snapshot: handle.prepared, completion };
+    });
+    return accepted;
+  }
+
   async send(
     botId: string | undefined,
     conversationId: string,
     request: ConversationSendRequest,
     accessToken: string,
   ): Promise<{ runId: string; snapshot: ConversationSnapshot }> {
-    validateModelRequest(request);
-    const requested = botId ? this.requireBot(botId) : undefined;
-    const seed = this.seedForBot((requested ?? this.requireBot(this.defaultBotId)).id);
-    await this.store.create(conversationId, seed);
-    const snapshot = await this.loadRecoverySnapshot(conversationId);
-    const activeAgentId = snapshot.activeAgentId ?? seed.activeAgentId;
-    if (requested && requested.id !== activeAgentId) {
-      throw new Error(`会话当前由 ${activeAgentId} 接待，不能直接切换到 ${requested.id}`);
+    const accepted = await this.enqueue(botId, conversationId, request, accessToken);
+    if (accepted.status === "started") {
+      return { runId: accepted.runId, snapshot: accepted.snapshot };
     }
-    const entry = this.requireBot(activeAgentId);
-    const getAccessToken = async () => accessToken;
-    const handle = await this.startBot({
-      conversationId,
-      bot: entry,
-      trigger: { kind: "user", request },
-      getAccessToken,
-    });
-    void this.continueTeamTurn({
-      conversationId,
-      from: entry,
-      handle,
-      getAccessToken,
-    }).catch((error: unknown) => this.onTeamError?.(error));
-    return { runId: handle.runId, snapshot: handle.prepared };
+    const started = await this.queueFor(conversationId).waitForStart(accepted.queueId);
+    return { runId: started.runId, snapshot: started.snapshot };
   }
 
   /** `chat-send` 的迁移入口：profile 仅用于校验，Bot 由目录或会话决定。 */
@@ -205,39 +238,65 @@ export class ConversationApplication {
   }
 
   /** `team-send`：显式团队入口；等待整条交接链回到 idle 后返回最终 snapshot。 */
+  async enqueueTeamMessage(
+    teamId: string,
+    conversationId: string,
+    request: ConversationSendRequest,
+    accessToken: string,
+  ): Promise<ConversationSendResult> {
+    validateModelRequest(request);
+    const preset = this.presets.require(teamId);
+    const seed = this.seedForTeam(preset);
+    await this.store.create(conversationId, seed);
+    const getAccessToken = async () => accessToken;
+    const queue = this.queueFor(conversationId);
+    const accepted = await queue.enqueue(async (): Promise<ConversationQueueStartResult> => {
+      const snapshot = await this.loadRecoverySnapshot(conversationId);
+      if (
+        snapshot.participantAgentIds &&
+        !sameParticipants(snapshot.participantAgentIds, seed.participantAgentIds)
+      ) {
+        throw new Error("会话已存在且 Bot 参与者不同");
+      }
+      const entry = this.requireBot(snapshot.activeAgentId ?? preset.entryBotId);
+      const participants = snapshot.participantAgentIds ?? preset.memberBotIds;
+      if (!participants.includes(entry.id))
+        throw new Error(`Bot 不属于当前会话参与者：${entry.id}`);
+      const first = await this.startBot({
+        conversationId,
+        bot: entry,
+        trigger: { kind: "user", request },
+        getAccessToken,
+      });
+      this.runConversations.set(first.runId, conversationId);
+      const completion = this.continueTeamTurn({
+        conversationId,
+        from: entry,
+        handle: first,
+        getAccessToken,
+      })
+        .catch((error: unknown) => {
+          this.onTeamError?.(error);
+          throw error;
+        })
+        .finally(() => this.runConversations.delete(first.runId));
+      return { runId: first.runId, snapshot: first.prepared, completion };
+    });
+    return accepted;
+  }
+
   async sendTeamMessage(
     teamId: string,
     conversationId: string,
     request: ConversationSendRequest,
     accessToken: string,
   ): Promise<{ runId: string; snapshot: ConversationSnapshot }> {
-    validateModelRequest(request);
-    const preset = this.presets.require(teamId);
-    const seed = this.seedForTeam(preset);
-    const snapshot = await this.store.create(conversationId, seed);
-    if (
-      snapshot.participantAgentIds &&
-      !sameParticipants(snapshot.participantAgentIds, seed.participantAgentIds)
-    ) {
-      throw new Error("会话已存在且 Bot 参与者不同");
-    }
-    const entry = this.requireBot(snapshot.activeAgentId ?? preset.entryBotId);
-    const participants = snapshot.participantAgentIds ?? preset.memberBotIds;
-    if (!participants.includes(entry.id)) throw new Error(`Bot 不属于当前会话参与者：${entry.id}`);
-    const getAccessToken = async () => accessToken;
-    const first = await this.startBot({
-      conversationId,
-      bot: entry,
-      trigger: { kind: "user", request },
-      getAccessToken,
-    });
-    await this.continueTeamTurn({
-      conversationId,
-      from: entry,
-      handle: first,
-      getAccessToken,
-    });
-    return { runId: first.runId, snapshot: await this.loadRecoverySnapshot(conversationId) };
+    const queue = this.queueFor(conversationId);
+    const accepted = await this.enqueueTeamMessage(teamId, conversationId, request, accessToken);
+    const completion = await queue.wait(accepted.queueId);
+    const snapshot = await this.loadRecoverySnapshot(conversationId);
+    if (!completion.runId) throw new Error("团队回合未启动");
+    return { runId: completion.runId, snapshot };
   }
 
   private async continueTeamTurn({
@@ -250,14 +309,14 @@ export class ConversationApplication {
     from: ConversationBot;
     handle: AgentRunHandle<ConversationSnapshot>;
     getAccessToken: () => Promise<string>;
-  }): Promise<void> {
+  }): Promise<ConversationQueueOutcome> {
     let current = from;
     let currentHandle = handle;
     for (;;) {
       const outcome = await currentHandle.done;
-      if (outcome !== "completed") return;
+      if (outcome !== "completed") return toQueueOutcome(outcome);
       const result = await currentHandle.result;
-      if (!result) return;
+      if (!result) return "completed";
       assertHandoffTask(result.task);
       const snapshot = await this.loadRecoverySnapshot(conversationId);
       assertCanHandoff({
@@ -392,7 +451,24 @@ export class ConversationApplication {
   }
 
   cancel(runId: string): void {
+    const conversationId = this.runConversations.get(runId);
+    if (conversationId !== undefined) this.queueFor(conversationId).cancelPending();
     this.agentRuntime.cancel(runId);
+  }
+
+  waitForQueue(
+    conversationId: string,
+    queueId: string,
+  ): Promise<{
+    queueId: string;
+    runId?: string;
+    outcome: ConversationQueueOutcome;
+  }> {
+    return this.requireQueue(conversationId).wait(queueId);
+  }
+
+  getQueuePosition(conversationId: string, queueId: string): number | undefined {
+    return this.queues.get(conversationId)?.position(queueId);
   }
 
   waitForRun(runId: string): Promise<void> {
@@ -408,8 +484,25 @@ export class ConversationApplication {
   }
 
   dispose(): void {
+    for (const queue of this.queues.values()) queue.dispose();
+    this.queues.clear();
+    this.runConversations.clear();
     this.readFileStates.clear();
     this.agentRuntime.dispose();
+  }
+
+  private queueFor(conversationId: string): ConversationQueue {
+    const existing = this.queues.get(conversationId);
+    if (existing) return existing;
+    const queue = new ConversationQueue();
+    this.queues.set(conversationId, queue);
+    return queue;
+  }
+
+  private requireQueue(conversationId: string): ConversationQueue {
+    const queue = this.queues.get(conversationId);
+    if (!queue) throw new Error("会话队列不存在");
+    return queue;
   }
 
   get activeRunCount(): number {
@@ -423,6 +516,12 @@ export class ConversationApplication {
     this.readFileStates.set(conversationId, state);
     return state;
   }
+}
+
+function toQueueOutcome(outcome: string): ConversationQueueOutcome {
+  if (outcome === "aborted" || outcome === "superseded") return "aborted";
+  if (outcome === "failed" || outcome === "orphaned") return "failed";
+  return "completed";
 }
 
 function withConversationPreset(

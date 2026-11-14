@@ -59,13 +59,11 @@ export function createRemoteCodingHost({
       if (command.operation !== "chat.send") {
         throw new RemoteOperationError(remoteError("invalid-command", "team send is unsupported"));
       }
-      const { runId } = await coding.runtime.send(
-        command.conversationId,
-        command.request,
-        accessToken,
-      );
-      return { runId };
+      return coding.runtime.enqueue(command.conversationId, command.request, accessToken);
     },
+    waitQueue: (conversationId, queueId) => coding.runtime.waitForQueue(conversationId, queueId),
+    waitQueueStart: (conversationId, queueId) =>
+      coding.runtime.waitForQueueStart(conversationId, queueId),
     cancel: (runId) => coding.runtime.cancel(runId),
     applyModel: (config) => coding.runtime.configure(toConversationModelConfig(config)),
     settings: () => settings,

@@ -10,6 +10,8 @@ export type {
 /** 对话运行、模型设置与会话快照的 IPC 频道和载荷契约。 */
 export const ConversationChannels = {
   Send: "answra:conversation:send",
+  WaitQueue: "answra:conversation:wait-queue",
+  QueuePosition: "answra:conversation:queue-position",
   AppendUserMessage: "answra:conversation:append-user-message",
   Cancel: "answra:conversation:cancel",
   GetSnapshot: "answra:conversation:get-snapshot",
@@ -144,6 +146,30 @@ export interface ConversationSendRequest {
   images: Array<{ name: string; dataUrl: string }>;
 }
 
+/** Host 接受用户消息后的排队结果；queued 表示尚未创建 Agent run。 */
+export type ConversationSendResult =
+  | {
+      queueId: string;
+      status: "started";
+      position: 0;
+      runId: string;
+      snapshot: ConversationSnapshot;
+    }
+  | { queueId: string; status: "queued"; position: number };
+
+export interface ConversationRunResult {
+  runId: string;
+  snapshot: ConversationSnapshot;
+}
+
+export type ConversationSendResponse = ConversationSendResult | ConversationRunResult;
+
+export interface ConversationQueueCompletion {
+  queueId: string;
+  runId?: string;
+  outcome: "completed" | "failed" | "aborted";
+}
+
 export interface ChatSendCommand {
   operation: "chat.send";
   conversationId: string;
@@ -175,7 +201,15 @@ export type ConversationSelection =
 export interface ConversationChannelMap {
   [ConversationChannels.Send]: {
     request: ConversationSendCommand;
-    response: { runId: string; snapshot: ConversationSnapshot };
+    response: ConversationSendResponse;
+  };
+  [ConversationChannels.WaitQueue]: {
+    request: { conversationId: string; queueId: string };
+    response: { queueId: string; runId?: string; outcome: "completed" | "failed" | "aborted" };
+  };
+  [ConversationChannels.QueuePosition]: {
+    request: { conversationId: string; queueId: string };
+    response: number | undefined;
   };
   [ConversationChannels.AppendUserMessage]: {
     request: { conversationId: string; text: string };

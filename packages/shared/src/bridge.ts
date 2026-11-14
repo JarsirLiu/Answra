@@ -9,6 +9,7 @@ import type {
   ConversationModelSettingsView,
   ConversationSelection,
   ConversationSendCommand,
+  ConversationSendResponse,
   ConversationSnapshot,
   DesktopAnnouncement,
   InterviewChange,
@@ -123,9 +124,15 @@ export interface DesktopBridge {
     conversationId: string,
     afterRevision: number,
   ) => Promise<AgentEventEnvelope[]>;
-  sendConversationMessage?: (
-    command: ConversationSendCommand,
-  ) => Promise<{ runId: string; snapshot: ConversationSnapshot }>;
+  sendConversationMessage?: (command: ConversationSendCommand) => Promise<ConversationSendResponse>;
+  getConversationQueuePosition?: (
+    conversationId: string,
+    queueId: string,
+  ) => Promise<number | undefined>;
+  waitForConversationQueue?: (
+    conversationId: string,
+    queueId: string,
+  ) => Promise<{ queueId: string; runId?: string; outcome: "completed" | "failed" | "aborted" }>;
   appendConversationUserMessage?: (
     conversationId: string,
     text: string,

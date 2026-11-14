@@ -63,13 +63,16 @@ export function createRemoteControllerSessionHost({
       await takePendingConfigure();
       return session.clearConversation(conversationId);
     },
-    async send(conversationId, request, _accessToken: string) {
+    async send(conversationId, request, _accessToken: string): Promise<{ runId: string }> {
       await takePendingConfigure();
-      return session.send({
+      const accepted = await session.send({
         operation: "chat.send",
         conversationId,
         request,
       });
+      if (accepted.status === "started") return { runId: accepted.runId };
+      const started = await session.waitQueueStart(conversationId, accepted.queueId);
+      return { runId: started.runId };
     },
     cancel(runId) {
       const next = session.cancel(runId);

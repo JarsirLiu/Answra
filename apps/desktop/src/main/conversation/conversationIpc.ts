@@ -59,6 +59,24 @@ export function registerConversationIpc(service: AgentService, deps: Conversatio
     return service.send(payload);
   });
   ipcMain.handle(
+    ConversationChannels.WaitQueue,
+    (event, payload: { conversationId: string; queueId: string }) => {
+      if (!isConversationReadSender(event, payload?.conversationId)) throw new Error("非法调用方");
+      if (!isValidConversationId(payload?.conversationId) || !isValidId(payload.queueId))
+        throw new Error("队列请求无效");
+      return service.waitForConversationQueue(payload.conversationId, payload.queueId);
+    },
+  );
+  ipcMain.handle(
+    ConversationChannels.QueuePosition,
+    (event, payload: { conversationId: string; queueId: string }) => {
+      if (!isConversationReadSender(event, payload?.conversationId)) throw new Error("非法调用方");
+      if (!isValidConversationId(payload?.conversationId) || !isValidId(payload.queueId))
+        throw new Error("队列请求无效");
+      return service.getConversationQueuePosition(payload.conversationId, payload.queueId);
+    },
+  );
+  ipcMain.handle(
     ConversationChannels.AppendUserMessage,
     (event, payload: { conversationId: string; text: string }) => {
       if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用方");

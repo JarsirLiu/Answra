@@ -6,6 +6,7 @@ import type {
   ConversationSelection,
   ConversationSendCommand,
   ConversationSendRequest,
+  ConversationSendResponse,
   ConversationSnapshot,
   InterviewPcmFrame,
 } from "@answra/shared";
@@ -95,7 +96,7 @@ export class AgentService {
     return this.workerHost.onInterviewAudioCredit(listener);
   }
 
-  async send(command: ConversationSendCommand): Promise<{ runId: string; snapshot: unknown }> {
+  async send(command: ConversationSendCommand): Promise<ConversationSendResponse> {
     if (
       !__ANSWRA_FEATURE_CHAT__ &&
       (command.operation === "chat.send" || command.operation === "team.send")
@@ -115,10 +116,33 @@ export class AgentService {
         : command.operation === "team.send"
           ? "team-send"
           : "answer-run";
-    return (await this.workerHost.request(type, { ...command, accessToken })) as {
-      runId: string;
-      snapshot: unknown;
+    return (await this.workerHost.request(type, {
+      ...command,
+      accessToken,
+    })) as ConversationSendResponse;
+  }
+
+  async waitForConversationQueue(
+    conversationId: string,
+    queueId: string,
+  ): Promise<{ queueId: string; runId?: string; outcome: "completed" | "failed" | "aborted" }> {
+    await this.start();
+    this.trackConversation(conversationId);
+    return (await this.workerHost.request("wait-queue", { conversationId, queueId })) as {
+      queueId: string;
+      runId?: string;
+      outcome: "completed" | "failed" | "aborted";
     };
+  }
+
+  async getConversationQueuePosition(
+    conversationId: string,
+    queueId: string,
+  ): Promise<number | undefined> {
+    await this.start();
+    return (await this.workerHost.request("queue-position", { conversationId, queueId })) as
+      | number
+      | undefined;
   }
 
   async appendUserMessage(conversationId: string, text: string) {

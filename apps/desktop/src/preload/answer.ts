@@ -71,6 +71,10 @@ const bridge: DesktopBridge = {
     ipcRenderer.invoke(ConversationChannels.ReadEvents, { conversationId, afterRevision }),
   sendConversationMessage: (command: ConversationSendCommand) =>
     ipcRenderer.invoke(ConversationChannels.Send, command),
+  waitForConversationQueue: (conversationId: string, queueId: string) =>
+    ipcRenderer.invoke(ConversationChannels.WaitQueue, { conversationId, queueId }),
+  getConversationQueuePosition: (conversationId: string, queueId: string) =>
+    ipcRenderer.invoke(ConversationChannels.QueuePosition, { conversationId, queueId }),
   appendConversationUserMessage: (conversationId: string, text: string) =>
     ipcRenderer.invoke(ConversationChannels.AppendUserMessage, { conversationId, text }),
   cancelConversationRun: (runId: string) =>

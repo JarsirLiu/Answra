@@ -144,6 +144,8 @@ export type AgentCommand =
   | { id: string; type: "clear-conversation"; conversationId: string }
   | { id: string; type: "append-user-message"; conversationId: string; text: string }
   | { id: string; type: "cancel"; runId: string }
+  | { id: string; type: "wait-queue"; conversationId: string; queueId: string }
+  | { id: string; type: "queue-position"; conversationId: string; queueId: string }
   /** 就绪探测：宿主在启动后确认 worker 能处理命令，连接域据此进入 connected。 */
   | { id: string; type: "ping" }
   | { id: string; type: "shutdown" };

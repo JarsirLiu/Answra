@@ -221,6 +221,10 @@ export class RemoteHostSession {
         return this.host.clearConversation(command.conversationId);
       case "send":
         return this.host.send(command.command);
+      case "wait-queue":
+        return this.host.waitQueue(command.conversationId, command.queueId);
+      case "wait-queue-start":
+        return this.host.waitQueueStart(command.conversationId, command.queueId);
       case "cancel":
         this.host.cancel(command.runId);
         return undefined;

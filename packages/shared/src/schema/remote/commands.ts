@@ -47,6 +47,16 @@ export const remoteCommandSchema = z.discriminatedUnion("type", [
     command: remoteSendCommandSchema,
   }),
   z.strictObject({
+    type: z.literal("wait-queue"),
+    conversationId: z.string(),
+    queueId: z.string(),
+  }),
+  z.strictObject({
+    type: z.literal("wait-queue-start"),
+    conversationId: z.string(),
+    queueId: z.string(),
+  }),
+  z.strictObject({
     type: z.literal("cancel"),
     runId: z.string(),
   }),

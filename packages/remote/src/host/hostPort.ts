@@ -1,3 +1,4 @@
+import type { ConversationQueueCompletion, ConversationSendResult } from "@answra/shared";
 import type {
   AgentEventEnvelope,
   BotSummary,
@@ -32,7 +33,12 @@ export interface HostCommandPort {
   clearConversation(conversationId: string): Promise<ConversationSnapshot>;
   snapshot(conversationId: string): Promise<ConversationSnapshot>;
   readEvents(conversationId: string, afterRevision: number): Promise<AgentEventEnvelope[]>;
-  send(command: RemoteSendCommand): Promise<{ runId: string }>;
+  send(command: RemoteSendCommand): Promise<ConversationSendResult>;
+  waitQueueStart(
+    conversationId: string,
+    queueId: string,
+  ): Promise<{ queueId: string; runId: string; snapshot: ConversationSnapshot }>;
+  waitQueue(conversationId: string, queueId: string): Promise<ConversationQueueCompletion>;
   cancel(runId: string): void;
   listBots?(): Promise<BotSummary[]>;
   selectBot?(conversationId: string, botId: string): Promise<void>;

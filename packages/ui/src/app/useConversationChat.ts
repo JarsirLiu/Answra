@@ -62,7 +62,6 @@ function useAiConversation(
     ) => {
       if (!platform?.sendConversationMessage)
         throw new Error("本地 AI 服务未连接，请重启应用后重试");
-      if (view.activeRunId || sendPending) throw new Error("当前回复尚未完成");
       setSendError(undefined);
       setSendPending(true);
       thinkingSetRef.current = false;
@@ -95,9 +94,27 @@ function useAiConversation(
                 request: { text, images },
               }
             : { operation, conversationId: targetConversationId, request: { text, images } };
-        const { runId, snapshot } = await platform.sendConversationMessage(command);
-        await reconcileRunSnapshot(snapshot);
+        const accepted = await platform.sendConversationMessage(command);
+        if (!("status" in accepted) || accepted.status === "started") {
+          await reconcileRunSnapshot(accepted.snapshot);
+        }
         onAccepted?.();
+        let runId: string;
+        if ("status" in accepted && accepted.status === "queued") {
+          if (!platform.waitForConversationQueue) throw new Error("当前宿主未提供排队消息等待能力");
+          const queued = await platform.waitForConversationQueue(
+            targetConversationId,
+            accepted.queueId,
+          );
+          if (queued.outcome !== "completed") {
+            if (queued.outcome === "aborted") return "cancelled";
+            throw new Error("模型请求失败");
+          }
+          if (!queued.runId) throw new Error("排队消息未启动");
+          runId = queued.runId;
+        } else {
+          runId = accepted.runId;
+        }
         if (cancelRequestedRef.current) platform.cancelConversationRun?.(runId);
         const outcome = await waitForRun(runId);
         if (outcome === "aborted" || outcome === "superseded") return "cancelled";
@@ -119,9 +136,7 @@ function useAiConversation(
       platform,
       operation,
       conversationId,
-      view.activeRunId,
       view.messages,
-      sendPending,
       selectConversation,
       reconcileRunSnapshot,
       waitForRun,
