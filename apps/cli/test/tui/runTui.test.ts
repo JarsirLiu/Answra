@@ -125,6 +125,12 @@ async function start(
   modelSettings = createModelSettings(),
   modelCredentials = createModelCredentials(),
   modelCatalog = createModelCatalog(),
+  startRemoteHost?: () => Promise<{
+    code: string;
+    keyId: string;
+    done: Promise<void>;
+    stop(): Promise<void>;
+  }>,
 ): Promise<RenderResult> {
   let props: AppProps | undefined;
   let options: Record<string, unknown> | undefined;
@@ -151,6 +157,7 @@ async function start(
     model: "test-model",
     workspaceRoot: "D:\\workspace",
     altScreen,
+    startRemoteHost,
   });
   await tick();
   if (!props || !options || !finish) throw new Error("TUI did not render");
@@ -246,6 +253,50 @@ describe("runInkTui", () => {
     });
 
     finish();
+    store.dispose();
+  });
+
+  it("starts a persistent remote host from /remote and stops it when the TUI exits", async () => {
+    const { session } = createSession();
+    const store = new TuiViewStore();
+    let resolveDone!: () => void;
+    const done = new Promise<void>((resolve) => {
+      resolveDone = resolve;
+    });
+    const stop = vi.fn(async () => {
+      resolveDone();
+    });
+    const startRemoteHost = vi.fn(async () => ({
+      code: "answra1.room.key.secret",
+      keyId: "key-id",
+      done,
+      stop,
+    }));
+    const { props, finish } = await start(
+      session,
+      store,
+      false,
+      createModelSettings(),
+      createModelCredentials(),
+      createModelCatalog(),
+      startRemoteHost,
+    );
+
+    props.onSubmit("/remote");
+    await tick();
+
+    expect(startRemoteHost).toHaveBeenCalledTimes(1);
+    expect(store.getSnapshot().notice).toEqual([
+      "远程连接已开启。请在其他设备运行 answra remote attach，并输入下面的连接码：",
+      "answra1.room.key.secret",
+      "Key ID: key-id",
+      "连接码会持久保存，直到在 host 上撤销。",
+      "撤销命令：answra remote key revoke key-id",
+    ]);
+
+    finish();
+    await tick();
+    expect(stop).toHaveBeenCalledTimes(1);
     store.dispose();
   });
 

@@ -12,7 +12,7 @@
   },
   "scripts": {
     "build": "node ./scripts/build.mjs",
-    "dev": "node --import tsx --env-file-if-exists=../../.env src/main.ts code",
+    "dev": "node --import tsx --env-file-if-exists=../../.env src/main.ts",
     "start": "node ./dist/main.mjs",
     "smoke:electron": "node ./scripts/build.mjs && node ./scripts/smoke-electron.mjs",
     "typecheck": "tsc --noEmit",

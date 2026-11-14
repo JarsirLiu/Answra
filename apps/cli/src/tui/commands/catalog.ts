@@ -8,7 +8,8 @@ export type TuiCommandKind =
   | "model"
   | "login"
   | "logout"
-  | "status";
+  | "status"
+  | "remote";
 
 export interface TuiCommandHelpDetail {
   readonly usage: string;
@@ -62,6 +63,7 @@ export const TUI_COMMANDS: readonly TuiCommandSpec[] = [
   { kind: "login", name: "login", summary: "打开浏览器登录 Answra 账号" },
   { kind: "logout", name: "logout", summary: "退出 Answra 账号" },
   { kind: "status", name: "status", summary: "查看账号登录状态" },
+  { kind: "remote", name: "remote", summary: "生成持久远程连接码并开启 host" },
   {
     kind: "exit",
     name: "exit",

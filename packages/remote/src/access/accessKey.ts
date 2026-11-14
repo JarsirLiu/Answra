@@ -20,7 +20,7 @@ export interface ParsedRemoteAccessKey {
 export interface GeneratedRemoteAccessKey extends ParsedRemoteAccessKey {
   readonly key: string;
   readonly createdAt: string;
-  readonly expiresAt: string;
+  readonly expiresAt?: string;
 }
 
 export interface RemoteHostAccessKeyRecord {
@@ -28,8 +28,9 @@ export interface RemoteHostAccessKeyRecord {
   readonly keyId: string;
   readonly secretHash: string;
   readonly label?: string;
+  readonly purpose?: "connection-code";
   readonly createdAt: string;
-  readonly expiresAt: string;
+  readonly expiresAt?: string;
   readonly lastUsedAt?: string;
   readonly revokedAt?: string;
 }
@@ -47,10 +48,12 @@ export interface RemoteCredentialRecord {
 export interface GenerateRemoteAccessKeyOptions {
   readonly now?: Date;
   readonly days?: number;
+  readonly permanent?: boolean;
 }
 
 export interface CreateRemoteHostAccessKeyRecordOptions {
   readonly label?: string;
+  readonly purpose?: "connection-code";
 }
 
 export interface CreateRemoteCredentialRecordOptions {
@@ -83,7 +86,10 @@ export function parseRemoteAccessKey(input: string): ParsedRemoteAccessKey {
 export function generateRemoteAccessKey(
   options: GenerateRemoteAccessKeyOptions = {},
 ): GeneratedRemoteAccessKey {
-  const days = resolveAccessKeyDays(options.days);
+  if (options.permanent === true && options.days !== undefined) {
+    throw new Error("永久连接码不能同时设置天数。");
+  }
+  const days = options.permanent === true ? undefined : resolveAccessKeyDays(options.days);
   const now = options.now ?? new Date();
   if (Number.isNaN(now.getTime())) throw new Error("访问密钥创建时间无效。");
 
@@ -91,7 +97,8 @@ export function generateRemoteAccessKey(
   const keyId = randomHex(KEY_ID_BYTES);
   const secret = randomHex(SECRET_BYTES);
   const createdAt = now.toISOString();
-  const expiresAt = new Date(now.getTime() + days * DAY_MS).toISOString();
+  const expiresAt =
+    days === undefined ? undefined : new Date(now.getTime() + days * DAY_MS).toISOString();
 
   return {
     version: REMOTE_ACCESS_KEY_VERSION,
@@ -100,7 +107,7 @@ export function generateRemoteAccessKey(
     secret,
     key: formatRemoteAccessKey({ roomId, keyId, secret }),
     createdAt,
-    expiresAt,
+    ...(expiresAt === undefined ? {} : { expiresAt }),
   };
 }
 
@@ -115,8 +122,9 @@ export async function createRemoteHostAccessKeyRecord(
     keyId: generated.keyId,
     secretHash,
     ...(label === undefined ? {} : { label }),
+    ...(options.purpose === undefined ? {} : { purpose: options.purpose }),
     createdAt: generated.createdAt,
-    expiresAt: generated.expiresAt,
+    ...(generated.expiresAt === undefined ? {} : { expiresAt: generated.expiresAt }),
   };
 }
 
@@ -146,6 +154,7 @@ export function isRemoteHostAccessKeyActive(
   now: Date = new Date(),
 ): boolean {
   if (record.revokedAt !== undefined) return false;
+  if (record.expiresAt === undefined) return true;
   const expiresAt = Date.parse(record.expiresAt);
   return Number.isFinite(expiresAt) && expiresAt > now.getTime();
 }

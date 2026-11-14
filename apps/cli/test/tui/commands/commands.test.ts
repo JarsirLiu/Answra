@@ -61,6 +61,7 @@ describe("parseTuiCommand", () => {
       "login",
       "logout",
       "status",
+      "remote",
       "exit",
     ]);
     expect(suggestTuiCommands("co").map((command) => command.name)).toEqual(["compact", "config"]);

@@ -258,11 +258,12 @@ describe("answra remote host/attach", () => {
     }
   });
 
-  it("rejects attach without a stored controller credential", async () => {
+  it("prompts securely for a connection code when no controller credential is stored", async () => {
     const signaling = createSignalingService();
     const output = createOutput();
+    const remoteKeys = createRemoteKeys();
     const deps = createDependencies(
-      createRemoteKeys(),
+      remoteKeys,
       {
         signaling: signaling.service,
         timers,
@@ -276,7 +277,8 @@ describe("answra remote host/attach", () => {
 
     try {
       await expect(runCli(["remote", "attach"], deps)).resolves.toBe(2);
-      expect(output.stderr).toContain("未保存 controller 密钥");
+      expect(output.stderr).toContain("远程访问密钥格式无效");
+      expect(remoteKeys.promptSecret).toHaveBeenCalledWith("输入远程连接码：");
     } finally {
       signaling.disconnect();
     }

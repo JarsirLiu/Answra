@@ -16,6 +16,7 @@ import { CodingSession } from "../session/codingSession";
 import { TuiViewStore } from "../tui/app/viewStore";
 import type { CliDependencies } from "./dependencies";
 import { CliUsageError } from "./errors";
+import { startRemoteHostWithConnectionCode } from "./remoteSessionCommands";
 
 type CodeOptions = Extract<CliOptions, { kind: "code" }>;
 
@@ -146,6 +147,13 @@ async function runInteractive(
       altScreen,
       remoteAuth: deps.remoteAuth,
       openBrowser: deps.openBrowser,
+      startRemoteHost:
+        deps.remoteKeys === undefined || deps.remoteRuntime === undefined
+          ? undefined
+          : () =>
+              startRemoteHostWithConnectionCode(deps, workspaceRoot, (line) =>
+                store.setNotice([line]),
+              ),
     });
   } finally {
     removeInterrupt?.();

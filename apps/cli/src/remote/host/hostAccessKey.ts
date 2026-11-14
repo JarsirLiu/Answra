@@ -13,6 +13,8 @@ export interface CreateHostAccessKeyOptions {
   now: Date;
   days?: number;
   label?: string;
+  permanent?: boolean;
+  purpose?: "connection-code";
 }
 
 export interface CreatedHostAccessKey {
@@ -30,13 +32,17 @@ export async function createHostAccessKey({
   now,
   days,
   label,
+  permanent,
+  purpose,
 }: CreateHostAccessKeyOptions): Promise<CreatedHostAccessKey> {
   const generated = generateRemoteAccessKey({
     now,
     ...(days === undefined ? {} : { days }),
+    ...(permanent === undefined ? {} : { permanent }),
   });
   const record = await createRemoteHostAccessKeyRecord(generated, {
     ...(label === undefined ? {} : { label }),
+    ...(purpose === undefined ? {} : { purpose }),
   });
   await hostKeys.save(record);
   return { record, generated };

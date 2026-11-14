@@ -70,6 +70,25 @@ describe("remote access keys", () => {
     expect(record).not.toHaveProperty("key");
   });
 
+  it("creates a permanent key that survives reloads until revoked", async () => {
+    const generated = generateRemoteAccessKey({ now: NOW, permanent: true });
+    const record = await createRemoteHostAccessKeyRecord(generated);
+
+    expect(generated).not.toHaveProperty("expiresAt");
+    expect(record).not.toHaveProperty("expiresAt");
+    expect(isRemoteHostAccessKeyActive(record, new Date("2036-11-13T00:00:00.000Z"))).toBe(true);
+    expect(() => generateRemoteAccessKey({ now: NOW, permanent: true, days: 7 })).toThrow();
+
+    const store = createMemoryHostKeyStore([record]);
+    const reloaded = await store.getByKeyId(record.keyId);
+    if (reloaded === null) throw new Error("permanent host key missing");
+    expect(isRemoteHostAccessKeyActive(reloaded, NOW)).toBe(true);
+    expect(await store.revoke(record.keyId, NOW.toISOString())).toBe(true);
+    const revoked = await store.getByKeyId(record.keyId);
+    if (revoked === null) throw new Error("revoked host key missing");
+    expect(isRemoteHostAccessKeyActive(revoked, NOW)).toBe(false);
+  });
+
   it("creates a controller credential and memory stores enforce revocation", async () => {
     const generated = generateRemoteAccessKey({ now: NOW });
     const hostKeys = createMemoryHostKeyStore();

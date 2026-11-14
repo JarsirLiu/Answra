@@ -1,6 +1,7 @@
 /** CLI 远程会话命令：host 常驻与 controller attach 的组合接线。 */
 import type { ModelCredentialStore } from "@answra/credentials";
 import {
+  createRemoteCredentialRecord,
   isRemoteHostAccessKeyActive,
   RemoteControllerSession,
   type RemoteHostAccessKeyRecord,
@@ -12,6 +13,7 @@ import { resolveModelAccessToken } from "../model/accessToken";
 import { createRemoteModelSettings } from "../remote/controller/modelSettings";
 import { createRemoteControllerSessionHost } from "../remote/controller/sessionHost";
 import { createRemoteCodingHost } from "../remote/host/commandPort";
+import { createHostAccessKey } from "../remote/host/hostAccessKey";
 import { type RemoteHostHandle, startRemoteHost } from "../remote/host/startRemoteHost";
 import type { RemoteRuntimeDependencies } from "../remote/runtimeDependencies";
 import { connectRemoteSignaling } from "../remote/signaling/connectRemoteSignaling";
@@ -95,6 +97,82 @@ export async function runRemoteHostCommand(
   if (failure !== undefined) throw failure;
 }
 
+export interface RemoteHostConnectionCode {
+  readonly code?: string;
+  readonly keyId: string;
+  readonly done: Promise<void>;
+  stop(): Promise<void>;
+}
+
+export async function startRemoteHostWithConnectionCode(
+  deps: CliDependencies,
+  workspaceRoot: string,
+  onStatus: (line: string) => void,
+): Promise<RemoteHostConnectionCode> {
+  const remote = requireRemoteKeys(deps);
+  const runtime = requireRemoteRuntime(deps);
+  if (deps.remoteAuth === undefined) throw new CliUsageError("请先运行 `answra auth login`。");
+  await deps.remoteAuth.getAccessToken();
+  const modelSnapshot = await deps.modelSettings.snapshot();
+  if (!modelSnapshot.configured) {
+    throw new CliUsageError("请先用 /config 配置本机模型，再开启远程连接。");
+  }
+  const accessToken = await resolveModelAccessToken(deps.env[CLI_API_KEY], deps.modelCredentials);
+  const now = remote.now?.() ?? new Date();
+  const existing = (await remote.hostKeys.list()).find(
+    (record) =>
+      record.purpose === "connection-code" &&
+      record.expiresAt === undefined &&
+      isRemoteHostAccessKeyActive(record, now),
+  );
+  const created =
+    existing === undefined
+      ? await createHostAccessKey({
+          hostKeys: remote.hostKeys,
+          now,
+          permanent: true,
+          label: "CLI connection code",
+          purpose: "connection-code",
+        })
+      : undefined;
+  const record = created?.record ?? existing;
+  if (record === undefined) throw new Error("无法创建远程连接码。");
+  const createHost = deps.createRemoteHost ?? createRemoteCodingHost;
+  const host = createHost({ workspaceRoot, modelSettings: deps.modelSettings, accessToken });
+
+  try {
+    const handle = await startRemoteHost({
+      runtime,
+      hostKeys: remote.hostKeys,
+      host: host.port,
+      workspaceRoot,
+      roomId: record.roomId,
+      onStatus,
+    });
+    return {
+      ...(created === undefined ? {} : { code: created.generated.key }),
+      keyId: record.keyId,
+      done: handle.done,
+      stop: async () => {
+        try {
+          await handle.stop();
+        } finally {
+          host.dispose();
+        }
+      },
+    };
+  } catch (error) {
+    host.dispose();
+    if (created !== undefined) {
+      await remote.hostKeys.revoke(
+        created.record.keyId,
+        (remote.now?.() ?? new Date()).toISOString(),
+      );
+    }
+    throw error;
+  }
+}
+
 export async function runRemoteAttachCommand(
   options: Extract<RemoteOptions, { action: "attach" }>,
   remote: RemoteKeyDependencies,
@@ -103,9 +181,16 @@ export async function runRemoteAttachCommand(
 ): Promise<number> {
   requireInteractive(deps, "remote attach");
   const runtime = requireRemoteRuntime(deps);
-  const credential = await remote.credentials.read();
+  let credential = await remote.credentials.read();
+  let enteredCredential = false;
   if (credential === null) {
-    throw new CliUsageError("未保存 controller 密钥。先运行 `answra remote key set`。");
+    const code = await remote.promptSecret("输入远程连接码：");
+    try {
+      credential = createRemoteCredentialRecord(code, { savedAt: now });
+    } catch (error) {
+      throw new CliUsageError(error instanceof Error ? error.message : "远程连接码格式无效。");
+    }
+    enteredCredential = true;
   }
   if (credential.expiresAt !== undefined) {
     const expiresAt = Date.parse(credential.expiresAt);
@@ -134,6 +219,7 @@ export async function runRemoteAttachCommand(
   const removeInterrupt = deps.onInterrupt(() => session.close());
   try {
     welcome = await session.connect();
+    if (enteredCredential) await remote.credentials.write(credential);
   } catch (error) {
     session.close();
     signaling.close();
@@ -216,6 +302,11 @@ async function selectHostKey(
 function requireRemoteRuntime(deps: CliDependencies): RemoteRuntimeDependencies {
   if (deps.remoteRuntime === undefined) throw new Error("远程运行时未配置。");
   return deps.remoteRuntime;
+}
+
+function requireRemoteKeys(deps: CliDependencies): RemoteKeyDependencies {
+  if (deps.remoteKeys === undefined) throw new Error("远程密钥依赖未注入。");
+  return deps.remoteKeys;
 }
 
 function requireInteractive(deps: CliDependencies, command: string): void {

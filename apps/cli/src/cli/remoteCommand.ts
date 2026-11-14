@@ -30,7 +30,7 @@ export const REMOTE_HELP = `Answra Remote
   key create   在 host 上生成访问密钥；密钥只显示一次
   key list     列出 host 上的密钥状态，不显示 secret
   key revoke   撤销 host 上的密钥
-  key set      粘贴 controller 访问密钥并保存到本机
+  key set      粘贴 controller 连接码并保存到本机
   key show     查看本机已保存的 controller 密钥摘要
   key forget   删除本机保存的 controller 密钥
 
@@ -110,9 +110,9 @@ async function createKey(
       "",
       `Key ID: ${record.keyId}`,
       `Label: ${record.label ?? "-"}`,
-      `Expires: ${record.expiresAt}`,
+      `Expires: ${record.expiresAt ?? "永不过期（撤销前有效）"}`,
       "",
-      "在 controller 上运行 `answra remote key set` 并粘贴此密钥。",
+      "在 controller 上运行 `answra remote attach` 并输入此连接码。",
       "任何持有该密钥的人都可以控制此 host。",
       "",
     ].join("\n"),
@@ -138,7 +138,7 @@ async function listKeys(
         ? "expired"
         : "revoked";
     lines.push(
-      `${record.keyId}  ${(record.label ?? "-").padEnd(15)}  ${record.expiresAt}  ${status}`,
+      `${record.keyId}  ${(record.label ?? "-").padEnd(15)}  ${record.expiresAt ?? "never"}  ${status}`,
     );
   }
   deps.output.write(`${lines.join("\n")}\n`);
@@ -160,7 +160,7 @@ async function setKey(
   deps: CliDependencies,
   now: Date,
 ): Promise<void> {
-  const key = await remote.promptSecret("Paste access key: ");
+  const key = await remote.promptSecret("输入远程连接码：");
   let credential: ReturnType<typeof createRemoteCredentialRecord>;
   try {
     credential = createRemoteCredentialRecord(key, { savedAt: now });

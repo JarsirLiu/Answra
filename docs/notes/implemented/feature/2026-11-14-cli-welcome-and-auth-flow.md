@@ -35,6 +35,7 @@ CLI 已有 PKCE 登录实现，但 TUI 欢迎页没有账号状态，也不能�
 - TUI 登录结果通过 `TuiViewStore` 更新欢迎区账户状态；成功 notice 不会永久留在对话区。
 - 本地 listener 只用于短时 OAuth 回调，细节与架构守护见 loopback 例外 Note；不得扩展成常驻服务。
 - 账号 token 仍只进入 OS keychain；工作区安全提醒不替代用户对当前目录的判断。
+- `pnpm dev:cli` 无参数时默认启动 `code`；传入 `remote`、`auth` 或 `--help` 时原样分发，避免开发入口吞掉顶层命令。
 
 ## 验证
 

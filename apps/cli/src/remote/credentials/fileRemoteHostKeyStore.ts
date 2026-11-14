@@ -81,8 +81,9 @@ function parseHostKeyRecord(value: unknown): RemoteHostAccessKeyRecord {
   const secretHash = readString(value.secretHash, "secretHash");
   if (!HEX_HASH_PATTERN.test(secretHash)) throw new Error("远程 host 密钥哈希无效。");
   const label = optionalString(value.label, "label");
+  const purpose = readPurpose(value.purpose);
   const createdAt = readTimestamp(value.createdAt, "createdAt");
-  const expiresAt = readTimestamp(value.expiresAt, "expiresAt");
+  const expiresAt = optionalTimestamp(value.expiresAt, "expiresAt");
   const lastUsedAt = optionalTimestamp(value.lastUsedAt, "lastUsedAt");
   const revokedAt = optionalTimestamp(value.revokedAt, "revokedAt");
   return {
@@ -90,11 +91,18 @@ function parseHostKeyRecord(value: unknown): RemoteHostAccessKeyRecord {
     keyId,
     secretHash,
     ...(label === undefined ? {} : { label }),
+    ...(purpose === undefined ? {} : { purpose }),
     createdAt,
-    expiresAt,
+    ...(expiresAt === undefined ? {} : { expiresAt }),
     ...(lastUsedAt === undefined ? {} : { lastUsedAt }),
     ...(revokedAt === undefined ? {} : { revokedAt }),
   };
+}
+
+function readPurpose(value: unknown): "connection-code" | undefined {
+  if (value === undefined) return undefined;
+  if (value !== "connection-code") throw new Error("远程 host 密钥用途无效。");
+  return value;
 }
 
 function cloneRecord(record: RemoteHostAccessKeyRecord): RemoteHostAccessKeyRecord {

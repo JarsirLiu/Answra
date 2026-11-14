@@ -70,4 +70,21 @@ describe("remote key file stores", () => {
     await store.delete();
     expect(await createFileRemoteCredentialStore(filePath).read()).toBeNull();
   });
+
+  it("persists a permanent connection code without an expiry across store reloads", async () => {
+    const directory = await createDirectory();
+    const filePath = path.join(directory, "remote", "host-keys.json");
+    const generated = generateRemoteAccessKey({ now: NOW, permanent: true });
+    const record = await createRemoteHostAccessKeyRecord(generated, {
+      purpose: "connection-code",
+    });
+
+    await createFileRemoteHostKeyStore(filePath).save(record);
+    const reloaded = await createFileRemoteHostKeyStore(filePath).getByKeyId(record.keyId);
+    if (reloaded === null) throw new Error("permanent connection code missing after reload");
+
+    expect(reloaded).toEqual(record);
+    expect(isRemoteHostAccessKeyActive(reloaded, new Date("2036-11-13T00:00:00.000Z"))).toBe(true);
+    expect(await readFile(filePath, "utf8")).not.toContain(generated.secret);
+  });
 });

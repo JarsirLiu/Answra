@@ -21,6 +21,12 @@ export interface TuiCommandDeps {
   readonly openPanel: (panel: TuiPanel) => void;
   readonly remoteAuth?: RemoteAuthPort;
   readonly login: () => Promise<void>;
+  readonly startRemoteHost?: () => Promise<{
+    readonly code?: string;
+    readonly keyId: string;
+    readonly done: Promise<void>;
+    stop(): Promise<void>;
+  }>;
 }
 
 type TuiCommandHandler = (args: readonly string[], deps: TuiCommandDeps) => void | Promise<void>;
@@ -35,6 +41,7 @@ const handlers = {
   login: handleLogin,
   logout: handleLogout,
   status: handleStatus,
+  remote: handleRemote,
 } satisfies Record<TuiCommandKind, TuiCommandHandler>;
 
 export async function dispatchTuiCommand(
@@ -155,6 +162,31 @@ async function handleStatus(args: readonly string[], deps: TuiCommandDeps): Prom
   const status = await deps.remoteAuth.status();
   deps.store.setAuthStatus(status);
   deps.openPanel("status");
+}
+
+async function handleRemote(args: readonly string[], deps: TuiCommandDeps): Promise<void> {
+  if (args.length > 0) {
+    deps.store.setNotice(["/remote 不接受参数。"]);
+    return;
+  }
+  if (deps.startRemoteHost === undefined) {
+    deps.store.setNotice(["当前环境未配置远程连接。"]);
+    return;
+  }
+  if (deps.isBusy()) {
+    deps.store.setNotice(["当前运行中，先按 Esc 中断后再开启远程连接。"]);
+    return;
+  }
+  const remote = await deps.startRemoteHost();
+  deps.store.setNotice([
+    remote.code === undefined
+      ? "已恢复持久远程连接。其他设备可以继续使用原连接码运行 answra remote attach。"
+      : "远程连接已开启。请在其他设备运行 answra remote attach，并输入下面的连接码：",
+    ...(remote.code === undefined ? [] : [remote.code]),
+    `Key ID: ${remote.keyId}`,
+    "连接码会持久保存，直到在 host 上撤销。",
+    `撤销命令：answra remote key revoke ${remote.keyId}`,
+  ]);
 }
 
 function messageOf(error: unknown): string {

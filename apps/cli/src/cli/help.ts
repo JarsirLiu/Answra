@@ -50,7 +50,7 @@ code 选项:
 
 远程访问密钥:
   host 上运行 answra remote key create 生成，默认 7 天、只显示一次；
-  controller 上运行 answra remote key set 粘贴并保存到本机；
+  另一台 CLI 首次运行 answra remote attach 时输入连接码，会安全保存到本机；
   key list/show 只显示 keyId 与过期时间，不显示 secret；
   key revoke 撤销 host 密钥，key forget 删除本机 controller 密钥。
 

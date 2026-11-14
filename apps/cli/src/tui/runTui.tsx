@@ -36,6 +36,12 @@ export interface TuiRunOptions {
   altScreen: boolean;
   remoteAuth?: RemoteAuthPort;
   openBrowser?: OpenBrowser;
+  startRemoteHost?: () => Promise<{
+    readonly code?: string;
+    readonly keyId: string;
+    readonly done: Promise<void>;
+    stop(): Promise<void>;
+  }>;
 }
 
 export type TuiRunner = (options: TuiRunOptions) => Promise<number>;
@@ -57,6 +63,7 @@ export async function runInkTui({
   altScreen,
   remoteAuth,
   openBrowser,
+  startRemoteHost,
 }: TuiRunOptions): Promise<number> {
   let session = initialSession;
   let setupStep: TuiSetupStep | undefined = session === undefined ? "base-url" : undefined;
@@ -83,6 +90,9 @@ export async function runInkTui({
   let compactAbort: AbortController | undefined;
   let exitTui: (() => void) | undefined;
   let authCodeResolver: ((value: string) => void) | undefined;
+  let activeRemoteHost:
+    | Awaited<ReturnType<NonNullable<TuiRunOptions["startRemoteHost"]>>>
+    | undefined;
 
   const submit = (text: string): void => {
     if (authCodeResolver !== undefined) {
@@ -197,6 +207,20 @@ export async function runInkTui({
     openPanel,
     remoteAuth,
     login,
+    startRemoteHost: async () => {
+      if (activeRemoteHost !== undefined) {
+        throw new Error("远程连接已经开启；连接码只在创建时显示一次。");
+      }
+      if (startRemoteHost === undefined) throw new Error("当前环境未配置远程连接。");
+      activeRemoteHost = await startRemoteHost();
+      void activeRemoteHost.done.then(
+        () => {
+          if (activeRemoteHost !== undefined) store.setNotice(["远程 host 已停止。"]);
+        },
+        (error: unknown) => store.fail(messageOf(error)),
+      );
+      return activeRemoteHost;
+    },
   };
 
   const panelHandlers: TuiPanelHandlers = {
@@ -436,6 +460,7 @@ export async function runInkTui({
     );
     await instance.waitUntilExit();
   } finally {
+    await activeRemoteHost?.stop();
     unsubscribePointer?.();
     pointer?.dispose();
   }
