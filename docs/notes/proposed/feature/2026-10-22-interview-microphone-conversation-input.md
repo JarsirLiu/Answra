@@ -10,7 +10,7 @@
 
 - 代码/模块：`apps/agent/src/interview` turn 聚合；`apps/agent/src/conversation` 仅追加用户消息；worker、shared channel/bridge、desktop IPC 投影；`apps/desktop/src/renderer` 麦克风电平观测；`packages/ui` 面试对话式面板及测试。
 - UI/进程/协议/持久化表面：用户点击麦克风后仅采集麦克风；识别完成的 turn 作为当前面试对话中的 user message 显示。沿用现有进程内存 conversation store，不新增磁盘持久化。面试系统声音暂不采集、不触发消息；后续另行切换输入源。
-- 相关 Note：[面试实时语音人工试用闭环](../../implemented/feature/2026-10-22-live-audio-test-loop.md)、[VAD 评测以 turn 判定与响应延迟为主](../../implemented/testing/2026-10-21-vad-turn-latency-evaluation.md)、[面试语音运行时模块边界与并行开发契约](../architecture/2026-10-19-interview-runtime-module-boundaries.md)、[产品方向与 Agent 底座](../architecture/2026-10-20-product-direction-and-agent-foundation.md)。
+- 相关 Note：[面试实时语音人工试用闭环](../../implemented/feature/2026-10-22-live-audio-test-loop.md)、[VAD 评测以 turn 判定与响应延迟为主](../../implemented/testing/2026-10-21-vad-turn-latency-evaluation.md)、[面试语音运行时模块边界与并行开发契约](../../implemented/architecture/2026-10-19-interview-runtime-module-boundaries.md)、[产品方向与 Agent 底座](../architecture/2026-10-20-product-direction-and-agent-foundation.md)。
 
 ## 提案
 

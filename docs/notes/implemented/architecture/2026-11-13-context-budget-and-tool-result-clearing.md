@@ -1,6 +1,6 @@
 # Note：256k 上下文预算与旧工具结果清理
 
-状态：提案
+状态：已实施
 
 ## 问题
 
@@ -40,14 +40,14 @@ Conversation 和 Coding 的长会话还会积累大量旧的 `read`、`grep`、`
   - 工具结果清理只改变模型投影，不删除 transcript、不改 UI 历史。
   - 本提案不新增磁盘持久化、不实现 archive、不实现服务端 cache editing。
 - 相关 Note：
-  - [会话上下文摘要压缩与旧上下文归档](2026-11-13-conversation-context-compaction-and-archive.md)
+  - [会话上下文摘要压缩与旧上下文归档](../../proposed/architecture/2026-11-13-conversation-context-compaction-and-archive.md)
   - [历史工具结果进入模型上下文](../../implemented/bug-fix/2026-11-10-conversation-tool-results-history.md)
   - [后端会话与内存仓储](../../implemented/architecture/2026-10-12-conversation-memory-store-port.md)
-  - [可切换的内存与 SQLite 存储边界](2026-11-08-switchable-memory-sqlite-storage.md)
+  - [可切换的内存与 SQLite 存储边界](../../proposed/architecture/2026-11-08-switchable-memory-sqlite-storage.md)
   - [旧工具结果清理结果跨轮保留](../../implemented/architecture/2026-11-16-sticky-tool-result-pruning.md)
-  - [产品方向与 Agent 底座](2026-10-20-product-direction-and-agent-foundation.md)
+  - [产品方向与 Agent 底座](../../proposed/architecture/2026-10-20-product-direction-and-agent-foundation.md)
 
-## 提案
+## 决定
 
 ### 1. 产品规则：只暴露用户能理解的控制面
 
@@ -239,11 +239,11 @@ definition.prepare()
 - 第三阶段 usage 锚点已落地：`ContextState.usageAnchor` 保存成功 run **首个 step** 的 `usage.inputTokens` 与同一请求的保守估算；`ContextPreparation` 用两者比例校准下一次阈值判断。prune、compact 或 trim 改变投影后，当前请求立即改用全量估算；成功 run 重新记录锚点，失败、中断或缺少 usage 时清理已失效锚点。锚点只校准估算，不替代保守估算，不改变 256k/216k/172k/40k/132k 预算值。
 - 摘要输入已收窄为正文：`renderMessagesForSummary` 只读取 `ConversationMessage.text`，不读取 `parts` 中的 `reasoning`、工具调用输入/输出/错误，也不使用 `message.reasoning`。`text` 是 transcript schema 必填的可见正文，不是旧格式回退；摘要模型只看到用户与助手的正文，避免把内部思考固化成 checkpoint。
 - 压缩写入已允许在活动 run 内保存 `ContextState`：此前 `MemoryConversationStore.saveContextState` 的 `activeRunId` 守卫会让真实自动压缩在 `beginRun` 之后必然失败。`prepareContext` 现在接收 run 的 `AbortSignal`，摘要生成被取消时记录 `failed`、不产生 checkpoint，原始 transcript 保持不变。
-- 存储边界保持 `ConversationStore` / `ExecutionStore` 端口：当前仍是内存 adapter，checkpoint、压缩状态和 usage 锚点都经 `ConversationStore.loadContextState/saveContextState` 保存；SQLite adapter 接入时不需要改压缩或锚点逻辑。SQLite 本身仍未实现，按 [可切换的内存与 SQLite 存储边界](2026-11-08-switchable-memory-sqlite-storage.md) 单独推进。
-- CLI 手动 `/compact` 当前是过渡实现：`CodingApplication.compactConversation` 直接复用 `ContextCompactor`，`force` 跳过预算触发点但仍保留最近尾段和最少摘要消息数；运行中拒绝，取消通过 `AbortSignal` 记录 `failed`。CLI 同时在 snapshot 中回放成功摘要边界，TUI 显示 Claude 风格 Spinner/边界/失败文案。最终手动入口必须改走 `ContextPreparation.compactNow`，补齐熔断绕过和 usage 刷新，见[会话上下文摘要压缩与旧上下文归档](2026-11-13-conversation-context-compaction-and-archive.md)的“手动压缩入口”。
+- 存储边界保持 `ConversationStore` / `ExecutionStore` 端口：当前仍是内存 adapter，checkpoint、压缩状态和 usage 锚点都经 `ConversationStore.loadContextState/saveContextState` 保存；SQLite adapter 接入时不需要改压缩或锚点逻辑。SQLite 本身仍未实现，按 [可切换的内存与 SQLite 存储边界](../../proposed/architecture/2026-11-08-switchable-memory-sqlite-storage.md) 单独推进。
+- CLI 手动 `/compact` 现已经 `ContextPreparation.compactNow` 执行，支持一次性摘要指令、熔断绕过和 usage 刷新；`CodingApplication.compactConversation` 只做用例编排，运行中拒绝，取消通过 `AbortSignal` 记录 `failed`。CLI 在 snapshot 中回放成功摘要边界，TUI 显示 Claude 风格 Spinner/边界/失败文案，见[手动压缩的自定义摘要指令与摘要展示](../../implemented/feature/2026-11-14-manual-compaction-instructions-and-summary.md)。
 - 模型窗口已改为可选端点能力：`ConversationCapabilityEndpoint.contextWindow` 由云端能力目录透传，桌面认证持久化保留；缺失时仍回退 256k 基准预算。客户端不增加手动窗口配置。
 - 上下文占用与最近一次工具清理已进入 snapshot：`contextUsage`（当前估算/输入上限/清理与压缩阈值）和 `contextPruning`（清理数量与节省 token）由 `ContextPreparation` 写入 `ContextState`；桌面 `ChatPanel` 与 CLI 状态行/尾部提示展示。
-- 自动压缩与自动清理保持默认开启，不提供用户开关（2026-11-14 产品决定）。P1 健壮性已落地 `postCompactTarget` 软目标、摘要中的图片文件名/media type、连续失败熔断（3 次 / 5 分钟冷却）、摘要请求超限截断重试和 provider 超限错误识别；provider 超限后的单次 reactive compact 仍未实现。手动压缩的熔断绕过、usage 刷新和可区分结果见[会话上下文摘要压缩与旧上下文归档](2026-11-13-conversation-context-compaction-and-archive.md)的“手动压缩入口”。
+- 自动压缩与自动清理保持默认开启，不提供用户开关（2026-11-14 产品决定）。P1 健壮性已落地 `postCompactTarget` 软目标、摘要中的图片文件名/media type、连续失败熔断（3 次 / 5 分钟冷却）、摘要请求超限截断重试和 provider 超限错误识别；provider 超限后的单次 reactive compact 已按[Provider 上下文超限的单次恢复](../../implemented/architecture/2026-11-14-provider-overflow-reactive-compaction.md)落地：`recoverContext` 只在真正完成压缩时返回请求，每个 run 最多一次。手动压缩的熔断绕过、usage 刷新和可区分结果见[手动压缩的自定义摘要指令与摘要展示](../../implemented/feature/2026-11-14-manual-compaction-instructions-and-summary.md)。
 
 ## 模块边界
 
@@ -278,7 +278,18 @@ definition.prepare()
 - **只依赖上一轮 `usage.inputTokens`，不做估算：** 舍弃。当前请求在压缩前还未发送，第一轮也没有 usage；必须保留保守估算路径。
 - **把“待处理消息”作为产品概念展示：** 舍弃。它是实现内部的 `messagesAfterCheckpoint`，不应成为用户心智模型。
 
-## 验收标准
+## 后果与防回退
+
+- 预算、锚点、清理、压缩和硬兜底只有 `ContextPreparation` 一条编排路径；Conversation、Coding、Interview 只提供最终 draft、`rebuild` 回调和会话 id，不得各自复制阈值或清理逻辑。
+- 清理只替换模型投影中的旧工具结果，不删除 transcript、不改 UI 历史、不重排 tool-call/result 配对；任何“直接改 transcript 工具结果”的实现都应被拒绝。
+- 阈值来自模型能力字段或本地配置，不得按模型名猜窗口，也不得把 256k/216k/172k/40k/132k 再写死到领域 profile。
+- 已清理 `toolCallId` 水印由[旧工具结果清理结果跨轮保留](../../implemented/architecture/2026-11-16-sticky-tool-result-pruning.md)持久化；不要再恢复“每轮从最终投影重算、重复提示”的旧行为。
+- provider 超限后的单次恢复由 `recoverContext` 承担，每个 run 最多一次；不得把恢复扩展成第二个 run、自动交接或循环重试。
+- 自动压缩与自动清理保持默认开启，不提供用户开关；手动 `/compact` 只接受一次性指令，不写入会话或共享配置。
+
+## 验证
+
+已实现并由 `apps/agent/test/core/context/`（`budget`、`tokenEstimate`、`preparation`、`pruning/prune`）与 provider 超限、手动压缩的已实施 Note 覆盖；以下保留验收项与实机确认范围。
 
 - 可观察结果：
   - 模型能力配置为 256k 时，预算显示 `compactionBuffer=40k`、`inputLimit=216k`、`compactAt=216k`、`pruneAt=172k`、`pruneTarget=40k`；固定开销变化时，`compactAt` 自动下降。

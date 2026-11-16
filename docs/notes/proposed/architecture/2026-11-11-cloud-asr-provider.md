@@ -12,7 +12,7 @@
 
 - 代码/模块：`apps/agent/src/interview/transcription/`（provider 端口、云端 adapter、pump）、`apps/agent/src/interview/runtime.ts`、`apps/agent/src/host.ts`、`apps/agent/src/worker/protocol.ts`、`apps/desktop/src/main/conversation/workerTransport.ts` 与 `apps/desktop/src/main/conversation/worker.ts`、`apps/desktop/src/main/interview/`（配置与凭据注入）、`packages/shared/src/env.ts`（如需新增变量名）、`examples/vad-asr-eval/`。
 - UI/进程/协议/持久化表面：云端模式下音频离开本机；desktop main 负责设置与凭据，agent 进程发起请求；访问令牌/API Key 不进 renderer、不写日志、不落明文盘；provider 选择是启动/会话级配置，不是 transcript 事件里的字段。
-- 相关 Note：[面试语音识别管线与客户端 VAD 选型](2026-10-16-interview-asr-pipeline-and-vad.md)、[本地内置 ASR 路线与 Paraformer-zh-small int8 首选](2026-10-21-local-asr-paraformer-small.md)、[面试语音运行时模块边界与并行开发契约](2026-10-19-interview-runtime-module-boundaries.md)、[面试转录宿主接线](../../implemented/feature/2026-10-21-interview-transcription-host-wiring.md)、[桌面端云端模型调用契约](2026-10-18-desktop-cloud-model-call-contract.md)、[VAD + ASR 评测](../../implemented/process/2026-10-21-vad-asr-eval-harness.md)、[产品方向与 Agent 底座](2026-10-20-product-direction-and-agent-foundation.md)。
+- 相关 Note：[面试语音识别管线与客户端 VAD 选型](2026-10-16-interview-asr-pipeline-and-vad.md)、[本地内置 ASR 路线与 Paraformer-zh-small int8 首选](2026-10-21-local-asr-paraformer-small.md)、[面试语音运行时模块边界与并行开发契约](../../implemented/architecture/2026-10-19-interview-runtime-module-boundaries.md)、[面试转录宿主接线](../../implemented/feature/2026-10-21-interview-transcription-host-wiring.md)、[桌面端云端模型调用契约](2026-10-18-desktop-cloud-model-call-contract.md)、[VAD + ASR 评测](../../implemented/process/2026-10-21-vad-asr-eval-harness.md)、[产品方向与 Agent 底座](2026-10-20-product-direction-and-agent-foundation.md)。
 
 ## 提案
 

@@ -57,7 +57,7 @@ Bot，`ConversationStore` 保存消息、`activeAgentId`、`participantAgentIds`
   - [多 Bot 同会话注册、发现与交接](2026-11-11-multi-bot-session-registry-and-handoff.md)
   - [产品方向与 Agent 底座](2026-10-20-product-direction-and-agent-foundation.md)
   - [面试向导、候选人与演练三 Agent 分工](2026-11-11-interview-three-agent-boundaries.md)
-  - [领域 Agent 模块注册与面试链路归属](2026-11-07-domain-agent-module-registration.md)
+  - [领域 Agent 模块注册与面试链路归属](../../implemented/architecture/2026-11-07-domain-agent-module-registration.md)
   - [Conversation 领域布局](../../implemented/architecture/2026-11-06-conversation-domain-layout.md)
   - [core transcript 抽取](../../implemented/architecture/2026-11-08-core-transcript-store.md)
   - [Agent 工具系统基础](../../implemented/architecture/2026-11-09-agent-tool-system-foundation.md)

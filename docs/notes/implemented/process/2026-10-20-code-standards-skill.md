@@ -10,7 +10,7 @@ AI 与新协作者产出的代码出现系统性质量病灶：不看架构往�
 
 - 代码/模块：`.agents/skills/answra-code/SKILL.md` 新增；`AGENTS.md` 质量门禁章节增加指针行。
 - 流程表面：不改变任何代码、命令或 CI 行为；为写代码与评审注入判断框架和自查清单。
-- 相关 Note：[提交前 AI 自检 skill](../../archived/process/2026-10-20-ai-submit-self-check-skill.md)、[产品方向与 Agent 底座提案](../../proposed/architecture/2026-10-20-product-direction-and-agent-foundation.md)、[面试语音运行时模块边界](../../proposed/architecture/2026-10-19-interview-runtime-module-boundaries.md)、[对话与答题领域拆分](../../implemented/architecture/2026-10-18-ai-capability-domains-and-reuse.md)。
+- 相关 Note：[提交前 AI 自检 skill](../../archived/process/2026-10-20-ai-submit-self-check-skill.md)、[产品方向与 Agent 底座提案](../../proposed/architecture/2026-10-20-product-direction-and-agent-foundation.md)、[面试语音运行时模块边界](../../implemented/architecture/2026-10-19-interview-runtime-module-boundaries.md)、[对话与答题领域拆分](../../implemented/architecture/2026-10-18-ai-capability-domains-and-reuse.md)。
 
 ## 流程变化
 

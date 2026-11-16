@@ -1,6 +1,6 @@
 # Note：领域 Agent 模块注册与面试链路归属
 
-状态：提案
+状态：已实施
 
 ## 问题
 
@@ -18,11 +18,11 @@ Agent 已有 `execution`、`conversation`、`interview` 目录，但职责没有
 - Agent：`apps/agent/src/core/`、`execution/`、`conversation/`、`interview/`、`worker/`。
 - 桌面与 UI：Agent worker transport、Conversation/Interview IPC、`useConversationView` 的 snapshot 与 event 恢复。
 - 共享契约：现有 `AgentEventEnvelope`、`ConversationSnapshot`、`AgentCommand` / `AgentFrame`。
-- 相关 Note：[产品方向与 Agent 底座](./2026-10-20-product-direction-and-agent-foundation.md)、[对话与答题能力拆分](../../implemented/architecture/2026-10-18-ai-capability-domains-and-reuse.md)、[面试运行时模块边界](./2026-10-19-interview-runtime-module-boundaries.md)、[Agent host 组装与传输](../../implemented/architecture/2026-10-17-agent-host-composition-and-transport.md)、[面试 transcript 未显示复盘](../../implemented/bug-fix/2026-11-07-interview-transcript-not-visible.md)、[会话恢复游标](../../implemented/architecture/2026-11-07-conversation-live-recovery-cursor.md)。
+- 相关 Note：[产品方向与 Agent 底座](../../proposed/architecture/2026-10-20-product-direction-and-agent-foundation.md)、[对话与答题能力拆分](../../implemented/architecture/2026-10-18-ai-capability-domains-and-reuse.md)、[面试运行时模块边界](./2026-10-19-interview-runtime-module-boundaries.md)、[Agent host 组装与传输](../../implemented/architecture/2026-10-17-agent-host-composition-and-transport.md)、[面试 transcript 未显示复盘](../../implemented/bug-fix/2026-11-07-interview-transcript-not-visible.md)、[会话恢复游标](../../implemented/architecture/2026-11-07-conversation-live-recovery-cursor.md)。
 
-本提案把“AgentRuntime 稳定、领域模块静态注册”确定为目标。Conversation、Answer 和 Interview 都是现存真实消费者；不提前建设通用插件系统。提案获准后按实施阶段推进，不一次性重写所有领域。第一阶段的面试 snapshot 竞态修复与目录归属调整、第二阶段的 `core/agent` 抽取、第三阶段的 `core/transcript` 抽取、第四阶段 Answer application 独立，以及第五阶段 Chat application 和 Interview application 归属调整已经实施。
+本决定把“AgentRuntime 稳定、领域模块静态注册”确定为架构目标。Conversation、Answer、Interview 都是现存真实消费者；不提前建设通用插件系统。第一阶段的面试 snapshot 竞态修复与目录归属调整、第二阶段的 `core/agent` 抽取、第三阶段的 `core/transcript` 抽取、第四阶段 Answer application 独立，以及第五阶段 Chat application 和 Interview application 归属调整已经实施。
 
-## 提案
+## 决定
 
 ### 目标架构
 
@@ -318,7 +318,18 @@ InterviewApplication.startReply
 - **在 UI 根据事件自动补造缺失 assistant message：** 可暂时掩盖 snapshot 丢失，却把 transcript 写入事实搬到 UI；违反单一写入来源，不采用。
 - **Desktop 继续在 `turn-committed` 后拉 snapshot：** 保留时序竞态，并把领域恢复策略放入平台进程，不采用。
 
-## 验收标准
+## 后果与防回退
+
+- `AgentRuntime` 保持通用：只做模型调用、AI SDK 流消费、重试、run 生命周期和唯一事件写入；不得把面试结算、对话历史或答题清理塞回 runtime。
+- 领域注册保持静态、启动期完成；不得引入插件加载、反射、DI 容器或 renderer 注入 prompt/工具。
+- Conversation、Answer、Interview、Coding 各自拥有 application 与 Agent 定义，互不 import；`core` 不依赖任何领域。
+- Desktop 只做来源校验、命令/事件转发和平台采集；不得恢复 `turn-committed → getSnapshot()` 的事后查询路径。
+- `AgentEventEnvelope` 仍是唯一执行事件事实，`ConversationSnapshot` 只是带恢复游标的查询 DTO；不得新增第二套消息 revision、领域事件日志或 UI 推导的占位消息。
+- snapshot 恢复只有 `reconcileSnapshot` 一个入口：先缓冲 live events，再按 snapshot cursor 补读；异步结果用 generation 丢弃迟到响应。
+
+## 验证
+
+实现与自动化覆盖：`core/agent/*`、`core/transcript/*`、`conversation/`、`answer/`、`interview/`、`coding/` 已按目标分层落位；`apps/agent/test/core/agent/registry.test.ts`、`core/transcript`、`conversation/application.test.ts`、`interview/application.test.ts`、`coding/application.test.ts` 覆盖注册、run 生命周期、领域隔离和 snapshot 认领。以下保留验收项与实机范围。
 
 - 可观察结果：Interview 识别文本先形成用户消息；回复认领时出现助手占位；文本、重试和终态沿现有 AgentEventEnvelope 更新；切页后不丢消息、不重复 delta。
 - 架构约束：Chat/Answer/Interview 都通过静态注册使用同一个 AgentRuntime；新领域只需在本领域组装 Agent 定义和 application，不修改另一个领域的执行分支。

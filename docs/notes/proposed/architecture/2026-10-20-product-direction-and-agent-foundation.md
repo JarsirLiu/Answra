@@ -17,7 +17,7 @@
 
 - 代码/模块：`apps/agent/src/` 新增平级 `core/` 与未来 `voice/`、`meeting/`、`inline/`、`document/` 领域目录；`apps/agent/src/worker/protocol.ts` 反向请求帧扩展；`apps/desktop/src/main/` 平台工具实现落点。
 - 进程/协议表面：`AgentCommand`/`AgentFrame` 是当前 desktop adapter 协议；Agent 工具不经反向 RPC；独立 CLI/stdio adapter 仍待实现。
-- 相关 Note：[对话与答题 AI 领域拆分及对话能力复用](../../implemented/architecture/2026-10-18-ai-capability-domains-and-reuse.md)、[面试语音运行时模块边界与并行开发契约](2026-10-19-interview-runtime-module-boundaries.md)、[面试语音识别管线与客户端 VAD 选型](2026-10-16-interview-asr-pipeline-and-vad.md)、[Agent 模块组装点与宿主传输抽象](../../implemented/architecture/2026-10-17-agent-host-composition-and-transport.md)、[对话会话与内存仓储端口](../../implemented/architecture/2026-10-12-conversation-memory-store-port.md)、[答题运行认领竞态修复](../../implemented/bug-fix/2026-10-20-answer-run-claim-race.md)、[拒绝将 Pi 作为桌面 Agent Runtime](../../rejected/architecture/2026-10-11-pi-agent-runtime-for-conversation.md)。
+- 相关 Note：[对话与答题 AI 领域拆分及对话能力复用](../../implemented/architecture/2026-10-18-ai-capability-domains-and-reuse.md)、[面试语音运行时模块边界与并行开发契约](../../implemented/architecture/2026-10-19-interview-runtime-module-boundaries.md)、[面试语音识别管线与客户端 VAD 选型](2026-10-16-interview-asr-pipeline-and-vad.md)、[Agent 模块组装点与宿主传输抽象](../../implemented/architecture/2026-10-17-agent-host-composition-and-transport.md)、[对话会话与内存仓储端口](../../implemented/architecture/2026-10-12-conversation-memory-store-port.md)、[答题运行认领竞态修复](../../implemented/bug-fix/2026-10-20-answer-run-claim-race.md)、[拒绝将 Pi 作为桌面 Agent Runtime](../../rejected/architecture/2026-10-11-pi-agent-runtime-for-conversation.md)。
 
 ## 提案
 

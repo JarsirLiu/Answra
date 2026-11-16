@@ -55,7 +55,7 @@ Conversation、CLI coding、Interview 等所有使用 transcript 的领域，每
   - [Conversation 工具步数上限与终态](../../implemented/bug-fix/2026-11-10-conversation-step-limit-and-terminal.md)
   - [Conversation 编排拆分与 Bot 边界收敛](2026-11-12-conversation-orchestration-decomposition.md)
   - [CLI Coding 模式与 TUI 移植](2026-11-12-cli-coding-mode-and-tui-port.md)
-  - [256k 上下文预算与旧工具结果清理](2026-11-13-context-budget-and-tool-result-clearing.md)
+  - [256k 上下文预算与旧工具结果清理](../../implemented/architecture/2026-11-13-context-budget-and-tool-result-clearing.md)
   - [Provider 上下文超限的单次恢复](../../implemented/architecture/2026-11-14-provider-overflow-reactive-compaction.md)
   - [产品方向与 Agent 底座](2026-10-20-product-direction-and-agent-foundation.md)
 
@@ -435,7 +435,7 @@ Conversation / Coding / Interview application
 
 已落地上下文占用与工具清理反馈：`ContextPreparation` 将最终请求的 `contextUsage` 和实际应用的 `contextPruning` 写入 `ContextState`，snapshot 投影到桌面 `ChatPanel` 和 CLI 状态行/尾部提示；模型窗口可从端点 `contextWindow` 派生，缺失时回退 256k。自动压缩与自动清理保持默认开启，不提供用户开关（2026-11-14 产品决定）。
 
-尚未落地：手动压缩的 `AgentExecutor.prepare` 只读投影、`ContextPreparation.compactNow`、`bypassFailureBreaker`、usage 刷新、可区分结果和桌面 Conversation 入口；`executeRun` 的 provider 超限单次恢复；摘要输出 20k 固定上限；Conversation/Coding/Interview 的独立 `CompactionProfile`；archive/SQLite；依赖持久化 store 的跨进程重启恢复。当前自动触发已使用 256k 窗口、216k 压缩点和 172k/40k/132k 工具清理预算，不再是 96k；预算与工具清理的细化规则见[256k 上下文预算与旧工具结果清理](2026-11-13-context-budget-and-tool-result-clearing.md)。
+尚未落地：手动压缩的 `AgentExecutor.prepare` 只读投影、`ContextPreparation.compactNow`、`bypassFailureBreaker`、usage 刷新、可区分结果和桌面 Conversation 入口；`executeRun` 的 provider 超限单次恢复；摘要输出 20k 固定上限；Conversation/Coding/Interview 的独立 `CompactionProfile`；archive/SQLite；依赖持久化 store 的跨进程重启恢复。当前自动触发已使用 256k 窗口、216k 压缩点和 172k/40k/132k 工具清理预算，不再是 96k；预算与工具清理的细化规则见[256k 上下文预算与旧工具结果清理](../../implemented/architecture/2026-11-13-context-budget-and-tool-result-clearing.md)。
 
 ## 模块边界
 

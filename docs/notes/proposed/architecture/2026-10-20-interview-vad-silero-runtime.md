@@ -4,13 +4,13 @@
 
 ## 问题
 
-[面试运行时模块边界](2026-10-19-interview-runtime-module-boundaries.md)规定的阶段 1–2 已交付（PCM 采集底座、`ingress` 校验），阶段 3 需要 VAD 检测器与分段器的具体实现。[`VadDetector`/`AudioSegmenter` 契约已冻结]（`apps/agent/src/interview/contracts.ts:82-85,103-107`），当前 `worker/host.ts` 的 `onFrame` 是空转，帧在 ingress 校验后无人消费。[批式 ASR 路线](2026-10-16-interview-asr-pipeline-and-vad.md)要求本地 VAD 承担切段正确性：句首 pre-roll、hangover 闭合、低能量强切、失败显式报错。需要决定：检测器用什么模型/引擎、放在哪一层、模型资源如何治理。
+[面试运行时模块边界](../../implemented/architecture/2026-10-19-interview-runtime-module-boundaries.md)规定的阶段 1–2 已交付（PCM 采集底座、`ingress` 校验），阶段 3 需要 VAD 检测器与分段器的具体实现。[`VadDetector`/`AudioSegmenter` 契约已冻结]（`apps/agent/src/interview/contracts.ts:82-85,103-107`），当前 `worker/host.ts` 的 `onFrame` 是空转，帧在 ingress 校验后无人消费。[批式 ASR 路线](2026-10-16-interview-asr-pipeline-and-vad.md)要求本地 VAD 承担切段正确性：句首 pre-roll、hangover 闭合、低能量强切、失败显式报错。需要决定：检测器用什么模型/引擎、放在哪一层、模型资源如何治理。
 
 ## 涉及范围
 
 - 代码/模块：`apps/agent/src/interview/vad/`（新增）、`apps/agent/src/worker/host.ts`（帧接线）、`apps/desktop/native/ten-vad-resources.json`（资源清单与准备脚本入口）。
 - UI/进程/协议/持久化表面：Agent utility process 内部实现变更；desktop/renderer/shared/通道契约不变；音频与检测结果仍只在内存，不落盘。
-- 相关 Note：[面试语音识别管线与客户端 VAD 选型](2026-10-16-interview-asr-pipeline-and-vad.md)、[面试运行时模块边界](2026-10-19-interview-runtime-module-boundaries.md)、[面试模式持续监听与回答建议](../feature/2026-10-12-live-interview-assistant.md)。
+- 相关 Note：[面试语音识别管线与客户端 VAD 选型](2026-10-16-interview-asr-pipeline-and-vad.md)、[面试运行时模块边界](../../implemented/architecture/2026-10-19-interview-runtime-module-boundaries.md)、[面试模式持续监听与回答建议](../feature/2026-10-12-live-interview-assistant.md)。
 
 ## 提案
 

@@ -13,7 +13,7 @@
 - 代码/模块：`apps/agent/src/interview/transcription/` 新增本地 provider adapter（segment 输入形态）；`apps/desktop` 预编译资源准备脚本与组合根（模型路径注入，与 rime 资源同构）；esbuild 打包约束（native addon external + asarUnpack）。
 - 进程/合规表面：推理驻留 Agent utility process；音频不再出设备（本地路径不发起网络请求）；安装包体积增加约 80MB；"关于/许可"页面需保留模型出处（FunASR 许可 v1.1 条件）。
 - 产品口径修订：10-12 Note 的本地否决对象是"让用户本机跑 Ollama/大 Whisper"（体积、性能、启动可用性不可控，且不得成为静默回退）；本方案是"随安装包分发的轻量内置模型"且作为**显式 provider 选型**而非静默降级，属于不同性质。实施时需在 10-12 Note 补一条边界修订记录，不得静默改写原否决条目。
-- 相关 Note：[面试语音识别管线与客户端 VAD 选型](2026-10-16-interview-asr-pipeline-and-vad.md)、[面试语音运行时模块边界与并行开发契约](2026-10-19-interview-runtime-module-boundaries.md)、[TEN VAD 选型与打包回归](2026-10-20-interview-vad-silero-runtime.md)；预编译资源纪律见根目录 `AGENTS.md` 内置输入法资源节。
+- 相关 Note：[面试语音识别管线与客户端 VAD 选型](2026-10-16-interview-asr-pipeline-and-vad.md)、[面试语音运行时模块边界与并行开发契约](../../implemented/architecture/2026-10-19-interview-runtime-module-boundaries.md)、[TEN VAD 选型与打包回归](2026-10-20-interview-vad-silero-runtime.md)；预编译资源纪律见根目录 `AGENTS.md` 内置输入法资源节。
 
 ## 提案
 

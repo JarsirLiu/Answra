@@ -38,7 +38,7 @@
 - 相关 Note：
   - [面试向导、候选人与演练三 Agent 分工](../architecture/2026-11-11-interview-three-agent-boundaries.md)
   - [面试演练与面试记忆](../../implemented/feature/2026-11-10-interview-rehearsal-and-memory.md)
-  - [面试语音运行时模块边界](../architecture/2026-10-19-interview-runtime-module-boundaries.md)
+  - [面试语音运行时模块边界](../../implemented/architecture/2026-10-19-interview-runtime-module-boundaries.md)
   - [声明式浮窗系统](../architecture/2026-11-11-declarative-surface-system.md)
   - [声明式浮窗 P0](../../implemented/architecture/2026-11-11-declarative-surface-p0.md)
   - [面试模式麦克风对话输入](2026-10-22-interview-microphone-conversation-input.md)

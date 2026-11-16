@@ -12,7 +12,7 @@ Conversation、Answer 和 Interview 共同保存会话消息、活动回复以�
 - Conversation、Answer、Interview 的组合入口及测试导入路径。
 - Agent 包公开入口和仓库结构文档。
 - UI/进程/协议/持久化表面：不改变 IPC/worker 契约；当前仍是 Agent 进程内存 transcript，不提供重启恢复。
-- 相关 Note：[领域 Agent 注册与运行时底座](../../proposed/architecture/2026-11-07-domain-agent-module-registration.md)、[会话切页恢复游标](2026-11-07-conversation-live-recovery-cursor.md)
+- 相关 Note：[领域 Agent 注册与运行时底座](../../implemented/architecture/2026-11-07-domain-agent-module-registration.md)、[会话切页恢复游标](2026-11-07-conversation-live-recovery-cursor.md)
 
 ## 决定
 

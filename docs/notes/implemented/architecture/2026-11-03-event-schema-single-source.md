@@ -17,7 +17,7 @@
 
 - 代码/模块：`packages/shared/src/schema/`、`packages/shared/src/channels/conversation.ts`、`apps/agent/src/core/`、`apps/agent/src/conversation/`、`packages/ui/src/app/`、`apps/desktop/src/main/window.ts`。
 - UI/进程/协议/持久化表面：renderer IPC 的 `ConversationChange` 载荷；agent worker 的 `AgentFrame.change`；内存 store 的 journal；UI 的 `useConversationView` / `useConversationChat` / `useReplyConversation`（面试与对话共用同一投影，见[前端会话消息投影收敛为唯一一份](./2026-11-06-unified-conversation-view-projection.md)）。
-- 相关 Note：[产品方向与 Agent 底座](../../proposed/architecture/2026-10-20-product-direction-and-agent-foundation.md)、[面试语音运行时模块边界](../../proposed/architecture/2026-10-19-interview-runtime-module-boundaries.md)、[对话与答题 AI 领域拆分及对话能力复用](../../implemented/architecture/2026-10-18-ai-capability-domains-and-reuse.md)。
+- 相关 Note：[产品方向与 Agent 底座](../../proposed/architecture/2026-10-20-product-direction-and-agent-foundation.md)、[面试语音运行时模块边界](../../implemented/architecture/2026-10-19-interview-runtime-module-boundaries.md)、[对话与答题 AI 领域拆分及对话能力复用](../../implemented/architecture/2026-10-18-ai-capability-domains-and-reuse.md)。
 
 ## 决定
 

@@ -52,7 +52,7 @@
 - 相关 Note：
   - [产品方向与 Agent 底座](2026-10-20-product-direction-and-agent-foundation.md)
   - [面试向导、候选人与演练三 Agent 分工](2026-11-11-interview-three-agent-boundaries.md)
-  - [领域 Agent 模块注册与面试链路归属](2026-11-07-domain-agent-module-registration.md)
+  - [领域 Agent 模块注册与面试链路归属](../../implemented/architecture/2026-11-07-domain-agent-module-registration.md)
   - [Agent host 组装与传输](../../implemented/architecture/2026-10-17-agent-host-composition-and-transport.md)
   - [Agent Runtime 命名与分层](../../implemented/architecture/2026-10-17-agent-runtime-rename-and-layering.md)
   - [对话领域布局](../../implemented/architecture/2026-11-06-conversation-domain-layout.md)

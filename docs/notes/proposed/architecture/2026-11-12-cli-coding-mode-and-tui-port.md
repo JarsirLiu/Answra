@@ -45,7 +45,7 @@
   - UI：终端 UI 与 DOM UI 分离；只共享纯投影逻辑，不共享组件。
 - 相关 Note：
   - [产品方向与 Agent 底座](2026-10-20-product-direction-and-agent-foundation.md)
-  - [领域 Agent 模块注册与面试链路归属](2026-11-07-domain-agent-module-registration.md)
+  - [领域 Agent 模块注册与面试链路归属](../../implemented/architecture/2026-11-07-domain-agent-module-registration.md)
   - [Bot 目录与会话参与者选择](2026-11-12-bot-catalog-and-conversation-selection.md)
   - [多 Bot 同会话注册、发现与交接](2026-11-11-multi-bot-session-registry-and-handoff.md)
   - [Agent host 组装与传输](../../implemented/architecture/2026-10-17-agent-host-composition-and-transport.md)

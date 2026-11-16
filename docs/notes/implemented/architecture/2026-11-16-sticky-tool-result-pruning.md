@@ -8,7 +8,7 @@
 
 - `ContextPreparation` 每轮都从 transcript 重新组装完整投影，压缩后 `rebuild()` 也会再次带回原始工具结果。
 - `pruneOldToolResults` 只替换本次 `ContextModelRequest` 的 copy，不写回 transcript。
-- `ContextState.pruning` 只保存最近一次清理反馈，不保存“哪些结果已经被清理”；原方案明确决定“不持久化清理水位”（[256k 上下文预算与旧工具结果清理](../../proposed/architecture/2026-11-13-context-budget-and-tool-result-clearing.md) §4.3、§8）。
+- `ContextState.pruning` 只保存最近一次清理反馈，不保存“哪些结果已经被清理”；原方案明确决定“不持久化清理水位”（[256k 上下文预算与旧工具结果清理](../../implemented/architecture/2026-11-13-context-budget-and-tool-result-clearing.md) §4.3、§8）。
 
 后果是：一次清理把投影从约 384k 降到约 40k，下一轮又从 384k 开始，再次命中 `pruneAt = 172k`，重复清理同一批结果。CLI 实测连续每轮提示“已清理 57 个旧工具结果，节省约 345.2k token”：数量和节省量都是每轮重算，不是累计。
 
@@ -32,7 +32,7 @@
   - transcript 与历史会话仍保存完整工具输出，`/resume` 不重新拉取消息，用户仍能看到原文；只有模型投影使用占位符。
   - `ContextState` 仍是内存/SQLite 可替换端口后面的会话级状态，不新增独立文件或数据库表。
 - 相关 Note：
-  - [256k 上下文预算与旧工具结果清理](../../proposed/architecture/2026-11-13-context-budget-and-tool-result-clearing.md)
+  - [256k 上下文预算与旧工具结果清理](../../implemented/architecture/2026-11-13-context-budget-and-tool-result-clearing.md)
   - [会话上下文摘要压缩与旧上下文归档](../../proposed/architecture/2026-11-13-conversation-context-compaction-and-archive.md)
   - [provider 超限的单次反应式压缩](2026-11-14-provider-overflow-reactive-compaction.md)
   - [历史工具结果进入模型上下文](../bug-fix/2026-11-10-conversation-tool-results-history.md)
@@ -113,7 +113,7 @@ loadContextState
 - **旧结果可能被再次清理：** 超过上限丢弃旧 ID 或 checkpoint 移走消息后，同一内容可能再次进入清理；只会多一次前缀变化，不会破坏配对或丢失用户可见内容。
 - **状态迁移：** 新字段是可选字段，旧会话文件可读；未来 SQLite adapter 把它当普通 `ContextState` 字段处理。
 - **防回退约束：** 不要把占位符写进 transcript，不要把水印暴露到 snapshot/shared，不要改回游标或每轮无水位重算；若引入 provider 缓存编辑，必须另立 Note 并保留本水印作为冷缓存基线。
-- **与原 Note 的关系：** 本决定推翻 [256k 上下文预算与旧工具结果清理](../../proposed/architecture/2026-11-13-context-budget-and-tool-result-clearing.md) 中“不持久化清理水位”的规则，该 Note 已加交叉引用。
+- **与原 Note 的关系：** 本决定推翻 [256k 上下文预算与旧工具结果清理](../../implemented/architecture/2026-11-13-context-budget-and-tool-result-clearing.md) 中“不持久化清理水位”的规则，该 Note 已加交叉引用。
 
 ## 验证
 

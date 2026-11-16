@@ -1,6 +1,8 @@
 # Note：面试语音运行时模块边界与并行开发契约
 
-状态：提案
+状态：已实施
+
+> 2026-10-21 修订：首轮 ASR provider 由内网 Qwen HTTP 改为随包分发的本地 Paraformer（sherpa-onnx int8），VAD 使用 TEN VAD；本文的模块边界、PCM/turn 契约和依赖方向不变。provider 差异见[本地内置 ASR 路线与 Paraformer-zh-small int8 首选](../../proposed/architecture/2026-10-21-local-asr-paraformer-small.md)。
 
 ## 问题
 
@@ -12,9 +14,9 @@
 
 - 代码/模块：`apps/agent/src/interview/` 新领域目录；既有 `apps/agent/src/worker/protocol.ts`、`apps/desktop/src/main/` 音频采集和转发；`packages/shared/src/channels.ts` 面向 DesktopBridge 的 IPC 类型。
 - 进程/协议表面：Windows 音频捕获留在 desktop；Agent 拥有 VAD、转录、turn 聚合和回答工作流。内部 TypeScript 契约不等于网络 AVP；当前不新增本地 listener 或 AVP wire client。
-- 相关 Note：[面试语音识别管线与客户端 VAD 选型](2026-10-16-interview-asr-pipeline-and-vad.md)、[面试模式持续监听与回答建议](../feature/2026-10-12-live-interview-assistant.md)、[Answra 实时语音识别私有协议（AVP）v1](2026-10-16-answra-voice-protocol-avp-v1.md)、[Agent runtime 分层](../../implemented/architecture/2026-10-17-agent-runtime-rename-and-layering.md)。
+- 相关 Note：[面试语音识别管线与客户端 VAD 选型](../../proposed/architecture/2026-10-16-interview-asr-pipeline-and-vad.md)、[面试模式持续监听与回答建议](../../proposed/feature/2026-10-12-live-interview-assistant.md)、[Answra 实时语音识别私有协议（AVP）v1](../../proposed/architecture/2026-10-16-answra-voice-protocol-avp-v1.md)、[Agent runtime 分层](../../implemented/architecture/2026-10-17-agent-runtime-rename-and-layering.md)。
 
-## 提案
+## 决定
 
 ### 单向依赖
 
@@ -124,9 +126,17 @@ interview runtime composition
 - 实时 provider 的服务端端点与客户端 VAD 边界可能不同；通过分别记录 provider segment 与本地 interviewer turn 解决，不能把二者强行合成单一“final”。
 - 该拆分会增加少量端口和装配代码；若早期引入通用插件系统、DI 容器或可配置策略框架，会超过当前单一 Qwen provider 的需要，因此暂不引入。
 
-## 当前实现与验证
+## 后果与防回退
 
-- 当前代码只完成 Windows loopback 到 desktop PCM 分帧、typed IPC、Agent ingress 校验和下游音频端口转交。UI 状态表示本机采集器状态，不代表 ASR 已工作；VAD、转录和回答尚未接入，因此本 Note 仍是提案。
+- 依赖方向固定为 desktop capture → interview runtime → VAD/transcription/turns/reply；`vad` 不得 import provider、reply 或 UI，`transcription` 不得触发回答，`reply` 不得持有音频或 provider 生命周期。
+- `runtime.ts` 只是组合根；不得演化成承载 VAD/ASR/回答算法或供应商字段的万能 service。
+- provider 通过 `TranscriptionProvider` 的 `segment`/`stream` 形态切换，VAD、turn 和 reply 契约不随 provider 更换而改；新增 provider 必须复用同一组 contract tests。
+- 所有异步结果携带 `sessionId` 与 generation；stop、重启或新 turn 后旧结果必须丢弃，不能复活旧 session。
+- 停止顺序按 provider、队列、VAD、采集端口逆序关闭；任何一条音频链路失败都显式进入 `failed`，不能假装静音或静默丢帧。
+
+## 验证
+
+- 模块已全部落地并由 `host.ts` 装配：`interview/{audio,vad,transcription,turns,reply}`、`interview/runtime.ts`、本地 Paraformer 转录、TEN VAD、turn assembler/settler 与候选语音自动回复均已接入，见[面试转录宿主接线](../../implemented/feature/2026-10-21-interview-transcription-host-wiring.md)、[candidate 语音对话的自动回复与开口打断](../../implemented/feature/2026-11-03-interview-candidate-voice-reply-loop.md)。UI 状态表示本机采集器状态，不代表 ASR 已工作。
 - 单帧上限为 100 ms / 3200 bytes。AudioWorklet 和 renderer 使用 10 帧 credit 窗口；Agent 每处理 5 帧返还一次额度，额度耗尽时采集端丢弃新帧，序号/采样位置保留缺口。连续 3 秒没有额度返还且仍有在途帧时，采集器报错并释放资源。各异步阶段因此有明确的有限上限，不能在实时处理落后时无限积压。
 - 自动化测试覆盖 PCM 格式/时间轴、session 生命周期、IPC 调用来源、启动取消和资源清理。Worker adapter 集成测试使用结构化克隆的 ParentPort 替身连接实际 worker 接线与 Agent host，验证 credit 按批往返、序号缺口可见、监听停止后旧 session 帧不污染重启 session。该测试不等同于 Electron 独立进程或 Windows 设备实测。
 - 采集面板将显示 Agent 通过 credit 回执确认处理的 PCM 帧数；worker 只为 ingress 接受的帧返还额度，拒绝帧不能增加确认数。实机验收时播放持续系统声音，确认该数字持续增长；若播放声音时仍为 0，不能判定音频链路通过。

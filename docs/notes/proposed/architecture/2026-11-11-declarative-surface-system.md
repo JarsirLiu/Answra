@@ -44,7 +44,7 @@ P0（产品预设 + 独立窗口 + 固定原语）已按 [实现 Note](../../imp
   - [悬浮表面视觉契约](../../implemented/architecture/2026-10-11-floating-surface-visual-contract.md)
   - [Agent host 组合与传输](../../implemented/architecture/2026-10-17-agent-host-composition-and-transport.md)
   - [面试演练与面试记忆](../../implemented/feature/2026-11-10-interview-rehearsal-and-memory.md)
-  - [面试语音运行时模块边界](2026-10-19-interview-runtime-module-boundaries.md)
+  - [面试语音运行时模块边界](../../implemented/architecture/2026-10-19-interview-runtime-module-boundaries.md)
   - [面试模式持续监听与回答建议](../feature/2026-10-12-live-interview-assistant.md)
 
 ## 提案

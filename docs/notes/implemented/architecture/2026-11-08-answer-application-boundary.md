@@ -10,7 +10,7 @@
 
 - 代码/模块：`apps/agent/src/answer/`、`apps/agent/src/conversation/turn/`、Agent host 和对应测试。
 - UI/进程/协议/持久化表面：`answer-run` 命令、AgentEventEnvelope 和 ConversationSnapshot 契约不变；transcript 仍是进程内存。
-- 相关 Note：[共享 transcript 仓储归属](./2026-11-08-core-transcript-store.md)、[领域 Agent 注册与运行时底座](../../proposed/architecture/2026-11-07-domain-agent-module-registration.md)
+- 相关 Note：[共享 transcript 仓储归属](./2026-11-08-core-transcript-store.md)、[领域 Agent 注册与运行时底座](../../implemented/architecture/2026-11-07-domain-agent-module-registration.md)
 
 ## 决定
 

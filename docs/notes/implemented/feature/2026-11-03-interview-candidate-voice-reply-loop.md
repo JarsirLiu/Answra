@@ -20,7 +20,7 @@
 
 - 代码/模块：`apps/agent/src/interview/reply/`（新增 `loop.ts` 与 `policy.ts`）、`apps/agent/src/worker/interviewReply.ts`（新增）、`apps/agent/src/worker/host.ts`、`apps/agent/src/interview/vad/pipeline.ts`、`apps/agent/src/conversation/{runtime,store}.ts`、`apps/desktop/src/main/conversation/agentService.ts`、`packages/ui/src/app/{FloatingBarApp.tsx,interviewConversation.ts,useInterviewConversation.ts}`、`packages/ui/src/components/panels/InterviewCapturePanel.*`。
 - UI/进程/协议/持久化表面：不新增 IPC 频道、不改 worker 线协议、不改持久化；面试面板从「只显示用户消息」变为「用户与助手同一条消息流」，助手支持流式与 interrupted 状态。
-- 相关 Note：[面试模式麦克风对话输入](../../proposed/feature/2026-10-22-interview-microphone-conversation-input.md)、[candidate 轮次 settle 合并与最小有效轮过滤](./2026-10-22-candidate-turn-settle-merging.md)、[面试语音运行时模块边界](../../proposed/architecture/2026-10-19-interview-runtime-module-boundaries.md)、[turn 端点判定层](../../proposed/architecture/2026-10-22-turn-endpoint-judge-layer.md)、[Answra 实时语音识别私有协议（AVP）v1](../../proposed/architecture/2026-10-16-answra-voice-protocol-avp-v1.md)。
+- 相关 Note：[面试模式麦克风对话输入](../../proposed/feature/2026-10-22-interview-microphone-conversation-input.md)、[candidate 轮次 settle 合并与最小有效轮过滤](./2026-10-22-candidate-turn-settle-merging.md)、[面试语音运行时模块边界](../../implemented/architecture/2026-10-19-interview-runtime-module-boundaries.md)、[turn 端点判定层](../../proposed/architecture/2026-10-22-turn-endpoint-judge-layer.md)、[Answra 实时语音识别私有协议（AVP）v1](../../proposed/architecture/2026-10-16-answra-voice-protocol-avp-v1.md)。
 
 ## 决定
 

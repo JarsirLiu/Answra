@@ -34,7 +34,7 @@
   - 压缩状态仍写 `ContextState.compaction`，trigger 复用 `auto`；未新增 `provider-overflow` 状态值。
 - 相关 Note：
   - [会话上下文摘要压缩与旧上下文归档](../../proposed/architecture/2026-11-13-conversation-context-compaction-and-archive.md)
-  - [256k 上下文预算与旧工具结果清理](../../proposed/architecture/2026-11-13-context-budget-and-tool-result-clearing.md)
+  - [256k 上下文预算与旧工具结果清理](../../implemented/architecture/2026-11-13-context-budget-and-tool-result-clearing.md)
   - [多 Bot 会话目录与交接](../../proposed/architecture/2026-11-11-multi-bot-session-registry-and-handoff.md)
   - [Conversation 编排拆分与 Bot 边界收敛](../../proposed/architecture/2026-11-12-conversation-orchestration-decomposition.md)
 

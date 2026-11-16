@@ -15,7 +15,7 @@
 - 线协议：`apps/agent/src/worker/protocol.ts` 新增 `interview-context` 和 `interview-message`。
 - Desktop：`apps/desktop/src/main/agent/` 是跨领域 Agent worker 客户端；`interviewIpc.ts` 新增 `InterviewChannels.Message`；`preload` 暴露 `sendInterviewMessage`。
 - Shared/UI：`packages/shared/src/channels/interview.ts`、`packages/shared/src/bridge.ts`；`InterviewFeaturePanel` 接管演练面板状态，`FloatingBarApp` 只保留装配。
-- 相关 Note：[面试语音运行时模块边界](../../proposed/architecture/2026-10-19-interview-runtime-module-boundaries.md)、[面试模式持续监听与回答建议](../../proposed/feature/2026-10-12-live-interview-assistant.md)、[领域 Agent 模块注册](../../proposed/architecture/2026-11-07-domain-agent-module-registration.md)、[工作区是默认根而不是边界](../architecture/2026-11-09-workspace-default-root-not-boundary.md)、[Read 文档文本抽取](2026-11-10-read-tool-document-text.md)。
+- 相关 Note：[面试语音运行时模块边界](../../implemented/architecture/2026-10-19-interview-runtime-module-boundaries.md)、[面试模式持续监听与回答建议](../../proposed/feature/2026-10-12-live-interview-assistant.md)、[领域 Agent 模块注册](../../implemented/architecture/2026-11-07-domain-agent-module-registration.md)、[工作区是默认根而不是边界](../architecture/2026-11-09-workspace-default-root-not-boundary.md)、[Read 文档文本抽取](2026-11-10-read-tool-document-text.md)。
 
 ## 影响表面
 

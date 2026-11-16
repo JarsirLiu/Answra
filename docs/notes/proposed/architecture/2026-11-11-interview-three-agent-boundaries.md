@@ -40,7 +40,7 @@
   - 实战/演练的音频来源与回复触发方不同；系统声音采集不在本 Note 的实现范围内。
 - 相关 Note：
   - [面试前引导与候选人档案首次使用流程](../feature/2026-11-11-interview-onboarding-and-avatar.md)
-  - [面试语音运行时模块边界](2026-10-19-interview-runtime-module-boundaries.md)
+  - [面试语音运行时模块边界](../../implemented/architecture/2026-10-19-interview-runtime-module-boundaries.md)
   - [面试演练与面试记忆](../../implemented/feature/2026-11-10-interview-rehearsal-and-memory.md)
   - [candidate 语音对话的自动回复与开口打断](../../implemented/feature/2026-11-03-interview-candidate-voice-reply-loop.md)
   - [声明式浮窗系统](2026-11-11-declarative-surface-system.md)
@@ -118,7 +118,7 @@
 
 ### 6. 工具与安全
 
-- 向导：只读工作区 + `interview.profile.patch`；不授予 `workspace.edit`、`workspace.run-command`、`workspace.write-stdin`。档案写入由领域工具校验，不让模型直接改文件。
+- 向导：只读工作区 + `interview.profile.patch`；不授予 `workspace.edit`、`workspace.run-command`。档案写入由领域工具校验，不让模型直接改文件。
 - 候选人：默认不授予工作区工具；档案整份注入或经 `interview.profile.search` 检索。不能读任意文件、不能写档案。
 - 演练官：只授予只读的 `workspace.read` / `workspace.grep`（用户明确要求查看项目资料时）；不授予写、编辑、执行命令。演练记录走独立领域方法。
 - 所有工具在 Agent 进程执行；desktop 只提供工作区根目录、文件选择结果和授权上下文，不反向 RPC 代执行。

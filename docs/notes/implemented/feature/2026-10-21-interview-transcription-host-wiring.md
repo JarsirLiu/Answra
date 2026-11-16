@@ -21,7 +21,7 @@
 - `apps/desktop/src/main/conversation/workerTransport.ts` / `agentService.ts` / `worker.ts`：desktop 把 `createParaformerRecognizerModule` 注入 host；utility process fork 参数新增 ASR 资源目录（argv[3]）。
 - 测试：`apps/agent/test/worker/host.test.ts`（+2：转配失败、端到端分段→事件）、`apps/agent/test/interview/transcription/pump.test.ts`（新增 4 条）、`apps/desktop/test/interviewWorkerTransport.test.ts`（注入假装配）。
 
-相关 Note：[桌面侧引擎装配](2026-10-21-asr-paraformer-engine-assembly.md)、[LocalParaformerAdapter](2026-10-21-local-paraformer-adapter.md)、[面试运行时模块边界](../../proposed/architecture/2026-10-19-interview-runtime-module-boundaries.md)。renderer 上屏与候选人麦克风采集属后续批次，届时另行记档。
+相关 Note：[桌面侧引擎装配](2026-10-21-asr-paraformer-engine-assembly.md)、[LocalParaformerAdapter](2026-10-21-local-paraformer-adapter.md)、[面试运行时模块边界](../../implemented/architecture/2026-10-19-interview-runtime-module-boundaries.md)。renderer 上屏与候选人麦克风采集属后续批次，届时另行记档。
 
 ## 决定
 

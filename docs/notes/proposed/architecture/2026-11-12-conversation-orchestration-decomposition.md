@@ -37,7 +37,7 @@ Bot 目录、会话参与者、单 Bot 会话和交接已经在
 - 相关 Note：
   - [Bot 目录与会话参与者选择](2026-11-12-bot-catalog-and-conversation-selection.md)
   - [多 Bot 同会话注册、发现与交接](2026-11-11-multi-bot-session-registry-and-handoff.md)
-  - [领域 Agent 模块注册与面试链路归属](2026-11-07-domain-agent-module-registration.md)
+  - [领域 Agent 模块注册与面试链路归属](../../implemented/architecture/2026-11-07-domain-agent-module-registration.md)
   - [CLI Coding 模式与终端 UI 移植](2026-11-12-cli-coding-mode-and-tui-port.md)
   - [域应用边界](../../implemented/architecture/2026-11-08-domain-applications.md)
 
