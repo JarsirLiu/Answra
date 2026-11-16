@@ -59,14 +59,12 @@ export function displayConfigValue(
 export function configPanelFooter(input: {
   readonly busy: boolean;
   readonly loaded: boolean;
-  readonly submenu: boolean;
   readonly editing: ConfigField | undefined;
   readonly searching: boolean;
   readonly selectedField?: ConfigField;
 }): string {
   if (input.busy) return "正在保存…";
   if (!input.loaded) return "Esc 关闭";
-  if (input.submenu) return "↑/↓ 选择 · Enter 确认 · Esc 返回";
   if (input.editing !== undefined) {
     return input.editing === "apiKey"
       ? "Enter 确认 · Ctrl+R 显示/隐藏 · Esc 取消编辑"

@@ -17,7 +17,7 @@ describe("ModelPicker", () => {
         select={select}
       />,
     );
-    await tick();
+    await vi.waitFor(() => expect(instance.lastFrame()).toContain("Current model"));
 
     const frame = instance.lastFrame() ?? "";
     expect(frame).toContain("Select model");
@@ -43,12 +43,37 @@ describe("ModelPicker", () => {
         select={vi.fn()}
       />,
     );
-    await tick();
+    await vi.waitFor(() => expect(instance.lastFrame()).toContain("HTTP 404"));
 
     const frame = instance.lastFrame() ?? "";
     expect(frame).toContain("HTTP 404");
     expect(frame).toContain("a");
-    expect(frame).toContain("可用 /model <ID> 直接切换");
+    expect(frame).toContain("按 Tab 输入模型 ID");
+    instance.unmount();
+  });
+
+  it("accepts a custom model id without relying on the catalog", async () => {
+    const select = vi.fn(async () => {});
+    const close = vi.fn();
+    const instance = render(
+      <ModelPicker
+        close={close}
+        load={async () => ({ current: "a", models: ["a", "b"] })}
+        select={select}
+      />,
+    );
+    await vi.waitFor(() => expect(instance.lastFrame()).toContain("Current model"));
+
+    instance.stdin.write("\t");
+    await vi.waitFor(() => expect(instance.lastFrame()).toContain("当前模型：a"));
+    instance.stdin.write("\u0015");
+    await tick();
+    instance.stdin.write("custom-model");
+    await tick();
+    instance.stdin.write("\r");
+
+    await vi.waitFor(() => expect(select).toHaveBeenCalledWith("custom-model"));
+    expect(close).toHaveBeenCalledTimes(1);
     instance.unmount();
   });
 
@@ -61,9 +86,33 @@ describe("ModelPicker", () => {
         select={vi.fn()}
       />,
     );
-    await tick();
+    await vi.waitFor(() => expect(instance.lastFrame()).toContain("↓ 3 more…"));
 
-    expect(instance.lastFrame()).toContain("and 3 more…");
+    expect(instance.lastFrame()).toContain("↓ 3 more…");
+    instance.unmount();
+  });
+
+  it("keeps the focused model inside the visible window while scrolling", async () => {
+    const models = Array.from({ length: 15 }, (_, index) => `model-${index}`);
+    const instance = render(
+      <ModelPicker
+        close={vi.fn()}
+        load={async () => ({ current: "current", models })}
+        select={vi.fn()}
+      />,
+    );
+    await vi.waitFor(() => expect(instance.lastFrame()).toContain("model-0"));
+
+    for (let index = 0; index < 11; index += 1) {
+      instance.stdin.write("\u001b[B");
+      await vi.waitFor(() => expect(instance.lastFrame()).toContain(`\u276f   model-${index}`));
+    }
+
+    const frame = instance.lastFrame() ?? "";
+    expect(frame).toContain("↑ 2 more…");
+    expect(frame).toContain("↓ 4 more…");
+    expect(frame).toContain("model-10");
+    expect(frame).not.toContain("model-0");
     instance.unmount();
   });
 });

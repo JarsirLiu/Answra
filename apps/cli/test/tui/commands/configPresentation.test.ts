@@ -42,7 +42,6 @@ describe("configPresentation", () => {
       configPanelFooter({
         busy: true,
         loaded: true,
-        submenu: false,
         editing: undefined,
         searching: false,
       }),
@@ -51,7 +50,6 @@ describe("configPresentation", () => {
       configPanelFooter({
         busy: false,
         loaded: true,
-        submenu: false,
         editing: undefined,
         searching: true,
       }),
@@ -60,16 +58,6 @@ describe("configPresentation", () => {
       configPanelFooter({
         busy: false,
         loaded: true,
-        submenu: true,
-        editing: undefined,
-        searching: false,
-      }),
-    ).toBe("↑/↓ 选择 · Enter 确认 · Esc 返回");
-    expect(
-      configPanelFooter({
-        busy: false,
-        loaded: true,
-        submenu: false,
         editing: "apiKey",
         searching: false,
       }),
@@ -78,7 +66,6 @@ describe("configPresentation", () => {
       configPanelFooter({
         busy: false,
         loaded: true,
-        submenu: false,
         editing: undefined,
         searching: false,
       }),
@@ -87,7 +74,6 @@ describe("configPresentation", () => {
       configPanelFooter({
         busy: false,
         loaded: true,
-        submenu: false,
         editing: undefined,
         searching: false,
         selectedField: "apiKey",

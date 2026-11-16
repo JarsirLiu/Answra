@@ -1,11 +1,9 @@
-/** `/config` 面板：可搜索设置列表、行内编辑与模型子选择器；只编排 TUI 状态，I/O 由宿主端口注入。 */
+/** `/config` 面板：可搜索设置列表与行内编辑；只编排 TUI 状态，I/O 由宿主端口注入。 */
 import { Text, useInput } from "ink";
 import { useEffect, useState } from "react";
 import { PanelFrame } from "../chrome/PanelFrame";
 import { TUI_THEME } from "../chrome/theme";
-import type { ModelPickerData } from "../panel";
 import { ConfigList } from "./ConfigList";
-import { ConfigModelMenu } from "./ConfigModelMenu";
 import {
   type ConfigField,
   type ConfigFormValues,
@@ -24,12 +22,10 @@ type LoadState =
 
 export function ConfigPanel({
   load,
-  loadModels,
   save,
   close,
 }: {
   load(): Promise<ConfigPanelData>;
-  loadModels(): Promise<ModelPickerData>;
   save(input: ConfigSaveInput): Promise<void>;
   close(reason?: "saved" | "dismissed"): void;
 }) {
@@ -38,7 +34,6 @@ export function ConfigPanel({
   const [query, setQuery] = useState("");
   const [index, setIndex] = useState(0);
   const [editing, setEditing] = useState<ConfigField>();
-  const [submenu, setSubmenu] = useState<ConfigField>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [revealApiKey, setRevealApiKey] = useState(false);
@@ -96,10 +91,6 @@ export function ConfigPanel({
   const openField = (field: ConfigField): void => {
     setError(undefined);
     setRevealApiKey(false);
-    if (field === "chatModel" || field === "answerModel") {
-      setSubmenu(field);
-      return;
-    }
     setEditing(field);
   };
 
@@ -110,7 +101,7 @@ export function ConfigPanel({
         if (key.escape) close("dismissed");
         return;
       }
-      if (editing !== undefined || submenu !== undefined) return;
+      if (editing !== undefined) return;
       if (searchMode) {
         if (key.escape) {
           if (query === "") setSearchMode(false);
@@ -172,13 +163,12 @@ export function ConfigPanel({
         openField(selectedRow.field);
       }
     },
-    { isActive: editing === undefined && submenu === undefined && !busy },
+    { isActive: editing === undefined && !busy },
   );
 
   const footer = configPanelFooter({
     busy,
     loaded: state.kind === "ready",
-    submenu: submenu !== undefined,
     editing,
     searching: searchMode,
     selectedField: selectedRow?.field,
@@ -189,42 +179,24 @@ export function ConfigPanel({
       {state.kind === "loading" ? <Text dimColor>正在读取模型配置…</Text> : null}
       {state.kind === "error" ? <Text color={TUI_THEME.error}>{state.message}</Text> : null}
       {state.kind === "ready" ? (
-        submenu === undefined ? (
-          <ConfigList
-            data={state.data}
-            editing={editing}
-            error={error}
-            index={index}
-            query={query}
-            revealApiKey={revealApiKey}
-            rows={rows}
-            searchMode={searchMode}
-            values={state.values}
-            onCancelEdit={() => {
-              setEditing(undefined);
-              setError(undefined);
-              setRevealApiKey(false);
-            }}
-            onToggleSecret={() => setRevealApiKey((value) => !value)}
-            onUpdate={updateValue}
-          />
-        ) : (
-          <ConfigModelMenu
-            answer={submenu === "answerModel"}
-            current={state.values.chatModel}
-            load={loadModels}
-            selected={state.values[submenu]}
-            onCancel={() => setSubmenu(undefined)}
-            onManual={() => {
-              setEditing(submenu);
-              setSubmenu(undefined);
-            }}
-            onSelect={(model) => {
-              updateValue(submenu, model);
-              setSubmenu(undefined);
-            }}
-          />
-        )
+        <ConfigList
+          data={state.data}
+          editing={editing}
+          error={error}
+          index={index}
+          query={query}
+          revealApiKey={revealApiKey}
+          rows={rows}
+          searchMode={searchMode}
+          values={state.values}
+          onCancelEdit={() => {
+            setEditing(undefined);
+            setError(undefined);
+            setRevealApiKey(false);
+          }}
+          onToggleSecret={() => setRevealApiKey((value) => !value)}
+          onUpdate={updateValue}
+        />
       ) : null}
     </PanelFrame>
   );

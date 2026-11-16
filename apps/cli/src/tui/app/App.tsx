@@ -160,7 +160,6 @@ export function App({
           <ConfigPanel
             close={panelHandlers.close}
             load={panelHandlers.loadConfig}
-            loadModels={panelHandlers.loadModels}
             save={panelHandlers.saveConfig}
           />
         ) : state.panel === "model" ? (

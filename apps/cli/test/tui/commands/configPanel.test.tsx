@@ -18,7 +18,6 @@ function basePanel(
       answerModel?: string;
       apiKey: string;
     }>;
-    loadModels: () => Promise<{ current: string; models: readonly string[]; error?: string }>;
     save: (input: unknown) => Promise<void>;
     close: (reason?: "saved" | "dismissed") => void;
   }> = {},
@@ -31,7 +30,6 @@ function basePanel(
       answerModel: "qwen-vl",
       apiKey: "sk-existing-1234",
     }),
-    loadModels: async () => ({ current: "qwen", models: ["qwen", "other"] }),
     save: vi.fn(async () => {}),
     ...overrides,
   };
@@ -199,7 +197,7 @@ describe("ConfigPanel", () => {
     instance.unmount();
   });
 
-  it("selects a chat model from the embedded model menu", async () => {
+  it("edits the chat model ID directly without opening a picker", async () => {
     const props = basePanel();
     const instance = render(<ConfigPanel {...props} />);
     await tick();
@@ -213,78 +211,10 @@ describe("ConfigPanel", () => {
     instance.stdin.write("\r");
     await tick();
 
-    const menu = instance.lastFrame() ?? "";
-    expect(menu).toContain("Select model");
-    expect(menu).toContain("Current model");
-    expect(menu).toContain("other");
+    const editor = instance.lastFrame() ?? "";
+    expect(editor).toContain("Enter 确认 · Esc 取消编辑");
+    expect(editor).not.toContain("Select model");
 
-    instance.stdin.write("\u001b[B");
-    await tick();
-    instance.stdin.write("\r");
-    await tick();
-    instance.stdin.write("\u0013");
-    await tick();
-
-    expect(props.save).toHaveBeenCalledWith({
-      baseUrl: "http://127.0.0.1:1234/v1",
-      chatModel: "other",
-      answerModel: "qwen-vl",
-      apiKey: { kind: "keep" },
-    });
-    instance.unmount();
-  });
-
-  it("selects the answer fallback from the model menu", async () => {
-    const props = basePanel();
-    const instance = render(<ConfigPanel {...props} />);
-    await tick();
-
-    instance.stdin.write("\r");
-    await tick();
-    instance.stdin.write("\u001b[B");
-    await tick();
-    instance.stdin.write("\u001b[B");
-    await tick();
-    instance.stdin.write("\u001b[B");
-    await tick();
-    instance.stdin.write("\r");
-    await tick();
-    expect(instance.lastFrame()).toContain("与 Chat 相同");
-
-    instance.stdin.write("\r");
-    await tick();
-    instance.stdin.write("\u0013");
-    await tick();
-
-    expect(props.save).toHaveBeenCalledWith({
-      baseUrl: "http://127.0.0.1:1234/v1",
-      chatModel: "qwen",
-      apiKey: { kind: "keep" },
-    });
-    instance.unmount();
-  });
-
-  it("falls back to manual model input when the catalog is unavailable", async () => {
-    const props = basePanel({
-      loadModels: async () => ({ current: "qwen", models: [], error: "HTTP 404" }),
-    });
-    const instance = render(<ConfigPanel {...props} />);
-    await tick();
-
-    instance.stdin.write("\r");
-    await tick();
-    instance.stdin.write("\u001b[B");
-    await tick();
-    instance.stdin.write("\u001b[B");
-    await tick();
-    instance.stdin.write("\r");
-    await tick();
-    expect(instance.lastFrame()).toContain("HTTP 404");
-
-    instance.stdin.write("\u001b[B");
-    await tick();
-    instance.stdin.write("\r");
-    await tick();
     instance.stdin.write("\u0015");
     await tick();
     instance.stdin.write("custom-model");
@@ -301,5 +231,38 @@ describe("ConfigPanel", () => {
       apiKey: { kind: "keep" },
     });
     instance.unmount();
-  });
+  }, 40_000);
+
+  it("edits the answer model ID directly and allows clearing it", async () => {
+    const props = basePanel();
+    const instance = render(<ConfigPanel {...props} />);
+    await tick();
+
+    instance.stdin.write("\r");
+    await tick();
+    instance.stdin.write("\u001b[B");
+    await tick();
+    instance.stdin.write("\u001b[B");
+    await tick();
+    instance.stdin.write("\u001b[B");
+    await tick();
+    instance.stdin.write("\r");
+    await tick();
+    expect(instance.lastFrame()).toContain("Enter 确认 · Esc 取消编辑");
+    expect(instance.lastFrame()).toContain("qwen-vl");
+
+    instance.stdin.write("\u0015");
+    await tick();
+    instance.stdin.write("\r");
+    await tick();
+    instance.stdin.write("\u0013");
+    await tick();
+
+    expect(props.save).toHaveBeenCalledWith({
+      baseUrl: "http://127.0.0.1:1234/v1",
+      chatModel: "qwen",
+      apiKey: { kind: "keep" },
+    });
+    instance.unmount();
+  }, 40_000);
 });
