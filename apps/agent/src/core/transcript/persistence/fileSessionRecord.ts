@@ -7,6 +7,7 @@ import {
   conversationSnapshotSchema,
 } from "@answra/shared/schema";
 import { z } from "zod";
+import type { ContextState } from "../contextState";
 import type { ConversationSessionRecord } from "../memoryStore";
 import { restoreContextState, restoreConversationSnapshot } from "./restore";
 
@@ -30,6 +31,7 @@ const contextStateSchema = z.strictObject({
   usageAnchor: usageAnchorSchema.optional(),
   usage: contextUsageSchema.optional(),
   pruning: contextPruningSchema.optional(),
+  prunedToolCallIds: z.array(z.string()).optional(),
   compactionFailureCount: z.number().int().nonnegative().optional(),
   compactionRetryAt: z.string().datetime().optional(),
 });
@@ -96,10 +98,7 @@ export function toFileSessionRecord(record: ConversationSessionRecord): FileSess
     snapshot,
     ...(record.contextState
       ? {
-          contextState: {
-            ...record.contextState,
-            checkpoints: record.contextState.checkpoints.map((checkpoint) => ({ ...checkpoint })),
-          },
+          contextState: toFileContextState(record.contextState),
         }
       : {}),
     ...(record.seed
@@ -111,6 +110,15 @@ export function toFileSessionRecord(record: ConversationSessionRecord): FileSess
           },
         }
       : {}),
+  };
+}
+
+function toFileContextState(state: ContextState): NonNullable<FileSessionRecord["contextState"]> {
+  const { prunedToolCallIds, ...rest } = state;
+  return {
+    ...rest,
+    checkpoints: rest.checkpoints.map((checkpoint) => ({ ...checkpoint })),
+    ...(prunedToolCallIds ? { prunedToolCallIds: [...prunedToolCallIds] } : {}),
   };
 }
 

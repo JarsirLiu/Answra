@@ -450,6 +450,7 @@ function cloneContextState(state: ContextState): ContextState {
     ...(state.usageAnchor ? { usageAnchor: { ...state.usageAnchor } } : {}),
     ...(state.usage ? { usage: { ...state.usage } } : {}),
     ...(state.pruning ? { pruning: { ...state.pruning } } : {}),
+    ...(state.prunedToolCallIds ? { prunedToolCallIds: [...state.prunedToolCallIds] } : {}),
     ...(state.compactionFailureCount === undefined
       ? {}
       : { compactionFailureCount: state.compactionFailureCount }),

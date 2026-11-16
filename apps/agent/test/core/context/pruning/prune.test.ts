@@ -6,6 +6,8 @@ import {
   type ToolResultPruningPolicy,
 } from "../../../../src/core/context/pruning/policy";
 import {
+  applyPrunedToolResults,
+  mergePrunedToolCallIds,
   PRUNED_TOOL_RESULT_TEXT,
   pruneOldToolResults,
 } from "../../../../src/core/context/pruning/prune";
@@ -63,6 +65,11 @@ describe("pruneOldToolResults", () => {
     });
 
     expect(result.prunedCount).toBe(3);
+    expect(result.prunedToolCallIds).toEqual([
+      "call-Read-rrrr",
+      "call-Grep-gggg",
+      "call-RunCommand-cccc",
+    ]);
     expect(result.request.messages.map(textOutput)).toEqual([
       PRUNED_TOOL_RESULT_TEXT,
       PRUNED_TOOL_RESULT_TEXT,
@@ -203,6 +210,82 @@ describe("pruneOldToolResults", () => {
 
     expect(result.prunedCount).toBe(0);
     expect(result.request).toEqual(request(messages));
+  });
+});
+
+describe("applyPrunedToolResults", () => {
+  it("replaces only the requested tool results and keeps the others intact", () => {
+    const messages = [
+      toolResult(READ_TOOL_NAME, "a".repeat(40), "clear-1"),
+      toolResult(READ_TOOL_NAME, "b".repeat(40), "keep-1"),
+      toolResult(GREP_TOOL_NAME, "c".repeat(40), "clear-2"),
+    ];
+
+    const result = applyPrunedToolResults({
+      request: request(messages),
+      toolCallIds: ["clear-1", "missing", "clear-2"],
+    });
+
+    expect(result.appliedCount).toBe(2);
+    expect(result.request.messages.map(textOutput)).toEqual([
+      PRUNED_TOOL_RESULT_TEXT,
+      "b".repeat(40),
+      PRUNED_TOOL_RESULT_TEXT,
+    ]);
+  });
+
+  it("is idempotent when the same watermark is applied again", () => {
+    const first = applyPrunedToolResults({
+      request: request([toolResult(READ_TOOL_NAME, "a".repeat(40), "call-1")]),
+      toolCallIds: ["call-1"],
+    });
+    const second = applyPrunedToolResults({
+      request: first.request,
+      toolCallIds: ["call-1"],
+    });
+
+    expect(second.appliedCount).toBe(0);
+    expect(second.request).toBe(first.request);
+  });
+
+  it("skips non-text outputs", () => {
+    const messages: ModelMessage[] = [
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "error",
+            toolName: READ_TOOL_NAME,
+            output: { type: "error-text", value: "x".repeat(40) },
+          },
+        ],
+      },
+    ];
+
+    expect(applyPrunedToolResults({ request: request(messages), toolCallIds: ["error"] })).toEqual({
+      request: request(messages),
+      appliedCount: 0,
+    });
+  });
+});
+
+describe("mergePrunedToolCallIds", () => {
+  it("dedupes new ids and keeps their order", () => {
+    expect(mergePrunedToolCallIds({ existing: ["a", "b"], added: ["b", "c", "a", "d"] })).toEqual([
+      "a",
+      "b",
+      "c",
+      "d",
+    ]);
+  });
+
+  it("drops the oldest ids above the limit", () => {
+    expect(mergePrunedToolCallIds({ existing: ["a", "b"], added: ["c", "d"], limit: 3 })).toEqual([
+      "b",
+      "c",
+      "d",
+    ]);
   });
 });
 

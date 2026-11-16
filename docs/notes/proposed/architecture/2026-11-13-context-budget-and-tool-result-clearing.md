@@ -44,6 +44,7 @@ Conversation 和 Coding 的长会话还会积累大量旧的 `read`、`grep`、`
   - [历史工具结果进入模型上下文](../../implemented/bug-fix/2026-11-10-conversation-tool-results-history.md)
   - [后端会话与内存仓储](../../implemented/architecture/2026-10-12-conversation-memory-store-port.md)
   - [可切换的内存与 SQLite 存储边界](2026-11-08-switchable-memory-sqlite-storage.md)
+  - [旧工具结果清理结果跨轮保留](../../implemented/architecture/2026-11-16-sticky-tool-result-pruning.md)
   - [产品方向与 Agent 底座](2026-10-20-product-direction-and-agent-foundation.md)
 
 ## 提案
@@ -159,6 +160,8 @@ saved >= 132_000
 
 `132_000` 是净节省门槛，不是“扫描到了多少旧内容”。低于门槛时返回原请求，不修改投影，也不写 `ContextState`。首版不持久化“清理尝试水位”：扫描是 O(messages) 的纯计算，状态会引入失效和迁移成本；等有真实遥测需求再另立 Note。
 
+> 后续已实施：[旧工具结果清理结果跨轮保留](../../implemented/architecture/2026-11-16-sticky-tool-result-pruning.md)。该决定指出原规则会让每轮重复清理同一批结果、重复提示并反复改写投影前缀，现已改为持久化“已清理 toolCallId”水印；本节的不持久化规则以新 Note 为准。
+
 #### 4.4 缓存与批处理
 
 替换旧结果会改变 prompt 前缀。Answra 当前走 OpenAI 兼容端点，不能假设存在 Claude Code 那种 cache editing API，因此：
@@ -216,7 +219,7 @@ definition.prepare()
 - 不做输出哈希判重；只按工具名、顺序和 token 预算选择。
 - 不清 assistant 文本、用户文本、最终回答或 thinking；只替换工具结果输出。
 - 首版不清 `Edit`、`WriteStdin` 的结果；`RunCommand` 纳入白名单。
-- 不为清理持久化尝试水位；每次从最终投影重新计算。
+- 不为清理持久化尝试水位；每次从最终投影重新计算（后续已由[旧工具结果清理结果跨轮保留](../../implemented/architecture/2026-11-16-sticky-tool-result-pruning.md)改为持久化 toolCallId 水印）。
 - 不删除 transcript、不改变 UI 历史、不做 archive。
 - 不在当前请求或当前 run 的工具结果上做清理。
 - 不承诺“零缓存影响”。

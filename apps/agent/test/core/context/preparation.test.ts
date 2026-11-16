@@ -483,6 +483,87 @@ describe("ContextPreparation", () => {
     expect((await store.loadContextState("conversation-1"))?.pruning).toBeUndefined();
   });
 
+  it("keeps pruned results cleared on the next request instead of pruning them again", async () => {
+    const store = await preparedStore();
+    const messages = Array.from({ length: 6 }, (_, index) =>
+      toolResult("r".repeat(400), `call-${index}`),
+    );
+    const preparationInstance = preparation(store, { toolResultPruning: NO_PROTECTION });
+    const request = { system: "", messages };
+
+    const first = await preparationInstance.prepareRequest({
+      conversationId: "conversation-1",
+      getAccessToken: async () => "token",
+      modelRequest: request,
+      rebuild: async () => {
+        throw new Error("不应重建");
+      },
+    });
+    expect(first.messages.map(toolText)).toEqual(
+      Array.from({ length: 6 }, () => PRUNED_TOOL_RESULT_TEXT),
+    );
+    expect((await store.loadContextState("conversation-1"))?.pruning).toMatchObject({
+      prunedCount: 6,
+    });
+
+    const second = await preparationInstance.prepareRequest({
+      conversationId: "conversation-1",
+      getAccessToken: async () => "token",
+      modelRequest: request,
+      rebuild: async () => {
+        throw new Error("不应重建");
+      },
+    });
+
+    expect(second.messages.map(toolText)).toEqual(
+      Array.from({ length: 6 }, () => PRUNED_TOOL_RESULT_TEXT),
+    );
+    const state = await store.loadContextState("conversation-1");
+    expect(state?.pruning).toBeUndefined();
+    expect(state?.prunedToolCallIds).toEqual(
+      Array.from({ length: 6 }, (_, index) => `call-${index}`),
+    );
+  });
+
+  it("prunes only the results added after the previous batch", async () => {
+    const store = await preparedStore();
+    const oldMessages = Array.from({ length: 6 }, (_, index) =>
+      toolResult("r".repeat(400), `old-${index}`),
+    );
+    const newMessages = Array.from({ length: 6 }, (_, index) =>
+      toolResult("n".repeat(400), `new-${index}`),
+    );
+    const preparationInstance = preparation(store, { toolResultPruning: NO_PROTECTION });
+
+    await preparationInstance.prepareRequest({
+      conversationId: "conversation-1",
+      getAccessToken: async () => "token",
+      modelRequest: { system: "", messages: oldMessages },
+      rebuild: async () => {
+        throw new Error("不应重建");
+      },
+    });
+
+    const result = await preparationInstance.prepareRequest({
+      conversationId: "conversation-1",
+      getAccessToken: async () => "token",
+      modelRequest: { system: "", messages: [...oldMessages, ...newMessages] },
+      rebuild: async () => {
+        throw new Error("不应重建");
+      },
+    });
+
+    expect(result.messages.map(toolText)).toEqual(
+      Array.from({ length: 12 }, () => PRUNED_TOOL_RESULT_TEXT),
+    );
+    const state = await store.loadContextState("conversation-1");
+    expect(state?.pruning).toMatchObject({ prunedCount: 6 });
+    expect(state?.prunedToolCallIds).toEqual([
+      ...Array.from({ length: 6 }, (_, index) => `old-${index}`),
+      ...Array.from({ length: 6 }, (_, index) => `new-${index}`),
+    ]);
+  });
+
   it("compacts on demand below the automatic threshold and reports refreshed usage", async () => {
     const store = await preparedStore();
     const generate = vi.fn(async () => "手动压缩摘要");

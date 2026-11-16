@@ -27,6 +27,7 @@ export function restoreContextState(state: ContextState): ContextState {
     ...(state.usageAnchor ? { usageAnchor: { ...state.usageAnchor } } : {}),
     ...(state.usage ? { usage: { ...state.usage } } : {}),
     ...(state.pruning ? { pruning: { ...state.pruning } } : {}),
+    ...(state.prunedToolCallIds ? { prunedToolCallIds: [...state.prunedToolCallIds] } : {}),
   };
 }
 

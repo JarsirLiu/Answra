@@ -22,10 +22,6 @@ export class ContextUsageAnchorTracker {
     this.now = now;
   }
 
-  async load(conversationId: string): Promise<ContextUsageAnchor | undefined> {
-    return (await this.store.loadContextState(conversationId))?.usageAnchor;
-  }
-
   /** 在请求发出前登记本轮最终投影的原始估算与是否发生投影变化。 */
   stage(
     conversationId: string,

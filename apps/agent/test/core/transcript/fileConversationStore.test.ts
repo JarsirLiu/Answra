@@ -78,6 +78,23 @@ describe("file conversation store", () => {
     ]);
   });
 
+  it("round-trips the pruning watermark with the context state", async () => {
+    const root = await createRoot();
+    const store = new FileConversationStore(root);
+    await store.create("coding-3", undefined, { scope: "coding" });
+    await store.saveContextState("coding-3", {
+      checkpoints: [],
+      prunedToolCallIds: ["call-1", "call-2"],
+    });
+
+    const reloaded = new FileConversationStore(root);
+    await reloaded.load("coding-3");
+
+    expect(await reloaded.loadContextState("coding-3")).toMatchObject({
+      prunedToolCallIds: ["call-1", "call-2"],
+    });
+  });
+
   it("quarantines a corrupt file and keeps listing other sessions", async () => {
     const root = await createRoot();
     const store = new FileConversationStore(root);

@@ -6,15 +6,83 @@ import type { ToolResultPruningPolicy } from "./policy";
 
 export const PRUNED_TOOL_RESULT_TEXT = "[旧工具结果已清理]";
 
+/** 清理水印的容量上限；超出后丢弃最旧的 ID，未命中的结果最多再清一次。 */
+export const PRUNED_TOOL_CALL_ID_LIMIT = 2_000;
+
 export interface ToolResultPruningResult {
   readonly request: ContextModelRequest;
   readonly prunedCount: number;
+  /** 本次实际替换的 toolCallId，供调用方合并到跨轮清理水印。 */
+  readonly prunedToolCallIds: readonly string[];
   readonly savedTokens: number;
+}
+
+export interface AppliedToolResultPruning {
+  readonly request: ContextModelRequest;
+  /** 本次实际替换的 tool-result 数；未命中或已是占位符时不计入。 */
+  readonly appliedCount: number;
 }
 
 interface PruningCandidate {
   readonly messageIndex: number;
   readonly partIndex: number;
+  readonly toolCallId: string;
+}
+
+/** 跨轮水印：把已清理的 toolCallId 重新应用到新的模型投影。 */
+export function applyPrunedToolResults({
+  request,
+  toolCallIds,
+}: {
+  request: ContextModelRequest;
+  toolCallIds: readonly string[];
+}): AppliedToolResultPruning {
+  if (toolCallIds.length === 0) return { request, appliedCount: 0 };
+  const targets = new Set(toolCallIds);
+  let messages = request.messages;
+  let appliedCount = 0;
+  for (const [messageIndex, message] of request.messages.entries()) {
+    if (message.role !== "tool") continue;
+    let changed = false;
+    const content = message.content.map((part) => {
+      if (part.type !== "tool-result") return part;
+      if (!targets.has(part.toolCallId)) return part;
+      if (part.output.type !== "text") return part;
+      if (part.output.value === PRUNED_TOOL_RESULT_TEXT) return part;
+      changed = true;
+      appliedCount += 1;
+      return { ...part, output: { type: "text" as const, value: PRUNED_TOOL_RESULT_TEXT } };
+    });
+    if (changed) {
+      const next = messages.slice();
+      next[messageIndex] = { ...message, content };
+      messages = next;
+    }
+  }
+  return appliedCount === 0
+    ? { request, appliedCount }
+    : { request: { ...request, messages }, appliedCount };
+}
+
+/** 按清理顺序合并水印，去重并保留最新的上限条数。 */
+export function mergePrunedToolCallIds({
+  existing,
+  added,
+  limit = PRUNED_TOOL_CALL_ID_LIMIT,
+}: {
+  existing: readonly string[];
+  added: readonly string[];
+  limit?: number;
+}): readonly string[] {
+  if (added.length === 0) return existing;
+  const merged = [...existing];
+  const seen = new Set(existing);
+  for (const id of added) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    merged.push(id);
+  }
+  return merged.length <= limit ? merged : merged.slice(merged.length - limit);
 }
 
 /** 按旧到新替换可清理工具结果，直到达到目标 token 或候选耗尽。 */
@@ -33,25 +101,30 @@ export function pruneOldToolResults({
   const beforeTokens = estimateTokens(request);
   const candidates = eligibleCandidates(request.messages, policy);
   if (candidates.length === 0 || beforeTokens <= targetTokens) {
-    return { request, prunedCount: 0, savedTokens: 0 };
+    return { request, prunedCount: 0, prunedToolCallIds: [], savedTokens: 0 };
   }
 
   let messages = request.messages;
   let currentTokens = beforeTokens;
   let prunedCount = 0;
+  const prunedToolCallIds: string[] = [];
   for (const candidate of candidates) {
     if (currentTokens <= targetTokens) break;
     const replaced = replaceToolResult(messages, candidate);
     if (!replaced) continue;
     messages = replaced;
     prunedCount += 1;
+    prunedToolCallIds.push(candidate.toolCallId);
     currentTokens = estimateTokens({ ...request, messages });
   }
 
-  if (prunedCount === 0) return { request, prunedCount: 0, savedTokens: 0 };
+  if (prunedCount === 0) {
+    return { request, prunedCount: 0, prunedToolCallIds: [], savedTokens: 0 };
+  }
   return {
     request: { ...request, messages },
     prunedCount,
+    prunedToolCallIds,
     savedTokens: beforeTokens - currentTokens,
   };
 }
@@ -69,7 +142,7 @@ function eligibleCandidates(
       if (!clearable.has(part.toolName)) continue;
       if (part.output.type !== "text") continue;
       if (part.output.value === PRUNED_TOOL_RESULT_TEXT) continue;
-      candidates.push({ messageIndex, partIndex });
+      candidates.push({ messageIndex, partIndex, toolCallId: part.toolCallId });
     }
   }
 

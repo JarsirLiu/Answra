@@ -21,7 +21,11 @@ import {
   DEFAULT_TOOL_RESULT_PRUNING_POLICY,
   type ToolResultPruningPolicy,
 } from "./pruning/policy";
-import { pruneOldToolResults } from "./pruning/prune";
+import {
+  applyPrunedToolResults,
+  mergePrunedToolCallIds,
+  pruneOldToolResults,
+} from "./pruning/prune";
 import { calibrateContextTokens, estimateContextRequestTokens } from "./tokenEstimate";
 import { trimContextRequest } from "./trim";
 import { type ContextStateStore, ContextUsageAnchorTracker } from "./usageAnchor";
@@ -49,7 +53,7 @@ export interface ContextPreparationRequest {
   bypassFailureBreaker?: boolean;
   /** 手动 `/compact` 的一次性摘要偏好；自动与恢复路径不传。 */
   compactionInstructions?: string;
-  /** 状态已写入 store 后通知宿主推�?snapshot；失败不影响本轮模型请求�?*/
+  /** 状态已写入 store 后通知宿主推送 snapshot；失败不影响本轮模型请求。 */
   onStatus?: () => void | Promise<void>;
 }
 
@@ -125,10 +129,22 @@ export class ContextPreparation {
     onStatus,
   }: ContextPreparationRequest): Promise<PreparedContext> {
     const budget = this.resolveBudget();
-    const anchor = await this.usageAnchors.load(conversationId);
-    const rawBeforeTokens = estimateContextRequestTokens(modelRequest);
+    const state = await this.store.loadContextState(conversationId);
+    const anchor = state?.usageAnchor;
+    let prunedToolCallIds = state?.prunedToolCallIds ?? [];
+    const applied = applyPrunedToolResults({
+      request: modelRequest,
+      toolCallIds: prunedToolCallIds,
+    });
+    const rawBeforeTokens = estimateContextRequestTokens(applied.request);
     const beforeTokens = calibrateContextTokens(rawBeforeTokens, anchor);
-    const initial = this.pruneIfWorthwhile(modelRequest, beforeTokens, anchor, budget);
+    const initial = this.pruneIfWorthwhile(applied.request, beforeTokens, anchor, budget);
+    if (initial.prunedCount > 0) {
+      prunedToolCallIds = mergePrunedToolCallIds({
+        existing: prunedToolCallIds,
+        added: initial.prunedToolCallIds,
+      });
+    }
     let projectionChanged = initial.changed;
 
     const compaction = await this.compactor.prepare({
@@ -151,8 +167,23 @@ export class ContextPreparation {
     if (compaction.status === "compacted") {
       projectionChanged = true;
       const rebuilt = await rebuild();
-      const rebuiltTokens = estimateContextRequestTokens(rebuilt);
-      const rebuiltPruned = this.pruneIfWorthwhile(rebuilt, rebuiltTokens, undefined, budget);
+      const rebuiltApplied = applyPrunedToolResults({
+        request: rebuilt,
+        toolCallIds: prunedToolCallIds,
+      });
+      const rebuiltTokens = estimateContextRequestTokens(rebuiltApplied.request);
+      const rebuiltPruned = this.pruneIfWorthwhile(
+        rebuiltApplied.request,
+        rebuiltTokens,
+        undefined,
+        budget,
+      );
+      if (rebuiltPruned.prunedCount > 0) {
+        prunedToolCallIds = mergePrunedToolCallIds({
+          existing: prunedToolCallIds,
+          added: rebuiltPruned.prunedToolCallIds,
+        });
+      }
       projectionChanged = projectionChanged || rebuiltPruned.changed;
       final = trimContextRequest(rebuiltPruned.request, budget, {
         targetTokens: budget.postCompactTarget,
@@ -188,7 +219,7 @@ export class ContextPreparation {
             updatedAt: usage.updatedAt,
           }
         : undefined;
-    await this.saveStatus(conversationId, usage, pruning);
+    await this.saveStatus(conversationId, usage, pruning, prunedToolCallIds);
 
     this.usageAnchors.stage(conversationId, {
       estimatedTokens: usage.usedTokens,
@@ -235,14 +266,20 @@ export class ContextPreparation {
     conversationId: string,
     usage: ContextUsage,
     pruning: ContextPruningStatus | undefined,
+    prunedToolCallIds: readonly string[],
   ): Promise<void> {
     try {
       const state = (await this.store.loadContextState(conversationId)) ?? { checkpoints: [] };
-      const { pruning: _previousPruning, ...rest } = state;
+      const {
+        pruning: _previousPruning,
+        prunedToolCallIds: _previousPrunedToolCallIds,
+        ...rest
+      } = state;
       await this.store.saveContextState(conversationId, {
         ...rest,
         usage,
         ...(pruning ? { pruning } : {}),
+        ...(prunedToolCallIds.length > 0 ? { prunedToolCallIds } : {}),
       });
     } catch (error) {
       console.warn("[context-preparation] status save failed", {
@@ -263,10 +300,18 @@ export class ContextPreparation {
     tokens: number;
     changed: boolean;
     prunedCount: number;
+    prunedToolCallIds: readonly string[];
     savedTokens: number;
   } {
     if (tokens < budget.pruneAt) {
-      return { request, tokens, changed: false, prunedCount: 0, savedTokens: 0 };
+      return {
+        request,
+        tokens,
+        changed: false,
+        prunedCount: 0,
+        prunedToolCallIds: [],
+        savedTokens: 0,
+      };
     }
     const estimateTokens = anchor
       ? (value: ContextModelRequest) =>
@@ -279,13 +324,21 @@ export class ContextPreparation {
       estimateTokens,
     });
     if (result.savedTokens < budget.minPruneSaving) {
-      return { request, tokens, changed: false, prunedCount: 0, savedTokens: 0 };
+      return {
+        request,
+        tokens,
+        changed: false,
+        prunedCount: 0,
+        prunedToolCallIds: [],
+        savedTokens: 0,
+      };
     }
     return {
       request: result.request,
       tokens: estimateContextRequestTokens(result.request),
       changed: true,
       prunedCount: result.prunedCount,
+      prunedToolCallIds: result.prunedToolCallIds,
       savedTokens: result.savedTokens,
     };
   }
