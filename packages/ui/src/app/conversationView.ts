@@ -117,6 +117,8 @@ export function applyAgentEvent(
       }));
       if (event.state === "retry-wait" && event.retry)
         next = { ...next, retry: event.retry, retryRunId: envelope.runId };
+      if (event.state === "running" && next.retryRunId === envelope.runId)
+        next = { ...next, retry: undefined, retryRunId: undefined };
     } else {
       const retryBelongsToRun = next.retryRunId === envelope.runId && next.retry !== undefined;
       const failed = messageStatus === "failed";

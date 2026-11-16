@@ -68,13 +68,26 @@ describe("conversation projection", () => {
           attempt: 1,
           maxRetries: 5,
           delayMs: 5_000,
+          statusCode: 429,
           scheduledAt: "2026-11-07T00:00:00.000Z",
         },
       }),
     );
     expect(retrying.messages[0]?.thinking).toBe(true);
-    expect(retrying.retry).toMatchObject({ kind: "rate-limit", attempt: 1, maxRetries: 5 });
+    expect(retrying.retry).toMatchObject({
+      kind: "rate-limit",
+      attempt: 1,
+      maxRetries: 5,
+      statusCode: 429,
+    });
     expect(retrying.retryRunId).toBe("run-1");
+
+    const resumed = applyAgentEvent(
+      retrying,
+      envelope(4, { type: "run-state-changed", state: "running", attempt: 2 }),
+    );
+    expect(resumed.retry).toBeUndefined();
+    expect(resumed.retryRunId).toBeUndefined();
   });
 
   it("shows the accepted run indicator until an explicit stream event arrives", () => {

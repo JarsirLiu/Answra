@@ -5,6 +5,7 @@ import { TUI_THEME } from "../chrome/theme";
 import type { TuiSetupStep } from "../modelSetup";
 import { MessageRow } from "./MessageRow";
 import { ModelSetupPanel } from "./ModelSetupPanel";
+import { RetryNotice } from "./RetryNotice";
 import { SelectableText } from "./SelectableText";
 
 export function Transcript({
@@ -109,13 +110,7 @@ export function TranscriptTail({
         </Box>
       )}
       {view.retry === undefined ? null : (
-        <Box flexDirection="row" marginTop={1}>
-          <SelectableText color={TUI_THEME.warning}>retry </SelectableText>
-          <SelectableText dimColor>
-            {view.retry.attempt}/{view.retry.maxRetries}
-            {view.retry.finished ? " failed" : "…"}
-          </SelectableText>
-        </Box>
+        <RetryNotice key={`${view.retry.kind}:${view.retry.attempt}`} retry={view.retry} />
       )}
       {view.error === undefined ? null : (
         <SelectableText color={TUI_THEME.error}>{view.error}</SelectableText>

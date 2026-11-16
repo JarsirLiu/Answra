@@ -36,6 +36,9 @@ export interface ConversationRetry {
   kind: "rate-limit" | "server-error" | "network-error";
   attempt: number;
   maxRetries: number;
+  /** 本次失败与下一次请求之间的等待时长；旧快照或测试构造可能缺省。 */
+  delayMs?: number;
+  statusCode?: number;
   /** 来自失败 run 终态；保留 Wi-Fi 记录，但不再表示正在等待。 */
   finished?: boolean;
 }
