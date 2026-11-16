@@ -1,9 +1,8 @@
 /** 静态 Agent 注册、模型路由、run 取消/等待和 Execution 查询的稳定运行时入口。 */
 import { randomUUID } from "node:crypto";
 import type { AgentEventEnvelope, AgentRunSnapshot, RunOutcome } from "@answra/shared/schema";
-import { generateText as generateModelText } from "ai";
 import type { ExecutionStore } from "../../execution/store";
-import { createModelProvider } from "../model/provider";
+import { generateModelText } from "../model/modelTransport";
 import { validateEndpoint } from "../model/providerFetch";
 import { RunRegistry } from "../run/registry";
 import type {
@@ -30,6 +29,7 @@ export class AgentRuntime {
   private readonly executionStore: ExecutionStore;
   private readonly tokenProvider?: AgentRuntimeOptions["tokenProvider"];
   private readonly unsubscribeEvents: () => void;
+  private readonly internalSessionId = randomUUID();
   private routes?: AgentModelRoutes;
 
   constructor({ executionStore, emitEvent, tokenProvider }: AgentRuntimeOptions) {
@@ -81,19 +81,17 @@ export class AgentRuntime {
     signal?: AbortSignal;
   }): Promise<string> {
     const endpoint = this.requireRoutes().chat;
-    const provider = createModelProvider({
-      endpoint,
-      accessToken,
-      tokenProvider: this.tokenProvider,
-    });
-    const result = await generateModelText({
-      model: provider(endpoint.model),
+    return generateModelText({
+      transport: {
+        endpoint,
+        accessToken,
+        conversationId: this.internalSessionId,
+        ...(this.tokenProvider === undefined ? {} : { tokenProvider: this.tokenProvider }),
+      },
       prompt,
       temperature: 0,
-      ...(signal ? { abortSignal: signal } : {}),
-      maxRetries: 0,
+      ...(signal === undefined ? {} : { signal }),
     });
-    return result.text;
   }
 
   cancel(runId: string): void {

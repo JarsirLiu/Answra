@@ -8,6 +8,7 @@ export function createModelProvider({
   endpoint,
   accessToken,
   tokenProvider,
+  headers,
   runId,
   onRetry,
   onRetryResume,
@@ -15,6 +16,7 @@ export function createModelProvider({
   endpoint: ConversationCapabilityEndpoint;
   accessToken: string;
   tokenProvider?: (options: { forceRefresh: boolean }) => Promise<string>;
+  headers?: Readonly<Record<string, string>>;
   runId?: string;
   onRetry?: (retry: RetryAttempt) => Promise<void> | void;
   onRetryResume?: (retry: RetryAttempt) => Promise<void> | void;
@@ -27,6 +29,7 @@ export function createModelProvider({
     name: "answra",
     baseURL: endpoint.baseUrl,
     apiKey: accessToken || "local",
+    ...(headers === undefined ? {} : { headers: { ...headers } }),
     fetch: createRetryingFetch(baseFetch, {
       ...(runId ? { runId } : {}),
       ...(onRetry ? { onRetry } : {}),

@@ -104,6 +104,16 @@ export interface ConversationCapabilityEndpoint {
    */
   auth?: "cloud" | "local";
   /**
+   * provider 级非 secret 请求头；由端点配置显式提供，例如客户端 User-Agent。
+   * 凭据仍只走 `auth` 对应的令牌或 API Key，不进入这里。
+   */
+  headers?: Readonly<Record<string, string>>;
+  /**
+   * 请求级会话头名称；声明后每次 run 用 conversationId 填充该头。
+   * 仅用于供应商要求的会话标识，不参与鉴权。
+   */
+  sessionHeader?: string;
+  /**
    * 模型总上下文窗口；由服务端能力目录或端点元数据提供，非 secret。
    * 缺省时使用内部保守预算，不向用户暴露手动配置。
    */

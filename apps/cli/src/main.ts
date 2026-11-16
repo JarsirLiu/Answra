@@ -7,6 +7,7 @@ import { FileConversationStore, startCodingHost } from "@answra/agent/compositio
 import { resolveDefaultConfigDir } from "@answra/config";
 import { createSystemModelCredentialStore } from "@answra/credentials";
 import { createAgentCodingSessionHost } from "./adapters/agentCodingHost";
+import { withLocalProviderProfiles } from "./adapters/localProviderProfiles";
 import { createOpenAiModelCatalog } from "./adapters/openAiModelCatalog";
 import { createSharedModelStore } from "./adapters/sharedModelStore";
 import { runCli } from "./cli/runCli";
@@ -30,7 +31,9 @@ import { createInkTuiRunner } from "./tui/runTui";
 
 async function main(): Promise<void> {
   try {
-    const modelSettings = new ModelSettingsService(createSharedModelStore());
+    const modelSettings = withLocalProviderProfiles(
+      new ModelSettingsService(createSharedModelStore()),
+    );
     const modelCredentials = createSystemModelCredentialStore();
     const sessionStore = new FileConversationStore(
       join(resolveDefaultConfigDir(), "cli", "sessions"),

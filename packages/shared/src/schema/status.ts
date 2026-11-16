@@ -6,6 +6,7 @@ export const agentRetrySchema = z.strictObject({
   attempt: z.number().int().positive(),
   maxRetries: z.number().int().positive(),
   delayMs: z.number().int().nonnegative(),
+  statusCode: z.number().int().positive().optional(),
 });
 export const agentRetryWaitSchema = agentRetrySchema.extend({
   scheduledAt: z.string().datetime(),

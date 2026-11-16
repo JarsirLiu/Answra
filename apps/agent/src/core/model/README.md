@@ -3,6 +3,9 @@
 本目录是 Agent 调用 AI SDK 和模型供应商的边界层。
 
 - `providerFetch.ts` / `errorSummary.ts`：校验模型端点、处理云端令牌刷新与本地 API Key，并把 provider 错误压缩成有界摘要。
+- `requestHeaders.ts`：把端点显式声明的会话头投影为请求级 headers；不按 URL 推导 provider。
+- `provider.ts`：唯一构造 OpenAI-compatible provider 的位置；provider 级 headers 交给 AI SDK，请求级 headers 交给 `streamText`/`generateText`。
+- `modelTransport.ts`：AI SDK `streamText` / `generateText` 的唯一执行入口；`executeRun` 与 `runtime` 只消费它，不各自拼模型 options。
 - `imageInput.ts`：校验并解码模型请求使用的图片 data URL。
 - `requestContent.ts`：校验 Conversation 与 Answer 共用的文本和图片请求边界。
 - `retryFetch.ts`：为可重放的模型 HTTP 请求提供限流、服务端错误和网络错误重试；通过回调报告每次等待，不保存会话或执行状态。

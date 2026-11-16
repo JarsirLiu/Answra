@@ -1,17 +1,11 @@
 /** 执行已注册 Agent 的 AI SDK 流、HTTP 重试与 run 终态；不读取或写入 transcript。 */
 import type { ConversationCapabilityEndpoint } from "@answra/shared";
 import type { AgentEvent, RunOutcome } from "@answra/shared/schema";
-import {
-  type OnToolCallFinishEvent,
-  type OnToolCallStartEvent,
-  streamText,
-  type ToolSet,
-} from "ai";
 import type { ExecutionStore } from "../../execution/store";
 import { isContextOverflowError } from "../model/contextOverflow";
 import { summarizeModelError } from "../model/errorSummary";
-import { createModelProvider } from "../model/provider";
-import { RATE_LIMIT_RETRY_POLICY } from "../model/retryFetch";
+import { streamModel } from "../model/modelTransport";
+import { RATE_LIMIT_RETRY_POLICY, type RetryAttempt } from "../model/retryFetch";
 import type {
   AgentDefinition,
   AgentModelRequest,
@@ -71,25 +65,27 @@ export async function executeRun<Input, Prepared>({
     await journal.notify(await executionStore.transition(runId, "running"));
     logRunStarted({ runId, agentId: definition.id, endpoint });
 
-    const provider = createModelProvider({
+    const transport = {
       endpoint,
       accessToken,
-      tokenProvider,
+      conversationId,
       runId,
-      onRetry: async (retry) => {
-        await journal.notify(await executionStore.scheduleRetry(runId, retry));
-        await journal.append({
-          type: "retry",
+      ...(tokenProvider === undefined ? {} : { tokenProvider }),
+      onRetry: async (retry: RetryAttempt) => {
+        const facts = {
           kind: retry.kind,
           attempt: retry.attempt,
           maxRetries: retry.maxRetries,
           delayMs: retry.delayMs,
-        });
+          ...(retry.statusCode === undefined ? {} : { statusCode: retry.statusCode }),
+        };
+        await journal.notify(await executionStore.scheduleRetry(runId, facts));
+        await journal.append({ type: "retry", ...facts });
       },
       onRetryResume: async () => {
         await journal.notify(await executionStore.resumeRetry(runId));
       },
-    });
+    };
 
     let contextRecovered = false;
     for (;;) {
@@ -98,64 +94,65 @@ export async function executeRun<Input, Prepared>({
       let failure: { error: unknown; errorText: string } | undefined;
 
       try {
-        const result = streamText({
-          model: provider(endpoint.model),
-          ...modelRequest,
-          abortSignal: controller.signal,
-          maxRetries: 0,
-          onError: ({ error }) => {
-            console.error("[agent][run] provider error", {
-              runId,
-              ...summarizeModelError(error),
-            });
-          },
-          onFinish: ({
-            finishReason: reason,
-            text,
-            reasoningText,
-            toolCalls,
-            usage,
-            totalUsage,
-          }) => {
-            finishReason = reason;
-            console.info("[agent][run] model finished", {
-              runId,
+        const result = streamModel({
+          transport,
+          signal: controller.signal,
+          options: {
+            ...modelRequest,
+            onError: ({ error }) => {
+              console.error("[agent][run] provider error", {
+                runId,
+                ...summarizeModelError(error),
+              });
+            },
+            onFinish: ({
               finishReason: reason,
-              textLength: text.length,
-              reasoningLength: reasoningText?.length ?? 0,
-              toolCallCount: toolCalls.length,
+              text,
+              reasoningText,
+              toolCalls,
               usage,
               totalUsage,
-            });
-          },
-          experimental_onToolCallStart: async (event: OnToolCallStartEvent<ToolSet>) => {
-            await attempt.append({
-              type: "tool-execution-started",
-              toolCallId: event.toolCall.toolCallId,
-              toolName: event.toolCall.toolName,
-              input: event.toolCall.input,
-              ...(event.stepNumber === undefined ? {} : { stepNumber: event.stepNumber }),
-            });
-          },
-          experimental_onToolCallFinish: async (event: OnToolCallFinishEvent<ToolSet>) => {
-            await attemptLiveOutput.flush();
-            const common = {
-              type: "tool-execution-finished" as const,
-              toolCallId: event.toolCall.toolCallId,
-              toolName: event.toolCall.toolName,
-              input: event.toolCall.input,
-              durationMs: event.durationMs,
-              ...(event.stepNumber === undefined ? {} : { stepNumber: event.stepNumber }),
-            };
-            await attempt.append(
-              event.success
-                ? { ...common, result: { success: true, output: event.output } }
-                : { ...common, result: { success: false, errorText: errorText(event.error) } },
-            );
+            }) => {
+              finishReason = reason;
+              console.info("[agent][run] model finished", {
+                runId,
+                finishReason: reason,
+                textLength: text.length,
+                reasoningLength: reasoningText?.length ?? 0,
+                toolCallCount: toolCalls.length,
+                usage,
+                totalUsage,
+              });
+            },
+            experimental_onToolCallStart: async (event) => {
+              await attempt.append({
+                type: "tool-execution-started",
+                toolCallId: event.toolCall.toolCallId,
+                toolName: event.toolCall.toolName,
+                input: event.toolCall.input,
+                ...(event.stepNumber === undefined ? {} : { stepNumber: event.stepNumber }),
+              });
+            },
+            experimental_onToolCallFinish: async (event) => {
+              await attemptLiveOutput.flush();
+              const common = {
+                type: "tool-execution-finished" as const,
+                toolCallId: event.toolCall.toolCallId,
+                toolName: event.toolCall.toolName,
+                input: event.toolCall.input,
+                durationMs: event.durationMs,
+                ...(event.stepNumber === undefined ? {} : { stepNumber: event.stepNumber }),
+              };
+              await attempt.append(
+                event.success
+                  ? { ...common, result: { success: true, output: event.output } }
+                  : { ...common, result: { success: false, errorText: errorText(event.error) } },
+              );
+            },
           },
         });
 
-        const resultAttempt = await consumeModelAttempt(result.fullStream, attempt);
+        const resultAttempt = await consumeModelAttempt(result, attempt);
         if (resultAttempt.kind === "finished") break;
         if (resultAttempt.kind === "aborted") {
           await attemptLiveOutput.flush();
