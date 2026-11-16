@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildEditDisplayDiff } from "../../../src/core/tool/builtin/editDisplayDiff";
+import { buildEditDisplayDiff } from "../../../src/core/tool/builtin/edit/diff";
 
 describe("buildEditDisplayDiff", () => {
   it("shows context around a single replacement with real line numbers", () => {

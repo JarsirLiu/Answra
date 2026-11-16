@@ -9,7 +9,7 @@ import {
   isCachedReadFresh,
   matchesFileStat,
   recordEditedFileState,
-} from "../../../src/core/tool/builtin/readFileState";
+} from "../../../src/core/tool/state/readFileState";
 
 const filePath = path.resolve(os.tmpdir(), "answra-read-state.md");
 

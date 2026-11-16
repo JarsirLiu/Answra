@@ -2,20 +2,27 @@
 
 状态：提案
 
-实施进度：shell 跨平台、会话流式解码、空文件 Edit 与 contentHash 已实施，见
-`docs/notes/implemented/feature/2026-11-16-agent-tool-cross-platform-shell-and-edit-state.md`。本 Note 继续保留尚未实施的目录迁移、macOS CI 和更大范围的编码策略。
+## 现状
+
+截至 2026-11-16，本提案中影响工具行为正确性的 P0 已落地：
+
+- 模型可见工具仍只有 `Read`、`Grep`、`Edit`、`RunCommand` 四个；CLI 与桌面端继续共用 `createBuiltinToolRegistry()`，没有第二套工具实现。
+- Windows shell 已按 `pwsh` → `powershell.exe` 检测，支持显式 cmd 与 30K 命令上限；macOS 默认 zsh。续接会话改为跨 chunk 流式解码，不再按字节切片后单独猜测编码。
+- `Edit` 已允许“先 Read 再填充已存在空文件”，`ReadFileState` 已用 `contentHash` 替代只比较 mtime/size。
+- 工具源码已按职责拆分：`text/`（编码与行尾）、`workspace/`（路径、文本文件、原子写入、错误与限制）、`state/`（读前状态）、`executor/`（执行与取消）、`builtin/<tool>/`（Read/Grep/Edit/RunCommand 各自实现）。`builtin/index.ts` 只负责注册。
+- 测试文件仍保留原目录，只更新了 import 路径；测试目录镜像、macOS CI 和更大范围的编码策略尚未实施。
+- 已验证：`pnpm --filter @answra/agent test` 78 文件/584 项通过，完整 `pnpm verify` 通过；macOS 尚无实机或 CI 证据。
+
+详见 `docs/notes/implemented/feature/2026-11-16-agent-tool-cross-platform-shell-and-edit-state.md` 与
+`docs/notes/implemented/architecture/2026-11-16-tool-runtime-directory-decomposition.md`。
 
 ## 问题
 
-当前 Agent 只有 `Read`、`Grep`、`Edit`、`RunCommand` 四个模型工具，核心能力已经可用，但“多端可用、不会编码错误”还没有成立：
+当前核心能力可用，但仍存在以下差距：
 
-- `RunCommand` 的续接会话按字节偏移切新增输出，再对切片单独做 UTF-8 fatal 解码；UTF-8 多字节字符跨 chunk 时，前后两段都会解码失败并回退 GBK，长命令继续读取时仍可能乱码（`apps/agent/src/core/tool/builtin/shell/sessions.ts:342-355`）。
-- 文件读取和编辑只支持 UTF-8/UTF-16；Windows 常见的 GBK/GB18030 文本会 fail-closed 拒绝，虽然不会写坏，但工具不可用（`apps/agent/src/core/tool/builtin/workspace.ts:294-302`、`workspace.ts:402-406`）。
-- Shell 非 UTF-8 输出一律回退 GBK；这只适合中文 Windows，英文 Windows 的 OEM code page、Big5、Shift-JIS 或 macOS 非法字节都会解错（`apps/agent/src/core/tool/builtin/shell/runtime.ts:99-108`）。
-- Windows 固定使用 `powershell.exe` 5.1，不检测 `pwsh`；`RunCommand` 允许 64,000 字符命令，但 Windows `CreateProcess` 命令行上限约 32K，长脚本可能直接失败（`runtime.ts:8`、`shell/tools.ts:25`）。
-- `Edit` 对已存在的空文件也拒绝 `old_string=""`；没有独立 `Write` 工具时，`touch` 或外部工具创建的空文件无法被写入（`apps/agent/src/core/tool/builtin/edit.ts:111-117`）。
-- `ReadFileState` 只比较 mtime/size，没有内容对比；Windows 上云同步、杀毒或 IDE 触碰 mtime 会产生假冲突。
-- 目录当前按文件平铺：`workspace.ts` 421 行、`grep.ts` 430 行、`shell/sessions.ts` 560 行；路径、编码、写入、进程管理、工具定义混在一起，后续跨平台修复会继续扩散。
+- 文件读取和编辑只支持 UTF-8/UTF-16；Windows 常见的 GBK/GB18030 文本会 fail-closed 拒绝，虽然不会写坏，但工具不可用（`apps/agent/src/core/tool/text/encoding.ts`、`workspace/textFile.ts`）。
+- Shell 非 UTF-8 输出一律回退 GBK；这只适合中文 Windows，英文 Windows 的 OEM code page、Big5、Shift-JIS 或 macOS 非法字节都会解错（`builtin/runCommand/shell/runtime.ts`）。
+- 测试目录仍与源码目录平铺不一致，后续按职责新增测试时容易继续堆在旧路径。
 - CI 只跑 `windows-latest`，没有 macOS 证据；`sessions.test.ts` 的容量测试还硬编码 `Start-Sleep`，macOS 直接不可用。
 
 本提案只处理 **Agent 工具运行时**。这里没有“CLI 工具”和“桌面端工具”两套实现：
@@ -43,25 +50,21 @@ Answra 已有 OpenCode 没有的续接会话、Windows Job Object 和流式快�
 - 工具契约与注册：
   - `apps/agent/src/core/tool/contracts.ts`
   - `apps/agent/src/core/tool/registry.ts`
-  - `apps/agent/src/core/tool/toolNames.ts`
+  - `apps/agent/src/core/tool/names.ts`
   - `apps/agent/src/core/tool/builtin/index.ts`
 - 两个宿主共用同一工具注册表：
   - CLI：`apps/cli/src/main.ts` → `apps/agent/src/coding/host.ts`
   - 桌面端：`apps/desktop/src/main/conversation/workerTransport.ts` → `apps/agent/src/host.ts`
 - 文件工具：
-  - `apps/agent/src/core/tool/builtin/read.ts`
-  - `apps/agent/src/core/tool/builtin/grep.ts`
-  - `apps/agent/src/core/tool/builtin/edit.ts`
-  - `apps/agent/src/core/tool/builtin/workspace.ts`
-  - `apps/agent/src/core/tool/builtin/readFileState.ts`
-  - `apps/agent/src/core/tool/builtin/documents/`
+  - `apps/agent/src/core/tool/text/`
+  - `apps/agent/src/core/tool/workspace/`
+  - `apps/agent/src/core/tool/state/`
+  - `apps/agent/src/core/tool/builtin/read/`
+  - `apps/agent/src/core/tool/builtin/grep/`
+  - `apps/agent/src/core/tool/builtin/edit/`
 - Shell 工具：
-  - `apps/agent/src/core/tool/builtin/shell/tools.ts`
-  - `apps/agent/src/core/tool/builtin/shell/runtime.ts`
-  - `apps/agent/src/core/tool/builtin/shell/localShell.ts`
-  - `apps/agent/src/core/tool/builtin/shell/sessions.ts`
-  - `apps/agent/src/core/tool/builtin/shell/processTree.ts`
-  - `apps/agent/src/core/tool/builtin/shell/workdir.ts`
+  - `apps/agent/src/core/tool/builtin/runCommand/`
+  - `apps/agent/src/core/tool/executor/`
 - 展示层不改语义：
   - `packages/ui/src/tool-presentation/`
   - `packages/ui/src/components/tool-call/renderers/`
@@ -77,6 +80,8 @@ Answra 已有 OpenCode 没有的续接会话、Windows Job Object 和流式快�
   - `docs/notes/implemented/bug-fix/2026-11-16-shell-output-valid-utf8-replacement-character.md`
   - `docs/notes/implemented/feature/2026-11-16-workspace-edit-create-file.md`
   - `docs/notes/implemented/architecture/2026-11-16-merge-write-stdin-into-run-command.md`
+  - `docs/notes/implemented/feature/2026-11-16-agent-tool-cross-platform-shell-and-edit-state.md`
+  - `docs/notes/implemented/architecture/2026-11-16-tool-runtime-directory-decomposition.md`
   - `docs/notes/proposed/architecture/2026-11-17-shell-process-tree-interrupt-convergence.md`
 
 ## 提案
@@ -90,90 +95,74 @@ Answra 已有 OpenCode 没有的续接会话、Windows Job Object 和流式快�
 - 先修行为正确性，再做目录重构；结构重构不能改变工具语义。
 - 不照抄 OpenCode 的多工具生态、Effect 运行时、MCP/LSP、权限弹窗和插件体系。
 
-### 2. 目标目录
+### 2. 当前目录
 
 ```text
 apps/agent/src/core/tool/
   contracts.ts
-  registry.ts
+  index.ts
   names.ts
+  registry.ts
   executor/
+    abort.ts
     executeToolCall.ts
     result.ts
+    resultBudget.ts
+    timeout.ts
 
   state/
     readFileState.ts
 
   text/
-    encoding.ts              # BOM、严格 UTF-8/UTF-16、编码策略
-    lineEndings.ts            # LF/CRLF 检测与恢复
-    streamDecoder.ts          # 流式解码，保留不完整 UTF-8 尾部
+    encoding.ts
+    lineEndings.ts
+    streamDecoder.ts
 
   workspace/
-    paths.ts                  # 相对/绝对路径、realpath、UNC/设备路径防护
-    textFile.ts               # 一次读取 text/encoding/BOM/lineEndings/stat
-    atomicWrite.ts            # 临时文件、rename、mode/BOM/行尾保留
+    paths.ts
+    textFile.ts
+    atomicWrite.ts
+    errors.ts
+    limits.ts
+    index.ts
 
   builtin/
     index.ts                  # 只注册，不放实现
 
     read/
       tool.ts
-      prompt.ts
-      schema.ts
-      execute.ts
       output.ts
-      limits.ts
-      documents/
-        format.ts
-        pdf.ts
-        word.ts
+      documents/{contracts,documentFormat,documentText,pdfText,wordText}.ts
 
     grep/
       tool.ts
-      prompt.ts
       schema.ts
-      execute.ts
+      prompt.ts
       output.ts
-      ripgrep/
-        args.ts
-        runner.ts
-        worker.ts
+      worker.ts
+      ripgrep/{args,runner}.ts
 
     edit/
       tool.ts
-      prompt.ts
-      schema.ts
-      execute.ts
       match.ts
-      create.ts
       diff.ts
-      output.ts
 
     runCommand/
       tool.ts
-      prompt.ts
-      schema.ts
-      execute.ts
-      output.ts
-      environment.ts          # 两领域共用的 Shell 提示事实
-      shell/
-        provider.ts
-        posix.ts
-        powershell.ts
-        cmd.ts
-        detect.ts
-        invocation.ts
-        errorWrapper.ts
-        decoder.ts
+      environment.ts
+      shell/runtime.ts
       process/
         oneShot.ts
         sessions.ts
-        workdir.ts
+        sessionContract.ts
+        sessionOutput.ts
         processTree.ts
+        workdir.ts
 ```
 
-测试镜像源码：
+未保留原目标中的 `prompt.ts`、`schema.ts`、`execute.ts` 机械拆分：现有工具已在 `tool.ts` 内保持 prompt/schema/执行入口的单一来源，强行拆开会扩大 diff 而不增加边界。`sessions.ts` 已降到 396 行，会话类型/等待策略与输出累计分别位于 `sessionContract.ts`、`sessionOutput.ts`。
+
+测试目录镜像尚未实施，目标如下：
 
 ```text
 apps/agent/test/core/tool/
@@ -307,9 +296,9 @@ RunCommand
 
 ## 风险
 
-- 正面：编码问题从“每次快照独立猜”变成一条可测试的流式解码链；工具目录按职责拆分，后续加平台或工具不会继续堆在 `workspace.ts` / `sessions.ts`。
+- 正面：编码问题已从“每次快照独立猜”变成一条可测试的流式解码链；工具目录已按职责拆分，后续加平台或工具不会继续堆在 `workspace.ts` / `sessions.ts`。
 - 正面：`Edit` 补齐空文件规则后，不新增 `Write` 也能覆盖完整的新建/写入流程。
-- 负面：目录移动会造成较大的 diff；必须先完成行为测试，再机械迁移，避免重构期间引入语义变化。
+- 负面：目录移动已产生较大 diff；本次先完成行为测试，再机械迁移，测试目录刻意未同步迁移，避免结构、导入和行为变化混在同一次 diff。
 - 负面：macOS CI 需要修复测试中的平台假设，并增加 CI 时间；同一套工具要在两个宿主上成立，这是必要成本。
 - 风险：流式编码仍只能可靠覆盖 UTF-8 与受控兜底；GBK 文件、其他本地编码和原生程序硬编码输出仍需要产品级编码策略，不能承诺“所有编码都不出错”。
 - 风险：Windows 长命令临时脚本涉及临时文件清理和权限边界，需要测试失败清理路径。

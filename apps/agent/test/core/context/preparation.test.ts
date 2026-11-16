@@ -14,7 +14,7 @@ import { ContextPreparation } from "../../../src/core/context/preparation";
 import type { ToolResultPruningPolicy } from "../../../src/core/context/pruning/policy";
 import { PRUNED_TOOL_RESULT_TEXT } from "../../../src/core/context/pruning/prune";
 import { estimateContextRequestTokens } from "../../../src/core/context/tokenEstimate";
-import { READ_TOOL_NAME } from "../../../src/core/tool/toolNames";
+import { READ_TOOL_NAME } from "../../../src/core/tool/names";
 import { MemoryConversationStore } from "../../../src/core/transcript/memoryStore";
 
 const PROFILE: CompactionProfile = {

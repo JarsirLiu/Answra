@@ -1,7 +1,7 @@
 /** Read 的文档分派：识别格式、读取字节、执行 PDF/Word 抽取并返回模型元数据。 */
 
 import { promises as fs } from "node:fs";
-import { ToolExecutionError } from "../../executor/result";
+import { ToolExecutionError } from "../../../executor/result";
 import type { ReadDocumentMetadata } from "./contracts";
 import { detectDocumentFormat } from "./documentFormat";
 import { extractPdfText } from "./pdfText";

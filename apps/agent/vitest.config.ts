@@ -6,7 +6,7 @@ export default defineConfig({
       provider: "v8",
       reporter: ["text", "lcov"],
       include: ["src/core/tool/**/*.ts"],
-      exclude: ["src/core/tool/index.ts", "src/core/tool/builtin/grepWorker.ts"],
+      exclude: ["src/core/tool/index.ts", "src/core/tool/builtin/grep/worker.ts"],
       all: true,
       thresholds: {
         statements: 92,

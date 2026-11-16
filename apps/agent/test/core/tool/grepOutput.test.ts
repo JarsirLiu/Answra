@@ -3,7 +3,7 @@ import {
   formatGrepOutput,
   type ParseGrepOutputOptions,
   parseGrepOutput,
-} from "../../../src/core/tool/builtin/grepOutput";
+} from "../../../src/core/tool/builtin/grep/output";
 
 interface MatchEventInput {
   readonly path: string;

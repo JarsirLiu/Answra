@@ -1,6 +1,6 @@
 /** PDF 文本抽取：pdfjs 在 Agent 进程内逐页取文本，不渲染页面、不依赖外部二进制。 */
 
-import { ToolExecutionError } from "../../executor/result";
+import { ToolExecutionError } from "../../../executor/result";
 
 const PDF_MAGIC = [0x25, 0x50, 0x44, 0x46, 0x2d] as const;
 const EMPTY_PAGE_TEXT = "[本页无可提取文本]";

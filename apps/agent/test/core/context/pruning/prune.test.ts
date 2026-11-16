@@ -17,7 +17,7 @@ import {
   GREP_TOOL_NAME,
   READ_TOOL_NAME,
   RUN_COMMAND_TOOL_NAME,
-} from "../../../../src/core/tool/toolNames";
+} from "../../../../src/core/tool/names";
 
 const OPEN_POLICY: ToolResultPruningPolicy = {
   clearableToolNames: [READ_TOOL_NAME, GREP_TOOL_NAME, RUN_COMMAND_TOOL_NAME],

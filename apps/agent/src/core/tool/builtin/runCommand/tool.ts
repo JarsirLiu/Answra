@@ -12,16 +12,17 @@ import {
   toolId,
 } from "../../contracts";
 import { ToolExecutionError } from "../../executor/result";
-import { RUN_COMMAND_TOOL_NAME } from "../../toolNames";
-import { LocalShell, type ShellOutputResult } from "./localShell";
-import { resolveShellRuntime, type ShellRuntime } from "./runtime";
+import { RUN_COMMAND_TOOL_NAME } from "../../names";
+import { buildRunCommandDescription } from "./environment";
+import { LocalShell, type ShellOutputResult } from "./process/oneShot";
 import {
   ShellSessionManager,
   ShellSessionNotFoundError,
   type ShellSessionSnapshot,
   type ShellYieldTimePolicy,
-} from "./sessions";
-import { resolveShellWorkdir } from "./workdir";
+} from "./process/sessions";
+import { resolveShellWorkdir } from "./process/workdir";
+import { resolveShellRuntime } from "./shell/runtime";
 
 // Windows CreateProcess 的命令行上限约 32K；留出解释器前缀与转义余量。
 const MAX_COMMAND_CHARS = process.platform === "win32" ? 30_000 : 64_000;
@@ -47,44 +48,6 @@ interface RunCommandInput {
 type RunCommandOutput =
   | { readonly kind: "result"; readonly result: ShellOutputResult }
   | { readonly kind: "session"; readonly snapshot: ShellSessionSnapshot };
-
-function buildRunCommandDescription(runtime: ShellRuntime): string {
-  const shellNotes =
-    runtime.kind === "powershell"
-      ? [
-          "- Shell: Windows PowerShell 5.1 (powershell.exe).",
-          "- Use `$LASTEXITCODE` for exit codes and `Get-Command` instead of `where`.",
-          "- `&&` is not supported; chain dependent commands with `cmd1; if ($?) { cmd2 }`.",
-          "- Paths use Windows separators.",
-        ]
-      : runtime.kind === "pwsh"
-        ? [
-            "- Shell: PowerShell 7+ (pwsh).",
-            "- Use `$LASTEXITCODE` for exit codes and `Get-Command` instead of `where`.",
-            "- `&&` is supported; paths use the current platform separator.",
-          ]
-        : runtime.kind === "cmd"
-          ? [
-              "- Shell: cmd.exe.",
-              "- Use `%VAR%` for environment variables and `&&` for dependent commands.",
-              "- Paths use Windows separators.",
-            ]
-          : [
-              `- Shell: ${runtime.displayName} (POSIX).`,
-              "- Use POSIX quoting and `/` path separators; `&&` is supported.",
-            ];
-  return [
-    "Executes a shell command or continues an existing shell session in the current workspace.",
-    "",
-    ...shellNotes,
-    "- Multiple statements run in one shell process, so variables and state persist.",
-    "- Omit `sessionId` to start a command; `command` is then required.",
-    "- A command that runs longer than `yieldTimeMs` returns a `sessionId`.",
-    "- To continue that session, call RunCommand with `sessionId` instead of `command`; optional `chars` writes stdin.",
-    "- `workdir` and `timeoutMs` apply only when starting a command.",
-    "- Without `yieldTimeMs`, a one-shot command runs to completion or its process timeout.",
-  ].join("\n");
-}
 
 const RUN_COMMAND_INPUT_SCHEMA: JSONSchema7 = {
   type: "object",

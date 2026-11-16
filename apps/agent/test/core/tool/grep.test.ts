@@ -3,8 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { executeToolCall, type ToolContext } from "../../../src/core/tool";
-import { executeGrep, grepTool } from "../../../src/core/tool/builtin/grep";
-import { formatGrepOutput } from "../../../src/core/tool/builtin/grepOutput";
+import { formatGrepOutput } from "../../../src/core/tool/builtin/grep/output";
+import { executeGrep, grepTool } from "../../../src/core/tool/builtin/grep/tool";
 
 function context(
   workspaceRoot: string | null,

@@ -1,27 +1,27 @@
 /** Edit：在已读文件中精确替换文本，或用空 old_string 创建新文件。 */
 import type { EditDiffDisplay } from "@answra/shared/schema";
 import type { JSONSchema7 } from "ai";
-import { defineTool, type ToolContext, type ToolHandlerFailure, toolId } from "../contracts";
-import { ToolExecutionError } from "../executor/result";
-import { EDIT_TOOL_NAME } from "../toolNames";
-import { buildEditDisplayDiff } from "./editDisplayDiff";
-import { replaceEditText } from "./editMatch";
+import { defineTool, type ToolContext, type ToolHandlerFailure, toolId } from "../../contracts";
+import { assertNotAborted } from "../../executor/abort";
+import { ToolExecutionError } from "../../executor/result";
+import { EDIT_TOOL_NAME } from "../../names";
 import {
   clearReadFileStatesForPath,
   findReadFileStateForEdit,
   hashReadFileContent,
   matchesFileStat,
   recordEditedFileState,
-} from "./readFileState";
+} from "../../state/readFileState";
+import type { ToolLineEndings } from "../../text/lineEndings";
 import {
-  assertNotAborted,
   createToolTextFileAtomic,
   EDIT_FILE_MAX_BYTES,
   readToolTextFileForEdit,
   resolveToolWriteTarget,
-  type ToolLineEndings,
   writeToolTextFileAtomic,
-} from "./workspace";
+} from "../../workspace";
+import { buildEditDisplayDiff } from "./diff";
+import { replaceEditText } from "./match";
 
 interface EditInput {
   file_path: string;

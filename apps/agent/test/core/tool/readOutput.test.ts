@@ -3,7 +3,7 @@ import {
   createReadTextOutput,
   formatReadOutput,
   ReadOutputTooLargeError,
-} from "../../../src/core/tool/builtin/readOutput";
+} from "../../../src/core/tool/builtin/read/output";
 
 const BASE = { bytesRead: 10, filePath: "/tmp/a.txt", sizeBytes: 10 };
 

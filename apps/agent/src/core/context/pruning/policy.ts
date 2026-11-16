@@ -1,5 +1,5 @@
 /** 旧工具结果清理策略：哪些结果可清、保留多少最近结果和消息；不承载 token 阈值。 */
-import { GREP_TOOL_NAME, READ_TOOL_NAME, RUN_COMMAND_TOOL_NAME } from "../../tool/toolNames";
+import { GREP_TOOL_NAME, READ_TOOL_NAME, RUN_COMMAND_TOOL_NAME } from "../../tool/names";
 
 export interface ToolResultPruningPolicy {
   /** 允许清理旧结果的模型工具名；按 ModelMessage.toolName 匹配。 */

@@ -9,16 +9,16 @@ import {
   type ToolSessionContext,
   toolId,
 } from "../../../src/core/tool";
-import { executeGrep } from "../../../src/core/tool/builtin/grep";
-import { formatGrepOutput } from "../../../src/core/tool/builtin/grepOutput";
-import { executeRead } from "../../../src/core/tool/builtin/read";
-import { formatReadOutput } from "../../../src/core/tool/builtin/readOutput";
+import { formatGrepOutput } from "../../../src/core/tool/builtin/grep/output";
+import { executeGrep } from "../../../src/core/tool/builtin/grep/tool";
+import { formatReadOutput } from "../../../src/core/tool/builtin/read/output";
+import { executeRead } from "../../../src/core/tool/builtin/read/tool";
 import {
   EDIT_TOOL_NAME,
   GREP_TOOL_NAME,
   READ_TOOL_NAME,
   RUN_COMMAND_TOOL_NAME,
-} from "../../../src/core/tool/toolNames";
+} from "../../../src/core/tool/names";
 
 function context(
   workspaceRoot: string | null,

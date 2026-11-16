@@ -5,7 +5,7 @@
 
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { ToolExecutionError } from "../../executor/result";
+import { ToolExecutionError } from "../../../executor/result";
 
 export async function resolveShellWorkdir(
   workspaceRoot: string | null,

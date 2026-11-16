@@ -8,7 +8,7 @@ export {
   type ShellRuntime,
   type ShellRuntimeOptions,
   type ShellSyntax,
-} from "./builtin/shell/runtime";
+} from "./builtin/runCommand/shell/runtime";
 export {
   type AnyToolEntry,
   defineTool,

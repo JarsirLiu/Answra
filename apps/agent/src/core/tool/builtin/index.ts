@@ -1,10 +1,10 @@
 /** 通用 Agent 工具的唯一装配入口：组合根只调用这里注册内置工具。 */
 import type { ToolWorkerPaths } from "../contracts";
 import { ToolRegistry } from "../registry";
-import { editTool } from "./edit";
-import { grepTool } from "./grep";
-import { readTool } from "./read";
-import { createShellTools } from "./shell/tools";
+import { editTool } from "./edit/tool";
+import { grepTool } from "./grep/tool";
+import { readTool } from "./read/tool";
+import { createShellTools } from "./runCommand/tool";
 
 export function createBuiltinToolRegistry(
   options: { readonly workerPaths?: ToolWorkerPaths } = {},

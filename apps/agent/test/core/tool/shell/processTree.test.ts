@@ -3,7 +3,7 @@ import {
   buildWindowsJobBootstrap,
   JOB_MARKER_ENV,
   parseJobContainmentMarker,
-} from "../../../../src/core/tool/builtin/shell/processTree";
+} from "../../../../src/core/tool/builtin/runCommand/process/processTree";
 
 describe("shell process tree", () => {
   it("parses Job containment marker values", () => {

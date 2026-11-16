@@ -11,8 +11,11 @@ import {
 import type {
   ShellSessionSnapshot,
   ShellYieldTimePolicy,
-} from "../../../../src/core/tool/builtin/shell/sessions";
-import { createShellTools, type ShellTools } from "../../../../src/core/tool/builtin/shell/tools";
+} from "../../../../src/core/tool/builtin/runCommand/process/sessions";
+import {
+  createShellTools,
+  type ShellTools,
+} from "../../../../src/core/tool/builtin/runCommand/tool";
 
 const roots: string[] = [];
 const toolSets: ShellTools[] = [];

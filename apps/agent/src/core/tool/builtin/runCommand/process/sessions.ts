@@ -9,103 +9,34 @@ import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { StreamingShellDecoder } from "../../../text/streamDecoder";
+import { buildShellInvocation } from "../shell/runtime";
 import { buildWindowsJobBootstrap, JOB_MARKER_ENV, terminateProcessTree } from "./processTree";
 import {
-  buildShellInvocation,
-  SHELL_OUTPUT_BUFFER_BYTES,
-  StreamingShellDecoder,
-  stripPowerShellErrorWrapper,
-  truncateShellOutput,
-} from "./runtime";
-
-export type ShellSessionStatus = "running" | "completed" | "timed_out" | "killed";
-
-export interface ShellSessionSnapshot {
-  readonly status: ShellSessionStatus;
-  readonly sessionId?: string;
-  readonly stdout: string;
-  readonly stderr: string;
-  readonly exitCode?: number | null;
-  readonly signal?: string | null;
-  readonly outputTruncated?: boolean;
-  readonly outputOmittedBytes?: number;
-}
-
-export interface StartShellSessionOptions {
-  readonly command: string;
-  readonly cwd: string;
-  readonly yieldTimeMs?: number;
-  readonly timeoutMs?: number;
-  readonly maxOutputLength?: number;
-  readonly signal?: AbortSignal;
-}
-
-export interface WriteShellSessionOptions {
-  readonly sessionId: string;
-  readonly chars?: string;
-  readonly yieldTimeMs?: number;
-  readonly maxOutputLength?: number;
-  readonly signal?: AbortSignal;
-}
-
-export class ShellSessionNotFoundError extends Error {
-  constructor(sessionId: string) {
-    super(`Shell session 不存在: ${sessionId}`);
-    this.name = "ShellSessionNotFoundError";
-  }
-}
-
-type TerminalReason = "aborted" | "timed_out" | "cleanup";
-type OutputStream = "stdout" | "stderr";
-type Session = {
-  readonly child: ChildProcess;
-  readonly jobMarkerPath?: string | undefined;
-  readonly shellSyntax: "posix" | "powershell" | "cmd";
-  readonly stdoutText: string[];
-  readonly stderrText: string[];
-  readonly stdoutDecoder: StreamingShellDecoder;
-  readonly stderrDecoder: StreamingShellDecoder;
-  readonly done: Promise<void>;
-  readonly terminationStarted: Promise<void>;
-  termination?: Promise<void>;
-  readonly ownerSignal?: AbortSignal;
-  ownerAbort?: () => void;
-  resolveDone: () => void;
-  resolveTerminationStarted: () => void;
-  interactionTail: Promise<void>;
-  timeout: ReturnType<typeof setTimeout> | undefined;
-  terminalReason?: TerminalReason;
-  exitCode: number | null | undefined;
-  signal: string | null | undefined;
-  stdoutBytes: number;
-  stderrBytes: number;
-  stdoutEmittedChars: number;
-  stderrEmittedChars: number;
-  outputTruncated: boolean;
-  outputOmittedBytes: number;
-  lastAccess: number;
-};
-
-const DEFAULT_YIELD_MS = 10_000;
-const MIN_YIELD_MS = 250;
-const MIN_EMPTY_YIELD_MS = 5_000;
-const MAX_YIELD_MS = 30_000;
-const MAX_EMPTY_YIELD_MS = 300_000;
-const WINDOWS_INITIAL_YIELD_FLOOR_MS = 10_000;
-const DEFAULT_MAX_OUTPUT = 8_000;
-const MAX_SESSIONS = 32;
-const SHUTDOWN_WAIT_MS = 5_000;
-
-export interface ShellSessionManagerOptions {
-  readonly maxSessions?: number;
-  readonly yieldTimePolicy?: ShellYieldTimePolicy;
-}
-
-export type ShellYieldTimePolicy = (options: {
-  readonly phase: "start" | "write";
-  readonly hasInput: boolean;
-  readonly requestedMs?: number;
-}) => number;
+  createAbortError,
+  DEFAULT_YIELD_MS,
+  defaultYieldTimePolicy,
+  delay,
+  normalizeOptionalPositiveInteger,
+  normalizePositiveInteger,
+  normalizeSessionLimit,
+  type Session,
+  SHUTDOWN_WAIT_MS,
+  type ShellSessionManagerOptions,
+  ShellSessionNotFoundError,
+  type ShellSessionSnapshot,
+  type ShellYieldTimePolicy,
+  type StartShellSessionOptions,
+  type TerminalReason,
+  throwIfAborted,
+  type WriteShellSessionOptions,
+} from "./sessionContract";
+import {
+  appendSessionOutput,
+  flushSessionDecoders,
+  isSessionFinished,
+  snapshotSession,
+} from "./sessionOutput";
 
 export class ShellSessionManager {
   private readonly sessions = new Map<string, Session>();
@@ -137,10 +68,10 @@ export class ShellSessionManager {
         }),
       );
       this.throwIfSessionAborted(session);
-      return this.snapshot(id, session, options.maxOutputLength);
+      return snapshotSession(id, session, options.maxOutputLength);
     } catch (error: unknown) {
       this.removeSession(id, session);
-      if (!this.isFinished(session)) this.terminate(session, "cleanup");
+      if (!isSessionFinished(session)) this.terminate(session, "cleanup");
       this.trackShutdown(session);
       throw error;
     }
@@ -155,7 +86,7 @@ export class ShellSessionManager {
       return this.withAbortSignal(options.sessionId, session, options.signal, async () => {
         session.lastAccess = this.nextAccess();
         this.throwIfSessionAborted(session);
-        if (!this.isFinished(session) && options.chars)
+        if (!isSessionFinished(session) && options.chars)
           await this.writeInput(session, options.chars);
         await this.wait(
           session,
@@ -166,7 +97,7 @@ export class ShellSessionManager {
           }),
         );
         this.throwIfSessionAborted(session);
-        return this.snapshot(options.sessionId, session, options.maxOutputLength);
+        return snapshotSession(options.sessionId, session, options.maxOutputLength);
       });
     });
   }
@@ -230,8 +161,8 @@ export class ShellSessionManager {
       ...(options.signal !== undefined && { ownerSignal: options.signal }),
     };
 
-    child.stdout?.on("data", (data: Buffer) => this.append(session, "stdout", data));
-    child.stderr?.on("data", (data: Buffer) => this.append(session, "stderr", data));
+    child.stdout?.on("data", (data: Buffer) => appendSessionOutput(session, "stdout", data));
+    child.stderr?.on("data", (data: Buffer) => appendSessionOutput(session, "stderr", data));
     child.on("error", (error: Error) => this.handleSpawnError(session, error));
     child.on("close", (code, closeSignal) => this.handleClose(session, code, closeSignal));
     if (timeoutMs !== undefined) {
@@ -254,49 +185,14 @@ export class ShellSessionManager {
     if (signal.aborted) ownerAbort();
   }
 
-  private append(session: Session, stream: OutputStream, data: Buffer): void {
-    const availableBytes = Math.max(
-      SHELL_OUTPUT_BUFFER_BYTES - session.stdoutBytes - session.stderrBytes,
-      0,
-    );
-    if (availableBytes === 0) {
-      session.outputTruncated = true;
-      session.outputOmittedBytes += data.length;
-      return;
-    }
-
-    const chunk = data.subarray(0, availableBytes);
-    const decoder = stream === "stdout" ? session.stdoutDecoder : session.stderrDecoder;
-    const text = decoder.write(chunk);
-    if (text) this.appendText(session, stream, text);
-    if (stream === "stdout") session.stdoutBytes += chunk.length;
-    else session.stderrBytes += chunk.length;
-    if (chunk.length < data.length) {
-      session.outputTruncated = true;
-      session.outputOmittedBytes += data.length - chunk.length;
-    }
-  }
-
-  private appendText(session: Session, stream: OutputStream, text: string): void {
-    if (stream === "stdout") session.stdoutText.push(text);
-    else session.stderrText.push(text);
-  }
-
-  private flushDecoders(session: Session): void {
-    const stdout = session.stdoutDecoder.end();
-    const stderr = session.stderrDecoder.end();
-    if (stdout) this.appendText(session, "stdout", stdout);
-    if (stderr) this.appendText(session, "stderr", stderr);
-  }
-
   private handleSpawnError(session: Session, error: Error): void {
-    this.append(session, "stderr", Buffer.from(error.message, "utf8"));
+    appendSessionOutput(session, "stderr", Buffer.from(error.message, "utf8"));
     session.exitCode = 1;
     this.resolveProcessExit(session);
   }
 
   private handleClose(session: Session, code: number | null, signal: NodeJS.Signals | null): void {
-    this.flushDecoders(session);
+    flushSessionDecoders(session);
     if (session.terminalReason === undefined) {
       session.exitCode = code;
       session.signal = signal;
@@ -321,7 +217,7 @@ export class ShellSessionManager {
   }
 
   private markTerminated(session: Session, reason: TerminalReason): boolean {
-    if (this.isFinished(session)) return false;
+    if (isSessionFinished(session)) return false;
     session.terminalReason = reason;
     session.exitCode = null;
     session.signal = "SIGTERM";
@@ -336,7 +232,7 @@ export class ShellSessionManager {
   }
 
   private async wait(session: Session, milliseconds?: number): Promise<void> {
-    if (this.isFinished(session)) return;
+    if (isSessionFinished(session)) return;
     await Promise.race([
       session.done,
       session.terminationStarted,
@@ -360,32 +256,6 @@ export class ShellSessionManager {
     });
   }
 
-  private snapshot(id: string, session: Session, maxOutputLength?: number): ShellSessionSnapshot {
-    const limit = normalizePositiveInteger(maxOutputLength, DEFAULT_MAX_OUTPUT);
-    const stdoutText = session.stdoutText.join("");
-    const stderrRaw = session.stderrText.join("");
-    const stderrText =
-      session.shellSyntax === "powershell" ? stripPowerShellErrorWrapper(stderrRaw) : stderrRaw;
-    const stdoutResult = truncateShellOutput(stdoutText.slice(session.stdoutEmittedChars), limit);
-    const stderrResult = truncateShellOutput(stderrText.slice(session.stderrEmittedChars), limit);
-    session.stdoutEmittedChars = stdoutText.length;
-    session.stderrEmittedChars = stderrText.length;
-
-    const status = this.statusOf(session);
-    const outputTruncated =
-      session.outputTruncated || stdoutResult.truncated || stderrResult.truncated;
-    return {
-      status,
-      sessionId: id,
-      stdout: stdoutResult.value,
-      stderr: stderrResult.value,
-      ...(status !== "running" && { exitCode: session.exitCode ?? null }),
-      ...(session.signal !== undefined && { signal: session.signal }),
-      ...(outputTruncated && { outputTruncated: true }),
-      ...(session.outputOmittedBytes > 0 && { outputOmittedBytes: session.outputOmittedBytes }),
-    };
-  }
-
   private trackShutdown(session: Session): void {
     const shutdown = this.waitForShutdown(session);
     this.pendingShutdowns.add(shutdown);
@@ -396,19 +266,8 @@ export class ShellSessionManager {
     await Promise.race([session.termination ?? Promise.resolve(), delay(SHUTDOWN_WAIT_MS)]);
   }
 
-  private statusOf(session: Session): ShellSessionStatus {
-    if (session.terminalReason === "timed_out") return "timed_out";
-    if (session.terminalReason === "cleanup") return "killed";
-    if (session.exitCode !== undefined) return "completed";
-    return "running";
-  }
-
   private throwIfSessionAborted(session: Session): void {
     if (session.terminalReason === "aborted") throw createAbortError();
-  }
-
-  private isFinished(session: Session): boolean {
-    return session.terminalReason !== undefined || session.exitCode !== undefined;
   }
 
   private get(id: string): Session {
@@ -435,8 +294,8 @@ export class ShellSessionManager {
     const candidates = entries
       .filter(([id]) => !recentIds.has(id))
       .sort(([leftId, left], [rightId, right]) => {
-        const leftFinished = this.isFinished(left) ? 0 : 1;
-        const rightFinished = this.isFinished(right) ? 0 : 1;
+        const leftFinished = isSessionFinished(left) ? 0 : 1;
+        const rightFinished = isSessionFinished(right) ? 0 : 1;
         return (
           leftFinished - rightFinished ||
           left.lastAccess - right.lastAccess ||
@@ -448,7 +307,7 @@ export class ShellSessionManager {
 
     const [id, session] = candidate;
     this.removeSession(id, session);
-    if (!this.isFinished(session)) {
+    if (!isSessionFinished(session)) {
       this.terminate(session, "cleanup");
       this.trackShutdown(session);
     }
@@ -526,55 +385,11 @@ export class ShellSessionManager {
   }
 }
 
-function delay(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(resolve, milliseconds);
-    timer.unref();
-  });
-}
-
-function normalizeSessionLimit(value: number | undefined): number {
-  if (value === undefined) return MAX_SESSIONS;
-  if (!Number.isInteger(value) || value < 1 || value > MAX_SESSIONS) {
-    throw new Error(`Shell 会话数量上限必须在 1 到 ${MAX_SESSIONS} 之间。`);
-  }
-  return value;
-}
-
-function normalizePositiveInteger(value: number | undefined, fallback: number): number {
-  return value !== undefined && Number.isInteger(value) && value > 0 ? value : fallback;
-}
-
-function normalizeOptionalPositiveInteger(
-  value: number | undefined,
-  name: string,
-): number | undefined {
-  if (value === undefined) return undefined;
-  if (!Number.isInteger(value) || value <= 0) throw new Error(`${name} 必须是正整数。`);
-  return value;
-}
-
-function defaultYieldTimePolicy(options: Parameters<ShellYieldTimePolicy>[0]): number {
-  return normalizeShellYieldTime(options);
-}
-
-export function normalizeShellYieldTime(options: Parameters<ShellYieldTimePolicy>[0]): number {
-  const requestedMs = normalizePositiveInteger(options.requestedMs, DEFAULT_YIELD_MS);
-  const minimum = options.hasInput || options.phase === "start" ? MIN_YIELD_MS : MIN_EMPTY_YIELD_MS;
-  const maximum = options.hasInput || options.phase === "start" ? MAX_YIELD_MS : MAX_EMPTY_YIELD_MS;
-  const windowsInitialFloor =
-    process.platform === "win32" && options.phase === "start"
-      ? WINDOWS_INITIAL_YIELD_FLOOR_MS
-      : minimum;
-  return Math.min(Math.max(requestedMs, windowsInitialFloor), maximum);
-}
-
-function throwIfAborted(signal?: AbortSignal): void {
-  if (signal?.aborted) throw createAbortError();
-}
-
-function createAbortError(): Error {
-  const error = new Error("命令执行已取消");
-  error.name = "AbortError";
-  return error;
-}
+export type {
+  ShellSessionSnapshot,
+  ShellSessionStatus,
+  ShellYieldTimePolicy,
+  StartShellSessionOptions,
+  WriteShellSessionOptions,
+} from "./sessionContract";
+export { normalizeShellYieldTime, ShellSessionNotFoundError } from "./sessionContract";

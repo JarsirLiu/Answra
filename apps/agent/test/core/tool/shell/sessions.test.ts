@@ -1,4 +1,4 @@
-﻿import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -7,7 +7,7 @@ import {
   ShellSessionManager,
   type ShellSessionSnapshot,
   type ShellYieldTimePolicy,
-} from "../../../../src/core/tool/builtin/shell/sessions";
+} from "../../../../src/core/tool/builtin/runCommand/process/sessions";
 
 const managers: ShellSessionManager[] = [];
 const workspaces: string[] = [];

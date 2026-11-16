@@ -12,7 +12,7 @@
     ".": "./src/index.ts",
     "./composition": "./src/composition.ts",
     "./evaluation": "./src/interview/evaluation.ts",
-    "./grep-worker": "./src/core/tool/builtin/grepWorker.ts"
+    "./grep-worker": "./src/core/tool/builtin/grep/worker.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

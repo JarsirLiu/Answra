@@ -3,10 +3,10 @@ import {
   buildShellInvocation,
   decodeShellOutput,
   resolveShellRuntime,
-  StreamingShellDecoder,
   stripPowerShellErrorWrapper,
   truncateShellOutput,
-} from "../../../../src/core/tool/builtin/shell/runtime";
+} from "../../../../src/core/tool/builtin/runCommand/shell/runtime";
+import { StreamingShellDecoder } from "../../../../src/core/tool/text/streamDecoder";
 
 describe("shell runtime resolution", () => {
   it("reports Windows PowerShell even when SHELL points at a POSIX shell", () => {

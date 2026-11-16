@@ -5,14 +5,14 @@
 
 import { type ChildProcess, spawn } from "node:child_process";
 import { StringDecoder } from "node:string_decoder";
-import { terminateProcessTree } from "./processTree";
 import {
   buildShellInvocation,
   decodeShellOutput,
   SHELL_OUTPUT_BUFFER_BYTES,
   stripPowerShellErrorWrapper,
   truncateShellOutput,
-} from "./runtime";
+} from "../shell/runtime";
+import { terminateProcessTree } from "./processTree";
 
 export interface ShellAction {
   readonly command: string;

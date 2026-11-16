@@ -1,7 +1,7 @@
 /** Word 文本抽取：word-extractor 同时处理 OLE(.doc) 与 OpenXML(.docx)，不依赖 Office。 */
 
 import WordExtractor from "word-extractor";
-import { ToolExecutionError } from "../../executor/result";
+import { ToolExecutionError } from "../../../executor/result";
 
 export interface WordTextExtraction {
   readonly text: string;

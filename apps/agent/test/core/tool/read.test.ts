@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ReadFileStateMap, ToolContext } from "../../../src/core/tool";
-import { executeRead } from "../../../src/core/tool/builtin/read";
+import { executeRead } from "../../../src/core/tool/builtin/read/tool";
 
 function context(workspaceRoot: string | null, readFileState?: ReadFileStateMap): ToolContext {
   return {

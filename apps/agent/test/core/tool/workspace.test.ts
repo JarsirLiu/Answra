@@ -2,8 +2,8 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { assertNotAborted } from "../../../src/core/tool/executor/abort";
 import {
-  assertNotAborted,
   EDIT_FILE_MAX_BYTES,
   readToolTextFile,
   readToolTextFileForEdit,
@@ -12,7 +12,7 @@ import {
   resolveToolWriteFile,
   statToolFile,
   writeToolTextFileAtomic,
-} from "../../../src/core/tool/builtin/workspace";
+} from "../../../src/core/tool/workspace";
 
 describe("workspace path resolution", () => {
   const roots: string[] = [];

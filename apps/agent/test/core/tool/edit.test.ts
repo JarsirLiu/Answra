@@ -3,10 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ReadFileStateMap, ToolContext } from "../../../src/core/tool";
-import { editTool, executeEdit, formatEditOutput } from "../../../src/core/tool/builtin/edit";
-import { executeRead } from "../../../src/core/tool/builtin/read";
-import { createReadFileStateKey } from "../../../src/core/tool/builtin/readFileState";
-import { formatReadOutput } from "../../../src/core/tool/builtin/readOutput";
+import { editTool, executeEdit, formatEditOutput } from "../../../src/core/tool/builtin/edit/tool";
+import { formatReadOutput } from "../../../src/core/tool/builtin/read/output";
+import { executeRead } from "../../../src/core/tool/builtin/read/tool";
+import { createReadFileStateKey } from "../../../src/core/tool/state/readFileState";
 
 function context(workspaceRoot: string, readFileState?: ReadFileStateMap): ToolContext {
   return {

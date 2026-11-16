@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { replaceEditText } from "../../../src/core/tool/builtin/editMatch";
+import { replaceEditText } from "../../../src/core/tool/builtin/edit/match";
 
 describe("edit text matching", () => {
   it("replaces a unique exact match", () => {

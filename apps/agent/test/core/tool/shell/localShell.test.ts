@@ -1,6 +1,6 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { LocalShell } from "../../../../src/core/tool/builtin/shell/localShell";
+import { LocalShell } from "../../../../src/core/tool/builtin/runCommand/process/oneShot";
 
 describe("LocalShell", () => {
   it("rejects immediately when the signal is already aborted", async () => {
