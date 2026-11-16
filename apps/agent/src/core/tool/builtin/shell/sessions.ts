@@ -1,6 +1,6 @@
 /**
  * 可续接的 shell 会话：一次 start 在等待窗口内返回增量输出或 sessionId，
- * 后续 writeStdin 继续等待或写入 stdin；会话按 LRU 淘汰，进程树由
+ * 后续 RunCommand 以 sessionId 继续等待或写入 stdin；会话按 LRU 淘汰，进程树由
  * processTree.ts 统一收割。
  */
 
@@ -12,8 +12,8 @@ import path from "node:path";
 import { buildWindowsJobBootstrap, JOB_MARKER_ENV, terminateProcessTree } from "./processTree";
 import {
   buildShellInvocation,
-  decodeShellOutput,
   SHELL_OUTPUT_BUFFER_BYTES,
+  StreamingShellDecoder,
   stripPowerShellErrorWrapper,
   truncateShellOutput,
 } from "./runtime";
@@ -60,8 +60,11 @@ type OutputStream = "stdout" | "stderr";
 type Session = {
   readonly child: ChildProcess;
   readonly jobMarkerPath?: string | undefined;
-  readonly stdout: Buffer[];
-  readonly stderr: Buffer[];
+  readonly shellSyntax: "posix" | "powershell" | "cmd";
+  readonly stdoutText: string[];
+  readonly stderrText: string[];
+  readonly stdoutDecoder: StreamingShellDecoder;
+  readonly stderrDecoder: StreamingShellDecoder;
   readonly done: Promise<void>;
   readonly terminationStarted: Promise<void>;
   termination?: Promise<void>;
@@ -76,8 +79,8 @@ type Session = {
   signal: string | null | undefined;
   stdoutBytes: number;
   stderrBytes: number;
-  stdoutOffset: number;
-  stderrOffset: number;
+  stdoutEmittedChars: number;
+  stderrEmittedChars: number;
   outputTruncated: boolean;
   outputOmittedBytes: number;
   lastAccess: number;
@@ -192,7 +195,7 @@ export class ShellSessionManager {
     options: StartShellSessionOptions,
     timeoutMs: number | undefined,
   ): Session {
-    const { child, jobMarkerPath } = this.spawn(options.command, options.cwd);
+    const { child, jobMarkerPath, shellSyntax } = this.spawn(options.command, options.cwd);
     let resolveDone: () => void = () => undefined;
     const done = new Promise<void>((resolve) => {
       resolveDone = resolve;
@@ -204,8 +207,11 @@ export class ShellSessionManager {
     const session: Session = {
       child,
       jobMarkerPath,
-      stdout: [],
-      stderr: [],
+      shellSyntax,
+      stdoutText: [],
+      stderrText: [],
+      stdoutDecoder: new StreamingShellDecoder(),
+      stderrDecoder: new StreamingShellDecoder(),
       done,
       terminationStarted,
       resolveDone,
@@ -216,8 +222,8 @@ export class ShellSessionManager {
       signal: undefined,
       stdoutBytes: 0,
       stderrBytes: 0,
-      stdoutOffset: 0,
-      stderrOffset: 0,
+      stdoutEmittedChars: 0,
+      stderrEmittedChars: 0,
       outputTruncated: false,
       outputOmittedBytes: 0,
       lastAccess: this.nextAccess(),
@@ -259,14 +265,28 @@ export class ShellSessionManager {
       return;
     }
 
-    const chunk = Buffer.from(data.subarray(0, availableBytes));
-    session[stream].push(chunk);
+    const chunk = data.subarray(0, availableBytes);
+    const decoder = stream === "stdout" ? session.stdoutDecoder : session.stderrDecoder;
+    const text = decoder.write(chunk);
+    if (text) this.appendText(session, stream, text);
     if (stream === "stdout") session.stdoutBytes += chunk.length;
     else session.stderrBytes += chunk.length;
     if (chunk.length < data.length) {
       session.outputTruncated = true;
       session.outputOmittedBytes += data.length - chunk.length;
     }
+  }
+
+  private appendText(session: Session, stream: OutputStream, text: string): void {
+    if (stream === "stdout") session.stdoutText.push(text);
+    else session.stderrText.push(text);
+  }
+
+  private flushDecoders(session: Session): void {
+    const stdout = session.stdoutDecoder.end();
+    const stderr = session.stderrDecoder.end();
+    if (stdout) this.appendText(session, "stdout", stdout);
+    if (stderr) this.appendText(session, "stderr", stderr);
   }
 
   private handleSpawnError(session: Session, error: Error): void {
@@ -276,6 +296,7 @@ export class ShellSessionManager {
   }
 
   private handleClose(session: Session, code: number | null, signal: NodeJS.Signals | null): void {
+    this.flushDecoders(session);
     if (session.terminalReason === undefined) {
       session.exitCode = code;
       session.signal = signal;
@@ -341,19 +362,14 @@ export class ShellSessionManager {
 
   private snapshot(id: string, session: Session, maxOutputLength?: number): ShellSessionSnapshot {
     const limit = normalizePositiveInteger(maxOutputLength, DEFAULT_MAX_OUTPUT);
-    const stdout = Buffer.concat(session.stdout, session.stdoutBytes);
-    const stderr = Buffer.concat(session.stderr, session.stderrBytes);
-    const stdoutResult = truncateShellOutput(
-      decodeShellOutput(stdout.subarray(session.stdoutOffset)),
-      limit,
-    );
-    const stderrText = decodeShellOutput(stderr.subarray(session.stderrOffset));
-    const stderrResult = truncateShellOutput(
-      process.platform === "win32" ? stripPowerShellErrorWrapper(stderrText) : stderrText,
-      limit,
-    );
-    session.stdoutOffset = stdout.length;
-    session.stderrOffset = stderr.length;
+    const stdoutText = session.stdoutText.join("");
+    const stderrRaw = session.stderrText.join("");
+    const stderrText =
+      session.shellSyntax === "powershell" ? stripPowerShellErrorWrapper(stderrRaw) : stderrRaw;
+    const stdoutResult = truncateShellOutput(stdoutText.slice(session.stdoutEmittedChars), limit);
+    const stderrResult = truncateShellOutput(stderrText.slice(session.stderrEmittedChars), limit);
+    session.stdoutEmittedChars = stdoutText.length;
+    session.stderrEmittedChars = stderrText.length;
 
     const status = this.statusOf(session);
     const outputTruncated =
@@ -485,9 +501,13 @@ export class ShellSessionManager {
   private spawn(
     command: string,
     cwd: string,
-  ): { readonly child: ChildProcess; readonly jobMarkerPath?: string | undefined } {
+  ): {
+    readonly child: ChildProcess;
+    readonly jobMarkerPath?: string | undefined;
+    readonly shellSyntax: "posix" | "powershell" | "cmd";
+  } {
     const windows = process.platform === "win32";
-    // Windows 下每个会话独立 marker 文件，反馈 Job Object containment 结果。
+    // Windows 每个会话都用 marker 文件把 Job Object containment 结果带回。
     const jobMarkerPath = windows
       ? path.join(os.tmpdir(), `answra-shell-job-${randomUUID()}.marker`)
       : undefined;
@@ -502,7 +522,7 @@ export class ShellSessionManager {
       stdio: ["pipe", "pipe", "pipe"],
       ...(jobMarkerPath && { env: { ...process.env, [JOB_MARKER_ENV]: jobMarkerPath } }),
     });
-    return { child, jobMarkerPath };
+    return { child, jobMarkerPath, shellSyntax: invocation.syntax };
   }
 }
 

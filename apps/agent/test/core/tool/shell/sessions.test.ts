@@ -193,6 +193,44 @@ function registerCompletionTests(): void {
     });
   }, 30_000);
 
+  it("keeps a UTF-8 character split across output chunks", async () => {
+    const { manager, workspace } = await createHarness();
+    const command = await writeScript(
+      workspace,
+      "split-utf8.mjs",
+      [
+        "process.stdout.write(Buffer.from([0xe4, 0xb8]))",
+        "setTimeout(() => process.stdout.write(Buffer.from([0xad])), 100)",
+      ].join("\n"),
+    );
+
+    const started = await manager.start({
+      command,
+      cwd: workspace,
+      yieldTimeMs: 50,
+      timeoutMs: 20_000,
+    });
+    const { result, stdout } = await waitForCompletion(manager, started);
+
+    expect(result.status).toBe("completed");
+    expect(stdout).toBe("中");
+    expect(stdout).not.toContain("\uFFFD");
+  });
+
+  it("falls back to GBK for a complete non-UTF-8 session stream", async () => {
+    const { manager, workspace } = await createHarness();
+    const command = await writeScript(
+      workspace,
+      "gbk-output.mjs",
+      "process.stdout.write(Buffer.from([0xd6, 0xd0, 0xce, 0xc4]))",
+    );
+
+    const started = await manager.start({ command, cwd: workspace, yieldTimeMs: 5_000 });
+    const { stdout } = await waitForCompletion(manager, started);
+
+    expect(stdout).toBe("中文");
+  });
+
   it("returns a session for a long command and reads incremental output to completion", async () => {
     const { manager, workspace } = await createHarness();
     const command = await writeScript(

@@ -35,6 +35,47 @@ export async function resolveToolWriteFile(
   return target.target;
 }
 
+export interface ToolWriteTarget {
+  readonly target: string;
+  readonly exists: boolean;
+}
+
+/** 解析可创建或覆盖的写目标；父目录必须已存在，目标为目录时拒绝。 */
+export async function resolveToolWriteTarget(
+  root: string | null,
+  inputPath: string,
+): Promise<ToolWriteTarget> {
+  const absoluteTarget = resolveInputPath(root, inputPath);
+  assertAllowedPath(absoluteTarget);
+  let realParent: string;
+  try {
+    realParent = await fs.realpath(path.dirname(absoluteTarget));
+  } catch (error) {
+    if (isNotFound(error)) {
+      throw new ToolExecutionError("invalid-input", "写入目标的父目录不存在");
+    }
+    throw error;
+  }
+  assertAllowedPath(realParent);
+  const parentStat = await fs.stat(realParent);
+  if (!parentStat.isDirectory()) {
+    throw new ToolExecutionError("invalid-input", "写入目标的父路径不是目录");
+  }
+
+  const candidate = path.join(realParent, path.basename(absoluteTarget));
+  assertAllowedPath(candidate);
+  try {
+    const realTarget = await fs.realpath(candidate);
+    assertAllowedPath(realTarget);
+    const stat = await fs.stat(realTarget);
+    if (!stat.isFile()) throw new ToolExecutionError("invalid-input", "Agent 只能写入文件");
+    return { target: realTarget, exists: true };
+  } catch (error) {
+    if (isNotFound(error)) return { target: candidate, exists: false };
+    throw error;
+  }
+}
+
 export interface ToolTarget {
   readonly target: string;
   readonly kind: "file" | "directory";
@@ -187,6 +228,51 @@ export async function writeToolTextFileAtomic(
   }
 }
 
+export interface ToolTextCreateOptions {
+  readonly maxBytes?: number;
+  readonly mode?: number;
+}
+
+/** 以独占方式创建新文件；目标已存在时失败，不覆盖任何现有内容。 */
+export async function createToolTextFileAtomic(
+  target: string,
+  text: string,
+  options: ToolTextCreateOptions = {},
+): Promise<ToolTextWriteResult> {
+  const bytes = encodeText(normalizeLineEndings(text, "LF"), {
+    encoding: "utf8",
+    bom: false,
+  });
+  const maxBytes = options.maxBytes ?? EDIT_FILE_MAX_BYTES;
+  if (bytes.length > maxBytes) {
+    throw new ToolExecutionError(
+      "invalid-input",
+      `写入后文件 ${bytes.length} 字节，超过上限 ${maxBytes} 字节`,
+    );
+  }
+
+  let handle: FileHandle | undefined;
+  let created = false;
+  try {
+    handle = await fs.open(target, "wx", options.mode ?? 0o666);
+    created = true;
+    await handle.writeFile(bytes);
+    await handle.sync();
+    const stat = await handle.stat();
+    await handle.close();
+    handle = undefined;
+    return { sizeBytes: stat.size, mtimeMs: stat.mtimeMs };
+  } catch (error) {
+    if (handle) await closeQuietly(handle);
+    if (created) await removeQuietly(target);
+    if (error instanceof ToolExecutionError) throw error;
+    if (isAlreadyExists(error)) {
+      throw new ToolExecutionError("invalid-input", "目标文件已存在，请先 Read 后再写入");
+    }
+    throw new ToolExecutionError("handler-failed", `创建文件失败：${errorMessage(error)}`);
+  }
+}
+
 function decodeEditableText(bytes: Uint8Array): {
   text: string;
   encoding: ToolTextEncoding;
@@ -268,6 +354,23 @@ async function removeQuietly(target: string): Promise<void> {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isNotFound(error: unknown): boolean {
+  return isErrorCode(error, "ENOENT");
+}
+
+function isAlreadyExists(error: unknown): boolean {
+  return isErrorCode(error, "EEXIST");
+}
+
+function isErrorCode(error: unknown, code: string): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { readonly code?: unknown }).code === code
+  );
 }
 
 function resolveInputPath(root: string | null, inputPath: string): string {

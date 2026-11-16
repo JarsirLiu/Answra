@@ -23,16 +23,19 @@ export function presentEdit(context: ToolPresenterContext): ToolPresentation {
   const legacyText = typeof context.output === "string" ? context.output : undefined;
   const legacyReplacements = legacyText?.match(REPLACEMENTS_PATTERN);
   const count = replacements ?? (legacyReplacements ? Number(legacyReplacements[1]) : undefined);
+  const created = outputType === "created";
   const failure =
     context.errorText ?? (legacyText?.startsWith(FAILURE_PREFIX) === true ? legacyText : undefined);
   const details: ToolDetail[] = diff ? [{ kind: "diff", diff }] : [];
-  const resultLine = diff
-    ? `Added ${diff.additions} ${diff.additions === 1 ? "line" : "lines"}, removed ${diff.deletions} ${diff.deletions === 1 ? "line" : "lines"}`
-    : count !== undefined
-      ? `Replaced ${count} ${count === 1 ? "occurrence" : "occurrences"}`
-      : context.state === "completed"
-        ? "Updated file"
-        : undefined;
+  const resultLine = created
+    ? "Created file"
+    : diff
+      ? `Added ${diff.additions} ${diff.additions === 1 ? "line" : "lines"}, removed ${diff.deletions} ${diff.deletions === 1 ? "line" : "lines"}`
+      : count !== undefined
+        ? `Replaced ${count} ${count === 1 ? "occurrence" : "occurrences"}`
+        : context.state === "completed"
+          ? "Updated file"
+          : undefined;
   const primary = filePath ? fileName(filePath) : (context.title ?? "file");
   const secondary = filePath ? directoryName(filePath) : undefined;
 

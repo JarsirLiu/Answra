@@ -17,7 +17,6 @@ import {
   GREP_TOOL_NAME,
   READ_TOOL_NAME,
   RUN_COMMAND_TOOL_NAME,
-  WRITE_STDIN_TOOL_NAME,
 } from "../../../../src/core/tool/toolNames";
 
 const OPEN_POLICY: ToolResultPruningPolicy = {
@@ -51,14 +50,13 @@ function request(messages: ModelMessage[]) {
 }
 
 describe("pruneOldToolResults", () => {
-  it("clears old Read, Grep, and RunCommand results but not Edit or WriteStdin", () => {
+  it("clears old Read, Grep, and RunCommand results but not Edit", () => {
     const result = pruneOldToolResults({
       request: request([
         toolResult(READ_TOOL_NAME, "r".repeat(400)),
         toolResult(GREP_TOOL_NAME, "g".repeat(400)),
         toolResult(RUN_COMMAND_TOOL_NAME, "c".repeat(400)),
         toolResult(EDIT_TOOL_NAME, "e".repeat(400)),
-        toolResult(WRITE_STDIN_TOOL_NAME, "s".repeat(400)),
       ]),
       targetTokens: 0,
       policy: OPEN_POLICY,
@@ -75,7 +73,6 @@ describe("pruneOldToolResults", () => {
       PRUNED_TOOL_RESULT_TEXT,
       PRUNED_TOOL_RESULT_TEXT,
       "e".repeat(400),
-      "s".repeat(400),
     ]);
     expect(result.savedTokens).toBeGreaterThan(0);
   });

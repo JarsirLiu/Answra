@@ -102,7 +102,7 @@ describe("CLI coding host", () => {
     expect(body).toContain("Grep");
     expect(body).toContain("Edit");
     expect(body).toContain("RunCommand");
-    expect(body).toContain("WriteStdin");
+    expect(body).not.toContain("WriteStdin");
     expect(body).not.toContain("通用 AI 助手");
     expect(requests.at(-1)?.authorization).toBe(`Bearer ${ACCESS_TOKEN}`);
     expect(events.some((event) => event.runId === runId && event.event.type === "text-delta")).toBe(

@@ -18,7 +18,6 @@ import {
   GREP_TOOL_NAME,
   READ_TOOL_NAME,
   RUN_COMMAND_TOOL_NAME,
-  WRITE_STDIN_TOOL_NAME,
 } from "../../../src/core/tool/toolNames";
 
 function context(
@@ -59,7 +58,6 @@ describe("builtin workspace tools", () => {
       ["workspace.grep", GREP_TOOL_NAME],
       ["workspace.edit", EDIT_TOOL_NAME],
       ["workspace.run-command", RUN_COMMAND_TOOL_NAME],
-      ["workspace.write-stdin", WRITE_STDIN_TOOL_NAME],
     ]);
     expect(Object.keys(tools)).toEqual([READ_TOOL_NAME]);
   });
@@ -292,7 +290,6 @@ describe("builtin workspace tools", () => {
         toolId("workspace.grep"),
         toolId("workspace.edit"),
         toolId("workspace.run-command"),
-        toolId("workspace.write-stdin"),
       ],
       sessionContext(null),
     );
@@ -371,7 +368,11 @@ describe("builtin workspace tools", () => {
       outputTruncated: false,
     };
     expect(
-      tools.WriteStdin?.toModelOutput?.({ toolCallId: "stdin", input: {}, output: snapshot }),
+      tools.RunCommand?.toModelOutput?.({
+        toolCallId: "session",
+        input: {},
+        output: { kind: "session" as const, snapshot },
+      }),
     ).toEqual({ type: "text", value: JSON.stringify(snapshot) });
   });
 

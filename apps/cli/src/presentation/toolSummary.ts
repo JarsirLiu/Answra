@@ -24,12 +24,17 @@ export function summarizePresentation(presentation: ToolPresentation): ToolSumma
       if (presentation.meta) parts.push(presentation.meta);
       return { label: actionLabel("search"), target: parts.join(", ") };
     }
-    case "run":
+    case "run": {
+      const extras = [
+        ...(presentation.secondary ? [`in ${presentation.secondary}`] : []),
+        ...(presentation.meta ? [presentation.meta] : []),
+      ];
       return {
         label: actionLabel("run"),
         target: presentation.primary,
-        ...(presentation.secondary ? { extra: ` in ${presentation.secondary}` } : {}),
+        ...(extras.length > 0 ? { extra: ` ${extras.join(" ")}` } : {}),
       };
+    }
     case "write":
       return {
         label: actionLabel("write"),

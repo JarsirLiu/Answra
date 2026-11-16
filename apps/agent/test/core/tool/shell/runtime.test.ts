@@ -3,17 +3,38 @@ import {
   buildShellInvocation,
   decodeShellOutput,
   resolveShellRuntime,
+  StreamingShellDecoder,
   stripPowerShellErrorWrapper,
   truncateShellOutput,
 } from "../../../../src/core/tool/builtin/shell/runtime";
 
 describe("shell runtime resolution", () => {
   it("reports Windows PowerShell even when SHELL points at a POSIX shell", () => {
-    const runtime = resolveShellRuntime({ platform: "win32", shell: "/bin/bash" });
+    const runtime = resolveShellRuntime({
+      platform: "win32",
+      shell: "/bin/bash",
+      findExecutable: () => undefined,
+    });
 
     expect(runtime).toEqual({
       executable: "powershell.exe",
       displayName: "Windows PowerShell 5.1 (powershell.exe)",
+      kind: "powershell",
+      syntax: "powershell",
+    });
+  });
+
+  it("prefers pwsh when it is available on Windows", () => {
+    const runtime = resolveShellRuntime({
+      platform: "win32",
+      findExecutable: (name) =>
+        name === "pwsh" ? "C:\\Program Files\\PowerShell\\7\\pwsh.exe" : undefined,
+    });
+
+    expect(runtime).toMatchObject({
+      executable: "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+      displayName: "PowerShell 7+ (pwsh)",
+      kind: "pwsh",
       syntax: "powershell",
     });
   });
@@ -24,17 +45,29 @@ describe("shell runtime resolution", () => {
     expect(runtime).toEqual({
       executable: "/bin/zsh",
       displayName: "/bin/zsh",
+      kind: "zsh",
       syntax: "posix",
     });
     expect(
       buildShellInvocation("echo ok", { platform: "linux", shell: "/bin/zsh" }).executable,
     ).toBe(runtime.executable);
   });
+
+  it("uses zsh on macOS and falls back from a non-POSIX SHELL", () => {
+    expect(resolveShellRuntime({ platform: "darwin", shell: "/bin/fish" })).toMatchObject({
+      executable: "/bin/zsh",
+      kind: "zsh",
+      syntax: "posix",
+    });
+  });
 });
 
 describe("shell runtime invocation", () => {
   it("uses PowerShell and puts encoding, command, and exit-code trailer in one script", () => {
-    const invocation = buildShellInvocation('Write-Output "ok"', { platform: "win32" });
+    const invocation = buildShellInvocation('Write-Output "ok"', {
+      platform: "win32",
+      findExecutable: () => undefined,
+    });
 
     expect(invocation.executable).toBe("powershell.exe");
     expect(invocation.args.slice(0, 4)).toEqual([
@@ -52,6 +85,7 @@ describe("shell runtime invocation", () => {
   it("places the Windows Job Object bootstrap before the user command", () => {
     const invocation = buildShellInvocation('Write-Output "ok"', {
       platform: "win32",
+      findExecutable: () => undefined,
       windowsBootstrap: "$__answraJobContained = $true",
     });
     const script = invocation.args[4];
@@ -64,6 +98,9 @@ describe("shell runtime invocation", () => {
   it("uses shell -c on POSIX without injecting the PowerShell prefix", () => {
     expect(buildShellInvocation("printf ok", { platform: "linux", shell: "/bin/bash" })).toEqual({
       executable: "/bin/bash",
+      displayName: "/bin/bash",
+      kind: "bash",
+      syntax: "posix",
       args: ["-c", "printf ok"],
     });
   });
@@ -74,12 +111,18 @@ describe("shell runtime invocation", () => {
       delete process.env.SHELL;
       expect(buildShellInvocation("echo ok", { platform: "linux" })).toEqual({
         executable: "sh",
+        displayName: "sh",
+        kind: "sh",
+        syntax: "posix",
         args: ["-c", "echo ok"],
       });
 
       process.env.SHELL = "";
       expect(buildShellInvocation("echo ok", { platform: "linux" })).toEqual({
         executable: "sh",
+        displayName: "sh",
+        kind: "sh",
+        syntax: "posix",
         args: ["-c", "echo ok"],
       });
     } finally {
@@ -102,12 +145,49 @@ describe("shell runtime invocation", () => {
   });
 });
 
+describe("streaming shell decoder", () => {
+  it("keeps a UTF-8 character split across chunks", () => {
+    const decoder = new StreamingShellDecoder();
+
+    expect(decoder.write(Buffer.from([0xe4, 0xb8]))).toBe("");
+    expect(decoder.write(Buffer.from([0xad]))).toBe("中");
+    expect(decoder.end()).toBe("");
+  });
+
+  it("falls back to GBK only when complete bytes are not UTF-8", () => {
+    const decoder = new StreamingShellDecoder();
+
+    expect(decoder.write(Buffer.from([0xd6]))).toBe("");
+    expect(decoder.write(Buffer.from([0xd0]))).toBe("中");
+  });
+
+  it("keeps a literal replacement character that is valid UTF-8", () => {
+    const decoder = new StreamingShellDecoder();
+
+    expect(decoder.write(Buffer.from([0xef, 0xbf, 0xbd]))).toBe("\uFFFD");
+  });
+});
+
 describe("shell runtime output", () => {
   it("prefers UTF-8 and falls back to GBK for non-UTF-8 output", () => {
     expect(decodeShellOutput(Buffer.from("中文输出", "utf8"))).toBe("中文输出");
     expect(decodeShellOutput(Buffer.from([0xd6, 0xd0, 0xce, 0xc4, 0xb4, 0xed, 0xce, 0xf3]))).toBe(
       "中文错误",
     );
+  });
+
+  it("keeps valid UTF-8 that contains a literal replacement character", () => {
+    const output = Buffer.concat([
+      Buffer.from("before ", "utf8"),
+      Buffer.from([0xef, 0xbf, 0xbd]),
+      Buffer.from(" after 中文", "utf8"),
+    ]);
+
+    expect(decodeShellOutput(output)).toBe("before \uFFFD after 中文");
+  });
+
+  it("returns decoded strings without reinterpreting their bytes", () => {
+    expect(decodeShellOutput("旧内容 \uFFFD 中文")).toBe("旧内容 \uFFFD 中文");
   });
 
   it("keeps head and tail, reports omitted characters, and does not split Unicode characters", () => {

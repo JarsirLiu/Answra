@@ -24,7 +24,7 @@ describe("interview rehearsal agent", () => {
     expect(request.system).toContain("面试演练官");
     expect(request.system).not.toContain("上次修改：");
     expect(Object.keys(request.tools ?? {})).toEqual(
-      expect.arrayContaining(["Read", "Grep", "Edit", "RunCommand", "WriteStdin"]),
+      expect.arrayContaining(["Read", "Grep", "Edit", "RunCommand"]),
     );
     await tools.dispose();
   });

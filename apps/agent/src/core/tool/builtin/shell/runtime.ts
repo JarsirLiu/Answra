@@ -3,10 +3,16 @@
  * 一次性命令与会话命令共用这里，避免两条路径的编码和错误语义再次漂移。
  */
 
+import { isUtf8 } from "node:buffer";
+import { existsSync } from "node:fs";
+import path from "node:path";
+
 export const SHELL_OUTPUT_BUFFER_BYTES = 10 * 1024 * 1024;
 
-const POWERSHELL_EXECUTABLE = "powershell.exe";
-const POWERSHELL_DISPLAY_NAME = "Windows PowerShell 5.1 (powershell.exe)";
+const POWERSHELL_5_EXECUTABLE = "powershell.exe";
+const POWERSHELL_5_DISPLAY_NAME = "Windows PowerShell 5.1 (powershell.exe)";
+const POWERSHELL_7_DISPLAY_NAME = "PowerShell 7+ (pwsh)";
+const CMD_DISPLAY_NAME = "cmd.exe";
 
 const POWERSHELL_PREFIX = [
   "[Console]::InputEncoding = New-Object System.Text.UTF8Encoding($false)",
@@ -23,41 +29,144 @@ const POWERSHELL_ECHO_START =
 const POWERSHELL_CATEGORY_LINE = /(?:^|\r?\n)\s*\+\s+(?:CategoryInfo|FullyQualifiedErrorId)\b/u;
 const POWERSHELL_LOCATION_LINE = /^\s*(?:At line:|所在位置 行:)/u;
 
-export interface ShellInvocation {
+export type ShellKind = "bash" | "zsh" | "sh" | "dash" | "ksh" | "pwsh" | "powershell" | "cmd";
+
+export type ShellSyntax = "posix" | "powershell" | "cmd";
+
+export interface ShellRuntime {
   readonly executable: string;
-  readonly args: readonly string[];
+  readonly displayName: string;
+  readonly kind: ShellKind;
+  readonly syntax: ShellSyntax;
 }
 
 export interface ShellRuntimeOptions {
   readonly platform?: NodeJS.Platform;
   readonly shell?: string;
+  readonly env?: NodeJS.ProcessEnv;
+  /** 测试注入；返回可执行文件路径，未找到时返回 undefined。 */
+  readonly findExecutable?: (name: string) => string | undefined;
 }
 
-/** 当前平台上真正会被执行的 shell；提示词与 spawn 共用这一份事实。 */
-export interface ShellRuntime {
-  readonly executable: string;
-  readonly displayName: string;
-  readonly syntax: "powershell" | "posix";
+export interface ShellInvocation extends ShellRuntime {
+  readonly args: readonly string[];
 }
 
 export interface ShellInvocationOptions extends ShellRuntimeOptions {
   readonly windowsBootstrap?: string;
 }
 
+const POSIX_SHELLS = new Set(["bash", "zsh", "sh", "dash", "ksh"]);
+
 export function resolveShellRuntime(options: ShellRuntimeOptions = {}): ShellRuntime {
   const platform = options.platform ?? process.platform;
-  if (platform === "win32") {
+  const env = options.env ?? process.env;
+  // 只检测 Windows 的 powershell/pwsh；POSIX 的 shell 由 SHELL 或固定兜底决定。
+  const findExecutable =
+    options.findExecutable ?? ((name: string) => findWindowsExecutable(name, env));
+
+  if (platform === "win32") return resolveWindowsShell(options.shell, env, findExecutable);
+  return resolvePosixShell(options.shell ?? env.SHELL, platform);
+}
+
+function resolveWindowsShell(
+  configured: string | undefined,
+  env: NodeJS.ProcessEnv,
+  findExecutable: (name: string) => string | undefined,
+): ShellRuntime {
+  const explicit = normalizeWindowsShell(configured, env, findExecutable);
+  if (explicit) return explicit;
+
+  const pwsh = findExecutable("pwsh") ?? findExecutable("pwsh.exe");
+  if (pwsh) return powershellRuntime("pwsh", pwsh);
+  return powershellRuntime("powershell", POWERSHELL_5_EXECUTABLE);
+}
+
+function normalizeWindowsShell(
+  value: string | undefined,
+  env: NodeJS.ProcessEnv,
+  findExecutable: (name: string) => string | undefined,
+): ShellRuntime | undefined {
+  if (!value) return undefined;
+  const name = path.win32.basename(value).toLowerCase();
+  if (name === "pwsh" || name === "pwsh.exe") {
+    return powershellRuntime("pwsh", findExecutable("pwsh") ?? value);
+  }
+  if (name === "powershell" || name === "powershell.exe") {
+    return powershellRuntime("powershell", value);
+  }
+  if (name === "cmd" || name === "cmd.exe") {
     return {
-      executable: POWERSHELL_EXECUTABLE,
-      displayName: POWERSHELL_DISPLAY_NAME,
-      syntax: "powershell",
+      executable: value || env.ComSpec || "cmd.exe",
+      displayName: CMD_DISPLAY_NAME,
+      kind: "cmd",
+      syntax: "cmd",
     };
   }
+  return undefined;
+}
 
-  const configuredShell = options.shell ?? process.env.SHELL;
-  const executable =
-    configuredShell === undefined || configuredShell === "" ? "sh" : configuredShell;
-  return { executable, displayName: executable, syntax: "posix" };
+function powershellRuntime(kind: "pwsh" | "powershell", executable: string): ShellRuntime {
+  return {
+    executable,
+    displayName: kind === "pwsh" ? POWERSHELL_7_DISPLAY_NAME : POWERSHELL_5_DISPLAY_NAME,
+    kind,
+    syntax: "powershell",
+  };
+}
+
+function resolvePosixShell(
+  configured: string | undefined,
+  platform: NodeJS.Platform,
+): ShellRuntime {
+  const candidate = configured?.trim();
+  if (candidate && isPosixShell(candidate)) return posixRuntime(candidate);
+  return posixRuntime(platform === "darwin" ? "/bin/zsh" : "sh");
+}
+
+function isPosixShell(executable: string): boolean {
+  const name = path.basename(executable).toLowerCase();
+  return POSIX_SHELLS.has(name);
+}
+
+function posixRuntime(executable: string): ShellRuntime {
+  const name = path.basename(executable).toLowerCase();
+  const kind: ShellKind = POSIX_SHELLS.has(name) ? (name as ShellKind) : "sh";
+  return { executable, displayName: executable, kind, syntax: "posix" };
+}
+
+function findWindowsExecutable(name: string, env: NodeJS.ProcessEnv): string | undefined {
+  if (process.platform !== "win32") return undefined;
+  const pathValue = env.PATH ?? env.Path ?? "";
+  const extensions = (env.PATHEXT ?? ".EXE;.CMD;.BAT;.COM")
+    .split(";")
+    .filter(Boolean)
+    .map((extension) => extension.toLowerCase());
+  const names = path.win32.extname(name)
+    ? [name]
+    : extensions.map((extension) => `${name}${extension}`);
+  for (const directory of pathValue.split(";")) {
+    if (!directory) continue;
+    for (const candidate of names) {
+      const fullPath = path.win32.join(directory, candidate);
+      if (existsSync(fullPath)) return fullPath;
+    }
+  }
+  return undefined;
+}
+
+/** 给模型提示用的 shell 语法事实；不参与 spawn。 */
+export function describeShellSyntax(runtime: ShellRuntime): string {
+  if (runtime.kind === "powershell") {
+    return "使用 Windows PowerShell 5.1 语法；不支持 &&，顺序执行用 `cmd1; if ($?) { cmd2 }`；路径使用 Windows 分隔符。";
+  }
+  if (runtime.kind === "pwsh") {
+    return "使用 PowerShell 7+ 语法；支持 &&，路径使用当前平台分隔符。";
+  }
+  if (runtime.kind === "cmd") {
+    return "使用 cmd.exe 语法；环境变量用 %VAR%，顺序执行用 &&。";
+  }
+  return "使用 POSIX shell 语法；路径使用 /，顺序执行可用 &&。";
 }
 
 export interface TruncatedShellOutput {
@@ -69,9 +178,9 @@ export interface TruncatedShellOutput {
 /**
  * 构造跨平台 shell 调用参数。
  *
- * Windows 的编码前缀、Job Object 引导和退出码收尾都放在同一条 `-Command`
- * 脚本里；POSIX 直接执行 `$SHELL -c`。一次性命令与会话命令共用此入口，
- * 避免两条路径的 PowerShell 语义再次漂移。
+ * PowerShell 的编码前缀、Job Object 引导和退出码收尾都放在同一条 `-Command`
+ * 脚本里；POSIX 直接执行 shell -c；cmd.exe 用 /d /s /c。一次性命令与会话命令
+ * 共用此入口，避免两条路径的 shell 语义再次漂移。
  */
 export function buildShellInvocation(
   command: string,
@@ -79,7 +188,10 @@ export function buildShellInvocation(
 ): ShellInvocation {
   const runtime = resolveShellRuntime(options);
   if (runtime.syntax === "posix") {
-    return { executable: runtime.executable, args: ["-c", command] };
+    return { ...runtime, args: ["-c", command] };
+  }
+  if (runtime.syntax === "cmd") {
+    return { ...runtime, args: ["/d", "/s", "/c", command] };
   }
 
   const script = [
@@ -91,18 +203,79 @@ export function buildShellInvocation(
     .filter((part): part is string => Boolean(part))
     .join("\n");
   return {
-    executable: runtime.executable,
+    ...runtime,
     args: ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script],
   };
 }
 
 export function decodeShellOutput(value: Buffer | string): string {
-  const bytes = Buffer.isBuffer(value) ? value : Buffer.from(value);
-  const utf8 = new TextDecoder("utf-8").decode(bytes);
-  if (!utf8.includes("\uFFFD")) return utf8;
+  if (typeof value === "string") return value;
 
-  // Windows 中文环境通常使用 GBK（代码页 936）输出 PowerShell 错误文本。
-  return new TextDecoder("gbk").decode(bytes);
+  try {
+    // A literal U+FFFD is valid UTF-8; only an invalid byte sequence may fall back to GBK.
+    return new TextDecoder("utf-8", { fatal: true }).decode(value);
+  } catch {
+    // Windows 中文环境通常使用 GBK（代码页 936）输出 PowerShell 错误文本。
+    return new TextDecoder("gbk").decode(value);
+  }
+}
+
+/**
+ * 会话输出跨 chunk 解码：UTF-8 多字节字符先留住不完整尾部，完整非法序列才回退 GBK。
+ * 只在同一 stream 内使用；编码一旦回退，后续 chunk 继续按 GBK 解，避免逐 chunk 反复猜。
+ */
+export class StreamingShellDecoder {
+  private pending: Buffer = Buffer.alloc(0);
+  private mode: "utf8" | "gbk" = "utf8";
+  private readonly gbk = new TextDecoder("gbk");
+
+  write(chunk: Buffer): string {
+    if (this.mode === "gbk") return this.gbk.decode(chunk, { stream: true });
+    if (chunk.length === 0) return "";
+
+    const bytes = this.pending.length === 0 ? chunk : Buffer.concat([this.pending, chunk]);
+    const completeLength = utf8CompleteLength(bytes);
+    this.pending = bytes.subarray(completeLength);
+    if (completeLength === 0) return "";
+
+    const complete = bytes.subarray(0, completeLength);
+    if (!isUtf8(complete)) {
+      this.mode = "gbk";
+      this.pending = Buffer.alloc(0);
+      return this.gbk.decode(complete, { stream: true });
+    }
+    return complete.toString("utf8");
+  }
+
+  end(): string {
+    const pending = this.pending;
+    this.pending = Buffer.alloc(0);
+    if (this.mode === "gbk") return this.gbk.decode();
+    if (pending.length === 0) return "";
+    if (isUtf8(pending)) return pending.toString("utf8");
+    this.mode = "gbk";
+    return this.gbk.decode(pending);
+  }
+}
+
+function utf8CompleteLength(bytes: Buffer): number {
+  let start = bytes.length - 1;
+  while (start >= 0 && ((bytes[start] ?? 0) & 0b1100_0000) === 0b1000_0000) start -= 1;
+  if (start < 0) return bytes.length;
+
+  const expected = utf8SequenceLength(bytes[start] ?? 0);
+  const available = bytes.length - start;
+  if (expected <= available) return bytes.length;
+  // 尾部看起来像不完整序列时，只有它前面的字节已经是合法 UTF-8 才能等待下一块。
+  return isUtf8(bytes.subarray(0, start)) ? start : bytes.length;
+}
+
+function utf8SequenceLength(byte: number): number {
+  if (byte < 0x80) return 1;
+  if ((byte & 0b1110_0000) === 0b1100_0000) return 2;
+  if ((byte & 0b1111_0000) === 0b1110_0000) return 3;
+  if ((byte & 0b1111_1000) === 0b1111_0000) return 4;
+  return 1;
 }
 
 export function truncateShellOutput(value: string, maxLength: number): TruncatedShellOutput {

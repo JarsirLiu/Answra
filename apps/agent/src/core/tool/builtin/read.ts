@@ -7,7 +7,7 @@ import { defineTool, type ToolContext, toolId } from "../contracts";
 import { ToolExecutionError } from "../executor/result";
 import { READ_TOOL_NAME } from "../toolNames";
 import { readDocumentText } from "./documents/documentText";
-import { createReadFileStateKey, isCachedReadFresh } from "./readFileState";
+import { createReadFileStateKey, hashReadFileContent, isCachedReadFresh } from "./readFileState";
 import {
   createReadTextOutput,
   formatReadOutput,
@@ -142,6 +142,7 @@ export async function executeRead(context: ToolContext, input: ReadInput): Promi
       text: read.text,
     });
     context.readFileState?.set(key, {
+      contentHash: hashReadFileContent(read.text),
       limit,
       mtimeMs: Math.trunc(stat.mtimeMs),
       offset,

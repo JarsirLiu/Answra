@@ -44,7 +44,10 @@ export function EditToolCall({ part }: ToolCallRendererProps) {
   const rawError = part.errorText ?? businessError;
   const error = rawError ? clipText(rawError, MAX_TOOL_VALUE_CHARS) : undefined;
   const malformed =
-    part.output !== undefined && outputText === undefined && outputType !== "edited"
+    part.output !== undefined &&
+    outputText === undefined &&
+    outputType !== "edited" &&
+    outputType !== "created"
       ? clipText(formatToolValue(part.output), MAX_TOOL_VALUE_CHARS)
       : undefined;
   const structuredDiff = useMemo(() => {

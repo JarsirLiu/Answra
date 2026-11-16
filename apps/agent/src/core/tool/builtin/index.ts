@@ -17,6 +17,5 @@ export function createBuiltinToolRegistry(
   registry.register(grepTool);
   registry.register(editTool);
   registry.register(shell.runCommand);
-  registry.register(shell.writeStdin);
   return registry;
 }

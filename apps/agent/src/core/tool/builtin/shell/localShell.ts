@@ -38,6 +38,7 @@ type ShellStream = "stdout" | "stderr";
 interface ShellProcessOptions {
   readonly executable: string;
   readonly args: readonly string[];
+  readonly syntax: "posix" | "powershell" | "cmd";
   readonly cwd: string;
   readonly timeoutMs: number;
   readonly maxOutputLength: number;
@@ -48,6 +49,7 @@ interface ShellProcessOptions {
 interface ShellProcessState {
   readonly child: ChildProcess;
   readonly output: OutputCollector;
+  readonly syntax: "posix" | "powershell" | "cmd";
   readonly signal: AbortSignal | undefined;
   readonly maxOutputLength: number;
   exitCode: number | null;
@@ -70,6 +72,7 @@ export class LocalShell {
     return runShellProcess({
       executable: invocation.executable,
       args: invocation.args,
+      syntax: invocation.syntax,
       cwd: action.cwd,
       timeoutMs,
       maxOutputLength,
@@ -94,6 +97,7 @@ function runShellProcess(options: ShellProcessOptions): Promise<ShellOutputResul
     const state: ShellProcessState = {
       child,
       output: new OutputCollector(),
+      syntax: options.syntax,
       signal: options.signal,
       maxOutputLength: options.maxOutputLength,
       exitCode: null,
@@ -167,7 +171,7 @@ function settleShellProcess(
   }
 
   const stdout = state.output.snapshot(state.maxOutputLength);
-  const stderr = formatShellStderr(stdout.stderr, state.terminationReason, error);
+  const stderr = formatShellStderr(stdout.stderr, state.syntax, state.terminationReason, error);
   if (state.terminationReason === "timeout") {
     resolve({ stdout: stdout.stdout, stderr, outcome: { type: "timeout" } });
     return;
@@ -185,10 +189,11 @@ function settleShellProcess(
 
 function formatShellStderr(
   stderr: string,
+  syntax: "posix" | "powershell" | "cmd",
   reason: TerminationReason | undefined,
   error: Error | undefined,
 ): string {
-  const cleaned = process.platform === "win32" ? stripPowerShellErrorWrapper(stderr) : stderr;
+  const cleaned = syntax === "powershell" ? stripPowerShellErrorWrapper(stderr) : stderr;
   if (reason === "output-limit") {
     return [
       cleaned,

@@ -74,7 +74,7 @@ interface EditInput {
 - `maxOutputBytes` 与 `resultBudget.maxModelChars`：20_000。模型结果只返回短回执，不返回整个文件或完整 diff。
 - `inputSchema` 使用 `JSONSchema7`，不引入 zod。
 - `validateInput` 只补 schema 无法表达的跨字段约束：
-  - `old_string` 为空：拒绝。本期不支持新建文件，新建留给后续 `Write` 工具。
+  - `old_string` 为空：进入创建模式；目标必须不存在。2026-11-16 修订，详见下方“后续修订”。
   - `old_string === new_string`：拒绝，避免无意义写盘。
   - `replace_all` 必须是布尔值。
 - 单文件上限 1 MiB；超过时明确失败，不截断后编辑。
@@ -84,7 +84,7 @@ interface EditInput {
 Edit 必须先证明“模型看过这个文件，而且文件没变”：
 
 1. 解析目标路径并 `realpath`，继续排除 `.git`、`.svn`、`.hg`、`.bzr`、`.jj`、`.sl` 目录。
-2. 目标必须是已存在的普通文件；不新建、不跟随目录、不删除。
+2. 编辑模式要求目标是已存在的普通文件；创建模式要求目标不存在，且父目录已存在。两种模式都不跟随目录目标、不删除文件。
 3. `readFileState` 必须存在。缺失时 fail-closed，返回“当前会话没有文件读取状态，不能编辑”。不允许因为状态缺失就跳过校验。
 4. 在 `readFileState` 中查找该路径最近一次读取记录：
    - 找不到：失败，提示先 `Read`。
@@ -187,9 +187,16 @@ interface EditOutput {
 ## 影响表面
 
 - 用户可在普通对话中让模型修改工作区文本文件；修改前必须已经通过 `Read` 看过该文件，否则明确失败。
-- 模型能删除文本范围（`new_string` 为空），但不能新建文件、重命名或删除文件；这些能力留给后续独立工具。
+- 模型能删除文本范围（`new_string` 为空），也能用空 `old_string` 新建文件；重命名和删除文件仍没有专用工具。
 - UI 工具卡新增 `Edit`：摘要是文件名；展开为多 hunk 行级 diff，带文件名、`+N -M`、复制修改后片段、每个 hunk 前后各 3 行真实文件上下文、hunk 间未修改行数，以及失败原因与“未写入文件”提示。结构化 `diff` 缺失时回退到 `old_string`/`new_string` 的单段兼容展示。
 - 用户仍是最终风险承担者：本期没有逐次审批，模型在获得授权的 profile 内可直接写入。
+
+## 后续修订（2026-11-16）
+
+- `old_string` 为空不再一律拒绝：目标文件不存在时创建新文件；目标已存在时仍拒绝，避免空 `old_string` 隐式整文件覆盖。
+- 新文件使用独占创建、UTF-8 无 BOM、LF，并输出 `type: "created"` 与新增行 diff。
+- 已有文件的编辑仍要求完整 `Read`、读取基线校验和原子写回。
+- 详细取舍见 [Edit 工具支持创建文件](2026-11-16-workspace-edit-create-file.md)。
 
 ## 曾考虑的替代方案
 

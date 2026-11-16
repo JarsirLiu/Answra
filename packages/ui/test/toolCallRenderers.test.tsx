@@ -4,7 +4,6 @@ import { EditToolCall } from "../src/components/tool-call/renderers/edit";
 import { GrepToolCall } from "../src/components/tool-call/renderers/grep";
 import { ReadToolCall } from "../src/components/tool-call/renderers/read";
 import { RunCommandToolCall } from "../src/components/tool-call/renderers/runCommand";
-import { WriteStdinToolCall } from "../src/components/tool-call/renderers/writeStdin";
 import { resolveToolCallRenderer } from "../src/components/tool-call/resolveToolCallRenderer";
 import { ToolCallFallback } from "../src/components/tool-call/ToolCallFallback";
 import type { ToolCallPart } from "../src/components/tool-call/toolCallPart";
@@ -303,6 +302,44 @@ describe("tool call renderers", () => {
     expect(screen.getByText("2 处替换")).toBeInTheDocument();
   });
 
+  it("renders a created Edit output as a new file diff", () => {
+    render(
+      <EditToolCall
+        part={toolPart(
+          "Edit",
+          { file_path: "src/new.ts", old_string: "", new_string: "hello\n" },
+          {
+            type: "created",
+            replacements: 0,
+            replaceAll: false,
+            diff: {
+              hunks: [
+                {
+                  oldStart: 1,
+                  oldLines: 0,
+                  newStart: 1,
+                  newLines: 2,
+                  lines: [
+                    { kind: "added", text: "hello" },
+                    { kind: "added", text: "" },
+                  ],
+                },
+              ],
+              additions: 2,
+              deletions: 0,
+              truncated: false,
+            },
+          },
+        )}
+      />,
+    );
+
+    expect(screen.getByText("Created")).toBeInTheDocument();
+    expand(/Created new\.ts/);
+    expect(screen.getByText("hello")).toBeInTheDocument();
+    expect(screen.queryByText("结果")).toBeNull();
+  });
+
   it("falls back to the legacy fragment when a structured diff is malformed", () => {
     render(
       <EditToolCall
@@ -484,6 +521,31 @@ describe("tool call renderers", () => {
     expect(container.querySelector("pre")?.textContent).toBe("$ npm test\nhello\nwarn");
   });
 
+  it("renders a RunCommand session continuation with stdin and output", () => {
+    const { container } = render(
+      <RunCommandToolCall
+        part={toolPart(
+          "RunCommand",
+          { sessionId: "shell-1", chars: "y\n" },
+          {
+            kind: "session",
+            snapshot: {
+              status: "completed",
+              sessionId: "shell-1",
+              stdout: "done\n",
+              stderr: "",
+              exitCode: 0,
+            },
+          },
+        )}
+      />,
+    );
+
+    expect(screen.getByText("session shell-1")).toBeInTheDocument();
+    expand(/ran/);
+    expect(container.querySelector("pre")?.textContent).toBe("session shell-1 <- y\ndone");
+  });
+
   it("labels an active RunCommand as running and pulses the command line", () => {
     render(
       <RunCommandToolCall
@@ -521,53 +583,6 @@ describe("tool call renderers", () => {
     expand(/ran/);
     expect(screen.queryByText(/Exit code/)).toBeNull();
     expect(container.querySelector("pre")?.textContent).toBe("$ dir");
-  });
-
-  it("renders a WriteStdin session snapshot", () => {
-    const { container } = render(
-      <WriteStdinToolCall
-        part={toolPart(
-          "WriteStdin",
-          { sessionId: "sess-1", chars: "y\n" },
-          {
-            status: "running",
-            sessionId: "sess-1",
-            stdout: "started\n",
-            stderr: "",
-            exitCode: null,
-          },
-        )}
-      />,
-    );
-
-    expect(screen.getByText("sess-1")).toBeInTheDocument();
-    expect(screen.queryByText(/会话运行中/)).toBeNull();
-
-    expand(/写入/);
-    expect(screen.getAllByText(/会话运行中/).length).toBeGreaterThan(0);
-    expect(screen.getByText("started")).toBeInTheDocument();
-    expect(container.querySelector("pre")?.textContent).toBe("y\n");
-  });
-
-  it("parses the model-facing WriteStdin JSON snapshot", () => {
-    const snapshot = {
-      status: "completed",
-      sessionId: "sess-1",
-      stdout: "done\n",
-      stderr: "",
-      exitCode: 0,
-    };
-    const { container } = render(
-      <WriteStdinToolCall
-        part={toolPart("WriteStdin", { sessionId: "sess-1" }, JSON.stringify(snapshot))}
-      />,
-    );
-
-    expand(/写入/);
-    expect(screen.getByText("stdout")).toBeInTheDocument();
-    expect(screen.getByText("done")).toBeInTheDocument();
-    expect(screen.queryByText("结果")).toBeNull();
-    expect(container.querySelector("[data-tool-panel]")?.textContent).toContain("done");
   });
 
   it("keeps unknown tools behind a fallback card with formatted input and output", () => {

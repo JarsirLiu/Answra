@@ -2,6 +2,8 @@
 
 状态：已实施
 
+> 2026-11-16 修订：`WriteStdin` 已合并进 `RunCommand`，独立的 `WriteStdin` renderer / presenter 与其测试已删除；会话续接继续由 `RunCommand` 的工具卡展示。见 [把 WriteStdin 合并进 RunCommand](2026-11-16-merge-write-stdin-into-run-command.md)。
+
 ## 问题
 
 Agent 已有的 `workspace.read`、`workspace.grep`、`workspace.run-command`、`workspace.write-stdin` 四个工具已经在 `general-chat` profile 中授权，工具事件和 transcript `parts` 也已进入 `packages/shared` 的既有 schema。但 renderer 侧没有对应的工具卡片：

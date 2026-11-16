@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ReadFileStateMap, ToolContext } from "../../../src/core/tool";
-import { editTool, executeEdit } from "../../../src/core/tool/builtin/edit";
+import { editTool, executeEdit, formatEditOutput } from "../../../src/core/tool/builtin/edit";
 import { executeRead } from "../../../src/core/tool/builtin/read";
 import { createReadFileStateKey } from "../../../src/core/tool/builtin/readFileState";
 import { formatReadOutput } from "../../../src/core/tool/builtin/readOutput";
@@ -24,6 +24,99 @@ describe("Edit tool", () => {
 
   afterEach(async () => {
     await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));
+  });
+
+  it("creates a new file with an empty old_string and no prior Read", async () => {
+    const root = await createRoot();
+    const filePath = path.join(root, "notes", "new.md");
+    await fs.mkdir(path.join(root, "notes"));
+    const state: ReadFileStateMap = new Map();
+
+    const output = await executeEdit(context(root, state), {
+      file_path: "notes/new.md",
+      old_string: "",
+      new_string: "# 标题\n正文\n",
+    });
+
+    expect(output).toMatchObject({
+      type: "created",
+      filePath: await fs.realpath(filePath),
+      replacements: 0,
+      replaceAll: false,
+      lineEndings: "LF",
+    });
+    expect(output.diff.deletions).toBe(0);
+    expect(output.diff.additions).toBeGreaterThan(0);
+    await expect(fs.readFile(filePath, "utf8")).resolves.toBe("# 标题\n正文\n");
+    expect([...state.values()]).toMatchObject([{ origin: "edit", partialView: false }]);
+    expect(formatEditOutput(output)).toContain("has been created successfully");
+  });
+
+  it("creates an empty file with empty old_string and new_string", async () => {
+    const root = await createRoot();
+
+    const output = await executeEdit(context(root), {
+      file_path: "empty.txt",
+      old_string: "",
+      new_string: "",
+    });
+
+    expect(output).toMatchObject({ type: "created", sizeBytes: 0 });
+    await expect(fs.readFile(path.join(root, "empty.txt"), "utf8")).resolves.toBe("");
+  });
+
+  it("fills an existing empty file after reading it", async () => {
+    const root = await createRoot();
+    const filePath = path.join(root, "empty.txt");
+    await fs.writeFile(filePath, "", "utf8");
+    const state: ReadFileStateMap = new Map();
+    await executeRead(context(root, state), { file_path: "empty.txt" });
+
+    const output = await executeEdit(context(root, state), {
+      file_path: "empty.txt",
+      old_string: "",
+      new_string: "filled\n",
+    });
+
+    expect(output).toMatchObject({ type: "created", replacements: 0 });
+    await expect(fs.readFile(filePath, "utf8")).resolves.toBe("filled\n");
+  });
+
+  it("requires a Read before filling an existing empty file", async () => {
+    const root = await createRoot();
+    const filePath = path.join(root, "empty.txt");
+    await fs.writeFile(filePath, "", "utf8");
+
+    await expect(
+      executeEdit(context(root, new Map()), {
+        file_path: "empty.txt",
+        old_string: "",
+        new_string: "filled",
+      }),
+    ).rejects.toThrow("没有可用的读取记录");
+    await expect(fs.readFile(filePath, "utf8")).resolves.toBe("");
+  });
+
+  it("rejects creating over an existing file or editing a missing file", async () => {
+    const root = await createRoot();
+    const filePath = path.join(root, "a.txt");
+    await fs.writeFile(filePath, "original", "utf8");
+
+    await expect(
+      executeEdit(context(root, new Map()), {
+        file_path: "a.txt",
+        old_string: "",
+        new_string: "replacement",
+      }),
+    ).rejects.toThrow("文件已存在");
+    await expect(
+      executeEdit(context(root, new Map()), {
+        file_path: "missing.txt",
+        old_string: "old",
+        new_string: "new",
+      }),
+    ).rejects.toThrow("文件不存在");
+    await expect(fs.readFile(filePath, "utf8")).resolves.toBe("original");
   });
 
   it("fails closed when the session has no read state", async () => {
@@ -77,6 +170,25 @@ describe("Edit tool", () => {
         new_string: "beta",
       }),
     ).rejects.toThrow("完整读取");
+  });
+
+  it("allows an edit when only the mtime changed and content is identical", async () => {
+    const root = await createRoot();
+    const filePath = path.join(root, "a.txt");
+    await fs.writeFile(filePath, "alpha", "utf8");
+    const state: ReadFileStateMap = new Map();
+    await executeRead(context(root, state), { file_path: "a.txt" });
+
+    await fs.writeFile(filePath, "alpha", "utf8");
+
+    await expect(
+      executeEdit(context(root, state), {
+        file_path: "a.txt",
+        old_string: "alpha",
+        new_string: "beta",
+      }),
+    ).resolves.toMatchObject({ type: "edited", replacements: 1 });
+    await expect(fs.readFile(filePath, "utf8")).resolves.toBe("beta");
   });
 
   it("rejects an edit when the file changed after the read", async () => {
@@ -351,6 +463,14 @@ describe("Edit tool", () => {
         file_path: "a.txt",
         old_string: "",
         new_string: "new",
+      }),
+    ).toBeUndefined();
+    expect(
+      editTool.validateInput?.({
+        file_path: "a.txt",
+        old_string: "",
+        new_string: "new",
+        replace_all: true,
       }),
     ).toMatchObject({ code: "invalid-input" });
     expect(

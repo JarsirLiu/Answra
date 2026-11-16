@@ -48,7 +48,9 @@ export interface ReadFileStateEntry {
   readonly offset: number;
   readonly limit: number | undefined;
   readonly partialView: boolean;
-  /** `edit` 表示内容由 Edit 写回，只能作为再次编辑的基线，不能被 Read 当作未变化缓存。 */
+  /** 文件文本的 SHA-256；用于 mtime 被外部工具触碰时避免假冲突。 */
+  readonly contentHash?: string;
+  /** `edit` 表示这是 Edit 写回，只能作为再次编辑的基线，不能被 Read 当成未变化缓存。 */
   readonly origin: "read" | "edit";
 }
 

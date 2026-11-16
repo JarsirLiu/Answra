@@ -200,6 +200,31 @@ describe("tool presentation", () => {
     expect(presentation.details).toEqual([]);
   });
 
+  it("summarizes a created Edit as Created file", () => {
+    const presentation = presentToolCall({
+      toolName: "Edit",
+      state: "completed",
+      input: { file_path: "src/new.ts", old_string: "", new_string: "new\n" },
+      output: {
+        type: "created",
+        filePath: "src/new.ts",
+        replacements: 0,
+        replaceAll: false,
+        diff: DIFF,
+      },
+    });
+
+    expect(presentation).toMatchObject({
+      action: "create",
+      category: "write",
+      primary: "new.ts",
+      secondary: "src",
+      resultLine: "Created file",
+      expandable: true,
+    });
+    expect(presentation.details[0]).toEqual({ kind: "diff", diff: DIFF });
+  });
+
   it("summarizes RunCommand success, empty output, failure, and timeout", () => {
     const success = presentToolCall({
       toolName: "RunCommand",
@@ -295,7 +320,7 @@ describe("tool presentation", () => {
     expect(presentation.details[0]).toMatchObject({ text: "failed" });
   });
 
-  it("summarizes WriteStdin snapshots from objects and legacy JSON strings", () => {
+  it("summarizes a RunCommand session continuation", () => {
     const snapshot = {
       status: "completed",
       sessionId: "shell-1",
@@ -307,27 +332,26 @@ describe("tool presentation", () => {
 
     expect(
       presentToolCall({
-        toolName: "WriteStdin",
+        toolName: "RunCommand",
         state: "completed",
         input: { sessionId: "shell-1", chars: "y\n" },
-        output: snapshot,
+        output: { kind: "session", snapshot },
       }),
     ).toMatchObject({
-      action: "write",
-      category: "write",
+      action: "run",
+      category: "command",
       primary: "shell-1",
-      secondary: "y",
-      resultLine: "Completed",
+      meta: "stdin y",
     });
 
     expect(
       presentToolCall({
-        toolName: "WriteStdin",
+        toolName: "RunCommand",
         state: "completed",
         input: { sessionId: "shell-1" },
-        output: JSON.stringify(snapshot),
+        output: { kind: "session", snapshot },
       }).resultLine,
-    ).toBe("Completed");
+    ).toBeUndefined();
   });
 
   it("keeps unknown tools safe and expandable", () => {

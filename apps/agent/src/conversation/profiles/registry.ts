@@ -22,7 +22,6 @@ export const CHAT_PROFILES = {
       toolId("workspace.grep"),
       toolId("workspace.edit"),
       toolId("workspace.run-command"),
-      toolId("workspace.write-stdin"),
     ],
     injectTime: true,
   },

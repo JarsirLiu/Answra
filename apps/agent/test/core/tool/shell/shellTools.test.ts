@@ -60,15 +60,6 @@ async function execute(
   return executeToolCall(tools.runCommand, input, context(root, signal));
 }
 
-async function executeWrite(
-  tools: ShellTools,
-  input: Parameters<ShellTools["writeStdin"]["handler"]>[0],
-  root: string | null,
-  signal?: AbortSignal,
-): Promise<ToolResult> {
-  return executeToolCall(tools.writeStdin, input, context(root, signal));
-}
-
 function modelText(result: ToolResult): string {
   if (!result.success) throw new Error(result.error.message);
   return result.modelContent;
@@ -267,7 +258,7 @@ describe("RunCommand", { timeout: 30_000 }, () => {
     });
   });
 
-  it("starts a session and continues it through WriteStdin", async () => {
+  it("starts a session and continues it through RunCommand", async () => {
     const root = await createRoot();
     const script = path.join(root, "session.mjs");
     await fs.writeFile(
@@ -289,9 +280,10 @@ describe("RunCommand", { timeout: 30_000 }, () => {
     const deadline = Date.now() + 15_000;
     while (snapshot.status === "running") {
       if (Date.now() >= deadline) throw new Error("会话未在测试期限内完成。");
-      const next = await tools.writeStdin.handler({ sessionId, yieldTimeMs: 1_000 }, context(root));
+      const next = await tools.runCommand.handler({ sessionId, yieldTimeMs: 1_000 }, context(root));
       if (isToolHandlerFailure(next)) throw new Error(next.message);
-      snapshot = next;
+      if (next.kind !== "session") throw new Error("续接会话应返回 session 快照。");
+      snapshot = next.snapshot;
       stdout.push(snapshot.stdout);
     }
     expect(snapshot).toMatchObject({ status: "completed", exitCode: 0 });
@@ -300,13 +292,32 @@ describe("RunCommand", { timeout: 30_000 }, () => {
     expect(output.match(/second/g)).toHaveLength(1);
   });
 
+  it("writes chars to a running session", async () => {
+    const root = await createRoot();
+    const script = path.join(root, "stdin.mjs");
+    await fs.writeFile(
+      script,
+      [
+        "process.stdin.setEncoding('utf8')",
+        "process.stdin.once('data', (data) => {",
+        "  process.stdout.write('got:' + data.trim())",
+        "  process.exit(0)",
+        "})",
+      ].join("\n"),
+    );
+    const tools = createTools();
+    const started = await execute(tools, { command: nodeCommand(script), yieldTimeMs: 50 }, root);
+    const snapshot = JSON.parse(modelText(started)) as ShellSessionSnapshot;
+    const sessionId = snapshot.sessionId;
+    if (!sessionId) throw new Error("运行中的会话缺少 sessionId。");
+
+    const next = await execute(tools, { sessionId, chars: "hello\n", yieldTimeMs: 2_000 }, root);
+    expect(modelText(next)).toContain("got:hello");
+  });
+
   it("turns an unknown sessionId into an invalid-input failure", async () => {
     const tools = createTools();
-    const result = await executeWrite(
-      tools,
-      { sessionId: "unknown-session", yieldTimeMs: 1 },
-      null,
-    );
+    const result = await execute(tools, { sessionId: "unknown-session", yieldTimeMs: 1 }, null);
 
     expect(result).toMatchObject({
       success: false,
@@ -348,16 +359,41 @@ describe("RunCommand", { timeout: 30_000 }, () => {
   it("rejects an empty or non-string sessionId before execution", async () => {
     const tools = createTools();
 
-    const blank = await executeWrite(tools, { sessionId: "   " }, null);
-    const nonString = await executeWrite(tools, { sessionId: 42 as unknown as string }, null);
+    const blank = await execute(tools, { sessionId: "   " }, null);
+    const nonString = await execute(tools, { sessionId: 42 as unknown as string }, null);
 
     expect(blank).toMatchObject({
       success: false,
-      error: { code: "invalid-input", message: "WriteStdin 的 sessionId 必须是非空字符串" },
+      error: { code: "invalid-input", message: "RunCommand 的 sessionId 必须是非空字符串" },
     });
     expect(nonString).toMatchObject({
       success: false,
-      error: { code: "invalid-input", message: "WriteStdin 的 sessionId 必须是非空字符串" },
+      error: { code: "invalid-input", message: "RunCommand 的 sessionId 必须是非空字符串" },
+    });
+  });
+
+  it("rejects command and sessionId together or session-only start options", async () => {
+    const tools = createTools();
+
+    expect(await execute(tools, { command: "echo hi", sessionId: "s-1" }, null)).toMatchObject({
+      success: false,
+      error: { code: "invalid-input" },
+    });
+    expect(await execute(tools, { chars: "y\n", sessionId: "s-1" }, null)).toMatchObject({
+      success: false,
+      error: { code: "invalid-input" },
+    });
+    expect(await execute(tools, { sessionId: "s-1", workdir: "." }, null)).toMatchObject({
+      success: false,
+      error: { code: "invalid-input" },
+    });
+    expect(await execute(tools, { sessionId: "s-1", timeoutMs: 1_000 }, null)).toMatchObject({
+      success: false,
+      error: { code: "invalid-input" },
+    });
+    expect(await execute(tools, { command: "echo hi", chars: "y\n" }, null)).toMatchObject({
+      success: false,
+      error: { code: "invalid-input" },
     });
   });
 

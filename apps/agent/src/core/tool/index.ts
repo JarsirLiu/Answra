@@ -2,9 +2,12 @@
 
 export { createBuiltinToolRegistry } from "./builtin";
 export {
+  describeShellSyntax,
   resolveShellRuntime,
+  type ShellKind,
   type ShellRuntime,
   type ShellRuntimeOptions,
+  type ShellSyntax,
 } from "./builtin/shell/runtime";
 export {
   type AnyToolEntry,

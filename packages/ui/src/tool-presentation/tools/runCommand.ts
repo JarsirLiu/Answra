@@ -30,7 +30,10 @@ type ParsedOutput =
 export function presentRunCommand(context: ToolPresenterContext): ToolPresentation {
   const input = asRecord(context.input);
   const command = input ? readCommand(input.command) : undefined;
+  const sessionIdInput = input ? stringField(input, "sessionId") : undefined;
+  const chars = input ? stringField(input, "chars") : undefined;
   const workdir = input ? stringField(input, "workdir") : undefined;
+  const continuation = command === undefined && sessionIdInput !== undefined;
   const parsed = parseRunCommandOutput(context.output);
   const legacy = parsed === undefined ? parseLegacyOutput(context.output) : undefined;
   const result = parsed?.kind === "result" ? parsed.result : legacy;
@@ -38,15 +41,22 @@ export function presentRunCommand(context: ToolPresenterContext): ToolPresentati
   const details = outputDetails(result, snapshot);
   const resultLine = resultLineFor(context.state, result, snapshot);
   const sessionId = snapshot?.sessionId;
+  const meta = continuation
+    ? chars
+      ? `stdin ${oneLine(chars)}`
+      : `session ${sessionIdInput}`
+    : sessionId
+      ? `session ${sessionId}`
+      : undefined;
 
   return {
     toolName: context.toolName,
     action: "run",
     category: "command",
     state: context.state,
-    primary: command ? oneLine(command) : (context.title ?? "command"),
+    primary: command ? oneLine(command) : (sessionIdInput ?? context.title ?? "session"),
     ...(workdir ? { secondary: oneLine(workdir) } : {}),
-    ...(sessionId ? { meta: `session ${sessionId}` } : {}),
+    ...(meta ? { meta } : {}),
     ...(resultLine ? { resultLine } : {}),
     ...(context.errorText ? { errorText: context.errorText } : {}),
     details,

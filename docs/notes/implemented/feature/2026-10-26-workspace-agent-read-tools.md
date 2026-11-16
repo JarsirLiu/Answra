@@ -13,7 +13,7 @@
 - `apps/agent/src/worker/`、`apps/desktop/src/main/conversation/`：workspace 根目录上下文下发。
 - Agent 测试及本 Note。
 
-本阶段只支持纯文本读取和搜索；不提供目录树工具、不写入或删除文件、不执行命令、不解析 PDF/DOCX。当前仓库没有 CLI/stdio 启动器，但 conversation runtime 和工具执行不依赖 desktop。后续已由 `2026-11-09-shell-tools-and-session-runtime.md` 开放 `RunCommand`/`WriteStdin`。
+本阶段只支持纯文本读取和搜索；不提供目录树工具、不写入或删除文件、不执行命令、不解析 PDF/DOCX。当前仓库没有 CLI/stdio 启动器，但 conversation runtime 和工具执行不依赖 desktop。后续已由 `2026-11-09-shell-tools-and-session-runtime.md` 开放 `RunCommand`。
 
 ## 影响表面
 

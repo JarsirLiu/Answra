@@ -11,6 +11,7 @@ const WINDOWS_ENVIRONMENT: RuntimeEnvironment = {
   shell: {
     executable: "powershell.exe",
     displayName: "Windows PowerShell 5.1 (powershell.exe)",
+    kind: "powershell",
     syntax: "powershell",
   },
 };
@@ -22,7 +23,7 @@ describe("runtime environment system context", () => {
     expect(context).toContain("# 运行环境");
     expect(context).toContain("操作系统：Windows（win32 10.0.22631 x64）");
     expect(context).toContain("Shell：Windows PowerShell 5.1 (powershell.exe)");
-    expect(context).toContain("不要使用 bash/sh 专有语法");
+    expect(context).toContain("不支持 &&");
     expect(context).not.toMatch(/\b(Read|Grep|RunCommand)\b/);
   });
 
@@ -31,7 +32,12 @@ describe("runtime environment system context", () => {
       platform: "linux",
       release: "6.8.0",
       arch: "arm64",
-      shell: { executable: "/bin/bash", displayName: "/bin/bash", syntax: "posix" },
+      shell: {
+        executable: "/bin/bash",
+        displayName: "/bin/bash",
+        kind: "bash",
+        syntax: "posix",
+      },
     });
 
     expect(context).toContain("操作系统：Linux（linux 6.8.0 arm64）");
@@ -44,7 +50,7 @@ describe("runtime environment system context", () => {
       platform: "freebsd",
       release: "14.0",
       arch: "x64",
-      shell: { executable: "/bin/sh", displayName: "/bin/sh", syntax: "posix" },
+      shell: { executable: "/bin/sh", displayName: "/bin/sh", kind: "sh", syntax: "posix" },
     });
 
     expect(context).toContain("操作系统：freebsd（freebsd 14.0 x64）");

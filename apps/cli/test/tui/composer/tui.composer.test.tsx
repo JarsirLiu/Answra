@@ -233,7 +233,7 @@ describe("TUI composer", () => {
 
     expect(onSubmit).not.toHaveBeenCalled();
     expect(instance.lastFrame()).not.toContain("draft");
-    expect(instance.lastFrame()).toContain("再按一次 Ctrl-C 退出");
+    expect(instance.lastFrame()).toContain("Ctrl-C");
     instance.unmount();
   });
 

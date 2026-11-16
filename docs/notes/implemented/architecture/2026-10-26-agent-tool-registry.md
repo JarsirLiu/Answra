@@ -25,7 +25,7 @@
 - 静态注册项绑定稳定 ID、模型名称/schema 和执行器；profile 仅列允许的 ID，runtime 根据 profile 授权构造 AI SDK 工具。
 - 首批只提供 `Read` 与 `Grep` 两项只读纯文本工具，移除旧 workspace 清单/读取工具。目录树不默认注入 prompt。
 - 每次 run 将 workspace 根目录快照和 `AbortSignal` 传给 Agent 工具。工具用 Agent 进程 Node 文件 API，自行校验真实路径、符号链接、隐藏目录、忽略目录和资源限制；desktop 只下发根目录。
-- Read 读取行号文本及指定行范围；Grep 搜索字面文本。PDF/DOCX、Glob、Bash、写入工具和 CLI/stdio 启动器不属于本阶段。后续由 `../feature/2026-11-09-shell-tools-and-session-runtime.md` 覆盖 Bash 范围限制：当前 `general-chat` 已开放 `RunCommand`/`WriteStdin`。
+- Read 读取行号文本及指定行范围；Grep 搜索字面文本。PDF/DOCX、Glob、Bash、写入工具和 CLI/stdio 启动器不属于本阶段。后续由 `../feature/2026-11-09-shell-tools-and-session-runtime.md` 覆盖 Bash 范围限制：当前 `general-chat` 已开放 `RunCommand`，长命令的会话续接也由同一个工具承担。
 - 不抽象 `FileSystemPort`：目前只有一种本地文件系统实现；第二个真实实现消费者出现后再评估。
 
 ## 曾考虑的替代方案

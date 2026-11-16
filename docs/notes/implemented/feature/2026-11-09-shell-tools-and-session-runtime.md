@@ -15,7 +15,7 @@
 - `apps/agent/src/core/tool/builtin/shell/localShell.ts`：一次性命令执行、超时/取消/输出超限终止进程树。
 - `apps/agent/src/core/tool/builtin/shell/sessions.ts`：可续接 shell 会话、stdin 写入、等待窗口、LRU 淘汰与 cleanup。
 - `apps/agent/src/core/tool/builtin/shell/workdir.ts`：工作目录解析；工作区是默认根目录而不是访问边界。
-- `apps/agent/src/core/tool/builtin/shell/tools.ts`：`RunCommand` / `WriteStdin` 工具定义与模型投影。
+- `apps/agent/src/core/tool/builtin/shell/tools.ts`：`RunCommand` 工具定义与模型投影；`sessionId` 续接由同一工具承担。
 - `apps/agent/src/core/tool/contracts.ts`、`registry.ts`、`builtin/index.ts`：`process` 副作用域、工具资源 dispose、内置工具装配。
 - `apps/agent/src/host.ts`：Agent 进程关闭时释放 shell 会话。
 - `apps/agent/src/conversation/profiles/registry.ts`：`general-chat` 授权两个 shell 工具。
@@ -24,8 +24,8 @@
 
 ## 影响表面
 
-- 模型可以在当前工作区运行任意 shell 命令，并获得 stdout、stderr、退出码或超时结果；Windows 使用 PowerShell，POSIX 使用 `$SHELL`/`sh`。
-- 长命令可以通过 `yieldTimeMs` 返回 `sessionId`，再用 `WriteStdin` 继续等待或写入 stdin；完成后的会话仍可复查最终增量输出。
+- 模型可以在当前工作区运行任意 shell 命令，并获得 stdout、stderr、退出码或超时结果；Windows 优先 `pwsh`，没有时回退 `powershell.exe`，POSIX 使用 `$SHELL`/`sh`。
+- 长命令可以通过 `yieldTimeMs` 返回 `sessionId`，再用 `RunCommand` 的 `sessionId` 模式继续等待或写入 stdin；完成后的会话仍可复查最终增量输出。
 - `workdir` 支持工作区相对路径和绝对路径，默认使用工作区根目录；工作区不是安全边界，命令本身也没有 sandbox 或审批。
 - 这是最高权限的通用工具：命令可以读写工作区外文件、访问网络、启动其他进程，影响范围等于 Agent 进程权限。
 - Answer 与 Interview profile 不获得 shell 工具；模型工具调用事件、transcript 和 UI 展示沿用现有链路。
@@ -33,11 +33,11 @@
 
 ## 决定
 
-- 工具模型名为 `RunCommand` / `WriteStdin`，内部 ID 为 `workspace.run-command` / `workspace.write-stdin`，与现有 `Read`/`Grep` 的命名风格一致。
+- 工具模型名为 `RunCommand`，内部 ID 为 `workspace.run-command`，与现有 `Read`/`Grep` 的命名风格一致；会话续接复用同一工具，不单独暴露 `WriteStdin`。该拆分已于 2026-11-16 合并，见本文末尾“后续修订”。
 - 一次性命令使用 `spawn`，POSIX 让子进程成为进程组组长，Windows 用 `taskkill /T /F` 兜底；超时、取消和输出超过 10 MiB 都终止整棵树，而不是只杀根进程。
 - 会话在 Windows 上先创建 `KILL_ON_JOB_CLOSE | BREAKAWAY_OK` Job Object 并 assign 根 PowerShell；containment 成功时 kill 根进程即可由内核收割后代，失败时回退 `taskkill`。containment 结果写临时 marker，不污染模型输出。
 - 一次性命令和会话共用 `buildShellInvocation`、`decodeShellOutput`、`truncateShellOutput`、`stripPowerShellErrorWrapper`；PowerShell 编码前缀、Job Object 引导和退出码收尾都在同一条 `-Command` 脚本中。
-- 不引入 `iconv-lite`：UTF-8 解码出现替换字符时回退到 `TextDecoder("gbk")`，避免增加 Agent 依赖。
+- 不引入 `iconv-lite`：一次性输出仅在完整字节不是合法 UTF-8 时回退 `TextDecoder("gbk")`；会话输出由 `StreamingShellDecoder` 保留不完整 UTF-8 尾部，完整非法序列才切换 GBK。
 - PowerShell 错误清理只在检测到 `Write-Error` 脚本回显、`At line`/`所在位置` 或 `CategoryInfo` 包装时生效；普通原生命令 stderr 保持原样。
 - 工作目录解析使用 `realpath` 后确认目录，但不强制落在工作区内，也不排除 VCS 目录。原因是 shell 命令可以通过 `cd` 绕过任何 workdir 字符串边界，声明边界只会制造虚假安全感；工作区只承担默认 cwd。
 - 会话管理器在工具注册表中全局共享，`start` 显式传入已解析的绝对 cwd，因此同一 Agent 进程内可以服务不同工作区；会话按访问顺序 LRU 淘汰，默认不设总超时，只有调用方显式传 `timeoutMs` 才计时。
@@ -59,7 +59,7 @@
 - 正面后果：模型可以执行构建、测试、CLI 和 OfficeCLI；长命令可以增量读取，不再受单次前台等待限制；PowerShell 错误输出更短，进程树不会因超时/取消残留。
 - 代价：这是任意代码执行能力，Agent 进程权限就是命令权限；没有审批、沙箱或网络限制。Shell 会话在进程内保留到退出/淘汰，不随会话清空自动消失。
 - 防回退：
-  - 不得把 `RunCommand` / `WriteStdin` 授权给 Answer、Interview 或其他不需要命令执行的 profile。
+  - 不得把 `RunCommand` 授权给 Answer、Interview 或其他不需要命令执行的 profile。
   - 不得移除超时/取消/输出超限时的整棵进程树终止；只 `child.kill()` 会重新引入孤儿进程。
   - Windows 会话必须保留 Job Object containment 与 `taskkill` 兜底；container 失败不能静默当作成功。
   - 一次性命令和会话必须继续共用 `runtime.ts`，不得恢复两套 PowerShell 前缀、编码或截断实现。
@@ -76,7 +76,15 @@
 - `pnpm --filter @answra/agent test`：31 个文件、240 项测试全部通过。
 - `pnpm lint`（Biome）、`pnpm notes:check`、`pnpm architecture:check`：通过。
 - 覆盖：UTF-8/GBK、PowerShell 脚本回显/CategoryInfo 清理、原生命令 stderr 保留、多语句变量共享、非零退出码、输出截断、相对/绝对 workdir、无工作区失败、会话增量读取、stdin 写入、超时、无默认会话超时、取消、并发轮询串行、LRU、cleanup、短命令超时/取消的进程树回收。
-- 尚未在真实桌面端模型对话中验收 `RunCommand`/`WriteStdin` 的 function calling 与 UI 工具活动呈现；自动化只证明工具契约、进程行为与模型投影。
+- 尚未在真实桌面端模型对话中验收 `RunCommand` 的 function calling 与 UI 工具活动呈现；自动化只证明工具契约、进程行为与模型投影。
+
+## 后续修订（2026-11-16）
+
+- 用户确认 `RunCommand` 已能启动 shell 会话，不应再暴露第二个 `WriteStdin` 工具。
+- `WriteStdin` 的 `sessionId` / `chars` / `yieldTimeMs` / `maxOutputLength` 已合并进 `RunCommand`；模型可见工具只剩 `RunCommand`。
+- 内部 `ShellSessionManager.writeStdin` 仍保留，但不再注册、授权或展示为独立工具。
+- 详细取舍见 [把 WriteStdin 合并进 RunCommand](../architecture/2026-11-16-merge-write-stdin-into-run-command.md)。
+- 同日补齐跨平台 shell：Windows 检测 `pwsh` 后回退 `powershell.exe`，macOS 默认 zsh，提示词按实际 shell 生成；续接会话改为流式 UTF-8/GBK 解码。详见 [Agent 工具跨平台 Shell、流式输出与空文件编辑](./2026-11-16-agent-tool-cross-platform-shell-and-edit-state.md)。
 
 ## 风险
 

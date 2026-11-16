@@ -44,6 +44,8 @@ const SHELL_STATUS_PATTERNS = [
 export function RunCommandToolCall({ part }: ToolCallRendererProps) {
   const input = asRecord(part.input);
   const command = input ? stringField(input, "command") : undefined;
+  const sessionId = input ? stringField(input, "sessionId") : undefined;
+  const chars = input ? stringField(input, "chars") : undefined;
   const parsed = parseShellOutput(part.output);
   const error = part.errorText ? clipText(part.errorText, MAX_TOOL_VALUE_CHARS) : undefined;
   const malformed =
@@ -51,7 +53,11 @@ export function RunCommandToolCall({ part }: ToolCallRendererProps) {
       ? clipText(formatToolValue(part.output), MAX_TOOL_VALUE_CHARS)
       : undefined;
   const hasDetails =
-    error !== undefined || command !== undefined || parsed !== undefined || malformed !== undefined;
+    error !== undefined ||
+    command !== undefined ||
+    sessionId !== undefined ||
+    parsed !== undefined ||
+    malformed !== undefined;
   const running = isToolCallRunning(part.state);
 
   return (
@@ -59,16 +65,23 @@ export function RunCommandToolCall({ part }: ToolCallRendererProps) {
       actionLabel={running ? "running" : "ran"}
       icon={<SquareTerminal size={15} strokeWidth={1.7} />}
       part={part}
-      primary={command ? firstLine(command) : (part.title ?? "命令")}
+      primary={
+        command ? firstLine(command) : sessionId ? `session ${sessionId}` : (part.title ?? "命令")
+      }
       pulsePrimary
       showState={isToolCallError(part.state) || part.state === "interrupted"}
     >
       {hasDetails ? (
         <>
-          {command !== undefined || parsed !== undefined || malformed !== undefined ? (
+          {command !== undefined ||
+          sessionId !== undefined ||
+          parsed !== undefined ||
+          malformed !== undefined ? (
             <ShellPanel
               command={command}
+              chars={chars}
               outputText={parsed?.text ?? malformed?.text}
+              sessionId={sessionId}
               truncated={parsed?.truncated === true}
             />
           ) : null}
@@ -81,14 +94,23 @@ export function RunCommandToolCall({ part }: ToolCallRendererProps) {
 
 function ShellPanel({
   command,
+  chars,
   outputText,
+  sessionId,
   truncated,
 }: {
   command?: string;
+  chars?: string;
   outputText?: string;
+  sessionId?: string;
   truncated: boolean;
 }) {
-  const text = [command ? `$ ${command}` : "", outputText ?? ""].filter(Boolean).join("\n");
+  const prompt = command
+    ? `$ ${command}`
+    : sessionId
+      ? `session ${sessionId}${chars ? ` <- ${chars.trimEnd()}` : ""}`
+      : "";
+  const text = [prompt, outputText ?? ""].filter(Boolean).join("\n");
 
   return (
     <ToolDetailSection label="Shell">

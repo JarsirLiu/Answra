@@ -4,7 +4,7 @@ import type { ConversationSendRequest } from "@answra/shared";
 import type { ModelMessage } from "ai";
 import { projectContextMessages } from "../core/context/projection";
 import { parseDataUrl } from "../core/model/imageInput";
-import { resolveShellRuntime } from "../core/tool";
+import { describeShellSyntax, resolveShellRuntime } from "../core/tool";
 import { latestCheckpoint } from "../core/transcript/contextCheckpoint";
 import { projectConversationMessages } from "../core/transcript/projection";
 import type { ConversationStore } from "../core/transcript/store";
@@ -67,14 +67,10 @@ export function buildCodingWorkspaceContext(workspaceRoot: string | null): strin
 export function buildCodingEnvironmentContext(): string {
   const shell = resolveShellRuntime();
   const platform = PLATFORM_LABELS[process.platform] ?? process.platform;
-  const syntax =
-    shell.syntax === "powershell"
-      ? "使用 PowerShell 语法；不要使用 bash/sh 专有语法，路径按 Windows 规则书写。"
-      : "使用 POSIX shell 语法。";
   return [
     "# 运行环境",
-    `- 操作系统：${platform}（${process.platform} ${os.release()} ${os.arch()}）`,
+    `- 操作系统：${platform}（${process.platform} ${os.release()} ${os.arch()}）。`,
     `- Shell：${shell.displayName}`,
-    `- 命令语法：${syntax}`,
+    `- 命令语法：${describeShellSyntax(shell)}`,
   ].join("\n");
 }

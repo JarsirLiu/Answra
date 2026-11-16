@@ -1,4 +1,5 @@
 /** 会话级文件读取状态：Read 的缓存键、Edit 的读前校验与写后回填；不读写文件系统。 */
+import { createHash } from "node:crypto";
 import path from "node:path";
 import type { ReadFileStateEntry, ReadFileStateMap } from "../contracts";
 
@@ -26,8 +27,16 @@ export function isCachedReadFresh(
 export function matchesFileStat(
   entry: ReadFileStateEntry,
   stat: { readonly mtimeMs: number; readonly sizeBytes: number },
+  contentHash?: string,
 ): boolean {
+  if (entry.contentHash !== undefined && contentHash !== undefined) {
+    return entry.contentHash === contentHash;
+  }
   return entry.mtimeMs === Math.trunc(stat.mtimeMs) && entry.sizeBytes === stat.sizeBytes;
+}
+
+export function hashReadFileContent(text: string): string {
+  return createHash("sha256").update(text, "utf8").digest("hex");
 }
 
 /** 最近一次完整读取或编辑基线；partial view 不能作为编辑依据。 */
@@ -59,9 +68,10 @@ export function clearReadFileStatesForPath(state: ReadFileStateMap, filePath: st
  */
 export function recordEditedFileState(
   state: ReadFileStateMap,
-  input: { path: string; mtimeMs: number; sizeBytes: number },
+  input: { path: string; mtimeMs: number; sizeBytes: number; contentHash?: string },
 ): void {
   state.set(createReadFileStateKey(input.path, FULL_FILE_OFFSET, undefined), {
+    ...(input.contentHash !== undefined && { contentHash: input.contentHash }),
     limit: undefined,
     mtimeMs: Math.trunc(input.mtimeMs),
     offset: FULL_FILE_OFFSET,

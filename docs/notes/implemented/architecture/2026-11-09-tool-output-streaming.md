@@ -26,7 +26,7 @@
 - **UI 累加**：`applyConversationPartEvent` 在 tool part `state === "running"` 时把 delta 追加到 `output`（字符串），终态事件用完整输出覆盖；居后到达的 delta 因状态已不是 `running` 而被忽略，避免重复拼接。
 - **渲染**：`RunCommand` 的 `parseShellOutput` 已经接受字符串 `output`，运行中显示原始 stdout/stderr；结束时字符串变成 `Exit code: …` 格式，仍按既有规则剥离状态行。
 - **上限**：每个 `toolCallId` 的实时 delta 累计最多 `8_000` 字符；超过后停止发送实时增量，最终结果不受影响，避免长命令把事件日志撑爆。
-- **不做**：不为 `WriteStdin` 会话快照额外建立持续推送；会话仍按模型每次 `WriteStdin` 调用的快照更新。不在 UI 里另建第二套 stdout 缓冲。
+- **不做**：不为会话快照额外建立持续推送；会话仍按模型每次 `RunCommand` 续接调用的快照更新。不在 UI 里另建第二套 stdout 缓冲。
 
 ## 模块边界
 
@@ -37,7 +37,7 @@
 
 ## 曾考虑的替代方案
 
-- **轮询 `WriteStdin` 快照：** 舍弃。要求模型主动多次调用工具，用户看不到连续输出，且会把交互工具语义塞进只读命令。
+- **轮询会话快照：** 舍弃。要求模型主动多次调用工具，用户看不到连续输出，且会把交互工具语义塞进只读命令。
 - **按完整预览替换而非 delta：** 舍弃。每次发送完整输出会让事件体积随输出长度平方增长；delta 更小，且与现有 text/reasoning delta 投影一致。
 - **让 renderer 定时轮询 agent 进程：** 舍弃。跨进程多一条拉取通道，状态来源分裂，违反事件是唯一事实来源的约束。
 - **把 `tool-output-delta` 设为 durable：** 舍弃。高频增量不需要长期存储，最终结果已持久化；durable 会放大存储与重放成本。

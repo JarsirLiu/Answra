@@ -1,6 +1,6 @@
 /** Canonical tool identity for presentation; accepts model names and legacy ids. */
 
-export type CanonicalToolName = "Read" | "Grep" | "Edit" | "RunCommand" | "WriteStdin";
+export type CanonicalToolName = "Read" | "Grep" | "Edit" | "RunCommand";
 
 const ALIASES: Readonly<Record<string, CanonicalToolName>> = {
   read: "Read",
@@ -16,10 +16,6 @@ const ALIASES: Readonly<Record<string, CanonicalToolName>> = {
   run_command: "RunCommand",
   bash: "RunCommand",
   "workspace.run-command": "RunCommand",
-  writestdin: "WriteStdin",
-  "write-stdin": "WriteStdin",
-  write_stdin: "WriteStdin",
-  "workspace.write-stdin": "WriteStdin",
 };
 
 export function canonicalToolName(toolName: string): CanonicalToolName | undefined {

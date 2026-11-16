@@ -8,7 +8,6 @@ export const INTERVIEW_REHEARSAL_TOOLS: readonly ToolId[] = [
   toolId("workspace.grep"),
   toolId("workspace.edit"),
   toolId("workspace.run-command"),
-  toolId("workspace.write-stdin"),
 ];
 
 export const INTERVIEW_REHEARSAL_SYSTEM_PROMPT = [

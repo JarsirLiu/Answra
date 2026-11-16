@@ -4,13 +4,13 @@
 
 ## 问题
 
-CLI TUI 已经能展示 Read、Grep、Edit、RunCommand、WriteStdin，但工具展示相关职责集中在少数文件里，继续增加行为会放大并行冲突：
+CLI TUI 已经能展示 Read、Grep、Edit、RunCommand，但工具展示相关职责集中在少数文件里，继续增加行为会放大并行冲突：
 
 - `ToolCall.tsx` 同时负责圆点/Spinner、摘要、结果行、失败状态、展开提示和详情入口；调整任意一项都要改同一个文件。
 - `ToolCallDetails.tsx` 同时负责文本截断、运行中 tail、diff、notice 和行数常量；`headLines`/`tailLines` 已经计算 `hidden`，但渲染层没有使用，截断提示没有单一来源。
 - `groupToolCalls.ts` 同时负责分类、去重计数、文案和运行态；`MessageRow.tsx` 同时渲染折叠组与单卡。折叠组的时态、顺序和当前目标无法单独测试。
 - `presentation/toolSummary.ts` 与 `presentation/toolLine.ts` 各有一套 action 到 label 的映射，TUI 与非 TTY 输出可能漂移。
-- 现有 5 个工具已经通过 `exposeOutput` 向事件提供结构化 output，工具执行与事件 schema 不是当前主要瓶颈；当前需要的是 CLI UI 的稳定边界和可并行文件划分。
+- 现有 4 个工具已经通过 `exposeOutput` 向事件提供结构化 output，工具执行与事件 schema 不是当前主要瓶颈；当前需要的是 CLI UI 的稳定边界和可并行文件划分。
 - 桌面工具卡暂不调整，不能把 `packages/ui/src/components/tool-call/**` 卷入本次改动。
 
 ## 涉及范围
@@ -114,7 +114,6 @@ packages/ui/src/tool-presentation/
    ├─ grep.ts
    ├─ edit.ts
    ├─ runCommand.ts
-   ├─ writeStdin.ts
    └─ fallback.ts
 ```
 
