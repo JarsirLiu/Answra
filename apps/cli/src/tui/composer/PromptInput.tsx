@@ -1,11 +1,25 @@
 /** Claude 风格输入框：底部边框、宽字符光标、历史浏览、Enter 提交与多行换行。 */
-import { Box, Text, useApp, useInput, usePaste, useWindowSize } from "ink";
+import {
+  Box,
+  type DOMElement,
+  Text,
+  useApp,
+  useBoxMetrics,
+  useInput,
+  usePaste,
+  useWindowSize,
+} from "ink";
 import { useEffect, useRef, useState } from "react";
+import type { ImageAttachment } from "../../image/attachment";
+import { imagePathsFromText } from "../../image/path";
+import type { ImageAttachmentReader } from "../../image/ports";
 import { POINTER, TUI_THEME } from "../chrome/theme";
 import { CommandPalette } from "../commands/CommandPalette";
 import { completeTuiCommand, suggestTuiCommands, tuiCommandPrefix } from "../commands/catalog";
+import { AttachmentBar } from "./AttachmentBar";
 import {
   endOfLineOffset,
+  inputLayoutColumns,
   inputVisualLineCount,
   moveCursorVertically,
   nextGraphemeOffset,
@@ -15,6 +29,7 @@ import {
 } from "./inputLayout";
 import { deleteSelection, selectedText, selectionRange } from "./selection";
 import { TextInput } from "./TextInput";
+import { usePromptAttachments } from "./usePromptAttachments";
 
 const CONTROL_HINT = "Enter 发送 · Shift+Enter 或 \\ + Enter 换行 · Esc 取消 · Ctrl-C 两次退出";
 const EXIT_ARM_MS = 2_000;
@@ -51,9 +66,11 @@ export function PromptInput({
   onToggleSecret,
   onCommandPaletteChange,
   onCopyText,
+  imageReader,
+  onPasteError,
 }: {
   busy: boolean;
-  onSubmit: (text: string) => void;
+  onSubmit: (text: string, images?: readonly ImageAttachment[]) => void;
   selectionActive?: boolean;
   idleHint?: string;
   secret?: boolean;
@@ -74,15 +91,23 @@ export function PromptInput({
   onToggleSecret?: () => void;
   onCommandPaletteChange?: (open: boolean) => void;
   onCopyText?: (text: string) => void;
+  imageReader?: ImageAttachmentReader;
+  onPasteError?: (message: string) => void;
 }) {
   const { exit } = useApp();
   const { columns: windowColumns, rows } = useWindowSize();
-  const columns = Math.max(1, columnsOverride ?? windowColumns - PROMPT_CHROME_COLUMNS);
+  const inputRef = useRef<DOMElement | null>(null);
+  const inputMetrics = useBoxMetrics(inputRef);
+  const fallbackColumns = Math.max(1, columnsOverride ?? windowColumns - PROMPT_CHROME_COLUMNS);
+  const columns = inputLayoutColumns(
+    inputMetrics.hasMeasured && inputMetrics.width > 0 ? inputMetrics.width : fallbackColumns,
+  );
   const [draft, setDraft] = useState<Draft>({
     value: initialValue,
     cursor: initialValue.length,
     anchor: null,
   });
+  const attachments = usePromptAttachments({ reader: imageReader, onError: onPasteError });
   const [history, setHistory] = useState<string[]>([]);
   const [exitArmed, setExitArmed] = useState(false);
   const [paletteSelection, setPaletteSelection] = useState(0);
@@ -144,21 +169,39 @@ export function PromptInput({
     });
   };
 
-  usePaste((text) => insert(text.replace(/\r\n?/g, "\n")), { isActive: active });
+  const handlePaste = (text: string): void => {
+    const normalized = text.replace(/\r\n?/g, "\n");
+    if (imageReader !== undefined) {
+      if (normalized.length === 0) {
+        void attachments.readClipboard();
+        return;
+      }
+      const paths = imagePathsFromText(normalized);
+      if (paths.length > 0) {
+        void attachments.readPaths(paths);
+        return;
+      }
+    }
+    insert(normalized);
+  };
 
-  const submitText = (value: string) => {
+  usePaste(handlePaste, { isActive: active });
+
+  const submitText = (value: string, images: readonly ImageAttachment[] = attachments.images) => {
     const text = value.trim();
-    if (text.length === 0 && !allowEmptySubmit) return;
-    if (!secret && historyEnabled) setHistory((current) => [...current, text]);
+    if (text.length === 0 && images.length === 0 && !allowEmptySubmit) return;
+    if (!secret && historyEnabled && text.length > 0) setHistory((current) => [...current, text]);
     historyIndex.current = -1;
     savedDraft.current = "";
     setExitArmed(false);
     setPaletteDismissed(false);
     replace("", 0);
-    onSubmit(text);
+    attachments.clear();
+    if (images.length > 0) onSubmit(text, images);
+    else onSubmit(text);
   };
 
-  const submit = () => submitText(draft.value);
+  const submit = () => submitText(draft.value, attachments.images);
 
   const browse = (direction: -1 | 1) => {
     if (!historyEnabled || secret || history.length === 0) return;
@@ -177,6 +220,7 @@ export function PromptInput({
       historyIndex.current === -1 ? savedDraft.current : (history[historyIndex.current] ?? "");
     setPaletteSelection(0);
     replace(next, next.length);
+    attachments.clear();
   };
 
   useInput(
@@ -186,17 +230,27 @@ export function PromptInput({
         onToggleSecret();
         return;
       }
+      if ((key.ctrl || key.super) && input === "v" && imageReader !== undefined) {
+        void attachments.readClipboard();
+        return;
+      }
       if (key.ctrl && input === "c") {
         if (busy) return;
         if (!exitOnCtrlC) {
-          if (draft.value.length > 0) replace("", 0);
+          if (draft.value.length > 0 || attachments.images.length > 0) {
+            replace("", 0);
+            attachments.clear();
+          }
           return;
         }
         if (exitArmed) {
           exit();
           return;
         }
-        if (draft.value.length > 0) replace("", 0);
+        if (draft.value.length > 0 || attachments.images.length > 0) {
+          replace("", 0);
+          attachments.clear();
+        }
         setExitArmed(true);
         clearTimeout(exitTimer.current);
         exitTimer.current = setTimeout(() => setExitArmed(false), EXIT_ARM_MS);
@@ -254,7 +308,10 @@ export function PromptInput({
           return;
         }
         if (selectionActive) return;
-        if (!busy && draft.value.length > 0) replace("", 0);
+        if (!busy && (draft.value.length > 0 || attachments.images.length > 0)) {
+          replace("", 0);
+          attachments.clear();
+        }
         return;
       }
       if (key.return) {
@@ -315,7 +372,11 @@ export function PromptInput({
       }
       if (key.ctrl && input === "a") {
         if (secret || draft.value.length === 0) return;
-        setDraft({ value: draft.value, cursor: draft.value.length, anchor: 0 });
+        setDraft({
+          value: draft.value,
+          cursor: draft.value.length,
+          anchor: 0,
+        });
         return;
       }
       if (key.home) {
@@ -344,7 +405,10 @@ export function PromptInput({
       }
       if (key.backspace) {
         if (removeSelection()) return;
-        if (draft.cursor === 0) return;
+        if (draft.cursor === 0) {
+          attachments.removeLast();
+          return;
+        }
         const before = previousGraphemeOffset(draft.value, draft.cursor);
         edit(draft.value.slice(0, before) + draft.value.slice(draft.cursor), before);
         return;
@@ -389,25 +453,33 @@ export function PromptInput({
               paddingX: 1,
             }
           : { paddingX: 0 })}
+        flexDirection="column"
         width="100%"
       >
-        {showPointer ? (
-          <Box flexShrink={0} marginRight={1}>
-            <Text color={busy ? TUI_THEME.inactive : TUI_THEME.text}>{POINTER}</Text>
+        <AttachmentBar
+          images={attachments.images}
+          reading={attachments.reading}
+          showHint={showHints}
+        />
+        <Box flexDirection="row" width="100%">
+          {showPointer ? (
+            <Box flexShrink={0} marginRight={1}>
+              <Text color={busy ? TUI_THEME.inactive : TUI_THEME.text}>{POINTER}</Text>
+            </Box>
+          ) : null}
+          <Box flexGrow={1} flexShrink={1} minWidth={0} ref={inputRef}>
+            <TextInput
+              columns={columns}
+              cursor={draft.cursor}
+              maxVisibleLines={maxVisibleLines}
+              placeholder={placeholder}
+              secret={secret}
+              secretMask={secretMask}
+              selectionEnd={selection?.end}
+              selectionStart={selection?.start}
+              value={draft.value}
+            />
           </Box>
-        ) : null}
-        <Box flexGrow={1} flexShrink={1}>
-          <TextInput
-            columns={columns}
-            cursor={draft.cursor}
-            maxVisibleLines={maxVisibleLines}
-            placeholder={placeholder}
-            secret={secret}
-            secretMask={secretMask}
-            selectionEnd={selection?.end}
-            selectionStart={selection?.start}
-            value={draft.value}
-          />
         </Box>
       </Box>
       {exitArmed && showHints ? (

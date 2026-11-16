@@ -320,7 +320,7 @@ describe("TUI compaction", () => {
     await instance.waitUntilRenderFlush();
 
     const frame = stdout.chunks.join("");
-    expect(frame).toContain("ctx 45k/216k");
+    expect(frame).toContain("ctx 21%");
     expect(frame).toContain("30k token");
     instance.unmount();
     store.dispose();

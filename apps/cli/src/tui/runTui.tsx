@@ -2,6 +2,9 @@
 import type { ModelCredentialStore } from "@answra/credentials";
 import type { ConversationModelConfig, ManualCompactionResult } from "@answra/shared";
 import { render } from "ink";
+import { createImageAttachmentReader } from "../adapters/imageAttachmentReader";
+import type { ImageAttachment } from "../image/attachment";
+import type { ImageAttachmentReader } from "../image/ports";
 import type { ModelCatalog } from "../model/catalog";
 import type { ModelSettings } from "../model/ports";
 import type { RemoteAuthPort } from "../remote/auth/remoteAuthService";
@@ -34,6 +37,7 @@ export interface TuiRunOptions {
   botName: string;
   workspaceRoot: string;
   altScreen: boolean;
+  imageReader?: ImageAttachmentReader;
   remoteAuth?: RemoteAuthPort;
   openBrowser?: OpenBrowser;
   startRemoteHost?: () => Promise<{
@@ -42,6 +46,11 @@ export interface TuiRunOptions {
     readonly done: Promise<void>;
     stop(): Promise<void>;
   }>;
+}
+
+interface QueuedTurn {
+  readonly text: string;
+  readonly images: readonly ImageAttachment[];
 }
 
 export type TuiRunner = (options: TuiRunOptions) => Promise<number>;
@@ -61,10 +70,12 @@ export async function runInkTui({
   botName,
   workspaceRoot,
   altScreen,
+  imageReader: injectedImageReader,
   remoteAuth,
   openBrowser,
   startRemoteHost,
 }: TuiRunOptions): Promise<number> {
+  const imageReader = injectedImageReader ?? createImageAttachmentReader();
   let session = initialSession;
   let setupStep: TuiSetupStep | undefined = session === undefined ? "base-url" : undefined;
   let setupBaseUrl = "";
@@ -84,7 +95,7 @@ export async function runInkTui({
   store.setAuthAvailable(remoteAuth !== undefined);
   if (remoteAuth !== undefined) store.setAuthStatus(await remoteAuth.status());
 
-  const queue: string[] = [];
+  const queue: QueuedTurn[] = [];
   let busy = false;
   let cancelRequested = false;
   let compactAbort: AbortController | undefined;
@@ -94,7 +105,7 @@ export async function runInkTui({
     | Awaited<ReturnType<NonNullable<TuiRunOptions["startRemoteHost"]>>>
     | undefined;
 
-  const submit = (text: string): void => {
+  const submit = (text: string, images: readonly ImageAttachment[] = []): void => {
     if (authCodeResolver !== undefined) {
       const resolve = authCodeResolver;
       authCodeResolver = undefined;
@@ -114,7 +125,8 @@ export async function runInkTui({
       store.setNotice(undefined);
       return;
     }
-    queue.push(text);
+    if (text.trim().length === 0 && images.length === 0) return;
+    queue.push({ text, images });
     store.setQueued(queue.length);
     void drain();
   };
@@ -373,9 +385,9 @@ export async function runInkTui({
 
   const drain = async (): Promise<void> => {
     if (busy) return;
-    const text = queue.shift();
+    const turn = queue.shift();
     store.setQueued(queue.length);
-    if (text === undefined) return;
+    if (turn === undefined) return;
     const activeSession = session;
     if (activeSession === undefined) {
       store.setNotice(undefined);
@@ -386,7 +398,7 @@ export async function runInkTui({
     store.beginRun();
     let failed = false;
     try {
-      const runId = await activeSession.send(text);
+      const runId = await activeSession.send(turn.text, turn.images);
       if (cancelRequested) activeSession.cancel();
       await activeSession.wait(runId);
     } catch (error) {
@@ -441,7 +453,9 @@ export async function runInkTui({
         onCopyText={clipboard.write}
         onExitReady={registerExit}
         onSelectAll={selectionActions?.selectAllAndCopy}
+        onPasteError={(message) => store.setNotice([message])}
         onSubmit={submit}
+        imageReader={imageReader}
         panelHandlers={panelHandlers}
         pointerSource={pointer?.source}
         selectionStore={selectionStore}

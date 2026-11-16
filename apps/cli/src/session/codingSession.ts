@@ -7,6 +7,7 @@ import type {
   ConversationSnapshot,
   ManualCompactionResult,
 } from "@answra/shared";
+import type { ImageAttachment } from "../image/attachment";
 
 /** 手动压缩的可选输入；指令只影响本次摘要，不写入会话或配置。 */
 export interface ManualCompactionOptions {
@@ -178,7 +179,7 @@ export class CodingSession {
     this.accessToken = accessToken;
   }
 
-  async send(text: string): Promise<string> {
+  async send(text: string, images: readonly ImageAttachment[] = []): Promise<string> {
     if (this.closed) throw new Error("会话已关闭。");
     if (!this.opened) throw new Error("会话尚未打开。");
     if (this.activeRunId !== undefined || this.sending) throw new Error("上一轮尚未结束。");
@@ -186,7 +187,7 @@ export class CodingSession {
     try {
       const { runId } = await this.host.send(
         this.conversationId,
-        { text, images: [] },
+        { text, images: [...images] },
         this.accessToken,
       );
       this.activeRunId = runId;

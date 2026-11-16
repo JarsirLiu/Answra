@@ -110,22 +110,52 @@ describe("CLI coding host", () => {
     );
   });
 
-  it("rejects image input before starting a run", async () => {
+  it("accepts image input and forwards it to the model", async () => {
     await host.runtime.createConversation("coding-images");
+    const image = { name: "capture.png", dataUrl: "data:image/png;base64,QUJD" };
 
-    await expect(
-      host.runtime.send(
-        "coding-images",
-        {
-          text: "看这张图",
-          images: [{ name: "capture.png", dataUrl: "data:image/png;base64,QUJD" }],
-        },
-        ACCESS_TOKEN,
-      ),
-    ).rejects.toThrow("暂不支持图片输入");
+    const { runId } = await host.runtime.send(
+      "coding-images",
+      { text: "看这张图", images: [image] },
+      ACCESS_TOKEN,
+    );
+    await host.runtime.waitForRun(runId);
 
-    expect(host.runtime.activeRunCount).toBe(0);
-    expect(events).toHaveLength(0);
+    const snapshot = await host.runtime.getSnapshot("coding-images");
+    expect(snapshot.messages[0]?.images).toEqual([image]);
+    expect(JSON.stringify(requests.at(-1)?.messages)).toContain("data:image/png;base64,QUJD");
+  });
+
+  it("accepts an image-only message", async () => {
+    await host.runtime.createConversation("coding-image-only");
+
+    const { runId } = await host.runtime.send(
+      "coding-image-only",
+      { text: "", images: [{ name: "capture.png", dataUrl: "data:image/png;base64,QUJD" }] },
+      ACCESS_TOKEN,
+    );
+    await host.runtime.waitForRun(runId);
+
+    expect(JSON.stringify(requests.at(-1)?.messages)).toContain("data:image/png;base64,QUJD");
+  });
+
+  it("keeps image attachments in later transcript context", async () => {
+    await host.runtime.createConversation("coding-image-history");
+    const dataUrl = "data:image/png;base64,QUJD";
+    const first = await host.runtime.send(
+      "coding-image-history",
+      { text: "看这张图", images: [{ name: "capture.png", dataUrl }] },
+      ACCESS_TOKEN,
+    );
+    await host.runtime.waitForRun(first.runId);
+    const second = await host.runtime.send(
+      "coding-image-history",
+      { text: "继续", images: [] },
+      ACCESS_TOKEN,
+    );
+    await host.runtime.waitForRun(second.runId);
+
+    expect(JSON.stringify(requests.at(-1)?.messages)).toContain(dataUrl);
   });
 
   it("cancels an active coding run", async () => {

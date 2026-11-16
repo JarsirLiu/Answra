@@ -9,6 +9,7 @@ import { MessageResponse } from "./MessageResponse";
 import { groupMessageParts } from "./tool/groups/groupToolCalls";
 import { ToolGroupRow } from "./tool/groups/ToolGroupRow";
 import { ToolCall } from "./tool/ToolCall";
+import { UserImages } from "./UserImages";
 
 export const MessageRow = memo(function MessageRow({
   message,
@@ -29,7 +30,12 @@ export const MessageRow = memo(function MessageRow({
         marginTop={1}
         paddingX={1}
       >
-        <MarkdownText text={message.text} />
+        {message.text.length > 0 ? <MarkdownText text={message.text} /> : null}
+        {message.images !== undefined && message.images.length > 0 ? (
+          <Box marginTop={message.text.length > 0 ? 1 : 0}>
+            <UserImages images={message.images} />
+          </Box>
+        ) : null}
       </Box>
     );
   }

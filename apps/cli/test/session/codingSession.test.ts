@@ -134,6 +134,20 @@ describe("CodingSession", () => {
     expect(host.cancel).toHaveBeenCalledWith("run-1");
   });
 
+  it("sends image attachments with the prompt", async () => {
+    const host = createHost();
+    const session = createSession(host);
+    await session.open();
+    const image = { name: "capture.png", dataUrl: "data:image/png;base64,QUJD" };
+
+    await expect(session.send("look", [image])).resolves.toBe("run-1");
+    expect(host.send).toHaveBeenCalledWith(
+      "conversation-1",
+      { text: "look", images: [image] },
+      "token",
+    );
+  });
+
   it("rejects a concurrent send before the first one resolves", async () => {
     let resolveSend: (value: { runId: string }) => void = () => {};
     const host = createHost({

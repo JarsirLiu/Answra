@@ -236,4 +236,53 @@ describe("TUI composer", () => {
     expect(instance.lastFrame()).toContain("再按一次 Ctrl-C 退出");
     instance.unmount();
   });
+
+  it("attaches a clipboard image with Ctrl-V and submits an image-only prompt", async () => {
+    const image = { name: "clipboard.png", dataUrl: "data:image/png;base64,QUJD" };
+    const readClipboard = vi.fn(async () => [image]);
+    const readPath = vi.fn(async () => image);
+    const onSubmit = vi.fn();
+    const instance = render(
+      <PromptInput busy={false} imageReader={{ readClipboard, readPath }} onSubmit={onSubmit} />,
+    );
+
+    instance.stdin.write("\u0016");
+    await nextFrame();
+
+    expect(readClipboard).toHaveBeenCalledTimes(1);
+    expect(instance.lastFrame()).toContain("[Image #1]");
+    expect(instance.lastFrame()).toContain("clipboard.png");
+
+    instance.stdin.write("\r");
+    await nextFrame();
+    expect(onSubmit).toHaveBeenCalledWith("", [image]);
+    instance.unmount();
+  });
+
+  it("reads a pasted image path and removes the last attachment with Backspace", async () => {
+    const image = { name: "capture.png", dataUrl: "data:image/png;base64,QUJD" };
+    const readClipboard = vi.fn(async () => []);
+    const readPath = vi.fn(async () => image);
+    const onSubmit = vi.fn();
+    const instance = render(
+      <PromptInput busy={false} imageReader={{ readClipboard, readPath }} onSubmit={onSubmit} />,
+    );
+
+    instance.stdin.write("\x1b[200~C:\\shots\\capture.png\x1b[201~");
+    await nextFrame();
+
+    expect(readPath).toHaveBeenCalledWith("C:\\shots\\capture.png");
+    expect(instance.lastFrame()).toContain("[Image #1]");
+
+    instance.stdin.write("\u007f");
+    await nextFrame();
+    expect(instance.lastFrame()).not.toContain("[Image #1]");
+
+    instance.stdin.write("describe the workspace");
+    await nextFrame();
+    instance.stdin.write("\r");
+    await nextFrame();
+    expect(onSubmit).toHaveBeenCalledWith("describe the workspace");
+    instance.unmount();
+  });
 });

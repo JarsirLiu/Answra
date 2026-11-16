@@ -35,6 +35,14 @@ export function cursorCellAt(layout: InputLayout, origin: CellPosition): CellPos
   return { x: origin.x + layout.cursorColumn, y: origin.y + row };
 }
 
+/**
+ * 输入文本可用的显示列：终端列宽减去光标单元格。
+ * 与 Claude Code 的 `Cursor.fromText(text, columns - 1)` 一致，避免整行文本把光标挤到下一行。
+ */
+export function inputLayoutColumns(availableColumns: number): number {
+  return Math.max(1, Math.floor(availableColumns) - 1);
+}
+
 const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
 export function previousGraphemeOffset(value: string, cursor: number): number {

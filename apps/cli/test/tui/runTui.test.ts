@@ -22,7 +22,7 @@ vi.mock("ink", () => ({
 }));
 
 interface AppProps {
-  onSubmit: (text: string) => void;
+  onSubmit: (text: string, images?: readonly { name: string; dataUrl: string }[]) => void;
   onCancel: () => void;
   selectionStore?: unknown;
   onCopySelection?: () => void;
@@ -95,11 +95,13 @@ function tick(): Promise<void> {
 
 function createSession() {
   const sent: string[] = [];
+  const sentImages: Array<readonly { name: string; dataUrl: string }[]> = [];
   const waits: Array<() => void> = [];
   const session = {
     open: vi.fn(async () => snapshot),
-    send: vi.fn(async (text: string) => {
+    send: vi.fn(async (text: string, images: readonly { name: string; dataUrl: string }[] = []) => {
       sent.push(text);
+      sentImages.push(images);
       return `run-${sent.length}`;
     }),
     wait: vi.fn(
@@ -115,7 +117,7 @@ function createSession() {
     setAccessToken: vi.fn(),
     close: vi.fn(),
   } as unknown as CodingSession;
-  return { session, sent, waits };
+  return { session, sent, sentImages, waits };
 }
 
 async function start(
@@ -230,6 +232,24 @@ describe("runInkTui", () => {
     waits.shift()?.();
     await tick();
     expect(store.getSnapshot().phase).toBe("idle");
+    finish();
+    store.dispose();
+  });
+
+  it("passes image attachments to the active session", async () => {
+    const { session, sent, sentImages, waits } = createSession();
+    const store = new TuiViewStore();
+    const { props, finish } = await start(session, store);
+    const image = { name: "capture.png", dataUrl: "data:image/png;base64,QUJD" };
+
+    props.onSubmit("look", [image]);
+    await tick();
+
+    expect(sent).toEqual(["look"]);
+    expect(sentImages[0]).toEqual([image]);
+
+    waits.shift()?.();
+    await tick();
     finish();
     store.dispose();
   });

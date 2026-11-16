@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   cursorCellAt,
   endOfLineOffset,
+  inputLayoutColumns,
   inputVisualLineCount,
   layoutInput,
   moveCursorVertically,
@@ -12,6 +13,12 @@ import {
 } from "../../../src/tui/composer/inputLayout";
 
 describe("input layout", () => {
+  it("reserves one terminal cell for the cursor", () => {
+    expect(inputLayoutColumns(20)).toBe(19);
+    expect(inputLayoutColumns(1)).toBe(1);
+    expect(inputLayoutColumns(0)).toBe(1);
+  });
+
   it("keeps wide characters and emoji on the right column", () => {
     const layout = layoutInput("中文😀a", 2, 4, 3);
     expect(layout.cursorLine).toBe(1);

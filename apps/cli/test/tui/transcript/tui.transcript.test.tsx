@@ -39,6 +39,39 @@ describe("TUI transcript interaction", () => {
     store.dispose();
   });
 
+  it("renders image attachments on user messages", async () => {
+    const store = new TuiViewStore();
+    store.initialize({
+      conversationId: "conversation-image",
+      eventRevision: 0,
+      messages: [
+        {
+          id: "user-1",
+          role: "user",
+          text: "look",
+          status: "complete",
+          images: [{ name: "capture.png", dataUrl: "data:image/png;base64,QUJD" }],
+          parts: [],
+        },
+      ],
+    });
+    const instance = render(
+      <App
+        botName="coding.engineer"
+        onCancel={vi.fn()}
+        onSubmit={vi.fn()}
+        panelHandlers={PANEL_HANDLERS}
+        store={store}
+        workspaceRoot="D:\\workspace"
+      />,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(instance.lastFrame()).toContain("[Image #1]");
+    expect(instance.lastFrame()).toContain("capture.png");
+    instance.unmount();
+    store.dispose();
+  });
+
   it("keeps the latest transcript line visible in a short viewport", async () => {
     const store = new TuiViewStore();
     store.initialize({

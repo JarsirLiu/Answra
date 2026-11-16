@@ -3,6 +3,7 @@ import os from "node:os";
 import type { ConversationSendRequest } from "@answra/shared";
 import type { ModelMessage } from "ai";
 import { projectContextMessages } from "../core/context/projection";
+import { parseDataUrl } from "../core/model/imageInput";
 import { resolveShellRuntime } from "../core/tool";
 import { latestCheckpoint } from "../core/transcript/contextCheckpoint";
 import { projectConversationMessages } from "../core/transcript/projection";
@@ -29,7 +30,20 @@ export async function buildCodingMessages({
 }
 
 function userMessage(request: ConversationSendRequest): ModelMessage {
-  return { role: "user", content: [{ type: "text", text: request.text }] };
+  return {
+    role: "user",
+    content: [
+      ...(request.text ? [{ type: "text" as const, text: request.text }] : []),
+      ...request.images.map((image) => {
+        const parsed = parseDataUrl(image.dataUrl);
+        return {
+          type: "image" as const,
+          image: parsed.bytes,
+          mediaType: parsed.mediaType,
+        };
+      }),
+    ],
+  };
 }
 
 const PLATFORM_LABELS: Partial<Record<NodeJS.Platform, string>> = {

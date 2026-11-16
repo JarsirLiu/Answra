@@ -136,8 +136,7 @@ export class CodingApplication {
     accessToken: string,
   ): Promise<ConversationSendResult> {
     validateModelRequest(request);
-    if (!request.text.trim()) throw new Error("消息内容不能为空");
-    if (request.images.length > 0) throw new Error("CLI coding 暂不支持图片输入");
+    if (!request.text.trim() && request.images.length === 0) throw new Error("消息内容不能为空");
     await this.store.create(conversationId, this.seed(), this.sessionMetadata());
     const getAccessToken = async () => accessToken;
     const queue = this.queueFor(conversationId);

@@ -79,6 +79,23 @@ describe("virtual transcript layout", () => {
     ).toBe(estimateCompactionBoundaryHeight(boundary, 80, true));
   });
 
+  it("counts image attachments in user message height", () => {
+    const image = { name: "capture.png", dataUrl: "data:image/png;base64,QUJD" };
+    const imageOnly = {
+      id: "user-1",
+      role: "user" as const,
+      text: "",
+      status: "complete" as const,
+      images: [image],
+      parts: [],
+    };
+    const withText = { ...imageOnly, text: "look" };
+    expect(estimateMessageHeight(imageOnly, 80, false)).toBe(2);
+    expect(estimateMessageHeight(withText, 80, false)).toBeGreaterThan(
+      estimateMessageHeight(imageOnly, 80, false),
+    );
+  });
+
   it("falls back to estimates until a row has been measured", () => {
     const message = {
       id: "assistant-1",

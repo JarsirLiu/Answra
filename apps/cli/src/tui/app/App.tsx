@@ -1,6 +1,8 @@
 /** TUI 根布局：滚动 transcript + 活动行 + Claude 式输入框/状态行。 */
 import { Box, Text, useApp, useInput, useWindowSize } from "ink";
 import { useEffect, useState, useSyncExternalStore } from "react";
+import type { ImageAttachment } from "../../image/attachment";
+import type { ImageAttachmentReader } from "../../image/ports";
 import { Spinner } from "../chrome/Spinner";
 import { StatusLine } from "../chrome/StatusLine";
 import { TUI_THEME } from "../chrome/theme";
@@ -39,13 +41,17 @@ export function App({
   onCopyText,
   onSelectAll,
   onClearSelection,
+  imageReader,
+  onPasteError,
   panelHandlers,
 }: {
   store: TuiViewStore;
   botName: string;
   workspaceRoot: string;
-  onSubmit: (text: string) => void;
+  onSubmit: (text: string, images?: readonly ImageAttachment[]) => void;
   onCancel: () => void;
+  imageReader?: ImageAttachmentReader;
+  onPasteError?: (message: string) => void;
   onExitReady?: (exit: () => void) => void;
   pointerSource?: PointerSource;
   selectionStore?: TuiSelectionStore;
@@ -173,6 +179,7 @@ export function App({
             account={state.authAccount}
             authAvailable={state.authAvailable}
             close={() => panelHandlers.close("status")}
+            contextUsage={state.view.contextUsage}
             model={state.modelLabel}
             signedIn={state.authSignedIn}
             workspaceRoot={workspaceRoot}
@@ -182,8 +189,10 @@ export function App({
             allowEmptySubmit={state.setupStep === "api-key"}
             busy={busy}
             idleHint={state.setupStep === undefined ? undefined : SETUP_HINTS[state.setupStep]}
+            imageReader={state.setupStep === undefined ? imageReader : undefined}
             onCommandPaletteChange={setCommandPaletteOpen}
             onCopyText={onCopyText}
+            onPasteError={onPasteError}
             onSubmit={onSubmit}
             secret={state.setupStep === "api-key"}
             selectionActive={hasSelection}
