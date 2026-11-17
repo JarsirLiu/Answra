@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import type { FileHandle } from "node:fs/promises";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { ToolExecutionError } from "../executor/result";
 import { encodeText, type ToolTextEncoding } from "../text/encoding";
 import { normalizeLineEndings, type ToolLineEndings } from "../text/lineEndings";
@@ -29,6 +30,8 @@ export interface ToolTextCreateOptions {
   readonly maxBytes?: number;
   readonly mode?: number;
 }
+
+const WINDOWS_RENAME_RETRY_DELAYS_MS = [10, 20, 40, 80, 160] as const;
 
 export async function writeToolTextFileAtomic(
   target: string,
@@ -56,15 +59,7 @@ export async function writeToolTextFileAtomic(
     await handle.close();
     handle = undefined;
 
-    const current = await fs.stat(target);
-    if (
-      Math.trunc(current.mtimeMs) !== Math.trunc(options.expectedMtimeMs) ||
-      current.size !== options.expectedSizeBytes
-    ) {
-      throw new ToolExecutionError("invalid-input", "文件在读取后已被修改，请重新读取后再编辑");
-    }
-
-    await fs.rename(temporaryPath, target);
+    await replaceFile(temporaryPath, target, options);
     return { sizeBytes: temporaryStat.size, mtimeMs: temporaryStat.mtimeMs };
   } catch (error) {
     if (handle) await closeQuietly(handle);
@@ -108,10 +103,46 @@ export async function createToolTextFileAtomic(
     if (created) await removeQuietly(target);
     if (error instanceof ToolExecutionError) throw error;
     if (isAlreadyExists(error)) {
-      throw new ToolExecutionError("invalid-input", "目标文件已存在，请先 Read 后再写入");
+      throw new ToolExecutionError("invalid-input", "目标文件已存在，不能用空 old_string 覆盖");
     }
     throw new ToolExecutionError("handler-failed", `创建文件失败：${errorMessage(error)}`);
   }
+}
+
+async function replaceFile(
+  temporaryPath: string,
+  target: string,
+  options: ToolTextWriteOptions,
+): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    const current = await fs.stat(target);
+    if (
+      Math.trunc(current.mtimeMs) !== Math.trunc(options.expectedMtimeMs) ||
+      current.size !== options.expectedSizeBytes
+    ) {
+      throw new ToolExecutionError("invalid-input", "文件在读取后已被修改，请重新读取后再编辑");
+    }
+
+    try {
+      await fs.rename(temporaryPath, target);
+      return;
+    } catch (error) {
+      const retryDelay = WINDOWS_RENAME_RETRY_DELAYS_MS[attempt];
+      if (
+        process.platform !== "win32" ||
+        retryDelay === undefined ||
+        !isTransientWindowsRenameError(error)
+      ) {
+        throw error;
+      }
+      await delay(retryDelay);
+    }
+  }
+}
+
+function isTransientWindowsRenameError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null || !("code" in error)) return false;
+  return error.code === "EPERM" || error.code === "EACCES" || error.code === "EBUSY";
 }
 
 async function closeQuietly(handle: FileHandle): Promise<void> {

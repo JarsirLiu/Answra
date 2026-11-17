@@ -2,20 +2,18 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import type { ReadFileStateMap, ToolContext } from "../../../src/core/tool";
+import type { ToolContext } from "../../../src/core/tool";
 import { editTool, executeEdit, formatEditOutput } from "../../../src/core/tool/builtin/edit/tool";
 import { formatReadOutput } from "../../../src/core/tool/builtin/read/output";
 import { executeRead } from "../../../src/core/tool/builtin/read/tool";
-import { createReadFileStateKey } from "../../../src/core/tool/state/readFileState";
 
-function context(workspaceRoot: string, readFileState?: ReadFileStateMap): ToolContext {
+function context(workspaceRoot: string): ToolContext {
   return {
     toolCallId: "tool-call-1",
     signal: new AbortController().signal,
     workspaceRoot,
     runId: "run-1",
     sessionId: "session-1",
-    ...(readFileState ? { readFileState } : {}),
   };
 }
 
@@ -26,13 +24,12 @@ describe("Edit tool", () => {
     await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));
   });
 
-  it("creates a new file with an empty old_string and no prior Read", async () => {
+  it("creates a new file with an empty old_string without a prior Read", async () => {
     const root = await createRoot();
     const filePath = path.join(root, "notes", "new.md");
     await fs.mkdir(path.join(root, "notes"));
-    const state: ReadFileStateMap = new Map();
 
-    const output = await executeEdit(context(root, state), {
+    const output = await executeEdit(context(root), {
       file_path: "notes/new.md",
       old_string: "",
       new_string: "# 标题\n正文\n",
@@ -48,7 +45,6 @@ describe("Edit tool", () => {
     expect(output.diff.deletions).toBe(0);
     expect(output.diff.additions).toBeGreaterThan(0);
     await expect(fs.readFile(filePath, "utf8")).resolves.toBe("# 标题\n正文\n");
-    expect([...state.values()]).toMatchObject([{ origin: "edit", partialView: false }]);
     expect(formatEditOutput(output)).toContain("has been created successfully");
   });
 
@@ -65,14 +61,12 @@ describe("Edit tool", () => {
     await expect(fs.readFile(path.join(root, "empty.txt"), "utf8")).resolves.toBe("");
   });
 
-  it("fills an existing empty file after reading it", async () => {
+  it("fills an existing empty file without a prior Read", async () => {
     const root = await createRoot();
     const filePath = path.join(root, "empty.txt");
     await fs.writeFile(filePath, "", "utf8");
-    const state: ReadFileStateMap = new Map();
-    await executeRead(context(root, state), { file_path: "empty.txt" });
 
-    const output = await executeEdit(context(root, state), {
+    const output = await executeEdit(context(root), {
       file_path: "empty.txt",
       old_string: "",
       new_string: "filled\n",
@@ -82,35 +76,20 @@ describe("Edit tool", () => {
     await expect(fs.readFile(filePath, "utf8")).resolves.toBe("filled\n");
   });
 
-  it("requires a Read before filling an existing empty file", async () => {
-    const root = await createRoot();
-    const filePath = path.join(root, "empty.txt");
-    await fs.writeFile(filePath, "", "utf8");
-
-    await expect(
-      executeEdit(context(root, new Map()), {
-        file_path: "empty.txt",
-        old_string: "",
-        new_string: "filled",
-      }),
-    ).rejects.toThrow("没有可用的读取记录");
-    await expect(fs.readFile(filePath, "utf8")).resolves.toBe("");
-  });
-
-  it("rejects creating over an existing file or editing a missing file", async () => {
+  it("rejects creating over an existing non-empty file or editing a missing file", async () => {
     const root = await createRoot();
     const filePath = path.join(root, "a.txt");
     await fs.writeFile(filePath, "original", "utf8");
 
     await expect(
-      executeEdit(context(root, new Map()), {
+      executeEdit(context(root), {
         file_path: "a.txt",
         old_string: "",
         new_string: "replacement",
       }),
     ).rejects.toThrow("文件已存在");
     await expect(
-      executeEdit(context(root, new Map()), {
+      executeEdit(context(root), {
         file_path: "missing.txt",
         old_string: "old",
         new_string: "new",
@@ -119,151 +98,70 @@ describe("Edit tool", () => {
     await expect(fs.readFile(filePath, "utf8")).resolves.toBe("original");
   });
 
-  it("fails closed when the session has no read state", async () => {
-    const root = await createRoot();
-    await fs.writeFile(path.join(root, "a.txt"), "alpha", "utf8");
-
-    await expect(
-      executeEdit(context(root), {
-        file_path: "a.txt",
-        old_string: "alpha",
-        new_string: "beta",
-      }),
-    ).rejects.toThrow("没有文件读取状态");
-  });
-
-  it("requires a complete read before editing", async () => {
-    const root = await createRoot();
-    await fs.writeFile(path.join(root, "a.txt"), "alpha", "utf8");
-    const state: ReadFileStateMap = new Map();
-
-    await expect(
-      executeEdit(context(root, state), {
-        file_path: "a.txt",
-        old_string: "alpha",
-        new_string: "beta",
-      }),
-    ).rejects.toThrow("必须先用 Read");
-  });
-
-  it("does not accept a partial-view read as the edit baseline", async () => {
+  it("edits an existing file without a prior Read", async () => {
     const root = await createRoot();
     const filePath = path.join(root, "a.txt");
     await fs.writeFile(filePath, "alpha", "utf8");
-    const realPath = await fs.realpath(filePath);
-    const stat = await fs.stat(realPath);
-    const state: ReadFileStateMap = new Map();
-    state.set(createReadFileStateKey(realPath, 1, undefined), {
-      path: realPath,
-      mtimeMs: Math.trunc(stat.mtimeMs),
-      sizeBytes: stat.size,
-      offset: 1,
-      limit: undefined,
-      partialView: true,
-      origin: "read",
+
+    const output = await executeEdit(context(root), {
+      file_path: "a.txt",
+      old_string: "alpha",
+      new_string: "beta",
     });
 
-    await expect(
-      executeEdit(context(root, state), {
-        file_path: "a.txt",
-        old_string: "alpha",
-        new_string: "beta",
-      }),
-    ).rejects.toThrow("完整读取");
-  });
-
-  it("allows an edit when only the mtime changed and content is identical", async () => {
-    const root = await createRoot();
-    const filePath = path.join(root, "a.txt");
-    await fs.writeFile(filePath, "alpha", "utf8");
-    const state: ReadFileStateMap = new Map();
-    await executeRead(context(root, state), { file_path: "a.txt" });
-
-    await fs.writeFile(filePath, "alpha", "utf8");
-
-    await expect(
-      executeEdit(context(root, state), {
-        file_path: "a.txt",
-        old_string: "alpha",
-        new_string: "beta",
-      }),
-    ).resolves.toMatchObject({ type: "edited", replacements: 1 });
+    expect(output).toMatchObject({ type: "edited", replacements: 1 });
     await expect(fs.readFile(filePath, "utf8")).resolves.toBe("beta");
   });
 
-  it("rejects an edit when the file changed after the read", async () => {
+  it("edits after a range Read", async () => {
     const root = await createRoot();
     const filePath = path.join(root, "a.txt");
-    await fs.writeFile(filePath, "alpha", "utf8");
-    const state: ReadFileStateMap = new Map();
-    await executeRead(context(root, state), { file_path: "a.txt" });
+    await fs.writeFile(filePath, "alpha\nbeta\ngamma", "utf8");
 
-    await fs.writeFile(filePath, "alpha changed", "utf8");
-
-    await expect(
-      executeEdit(context(root, state), {
-        file_path: "a.txt",
-        old_string: "alpha",
-        new_string: "beta",
-      }),
-    ).rejects.toThrow("已被修改");
-    await expect(fs.readFile(filePath, "utf8")).resolves.toBe("alpha changed");
-  });
-
-  it("replaces a unique match and lets the next Read return the new content", async () => {
-    const root = await createRoot();
-    const filePath = path.join(root, "a.txt");
-    await fs.writeFile(filePath, "alpha\nbeta\n", "utf8");
-    const state: ReadFileStateMap = new Map();
-    await executeRead(context(root, state), { file_path: "a.txt" });
-
-    const output = await executeEdit(context(root, state), {
+    await executeRead(context(root), { file_path: "a.txt", offset: 2, limit: 1 });
+    await executeEdit(context(root), {
       file_path: "a.txt",
       old_string: "beta",
       new_string: "BETA",
     });
 
-    expect(output).toMatchObject({
-      type: "edited",
-      filePath: await fs.realpath(filePath),
-      replacements: 1,
-      replaceAll: false,
-      lineEndings: "LF",
-    });
-    expect(output.diff.hunks).toHaveLength(1);
-    expect(output.diff.hunks[0]).toMatchObject({
-      oldStart: 1,
-      oldLines: 3,
-      newStart: 1,
-      newLines: 3,
-    });
-    expect(output.diff.hunks[0]?.lines).toEqual([
-      { kind: "context", text: "alpha" },
-      { kind: "removed", text: "beta" },
-      { kind: "added", text: "BETA" },
-      { kind: "context", text: "" },
-    ]);
-    await expect(fs.readFile(filePath, "utf8")).resolves.toBe("alpha\nBETA\n");
-    expect([...state.values()]).toMatchObject([{ origin: "edit", partialView: false }]);
-
-    const next = await executeRead(context(root, state), { file_path: "a.txt" });
-    expect(next).toMatchObject({ type: "text", content: "alpha\nBETA\n" });
-    expect(formatReadOutput(next)).toContain("2\tBETA");
+    await expect(fs.readFile(filePath, "utf8")).resolves.toBe("alpha\nBETA\ngamma");
   });
 
-  it("allows consecutive edits from the edit baseline", async () => {
+  it("serializes concurrent edits to the same path", async () => {
+    const root = await createRoot();
+    const filePath = path.join(root, "a.txt");
+    await fs.writeFile(filePath, "alpha\nbeta\n", "utf8");
+
+    const [first, second] = await Promise.all([
+      executeEdit(context(root), {
+        file_path: "a.txt",
+        old_string: "alpha",
+        new_string: "ALPHA",
+      }),
+      executeEdit(context(root), {
+        file_path: "a.txt",
+        old_string: "beta",
+        new_string: "BETA",
+      }),
+    ]);
+
+    expect(first).toMatchObject({ type: "edited", replacements: 1 });
+    expect(second).toMatchObject({ type: "edited", replacements: 1 });
+    await expect(fs.readFile(filePath, "utf8")).resolves.toBe("ALPHA\nBETA\n");
+  });
+
+  it("allows consecutive edits without another Read", async () => {
     const root = await createRoot();
     const filePath = path.join(root, "a.txt");
     await fs.writeFile(filePath, "alpha", "utf8");
-    const state: ReadFileStateMap = new Map();
-    await executeRead(context(root, state), { file_path: "a.txt" });
 
-    await executeEdit(context(root, state), {
+    await executeEdit(context(root), {
       file_path: "a.txt",
       old_string: "alpha",
       new_string: "beta",
     });
-    await executeEdit(context(root, state), {
+    await executeEdit(context(root), {
       file_path: "a.txt",
       old_string: "beta",
       new_string: "gamma",
@@ -272,15 +170,55 @@ describe("Edit tool", () => {
     await expect(fs.readFile(filePath, "utf8")).resolves.toBe("gamma");
   });
 
+  it("allows consecutive edits to a CRLF file", async () => {
+    const root = await createRoot();
+    const filePath = path.join(root, "a.txt");
+    await fs.writeFile(filePath, "a\r\nb\r\n", "utf8");
+
+    await executeEdit(context(root), {
+      file_path: "a.txt",
+      old_string: "b",
+      new_string: "B",
+    });
+    await executeEdit(context(root), {
+      file_path: "a.txt",
+      old_string: "B",
+      new_string: "C",
+    });
+
+    await expect(fs.readFile(filePath, "utf8")).resolves.toBe("a\r\nC\r\n");
+  });
+
+  it("releases the path queue after a failed edit", async () => {
+    const root = await createRoot();
+    const filePath = path.join(root, "a.txt");
+    await fs.writeFile(filePath, "alpha", "utf8");
+
+    await expect(
+      executeEdit(context(root), {
+        file_path: "a.txt",
+        old_string: "missing",
+        new_string: "beta",
+      }),
+    ).rejects.toThrow("旧内容未在文件中找到");
+
+    const output = await executeEdit(context(root), {
+      file_path: "a.txt",
+      old_string: "alpha",
+      new_string: "beta",
+    });
+
+    expect(output).toMatchObject({ type: "edited", replacements: 1 });
+    await expect(fs.readFile(filePath, "utf8")).resolves.toBe("beta");
+  });
+
   it("refuses ambiguous matches unless replace_all is true", async () => {
     const root = await createRoot();
     const filePath = path.join(root, "a.txt");
     await fs.writeFile(filePath, "x\nx\n", "utf8");
-    const state: ReadFileStateMap = new Map();
-    await executeRead(context(root, state), { file_path: "a.txt" });
 
     await expect(
-      executeEdit(context(root, state), {
+      executeEdit(context(root), {
         file_path: "a.txt",
         old_string: "x",
         new_string: "y",
@@ -288,7 +226,7 @@ describe("Edit tool", () => {
     ).rejects.toThrow("出现了 2 次");
     await expect(fs.readFile(filePath, "utf8")).resolves.toBe("x\nx\n");
 
-    const output = await executeEdit(context(root, state), {
+    const output = await executeEdit(context(root), {
       file_path: "a.txt",
       old_string: "x",
       new_string: "y",
@@ -303,10 +241,8 @@ describe("Edit tool", () => {
     const root = await createRoot();
     const filePath = path.join(root, "a.txt");
     await fs.writeFile(filePath, "x\n1\n2\n3\n4\n5\n6\n7\nx\n", "utf8");
-    const state: ReadFileStateMap = new Map();
-    await executeRead(context(root, state), { file_path: "a.txt" });
 
-    const output = await executeEdit(context(root, state), {
+    const output = await executeEdit(context(root), {
       file_path: "a.txt",
       old_string: "x",
       new_string: "y",
@@ -323,10 +259,9 @@ describe("Edit tool", () => {
     const root = await createRoot();
     const filePath = path.join(root, "a.txt");
     await fs.writeFile(filePath, "alpha\nbeta", "utf8");
-    const state: ReadFileStateMap = new Map();
-    const read = await executeRead(context(root, state), { file_path: "a.txt" });
+    const read = await executeRead(context(root), { file_path: "a.txt" });
 
-    await executeEdit(context(root, state), {
+    await executeEdit(context(root), {
       file_path: "a.txt",
       old_string: formatReadOutput(read),
       new_string: "ALPHA\nBETA",
@@ -339,11 +274,9 @@ describe("Edit tool", () => {
     const root = await createRoot();
     const filePath = path.join(root, "a.txt");
     await fs.writeFile(filePath, "alpha", "utf8");
-    const state: ReadFileStateMap = new Map();
-    await executeRead(context(root, state), { file_path: "a.txt" });
 
     await expect(
-      executeEdit(context(root, state), {
+      executeEdit(context(root), {
         file_path: "a.txt",
         old_string: "1\talpha",
         new_string: "alpha",
@@ -359,10 +292,8 @@ describe("Edit tool", () => {
       filePath,
       Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from("a\r\nb\r\n", "utf8")]),
     );
-    const state: ReadFileStateMap = new Map();
-    await executeRead(context(root, state), { file_path: "a.txt" });
 
-    await executeEdit(context(root, state), {
+    await executeEdit(context(root), {
       file_path: "a.txt",
       old_string: "b",
       new_string: "B",
@@ -373,50 +304,15 @@ describe("Edit tool", () => {
     expect(bytes.toString("utf8").slice(1)).toBe("a\r\nB\r\n");
   });
 
-  it("invalidates every cached range after a write", async () => {
-    const root = await createRoot();
-    const filePath = path.join(root, "a.txt");
-    await fs.writeFile(filePath, "one\ntwo\nthree", "utf8");
-    const state: ReadFileStateMap = new Map();
-    const toolContext = context(root, state);
-    await executeRead(toolContext, { file_path: "a.txt" });
-    await executeRead(toolContext, { file_path: "a.txt", offset: 2, limit: 1 });
-
-    await executeEdit(toolContext, {
-      file_path: "a.txt",
-      old_string: "two",
-      new_string: "TWO",
-    });
-
-    const range = await executeRead(toolContext, {
-      file_path: "a.txt",
-      offset: 2,
-      limit: 1,
-    });
-    expect(range).toMatchObject({ type: "text", content: "TWO" });
-  });
-
   it("rejects edits inside version-control directories", async () => {
     const root = await createRoot();
     const gitDirectory = path.join(root, ".git");
     const filePath = path.join(gitDirectory, "config");
     await fs.mkdir(gitDirectory);
     await fs.writeFile(filePath, "secret", "utf8");
-    const realPath = await fs.realpath(filePath);
-    const stat = await fs.stat(realPath);
-    const state: ReadFileStateMap = new Map();
-    state.set(createReadFileStateKey(realPath, 1, undefined), {
-      path: realPath,
-      mtimeMs: Math.trunc(stat.mtimeMs),
-      sizeBytes: stat.size,
-      offset: 1,
-      limit: undefined,
-      partialView: false,
-      origin: "read",
-    });
 
     await expect(
-      executeEdit(context(root, state), {
+      executeEdit(context(root), {
         file_path: ".git/config",
         old_string: "secret",
         new_string: "public",
@@ -428,21 +324,9 @@ describe("Edit tool", () => {
     const root = await createRoot();
     const filePath = path.join(root, "large.txt");
     await fs.writeFile(filePath, "x".repeat(1024 * 1024 + 1), "utf8");
-    const realPath = await fs.realpath(filePath);
-    const stat = await fs.stat(realPath);
-    const state: ReadFileStateMap = new Map();
-    state.set(createReadFileStateKey(realPath, 1, undefined), {
-      path: realPath,
-      mtimeMs: Math.trunc(stat.mtimeMs),
-      sizeBytes: stat.size,
-      offset: 1,
-      limit: undefined,
-      partialView: false,
-      origin: "read",
-    });
 
     await expect(
-      executeEdit(context(root, state), {
+      executeEdit(context(root), {
         file_path: "large.txt",
         old_string: "x",
         new_string: "y",

@@ -1,12 +1,6 @@
 /** 工具启动期静态注册表：注册、查询、按授权 id 生成 AI SDK ToolSet。 */
 import { jsonSchema, type ToolSet, tool } from "ai";
-import type {
-  AnyToolEntry,
-  ReadFileStateMap,
-  ToolEntry,
-  ToolId,
-  ToolWorkerPaths,
-} from "./contracts";
+import type { AnyToolEntry, ToolEntry, ToolId, ToolWorkerPaths } from "./contracts";
 import { executeToolCall } from "./executor/executeToolCall";
 
 export interface ToolSessionContext {
@@ -14,7 +8,6 @@ export interface ToolSessionContext {
   readonly workspaceRoot: string | null;
   readonly runId: string;
   readonly sessionId: string;
-  readonly readFileState?: ReadFileStateMap;
   readonly workerPaths?: ToolWorkerPaths;
   /** 单次工具调用的增量输出回调；由 Agent 层接到事件日志。 */
   readonly onToolOutput?: (toolCallId: string, delta: string) => void;
@@ -83,7 +76,6 @@ function createModelTool(
         workspaceRoot: context.workspaceRoot,
         runId: context.runId,
         sessionId: context.sessionId,
-        ...(context.readFileState ? { readFileState: context.readFileState } : {}),
         ...(workerPaths ? { workerPaths } : {}),
         ...(context.onToolOutput
           ? {

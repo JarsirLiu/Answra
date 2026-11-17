@@ -8,8 +8,8 @@
 
 - 模型可见工具仍只有 `Read`、`Grep`、`Edit`、`RunCommand` 四个；CLI 与桌面端继续共用 `createBuiltinToolRegistry()`，没有第二套工具实现。
 - Windows shell 已按 `pwsh` → `powershell.exe` 检测，支持显式 cmd 与 30K 命令上限；macOS 默认 zsh。续接会话改为跨 chunk 流式解码，不再按字节切片后单独猜测编码。
-- `Edit` 已允许“先 Read 再填充已存在空文件”，`ReadFileState` 已用 `contentHash` 替代只比较 mtime/size。
-- 工具源码已按职责拆分：`text/`（编码与行尾）、`workspace/`（路径、文本文件、原子写入、错误与限制）、`state/`（读前状态）、`executor/`（执行与取消）、`builtin/<tool>/`（Read/Grep/Edit/RunCommand 各自实现）。`builtin/index.ts` 只负责注册。
+- 2026-11-17 起 `ReadFileState`/`contentHash` 已整体删除：`Edit` 自读文件，`Read` 无状态，重复 Read 直接返回文本；已有空文件由 Edit 自读确认后回填。
+- 工具源码已按职责拆分：`text/`（编码与行尾）、`workspace/`（路径、文本文件、原子写入、错误与限制）、`executor/`（执行与取消）、`builtin/<tool>/`（Read/Grep/Edit/RunCommand 各自实现）。`builtin/index.ts` 只负责注册；`state/` 已随读取状态删除。
 - 测试文件仍保留原目录，只更新了 import 路径；测试目录镜像、macOS CI 和更大范围的编码策略尚未实施。
 - 已验证：`pnpm --filter @answra/agent test` 78 文件/584 项通过，完整 `pnpm verify` 通过；macOS 尚无实机或 CI 证据。
 
@@ -58,7 +58,6 @@ Answra 已有 OpenCode 没有的续接会话、Windows Job Object 和流式快�
 - 文件工具：
   - `apps/agent/src/core/tool/text/`
   - `apps/agent/src/core/tool/workspace/`
-  - `apps/agent/src/core/tool/state/`
   - `apps/agent/src/core/tool/builtin/read/`
   - `apps/agent/src/core/tool/builtin/grep/`
   - `apps/agent/src/core/tool/builtin/edit/`
@@ -110,9 +109,6 @@ apps/agent/src/core/tool/
     resultBudget.ts
     timeout.ts
 
-  state/
-    readFileState.ts
-
   text/
     encoding.ts
     lineEndings.ts
@@ -146,6 +142,7 @@ apps/agent/src/core/tool/
       tool.ts
       match.ts
       diff.ts
+      mutationQueue.ts
 
     runCommand/
       tool.ts
@@ -174,8 +171,6 @@ apps/agent/test/core/tool/
     paths.test.ts
     textFile.test.ts
     atomicWrite.test.ts
-  state/
-    readFileState.test.ts
   builtin/
     read.test.ts
     read.documents.test.ts
@@ -196,16 +191,16 @@ apps/agent/test/core/tool/
 - GBK/GB18030 不作为默认自动猜测；如产品需要，增加显式编码参数或显式配置，并单独记录决策。
 - `streamDecoder.ts` 必须保留不完整 UTF-8 尾部；只有完整非法序列才允许切换兜底编码，不能因为 chunk 边界误判。
 
-### 4. 文件状态与 Edit
+### 4. 文件状态与 Edit（2026-11-17 已收口）
 
-- `ReadFileStateEntry` 增加 `contentHash`；mtime 变化时先比内容 hash，hash 相同允许编辑。
-- `readFileState` 使用有界 LRU，避免长会话无界增长。
-- 路径键统一归一化；Windows 大小写不敏感、`/` 与 `\` 混合路径必须命中同一条记录。
-- `Edit` 规则补全：
+- 不再引入 `ReadFileStateEntry`、`contentHash`、LRU 或路径键归一化；这些状态已随 [移除工具读前状态与 Edit 读前门禁](../../implemented/simplification/2026-11-17-remove-tool-read-state-and-edit-read-gate.md) 删除。
+- `Edit` 在单次调用内自读文件，按精确匹配写入；同一路径由 `builtin/edit/mutationQueue.ts` 串行。
+- 路径解析、VCS 排除、编码/BOM/行尾/权限保留和原子写继续由 `workspace/` 负责。
+- `Edit` 规则：
   - 文件不存在 + `old_string=""`：新建。
-  - 文件存在且 size 为 0 + `old_string=""`：允许写入，但要求先 Read，避免并发覆盖。
+  - 文件存在且 size 为 0 + `old_string=""`：Edit 自读确认后写入，不要求先 Read。
   - 文件存在且非空 + `old_string=""`：拒绝。
-  - 非空 `old_string`：继续要求完整 Read、唯一匹配或 `replace_all`。
+  - 非空 `old_string`：要求精确匹配、唯一匹配或 `replace_all`。
 
 ### 5. RunCommand 与 Shell provider
 
@@ -257,7 +252,7 @@ RunCommand
 
 - `core/tool` 仍只放跨域工具契约、注册、执行与通用工具；不导入任何领域。
 - `createBuiltinToolRegistry()` 是 CLI 与桌面端共用的唯一工具装配入口；不出现按宿主分叉的第二套工具目录。
-- `workspace/`、`text/`、`state/` 是 Agent 内 Node 能力，不是 desktop 平台能力。
+- `workspace/`、`text/` 是 Agent 内 Node 能力，不是 desktop 平台能力；`state/` 已删除，不得借跨平台改造恢复会话读取状态。
 - `packages/ui` 只消费结构化输出和工具事件；不解析 shell 输出、不判断编码。
 - desktop 不代执行 Agent 工具；本提案不新增反向 RPC。
 - `RunCommand` 是唯一模型工具；平台 provider 不是模型可见工具。
@@ -283,10 +278,10 @@ RunCommand
   - CLI 和桌面端使用同一套工具注册表；一次修复同时作用于两个宿主。
   - 续接长命令输出中文不再出现因 chunk 边界导致的乱码。
   - UTF-8/UTF-16LE/UTF-16BE 文件可读可编辑；不支持编码明确报错且不写盘。
-  - 新建文件、编辑 CRLF 文件、填充已存在空文件行为符合上述规则。
+  - 新建文件、编辑 CRLF 文件、填充已存在空文件行为符合上述规则；Edit 不要求历史 Read。
   - Windows 使用 `pwsh` 或 PowerShell 5.1 时提示与调用一致；macOS 使用 POSIX provider。
 - 自动化验证：
-  - 新增 `streamDecoder`、`encoding`、`atomicWrite`、`readFileState`、`edit`、`runCommand` 测试。
+  - 新增 `streamDecoder`、`encoding`、`atomicWrite`、`edit`（含未读编辑与同路径串行）、`runCommand` 测试；不恢复 `readFileState` 测试。
   - `pnpm --filter @answra/agent test` 在 Windows 与 macOS 通过。
   - `@answra/agent`、`@answra/ui`、`@answra/cli` typecheck 通过。
   - `pnpm notes:check`、`pnpm architecture:check` 通过。

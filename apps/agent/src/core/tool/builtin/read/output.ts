@@ -8,8 +8,6 @@ export const READ_MAX_OUTPUT_TOKENS = 25_000;
 export const READ_DEFAULT_MAX_LINES = 2_000;
 const READ_TOKEN_BUDGET_PARTIAL_TARGET = Math.floor(READ_MAX_OUTPUT_TOKENS * 0.85);
 const EMPTY_FILE_REMINDER = "<system-reminder>文件存在，但内容为空。</system-reminder>";
-const FILE_UNCHANGED_STUB =
-  "Wasted call — file unchanged since your last Read. Refer to that earlier tool_result instead.";
 
 export interface ReadTextOutput {
   readonly type: "text";
@@ -26,12 +24,7 @@ export interface ReadTextOutput {
   readonly document?: ReadDocumentMetadata;
 }
 
-export interface ReadUnchangedOutput {
-  readonly type: "file_unchanged";
-  readonly filePath: string;
-}
-
-export type ReadOutput = ReadTextOutput | ReadUnchangedOutput;
+export type ReadOutput = ReadTextOutput;
 
 export class ReadOutputTooLargeError extends Error {
   constructor(
@@ -98,12 +91,7 @@ export function createReadTextOutput(input: {
 }
 
 export function formatReadOutput(output: ReadOutput): string {
-  switch (output.type) {
-    case "file_unchanged":
-      return FILE_UNCHANGED_STUB;
-    case "text":
-      return formatReadTextOutput(output);
-  }
+  return formatReadTextOutput(output);
 }
 
 function formatReadTextOutput(output: ReadTextOutput): string {

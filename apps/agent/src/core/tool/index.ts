@@ -13,8 +13,6 @@ export {
   type AnyToolEntry,
   defineTool,
   isToolHandlerFailure,
-  type ReadFileStateEntry,
-  type ReadFileStateMap,
   type ToolContext,
   type ToolEntry,
   type ToolFailure,

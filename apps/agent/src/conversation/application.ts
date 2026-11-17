@@ -24,7 +24,6 @@ import {
   type TeamPreset,
   type TeamPresetCatalog,
 } from "../core/team/preset";
-import type { ReadFileStateMap } from "../core/tool";
 import { createUserMessage } from "../core/transcript/message";
 import type {
   ConversationSessionMetadata,
@@ -66,7 +65,6 @@ export class ConversationApplication {
   private readonly contextPreparation: ContextPreparation;
   private readonly onSnapshot?: ConversationApplicationOptions["onSnapshot"];
   private readonly onTeamError?: ConversationApplicationOptions["onTeamError"];
-  private readonly readFileStates = new Map<string, ReadFileStateMap>();
   private readonly queues = new Map<string, ConversationQueue>();
   private readonly runConversations = new Map<string, string>();
   private workspaceRoot: string | null = null;
@@ -156,7 +154,6 @@ export class ConversationApplication {
     ) {
       throw new Error("会话已存在且 Bot 参与者不同");
     }
-    this.readFileStates.delete(conversationId);
     return this.loadRecoverySnapshot(conversationId);
   }
 
@@ -165,7 +162,6 @@ export class ConversationApplication {
     this.queues.get(conversationId)?.cancelPending();
     const eventRevision = await this.agentRuntime.getConversationRevision(conversationId);
     await this.store.clear(conversationId, eventRevision);
-    this.readFileStates.delete(conversationId);
     return this.loadRecoverySnapshot(conversationId);
   }
 
@@ -395,7 +391,6 @@ export class ConversationApplication {
       request: { text: "", images: [] },
       profile: bot.policy,
       workspaceRoot: this.workspaceRoot,
-      readFileState: this.getReadFileState(conversationId),
       viewerAgentId: bot.id,
       agentNames: new Map(this.catalog.list().map((member) => [member.id, member.name])),
     };
@@ -466,7 +461,6 @@ export class ConversationApplication {
             request,
             profile: bot.policy,
             workspaceRoot: this.workspaceRoot,
-            readFileState: this.getReadFileState(conversationId),
             viewerAgentId: bot.id,
             agentNames: new Map(this.catalog.list().map((member) => [member.id, member.name])),
           },
@@ -558,7 +552,6 @@ export class ConversationApplication {
     for (const queue of this.queues.values()) queue.dispose();
     this.queues.clear();
     this.runConversations.clear();
-    this.readFileStates.clear();
     this.agentRuntime.dispose();
   }
 
@@ -578,14 +571,6 @@ export class ConversationApplication {
 
   get activeRunCount(): number {
     return this.agentRuntime.activeRunCount;
-  }
-
-  private getReadFileState(conversationId: string): ReadFileStateMap {
-    const existing = this.readFileStates.get(conversationId);
-    if (existing) return existing;
-    const state: ReadFileStateMap = new Map();
-    this.readFileStates.set(conversationId, state);
-    return state;
   }
 }
 

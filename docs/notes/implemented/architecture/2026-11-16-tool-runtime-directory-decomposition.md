@@ -2,6 +2,8 @@
 
 状态：已实施
 
+> 2026-11-17 修订：`state/readFileState.ts` 已删除，Edit 的按路径队列落在 `builtin/edit/mutationQueue.ts`。目录分层原则不变，详见 [移除工具读前状态与 Edit 读前门禁](../simplification/2026-11-17-remove-tool-read-state-and-edit-read-gate.md)。
+
 ## 问题
 
 Agent 的四个模型工具已经统一在 `apps/agent/src/core/tool`，但源码按文件平铺：
@@ -17,7 +19,7 @@ Agent 的四个模型工具已经统一在 `apps/agent/src/core/tool`，但源�
 
 - `apps/agent/src/core/tool/text/`：`encoding.ts`、`lineEndings.ts`、`streamDecoder.ts`。
 - `apps/agent/src/core/tool/workspace/`：`paths.ts`、`textFile.ts`、`atomicWrite.ts`、`errors.ts`、`limits.ts` 与聚合入口 `index.ts`。
-- `apps/agent/src/core/tool/state/readFileState.ts`。
+- `apps/agent/src/core/tool/state/readFileState.ts`（2026-11-17 删除）。
 - `apps/agent/src/core/tool/builtin/read/`：工具、输出与 `documents/`。
 - `apps/agent/src/core/tool/builtin/grep/`：工具、schema、prompt、输出、worker 与 `ripgrep/`。
 - `apps/agent/src/core/tool/builtin/edit/`：工具、匹配与 diff。
@@ -38,8 +40,8 @@ Agent 的四个模型工具已经统一在 `apps/agent/src/core/tool`，但源�
 ### 2. 工作区层只处理路径与文件
 
 - `workspace/paths.ts` 负责相对/绝对路径、盘符相对路径拒绝、VCS 目录拒绝和 realpath。
-- `workspace/textFile.ts` 负责只读文本与编辑基线读取。
-- `workspace/atomicWrite.ts` 负责临时文件、mtime/size 校验、编码/BOM/行尾/权限保留与独占创建。
+- `workspace/textFile.ts` 负责只读文本与单次 Edit 自读。
+- `workspace/atomicWrite.ts` 负责临时文件、mtime/size 校验、编码/BOM/行尾/权限保留、独占创建与 Windows rename 共享冲突重试。
 - `workspace/errors.ts` 只做文件系统错误窄分类；`limits.ts` 集中字节上限。
 - `workspace/index.ts` 是对外聚合入口；工具内部按需导入具体模块，避免路径层反向依赖工具层。
 
@@ -49,7 +51,7 @@ Agent 的四个模型工具已经统一在 `apps/agent/src/core/tool`，但源�
 - Grep 的 schema、prompt、ripgrep 参数、ripgrep 执行和输出投影分开，`worker.ts` 继续作为独立 worker 入口。
 - RunCommand 的模型提示移到 `environment.ts`；一次性执行、会话、进程树与 workdir 进入 `process/`；shell 检测、调用构造与输出清理留在 `shell/`。
 - 会话的公开类型、等待策略与错误进入 `sessionContract.ts`，输出累计与快照进入 `sessionOutput.ts`，LRU 与生命周期管理留在 `sessions.ts`。
-- `readFileState` 上移到 `state/`；`toolNames` 改名为 `names.ts`；取消检查上移到 `executor/abort.ts`。
+- `readFileState` 当时上移到 `state/`，2026-11-17 已删除；`toolNames` 改名为 `names.ts`；取消检查上移到 `executor/abort.ts`。Edit 的按路径队列留在 `builtin/edit/mutationQueue.ts`，不重建 `state/`。
 
 ## 曾考虑的替代方案
 
@@ -74,16 +76,16 @@ Agent 的四个模型工具已经统一在 `apps/agent/src/core/tool`，但源�
 ## 模块边界
 
 - `core/tool` 只放工具契约、静态注册、执行器与内建工具；工具仍在 Agent 进程执行。
-- `text/`、`workspace/`、`state/` 是 Agent 内 Node 能力，不包含桌面平台能力，也不依赖 React。
-- `builtin/<tool>/` 只消费文本/工作区/状态层；工具之间不互相调用。
+- `text/`、`workspace/` 是 Agent 内 Node 能力，不包含桌面平台能力，也不依赖 React；`state/` 已随读取状态删除，不得为单个工具重建跨领域状态层。
+- `builtin/<tool>/` 只消费文本/工作区层；工具之间不互相调用，Edit 的串行队列属于 Edit 自身。
 - `runCommand/process/` 管进程与会话，`runCommand/shell/` 管跨平台 shell provider；两层不复制终止或编码语义。
 - CLI 与桌面端继续通过 `createBuiltinToolRegistry()` 使用同一套工具；desktop 只注入 grep worker 路径和工作区根目录。
 
 ## 验证
 
 - `pnpm --filter @answra/agent typecheck`：通过。
-- `pnpm --filter @answra/agent test`：78 个文件、584 项通过。
+- `pnpm --filter @answra/agent test`：当时 78 个文件、584 项通过；2026-11-17 删除读取状态测试并补充队列失败释放用例后为 78 个文件、576 项通过。
 - 定向测试：`vitest run test/core/tool/shell test/core/tool/edit.test.ts test/core/tool/grep.test.ts test/core/tool/read.test.ts test/core/tool/workspace.test.ts`，10 个文件、151 项通过。
 - `pnpm verify`（lint、全包 typecheck、全包测试、architecture、tokens）：通过。
-- 覆盖：UTF-8 跨 chunk、GBK 回退、空文件 Edit、contentHash、PowerShell 错误清理、会话 LRU、进程树取消与超时。
+- 覆盖：UTF-8 跨 chunk、GBK 回退、空文件 Edit、PowerShell 错误清理、会话 LRU、进程树取消与超时；2026-11-17 后 contentHash 用例删除，新增未读编辑、并发串行、CRLF 连续编辑和 Windows rename 重试。
 - 未覆盖：测试目录镜像迁移、macOS CI、GBK/GB18030 文件自动识别；这些仍留在跨平台提案中。

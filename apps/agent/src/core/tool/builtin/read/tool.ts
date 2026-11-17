@@ -8,11 +8,6 @@ import { assertNotAborted } from "../../executor/abort";
 import { ToolExecutionError } from "../../executor/result";
 import { READ_TOOL_NAME } from "../../names";
 import {
-  createReadFileStateKey,
-  hashReadFileContent,
-  isCachedReadFresh,
-} from "../../state/readFileState";
-import {
   READ_FILE_MAX_BYTES,
   READ_SCAN_MAX_BYTES,
   readToolTextFile,
@@ -97,11 +92,6 @@ export async function executeRead(context: ToolContext, input: ReadInput): Promi
   try {
     assertNotAborted(context.signal);
     const stat = await statToolFile(root, input.file_path);
-    const key = createReadFileStateKey(stat.target, offset, limit);
-    const cached = context.readFileState?.get(key);
-    if (cached && isCachedReadFresh(cached, stat)) {
-      return { type: "file_unchanged", filePath: stat.target };
-    }
 
     const document = await readDocumentText(stat.target, stat.sizeBytes, context.signal);
     if (document) {
@@ -114,15 +104,6 @@ export async function executeRead(context: ToolContext, input: ReadInput): Promi
         offset,
         sizeBytes: stat.sizeBytes,
         text: document.text,
-      });
-      context.readFileState?.set(key, {
-        limit,
-        mtimeMs: Math.trunc(stat.mtimeMs),
-        offset,
-        origin: "read",
-        partialView: output.truncatedByTokenCap === true,
-        path: stat.target,
-        sizeBytes: stat.sizeBytes,
       });
       return output;
     }
@@ -144,16 +125,6 @@ export async function executeRead(context: ToolContext, input: ReadInput): Promi
       offset,
       sizeBytes: stat.sizeBytes,
       text: read.text,
-    });
-    context.readFileState?.set(key, {
-      contentHash: hashReadFileContent(read.text),
-      limit,
-      mtimeMs: Math.trunc(stat.mtimeMs),
-      offset,
-      origin: "read",
-      partialView: output.truncatedByTokenCap === true,
-      path: stat.target,
-      sizeBytes: stat.sizeBytes,
     });
     return output;
   } catch (error) {

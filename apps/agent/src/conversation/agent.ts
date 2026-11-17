@@ -9,7 +9,7 @@ import type {
 } from "../core/agent/definition";
 import { agentId } from "../core/agent/definition";
 import { createToolStepLimit } from "../core/agent/toolStepLimit";
-import type { ReadFileStateMap, ToolRegistry } from "../core/tool";
+import type { ToolRegistry } from "../core/tool";
 import type { ConversationStore } from "../core/transcript/store";
 import { CHAT_PROFILES, type ChatProfile } from "./profiles/registry";
 import { buildEnvironmentSystemContext, readRuntimeEnvironment } from "./turn/environmentContext";
@@ -38,7 +38,6 @@ export interface ConversationAgentInput {
   request: ConversationSendRequest;
   profile: ConversationAgentProfile;
   workspaceRoot: string | null;
-  readFileState?: ReadFileStateMap;
   /** 当前发言 Bot；用于按 author/audience 投影历史和交接消息。 */
   viewerAgentId?: string;
   /** 当前会话可见 Bot 的展示名，交接消息按来源名渲染。 */
@@ -90,7 +89,6 @@ export function createConversationAgentDefinition({
               workspaceRoot: input.workspaceRoot,
               runId: input.runId,
               sessionId: input.conversationId,
-              ...(input.readFileState ? { readFileState: input.readFileState } : {}),
               ...(emitter ? { onToolOutput: emitter.toolOutput } : {}),
             });
       const system = toolSet

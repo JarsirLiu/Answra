@@ -3,7 +3,7 @@ import type { ConversationSendRequest } from "@answra/shared";
 import type { AgentDefinition, BotDiscovery, BotIdentity } from "../core/agent/definition";
 import { agentId } from "../core/agent/definition";
 import { createToolStepLimit } from "../core/agent/toolStepLimit";
-import type { ReadFileStateMap, ToolRegistry } from "../core/tool";
+import type { ToolRegistry } from "../core/tool";
 import type { ConversationStore } from "../core/transcript/store";
 import {
   buildCodingEnvironmentContext,
@@ -31,7 +31,6 @@ export interface CodingAgentInput {
   request: ConversationSendRequest;
   policy: CodingPolicy;
   workspaceRoot: string | null;
-  readFileState?: ReadFileStateMap;
 }
 
 export function createCodingAgentDefinition({
@@ -61,7 +60,6 @@ export function createCodingAgentDefinition({
               workspaceRoot: input.workspaceRoot,
               runId: input.runId,
               sessionId: input.conversationId,
-              ...(input.readFileState ? { readFileState: input.readFileState } : {}),
               ...(emitter ? { onToolOutput: emitter.toolOutput } : {}),
             });
       const system = toolSet

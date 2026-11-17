@@ -2,6 +2,8 @@
 
 状态：已实施
 
+> 2026-11-17 修订：本 Note 的 `ReadFileState`/`contentHash`、“空文件回填必须先 Read”和会话级编辑基线已被 [移除工具读前状态与 Edit 读前门禁](../simplification/2026-11-17-remove-tool-read-state-and-edit-read-gate.md) 取代。Shell 检测、流式解码和会话行为仍然有效。
+
 ## 问题
 
 同一套 Agent 工具在 Windows 与 macOS 上存在四个具体缺口：
@@ -9,7 +11,7 @@
 - `RunCommand` 在 Windows 写死 `powershell.exe` 5.1；即使安装了 `pwsh` 也不会使用，平台提示也固定为 PowerShell。
 - 续接会话按字节 offset 切新增输出，再对切片单独解码；UTF-8 中文字符跨 chunk 时会触发 GBK 回退，产生乱码。
 - `Edit` 拒绝“已存在空文件 + `old_string=""`”；没有独立 `Write` 工具时，Read 后的空文件无法写入。
-- `ReadFileState` 只比较 mtime/size；Windows 云同步或杀毒软件触碰 mtime 会造成假冲突。
+- 当时 `ReadFileState` 只比较 mtime/size；Windows 云同步或杀毒软件触碰 mtime 会造成假冲突。该状态已在 2026-11-17 整体删除。
 
 CLI 与桌面端共用 `createBuiltinToolRegistry()`，因此这些问题一次修复同时作用于两个宿主。
 
@@ -26,7 +28,7 @@ CLI 与桌面端共用 `createBuiltinToolRegistry()`，因此这些问题一次�
 - 文件编辑与状态：
   - `apps/agent/src/core/tool/builtin/edit.ts`
   - `apps/agent/src/core/tool/builtin/read.ts`
-  - `apps/agent/src/core/tool/builtin/readFileState.ts`
+  - `apps/agent/src/core/tool/builtin/readFileState.ts`（2026-11-17 删除）
   - `apps/agent/src/core/tool/contracts.ts`
 - 测试：
   - `apps/agent/test/core/tool/shell/runtime.test.ts`
@@ -53,11 +55,11 @@ CLI 与桌面端共用 `createBuiltinToolRegistry()`，因此这些问题一次�
   - 只有完整非法 UTF-8 才回退 GBK，并在该 stream 后续保持 GBK，避免逐 chunk 来回猜。
   - 会话快照按字符 offset 返回新增文本，不再按字节切片；关闭时 flush decoder。
 - PowerShell stderr 包装清理只在 `syntax === "powershell"` 时执行，POSIX 与 cmd 原样保留 stderr。
-- `Edit`：
+- `Edit`（2026-11-17 修订）：
   - 文件不存在 + `old_string=""`：新建。
-  - 文件已存在、内容为空 + `old_string=""`：要求先 Read，再按原编码/BOM/行尾写回。
+  - 文件已存在、内容为空 + `old_string=""`：Edit 自读确认后按原编码/BOM/行尾写回，不再要求先 Read。
   - 文件非空 + `old_string=""`：继续拒绝。
-- `ReadFileStateEntry` 增加可选 `contentHash`；Read 记录文本 SHA-256，Edit 在 mtime 变化时先比 hash，内容相同允许继续编辑。
+- 2026-11-17 删除 `ReadFileStateEntry`/`contentHash` 与会话读取状态；`Edit` 每次自读，并按路径串行。
 - 仍不新增 `Write`、`Glob`、`WriteStdin`，也不新增第二个 shell 工具。
 
 ## 曾考虑的替代方案
@@ -74,23 +76,23 @@ CLI 与桌面端共用 `createBuiltinToolRegistry()`，因此这些问题一次�
 - Windows 默认 shell 可能从 `powershell.exe` 变为 `pwsh`；提示与参数必须从同一个 `ShellRuntime` 读取，不能再按 `process.platform` 各自猜。
 - 会话输出不再按字节切片；任何后续改动都必须保留“decoder 持有跨 chunk 状态”和“按字符 offset 出快照”这两个不变量。
 - GBK 回退是 per-stream 的受控回退，不承诺 Big5、Shift-JIS 或同一 stream 中途切换编码；遇到其他编码仍可能显示替换字符。
-- Edit 已存在空文件仍要求先 Read；这是防止并发覆盖的约束，不得为了“方便”去掉。
-- `contentHash` 只在 Read 文本路径和 Edit 写回后记录；旧状态或文档路径没有 hash 时继续按 mtime/size 校验。
+- 2026-11-17 起 Edit 对已存在空文件自读确认后写入；并发覆盖由 `withEditMutationQueue` 和写前 stat 校验负责，不得恢复读前状态。
+- 不得恢复 `ReadFileState`、`contentHash`、`origin` 或 `file_unchanged`；这些状态已整体删除。
 - 目录拆分（`text/`、`workspace/`、`builtin/<tool>/`）与 macOS CI 不在本次实施范围，保留在
   `docs/notes/proposed/architecture/2026-11-16-tool-runtime-portability-and-directory-contract.md`。
 
 ## 验证
 
 - `pnpm typecheck` 通过（8 个 workspace 包）。
-- `pnpm --filter @answra/agent test` 通过（584 项；含新增 shell decoder、会话 GBK、空文件 Edit、contentHash 假冲突测试）。
+- `pnpm --filter @answra/agent test` 当时通过（584 项；含 shell decoder、会话 GBK、空文件 Edit、contentHash 假冲突测试）。2026-11-17 后 contentHash/读取状态测试已删除，当前 576 项通过。
 - `pnpm --filter @answra/cli test` 通过（305 项）。
 - `pnpm lint`、`pnpm architecture:check`、`pnpm notes:check` 通过。
 - `pnpm verify` 在 UI 全量测试的 `FloatingBarApp.navigation.test.tsx` 超时/找不到面板元素处中断；该文件单独重跑 9 项通过，属于既有并行测试抖动，与本次工具改动无关。
 - 新增行为测试：
   - UTF-8 字符跨 chunk 不产生 U+FFFD；
   - 完整 GBK 字节流回退为中文；
-  - 已存在空文件 Read 后可写入；
-  - mtime 变化但内容相同允许 Edit；
+  - 已存在空文件由 Edit 自读后可写入（2026-11-17 起不再要求先 Read）；
+  - 读到范围片段后仍可直接编辑（2026-11-17 起不再有 partial view 门禁）；
   - PowerShell 5.1 / pwsh / macOS zsh / 非 POSIX `$SHELL` 的 runtime 解析。
 - 未验证：真实 macOS 实机、macOS CI、目录迁移后的导入稳定性。
 
@@ -99,5 +101,5 @@ CLI 与桌面端共用 `createBuiltinToolRegistry()`，因此这些问题一次�
 - 模型可见工具不变，仍为 `Read`、`Grep`、`Edit`、`RunCommand`。
 - Windows 用户安装 `pwsh` 后，`RunCommand` 的 shell 与提示会切换为 PowerShell 7+。
 - 续接长命令的中文输出不再因 chunk 边界乱码。
-- 已存在空文件可以在 Read 后通过 Edit 写入。
+- 已存在空文件可以直接通过 Edit 写入；2026-11-17 起不再要求先 Read。
 - CLI 与桌面端同时受影响，因为二者共用同一工具注册表。

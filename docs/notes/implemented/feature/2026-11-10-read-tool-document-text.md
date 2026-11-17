@@ -2,11 +2,13 @@
 
 状态：已实施
 
+> 2026-11-17 修订：本 Note 的文档读取 `readFileState`/`file_unchanged` 行为已被 [移除工具读前状态与 Edit 读前门禁](../simplification/2026-11-17-remove-tool-read-state-and-edit-read-gate.md) 取代。文档抽取、offset/limit 和 token 预算仍有效；文档读取现在也无状态。
+
 ## 问题
 
 `Read` 目前只支持 UTF-8/UTF-16 纯文本；PDF、`.doc`、`.docx` 会被二进制预检拒绝。用户需要在同一个 Read 入口读取简历、报告等文档，而不是再增加一个模型工具或依赖本机 Office/Poppler。
 
-本次把三种文档的**纯文本抽取**接入现有 `Read`，保持路径、`offset`/`limit`、token 预算和 `file_unchanged` 行为一致；不实现渲染、版式还原、OCR 或文档编辑。
+本次把三种文档的**纯文本抽取**接入现有 `Read`，保持路径、`offset`/`limit` 和 token 预算行为一致；2026-11-17 起不再有 `file_unchanged`。不实现渲染、版式还原、OCR 或文档编辑。
 
 ## 涉及范围
 
@@ -28,7 +30,7 @@
 - Word 只返回正文；页眉、页脚、批注、图片不进入 `Read` 结果，并通过 system-reminder 明确告知模型。
 - 文档输入上限 20 MiB；超过时返回 `output-too-large`，不做静默截断。文本文件原有上限不变。
 - 文档文本仍受 25k token 预算约束；超限时继续复用部分视图和下一 `offset` 提示。`offset`/`limit` 作用于抽取后的行。
-- 文档读取同样进入会话级 `readFileState`；文件未变化时返回 `file_unchanged`。
+- 2026-11-17 前文档读取进入会话级 `readFileState`，未变化时返回 `file_unchanged`；该状态已删除，当前文档读取与文本读取一样无状态。
 - 未修改 UI、IPC、worker 协议、持久化表面或工具授权清单；没有新增模型工具。
 
 ## 决定
@@ -63,7 +65,7 @@
   - `apps/agent/src/index.ts` 必须保留两个 ambient 声明文件的 `/// <reference path>`；desktop 的 `tsconfig.main.json` 只 include `src/main`，删除后会在 `@answra/desktop typecheck` 中重新出现 TS7016。
   - 不得把“整份 PDF 无文本”降级为空文件或空字符串，必须返回明确错误。
   - 不得静默截断超过 20 MiB 的文档；必须返回 `output-too-large`。
-  - 不得让文档读取绕过 `readFileState`，否则重复读取会浪费上下文。
+  - 不得恢复文档读取的会话级缓存或 `file_unchanged`；重复读取直接返回文本。
 
 ## 验证
 

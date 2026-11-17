@@ -18,7 +18,6 @@ import { ContextCompactor } from "../core/context/compaction/compactor";
 import { DEFAULT_COMPACTION_PROFILE } from "../core/context/compaction/profile";
 import { ContextPreparation } from "../core/context/preparation";
 import { validateModelRequest } from "../core/model/requestContent";
-import type { ReadFileStateMap } from "../core/tool";
 import { createUserMessage } from "../core/transcript/message";
 import type {
   ConversationSessionMetadata,
@@ -45,7 +44,6 @@ export class CodingApplication {
   private readonly contextCompactor: ContextCompactor;
   private readonly contextPreparation: ContextPreparation;
   private readonly onSnapshot?: CodingApplicationOptions["onSnapshot"];
-  private readonly readFileStates = new Map<string, ReadFileStateMap>();
   private readonly queues = new Map<string, ConversationQueue>();
   private readonly runConversations = new Map<string, string>();
   private workspaceRoot: string | null = null;
@@ -87,7 +85,6 @@ export class CodingApplication {
 
   async createConversation(conversationId: string): Promise<ConversationSnapshot> {
     await this.store.create(conversationId, this.seed(), this.sessionMetadata());
-    this.readFileStates.delete(conversationId);
     return this.store.load(conversationId);
   }
 
@@ -95,7 +92,6 @@ export class CodingApplication {
     this.queues.get(conversationId)?.cancelPending();
     const eventRevision = await this.agentRuntime.getConversationRevision(conversationId);
     await this.store.clear(conversationId, eventRevision);
-    this.readFileStates.delete(conversationId);
     return this.store.load(conversationId);
   }
 
@@ -195,7 +191,6 @@ export class CodingApplication {
     for (const queue of this.queues.values()) queue.dispose();
     this.queues.clear();
     this.runConversations.clear();
-    this.readFileStates.clear();
     this.agentRuntime.dispose();
   }
 
@@ -224,7 +219,6 @@ export class CodingApplication {
       request: { text: "", images: [] },
       policy: this.bot.policy,
       workspaceRoot: this.workspaceRoot,
-      readFileState: this.getReadFileState(conversationId),
     };
   }
 
@@ -280,7 +274,6 @@ export class CodingApplication {
             request,
             policy: this.bot.policy,
             workspaceRoot: this.workspaceRoot,
-            readFileState: this.getReadFileState(conversationId),
           },
           prepared: snapshot,
         };
@@ -305,13 +298,5 @@ export class CodingApplication {
   private async applyRunEvent(conversationId: string, envelope: AgentEventEnvelope): Promise<void> {
     await this.store.applyAgentEvent(conversationId, envelope);
     await this.contextPreparation.recordRunEvent(conversationId, envelope.event);
-  }
-
-  private getReadFileState(conversationId: string): ReadFileStateMap {
-    const existing = this.readFileStates.get(conversationId);
-    if (existing) return existing;
-    const state: ReadFileStateMap = new Map();
-    this.readFileStates.set(conversationId, state);
-    return state;
   }
 }

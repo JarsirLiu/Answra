@@ -87,7 +87,7 @@ interface ToolEntry<Input = unknown, Output = unknown> {
 ```
 
 - `ToolId` 是品牌字符串，由 `toolId()` 工厂创建；注册表在启动装配时拒绝重复 id，授权时拒绝未注册 id，fail-closed。
-- `ToolContext` 包含 `toolCallId`、`signal`、`workspaceRoot`、`runId`、`sessionId`；可选的 `readFileState` 与 `workerPaths` 由宿主/会话上下文注入。
+- `ToolContext` 包含 `toolCallId`、`signal`、`workspaceRoot`、`runId`、`sessionId`；可选的 `workerPaths` 由宿主上下文注入。2026-11-17 起已删除 `readFileState`，文件工具不再共享会话读取状态。
 - 采用开放 id 而不是 core 内的闭合联合，是为了让领域新增工具时不需要改 core 的类型文件；代价是失去编译期穷举，由「启动注册 + 授权 fail-closed」补偿。
 - 运行时输入校验继续使用 AI SDK 的 `jsonSchema` 和 JSON Schema 约束，不引入 zod。`validateInput` 只补 schema 表达不了的业务前置。
 - 结果预算默认按字符计（`maxModelChars`）；新增可选 `maxModelBytes`，两者同时配置时先按 UTF-8 字节安全截断，再按字符截断。Read 继续只使用字符/token 预算；Grep 按 ZCode 对齐同时使用 20,000 字符和 20,000 字节。`maxOutputBytes` 是投影后模型可见内容的硬上限，执行器在 `formatModelContent` 后检查，超过时返回 `output-too-large`；结构化原始输出不能因 JSON 包装被误判。Read 的独立预算见 `../feature/2026-11-09-read-tool-text-quality.md`，Grep 见 `../feature/2026-11-09-grep-ripgrep-tool.md`。

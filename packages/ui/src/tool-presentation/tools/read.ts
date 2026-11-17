@@ -2,7 +2,6 @@
 import type { ToolPresentation, ToolPresenterContext } from "../types";
 import { asRecord, directoryName, fileName, numberField, stringField } from "../value";
 
-const FILE_UNCHANGED_PREFIX = "Wasted call";
 const SYSTEM_REMINDER = /<system-reminder>[\s\S]*?<\/system-reminder>/gu;
 const LINE_NUMBER_PREFIX = /^\d+\t/u;
 
@@ -38,13 +37,11 @@ function readResultLine(
   output: Record<string, unknown> | undefined,
   raw: unknown,
 ): string | undefined {
-  if (outputType === "file_unchanged") return "Unchanged since last read";
   if (outputType === "text") {
     const numLines = output ? (numberField(output, "numLines") ?? 0) : 0;
     return `Read ${numLines} ${numLines === 1 ? "line" : "lines"}`;
   }
   if (typeof raw !== "string") return undefined;
-  if (raw.startsWith(FILE_UNCHANGED_PREFIX)) return "Unchanged since last read";
   const lines = countLegacyReadLines(raw);
   return lines === undefined ? undefined : `Read ${lines} ${lines === 1 ? "line" : "lines"}`;
 }

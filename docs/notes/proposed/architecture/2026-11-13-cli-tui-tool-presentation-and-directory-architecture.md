@@ -131,7 +131,7 @@ export function presentToolCall(input: ToolPresentationInput): ToolPresentation;
 
 | 工具 | 摘要 | 结果行 | 展开详情 |
 | --- | --- | --- | --- |
-| Read | `Read(<fileName>)` | `Read N lines`；`file_unchanged` 显示 `Unchanged since last read` | 无，不展示文件内容 |
+| Read | `Read(<fileName>)` | `Read N lines` | 无，不展示文件内容 |
 | Grep | `Search(pattern: "...", path: "...")` | `Found N lines` / `Found N files` / `Found N files counted` | 匹配行或文件列表，受行数/字符上限约束 |
 | Edit | `Update(<fileName>)` + `+N -N` | `Added N lines, removed M lines` | 既有 hunk diff 卡 |
 | RunCommand | `Bash(<command>)` | 运行中 `elapsed · N lines`；完成 `Done` / `(No output)` / `… +N lines` | stdout/stderr 合并文本，首 3 行预览、展开完整 |

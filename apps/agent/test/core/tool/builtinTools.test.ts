@@ -4,7 +4,6 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   createBuiltinToolRegistry,
-  type ReadFileStateMap,
   type ToolContext,
   type ToolSessionContext,
   toolId,
@@ -23,7 +22,6 @@ import {
 function context(
   workspaceRoot: string | null,
   signal: AbortSignal = new AbortController().signal,
-  readFileState?: ReadFileStateMap,
 ): ToolContext {
   return {
     toolCallId: "tool-call-1",
@@ -31,7 +29,6 @@ function context(
     workspaceRoot,
     runId: "run-1",
     sessionId: "session-1",
-    ...(readFileState ? { readFileState } : {}),
   };
 }
 
@@ -163,19 +160,17 @@ describe("builtin workspace tools", () => {
     ).resolves.toMatchObject({ type: "text", numLines: 1, content: "x".repeat(10) });
   });
 
-  it("returns file_unchanged for a repeated range until the file changes", async () => {
+  it("returns the file again when the same path is read twice", async () => {
     const root = await createRoot();
     const filePath = path.join(root, "state.md");
     await fs.writeFile(filePath, "first");
-    const state: ReadFileStateMap = new Map();
-    const toolContext = context(root, new AbortController().signal, state);
+    const toolContext = context(root);
 
     const first = await executeRead(toolContext, { file_path: "state.md" });
-    const unchanged = await executeRead(toolContext, { file_path: "state.md" });
+    const second = await executeRead(toolContext, { file_path: "state.md" });
 
-    expect(first).toMatchObject({ type: "text" });
-    expect(unchanged).toMatchObject({ type: "file_unchanged", filePath });
-    expect(formatReadOutput(unchanged)).toContain("file unchanged");
+    expect(first).toMatchObject({ type: "text", content: "first" });
+    expect(second).toEqual(first);
 
     await fs.writeFile(filePath, "second-change");
     await expect(executeRead(toolContext, { file_path: "state.md" })).resolves.toMatchObject({

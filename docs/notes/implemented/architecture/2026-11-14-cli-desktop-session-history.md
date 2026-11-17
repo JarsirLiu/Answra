@@ -191,7 +191,7 @@ seed?: ConversationSessionSeed
 - `ConversationSnapshot` 是消息、parts、状态、Bot 归属和 context 压缩/占用信息的唯一来源。
 - `ContextState` 单独保存，避免把摘要正文塞进 UI snapshot；恢复压缩检查点和 usage anchor。
 - `seed` 保存 activeAgentId、participantAgentIds 和 bots。
-- 不保存 `activeRunId`、TUI 队列、`AbortController`、`readFileState` 和工具实例。
+- 不保存 `activeRunId`、TUI 队列、`AbortController` 和工具实例；`readFileState` 已在 2026-11-17 删除，不再属于会话快照或运行时状态。
 - `conversationId` 只允许 `[A-Za-z0-9][A-Za-z0-9._-]{0,127}`；拒绝 `.`、`..` 和路径分隔符，避免路径穿越。
 - 写入采用临时文件 + rename 原子替换；同一 conversation 的写入串行化。
 - v1 在 run 边界落盘，不逐 token 重写整个文件：`create`、`beginRun`、run 终态、`clear`、删除和正常退出强制 flush。

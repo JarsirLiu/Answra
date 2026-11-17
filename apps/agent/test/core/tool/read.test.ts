@@ -2,17 +2,16 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import type { ReadFileStateMap, ToolContext } from "../../../src/core/tool";
+import type { ToolContext } from "../../../src/core/tool";
 import { executeRead } from "../../../src/core/tool/builtin/read/tool";
 
-function context(workspaceRoot: string | null, readFileState?: ReadFileStateMap): ToolContext {
+function context(workspaceRoot: string | null): ToolContext {
   return {
     toolCallId: "tool-call-1",
     signal: new AbortController().signal,
     workspaceRoot,
     runId: "run-1",
     sessionId: "session-1",
-    ...(readFileState ? { readFileState } : {}),
   };
 }
 
@@ -81,31 +80,30 @@ describe("Read tool edge cases", () => {
     });
   });
 
-  it("does not treat a partial-view read as file_unchanged", async () => {
+  it("returns the same partial view again when a large file is read twice", async () => {
     const root = await createRoot();
     const text = Array.from({ length: 5_000 }, () => "x".repeat(20)).join("\n");
     await fs.writeFile(path.join(root, "large.md"), text, "utf8");
-    const state: ReadFileStateMap = new Map();
 
-    const first = await executeRead(context(root, state), { file_path: "large.md" });
-    const second = await executeRead(context(root, state), { file_path: "large.md" });
+    const first = await executeRead(context(root), { file_path: "large.md" });
+    const second = await executeRead(context(root), { file_path: "large.md" });
 
     expect(first).toMatchObject({ type: "text", truncatedByTokenCap: true });
-    expect(second).toMatchObject({ type: "text" });
+    expect(second).toMatchObject({ type: "text", truncatedByTokenCap: true });
+    expect(second).toEqual(first);
   });
 
-  it("keys cached reads by their line range", async () => {
+  it("returns line ranges again without a read cache", async () => {
     const root = await createRoot();
     await fs.writeFile(path.join(root, "a.txt"), "a\nb\nc", "utf8");
-    const state: ReadFileStateMap = new Map();
 
-    const whole = await executeRead(context(root, state), { file_path: "a.txt" });
-    const firstRange = await executeRead(context(root, state), {
+    const whole = await executeRead(context(root), { file_path: "a.txt" });
+    const firstRange = await executeRead(context(root), {
       file_path: "a.txt",
       offset: 1,
       limit: 1,
     });
-    const secondRange = await executeRead(context(root, state), {
+    const secondRange = await executeRead(context(root), {
       file_path: "a.txt",
       offset: 2,
       limit: 1,

@@ -48,26 +48,6 @@ describe("tool presentation", () => {
     });
   });
 
-  it("reports unchanged reads from structured and legacy outputs", () => {
-    expect(
-      presentToolCall({
-        toolName: "Read",
-        state: "completed",
-        input: { file_path: "src/a.ts" },
-        output: { type: "file_unchanged", filePath: "src/a.ts" },
-      }).resultLine,
-    ).toBe("Unchanged since last read");
-
-    expect(
-      presentToolCall({
-        toolName: "Read",
-        state: "completed",
-        input: { file_path: "src/a.ts" },
-        output: "Wasted call — file unchanged since your last Read.",
-      }).resultLine,
-    ).toBe("Unchanged since last read");
-  });
-
   it("counts legacy line-numbered Read output", () => {
     const presentation = presentToolCall({
       toolName: "Read",

@@ -1,17 +1,10 @@
-/** Edit：在已读文件中精确替换文本，或用空 old_string 创建新文件。 */
+/** Edit：在已存在文件中精确替换文本，或用空 old_string 创建新文件。 */
 import type { EditDiffDisplay } from "@answra/shared/schema";
 import type { JSONSchema7 } from "ai";
 import { defineTool, type ToolContext, type ToolHandlerFailure, toolId } from "../../contracts";
 import { assertNotAborted } from "../../executor/abort";
 import { ToolExecutionError } from "../../executor/result";
 import { EDIT_TOOL_NAME } from "../../names";
-import {
-  clearReadFileStatesForPath,
-  findReadFileStateForEdit,
-  hashReadFileContent,
-  matchesFileStat,
-  recordEditedFileState,
-} from "../../state/readFileState";
 import type { ToolLineEndings } from "../../text/lineEndings";
 import {
   createToolTextFileAtomic,
@@ -22,6 +15,7 @@ import {
 } from "../../workspace";
 import { buildEditDisplayDiff } from "./diff";
 import { replaceEditText } from "./match";
+import { withEditMutationQueue } from "./mutationQueue";
 
 interface EditInput {
   file_path: string;
@@ -46,7 +40,7 @@ const EDIT_MAX_OUTPUT_BYTES = 20_000;
 const EDIT_TOOL_DESCRIPTION = [
   "Edits an existing text file by replacing exact text, or creates a new file.",
   "",
-  "- To edit, Read the file first; editing is rejected without a complete read of the current content.",
+  "- Read the file before editing when you need to confirm the exact text; Read is recommended but not required.",
   "- `old_string` must match the file exactly and uniquely unless `replace_all` is true.",
   "- To create a new file, set `old_string` to an empty string; `file_path` must not exist.",
   "- Line-number prefixes copied from Read results are tolerated.",
@@ -107,49 +101,45 @@ export const editTool = defineTool<EditInput, EditOutput>({
 export async function executeEdit(context: ToolContext, input: EditInput): Promise<EditOutput> {
   assertNotAborted(context.signal);
   const target = await resolveToolWriteTarget(context.workspaceRoot, input.file_path);
-  const creating = input.old_string === "";
 
-  if (creating) {
-    if (target.exists) return fillExistingEmptyFile(context, target.target, input.new_string);
-    const written = await createToolTextFileAtomic(target.target, input.new_string, {
-      maxBytes: EDIT_FILE_MAX_BYTES,
-    });
-    recordWrite(context, target.target, written, hashReadFileContent(input.new_string));
-    return {
-      type: "created",
-      filePath: target.target,
-      replacements: 0,
-      replaceAll: false,
-      lineEndings: "LF",
-      sizeBytes: written.sizeBytes,
-      diff: buildEditDisplayDiff("", input.new_string),
-    };
-  }
+  return withEditMutationQueue(target.target, async () => {
+    assertNotAborted(context.signal);
+    const creating = input.old_string === "";
 
-  if (!target.exists) {
-    throw new ToolExecutionError(
-      "invalid-input",
-      "文件不存在；新建文件请将 old_string 设为空字符串",
-    );
-  }
+    if (creating) {
+      if (target.exists) return fillExistingEmptyFile(context, target.target, input.new_string);
+      const written = await createToolTextFileAtomic(target.target, input.new_string, {
+        maxBytes: EDIT_FILE_MAX_BYTES,
+      });
+      return {
+        type: "created",
+        filePath: target.target,
+        replacements: 0,
+        replaceAll: false,
+        lineEndings: "LF",
+        sizeBytes: written.sizeBytes,
+        diff: buildEditDisplayDiff("", input.new_string),
+      };
+    }
 
-  const state = context.readFileState;
-  if (!state) {
-    throw new ToolExecutionError("invalid-input", "当前会话没有文件读取状态，不能编辑文件");
-  }
-  const baseline = findReadFileStateForEdit(state, target.target);
-  if (!baseline) {
-    throw new ToolExecutionError(
-      "invalid-input",
-      "编辑前必须先用 Read 完整读取该文件；没有可用的读取记录",
-    );
-  }
+    if (!target.exists) {
+      throw new ToolExecutionError(
+        "invalid-input",
+        "文件不存在；新建文件请将 old_string 设为空字符串",
+      );
+    }
 
-  const file = await readToolTextFileForEdit(target.target, EDIT_FILE_MAX_BYTES);
+    return editExistingFile(context, target.target, input);
+  });
+}
+
+async function editExistingFile(
+  context: ToolContext,
+  filePath: string,
+  input: EditInput,
+): Promise<EditOutput> {
+  const file = await readToolTextFileForEdit(filePath, EDIT_FILE_MAX_BYTES);
   assertNotAborted(context.signal);
-  if (!matchesFileStat(baseline, file, hashReadFileContent(file.text))) {
-    throw new ToolExecutionError("invalid-input", "文件在读取后已被修改，请重新 Read 后再编辑");
-  }
 
   const replaceAll = input.replace_all ?? false;
   const match = replaceEditText({
@@ -177,7 +167,7 @@ export async function executeEdit(context: ToolContext, input: EditInput): Promi
 
   const diff = buildEditDisplayDiff(file.text, match.text);
   assertNotAborted(context.signal);
-  const written = await writeToolTextFileAtomic(target.target, match.text, {
+  const written = await writeToolTextFileAtomic(filePath, match.text, {
     bom: file.bom,
     encoding: file.encoding,
     expectedMtimeMs: file.mtimeMs,
@@ -186,11 +176,10 @@ export async function executeEdit(context: ToolContext, input: EditInput): Promi
     maxBytes: EDIT_FILE_MAX_BYTES,
     mode: file.mode,
   });
-  recordWrite(context, target.target, written, hashReadFileContent(match.text));
 
   return {
     type: "edited",
-    filePath: target.target,
+    filePath,
     replacements: match.replacements,
     replaceAll,
     lineEndings: file.lineEndings,
@@ -213,21 +202,6 @@ async function fillExistingEmptyFile(
     );
   }
 
-  const state = context.readFileState;
-  if (!state) {
-    throw new ToolExecutionError("invalid-input", "当前会话没有文件读取状态，不能编辑文件");
-  }
-  const baseline = findReadFileStateForEdit(state, filePath);
-  if (!baseline) {
-    throw new ToolExecutionError(
-      "invalid-input",
-      "编辑前必须先用 Read 完整读取该文件；没有可用的读取记录",
-    );
-  }
-  if (!matchesFileStat(baseline, file, hashReadFileContent(file.text))) {
-    throw new ToolExecutionError("invalid-input", "文件在读取后已被修改，请重新 Read 后再编辑");
-  }
-
   const written = await writeToolTextFileAtomic(filePath, newString, {
     bom: file.bom,
     encoding: file.encoding,
@@ -237,7 +211,6 @@ async function fillExistingEmptyFile(
     maxBytes: EDIT_FILE_MAX_BYTES,
     mode: file.mode,
   });
-  recordWrite(context, filePath, written, hashReadFileContent(newString));
 
   return {
     type: "created",
@@ -257,23 +230,6 @@ export function formatEditOutput(output: EditOutput): string {
   const occurrenceLabel = output.replacements === 1 ? "occurrence" : "occurrences";
   const allLabel = output.replaceAll ? " All matches were replaced." : "";
   return `The file ${output.filePath} has been updated successfully. Replaced ${output.replacements} ${occurrenceLabel}.${allLabel} No need to read it again to verify.`;
-}
-
-function recordWrite(
-  context: ToolContext,
-  path: string,
-  written: { readonly mtimeMs: number; readonly sizeBytes: number },
-  contentHash?: string,
-): void {
-  const state = context.readFileState;
-  if (!state) return;
-  clearReadFileStatesForPath(state, path);
-  recordEditedFileState(state, {
-    ...(contentHash !== undefined && { contentHash }),
-    mtimeMs: written.mtimeMs,
-    path,
-    sizeBytes: written.sizeBytes,
-  });
 }
 
 function validateEditInput(input: unknown): ToolHandlerFailure | undefined {

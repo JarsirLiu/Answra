@@ -7,7 +7,6 @@ import type { AgentRuntime } from "../core/agent/runtime";
 import { ContextCompactor } from "../core/context/compaction/compactor";
 import { DEFAULT_COMPACTION_PROFILE } from "../core/context/compaction/profile";
 import { ContextPreparation } from "../core/context/preparation";
-import type { ReadFileStateMap } from "../core/tool";
 import { createUserMessage } from "../core/transcript/message";
 import type { ConversationStore } from "../core/transcript/store";
 import type { InterviewRehearsalInput } from "./agent";
@@ -36,7 +35,6 @@ export class InterviewApplication {
   private readonly contextCompactor: ContextCompactor;
   private readonly contextPreparation: ContextPreparation;
   private readonly replyLoop: InterviewReplyLoop;
-  private readonly readFileStates = new Map<string, ReadFileStateMap>();
   private workspaceRoot: string | null = null;
   private interviewDataRoot: string | null = null;
 
@@ -126,7 +124,6 @@ export class InterviewApplication {
       scope: "interview",
       ...(this.workspaceRoot ? { workspaceRoot: this.workspaceRoot } : {}),
     });
-    this.readFileStates.delete(conversationId);
     return this.loadRecoverySnapshot(conversationId);
   }
 
@@ -194,7 +191,6 @@ export class InterviewApplication {
             runId,
             workspaceRoot: this.workspaceRoot,
             interviewDataRoot: this.interviewDataRoot,
-            readFileState: this.getReadFileState(conversationId),
           },
           prepared: snapshot,
         };
@@ -211,13 +207,5 @@ export class InterviewApplication {
   private async applyRunEvent(conversationId: string, envelope: AgentEventEnvelope): Promise<void> {
     await this.store.applyAgentEvent(conversationId, envelope);
     await this.contextPreparation.recordRunEvent(conversationId, envelope.event);
-  }
-
-  private getReadFileState(conversationId: string): ReadFileStateMap {
-    const existing = this.readFileStates.get(conversationId);
-    if (existing) return existing;
-    const state: ReadFileStateMap = new Map();
-    this.readFileStates.set(conversationId, state);
-    return state;
   }
 }

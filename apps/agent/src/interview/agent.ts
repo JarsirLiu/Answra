@@ -4,7 +4,7 @@ import type { AgentDefinition } from "../core/agent/definition";
 import { agentId } from "../core/agent/definition";
 import { createToolStepLimit } from "../core/agent/toolStepLimit";
 import { projectContextMessages } from "../core/context/projection";
-import type { ReadFileStateMap, ToolRegistry } from "../core/tool";
+import type { ToolRegistry } from "../core/tool";
 import { latestCheckpoint } from "../core/transcript/contextCheckpoint";
 import { projectConversationMessages } from "../core/transcript/projection";
 import type { ConversationStore } from "../core/transcript/store";
@@ -19,7 +19,6 @@ export interface InterviewRehearsalInput {
   runId: string;
   workspaceRoot: string | null;
   interviewDataRoot: string | null;
-  readFileState?: ReadFileStateMap;
 }
 
 export const INTERVIEW_REHEARSAL_AGENT_ID = agentId("interview.rehearsal");
@@ -53,7 +52,6 @@ export function createInterviewRehearsalAgent({
         workspaceRoot: input.workspaceRoot,
         runId: input.runId,
         sessionId: input.conversationId,
-        ...(input.readFileState ? { readFileState: input.readFileState } : {}),
         ...(emitter ? { onToolOutput: emitter.toolOutput } : {}),
       });
       return {

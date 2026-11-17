@@ -72,10 +72,4 @@ describe("Read output projection", () => {
       createReadTextOutput({ ...BASE, text: "x".repeat(100_000), offset: 1, limit: 1 }),
     ).toThrow(ReadOutputTooLargeError);
   });
-
-  it("formats file_unchanged as the wasted-call stub", () => {
-    expect(formatReadOutput({ type: "file_unchanged", filePath: "/tmp/a.txt" })).toContain(
-      "file unchanged",
-    );
-  });
 });

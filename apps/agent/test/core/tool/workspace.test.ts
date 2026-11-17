@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { assertNotAborted } from "../../../src/core/tool/executor/abort";
 import {
   EDIT_FILE_MAX_BYTES,
@@ -208,6 +208,35 @@ describe("workspace path resolution", () => {
     if (process.platform !== "win32") {
       expect((await fs.stat(filePath)).mode & 0o777).toBe(0o640);
     }
+  });
+
+  const itWindows = process.platform === "win32" ? it : it.skip;
+
+  itWindows("retries a transient Windows rename sharing violation", async () => {
+    const root = await createRoot();
+    const filePath = path.join(root, "a.txt");
+    await fs.writeFile(filePath, "alpha", "utf8");
+    const file = await readToolTextFileForEdit(filePath, EDIT_FILE_MAX_BYTES);
+    const sharingViolation = Object.assign(new Error("EPERM: operation not permitted, rename"), {
+      code: "EPERM",
+    });
+    const rename = vi.spyOn(fs, "rename").mockRejectedValueOnce(sharingViolation);
+
+    try {
+      await writeToolTextFileAtomic(filePath, "beta", {
+        encoding: file.encoding,
+        bom: file.bom,
+        lineEndings: file.lineEndings,
+        mode: file.mode,
+        expectedMtimeMs: file.mtimeMs,
+        expectedSizeBytes: file.sizeBytes,
+      });
+      expect(rename).toHaveBeenCalledTimes(2);
+    } finally {
+      rename.mockRestore();
+    }
+
+    await expect(fs.readFile(filePath, "utf8")).resolves.toBe("beta");
   });
 
   it("rejects content above the write byte limit without touching the source", async () => {

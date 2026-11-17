@@ -2,6 +2,8 @@
 
 状态：已实施
 
+> 2026-11-17 修订：本 Note 中会话级 `readFileState`、完整 Read 基线门禁、写后状态回填和 `file_unchanged` 已被 [移除工具读前状态与 Edit 读前门禁](../simplification/2026-11-17-remove-tool-read-state-and-edit-read-gate.md) 取代。当前 `Edit` 自读并按路径串行，`Read` 无状态；下文保留当时决策背景。
+
 ## 问题
 
 `general-chat` 目前只授权 `Read`、`Grep`、`RunCommand`、`WriteStdin`。模型要修改文件时只能通过 shell 重定向或脚本落盘，缺少以下约束：
@@ -79,20 +81,15 @@ interface EditInput {
   - `replace_all` 必须是布尔值。
 - 单文件上限 1 MiB；超过时明确失败，不截断后编辑。
 
-### 2. 防乱写：前置条件
+### 2. 防乱写：前置条件（2026-11-17 修订）
 
-Edit 必须先证明“模型看过这个文件，而且文件没变”：
+Edit 在单次调用内读取当前文件，不再依赖历史 Read：
 
 1. 解析目标路径并 `realpath`，继续排除 `.git`、`.svn`、`.hg`、`.bzr`、`.jj`、`.sl` 目录。
 2. 编辑模式要求目标是已存在的普通文件；创建模式要求目标不存在，且父目录已存在。两种模式都不跟随目录目标、不删除文件。
-3. `readFileState` 必须存在。缺失时 fail-closed，返回“当前会话没有文件读取状态，不能编辑”。不允许因为状态缺失就跳过校验。
-4. 在 `readFileState` 中查找该路径最近一次读取记录：
-   - 找不到：失败，提示先 `Read`。
-   - 只有 `partialView` 记录：失败，提示先完整读取或改用更小的读取范围后重新读取。
-   - 找到非 partial 记录：继续。
-5. 读取当前文件并比较 `mtimeMs` 与 `sizeBytes`：
-   - 与读取记录不一致：失败，提示文件已被修改，需要重新 `Read`。
-   - 一致：继续。
+3. 编辑模式直接读取当前文件；不检查会话读取记录，也不要求先 `Read`。
+4. 用本次读取得到的 `mtimeMs`/`sizeBytes` 做写前校验；文件在读取后被外部改动时失败。
+5. 同一路径的 Edit 由 `withEditMutationQueue` 串行，避免并发交错。
 6. 只允许编辑 UTF-8、UTF-8 BOM、UTF-16LE、UTF-16BE 文本；其他编码明确失败，不做有损转换。
 
 ### 3. 防乱写：匹配规则
@@ -112,7 +109,7 @@ Edit 必须先证明“模型看过这个文件，而且文件没变”：
 
 ### 4. 防乱写：并发与写入
 
-- 写前再次 `stat`，与读取记录比较；`mtimeMs` 或 `sizeBytes` 变化即失败，删除临时文件，不覆盖原文件。
+- 写前再次 `stat`，与本次 Edit 自读得到的 `mtimeMs`/`sizeBytes` 比较；变化即失败，删除临时文件，不覆盖原文件。
 - 替换后内容与原文相同（包括剥离 Read 行号前缀后才相等的情况）时拒绝写盘。
 - 编码后的字节数超过 1 MiB 时拒绝写盘，不截断。
 - 使用同目录临时文件写入，`fsync` 后 `rename` 覆盖目标：
@@ -128,21 +125,9 @@ Edit 必须先证明“模型看过这个文件，而且文件没变”：
 - 每次写盘前后检查 `AbortSignal`；取消后不再继续写入。
 - 业务失败返回 `ToolHandlerFailure`，由执行器投影为模型可见文本；只有磁盘/进程异常继续抛出。
 
-### 5. 写完结果回填
+### 5. 写完结果（2026-11-17 修订）
 
-写入成功后必须回填两类状态：会话读取状态、模型与 UI 回执。
-
-**会话读取状态**
-
-1. 删除 `readFileState` 中该路径所有旧的范围缓存。
-2. 写入一条新的整文件基线：
-   - `path`：真实路径；
-   - `mtimeMs` / `sizeBytes`：`rename` 前临时文件的 `stat`（`rename` 保留该时间戳）；
-   - `offset: 1`、`limit: undefined`；
-   - `partialView: false`；
-   - `origin: "edit"`。
-3. `origin: "edit"` 允许模型连续编辑，不必为第二次编辑强制 Read。
-4. `Read` 的未变化缓存只接受 `origin: "read"`，因此下一次 `Read` 会返回新内容，而不是 `file_unchanged`。
+写入成功后不再回填任何会话读取状态；只返回模型与 UI 回执。连续编辑由每次 Edit 自读保证，下一次 `Read` 直接返回新内容。
 
 **工具输出与回执**
 
@@ -186,7 +171,7 @@ interface EditOutput {
 
 ## 影响表面
 
-- 用户可在普通对话中让模型修改工作区文本文件；修改前必须已经通过 `Read` 看过该文件，否则明确失败。
+- 用户可在普通对话中让模型修改工作区文本文件；建议模型先用 `Read` 确认原文，但工具不再强制读前门禁。
 - 模型能删除文本范围（`new_string` 为空），也能用空 `old_string` 新建文件；重命名和删除文件仍没有专用工具。
 - UI 工具卡新增 `Edit`：摘要是文件名；展开为多 hunk 行级 diff，带文件名、`+N -M`、复制修改后片段、每个 hunk 前后各 3 行真实文件上下文、hunk 间未修改行数，以及失败原因与“未写入文件”提示。结构化 `diff` 缺失时回退到 `old_string`/`new_string` 的单段兼容展示。
 - 用户仍是最终风险承担者：本期没有逐次审批，模型在获得授权的 profile 内可直接写入。
@@ -195,8 +180,16 @@ interface EditOutput {
 
 - `old_string` 为空不再一律拒绝：目标文件不存在时创建新文件；目标已存在时仍拒绝，避免空 `old_string` 隐式整文件覆盖。
 - 新文件使用独占创建、UTF-8 无 BOM、LF，并输出 `type: "created"` 与新增行 diff。
-- 已有文件的编辑仍要求完整 `Read`、读取基线校验和原子写回。
+- 当时已有文件的编辑仍要求完整 `Read`、读取基线校验和原子写回；该读前门禁已在 2026-11-17 移除。
 - 详细取舍见 [Edit 工具支持创建文件](2026-11-16-workspace-edit-create-file.md)。
+
+## 后续修订（2026-11-17）
+
+- 删除会话级 `readFileState`，`Edit` 改为自读，不再要求先 `Read`；已有空文件回填同样自读确认。
+- 同一路径 Edit 由 `withEditMutationQueue` 串行；写前 `mtimeMs`/`sizeBytes` 校验和原子写保留。
+- `Read` 删除 `file_unchanged`，重复读取直接返回文本。
+- Windows `fs.rename` 对短暂 `EPERM`/`EACCES`/`EBUSY` 做有界退避重试，不降级为直接覆盖。
+- 详细取舍见 [移除工具读前状态与 Edit 读前门禁](../simplification/2026-11-17-remove-tool-read-state-and-edit-read-gate.md)。
 
 ## 曾考虑的替代方案
 
@@ -210,12 +203,12 @@ interface EditOutput {
 
 ## 验收结果
 
-- 未 Read 直接 Edit：失败并提示先 Read；`readFileState` 缺失时 fail-closed；只有 partial view 时拒绝。
+- 未 Read 直接 Edit：可以成功；只有目标缺失、匹配歧义或外部改动等真实错误失败（2026-11-17 起）。
 - Read 后文件被外部修改再 Edit：失败并提示重新 Read，原文件不变。
 - 唯一匹配：文件内容正确替换；UTF-8 BOM、UTF-16LE/BE、CRLF 与权限位保持不变。
 - 多处匹配且 `replace_all=false`：失败并报告次数；`replace_all=true` 时全部替换。
 - `old_string` 带 Read 行号前缀：可正确匹配；剥离后替换结果与原文相同时拒绝无意义写盘。
-- 成功写入后再次 Read：返回新内容，不返回 `file_unchanged`；连续 Edit 可直接基于编辑后的基线继续。
+- 成功写入后再次 Read：返回新内容；连续 Edit 由每次自读继续，不再维护编辑后基线。
 - 写入内容超过 1 MiB：拒绝写盘，原文件与临时文件清理正常。
 - UI 显示 `Edit` 卡片、文件名、`+N -M`、多 hunk 行级 diff、`replace_all` 替换次数与失败原因；每个 hunk 显示真实旧/新文件行号与前后上下文，远隔 hunk 之间显示未修改行数；复制按钮复制修改后的片段；失败时显示“编辑未写入文件”；畸形输入回退到通用展示。
 - 结构化 `diff` 缺失或解析失败时回退到 `old_string`/`new_string` 单段展示；旧事件不白屏。
@@ -228,9 +221,8 @@ interface EditOutput {
 - 代价：只支持精确匹配和 Read 行号前缀剥离，模型抄错缩进或空白时会失败重试，不做猜测性修改。
 - 代价：编码保留仅覆盖 UTF-8/UTF-16，其他编码继续拒绝；Windows 上原子写可能受占位文件或杀软影响，失败时不降级为直接覆盖。
 - 防回退：
-  - 不得在缺少完整 Read 基线时允许 Edit；`readFileState` 缺失必须 fail-closed。
-  - 不得移除写前 `mtimeMs` / `sizeBytes` 比较，也不得在 `rename` 失败后降级为直接覆盖。
-  - 不得让 `origin: "edit"` 的基线阻止下一次 Read 读取新内容。
+  - 不得恢复会话级 `readFileState`、完整 Read 基线门禁或 `file_unchanged`（2026-11-17 起）。
+  - 不得移除 Edit 自读、写前 `mtimeMs` / `sizeBytes` 比较、按路径队列或原子写，也不得在 `rename` 失败后降级为直接覆盖。
   - 不得把精确匹配改成模糊匹配或忽略空白；匹配失败必须让模型重新 Read。
   - 不得静默截断超限文件或超限写回内容。
   - Edit 的 `part.output` 是结构化对象，模型可见文本由 `toModelOutput` 单独生成；UI diff 来自结构化 `diff`，旧事件才回退 `part.input`。结构化输出不能替代文件系统事实。

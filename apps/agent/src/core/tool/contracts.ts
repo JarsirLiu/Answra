@@ -41,21 +41,6 @@ export interface ToolMetadata {
   readonly resultBudget: ToolResultBudget;
 }
 
-export interface ReadFileStateEntry {
-  readonly path: string;
-  readonly mtimeMs: number;
-  readonly sizeBytes: number;
-  readonly offset: number;
-  readonly limit: number | undefined;
-  readonly partialView: boolean;
-  /** 文件文本的 SHA-256；用于 mtime 被外部工具触碰时避免假冲突。 */
-  readonly contentHash?: string;
-  /** `edit` 表示这是 Edit 写回，只能作为再次编辑的基线，不能被 Read 当成未变化缓存。 */
-  readonly origin: "read" | "edit";
-}
-
-export type ReadFileStateMap = Map<string, ReadFileStateEntry>;
-
 export interface ToolWorkerPaths {
   readonly grep?: string;
 }
@@ -66,7 +51,6 @@ export interface ToolContext {
   readonly workspaceRoot: string | null;
   readonly runId: string;
   readonly sessionId: string;
-  readonly readFileState?: ReadFileStateMap;
   readonly workerPaths?: ToolWorkerPaths;
   /** 长命令在结束前增量回报已产生的输出；只用于实时预览，不参与模型结果。 */
   readonly onOutput?: (delta: string) => void;
