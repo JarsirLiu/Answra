@@ -152,3 +152,19 @@ describe("parseTuiCommand", () => {
     expect(helpText).not.toContain("/model add");
   });
 });
+
+describe("catalog access", () => {
+  it("keeps read-only commands available while a run is active", () => {
+    for (const name of ["help", "status", "sessions"]) {
+      expect(requireCommand(name).access).toEqual({ whileRunning: "allow" });
+    }
+  });
+
+  it("marks every mutating command idle-only", () => {
+    const readOnly = new Set(["help", "status", "sessions"]);
+    for (const command of TUI_COMMANDS) {
+      if (readOnly.has(command.name)) continue;
+      expect(command.access).toMatchObject({ whileRunning: "deny" });
+    }
+  });
+});

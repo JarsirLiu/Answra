@@ -7,8 +7,7 @@ import type { ModelSettings } from "../../src/model/ports";
 import type { RemoteAuthPort } from "../../src/remote/auth/remoteAuthService";
 import type { CodingSession } from "../../src/session/codingSession";
 import { TuiViewStore } from "../../src/tui/app/viewStore";
-import { TUI_HELP_LINES } from "../../src/tui/commands/help";
-import type { TuiPanelHandlers } from "../../src/tui/panel";
+import type { TuiPanelHandlers } from "../../src/tui/panels/panel";
 import { runInkTui } from "../../src/tui/runTui";
 
 const { renderMock } = vi.hoisted(() => ({ renderMock: vi.fn() }));
@@ -278,14 +277,14 @@ describe("runInkTui", () => {
 
     props.onSubmit("/help");
     await tick();
-    expect(store.getSnapshot().notice).toEqual(TUI_HELP_LINES);
+    expect(store.getSnapshot().panel).toBe("help");
 
     props.onSubmit("/clear");
     await tick();
     expect(session.clear).toHaveBeenCalledTimes(1);
     expect(session.send).not.toHaveBeenCalled();
     expect(store.getSnapshot()).toMatchObject({
-      notice: ["会话已清除。"],
+      notifications: { current: { text: "会话已清除。" } },
       view: { eventRevision: 0, messages: [] },
     });
 
@@ -324,13 +323,15 @@ describe("runInkTui", () => {
     await tick();
 
     expect(startRemoteHost).toHaveBeenCalledTimes(1);
-    expect(store.getSnapshot().notice).toEqual([
-      "远程连接已开启。请在其他设备运行 answra remote attach，并输入下面的连接码：",
-      "answra1.room.key.secret",
-      "Key ID: key-id",
-      "连接码会持久保存，直到在 host 上撤销。",
-      "撤销命令：answra remote key revoke key-id",
-    ]);
+    expect(store.getSnapshot().notifications.current?.text).toBe(
+      [
+        "远程连接已开启。请在其他设备运行 answra remote attach，并输入下面的连接码：",
+        "answra1.room.key.secret",
+        "Key ID: key-id",
+        "连接码会持久保存，直到在 host 上撤销。",
+        "撤销命令：answra remote key revoke key-id",
+      ].join("\n"),
+    );
 
     finish();
     await tick();
@@ -363,7 +364,7 @@ describe("runInkTui", () => {
     await tick();
 
     expect(store.getSnapshot().panel).toBe("sessions");
-    expect(store.getSnapshot().notice).toBeUndefined();
+    expect(store.getSnapshot().notifications.current).toBeNull();
 
     await props.panelHandlers.loadSessions().then((data) => {
       expect(data.current).toBe("conversation-1");
@@ -372,7 +373,7 @@ describe("runInkTui", () => {
 
     await props.panelHandlers.resumeSession("conversation-2");
     expect(session.resume).toHaveBeenCalledWith("conversation-2");
-    expect(store.getSnapshot().notice).toEqual(["已恢复会话：conversation-2"]);
+    expect(store.getSnapshot().notifications.current?.text).toBe("已恢复会话：conversation-2");
 
     finish();
     store.dispose();
@@ -388,7 +389,7 @@ describe("runInkTui", () => {
     await tick();
 
     await expect(props.panelHandlers.resumeSession("conversation-2")).rejects.toThrow(
-      "当前运行中，先按 Esc 中断后再恢复会话。",
+      "当前运行中，先按 Esc 中断或等待本轮结束后再恢复会话。",
     );
     expect(session.resume).not.toHaveBeenCalled();
 
@@ -464,7 +465,9 @@ describe("runInkTui", () => {
     await tick();
 
     expect(session.send).not.toHaveBeenCalled();
-    expect(store.getSnapshot().notice).toEqual(["未知命令：/missing", "输入 /help 查看可用命令。"]);
+    expect(store.getSnapshot().notifications.current?.text).toBe(
+      "未知命令：/missing\n输入 /help 查看可用命令。",
+    );
 
     finish();
     store.dispose();
@@ -481,7 +484,9 @@ describe("runInkTui", () => {
     await tick();
 
     expect(session.clear).not.toHaveBeenCalled();
-    expect(store.getSnapshot().notice).toEqual(["当前运行中，先按 Esc 中断后再清除会话。"]);
+    expect(store.getSnapshot().notifications.current?.text).toBe(
+      "当前运行中，先按 Esc 中断或等待本轮结束后再清除会话。",
+    );
 
     finish();
     store.dispose();
@@ -561,7 +566,7 @@ describe("runInkTui", () => {
     expect(session.setModel).toHaveBeenCalledWith(modelConfig("next-model"));
     expect(store.getSnapshot()).toMatchObject({
       modelLabel: "next-model",
-      notice: ["已切换模型：next-model"],
+      notifications: { current: { text: "已切换模型：next-model" } },
     });
 
     finish();
@@ -578,7 +583,9 @@ describe("runInkTui", () => {
     await tick();
 
     expect(modelSettings.addLocal).not.toHaveBeenCalled();
-    expect(store.getSnapshot().localError).toBe("已改用 /config 修改完整模型配置。");
+    expect(store.getSnapshot().notifications.current?.text).toBe(
+      "已改用 /config 修改完整模型配置。",
+    );
 
     finish();
     store.dispose();
@@ -613,11 +620,15 @@ describe("runInkTui", () => {
     expect(session.setAccessToken).toHaveBeenCalledWith("new-key");
     expect(store.getSnapshot()).toMatchObject({
       modelLabel: "added-model",
-      notice: [
-        "Set baseUrl to http://127.0.0.1:9999/v1",
-        "Set chatModel to saved-model",
-        "Set API key",
-      ],
+      notifications: {
+        current: {
+          text: [
+            "Set baseUrl to http://127.0.0.1:9999/v1",
+            "Set chatModel to saved-model",
+            "Set API key",
+          ].join("\n"),
+        },
+      },
     });
 
     finish();
@@ -643,10 +654,9 @@ describe("runInkTui", () => {
     expect(modelCredentials.write).not.toHaveBeenCalled();
     expect(modelCredentials.clear).not.toHaveBeenCalled();
     expect(session.setAccessToken).toHaveBeenCalledWith("stored-key");
-    expect(store.getSnapshot().notice).toEqual([
-      "Set baseUrl to http://127.0.0.1:9999/v1",
-      "Set chatModel to saved-model",
-    ]);
+    expect(store.getSnapshot().notifications.current?.text).toBe(
+      ["Set baseUrl to http://127.0.0.1:9999/v1", "Set chatModel to saved-model"].join("\n"),
+    );
 
     finish();
     store.dispose();
@@ -664,7 +674,7 @@ describe("runInkTui", () => {
       apiKey: { kind: "keep" },
     });
 
-    expect(store.getSnapshot().notice).toEqual(["Config dialog dismissed"]);
+    expect(store.getSnapshot().notifications.current?.text).toBe("Config dialog dismissed");
 
     finish();
     store.dispose();
@@ -678,7 +688,7 @@ describe("runInkTui", () => {
     props.panelHandlers.close("dismissed");
 
     expect(store.getSnapshot().panel).toBeUndefined();
-    expect(store.getSnapshot().notice).toEqual(["Config dialog dismissed"]);
+    expect(store.getSnapshot().notifications.current?.text).toBe("Config dialog dismissed");
 
     finish();
     store.dispose();
@@ -750,7 +760,77 @@ describe("runInkTui", () => {
     await tick();
 
     expect(store.getSnapshot().panel).toBeUndefined();
-    expect(store.getSnapshot().notice).toEqual(["当前运行中，先按 Esc 中断后再修改模型配置。"]);
+    expect(store.getSnapshot().notifications.current?.text).toBe(
+      "当前运行中，先按 Esc 中断或等待本轮结束后再修改模型配置。",
+    );
+
+    finish();
+    store.dispose();
+  });
+
+  it("opens /status while a run is active", async () => {
+    const { session } = createSession();
+    const store = new TuiViewStore();
+    const { props, finish } = await start(
+      session,
+      store,
+      false,
+      createModelSettings(),
+      createModelCredentials(),
+      createModelCatalog(),
+      undefined,
+      createRemoteAuth(),
+    );
+
+    props.onSubmit("first");
+    await tick();
+    props.onSubmit("/status");
+    await tick();
+
+    expect(store.getSnapshot().panel).toBe("status");
+    expect(store.getSnapshot().notifications.current).toBeNull();
+
+    finish();
+    store.dispose();
+  });
+
+  it("opens /sessions while a run is active but refuses to resume", async () => {
+    const { session } = createSession();
+    Object.assign(session, {
+      currentConversationId: "conversation-1",
+      listSessions: vi.fn(async () => [
+        {
+          conversationId: "conversation-1",
+          scope: "coding" as const,
+          title: "当前会话",
+          messageCount: 1,
+          createdAt: "2026-11-17T09:28:00.000Z",
+          updatedAt: "2026-11-17T09:28:00.000Z",
+        },
+        {
+          conversationId: "conversation-2",
+          scope: "coding" as const,
+          title: "旧会话",
+          messageCount: 1,
+          createdAt: "2026-11-16T08:00:00.000Z",
+          updatedAt: "2026-11-16T08:00:00.000Z",
+        },
+      ]),
+      resume: vi.fn(async () => snapshot),
+    });
+    const store = new TuiViewStore();
+    const { props, finish } = await start(session, store);
+
+    props.onSubmit("first");
+    await tick();
+    props.onSubmit("/sessions");
+    await tick();
+
+    expect(store.getSnapshot().panel).toBe("sessions");
+    await expect(props.panelHandlers.resumeSession("conversation-2")).rejects.toThrow(
+      "当前运行中，先按 Esc 中断或等待本轮结束后再恢复会话。",
+    );
+    expect(session.resume).not.toHaveBeenCalled();
 
     finish();
     store.dispose();
@@ -772,21 +852,21 @@ describe("runInkTui", () => {
     expect(store.getSnapshot()).toMatchObject({
       modelConfigured: false,
       setupStep: "base-url",
-      notice: undefined,
+      notifications: { current: null },
     });
 
     props.onSubmit("http://127.0.0.1:9999/v1");
     await tick();
     expect(store.getSnapshot()).toMatchObject({
       setupStep: "api-key",
-      notice: undefined,
+      notifications: { current: null },
     });
 
     props.onSubmit("sk-test");
     await tick();
     expect(store.getSnapshot()).toMatchObject({
       setupStep: "model-id",
-      notice: undefined,
+      notifications: { current: null },
     });
 
     props.onSubmit("qwen");
@@ -806,11 +886,15 @@ describe("runInkTui", () => {
       modelConfigured: true,
       setupStep: undefined,
       modelLabel: "added-model",
-      notice: [
-        "模型已配置：added-model",
-        "API Key 已保存到系统凭据库。",
-        "现在可以输入任务开始会话。",
-      ],
+      notifications: {
+        current: {
+          text: [
+            "模型已配置：added-model",
+            "API Key 已保存到系统凭据库。",
+            "现在可以输入任务开始会话。",
+          ].join("\n"),
+        },
+      },
     });
 
     finish();
@@ -890,7 +974,9 @@ describe("runInkTui", () => {
     await tick();
 
     expect(modelSettings.switchChatModel).not.toHaveBeenCalled();
-    expect(store.getSnapshot().localError).toBe("当前运行中，先按 Esc 中断后再切换模型。");
+    expect(store.getSnapshot().notifications.current?.text).toBe(
+      "当前运行中，先按 Esc 中断或等待本轮结束后再切换模型。",
+    );
 
     finish();
     store.dispose();

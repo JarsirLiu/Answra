@@ -17,6 +17,14 @@ CLI TUI 底部状态行只显示 `ctx 21%`。百分比丢掉了绝对量信息�
 - UI/进程/协议/持久化表面：只改 CLI TUI 状态行文案；不改上下文预算、压缩策略、事件或远程协议。
 - 不涉及：新增依赖、`@answra/ui` 的格式化实现、桌面端状态展示。
 
+## 影响表面
+
+| 表面 | 变化 |
+| --- | --- |
+| CLI TUI 状态行 | `ctx 21%` 改为 `ctx 45k/216k`，分母使用 `inputLimit` |
+| `/status` 面板 | 不变；仍同时显示百分比与 `used / inputLimit` |
+| 协议/持久化 | 无变化 |
+
 ## 决定
 
 - 状态行显示 `ctx <已用>/<inputLimit>`，例如 `ctx 45k/216k`，复用 `@answra/ui/conversation-view` 已有的 `formatContextTokens`；不在 CLI 复制 token 格式化规则。

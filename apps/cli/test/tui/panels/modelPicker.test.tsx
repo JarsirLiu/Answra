@@ -1,6 +1,6 @@
 import { render } from "ink-testing-library";
 import { describe, expect, it, vi } from "vitest";
-import { ModelPicker } from "../../../src/tui/commands/ModelPicker";
+import { ModelPicker } from "../../../src/tui/panels/ModelPicker";
 
 function tick(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));

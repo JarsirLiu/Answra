@@ -12,14 +12,16 @@ import type { CodingSession } from "../session/codingSession";
 import type { OpenBrowser } from "../transport/openBrowser";
 import { App } from "./app/App";
 import type { TuiViewStore } from "./app/viewStore";
-import { dispatchTuiCommand, type TuiCommandDeps } from "./commands/dispatch";
+import { assertAccessAllowed, PANEL_ACTION_ACCESS } from "./commands/access";
+import { dispatchTuiCommand } from "./commands/dispatch";
 import { parseTuiCommand } from "./commands/parse";
+import type { RemoteHostHandle, RemoteHostInfo, TuiCommandDeps } from "./commands/ports";
 import { createClipboardWriter } from "./interaction/clipboard";
 import { createPointerInput } from "./interaction/pointerInput";
 import { createSelectionActions } from "./interaction/selectionActions";
 import { TuiSelectionStore } from "./interaction/selectionStore";
 import type { TuiSetupStep } from "./modelSetup";
-import type { TuiPanel, TuiPanelHandlers } from "./panel";
+import type { TuiPanel, TuiPanelHandlers } from "./panels/panel";
 
 export type TuiSessionFactory = (
   model: ConversationModelConfig,
@@ -40,18 +42,15 @@ export interface TuiRunOptions {
   imageReader?: ImageAttachmentReader;
   remoteAuth?: RemoteAuthPort;
   openBrowser?: OpenBrowser;
-  startRemoteHost?: () => Promise<{
-    readonly code?: string;
-    readonly keyId: string;
-    readonly done: Promise<void>;
-    stop(): Promise<void>;
-  }>;
+  startRemoteHost?: () => Promise<RemoteHostHandle>;
 }
 
 interface QueuedTurn {
   readonly text: string;
   readonly images: readonly ImageAttachment[];
 }
+
+const LOGIN_PROGRESS_TIMEOUT_MS = 5_000;
 
 export type TuiRunner = (options: TuiRunOptions) => Promise<number>;
 
@@ -84,7 +83,6 @@ export async function runInkTui({
   if (session === undefined) {
     store.setModelConfigured(false);
     store.setSetupStep(setupStep);
-    store.setNotice(undefined);
   } else {
     store.initialize(await session.open());
     store.setModelLabel(initialModel ?? "");
@@ -101,15 +99,14 @@ export async function runInkTui({
   let compactAbort: AbortController | undefined;
   let exitTui: (() => void) | undefined;
   let authCodeResolver: ((value: string) => void) | undefined;
-  let activeRemoteHost:
-    | Awaited<ReturnType<NonNullable<TuiRunOptions["startRemoteHost"]>>>
-    | undefined;
+  let activeRemoteHost: RemoteHostHandle | undefined;
 
   const submit = (text: string, images: readonly ImageAttachment[] = []): void => {
     if (authCodeResolver !== undefined) {
       const resolve = authCodeResolver;
       authCodeResolver = undefined;
       resolve(text);
+      store.dismissNotification("login-code");
       return;
     }
     const invocation = parseTuiCommand(text);
@@ -122,7 +119,6 @@ export async function runInkTui({
       return;
     }
     if (session === undefined) {
-      store.setNotice(undefined);
       return;
     }
     if (text.trim().length === 0 && images.length === 0) return;
@@ -133,32 +129,62 @@ export async function runInkTui({
 
   const login = async (): Promise<void> => {
     if (remoteAuth === undefined) return;
-    if (busy) {
-      store.setNotice(["当前运行中，先按 Esc 中断后再登录。"]);
-      return;
-    }
-    store.setNotice(["正在打开浏览器登录 Answra 账号……"]);
-    const status = await remoteAuth.login({
-      onAuthorizeUrl: async (url) => {
-        if (openBrowser !== undefined) {
-          try {
-            await openBrowser(url);
-            store.setNotice(["浏览器已打开，请在 Answra 网站完成登录；完成后 CLI 会自动继续。"]);
-          } catch {
-            store.setNotice(["无法自动打开浏览器，请检查系统默认浏览器后重新运行 /login。"]);
-          }
-        } else {
-          store.setNotice(["请在浏览器完成 Answra 登录；完成后 CLI 会自动继续。"]);
-        }
-      },
-      promptCode: async (label) =>
-        new Promise<string>((resolve) => {
-          authCodeResolver = resolve;
-          store.setNotice([label]);
-        }),
+    store.notify({
+      key: "login",
+      text: "正在打开浏览器登录 Answra 账号……",
+      tone: "info",
+      priority: "high",
+      timeoutMs: LOGIN_PROGRESS_TIMEOUT_MS,
     });
-    store.setAuthStatus(status);
-    store.setNotice(undefined);
+    try {
+      const status = await remoteAuth.login({
+        onAuthorizeUrl: async (url) => {
+          if (openBrowser !== undefined) {
+            try {
+              await openBrowser(url);
+              store.notify({
+                key: "login",
+                text: "浏览器已打开，请在 Answra 网站完成登录；完成后 CLI 会自动继续。",
+                tone: "info",
+                priority: "high",
+                timeoutMs: LOGIN_PROGRESS_TIMEOUT_MS,
+              });
+            } catch {
+              store.notify({
+                key: "login",
+                text: "无法自动打开浏览器，请检查系统默认浏览器后重新运行 /login。",
+                tone: "warning",
+                priority: "high",
+              });
+            }
+          } else {
+            store.notify({
+              key: "login",
+              text: "请在浏览器完成 Answra 登录；完成后 CLI 会自动继续。",
+              tone: "info",
+              priority: "high",
+              timeoutMs: LOGIN_PROGRESS_TIMEOUT_MS,
+            });
+          }
+        },
+        promptCode: async (label) =>
+          new Promise<string>((resolve) => {
+            authCodeResolver = resolve;
+            store.notify({
+              key: "login-code",
+              text: label,
+              tone: "info",
+              priority: "immediate",
+              timeoutMs: null,
+            });
+          }),
+      });
+      store.setAuthStatus(status);
+    } finally {
+      authCodeResolver = undefined;
+      store.dismissNotification("login");
+      store.dismissNotification("login-code");
+    }
   };
 
   const resolveAccessToken = async (override?: string): Promise<string | undefined> => {
@@ -181,13 +207,15 @@ export async function runInkTui({
     store.setModelConfigured(true);
   };
 
+  /** 命令已通过 access；面板本身不再判断运行状态。 */
   const openPanel = (panel: TuiPanel): void => {
-    if (busy) {
-      store.setNotice(["当前运行中，先按 Esc 中断后再修改模型配置。"]);
-      return;
-    }
     store.setPanel(panel);
   };
+
+  const runtime = () => ({
+    runActive: busy,
+    compactionActive: store.getSnapshot().compactionActive,
+  });
 
   const compactConversation = async (instructions?: string): Promise<ManualCompactionResult> => {
     if (busy || store.getSnapshot().compactionActive) throw new Error("上一轮尚未结束。");
@@ -211,7 +239,7 @@ export async function runInkTui({
   const commandDeps: TuiCommandDeps = {
     store,
     modelSettings,
-    isBusy: () => busy || store.getSnapshot().compactionActive,
+    runtime,
     getSession: () => session,
     compactConversation,
     configureSession: ensureSession,
@@ -219,6 +247,7 @@ export async function runInkTui({
     openPanel,
     remoteAuth,
     login,
+    activeRemote: () => remoteInfo(activeRemoteHost),
     startRemoteHost: async () => {
       if (activeRemoteHost !== undefined) {
         throw new Error("远程连接已经开启；连接码只在创建时显示一次。");
@@ -227,7 +256,9 @@ export async function runInkTui({
       activeRemoteHost = await startRemoteHost();
       void activeRemoteHost.done.then(
         () => {
-          if (activeRemoteHost !== undefined) store.setNotice(["远程 host 已停止。"]);
+          if (activeRemoteHost !== undefined) {
+            store.notify({ key: "remote", text: "远程 host 已停止。", tone: "info" });
+          }
         },
         (error: unknown) => store.fail(messageOf(error)),
       );
@@ -249,6 +280,7 @@ export async function runInkTui({
       };
     },
     saveConfig: async (input) => {
+      assertAccessAllowed(PANEL_ACTION_ACCESS.saveConfig, runtime());
       const before = await modelSettings.snapshot();
       const model = await modelSettings.addLocal({
         baseUrl: input.baseUrl,
@@ -287,7 +319,11 @@ export async function runInkTui({
       }
       if (input.apiKey.kind === "set") changes.push("Set API key");
       else if (input.apiKey.kind === "clear") changes.push("Cleared API key");
-      store.setNotice(changes.length === 0 ? ["Config dialog dismissed"] : changes);
+      store.notify({
+        key: "model",
+        text: changes.length === 0 ? "Config dialog dismissed" : changes.join("\n"),
+        tone: "success",
+      });
     },
     loadModels: async () => {
       const snapshot = await modelSettings.snapshot();
@@ -311,7 +347,7 @@ export async function runInkTui({
       }
     },
     selectModel: async (modelId) => {
-      if (busy) throw new Error("当前运行中，先按 Esc 中断后再切换模型。");
+      assertAccessAllowed(PANEL_ACTION_ACCESS.selectModel, runtime());
       const model = await modelSettings.switchChatModel(modelId);
       if (session === undefined) {
         await ensureSession(model);
@@ -322,7 +358,11 @@ export async function runInkTui({
       store.setModelLabel(model.chat.model);
       store.setModelConfigured(true);
       store.setSetupStep(undefined);
-      store.setNotice([`已切换模型：${model.chat.model}`]);
+      store.notify({
+        key: "model",
+        text: `已切换模型：${model.chat.model}`,
+        tone: "success",
+      });
     },
     loadSessions: async () => {
       const activeSession = session;
@@ -333,16 +373,24 @@ export async function runInkTui({
         const sessions = await activeSession.listSessions();
         return { current: activeSession.currentConversationId, sessions };
       } catch (error) {
-        return { current: activeSession.currentConversationId, sessions: [], error: messageOf(error) };
+        return {
+          current: activeSession.currentConversationId,
+          sessions: [],
+          error: messageOf(error),
+        };
       }
     },
     resumeSession: async (conversationId) => {
-      if (busy) throw new Error("当前运行中，先按 Esc 中断后再恢复会话。");
+      assertAccessAllowed(PANEL_ACTION_ACCESS.resumeSession, runtime());
       const activeSession = session;
       if (activeSession === undefined) throw new Error("尚未配置模型。");
       if (conversationId === activeSession.currentConversationId) return;
       store.reset(await activeSession.resume(conversationId));
-      store.setNotice([`已恢复会话：${conversationId}`]);
+      store.notify({
+        key: "session",
+        text: `已恢复会话：${conversationId}`,
+        tone: "success",
+      });
     },
     close: (reason) => {
       const panel = store.getSnapshot().panel;
@@ -351,7 +399,7 @@ export async function runInkTui({
         reason === "dismissed" &&
         (panel === undefined || panel === "config" || panel === "model")
       ) {
-        store.setNotice(["Config dialog dismissed"]);
+        store.notify({ key: "model", text: "Config dialog dismissed", tone: "success" });
       }
     },
   };
@@ -386,20 +434,23 @@ export async function runInkTui({
       const accessToken = setupApiKey !== "" ? setupApiKey : ((await resolveAccessToken()) ?? "");
       await ensureSession(model, accessToken);
       store.setModelLabel(model.chat.model);
-      store.setNotice([
-        `模型已配置：${model.chat.model}`,
-        setupApiKey !== ""
-          ? "API Key 已保存到系统凭据库。"
-          : "已使用系统凭据库中的 API Key（如已保存）。",
-        "现在可以输入任务开始会话。",
-      ]);
+      store.notify({
+        key: "setup",
+        text: [
+          `模型已配置：${model.chat.model}`,
+          setupApiKey !== ""
+            ? "API Key 已保存到系统凭据库。"
+            : "已使用系统凭据库中的 API Key（如已保存）。",
+          "现在可以输入任务开始会话。",
+        ].join("\n"),
+        tone: "success",
+      });
     } catch (error) {
       setupStep = "base-url";
       setupBaseUrl = "";
       setupApiKey = "";
       store.setSetupStep(setupStep);
       store.fail(messageOf(error));
-      store.setNotice(undefined);
     }
   };
 
@@ -410,7 +461,6 @@ export async function runInkTui({
     if (turn === undefined) return;
     const activeSession = session;
     if (activeSession === undefined) {
-      store.setNotice(undefined);
       return;
     }
     busy = true;
@@ -473,7 +523,7 @@ export async function runInkTui({
         onCopyText={clipboard.write}
         onExitReady={registerExit}
         onSelectAll={selectionActions?.selectAllAndCopy}
-        onPasteError={(message) => store.setNotice([message])}
+        onPasteError={(message) => store.notify({ key: "paste", text: message, tone: "error" })}
         onSubmit={submit}
         imageReader={imageReader}
         panelHandlers={panelHandlers}
@@ -503,4 +553,9 @@ export async function runInkTui({
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : "未知错误";
+}
+
+function remoteInfo(host: RemoteHostHandle | undefined): RemoteHostInfo | undefined {
+  if (host === undefined) return undefined;
+  return host.code === undefined ? { keyId: host.keyId } : { code: host.code, keyId: host.keyId };
 }

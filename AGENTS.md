@@ -82,13 +82,16 @@
 | `src/adapters` | `@answra/config` 共享文件实现、OpenAI 兼容 `/models` 模型目录、`@answra/agent/composition` 的 `CodingHost` 到 CLI 端口映射 | 不复制 Agent 运行时语义，不承载模型合并规则 |
 | `src/remote` | 远程 host/controller 适配与 CLI 本地密钥存储 | 不实现信令/WebRTC 状态机；key 不进共享 config；TUI 不 import |
 | `src/presentation` | Agent 事件到非 TTY 文本、工具行与模型摘要格式化 | 纯投影，不读写会话或进程 |
-| `src/tui` | TUI 组合根：`runTui.tsx` 只接线；备用屏幕用 Ink 原生 `alternateScreen` | 不 import Electron/desktop 或 `@answra/config`；不承载 Agent 命令分派或 runtime；运行中提交的 prompt 只在 TUI 队列内排队 |
+| `src/tui` | TUI 组合根：`runTui.tsx` 只接线、维护运行/压缩快照并实现命令端口；备用屏幕用 Ink 原生 `alternateScreen` | 不 import Electron/desktop 或 `@answra/config`；不承载 Agent 命令分派，不写命令可用性规则；运行中提交的 prompt 只在 TUI 队列内排队 |
 | `src/tui/app` | 根布局与 view store：snapshot/事件 -> TuiState | store 是唯一 writer；不解析工具输出 |
 | `src/tui/transcript` | 虚拟 transcript、消息行、Markdown、选区文本与高度估算 | 只处理消息顺序、虚拟化与滚动；工具语义只走 `transcript/tool/` |
 | `src/tui/transcript/tool` | 工具展示适配：`ToolCall`、详情、连续 read/search/list 折叠组 | 只消费 `@answra/ui/tool-presentation`；不重新解析工具输出或判断 Agent 事件 |
 | `src/tui/composer` | 输入框、搜索框、宽字符/光标布局、历史与粘贴 | 不读写 transcript 或工具状态 |
 | `src/tui/chrome` | 状态行、Spinner、主题与面板外框 | 不持有会话或工具状态 |
-| `src/tui/commands` | 本地 slash 命令目录、解析、分派、帮助、候选面板、`/config` 可搜索设置列表、`/model` 选择器与会话历史命令 | 不承载 Agent 命令分派或 runtime |
+| `src/tui/commands` | slash 命令元数据、解析、`access` 策略、唯一分派边界与帮助/候选/参数提示 | 不承载 Agent 命令或 runtime；`dispatch.ts` 之外不写命令可用性规则 |
+| `src/tui/commands/handlers` | 按命令族执行：session/model/account/remote/meta | 不判断 busy、不写第二套拒绝文案、不 import Ink |
+| `src/tui/panels` | 面板 UI 与本地交互：config/model/sessions/status/help | 不判断 busy、不调用 session 或 `runTui` |
+| `src/tui/notices` | 通知队列纯状态机与唯一通知渲染 | 队列不依赖 Ink/React/timer；渲染不持有队列或创建 timer |
 | `src/tui/interaction` | 终端交互原语：指针解析、选区 store/action 与剪贴板输出 | 不 import `transcript`/`composer`/`runTui`；不解析 Ink 组件；指针/选区状态只由 store 写 |
 | `src/transport` | stdin/stdout/stderr 适配 | 不定义业务行为 |
 

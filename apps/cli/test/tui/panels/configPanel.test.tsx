@@ -1,6 +1,6 @@
 import { render } from "ink-testing-library";
 import { describe, expect, it, vi } from "vitest";
-import { ConfigPanel } from "../../../src/tui/commands/ConfigPanel";
+import { ConfigPanel } from "../../../src/tui/panels/ConfigPanel";
 
 function tick(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));

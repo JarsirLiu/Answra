@@ -436,7 +436,6 @@ describe("TUI tool presentation", () => {
     const instance = render(
       <Transcript
         localError="send failed"
-        notice={["会话已清除。"]}
         view={{
           eventRevision: 0,
           messages: [
@@ -457,7 +456,6 @@ describe("TUI tool presentation", () => {
     expect(instance.lastFrame()).toContain("find the bug");
     expect(instance.lastFrame()).toContain("model failed");
     expect(instance.lastFrame()).toContain("send failed");
-    expect(instance.lastFrame()).toContain("会话已清除。");
     instance.unmount();
   });
 });

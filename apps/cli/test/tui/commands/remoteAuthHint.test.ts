@@ -5,8 +5,9 @@ import {
   type RemoteAuthStatus,
 } from "../../../src/remote/auth/remoteAuthService";
 import { TuiViewStore } from "../../../src/tui/app/viewStore";
-import { dispatchTuiCommand, type TuiCommandDeps } from "../../../src/tui/commands/dispatch";
+import { dispatchTuiCommand } from "../../../src/tui/commands/dispatch";
 import { parseTuiCommand } from "../../../src/tui/commands/parse";
+import type { TuiCommandDeps } from "../../../src/tui/commands/ports";
 
 const SIGNED_OUT: RemoteAuthStatus = { signedIn: false, expiresAt: null, account: null };
 const SIGNED_IN: RemoteAuthStatus = {
@@ -28,7 +29,7 @@ function createDeps(overrides: Partial<TuiCommandDeps> = {}): TuiCommandDeps {
   return {
     store: new TuiViewStore(),
     modelSettings: {} as TuiCommandDeps["modelSettings"],
-    isBusy: () => false,
+    runtime: () => ({ runActive: false, compactionActive: false }),
     getSession: () => undefined,
     compactConversation: async () => ({ status: "compacted" }),
     configureSession: async () => {},
@@ -58,9 +59,9 @@ describe("/remote auth hints", () => {
     );
 
     expect(startRemoteHost).not.toHaveBeenCalled();
-    expect(store.getSnapshot().notice).toEqual([
+    expect(store.getSnapshot().notifications.current?.text).toBe(
       "远程连接需要登录。请先运行 /login 登录，成功后再运行 /remote。",
-    ]);
+    );
   });
 
   it("maps an expired login failure to the TUI login hint", async () => {
@@ -76,9 +77,9 @@ describe("/remote auth hints", () => {
       }),
     );
 
-    expect(store.getSnapshot().notice).toEqual([
+    expect(store.getSnapshot().notifications.current?.text).toBe(
       "登录已过期。请先运行 /login 重新登录，成功后再运行 /remote。",
-    ]);
+    );
     expect(store.getSnapshot().localError).toBeUndefined();
   });
 
@@ -88,6 +89,8 @@ describe("/remote auth hints", () => {
     await runRemote(createDeps({ store, startRemoteHost }));
 
     expect(startRemoteHost).not.toHaveBeenCalled();
-    expect(store.getSnapshot().notice).toEqual(["当前环境未配置账号登录，无法开启远程连接。"]);
+    expect(store.getSnapshot().notifications.current?.text).toBe(
+      "当前环境未配置账号登录，无法开启远程连接。",
+    );
   });
 });

@@ -1,4 +1,6 @@
 /** TUI 本地命令目录：帮助、slash 解析与输入补全的唯一元数据来源；不触达 Agent 运行时。 */
+import { ALWAYS_AVAILABLE, idleOnly, type TuiAccess } from "./access";
+
 export type TuiCommandKind =
   | "help"
   | "clear"
@@ -30,6 +32,8 @@ export interface TuiCommandSpec {
   readonly helpUsage?: string;
   /** 帮助页额外用法；首行用法与 summary 由目录自动生成。 */
   readonly helpDetails?: readonly TuiCommandHelpDetail[];
+  /** 运行/压缩中是否允许执行；拒绝时使用 action 生成唯一提示。 */
+  readonly access: TuiAccess;
 }
 
 export const TUI_COMMANDS: readonly TuiCommandSpec[] = [
@@ -37,33 +41,39 @@ export const TUI_COMMANDS: readonly TuiCommandSpec[] = [
     kind: "help",
     name: "help",
     summary: "显示本帮助",
+    access: ALWAYS_AVAILABLE,
   },
   {
     kind: "clear",
     name: "clear",
     summary: "清空当前会话 transcript",
+    access: idleOnly("清除会话"),
   },
   {
     kind: "new",
     name: "new",
     summary: "新建会话并回到欢迎页",
+    access: idleOnly("新建会话"),
   },
   {
     kind: "sessions",
     name: "sessions",
     summary: "浏览并恢复当前 workspace 的历史会话",
+    access: ALWAYS_AVAILABLE,
   },
   {
     kind: "resume",
     name: "resume",
     summary: "恢复历史会话",
     argumentHint: "<ID|前缀>",
+    access: idleOnly("恢复会话"),
   },
   {
     kind: "delete",
     name: "delete",
     summary: "删除历史会话",
     argumentHint: "<ID>",
+    access: idleOnly("删除会话"),
   },
   {
     kind: "compact",
@@ -71,12 +81,14 @@ export const TUI_COMMANDS: readonly TuiCommandSpec[] = [
     summary: "压缩当前会话上下文，可附加摘要指令",
     argumentHint: "[instructions]",
     helpUsage: "/compact [instructions]",
+    access: idleOnly("压缩会话"),
   },
   {
     kind: "config",
     name: "config",
     summary: "编辑本地模型配置",
     helpUsage: "/config",
+    access: idleOnly("修改模型配置"),
   },
   {
     kind: "model",
@@ -85,16 +97,23 @@ export const TUI_COMMANDS: readonly TuiCommandSpec[] = [
     argumentHint: "<ID>",
     helpUsage: "/model",
     helpDetails: [{ usage: "/model <ID>", summary: "切换并保存 chat 模型" }],
+    access: idleOnly("切换模型"),
   },
-  { kind: "login", name: "login", summary: "打开浏览器登录 Answra 账号" },
-  { kind: "logout", name: "logout", summary: "退出 Answra 账号" },
-  { kind: "status", name: "status", summary: "查看账号登录状态" },
-  { kind: "remote", name: "remote", summary: "生成持久远程连接码并开启 host" },
+  { kind: "login", name: "login", summary: "打开浏览器登录 Answra 账号", access: idleOnly("登录") },
+  { kind: "logout", name: "logout", summary: "退出 Answra 账号", access: idleOnly("退出登录") },
+  { kind: "status", name: "status", summary: "查看账号登录状态", access: ALWAYS_AVAILABLE },
+  {
+    kind: "remote",
+    name: "remote",
+    summary: "生成持久远程连接码并开启 host",
+    access: idleOnly("开启远程连接"),
+  },
   {
     kind: "exit",
     name: "exit",
     aliases: ["quit"],
     summary: "退出 TUI（/quit 同义）",
+    access: idleOnly("退出"),
   },
 ];
 

@@ -8,7 +8,16 @@ import {
   EMPTY_CONVERSATION_VIEW,
 } from "@answra/ui/conversation-view";
 import type { TuiSetupStep } from "../modelSetup";
-import type { TuiPanel } from "../panel";
+import {
+  addNotification,
+  EMPTY_NOTIFICATION_STATE,
+  notificationTimeoutMs,
+  promoteNext,
+  removeNotification,
+  type TuiNotification,
+  type TuiNotificationState,
+} from "../notices/notification";
+import type { TuiPanel } from "../panels/panel";
 import type { TuiCompactionBoundary } from "../transcript/compactionBoundary";
 
 const TUI_EVENT_BATCH_MS = 16;
@@ -31,7 +40,7 @@ export interface TuiState {
   authAccount?: string;
   setupStep?: TuiSetupStep;
   localError?: string;
-  notice?: readonly string[];
+  notifications: TuiNotificationState;
   panel?: TuiPanel;
 }
 
@@ -49,10 +58,12 @@ export class TuiViewStore {
     modelConfigured: false,
     authAvailable: false,
     authSignedIn: false,
+    notifications: EMPTY_NOTIFICATION_STATE,
   };
   private readonly listeners = new Set<Listener>();
   private pending: AgentEventEnvelope[] = [];
   private timer?: ReturnType<typeof setTimeout>;
+  private notificationTimer?: ReturnType<typeof setTimeout>;
   private disposed = false;
 
   readonly subscribe = (listener: Listener): (() => void) => {
@@ -105,6 +116,7 @@ export class TuiViewStore {
       this.timer = undefined;
     }
     this.pending = [];
+    this.clearNotificationTimer();
     this.setState({
       ...this.state,
       view: applyConversationSnapshot(EMPTY_CONVERSATION_VIEW, snapshot),
@@ -112,7 +124,7 @@ export class TuiViewStore {
       compactionActive: false,
       queued: 0,
       localError: undefined,
-      notice: undefined,
+      notifications: EMPTY_NOTIFICATION_STATE,
     });
   }
 
@@ -147,8 +159,21 @@ export class TuiViewStore {
     this.setState({ ...this.state, setupStep });
   }
 
-  setNotice(lines: readonly string[] | undefined): void {
-    this.setState({ ...this.state, notice: lines });
+  /** 通知唯一入口：同 key 替换，immediate 插队，其余进入队列。 */
+  notify(notification: TuiNotification): void {
+    const previous = this.state.notifications;
+    const next = addNotification(previous, notification);
+    if (next === previous) return;
+    this.setState({ ...this.state, notifications: next });
+    if (next.current !== previous.current) this.startNotificationTimer();
+  }
+
+  dismissNotification(key: string): void {
+    const previous = this.state.notifications;
+    const next = removeNotification(previous, key);
+    if (next === previous) return;
+    this.setState({ ...this.state, notifications: next });
+    if (next.current !== previous.current) this.startNotificationTimer();
   }
 
   clearError(): void {
@@ -187,7 +212,7 @@ export class TuiViewStore {
 
   beginRun(): void {
     this.flush();
-    this.setState({ ...this.state, phase: "running", localError: undefined, notice: undefined });
+    this.setState({ ...this.state, phase: "running", localError: undefined });
   }
 
   markCancelling(): void {
@@ -208,8 +233,34 @@ export class TuiViewStore {
     this.disposed = true;
     if (this.timer !== undefined) clearTimeout(this.timer);
     this.timer = undefined;
+    this.clearNotificationTimer();
     this.pending = [];
     this.listeners.clear();
+  }
+
+  private startNotificationTimer(): void {
+    this.clearNotificationTimer();
+    const current = this.state.notifications.current;
+    if (current === null) return;
+    const timeoutMs = notificationTimeoutMs(current);
+    if (timeoutMs === null) return;
+    this.notificationTimer = setTimeout(() => {
+      this.notificationTimer = undefined;
+      this.advanceNotification();
+    }, timeoutMs);
+  }
+
+  private advanceNotification(): void {
+    const previous = this.state.notifications;
+    const next = promoteNext({ current: null, queue: previous.queue });
+    this.setState({ ...this.state, notifications: next });
+    this.startNotificationTimer();
+  }
+
+  private clearNotificationTimer(): void {
+    if (this.notificationTimer === undefined) return;
+    clearTimeout(this.notificationTimer);
+    this.notificationTimer = undefined;
   }
 
   private scheduleFlush(): void {

@@ -162,7 +162,12 @@ async function runInteractive(
           ? undefined
           : () =>
               startRemoteHostWithConnectionCode(deps, workspaceRoot, (line) =>
-                store.setNotice([line]),
+                store.notify({
+                  key: "remote-status",
+                  text: line,
+                  tone: "info",
+                  timeoutMs: 30_000,
+                }),
               ),
     });
   } finally {

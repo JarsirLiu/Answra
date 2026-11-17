@@ -6,15 +6,17 @@ import type { ImageAttachmentReader } from "../../image/ports";
 import { Spinner } from "../chrome/Spinner";
 import { StatusLine } from "../chrome/StatusLine";
 import { TUI_THEME } from "../chrome/theme";
-import { ConfigPanel } from "../commands/ConfigPanel";
-import { ModelPicker } from "../commands/ModelPicker";
-import { SessionsPanel } from "../commands/SessionsPanel";
-import { StatusPanel } from "../commands/StatusPanel";
 import { PromptInput } from "../composer/PromptInput";
 import type { PointerSource } from "../interaction/pointerInput";
 import type { TuiSelectionStore } from "../interaction/selectionStore";
 import type { TuiSetupStep } from "../modelSetup";
-import type { TuiPanelHandlers } from "../panel";
+import { NotificationLine } from "../notices/NotificationLine";
+import { ConfigPanel } from "../panels/ConfigPanel";
+import { HelpPanel } from "../panels/HelpPanel";
+import { ModelPicker } from "../panels/ModelPicker";
+import type { TuiPanelHandlers } from "../panels/panel";
+import { SessionsPanel } from "../panels/SessionsPanel";
+import { StatusPanel } from "../panels/StatusPanel";
 import { ContextPruningNotice } from "../transcript/ContextPruningNotice";
 import { COMPACTION_FAILURE_TEXT, COMPACTION_SPINNER_MESSAGE } from "../transcript/compactionText";
 import { SelectionContext } from "../transcript/SelectableText";
@@ -149,13 +151,13 @@ export function App({
           }
           localError={state.localError}
           modelConfigured={state.modelConfigured}
-          notice={state.notice}
           onScroll={onClearSelection}
           pointerSource={pointerSource}
           setupStep={state.setupStep}
           view={state.view}
           workspaceRoot={workspaceRoot}
         />
+        <NotificationLine notification={state.notifications.current} />
         {transcriptMode ? (
           <Box paddingX={1}>
             <Text dimColor wrap="truncate">
@@ -191,6 +193,8 @@ export function App({
             signedIn={state.authSignedIn}
             workspaceRoot={workspaceRoot}
           />
+        ) : state.panel === "help" ? (
+          <HelpPanel close={() => panelHandlers.close()} />
         ) : (
           <PromptInput
             allowEmptySubmit={state.setupStep === "api-key"}

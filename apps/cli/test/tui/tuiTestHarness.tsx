@@ -1,5 +1,5 @@
 import type { PointerEvent } from "../../src/tui/interaction/pointerInput";
-import type { TuiPanelHandlers } from "../../src/tui/panel";
+import type { TuiPanelHandlers } from "../../src/tui/panels/panel";
 
 type ProbeListener = (...args: unknown[]) => void;
 

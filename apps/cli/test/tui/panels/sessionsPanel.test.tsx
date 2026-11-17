@@ -1,13 +1,20 @@
 import { render } from "ink-testing-library";
 import { describe, expect, it, vi } from "vitest";
-import { SessionsPanel } from "../../../src/tui/commands/SessionsPanel";
+import { SessionsPanel } from "../../../src/tui/panels/SessionsPanel";
 
 function tick(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 function session(id: string, title = `title-${id}`) {
-  return { conversationId: id, title, updatedAt: "2026-11-17T09:28:00.000Z" };
+  return {
+    conversationId: id,
+    scope: "coding" as const,
+    title,
+    messageCount: 1,
+    createdAt: "2026-11-17T09:28:00.000Z",
+    updatedAt: "2026-11-17T09:28:00.000Z",
+  };
 }
 
 describe("SessionsPanel", () => {
@@ -66,7 +73,11 @@ describe("SessionsPanel", () => {
 
   it("pages with PgDn and reports an empty workspace", async () => {
     const instance = render(
-      <SessionsPanel close={vi.fn()} load={async () => ({ current: "", sessions: [] })} resume={vi.fn()} />,
+      <SessionsPanel
+        close={vi.fn()}
+        load={async () => ({ current: "", sessions: [] })}
+        resume={vi.fn()}
+      />,
     );
     await vi.waitFor(() =>
       expect(instance.lastFrame()).toContain("当前 workspace 还没有历史会话。"),
@@ -86,9 +97,7 @@ describe("SessionsPanel", () => {
         resume={vi.fn()}
       />,
     );
-    await vi.waitFor(() =>
-      expect(instance.lastFrame()).toContain("当前宿主不支持会话历史。"),
-    );
+    await vi.waitFor(() => expect(instance.lastFrame()).toContain("当前宿主不支持会话历史。"));
     instance.unmount();
   });
 

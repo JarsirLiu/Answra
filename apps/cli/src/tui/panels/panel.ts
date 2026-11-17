@@ -1,8 +1,8 @@
 /** TUI 面板契约：面板种类与 `/config`、`/model` 的窄宿主端口；不持有 store 或会话实现。 */
 import type { ConversationSessionSummary } from "@answra/shared";
-import type { ConfigPanelData, ConfigSaveInput } from "./commands/configForm";
+import type { ConfigPanelData, ConfigSaveInput } from "./configForm";
 
-export type TuiPanel = "config" | "model" | "status" | "sessions";
+export type TuiPanel = "config" | "model" | "status" | "sessions" | "help";
 
 export interface ModelPickerData {
   readonly current: string;

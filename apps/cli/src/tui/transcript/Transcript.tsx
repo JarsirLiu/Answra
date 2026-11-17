@@ -11,7 +11,6 @@ import { SelectableText } from "./SelectableText";
 export function Transcript({
   view,
   localError,
-  notice,
   workspaceRoot,
   modelConfigured = true,
   setupStep,
@@ -20,7 +19,6 @@ export function Transcript({
 }: {
   view: ConversationView;
   localError?: string;
-  notice?: readonly string[];
   workspaceRoot: string;
   modelConfigured?: boolean;
   setupStep?: TuiSetupStep;
@@ -44,7 +42,7 @@ export function Transcript({
           message={message}
         />
       ))}
-      <TranscriptTail localError={localError} notice={notice} view={view} />
+      <TranscriptTail localError={localError} view={view} />
     </Box>
   );
 }
@@ -92,23 +90,12 @@ export function Welcome({
 export function TranscriptTail({
   view,
   localError,
-  notice,
 }: {
   view: ConversationView;
   localError?: string;
-  notice?: readonly string[];
 }) {
   return (
     <>
-      {notice === undefined ? null : (
-        <Box flexDirection="column" marginTop={1}>
-          {notice.map((line) => (
-            <SelectableText key={line} color={TUI_THEME.suggestion}>
-              {line}
-            </SelectableText>
-          ))}
-        </Box>
-      )}
       {view.retry === undefined ? null : (
         <RetryNotice key={`${view.retry.kind}:${view.retry.attempt}`} retry={view.retry} />
       )}

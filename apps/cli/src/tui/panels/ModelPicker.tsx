@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { PanelFrame } from "../chrome/PanelFrame";
 import { TUI_THEME } from "../chrome/theme";
 import { PromptInput } from "../composer/PromptInput";
-import type { ModelPickerData } from "../panel";
+import type { ModelPickerData } from "./panel";
 
 const VISIBLE_MODELS = 10;
 

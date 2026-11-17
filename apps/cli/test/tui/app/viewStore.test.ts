@@ -2,6 +2,7 @@ import type { ConversationSnapshot } from "@answra/shared";
 import type { AgentEventEnvelope } from "@answra/shared/schema";
 import { describe, expect, it, vi } from "vitest";
 import { TuiViewStore } from "../../../src/tui/app/viewStore";
+import { DEFAULT_NOTIFICATION_TIMEOUT_MS } from "../../../src/tui/notices/notification";
 
 const snapshot: ConversationSnapshot = {
   conversationId: "conversation-1",
@@ -188,23 +189,81 @@ describe("TuiViewStore", () => {
     store.dispose();
   });
 
-  it("tracks queued prompts, notices, and reset views", () => {
+  it("tracks queued prompts, notifications, and reset views", () => {
     const store = new TuiViewStore();
     store.initialize(snapshot);
 
     store.setQueued(2);
-    store.setNotice(["会话已清除。"]);
+    store.notify({ key: "session", text: "会话已清除。", tone: "success" });
     expect(store.getSnapshot()).toMatchObject({
       queued: 2,
-      notice: ["会话已清除。"],
+      notifications: { current: { text: "会话已清除。" } },
     });
 
     store.reset({ conversationId: "conversation-1", eventRevision: 9, messages: [] });
     expect(store.getSnapshot()).toMatchObject({
       queued: 0,
-      notice: undefined,
+      notifications: { current: null },
       view: { eventRevision: 9, messages: [] },
       localError: undefined,
+    });
+    store.dispose();
+  });
+
+  it("auto-dismisses the current notification and advances the queue", () => {
+    vi.useFakeTimers();
+    try {
+      const store = new TuiViewStore();
+      store.notify({ key: "first", text: "first" });
+      store.notify({ key: "second", text: "second" });
+
+      expect(store.getSnapshot().notifications.current?.text).toBe("first");
+      vi.advanceTimersByTime(DEFAULT_NOTIFICATION_TIMEOUT_MS);
+      expect(store.getSnapshot().notifications.current?.text).toBe("second");
+      vi.advanceTimersByTime(DEFAULT_NOTIFICATION_TIMEOUT_MS);
+      expect(store.getSnapshot().notifications.current).toBeNull();
+      store.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("lets immediate notifications preempt the current one", () => {
+    const store = new TuiViewStore();
+    store.notify({ key: "background", text: "background", timeoutMs: null });
+    store.notify({ key: "urgent", text: "urgent", priority: "immediate" });
+
+    expect(store.getSnapshot().notifications.current?.text).toBe("urgent");
+    store.dismissNotification("urgent");
+    expect(store.getSnapshot().notifications.current?.text).toBe("background");
+    store.dispose();
+  });
+
+  it("keeps blocking notifications until they are dismissed", () => {
+    vi.useFakeTimers();
+    try {
+      const store = new TuiViewStore();
+      store.notify({ key: "login-code", text: "输入授权码", timeoutMs: null });
+
+      vi.advanceTimersByTime(DEFAULT_NOTIFICATION_TIMEOUT_MS * 10);
+      expect(store.getSnapshot().notifications.current?.text).toBe("输入授权码");
+
+      store.dismissNotification("login-code");
+      expect(store.getSnapshot().notifications.current).toBeNull();
+      store.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("replaces a notification with the same key instead of stacking it", () => {
+    const store = new TuiViewStore();
+    store.notify({ key: "model", text: "old" });
+    store.notify({ key: "model", text: "new" });
+
+    expect(store.getSnapshot().notifications).toMatchObject({
+      current: { text: "new" },
+      queue: [],
     });
     store.dispose();
   });

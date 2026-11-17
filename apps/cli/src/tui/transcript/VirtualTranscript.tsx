@@ -53,7 +53,6 @@ export function VirtualTranscript({
   view,
   compactionBoundaries = [],
   localError,
-  notice,
   workspaceRoot,
   modelConfigured,
   setupStep,
@@ -66,7 +65,6 @@ export function VirtualTranscript({
   view: ConversationView;
   compactionBoundaries?: readonly TuiCompactionBoundary[];
   localError?: string;
-  notice?: readonly string[];
   workspaceRoot: string;
   modelConfigured?: boolean;
   setupStep?: TuiSetupStep;
@@ -90,7 +88,7 @@ export function VirtualTranscript({
 
   const items = useMemo<VirtualItem[]>(() => {
     const messageItems = mergeCompactionBoundaries(view.messages, compactionBoundaries);
-    const tail = <TranscriptTail localError={localError} notice={notice} view={view} />;
+    const tail = <TranscriptTail localError={localError} view={view} />;
     const tailNode =
       footer === undefined ? (
         tail
@@ -101,7 +99,7 @@ export function VirtualTranscript({
         </>
       );
     return [...messageItems, { kind: "footer", id: "__footer__", node: tailNode }];
-  }, [view, compactionBoundaries, footer, localError, notice]);
+  }, [view, compactionBoundaries, footer, localError]);
 
   const lastThinkingMessageId = useMemo(() => lastThinkingId(view.messages), [view.messages]);
   const heights = useMemo(
@@ -197,7 +195,7 @@ export function VirtualTranscript({
           setupStep={setupStep}
           workspaceRoot={workspaceRoot}
         />
-        <TranscriptTail localError={localError} notice={notice} view={view} />
+        <TranscriptTail localError={localError} view={view} />
         {footer}
       </Box>
     );

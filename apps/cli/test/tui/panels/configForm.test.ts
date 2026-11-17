@@ -8,7 +8,7 @@ import {
   maskApiKey,
   maskApiKeyForInput,
   validateConfigForm,
-} from "../../../src/tui/commands/configForm";
+} from "../../../src/tui/panels/configForm";
 
 describe("configForm", () => {
   it("projects saved config into editable values without a second key source", () => {

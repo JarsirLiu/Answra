@@ -3,7 +3,7 @@ import {
   configPanelFooter,
   displayConfigValue,
   filterConfigRows,
-} from "../../../src/tui/commands/configPresentation";
+} from "../../../src/tui/panels/configPresentation";
 
 const values = {
   baseUrl: "http://127.0.0.1:1234/v1",

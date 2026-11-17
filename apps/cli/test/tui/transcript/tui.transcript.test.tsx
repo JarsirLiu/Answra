@@ -22,7 +22,7 @@ describe("TUI transcript interaction", () => {
         },
       ],
     });
-    store.setNotice(["登录成功（user@example.com）。"]);
+    store.notify({ key: "login", text: "登录成功（user@example.com）。", tone: "success" });
     const instance = render(
       <App
         botName="coding.engineer"

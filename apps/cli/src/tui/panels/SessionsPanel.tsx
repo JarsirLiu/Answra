@@ -4,7 +4,7 @@ import { Box, Text, useInput } from "ink";
 import { useEffect, useState } from "react";
 import { PanelFrame } from "../chrome/PanelFrame";
 import { TUI_THEME } from "../chrome/theme";
-import type { SessionsPanelData } from "../panel";
+import type { SessionsPanelData } from "./panel";
 
 const VISIBLE_SESSIONS = 12;
 const PAGE_STEP = VISIBLE_SESSIONS - 1;
