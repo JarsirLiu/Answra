@@ -3,10 +3,10 @@
 import {
   hasPowerShellScriptEchoPrefix,
   SHELL_OUTPUT_BUFFER_BYTES,
-  type ShellSyntax,
   stripPowerShellErrorWrapper,
   truncateShellOutput,
-} from "../shell/runtime";
+} from "../shell/output";
+import type { ShellSyntax } from "../shell/runtime";
 import {
   DEFAULT_MAX_OUTPUT,
   normalizePositiveInteger,

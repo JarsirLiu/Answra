@@ -4,6 +4,39 @@
 
 > 2026-11-17：本提案的吸收项中，Windows 一次性 Job Object、POSIX `SIGTERM → SIGKILL`、CLI 退出信号、一次性命令的 `exit` 有限排空和 marker 清理顺序已先行实施，见 [Shell 一次性命令的 Job Object、POSIX 终止升级与 CLI 退出信号](../../implemented/bug-fix/2026-11-17-shell-signal-and-job-containment.md)。统一执行路径、会话输出收口和会话语义仍待实施。
 
+## 安全迁移基线（2026-11-17）
+
+> 2026-11-17：阶段 1 纯拆分已实施：`shell/output.ts`、`shell/workdir.ts`、`process/containment.ts`、`process/windows.ts`、`process/posix.ts` 已落位，`spawn.ts` 不再判断平台，`processTree.ts` 已删除；一次性/会话状态机未改。记录见 [RunCommand 进程与 shell 模块纯拆分](../../implemented/simplification/2026-11-17-runcommand-process-shell-layout.md)。
+
+本提案按阶段实施；阶段 1-4 只改内部结构，不改模型可见行为。若与下文旧目标冲突，以本节为准：
+
+- `RunCommand` 的 schema、工具名和输出字段不变；
+- 完成后 `sessionId` 仍可用于读取最终快照；结束后写 `chars` 仍按现状静默忽略；
+- 一次性命令输出超 10 MiB 终止，会话截断并继续；一次性命令默认 120 秒，会话无默认超时；
+- 不提前引入 head-tail 输出缓冲，先保留现有有界缓冲与最终截断；
+- 会话语义变化（`unknown session`、`stdin closed`、移除完成后的 `sessionId`）另立 Note，不混入本次迁移；
+- `execution/` 不直接读 `process.platform`；平台派生的输入上限、yield 策略由 `environment.ts` 注入，`process/` 只保留进程 containment 差异。
+
+### 迁移前行为矩阵
+
+| 维度 | 一次性命令 | 会话 | 统一后的显式参数 |
+| --- | --- | --- | --- |
+| stdin | `ignore` | `pipe` | `stdin: "ignore" \| "pipe"` |
+| 默认超时 | 120s | 无 | 默认值由 `tool` 注入 |
+| 输出超限 | 终止进程 | 截断并继续 | `overflow: "terminate" \| "truncate"` |
+| 输出方式 | 最终解码 + delta | 增量快照 | `onOutput` + snapshot |
+| 会话表 | 不注册 | LRU + 交互锁 | 只有 session 注册 |
+| `chars` | 不允许 | 运行中写入，结束后忽略 | 保持现状 |
+
+### 安全迁移顺序
+
+1. **纯拆分**：抽出 `shell/output.ts`、`shell/workdir.ts`、`process/windows.ts`、`process/posix.ts`、`process/containment.ts`；`spawn.ts` 不再判断平台；不改一次性/会话状态机。
+2. **一次性命令**：新增 `execution/contract.ts`、`output.ts`、`command.ts`，先让 `LocalShell` 内部改用新 command；现有测试不改断言，通过后删除 `oneShot.ts`。
+3. **会话**：`commandManager` 接管 `start/write/kill/cleanup`、LRU、交互锁；先保留 `ShellSessionManager` 适配层，现有 `sessions.test.ts` 全绿后删除旧实现。
+4. **收尾**：`tool.ts` 只保留模型契约与投影；最后再移动测试目录到 `test/core/tool/runCommand/`。
+
+每一阶段都必须 `pnpm verify` 通过；Windows 与 macOS 平台差异另开阶段处理，不阻塞纯拆分。
+
 ## 问题
 
 `RunCommand` 是模型可见的唯一 shell 工具，CLI 与桌面端共用同一套实现，并明确保留可续接会话。但当前内部仍按 `yieldTimeMs` 分成两条执行路径：
@@ -19,7 +52,7 @@
 4. **会话完成后仍保留，并可能错误显示 `completed`。** `sessionOutput.ts:99-104` 只把 `timed_out`/`cleanup` 映射为非完成状态；进程被信号杀死时 `exitCode` 为 `null`，但仍满足 `!== undefined`，模型会看到 `completed`。
 5. **结束后写 `chars` 被静默忽略。** `sessions.ts:89` 只在 `!isSessionFinished` 时写 stdin；命令已退出时传 `chars` 不报错，模型会误以为输入已送达。
 6. **CLI 退出的清理入口不完整。** `apps/cli/src/main.ts:90-94` 只注册 `SIGINT`；`SIGTERM`、Windows 关闭控制台或安装包父进程结束时，`host.dispose()` 和 `ShellSessionManager.cleanup()` 可能不会执行，长任务及其后代可能残留。
-7. **POSIX 终止没有升级。** `processTree.ts:28-35` 只发一次 `SIGTERM` 并立即返回；`trap '' TERM` 这类命令会存活，一次性命令只能等工具超时（`tool.ts:36`，约 630 秒）。
+7. **POSIX 终止没有升级。** 原 `processTree.ts`（现 `posix.ts`）只发一次 `SIGTERM` 并立即返回；`trap '' TERM` 这类命令会存活，一次性命令只能等工具超时（`tool.ts:36`，约 630 秒）。
 
 本地 codex 仓库的 `unified_exec` 是目前最贴近本问题的参考：
 
@@ -40,9 +73,12 @@
   - `apps/agent/src/core/tool/builtin/runCommand/process/sessions.ts`
   - `apps/agent/src/core/tool/builtin/runCommand/process/sessionContract.ts`
   - `apps/agent/src/core/tool/builtin/runCommand/process/sessionOutput.ts`
-  - `apps/agent/src/core/tool/builtin/runCommand/process/processTree.ts`
-  - `apps/agent/src/core/tool/builtin/runCommand/process/workdir.ts`
-  - `apps/agent/src/core/tool/builtin/runCommand/shell/runtime.ts`（只抽共用 spawn 参数，不改 shell 检测策略）
+  - `apps/agent/src/core/tool/builtin/runCommand/process/containment.ts`
+  - `apps/agent/src/core/tool/builtin/runCommand/process/windows.ts`
+  - `apps/agent/src/core/tool/builtin/runCommand/process/posix.ts`
+  - `apps/agent/src/core/tool/builtin/runCommand/shell/output.ts`
+  - `apps/agent/src/core/tool/builtin/runCommand/shell/workdir.ts`
+  - `apps/agent/src/core/tool/builtin/runCommand/shell/runtime.ts`（只保留 shell 选择与调用构造）
   - `apps/cli/src/main.ts`（信号覆盖与幂等触发）
   - `apps/cli/src/cli/` 中调用 `onInterrupt` 的宿主组合点（只验证幂等，不新增领域逻辑）
 - 测试：
@@ -100,12 +136,14 @@ stdinClosed
 outputClosed
 ```
 
-- 使用 head-tail 有界缓冲，保留开头和结尾；初版每个输出缓冲上限 1 MiB，不把 10 MiB 原始缓冲直接交给模型。
+- 本次迁移先保留现有 10 MiB 有界缓冲与最终截断；head-tail 和 1 MiB 上限是后续独立优化，不作为迁移前置。
 - 模型侧仍受现有 `resultBudget`（20,000 字符/字节）约束。
-- 根进程退出后最多等待一个短窗口（参考 codex 的本地 150ms，按 Windows 实测可调）排空已到达输出，然后关闭输出；不等待所有继承 fd 的后代自然退出。
-- 进程退出且最终输出被收集后，从进程表移除；不靠 LRU 才清理已完成会话。
+- 根进程退出后最多等待一个短窗口排空已到达输出，然后关闭输出；不等待所有继承 fd 的后代自然退出。一次性命令的 2 秒窗口是当前基线，会话是否采用同一窗口需先补表征测试。
+- 进程退出且最终输出被收集后是否移出进程表，属于后续会话语义变更；本次迁移先保持现有完成快照。
 
-### 3. 会话语义
+### 3. 会话语义（后续独立变更，不在本次迁移中实施）
+
+以下为后续目标，本次阶段 1-4 先保持现有行为：
 
 - `sessionId` 只在进程仍运行时返回；最终结果不再承诺可续接。
 - 已退出后再用 `sessionId`：返回 `unknown session`，而不是 `completed` 或空输出。
@@ -121,7 +159,7 @@ outputClosed
 
 - Windows：一次性命令和会话都生成同一个 Job Object marker，共用 `windowsBootstrap`、`env`、`detached` 和 `stdio` 构造；`taskkill` 只作为 containment 失败兜底。
 - POSIX：`SIGTERM` 后轮询进程组，最多 2 秒；仍存活则 `SIGKILL`；再等待最多 5 秒。进程组已消失时立即返回，避免每次取消都固定等待。
-- `RunCommand.dispose()` 调用 manager 的 `terminateAll()`；CLI `onInterrupt` 覆盖 `SIGINT`、`SIGTERM`（Windows 另加 `SIGBREAK`），并保证同一轮退出只触发一次。
+- `RunCommand.dispose()` 调用 manager 的 `terminateAll()`；CLI `onInterrupt` 在 POSIX 覆盖 `SIGINT`、`SIGTERM`、`SIGHUP`，Windows 覆盖 `SIGINT`、`SIGBREAK`，并保证同一轮退出只触发一次。
 - 任何超时、取消、输出上限或显式清理都必须终止整棵进程树，而不是只杀根进程。
 
 ### 5. 容量和淘汰
@@ -143,8 +181,8 @@ outputClosed
 
 - `builtin/runCommand/` 只负责 shell 进程生命周期、输出缓冲和模型输出投影；不读写 transcript，不定义领域 prompt，不导入 `conversation`/`interview`。
 - `tool.ts` 继续是唯一模型契约入口；内部 manager 不是新工具，不进入工具目录、profile 或 UI 映射。
-- `processTree.ts` 仍是唯一进程树终止实现；`oneShot`/`sessions` 不得各自拼 spawn 或 kill。
-- `shell/runtime.ts` 只负责 shell 选择、调用构造、解码和错误清理；不得把进程生命周期放进去。
+- `process/containment.ts` 是进程创建与终止的唯一入口；`windows.ts`/`posix.ts` 只放平台实现；`spawn.ts` 不判断平台；`oneShot`/`sessions` 不得各自拼 spawn 或 kill。
+- `shell/runtime.ts` 只负责 shell 选择与调用构造；`shell/output.ts` 负责解码、截断和错误清理；不得把进程生命周期放进去。
 - CLI 只负责信号注册和 `host.dispose()` 调用；不得复制 shell 会话语义。
 - `packages/ui` 只展示结构化输出；不得解析 shell 文本推断状态。
 
@@ -161,6 +199,8 @@ outputClosed
 - **直接照 Claude-Code 无条件 SIGKILL。** 舍弃。开发服务器和 watcher 需要 SIGTERM 清理窗口；阶段升级更适合本产品。
 
 ## 验收标准
+
+阶段 1-4 的验收以现有行为测试全部通过为准；下面的完成态 `sessionId`、`stdin closed` 和一次性/会话完全一致属于后续独立变更，不在本次迁移中同时实现。
 
 - 可观察结果：
   - 短命令在等待窗口内完成，直接返回最终输出和退出码，不产生可续接 `sessionId`。

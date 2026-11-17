@@ -1,70 +1,53 @@
-/** 终止 shell 子进程树；Windows 路径用 Job Object containment 或 taskkill，POSIX 用进程组阶段升级。 */
+/**
+ * Windows shell 进程 containment：Job Object 引导、marker、taskkill 兜底和终止等待。
+ * 不负责 shell 构造、输出收集或会话状态。
+ */
 
-import { type ChildProcess, execFile } from "node:child_process";
+import { type ChildProcess, execFile, type SpawnOptions } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { readFile, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { delay } from "./delay";
 
 const KILL_SETTLE_MS = 200;
 const KILL_CAP_MS = 5_000;
 const CONTAINMENT_PROBE_MS = 2_000;
 const CONTAINMENT_PROBE_INTERVAL_MS = 50;
-const POSIX_TERM_WAIT_MS = 2_000;
-const POSIX_KILL_WAIT_MS = 5_000;
 
 export const JOB_MARKER_ENV = "ANSWRA_SHELL_JOB_MARKER";
 
 export type JobContainment = "ok" | "failed" | "unknown";
 
+export interface WindowsContainment {
+  readonly kind: "job-object";
+  readonly shellBootstrap: string;
+  readonly jobMarkerPath: string;
+  spawnOptions(): Pick<SpawnOptions, "detached" | "env" | "windowsHide">;
+}
+
+export function createWindowsContainment(): WindowsContainment {
+  const jobMarkerPath = path.join(os.tmpdir(), `answra-shell-job-${randomUUID()}.marker`);
+  return {
+    kind: "job-object",
+    shellBootstrap: buildWindowsJobBootstrap(),
+    jobMarkerPath,
+    spawnOptions: () => ({
+      detached: false,
+      windowsHide: true,
+      env: { ...process.env, [JOB_MARKER_ENV]: jobMarkerPath },
+    }),
+  };
+}
+
 /**
- * 终止子进程的整棵进程树并等待根进程退出。
+ * 终止 Windows 子进程树并等待根进程退出。
  *
- * Windows 主路径依赖 Job Object 内核约束（见 buildWindowsJobBootstrap）：
+ * 主路径依赖 Job Object 内核约束（见 buildWindowsJobBootstrap）：
  * 根 PowerShell 进程死亡后 job 句柄关闭，KILL_ON_JOB_CLOSE 由内核收割全部后代，
  * 因此不存在 taskkill 快照枚举与后代 spawn 之间的 TOCTOU 竞态。
  */
-export function terminateProcessTree(child: ChildProcess, jobMarkerPath?: string): Promise<void> {
-  if (process.platform === "win32") return terminateWindowsProcessTree(child, jobMarkerPath);
-  return terminatePosixProcessTree(child);
-}
-
-async function terminatePosixProcessTree(child: ChildProcess): Promise<void> {
-  const pid = child.pid;
-  if (!pid) return;
-
-  signalPosixProcessGroup(pid, "SIGTERM", child);
-  if (await waitForPosixProcessGroupExit(pid, POSIX_TERM_WAIT_MS)) return;
-
-  signalPosixProcessGroup(pid, "SIGKILL", child);
-  await waitForPosixProcessGroupExit(pid, POSIX_KILL_WAIT_MS);
-}
-
-function signalPosixProcessGroup(pid: number, signal: NodeJS.Signals, child: ChildProcess): void {
-  try {
-    process.kill(-pid, signal);
-  } catch (error: unknown) {
-    if (isMissingProcessError(error)) return;
-    child.kill(signal);
-  }
-}
-
-async function waitForPosixProcessGroupExit(pid: number, timeoutMs: number): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  for (;;) {
-    if (!isPosixProcessGroupAlive(pid)) return true;
-    if (Date.now() >= deadline) return !isPosixProcessGroupAlive(pid);
-    await delay(CONTAINMENT_PROBE_INTERVAL_MS);
-  }
-}
-
-function isPosixProcessGroupAlive(pid: number): boolean {
-  try {
-    process.kill(-pid, 0);
-    return true;
-  } catch (error: unknown) {
-    return !isMissingProcessError(error);
-  }
-}
-
-async function terminateWindowsProcessTree(
+export async function terminateWindowsProcessTree(
   child: ChildProcess,
   jobMarkerPath?: string,
 ): Promise<void> {
@@ -138,26 +121,13 @@ function waitForRootExit(child: ChildProcess): Promise<void> {
   });
 }
 
-async function removeJobMarker(markerPath?: string): Promise<void> {
+export async function removeJobMarker(markerPath?: string): Promise<void> {
   if (!markerPath) return;
   try {
     await rm(markerPath, { force: true });
   } catch {
     // 标记文件只是临时反馈介质，清理失败不影响终止结果。
   }
-}
-
-function isMissingProcessError(error: unknown): boolean {
-  return (
-    error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "ESRCH"
-  );
-}
-
-function delay(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(resolve, milliseconds);
-    timer.unref();
-  });
 }
 
 const JOB_TREE_CSHARP_SOURCE = `

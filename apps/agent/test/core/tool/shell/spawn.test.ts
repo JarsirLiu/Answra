@@ -1,11 +1,9 @@
 import { once } from "node:events";
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
-import {
-  parseJobContainmentMarker,
-  terminateProcessTree,
-} from "../../../../src/core/tool/builtin/runCommand/process/processTree";
+import { terminateProcessTree } from "../../../../src/core/tool/builtin/runCommand/process/containment";
 import { spawnShellProcess } from "../../../../src/core/tool/builtin/runCommand/process/spawn";
+import { parseJobContainmentMarker } from "../../../../src/core/tool/builtin/runCommand/process/windows";
 
 async function waitForFile(filePath: string, timeoutMs = 5_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;

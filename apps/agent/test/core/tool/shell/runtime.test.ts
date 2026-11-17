@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildShellInvocation,
   decodeShellOutput,
-  resolveShellRuntime,
   stripPowerShellErrorWrapper,
   truncateShellOutput,
+} from "../../../../src/core/tool/builtin/runCommand/shell/output";
+import {
+  buildShellInvocation,
+  resolveShellRuntime,
 } from "../../../../src/core/tool/builtin/runCommand/shell/runtime";
 import { StreamingShellDecoder } from "../../../../src/core/tool/text/streamDecoder";
 

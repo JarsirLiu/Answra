@@ -15,7 +15,7 @@
 ## 根因
 
 - `oneShot.ts` 自己调用 `buildShellInvocation` 和 `spawn`，没有复用会话的 Windows Job Object 引导。
-- `processTree.ts` 的 POSIX 分支发完 `SIGTERM` 就返回，没有等待进程组退出，也没有升级信号。
+- `processTree.ts` 的 POSIX 分支发完 `SIGTERM` 就返回，没有等待进程组退出，也没有升级信号；该文件后续已纯拆分到 `containment.ts`、`windows.ts`、`posix.ts`，语义未变。
 - `apps/cli/src/main.ts` 的 `onInterrupt` 只有 `SIGINT`，平台信号适配散落在组合根。
 - `oneShot.ts` 只监听 `close`，没有在根进程 `exit` 后设置有限排空窗口，也没有在排空后主动关闭残留 stdio。
 - `oneShot.ts` 在 `settleShellProcess` 中先删除 marker，终止 Promise 没有与清理顺序绑定。
@@ -25,11 +25,14 @@
 - `apps/agent/src/core/tool/builtin/runCommand/process/spawn.ts`
 - `apps/agent/src/core/tool/builtin/runCommand/process/oneShot.ts`
 - `apps/agent/src/core/tool/builtin/runCommand/process/sessions.ts`
-- `apps/agent/src/core/tool/builtin/runCommand/process/processTree.ts`
+- `apps/agent/src/core/tool/builtin/runCommand/process/containment.ts`
+- `apps/agent/src/core/tool/builtin/runCommand/process/windows.ts`
+- `apps/agent/src/core/tool/builtin/runCommand/process/posix.ts`
 - `apps/cli/src/main.ts`
 - `apps/cli/src/transport/processSignals.ts`
 - `apps/agent/test/core/tool/shell/localShell.test.ts`
-- `apps/agent/test/core/tool/shell/processTree.test.ts`
+- `apps/agent/test/core/tool/shell/processContainment.test.ts`
+- `apps/agent/test/core/tool/shell/containment.test.ts`
 - `apps/agent/test/core/tool/shell/spawn.test.ts`
 - `apps/cli/test/transport/processSignals.test.ts`
 - `.github/workflows/ci.yml`

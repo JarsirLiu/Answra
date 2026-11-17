@@ -10,9 +10,9 @@ import {
   SHELL_OUTPUT_BUFFER_BYTES,
   stripPowerShellErrorWrapper,
   truncateShellOutput,
-} from "../shell/runtime";
-import { terminateProcessTree } from "./processTree";
-import { removeShellJobMarker, spawnShellProcess } from "./spawn";
+} from "../shell/output";
+import { removeShellJobMarker, terminateProcessTree } from "./containment";
+import { spawnShellProcess } from "./spawn";
 
 export interface ShellAction {
   readonly command: string;

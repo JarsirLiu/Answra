@@ -1,12 +1,12 @@
 /**
  * 可续接的 shell 会话：一次 start 在等待窗口内返回增量输出或 sessionId，
  * 后续 RunCommand 以 sessionId 继续等待或写入 stdin；会话按 LRU 淘汰，进程树由
- * processTree.ts 统一收割。
+ * containment.ts 统一收割。
  */
 
 import { randomUUID } from "node:crypto";
 import { StreamingShellDecoder } from "../../../text/streamDecoder";
-import { terminateProcessTree } from "./processTree";
+import { removeShellJobMarker, terminateProcessTree } from "./containment";
 import {
   createAbortError,
   DEFAULT_YIELD_MS,
@@ -32,7 +32,7 @@ import {
   isSessionFinished,
   snapshotSession,
 } from "./sessionOutput";
-import { removeShellJobMarker, spawnShellProcess } from "./spawn";
+import { spawnShellProcess } from "./spawn";
 
 export class ShellSessionManager {
   private readonly sessions = new Map<string, Session>();

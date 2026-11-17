@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { resolveShellWorkdir } from "../../../../src/core/tool/builtin/runCommand/process/workdir";
+import { resolveShellWorkdir } from "../../../../src/core/tool/builtin/runCommand/shell/workdir";
 
 describe("resolveShellWorkdir", () => {
   const roots: string[] = [];

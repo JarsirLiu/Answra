@@ -21,8 +21,8 @@ import {
   type ShellSessionSnapshot,
   type ShellYieldTimePolicy,
 } from "./process/sessions";
-import { resolveShellWorkdir } from "./process/workdir";
 import { resolveShellRuntime } from "./shell/runtime";
+import { resolveShellWorkdir } from "./shell/workdir";
 
 // Windows CreateProcess 的命令行上限约 32K；留出解释器前缀与转义余量。
 const MAX_COMMAND_CHARS = process.platform === "win32" ? 30_000 : 64_000;
