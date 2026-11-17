@@ -12,7 +12,6 @@ import type { CodingSession } from "../session/codingSession";
 import type { OpenBrowser } from "../transport/openBrowser";
 import { App } from "./app/App";
 import type { TuiViewStore } from "./app/viewStore";
-import { assertAccessAllowed, PANEL_ACTION_ACCESS } from "./commands/access";
 import { dispatchTuiCommand } from "./commands/dispatch";
 import { parseTuiCommand } from "./commands/parse";
 import type { RemoteHostHandle, RemoteHostInfo, TuiCommandDeps } from "./commands/ports";
@@ -21,17 +20,15 @@ import { createPointerInput } from "./interaction/pointerInput";
 import { createSelectionActions } from "./interaction/selectionActions";
 import { TuiSelectionStore } from "./interaction/selectionStore";
 import type { TuiSetupStep } from "./modelSetup";
-import type { TuiPanel, TuiPanelHandlers } from "./panels/panel";
-
-export type TuiSessionFactory = (
-  model: ConversationModelConfig,
-  accessToken?: string,
-) => CodingSession;
+import { createTuiPanelHandlers } from "./panelHandlers";
+import type { TuiPanel } from "./panels/panel";
+import { TuiRunController, type TuiSessionFactory } from "./runController";
 
 export interface TuiRunOptions {
   session?: CodingSession;
   model?: string;
   createSession?: TuiSessionFactory;
+  onInterrupt?: (handler: () => void) => () => void;
   store: TuiViewStore;
   modelSettings: ModelSettings;
   modelCredentials: ModelCredentialStore;
@@ -43,11 +40,6 @@ export interface TuiRunOptions {
   remoteAuth?: RemoteAuthPort;
   openBrowser?: OpenBrowser;
   startRemoteHost?: () => Promise<RemoteHostHandle>;
-}
-
-interface QueuedTurn {
-  readonly text: string;
-  readonly images: readonly ImageAttachment[];
 }
 
 const LOGIN_PROGRESS_TIMEOUT_MS = 5_000;
@@ -62,6 +54,7 @@ export async function runInkTui({
   session: initialSession,
   model: initialModel,
   createSession,
+  onInterrupt,
   store,
   modelSettings,
   modelCredentials,
@@ -75,16 +68,15 @@ export async function runInkTui({
   startRemoteHost,
 }: TuiRunOptions): Promise<number> {
   const imageReader = injectedImageReader ?? createImageAttachmentReader();
-  let session = initialSession;
-  let setupStep: TuiSetupStep | undefined = session === undefined ? "base-url" : undefined;
+  let setupStep: TuiSetupStep | undefined = initialSession === undefined ? "base-url" : undefined;
   let setupBaseUrl = "";
   let setupApiKey = "";
 
-  if (session === undefined) {
+  if (initialSession === undefined) {
     store.setModelConfigured(false);
     store.setSetupStep(setupStep);
   } else {
-    store.initialize(await session.open());
+    store.initialize(await initialSession.open());
     store.setModelLabel(initialModel ?? "");
     store.setModelConfigured(true);
     store.setSetupStep(undefined);
@@ -93,9 +85,13 @@ export async function runInkTui({
   store.setAuthAvailable(remoteAuth !== undefined);
   if (remoteAuth !== undefined) store.setAuthStatus(await remoteAuth.status());
 
-  const queue: QueuedTurn[] = [];
-  let busy = false;
-  let cancelRequested = false;
+  const resolveAccessToken = async (override?: string): Promise<string | undefined> => {
+    if (override !== undefined && override !== "") return override;
+    return (await modelCredentials.read()) ?? undefined;
+  };
+  const runController = new TuiRunController({ store, createSession, resolveAccessToken });
+  if (initialSession !== undefined) runController.register(initialSession);
+
   let compactAbort: AbortController | undefined;
   let exitTui: (() => void) | undefined;
   let authCodeResolver: ((value: string) => void) | undefined;
@@ -118,13 +114,7 @@ export async function runInkTui({
       void handleSetup(text);
       return;
     }
-    if (session === undefined) {
-      return;
-    }
-    if (text.trim().length === 0 && images.length === 0) return;
-    queue.push({ text, images });
-    store.setQueued(queue.length);
-    void drain();
+    runController.submit(text, images);
   };
 
   const login = async (): Promise<void> => {
@@ -187,21 +177,17 @@ export async function runInkTui({
     }
   };
 
-  const resolveAccessToken = async (override?: string): Promise<string | undefined> => {
-    if (override !== undefined && override !== "") return override;
-    return (await modelCredentials.read()) ?? undefined;
-  };
-
   const ensureSession = async (
     model: ConversationModelConfig,
     accessToken?: string,
   ): Promise<void> => {
-    if (session !== undefined) return;
+    if (runController.activeSession !== undefined) return;
     if (createSession === undefined) throw new Error("当前 TUI 未提供会话工厂。");
     const token = accessToken === undefined ? await resolveAccessToken() : accessToken;
     const next = createSession(model, token);
-    store.initialize(await next.open());
-    session = next;
+    const snapshot = await next.open();
+    runController.register(next);
+    store.initialize(snapshot);
     setupStep = undefined;
     store.setSetupStep(undefined);
     store.setModelConfigured(true);
@@ -212,14 +198,13 @@ export async function runInkTui({
     store.setPanel(panel);
   };
 
-  const runtime = () => ({
-    runActive: busy,
-    compactionActive: store.getSnapshot().compactionActive,
-  });
+  const runtime = () => runController.runtime();
 
   const compactConversation = async (instructions?: string): Promise<ManualCompactionResult> => {
-    if (busy || store.getSnapshot().compactionActive) throw new Error("上一轮尚未结束。");
-    const activeSession = session;
+    if (runtime().activeRunActive || store.getSnapshot().compactionActive) {
+      throw new Error("上一轮尚未结束。");
+    }
+    const activeSession = runController.activeSession;
     if (activeSession === undefined) throw new Error("尚未配置模型。");
     const controller = new AbortController();
     compactAbort = controller;
@@ -240,7 +225,10 @@ export async function runInkTui({
     store,
     modelSettings,
     runtime,
-    getSession: () => session,
+    getSession: () => runController.activeSession,
+    activateSession: (conversationId) => runController.activate(conversationId),
+    createNewSession: () => runController.createNew(),
+    deleteSession: (conversationId) => runController.delete(conversationId),
     compactConversation,
     configureSession: ensureSession,
     requestExit: () => exitTui?.(),
@@ -266,143 +254,14 @@ export async function runInkTui({
     },
   };
 
-  const panelHandlers: TuiPanelHandlers = {
-    loadConfig: async () => {
-      const snapshot = await modelSettings.snapshot();
-      const apiKey = await modelCredentials.read();
-      return {
-        baseUrl: snapshot.local.baseUrl,
-        chatModel: snapshot.local.chatModel,
-        ...(snapshot.local.answerModel === undefined
-          ? {}
-          : { answerModel: snapshot.local.answerModel }),
-        apiKey: apiKey ?? "",
-      };
-    },
-    saveConfig: async (input) => {
-      assertAccessAllowed(PANEL_ACTION_ACCESS.saveConfig, runtime());
-      const before = await modelSettings.snapshot();
-      const model = await modelSettings.addLocal({
-        baseUrl: input.baseUrl,
-        chatModel: input.chatModel,
-        ...(input.answerModel === undefined ? {} : { answerModel: input.answerModel }),
-      });
-      let accessToken: string;
-      if (input.apiKey.kind === "set") {
-        await modelCredentials.write(input.apiKey.value);
-        accessToken = input.apiKey.value;
-      } else if (input.apiKey.kind === "clear") {
-        await modelCredentials.clear();
-        accessToken = "";
-      } else {
-        accessToken = (await modelCredentials.read()) ?? "";
-      }
-      if (session === undefined) {
-        await ensureSession(model, accessToken);
-      } else {
-        session.setModel(model);
-        session.setAccessToken(accessToken);
-      }
-      store.clearError();
-      store.setModelLabel(model.chat.model);
-      store.setModelConfigured(true);
-      store.setSetupStep(undefined);
-      const changes: string[] = [];
-      if (before.local.baseUrl !== input.baseUrl) {
-        changes.push(`Set baseUrl to ${input.baseUrl}`);
-      }
-      if (before.local.chatModel !== input.chatModel) {
-        changes.push(`Set chatModel to ${input.chatModel}`);
-      }
-      if ((before.local.answerModel ?? "") !== (input.answerModel ?? "")) {
-        changes.push(`Set answerModel to ${input.answerModel ?? "(none)"}`);
-      }
-      if (input.apiKey.kind === "set") changes.push("Set API key");
-      else if (input.apiKey.kind === "clear") changes.push("Cleared API key");
-      store.notify({
-        key: "model",
-        text: changes.length === 0 ? "Config dialog dismissed" : changes.join("\n"),
-        tone: "success",
-      });
-    },
-    loadModels: async () => {
-      const snapshot = await modelSettings.snapshot();
-      const current = snapshot.local.chatModel;
-      if (!snapshot.configured || snapshot.local.baseUrl.trim() === "") {
-        return {
-          current,
-          models: [],
-          error: "尚未配置本地模型，请先打开 /config。",
-        };
-      }
-      try {
-        const apiKey = (await modelCredentials.read()) ?? undefined;
-        const models = await modelCatalog.list({
-          baseUrl: snapshot.local.baseUrl,
-          ...(apiKey === undefined ? {} : { apiKey }),
-        });
-        return { current, models };
-      } catch (error) {
-        return { current, models: [], error: messageOf(error) };
-      }
-    },
-    selectModel: async (modelId) => {
-      assertAccessAllowed(PANEL_ACTION_ACCESS.selectModel, runtime());
-      const model = await modelSettings.switchChatModel(modelId);
-      if (session === undefined) {
-        await ensureSession(model);
-      } else {
-        session.setModel(model);
-      }
-      store.clearError();
-      store.setModelLabel(model.chat.model);
-      store.setModelConfigured(true);
-      store.setSetupStep(undefined);
-      store.notify({
-        key: "model",
-        text: `已切换模型：${model.chat.model}`,
-        tone: "success",
-      });
-    },
-    loadSessions: async () => {
-      const activeSession = session;
-      if (activeSession === undefined) {
-        return { current: "", sessions: [], error: "尚未配置模型，无法读取会话历史。" };
-      }
-      try {
-        const sessions = await activeSession.listSessions();
-        return { current: activeSession.currentConversationId, sessions };
-      } catch (error) {
-        return {
-          current: activeSession.currentConversationId,
-          sessions: [],
-          error: messageOf(error),
-        };
-      }
-    },
-    resumeSession: async (conversationId) => {
-      assertAccessAllowed(PANEL_ACTION_ACCESS.resumeSession, runtime());
-      const activeSession = session;
-      if (activeSession === undefined) throw new Error("尚未配置模型。");
-      if (conversationId === activeSession.currentConversationId) return;
-      store.reset(await activeSession.resume(conversationId));
-      store.notify({
-        key: "session",
-        text: `已恢复会话：${conversationId}`,
-        tone: "success",
-      });
-    },
-    close: (reason) => {
-      const panel = store.getSnapshot().panel;
-      store.setPanel(undefined);
-      if (
-        reason === "dismissed" &&
-        (panel === undefined || panel === "config" || panel === "model")
-      ) {
-        store.notify({ key: "model", text: "Config dialog dismissed", tone: "success" });
-      }
-    },
-  };
+  const panelHandlers = createTuiPanelHandlers({
+    store,
+    runController,
+    modelSettings,
+    modelCredentials,
+    modelCatalog,
+    ensureSession,
+  });
 
   const handleSetup = async (text: string): Promise<void> => {
     if (setupStep === undefined) return;
@@ -454,51 +313,15 @@ export async function runInkTui({
     }
   };
 
-  const drain = async (): Promise<void> => {
-    if (busy) return;
-    const turn = queue.shift();
-    store.setQueued(queue.length);
-    if (turn === undefined) return;
-    const activeSession = session;
-    if (activeSession === undefined) {
-      return;
-    }
-    busy = true;
-    cancelRequested = false;
-    store.beginRun();
-    let failed = false;
-    try {
-      const runId = await activeSession.send(turn.text, turn.images);
-      if (cancelRequested) activeSession.cancel();
-      await activeSession.wait(runId);
-    } catch (error) {
-      failed = true;
-      queue.length = 0;
-      store.setQueued(0);
-      store.fail(messageOf(error));
-    } finally {
-      busy = false;
-      cancelRequested = false;
-    }
-    if (failed || queue.length === 0) {
-      store.finishRun();
-      return;
-    }
-    void drain();
-  };
-
   const cancel = (): void => {
     if (compactAbort !== undefined) {
       compactAbort.abort();
       return;
     }
-    if (!busy) return;
-    cancelRequested = true;
-    queue.length = 0;
-    store.setQueued(0);
-    store.markCancelling();
-    session?.cancel();
+    runController.cancel();
   };
+
+  const removeInterrupt = onInterrupt?.(cancel);
 
   const registerExit = (exit: () => void): void => {
     exitTui = exit;
@@ -544,6 +367,7 @@ export async function runInkTui({
     );
     await instance.waitUntilExit();
   } finally {
+    removeInterrupt?.();
     await activeRemoteHost?.stop();
     unsubscribePointer?.();
     pointer?.dispose();

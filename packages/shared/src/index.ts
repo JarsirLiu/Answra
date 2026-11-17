@@ -57,6 +57,7 @@ export {
   type ConversationSendRequest,
   type ConversationSendResponse,
   type ConversationSendResult,
+  type ConversationSessionPage,
   type ConversationSessionScope,
   type ConversationSessionSummary,
   type ConversationSnapshot,

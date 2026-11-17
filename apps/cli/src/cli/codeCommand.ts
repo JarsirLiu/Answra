@@ -110,7 +110,6 @@ async function runInteractive(
   const store = new TuiViewStore();
   let session: CodingSession | undefined;
   let host: CodingSessionHost | undefined;
-  let removeInterrupt: (() => void) | undefined;
 
   const ensureHost = (): CodingSessionHost => {
     host ??= deps.createSessionHost({
@@ -124,17 +123,16 @@ async function runInteractive(
   const createSession = (
     model: ConversationModelConfig,
     accessTokenOverride?: string,
+    conversationId?: string,
   ): CodingSession => {
     const next = new CodingSession({
       host: ensureHost(),
-      conversationId: deps.createConversationId(),
+      conversationId: conversationId ?? deps.createConversationId(),
       createConversationId: deps.createConversationId,
       model,
       accessToken: accessTokenOverride ?? accessToken,
       workspaceRoot,
     });
-    removeInterrupt?.();
-    removeInterrupt = deps.onInterrupt(() => next.cancel());
     session = next;
     return next;
   };
@@ -148,6 +146,7 @@ async function runInteractive(
     return await deps.runTui({
       ...(initial ?? {}),
       createSession,
+      onInterrupt: deps.onInterrupt,
       store,
       modelSettings: deps.modelSettings,
       modelCredentials: deps.modelCredentials,
@@ -171,7 +170,6 @@ async function runInteractive(
               ),
     });
   } finally {
-    removeInterrupt?.();
     store.dispose();
     session?.close();
     host?.dispose();

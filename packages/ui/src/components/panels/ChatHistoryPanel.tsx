@@ -8,6 +8,9 @@ export interface ChatHistoryPanelProps {
   activeConversationId: string;
   disabledReason?: string;
   error?: string;
+  hasMore?: boolean;
+  loading?: boolean;
+  onLoadMore?: () => void;
   onResume: (conversationId: string) => void;
   onDelete: (conversationId: string) => Promise<void>;
 }
@@ -18,6 +21,9 @@ export function ChatHistoryPanel({
   activeConversationId,
   disabledReason,
   error,
+  hasMore = false,
+  loading = false,
+  onLoadMore,
   onResume,
   onDelete,
 }: ChatHistoryPanelProps) {
@@ -82,6 +88,17 @@ export function ChatHistoryPanel({
           );
         })}
       </ul>
+      {hasMore ? (
+        <SurfaceButton
+          aria-label="加载更多会话"
+          disabled={loading || onLoadMore === undefined}
+          onClick={onLoadMore}
+          size="sm"
+          variant="quiet"
+        >
+          {loading ? "加载中…" : "加载更多"}
+        </SurfaceButton>
+      ) : null}
     </section>
   );
 }

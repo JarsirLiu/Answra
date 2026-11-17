@@ -6,21 +6,29 @@ import {
 import { useCallback, useEffect, useState } from "react";
 
 const ACTIVE_CHAT_STORAGE_KEY = "answra.chat.activeConversationId";
+const HISTORY_PAGE_SIZE = 20;
 
-/** 桌面 chat 会话状态唯一 owner：active ID、历史列表与新建/恢复/删除。 */
+/** 桌面 chat 会话状态唯一 owner：active ID、历史分页与新建/恢复/删除。 */
 export function useChatSessions(platform: DesktopBridge | undefined) {
   const [activeConversationId, setActiveConversationId] = useState(readStoredConversationId);
   const [sessions, setSessions] = useState<readonly ConversationSessionSummary[]>([]);
+  const [nextCursor, setNextCursor] = useState<string>();
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string>();
 
   const refresh = useCallback(async () => {
     if (!platform?.listConversationSessions) {
       setSessions([]);
+      setNextCursor(undefined);
       return;
     }
     try {
-      const next = await platform.listConversationSessions({ scope: "conversation" });
-      setSessions(next);
+      const page = await platform.listConversationSessions({
+        scope: "conversation",
+        limit: HISTORY_PAGE_SIZE,
+      });
+      setSessions(page.items);
+      setNextCursor(page.nextCursor);
       setError(undefined);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "读取会话历史失败");
@@ -30,6 +38,32 @@ export function useChatSessions(platform: DesktopBridge | undefined) {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  const loadMore = useCallback(async () => {
+    if (nextCursor === undefined || loadingMore || !platform?.listConversationSessions) {
+      return;
+    }
+    setLoadingMore(true);
+    try {
+      const page = await platform.listConversationSessions({
+        scope: "conversation",
+        cursor: nextCursor,
+        limit: HISTORY_PAGE_SIZE,
+      });
+      setSessions((previous) => {
+        const merged = new Map(
+          [...previous, ...page.items].map((item) => [item.conversationId, item]),
+        );
+        return [...merged.values()];
+      });
+      setNextCursor(page.nextCursor);
+      setError(undefined);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "读取更多会话失败");
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [loadingMore, nextCursor, platform]);
 
   const select = useCallback((conversationId: string) => {
     setActiveConversationId(conversationId);
@@ -74,6 +108,9 @@ export function useChatSessions(platform: DesktopBridge | undefined) {
     activeConversationId,
     deleteConversation,
     error,
+    hasMore: nextCursor !== undefined,
+    loadMore,
+    loadingMore,
     newConversation,
     refresh,
     resumeConversation,

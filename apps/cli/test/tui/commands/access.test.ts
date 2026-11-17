@@ -6,9 +6,10 @@ import {
   idleOnly,
 } from "../../../src/tui/commands/access";
 
-const IDLE = { runActive: false, compactionActive: false };
-const RUNNING = { runActive: true, compactionActive: false };
-const COMPACTING = { runActive: false, compactionActive: true };
+const IDLE = { runActive: false, activeRunActive: false, compactionActive: false };
+const RUNNING = { runActive: true, activeRunActive: true, compactionActive: false };
+const BACKGROUND_RUNNING = { runActive: true, activeRunActive: false, compactionActive: false };
+const COMPACTING = { runActive: false, activeRunActive: false, compactionActive: true };
 
 describe("accessDenial", () => {
   it("always allows read-only access", () => {
@@ -26,8 +27,18 @@ describe("accessDenial", () => {
     );
   });
 
+  it("lets active-session actions run while only a background session is busy", () => {
+    expect(accessDenial(idleOnly("清除会话", "active"), BACKGROUND_RUNNING)).toBeUndefined();
+    expect(accessDenial(idleOnly("切换模型"), BACKGROUND_RUNNING)).toBe(
+      "当前运行中，先按 Esc 中断或等待本轮结束后再切换模型。",
+    );
+    expect(accessDenial(idleOnly("清除会话", "active"), RUNNING)).toBe(
+      "当前运行中，先按 Esc 中断或等待本轮结束后再清除会话。",
+    );
+  });
+
   it("uses a separate message while compaction is active", () => {
-    expect(accessDenial(idleOnly("清除会话"), COMPACTING)).toBe(
+    expect(accessDenial(idleOnly("清除会话", "active"), COMPACTING)).toBe(
       "正在压缩上下文，先按 Esc 取消或等待完成后再清除会话。",
     );
   });

@@ -154,17 +154,24 @@ describe("parseTuiCommand", () => {
 });
 
 describe("catalog access", () => {
-  it("keeps read-only commands available while a run is active", () => {
-    for (const name of ["help", "status", "sessions"]) {
+  it("keeps view-only commands available while a run is active", () => {
+    for (const name of ["help", "status", "sessions", "resume"]) {
       expect(requireCommand(name).access).toEqual({ whileRunning: "allow" });
     }
   });
 
-  it("marks every mutating command idle-only", () => {
-    const readOnly = new Set(["help", "status", "sessions"]);
-    for (const command of TUI_COMMANDS) {
-      if (readOnly.has(command.name)) continue;
-      expect(command.access).toMatchObject({ whileRunning: "deny" });
+  it("scopes session mutations to the active run and global mutations to all runs", () => {
+    for (const name of ["clear", "new", "delete"]) {
+      expect(requireCommand(name).access).toMatchObject({
+        whileRunning: "deny",
+        scope: "active",
+      });
+    }
+    for (const name of ["model", "config", "compact", "exit"]) {
+      expect(requireCommand(name).access).toMatchObject({
+        whileRunning: "deny",
+        scope: "all",
+      });
     }
   });
 });

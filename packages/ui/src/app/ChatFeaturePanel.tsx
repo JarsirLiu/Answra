@@ -191,6 +191,9 @@ export function ChatFeaturePanel({
       historyDisabledReason={
         conversation.activeRunId || conversation.sendPending ? "回复完成后才能切换会话" : undefined
       }
+      historyHasMore={sessions.hasMore}
+      historyLoading={sessions.loadingMore}
+      onLoadMoreHistory={() => void sessions.loadMore()}
       onNewConversation={() => void startNewConversation()}
       onResumeConversation={resumeConversation}
       onDeleteConversation={deleteConversation}

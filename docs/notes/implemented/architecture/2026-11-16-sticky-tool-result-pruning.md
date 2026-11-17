@@ -2,6 +2,8 @@
 
 状态：已实施
 
+后续变更：文件 store 已由 [SQLite 会话 transcript 存储](2026-11-17-sqlite-transcript-store.md) 替代；本文引用的 ileConversationStore.test.ts 已迁移为 sqliteConversationStore.test.ts，pruning 行为未变。
+
 ## 问题
 
 长会话里的旧工具结果清理原先只作用于“本次请求的投影副本”，清理结果没有进入下一轮请求的基线：

@@ -4,14 +4,14 @@ import type { TuiCommandDeps } from "../ports";
 
 const SESSION_NOTICE_KEY = "session";
 const COMPACTION_NOTICE_KEY = "compaction";
+const SESSION_LOOKUP_LIMIT = 200;
 export async function handleNew(args: readonly string[], deps: TuiCommandDeps): Promise<void> {
   if (args.length > 0) {
     notify(deps, SESSION_NOTICE_KEY, "/new 不接受参数。", "warning");
     return;
   }
-  const session = deps.getSession();
-  if (session === undefined) throw new Error("尚未配置模型。");
-  deps.store.reset(await session.startNewConversation());
+  if (deps.getSession() === undefined) throw new Error("尚未配置模型。");
+  await deps.createNewSession();
   notify(deps, SESSION_NOTICE_KEY, "已新建会话。", "success");
 }
 
@@ -33,7 +33,7 @@ export async function handleResume(args: readonly string[], deps: TuiCommandDeps
   const session = deps.getSession();
   if (session === undefined) throw new Error("尚未配置模型。");
   const query = args[0] ?? "";
-  const sessions = await session.listSessions();
+  const sessions = (await session.listSessions({ limit: SESSION_LOOKUP_LIMIT })).items;
   const exact = sessions.find((item) => item.conversationId === query);
   const matches = exact
     ? [exact]
@@ -56,7 +56,7 @@ export async function handleResume(args: readonly string[], deps: TuiCommandDeps
   }
   const target = matches[0];
   if (target === undefined) return;
-  deps.store.reset(await session.resume(target.conversationId));
+  await deps.activateSession(target.conversationId);
   notify(deps, SESSION_NOTICE_KEY, `已恢复会话：${target.conversationId}`, "success");
 }
 
@@ -68,12 +68,12 @@ export async function handleDelete(args: readonly string[], deps: TuiCommandDeps
   const session = deps.getSession();
   if (session === undefined) throw new Error("尚未配置模型。");
   const conversationId = args[0] ?? "";
-  const sessions = await session.listSessions();
+  const sessions = (await session.listSessions({ limit: SESSION_LOOKUP_LIMIT })).items;
   if (!sessions.some((item) => item.conversationId === conversationId)) {
     notify(deps, SESSION_NOTICE_KEY, `没有匹配的会话：${conversationId}`, "warning");
     return;
   }
-  const next = await session.deleteSession(conversationId);
+  const next = await deps.deleteSession(conversationId);
   if (next !== undefined) deps.store.reset(next);
   notify(
     deps,

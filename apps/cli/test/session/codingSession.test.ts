@@ -23,7 +23,7 @@ function createHost(overrides: Partial<CodingSessionHost> = {}): CodingSessionHo
     configure: vi.fn(),
     createConversation: vi.fn(async () => snapshot),
     getSnapshot: vi.fn(async () => snapshot),
-    listSessions: vi.fn(async () => []),
+    listSessions: vi.fn(async () => ({ items: [] })),
     deleteSession: vi.fn(async () => {}),
     clearConversation: vi.fn(async () => snapshot),
     compactConversation: vi.fn(async () => ({
@@ -67,6 +67,18 @@ describe("CodingSession", () => {
     expect(order).toEqual(["configure", "create"]);
     expect(host.configure).toHaveBeenCalledWith(model);
     expect(host.createConversation).toHaveBeenCalledWith("conversation-1");
+  });
+
+  it("refreshes the latest snapshot without requiring an idle session", async () => {
+    const latest = { ...snapshot, eventRevision: 8 };
+    const host = createHost({ getSnapshot: vi.fn(async () => latest) });
+    const session = createSession(host);
+    await session.open();
+    await session.send("hello");
+
+    await expect(session.refresh()).resolves.toBe(latest);
+    expect(host.getSnapshot).toHaveBeenCalledWith("conversation-1");
+    expect(session.modelConfig).toBe(model);
   });
 
   it("clears the conversation and caches the returned snapshot", async () => {
@@ -269,14 +281,14 @@ describe("CodingSession", () => {
     ];
     const host = createHost({
       getSnapshot: vi.fn(async () => resumed),
-      listSessions: vi.fn(async () => summaries),
+      listSessions: vi.fn(async () => ({ items: summaries })),
     });
     const session = createSession(host);
     await session.open();
 
     await expect(session.resume("conversation-old")).resolves.toBe(resumed);
     expect(session.currentConversationId).toBe("conversation-old");
-    await expect(session.listSessions()).resolves.toEqual(summaries);
+    await expect(session.listSessions()).resolves.toEqual({ items: summaries });
   });
 
   it("deletes the current conversation and starts a new one", async () => {

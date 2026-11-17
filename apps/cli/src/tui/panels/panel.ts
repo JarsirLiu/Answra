@@ -13,6 +13,7 @@ export interface ModelPickerData {
 export interface SessionsPanelData {
   readonly current: string;
   readonly sessions: readonly ConversationSessionSummary[];
+  readonly nextCursor?: string;
   readonly error?: string;
 }
 
@@ -21,7 +22,7 @@ export interface TuiPanelHandlers {
   saveConfig(input: ConfigSaveInput): Promise<void>;
   loadModels(): Promise<ModelPickerData>;
   selectModel(model: string): Promise<void>;
-  loadSessions(): Promise<SessionsPanelData>;
+  loadSessions(cursor?: string): Promise<SessionsPanelData>;
   resumeSession(conversationId: string): Promise<void>;
   close(reason?: "saved" | "dismissed" | "status" | "resumed"): void;
 }

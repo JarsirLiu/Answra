@@ -47,13 +47,13 @@ export const TUI_COMMANDS: readonly TuiCommandSpec[] = [
     kind: "clear",
     name: "clear",
     summary: "清空当前会话 transcript",
-    access: idleOnly("清除会话"),
+    access: idleOnly("清除会话", "active"),
   },
   {
     kind: "new",
     name: "new",
     summary: "新建会话并回到欢迎页",
-    access: idleOnly("新建会话"),
+    access: idleOnly("新建会话", "active"),
   },
   {
     kind: "sessions",
@@ -66,14 +66,14 @@ export const TUI_COMMANDS: readonly TuiCommandSpec[] = [
     name: "resume",
     summary: "恢复历史会话",
     argumentHint: "<ID|前缀>",
-    access: idleOnly("恢复会话"),
+    access: ALWAYS_AVAILABLE,
   },
   {
     kind: "delete",
     name: "delete",
     summary: "删除历史会话",
     argumentHint: "<ID>",
-    access: idleOnly("删除会话"),
+    access: idleOnly("删除会话", "active"),
   },
   {
     kind: "compact",

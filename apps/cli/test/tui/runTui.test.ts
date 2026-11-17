@@ -1,223 +1,20 @@
-import type { ModelCredentialStore } from "@answra/credentials";
-import type { ConversationModelConfig, ConversationSnapshot } from "@answra/shared";
-import type { ReactElement } from "react";
+import type { ConversationSnapshot } from "@answra/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ModelCatalog } from "../../src/model/catalog";
-import type { ModelSettings } from "../../src/model/ports";
-import type { RemoteAuthPort } from "../../src/remote/auth/remoteAuthService";
-import type { CodingSession } from "../../src/session/codingSession";
 import { TuiViewStore } from "../../src/tui/app/viewStore";
-import type { TuiPanelHandlers } from "../../src/tui/panels/panel";
-import { runInkTui } from "../../src/tui/runTui";
-
-const { renderMock } = vi.hoisted(() => ({ renderMock: vi.fn() }));
-
-vi.mock("ink", () => ({
-  Box: () => null,
-  Text: () => null,
-  render: renderMock,
-  useApp: () => ({ exit: vi.fn() }),
-  useInput: () => {},
-  useWindowSize: () => ({ columns: 80, rows: 24 }),
-}));
-
-interface AppProps {
-  onSubmit: (text: string, images?: readonly { name: string; dataUrl: string }[]) => void;
-  onCancel: () => void;
-  selectionStore?: unknown;
-  onCopySelection?: () => void;
-  onSelectAll?: () => void;
-  onClearSelection?: () => void;
-  panelHandlers: TuiPanelHandlers;
-}
-
-interface RenderResult {
-  props: AppProps;
-  options: Record<string, unknown>;
-  finish: () => void;
-}
-
-const snapshot: ConversationSnapshot = {
-  conversationId: "conversation-1",
-  eventRevision: 0,
-  messages: [],
-};
-
-function modelConfig(model: string): ConversationModelConfig {
-  return {
-    chat: { baseUrl: "http://127.0.0.1:1234/v1", model, auth: "local" },
-    answer: { baseUrl: "http://127.0.0.1:1234/v1", model, auth: "local" },
-  };
-}
-
-function createModelCredentials(initial: string | null = null): ModelCredentialStore & {
-  current(): string | null;
-} {
-  let apiKey = initial;
-  return {
-    read: vi.fn(async () => apiKey),
-    write: vi.fn(async (value: string) => {
-      apiKey = value;
-    }),
-    clear: vi.fn(async () => {
-      apiKey = null;
-    }),
-    current: () => apiKey,
-  };
-}
-
-function createModelCatalog(
-  models: readonly string[] = ["test-model", "next-model"],
-): ModelCatalog {
-  return { list: vi.fn(async () => models) };
-}
-
-function createRemoteAuth(signedIn = true): RemoteAuthPort {
-  const status = {
-    signedIn,
-    expiresAt: null,
-    account: signedIn ? "tester@example.com" : null,
-  };
-  return {
-    login: vi.fn(async () => status),
-    status: vi.fn(async () => status),
-    logout: vi.fn(async () => ({ signedIn: false, expiresAt: null, account: null })),
-    getAccessToken: vi.fn(async () => "access-token"),
-  };
-}
-
-function createModelSettings(): ModelSettings {
-  return {
-    resolve: vi.fn(async () => modelConfig("test-model")),
-    snapshot: vi.fn(async () => ({
-      source: "local" as const,
-      local: {
-        baseUrl: "http://127.0.0.1:1234/v1",
-        chatModel: "test-model",
-      },
-      configured: true,
-    })),
-    addLocal: vi.fn(async () => modelConfig("added-model")),
-    switchChatModel: vi.fn(async (model) => modelConfig(model)),
-    clearLocal: vi.fn(async () => {}),
-  };
-}
-
-function tick(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 0));
-}
-
-function createSession() {
-  const sent: string[] = [];
-  const sentImages: Array<readonly { name: string; dataUrl: string }[]> = [];
-  const waits: Array<() => void> = [];
-  const session = {
-    open: vi.fn(async () => snapshot),
-    send: vi.fn(async (text: string, images: readonly { name: string; dataUrl: string }[] = []) => {
-      sent.push(text);
-      sentImages.push(images);
-      return `run-${sent.length}`;
-    }),
-    wait: vi.fn(
-      () =>
-        new Promise<void>((resolve) => {
-          waits.push(resolve);
-        }),
-    ),
-    cancel: vi.fn(),
-    clear: vi.fn(async () => snapshot),
-    compact: vi.fn(async () => ({ result: { status: "compacted" as const }, snapshot })),
-    setModel: vi.fn(),
-    setAccessToken: vi.fn(),
-    close: vi.fn(),
-  } as unknown as CodingSession;
-  return { session, sent, sentImages, waits };
-}
-
-async function start(
-  session: CodingSession,
-  store: TuiViewStore,
-  altScreen = false,
-  modelSettings = createModelSettings(),
-  modelCredentials = createModelCredentials(),
-  modelCatalog = createModelCatalog(),
-  startRemoteHost?: () => Promise<{
-    code: string;
-    keyId: string;
-    done: Promise<void>;
-    stop(): Promise<void>;
-  }>,
-  remoteAuth?: RemoteAuthPort,
-): Promise<RenderResult> {
-  let props: AppProps | undefined;
-  let options: Record<string, unknown> | undefined;
-  let finish: (() => void) | undefined;
-  renderMock.mockImplementation(
-    (element: ReactElement<AppProps>, renderOptions: Record<string, unknown>) => {
-      props = element.props;
-      options = renderOptions;
-      return {
-        waitUntilExit: () =>
-          new Promise<void>((resolve) => {
-            finish = resolve;
-          }),
-      };
-    },
-  );
-  void runInkTui({
-    session,
-    store,
-    modelSettings,
-    modelCredentials,
-    modelCatalog,
-    botName: "coding.engineer",
-    model: "test-model",
-    workspaceRoot: "D:\\workspace",
-    altScreen,
-    startRemoteHost,
-    remoteAuth,
-  });
-  await tick();
-  if (!props || !options || !finish) throw new Error("TUI did not render");
-  return { props, options, finish };
-}
-
-async function startUnconfigured(
-  store: TuiViewStore,
-  modelSettings: ModelSettings,
-  createSession: (model: ConversationModelConfig, accessToken?: string) => CodingSession,
-  modelCredentials = createModelCredentials(),
-  modelCatalog = createModelCatalog(),
-): Promise<RenderResult> {
-  let props: AppProps | undefined;
-  let options: Record<string, unknown> | undefined;
-  let finish: (() => void) | undefined;
-  renderMock.mockImplementation(
-    (element: ReactElement<AppProps>, renderOptions: Record<string, unknown>) => {
-      props = element.props;
-      options = renderOptions;
-      return {
-        waitUntilExit: () =>
-          new Promise<void>((resolve) => {
-            finish = resolve;
-          }),
-      };
-    },
-  );
-  void runInkTui({
-    createSession,
-    store,
-    modelSettings,
-    modelCredentials,
-    modelCatalog,
-    botName: "coding.engineer",
-    workspaceRoot: "D:\\workspace",
-    altScreen: false,
-  });
-  await tick();
-  if (!props || !options || !finish) throw new Error("TUI did not render");
-  return { props, options, finish };
-}
+import {
+  createModelCatalog,
+  createModelCredentials,
+  createModelSettings,
+  createRemoteAuth,
+  createSession,
+  modelConfig,
+  renderMock,
+  snapshot,
+  start,
+  startUnconfigured,
+  tick,
+} from "./runTuiHarness";
 
 describe("runInkTui", () => {
   beforeEach(() => {
@@ -339,26 +136,46 @@ describe("runInkTui", () => {
     store.dispose();
   });
 
-  it("opens the sessions panel from /sessions and resumes the picked session", async () => {
+  it("opens the sessions panel and switches to a stored session", async () => {
     const { session } = createSession();
     Object.assign(session, {
-      currentConversationId: "conversation-1",
-      listSessions: vi.fn(async () => [
-        {
-          conversationId: "conversation-1",
-          title: "当前会话",
-          updatedAt: "2026-11-17T09:28:00.000Z",
-        },
-        {
-          conversationId: "conversation-2",
-          title: "旧会话",
-          updatedAt: "2026-11-16T08:00:00.000Z",
-        },
-      ]),
-      resume: vi.fn(async () => snapshot),
+      listSessions: vi.fn(async () => ({
+        items: [
+          {
+            conversationId: "conversation-1",
+            title: "当前会话",
+            updatedAt: "2026-11-17T09:28:00.000Z",
+          },
+          {
+            conversationId: "conversation-2",
+            title: "旧会话",
+            updatedAt: "2026-11-16T08:00:00.000Z",
+          },
+        ],
+      })),
     });
+    const targetSnapshot: ConversationSnapshot = {
+      ...snapshot,
+      conversationId: "conversation-2",
+      eventRevision: 4,
+      messages: [
+        { id: "message-2", role: "user", text: "history", images: [], status: "complete" },
+      ],
+    };
+    const target = createSession(targetSnapshot);
+    const factory = vi.fn(() => target.session);
     const store = new TuiViewStore();
-    const { props, finish } = await start(session, store);
+    const { props, finish } = await start(
+      session,
+      store,
+      false,
+      createModelSettings(),
+      createModelCredentials(),
+      createModelCatalog(),
+      undefined,
+      undefined,
+      factory,
+    );
 
     props.onSubmit("/sessions");
     await tick();
@@ -372,26 +189,17 @@ describe("runInkTui", () => {
     });
 
     await props.panelHandlers.resumeSession("conversation-2");
-    expect(session.resume).toHaveBeenCalledWith("conversation-2");
-    expect(store.getSnapshot().notifications.current?.text).toBe("已恢复会话：conversation-2");
-
-    finish();
-    store.dispose();
-  });
-
-  it("refuses to resume a session while a run is active", async () => {
-    const { session } = createSession();
-    Object.assign(session, { currentConversationId: "conversation-1", resume: vi.fn() });
-    const store = new TuiViewStore();
-    const { props, finish } = await start(session, store);
-
-    props.onSubmit("first");
-    await tick();
-
-    await expect(props.panelHandlers.resumeSession("conversation-2")).rejects.toThrow(
-      "当前运行中，先按 Esc 中断或等待本轮结束后再恢复会话。",
+    expect(factory).toHaveBeenCalledWith(
+      expect.objectContaining({ chat: expect.objectContaining({ model: "test-model" }) }),
+      undefined,
+      "conversation-2",
     );
-    expect(session.resume).not.toHaveBeenCalled();
+    expect(target.session.open).toHaveBeenCalledTimes(1);
+    expect(store.getSnapshot()).toMatchObject({
+      view: { eventRevision: 4 },
+      phase: "idle",
+      notifications: { current: { text: "已恢复会话：conversation-2" } },
+    });
 
     finish();
     store.dispose();
@@ -789,48 +597,6 @@ describe("runInkTui", () => {
 
     expect(store.getSnapshot().panel).toBe("status");
     expect(store.getSnapshot().notifications.current).toBeNull();
-
-    finish();
-    store.dispose();
-  });
-
-  it("opens /sessions while a run is active but refuses to resume", async () => {
-    const { session } = createSession();
-    Object.assign(session, {
-      currentConversationId: "conversation-1",
-      listSessions: vi.fn(async () => [
-        {
-          conversationId: "conversation-1",
-          scope: "coding" as const,
-          title: "当前会话",
-          messageCount: 1,
-          createdAt: "2026-11-17T09:28:00.000Z",
-          updatedAt: "2026-11-17T09:28:00.000Z",
-        },
-        {
-          conversationId: "conversation-2",
-          scope: "coding" as const,
-          title: "旧会话",
-          messageCount: 1,
-          createdAt: "2026-11-16T08:00:00.000Z",
-          updatedAt: "2026-11-16T08:00:00.000Z",
-        },
-      ]),
-      resume: vi.fn(async () => snapshot),
-    });
-    const store = new TuiViewStore();
-    const { props, finish } = await start(session, store);
-
-    props.onSubmit("first");
-    await tick();
-    props.onSubmit("/sessions");
-    await tick();
-
-    expect(store.getSnapshot().panel).toBe("sessions");
-    await expect(props.panelHandlers.resumeSession("conversation-2")).rejects.toThrow(
-      "当前运行中，先按 Esc 中断或等待本轮结束后再恢复会话。",
-    );
-    expect(session.resume).not.toHaveBeenCalled();
 
     finish();
     store.dispose();

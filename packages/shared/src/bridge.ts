@@ -10,8 +10,8 @@ import type {
   ConversationSelection,
   ConversationSendCommand,
   ConversationSendResponse,
+  ConversationSessionPage,
   ConversationSessionScope,
-  ConversationSessionSummary,
   ConversationSnapshot,
   DesktopAnnouncement,
   InterviewChange,
@@ -119,7 +119,9 @@ export interface DesktopBridge {
   /** 列出已落盘会话摘要；scope 缺省由宿主决定。 */
   listConversationSessions?: (query?: {
     scope?: ConversationSessionScope;
-  }) => Promise<readonly ConversationSessionSummary[]>;
+    cursor?: string;
+    limit?: number;
+  }) => Promise<ConversationSessionPage>;
   /** 删除一个已落盘会话；活动 run 中的会话由宿主拒绝。 */
   deleteConversationSession?: (conversationId: string) => Promise<void>;
   createConversation?: (

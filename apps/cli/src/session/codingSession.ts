@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import type {
   ConversationModelConfig,
   ConversationSendRequest,
-  ConversationSessionSummary,
+  ConversationSessionPage,
   ConversationSnapshot,
   ManualCompactionResult,
 } from "@answra/shared";
@@ -20,7 +20,11 @@ export interface CodingSessionHost {
   configure(model: ConversationModelConfig): void;
   createConversation(conversationId: string): Promise<ConversationSnapshot>;
   getSnapshot?(conversationId: string): Promise<ConversationSnapshot>;
-  listSessions?(workspaceRoot?: string): Promise<readonly ConversationSessionSummary[]>;
+  listSessions?(query: {
+    workspaceRoot?: string;
+    cursor?: string;
+    limit?: number;
+  }): Promise<ConversationSessionPage>;
   deleteSession?(conversationId: string): Promise<void>;
   clearConversation(conversationId: string): Promise<ConversationSnapshot>;
   compactConversation?(
@@ -81,6 +85,10 @@ export class CodingSession {
     return this.conversationId;
   }
 
+  get modelConfig(): ConversationModelConfig {
+    return this.model;
+  }
+
   async open(): Promise<ConversationSnapshot> {
     if (this.closed) throw new Error("会话已关闭。");
     if (this.snapshot !== undefined) return this.snapshot;
@@ -101,6 +109,16 @@ export class CodingSession {
     return snapshot;
   }
 
+  /** 读取当前会话的最新内存/持久化快照；用于运行中切回时补齐后台流式内容。 */
+  async refresh(): Promise<ConversationSnapshot> {
+    if (this.closed) throw new Error("会话已关闭。");
+    if (!this.opened) return this.open();
+    if (this.host.getSnapshot === undefined) throw new Error("当前宿主不支持读取会话快照。");
+    const snapshot = await this.host.getSnapshot(this.conversationId);
+    this.snapshot = snapshot;
+    return snapshot;
+  }
+
   async resume(conversationId: string): Promise<ConversationSnapshot> {
     this.requireIdle("恢复会话");
     if (this.host.getSnapshot === undefined) throw new Error("当前宿主不支持恢复会话。");
@@ -111,9 +129,15 @@ export class CodingSession {
     return snapshot;
   }
 
-  listSessions(): Promise<readonly ConversationSessionSummary[]> {
+  listSessions(
+    options: { cursor?: string; limit?: number } = {},
+  ): Promise<ConversationSessionPage> {
     if (this.host.listSessions === undefined) throw new Error("当前宿主不支持会话历史。");
-    return this.host.listSessions(this.workspaceRoot);
+    return this.host.listSessions({
+      ...(this.workspaceRoot === undefined ? {} : { workspaceRoot: this.workspaceRoot }),
+      ...(options.cursor === undefined ? {} : { cursor: options.cursor }),
+      ...(options.limit === undefined ? {} : { limit: options.limit }),
+    });
   }
 
   async deleteSession(conversationId: string): Promise<ConversationSnapshot | undefined> {

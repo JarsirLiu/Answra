@@ -19,13 +19,14 @@ export function SessionsPanel({
   resume,
   close,
 }: {
-  load(): Promise<SessionsPanelData>;
+  load(cursor?: string): Promise<SessionsPanelData>;
   resume(conversationId: string): Promise<void>;
   close(): void;
 }) {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [selected, setSelected] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string>();
 
   useEffect(() => {
@@ -54,6 +55,7 @@ export function SessionsPanel({
   const visible = sessions.slice(windowStart, windowStart + VISIBLE_SESSIONS);
   const above = windowStart;
   const below = sessions.length - windowStart - visible.length;
+  const hasMore = state.kind === "ready" && state.data.nextCursor !== undefined;
   const loadError =
     state.kind === "error" ? state.message : state.kind === "ready" ? state.data.error : undefined;
   const shownError = error ?? loadError;
@@ -71,9 +73,39 @@ export function SessionsPanel({
     }
   };
 
+  const loadMore = async (): Promise<void> => {
+    if (state.kind !== "ready" || state.data.nextCursor === undefined || loadingMore || busy)
+      return;
+    setLoadingMore(true);
+    setError(undefined);
+    try {
+      const next = await load(state.data.nextCursor);
+      setState((previous) => {
+        if (previous.kind !== "ready") return previous;
+        const merged = new Map(
+          [...previous.data.sessions, ...next.sessions].map((item) => [item.conversationId, item]),
+        );
+        return {
+          kind: "ready",
+          data: {
+            ...previous.data,
+            current: next.current,
+            sessions: [...merged.values()],
+            nextCursor: next.nextCursor,
+            error: next.error,
+          },
+        };
+      });
+    } catch (cause) {
+      setError(messageOf(cause));
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
   useInput(
     (_input, key) => {
-      if (busy) return;
+      if (busy || loadingMore) return;
       if (key.escape) {
         close();
         return;
@@ -84,6 +116,10 @@ export function SessionsPanel({
         return;
       }
       if (key.downArrow) {
+        if (selected === sessions.length - 1 && state.kind === "ready" && state.data.nextCursor) {
+          void loadMore();
+          return;
+        }
         setSelected((index) => (index + 1) % sessions.length);
         return;
       }
@@ -92,6 +128,10 @@ export function SessionsPanel({
         return;
       }
       if (key.pageDown) {
+        if (selected === sessions.length - 1 && state.kind === "ready" && state.data.nextCursor) {
+          void loadMore();
+          return;
+        }
         setSelected((index) => Math.min(sessions.length - 1, index + PAGE_STEP));
         return;
       }
@@ -99,7 +139,7 @@ export function SessionsPanel({
       const target = sessions[selected];
       if (target !== undefined) void choose(target.conversationId);
     },
-    { isActive: !busy },
+    { isActive: !busy && !loadingMore },
   );
 
   return (
@@ -109,9 +149,11 @@ export function SessionsPanel({
       footer={
         busy
           ? "正在恢复会话…"
-          : sessions.length === 0
-            ? "Esc 关闭"
-            : "↑/↓ 选择 · PgUp/PgDn 翻页 · Enter 恢复 · Esc 关闭"
+          : loadingMore
+            ? "正在加载更多会话…"
+            : sessions.length === 0
+              ? "Esc 关闭"
+              : "↑/↓ 选择 · PgUp/PgDn 翻页 · Enter 恢复 · Esc 关闭"
       }
     >
       <Box flexDirection="column">
@@ -142,7 +184,9 @@ export function SessionsPanel({
             </Box>
           );
         })}
-        {below > 0 ? <Text dimColor> ↓ {below} more…</Text> : null}
+        {below > 0 || hasMore ? (
+          <Text dimColor> ↓ {below > 0 ? `${below} more…` : "more…"}</Text>
+        ) : null}
         {state.kind === "ready" && sessions.length === 0 && shownError === undefined ? (
           <Text dimColor>当前 workspace 还没有历史会话。</Text>
         ) : null}

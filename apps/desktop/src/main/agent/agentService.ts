@@ -7,8 +7,8 @@ import type {
   ConversationSendCommand,
   ConversationSendRequest,
   ConversationSendResponse,
+  ConversationSessionPage,
   ConversationSessionScope,
-  ConversationSessionSummary,
   ConversationSnapshot,
   InterviewPcmFrame,
   ManualCompactionResult,
@@ -185,11 +185,13 @@ export class AgentService {
 
   async listConversationSessions(query?: {
     scope?: ConversationSessionScope;
-  }): Promise<readonly ConversationSessionSummary[]> {
+    cursor?: string;
+    limit?: number;
+  }): Promise<ConversationSessionPage> {
     await this.start();
     return (await this.workerHost.request("session-list", {
       ...(query === undefined ? {} : { query }),
-    })) as readonly ConversationSessionSummary[];
+    })) as ConversationSessionPage;
   }
 
   async deleteConversationSession(conversationId: string): Promise<void> {

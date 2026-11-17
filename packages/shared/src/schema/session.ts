@@ -19,5 +19,11 @@ export const conversationSessionSummarySchema = z.strictObject({
   workspaceRoot: z.string().optional(),
 });
 
+export const conversationSessionPageSchema = z.strictObject({
+  items: z.array(conversationSessionSummarySchema),
+  nextCursor: z.string().optional(),
+});
+
 export type ConversationSessionScope = z.infer<typeof conversationSessionScopeSchema>;
 export type ConversationSessionSummary = z.infer<typeof conversationSessionSummarySchema>;
+export type ConversationSessionPage = z.infer<typeof conversationSessionPageSchema>;

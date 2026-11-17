@@ -82,6 +82,9 @@ interface ChatPanelProps {
   activeConversationId?: string;
   historyError?: string;
   historyDisabledReason?: string;
+  historyHasMore?: boolean;
+  historyLoading?: boolean;
+  onLoadMoreHistory?: () => void;
   onNewConversation?: () => void;
   onResumeConversation?: (conversationId: string) => void;
   onDeleteConversation?: (conversationId: string) => Promise<void>;
@@ -118,6 +121,9 @@ export function ChatPanel({
   activeConversationId,
   historyError,
   historyDisabledReason,
+  historyHasMore = false,
+  historyLoading = false,
+  onLoadMoreHistory,
   onNewConversation,
   onResumeConversation,
   onDeleteConversation,
@@ -197,7 +203,10 @@ export function ChatPanel({
           activeConversationId={activeConversationId ?? ""}
           disabledReason={historyDisabledReason}
           error={historyError}
+          hasMore={historyHasMore}
+          loading={historyLoading}
           onDelete={onDeleteConversation ?? (async () => {})}
+          onLoadMore={onLoadMoreHistory}
           onResume={(conversationId) => {
             setHistoryOpen(false);
             onResumeConversation?.(conversationId);

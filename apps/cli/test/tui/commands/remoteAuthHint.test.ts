@@ -29,8 +29,11 @@ function createDeps(overrides: Partial<TuiCommandDeps> = {}): TuiCommandDeps {
   return {
     store: new TuiViewStore(),
     modelSettings: {} as TuiCommandDeps["modelSettings"],
-    runtime: () => ({ runActive: false, compactionActive: false }),
+    runtime: () => ({ runActive: false, activeRunActive: false, compactionActive: false }),
     getSession: () => undefined,
+    activateSession: async () => {},
+    createNewSession: async () => {},
+    deleteSession: async () => undefined,
     compactConversation: async () => ({ status: "compacted" }),
     configureSession: async () => {},
     requestExit: () => {},

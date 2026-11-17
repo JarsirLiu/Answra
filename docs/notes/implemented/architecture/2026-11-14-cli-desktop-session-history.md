@@ -3,6 +3,9 @@
 状态：已实施
 
 当前阶段：CLI 与桌面各自使用独立文件根目录；CLI 已提供 `/new`、`/sessions`、`/resume`、`/delete`，桌面 chat 已提供“新对话”和历史列表。`answer` 会话只保留在 worker 内存，不读盘、不落盘，也不进入历史。
+后续变更：自 [SQLite 会话 transcript 存储](2026-11-17-sqlite-transcript-store.md) 起，实际存储由 `FileConversationStore` 换为 `SqliteConversationStore`（`<sessionsRoot>/sessions.sqlite`），旧 JSON 首次启动导入并归档；本文中“文件格式与写入策略”和文件路径相关描述保留为当时的实现基线，命令、scope 与恢复语义仍有效。
+后续变更：[会话历史 keyset 分页](2026-11-17-session-list-cursor-pagination.md) 将列表 IPC 改为页对象并按页追加，本文“一次返回完整摘要数组”的描述不再是当前行为。
+后续变更：[CLI 多会话运行与切回](2026-11-17-cli-multi-session-runtime.md) 允许运行中切到其他会话；本文“恢复必须在 idle”的 CLI 限制不再成立。
 
 ## 问题
 

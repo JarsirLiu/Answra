@@ -24,7 +24,7 @@ describe("useChatSessions", () => {
   it("loads history and creates a new chat conversation", async () => {
     const createConversation = vi.fn(async (conversationId: string) => snapshot(conversationId));
     const bridge = {
-      listConversationSessions: vi.fn(async () => [summary]),
+      listConversationSessions: vi.fn(async () => ({ items: [summary] })),
       createConversation,
       deleteConversationSession: vi.fn(async () => {}),
     } as unknown as DesktopBridge;
@@ -45,7 +45,7 @@ describe("useChatSessions", () => {
     const createConversation = vi.fn(async (conversationId: string) => snapshot(conversationId));
     const deleteConversationSession = vi.fn(async () => {});
     const bridge = {
-      listConversationSessions: vi.fn(async () => [summary]),
+      listConversationSessions: vi.fn(async () => ({ items: [summary] })),
       createConversation,
       deleteConversationSession,
     } as unknown as DesktopBridge;
@@ -61,5 +61,42 @@ describe("useChatSessions", () => {
     expect(deleteConversationSession).toHaveBeenCalledWith("chat-old");
     expect(createConversation).toHaveBeenCalledTimes(1);
     expect(result.current.activeConversationId).toMatch(/^chat-/);
+  });
+
+  it("loads the next history page with the cursor", async () => {
+    const older = {
+      ...summary,
+      conversationId: "chat-older",
+      updatedAt: "2026-11-13T00:00:00.000Z",
+    };
+    const listConversationSessions = vi.fn(async (query?: { cursor?: string }) =>
+      query?.cursor === undefined
+        ? { items: [summary], nextCursor: "cursor-1" }
+        : { items: [older] },
+    );
+    const bridge = {
+      listConversationSessions,
+      createConversation: vi.fn(async (conversationId: string) => snapshot(conversationId)),
+      deleteConversationSession: vi.fn(async () => {}),
+    } as unknown as DesktopBridge;
+
+    const { result } = renderHook(() => useChatSessions(bridge));
+    await waitFor(() => expect(result.current.sessions).toEqual([summary]));
+    expect(result.current.hasMore).toBe(true);
+
+    await act(async () => {
+      await result.current.loadMore();
+    });
+
+    expect(listConversationSessions).toHaveBeenLastCalledWith({
+      scope: "conversation",
+      cursor: "cursor-1",
+      limit: 20,
+    });
+    expect(result.current.sessions.map((item) => item.conversationId)).toEqual([
+      "chat-old",
+      "chat-older",
+    ]);
+    expect(result.current.hasMore).toBe(false);
   });
 });

@@ -1,5 +1,9 @@
 /** TUI 命令执行端口：命令族共享的窄依赖；不 import Ink 组件、runTui 或面板实现。 */
-import type { ConversationModelConfig, ManualCompactionResult } from "@answra/shared";
+import type {
+  ConversationModelConfig,
+  ConversationSnapshot,
+  ManualCompactionResult,
+} from "@answra/shared";
 import type { ModelSettings } from "../../model/ports";
 import type { RemoteAuthPort } from "../../remote/auth/remoteAuthService";
 import type { CodingSession } from "../../session/codingSession";
@@ -25,6 +29,11 @@ export interface TuiCommandDeps {
   /** 运行/压缩状态快照；access 策略的唯一运行时输入。 */
   readonly runtime: () => TuiRuntime;
   readonly getSession: () => CodingSession | undefined;
+  /** 切换到目标会话；目标已在运行也允许，只切换视图，不取消后台 run。 */
+  readonly activateSession: (conversationId: string) => Promise<void>;
+  readonly createNewSession: () => Promise<void>;
+  /** 删除历史会话；若删除当前会话，返回新会话快照。 */
+  readonly deleteSession: (conversationId: string) => Promise<ConversationSnapshot | undefined>;
   readonly compactConversation: (instructions?: string) => Promise<ManualCompactionResult>;
   readonly configureSession: (model: ConversationModelConfig) => Promise<void>;
   readonly requestExit: () => void;

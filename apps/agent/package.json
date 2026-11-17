@@ -6,7 +6,7 @@
   "type": "module",
   "sideEffects": false,
   "engines": {
-    "node": ">=20.9.0"
+    "node": ">=22.13.0"
   },
   "exports": {
     ".": "./src/index.ts",

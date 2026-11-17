@@ -36,8 +36,10 @@ export {
 } from "./events";
 export * from "./remote";
 export {
+  type ConversationSessionPage,
   type ConversationSessionScope,
   type ConversationSessionSummary,
+  conversationSessionPageSchema,
   conversationSessionScopeSchema,
   conversationSessionSummarySchema,
 } from "./session";

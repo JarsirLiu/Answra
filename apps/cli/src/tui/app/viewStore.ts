@@ -65,6 +65,7 @@ export class TuiViewStore {
   private timer?: ReturnType<typeof setTimeout>;
   private notificationTimer?: ReturnType<typeof setTimeout>;
   private disposed = false;
+  private activeConversationId?: string;
 
   readonly subscribe = (listener: Listener): (() => void) => {
     this.listeners.add(listener);
@@ -75,6 +76,7 @@ export class TuiViewStore {
 
   initialize(snapshot: ConversationSnapshot): void {
     this.flush();
+    this.activeConversationId = snapshot.conversationId;
     if (snapshot.eventRevision < this.state.view.eventRevision) return;
     this.setState({
       ...this.state,
@@ -85,8 +87,29 @@ export class TuiViewStore {
     });
   }
 
-  applySnapshot(snapshot: ConversationSnapshot): void {
+  /** 切到另一会话：先丢弃旧视图的 revision 与事件，再接收目标会话快照。 */
+  switchConversation(snapshot: ConversationSnapshot): void {
     if (this.disposed) return;
+    this.flush();
+    if (this.timer !== undefined) {
+      clearTimeout(this.timer);
+      this.timer = undefined;
+    }
+    this.pending = [];
+    this.activeConversationId = snapshot.conversationId;
+    this.setState({
+      ...this.state,
+      view: applyConversationSnapshot(EMPTY_CONVERSATION_VIEW, snapshot),
+      compactionBoundaries: boundariesFromSnapshot(snapshot, []),
+      compactionActive: false,
+      phase: "idle",
+      queued: 0,
+      localError: undefined,
+    });
+  }
+
+  applySnapshot(snapshot: ConversationSnapshot): void {
+    if (this.disposed || snapshot.conversationId !== this.activeConversationId) return;
     this.flush();
     if (snapshot.eventRevision < this.state.view.eventRevision) return;
     this.setState({
@@ -98,7 +121,7 @@ export class TuiViewStore {
   }
 
   applyEvent(envelope: AgentEventEnvelope): void {
-    if (this.disposed) return;
+    if (this.disposed || envelope.conversationId !== this.activeConversationId) return;
     this.pending.push(envelope);
     if (this.pending.length >= TUI_EVENT_QUEUE_MAX) {
       this.flush();
@@ -116,6 +139,7 @@ export class TuiViewStore {
       this.timer = undefined;
     }
     this.pending = [];
+    this.activeConversationId = snapshot.conversationId;
     this.clearNotificationTimer();
     this.setState({
       ...this.state,

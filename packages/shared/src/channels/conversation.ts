@@ -1,8 +1,8 @@
 import type {
   AgentEventEnvelope,
   BotSummary,
+  ConversationSessionPage,
   ConversationSessionScope,
-  ConversationSessionSummary,
   ConversationSnapshot,
   ManualCompactionResult,
 } from "../schema";
@@ -11,6 +11,7 @@ export type {
   AgentEventEnvelope,
   ContextCompactionStatus,
   ConversationMessage,
+  ConversationSessionPage,
   ConversationSessionScope,
   ConversationSessionSummary,
   ConversationSnapshot,
@@ -279,8 +280,14 @@ export interface ConversationChannelMap {
     response: BotSummary[];
   };
   [ConversationChannels.ListSessions]: {
-    request: { scope?: ConversationSessionScope } | undefined;
-    response: readonly ConversationSessionSummary[];
+    request:
+      | {
+          scope?: ConversationSessionScope;
+          cursor?: string;
+          limit?: number;
+        }
+      | undefined;
+    response: ConversationSessionPage;
   };
   [ConversationChannels.DeleteSession]: {
     request: { conversationId: string };

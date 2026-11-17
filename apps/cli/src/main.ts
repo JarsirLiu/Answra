@@ -3,7 +3,7 @@
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import process from "node:process";
-import { FileConversationStore, startCodingHost } from "@answra/agent/composition";
+import { SqliteConversationStore, startCodingHost } from "@answra/agent/composition";
 import { resolveDefaultConfigDir } from "@answra/config";
 import { createSystemModelCredentialStore } from "@answra/credentials";
 import { createAgentCodingSessionHost } from "./adapters/agentCodingHost";
@@ -37,7 +37,7 @@ async function main(): Promise<void> {
       new ModelSettingsService(createSharedModelStore()),
     );
     const modelCredentials = createSystemModelCredentialStore();
-    const sessionStore = new FileConversationStore(
+    const sessionStore = new SqliteConversationStore(
       join(resolveDefaultConfigDir(), "cli", "sessions"),
     );
     const promptSecret = createProcessSecretPrompt(process.stdin, process.stdout);

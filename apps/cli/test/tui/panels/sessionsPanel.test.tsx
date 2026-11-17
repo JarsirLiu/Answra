@@ -71,6 +71,21 @@ describe("SessionsPanel", () => {
     instance.unmount();
   });
 
+  it("loads the next page when the last loaded row is focused", async () => {
+    const load = vi.fn(async (cursor?: string) =>
+      cursor === undefined
+        ? { current: "conversation-a", sessions: [session("conversation-a")], nextCursor: "next" }
+        : { current: "conversation-a", sessions: [session("conversation-b")] },
+    );
+    const instance = render(<SessionsPanel close={vi.fn()} load={load} resume={vi.fn()} />);
+    await vi.waitFor(() => expect(instance.lastFrame()).toContain("title-conversation-a"));
+
+    instance.stdin.write("\u001b[B");
+    await vi.waitFor(() => expect(load).toHaveBeenCalledWith("next"));
+    await vi.waitFor(() => expect(instance.lastFrame()).toContain("title-conversation-b"));
+    instance.unmount();
+  });
+
   it("pages with PgDn and reports an empty workspace", async () => {
     const instance = render(
       <SessionsPanel

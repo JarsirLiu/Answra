@@ -80,7 +80,7 @@ export type {
   ConversationSessionQuery,
 } from "./core/transcript/catalog";
 export { MemoryConversationStore } from "./core/transcript/memoryStore";
-export { FileConversationStore } from "./core/transcript/persistence/fileConversationStore";
+export { SqliteConversationStore } from "./core/transcript/persistence/sqlite/sqliteConversationStore";
 export type {
   ConversationSessionMetadata,
   ConversationSessionSeed,

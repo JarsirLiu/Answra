@@ -55,6 +55,23 @@ describe("ChatHistoryPanel", () => {
     expect(onDelete).toHaveBeenCalledWith("chat-2");
   });
 
+  it("loads another page from the history footer", () => {
+    const onLoadMore = vi.fn();
+    render(
+      <ChatHistoryPanel
+        activeConversationId="chat-1"
+        hasMore
+        onDelete={vi.fn(async () => {})}
+        onLoadMore={onLoadMore}
+        onResume={vi.fn()}
+        sessions={sessions}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "加载更多会话" }));
+    expect(onLoadMore).toHaveBeenCalledTimes(1);
+  });
+
   it("shows the history error and empty state", () => {
     render(
       <ChatHistoryPanel

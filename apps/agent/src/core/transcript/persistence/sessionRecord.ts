@@ -1,3 +1,4 @@
+/** 会话记录 payload：SQLite 行与旧 JSON 文件共用的 schema、恢复和摘要投影。 */
 import type { ConversationSessionSummary } from "@answra/shared";
 import {
   contextCompactionSchema,
@@ -48,7 +49,7 @@ const seedSchema = z.strictObject({
   bots: z.array(botSchema).optional(),
 });
 
-export const fileSessionRecordSchema = z.strictObject({
+export const sessionRecordSchema = z.strictObject({
   schemaVersion: z.literal(1),
   conversationId: z.string(),
   scope: conversationSessionScopeSchema,
@@ -61,13 +62,15 @@ export const fileSessionRecordSchema = z.strictObject({
   seed: seedSchema.optional(),
 });
 
-export type FileSessionRecord = z.infer<typeof fileSessionRecordSchema>;
+export type SessionRecordPayload = z.infer<typeof sessionRecordSchema>;
 
-export function parseFileSessionRecord(value: unknown): FileSessionRecord {
-  return fileSessionRecordSchema.parse(value);
+export function parseSessionRecord(value: unknown): SessionRecordPayload {
+  return sessionRecordSchema.parse(value);
 }
 
-export function toSessionRecord(record: FileSessionRecord): ConversationSessionRecord {
+export function toConversationSessionRecord(
+  record: SessionRecordPayload,
+): ConversationSessionRecord {
   return {
     snapshot: restoreConversationSnapshot(record.snapshot),
     ...(record.seed ? { seed: record.seed } : {}),
@@ -82,7 +85,7 @@ export function toSessionRecord(record: FileSessionRecord): ConversationSessionR
   };
 }
 
-export function toFileSessionRecord(record: ConversationSessionRecord): FileSessionRecord {
+export function toSessionRecordPayload(record: ConversationSessionRecord): SessionRecordPayload {
   if (!record.metadata) throw new Error("会话缺少 metadata，拒绝持久化");
   const { activeRunId: _activeRunId, ...snapshot } = record.snapshot;
   return {
@@ -98,7 +101,7 @@ export function toFileSessionRecord(record: ConversationSessionRecord): FileSess
     snapshot,
     ...(record.contextState
       ? {
-          contextState: toFileContextState(record.contextState),
+          contextState: toPersistedContextState(record.contextState),
         }
       : {}),
     ...(record.seed
@@ -113,7 +116,9 @@ export function toFileSessionRecord(record: ConversationSessionRecord): FileSess
   };
 }
 
-function toFileContextState(state: ContextState): NonNullable<FileSessionRecord["contextState"]> {
+function toPersistedContextState(
+  state: ContextState,
+): NonNullable<SessionRecordPayload["contextState"]> {
   const { prunedToolCallIds, ...rest } = state;
   return {
     ...rest,
@@ -122,7 +127,7 @@ function toFileContextState(state: ContextState): NonNullable<FileSessionRecord[
   };
 }
 
-export function summarizeFileSessionRecord(record: FileSessionRecord): ConversationSessionSummary {
+export function summarizeSessionRecord(record: SessionRecordPayload): ConversationSessionSummary {
   return {
     conversationId: record.conversationId,
     scope: record.scope,

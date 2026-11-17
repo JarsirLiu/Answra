@@ -20,11 +20,15 @@ const snapshot: ConversationSnapshot = {
   ],
 };
 
-function envelope(revision: number, event: AgentEventEnvelope["event"]): AgentEventEnvelope {
+function envelope(
+  revision: number,
+  event: AgentEventEnvelope["event"],
+  conversationId = "conversation-1",
+): AgentEventEnvelope {
   return {
     schemaVersion: 1,
     eventId: `event-${revision}`,
-    conversationId: "conversation-1",
+    conversationId,
     runId: "run-1",
     attemptId: "attempt-1",
     sequence: revision,
@@ -78,6 +82,36 @@ describe("TuiViewStore", () => {
 
     expect(store.getSnapshot().view.eventRevision).toBe(6);
     expect(store.getSnapshot().view.messages[0]?.text).toBe("new");
+    store.dispose();
+  });
+
+  it("filters background conversation updates and resets the revision on switch", () => {
+    const store = new TuiViewStore();
+    store.initialize(snapshot);
+    store.applyEvent(envelope(4, { type: "text-delta", partId: "text-1", delta: "one" }));
+    store.flush();
+
+    const target: ConversationSnapshot = {
+      conversationId: "conversation-2",
+      eventRevision: 2,
+      messages: [{ id: "run-2", role: "assistant", text: "two", images: [], status: "complete" }],
+    };
+    store.switchConversation(target);
+    expect(store.getSnapshot().view).toMatchObject({ eventRevision: 2 });
+
+    store.applySnapshot({ ...snapshot, eventRevision: 99 });
+    store.applyEvent(envelope(5, { type: "text-delta", partId: "text-1", delta: "hidden" }));
+    store.flush();
+    expect(store.getSnapshot().view).toMatchObject({
+      eventRevision: 2,
+      messages: [expect.objectContaining({ id: "run-2" })],
+    });
+
+    store.switchConversation(snapshot);
+    expect(store.getSnapshot().view).toMatchObject({
+      eventRevision: 3,
+      messages: [expect.objectContaining({ id: "run-1" })],
+    });
     store.dispose();
   });
 
