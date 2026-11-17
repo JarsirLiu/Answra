@@ -41,7 +41,7 @@ describe("TUI rendering", () => {
     instance.unmount();
   });
 
-  it("parks the real terminal cursor at the input caret for IME", async () => {
+  it("does not park the native terminal cursor over the input border", async () => {
     const stdout = new CursorProbeStdout();
     const stdin = new CursorProbeStdin();
     const instance = inkRender(<PromptInput busy={false} onSubmit={vi.fn()} />, {
@@ -60,14 +60,8 @@ describe("TUI rendering", () => {
     stdin.write("a");
     await nextFrame();
     await instance.waitUntilRenderFlush();
-    const afterAscii = lastParkedCursorColumn(stdout.chunks.join(""));
-    stdin.write("中");
-    await nextFrame();
-    await instance.waitUntilRenderFlush();
-    const afterWide = lastParkedCursorColumn(stdout.chunks.join(""));
 
-    expect(afterAscii).toBeDefined();
-    expect(afterWide).toBe((afterAscii ?? 0) + 2);
+    expect(lastParkedCursorColumn(stdout.chunks.join(""))).toBeUndefined();
     instance.unmount();
   });
 

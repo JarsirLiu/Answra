@@ -206,6 +206,16 @@ describe("TUI composer", () => {
     instance.unmount();
   });
 
+  it("does not show the native terminal cursor over the input border", async () => {
+    const instance = render(<PromptInput busy={false} onSubmit={vi.fn()} />);
+
+    instance.stdin.write("/resume ");
+    await nextFrame();
+
+    expect(instance.lastFrame()).not.toContain("\u001b[?25h");
+    instance.unmount();
+  });
+
   it("dismisses the command palette with Escape and reopens it with Tab", async () => {
     const instance = render(<PromptInput busy={false} onSubmit={vi.fn()} />);
 

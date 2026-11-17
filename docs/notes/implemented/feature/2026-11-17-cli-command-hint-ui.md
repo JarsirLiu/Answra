@@ -28,6 +28,7 @@ CLI TUI 的 slash 命令提示已经能列出候选、用 Tab 补全、用 Enter
   - [CLI slash 命令候选面板](./2026-11-13-cli-slash-command-palette.md)
   - [CLI TUI UI 目录架构](../architecture/2026-11-14-cli-tui-ui-directory-architecture.md)
   - [CLI 斜杠命令统一管理远程连接](../../proposed/feature/2026-11-15-cli-slash-remote-management.md)
+  - [CLI TUI 输入光标与下边框重叠](../bug-fix/2026-11-17-cli-tui-native-cursor-overlap.md)
 
 ## 决定
 
@@ -123,7 +124,7 @@ CLI TUI 的 slash 命令提示已经能列出候选、用 Tab 补全、用 Enter
 
 ## 验证
 
-- 2026-11-17：`apps/cli/test/tui/commands/commands.test.ts` 11 项、`commandPalette.test.tsx` 5 项、`tui.composer.test.tsx` 17 项通过。
-- 2026-11-17：完整 `@answra/cli` 测试 51 个文件、319 项通过；`pnpm typecheck` 全 workspace 通过。
+- 2026-11-17：`apps/cli/test/tui/commands/commands.test.ts` 11 项、`commandPalette.test.tsx` 5 项、`tui.composer.test.tsx` 18 项通过。
+- 2026-11-17：完整 `@answra/cli` 测试 51 个文件、318 项通过；`pnpm typecheck` 当时全 workspace 通过。
 - 2026-11-17：`pnpm lint`、`pnpm architecture:check` 与 `pnpm notes:check` 通过。
 - 未做真机截图验收；候选面板颜色对比度与 24/120 列终端表现需要在后续手动检查。

@@ -24,17 +24,6 @@ export interface InputLayout {
   readonly hiddenBelow: number;
 }
 
-export interface CellPosition {
-  readonly x: number;
-  readonly y: number;
-}
-
-/** 把可视光标行列换算成相对 Ink 输出原点的终端单元格；上方省略号占用一行。 */
-export function cursorCellAt(layout: InputLayout, origin: CellPosition): CellPosition {
-  const row = layout.cursorLine - layout.startLine + (layout.hiddenAbove > 0 ? 1 : 0);
-  return { x: origin.x + layout.cursorColumn, y: origin.y + row };
-}
-
 /**
  * 输入文本可用的显示列：终端列宽减去光标单元格。
  * 与 Claude Code 的 `Cursor.fromText(text, columns - 1)` 一致，避免整行文本把光标挤到下一行。
