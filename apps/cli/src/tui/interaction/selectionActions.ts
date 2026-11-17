@@ -33,6 +33,7 @@ export function createSelectionActions(
           return;
         case "release":
           store.extend(event.point);
+          store.endDrag();
           copy();
       }
     },

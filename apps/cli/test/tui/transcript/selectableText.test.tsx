@@ -56,6 +56,25 @@ describe("SelectableText", () => {
     instance.unmount();
   });
 
+  it("registers rows against the scrollable content rather than the screen", async () => {
+    const store = new TuiSelectionStore();
+    store.setViewport({ topRow: 0, height: 4, offsetRows: 100 });
+    store.begin({ row: 0, col: 0 });
+    store.extend({ row: 0, col: 4 });
+
+    const instance = render(
+      <SelectionContext.Provider value={store}>
+        <SelectableText>hello</SelectableText>
+      </SelectionContext.Provider>,
+    );
+    await nextFrame();
+    store.commitFrame();
+
+    expect(store.hasLine(0)).toBe(true);
+    expect(store.getSelectedText()).toBe("hello");
+    instance.unmount();
+  });
+
   it("registers each explicit line at its own row", async () => {
     const store = new TuiSelectionStore();
     const instance = render(

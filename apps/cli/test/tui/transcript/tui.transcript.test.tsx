@@ -2,6 +2,7 @@ import { render } from "ink-testing-library";
 import { describe, expect, it, vi } from "vitest";
 import { App } from "../../../src/tui/app/App";
 import { TuiViewStore } from "../../../src/tui/app/viewStore";
+import { createSelectionActions } from "../../../src/tui/interaction/selectionActions";
 import { TuiSelectionStore } from "../../../src/tui/interaction/selectionStore";
 import { createPointerSource, nextFrame, PANEL_HANDLERS, wheelEvent } from "../tuiTestHarness";
 
@@ -300,29 +301,109 @@ describe("TUI transcript interaction", () => {
     store.dispose();
   });
 
-  it("clears the selection when the transcript scrolls", async () => {
+  it("keeps the selected text when the transcript scrolls", async () => {
     const store = new TuiViewStore();
-    store.initialize({ conversationId: "conversation-1", eventRevision: 0, messages: [] });
+    store.initialize({
+      conversationId: "conversation-1",
+      eventRevision: 0,
+      messages: Array.from({ length: 40 }, (_, index) => ({
+        id: `assistant-${index}`,
+        role: "assistant" as const,
+        text: `line-${index}`,
+        status: "complete" as const,
+        images: [],
+        parts: [
+          {
+            id: `part-${index}`,
+            kind: "text" as const,
+            text: `line-${index}`,
+            state: "completed" as const,
+          },
+        ],
+      })),
+    });
     const pointer = createPointerSource();
-    const onClear = vi.fn();
+    const selectionStore = new TuiSelectionStore();
     const instance = render(
       <App
         botName="coding.engineer"
         onCancel={vi.fn()}
-        onClearSelection={onClear}
         onSubmit={vi.fn()}
         pointerSource={pointer}
+        selectionStore={selectionStore}
         store={store}
         panelHandlers={PANEL_HANDLERS}
         workspaceRoot="D:\\workspace"
       />,
     );
-    await nextFrame();
-    onClear.mockClear();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    selectionStore.commitFrame();
+    selectionStore.selectAll();
+    const selected = selectionStore.getSelectedText();
+    expect(selected).not.toBe("");
 
-    pointer.emit(wheelEvent(1));
+    pointer.emit(wheelEvent(-1));
     await nextFrame();
-    expect(onClear).toHaveBeenCalledTimes(1);
+
+    expect(selectionStore.hasSelection()).toBe(true);
+    expect(selectionStore.getSelectedText()).toBe(selected);
+
+    instance.unmount();
+    store.dispose();
+  });
+
+  it("auto-scrolls while a drag selection stays past the viewport edge", async () => {
+    const store = new TuiViewStore();
+    store.initialize({
+      conversationId: "conversation-1",
+      eventRevision: 0,
+      messages: Array.from({ length: 100 }, (_, index) => ({
+        id: `assistant-${index}`,
+        role: "assistant" as const,
+        text: `line-${index}`,
+        status: "complete" as const,
+        images: [],
+        parts: [
+          {
+            id: `part-${index}`,
+            kind: "text" as const,
+            text: `line-${index}`,
+            state: "completed" as const,
+          },
+        ],
+      })),
+    });
+    const pointer = createPointerSource();
+    const selectionStore = new TuiSelectionStore();
+    const actions = createSelectionActions(selectionStore, { write: vi.fn() });
+    pointer.subscribe((event) => actions.handlePointer(event));
+    const instance = render(
+      <App
+        botName="coding.engineer"
+        onCancel={vi.fn()}
+        onSubmit={vi.fn()}
+        pointerSource={pointer}
+        selectionStore={selectionStore}
+        store={store}
+        panelHandlers={PANEL_HANDLERS}
+        workspaceRoot="D:\\workspace"
+      />,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    selectionStore.commitFrame();
+
+    pointer.emit({ kind: "press", point: { row: 1, col: 0 } });
+    pointer.emit({ kind: "drag", point: { row: 0, col: 0 } });
+    const initialStart = selectionStore.getBounds()?.start.row ?? 0;
+
+    await vi.waitFor(() => {
+      expect(selectionStore.getBounds()?.start.row ?? initialStart).toBeLessThan(initialStart - 10);
+    });
+
+    pointer.emit({ kind: "release", point: { row: 0, col: 0 } });
+    expect(selectionStore.hasSelection()).toBe(true);
+    selectionStore.commitFrame();
+    expect(selectionStore.getSelectedText()).toContain("line-");
 
     instance.unmount();
     store.dispose();

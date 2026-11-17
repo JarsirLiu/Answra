@@ -72,12 +72,19 @@ function SelectableLine({
       const node = nodeRef.current;
       if (!mounted || node === null) return text;
       const position = absolutePosition(node);
-      const row = position.row + lineIndex;
       const plain = stripAnsi(text);
-      store.registerLine({ row, left: position.col, text: plain });
+      const contentRow = store.registerLine({
+        row: position.row + lineIndex,
+        left: position.col,
+        text: plain,
+      });
       const bounds = store.getBounds();
       if (bounds === undefined) return text;
-      const range = selectionRowRange(bounds, { row, left: position.col, text: plain });
+      const range = selectionRowRange(bounds, {
+        row: contentRow,
+        left: position.col,
+        text: plain,
+      });
       if (range === undefined) return text;
       return highlightSelection(text, range.from, range.to);
     },

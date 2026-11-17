@@ -86,4 +86,53 @@ describe("TuiSelectionStore", () => {
     expect(store.getVersion()).toBe(version + 2);
     expect(listener).toHaveBeenCalledTimes(2);
   });
+
+  it("keeps cached text when the viewport scrolls without dragging", () => {
+    const store = new TuiSelectionStore();
+    store.setViewport({ topRow: 0, height: 4, offsetRows: 0 });
+    for (let row = 0; row < 4; row += 1) {
+      store.registerLine(line(row, 0, `line-${row}`));
+    }
+    store.commitFrame();
+    store.begin({ row: 0, col: 0 });
+    store.extend({ row: 2, col: 5 });
+    store.endDrag();
+
+    store.shiftViewport(2);
+    store.setViewport({ topRow: 0, height: 4, offsetRows: 2 });
+
+    expect(store.getSelectedText()).toBe("line-0\nline-1\nline-2");
+    expect(store.hasLine(10)).toBe(false);
+  });
+
+  it("moves the drag focus with the viewport so the mouse stays on the edge", () => {
+    const store = new TuiSelectionStore();
+    store.setViewport({ topRow: 0, height: 4, offsetRows: 0 });
+    for (let row = 0; row < 4; row += 1) {
+      store.registerLine(line(row, 0, `line-${row}`));
+    }
+    store.commitFrame();
+    store.begin({ row: 1, col: 0 });
+    store.extend({ row: 3, col: 5 });
+
+    store.shiftViewport(2);
+
+    expect(store.getFocusScreenRow()).toBe(3);
+    expect(store.getBounds()).toEqual({
+      start: { row: 1, col: 0 },
+      end: { row: 5, col: 5 },
+    });
+  });
+
+  it("drops the cached lines and selection when content is reset", () => {
+    const store = createStore(line(0, 0, "hello"));
+    store.begin({ row: 0, col: 0 });
+    store.extend({ row: 0, col: 4 });
+
+    store.resetContent();
+
+    expect(store.hasSelection()).toBe(false);
+    expect(store.getSelectedText()).toBe("");
+    expect(store.hasLine(0)).toBe(false);
+  });
 });

@@ -22,6 +22,7 @@ describe("selection actions", () => {
     actions.handlePointer({ kind: "release", point: { row: 0, col: 4 } });
 
     expect(clipboard.write).toHaveBeenCalledWith("hello");
+    expect(store.isDragging()).toBe(false);
   });
 
   it("does not start a selection on an unregistered row and clears the old one", () => {

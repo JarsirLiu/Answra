@@ -4,6 +4,7 @@ import { Box, type DOMElement, measureElement, useBoxMetrics, useInput, useWindo
 import {
   type ReactNode,
   useCallback,
+  useContext,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -11,10 +12,12 @@ import {
   useState,
 } from "react";
 import type { PointerSource } from "../interaction/pointerInput";
+import { useDragAutoScroll } from "../interaction/useDragAutoScroll";
 import type { TuiSetupStep } from "../modelSetup";
 import { CompactionBoundaryRow } from "./CompactionBoundaryRow";
 import type { TuiCompactionBoundary } from "./compactionBoundary";
 import { MessageRow } from "./MessageRow";
+import { SelectionContext } from "./SelectableText";
 import { TranscriptTail, Welcome } from "./Transcript";
 import {
   buildOffsets,
@@ -60,7 +63,6 @@ export function VirtualTranscript({
   expandedToolIds,
   footer,
   pointerSource,
-  onScroll,
 }: {
   view: ConversationView;
   compactionBoundaries?: readonly TuiCompactionBoundary[];
@@ -72,8 +74,8 @@ export function VirtualTranscript({
   expandedToolIds?: ReadonlySet<string>;
   footer?: ReactNode;
   pointerSource?: PointerSource;
-  onScroll?: () => void;
 }) {
+  const selectionStore = useContext(SelectionContext);
   const viewportRef = useRef<DOMElement>(null);
   const viewport = useBoxMetrics(viewportRef);
   const { columns } = useWindowSize();
@@ -121,38 +123,81 @@ export function VirtualTranscript({
   const maxOffset = maxScrollTop(totalHeight, viewportHeight);
   const currentOffset = scroll.following ? maxOffset : Math.min(scroll.top, maxOffset);
   const virtualWindow = findVirtualWindow(offsets, currentOffset, viewportHeight, OVERSCAN_LINES);
+  const viewportTop = viewport.hasMeasured ? viewport.top : 0;
+  const scrollRef = useRef(scroll);
+  scrollRef.current = scroll;
+  const maxOffsetRef = useRef(maxOffset);
+  maxOffsetRef.current = maxOffset;
+  const pendingMeasures = useRef(new Map<string, number>());
 
-  const handleMeasure = useCallback(
-    (id: string, height: number) => {
-      if (height <= 0) return;
+  // 选区用内容行保存；这里只更新换算基准，滚动的焦点平移由 shiftViewport 负责。
+  selectionStore?.setViewport({
+    topRow: viewportTop,
+    height: viewportHeight,
+    offsetRows: currentOffset,
+  });
+
+  const applyMeasures = useCallback(
+    (entries: Iterable<readonly [string, number]>) => {
       setMeasured((current) => {
-        if (current.key === layoutKey && current.values.get(id) === height) return current;
         const next = new Map(current.key === layoutKey ? current.values : []);
-        next.set(id, height);
+        let changed = false;
+        for (const [id, height] of entries) {
+          if (next.get(id) === height) continue;
+          next.set(id, height);
+          changed = true;
+        }
+        if (!changed && current.key === layoutKey) return current;
         return { key: layoutKey, values: next };
       });
     },
     [layoutKey],
   );
 
+  const flushPendingMeasures = useCallback(() => {
+    const pending = pendingMeasures.current;
+    if (pending.size === 0) return;
+    pendingMeasures.current = new Map();
+    applyMeasures(pending.entries());
+  }, [applyMeasures]);
+
+  const handleMeasure = useCallback(
+    (id: string, height: number) => {
+      if (height <= 0) return;
+      // 选区存活期间冻结测量，否则新挂载项的高度会改写内容行坐标。
+      if (selectionStore?.hasSelection() === true) {
+        pendingMeasures.current.set(id, height);
+        return;
+      }
+      applyMeasures([[id, height]]);
+    },
+    [applyMeasures, selectionStore],
+  );
+
+  const scrollBy = useCallback(
+    (delta: number): number => {
+      const current = scrollRef.current;
+      const max = maxOffsetRef.current;
+      const from = baseOffset(current, max);
+      const to = Math.max(0, Math.min(max, from + delta));
+      const actual = to - from;
+      if (actual === 0) return 0;
+      selectionStore?.shiftViewport(actual);
+      const next = { top: to, following: to >= max };
+      scrollRef.current = next;
+      setScroll(next);
+      return actual;
+    },
+    [selectionStore],
+  );
+
   useInput((_input, key) => {
     if (key.pageUp) {
-      onScroll?.();
-      setScroll((current) => {
-        const top = Math.max(0, baseOffset(current, maxOffset) - pageStep(viewportHeight));
-        if (!current.following && current.top === top) return current;
-        return { top, following: false };
-      });
+      scrollBy(-pageStep(viewportHeight));
       return;
     }
     if (key.pageDown) {
-      onScroll?.();
-      setScroll((current) => {
-        const top = Math.min(maxOffset, baseOffset(current, maxOffset) + pageStep(viewportHeight));
-        const following = top >= maxOffset;
-        if (current.following === following && current.top === top) return current;
-        return { top, following };
-      });
+      scrollBy(pageStep(viewportHeight));
     }
   });
 
@@ -160,21 +205,16 @@ export function VirtualTranscript({
     if (pointerSource === undefined) return;
     return pointerSource.subscribe((event) => {
       if (event.kind !== "wheel") return;
-      onScroll?.();
-      setScroll((current) => {
-        const top = Math.max(
-          0,
-          Math.min(
-            maxOffset,
-            baseOffset(current, maxOffset) + event.direction * WHEEL_SCROLL_LINES,
-          ),
-        );
-        const following = top >= maxOffset;
-        if (current.following === following && current.top === top) return current;
-        return { top, following };
-      });
+      scrollBy(event.direction * WHEEL_SCROLL_LINES);
     });
-  }, [maxOffset, onScroll, pointerSource]);
+  }, [pointerSource, scrollBy]);
+
+  useDragAutoScroll({
+    store: selectionStore,
+    topRow: viewportTop,
+    bottomRow: viewportTop + viewportHeight - 1,
+    scrollBy,
+  });
 
   const previousLayout = useRef({ messages: view.messages, boundaries: compactionBoundaries });
   useEffect(() => {
@@ -183,9 +223,28 @@ export function VirtualTranscript({
       return;
     }
     previousLayout.current = { messages: view.messages, boundaries: compactionBoundaries };
-    // 内容或压缩边界变化会移动已登记行的屏幕坐标，旧选区必须失效。
-    onScroll?.();
-  }, [view.messages, compactionBoundaries, onScroll]);
+    pendingMeasures.current = new Map();
+    // 内容或压缩边界变化会移动内容行，旧选区与行缓存必须失效。
+    selectionStore?.resetContent();
+  }, [view.messages, compactionBoundaries, selectionStore]);
+
+  const previousLayoutKey = useRef(layoutKey);
+  useEffect(() => {
+    if (previousLayoutKey.current === layoutKey) return;
+    previousLayoutKey.current = layoutKey;
+    pendingMeasures.current = new Map();
+    selectionStore?.resetContent();
+  }, [layoutKey, selectionStore]);
+
+  useEffect(() => {
+    if (selectionStore === undefined) return;
+    let hadSelection = selectionStore.hasSelection();
+    return selectionStore.subscribe(() => {
+      const hasSelection = selectionStore.hasSelection();
+      if (hadSelection && !hasSelection) flushPendingMeasures();
+      hadSelection = hasSelection;
+    });
+  }, [flushPendingMeasures, selectionStore]);
 
   if (view.messages.length === 0) {
     return (

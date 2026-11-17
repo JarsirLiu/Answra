@@ -151,7 +151,6 @@ export function App({
           }
           localError={state.localError}
           modelConfigured={state.modelConfigured}
-          onScroll={onClearSelection}
           pointerSource={pointerSource}
           setupStep={state.setupStep}
           view={state.view}
