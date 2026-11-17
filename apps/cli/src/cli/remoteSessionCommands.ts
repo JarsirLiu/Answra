@@ -111,7 +111,9 @@ export async function startRemoteHostWithConnectionCode(
 ): Promise<RemoteHostConnectionCode> {
   const remote = requireRemoteKeys(deps);
   const runtime = requireRemoteRuntime(deps);
-  if (deps.remoteAuth === undefined) throw new CliUsageError("请先运行 `answra auth login`。");
+  if (deps.remoteAuth === undefined) {
+    throw new CliUsageError("当前环境未配置账号登录，无法开启远程连接。");
+  }
   await deps.remoteAuth.getAccessToken();
   const modelSnapshot = await deps.modelSettings.snapshot();
   if (!modelSnapshot.configured) {

@@ -5,7 +5,7 @@ import type {
   ManualCompactionResult,
 } from "@answra/shared";
 import type { ModelSettings } from "../../model/ports";
-import type { RemoteAuthPort } from "../../remote/auth/remoteAuthService";
+import { type RemoteAuthPort, RemoteAuthRequiredError } from "../../remote/auth/remoteAuthService";
 import type { CodingSession } from "../../session/codingSession";
 import type { TuiViewStore } from "../app/viewStore";
 import type { TuiPanel } from "../panel";
@@ -279,7 +279,26 @@ async function handleRemote(args: readonly string[], deps: TuiCommandDeps): Prom
     deps.store.setNotice(["当前运行中，先按 Esc 中断后再开启远程连接。"]);
     return;
   }
-  const remote = await deps.startRemoteHost();
+  if (deps.remoteAuth === undefined) {
+    deps.store.setNotice(["当前环境未配置账号登录，无法开启远程连接。"]);
+    return;
+  }
+  const authStatus = await deps.remoteAuth.status();
+  deps.store.setAuthStatus(authStatus);
+  if (!authStatus.signedIn) {
+    deps.store.setNotice(["远程连接需要登录。请先运行 /login 登录，成功后再运行 /remote。"]);
+    return;
+  }
+  let remote: Awaited<ReturnType<NonNullable<TuiCommandDeps["startRemoteHost"]>>>;
+  try {
+    remote = await deps.startRemoteHost();
+  } catch (error) {
+    if (error instanceof RemoteAuthRequiredError) {
+      deps.store.setNotice(["登录已过期。请先运行 /login 重新登录，成功后再运行 /remote。"]);
+      return;
+    }
+    throw error;
+  }
   deps.store.setNotice([
     remote.code === undefined
       ? "已恢复持久远程连接。其他设备可以继续使用原连接码运行 answra remote attach。"

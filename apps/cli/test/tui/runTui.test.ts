@@ -4,6 +4,7 @@ import type { ReactElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ModelCatalog } from "../../src/model/catalog";
 import type { ModelSettings } from "../../src/model/ports";
+import type { RemoteAuthPort } from "../../src/remote/auth/remoteAuthService";
 import type { CodingSession } from "../../src/session/codingSession";
 import { TuiViewStore } from "../../src/tui/app/viewStore";
 import { TUI_HELP_LINES } from "../../src/tui/commands/help";
@@ -72,6 +73,20 @@ function createModelCatalog(
   return { list: vi.fn(async () => models) };
 }
 
+function createRemoteAuth(signedIn = true): RemoteAuthPort {
+  const status = {
+    signedIn,
+    expiresAt: null,
+    account: signedIn ? "tester@example.com" : null,
+  };
+  return {
+    login: vi.fn(async () => status),
+    status: vi.fn(async () => status),
+    logout: vi.fn(async () => ({ signedIn: false, expiresAt: null, account: null })),
+    getAccessToken: vi.fn(async () => "access-token"),
+  };
+}
+
 function createModelSettings(): ModelSettings {
   return {
     resolve: vi.fn(async () => modelConfig("test-model")),
@@ -133,6 +148,7 @@ async function start(
     done: Promise<void>;
     stop(): Promise<void>;
   }>,
+  remoteAuth?: RemoteAuthPort,
 ): Promise<RenderResult> {
   let props: AppProps | undefined;
   let options: Record<string, unknown> | undefined;
@@ -160,6 +176,7 @@ async function start(
     workspaceRoot: "D:\\workspace",
     altScreen,
     startRemoteHost,
+    remoteAuth,
   });
   await tick();
   if (!props || !options || !finish) throw new Error("TUI did not render");
@@ -300,6 +317,7 @@ describe("runInkTui", () => {
       createModelCredentials(),
       createModelCatalog(),
       startRemoteHost,
+      createRemoteAuth(),
     );
 
     props.onSubmit("/remote");
