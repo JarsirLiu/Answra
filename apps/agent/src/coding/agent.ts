@@ -1,9 +1,12 @@
-/** CLI coding Agent 定义：组装独立 prompt、transcript 上下文和编码工具授权。 */
+/** CLI coding Agent 定义：组装独立 prompt、transcript 上下文、skill 索引和编码工具授权。 */
 import type { ConversationSendRequest } from "@answra/shared";
 import type { AgentDefinition, BotDiscovery, BotIdentity } from "../core/agent/definition";
 import { agentId } from "../core/agent/definition";
 import { createToolStepLimit } from "../core/agent/toolStepLimit";
+import type { SkillCatalog } from "../core/skill/catalog";
+import { renderSkillIndex, selectSkills } from "../core/skill/guidance";
 import type { ToolRegistry } from "../core/tool";
+import { SKILL_TOOL_ID } from "../core/tool/ids";
 import type { ConversationStore } from "../core/transcript/store";
 import {
   buildCodingEnvironmentContext,
@@ -36,9 +39,12 @@ export interface CodingAgentInput {
 export function createCodingAgentDefinition({
   store,
   tools,
+  skills,
 }: {
   store: ConversationStore;
   tools: ToolRegistry;
+  /** 会话级 skill 目录；缺省表示本会话没有可用 skill。 */
+  skills?: SkillCatalog;
 }): AgentDefinition<CodingAgentInput> {
   return {
     id: CODING_AGENT_ID,
@@ -52,21 +58,28 @@ export function createCodingAgentDefinition({
         includeHistory: input.policy.includeHistory,
         store,
       });
+      const authorizedToolIds = skills
+        ? [...input.policy.tools, SKILL_TOOL_ID]
+        : input.policy.tools;
       const toolSet =
-        input.policy.tools.length === 0
+        authorizedToolIds.length === 0
           ? undefined
-          : tools.authorize(input.policy.tools, {
+          : tools.authorize(authorizedToolIds, {
               signal,
               workspaceRoot: input.workspaceRoot,
               runId: input.runId,
               sessionId: input.conversationId,
               ...(emitter ? { onToolOutput: emitter.toolOutput } : {}),
             });
+      const skillIndex = skills
+        ? renderSkillIndex(selectSkills(skills.list(), input.policy.skills))
+        : "";
       const system = toolSet
         ? [
             input.policy.systemPrompt,
             buildCodingEnvironmentContext(),
             buildCodingWorkspaceContext(input.workspaceRoot),
+            ...(skillIndex ? [skillIndex] : []),
           ].join("\n\n")
         : input.policy.systemPrompt;
       return {

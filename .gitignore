@@ -21,6 +21,9 @@ apps/desktop/resources/vad/**
 # Local ASR model resources are prepared via `asr:prepare`; only the manifest source stays in Git.
 apps/desktop/.cache-asr/
 apps/desktop/resources/asr/**
+# Bundled skills are copied from packages/skills via `skills:prepare`; the package is the
+# single source of truth, this directory is only packaging staging.
+apps/desktop/resources/skills/**
 # Locally downloaded dictionary data and prebuilt helper binaries are not source files.
 apps/desktop/native/rime-data/easy_en.dict.yaml
 apps/desktop/native/rime-host/*.exe

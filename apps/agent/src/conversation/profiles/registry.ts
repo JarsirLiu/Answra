@@ -6,6 +6,8 @@ export interface ChatProfile {
   includeHistory: boolean;
   tools: readonly ToolId[];
   injectTime?: boolean;
+  /** 可加载的 skill 名单；缺省表示该 profile 不使用 skill，不接受通配符。 */
+  skills?: readonly string[];
 }
 
 export const CHAT_PROFILES = {

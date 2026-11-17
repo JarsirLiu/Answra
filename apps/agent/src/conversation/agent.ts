@@ -9,7 +9,10 @@ import type {
 } from "../core/agent/definition";
 import { agentId } from "../core/agent/definition";
 import { createToolStepLimit } from "../core/agent/toolStepLimit";
+import type { SkillCatalog } from "../core/skill/catalog";
+import { renderSkillIndex, selectSkills } from "../core/skill/guidance";
 import type { ToolRegistry } from "../core/tool";
+import { SKILL_TOOL_ID } from "../core/tool/ids";
 import type { ConversationStore } from "../core/transcript/store";
 import { CHAT_PROFILES, type ChatProfile } from "./profiles/registry";
 import { buildEnvironmentSystemContext, readRuntimeEnvironment } from "./turn/environmentContext";
@@ -51,6 +54,8 @@ export interface ConversationAgentOptions {
   identity?: BotIdentity;
   discovery?: BotDiscovery;
   profile?: ConversationAgentProfile;
+  /** 会话级 skill 目录；缺省表示本会话没有可用 skill。 */
+  skills?: SkillCatalog;
   /** 测试或结构化输出实现注入；缺省视为普通回复。 */
   result?: (input: ConversationAgentInput, runId: string) => Promise<BotTurnResult | undefined>;
 }
@@ -62,6 +67,7 @@ export function createConversationAgentDefinition({
   identity = GENERAL_IDENTITY,
   discovery = GENERAL_DISCOVERY,
   profile = CHAT_PROFILES["general-chat"],
+  skills,
   result,
 }: ConversationAgentOptions): AgentDefinition<ConversationAgentInput> {
   return {
@@ -81,21 +87,28 @@ export function createConversationAgentDefinition({
         ...(input.viewerAgentId ? { viewerAgentId: input.viewerAgentId } : {}),
         ...(input.agentNames ? { agentNames: input.agentNames } : {}),
       });
+      const authorizedToolIds = skills
+        ? [...activeProfile.tools, SKILL_TOOL_ID]
+        : activeProfile.tools;
       const toolSet =
-        activeProfile.tools.length === 0
+        authorizedToolIds.length === 0
           ? undefined
-          : tools.authorize(activeProfile.tools, {
+          : tools.authorize(authorizedToolIds, {
               signal,
               workspaceRoot: input.workspaceRoot,
               runId: input.runId,
               sessionId: input.conversationId,
               ...(emitter ? { onToolOutput: emitter.toolOutput } : {}),
             });
+      const skillIndex = skills
+        ? renderSkillIndex(selectSkills(skills.list(), activeProfile.skills))
+        : "";
       const system = toolSet
         ? [
             activeProfile.systemPrompt,
             buildEnvironmentSystemContext(readRuntimeEnvironment()),
             buildWorkspaceSystemContext(input.workspaceRoot),
+            ...(skillIndex ? [skillIndex] : []),
           ].join("\n\n")
         : activeProfile.systemPrompt;
       return {

@@ -4,3 +4,4 @@ export const READ_TOOL_NAME = "Read";
 export const GREP_TOOL_NAME = "Grep";
 export const EDIT_TOOL_NAME = "Edit";
 export const RUN_COMMAND_TOOL_NAME = "RunCommand";
+export const SKILL_TOOL_NAME = "Skill";

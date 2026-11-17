@@ -9,6 +9,7 @@ export {
   type ShellRuntimeOptions,
   type ShellSyntax,
 } from "./builtin/runCommand/shell/runtime";
+export { createSkillTool } from "./builtin/skill/tool";
 export {
   type AnyToolEntry,
   defineTool,

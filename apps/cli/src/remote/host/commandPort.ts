@@ -14,6 +14,7 @@ import type {
   RemoteModelConfig,
   RemoteModelSettingsView,
 } from "@answra/shared/schema";
+import { resolveCliSkillRoots } from "../../config/skillRoots";
 import type { ModelSettings } from "../../model/ports";
 
 const CAPABILITIES: readonly RemoteCapability[] = ["coding", "model-settings"];
@@ -45,6 +46,7 @@ export function createRemoteCodingHost({
       for (const listener of snapshotListeners) listener(snapshot);
     },
     workspaceRoot,
+    skillRoots: resolveCliSkillRoots(workspaceRoot),
   });
 
   const settings = createHostModelSettings(modelSettings);

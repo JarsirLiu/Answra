@@ -52,7 +52,13 @@ export class AgentWorkerProcess implements AgentWorkerHostPort {
     // worker 无法访问 Electron app 路径 API，资源目录以启动参数传入（见 worker.ts）。
     const worker = utilityProcess.fork(
       workerPath,
-      [resolveVadResourceRoot(), resolveAsrResourceRoot(), resolveSessionsRoot()],
+      [
+        resolveVadResourceRoot(),
+        resolveAsrResourceRoot(),
+        resolveSessionsRoot(),
+        resolveBuiltinSkillsRoot(),
+        resolveUserSkillsRoot(),
+      ],
       {
         cwd: app.getPath("userData"),
         serviceName: "Answra Agent Runtime",
@@ -242,4 +248,16 @@ function resolveAsrResourceRoot(): string {
 /** 桌面会话历史根目录：与 CLI 的 cli/sessions 明确隔离。 */
 function resolveSessionsRoot(): string {
   return path.join(app.getPath("userData"), "desktop-sessions");
+}
+
+/** 内置 skill 目录：打包版经 extraResources 落在 resourcesPath/skills。 */
+function resolveBuiltinSkillsRoot(): string {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, "skills")
+    : path.join(app.getAppPath(), "resources", "skills");
+}
+
+/** 用户级 skill 目录：跨项目复用，与 CLI 共用同一位置。 */
+function resolveUserSkillsRoot(): string {
+  return path.join(app.getPath("home"), ".answra", "skills");
 }

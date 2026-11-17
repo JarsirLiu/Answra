@@ -1,6 +1,7 @@
 /** CLI coding Bot 描述符：把独立身份、policy 与已注册执行器装配成 Bot。 */
 import type { AgentRuntime } from "../core/agent/runtime";
 import type { BotDescriptor } from "../core/bot/contracts";
+import type { SkillCatalog } from "../core/skill/catalog";
 import type { ToolRegistry } from "../core/tool";
 import type { ConversationStore } from "../core/transcript/store";
 import {
@@ -18,12 +19,18 @@ export function createCodingBot({
   agentRuntime,
   store,
   tools,
+  skills,
 }: {
   agentRuntime: AgentRuntime;
   store: ConversationStore;
   tools: ToolRegistry;
+  skills?: SkillCatalog;
 }): CodingBot {
-  const definition = createCodingAgentDefinition({ store, tools });
+  const definition = createCodingAgentDefinition({
+    store,
+    tools,
+    ...(skills ? { skills } : {}),
+  });
   return {
     id: CODING_AGENT_ID,
     identity: CODING_IDENTITY,

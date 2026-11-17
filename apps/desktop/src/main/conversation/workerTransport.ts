@@ -6,6 +6,7 @@ import type {
   AgentHost,
   AgentTransport,
   RecognizerSource,
+  SkillRoots,
   TenVadSource,
 } from "@answra/agent";
 import { FileConversationStore, startAgentHost } from "@answra/agent";
@@ -20,6 +21,10 @@ export interface AgentWorkerOptions {
   asrResourceRoot?: string;
   /** 桌面会话历史根目录；缺省使用内存 store。 */
   sessionsRoot?: string;
+  /** 由 AgentService 解析的内置 skill 目录（resources/skills）。 */
+  builtinSkillsRoot?: string;
+  /** 由 AgentService 解析的用户级 skill 目录（~/.answra/skills）。 */
+  userSkillsRoot?: string;
   /** 测试注入：绕过从磁盘加载预编译资源。 */
   vad?: TenVadSource;
   /** 测试注入：绕过从磁盘加载本地模型。 */
@@ -50,13 +55,30 @@ export function startAgentWorker(
     options?.sessionsRoot === undefined
       ? undefined
       : new FileConversationStore(options.sessionsRoot);
+  const skillRoots = resolveSkillRoots(options);
   return startAgentHost({
     transport,
     vad,
     recognizer,
     ...(sessionStore ? { store: sessionStore, catalog: sessionStore } : {}),
     ...(grepWorkerPath && existsSync(grepWorkerPath) ? { grepWorkerPath } : {}),
+    ...(skillRoots ? { skillRoots } : {}),
   });
+}
+
+/**
+ * 内置与用户级 skill 目录：存在才注入，缺失即为"该来源没有 skill"。
+ * 工作区来源由 workspace-context 命令下发，这里不解析。
+ */
+function resolveSkillRoots(options: AgentWorkerOptions | undefined): SkillRoots | undefined {
+  const builtin = existingDirectory(options?.builtinSkillsRoot);
+  const user = existingDirectory(options?.userSkillsRoot);
+  if (!builtin && !user) return undefined;
+  return { builtin, user, workspace: null };
+}
+
+function existingDirectory(candidate: string | undefined): string | null {
+  return candidate && existsSync(candidate) ? candidate : null;
 }
 
 function createRecognizer(

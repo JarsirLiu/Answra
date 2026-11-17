@@ -33,7 +33,20 @@ await build({
 });
 
 await copyNativePackages();
+await copyBuiltinSkills();
 if (process.platform !== "win32") await chmod(outfile, 0o755);
+
+/** 内置 skill 是纯内容包，整目录复制到 dist/skills，运行期由宿主解析后注入 agent。 */
+async function copyBuiltinSkills() {
+  const skillsRoot = findPackageRoot(require.resolve("@answra/skills/package.json"));
+  const destination = path.join(outDir, "skills");
+  await cp(skillsRoot, destination, {
+    recursive: true,
+    dereference: true,
+    // 复制内容本身，不复制包清单与说明文件。
+    filter: (source) => path.basename(source) !== "package.json",
+  });
+}
 
 async function copyNativePackages() {
   await copyNativePackage("@napi-rs/keyring");

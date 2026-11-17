@@ -81,6 +81,7 @@ packages/shared        跨进程契约：IPC 频道常量 + ChannelMap 类型、
 packages/config        Node-only 共享客户端配置：非 secret 本地模型地址/模型 ID、原子读写与迁移
 packages/credentials   Node-only 共享 OS 凭据：本地模型 API Key 的 keychain 读写，fail-closed
 packages/remote        平台无关远程连接核心：帧/信令 schema、host/controller 会话、访问密钥、稳定错误码与 fake ports
+packages/skills        内置 Agent Skill 内容包：只有 Markdown 与资源，无运行时代码
 packages/ui            悬浮条与面板的全部业务 UI（React），含组件测试
 apps/desktop           Electron 桌面壳
   src/main             主进程：窗口管理、按领域拆分的 IPC handler
@@ -112,6 +113,7 @@ apps/agent             平台无关的 Agent 运行时（不依赖 Electron/Reac
   src/core/transcript   Conversation、Answer、Interview 共用的 transcript 端口、内存与文件适配器；answer 仅内存
   src/core/run         进程内 run 取消与完成等待原语
   src/core/model       provider 适配、模型流归一化、图片输入与 HTTP 重试
+  src/core/skill       skill 来源扫描、frontmatter 校验、索引渲染与按名加载
   src/execution        run/attempt/step 事件、状态、进程内 store 和投影
   src/conversation     对话领域：turn、agent、profiles、tools 子域
   src/interview        面试语音领域：audio、transcription、turns、vad、reply 与 worker adapter

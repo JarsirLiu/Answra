@@ -24,6 +24,7 @@
 - `@answra/config` 是 Node-only 客户端配置库：只存本地模型地址/模型 ID 等非 secret 字段；API Key 由 `@answra/credentials` 写入 OS keychain，登录令牌仍由桌面 `safeStorage` 负责，CLI 不得解密桌面 `safeStorage` 文件。
 - `@answra/credentials` 是 Node-only OS 凭据库：只封装本地模型 API Key 的 keychain 读写，不读写 `config.json`、不依赖 Electron/CLI/Agent；keychain 不可用时 fail-closed，不回退明文。桌面 main 与 CLI 共用固定 service/account。
 - `@answra/remote` 是平台无关的远程连接核心：只放远程帧编解码、host/controller 端口、配对/信令状态机与 fake ports；只能依赖 `@answra/shared`，不得 import Electron/Node/React/Ink/Agent/CLI/desktop。WebRTC、WebSocket、OS keychain 由各宿主适配。
+- `@answra/skills` 是纯内容包：只放内置 skill 的 Markdown 与资源，不含运行时代码；宿主解析目录后注入 agent，agent 不 import 该包。
 - Agent 事件 payload 的唯一目录与 envelope 定义在 `packages/shared/src/schema/events.ts`；状态词汇/快照单独定义在 `status.ts`。`AgentDurableEvent` 仅规定未来适配器的事件资格，不代表已有持久化实现。
 - `apps/` 只放可启动单元（`desktop` 是 Electron 壳，`agent` 由 utility process 拉起并保留独立为常驻 sidecar 的可能，`cli` 是独立终端宿主）；纯库放 `packages/`。
 
@@ -51,6 +52,7 @@
 | `src/core/transcript` | Conversation、Answer、Interview 共用的消息 transcript、活动 run 认领、恢复游标端口、内存与文件适配器 | 不保存 Agent 事件、不包含领域产品策略；文件适配器按 scope 持久化，`answer` 只走内存、不读盘不落盘 |
 | `src/core/model` | AI SDK/provider 边界归一化、共享模型输入校验与 HTTP 重试原语 | 不放 Conversation profile 或 transcript 规则 |
 | `src/core/tool` | 跨领域工具契约、静态注册表与单次调用执行管理；通用工具在 `builtin/` | 不导入领域、不写工具事件；领域专属工具留在 `<domain>/tools/`，执行器只返回结果 |
+| `src/core/skill` | 三类来源的 skill 扫描、frontmatter 校验、索引渲染与按名查表契约 | 不读领域 prompt、不接受模型传入路径；宿主注入根目录，缺省即没有 skill |
 | `src/execution` | run/attempt/step 状态迁移规则、事件 envelope 工厂、进程内 store 和查询投影 | 跨包事件 payload 与状态词汇唯一来自 `packages/shared/src/schema/`；当前只实现进程内 store，不得声称已有 durable store 或恢复流程 |
 | `src/conversation/application.ts` | Conversation 唯一编排循环：按 Bot/团队选择创建会话、运行当前 Bot、执行交接链 | 只组合 catalog/store/run；不复制消息或 run 语义，不让 renderer 选择 Bot 之外的能力 |
 | `src/conversation/turn` | Conversation transcript 回合认领、模型上下文与应用事件回调 | 模型执行/run 生命周期由 `core/agent` 负责；不定义共享执行状态 schema |
@@ -74,7 +76,7 @@
 | --- | --- | --- |
 | `src/main.ts` | 可执行组合根：注入 process/env/stdin/stdout、SIGINT 与真实 Agent host | 只接线，不承载命令解析、会话状态机或呈现逻辑 |
 | `src/cli` | 顶层命令分派、`code`/`config`/`remote` 用例、依赖端口、help/error | 只依赖端口，不 import Electron 或 desktop |
-| `src/config` | argv 语法与工作区校验 | 不读写配置、不启动会话、不写事件 |
+| `src/config` | argv 语法、工作区校验与宿主 skill 根目录解析 | 不读写配置、不启动会话、不写事件 |
 | `src/model` | CLI 模型设置域：选择、优先级、应用服务、持久化端口与模型目录端口 | 不 import `tui`/`cli`/`adapters`，不碰 `node:fs`、Ink 或终端输出 |
 | `src/session` | `CodingSession` 单活动 run 用例、新建/恢复/列表/删除与窄宿主端口 | 不实现模型调用、TUI 或进程 I/O |
 | `src/adapters` | `@answra/config` 共享文件实现、OpenAI 兼容 `/models` 模型目录、`@answra/agent/composition` 的 `CodingHost` 到 CLI 端口映射 | 不复制 Agent 运行时语义，不承载模型合并规则 |

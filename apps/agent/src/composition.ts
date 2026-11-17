@@ -66,6 +66,7 @@ export {
   assertCanHandoff,
   visibleBots,
 } from "./core/bot/directory";
+export * from "./core/skill";
 export { assertHandoffTask, MAX_HANDOFF_TASK_CHARS } from "./core/team/handoff";
 export {
   assertTeamPreset,

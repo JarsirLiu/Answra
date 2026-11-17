@@ -7,6 +7,8 @@ import { ConversationApplication } from "./conversation/application";
 import { createConversationBots } from "./conversation/bots";
 import { AgentRuntime } from "./core/agent/runtime";
 import { createBotCatalog } from "./core/bot/catalog";
+import { createLazySkillCatalog } from "./core/skill/catalog";
+import type { SkillRoots } from "./core/skill/contracts";
 import { createBuiltinToolRegistry } from "./core/tool";
 import type { ConversationSessionCatalog } from "./core/transcript/catalog";
 import { MemoryConversationStore } from "./core/transcript/memoryStore";
@@ -57,6 +59,11 @@ export interface AgentHostOptions {
   turnSettler?: import("./interview/turns/settler").CandidateTurnSettlerOptions;
   /** 宿主注入的 Grep WASI worker 脚本路径；缺省时在 Agent 进程内执行。 */
   grepWorkerPath?: string;
+  /**
+   * skill 来源根目录，由宿主解析后注入；缺省表示本会话没有可用 skill。
+   * 不提供任何默认目录——不回退到猜测路径。
+   */
+  skillRoots?: SkillRoots;
 }
 
 export interface AgentHost {
@@ -84,6 +91,7 @@ export function startAgentHost({
   recognizer,
   turnSettler,
   grepWorkerPath,
+  skillRoots,
 }: AgentHostOptions): AgentHost {
   /** 云端令牌的等待表：run 启动与 401 刷新共用同一条反向请求。 */
   const tokenRequests = new Map<
@@ -125,10 +133,18 @@ export function startAgentHost({
     emitEvent: (event: AgentEventEnvelope) => transport.send({ version: 1, type: "event", event }),
     tokenProvider: requestAccessToken,
   });
+  const skillsReady = skillRoots ? createLazySkillCatalog(skillRoots) : undefined;
+  const skills = skillsReady?.catalog;
   const tools = createBuiltinToolRegistry({
     ...(grepWorkerPath ? { workerPaths: { grep: grepWorkerPath } } : {}),
+    ...(skills ? { skills } : {}),
   });
-  const conversationBots = createConversationBots({ agentRuntime, store, tools });
+  const conversationBots = createConversationBots({
+    agentRuntime,
+    store,
+    tools,
+    ...(skills ? { skills } : {}),
+  });
   const conversationCatalog = createBotCatalog(conversationBots);
   const answerAgent = agentRuntime.registerAgent(screenshotAnswerAgent);
   const interviewAgent = agentRuntime.registerAgent(
@@ -204,6 +220,7 @@ export function startAgentHost({
       pending.reject(new Error("本地 AI 服务已关闭"));
     }
     tokenRequests.clear();
+    skillsReady?.dispose();
     void tools.dispose().catch((error: unknown) => {
       console.warn("[agent] tool cleanup failed", error);
     });
@@ -296,6 +313,8 @@ export function startAgentHost({
       case "workspace-context":
         runtime.setWorkspaceRoot(command.root);
         interview.setWorkspaceRoot(command.root);
+        // 工作区来源的 skill 随工作区变化重扫；结果迟到会被 catalog 自身丢弃。
+        void skillsReady?.setWorkspaceRoot(command.root);
         return undefined;
       case "interview-context":
         interview.setInterviewDataRoot(command.root);

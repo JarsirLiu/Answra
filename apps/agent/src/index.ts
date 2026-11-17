@@ -36,6 +36,14 @@ export {
   DEFAULT_AGENT_CONNECTION_POLICY,
 } from "./client/connection";
 export { ConversationApplication } from "./conversation/application";
+export type { LazySkillCatalog, SkillCatalog } from "./core/skill/catalog";
+export { createLazySkillCatalog, scanSkills } from "./core/skill/catalog";
+export type {
+  SkillInfo,
+  SkillRoots,
+  SkillSourceKind,
+} from "./core/skill/contracts";
+export { renderSkillIndex, selectSkills } from "./core/skill/guidance";
 export type {
   ConversationSessionCatalog,
   ConversationSessionQuery,

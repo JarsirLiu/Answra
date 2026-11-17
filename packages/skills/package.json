@@ -1,0 +1,11 @@
+{
+  "name": "@answra/skills",
+  "version": "0.1.0",
+  "private": true,
+  "description": "内置 Agent Skill 内容包：只有 Markdown 与资源，无运行时代码，由宿主解析目录后注入 agent。",
+  "type": "module",
+  "files": [
+    "*/SKILL.md",
+    "*/**"
+  ]
+}

@@ -12,6 +12,7 @@ import { createOpenAiModelCatalog } from "./adapters/openAiModelCatalog";
 import { createSharedModelStore } from "./adapters/sharedModelStore";
 import { runCli } from "./cli/runCli";
 import { isPackagedCliRuntime, resolveCliCloudEndpoints } from "./config/cloudEndpoints";
+import { resolveCliSkillRoots } from "./config/skillRoots";
 import { ModelSettingsService } from "./model/settingsService";
 import { resolveCliDeviceDescriptor } from "./remote/auth/deviceInfo";
 import { createKeychainServiceAuthStore } from "./remote/auth/keychainServiceAuthStore";
@@ -84,6 +85,7 @@ async function main(): Promise<void> {
             workspaceRoot,
             store: sessionStore,
             catalog: sessionStore,
+            skillRoots: resolveCliSkillRoots(workspaceRoot),
           }),
         ),
       createConversationId: randomUUID,

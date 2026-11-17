@@ -1,10 +1,13 @@
 /** CLI coding Bot 的提示词与工具授权；不复用桌面对话 profile。 */
+
 import { type ToolId, toolId } from "../core/tool";
 
 export interface CodingPolicy {
   systemPrompt: string;
   includeHistory: boolean;
   tools: readonly ToolId[];
+  /** 可加载的 skill 名单；缺省表示不使用 skill，不接受通配符。 */
+  skills?: readonly string[];
 }
 
 const CODING_SYSTEM_PROMPT = [
@@ -25,4 +28,6 @@ export const CODING_POLICY = {
     toolId("workspace.edit"),
     toolId("workspace.run-command"),
   ],
+  // 编码场景可使用本仓库的开发者 skill（工作区来源即可索引到，无需打包）。
+  skills: ["answra-code", "answra-change", "answra-vision"],
 } as const satisfies CodingPolicy;

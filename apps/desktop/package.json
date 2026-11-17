@@ -18,11 +18,12 @@
     "audit:packaged": "node ./scripts/audit-packaged-input.mjs",
     "vad:prepare": "node ./scripts/prepare-ten-vad.mjs",
     "asr:prepare": "node ./scripts/prepare-asr.mjs",
+    "skills:prepare": "node ./scripts/prepare-skills.mjs",
     "typecheck": "tsc -p tsconfig.main.json && tsc -p tsconfig.preload.json && tsc -p tsconfig.renderer.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "dist:win": "pnpm build:cli && pnpm build:answer && pnpm audit:packaged -- --profile=answer && node ./scripts/write-electron-builder-config.mjs --profile=answer && electron-builder --config .release-audit/answer/electron-builder.json --win nsis",
-    "dist:win:full": "pnpm build:cli && pnpm vad:prepare && pnpm asr:prepare && pnpm build && pnpm audit:packaged -- --profile=full && node ./scripts/write-electron-builder-config.mjs --profile=full && electron-builder --config .release-audit/full/electron-builder.json --win nsis",
+    "dist:win:full": "pnpm build:cli && pnpm vad:prepare && pnpm asr:prepare && pnpm skills:prepare && pnpm build && pnpm audit:packaged -- --profile=full && node ./scripts/write-electron-builder-config.mjs --profile=full && electron-builder --config .release-audit/full/electron-builder.json --win nsis",
     "dist:mac": "pnpm build:cli && pnpm build:answer && pnpm audit:packaged -- --profile=answer && node ./scripts/write-electron-builder-config.mjs --profile=answer && electron-builder --config .release-audit/answer/electron-builder.json --mac --arm64 --x64",
     "icons": "node ./scripts/generate-icons.mjs"
   },
@@ -55,6 +56,13 @@
       {
         "from": "resources/vad",
         "to": "vad",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "resources/skills",
+        "to": "skills",
         "filter": [
           "**/*"
         ]
@@ -112,6 +120,7 @@
     "@answra/config": "workspace:*",
     "@answra/credentials": "workspace:*",
     "@answra/shared": "workspace:*",
+    "@answra/skills": "workspace:*",
     "@answra/ui": "workspace:*",
     "@resvg/resvg-js": "^2.6.2",
     "@types/node": "^26.6.5",
