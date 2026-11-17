@@ -23,14 +23,14 @@
   padding: 7px 10px;
   border: 0;
   border-radius: var(--ctl-radius);
-  color: white;
-  background: var(--mint);
+  color: var(--action-contrast);
+  background: var(--action);
   font-size: var(--font-sm);
   font-weight: var(--label-weight);
   transition: background 140ms ease-out;
 }
 .file-picker:hover {
-  background: var(--mint-deep);
+  background: var(--action-deep);
 }
 .file-picker input {
   position: absolute;

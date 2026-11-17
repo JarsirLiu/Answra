@@ -121,6 +121,17 @@
   --mint-tint: 61 145 119; /* #3D9177 */
   --mint-deep-tint: 38 111 88; /* #266F58 */
   --mint-text-tint: 44 119 94; /* #2C775E */
+
+  /* 【主操作】实底按钮：与薄荷强调色解耦。滑杆/开关/进度继续用 --mint，
+     保存/确认/发送等按钮改用中性炭灰，避免小面积薄荷绿到处出现。 */
+  --action-tint: 52 58 64; /* #343A40 */
+  --action-deep-tint: 30 35 40; /* #1E2328 */
+  --action-contrast-tint: 255 255 255; /* #FFFFFF */
+
+  /* 【控件面】开关拇指与分段选中段：不跟表面变色龙走。
+     浅色取近白，深色取浅灰，保证在灰轨道上仍是一块“亮面”，
+     而不是与轨道糊成同一层灰。 */
+  --control-face-tint: 255 255 255; /* #FFFFFF */
   --mint-wash-base: 0.2;
   --user-wash-base: 0.1;
 
@@ -178,6 +189,9 @@
   --mint: rgb(var(--mint-tint) / var(--fade));
   --mint-deep: rgb(var(--mint-deep-tint) / var(--fade));
   --mint-text: rgb(var(--mint-text-tint) / var(--fade));
+  --action: rgb(var(--action-tint) / var(--fade));
+  --action-deep: rgb(var(--action-deep-tint) / var(--fade));
+  --action-contrast: rgb(var(--action-contrast-tint) / var(--fade));
   --mint-wash: rgb(var(--mint-tint) / calc(var(--mint-wash-base) * var(--fade)));
   --user-wash: rgb(var(--mint-tint) / calc(var(--user-wash-base) * var(--fade)));
   --mint-wash-strong: rgb(var(--mint-tint) / calc((var(--mint-wash-base) + 0.08) * var(--fade)));
@@ -197,6 +211,7 @@
   --focus-ring: rgb(var(--focus-tint) / max(calc(var(--focus-base) * var(--fade)), 0.15));
   --paper: rgb(var(--paper-tint) / var(--paper-base)); /* 表面：不透明 */
   --on-ink: rgb(var(--paper-tint) / var(--fade)); /* 反色前景：随 fade */
+  --control-face: rgb(var(--control-face-tint) / var(--fade)); /* 控件亮面：随 fade */
   --danger: rgb(var(--danger-tint) / var(--fade));
   --danger-wash: rgb(var(--danger-tint) / calc(0.1 * var(--fade)));
   --warning: rgb(var(--warning-tint) / var(--fade));
@@ -253,6 +268,12 @@
   --mint-text-tint: 122 230 184;
   /* 深色主题薄荷绿更亮，主操作按钮文字翻转为深绿黑保证对比 */
   --mint-contrast: rgb(8 34 24 / var(--fade));
+  /* 深色主操作：浅灰蓝实底 + 深色文字，在深面板上保持高对比 */
+  --action-tint: 226 233 240; /* #E2E9F0 */
+  --action-deep-tint: 242 246 250; /* #F2F6FA */
+  --action-contrast-tint: 26 31 35; /* #1A1F23 */
+  /* 深色控件亮面：浅灰蓝，避免白块过曝，又能在深轨道上浮起来 */
+  --control-face-tint: 226 233 240; /* #E2E9F0 */
 
   /* 【描边与交互态】通道翻转为白，alpha 基数沿用浅色 */
   --line-tint: 255 255 255;

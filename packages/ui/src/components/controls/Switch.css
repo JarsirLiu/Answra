@@ -21,7 +21,7 @@
   height: var(--control-h-xs);
   border: 1px solid var(--edge-line);
   border-radius: 9px;
-  background: var(--field-strong);
+  background: var(--field);
   transition:
     background 140ms ease-out,
     border-color 140ms ease-out;
@@ -32,27 +32,30 @@
 }
 .switch.is-on .switch-track {
   border-color: transparent;
-  background: var(--mint);
+  background: var(--action);
 }
-/* 关闭态拇指取控件实色，不取 --paper：--paper-tint 是表面固有色，变色龙会把它
-   写成本地背景色并归零 --shadow-ctl，白拇指藏在浅色轨道里就看不见了。
-   实色拇指在任何模式下都有边界（同「控件边界不允许被抹掉」约束）。 */
+/* 拇指取专用控件亮面，不取表面色：--paper-tint 会被变色龙写成本地背景色，
+   且 --shadow-ctl 会被归零；近白拇指会消失在浅色轨道里。专用亮面不参与
+   变色龙采样，再补一圈 --edge-line 描边，任何模式下都保持可见。 */
 .switch-thumb {
   position: absolute;
   top: 2px;
   left: 2px;
   width: var(--control-icon-xs);
   height: var(--control-icon-xs);
+  border: 1px solid var(--edge-line);
   border-radius: 50%;
-  background: var(--icon);
+  background: var(--control-face);
   box-shadow: var(--shadow-ctl);
   transition:
     transform 140ms ease-out,
-    background 140ms ease-out;
+    background 140ms ease-out,
+    border-color 140ms ease-out;
 }
-/* 开启态铺在薄荷色轨道上，纸色拇指对比度足够，保持 iOS 观感 */
+/* 开启态铺在动作色轨道上，拇指取反色亮面，保持清晰对比 */
 .switch.is-on .switch-thumb {
-  background: var(--on-ink);
+  border-color: transparent;
+  background: var(--action-contrast);
   transform: translateX(12px);
 }
 /* 禁用态：保持完整轮廓与拇指可见、只降低内部对比，放在基础规则之后。
@@ -61,8 +64,8 @@
   background: var(--field);
 }
 .switch.is-disabled.is-on .switch-track {
-  border-color: var(--mint-line);
-  background: var(--mint-wash-strong);
+  border-color: var(--edge-line);
+  background: var(--field-strong);
 }
 .switch.is-disabled .switch-thumb {
   background: var(--icon);

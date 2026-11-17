@@ -117,13 +117,13 @@
 }
 
 .conversation-composer-submit {
-  color: white;
-  background: var(--mint);
+  color: var(--action-contrast);
+  background: var(--action);
 }
 
 .conversation-composer-submit:hover:not(:disabled) {
-  color: white;
-  background: var(--mint-deep);
+  color: var(--action-contrast);
+  background: var(--action-deep);
 }
 
 .conversation-composer-submit:disabled,

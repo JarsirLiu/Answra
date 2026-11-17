@@ -67,18 +67,34 @@ describe("theme CSS integrity", () => {
     expect(unknown).toEqual([]);
   });
 
-  it("keeps the switch thumb off the ambient surface tokens", () => {
+  it("keeps the switch thumb on the dedicated control face", () => {
     // 变色龙会替换 --paper-tint、把 --shadow-ctl-* 归零；关闭态拇指若取表面色，
-    // 就会在浅色轨道里变成一颗背景色圆点。拇指属于控件而非表面，必须取控件实色
-    // （--icon），并在开启态才切回反色前景（--on-ink）。
+    // 就会在浅色轨道里变成一颗背景色圆点。拇指属于控件而非表面，必须取不参与
+    // 变色龙采样的 --control-face，并保留 --edge-line 描边。
     const css = stripComments(
       readFileSync(join(sourceRoot, "components", "controls", "Switch.css"), "utf8"),
     );
     const base = css.match(/\.switch-thumb\s*\{([^}]*)\}/)?.[1] ?? "";
     const on = css.match(/\.switch\.is-on\s+\.switch-thumb\s*\{([^}]*)\}/)?.[1] ?? "";
-    expect(base).toContain("var(--icon)");
+    const onTrack = css.match(/\.switch\.is-on\s+\.switch-track\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(base).toContain("var(--control-face)");
+    expect(base).toContain("var(--edge-line)");
     expect(base).not.toContain("var(--paper)");
-    expect(on).toContain("var(--on-ink)");
+    expect(on).toContain("var(--action-contrast)");
+    expect(onTrack).toContain("var(--action)");
+    expect(onTrack).not.toContain("var(--mint)");
+  });
+
+  it("keeps primary actions off the mint accent", () => {
+    // 滑杆/进度仍用 --mint；开关与保存/确认等主按钮改用 --action，
+    // 避免调整强调色时把两类面一起改掉。
+    const css = stripComments(
+      readFileSync(join(sourceRoot, "components", "controls", "SurfaceButton.css"), "utf8"),
+    );
+    const primary = css.match(/\.surface-control--primary\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(primary).toContain("var(--action)");
+    expect(primary).toContain("var(--action-contrast)");
+    expect(primary).not.toContain("var(--mint)");
   });
 
   it("keeps surfaces opaque and gives inverse foreground its own token", () => {
