@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { sharedConfigPath } from "@answra/config";
+import type { ReleaseManifest } from "@answra/shared";
 import { app, type BrowserWindow, shell } from "electron";
 import { AgentService } from "./agent/agentService";
 import { createAmbientThemeController } from "./ambient";
@@ -16,7 +17,7 @@ import { registerCaptureIpc } from "./capture/captureIpc";
 import { configureChromiumCompatibility } from "./chromiumCompatibility";
 import { registerConnectionIpc } from "./connection/connectionIpc";
 import { registerConversationIpc } from "./conversation/conversationIpc";
-import { ModelRouter } from "./conversation/modelRouter";
+import { isLocalModelAvailable, ModelRouter } from "./conversation/modelRouter";
 import {
   ModelSettingsStore,
   modelSettingsFilePath,
@@ -71,6 +72,7 @@ let updateController: ReturnType<typeof createUpdateController> | undefined;
 let disposeUpdateIpc: (() => void) | undefined;
 let quitting = false;
 const configDir = app.getPath("userData");
+const releaseManifest = JSON.parse(__ANSWRA_RELEASE_MANIFEST__) as ReleaseManifest;
 const answraDataRoot = join(app.getPath("appData"), "Answra");
 // 面试记忆是用户可见数据，不能依赖 Electron 由 package name 派生的 userData 目录名。
 const interviewDataRoot = join(answraDataRoot, "interview");
@@ -95,7 +97,7 @@ const modelSettings = new ModelSettingsStore({
 });
 const modelRouter = new ModelRouter({
   store: modelSettings,
-  localAvailable: !app.isPackaged,
+  localAvailable: isLocalModelAvailable(app.isPackaged, releaseManifest.profile),
   cloud: {
     modelConfig: () => authService.getDesktopModelConfig(),
     hasSession: () => authService.hasSession(),

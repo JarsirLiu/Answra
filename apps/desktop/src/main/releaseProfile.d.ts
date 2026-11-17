@@ -2,3 +2,4 @@
 declare const __ANSWRA_FEATURE_WORKSPACE__: boolean;
 declare const __ANSWRA_FEATURE_INTERVIEW__: boolean;
 declare const __ANSWRA_FEATURE_CHAT__: boolean;
+declare const __ANSWRA_RELEASE_MANIFEST__: string;

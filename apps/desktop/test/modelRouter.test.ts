@@ -18,7 +18,11 @@ vi.mock("electron", () => ({
 }));
 
 import { AUTH_REQUIRED_CODE, type ConversationModelSettings } from "@answra/shared";
-import { ModelRouter, type ModelSettingsStorePort } from "../src/main/conversation/modelRouter";
+import {
+  isLocalModelAvailable,
+  ModelRouter,
+  type ModelSettingsStorePort,
+} from "../src/main/conversation/modelRouter";
 import {
   defaultModelSettings,
   toView,
@@ -129,7 +133,7 @@ describe("model router source selection", () => {
     expect(router.canSend()).toBe(false);
   });
 
-  it("ignores the local source in packaged builds and uses the cloud", async () => {
+  it("ignores the local source when local is unavailable and uses the cloud", async () => {
     const store = createFakeStore(
       {
         source: "local",
@@ -143,7 +147,7 @@ describe("model router source selection", () => {
     await expect(router.resolve()).resolves.toMatchObject({ accessToken: "cloud-token" });
   });
 
-  it("rejects saving the local source in packaged builds", async () => {
+  it("rejects saving the local source when local is unavailable", async () => {
     const router = createRouter(createFakeStore(), false);
     await expect(
       router.save({ source: "local", baseUrl: "http://127.0.0.1:1234/v1", model: "m" }),
@@ -166,6 +170,21 @@ describe("model router source selection", () => {
     });
     expect(store.save).toHaveBeenCalledWith(input);
     await expect(router.clear()).resolves.toMatchObject({ source: "cloud", configured: false });
+  });
+});
+
+describe("local model availability", () => {
+  it("allows local models in the packaged answer profile", () => {
+    expect(isLocalModelAvailable(true, "answer")).toBe(true);
+  });
+
+  it("keeps the packaged full profile on cloud", () => {
+    expect(isLocalModelAvailable(true, "full")).toBe(false);
+  });
+
+  it("allows local models in development for both profiles", () => {
+    expect(isLocalModelAvailable(false, "answer")).toBe(true);
+    expect(isLocalModelAvailable(false, "full")).toBe(true);
   });
 });
 

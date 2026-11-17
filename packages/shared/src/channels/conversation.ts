@@ -136,8 +136,8 @@ export interface ConversationModelConfig {
 /**
  * 模型调用来源：`local` 走本机保存的自定义端点（OpenAI 兼容），`cloud` 走云端订阅。
  *
- * 这是显式切换，不是优先级兜底：选哪一路就只用哪一路。本地来源仅在开发态可选，
- * 打包版固定云端，避免绕过订阅。
+ * 这是显式切换，不是优先级兜底：选哪一路就只用哪一路。本地来源在开发态和
+ * answer 打包版可选；full 打包版固定云端，避免绕过订阅。
  */
 export type ConversationModelSource = "local" | "cloud";
 
@@ -157,7 +157,7 @@ export interface ConversationModelSettings {
 /** 渲染层可见的模型设置摘要（不含任何凭据）。 */
 export interface ConversationModelSettingsView {
   source: ConversationModelSource;
-  /** 是否允许选择本地来源（仅开发态为 true）。 */
+  /** 是否允许选择本地来源（开发态或 answer 打包版为 true）。 */
   localAvailable: boolean;
   baseUrl: string;
   model: string;

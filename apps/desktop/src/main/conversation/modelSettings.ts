@@ -77,7 +77,7 @@ export function validateModelSettings(input: unknown): ConversationModelSettings
   };
 }
 
-/** 渲染层摘要：打包版强制云端，本地来源只在开发态出现。 */
+/** 渲染层摘要：full 打包版强制云端；开发态与 answer 打包版保留本地来源。 */
 export function toView(
   settings: StoredModelSettings,
   localAvailable: boolean,

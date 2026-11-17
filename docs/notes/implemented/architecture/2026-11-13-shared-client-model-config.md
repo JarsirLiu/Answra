@@ -81,7 +81,7 @@ API Key：--api-key > ANSWRA_API_KEY > OS keychain > 无显式 Key
 
 - 首次读取旧 `conversation-model.json`：非 secret 字段迁移到共享文件，旧 `encryptedKey` 或旧 `conversation-model-key.json` 的 `safeStorage` 密文迁移到 keychain。
 - 迁移成功后清理旧字段/旧文件；keychain 写入失败时保留旧文件，下次启动重试。
-- 打包版 `localAvailable = !app.isPackaged` 保持不变。本次只共享配置与凭据，不改变“打包版本地来源折叠为云端”的产品门禁。
+- 打包版 `localAvailable = !app.isPackaged` 在本 Note 落地时保持不变。2026-11-17 起 answer 打包版开放本地来源，full 仍折叠为云端，见[答题安装包支持本地模型](../feature/2026-11-17-answer-package-local-model.md)。
 
 ## 模块边界
 
@@ -97,7 +97,7 @@ API Key：--api-key > ANSWRA_API_KEY > OS keychain > 无显式 Key
 - **CLI 解密桌面 `safeStorage` 文件：** 舍弃。需要平台专属实现，扩大密钥暴露面，且与 CLI 独立宿主边界冲突。
 - **桌面常驻并通过本地 IPC 提供配置：** 舍弃。CLI 会依赖桌面运行，失去独立终端/CI/SSH 场景。
 - **桌面与 CLI 各写一套配置 I/O：** 舍弃。路径、校验、迁移和原子写会分叉，最终又回到两套行为。
-- **本次一并开放打包版本地模型：** 暂缓。会改变订阅与登录门禁，需要单独产品决策与权限评估。
+- **本次一并开放打包版本地模型：** 暂缓。会改变订阅与登录门禁，需要单独产品决策与权限评估；该决策已由[答题安装包支持本地模型](../feature/2026-11-17-answer-package-local-model.md)落地到 answer profile。
 - **本次一并实现 CLI 云端登录：** 暂缓。需要 device code/OAuth 与后端支持，不能只靠本地配置。
 
 ## 后果与防回退

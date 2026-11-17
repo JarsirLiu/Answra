@@ -294,7 +294,7 @@ export function SettingsPanel({
             </div>
           </section>
 
-          {/* 打包版 localAvailable=false：本地来源不可用，整块「模型」分组不渲染，避免留下空壳分组。 */}
+          {/* full 打包版 localAvailable=false：本地来源不可用，整块「模型」分组不渲染；answer 打包版与开发态会显示。 */}
           {modelView?.localAvailable && (
             <section className="settings-group">
               <h2>模型</h2>
