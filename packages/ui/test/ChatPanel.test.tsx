@@ -3,7 +3,6 @@ import type {
   ContextCompactionBoundary,
   ContextCompactionStatus,
   ContextPruningStatus,
-  ContextUsage,
   ConversationSessionSummary,
 } from "@answra/shared";
 import { fireEvent, render, screen } from "@testing-library/react";
@@ -19,7 +18,6 @@ interface ChatRenderOptions {
   connection?: AgentConnectionState;
   contextCompaction?: ContextCompactionStatus;
   compactionBoundaries?: readonly ContextCompactionBoundary[];
-  contextUsage?: ContextUsage;
   contextPruning?: ContextPruningStatus;
   error?: string;
   retry?: ConversationRetry;
@@ -46,7 +44,6 @@ function renderChat(messages: ConversationViewMessage[], options: ChatRenderOpti
       connection={options.connection}
       contextCompaction={options.contextCompaction}
       compactionBoundaries={options.compactionBoundaries}
-      contextUsage={options.contextUsage}
       contextPruning={options.contextPruning}
       error={options.error}
       retry={options.retry}
@@ -128,17 +125,8 @@ describe("ChatPanel context compaction", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("上下文压缩失败：摘要模型不可用");
   });
 
-  it("shows context usage and the latest tool-result cleanup", () => {
+  it("shows the latest tool-result cleanup", () => {
     renderChat([], {
-      contextUsage: {
-        contextWindow: 256_000,
-        usedTokens: 45_000,
-        inputLimit: 216_000,
-        compactAt: 216_000,
-        pruneAt: 172_000,
-        pruneTarget: 40_000,
-        updatedAt: "2026-11-14T10:00:00.000Z",
-      },
       contextPruning: {
         trigger: "auto",
         prunedCount: 2,
@@ -148,11 +136,6 @@ describe("ChatPanel context compaction", () => {
     });
 
     expect(screen.getByText("已清理 2 个旧工具结果，节省约 30k token")).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        (content) => content.includes("45k") && content.includes("216k") && content.includes("21%"),
-      ),
-    ).toBeInTheDocument();
   });
 
   it("shows the compaction boundary metadata and expands its summary", () => {

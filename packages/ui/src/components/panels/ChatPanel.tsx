@@ -3,7 +3,6 @@ import type {
   ContextCompactionBoundary,
   ContextCompactionStatus,
   ContextPruningStatus,
-  ContextUsage,
   ConversationSessionSummary,
   DesktopBridge,
 } from "@answra/shared";
@@ -16,7 +15,6 @@ import {
   ConnectionNotice,
   ContextCompactionNotice,
   ContextPruningNotice,
-  ContextUsageNotice,
   formatConnectionNotice,
   MessageStream,
   ModelErrorNotice,
@@ -62,8 +60,6 @@ interface ChatPanelProps {
   contextCompaction?: ContextCompactionStatus;
   /** 已成功摘要的边界；按 throughMessageId 插入消息流。 */
   compactionBoundaries?: readonly ContextCompactionBoundary[];
-  /** 最近一次模型请求的上下文占用与阈值。 */
-  contextUsage?: ContextUsage;
   /** 最近一次实际应用的旧工具结果清理。 */
   contextPruning?: ContextPruningStatus;
   /** 本轮思考耗时（毫秒），回答开始输出后冻结。 */
@@ -115,7 +111,6 @@ export function ChatPanel({
   connection,
   contextCompaction,
   compactionBoundaries,
-  contextUsage,
   contextPruning,
   thinkingMs,
   error,
@@ -155,7 +150,6 @@ export function ChatPanel({
       (boundary) =>
         `boundary:${boundary.id}:${boundary.summary.length}:${boundary.instructions?.length ?? 0}`,
     ),
-    contextUsage ? `usage:${contextUsage.usedTokens}:${contextUsage.updatedAt}` : "",
     contextPruning ? `pruning:${contextPruning.updatedAt}` : "",
   ].join("|");
   return (
@@ -278,7 +272,6 @@ export function ChatPanel({
             })}
             {contextCompaction && <ContextCompactionNotice status={contextCompaction} />}
             {contextPruning && <ContextPruningNotice status={contextPruning} />}
-            {contextUsage && <ContextUsageNotice usage={contextUsage} />}
             <ConnectionNotice state={connection} />
             {!connectionNotice && retry && <RetryNotice retry={retry} />}
             {!connectionNotice && error && <ModelErrorNotice message={error} onSignIn={onSignIn} />}

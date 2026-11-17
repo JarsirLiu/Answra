@@ -30,7 +30,6 @@ export type {
 export { contextCompactionLabel } from "./contextCompaction";
 export {
   contextPruningLabel,
-  contextUsageLabel,
   contextUsagePercent,
   formatContextTokens,
 } from "./contextUsage";

@@ -164,7 +164,6 @@ export function ChatFeaturePanel({
       connection={connection}
       contextCompaction={conversation.contextCompaction}
       compactionBoundaries={conversation.contextCompactionBoundaries}
-      contextUsage={conversation.contextUsage}
       contextPruning={conversation.contextPruning}
       streaming={Boolean(conversation.activeRunId)}
       sending={conversation.sendPending && !conversation.activeRunId}

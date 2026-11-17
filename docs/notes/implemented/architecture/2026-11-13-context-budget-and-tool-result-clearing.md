@@ -242,7 +242,7 @@ definition.prepare()
 - 存储边界保持 `ConversationStore` / `ExecutionStore` 端口：当前仍是内存 adapter，checkpoint、压缩状态和 usage 锚点都经 `ConversationStore.loadContextState/saveContextState` 保存；SQLite adapter 接入时不需要改压缩或锚点逻辑。SQLite 本身仍未实现，按 [可切换的内存与 SQLite 存储边界](../../proposed/architecture/2026-11-08-switchable-memory-sqlite-storage.md) 单独推进。
 - CLI 手动 `/compact` 现已经 `ContextPreparation.compactNow` 执行，支持一次性摘要指令、熔断绕过和 usage 刷新；`CodingApplication.compactConversation` 只做用例编排，运行中拒绝，取消通过 `AbortSignal` 记录 `failed`。CLI 在 snapshot 中回放成功摘要边界，TUI 显示 Claude 风格 Spinner/边界/失败文案，见[手动压缩的自定义摘要指令与摘要展示](../../implemented/feature/2026-11-14-manual-compaction-instructions-and-summary.md)。
 - 模型窗口已改为可选端点能力：`ConversationCapabilityEndpoint.contextWindow` 由云端能力目录透传，桌面认证持久化保留；缺失时仍回退 256k 基准预算。客户端不增加手动窗口配置。
-- 上下文占用与最近一次工具清理已进入 snapshot：`contextUsage`（当前估算/输入上限/清理与压缩阈值）和 `contextPruning`（清理数量与节省 token）由 `ContextPreparation` 写入 `ContextState`；桌面 `ChatPanel` 与 CLI 状态行/尾部提示展示。
+- 上下文占用与最近一次工具清理已进入 snapshot：`contextUsage`（当前估算/输入上限/清理与压缩阈值）和 `contextPruning`（清理数量与节省 token）由 `ContextPreparation` 写入 `ContextState`；CLI 状态行/尾部提示展示；桌面 `ChatPanel` 的上下文占用行已于 2026-11-17 移除（阈值常被误读为已清理量），见[移除桌面 AI 对话的上下文占用行](../feature/2026-11-17-remove-desktop-context-usage-notice.md)。
 - 自动压缩与自动清理保持默认开启，不提供用户开关（2026-11-14 产品决定）。P1 健壮性已落地 `postCompactTarget` 软目标、摘要中的图片文件名/media type、连续失败熔断（3 次 / 5 分钟冷却）、摘要请求超限截断重试和 provider 超限错误识别；provider 超限后的单次 reactive compact 已按[Provider 上下文超限的单次恢复](../../implemented/architecture/2026-11-14-provider-overflow-reactive-compaction.md)落地：`recoverContext` 只在真正完成压缩时返回请求，每个 run 最多一次。手动压缩的熔断绕过、usage 刷新和可区分结果见[手动压缩的自定义摘要指令与摘要展示](../../implemented/feature/2026-11-14-manual-compaction-instructions-and-summary.md)。
 
 ## 模块边界
