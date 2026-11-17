@@ -338,6 +338,83 @@ describe("runInkTui", () => {
     store.dispose();
   });
 
+  it("opens the sessions panel from /sessions and resumes the picked session", async () => {
+    const { session } = createSession();
+    Object.assign(session, {
+      currentConversationId: "conversation-1",
+      listSessions: vi.fn(async () => [
+        {
+          conversationId: "conversation-1",
+          title: "当前会话",
+          updatedAt: "2026-11-17T09:28:00.000Z",
+        },
+        {
+          conversationId: "conversation-2",
+          title: "旧会话",
+          updatedAt: "2026-11-16T08:00:00.000Z",
+        },
+      ]),
+      resume: vi.fn(async () => snapshot),
+    });
+    const store = new TuiViewStore();
+    const { props, finish } = await start(session, store);
+
+    props.onSubmit("/sessions");
+    await tick();
+
+    expect(store.getSnapshot().panel).toBe("sessions");
+    expect(store.getSnapshot().notice).toBeUndefined();
+
+    await props.panelHandlers.loadSessions().then((data) => {
+      expect(data.current).toBe("conversation-1");
+      expect(data.sessions).toHaveLength(2);
+    });
+
+    await props.panelHandlers.resumeSession("conversation-2");
+    expect(session.resume).toHaveBeenCalledWith("conversation-2");
+    expect(store.getSnapshot().notice).toEqual(["已恢复会话：conversation-2"]);
+
+    finish();
+    store.dispose();
+  });
+
+  it("refuses to resume a session while a run is active", async () => {
+    const { session } = createSession();
+    Object.assign(session, { currentConversationId: "conversation-1", resume: vi.fn() });
+    const store = new TuiViewStore();
+    const { props, finish } = await start(session, store);
+
+    props.onSubmit("first");
+    await tick();
+
+    await expect(props.panelHandlers.resumeSession("conversation-2")).rejects.toThrow(
+      "当前运行中，先按 Esc 中断后再恢复会话。",
+    );
+    expect(session.resume).not.toHaveBeenCalled();
+
+    finish();
+    store.dispose();
+  });
+
+  it("reports session list failures inside the panel data", async () => {
+    const { session } = createSession();
+    Object.assign(session, {
+      currentConversationId: "conversation-1",
+      listSessions: vi.fn(async () => {
+        throw new Error("当前宿主不支持会话历史。");
+      }),
+    });
+    const store = new TuiViewStore();
+    const { props, finish } = await start(session, store);
+
+    const data = await props.panelHandlers.loadSessions();
+    expect(data).toMatchObject({ current: "conversation-1", sessions: [] });
+    expect(data.error).toBe("当前宿主不支持会话历史。");
+
+    finish();
+    store.dispose();
+  });
+
   it("runs manual compaction without sending a prompt", async () => {
     const { session } = createSession();
     const store = new TuiViewStore();

@@ -51,7 +51,7 @@ export const TUI_COMMANDS: readonly TuiCommandSpec[] = [
   {
     kind: "sessions",
     name: "sessions",
-    summary: "列出当前 workspace 的历史会话",
+    summary: "浏览并恢复当前 workspace 的历史会话",
   },
   {
     kind: "resume",

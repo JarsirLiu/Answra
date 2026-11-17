@@ -8,6 +8,7 @@ import { StatusLine } from "../chrome/StatusLine";
 import { TUI_THEME } from "../chrome/theme";
 import { ConfigPanel } from "../commands/ConfigPanel";
 import { ModelPicker } from "../commands/ModelPicker";
+import { SessionsPanel } from "../commands/SessionsPanel";
 import { StatusPanel } from "../commands/StatusPanel";
 import { PromptInput } from "../composer/PromptInput";
 import type { PointerSource } from "../interaction/pointerInput";
@@ -173,6 +174,12 @@ export function App({
             close={panelHandlers.close}
             load={panelHandlers.loadModels}
             select={panelHandlers.selectModel}
+          />
+        ) : state.panel === "sessions" ? (
+          <SessionsPanel
+            close={() => panelHandlers.close("resumed")}
+            load={panelHandlers.loadSessions}
+            resume={panelHandlers.resumeSession}
           />
         ) : state.panel === "status" ? (
           <StatusPanel

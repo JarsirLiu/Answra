@@ -324,6 +324,26 @@ export async function runInkTui({
       store.setSetupStep(undefined);
       store.setNotice([`已切换模型：${model.chat.model}`]);
     },
+    loadSessions: async () => {
+      const activeSession = session;
+      if (activeSession === undefined) {
+        return { current: "", sessions: [], error: "尚未配置模型，无法读取会话历史。" };
+      }
+      try {
+        const sessions = await activeSession.listSessions();
+        return { current: activeSession.currentConversationId, sessions };
+      } catch (error) {
+        return { current: activeSession.currentConversationId, sessions: [], error: messageOf(error) };
+      }
+    },
+    resumeSession: async (conversationId) => {
+      if (busy) throw new Error("当前运行中，先按 Esc 中断后再恢复会话。");
+      const activeSession = session;
+      if (activeSession === undefined) throw new Error("尚未配置模型。");
+      if (conversationId === activeSession.currentConversationId) return;
+      store.reset(await activeSession.resume(conversationId));
+      store.setNotice([`已恢复会话：${conversationId}`]);
+    },
     close: (reason) => {
       const panel = store.getSnapshot().panel;
       store.setPanel(undefined);

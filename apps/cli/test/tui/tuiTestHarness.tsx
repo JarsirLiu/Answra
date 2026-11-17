@@ -51,6 +51,8 @@ export const PANEL_HANDLERS: TuiPanelHandlers = {
   saveConfig: async () => {},
   loadModels: async () => ({ current: "", models: [] }),
   selectModel: async () => {},
+  loadSessions: async () => ({ current: "", sessions: [] }),
+  resumeSession: async () => {},
   close: () => {},
 };
 

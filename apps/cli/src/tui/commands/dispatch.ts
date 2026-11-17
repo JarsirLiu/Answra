@@ -113,18 +113,8 @@ async function handleSessions(args: readonly string[], deps: TuiCommandDeps): Pr
   }
   const session = deps.getSession();
   if (session === undefined) throw new Error("尚未配置模型。");
-  const sessions = await session.listSessions();
-  if (sessions.length === 0) {
-    deps.store.setNotice(["当前 workspace 还没有历史会话。"]);
-    return;
-  }
-  deps.store.setNotice([
-    "历史会话：",
-    ...sessions.map((item) =>
-      sessionLine(item, item.conversationId === session.currentConversationId),
-    ),
-    "使用 /resume <ID 或唯一前缀> 继续；/delete <完整 ID> 删除。",
-  ]);
+  // 列表放进可滚动的面板：notice 会被输入框挤出视口，无法翻看长列表。
+  deps.openPanel("sessions");
 }
 
 async function handleResume(args: readonly string[], deps: TuiCommandDeps): Promise<void> {
