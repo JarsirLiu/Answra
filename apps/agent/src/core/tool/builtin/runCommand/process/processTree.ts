@@ -1,4 +1,4 @@
-/** 终止 shell 子进程树；Windows 会话用 Job Object containment，其余路径回退 taskkill。 */
+/** 终止 shell 子进程树；Windows 路径用 Job Object containment 或 taskkill，POSIX 用进程组阶段升级。 */
 
 import { type ChildProcess, execFile } from "node:child_process";
 import { readFile, rm } from "node:fs/promises";
@@ -7,6 +7,8 @@ const KILL_SETTLE_MS = 200;
 const KILL_CAP_MS = 5_000;
 const CONTAINMENT_PROBE_MS = 2_000;
 const CONTAINMENT_PROBE_INTERVAL_MS = 50;
+const POSIX_TERM_WAIT_MS = 2_000;
+const POSIX_KILL_WAIT_MS = 5_000;
 
 export const JOB_MARKER_ENV = "ANSWRA_SHELL_JOB_MARKER";
 
@@ -21,16 +23,44 @@ export type JobContainment = "ok" | "failed" | "unknown";
  */
 export function terminateProcessTree(child: ChildProcess, jobMarkerPath?: string): Promise<void> {
   if (process.platform === "win32") return terminateWindowsProcessTree(child, jobMarkerPath);
-  terminatePosixProcessTree(child);
-  return Promise.resolve();
+  return terminatePosixProcessTree(child);
 }
 
-function terminatePosixProcessTree(child: ChildProcess): void {
-  if (!child.pid) return;
+async function terminatePosixProcessTree(child: ChildProcess): Promise<void> {
+  const pid = child.pid;
+  if (!pid) return;
+
+  signalPosixProcessGroup(pid, "SIGTERM", child);
+  if (await waitForPosixProcessGroupExit(pid, POSIX_TERM_WAIT_MS)) return;
+
+  signalPosixProcessGroup(pid, "SIGKILL", child);
+  await waitForPosixProcessGroupExit(pid, POSIX_KILL_WAIT_MS);
+}
+
+function signalPosixProcessGroup(pid: number, signal: NodeJS.Signals, child: ChildProcess): void {
   try {
-    process.kill(-child.pid, "SIGTERM");
+    process.kill(-pid, signal);
   } catch (error: unknown) {
-    if (!isMissingProcessError(error)) child.kill("SIGTERM");
+    if (isMissingProcessError(error)) return;
+    child.kill(signal);
+  }
+}
+
+async function waitForPosixProcessGroupExit(pid: number, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (!isPosixProcessGroupAlive(pid)) return true;
+    if (Date.now() >= deadline) return !isPosixProcessGroupAlive(pid);
+    await delay(CONTAINMENT_PROBE_INTERVAL_MS);
+  }
+}
+
+function isPosixProcessGroupAlive(pid: number): boolean {
+  try {
+    process.kill(-pid, 0);
+    return true;
+  } catch (error: unknown) {
+    return !isMissingProcessError(error);
   }
 }
 

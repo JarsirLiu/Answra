@@ -26,6 +26,7 @@ import { NodeWebRtcLink } from "./remote/transport/nodeWebRtcLink";
 import { createProcessInput } from "./transport/input";
 import { openSystemBrowser } from "./transport/openBrowser";
 import { createStreamOutput } from "./transport/output";
+import { onProcessInterrupt } from "./transport/processSignals";
 import { createProcessSecretPrompt } from "./transport/secretPrompt";
 import { createInkTuiRunner } from "./tui/runTui";
 
@@ -87,11 +88,7 @@ async function main(): Promise<void> {
         ),
       createConversationId: randomUUID,
       runTui: createInkTuiRunner(),
-      onInterrupt: (handler) => {
-        const onSigint = (): void => handler();
-        process.on("SIGINT", onSigint);
-        return () => process.off("SIGINT", onSigint);
-      },
+      onInterrupt: (handler) => onProcessInterrupt(handler),
     });
   } catch (error) {
     console.error("[answra] 启动失败", error);

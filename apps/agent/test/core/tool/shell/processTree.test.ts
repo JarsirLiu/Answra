@@ -1,8 +1,14 @@
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   buildWindowsJobBootstrap,
   JOB_MARKER_ENV,
   parseJobContainmentMarker,
+  terminateProcessTree,
 } from "../../../../src/core/tool/builtin/runCommand/process/processTree";
 
 describe("shell process tree", () => {
@@ -28,4 +34,66 @@ describe("shell process tree", () => {
     expect(source).toContain("AssignProcessToJobObject");
     expect(source).toContain("SetInformationJobObject");
   });
+
+  it("escalates to SIGKILL when the POSIX process group ignores SIGTERM", async () => {
+    if (process.platform === "win32") return;
+    const workspace = await mkdtemp(path.join(os.tmpdir(), "answra-shell-signal-"));
+    try {
+      const script = path.join(workspace, "ignore-term.mjs");
+      await writeFile(
+        script,
+        [
+          "process.on('SIGTERM', () => {})",
+          "process.stdout.write('ready\\n')",
+          "setInterval(() => {}, 1_000)",
+        ].join("\n"),
+        "utf8",
+      );
+      const child = spawn(process.execPath, [script], {
+        detached: true,
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+      if (!child.stdout) throw new Error("child stdout is unavailable");
+      await once(child.stdout, "data");
+      const exited = once(child, "exit");
+      const startedAt = Date.now();
+
+      await terminateProcessTree(child);
+      const [, signal] = await exited;
+
+      expect(signal).toBe("SIGKILL");
+      expect(Date.now() - startedAt).toBeGreaterThanOrEqual(1_500);
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  }, 10_000);
+
+  it("terminates a cooperative POSIX process group without waiting for escalation", async () => {
+    if (process.platform === "win32") return;
+    const workspace = await mkdtemp(path.join(os.tmpdir(), "answra-shell-signal-"));
+    try {
+      const script = path.join(workspace, "wait.mjs");
+      await writeFile(
+        script,
+        ["process.stdout.write('ready\\n')", "setInterval(() => {}, 1_000)"].join("\n"),
+        "utf8",
+      );
+      const child = spawn(process.execPath, [script], {
+        detached: true,
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+      if (!child.stdout) throw new Error("child stdout is unavailable");
+      await once(child.stdout, "data");
+      const exited = once(child, "exit");
+      const startedAt = Date.now();
+
+      await terminateProcessTree(child);
+      const [, signal] = await exited;
+
+      expect(signal).toBe("SIGTERM");
+      expect(Date.now() - startedAt).toBeLessThan(1_500);
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  }, 10_000);
 });

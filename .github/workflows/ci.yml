@@ -48,3 +48,26 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+  shell-macos:
+    name: Shell lifecycle on macOS
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Agent shell tests
+        run: pnpm --filter @answra/agent exec vitest run test/core/tool/shell
+
+      - name: CLI signal tests
+        run: pnpm --filter @answra/cli exec vitest run test/transport/processSignals.test.ts

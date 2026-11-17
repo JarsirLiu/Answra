@@ -3,16 +3,16 @@
  * 长命令与 stdin 交互由 sessions.ts 负责，不在本文件维护会话状态。
  */
 
-import { type ChildProcess, spawn } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { StringDecoder } from "node:string_decoder";
 import {
-  buildShellInvocation,
   decodeShellOutput,
   SHELL_OUTPUT_BUFFER_BYTES,
   stripPowerShellErrorWrapper,
   truncateShellOutput,
 } from "../shell/runtime";
 import { terminateProcessTree } from "./processTree";
+import { removeShellJobMarker, spawnShellProcess } from "./spawn";
 
 export interface ShellAction {
   readonly command: string;
@@ -31,14 +31,13 @@ export interface ShellOutputResult {
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 const DEFAULT_MAX_OUTPUT_LENGTH = 8_000;
+const EXIT_DRAIN_MS = 2_000;
 
 type TerminationReason = "timeout" | "aborted" | "output-limit";
 type ShellStream = "stdout" | "stderr";
 
 interface ShellProcessOptions {
-  readonly executable: string;
-  readonly args: readonly string[];
-  readonly syntax: "posix" | "powershell" | "cmd";
+  readonly command: string;
   readonly cwd: string;
   readonly timeoutMs: number;
   readonly maxOutputLength: number;
@@ -48,6 +47,7 @@ interface ShellProcessOptions {
 
 interface ShellProcessState {
   readonly child: ChildProcess;
+  readonly jobMarkerPath?: string;
   readonly output: OutputCollector;
   readonly syntax: "posix" | "powershell" | "cmd";
   readonly signal: AbortSignal | undefined;
@@ -57,6 +57,8 @@ interface ShellProcessState {
   terminationStarted: boolean;
   settled: boolean;
   timer: ReturnType<typeof setTimeout> | undefined;
+  drainTimer: ReturnType<typeof setTimeout> | undefined;
+  termination: Promise<void> | undefined;
   onAbort: () => void;
 }
 
@@ -67,12 +69,9 @@ export class LocalShell {
       action.maxOutputLength,
       DEFAULT_MAX_OUTPUT_LENGTH,
     );
-    const invocation = buildShellInvocation(action.command);
 
     return runShellProcess({
-      executable: invocation.executable,
-      args: invocation.args,
-      syntax: invocation.syntax,
+      command: action.command,
       cwd: action.cwd,
       timeoutMs,
       maxOutputLength,
@@ -86,18 +85,17 @@ function runShellProcess(options: ShellProcessOptions): Promise<ShellOutputResul
   if (options.signal?.aborted) return Promise.reject(createAbortError());
 
   return new Promise((resolve, reject) => {
-    const child = spawn(options.executable, options.args, {
+    const spawned = spawnShellProcess({
+      command: options.command,
       cwd: options.cwd,
-      windowsHide: true,
-      // POSIX 下让子进程成为进程组组长，终止时才能用负 PID 收割整棵树。
-      detached: process.platform !== "win32",
-      // 一次性命令不读取 stdin；避免交互式命令在后台等到超时。
-      stdio: ["ignore", "pipe", "pipe"],
+      stdin: "ignore",
     });
+    const child = spawned.child;
     const state: ShellProcessState = {
       child,
+      ...(spawned.jobMarkerPath && { jobMarkerPath: spawned.jobMarkerPath }),
       output: new OutputCollector(),
-      syntax: options.syntax,
+      syntax: spawned.shellSyntax,
       signal: options.signal,
       maxOutputLength: options.maxOutputLength,
       exitCode: null,
@@ -105,6 +103,8 @@ function runShellProcess(options: ShellProcessOptions): Promise<ShellOutputResul
       terminationStarted: false,
       settled: false,
       timer: undefined,
+      drainTimer: undefined,
+      termination: undefined,
       onAbort: () => undefined,
     };
 
@@ -128,6 +128,10 @@ function runShellProcess(options: ShellProcessOptions): Promise<ShellOutputResul
       emitShellDelta(options, decoders.stderr.write(chunk));
     });
     child.on("error", (error: Error) => settleShellProcess(state, resolve, reject, error));
+    child.on("exit", (code: number | null) => {
+      state.exitCode = code;
+      scheduleDrainSettle(state, resolve, reject);
+    });
     child.on("close", (code: number | null) => {
       state.exitCode = code;
       emitShellDelta(options, decoders.stdout.end());
@@ -135,6 +139,23 @@ function runShellProcess(options: ShellProcessOptions): Promise<ShellOutputResul
       settleShellProcess(state, resolve, reject);
     });
   });
+}
+
+function scheduleDrainSettle(
+  state: ShellProcessState,
+  resolve: (result: ShellOutputResult) => void,
+  reject: (error: Error) => void,
+): void {
+  if (state.settled || state.drainTimer) return;
+  state.drainTimer = setTimeout(() => {
+    state.drainTimer = undefined;
+    if (state.termination) {
+      void state.termination.then(() => settleShellProcess(state, resolve, reject));
+      return;
+    }
+    settleShellProcess(state, resolve, reject);
+  }, EXIT_DRAIN_MS);
+  state.drainTimer.unref();
 }
 
 function emitShellDelta(options: ShellProcessOptions, delta: string): void {
@@ -147,7 +168,7 @@ function terminateShellProcess(state: ShellProcessState, reason: TerminationReas
   state.terminationStarted = true;
   if (state.timer) clearTimeout(state.timer);
   state.timer = undefined;
-  void terminateProcessTree(state.child).catch(() => undefined);
+  state.termination = terminateProcessTree(state.child, state.jobMarkerPath).catch(() => undefined);
 }
 
 function appendShellOutput(state: ShellProcessState, stream: ShellStream, chunk: Buffer): void {
@@ -163,7 +184,16 @@ function settleShellProcess(
   if (state.settled) return;
   state.settled = true;
   if (state.timer) clearTimeout(state.timer);
+  state.timer = undefined;
+  if (state.drainTimer) clearTimeout(state.drainTimer);
+  state.drainTimer = undefined;
   state.signal?.removeEventListener("abort", state.onAbort);
+  state.child.stdout?.destroy();
+  state.child.stderr?.destroy();
+  state.child.stdin?.destroy();
+  if (state.termination)
+    void state.termination.then(() => removeShellJobMarker(state.jobMarkerPath));
+  else void removeShellJobMarker(state.jobMarkerPath);
 
   if (state.terminationReason === "aborted" || state.signal?.aborted) {
     reject(createAbortError());

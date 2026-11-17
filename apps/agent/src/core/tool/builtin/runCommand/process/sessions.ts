@@ -4,14 +4,9 @@
  * processTree.ts 统一收割。
  */
 
-import { type ChildProcess, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { rm } from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
 import { StreamingShellDecoder } from "../../../text/streamDecoder";
-import { buildShellInvocation } from "../shell/runtime";
-import { buildWindowsJobBootstrap, JOB_MARKER_ENV, terminateProcessTree } from "./processTree";
+import { terminateProcessTree } from "./processTree";
 import {
   createAbortError,
   DEFAULT_YIELD_MS,
@@ -37,6 +32,7 @@ import {
   isSessionFinished,
   snapshotSession,
 } from "./sessionOutput";
+import { removeShellJobMarker, spawnShellProcess } from "./spawn";
 
 export class ShellSessionManager {
   private readonly sessions = new Map<string, Session>();
@@ -126,7 +122,11 @@ export class ShellSessionManager {
     options: StartShellSessionOptions,
     timeoutMs: number | undefined,
   ): Session {
-    const { child, jobMarkerPath, shellSyntax } = this.spawn(options.command, options.cwd);
+    const { child, jobMarkerPath, shellSyntax } = spawnShellProcess({
+      command: options.command,
+      cwd: options.cwd,
+      stdin: "pipe",
+    });
     let resolveDone: () => void = () => undefined;
     const done = new Promise<void>((resolve) => {
       resolveDone = resolve;
@@ -202,8 +202,9 @@ export class ShellSessionManager {
   }
 
   private releaseJobMarker(session: Session): void {
-    if (!session.jobMarkerPath) return;
-    void rm(session.jobMarkerPath, { force: true }).catch(() => undefined);
+    if (session.termination)
+      void session.termination.then(() => removeShellJobMarker(session.jobMarkerPath));
+    else void removeShellJobMarker(session.jobMarkerPath);
   }
 
   private resolveProcessExit(session: Session): void {
@@ -213,7 +214,9 @@ export class ShellSessionManager {
 
   private terminate(session: Session, reason: TerminalReason): void {
     if (!this.markTerminated(session, reason)) return;
-    session.termination = terminateProcessTree(session.child, session.jobMarkerPath);
+    session.termination = terminateProcessTree(session.child, session.jobMarkerPath).catch(
+      () => undefined,
+    );
   }
 
   private markTerminated(session: Session, reason: TerminalReason): boolean {
@@ -355,33 +358,6 @@ export class ShellSessionManager {
     } finally {
       signal.removeEventListener("abort", abort);
     }
-  }
-
-  private spawn(
-    command: string,
-    cwd: string,
-  ): {
-    readonly child: ChildProcess;
-    readonly jobMarkerPath?: string | undefined;
-    readonly shellSyntax: "posix" | "powershell" | "cmd";
-  } {
-    const windows = process.platform === "win32";
-    // Windows 每个会话都用 marker 文件把 Job Object containment 结果带回。
-    const jobMarkerPath = windows
-      ? path.join(os.tmpdir(), `answra-shell-job-${randomUUID()}.marker`)
-      : undefined;
-    const invocation = buildShellInvocation(
-      command,
-      windows ? { windowsBootstrap: buildWindowsJobBootstrap() } : {},
-    );
-    const child = spawn(invocation.executable, invocation.args, {
-      cwd,
-      windowsHide: true,
-      detached: !windows,
-      stdio: ["pipe", "pipe", "pipe"],
-      ...(jobMarkerPath && { env: { ...process.env, [JOB_MARKER_ENV]: jobMarkerPath } }),
-    });
-    return { child, jobMarkerPath, shellSyntax: invocation.syntax };
   }
 }
 

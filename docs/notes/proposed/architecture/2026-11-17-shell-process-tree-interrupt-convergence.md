@@ -2,6 +2,8 @@
 
 状态：提案
 
+> 2026-11-17：本提案的进程树、Windows Job Object 共用、POSIX 阶段升级和 CLI 信号覆盖已并入 [RunCommand 统一执行生命周期](./2026-11-17-runcommand-unified-exec-lifecycle.md)；实施以该提案为准，避免两套终止语义。
+
 ## 问题
 
 CLI 的 `RunCommand` 已经是任意命令执行入口，模型可以启动 `pnpm dev`、测试 watcher、本地 server 这类长期进程，也可以启动再派生 Node、Python、`sh -c` 孙进程。用户按 Ctrl-C、关闭终端、或安装包由父进程结束时，如果只回收根进程，这些后代就会变成孤儿，继续占用端口、文件锁和 CPU，用户很难定位来源。
