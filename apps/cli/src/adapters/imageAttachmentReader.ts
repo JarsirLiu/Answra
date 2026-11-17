@@ -25,7 +25,7 @@ export interface ImageAttachmentEnvironment {
   readonly tempPath: (name: string) => string;
 }
 
-const IMAGE_COMMAND_TIMEOUT_MS = 3_000;
+const IMAGE_COMMAND_TIMEOUT_MS = 2_000;
 
 const defaultEnvironment: ImageAttachmentEnvironment = {
   platform: process.platform,
@@ -142,11 +142,11 @@ function mediaTypeFromBuffer(buffer: Buffer): ImageMediaType | undefined {
 
 function windowsClipboardCommand(path: string): ImageCommand {
   const script = [
-    "Add-Type -AssemblyName System.Windows.Forms;",
     "Add-Type -AssemblyName System.Drawing;",
-    "$img = [System.Windows.Forms.Clipboard]::GetImage();",
+    "$img = Get-Clipboard -Format Image;",
     "if ($img -eq $null) { exit 1 };",
     `$img.Save(${powershellString(path)}, [System.Drawing.Imaging.ImageFormat]::Png);`,
+    "$img.Dispose();",
   ].join(" ");
   return {
     command: "powershell.exe",

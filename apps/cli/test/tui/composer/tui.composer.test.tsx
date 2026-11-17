@@ -292,15 +292,51 @@ describe("TUI composer", () => {
 
     expect(readClipboard).toHaveBeenCalledTimes(1);
     expect(instance.lastFrame()).toContain("[Image #1]");
-    expect(instance.lastFrame()).toContain("clipboard.png");
+    expect(instance.lastFrame()).not.toContain("clipboard.png");
 
     instance.stdin.write("\r");
     await nextFrame();
-    expect(onSubmit).toHaveBeenCalledWith("", [image]);
+    expect(onSubmit).toHaveBeenCalledWith("[Image #1]", [image]);
     instance.unmount();
   });
 
-  it("reads a pasted image path and removes the last attachment with Backspace", async () => {
+  it("attaches a clipboard image with Alt-V", async () => {
+    const image = { name: "clipboard.png", dataUrl: "data:image/png;base64,QUJD" };
+    const readClipboard = vi.fn(async () => [image]);
+    const readPath = vi.fn(async () => image);
+    const instance = render(
+      <PromptInput busy={false} imageReader={{ readClipboard, readPath }} onSubmit={vi.fn()} />,
+    );
+
+    instance.stdin.write("\u001bv");
+    await nextFrame();
+
+    expect(readClipboard).toHaveBeenCalledTimes(1);
+    expect(instance.lastFrame()).toContain("[Image #1]");
+    instance.unmount();
+  });
+
+  it("keeps the inline reference in the submitted text", async () => {
+    const image = { name: "capture.png", dataUrl: "data:image/png;base64,QUJD" };
+    const readClipboard = vi.fn(async () => []);
+    const readPath = vi.fn(async () => image);
+    const onSubmit = vi.fn();
+    const instance = render(
+      <PromptInput busy={false} imageReader={{ readClipboard, readPath }} onSubmit={onSubmit} />,
+    );
+
+    instance.stdin.write("\x1b[200~C:\\shots\\capture.png\x1b[201~");
+    await nextFrame();
+    instance.stdin.write("describe this");
+    await nextFrame();
+    instance.stdin.write("\r");
+    await nextFrame();
+
+    expect(onSubmit).toHaveBeenCalledWith("[Image #1] describe this", [image]);
+    instance.unmount();
+  });
+
+  it("reads a pasted image path and drops the image when its reference is deleted", async () => {
     const image = { name: "capture.png", dataUrl: "data:image/png;base64,QUJD" };
     const readClipboard = vi.fn(async () => []);
     const readPath = vi.fn(async () => image);
@@ -317,13 +353,45 @@ describe("TUI composer", () => {
 
     instance.stdin.write("\u007f");
     await nextFrame();
-    expect(instance.lastFrame()).not.toContain("[Image #1]");
+    expect(instance.lastFrame()).not.toContain("[Image #");
 
     instance.stdin.write("describe the workspace");
     await nextFrame();
     instance.stdin.write("\r");
     await nextFrame();
     expect(onSubmit).toHaveBeenCalledWith("describe the workspace");
+    instance.unmount();
+  });
+
+  it("shows the reading state only when clipboard reading is slow", async () => {
+    const image = { name: "clipboard.png", dataUrl: "data:image/png;base64,QUJD" };
+    let release: ((images: readonly (typeof image)[]) => void) | undefined;
+    const readClipboard = vi.fn(
+      () =>
+        new Promise<readonly (typeof image)[]>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const instance = render(
+      <PromptInput
+        busy={false}
+        imageReader={{ readClipboard, readPath: vi.fn(async () => image) }}
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    instance.stdin.write("\u0016");
+    await nextFrame();
+    expect(instance.lastFrame()).not.toContain("正在读取图片");
+
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(instance.lastFrame()).toContain("正在读取图片");
+
+    release?.([image]);
+    await nextFrame();
+    await nextFrame();
+    expect(instance.lastFrame()).not.toContain("正在读取图片");
+    expect(instance.lastFrame()).toContain("[Image #1]");
     instance.unmount();
   });
 });

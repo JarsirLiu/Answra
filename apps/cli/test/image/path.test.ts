@@ -1,6 +1,6 @@
 import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
-import { imagePathsFromText } from "../../src/image/path";
+import { imagePathsFromText, parseImagePaste } from "../../src/image/path";
 
 describe("image path detection", () => {
   it("extracts a quoted absolute Windows path", () => {
@@ -12,6 +12,13 @@ describe("image path detection", () => {
       "C:\\shots\\one.png",
       "C:\\shots\\two.jpg",
     ]);
+  });
+
+  it("extracts multiple image paths separated by spaces before absolute paths", () => {
+    expect(parseImagePaste("C:\\shots\\one.png C:\\shots\\two.jpg")).toEqual({
+      paths: ["C:\\shots\\one.png", "C:\\shots\\two.jpg"],
+      text: "",
+    });
   });
 
   it("keeps spaces inside an absolute path", () => {
@@ -28,6 +35,13 @@ describe("image path detection", () => {
   it("does not treat relative paths or mixed text as image paste", () => {
     expect(imagePathsFromText("shots/capture.png")).toEqual([]);
     expect(imagePathsFromText("look at C:\\shots\\capture.png")).toEqual([]);
+  });
+
+  it("keeps non-image text when parsing mixed image paste", () => {
+    expect(parseImagePaste("look at C:\\shots\\capture.png")).toEqual({
+      paths: ["C:\\shots\\capture.png"],
+      text: "look at",
+    });
   });
 
   it("does not treat unsupported extensions as images", () => {

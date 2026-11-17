@@ -41,7 +41,7 @@ describe("TUI rendering", () => {
     instance.unmount();
   });
 
-  it("does not park the native terminal cursor over the input border", async () => {
+  it("parks the native terminal cursor at the input caret", async () => {
     const stdout = new CursorProbeStdout();
     const stdin = new CursorProbeStdin();
     const instance = inkRender(<PromptInput busy={false} onSubmit={vi.fn()} />, {
@@ -61,7 +61,7 @@ describe("TUI rendering", () => {
     await nextFrame();
     await instance.waitUntilRenderFlush();
 
-    expect(lastParkedCursorColumn(stdout.chunks.join(""))).toBeUndefined();
+    expect(lastParkedCursorColumn(stdout.chunks.join(""))).toBe(5);
     instance.unmount();
   });
 

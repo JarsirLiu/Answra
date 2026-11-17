@@ -2,25 +2,37 @@
 import {
   Box,
   type DOMElement,
+  measureElement,
   Text,
   useApp,
   useBoxMetrics,
+  useCursor,
   useInput,
   usePaste,
   useWindowSize,
 } from "ink";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ImageAttachment } from "../../image/attachment";
-import { imagePathsFromText } from "../../image/path";
+import { parseImagePaste } from "../../image/path";
 import type { ImageAttachmentReader } from "../../image/ports";
 import { POINTER, TUI_THEME } from "../chrome/theme";
 import { CommandPalette } from "../commands/CommandPalette";
 import { completeTuiCommand } from "../commands/catalog";
-import { AttachmentBar } from "./AttachmentBar";
+import {
+  formatImageReference,
+  imageReferenceAfter,
+  imageReferenceBefore,
+  imageReferenceEndingBeforeCursor,
+  imageReferenceStartingAt,
+  referencedImageIds,
+  resolveImageAttachments,
+  stripImageReferences,
+} from "./imageReferences";
 import {
   endOfLineOffset,
   inputLayoutColumns,
   inputVisualLineCount,
+  layoutInput,
   moveCursorVertically,
   nextGraphemeOffset,
   previousGraphemeOffset,
@@ -109,6 +121,7 @@ export function PromptInput({
     anchor: null,
   });
   const attachments = usePromptAttachments({ reader: imageReader, onError: onPasteError });
+  const pruneAttachments = attachments.prune;
   const [history, setHistory] = useState<string[]>([]);
   const [exitArmed, setExitArmed] = useState(false);
   const [paletteSelection, setPaletteSelection] = useState(0);
@@ -120,6 +133,27 @@ export function PromptInput({
     maxVisibleLinesOverride ??
     Math.max(MIN_INPUT_LINES, Math.min(MAX_INPUT_LINES, Math.floor(rows / 2) - 3));
   const selection = secret ? undefined : selectionRange(draft.anchor, draft.cursor);
+  const { setCursorPosition } = useCursor();
+  const inputOrigin = useRef<{ readonly x: number; readonly y: number } | undefined>(undefined);
+  useLayoutEffect(() => {
+    const node = inputRef.current;
+    if (node === null) {
+      inputOrigin.current = undefined;
+      return;
+    }
+    const metrics = measureElement(node);
+    inputOrigin.current = metrics.width > 0 ? { x: metrics.x, y: metrics.y } : undefined;
+  });
+  const origin = inputOrigin.current;
+  if (!active || secret || origin === undefined) {
+    setCursorPosition(undefined);
+  } else {
+    const cursorLayout = layoutInput(draft.value, draft.cursor, columns, maxVisibleLines);
+    setCursorPosition({
+      x: origin.x + cursorLayout.cursorColumn,
+      y: origin.y + cursorLayout.cursorLine - cursorLayout.startLine,
+    });
+  }
   const {
     suggestions,
     hint: commandHint,
@@ -136,6 +170,10 @@ export function PromptInput({
     suggestions[Math.min(paletteSelection, Math.max(0, suggestions.length - 1))];
 
   useEffect(() => () => clearTimeout(exitTimer.current), []);
+
+  useEffect(() => {
+    pruneAttachments(referencedImageIds(draft.value));
+  }, [draft.value, pruneAttachments]);
 
   useEffect(() => {
     onCommandPaletteChange?.(paletteOpen);
@@ -178,16 +216,34 @@ export function PromptInput({
     });
   };
 
+  const insertImages = (images: readonly ImageAttachment[]): void => {
+    const ids = attachments.attach(images);
+    if (ids.length === 0) return;
+    insert(`${ids.map((id) => formatImageReference(id)).join(" ")} `);
+  };
+
+  const pasteClipboardImage = async (): Promise<void> => {
+    insertImages(await attachments.readClipboard());
+  };
+
+  const pasteImagePaths = async (
+    paths: readonly string[],
+    remainingText: string,
+  ): Promise<void> => {
+    insertImages(await attachments.readPaths(paths));
+    if (remainingText.length > 0) insert(remainingText);
+  };
+
   const handlePaste = (text: string): void => {
     const normalized = text.replace(/\r\n?/g, "\n");
     if (imageReader !== undefined) {
       if (normalized.length === 0) {
-        void attachments.readClipboard();
+        void pasteClipboardImage();
         return;
       }
-      const paths = imagePathsFromText(normalized);
-      if (paths.length > 0) {
-        void attachments.readPaths(paths);
+      const paste = parseImagePaste(normalized);
+      if (paste.paths.length > 0) {
+        void pasteImagePaths(paste.paths, paste.text);
         return;
       }
     }
@@ -196,11 +252,15 @@ export function PromptInput({
 
   usePaste(handlePaste, { isActive: active });
 
-  const submitText = (value: string, images: readonly ImageAttachment[] = attachments.images) => {
+  const submitText = (value: string) => {
     const text = value.trim();
+    const images = resolveImageAttachments(value, attachments.entries);
     if (text.length === 0 && images.length === 0 && !allowEmptySubmit) return;
     if (!secret && text.length > 0) rememberCommand(text);
-    if (!secret && historyEnabled && text.length > 0) setHistory((current) => [...current, text]);
+    const historyText = secret ? "" : stripImageReferences(text);
+    if (!secret && historyEnabled && historyText.length > 0) {
+      setHistory((current) => [...current, historyText]);
+    }
     historyIndex.current = -1;
     savedDraft.current = "";
     setExitArmed(false);
@@ -211,7 +271,7 @@ export function PromptInput({
     else onSubmit(text);
   };
 
-  const submit = () => submitText(draft.value, attachments.images);
+  const submit = () => submitText(draft.value);
 
   const browse = (direction: -1 | 1) => {
     if (!historyEnabled || secret || history.length === 0) return;
@@ -241,13 +301,17 @@ export function PromptInput({
         return;
       }
       if ((key.ctrl || key.super) && input === "v" && imageReader !== undefined) {
-        void attachments.readClipboard();
+        void pasteClipboardImage();
+        return;
+      }
+      if (key.meta && input === "v" && imageReader !== undefined) {
+        void pasteClipboardImage();
         return;
       }
       if (key.ctrl && input === "c") {
         if (busy) return;
         if (!exitOnCtrlC) {
-          if (draft.value.length > 0 || attachments.images.length > 0) {
+          if (draft.value.length > 0 || attachments.entries.length > 0) {
             replace("", 0);
             attachments.clear();
           }
@@ -257,7 +321,7 @@ export function PromptInput({
           exit();
           return;
         }
-        if (draft.value.length > 0 || attachments.images.length > 0) {
+        if (draft.value.length > 0 || attachments.entries.length > 0) {
           replace("", 0);
           attachments.clear();
         }
@@ -318,7 +382,7 @@ export function PromptInput({
           return;
         }
         if (selectionActive) return;
-        if (!busy && (draft.value.length > 0 || attachments.images.length > 0)) {
+        if (!busy && (draft.value.length > 0 || attachments.entries.length > 0)) {
           replace("", 0);
           attachments.clear();
         }
@@ -340,13 +404,21 @@ export function PromptInput({
         return;
       }
       if (key.leftArrow) {
-        if (selection !== undefined) replace(draft.value, selection.start);
-        else replace(draft.value, previousGraphemeOffset(draft.value, draft.cursor));
+        if (selection !== undefined) {
+          replace(draft.value, selection.start);
+          return;
+        }
+        const reference = imageReferenceBefore(draft.value, draft.cursor);
+        replace(draft.value, reference?.start ?? previousGraphemeOffset(draft.value, draft.cursor));
         return;
       }
       if (key.rightArrow) {
-        if (selection !== undefined) replace(draft.value, selection.end);
-        else replace(draft.value, nextGraphemeOffset(draft.value, draft.cursor));
+        if (selection !== undefined) {
+          replace(draft.value, selection.end);
+          return;
+        }
+        const reference = imageReferenceAfter(draft.value, draft.cursor);
+        replace(draft.value, reference?.end ?? nextGraphemeOffset(draft.value, draft.cursor));
         return;
       }
       if (key.upArrow) {
@@ -415,16 +487,29 @@ export function PromptInput({
       }
       if (key.backspace) {
         if (removeSelection()) return;
-        if (draft.cursor === 0) {
-          attachments.removeLast();
+        const reference = imageReferenceEndingBeforeCursor(draft.value, draft.cursor);
+        if (reference !== undefined) {
+          edit(
+            draft.value.slice(0, reference.start) + draft.value.slice(reference.end),
+            reference.start,
+          );
           return;
         }
+        if (draft.cursor === 0) return;
         const before = previousGraphemeOffset(draft.value, draft.cursor);
         edit(draft.value.slice(0, before) + draft.value.slice(draft.cursor), before);
         return;
       }
       if (key.delete) {
         if (removeSelection()) return;
+        const reference = imageReferenceStartingAt(draft.value, draft.cursor);
+        if (reference !== undefined) {
+          edit(
+            draft.value.slice(0, reference.start) + draft.value.slice(reference.end),
+            reference.start,
+          );
+          return;
+        }
         if (draft.cursor >= draft.value.length) return;
         const after = nextGraphemeOffset(draft.value, draft.cursor);
         edit(draft.value.slice(0, draft.cursor) + draft.value.slice(after), draft.cursor);
@@ -470,11 +555,7 @@ export function PromptInput({
         flexDirection="column"
         width="100%"
       >
-        <AttachmentBar
-          images={attachments.images}
-          reading={attachments.reading}
-          showHint={showHints}
-        />
+        {attachments.reading ? <Text dimColor>正在读取图片…</Text> : null}
         <Box flexDirection="row" width="100%">
           {showPointer ? (
             <Box flexShrink={0} marginRight={1}>
@@ -485,6 +566,7 @@ export function PromptInput({
             <TextInput
               columns={columns}
               cursor={draft.cursor}
+              highlightImageReferences
               maxVisibleLines={maxVisibleLines}
               placeholder={placeholder}
               secret={secret}
