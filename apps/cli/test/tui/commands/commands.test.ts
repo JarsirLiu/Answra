@@ -4,6 +4,7 @@ import {
   findTuiCommand,
   suggestTuiCommands,
   TUI_COMMANDS,
+  tuiCommandArgumentHint,
   tuiCommandHelpUsage,
   tuiCommandPrefix,
 } from "../../../src/tui/commands/catalog";
@@ -82,7 +83,43 @@ describe("parseTuiCommand", () => {
     expect(suggestTuiCommands("mo").map((command) => command.name)).toEqual(["model"]);
     expect(suggestTuiCommands("log").map((command) => command.name)).toEqual(["login", "logout"]);
     expect(suggestTuiCommands("qu").map((command) => command.name)).toEqual(["exit"]);
+    expect(suggestTuiCommands("压缩").map((command) => command.name)).toEqual(["compact"]);
     expect(suggestTuiCommands("zzz")).toEqual([]);
+  });
+
+  it("keeps exact names and aliases ahead of partial matches", () => {
+    expect(suggestTuiCommands("model").map((command) => command.name)).toEqual(["model"]);
+    expect(suggestTuiCommands("quit").map((command) => command.name)).toEqual(["exit"]);
+  });
+
+  it("puts recently executed commands first for an empty query", () => {
+    expect(suggestTuiCommands("", ["model", "help"]).map((command) => command.name)).toEqual([
+      "model",
+      "help",
+      "clear",
+      "new",
+      "sessions",
+      "resume",
+      "delete",
+      "compact",
+      "config",
+      "login",
+      "logout",
+      "status",
+      "remote",
+      "exit",
+    ]);
+  });
+
+  it("shows argument hints only before real arguments are typed", () => {
+    expect(tuiCommandArgumentHint("/compact")).toBe("[instructions]");
+    expect(tuiCommandArgumentHint("/compact ")).toBe("[instructions]");
+    expect(tuiCommandArgumentHint("/resume ")).toBe("<ID|前缀>");
+    expect(tuiCommandArgumentHint("/compact  ")).toBeUndefined();
+    expect(tuiCommandArgumentHint("/compact 保留迁移")).toBeUndefined();
+    expect(tuiCommandArgumentHint("/help")).toBeUndefined();
+    expect(tuiCommandArgumentHint("/unknown")).toBeUndefined();
+    expect(tuiCommandArgumentHint("compact")).toBeUndefined();
   });
 
   it("completes command names and leaves room for arguments", () => {

@@ -175,6 +175,37 @@ describe("TUI composer", () => {
     instance.unmount();
   });
 
+  it("puts recently executed commands first in the empty slash palette", async () => {
+    const instance = render(<PromptInput busy={false} onSubmit={vi.fn()} />);
+
+    instance.stdin.write("/model");
+    await nextFrame();
+    instance.stdin.write("\r");
+    await nextFrame();
+    instance.stdin.write("/");
+    await nextFrame();
+
+    const lines = (instance.lastFrame() ?? "").split("\n");
+    const modelLine = lines.findIndex((line) => line.includes("/model"));
+    const helpLine = lines.findIndex((line) => line.includes("/help"));
+    expect(modelLine).toBeGreaterThanOrEqual(0);
+    expect(modelLine).toBeLessThan(helpLine);
+    instance.unmount();
+  });
+
+  it("shows argument hints until real arguments are typed", async () => {
+    const instance = render(<PromptInput busy={false} onSubmit={vi.fn()} />);
+
+    instance.stdin.write("/compact");
+    await nextFrame();
+    expect(instance.lastFrame()).toContain("[instructions]");
+
+    instance.stdin.write(" 保留迁移");
+    await nextFrame();
+    expect(instance.lastFrame()).not.toContain("[instructions]");
+    instance.unmount();
+  });
+
   it("dismisses the command palette with Escape and reopens it with Tab", async () => {
     const instance = render(<PromptInput busy={false} onSubmit={vi.fn()} />);
 

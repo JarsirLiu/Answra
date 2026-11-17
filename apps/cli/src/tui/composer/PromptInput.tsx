@@ -15,7 +15,7 @@ import { imagePathsFromText } from "../../image/path";
 import type { ImageAttachmentReader } from "../../image/ports";
 import { POINTER, TUI_THEME } from "../chrome/theme";
 import { CommandPalette } from "../commands/CommandPalette";
-import { completeTuiCommand, suggestTuiCommands, tuiCommandPrefix } from "../commands/catalog";
+import { completeTuiCommand } from "../commands/catalog";
 import { AttachmentBar } from "./AttachmentBar";
 import {
   endOfLineOffset,
@@ -30,6 +30,7 @@ import {
 import { deleteSelection, selectedText, selectionRange } from "./selection";
 import { TextInput } from "./TextInput";
 import { usePromptAttachments } from "./usePromptAttachments";
+import { useTuiCommandHints } from "./useTuiCommandHints";
 
 const CONTROL_HINT = "Enter 发送 · Shift+Enter 或 \\ + Enter 换行 · Esc 取消 · Ctrl-C 两次退出";
 const EXIT_ARM_MS = 2_000;
@@ -118,8 +119,18 @@ export function PromptInput({
   const maxVisibleLines =
     maxVisibleLinesOverride ??
     Math.max(MIN_INPUT_LINES, Math.min(MAX_INPUT_LINES, Math.floor(rows / 2) - 3));
-  const commandPrefix = commandsEnabled && !secret ? tuiCommandPrefix(draft.value) : undefined;
-  const suggestions = commandPrefix === undefined ? [] : suggestTuiCommands(commandPrefix);
+  const selection = secret ? undefined : selectionRange(draft.anchor, draft.cursor);
+  const {
+    suggestions,
+    hint: commandHint,
+    remember: rememberCommand,
+  } = useTuiCommandHints({
+    value: draft.value,
+    cursor: draft.cursor,
+    enabled: commandsEnabled,
+    secret,
+    hasSelection: selection !== undefined,
+  });
   const paletteOpen = !paletteDismissed && suggestions.length > 0;
   const selectedCommand =
     suggestions[Math.min(paletteSelection, Math.max(0, suggestions.length - 1))];
@@ -129,8 +140,6 @@ export function PromptInput({
   useEffect(() => {
     onCommandPaletteChange?.(paletteOpen);
   }, [onCommandPaletteChange, paletteOpen]);
-
-  const selection = secret ? undefined : selectionRange(draft.anchor, draft.cursor);
 
   const replace = (next: string, nextCursor: number) => {
     setDraft({
@@ -190,6 +199,7 @@ export function PromptInput({
   const submitText = (value: string, images: readonly ImageAttachment[] = attachments.images) => {
     const text = value.trim();
     if (text.length === 0 && images.length === 0 && !allowEmptySubmit) return;
+    if (!secret && text.length > 0) rememberCommand(text);
     if (!secret && historyEnabled && text.length > 0) setHistory((current) => [...current, text]);
     historyIndex.current = -1;
     savedDraft.current = "";
@@ -442,7 +452,11 @@ export function PromptInput({
   return (
     <Box flexDirection="column" marginTop={marginTop} width="100%">
       {paletteOpen ? (
-        <CommandPalette commands={suggestions} selectedIndex={paletteSelection} />
+        <CommandPalette
+          columns={windowColumns}
+          commands={suggestions}
+          selectedIndex={paletteSelection}
+        />
       ) : null}
       <Box
         {...(showBorder
@@ -482,6 +496,11 @@ export function PromptInput({
           </Box>
         </Box>
       </Box>
+      {commandHint !== undefined && showHints ? (
+        <Box paddingX={1}>
+          <Text dimColor>{commandHint}</Text>
+        </Box>
+      ) : null}
       {exitArmed && showHints ? (
         <Text dimColor>再按一次 Ctrl-C 退出；输入任意内容可取消。</Text>
       ) : null}

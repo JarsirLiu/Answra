@@ -107,14 +107,54 @@ export function findTuiCommand(name: string): TuiCommandSpec | undefined {
   );
 }
 
-export function suggestTuiCommands(prefix: string): readonly TuiCommandSpec[] {
+export function suggestTuiCommands(
+  prefix: string,
+  recentNames: readonly string[] = [],
+): readonly TuiCommandSpec[] {
   const normalized = prefix.toLowerCase();
-  if (normalized === "") return TUI_COMMANDS;
-  return TUI_COMMANDS.filter(
-    (command) =>
-      command.name.startsWith(normalized) ||
-      command.aliases?.some((alias) => alias.startsWith(normalized)) === true,
-  );
+  if (normalized === "") {
+    const seen = new Set<string>();
+    const ordered: TuiCommandSpec[] = [];
+    for (const name of recentNames) {
+      const command = findTuiCommand(name);
+      if (command !== undefined && !seen.has(command.name)) {
+        seen.add(command.name);
+        ordered.push(command);
+      }
+    }
+    for (const command of TUI_COMMANDS) {
+      if (!seen.has(command.name)) ordered.push(command);
+    }
+    return ordered;
+  }
+  return TUI_COMMANDS.map((command, index) => ({
+    command,
+    index,
+    score: commandMatchScore(command, normalized),
+  }))
+    .filter(
+      (entry): entry is { command: TuiCommandSpec; index: number; score: number } =>
+        entry.score !== undefined,
+    )
+    .sort((left, right) => left.score - right.score || left.index - right.index)
+    .map((entry) => entry.command);
+}
+
+function commandMatchScore(command: TuiCommandSpec, query: string): number | undefined {
+  if (command.name === query) return 0;
+  if (command.aliases?.includes(query) === true) return 1;
+  if (command.name.startsWith(query)) return 2;
+  if (command.aliases?.some((alias) => alias.startsWith(query)) === true) return 3;
+  if (command.summary.toLowerCase().includes(query)) return 4;
+  return undefined;
+}
+
+/** 命令名后没有参数，或只有恰好一个尾随空格时，返回该命令的参数提示。 */
+export function tuiCommandArgumentHint(value: string): string | undefined {
+  const match = /^\/([^\s]+)( ?)$/.exec(value);
+  const name = match?.[1];
+  if (name === undefined) return undefined;
+  return findTuiCommand(name)?.argumentHint;
 }
 
 export function completeTuiCommand(command: TuiCommandSpec): string {
