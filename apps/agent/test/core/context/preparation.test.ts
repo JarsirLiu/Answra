@@ -18,7 +18,6 @@ import { READ_TOOL_NAME } from "../../../src/core/tool/names";
 import { MemoryConversationStore } from "../../../src/core/transcript/memoryStore";
 
 const PROFILE: CompactionProfile = {
-  retainRecentMessages: 1,
   minimumMessagesToSummarize: 1,
 };
 
@@ -32,6 +31,7 @@ const SMALL_BUDGET: ContextBudgetPolicy = {
   pruneTarget: 100,
   minPruneSaving: 400,
   postCompactTarget: 800,
+  summaryMaxTokens: 200,
 };
 
 const MODEL_REQUEST = {
@@ -55,6 +55,7 @@ const PRUNE_ONLY_BUDGET: ContextBudgetPolicy = {
   pruneTarget: 100,
   minPruneSaving: 400,
   postCompactTarget: 2_000,
+  summaryMaxTokens: 500,
 };
 
 const REBUILD_BUDGET: ContextBudgetPolicy = {
@@ -67,6 +68,7 @@ const REBUILD_BUDGET: ContextBudgetPolicy = {
   pruneTarget: 100,
   minPruneSaving: 400,
   postCompactTarget: 2_000,
+  summaryMaxTokens: 500,
 };
 
 function message(id: string, text: string): ConversationMessage {
@@ -151,6 +153,9 @@ describe("ContextPreparation", () => {
 
     expect(rebuild).toHaveBeenCalledOnce();
     expect(result).toEqual({ system: "small", messages: [] });
+    expect((await store.loadContextState("conversation-1"))?.checkpoints.at(-1)).toMatchObject({
+      throughMessageId: "m1",
+    });
   });
 
   it("trims the oldest complete turn when compaction cannot reduce the request", async () => {
@@ -163,7 +168,7 @@ describe("ContextPreparation", () => {
     ];
 
     const result = await preparation(store, {
-      profile: { retainRecentMessages: 2, minimumMessagesToSummarize: 1 },
+      profile: { minimumMessagesToSummarize: 2 },
       generate,
     }).prepareRequest({
       conversationId: "conversation-1",
@@ -184,7 +189,7 @@ describe("ContextPreparation", () => {
 
     await expect(
       preparation(store, {
-        profile: { retainRecentMessages: 2, minimumMessagesToSummarize: 1 },
+        profile: { minimumMessagesToSummarize: 2 },
         generate,
       }).prepareRequest({
         conversationId: "conversation-1",
@@ -586,6 +591,9 @@ describe("ContextPreparation", () => {
     expect(generate).toHaveBeenCalledOnce();
     expect(rebuild).toHaveBeenCalledOnce();
     expect((await store.load("conversation-1")).messages).toHaveLength(2);
+    expect((await store.loadContextState("conversation-1"))?.checkpoints.at(-1)).toMatchObject({
+      throughMessageId: "m2",
+    });
     expect((await store.loadContextState("conversation-1"))?.compaction).toMatchObject({
       state: "succeeded",
       trigger: "manual",
@@ -699,7 +707,10 @@ describe("ContextPreparation", () => {
     const generate = vi.fn(async () => "不应调用");
 
     await expect(
-      preparation(store, { generate }).compactNow({
+      preparation(store, {
+        profile: { minimumMessagesToSummarize: 2 },
+        generate,
+      }).compactNow({
         conversationId: "conversation-1",
         getAccessToken: async () => "token",
         modelRequest: { system: "small", messages: [] },

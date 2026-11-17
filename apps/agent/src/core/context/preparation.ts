@@ -16,6 +16,7 @@ import {
   resolveContextBudget,
 } from "./budget";
 import type { ContextCompactor } from "./compaction/compactor";
+import type { CompactionRetention } from "./compaction/plan";
 import {
   assertToolResultPruningPolicy,
   DEFAULT_TOOL_RESULT_PRUNING_POLICY,
@@ -146,12 +147,15 @@ export class ContextPreparation {
       });
     }
     let projectionChanged = initial.changed;
+    const retention: CompactionRetention = trigger === "manual" ? "none" : "current-user-turn";
 
     const compaction = await this.compactor.prepare({
       conversationId,
       getAccessToken,
       triggerTokens: budget.compactAt,
       contextTokens: initial.tokens,
+      summaryMaxTokens: budget.summaryMaxTokens,
+      retention,
       ...(signal === undefined ? {} : { signal }),
       ...(trigger === undefined ? {} : { trigger }),
       ...(forceCompact ? { force: true } : {}),
@@ -177,6 +181,11 @@ export class ContextPreparation {
         rebuiltTokens,
         undefined,
         budget,
+        {
+          force: true,
+          targetTokens: budget.postCompactTarget,
+          policy: compactionToolResultPruning(this.toolResultPruning),
+        },
       );
       if (rebuiltPruned.prunedCount > 0) {
         prunedToolCallIds = mergePrunedToolCallIds({
@@ -295,6 +304,11 @@ export class ContextPreparation {
     tokens: number,
     anchor: ContextUsageAnchor | undefined,
     budget: ResolvedContextBudget,
+    options: {
+      force?: boolean;
+      targetTokens?: number;
+      policy?: ToolResultPruningPolicy;
+    } = {},
   ): {
     request: ContextModelRequest;
     tokens: number;
@@ -303,7 +317,7 @@ export class ContextPreparation {
     prunedToolCallIds: readonly string[];
     savedTokens: number;
   } {
-    if (tokens < budget.pruneAt) {
+    if (!options.force && tokens < budget.pruneAt) {
       return {
         request,
         tokens,
@@ -319,11 +333,11 @@ export class ContextPreparation {
       : estimateContextRequestTokens;
     const result = pruneOldToolResults({
       request,
-      targetTokens: budget.pruneTarget,
-      policy: this.toolResultPruning,
+      targetTokens: options.targetTokens ?? budget.pruneTarget,
+      policy: options.policy ?? this.toolResultPruning,
       estimateTokens,
     });
-    if (result.savedTokens < budget.minPruneSaving) {
+    if (!options.force && result.savedTokens < budget.minPruneSaving) {
       return {
         request,
         tokens,
@@ -367,6 +381,24 @@ function normalizeCompactionInstructions(value: string | undefined): string | un
     throw new Error(`压缩指令不能超过 ${MANUAL_COMPACTION_INSTRUCTIONS_MAX_CHARS} 个字符`);
   }
   return trimmed;
+}
+
+/** 压缩路径只保护最近 3 个可清结果和当前模型消息，避免当前回合占满预算。 */
+const COMPACTION_PROTECTED_RECENT_RESULTS = 3;
+const COMPACTION_PROTECTED_RECENT_MESSAGES = 1;
+
+function compactionToolResultPruning(policy: ToolResultPruningPolicy): ToolResultPruningPolicy {
+  return {
+    ...policy,
+    protectedRecentResults: Math.min(
+      policy.protectedRecentResults,
+      COMPACTION_PROTECTED_RECENT_RESULTS,
+    ),
+    protectedRecentMessages: Math.min(
+      policy.protectedRecentMessages,
+      COMPACTION_PROTECTED_RECENT_MESSAGES,
+    ),
+  };
 }
 
 function errorText(error: unknown): string {

@@ -9,7 +9,7 @@ import {
   markContextCompactionSucceeded,
   startContextCompaction,
 } from "./lifecycle";
-import type { CompactionSkipReason } from "./plan";
+import type { CompactionRetention, CompactionSkipReason } from "./plan";
 import type { CompactionProfile } from "./profile";
 
 export interface ContextSummaryRequest extends SummaryGeneratorInput {
@@ -44,6 +44,10 @@ export interface ContextCompactionRequest {
   triggerTokens: number;
   /** 最终模型请求的保守 token 估算；缺省时退回 transcript 估算。 */
   contextTokens?: number;
+  /** 压缩后保留的原始消息范围；手动压缩可只留摘要。 */
+  retention?: CompactionRetention;
+  /** 摘要输出上限；缺省使用 256k 窗口的基准值。 */
+  summaryMaxTokens?: number;
   /** 手动压缩跳过触发点判断，但仍保留最少消息数与保留尾段约束。 */
   force?: boolean;
   /** 手动压缩的一次性摘要偏好；自动与超限兜底不传。 */
@@ -81,6 +85,8 @@ export class ContextCompactor {
     trigger = "auto",
     triggerTokens,
     contextTokens,
+    retention = "current-user-turn",
+    summaryMaxTokens,
     force,
     instructions,
     bypassFailureBreaker = false,
@@ -95,9 +101,11 @@ export class ContextCompactor {
         messages: snapshot.messages,
         state,
         profile: this.profile,
+        retention,
         triggerTokens,
         force: force === true,
         ...(contextTokens === undefined ? {} : { contextTokens }),
+        ...(summaryMaxTokens === undefined ? {} : { summaryMaxTokens }),
         ...(instructions === undefined ? {} : { instructions }),
         signal,
         now: this.now,

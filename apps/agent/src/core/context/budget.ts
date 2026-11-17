@@ -21,6 +21,8 @@ export interface ContextBudgetPolicy {
   minPruneSaving: number;
   /** 摘要压缩后的软目标；仍超限时先裁到该目标，再受输入硬上限约束。 */
   postCompactTarget: number;
+  /** 单次会话摘要允许占用的最大 token；超过时先缩短，再硬截断。 */
+  summaryMaxTokens: number;
 }
 
 /** 解析后的硬上限与触发点；业务只消费这些派生值。 */
@@ -38,6 +40,7 @@ export interface ResolvedContextBudget {
   pruneTarget: number;
   minPruneSaving: number;
   postCompactTarget: number;
+  summaryMaxTokens: number;
 }
 
 const BASE_CONTEXT_WINDOW = 256_000;
@@ -46,7 +49,10 @@ const BASE_SAFETY_TOKENS = 12_000;
 const BASE_FIXED_OVERHEAD_TOKENS = 8_000;
 const BASE_PRUNE_AT = 172_000;
 const BASE_PRUNE_TARGET = 40_000;
-const BASE_POST_COMPACT_TARGET = 120_000;
+const BASE_POST_COMPACT_TARGET = 16_000;
+/** 256k 窗口下的摘要 token 上限；ContextCompactor 的直接调用也以此为默认值。 */
+export const DEFAULT_SUMMARY_MAX_TOKENS = 4_000;
+const MIN_SUMMARY_MAX_TOKENS = 2_000;
 
 /** 按模型窗口等比缩放预算；256k 时得到首版基准值，小窗口不会沿用固定 172k 触发点。 */
 export function contextBudgetPolicyForWindow(contextWindow: number): ContextBudgetPolicy {
@@ -73,6 +79,10 @@ export function contextBudgetPolicyForWindow(contextWindow: number): ContextBudg
       1,
       Math.floor((contextWindow * BASE_POST_COMPACT_TARGET) / BASE_CONTEXT_WINDOW),
     ),
+    summaryMaxTokens: Math.max(
+      MIN_SUMMARY_MAX_TOKENS,
+      Math.floor(DEFAULT_SUMMARY_MAX_TOKENS * scale),
+    ),
   };
 }
 
@@ -98,6 +108,7 @@ export function resolveContextBudget(
   assertNonNegativeInteger(policy.pruneTarget, "pruneTarget");
   assertNonNegativeInteger(policy.minPruneSaving, "minPruneSaving");
   assertPositiveInteger(policy.postCompactTarget, "postCompactTarget");
+  assertPositiveInteger(policy.summaryMaxTokens, "summaryMaxTokens");
 
   const inputLimit =
     policy.contextWindow -
@@ -123,6 +134,7 @@ export function resolveContextBudget(
     pruneTarget: policy.pruneTarget,
     minPruneSaving: policy.minPruneSaving,
     postCompactTarget: Math.min(policy.postCompactTarget, inputLimit),
+    summaryMaxTokens: policy.summaryMaxTokens,
   };
 }
 

@@ -1,11 +1,13 @@
 import type { ConversationMessage } from "@answra/shared";
 import { describe, expect, it } from "vitest";
-import { planCompaction } from "../../../src/core/context/compaction/plan";
+import {
+  type CompactionRetention,
+  planCompaction,
+} from "../../../src/core/context/compaction/plan";
 import type { CompactionProfile } from "../../../src/core/context/compaction/profile";
 import type { ContextCheckpoint } from "../../../src/core/transcript/contextCheckpoint";
 
 const PROFILE: CompactionProfile = {
-  retainRecentMessages: 2,
   minimumMessagesToSummarize: 2,
 };
 
@@ -34,15 +36,29 @@ function checkpoint(throughMessageId: string, summary = "旧摘要"): ContextChe
   };
 }
 
+function plan(
+  messages: ConversationMessage[],
+  retention: CompactionRetention,
+  options: {
+    checkpoint?: ContextCheckpoint;
+    triggerTokens?: number;
+    force?: boolean;
+  } = {},
+) {
+  return planCompaction({
+    messages,
+    checkpoint: options.checkpoint,
+    profile: PROFILE,
+    retention,
+    triggerTokens: options.triggerTokens ?? TRIGGER_TOKENS,
+    ...(options.force ? { force: true } : {}),
+  });
+}
+
 describe("context compaction plan", () => {
   it("keeps recent messages untouched when the context is below budget", () => {
     expect(
-      planCompaction({
-        messages: [message("m1", "短")],
-        checkpoint: undefined,
-        profile: PROFILE,
-        triggerTokens: 100,
-      }),
+      plan([message("m1", "短")], "current-user-turn", { triggerTokens: 100 }),
     ).toBeUndefined();
   });
 
@@ -54,26 +70,16 @@ describe("context compaction plan", () => {
       message("m4", "保留消息二", "assistant"),
     ];
 
+    expect(plan(messages, "current-user-turn", { triggerTokens: 100 })).toBeUndefined();
     expect(
-      planCompaction({
-        messages,
-        checkpoint: undefined,
-        profile: PROFILE,
-        triggerTokens: 100,
-      }),
-    ).toBeUndefined();
-    expect(
-      planCompaction({
-        messages,
-        checkpoint: undefined,
-        profile: PROFILE,
+      plan(messages, "current-user-turn", {
         triggerTokens: 100,
         force: true,
       })?.messagesToSummarize.map((item) => item.id),
     ).toEqual(["m1", "m2"]);
   });
 
-  it("summarizes the oldest messages and retains the configured tail", () => {
+  it("summarizes everything before the last user message and retains the current turn", () => {
     const messages = [
       message("m1", "第一轮需求"),
       message("m2", "第一轮回答", "assistant"),
@@ -83,15 +89,36 @@ describe("context compaction plan", () => {
       message("m6", "第三轮回答", "assistant"),
     ];
 
-    const plan = planCompaction({
-      messages,
-      checkpoint: undefined,
-      profile: PROFILE,
-      triggerTokens: TRIGGER_TOKENS,
-    });
+    const result = plan(messages, "current-user-turn");
 
-    expect(plan?.messagesToSummarize.map((item) => item.id)).toEqual(["m1", "m2", "m3", "m4"]);
-    expect(plan?.retainedMessages.map((item) => item.id)).toEqual(["m5", "m6"]);
+    expect(result?.messagesToSummarize.map((item) => item.id)).toEqual(["m1", "m2", "m3", "m4"]);
+    expect(result?.retainedMessages.map((item) => item.id)).toEqual(["m5", "m6"]);
+  });
+
+  it("drops the whole tail for manual compaction", () => {
+    const messages = [
+      message("m1", "第一轮需求"),
+      message("m2", "第一轮回答", "assistant"),
+      message("m3", "第二轮需求"),
+      message("m4", "第二轮回答", "assistant"),
+    ];
+
+    const result = plan(messages, "none");
+
+    expect(result?.messagesToSummarize.map((item) => item.id)).toEqual(["m1", "m2", "m3", "m4"]);
+    expect(result?.retainedMessages).toEqual([]);
+  });
+
+  it("summarizes all messages when there is no user message to retain", () => {
+    const messages = [
+      message("m1", "内部步骤一", "assistant"),
+      message("m2", "内部步骤二", "assistant"),
+    ];
+
+    const result = plan(messages, "current-user-turn");
+
+    expect(result?.messagesToSummarize.map((item) => item.id)).toEqual(["m1", "m2"]);
+    expect(result?.retainedMessages).toEqual([]);
   });
 
   it("does not re-summarize messages already covered by the latest checkpoint", () => {
@@ -104,25 +131,25 @@ describe("context compaction plan", () => {
       message("m6", "最新回答", "assistant"),
     ];
 
-    const plan = planCompaction({
-      messages,
+    const result = plan(messages, "current-user-turn", {
       checkpoint: checkpoint("m2"),
-      profile: PROFILE,
       triggerTokens: 1,
     });
 
-    expect(plan?.messagesToSummarize.map((item) => item.id)).toEqual(["m3", "m4"]);
-    expect(plan?.retainedMessages.map((item) => item.id)).toEqual(["m5", "m6"]);
+    expect(result?.messagesToSummarize.map((item) => item.id)).toEqual(["m3", "m4"]);
+    expect(result?.retainedMessages.map((item) => item.id)).toEqual(["m5", "m6"]);
   });
 
   it("refuses to compact when the checkpoint no longer exists", () => {
     expect(
-      planCompaction({
-        messages: [message("m1", "新消息")],
+      plan([message("m1", "新消息")], "current-user-turn", {
         checkpoint: checkpoint("missing"),
-        profile: PROFILE,
         triggerTokens: 1,
       }),
     ).toBeUndefined();
+  });
+
+  it("refuses to compact when there are not enough messages before the current turn", () => {
+    expect(plan([message("m1", "当前需求")], "current-user-turn", { force: true })).toBeUndefined();
   });
 });

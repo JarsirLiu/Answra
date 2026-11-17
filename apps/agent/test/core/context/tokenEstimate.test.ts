@@ -4,6 +4,8 @@ import {
   calibrateContextTokens,
   estimateContextRequestTokens,
   estimateMessageTokens,
+  estimateTextTokens,
+  truncateTextToTokenBudget,
 } from "../../../src/core/context/tokenEstimate";
 
 function message(overrides: Partial<ConversationMessage> = {}): ConversationMessage {
@@ -96,6 +98,14 @@ describe("context token estimate", () => {
     });
 
     expect(failed).toBeLessThan(completed);
+  });
+
+  it("truncates text to the same conservative token budget", () => {
+    const ascii = "x".repeat(400);
+    expect(truncateTextToTokenBudget(ascii, 50)).toBe("x".repeat(200));
+    expect(estimateTextTokens(truncateTextToTokenBudget(ascii, 50))).toBe(50);
+    expect(truncateTextToTokenBudget("中文内容", 2)).toBe("中文");
+    expect(truncateTextToTokenBudget("中文内容", 0)).toBe("");
   });
 
   it("calibrates a raw estimate with the last successful run usage", () => {

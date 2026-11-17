@@ -13,6 +13,7 @@ const BUDGET = resolveContextBudget({
   pruneTarget: 100,
   minPruneSaving: 400,
   postCompactTarget: 1_200,
+  summaryMaxTokens: 200,
 });
 
 function message(role: "user" | "assistant", content: string): ModelMessage {

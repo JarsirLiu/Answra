@@ -3,9 +3,11 @@ import type { ConversationMessage } from "@answra/shared";
 import { isContextOverflowError } from "../../model/contextOverflow";
 import { type ContextCheckpoint, latestCheckpoint } from "../../transcript/contextCheckpoint";
 import type { ContextState } from "../../transcript/contextState";
-import { type CompactionSkipReason, decideCompaction } from "./plan";
+import { DEFAULT_SUMMARY_MAX_TOKENS } from "../budget";
+import { estimateTextTokens, truncateTextToTokenBudget } from "../tokenEstimate";
+import { type CompactionRetention, type CompactionSkipReason, decideCompaction } from "./plan";
 import type { CompactionProfile } from "./profile";
-import { buildSummaryPrompt } from "./prompt";
+import { buildSummaryPrompt, buildSummaryShorteningPrompt } from "./prompt";
 import { dropOldestSummaryTurn, renderMessagesForSummary } from "./transcript";
 
 const MAX_SUMMARY_OVERFLOW_RETRIES = 3;
@@ -29,10 +31,12 @@ export async function compactContext({
   messages,
   state,
   profile,
+  retention,
   triggerTokens,
   contextTokens,
   force = false,
   instructions,
+  summaryMaxTokens = DEFAULT_SUMMARY_MAX_TOKENS,
   generate,
   signal,
   now = () => new Date(),
@@ -41,10 +45,13 @@ export async function compactContext({
   messages: readonly ConversationMessage[];
   state: ContextState | undefined;
   profile: CompactionProfile;
+  retention: CompactionRetention;
   triggerTokens: number;
   contextTokens?: number;
   /** 手动压缩跳过触发点判断。 */
   force?: boolean;
+  /** 摘要输出上限；超过时先请求模型缩短，再确定性截断。 */
+  summaryMaxTokens?: number;
   /** 手动压缩的一次性摘要偏好；自动与超限恢复不传。 */
   instructions?: string;
   generate: SummaryGenerator;
@@ -57,6 +64,7 @@ export async function compactContext({
     messages,
     checkpoint: previous,
     profile,
+    retention,
     triggerTokens,
     force,
     ...(contextTokens === undefined ? {} : { contextTokens }),
@@ -89,6 +97,12 @@ export async function compactContext({
     }
   }
   if (!summary) throw new Error("上下文摘要为空");
+  summary = await enforceSummaryBudget({
+    summary,
+    maxTokens: summaryMaxTokens,
+    generate,
+    ...(signal ? { signal } : {}),
+  });
   const checkpoint = createCheckpoint({
     summary,
     previous,
@@ -106,6 +120,44 @@ export async function compactContext({
     },
     summarizedMessages: plan.messagesToSummarize.length,
   };
+}
+
+/** 摘要超限时先让模型缩短；缩短失败再按预算硬截断并标注。 */
+async function enforceSummaryBudget({
+  summary,
+  maxTokens,
+  generate,
+  signal,
+}: {
+  summary: string;
+  maxTokens: number;
+  generate: SummaryGenerator;
+  signal?: AbortSignal;
+}): Promise<string> {
+  if (estimateTextTokens(summary) <= maxTokens) return summary;
+  let candidate = summary;
+  try {
+    const shortened = (
+      await generate({
+        prompt: buildSummaryShorteningPrompt({ summary, maxTokens }),
+        ...(signal ? { signal } : {}),
+      })
+    ).trim();
+    if (shortened) {
+      candidate = shortened;
+      if (estimateTextTokens(shortened) <= maxTokens) return shortened;
+    }
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    // 缩短请求失败时退化为确定性截断，不能把超长摘要写进检查点。
+    console.warn("[context-compaction] summary shortening failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  const marker = "\n\n[摘要因长度限制已截断]";
+  const contentBudget = Math.max(1, maxTokens - estimateTextTokens(marker));
+  const truncated = truncateTextToTokenBudget(candidate, contentBudget).trimEnd();
+  return `${truncated}${marker}`;
 }
 
 function createCheckpoint({

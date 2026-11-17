@@ -26,7 +26,7 @@ function reasoningPart(id: string, text: string): ConversationMessagePart {
   return { id, kind: "reasoning", text, state: "completed" };
 }
 
-function toolPart(id: string): ConversationMessagePart {
+function toolPart(id: string, output = "工具原始输出"): ConversationMessagePart {
   return {
     id,
     kind: "tool",
@@ -34,12 +34,12 @@ function toolPart(id: string): ConversationMessagePart {
     toolName: "Read",
     state: "completed",
     input: { path: "secret.txt" },
-    output: "工具原始输出",
+    output,
   };
 }
 
 describe("context summary transcript", () => {
-  it("renders only the message body and excludes reasoning and tool details", () => {
+  it("renders message bodies and tool details while excluding reasoning and duplicate parts", () => {
     const transcript = renderMessagesForSummary([
       message("u1", "user", "用户正文", [textPart("u1-part", "part 用户正文")]),
       message("a1", "assistant", "助手正文", [
@@ -53,12 +53,13 @@ describe("context summary transcript", () => {
 
     expect(transcript).toContain("### 用户\n用户正文");
     expect(transcript).toContain("### 助手\n助手正文");
+    expect(transcript).toContain("[工具调用 Read]");
+    expect(transcript).toContain("secret.txt");
+    expect(transcript).toContain("工具原始输出");
     expect(transcript).not.toContain("part 用户正文");
     expect(transcript).not.toContain("part 助手正文");
     expect(transcript).not.toContain("内部思考");
     expect(transcript).not.toContain("只有思考");
-    expect(transcript).not.toContain("工具原始输出");
-    expect(transcript).not.toContain("secret.txt");
     expect(transcript).not.toContain("### 助手\n\n");
   });
 
@@ -90,5 +91,31 @@ describe("context summary transcript", () => {
     ]);
 
     expect(transcript).toBe("");
+  });
+
+  it("keeps the head and tail of an oversized tool result and marks the truncation", () => {
+    const output = `${"H".repeat(1_200)}MIDDLE_MARKER${"T".repeat(800)}`;
+    const transcript = renderMessagesForSummary([
+      message("a1", "assistant", "", [toolPart("a1-tool", output)]),
+    ]);
+
+    expect(transcript).toContain("[已截断]");
+    expect(transcript).toContain("H".repeat(100));
+    expect(transcript).toContain("T".repeat(100));
+    expect(transcript).not.toContain("MIDDLE_MARKER");
+  });
+
+  it("drops the oldest tool sections when the total tool budget is exhausted", () => {
+    const messages = Array.from({ length: 30 }, (_, index) =>
+      message(`a${index}`, "assistant", "", [
+        toolPart(`tool-${index}`, `old-${index}-${"x".repeat(2_000)}`),
+      ]),
+    );
+
+    const transcript = renderMessagesForSummary(messages);
+
+    expect(transcript).toContain("[更早工具结果未进入摘要]");
+    expect(transcript).not.toContain("old-0-");
+    expect(transcript).toContain("old-29-");
   });
 });

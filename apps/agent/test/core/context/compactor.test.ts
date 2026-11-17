@@ -5,7 +5,6 @@ import type { CompactionProfile } from "../../../src/core/context/compaction/pro
 import { MemoryConversationStore } from "../../../src/core/transcript/memoryStore";
 
 const PROFILE: CompactionProfile = {
-  retainRecentMessages: 1,
   minimumMessagesToSummarize: 1,
 };
 
@@ -92,7 +91,7 @@ describe("ContextCompactor", () => {
     expect((await store.load("conversation-1")).activeRunId).toBe("run-1");
     expect((await store.loadContextState("conversation-1"))?.checkpoints.at(-1)).toMatchObject({
       summary: "压缩后的摘要",
-      throughMessageId: "m3",
+      throughMessageId: "m2",
     });
   });
 

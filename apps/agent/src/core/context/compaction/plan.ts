@@ -1,4 +1,4 @@
-/** 选择可摘要的旧消息与保留尾段；只按完整 transcript 消息切分。 */
+/** 选择可摘要的旧消息与保留的当前回合；只按完整 transcript 消息切分。 */
 import type { ConversationMessage } from "@answra/shared";
 import {
   type ContextCheckpoint,
@@ -21,10 +21,18 @@ export type CompactionPlanDecision =
   | { status: "plan"; plan: CompactionPlan }
   | { status: "skip"; reason: CompactionSkipReason };
 
+/**
+ * 摘要后保留多少原始消息：
+ * - `none`：手动压缩，模型投影只保留摘要；
+ * - `current-user-turn`：保留最后一条真实用户消息及其后的当前回合。
+ */
+export type CompactionRetention = "none" | "current-user-turn";
+
 interface CompactionPlanInput {
   messages: readonly ConversationMessage[];
   checkpoint: ContextCheckpoint | undefined;
   profile: CompactionProfile;
+  retention: CompactionRetention;
   triggerTokens: number;
   /** 最终模型请求的估算值；缺省时退回摘要 + checkpoint 后消息的旧估算。 */
   contextTokens?: number;
@@ -42,7 +50,8 @@ export function decideCompaction(input: CompactionPlanInput): CompactionPlanDeci
   if (!input.force && estimatedTokens < input.triggerTokens) {
     return { status: "skip", reason: "below-threshold" };
   }
-  const summarizeCount = pending.length - input.profile.retainRecentMessages;
+  const summarizeCount =
+    input.retention === "none" ? pending.length : lastUserMessageIndex(pending);
   if (summarizeCount < input.profile.minimumMessagesToSummarize) {
     return { status: "skip", reason: "insufficient-messages" };
   }
@@ -58,4 +67,12 @@ export function decideCompaction(input: CompactionPlanInput): CompactionPlanDeci
 export function planCompaction(input: CompactionPlanInput): CompactionPlan | undefined {
   const decision = decideCompaction(input);
   return decision.status === "plan" ? decision.plan : undefined;
+}
+
+/** 没有用户消息时摘要全部，避免把内部运行的历史永久留在投影里。 */
+function lastUserMessageIndex(messages: readonly ConversationMessage[]): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.role === "user") return index;
+  }
+  return messages.length;
 }

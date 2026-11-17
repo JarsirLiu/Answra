@@ -19,6 +19,36 @@ export function estimateTextTokens(text: string): number {
   return cjkCount + Math.ceil((text.length - cjkCount) / ASCII_CHARS_PER_TOKEN);
 }
 
+/** 按同一保守口径截断文本到 token 预算；可能切在 ASCII 分组中间，误差不超过 1 token。 */
+export function truncateTextToTokenBudget(text: string, maxTokens: number): string {
+  if (maxTokens <= 0) return "";
+  if (estimateTextTokens(text) <= maxTokens) return text;
+  let tokens = 0;
+  let asciiChars = 0;
+  let end = 0;
+  let completeEnd = 0;
+  for (const char of text) {
+    const codePoint = char.codePointAt(0) ?? 0;
+    if (isCjk(codePoint)) {
+      if (tokens + 1 > maxTokens) break;
+      tokens += 1;
+      asciiChars = 0;
+      end += char.length;
+      completeEnd = end;
+    } else {
+      asciiChars += 1;
+      end += char.length;
+      if (asciiChars === ASCII_CHARS_PER_TOKEN) {
+        if (tokens + 1 > maxTokens) break;
+        tokens += 1;
+        asciiChars = 0;
+        completeEnd = end;
+      }
+    }
+  }
+  return text.slice(0, completeEnd);
+}
+
 /** 估算单条 transcript 消息进入模型后的 token 数；有 parts 时不再重复计算 text。 */
 export function estimateMessageTokens(message: ConversationMessage): number {
   let tokens = message.images.length * IMAGE_TOKEN_ESTIMATE;
