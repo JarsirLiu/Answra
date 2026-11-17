@@ -1,6 +1,6 @@
-/** 底部状态行：Bot/模型可收缩，上下文百分比与阶段固定可见，工作区只占剩余列并截断中间。 */
+/** 底部状态行：Bot/模型可收缩，上下文用量与阶段固定可见，工作区只占剩余列并截断中间。 */
 import type { ContextUsage } from "@answra/shared";
-import { contextUsagePercent } from "@answra/ui/conversation-view";
+import { formatContextTokens } from "@answra/ui/conversation-view";
 import { Box, Text } from "ink";
 import type { TuiRunPhase } from "../app/viewStore";
 
@@ -25,7 +25,12 @@ export function StatusLine({
   phase: TuiRunPhase;
   contextUsage?: ContextUsage;
 }) {
-  const context = contextUsage ? `ctx ${contextUsagePercent(contextUsage)}%` : undefined;
+  const context =
+    contextUsage === undefined
+      ? undefined
+      : `ctx ${formatContextTokens(contextUsage.usedTokens)}/${formatContextTokens(
+          contextUsage.inputLimit,
+        )}`;
   return (
     <Box flexDirection="row" width="100%">
       <Box flexShrink={1} minWidth={0}>

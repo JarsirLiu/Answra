@@ -38,18 +38,18 @@ async function renderStatusLine(model: string) {
 }
 
 describe("status line", () => {
-  it("shows a compact context percentage instead of a truncated token pair", async () => {
+  it("shows the concrete context token pair instead of a percentage", async () => {
     const frame = await renderStatusLine("deepseek-v4.1-flash-1017");
 
-    expect(frame).toContain("ctx 21%");
-    expect(frame).not.toContain("45k/216k");
+    expect(frame).toContain("ctx 45k/216k");
+    expect(frame).not.toContain("21%");
     expect(frame).toContain("idle");
   });
 
-  it("keeps the context percentage when the model name is too long", async () => {
+  it("keeps the context token pair when the model name is too long", async () => {
     const frame = await renderStatusLine("m".repeat(200));
 
-    expect(frame).toContain("ctx 21%");
+    expect(frame).toContain("ctx 45k/216k");
     expect(frame).toContain("idle");
   });
 });
