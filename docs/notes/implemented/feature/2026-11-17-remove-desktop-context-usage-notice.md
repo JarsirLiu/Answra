@@ -2,6 +2,8 @@
 
 状态：已实施
 
+> 2026-11-17 修订：`ContextPruningNotice` 也已从桌面移除，见[移除桌面 AI 对话的清理提示](2026-11-17-remove-desktop-context-pruning-notice.md)。本 Note 中“仍显示清理提示”的表述现仅适用于 CLI。
+
 ## 问题
 
 桌面 `ChatPanel` 在每轮回复后显示 `ContextUsageNotice`：
@@ -18,20 +20,20 @@
 - `packages/ui/src/components/chat/index.ts`：删除组件导出。
 - `packages/ui/src/app/contextUsage.ts`：删除只服务该组件文案的 `contextUsageLabel`。
 - `packages/ui/src/app/conversationView.ts`：删除 `contextUsageLabel` 再导出。
-- `packages/ui/test/ChatPanel.test.tsx`：移除 usage 渲染断言，保留真实清理提示断言。
+- `packages/ui/test/ChatPanel.test.tsx`：移除 usage 渲染断言；清理提示断言随后也移除（见修订）。
 - 相关 Note：[256k 上下文预算与旧工具结果清理](../architecture/2026-11-13-context-budget-and-tool-result-clearing.md)、[上下文压缩与归档](../../proposed/architecture/2026-11-13-conversation-context-compaction-and-archive.md)。
 
 ## 影响表面
 
 - 桌面 AI 对话不再显示常驻的“上下文约 / 工具清理阈值 / 摘要压缩阈值”行。
-- 真实发生旧工具结果清理时，仍显示 `ContextPruningNotice`，文案是“已清理 N 个旧工具结果，节省约 X token”；该提示只由 `ContextPruningStatus` 驱动，`prunedCount > 0` 才出现。
+- 真实发生旧工具结果清理时，桌面也不再显示提示；CLI 仍显示 `ContextPruningNotice`，文案是“已清理 N 个旧工具结果，节省约 X token”；该提示只由 `ContextPruningStatus` 驱动，`prunedCount > 0` 才出现。
 - CLI 状态行的 `ctx N%`、`/status` 的完整用量和 CLI 尾部清理提示不变。
 - `ConversationSnapshot.contextUsage` 与 `ConversationView.contextUsage` 保留，CLI 和其他消费者继续使用；本次只改桌面展示。
 
 ## 决定
 
 - 删除桌面 `ContextUsageNotice` 及其 `ChatPanel` prop，不再在对话流末尾显示上下文占用/阈值行。
-- 保留 `contextUsagePercent`、`formatContextTokens` 和 `contextPruningLabel`，分别供 CLI 状态行、`/status` 与清理提示使用。
+- 保留 `contextUsagePercent`、`formatContextTokens` 和 `contextPruningLabel`，分别供 CLI 状态行、`/status` 与 CLI 清理提示使用。
 - 不修改 `ContextPreparation` 写入的 `contextUsage`，也不修改 snapshot 契约。
 - 不在桌面用阈值替代清理事件；阈值不是清理结果，不能出现在“已清理”语义的提示里。
 
@@ -48,7 +50,7 @@
 - 代价是桌面不再显示当前上下文占用；需要诊断时使用 CLI 状态行、`/status` 或日志。
 - 防回退：
   - 不得在桌面用 `usedTokens` / `pruneAt` / `compactAt` 拼出暗示“已清理”的常驻文案；
-  - 真实清理提示必须继续由 `ContextPruningStatus` 且仅在 `prunedCount > 0` 时展示；
+  - CLI 清理提示必须继续由 `ContextPruningStatus` 且仅在 `prunedCount > 0` 时展示；
   - 不得把阈值当作清理节省量传给 `ContextPruningNotice`；
   - 重新引入用量展示时，必须把“当前占用”和“触发阈值”分成不同语义，并明确阈值不是已发生事件。
 
@@ -56,4 +58,4 @@
 
 - `pnpm --filter @answra/ui exec vitest run test/ChatPanel.test.tsx`
 - `pnpm --filter @answra/ui typecheck`
-- 覆盖：删除 usage 渲染后，`ChatPanel` 仍显示真实 `ContextPruningStatus` 文案；无 `contextUsage` prop 的类型检查通过。
+- 覆盖：删除 usage 渲染后，`ChatPanel` 不再显示 `contextUsage`/`contextPruning` 文案；无相关 prop 的类型检查通过。

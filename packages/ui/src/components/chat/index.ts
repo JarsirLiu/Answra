@@ -16,7 +16,6 @@ export {
   formatConnectionNotice,
 } from "./ConnectionNotice";
 export { ContextCompactionNotice } from "./ContextCompactionNotice";
-export { ContextPruningNotice } from "./ContextPruningNotice";
 export { MessageActions } from "./MessageActions";
 export { MessageStream, useFollowLatest } from "./MessageStream";
 export { MessageTimeline } from "./MessageTimeline";
