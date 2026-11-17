@@ -4,6 +4,7 @@ import type {
   ContextCompactionStatus,
   ContextPruningStatus,
   ContextUsage,
+  ConversationSessionSummary,
 } from "@answra/shared";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { createRef } from "react";
@@ -22,7 +23,9 @@ interface ChatRenderOptions {
   contextPruning?: ContextPruningStatus;
   error?: string;
   retry?: ConversationRetry;
-  onCompact?: (instructions?: string) => void;
+  sessions?: readonly ConversationSessionSummary[];
+  onClear?: () => void;
+  onNewConversation?: () => void;
 }
 
 function renderChat(messages: ConversationViewMessage[], options: ChatRenderOptions = {}): void {
@@ -47,7 +50,9 @@ function renderChat(messages: ConversationViewMessage[], options: ChatRenderOpti
       contextPruning={options.contextPruning}
       error={options.error}
       retry={options.retry}
-      onCompact={options.onCompact}
+      sessions={options.sessions}
+      onClear={options.onClear}
+      onNewConversation={options.onNewConversation}
     />,
   );
 }
@@ -150,29 +155,6 @@ describe("ChatPanel context compaction", () => {
     ).toBeInTheDocument();
   });
 
-  it("sends optional summary instructions before compacting", () => {
-    const onCompact = vi.fn();
-    renderChat([], { onCompact });
-
-    fireEvent.click(screen.getByRole("button", { name: "压缩上下文" }));
-    fireEvent.change(screen.getByLabelText("摘要指令（可选）"), {
-      target: { value: "  保留数据库迁移决定  " },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "开始压缩" }));
-
-    expect(onCompact).toHaveBeenCalledWith("保留数据库迁移决定");
-  });
-
-  it("allows compacting without instructions", () => {
-    const onCompact = vi.fn();
-    renderChat([], { onCompact });
-
-    fireEvent.click(screen.getByRole("button", { name: "压缩上下文" }));
-    fireEvent.click(screen.getByRole("button", { name: "开始压缩" }));
-
-    expect(onCompact).toHaveBeenCalledWith(undefined);
-  });
-
   it("shows the compaction boundary metadata and expands its summary", () => {
     renderChat(
       [
@@ -207,6 +189,21 @@ describe("ChatPanel context compaction", () => {
 
     expect(screen.getByText(/继续实现压缩/)).toBeInTheDocument();
     expect(screen.queryByText("已摘要 8 条消息")).not.toBeInTheDocument();
+  });
+});
+
+describe("ChatPanel header", () => {
+  it("keeps only history, new conversation, and clear actions", () => {
+    renderChat([], {
+      sessions: [],
+      onClear: vi.fn(),
+      onNewConversation: vi.fn(),
+    });
+
+    expect(screen.getByRole("button", { name: "查看会话历史" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "新建对话" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "清空对话历史" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "压缩上下文" })).not.toBeInTheDocument();
   });
 });
 

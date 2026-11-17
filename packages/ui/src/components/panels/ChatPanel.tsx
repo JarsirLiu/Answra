@@ -7,9 +7,8 @@ import type {
   ConversationSessionSummary,
   DesktopBridge,
 } from "@answra/shared";
-import { MANUAL_COMPACTION_INSTRUCTIONS_MAX_CHARS } from "@answra/shared";
 import { LoaderCircle, X } from "lucide-react";
-import { type FormEvent, type RefObject, useId, useRef, useState } from "react";
+import { type RefObject, useRef, useState } from "react";
 import { ICON_SM } from "../../tokens";
 import {
   AssistantMessage,
@@ -63,8 +62,6 @@ interface ChatPanelProps {
   contextCompaction?: ContextCompactionStatus;
   /** 已成功摘要的边界；按 throughMessageId 插入消息流。 */
   compactionBoundaries?: readonly ContextCompactionBoundary[];
-  /** 手动压缩的即时反馈；成功结果仍以 snapshot 状态展示。 */
-  compactNotice?: string;
   /** 最近一次模型请求的上下文占用与阈值。 */
   contextUsage?: ContextUsage;
   /** 最近一次实际应用的旧工具结果清理。 */
@@ -87,10 +84,6 @@ interface ChatPanelProps {
   onVote?: (vote: "up" | "down" | null) => void;
   /** 清空对话历史（经网关链路归零，所有订阅方同步）；缺省不显示清空入口。 */
   onClear?: () => void;
-  /** 手动压缩上下文；可附带一次性摘要指令，缺省不显示压缩入口。 */
-  onCompact?: (instructions?: string) => void;
-  /** 手动压缩不可用的原因；设置即禁用按钮并用 title 提示。 */
-  compactDisabledReason?: string;
   /** 清空不可用的原因（活动回复进行中/没有消息）；设置即禁用按钮并以 title 提示。 */
   clearDisabledReason?: string;
   sessions?: readonly ConversationSessionSummary[];
@@ -122,7 +115,6 @@ export function ChatPanel({
   connection,
   contextCompaction,
   compactionBoundaries,
-  compactNotice,
   contextUsage,
   contextPruning,
   thinkingMs,
@@ -139,31 +131,15 @@ export function ChatPanel({
   onNewConversation,
   onResumeConversation,
   onDeleteConversation,
-  onCompact,
-  compactDisabledReason,
   onClose,
   bridge: _bridge,
   stealth: _stealth,
 }: ChatPanelProps) {
   const composerInputRef = useRef<HTMLTextAreaElement>(null);
-  const compactInputId = useId();
-  const [compactFormOpen, setCompactFormOpen] = useState(false);
-  const [compactInstructions, setCompactInstructions] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
   const connectionNotice = formatConnectionNotice(connection);
   const timeline = mergeCompactionBoundaries(messages, compactionBoundaries);
 
-  function closeCompactForm(): void {
-    setCompactFormOpen(false);
-    setCompactInstructions("");
-  }
-
-  function submitCompaction(event: FormEvent<HTMLFormElement>): void {
-    event.preventDefault();
-    const instructions = compactInstructions.trim();
-    closeCompactForm();
-    onCompact?.(instructions || undefined);
-  }
   // 内容指纹：消息增减/正文与思维链流式增长都会变化，驱动 MessageStream 自动跟随；
   // 失败提示也算本轮结果，出现时要能滚到可见位置。
   const contentKey = [
@@ -186,7 +162,7 @@ export function ChatPanel({
     <PanelShell
       context={attachments.length ? "截图已添加，可补充问题" : undefined}
       headerAction={
-        onClear || onCompact || sessions !== undefined || onNewConversation ? (
+        onClear || sessions !== undefined || onNewConversation ? (
           <div className="panel-header-action chat-panel-header-actions">
             {sessions !== undefined && (
               <SurfaceButton
@@ -211,16 +187,6 @@ export function ChatPanel({
                 新对话
               </SurfaceButton>
             )}
-            {onCompact && (
-              <SurfaceButton
-                aria-label={compactDisabledReason ?? "压缩上下文"}
-                disabled={Boolean(compactDisabledReason)}
-                onClick={() => setCompactFormOpen(true)}
-                variant="quiet"
-              >
-                压缩
-              </SurfaceButton>
-            )}
             {onClear && (
               <SurfaceButton
                 aria-label={clearDisabledReason ?? "清空对话历史"}
@@ -238,35 +204,6 @@ export function ChatPanel({
       title="AI 对话"
       variant="chat"
     >
-      {compactFormOpen && onCompact ? (
-        <form className="chat-panel-compact-form" onSubmit={submitCompaction}>
-          <label className="chat-panel-compact-label" htmlFor={compactInputId}>
-            摘要指令（可选）
-          </label>
-          <textarea
-            id={compactInputId}
-            maxLength={MANUAL_COMPACTION_INSTRUCTIONS_MAX_CHARS}
-            onChange={(event) => setCompactInstructions(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") closeCompactForm();
-            }}
-            placeholder="告诉摘要重点保留什么，例如：保留数据库迁移决定和未完成事项。"
-            rows={2}
-            value={compactInstructions}
-          />
-          <div className="chat-panel-compact-actions">
-            <span className="chat-panel-compact-count">
-              {compactInstructions.length}/{MANUAL_COMPACTION_INSTRUCTIONS_MAX_CHARS}
-            </span>
-            <SurfaceButton onClick={closeCompactForm} size="sm" variant="quiet">
-              取消
-            </SurfaceButton>
-            <SurfaceButton size="sm" type="submit">
-              开始压缩
-            </SurfaceButton>
-          </div>
-        </form>
-      ) : null}
       {historyOpen ? (
         <ChatHistoryPanel
           activeConversationId={activeConversationId ?? ""}
@@ -339,11 +276,6 @@ export function ChatPanel({
                 </article>
               );
             })}
-            {compactNotice && (
-              <div className="chat-panel-compact-notice" role="status">
-                {compactNotice}
-              </div>
-            )}
             {contextCompaction && <ContextCompactionNotice status={contextCompaction} />}
             {contextPruning && <ContextPruningNotice status={contextPruning} />}
             {contextUsage && <ContextUsageNotice usage={contextUsage} />}

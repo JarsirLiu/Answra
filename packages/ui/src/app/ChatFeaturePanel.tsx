@@ -51,7 +51,6 @@ export function ChatFeaturePanel({
   const sessions = useChatSessions(bridge);
   const conversation = useGeneralChat(bridge, sessions.activeConversationId);
   const [failure, setFailure] = useState<{ message: string; needsSignIn: boolean }>();
-  const [compactNotice, setCompactNotice] = useState<string>();
   useEffect(() => {
     if (signedIn) setFailure(undefined);
   }, [signedIn]);
@@ -83,7 +82,6 @@ export function ChatFeaturePanel({
     const sentDraft = draft;
     const sentAttachments = attachments;
     setFailure(undefined);
-    setCompactNotice(undefined);
     void conversation
       .send(sentDraft, sentAttachments, undefined, () => {
         onDraftChange("");
@@ -115,35 +113,9 @@ export function ChatFeaturePanel({
     }
   }
 
-  async function compactConversation(instructions?: string): Promise<void> {
-    if (!bridge?.compactConversation) return;
-    setCompactNotice(undefined);
-    try {
-      const { result, snapshot } = await bridge.compactConversation(
-        sessions.activeConversationId,
-        instructions,
-      );
-      await conversation.reconcileSnapshot(snapshot);
-      if (result.status === "failed") {
-        setCompactNotice(result.errorText ?? "上下文压缩失败。");
-      } else if (result.status === "aborted") {
-        setCompactNotice("已取消压缩。");
-      } else if (result.status === "skipped") {
-        setCompactNotice(
-          result.reason === "insufficient-messages"
-            ? "没有足够的旧消息可压缩。"
-            : "当前没有可压缩的上下文。",
-        );
-      }
-    } catch (error) {
-      setCompactNotice(error instanceof Error ? error.message : "上下文压缩失败。");
-    }
-  }
-
   async function startNewConversation(): Promise<void> {
     if (conversation.activeRunId || conversation.sendPending) return;
     setFailure(undefined);
-    setCompactNotice(undefined);
     try {
       await sessions.newConversation();
       conversation.clearMessages();
@@ -158,7 +130,6 @@ export function ChatFeaturePanel({
   function resumeConversation(conversationId: string): void {
     if (conversation.activeRunId || conversation.sendPending) return;
     setFailure(undefined);
-    setCompactNotice(undefined);
     conversation.clearMessages();
     sessions.resumeConversation(conversationId);
   }
@@ -166,7 +137,6 @@ export function ChatFeaturePanel({
   async function deleteConversation(conversationId: string): Promise<void> {
     if (conversation.activeRunId || conversation.sendPending) return;
     setFailure(undefined);
-    setCompactNotice(undefined);
     const wasActive = conversationId === sessions.activeConversationId;
     try {
       await sessions.deleteConversation(conversationId);
@@ -194,7 +164,6 @@ export function ChatFeaturePanel({
       connection={connection}
       contextCompaction={conversation.contextCompaction}
       compactionBoundaries={conversation.contextCompactionBoundaries}
-      compactNotice={compactNotice}
       contextUsage={conversation.contextUsage}
       contextPruning={conversation.contextPruning}
       streaming={Boolean(conversation.activeRunId)}
@@ -210,20 +179,6 @@ export function ChatFeaturePanel({
       onSignIn={needsSignIn ? signIn : undefined}
       onVote={onVote}
       onSend={send}
-      onCompact={
-        bridge?.compactConversation
-          ? (instructions) => void compactConversation(instructions)
-          : undefined
-      }
-      compactDisabledReason={
-        conversation.contextCompaction?.state === "started"
-          ? "正在压缩上下文"
-          : conversation.activeRunId || conversation.sendPending
-            ? "回复完成后才能压缩"
-            : conversation.messages.length === 0
-              ? "暂无可压缩的对话"
-              : undefined
-      }
       onClear={bridge?.clearConversationMessages ? () => void clearConversation() : undefined}
       clearDisabledReason={
         conversation.activeRunId || conversation.sendPending
