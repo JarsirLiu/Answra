@@ -466,6 +466,7 @@ function registerConcurrencyTests(): void {
     const [firstResult, secondResult] = await Promise.all([first, second]);
 
     let finished = secondResult;
+    const snapshots = [started, firstResult, secondResult];
     const deadline = Date.now() + 15_000;
     while (finished.status === "running") {
       if (Date.now() >= deadline) throw new Error("并发轮询会话未在测试期限内完成。");
@@ -473,14 +474,10 @@ function registerConcurrencyTests(): void {
         sessionId: requireSessionId(started),
         yieldTimeMs: 500,
       });
+      snapshots.push(finished);
     }
 
-    const output = combineOutput(
-      started,
-      firstResult,
-      secondResult,
-      ...(finished === secondResult ? [] : [finished]),
-    );
+    const output = combineOutput(...snapshots);
     expect(finished).toMatchObject({ status: "completed", exitCode: 0 });
     expect(output.match(/one/g)).toHaveLength(1);
     expect(output.match(/two/g)).toHaveLength(1);

@@ -223,7 +223,7 @@ describe("tool call renderers", () => {
       expand(/Edited/);
       fireEvent.click(screen.getByRole("button", { name: "复制修改后片段" }));
       await waitFor(() => expect(writeText).toHaveBeenCalledWith("after"));
-      expect(screen.getByRole("button", { name: "已复制修改后片段" })).toBeInTheDocument();
+      expect(await screen.findByRole("button", { name: "已复制修改后片段" })).toBeInTheDocument();
     } finally {
       if (previousClipboard) Object.defineProperty(navigator, "clipboard", previousClipboard);
       else Reflect.deleteProperty(navigator, "clipboard");

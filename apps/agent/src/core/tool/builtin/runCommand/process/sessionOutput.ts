@@ -1,7 +1,9 @@
 /** shell 会话输出缓冲：流式解码、累计上限与增量快照。 */
 
 import {
+  hasPowerShellScriptEchoPrefix,
   SHELL_OUTPUT_BUFFER_BYTES,
+  type ShellSyntax,
   stripPowerShellErrorWrapper,
   truncateShellOutput,
 } from "../shell/runtime";
@@ -12,7 +14,21 @@ import {
   type Session,
   type ShellSessionSnapshot,
   type ShellSessionStatus,
+  type TerminalReason,
 } from "./sessionContract";
+
+export interface SessionOutputState {
+  readonly shellSyntax: ShellSyntax;
+  readonly stdoutText: readonly string[];
+  readonly stderrText: readonly string[];
+  stdoutEmittedChars: number;
+  stderrEmittedChars: number;
+  readonly outputTruncated: boolean;
+  readonly outputOmittedBytes: number;
+  readonly exitCode: number | null | undefined;
+  readonly signal: string | null | undefined;
+  readonly terminalReason?: TerminalReason;
+}
 
 export function appendSessionOutput(session: Session, stream: OutputStream, data: Buffer): void {
   const availableBytes = Math.max(
@@ -46,7 +62,7 @@ export function flushSessionDecoders(session: Session): void {
 
 export function snapshotSession(
   id: string,
-  session: Session,
+  session: SessionOutputState,
   maxOutputLength?: number,
 ): ShellSessionSnapshot {
   const limit = normalizePositiveInteger(maxOutputLength, DEFAULT_MAX_OUTPUT);
@@ -55,9 +71,15 @@ export function snapshotSession(
   const stderrText =
     session.shellSyntax === "powershell" ? stripPowerShellErrorWrapper(stderrRaw) : stderrRaw;
   const stdoutResult = truncateShellOutput(stdoutText.slice(session.stdoutEmittedChars), limit);
-  const stderrResult = truncateShellOutput(stderrText.slice(session.stderrEmittedChars), limit);
+  const pendingPowerShellWrapper =
+    session.shellSyntax === "powershell" &&
+    !isSessionFinished(session) &&
+    hasPowerShellScriptEchoPrefix(stderrRaw);
+  const stderrResult = pendingPowerShellWrapper
+    ? { value: "", truncated: false, omittedChars: 0 }
+    : truncateShellOutput(stderrText.slice(session.stderrEmittedChars), limit);
   session.stdoutEmittedChars = stdoutText.length;
-  session.stderrEmittedChars = stderrText.length;
+  if (!pendingPowerShellWrapper) session.stderrEmittedChars = stderrText.length;
 
   const status = sessionStatus(session);
   const outputTruncated =
@@ -74,14 +96,14 @@ export function snapshotSession(
   };
 }
 
-export function sessionStatus(session: Session): ShellSessionStatus {
+export function sessionStatus(session: SessionOutputState): ShellSessionStatus {
   if (session.terminalReason === "timed_out") return "timed_out";
   if (session.terminalReason === "cleanup") return "killed";
   if (session.exitCode !== undefined) return "completed";
   return "running";
 }
 
-export function isSessionFinished(session: Session): boolean {
+export function isSessionFinished(session: SessionOutputState): boolean {
   return session.terminalReason !== undefined || session.exitCode !== undefined;
 }
 

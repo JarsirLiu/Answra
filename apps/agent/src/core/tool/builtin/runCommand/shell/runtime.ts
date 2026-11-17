@@ -25,6 +25,10 @@ const POWERSHELL_EXIT_CODE_TRAILER = "if ($null -ne $LASTEXITCODE) { exit $LASTE
 const POWERSHELL_ECHO_START =
   "[Console]::InputEncoding = New-Object System.Text.UTF8Encoding($false)";
 
+export function hasPowerShellScriptEchoPrefix(value: string): boolean {
+  return value.startsWith(POWERSHELL_ECHO_START);
+}
+
 const POWERSHELL_CATEGORY_LINE = /(?:^|\r?\n)\s*\+\s+(?:CategoryInfo|FullyQualifiedErrorId)\b/u;
 const POWERSHELL_LOCATION_LINE = /^\s*(?:At line:|所在位置 行:)/u;
 

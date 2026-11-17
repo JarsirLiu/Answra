@@ -111,10 +111,10 @@ describe("floating bar navigation and shell", () => {
     ).toBeInTheDocument();
   });
 
-  it("opens the workspace panel with directory pick entry and opens settings from the third segment", () => {
+  it("opens the workspace panel with directory pick entry and opens settings from the third segment", async () => {
     render(<FloatingBarApp />);
     fireEvent.click(screen.getByRole("button", { name: "打开笔记本" }));
-    expect(screen.getByRole("button", { name: /选择目录/ })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /选择目录/ })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
     // Tab 栏即面板头部：无"设置"标题行
@@ -122,12 +122,12 @@ describe("floating bar navigation and shell", () => {
     expect(screen.getByRole("tab", { name: "设置" })).toHaveAttribute("aria-selected", "true");
   });
 
-  it("reports shell content size through the bridge and closes on demand", () => {
+  it("reports shell content size through the bridge and closes on demand", async () => {
     const bridge = { fitContent: vi.fn(), close: vi.fn() };
     render(<FloatingBarApp bridge={bridge} />);
 
     fireEvent.click(screen.getByRole("button", { name: "打开笔记本" }));
-    expect(screen.getByRole("heading", { name: "笔记本 / 资料" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "笔记本 / 资料" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "收起面板" }));
     expect(screen.queryByRole("heading", { name: "笔记本 / 资料" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "关闭应用" }));

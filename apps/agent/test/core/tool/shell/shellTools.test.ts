@@ -310,12 +310,26 @@ describe("RunCommand", { timeout: 30_000 }, () => {
     );
     const tools = createTools();
     const started = await execute(tools, { command: nodeCommand(script), yieldTimeMs: 50 }, root);
-    const snapshot = JSON.parse(modelText(started)) as ShellSessionSnapshot;
-    const sessionId = snapshot.sessionId;
+    const startedSnapshot = JSON.parse(modelText(started)) as ShellSessionSnapshot;
+    const sessionId = startedSnapshot.sessionId;
     if (!sessionId) throw new Error("运行中的会话缺少 sessionId。");
 
-    const next = await execute(tools, { sessionId, chars: "hello\n", yieldTimeMs: 2_000 }, root);
-    expect(modelText(next)).toContain("got:hello");
+    let snapshot = startedSnapshot;
+    const stdout = [startedSnapshot.stdout];
+    let next = await execute(tools, { sessionId, chars: "hello\n", yieldTimeMs: 2_000 }, root);
+    if (isToolHandlerFailure(next)) throw new Error(next.message);
+    snapshot = JSON.parse(modelText(next)) as ShellSessionSnapshot;
+    stdout.push(snapshot.stdout);
+
+    const deadline = Date.now() + 15_000;
+    while (!stdout.join("").includes("got:hello") && snapshot.status === "running") {
+      if (Date.now() >= deadline) throw new Error("会话未在测试期限内输出 stdin 结果。");
+      next = await execute(tools, { sessionId, yieldTimeMs: 1_000 }, root);
+      if (isToolHandlerFailure(next)) throw new Error(next.message);
+      snapshot = JSON.parse(modelText(next)) as ShellSessionSnapshot;
+      stdout.push(snapshot.stdout);
+    }
+    expect(stdout.join("")).toContain("got:hello");
   });
 
   it("turns an unknown sessionId into an invalid-input failure", async () => {
