@@ -1,6 +1,6 @@
 # Note：安装包审计误拒 keychain 原生依赖，阻断答题版打包
 
-状态：已实现
+状态：已实施
 
 ## 问题
 
@@ -29,6 +29,12 @@ app.asar 包含已由 bundle 覆盖的运行时依赖：@napi-rs/keyring-win32-x
 - 审计对 `@napi-rs/keyring` 与平台二进制包（`@napi-rs/keyring-*`）豁免 bundled-only 判定；其它 `@napi-rs/` 包仍按原规则拒绝。
 - 新增断言：`resources/app.asar.unpacked/node_modules/@napi-rs/keyring` 必须存在。缺少解包原生模块时仍失败，避免把“审计通过但运行时崩溃”的安装包放出去。
 - 不修改 keyring 的打包方式：原生 `.node` 不能进 asar，external + `asarUnpack` 是该依赖的正确形态。
+
+## 修复
+
+- `audit-packaged-app.cjs` 的 bundled-only 规则对 `@napi-rs/keyring` 与 `@napi-rs/keyring-*` 豁免，其余 `@napi-rs/` 包仍拒绝。
+- `afterPack` 增加 `app.asar.unpacked/node_modules/@napi-rs/keyring` 存在性断言，避免只放宽规则而漏掉真正缺包。
+- 不改变 keyring 的 external / `asarUnpack` 声明，保持原生模块可加载。
 
 ## 曾考虑的替代方案
 

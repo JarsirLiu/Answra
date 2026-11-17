@@ -4,7 +4,7 @@
 
 ## 问题
 
-产品目前只有 Electron 桌面壳一种宿主。Agent 运行时本身已经平台无关，编码所需的 `Read`、`Grep`、`Edit`、`RunCommand`、`WriteStdin` 也已经在工具层落地，但用户只能在悬浮条里使用它们。用户要求增加一个 CLI 专用的 coding 模式，并希望终端 UI 尽量复刻 Claude Code。
+产品目前只有 Electron 桌面壳一种宿主。Agent 运行时本身已经平台无关，编码所需的 `Read`、`Grep`、`Edit`、`RunCommand` 也已经在工具层落地，但用户只能在悬浮条里使用它们。用户要求增加一个 CLI 专用的 coding 模式，并希望终端 UI 尽量复刻 Claude Code。
 
 需要先纠正上一版提案的事实错误：当前 `conversation` 域只有 `conversation.general` 一个 Bot（profile 为 `general-chat`），不存在 `conversation.coding`。桌面对话 Bot 是给悬浮条通用对话用的，没有按编码任务打磨；CLI 不能借用它，也不能把 CLI 的编码策略塞进 `conversation` 域。CLI 需要自己的 coding Bot、自己的策略和自己的会话用例。
 
@@ -77,7 +77,7 @@ id: coding.engineer            domain: coding
 modelRoute: chat
 policy: coding 专用 prompt + 完整编码工具授权
 tools: workspace.read / workspace.grep / workspace.edit /
-       workspace.run-command / workspace.write-stdin
+       workspace.run-command
 ```
 
 - 身份独立于桌面通用助手：名称、role、responsibility、owns 都由 `coding/agent.ts` 定义；不复用 `GENERAL_IDENTITY` / `GENERAL_DISCOVERY`。
