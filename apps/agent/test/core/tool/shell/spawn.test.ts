@@ -5,7 +5,7 @@ import { terminateProcessTree } from "../../../../src/core/tool/builtin/runComma
 import { spawnShellProcess } from "../../../../src/core/tool/builtin/runCommand/process/spawn";
 import { parseJobContainmentMarker } from "../../../../src/core/tool/builtin/runCommand/process/windows";
 
-async function waitForFile(filePath: string, timeoutMs = 5_000): Promise<void> {
+async function waitForFile(filePath: string, timeoutMs = 20_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     try {
@@ -35,5 +35,5 @@ describe("shell process spawn", () => {
     const closed = once(handle.child, "close");
     await terminateProcessTree(handle.child, handle.jobMarkerPath);
     await closed;
-  }, 15_000);
+  }, 30_000);
 });

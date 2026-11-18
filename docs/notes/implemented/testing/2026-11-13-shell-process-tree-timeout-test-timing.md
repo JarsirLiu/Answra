@@ -57,3 +57,21 @@ Windows 下每次 shell 调用都要启动 PowerShell；64 个 vitest worker 并
 - `pnpm --filter @answra/agent exec vitest run test/core/tool/shell/shellTools.test.ts -t "process tree"`：连续 5 次通过，两个用例耗时约 3.7 秒和 1.6 秒。
 - `pnpm --filter @answra/agent exec vitest run test/core/tool/shell`：通过。
 - `pnpm verify`：通过。
+
+## 2026-11-18 补充
+
+全仓并行 `pnpm verify` 再次暴露两处同类问题：
+
+- `spawn.test.ts` 的 Job Object marker 固定等待 5 秒；满载时 PowerShell 启动和 Add-Type 编译超过 5 秒。
+- `localShell.test.ts` 把 10 秒命令超时、5 秒后即退出的后代和 8 秒墙钟断言绑在一起；满载时根 shell 未在 10 秒内退出，测试得到 `timeout` 而不是 `exit`。
+
+补充决定：
+
+- marker 等待改为 20 秒，测试显式超时 30 秒。
+- drain 测试的后代延长到 60 秒，命令超时 30 秒，测试显式超时 45 秒；断言只检查 `exit` 与 `root done`，删除 8 秒墙钟断言；清理时按 `child.pid` 终止后代，避免残留进程。
+- 仍遵循原决定：不通过延长产品默认超时掩盖问题，只给测试里的真实 PowerShell 启动和进程回收留足窗口。
+
+验证：
+
+- `pnpm --filter @answra/agent exec vitest run test/core/tool/shell/localShell.test.ts test/core/tool/shell/spawn.test.ts`：通过。
+- `pnpm --filter @answra/agent test`：88 文件 / 669 项通过。
