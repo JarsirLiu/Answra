@@ -65,6 +65,7 @@ function streamBody(text: string): string {
 
 type RecordedRequest = {
   messages: Array<{ role: string; content: unknown }>;
+  body: Record<string, unknown>;
 };
 
 async function startModelServer(
@@ -82,7 +83,7 @@ async function startModelServer(
     const parsed = JSON.parse(Buffer.concat(chunks).toString("utf8")) as {
       messages?: Array<{ role: string; content: unknown }>;
     };
-    requests.push({ messages: parsed.messages ?? [] });
+    requests.push({ messages: parsed.messages ?? [], body: parsed as Record<string, unknown> });
     attempt += 1;
     const result = respond(attempt);
     response.writeHead(result.status, {
@@ -130,6 +131,17 @@ function recoveryRequest({
     getAccessToken: async () => "token",
     prepareRun: async () => ({ input: undefined, prepared: undefined }),
     recoverContext,
+    onEvent: async (event) => {
+      events.push(event);
+    },
+  };
+}
+
+function plainRequest(events: AgentEventEnvelope[]): AgentRunRequest<undefined, undefined> {
+  return {
+    conversationId: "provider-options-conversation",
+    getAccessToken: async () => "token",
+    prepareRun: async () => ({ input: undefined, prepared: undefined }),
     onEvent: async (event) => {
       events.push(event);
     },
@@ -236,6 +248,41 @@ describe("agent run context overflow recovery", () => {
       expect(recoverContext).toHaveBeenCalledTimes(1);
       expect(requests).toHaveLength(1);
       expect(events.filter((envelope) => envelope.event.type === "error")).toHaveLength(1);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+});
+
+describe("agent endpoint provider options", () => {
+  it("writes endpoint providerOptions into the request body under the provider name", async () => {
+    const { server, endpoint, requests } = await startModelServer(() => ({
+      status: 200,
+      body: streamBody("answer"),
+    }));
+    const events: AgentEventEnvelope[] = [];
+
+    try {
+      const outcome = await executeRun({
+        definition: recoveryDefinition(),
+        request: plainRequest(events),
+        input: undefined,
+        runId: "run-provider-options",
+        endpoint: {
+          ...endpoint,
+          providerOptions: { thinking: { type: "enabled" }, max_completion_tokens: 4_096 },
+        },
+        executionStore: new MemoryExecutionStore(),
+        controller: new AbortController(),
+      });
+
+      expect(outcome).toBe("completed");
+      expect(requests).toHaveLength(1);
+      expect(requests[0]?.body).toMatchObject({
+        thinking: { type: "enabled" },
+        max_completion_tokens: 4_096,
+      });
+      expect(requests[0]?.body).not.toHaveProperty("max_tokens");
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }

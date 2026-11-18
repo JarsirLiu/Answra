@@ -113,7 +113,28 @@ describe("ModelSettingsStore", () => {
     await expect(access(paths.secretPath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("keeps the shared local endpoint and clears the key when switching to cloud", async () => {
+  it("loads answer provider options and preserves them when saving from the UI", async () => {
+    const paths = await createPaths();
+    await mkdir(path.dirname(paths.configPath), { recursive: true });
+    await writeFile(
+      paths.configPath,
+      JSON.stringify({
+        version: 1,
+        model: { source: "cloud", local: { baseUrl: "", chatModel: "" } },
+        answer: { providerOptions: { thinking: { type: "enabled" } } },
+      }),
+    );
+    const store = new ModelSettingsStore(paths, createCredentials());
+
+    await store.init();
+
+    expect(store.read().answerProviderOptions).toEqual({ thinking: { type: "enabled" } });
+    await store.save({ source: "cloud", baseUrl: "", model: "" });
+    const raw = JSON.parse(await readFile(paths.configPath, "utf8"));
+    expect(raw.answer).toEqual({ providerOptions: { thinking: { type: "enabled" } } });
+  });
+
+  it("keeps the shared local endpoint and key when switching to cloud", async () => {
     const paths = await createPaths();
     const credentials = createCredentials();
     const store = new ModelSettingsStore(paths, credentials);
@@ -133,8 +154,8 @@ describe("ModelSettingsStore", () => {
       model: "qwen",
       answerModel: "qwen-vl",
     });
-    expect(credentials.current()).toBeNull();
-    await expect(store.revealApiKey()).resolves.toBeNull();
+    expect(credentials.current()).toBe("secret-key");
+    await expect(store.revealApiKey()).resolves.toBe("secret-key");
   });
 
   it("keeps an existing keychain key when local settings are saved without a new key", async () => {

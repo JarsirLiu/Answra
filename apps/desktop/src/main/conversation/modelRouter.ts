@@ -82,18 +82,43 @@ export class ModelRouter {
   async resolve(options?: { forceRefresh?: boolean }): Promise<ResolvedModel> {
     await this.deps.store.init();
     const view = this.getView();
+    const answerProviderOptions = this.deps.store.read().answerProviderOptions;
     if (view.source === "local") {
       if (!view.configured) throw new Error("请先在设置 → 模型中配置本地模型服务");
       return {
-        config: {
-          chat: { baseUrl: view.baseUrl, model: view.model, auth: "local" },
-          answer: { baseUrl: view.baseUrl, model: view.answerModel || view.model, auth: "local" },
-        },
+        config: withAnswerProviderOptions(
+          {
+            chat: { baseUrl: view.baseUrl, model: view.model, auth: "local" },
+            answer: { baseUrl: view.baseUrl, model: view.answerModel || view.model, auth: "local" },
+          },
+          answerProviderOptions,
+        ),
         accessToken: (await this.deps.store.revealApiKey()) ?? "",
       };
     }
     const config = this.deps.cloud.modelConfig();
     if (!config) throw authRequiredError();
-    return { config, accessToken: await this.deps.cloud.accessToken(options) };
+    return {
+      config: withAnswerProviderOptions(config, answerProviderOptions),
+      accessToken: await this.deps.cloud.accessToken(options),
+    };
   }
+}
+
+/**
+ * 本地 `config.json` 的答题扩展参数覆盖云端端点声明；只作用于 answer，
+ * 不改 chat 或本地端点地址。
+ */
+function withAnswerProviderOptions(
+  config: ConversationModelConfig,
+  providerOptions: Readonly<Record<string, unknown>> | undefined,
+): ConversationModelConfig {
+  if (providerOptions === undefined) return config;
+  return {
+    ...config,
+    answer: {
+      ...config.answer,
+      providerOptions: { ...config.answer.providerOptions, ...providerOptions },
+    },
+  };
 }

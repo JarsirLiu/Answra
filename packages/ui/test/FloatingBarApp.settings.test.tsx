@@ -70,13 +70,29 @@ describe("floating bar settings", () => {
     expect(screen.getByRole("button", { name: "保存" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "云端订阅" }));
-    expect(screen.queryByPlaceholderText("http://127.0.0.1:1234/v1")).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(bridge.configureConversation).toHaveBeenCalledWith(
+        expect.objectContaining({ source: "cloud" }),
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.queryByPlaceholderText("http://127.0.0.1:1234/v1")).not.toBeInTheDocument(),
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "本地模型" }));
-    fireEvent.click(screen.getByRole("button", { name: "保存" }));
     await waitFor(() =>
       expect(bridge.configureConversation).toHaveBeenCalledWith(
         expect.objectContaining({ source: "local", model: "local-model" }),
+      ),
+    );
+
+    fireEvent.change(screen.getByPlaceholderText("必填"), {
+      target: { value: "edited-model" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() =>
+      expect(bridge.configureConversation).toHaveBeenCalledWith(
+        expect.objectContaining({ source: "local", model: "edited-model" }),
       ),
     );
   });

@@ -119,6 +119,12 @@ export interface ConversationCapabilityEndpoint {
    * 缺省时使用内部保守预算，不向用户暴露手动配置。
    */
   contextWindow?: number;
+  /**
+   * 厂商扩展请求参数（非 secret），由本地 `config.json` 的 `answer.providerOptions`
+   * 注入，例如 MiMo 的 `thinking` 或 Qwen 的 `enable_thinking` / `thinking_budget`。
+   * Agent 按原样并入请求体；只允许配置明确支持这些字段的模型，客户端不做兼容性猜测。
+   */
+  providerOptions?: Readonly<Record<string, unknown>>;
 }
 
 /**

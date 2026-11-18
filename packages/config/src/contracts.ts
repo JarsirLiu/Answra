@@ -16,9 +16,15 @@ export interface ClientModelConfig {
   readonly local: LocalModelConfig;
 }
 
+/** 截图答题的本地扩展参数；不区分来源，云端与本地端点共用。 */
+export interface ClientAnswerConfig {
+  readonly providerOptions?: Readonly<Record<string, unknown>>;
+}
+
 export interface ClientConfig {
   readonly version: typeof CLIENT_CONFIG_VERSION;
   readonly model: ClientModelConfig;
+  readonly answer?: ClientAnswerConfig;
 }
 
 export function defaultClientConfig(): ClientConfig {

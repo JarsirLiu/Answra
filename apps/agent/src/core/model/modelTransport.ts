@@ -1,7 +1,7 @@
 /** AI SDK 模型请求的唯一执行入口：provider、端点 headers、会话头与重试边界。 */
 import type { ConversationCapabilityEndpoint } from "@answra/shared";
 import { generateText as generateTextSdk, streamText, type TextStreamPart, type ToolSet } from "ai";
-import { createModelProvider } from "./provider";
+import { createModelProvider, MODEL_PROVIDER_NAME } from "./provider";
 import { requestHeadersFor } from "./requestHeaders";
 import type { RetryAttempt } from "./retryFetch";
 
@@ -37,12 +37,40 @@ export function streamModel({
   const headers = requestHeadersFor(transport.endpoint, transport.conversationId);
   const result = streamText({
     model: provider(transport.endpoint.model),
-    ...options,
+    ...withEndpointProviderOptions(options, transport.endpoint),
     ...(headers === undefined ? {} : { headers }),
     abortSignal: signal,
     maxRetries: 0,
   });
   return result.fullStream;
+}
+
+/**
+ * 端点声明的厂商扩展参数并入 providerOptions。`@ai-sdk/openai-compatible` 只把
+ * provider 注册名下的未知 key 写进请求体，因此必须挂在 {@link MODEL_PROVIDER_NAME}。
+ */
+function withEndpointProviderOptions(
+  options: ModelStreamOptions,
+  endpoint: ConversationCapabilityEndpoint,
+): ModelStreamOptions {
+  const vendor = endpoint.providerOptions;
+  if (vendor === undefined || Object.keys(vendor).length === 0) return options;
+  const providerOptions = options.providerOptions ?? {};
+  const existing = providerOptions[MODEL_PROVIDER_NAME];
+  return {
+    ...options,
+    providerOptions: {
+      ...providerOptions,
+      [MODEL_PROVIDER_NAME]: {
+        ...(isPlainRecord(existing) ? existing : {}),
+        ...vendor,
+      },
+    } as ModelStreamOptions["providerOptions"],
+  };
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export async function generateModelText({

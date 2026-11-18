@@ -65,6 +65,43 @@ describe("shared client config", () => {
     expect(raw).not.toContain("secret");
   });
 
+  it("writes and reads answer provider options without treating them as secrets", async () => {
+    const file = await configFile();
+    await writeClientConfig(file, {
+      ...localConfig(),
+      answer: {
+        providerOptions: {
+          thinking: { type: "enabled" },
+          max_completion_tokens: 4096,
+        },
+      },
+    });
+
+    await expect(readClientConfig(file)).resolves.toMatchObject({
+      answer: {
+        providerOptions: {
+          thinking: { type: "enabled" },
+          max_completion_tokens: 4096,
+        },
+      },
+    });
+  });
+
+  it("drops non-object and oversized answer provider options instead of failing the file", () => {
+    const parse = (providerOptions: unknown) =>
+      parseClientConfig({
+        version: 1,
+        model: defaultClientConfig().model,
+        answer: { providerOptions },
+      });
+
+    expect(parse([1, 2]).answer).toBeUndefined();
+    expect(parse({ value: "x".repeat(4096) }).answer).toBeUndefined();
+    expect(parse({ thinking: { type: "enabled" } }).answer).toEqual({
+      providerOptions: { thinking: { type: "enabled" } },
+    });
+  });
+
   it("returns null when the shared file does not exist", async () => {
     await expect(readClientConfig(await configFile())).resolves.toBeNull();
   });

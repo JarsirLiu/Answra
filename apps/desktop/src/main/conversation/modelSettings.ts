@@ -34,6 +34,8 @@ export interface StoredModelSettings {
   baseUrl: string;
   model: string;
   answerModel?: string;
+  /** 截图答题的厂商扩展参数；只从共享配置读取，不经渲染层提交。 */
+  answerProviderOptions?: Readonly<Record<string, unknown>>;
 }
 
 interface LegacyStoredModelSettings extends StoredModelSettings {
@@ -125,10 +127,11 @@ export class ModelSettingsStore {
     const config: ClientConfig = {
       version: CLIENT_CONFIG_VERSION,
       model: { source: settings.source, local },
+      ...(this.current.answerProviderOptions === undefined
+        ? {}
+        : { answer: { providerOptions: this.current.answerProviderOptions } }),
     };
-    if (settings.source === "cloud") {
-      await this.secret.clear();
-    } else if (settings.apiKey) {
+    if (settings.source === "local" && settings.apiKey) {
       await this.secret.write(settings.apiKey);
     }
     await writeClientConfig(this.paths.configPath, config);
@@ -274,6 +277,9 @@ function storedSettings(config: ClientConfig): StoredModelSettings {
     baseUrl: config.model.local.baseUrl,
     model: config.model.local.chatModel,
     ...(config.model.local.answerModel ? { answerModel: config.model.local.answerModel } : {}),
+    ...(config.answer?.providerOptions === undefined
+      ? {}
+      : { answerProviderOptions: config.answer.providerOptions }),
   };
 }
 

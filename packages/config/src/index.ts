@@ -2,6 +2,7 @@
 export {
   CLIENT_CONFIG_FILE,
   CLIENT_CONFIG_VERSION,
+  type ClientAnswerConfig,
   type ClientConfig,
   type ClientModelConfig,
   defaultClientConfig,
@@ -18,4 +19,5 @@ export {
   resolveDefaultConfigPath,
   sharedConfigPath,
 } from "./paths";
+export { readProviderOptions } from "./providerOptions";
 export { normalizeBaseUrl, parseClientConfig, readClientConfig, writeClientConfig } from "./store";

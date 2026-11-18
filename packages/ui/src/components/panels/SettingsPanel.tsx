@@ -195,9 +195,48 @@ export function SettingsPanel({
         apiKey: apiKey || undefined,
       });
       setModelView(view);
+      setSource(view.source);
+      setBaseUrl(view.baseUrl);
+      setModel(view.model);
       setModelNotice("已保存");
     } catch (error) {
       setModelError(error instanceof Error ? error.message : "保存失败");
+    } finally {
+      setModelBusy(false);
+    }
+  }
+
+  /** 切换来源即生效；本地地址/模型为空时只展开表单，等用户填完再保存。 */
+  async function selectSource(next: ConversationModelSource) {
+    if (next === source) return;
+    if (!bridge?.configureConversation) {
+      setSource(next);
+      return;
+    }
+    if (next === "local" && (!baseUrl.trim() || !model.trim())) {
+      setSource("local");
+      return;
+    }
+    setModelBusy(true);
+    setModelError("");
+    setModelNotice("");
+    try {
+      const view = await bridge.configureConversation({
+        source: next,
+        baseUrl,
+        model,
+        apiKey: apiKey || undefined,
+      });
+      setModelView(view);
+      setSource(view.source);
+      setBaseUrl(view.baseUrl);
+      setModel(view.model);
+      if (next === "cloud") {
+        setApiKey("");
+        setRevealKey(false);
+      }
+    } catch (error) {
+      setModelError(error instanceof Error ? error.message : "切换失败");
     } finally {
       setModelBusy(false);
     }
@@ -306,7 +345,8 @@ export function SettingsPanel({
                   <SurfaceButton
                     aria-pressed={source === "local"}
                     className="setting-source-option"
-                    onClick={() => setSource("local")}
+                    disabled={modelBusy}
+                    onClick={() => void selectSource("local")}
                     size="sm"
                   >
                     本地模型
@@ -314,7 +354,8 @@ export function SettingsPanel({
                   <SurfaceButton
                     aria-pressed={source === "cloud"}
                     className="setting-source-option"
-                    onClick={() => setSource("cloud")}
+                    disabled={modelBusy}
+                    onClick={() => void selectSource("cloud")}
                     size="sm"
                   >
                     云端订阅

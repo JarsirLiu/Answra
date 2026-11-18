@@ -3,7 +3,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const shared = vi.hoisted(() => ({
   cloudConfig: null as {
     chat: { baseUrl: string; model: string; auth?: "cloud" | "local" };
-    answer: { baseUrl: string; model: string; auth?: "cloud" | "local" };
+    answer: {
+      baseUrl: string;
+      model: string;
+      auth?: "cloud" | "local";
+      providerOptions?: Readonly<Record<string, unknown>>;
+    };
   } | null,
   hasSession: true,
   accessToken: "cloud-token",
@@ -124,6 +129,54 @@ describe("model router source selection", () => {
       config: shared.cloudConfig,
       accessToken: "cloud-token",
     });
+  });
+
+  it("applies local answer provider options to the cloud answer endpoint only", async () => {
+    shared.cloudConfig = {
+      chat: { baseUrl: "https://cloud.example/v1", model: "cloud-model", auth: "cloud" },
+      answer: {
+        baseUrl: "https://cloud.example/v1",
+        model: "cloud-answer",
+        auth: "cloud",
+        providerOptions: { max_completion_tokens: 8000 },
+      },
+    };
+    const store = createFakeStore({
+      source: "cloud",
+      baseUrl: "",
+      model: "",
+      answerProviderOptions: {
+        max_completion_tokens: 4096,
+        thinking: { type: "enabled" },
+      },
+    });
+
+    const resolved = await createRouter(store).resolve();
+
+    expect(resolved.config.answer.providerOptions).toEqual({
+      max_completion_tokens: 4096,
+      thinking: { type: "enabled" },
+    });
+    expect(resolved.config.chat).not.toHaveProperty("providerOptions");
+  });
+
+  it("applies local answer provider options to the local answer endpoint", async () => {
+    const store = createFakeStore(
+      {
+        source: "local",
+        baseUrl: "http://127.0.0.1:1234/v1",
+        model: "local-model",
+        answerProviderOptions: { thinking: { type: "enabled" } },
+      },
+      "local-key",
+    );
+
+    const resolved = await createRouter(store).resolve();
+
+    expect(resolved.config.answer.providerOptions).toEqual({
+      thinking: { type: "enabled" },
+    });
+    expect(resolved.config.chat).not.toHaveProperty("providerOptions");
   });
 
   it("rejects cloud calls without a session using the shared auth-required code", async () => {

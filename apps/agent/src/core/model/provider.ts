@@ -4,6 +4,9 @@ import type { ConversationCapabilityEndpoint } from "@answra/shared";
 import { createAuthorizedFetch, createLocalFetch } from "./providerFetch";
 import { createRetryingFetch, type RetryAttempt } from "./retryFetch";
 
+/** providerOptions 中承载厂商扩展字段的 key；必须与 provider 注册名一致。 */
+export const MODEL_PROVIDER_NAME = "answra";
+
 export function createModelProvider({
   endpoint,
   accessToken,
@@ -26,7 +29,7 @@ export function createModelProvider({
       ? createLocalFetch(accessToken)
       : createAuthorizedFetch(accessToken, tokenProvider);
   return createOpenAICompatible({
-    name: "answra",
+    name: MODEL_PROVIDER_NAME,
     baseURL: endpoint.baseUrl,
     apiKey: accessToken || "local",
     ...(headers === undefined ? {} : { headers: { ...headers } }),
