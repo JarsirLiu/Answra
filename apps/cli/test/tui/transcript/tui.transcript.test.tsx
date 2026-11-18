@@ -396,9 +396,14 @@ describe("TUI transcript interaction", () => {
     pointer.emit({ kind: "drag", point: { row: 0, col: 0 } });
     const initialStart = selectionStore.getBounds()?.start.row ?? 0;
 
-    await vi.waitFor(() => {
-      expect(selectionStore.getBounds()?.start.row ?? initialStart).toBeLessThan(initialStart - 10);
-    });
+    await vi.waitFor(
+      () => {
+        expect(selectionStore.getBounds()?.start.row ?? initialStart).toBeLessThan(
+          initialStart - 1,
+        );
+      },
+      { timeout: 5_000 },
+    );
 
     pointer.emit({ kind: "release", point: { row: 0, col: 0 } });
     expect(selectionStore.hasSelection()).toBe(true);

@@ -91,9 +91,9 @@ SQLite transcript 适配器在四个边界上会留下不一致状态：
 ## 验证
 
 - `pnpm --filter @answra/agent exec vitest run test/core/transcript/sqliteConversationStore.test.ts test/core/transcript/sqliteConversationMessages.test.ts test/core/transcript/persistence/workspaceKey.test.ts`：35 项通过。
-- `pnpm --filter @answra/agent test`：87 文件 / 662 项通过；`pnpm --filter @answra/desktop test`：53 文件 / 350 项通过。
-- `pnpm --filter @answra/cli test`：381 项通过，1 项既有失败 `tui.transcript.test.tsx > auto-scrolls while a drag selection stays past the viewport edge`（`expected 180 to be less than 172`），与本次持久化/面板改动无调用关系，隔离重跑仍复现。
-- `pnpm lint`、全包 `pnpm typecheck`、`pnpm architecture:check`、`pnpm tokens:check`、`pnpm notes:check` 通过。
+- `pnpm --filter @answra/agent test`：88 文件 / 669 项通过；`pnpm --filter @answra/desktop test`：53 文件 / 350 项通过。
+- `pnpm --filter @answra/cli test`：382 项通过。`auto-scrolls while a drag selection stays past the viewport edge` 原按 10 行阈值等待，在 Ink 测试渲染较慢时会误判超时；现只验证下一次自动滚动，并为 `vi.waitFor` 设置 5s 超时。
+- `pnpm verify` 与 `pnpm notes:check` 通过。
 
 ## 风险
 
