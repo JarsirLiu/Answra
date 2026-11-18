@@ -92,7 +92,8 @@ SQLite transcript 适配器在四个边界上会留下不一致状态：
 
 - `pnpm --filter @answra/agent exec vitest run test/core/transcript/sqliteConversationStore.test.ts test/core/transcript/sqliteConversationMessages.test.ts test/core/transcript/persistence/workspaceKey.test.ts`：35 项通过。
 - `pnpm --filter @answra/agent test`：88 文件 / 669 项通过；`pnpm --filter @answra/desktop test`：53 文件 / 350 项通过。
-- `pnpm --filter @answra/cli test`：382 项通过。`auto-scrolls while a drag selection stays past the viewport edge` 原按 10 行阈值等待，在 Ink 测试渲染较慢时会误判超时；现只验证下一次自动滚动，并为 `vi.waitFor` 设置 5s 超时。
+- `pnpm --filter @answra/cli test`：385 项通过。`auto-scrolls while a drag selection stays past the viewport edge` 不再按墙钟 10 行阈值等待，改用假 `setInterval` 推进一次真实集成 tick；`useDragAutoScroll.test.ts` 另用假定时器覆盖立即 tick、周期 tick、`endDrag` 与清理停止。
+- `useDragAutoScroll` 的计时逻辑抽为可独立调用的 `startDragAutoScroll`，hook 只负责生命周期接线，使上述测试不依赖 Ink 渲染速度。
 - `pnpm verify` 与 `pnpm notes:check` 通过。
 
 ## 风险

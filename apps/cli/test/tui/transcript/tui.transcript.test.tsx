@@ -1,10 +1,14 @@
 import { render } from "ink-testing-library";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../../../src/tui/app/App";
 import { TuiViewStore } from "../../../src/tui/app/viewStore";
 import { createSelectionActions } from "../../../src/tui/interaction/selectionActions";
 import { TuiSelectionStore } from "../../../src/tui/interaction/selectionStore";
 import { createPointerSource, nextFrame, PANEL_HANDLERS, wheelEvent } from "../tuiTestHarness";
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe("TUI transcript interaction", () => {
   it("shows command feedback after a conversation already has messages", async () => {
@@ -357,7 +361,7 @@ describe("TUI transcript interaction", () => {
     store.initialize({
       conversationId: "conversation-1",
       eventRevision: 0,
-      messages: Array.from({ length: 100 }, (_, index) => ({
+      messages: Array.from({ length: 40 }, (_, index) => ({
         id: `assistant-${index}`,
         role: "assistant" as const,
         text: `line-${index}`,
@@ -392,23 +396,25 @@ describe("TUI transcript interaction", () => {
     await new Promise((resolve) => setTimeout(resolve, 100));
     selectionStore.commitFrame();
 
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
     pointer.emit({ kind: "press", point: { row: 1, col: 0 } });
     pointer.emit({ kind: "drag", point: { row: 0, col: 0 } });
-    const initialStart = selectionStore.getBounds()?.start.row ?? 0;
+    const afterFirstTick = selectionStore.getBounds()?.start.row ?? 0;
 
-    await vi.waitFor(
-      () => {
-        expect(selectionStore.getBounds()?.start.row ?? initialStart).toBeLessThan(
-          initialStart - 1,
-        );
-      },
-      { timeout: 5_000 },
+    vi.advanceTimersByTime(50);
+    expect(selectionStore.getBounds()?.start.row ?? afterFirstTick).toBeLessThanOrEqual(
+      afterFirstTick - 2,
     );
 
     pointer.emit({ kind: "release", point: { row: 0, col: 0 } });
     expect(selectionStore.hasSelection()).toBe(true);
-    selectionStore.commitFrame();
-    expect(selectionStore.getSelectedText()).toContain("line-");
+    await vi.waitFor(
+      () => {
+        selectionStore.commitFrame();
+        expect(selectionStore.getSelectedText()).toContain("line-");
+      },
+      { timeout: 5_000 },
+    );
 
     instance.unmount();
     store.dispose();
