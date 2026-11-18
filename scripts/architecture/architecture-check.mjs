@@ -204,6 +204,7 @@ function checkImports(pkg) {
           // 构建脚本只在打包期运行，不进入 renderer/preload 运行时产物。
           normalized.startsWith("apps/desktop/scripts/") ||
           normalized.startsWith("apps/agent/src/") ||
+          normalized.startsWith("apps/agent/scripts/") ||
           normalized.startsWith("apps/cli/src/") ||
           normalized.startsWith("apps/cli/scripts/") ||
           // 共享客户端配置是 Node-only 库，只允许 desktop main 与 CLI 消费；

@@ -179,7 +179,9 @@ export function App({
         ) : state.panel === "sessions" ? (
           <SessionsPanel
             close={() => panelHandlers.close("resumed")}
+            copyText={onCopyText}
             load={panelHandlers.loadSessions}
+            remove={panelHandlers.deleteSession}
             resume={panelHandlers.resumeSession}
           />
         ) : state.panel === "status" ? (

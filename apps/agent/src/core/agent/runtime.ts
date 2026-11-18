@@ -118,6 +118,12 @@ export class AgentRuntime {
     return this.executionStore.readEventsForRun(runId);
   }
 
+  /** 宿主退出：先取消并等待所有 run 的最终消息落账，再释放事件订阅。 */
+  async shutdown(): Promise<void> {
+    await this.runs.abortAllAndWait();
+    this.unsubscribeEvents();
+  }
+
   dispose(): void {
     this.runs.abortAll();
     this.unsubscribeEvents();

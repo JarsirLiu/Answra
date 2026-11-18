@@ -31,6 +31,13 @@ export class RunRegistry {
     this.runs.delete(runId);
   }
 
+  /** 进程退出：取消所有在途 run，并等待它们完成落账。 */
+  async abortAllAndWait(): Promise<void> {
+    const completions = [...this.runs.values()].map((run) => run.completion.promise);
+    for (const run of this.runs.values()) run.controller.abort();
+    await Promise.allSettled(completions);
+  }
+
   /** 进程退出：取消所有在途 run，并释放所有等待者。 */
   abortAll(): void {
     for (const run of this.runs.values()) {

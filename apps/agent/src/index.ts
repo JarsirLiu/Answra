@@ -45,6 +45,9 @@ export type {
 } from "./core/skill/contracts";
 export { renderSkillIndex, selectSkills } from "./core/skill/guidance";
 export type {
+  ConversationMessageCatalog,
+  ConversationMessagePage,
+  ConversationMessageQuery,
   ConversationSessionCatalog,
   ConversationSessionQuery,
 } from "./core/transcript/catalog";

@@ -95,7 +95,8 @@ async function runOnce(
   } finally {
     removeInterrupt();
     session.close();
-    host.dispose();
+    if (host.shutdown) await host.shutdown();
+    else host.dispose();
     presenter.finish();
   }
 }
@@ -172,7 +173,8 @@ async function runInteractive(
   } finally {
     store.dispose();
     session?.close();
-    host?.dispose();
+    if (host?.shutdown) await host.shutdown();
+    else host?.dispose();
   }
 }
 

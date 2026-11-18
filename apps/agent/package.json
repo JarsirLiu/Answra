@@ -17,7 +17,10 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "db:check": "tsx scripts/db/check.ts",
+    "db:generate": "tsx scripts/db/generate.ts",
+    "db:test": "vitest run test/core/transcript/databaseMigration.test.ts"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "2.0.81",
@@ -31,6 +34,7 @@
   "devDependencies": {
     "@types/node": "^26.6.5",
     "@vitest/coverage-v8": "5.0.3",
+    "tsx": "^4.23.15",
     "typescript": "~5.9.3",
     "vitest": "^5.0.3"
   }

@@ -52,46 +52,50 @@ async function main(): Promise<void> {
       apiBaseUrl: endpoints.apiBaseUrl,
       createAuthorizationCallback: createLocalAuthorizationCallback,
     });
-    process.exitCode = await runCli(process.argv.slice(2), {
-      env: process.env,
-      input: createProcessInput(process.stdin),
-      output: createStreamOutput(process.stdout, process.stderr),
-      cwd: process.cwd(),
-      modelSettings,
-      modelCredentials,
-      modelCatalog: createOpenAiModelCatalog(),
-      remoteKeys: {
-        hostKeys: createFileRemoteHostKeyStore(),
-        credentials: createFileRemoteCredentialStore(),
-        promptSecret,
-      },
-      remoteAuth,
-      remoteRuntime: {
-        signaling: createRemoteSignalingService({
-          baseUrl: endpoints.apiBaseUrl,
-          getAccessToken: () => remoteAuth.getAccessToken(),
-        }),
-        timers: createNodeSignalingTimers(),
-        createLink: (options) => new NodeWebRtcLink(options),
-        createId: randomUUID,
-      },
-      createRemoteHost: createRemoteCodingHost,
-      openBrowser: openSystemBrowser,
-      createSessionHost: ({ emitEvent, onSnapshot, workspaceRoot }) =>
-        createAgentCodingSessionHost(
-          startCodingHost({
-            emitEvent,
-            onSnapshot,
-            workspaceRoot,
-            store: sessionStore,
-            catalog: sessionStore,
-            skillRoots: resolveCliSkillRoots(workspaceRoot),
+    try {
+      process.exitCode = await runCli(process.argv.slice(2), {
+        env: process.env,
+        input: createProcessInput(process.stdin),
+        output: createStreamOutput(process.stdout, process.stderr),
+        cwd: process.cwd(),
+        modelSettings,
+        modelCredentials,
+        modelCatalog: createOpenAiModelCatalog(),
+        remoteKeys: {
+          hostKeys: createFileRemoteHostKeyStore(),
+          credentials: createFileRemoteCredentialStore(),
+          promptSecret,
+        },
+        remoteAuth,
+        remoteRuntime: {
+          signaling: createRemoteSignalingService({
+            baseUrl: endpoints.apiBaseUrl,
+            getAccessToken: () => remoteAuth.getAccessToken(),
           }),
-        ),
-      createConversationId: randomUUID,
-      runTui: createInkTuiRunner(),
-      onInterrupt: (handler) => onProcessInterrupt(handler),
-    });
+          timers: createNodeSignalingTimers(),
+          createLink: (options) => new NodeWebRtcLink(options),
+          createId: randomUUID,
+        },
+        createRemoteHost: createRemoteCodingHost,
+        openBrowser: openSystemBrowser,
+        createSessionHost: ({ emitEvent, onSnapshot, workspaceRoot }) =>
+          createAgentCodingSessionHost(
+            startCodingHost({
+              emitEvent,
+              onSnapshot,
+              workspaceRoot,
+              store: sessionStore,
+              catalog: sessionStore,
+              skillRoots: resolveCliSkillRoots(workspaceRoot),
+            }),
+          ),
+        createConversationId: randomUUID,
+        runTui: createInkTuiRunner(),
+        onInterrupt: (handler) => onProcessInterrupt(handler),
+      });
+    } finally {
+      await sessionStore.close();
+    }
   } catch (error) {
     console.error("[answra] 启动失败", error);
     process.exitCode = 1;

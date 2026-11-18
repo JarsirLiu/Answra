@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { SessionRecordPayload } from "../../../src/core/transcript/persistence/sessionRecord";
 import {
   ConversationSessionConflictError,
+  ConversationSessionCorruptError,
   SqliteConversationStore,
 } from "../../../src/core/transcript/persistence/sqlite/sqliteConversationStore";
 
@@ -96,6 +97,13 @@ describe("SQLite conversation store", () => {
     const root = await createRoot();
     const store = storeFor(root);
     await store.create("coding-3", undefined, { scope: "coding" });
+    await store.appendUserMessage("coding-3", {
+      id: "user-1",
+      role: "user",
+      text: "保留上下文",
+      images: [],
+      status: "complete",
+    });
     await store.saveContextState("coding-3", {
       checkpoints: [],
       prunedToolCallIds: ["call-1", "call-2"],
@@ -109,7 +117,7 @@ describe("SQLite conversation store", () => {
     });
   });
 
-  it("quarantines a corrupt row and keeps listing other sessions", async () => {
+  it("lists a corrupt state row without parsing and fails only when opened", async () => {
     const root = await createRoot();
     const store = storeFor(root);
     await store.create("coding-ok", undefined, { scope: "coding" });
@@ -118,19 +126,14 @@ describe("SQLite conversation store", () => {
     const db = new DatabaseSync(path.join(root, "sessions.sqlite"));
     db.prepare(`
       INSERT INTO sessions
-        (conversation_id, scope, workspace_root, created_at, updated_at, revision, record_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run("broken", "coding", null, now, now, 0, "{");
+        (conversation_id, scope, workspace_root, created_at, updated_at, revision,
+         title, message_count, state_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run("broken", "coding", null, now, now, 0, "损坏会话", 1, "{");
     db.close();
 
     expect((await store.list({ scope: "coding" })).items).toHaveLength(1);
-
-    const verification = new DatabaseSync(path.join(root, "sessions.sqlite"));
-    const quarantined = verification
-      .prepare("SELECT reason FROM quarantined_sessions WHERE conversation_id = ?")
-      .get("broken") as { reason: string } | undefined;
-    verification.close();
-    expect(quarantined?.reason).toContain("无法解析");
+    await expect(store.load("broken")).rejects.toBeInstanceOf(ConversationSessionCorruptError);
   });
 
   it("keeps answer conversations in memory without database rows", async () => {
@@ -207,10 +210,59 @@ describe("SQLite conversation store", () => {
     );
   });
 
+  it("archives a duplicate legacy file as already imported instead of corrupt", async () => {
+    const root = await createRoot();
+    const store = storeFor(root);
+    await store.create("coding-dup", undefined, { scope: "coding" });
+    await store.appendUserMessage("coding-dup", {
+      id: "user-1",
+      role: "user",
+      text: "已有会话",
+      images: [],
+      status: "complete",
+    });
+    await store.close();
+
+    const db = new DatabaseSync(path.join(root, "sessions.sqlite"));
+    db.prepare("DELETE FROM meta WHERE key LIKE 'legacy-import:%'").run();
+    db.close();
+
+    const now = new Date().toISOString();
+    await writeFile(
+      path.join(root, "coding-dup.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        conversationId: "coding-dup",
+        scope: "coding",
+        createdAt: now,
+        updatedAt: now,
+        snapshot: {
+          conversationId: "coding-dup",
+          eventRevision: 0,
+          messages: [],
+        },
+      }),
+      "utf8",
+    );
+
+    const reloaded = storeFor(root);
+    expect((await reloaded.list({ scope: "coding" })).items).toHaveLength(1);
+    const archived = await readdir(path.join(root, "legacy"));
+    expect(archived).toContain("coding-dup.json");
+    expect(archived.some((name) => name.includes(".corrupt-"))).toBe(false);
+  });
+
   it("rejects a stale write instead of overwriting another store", async () => {
     const root = await createRoot();
     const first = storeFor(root);
     await first.create("coding-conflict", undefined, { scope: "coding" });
+    await first.appendUserMessage("coding-conflict", {
+      id: "user-0",
+      role: "user",
+      text: "初始",
+      images: [],
+      status: "complete",
+    });
     const second = storeFor(root);
     await second.load("coding-conflict");
 
@@ -232,6 +284,75 @@ describe("SQLite conversation store", () => {
       }),
     ).rejects.toBeInstanceOf(ConversationSessionConflictError);
     expect((await second.load("coding-conflict")).messages.map((message) => message.text)).toEqual([
+      "初始",
+      "先写",
+    ]);
+  });
+
+  it("does not delete the winner's messages when clear loses the revision race", async () => {
+    const root = await createRoot();
+    const first = storeFor(root);
+    await first.create("coding-clear", undefined, { scope: "coding" });
+    await first.appendUserMessage("coding-clear", {
+      id: "user-0",
+      role: "user",
+      text: "初始",
+      images: [],
+      status: "complete",
+    });
+    const second = storeFor(root);
+    await second.load("coding-clear");
+
+    await first.appendUserMessage("coding-clear", {
+      id: "user-1",
+      role: "user",
+      text: "先写",
+      images: [],
+      status: "complete",
+    });
+
+    await expect(second.clear("coding-clear")).rejects.toBeInstanceOf(
+      ConversationSessionConflictError,
+    );
+    const db = new DatabaseSync(path.join(root, "sessions.sqlite"));
+    expect(db.prepare("SELECT COUNT(*) AS count FROM session_messages").get()).toEqual({
+      count: 2,
+    });
+    db.close();
+  });
+
+  it("rejects deleting a session changed by another store", async () => {
+    const root = await createRoot();
+    const first = storeFor(root);
+    await first.create("coding-delete", undefined, { scope: "coding" });
+    await first.appendUserMessage("coding-delete", {
+      id: "user-0",
+      role: "user",
+      text: "初始",
+      images: [],
+      status: "complete",
+    });
+    const second = storeFor(root);
+    await second.load("coding-delete");
+
+    await first.appendUserMessage("coding-delete", {
+      id: "user-1",
+      role: "user",
+      text: "先写",
+      images: [],
+      status: "complete",
+    });
+
+    await expect(second.delete("coding-delete")).rejects.toBeInstanceOf(
+      ConversationSessionConflictError,
+    );
+    const db = new DatabaseSync(path.join(root, "sessions.sqlite"));
+    expect(db.prepare("SELECT COUNT(*) AS count FROM session_messages").get()).toEqual({
+      count: 2,
+    });
+    db.close();
+    expect((await first.load("coding-delete")).messages.map((message) => message.text)).toEqual([
+      "初始",
       "先写",
     ]);
   });
@@ -265,73 +386,117 @@ describe("SQLite conversation store", () => {
     expect((await first.list({ scope: "coding" })).items).toHaveLength(2);
   });
 
-  it("migrates v1 rows and backfills list summaries", async () => {
+  it("initializes a new database with an empty migration ledger", async () => {
     const root = await createRoot();
-    const dbPath = path.join(root, "sessions.sqlite");
-    const db = new DatabaseSync(dbPath);
-    db.exec(`
-      CREATE TABLE sessions (
-        conversation_id TEXT PRIMARY KEY,
-        scope TEXT NOT NULL,
-        workspace_root TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        revision INTEGER NOT NULL,
-        record_json TEXT NOT NULL
-      );
-      CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-      CREATE TABLE quarantined_sessions (
-        conversation_id TEXT NOT NULL,
-        record_json TEXT,
-        reason TEXT NOT NULL,
-        quarantined_at TEXT NOT NULL
-      );
-      PRAGMA user_version = 1;
-    `);
-    const payload = {
-      schemaVersion: 1,
-      conversationId: "coding-v1",
-      scope: "coding",
-      createdAt: "2026-11-17T00:00:00.000Z",
-      updatedAt: "2026-11-17T01:00:00.000Z",
-      snapshot: {
-        conversationId: "coding-v1",
-        eventRevision: 0,
-        messages: [
-          {
-            id: "user-v1",
-            role: "user",
-            text: "旧版本会话",
-            images: [],
-            status: "complete",
-          },
-        ],
-      },
-    };
-    db.prepare(`
-      INSERT INTO sessions
-        (conversation_id, scope, workspace_root, created_at, updated_at, revision, record_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      "coding-v1",
-      "coding",
-      null,
-      payload.createdAt,
-      payload.updatedAt,
-      0,
-      JSON.stringify(payload),
-    );
+    storeFor(root);
+
+    const db = new DatabaseSync(path.join(root, "sessions.sqlite"));
+    expect(db.prepare("SELECT COUNT(*) AS count FROM _migrations").get()).toEqual({ count: 0 });
+    db.close();
+  });
+
+  it("ignores PRAGMA user_version when the migration ledger is current", async () => {
+    const root = await createRoot();
+    storeFor(root);
+
+    const db = new DatabaseSync(path.join(root, "sessions.sqlite"));
+    db.exec("PRAGMA user_version = 99");
     db.close();
 
+    expect(() => storeFor(root)).not.toThrow();
+  });
+
+  it("rejects a database created before the migration ledger", async () => {
+    const root = await createRoot();
+    const db = new DatabaseSync(path.join(root, "sessions.sqlite"));
+    db.exec("CREATE TABLE sessions (conversation_id TEXT PRIMARY KEY)");
+    db.close();
+
+    expect(() => new SqliteConversationStore(root)).toThrow("pnpm db:reset");
+  });
+
+  it("does not persist a session until it has a message and drops an emptied session", async () => {
+    const root = await createRoot();
     const store = storeFor(root);
-    const page = await store.list({ scope: "coding" });
-    expect(page.items).toEqual([
-      expect.objectContaining({
-        conversationId: "coding-v1",
-        title: "旧版本会话",
-        messageCount: 1,
-      }),
-    ]);
+    await store.create("coding-empty", undefined, { scope: "coding" });
+
+    expect((await store.list({ scope: "coding" })).items).toEqual([]);
+    const db = new DatabaseSync(path.join(root, "sessions.sqlite"));
+    expect(db.prepare("SELECT COUNT(*) AS count FROM sessions").get()).toEqual({ count: 0 });
+    db.close();
+
+    await store.appendUserMessage("coding-empty", {
+      id: "user-1",
+      role: "user",
+      text: "第一条消息",
+      images: [],
+      status: "complete",
+    });
+    expect((await store.list({ scope: "coding" })).items).toHaveLength(1);
+
+    await store.clear("coding-empty");
+    expect((await store.list({ scope: "coding" })).items).toEqual([]);
+    const verification = new DatabaseSync(path.join(root, "sessions.sqlite"));
+    expect(verification.prepare("SELECT COUNT(*) AS count FROM sessions").get()).toEqual({
+      count: 0,
+    });
+    verification.close();
+
+    expect((await store.load("coding-empty")).messages).toEqual([]);
+    await store.appendUserMessage("coding-empty", {
+      id: "user-2",
+      role: "user",
+      text: "清空后重写",
+      images: [],
+      status: "complete",
+    });
+    expect((await store.list({ scope: "coding" })).items).toHaveLength(1);
+  });
+
+  it("finds a session by exact id without going through the list page", async () => {
+    const root = await createRoot();
+    const store = storeFor(root);
+    await store.create("coding-direct", undefined, {
+      scope: "coding",
+      workspaceRoot: "D:\\WorkSpace",
+    });
+    await store.appendUserMessage("coding-direct", {
+      id: "user-1",
+      role: "user",
+      text: "直接查找",
+      images: [],
+      status: "complete",
+    });
+
+    expect(await store.getSession("coding-direct")).toMatchObject({
+      conversationId: "coding-direct",
+      title: "直接查找",
+      messageCount: 1,
+    });
+    expect(await store.getSession("coding-direct", "D:\\WorkSpace")).toBeDefined();
+    expect(await store.getSession("coding-direct", "E:\\WorkSpace")).toBeUndefined();
+    expect(await store.getSession("missing")).toBeUndefined();
+  });
+
+  it("matches workspace roots case-insensitively on Windows", async () => {
+    if (process.platform !== "win32") return;
+    const root = await createRoot();
+    const store = storeFor(root);
+    await store.create("coding-case", undefined, {
+      scope: "coding",
+      workspaceRoot: "D:\\WorkSpace",
+    });
+    await store.appendUserMessage("coding-case", {
+      id: "user-1",
+      role: "user",
+      text: "大小写路径",
+      images: [],
+      status: "complete",
+    });
+
+    expect(
+      (await store.list({ scope: "coding", workspaceRoot: "d:\\workspace" })).items,
+    ).toHaveLength(1);
   });
 
   it("paginates sessions with a stable cursor without duplicates", async () => {
@@ -339,6 +504,13 @@ describe("SQLite conversation store", () => {
     const store = storeFor(root);
     for (const conversationId of ["coding-1", "coding-2", "coding-3", "coding-4", "coding-5"]) {
       await store.create(conversationId, undefined, { scope: "coding" });
+      await store.appendUserMessage(conversationId, {
+        id: `user-${conversationId}`,
+        role: "user",
+        text: conversationId,
+        images: [],
+        status: "complete",
+      });
       await new Promise((resolve) => setTimeout(resolve, 2));
     }
 

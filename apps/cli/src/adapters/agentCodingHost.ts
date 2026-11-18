@@ -16,6 +16,11 @@ export function createAgentCodingSessionHost(host: CodingHost): CodingSessionHos
         ...(query.limit === undefined ? {} : { limit: query.limit }),
       });
     },
+    getSession: async (conversationId, workspaceRoot) => {
+      if (!host.catalog) throw new Error("当前宿主不支持会话历史。");
+      const session = await host.catalog.getSession(conversationId, workspaceRoot);
+      return session?.scope === "coding" ? session : undefined;
+    },
     deleteSession: async (conversationId) => {
       if (!host.catalog) throw new Error("当前宿主不支持会话历史。");
       return host.catalog.delete(conversationId);
@@ -29,5 +34,6 @@ export function createAgentCodingSessionHost(host: CodingHost): CodingSessionHos
     cancel: (runId) => host.runtime.cancel(runId),
     waitForRun: (runId) => host.runtime.waitForRun(runId),
     dispose: () => host.dispose(),
+    shutdown: () => host.shutdown(),
   };
 }

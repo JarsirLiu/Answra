@@ -76,6 +76,9 @@ export {
 } from "./core/team/preset";
 export * from "./core/tool";
 export type {
+  ConversationMessageCatalog,
+  ConversationMessagePage,
+  ConversationMessageQuery,
   ConversationSessionCatalog,
   ConversationSessionQuery,
 } from "./core/transcript/catalog";

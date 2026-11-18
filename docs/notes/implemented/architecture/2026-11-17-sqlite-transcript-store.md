@@ -2,7 +2,7 @@
 
 状态：已实施
 
-后续变更：会话列表已改为 keyset 游标分页并增加摘要列，见 [会话历史 keyset 分页](2026-11-17-session-list-cursor-pagination.md)。消息正文仍保存在 `record_json`，拆分消息表与消息分页尚未实施，见 [会话消息表与消息分页](../../proposed/architecture/2026-11-17-conversation-message-pagination.md)。
+后续变更：会话列表已改为 keyset 游标分页并增加摘要列，见 [会话历史 keyset 分页](2026-11-17-session-list-cursor-pagination.md)。消息正文已拆到 `session_messages`，并增加流式草稿与退出屏障，见 [会话消息表、流式草稿与退出屏障](2026-11-17-conversation-message-pagination.md)。写失败补写、冲突残留清理、空会话与 workspace 大小写修复见 [会话持久化写失败补写与冲突残留清理](../bug-fix/2026-11-18-session-persistence-durability-and-conflict-cleanup.md)；开发期旧库迁移已移除，当前 DDL 收口为 v1，见 [会话数据库只保留最新 schema](../simplification/2026-11-18-session-schema-latest-only.md)。
 
 ## 问题
 
@@ -23,7 +23,7 @@ CLI 与桌面的会话历史目前由 `FileConversationStore` 承担：每个会
   - `apps/agent/src/index.ts`、`apps/agent/src/composition.ts`：公开入口换为 SQLite store；
   - `apps/cli/src/main.ts`：CLI 会话根目录注入；
   - `apps/desktop/src/main/conversation/workerTransport.ts`：桌面 worker 注入；
-  - `apps/agent/test/core/transcript/`：存储契约、迁移与并发冲突测试。
+  - `apps/agent/test/core/transcript/`：存储契约与并发冲突测试。
 - UI/进程/协议/持久化表面：
   - CLI `/sessions`、`/resume`、`/delete` 行为不变；
   - 桌面历史列表、恢复、删除行为不变；
@@ -52,7 +52,7 @@ PRAGMA synchronous = NORMAL;
 PRAGMA busy_timeout = 5000;
 ```
 
-业务表只保存会话记录与索引，不保存 Agent 事件：
+业务表只保存会话状态、消息与草稿，不保存 Agent 事件。当前 v1 schema：
 
 ```sql
 CREATE TABLE sessions (
@@ -62,28 +62,43 @@ CREATE TABLE sessions (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   revision INTEGER NOT NULL,
-  title TEXT,
+  title TEXT NOT NULL,
   message_count INTEGER NOT NULL DEFAULT 0,
-  record_json TEXT NOT NULL
+  state_json TEXT NOT NULL
 );
 CREATE INDEX sessions_scope_updated ON sessions(scope, updated_at DESC);
 CREATE INDEX sessions_scope_workspace_updated
   ON sessions(scope, workspace_root, updated_at DESC, conversation_id ASC);
 
+CREATE TABLE session_messages (
+  conversation_id TEXT NOT NULL,
+  message_id TEXT NOT NULL,
+  seq INTEGER NOT NULL,
+  role TEXT NOT NULL,
+  status TEXT NOT NULL,
+  message_json TEXT NOT NULL,
+  PRIMARY KEY (conversation_id, message_id),
+  UNIQUE (conversation_id, seq),
+  FOREIGN KEY (conversation_id) REFERENCES sessions(conversation_id) ON DELETE CASCADE
+);
+
+CREATE TABLE session_message_drafts (
+  conversation_id TEXT NOT NULL,
+  message_id TEXT NOT NULL,
+  base_revision INTEGER NOT NULL,
+  draft_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (conversation_id, message_id),
+  FOREIGN KEY (conversation_id) REFERENCES sessions(conversation_id) ON DELETE CASCADE
+);
+
 CREATE TABLE meta (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
-
-CREATE TABLE quarantined_sessions (
-  conversation_id TEXT NOT NULL,
-  record_json TEXT,
-  reason TEXT NOT NULL,
-  quarantined_at TEXT NOT NULL
-);
 ```
 
-`record_json` 复用现有 `SessionRecordPayload` schema：snapshot、contextState、seed 和 metadata 是唯一 transcript 事实。`revision` 只是存储层的 compare-and-swap 版本，不是会话状态；不写 `activeRunId`，加载时仍按 `restoreConversationSnapshot` 移除活动 run、把未完成内容标为 `interrupted`、把 `eventRevision` 归零。
+`state_json` 保存去掉 messages/activeRunId/eventRevision 的 snapshot、contextState 与 seed；`session_messages` 是已完成消息正文，`session_message_drafts` 只保存活动 assistant 的最新流式快照与写入时看到的 `base_revision`。`revision` 只是存储层的 compare-and-swap 版本，不是会话状态；不写 `activeRunId`，加载时仍按 `restoreConversationSnapshot` 移除活动 run、把未完成内容标为 `interrupted`、把 `eventRevision` 归零。冷加载只合并 `base_revision` 等于当前 session revision 的草稿；有效草稿合并后递增 revision。详见 [会话消息表、流式草稿与退出屏障](2026-11-17-conversation-message-pagination.md)。
 
 ### 3. 并发语义
 
@@ -92,23 +107,28 @@ CREATE TABLE quarantined_sessions (
 - 同一会话跨进程：每次写入带 `expectedRevision`，使用
   `UPDATE sessions SET ... revision = revision + 1 WHERE conversation_id = ? AND revision = ?`；
   版本不匹配时抛 `ConversationSessionConflictError`，不静默覆盖。
+- 冲突清理只删除本进程未提交草稿；本进程已提交的 `streaming` 占位行标记为 `interrupted`，不删除。`delete`/`clear` 使用 revision CAS，CAS 失败不得清理消息或草稿；`delete` 拒绝冲突会话。
+- 草稿写入校验数据库 revision，加载只合并 `base_revision` 匹配的草稿；迟到草稿在加载时删除，不参与恢复。
 - 本次不引入租约/心跳；需要同一会话多窗口同时写入时，再单独立 Note 增加 lease 或合并协议。当前明确是“显式失败”，不是“假装支持”。
 
 ### 4. 旧数据迁移
 
+只保留旧 `<conversationId>.json` 文件导入。数据库 schema 已改为 [baseline + `_migrations` 账本](2026-11-18-sqlite-migration-baseline-and-ledger.md)：新库应用 baseline，旧库按账本补迁移，未知未来版本或 checksum 变化显式失败；不再使用 `SCHEMA_VERSION` 或结构不匹配即删库的策略。旧 JSON 导入仍是独立的一次性流程，不混入 schema migration。
+
 首次打开数据库时扫描 `sessionsRoot` 下旧 `<conversationId>.json`：
 
 1. 用现有 `parseSessionRecord` 校验；
-2. 在事务中 `INSERT OR IGNORE` 到 `sessions`，`revision = 0`；
-3. 成功和损坏文件都移动到 `sessionsRoot/legacy/`，损坏文件保留 `.corrupt-<timestamp>` 后缀；
-4. 在 `meta` 写入 `legacy-import:<root>` 标记，避免重复导入；
+2. 会话 ID 已存在时按已导入归档，不覆盖；其余在事务中写入当前 schema，`revision = 0`；
+3. 成功和损坏文件都移动到 `sessionsRoot/legacy/`，损坏文件保留 `.corrupt-<timestamp>` 后缀；写库失败时保留文件等待下次重试；
+4. 全部成功后写入 `meta` 的 `legacy-import:<root>` 标记，避免重复导入；
 5. `answer` scope 的旧文件不导入，保持“答题只在内存、不落盘”的既有边界。
 
 ### 5. 列表与删除
 
-- `list` 用 SQL 按 `scope`、`workspace_root` 过滤，按 `updated_at DESC, conversation_id ASC` 排序，使用 keyset 游标分页；标题和消息数来自写入时维护的 `title`、`message_count` 摘要列，不解析 `record_json`。
-- 列表行仍会校验 `record_json` 可解析；损坏的行移入 `quarantined_sessions`，从 `sessions` 删除，并跳过该行；不静默吞掉用户数据。后续消息表提案会把正文校验从列表查询中拆出。
-- `delete` 先检查内存中是否有活动 run；有则拒绝。数据库删除与内存删除在同一调用内完成。
+- `list` 用 SQL 按 `scope`、`workspace_root` 过滤，按 `updated_at DESC, conversation_id ASC` 排序，使用 keyset 游标分页；标题和消息数来自写入时维护的 `title`、`message_count` 摘要列。`message_count = 0` 的空会话不进入列表；Windows 下 workspace 比较折叠大小写。
+- `getSession` 按完整 ID 读取摘要，供 `/resume`、`/delete` 绕过最近 200 条的分页窗口。
+- 列表行不再解析正文；损坏消息在 `load`/消息页读取时显式失败。
+- `delete` 先拒绝冲突会话与活动 run，再按 revision CAS 删除；CAS 失败抛冲突且不清理子行，数据库删除与内存删除在同一调用内完成。`clear` 同样用 revision CAS 删除空会话行。
 - `answer` scope 的 create/load/delete 全部走内存，不产生数据库行。
 
 ### 6. 组合根
@@ -124,7 +144,7 @@ CREATE TABLE quarantined_sessions (
 - `core/transcript/catalog.ts`：只定义列表/删除端口。
 - `core/transcript/persistence/sessionRecord.ts`：会话记录 schema、序列化/恢复和摘要；不依赖 SQLite。
 - `core/transcript/persistence/sqlite/`：只实现 SQLite 连接、建表、读写和冲突检测；不 import CLI、Electron、React 或领域模块。
-- `core/transcript/persistence/legacy/`：只处理旧 JSON 文件扫描和迁移。
+- `core/transcript/persistence/legacySessionFiles.ts`、`persistence/sqlite/legacySessionImport.ts`：只处理旧 JSON 文件扫描和一次性导入。
 - `execution/`：继续是 `AgentEventEnvelope` 与运行状态的唯一事实来源；本次不新增事件表、事件回放或运行状态表。
 - 宿主（CLI、desktop worker）：只解析根目录、注入 store；不直接执行 SQL。
 
@@ -158,14 +178,14 @@ CREATE TABLE quarantined_sessions (
 - 运行时只有一个活跃 transcript 后端：`SqliteConversationStore`。不要再引入 `FileConversationStore` 或 JSONL 运行时适配器；旧 JSON 只作为一次性迁移输入。
 - `AgentEventEnvelope`、运行状态和消息状态仍只来自现有 `execution` 与 `packages/shared/src/schema/`；数据库不新增事件表、事件回放表或第二套运行状态表。
 - `answer` scope 必须继续只走内存，不能因为换成 SQLite 就被写入历史。
-- 同一会话跨进程写入失败时不得静默覆盖；当前版本会丢弃本地未提交工作集，要求重新加载。需要真正并行写同一会话时必须另立租约/合并 Note。
-- 数据库 schema 变更必须提升 `PRAGMA user_version` 并在同一变更中提供迁移；不得在未知版本上继续读写。
-- `record_json` 是唯一 transcript 正文；如果未来拆 messages 表，必须保持同一事实来源和恢复语义，不能并行保留两份可写正文。
+- 同一会话跨进程写入失败时不得静默覆盖；冲突会丢弃本地未提交工作集、删除本进程草稿并把已提交 streaming 占位标记为 interrupted，要求重新加载。需要真正并行写同一会话时必须另立租约/合并 Note。
+- 发布前数据库只支持最新 schema（当前 v1），非当前版本或结构不匹配的旧库显式失败；公开发布后必须重新引入版本迁移或升级流程。不得在未知版本上继续读写，也不得把 schema 版本号当开发迭代计数器。
+- `state_json` 与 `session_messages` 是唯一 transcript 正文；如果未来再次调整表结构，必须保持同一事实来源和恢复语义，不能并行保留两份可写正文。
 
 ## 验证
 
-- 聚焦测试：`pnpm --filter @answra/agent exec vitest run test/core/transcript/sqliteConversationStore.test.ts`，10 项通过；覆盖往返、列表、删除、未完成 run 恢复、contextState、损坏行隔离、`answer` 内存隔离、scope 校验、旧 JSON 导入、跨 store 冲突和不同会话并行。
-- 全量测试：`pnpm --filter @answra/agent test` 85 文件 / 636 项通过；`pnpm --filter @answra/cli test` 59 文件 / 378 项通过；`pnpm --filter @answra/desktop test` 53 文件 / 350 项通过。
+- 聚焦测试：`pnpm --filter @answra/agent exec vitest run test/core/transcript`；覆盖往返、列表、删除、未完成 run 恢复、contextState、`answer` 内存隔离、scope 校验、旧 JSON 导入、按 ID 直查、空会话、跨 store 冲突和不同会话并行。
+- 全量测试：`pnpm --filter @answra/agent test`、`pnpm --filter @answra/cli test`、`pnpm --filter @answra/desktop test`；最终计数见本次变更的验证记录。
 - 门禁：`pnpm verify`、`pnpm notes:check`、`pnpm architecture:check`、Agent/CLI/desktop typecheck 均通过；`pnpm verify` 在 Windows 11 上完成全仓 lint、测试、架构检查和设计令牌检查。
 - 运行时探测：Node 22.14 与 Electron 35（`ELECTRON_RUN_AS_NODE=1`）均可加载 `node:sqlite` 的 `DatabaseSync`。
 - 实机验证待执行：Windows 11 上 CLI `/sessions`、`/resume`、`/delete`，桌面历史恢复/删除，以及旧 JSON 首次迁移后重启读取。自动化测试不等同于实机验收。
@@ -173,7 +193,7 @@ CREATE TABLE quarantined_sessions (
 ## 风险
 
 - `node:sqlite` 在 Node 22.14 仍是 experimental，API 可能变化；适配器隔离在 persistence 层，升级运行时需重跑契约测试。Electron 35 的 Node 22.14 已实测可加载 `DatabaseSync`。
-- 全量 `record_json` 写入仍会随消息增长放大写放大；当前与文件 store 等价，后续若要优化可把 messages 拆表，但不能因此新增第二套消息事实。
+- 每次状态变化仍会重写 `state_json`；消息正文已增量写入，但长会话冷加载仍全量读入内存，窗口化尚未实施。
 - WAL 会产生 `-wal`/`-shm` 文件；备份和清理策略需要后续单独决定。
 - 跨进程同一会话目前是显式冲突，不是可用功能；需要多窗口写同一会话时必须另立租约/合并 Note。
 - 旧数据归档到 `legacy/` 后不会自动清理；磁盘占用需要后续清理策略。

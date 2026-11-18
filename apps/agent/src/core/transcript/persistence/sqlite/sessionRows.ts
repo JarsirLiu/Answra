@@ -1,18 +1,43 @@
-/** sessions 表的行读写与解析边界；不包含业务状态机。 */
-
+/** sessions / session_messages / session_message_drafts 的行读写与解析边界；不包含业务状态机。 */
 import type { DatabaseSync } from "node:sqlite";
-import type { ConversationSessionScope } from "@answra/shared";
-import {
-  parseSessionRecord,
-  type SessionRecordPayload,
-  summarizeSessionRecord,
-} from "../sessionRecord";
+import type { ConversationMessage, ConversationSessionScope } from "@answra/shared";
+import type { SessionStatePayload } from "../sessionRecord";
+import { parseSessionStatePayload, parseStoredMessage } from "../sessionRecord";
+import { workspaceStorageKey } from "../workspaceKey";
 import type { SessionCursor } from "./sessionCursor";
+
+export interface SessionRowInput {
+  state: SessionStatePayload;
+  scope: ConversationSessionScope;
+  workspaceRoot?: string;
+  title: string;
+  messageCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StoredMessageRow {
+  seq: number;
+  message: ConversationMessage;
+}
+
+export interface StoredDraftRow {
+  messageId: string;
+  baseRevision: number;
+  draft: ConversationMessage;
+}
 
 export interface StoredSessionRow {
   conversationId: string;
   revision: number;
-  record: SessionRecordPayload;
+  state: SessionStatePayload;
+  messages: StoredMessageRow[];
+  drafts: StoredDraftRow[];
+  scope: ConversationSessionScope;
+  workspaceRoot?: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface SessionListRow {
@@ -21,9 +46,8 @@ export interface SessionListRow {
   workspaceRoot?: string;
   createdAt: string;
   updatedAt: string;
-  title: string | null;
+  title: string;
   messageCount: number;
-  recordJson: string;
 }
 
 export class SessionRecordParseError extends Error {
@@ -43,54 +67,52 @@ export class SessionRecordParseError extends Error {
 
 export function insertSessionRow(
   db: DatabaseSync,
-  payload: SessionRecordPayload,
+  input: SessionRowInput,
   revision: number,
 ): number {
-  const summary = summarizeSessionRecord(payload);
   const result = db
     .prepare(`
-      INSERT OR IGNORE INTO sessions
+      INSERT INTO sessions
         (conversation_id, scope, workspace_root, created_at, updated_at, revision,
-         title, message_count, record_json)
+         title, message_count, state_json)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
     .run(
-      payload.conversationId,
-      payload.scope,
-      payload.workspaceRoot ?? null,
-      payload.createdAt,
-      payload.updatedAt,
+      input.state.conversationId,
+      input.scope,
+      input.workspaceRoot ?? null,
+      input.createdAt,
+      input.updatedAt,
       revision,
-      summary.title,
-      summary.messageCount,
-      JSON.stringify(payload),
+      input.title,
+      input.messageCount,
+      JSON.stringify(input.state),
     );
   return Number(result.changes);
 }
 
 export function updateSessionRow(
   db: DatabaseSync,
-  payload: SessionRecordPayload,
+  input: SessionRowInput,
   expectedRevision: number,
 ): number {
-  const summary = summarizeSessionRecord(payload);
   const result = db
     .prepare(`
       UPDATE sessions
       SET scope = ?, workspace_root = ?, created_at = ?, updated_at = ?,
-          revision = ?, title = ?, message_count = ?, record_json = ?
+          revision = ?, title = ?, message_count = ?, state_json = ?
       WHERE conversation_id = ? AND revision = ?
     `)
     .run(
-      payload.scope,
-      payload.workspaceRoot ?? null,
-      payload.createdAt,
-      payload.updatedAt,
+      input.scope,
+      input.workspaceRoot ?? null,
+      input.createdAt,
+      input.updatedAt,
       expectedRevision + 1,
-      summary.title,
-      summary.messageCount,
-      JSON.stringify(payload),
-      payload.conversationId,
+      input.title,
+      input.messageCount,
+      JSON.stringify(input.state),
+      input.state.conversationId,
       expectedRevision,
     );
   return Number(result.changes);
@@ -101,28 +123,171 @@ export function readSessionRow(
   conversationId: string,
 ): StoredSessionRow | undefined {
   const row = db
-    .prepare("SELECT record_json, revision FROM sessions WHERE conversation_id = ?")
-    .get(conversationId) as { record_json: string; revision: number } | undefined;
+    .prepare(`
+      SELECT conversation_id, scope, workspace_root, created_at, updated_at,
+             revision, title, state_json
+      FROM sessions
+      WHERE conversation_id = ?
+    `)
+    .get(conversationId) as StoredSessionColumns | undefined;
   if (!row) return undefined;
-  return {
-    conversationId,
-    revision: row.revision,
-    record: parseStoredRecord(conversationId, row.record_json),
-  };
-}
-
-export function parseStoredRecord(
-  conversationId: string,
-  recordJson: string,
-): SessionRecordPayload {
   try {
-    const parsed = JSON.parse(recordJson) as unknown;
-    const record = parseSessionRecord(parsed);
-    if (record.conversationId !== conversationId) throw new Error("数据库会话 ID 与行不一致");
-    return record;
+    const state = parseSessionStatePayload(JSON.parse(row.state_json) as unknown);
+    if (
+      state.conversationId !== conversationId ||
+      state.snapshot.conversationId !== conversationId
+    ) {
+      throw new Error("数据库会话 ID 与行不一致");
+    }
+    const messages = listMessageRows(db, conversationId);
+    const drafts = listDraftRows(db, conversationId);
+    return {
+      conversationId,
+      revision: row.revision,
+      state,
+      messages,
+      drafts,
+      scope: row.scope,
+      ...(row.workspace_root === null ? {} : { workspaceRoot: row.workspace_root }),
+      title: row.title,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
   } catch (error) {
     throw new SessionRecordParseError(conversationId, error);
   }
+}
+
+export function listMessageRows(db: DatabaseSync, conversationId: string): StoredMessageRow[] {
+  const rows = db
+    .prepare(`
+      SELECT seq, message_json
+      FROM session_messages
+      WHERE conversation_id = ?
+      ORDER BY seq ASC
+    `)
+    .all(conversationId) as Array<{ seq: number; message_json: string }>;
+  const ids = new Set<string>();
+  return rows.map((row) => {
+    const message = parseStoredMessage(JSON.parse(row.message_json) as unknown);
+    if (ids.has(message.id)) throw new Error(`消息 ID 重复：${message.id}`);
+    ids.add(message.id);
+    return { seq: row.seq, message };
+  });
+}
+
+export function listDraftRows(db: DatabaseSync, conversationId: string): StoredDraftRow[] {
+  const rows = db
+    .prepare(`
+      SELECT message_id, base_revision, draft_json
+      FROM session_message_drafts
+      WHERE conversation_id = ?
+      ORDER BY message_id ASC
+    `)
+    .all(conversationId) as Array<{
+    message_id: string;
+    base_revision: number;
+    draft_json: string;
+  }>;
+  return rows.map((row) => {
+    const draft = parseStoredMessage(JSON.parse(row.draft_json) as unknown);
+    if (draft.id !== row.message_id) throw new Error("消息草稿 ID 与行不一致");
+    if (draft.role !== "assistant") throw new Error("消息草稿必须是 assistant 消息");
+    return { messageId: row.message_id, baseRevision: row.base_revision, draft };
+  });
+}
+
+export function insertMessageRow(
+  db: DatabaseSync,
+  conversationId: string,
+  seq: number,
+  message: ConversationMessage,
+): void {
+  db.prepare(`
+    INSERT INTO session_messages
+      (conversation_id, message_id, seq, role, status, message_json)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(conversationId, message.id, seq, message.role, message.status, JSON.stringify(message));
+}
+
+export function updateMessageRow(
+  db: DatabaseSync,
+  conversationId: string,
+  message: ConversationMessage,
+): void {
+  db.prepare(`
+    UPDATE session_messages
+    SET role = ?, status = ?, message_json = ?
+    WHERE conversation_id = ? AND message_id = ?
+  `).run(message.role, message.status, JSON.stringify(message), conversationId, message.id);
+}
+
+export function upsertDraftRow(
+  db: DatabaseSync,
+  conversationId: string,
+  message: ConversationMessage,
+  baseRevision: number,
+  updatedAt: string,
+): void {
+  db.prepare(`
+    INSERT INTO session_message_drafts
+      (conversation_id, message_id, base_revision, draft_json, updated_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(conversation_id, message_id) DO UPDATE SET
+      base_revision = excluded.base_revision,
+      draft_json = excluded.draft_json,
+      updated_at = excluded.updated_at
+  `).run(conversationId, message.id, baseRevision, JSON.stringify(message), updatedAt);
+}
+
+export function deleteDraftRow(db: DatabaseSync, conversationId: string, messageId: string): void {
+  db.prepare(`
+    DELETE FROM session_message_drafts
+    WHERE conversation_id = ? AND message_id = ?
+  `).run(conversationId, messageId);
+}
+
+export function deleteDraftRows(db: DatabaseSync, conversationId: string): void {
+  db.prepare("DELETE FROM session_message_drafts WHERE conversation_id = ?").run(conversationId);
+}
+
+export function deleteMessageRows(db: DatabaseSync, conversationId: string): void {
+  db.prepare("DELETE FROM session_messages WHERE conversation_id = ?").run(conversationId);
+}
+
+export function readSessionRevision(db: DatabaseSync, conversationId: string): number | undefined {
+  const row = db
+    .prepare("SELECT revision FROM sessions WHERE conversation_id = ?")
+    .get(conversationId) as { revision: number } | undefined;
+  return row?.revision;
+}
+
+export function bumpSessionRevision(
+  db: DatabaseSync,
+  conversationId: string,
+  expectedRevision: number,
+): number {
+  const result = db
+    .prepare(
+      "UPDATE sessions SET revision = revision + 1 WHERE conversation_id = ? AND revision = ?",
+    )
+    .run(conversationId, expectedRevision);
+  return Number(result.changes);
+}
+
+export function readSessionSummaryRow(
+  db: DatabaseSync,
+  conversationId: string,
+): SessionListRow | undefined {
+  const row = db
+    .prepare(`
+      SELECT conversation_id, scope, workspace_root, created_at, updated_at,
+             title, message_count
+      FROM sessions
+      WHERE conversation_id = ?
+    `)
+    .get(conversationId) as StoredSummaryColumns | undefined;
+  return row === undefined ? undefined : toSessionListRow(row);
 }
 
 export function listSessionRows(
@@ -134,15 +299,20 @@ export function listSessionRows(
     limit: number;
   },
 ): SessionListRow[] {
-  const clauses = ["scope <> 'answer'"];
+  const clauses = ["scope <> 'answer'", "message_count > 0"];
   const parameters: Array<string | number> = [];
   if (filters.scope !== undefined) {
     clauses.push("scope = ?");
     parameters.push(filters.scope);
   }
   if (filters.workspaceRoot !== undefined) {
-    clauses.push("workspace_root = ?");
-    parameters.push(filters.workspaceRoot);
+    const workspaceRoot = workspaceStorageKey(filters.workspaceRoot);
+    if (process.platform === "win32") {
+      clauses.push("LOWER(workspace_root) = ?");
+    } else {
+      clauses.push("workspace_root = ?");
+    }
+    parameters.push(workspaceRoot);
   }
   if (filters.cursor !== undefined) {
     clauses.push("(updated_at < ? OR (updated_at = ? AND conversation_id > ?))");
@@ -156,14 +326,18 @@ export function listSessionRows(
   const rows = db
     .prepare(`
       SELECT conversation_id, scope, workspace_root, created_at, updated_at,
-             title, message_count, record_json
+             title, message_count
       FROM sessions
       WHERE ${clauses.join(" AND ")}
       ORDER BY updated_at DESC, conversation_id ASC
       LIMIT ?
     `)
     .all(...parameters) as unknown as StoredSummaryColumns[];
-  return rows.map((row) => ({
+  return rows.map(toSessionListRow);
+}
+
+function toSessionListRow(row: StoredSummaryColumns): SessionListRow {
+  return {
     conversationId: row.conversation_id,
     scope: row.scope,
     ...(row.workspace_root === null ? {} : { workspaceRoot: row.workspace_root }),
@@ -171,54 +345,23 @@ export function listSessionRows(
     updatedAt: row.updated_at,
     title: row.title,
     messageCount: row.message_count,
-    recordJson: row.record_json,
-  }));
+  };
 }
 
-export function deleteSessionRow(db: DatabaseSync, conversationId: string): void {
-  db.prepare("DELETE FROM sessions WHERE conversation_id = ?").run(conversationId);
-}
-
-export function quarantineSessionRow(
+export function deleteSessionRowWithRevision(
   db: DatabaseSync,
   conversationId: string,
-  recordJson: string | null,
-  reason: string,
-): void {
-  db.prepare(`
-    INSERT INTO quarantined_sessions
-      (conversation_id, record_json, reason, quarantined_at)
-    VALUES (?, ?, ?, ?)
-  `).run(conversationId, recordJson, reason, new Date().toISOString());
-  deleteSessionRow(db, conversationId);
-}
-
-export function backfillSessionSummaries(db: DatabaseSync): void {
-  const rows = db
-    .prepare("SELECT conversation_id, record_json FROM sessions WHERE title IS NULL")
-    .all() as Array<{ conversation_id: string; record_json: string }>;
-  for (const row of rows) {
-    try {
-      const record = parseStoredRecord(row.conversation_id, row.record_json);
-      const summary = summarizeSessionRecord(record);
-      db.prepare("UPDATE sessions SET title = ?, message_count = ? WHERE conversation_id = ?").run(
-        summary.title,
-        summary.messageCount,
-        row.conversation_id,
-      );
-    } catch (error) {
-      if (!(error instanceof SessionRecordParseError)) throw error;
-      quarantineSessionRow(db, row.conversation_id, row.record_json, error.message);
-    }
+  expectedRevision: number,
+): number {
+  const result = db
+    .prepare("DELETE FROM sessions WHERE conversation_id = ? AND revision = ?")
+    .run(conversationId, expectedRevision);
+  const changes = Number(result.changes);
+  if (changes === 1) {
+    deleteDraftRows(db, conversationId);
+    deleteMessageRows(db, conversationId);
   }
-}
-
-export function hasMeta(db: DatabaseSync, key: string): boolean {
-  return db.prepare("SELECT 1 FROM meta WHERE key = ?").get(key) !== undefined;
-}
-
-export function writeMeta(db: DatabaseSync, key: string, value: string): void {
-  db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)").run(key, value);
+  return changes;
 }
 
 interface StoredSummaryColumns {
@@ -227,7 +370,17 @@ interface StoredSummaryColumns {
   workspace_root: string | null;
   created_at: string;
   updated_at: string;
-  title: string | null;
+  title: string;
   message_count: number;
-  record_json: string;
+}
+
+interface StoredSessionColumns {
+  conversation_id: string;
+  scope: ConversationSessionScope;
+  workspace_root: string | null;
+  created_at: string;
+  updated_at: string;
+  revision: number;
+  title: string;
+  state_json: string;
 }

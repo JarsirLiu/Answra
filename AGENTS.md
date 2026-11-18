@@ -49,7 +49,7 @@
 | `src/core/agent` | 静态 Agent 注册、模型路由、AI SDK 执行与统一事件写入 | 不读写 transcript、不包含领域 prompt/工具授权；领域注入注册后的 executor |
 | `src/core/bot` | Bot 身份/发现契约、启动期不可变目录与会话参与者可见性校验 | 不持有 store、不创建 run、不 import 领域、不定义 prompt；独立助手与团队共用同一目录 |
 | `src/core/team` | 团队预置与交接任务校验 | 只描述预置成员；不持有 Bot 身份、执行器或 profile |
-| `src/core/transcript` | Conversation、Answer、Interview 共用的消息 transcript、活动 run 认领、恢复游标端口、内存与 SQLite（`node:sqlite`）适配器 | 不保存 Agent 事件、不包含领域产品策略；SQLite 适配器按 scope 写入 `sessions.sqlite` 并迁移旧 JSON，`answer` 只走内存、不读盘不落盘 |
+| `src/core/transcript` | Conversation、Answer、Interview 共用的消息 transcript、活动 run 认领、恢复游标端口、内存与 SQLite（`node:sqlite`）适配器；SQLite 使用 `schema.ts` baseline、`_migrations` 账本与 append-only migration | 不保存 Agent 事件、不包含领域产品策略；SQLite 适配器按 scope 写入 `sessions.sqlite` 并迁移旧 JSON，`answer` 只走内存、不读盘不落盘；不得用全局 `SCHEMA_VERSION` 或删库处理版本升级 |
 | `src/core/model` | AI SDK/provider 边界归一化、共享模型输入校验与 HTTP 重试原语 | 不放 Conversation profile 或 transcript 规则 |
 | `src/core/tool` | 跨领域工具契约、静态注册表与单次调用执行管理；通用工具在 `builtin/` | 不导入领域、不写工具事件；领域专属工具留在 `<domain>/tools/`，执行器只返回结果 |
 | `src/core/skill` | 三类来源的 skill 扫描、frontmatter 校验、索引渲染与按名查表契约 | 不读领域 prompt、不接受模型传入路径；宿主注入根目录，缺省即没有 skill |
@@ -128,7 +128,7 @@
 
 ## 质量门禁
 
-- `pnpm verify` = biome lint + 全包 typecheck + vitest + 架构守护 + `tokens:check`；其中 Note 检查走 `pnpm notes:hint`（只提示、不阻断本地提交）；husky pre-push 自动执行。
+- `pnpm verify` = biome lint + 全包 typecheck + `db:check` + vitest + 架构守护 + `tokens:check`；其中 Note 检查走 `pnpm notes:hint`（只提示、不阻断本地提交）；husky pre-push 自动执行。
 - `pnpm notes:check`（严格）保留给 CI 与发布前：缺少配套 Note、Note 格式不完整或本地链接失效时失败。CI（`.github/workflows/ci.yml`）以 `--base` 比较目标分支执行严格模式。
 - 提交前自检与门禁执行要点（范围意图、Note 配对、全量门禁、diff 自审、秘密与工件、Conventional Commits）收编在 `.agents/skills/answra-code/SKILL.md` 终篇，不再单设 skill。
 - 写代码与评审的工程规范见 `.agents/skills/answra-code/SKILL.md`：前置条件闸门（事实不足必须停下并客观告知）、代码落层判断、契约与类型纪律、状态与行为的显式来源（禁推演状态）、防御性代码预算、魔法值清零、规模预算（函数/文件/目录）、co-location、可读性、并行模块纪律。

@@ -33,6 +33,12 @@ export async function handleResume(args: readonly string[], deps: TuiCommandDeps
   const session = deps.getSession();
   if (session === undefined) throw new Error("尚未配置模型。");
   const query = args[0] ?? "";
+  const direct = await session.findSession(query);
+  if (direct !== undefined) {
+    await deps.activateSession(direct.conversationId);
+    notify(deps, SESSION_NOTICE_KEY, `已恢复会话：${direct.conversationId}`, "success");
+    return;
+  }
   const sessions = (await session.listSessions({ limit: SESSION_LOOKUP_LIMIT })).items;
   const exact = sessions.find((item) => item.conversationId === query);
   const matches = exact
@@ -68,10 +74,13 @@ export async function handleDelete(args: readonly string[], deps: TuiCommandDeps
   const session = deps.getSession();
   if (session === undefined) throw new Error("尚未配置模型。");
   const conversationId = args[0] ?? "";
-  const sessions = (await session.listSessions({ limit: SESSION_LOOKUP_LIMIT })).items;
-  if (!sessions.some((item) => item.conversationId === conversationId)) {
-    notify(deps, SESSION_NOTICE_KEY, `没有匹配的会话：${conversationId}`, "warning");
-    return;
+  const direct = await session.findSession(conversationId);
+  if (direct === undefined) {
+    const sessions = (await session.listSessions({ limit: SESSION_LOOKUP_LIMIT })).items;
+    if (!sessions.some((item) => item.conversationId === conversationId)) {
+      notify(deps, SESSION_NOTICE_KEY, `没有匹配的会话：${conversationId}`, "warning");
+      return;
+    }
   }
   const next = await deps.deleteSession(conversationId);
   if (next !== undefined) deps.store.reset(next);

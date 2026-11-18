@@ -27,6 +27,10 @@ class FakeWorker extends EventEmitter {
       reply(emptySnapshot(command.conversationId));
       return;
     }
+    if (command.type === "shutdown") {
+      queueMicrotask(() => this.emit("exit", 0));
+      return;
+    }
     reply();
   });
   readonly kill = vi.fn(() => {
@@ -101,7 +105,9 @@ describe("AgentService connection lifecycle", () => {
       expect(service.getConnectionState().status).toBe("connected");
     });
     expect(shared.workers).toHaveLength(2);
+    const active = lastWorker();
     await service.stop();
+    expect(active.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: "shutdown" }));
   });
 
   it("refreshes known conversation snapshots after a worker restart", async () => {

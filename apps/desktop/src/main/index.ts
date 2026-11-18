@@ -71,6 +71,8 @@ let disposeWorkspace: (() => void) | undefined;
 let updateController: ReturnType<typeof createUpdateController> | undefined;
 let disposeUpdateIpc: (() => void) | undefined;
 let quitting = false;
+let quitComplete = false;
+let quitShutdown: Promise<void> | undefined;
 const configDir = app.getPath("userData");
 const releaseManifest = JSON.parse(__ANSWRA_RELEASE_MANIFEST__) as ReleaseManifest;
 const answraDataRoot = join(app.getPath("appData"), "Answra");
@@ -221,23 +223,38 @@ if (!app.requestSingleInstanceLock()) {
       .finally(() => flushAuthUrls());
   });
 
-  app.on("before-quit", () => {
-    if (quitting) return;
+  app.on("before-quit", (event) => {
+    if (quitComplete) return;
+    event.preventDefault();
+    if (quitShutdown) return;
     quitting = true;
-    disposeUpdateIpc?.();
-    updateController?.dispose();
-    authService.dispose();
-    void stopInterview()
-      .catch(() => undefined)
-      .finally(() => agentService.stop());
-    disposeInterview();
-    disposeInterviewOnboarding();
-    disposeWorkspace?.();
+    quitShutdown = shutdownForQuit();
   });
 
   app.on("activate", () => activateOrCreateMainWindow());
 
   app.on("window-all-closed", () => app.quit());
+}
+
+async function shutdownForQuit(): Promise<void> {
+  disposeUpdateIpc?.();
+  updateController?.dispose();
+  authService.dispose();
+  try {
+    await stopInterview();
+  } catch (error) {
+    console.warn("[app] 面试会话收口失败", error);
+  }
+  disposeInterview();
+  disposeInterviewOnboarding();
+  try {
+    await agentService.stop();
+  } catch (error) {
+    console.warn("[app] Agent worker 收口失败", error);
+  }
+  disposeWorkspace?.();
+  quitComplete = true;
+  app.quit();
 }
 
 function createManagedMainWindow(): void {

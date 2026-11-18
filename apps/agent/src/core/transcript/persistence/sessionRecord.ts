@@ -1,15 +1,17 @@
 /** 会话记录 payload：SQLite 行与旧 JSON 文件共用的 schema、恢复和摘要投影。 */
-import type { ConversationSessionSummary } from "@answra/shared";
+import type { ConversationMessage, ConversationSessionSummary } from "@answra/shared";
 import {
   contextCompactionSchema,
   contextPruningSchema,
   contextUsageSchema,
+  conversationMessageSchema,
   conversationSessionScopeSchema,
   conversationSnapshotSchema,
 } from "@answra/shared/schema";
 import { z } from "zod";
 import type { ContextState } from "../contextState";
 import type { ConversationSessionRecord } from "../memoryStore";
+import type { ConversationSessionMetadata } from "../store";
 import { restoreContextState, restoreConversationSnapshot } from "./restore";
 
 const checkpointSchema = z.strictObject({
@@ -49,6 +51,20 @@ const seedSchema = z.strictObject({
   bots: z.array(botSchema).optional(),
 });
 
+const stateSnapshotSchema = conversationSnapshotSchema.omit({
+  messages: true,
+  activeRunId: true,
+  eventRevision: true,
+});
+
+export const sessionStatePayloadSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  conversationId: z.string(),
+  snapshot: stateSnapshotSchema,
+  contextState: contextStateSchema.optional(),
+  seed: seedSchema.optional(),
+});
+
 export const sessionRecordSchema = z.strictObject({
   schemaVersion: z.literal(1),
   conversationId: z.string(),
@@ -62,68 +78,120 @@ export const sessionRecordSchema = z.strictObject({
   seed: seedSchema.optional(),
 });
 
+export type SessionStatePayload = z.infer<typeof sessionStatePayloadSchema>;
 export type SessionRecordPayload = z.infer<typeof sessionRecordSchema>;
+
+export interface StoredSessionState {
+  state: SessionStatePayload;
+  messages: readonly ConversationMessage[];
+  metadata: ConversationSessionMetadata;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SplitSessionRecord {
+  state: SessionStatePayload;
+  messages: readonly ConversationMessage[];
+}
 
 export function parseSessionRecord(value: unknown): SessionRecordPayload {
   return sessionRecordSchema.parse(value);
 }
 
-export function toConversationSessionRecord(
-  record: SessionRecordPayload,
-): ConversationSessionRecord {
-  return {
-    snapshot: restoreConversationSnapshot(record.snapshot),
-    ...(record.seed ? { seed: record.seed } : {}),
-    ...(record.contextState ? { contextState: restoreContextState(record.contextState) } : {}),
-    metadata: {
-      scope: record.scope,
-      ...(record.workspaceRoot === undefined ? {} : { workspaceRoot: record.workspaceRoot }),
-      ...(record.title === undefined ? {} : { title: record.title }),
-    },
-    createdAt: record.createdAt,
-    updatedAt: record.updatedAt,
-  };
+export function parseSessionStatePayload(value: unknown): SessionStatePayload {
+  return sessionStatePayloadSchema.parse(value);
 }
 
-export function toSessionRecordPayload(record: ConversationSessionRecord): SessionRecordPayload {
+export function parseStoredMessage(value: unknown): ConversationMessage {
+  return conversationMessageSchema.parse(value);
+}
+
+export function splitSessionRecord(record: ConversationSessionRecord): SplitSessionRecord {
   if (!record.metadata) throw new Error("会话缺少 metadata，拒绝持久化");
-  const { activeRunId: _activeRunId, ...snapshot } = record.snapshot;
+  const {
+    messages,
+    activeRunId: _activeRunId,
+    eventRevision: _eventRevision,
+    ...snapshot
+  } = record.snapshot;
   return {
-    schemaVersion: 1,
-    conversationId: record.snapshot.conversationId,
-    scope: record.metadata.scope,
-    ...(record.metadata.workspaceRoot === undefined
-      ? {}
-      : { workspaceRoot: record.metadata.workspaceRoot }),
-    ...(record.metadata.title === undefined ? {} : { title: record.metadata.title }),
-    createdAt: record.createdAt,
-    updatedAt: record.updatedAt,
-    snapshot,
-    ...(record.contextState
-      ? {
-          contextState: toPersistedContextState(record.contextState),
-        }
-      : {}),
-    ...(record.seed
-      ? {
-          seed: {
-            activeAgentId: record.seed.activeAgentId,
-            participantAgentIds: [...record.seed.participantAgentIds],
-            ...(record.seed.bots ? { bots: record.seed.bots.map((bot) => ({ ...bot })) } : {}),
-          },
-        }
-      : {}),
+    state: {
+      schemaVersion: 1,
+      conversationId: record.snapshot.conversationId,
+      snapshot,
+      ...(record.contextState
+        ? { contextState: toPersistedContextState(record.contextState) }
+        : {}),
+      ...(record.seed ? { seed: cloneSeed(record.seed) } : {}),
+    },
+    messages: messages.map(cloneMessage),
   };
 }
 
-function toPersistedContextState(
-  state: ContextState,
-): NonNullable<SessionRecordPayload["contextState"]> {
-  const { prunedToolCallIds, ...rest } = state;
+export function splitLegacySessionRecord(record: SessionRecordPayload): SplitSessionRecord {
+  const {
+    messages,
+    activeRunId: _activeRunId,
+    eventRevision: _eventRevision,
+    ...snapshot
+  } = record.snapshot;
+  return {
+    state: {
+      schemaVersion: 1,
+      conversationId: record.conversationId,
+      snapshot,
+      ...(record.contextState
+        ? { contextState: toPersistedContextState(record.contextState) }
+        : {}),
+      ...(record.seed ? { seed: cloneSeed(record.seed) } : {}),
+    },
+    messages: messages.map(cloneMessage),
+  };
+}
+
+export function restoreStoredSession(stored: StoredSessionState): ConversationSessionRecord {
+  return {
+    snapshot: restoreConversationSnapshot({
+      ...stored.state.snapshot,
+      conversationId: stored.state.conversationId,
+      eventRevision: 0,
+      messages: stored.messages.map(cloneMessage),
+    }),
+    ...(stored.state.seed ? { seed: cloneSeed(stored.state.seed) } : {}),
+    ...(stored.state.contextState
+      ? { contextState: restoreContextState(stored.state.contextState) }
+      : {}),
+    metadata: cloneMetadata(stored.metadata),
+    createdAt: stored.createdAt,
+    updatedAt: stored.updatedAt,
+  };
+}
+
+export function mergeDraftMessage(
+  stored: ConversationMessage,
+  draft: ConversationMessage,
+): ConversationMessage {
+  if (draft.id !== stored.id || draft.role !== "assistant") {
+    throw new Error("消息草稿与已存消息不匹配");
+  }
+  const { parts: _storedParts, reasoning: _storedReasoning, ...rest } = stored;
   return {
     ...rest,
-    checkpoints: rest.checkpoints.map((checkpoint) => ({ ...checkpoint })),
-    ...(prunedToolCallIds ? { prunedToolCallIds: [...prunedToolCallIds] } : {}),
+    text: draft.text,
+    images: [...draft.images],
+    status: draft.status,
+    ...(draft.parts === undefined ? {} : { parts: draft.parts.map(clonePart) }),
+    ...(draft.reasoning === undefined ? {} : { reasoning: draft.reasoning }),
+  };
+}
+
+export function summarizeSessionState(
+  messages: readonly ConversationMessage[],
+  explicitTitle?: string,
+): { title: string; messageCount: number } {
+  return {
+    title: explicitTitle?.trim() || firstUserMessageTitle(messages) || "未命名会话",
+    messageCount: messages.length,
   };
 }
 
@@ -146,4 +214,47 @@ function firstUserMessageTitle(
   if (!text) return undefined;
   const chars = Array.from(text);
   return chars.length > 80 ? `${chars.slice(0, 80).join("")}…` : text;
+}
+
+function toPersistedContextState(
+  state: ContextState,
+): NonNullable<SessionRecordPayload["contextState"]> {
+  const { prunedToolCallIds, ...rest } = state;
+  return {
+    ...rest,
+    checkpoints: rest.checkpoints.map((checkpoint) => ({ ...checkpoint })),
+    ...(prunedToolCallIds ? { prunedToolCallIds: [...prunedToolCallIds] } : {}),
+  };
+}
+
+function cloneSeed(seed: {
+  activeAgentId: string;
+  participantAgentIds: readonly string[];
+  bots?: readonly { id: string; name: string; role: string }[];
+}) {
+  return {
+    activeAgentId: seed.activeAgentId,
+    participantAgentIds: [...seed.participantAgentIds],
+    ...(seed.bots ? { bots: seed.bots.map((bot) => ({ ...bot })) } : {}),
+  };
+}
+
+function cloneMetadata(metadata: ConversationSessionMetadata): ConversationSessionMetadata {
+  return {
+    scope: metadata.scope,
+    ...(metadata.workspaceRoot === undefined ? {} : { workspaceRoot: metadata.workspaceRoot }),
+    ...(metadata.title === undefined ? {} : { title: metadata.title }),
+  };
+}
+
+function cloneMessage(message: ConversationMessage): ConversationMessage {
+  return {
+    ...message,
+    images: [...message.images],
+    ...(message.parts ? { parts: message.parts.map(clonePart) } : {}),
+  };
+}
+
+function clonePart(part: NonNullable<ConversationMessage["parts"]>[number]) {
+  return { ...part };
 }

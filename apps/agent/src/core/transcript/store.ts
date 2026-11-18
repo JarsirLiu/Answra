@@ -23,7 +23,12 @@ export interface ConversationSessionMetadata {
 }
 
 export type ConversationStoreMutation =
-  | { kind: "created" | "changed" | "run-started" | "run-finished" }
+  | {
+      kind: "created" | "changed" | "run-started" | "run-finished";
+      dirtyMessageIds?: readonly string[];
+    }
+  | { kind: "stream-checkpoint"; messageId: string }
+  | { kind: "cleared" }
   | { kind: "event"; event: AgentEventEnvelope };
 
 export interface HandoffMessageInput {
@@ -94,4 +99,6 @@ export interface ConversationStore {
   /** 读取上下文检查点与压缩生命周期；与 transcript 消息分开保存，避免 UI snapshot 携带摘要正文。 */
   loadContextState(conversationId: string): Promise<ContextState | undefined>;
   saveContextState(conversationId: string, state: ContextState): Promise<void>;
+  /** 宿主退出时收口待写入内容；可重复调用。 */
+  close(): Promise<void>;
 }

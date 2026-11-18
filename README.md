@@ -38,7 +38,7 @@ pnpm dev
 ## 检查
 
 ```powershell
-pnpm verify   # lint + typecheck + test + architecture:check（Note 检查仅提示，不阻断）
+pnpm verify   # lint + typecheck + db:check + test + architecture:check（Note 检查仅提示，不阻断）
 pnpm build
 ```
 
@@ -110,13 +110,14 @@ apps/agent             平台无关的 Agent 运行时（不依赖 Electron/Reac
   src/core/agent        静态 Agent 注册、AI SDK 执行与 run 生命周期
   src/core/bot          Bot 身份/发现契约、启动期不可变目录与会话参与者可见性
   src/core/team         团队预置与交接任务校验
-  src/core/transcript   Conversation、Answer、Interview 共用的 transcript 端口、内存与 SQLite 适配器；answer 仅内存
+  src/core/transcript   Conversation、Answer、Interview 共用的 transcript 端口、内存与 SQLite 适配器（baseline + _migrations 迁移）；answer 仅内存
   src/core/run         进程内 run 取消与完成等待原语
   src/core/model       provider 适配、模型流归一化、图片输入与 HTTP 重试
   src/core/skill       skill 来源扫描、frontmatter 校验、索引渲染与按名加载
   src/execution        run/attempt/step 事件、状态、进程内 store 和投影
   src/conversation     对话领域：turn、agent、profiles、tools 子域
   src/interview        面试语音领域：audio、transcription、turns、vad、reply 与 worker adapter
+  scripts/db           开发期 DB 生成与校验；不进入运行时 bundle
 examples/vad-asr-eval  独立 workspace 的可选 VAD/ASR 评测：按需安装，不进根 workspace、依赖安装或常规门禁
 scripts/architecture   架构守护脚本（深导入/依赖环/平台越界检查）
 scripts/docs           文档门禁
@@ -142,12 +143,16 @@ docs                   Note 索引
 | `pnpm build` | 全 workspace 构建（desktop: esbuild + vite） |
 | `pnpm typecheck` | 各包依次 `tsc --noEmit`（desktop 按进程分三个编译单元） |
 | `pnpm test` | 各包测试（ui 使用 vitest + jsdom） |
+| `pnpm db:check` | 校验 baseline、`_migrations`、生成物与 fresh DB 启动 |
+| `pnpm db:generate` | 重建 migration registry 与 schema 快照 |
+| `pnpm db:test` | 运行迁移 runner 的升级、幂等、checksum 与回滚测试 |
+| `pnpm db:reset --yes` | 删除 CLI/桌面开发会话数据库并保留 legacy 归档 |
 | `pnpm notes:hint` | Note 格式、本地链接和变更配对检查（仅提示，不阻断） |
 | `pnpm notes:check` | 同 `notes:hint` 但严格：缺失或格式错误即失败（CI/发布用） |
 | `pnpm architecture:check` | 架构守护检查 |
 | `pnpm --dir examples/vad-asr-eval install` | 可选：单独安装 VAD/ASR 评测依赖，不影响根 workspace |
 | `pnpm --dir examples/vad-asr-eval eval:eot` | 可选运行真实中文轮次 VAD/ASR 评测，结果在 `examples/vad-asr-eval/out/` |
-| `pnpm verify` | lint + typecheck + test + architecture（Note 检查为提示；pre-push 同款） |
+| `pnpm verify` | lint + typecheck + `db:check` + test + architecture（Note 检查为提示；pre-push 同款） |
 
 ## 参与开发
 

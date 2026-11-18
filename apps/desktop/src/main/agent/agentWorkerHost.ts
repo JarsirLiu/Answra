@@ -24,6 +24,8 @@ type RequestCommand = Exclude<AgentCommand, { type: "interview-audio-frame" }>;
 
 /** worker 启动后等待就绪探测的上限；本地资源在面试开始时才加载，启动本身应很快。 */
 const WORKER_READY_TIMEOUT_MS = 15_000;
+/** 退出时等待 worker 写完最终 transcript 的上限；超时才强制结束进程。 */
+const SHUTDOWN_TIMEOUT_MS = 3_000;
 
 export interface AgentWorkerProcessOptions {
   resolveModel: (options?: { forceRefresh?: boolean }) => Promise<ResolvedModel>;
@@ -95,7 +97,7 @@ export class AgentWorkerProcess implements AgentWorkerHostPort {
     const worker = this.worker;
     this.worker = undefined;
     if (!worker) return;
-    worker.kill();
+    await waitForWorkerShutdown(worker);
     this.failPending(agentServiceDisconnectedError("本地 AI 服务已关闭"));
   }
 
@@ -229,6 +231,29 @@ export class AgentWorkerProcess implements AgentWorkerHostPort {
     for (const pending of this.pending.values()) pending.reject(error);
     this.pending.clear();
   }
+}
+
+function waitForWorkerShutdown(worker: UtilityProcess): Promise<void> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      worker.kill();
+      finish();
+    }, SHUTDOWN_TIMEOUT_MS);
+    worker.once("exit", finish);
+    try {
+      worker.postMessage({ id: randomUUID(), type: "shutdown" } satisfies AgentCommand);
+    } catch {
+      worker.kill();
+      finish();
+    }
+  });
 }
 
 /** 预编译 VAD 资源目录：打包版经 extraResources 落在 resourcesPath/vad。 */

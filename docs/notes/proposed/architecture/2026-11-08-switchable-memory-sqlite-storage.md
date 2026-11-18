@@ -2,7 +2,7 @@
 
 状态：提案
 
-当前进展：transcript 部分已由 [SQLite 会话 transcript 存储](../../implemented/architecture/2026-11-17-sqlite-transcript-store.md) 实施；`AgentEventEnvelope` 与运行状态仍只由 `MemoryExecutionStore` 持有，不落盘、不新增事件表。原提案中的执行事件 SQLite、可切换 storage backend 与 Answer 同库均未采纳。后续只推进消息表与消息分页，见 [会话消息表与消息分页](2026-11-17-conversation-message-pagination.md)；本文保留为存储边界的历史背景。
+当前进展：transcript 部分已由 [SQLite 会话 transcript 存储](../../implemented/architecture/2026-11-17-sqlite-transcript-store.md) 实施；`AgentEventEnvelope` 与运行状态仍只由 `MemoryExecutionStore` 持有，不落盘、不新增事件表。原提案中的执行事件 SQLite、可切换 storage backend 与 Answer 同库均未采纳。消息表、流式草稿与退出屏障已实施，见 [会话消息表、流式草稿与退出屏障](../../implemented/architecture/2026-11-17-conversation-message-pagination.md)；本文保留为存储边界的历史背景。
 
 ## 问题
 

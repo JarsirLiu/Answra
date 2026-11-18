@@ -162,6 +162,16 @@ export function createTuiPanelHandlers({
         tone: "success",
       });
     },
+    deleteSession: async (conversationId) => {
+      assertAccessAllowed(PANEL_ACTION_ACCESS.deleteSession, runController.runtime());
+      const next = await runController.delete(conversationId);
+      if (next !== undefined) store.reset(next);
+      store.notify({
+        key: "session",
+        text: next === undefined ? `已删除会话：${conversationId}` : "已删除当前会话并新建会话。",
+        tone: "success",
+      });
+    },
     close: (reason) => {
       const panel = store.getSnapshot().panel;
       store.setPanel(undefined);

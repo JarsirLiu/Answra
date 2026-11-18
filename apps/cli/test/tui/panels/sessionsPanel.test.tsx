@@ -28,6 +28,7 @@ describe("SessionsPanel", () => {
           current: "conversation-a",
           sessions: [session("conversation-a"), session("conversation-b")],
         })}
+        remove={vi.fn()}
         resume={resume}
       />,
     );
@@ -54,6 +55,7 @@ describe("SessionsPanel", () => {
       <SessionsPanel
         close={vi.fn()}
         load={async () => ({ current: "conversation-00", sessions })}
+        remove={vi.fn()}
         resume={vi.fn()}
       />,
     );
@@ -77,7 +79,9 @@ describe("SessionsPanel", () => {
         ? { current: "conversation-a", sessions: [session("conversation-a")], nextCursor: "next" }
         : { current: "conversation-a", sessions: [session("conversation-b")] },
     );
-    const instance = render(<SessionsPanel close={vi.fn()} load={load} resume={vi.fn()} />);
+    const instance = render(
+      <SessionsPanel close={vi.fn()} load={load} remove={vi.fn()} resume={vi.fn()} />,
+    );
     await vi.waitFor(() => expect(instance.lastFrame()).toContain("title-conversation-a"));
 
     instance.stdin.write("\u001b[B");
@@ -91,6 +95,7 @@ describe("SessionsPanel", () => {
       <SessionsPanel
         close={vi.fn()}
         load={async () => ({ current: "", sessions: [] })}
+        remove={vi.fn()}
         resume={vi.fn()}
       />,
     );
@@ -109,10 +114,66 @@ describe("SessionsPanel", () => {
       <SessionsPanel
         close={vi.fn()}
         load={async () => ({ current: "", sessions: [], error: "当前宿主不支持会话历史。" })}
+        remove={vi.fn()}
         resume={vi.fn()}
       />,
     );
     await vi.waitFor(() => expect(instance.lastFrame()).toContain("当前宿主不支持会话历史。"));
+    instance.unmount();
+  });
+
+  it("keeps a long title on one truncated line instead of wrapping", async () => {
+    const tail = "TAIL-MARKER";
+    const longTitle = `宽字符标题片段-${"样例".repeat(200)}${tail}`;
+    const instance = render(
+      <SessionsPanel
+        close={vi.fn()}
+        load={async () => ({
+          current: "",
+          sessions: [session("conversation-long", longTitle)],
+        })}
+        remove={vi.fn()}
+        resume={vi.fn()}
+      />,
+    );
+    const frame = await vi.waitFor(() => {
+      const current = instance.lastFrame() ?? "";
+      expect(current).toContain("conversa");
+      return current;
+    });
+
+    expect(frame).toContain("…");
+    expect(frame).not.toContain(tail);
+    const titleLine = frame.split("\n").find((line) => line.includes("conversa"));
+    expect(titleLine).toContain("2026-11-17 09:28");
+    expect(titleLine).toContain("宽字符标题片段-");
+    instance.unmount();
+  });
+
+  it("aligns short ids in a fixed-width first column", async () => {
+    const instance = render(
+      <SessionsPanel
+        close={vi.fn()}
+        load={async () => ({
+          current: "",
+          sessions: [session("ab"), session("conversation-wide")],
+        })}
+        remove={vi.fn()}
+        resume={vi.fn()}
+      />,
+    );
+    const frame = await vi.waitFor(() => {
+      const current = instance.lastFrame() ?? "";
+      expect(current).toContain("title-conversation-wide");
+      return current;
+    });
+
+    const rows = frame
+      .split("\n")
+      .filter((line) => line.includes("2026-11-17 09:28"))
+      .map((line) => line.indexOf("2026-11-17 09:28"));
+    expect(rows.length).toBeGreaterThan(1);
+    expect(new Set(rows).size).toBe(1);
     instance.unmount();
   });
 
@@ -122,6 +183,7 @@ describe("SessionsPanel", () => {
       <SessionsPanel
         close={close}
         load={async () => ({ current: "", sessions: [session("conversation-a")] })}
+        remove={vi.fn()}
         resume={async () => {
           throw new Error("当前运行中，先按 Esc 中断后再恢复会话。");
         }}
@@ -134,6 +196,54 @@ describe("SessionsPanel", () => {
       expect(instance.lastFrame()).toContain("当前运行中，先按 Esc 中断后再恢复会话。"),
     );
     expect(close).not.toHaveBeenCalled();
+    instance.unmount();
+  });
+
+  it("copies the full conversation id with Ctrl+Y", async () => {
+    const copyText = vi.fn();
+    const instance = render(
+      <SessionsPanel
+        close={vi.fn()}
+        copyText={copyText}
+        load={async () => ({
+          current: "",
+          sessions: [session("conversation-a"), session("conversation-b")],
+        })}
+        remove={vi.fn()}
+        resume={vi.fn()}
+      />,
+    );
+    await vi.waitFor(() => expect(instance.lastFrame()).toContain("title-conversation-a"));
+
+    instance.stdin.write("\u0019");
+    await vi.waitFor(() => expect(copyText).toHaveBeenCalledWith("conversation-a"));
+    expect(instance.lastFrame()).toContain("已复制会话 ID：conversation-a");
+    instance.unmount();
+  });
+
+  it("deletes the selected session only after a second Ctrl+D", async () => {
+    const remove = vi.fn(async () => {});
+    const instance = render(
+      <SessionsPanel
+        close={vi.fn()}
+        load={async () => ({
+          current: "",
+          sessions: [session("conversation-a"), session("conversation-b")],
+        })}
+        remove={remove}
+        resume={vi.fn()}
+      />,
+    );
+    await vi.waitFor(() => expect(instance.lastFrame()).toContain("title-conversation-a"));
+
+    instance.stdin.write("\u0004");
+    await tick();
+    expect(remove).not.toHaveBeenCalled();
+    expect(instance.lastFrame()).toContain("再按 Ctrl+D 确认删除：conversation-a");
+
+    instance.stdin.write("\u0004");
+    await vi.waitFor(() => expect(remove).toHaveBeenCalledWith("conversation-a"));
+    await vi.waitFor(() => expect(instance.lastFrame()).not.toContain("title-conversation-a"));
     instance.unmount();
   });
 });

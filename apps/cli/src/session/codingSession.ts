@@ -4,6 +4,7 @@ import type {
   ConversationModelConfig,
   ConversationSendRequest,
   ConversationSessionPage,
+  ConversationSessionSummary,
   ConversationSnapshot,
   ManualCompactionResult,
 } from "@answra/shared";
@@ -25,6 +26,10 @@ export interface CodingSessionHost {
     cursor?: string;
     limit?: number;
   }): Promise<ConversationSessionPage>;
+  getSession?(
+    conversationId: string,
+    workspaceRoot?: string,
+  ): Promise<ConversationSessionSummary | undefined>;
   deleteSession?(conversationId: string): Promise<void>;
   clearConversation(conversationId: string): Promise<ConversationSnapshot>;
   compactConversation?(
@@ -40,6 +45,7 @@ export interface CodingSessionHost {
   cancel(runId: string): void;
   waitForRun(runId: string): Promise<void>;
   dispose(): void;
+  shutdown?(): Promise<void>;
 }
 
 export interface CodingSessionOptions {
@@ -138,6 +144,10 @@ export class CodingSession {
       ...(options.cursor === undefined ? {} : { cursor: options.cursor }),
       ...(options.limit === undefined ? {} : { limit: options.limit }),
     });
+  }
+
+  findSession(conversationId: string): Promise<ConversationSessionSummary | undefined> {
+    return this.host.getSession?.(conversationId, this.workspaceRoot) ?? Promise.resolve(undefined);
   }
 
   async deleteSession(conversationId: string): Promise<ConversationSnapshot | undefined> {

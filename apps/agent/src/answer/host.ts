@@ -18,6 +18,7 @@ export interface AnswerAgentTransport {
 export interface AnswerAgentHost {
   answer: AnswerApplication;
   dispose(): void;
+  shutdown(): Promise<void>;
 }
 
 export interface AnswerAgentHostOptions {
@@ -38,6 +39,7 @@ export function startAnswerAgentHost({
   >();
   let requestSequence = 0;
   let disposed = false;
+  let shutdownPromise: Promise<void> | undefined;
   const agentRuntime = new AgentRuntime({
     executionStore,
     emitEvent: (event: AgentEventEnvelope) => transport.send({ version: 1, type: "event", event }),
@@ -67,14 +69,31 @@ export function startAnswerAgentHost({
     answer.dispose();
   }
 
+  function shutdown(): Promise<void> {
+    shutdownPromise ??= (async () => {
+      await agentRuntime.shutdown();
+      disposed = true;
+      for (const settle of tokenRequests.values()) settle({ error: "本地 AI 服务已关闭" });
+      tokenRequests.clear();
+      answer.dispose();
+      await store.close();
+    })();
+    return shutdownPromise;
+  }
+
   transport.onCommand((command) => {
     void handle(command);
   });
 
   async function handle(command: AgentCommand): Promise<void> {
     if (command.type === "shutdown") {
-      dispose();
-      transport.close?.();
+      try {
+        await shutdown();
+      } catch (error) {
+        console.error("[answer-agent] shutdown failed", error);
+      } finally {
+        transport.close?.();
+      }
       return;
     }
     if (command.type === "token") {
@@ -149,5 +168,5 @@ export function startAnswerAgentHost({
     }
   }
 
-  return { answer, dispose };
+  return { answer, dispose, shutdown };
 }

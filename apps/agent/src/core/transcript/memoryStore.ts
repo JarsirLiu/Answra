@@ -71,7 +71,7 @@ export class MemoryConversationStore implements ConversationStore {
       messages: [],
       ...(session.seed ? seedSnapshot(session.seed) : {}),
     };
-    await this.afterMutation(conversationId, { kind: "changed" });
+    await this.afterMutation(conversationId, { kind: "cleared" });
   }
 
   async beginRun(
@@ -81,8 +81,12 @@ export class MemoryConversationStore implements ConversationStore {
     eventRevision = 0,
     authorAgentId?: string,
   ): Promise<void> {
+    const previous = this.captureSession(conversationId);
     this.beginMessages(conversationId, runId, userMessage, true, eventRevision, authorAgentId);
-    await this.afterMutation(conversationId, { kind: "run-started" });
+    await this.commitMutation(conversationId, previous, {
+      kind: "run-started",
+      dirtyMessageIds: [userMessage.id, runId],
+    });
   }
 
   async beginReplyRun(
@@ -96,6 +100,7 @@ export class MemoryConversationStore implements ConversationStore {
     const last = session.snapshot.messages.at(-1);
     if (last?.role !== "user" || last.status !== "complete")
       throw new Error("没有可回复的用户消息");
+    const previous = cloneRecord(session);
     const assistant = createAssistantMessage(runId, authorAgentId);
     session.snapshot = {
       ...session.snapshot,
@@ -104,7 +109,10 @@ export class MemoryConversationStore implements ConversationStore {
       eventRevision: Math.max(session.snapshot.eventRevision, eventRevision),
       ...(authorAgentId ? { activeAgentId: authorAgentId } : {}),
     };
-    await this.afterMutation(conversationId, { kind: "run-started" });
+    await this.commitMutation(conversationId, previous, {
+      kind: "run-started",
+      dirtyMessageIds: [assistant.id],
+    });
     return cloneMessage(last);
   }
 
@@ -124,6 +132,7 @@ export class MemoryConversationStore implements ConversationStore {
       last.audience.agentId !== targetAgentId
     )
       throw new Error("没有可接管给当前 Bot 的交接消息");
+    const previous = cloneRecord(session);
     const assistant = createAssistantMessage(runId, targetAgentId);
     session.snapshot = {
       ...session.snapshot,
@@ -132,7 +141,10 @@ export class MemoryConversationStore implements ConversationStore {
       eventRevision: Math.max(session.snapshot.eventRevision, eventRevision),
       activeAgentId: targetAgentId,
     };
-    await this.afterMutation(conversationId, { kind: "run-started" });
+    await this.commitMutation(conversationId, previous, {
+      kind: "run-started",
+      dirtyMessageIds: [assistant.id],
+    });
     return cloneMessage(last);
   }
 
@@ -164,7 +176,10 @@ export class MemoryConversationStore implements ConversationStore {
       messages: [...session.snapshot.messages, message],
       activeAgentId: handoff.toAgentId,
     };
-    await this.afterMutation(conversationId, { kind: "changed" });
+    await this.afterMutation(conversationId, {
+      kind: "changed",
+      dirtyMessageIds: [handoff.id],
+    });
     return snapshotOf(session);
   }
 
@@ -187,7 +202,10 @@ export class MemoryConversationStore implements ConversationStore {
       ...session.snapshot,
       messages: [...session.snapshot.messages, normalizeUserMessage(userMessage)],
     };
-    await this.afterMutation(conversationId, { kind: "changed" });
+    await this.afterMutation(conversationId, {
+      kind: "changed",
+      dirtyMessageIds: [userMessage.id],
+    });
     return snapshotOf(session);
   }
 
@@ -198,8 +216,12 @@ export class MemoryConversationStore implements ConversationStore {
     eventRevision = 0,
     authorAgentId?: string,
   ): Promise<void> {
+    const previous = this.captureSession(conversationId);
     this.beginMessages(conversationId, runId, userMessage, false, eventRevision, authorAgentId);
-    await this.afterMutation(conversationId, { kind: "run-started" });
+    await this.commitMutation(conversationId, previous, {
+      kind: "run-started",
+      dirtyMessageIds: [userMessage.id, runId],
+    });
   }
 
   async loadContextState(conversationId: string): Promise<ContextState | undefined> {
@@ -214,6 +236,8 @@ export class MemoryConversationStore implements ConversationStore {
     await this.afterMutation(conversationId, { kind: "changed" });
   }
 
+  async close(): Promise<void> {}
+
   async applyAgentEvent(conversationId: string, envelope: AgentEventEnvelope): Promise<void> {
     const { event, runId, aggregateRevision } = envelope;
     const session = this.requireSession(conversationId);
@@ -223,7 +247,10 @@ export class MemoryConversationStore implements ConversationStore {
       const outcome = runOutcomeForState(event.state);
       if (outcome) {
         this.finishRun(conversationId, runId, outcome, aggregateRevision);
-        await this.afterMutation(conversationId, { kind: "run-finished" });
+        await this.afterMutation(conversationId, {
+          kind: "run-finished",
+          dirtyMessageIds: [runId],
+        });
         return;
       }
       if (session.snapshot.activeRunId === runId)
@@ -283,6 +310,24 @@ export class MemoryConversationStore implements ConversationStore {
           : message,
       ),
     };
+  }
+
+  private captureSession(conversationId: string): ConversationSessionRecord {
+    return cloneRecord(this.requireSession(conversationId));
+  }
+
+  private async commitMutation(
+    conversationId: string,
+    previous: ConversationSessionRecord,
+    mutation: ConversationStoreMutation,
+  ): Promise<void> {
+    try {
+      await this.afterMutation(conversationId, mutation);
+    } catch (error) {
+      // 冲突处理会主动丢弃内存会话，不能在这里把它复活。
+      if (this.sessions.has(conversationId)) this.sessions.set(conversationId, previous);
+      throw error;
+    }
   }
 
   private beginMessages(

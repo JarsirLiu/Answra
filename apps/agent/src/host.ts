@@ -72,6 +72,8 @@ export interface AgentHost {
   /** Publishes a domain event for desktop-main projection into renderer DTOs. */
   emitInterviewEvent(event: InterviewDomainEvent): void;
   dispose(): void;
+  /** 退出屏障：abort 活动 run、等待最终落账并关闭 store；可重复调用。 */
+  shutdown(): Promise<void>;
 }
 
 /** 云端令牌刷新请求的等待上限。 */
@@ -208,6 +210,7 @@ export function startAgentHost({
   }
 
   let disposed = false;
+  let shutdownPromise: Promise<void> | undefined;
 
   function dispose(): void {
     if (disposed) return;
@@ -215,16 +218,39 @@ export function startAgentHost({
     // 运行时马上关闭：挂起内容不做异步结算，显式丢弃而非冒险 race。
     interviewRuntime.dispose();
     void interview.stop();
-    for (const pending of tokenRequests.values()) {
-      pending.cleanup();
-      pending.reject(new Error("本地 AI 服务已关闭"));
-    }
-    tokenRequests.clear();
+    rejectTokenRequests();
     skillsReady?.dispose();
     void tools.dispose().catch((error: unknown) => {
       console.warn("[agent] tool cleanup failed", error);
     });
     runtime.dispose();
+  }
+
+  function shutdown(): Promise<void> {
+    shutdownPromise ??= (async () => {
+      interviewRuntime.dispose();
+      await interview
+        .stop()
+        .catch((error: unknown) => console.warn("[interview-reply] stop failed", error));
+      await agentRuntime.shutdown();
+      disposed = true;
+      rejectTokenRequests();
+      runtime.dispose();
+      skillsReady?.dispose();
+      await tools.dispose().catch((error: unknown) => {
+        console.warn("[agent] tool cleanup failed", error);
+      });
+      await store.close();
+    })();
+    return shutdownPromise;
+  }
+
+  function rejectTokenRequests(): void {
+    for (const pending of tokenRequests.values()) {
+      pending.cleanup();
+      pending.reject(new Error("本地 AI 服务已关闭"));
+    }
+    tokenRequests.clear();
   }
 
   transport.onCommand((command) => {
@@ -233,8 +259,13 @@ export function startAgentHost({
 
   async function handle(command: AgentCommand): Promise<void> {
     if (command.type === "shutdown") {
-      dispose();
-      transport.close?.();
+      try {
+        await shutdown();
+      } catch (error) {
+        console.error("[agent] shutdown failed", error);
+      } finally {
+        transport.close?.();
+      }
       return;
     }
     // 宿主对令牌刷新的回答：不经过 run()，也不回响应帧。
@@ -392,5 +423,6 @@ export function startAgentHost({
     answer,
     emitInterviewEvent,
     dispose,
+    shutdown,
   };
 }

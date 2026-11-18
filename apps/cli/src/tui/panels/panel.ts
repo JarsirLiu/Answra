@@ -24,5 +24,6 @@ export interface TuiPanelHandlers {
   selectModel(model: string): Promise<void>;
   loadSessions(cursor?: string): Promise<SessionsPanelData>;
   resumeSession(conversationId: string): Promise<void>;
+  deleteSession(conversationId: string): Promise<void>;
   close(reason?: "saved" | "dismissed" | "status" | "resumed"): void;
 }

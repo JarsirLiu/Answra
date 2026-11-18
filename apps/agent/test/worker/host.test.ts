@@ -849,7 +849,7 @@ describe("agent worker host", () => {
     expect(dispose).not.toHaveBeenCalled();
   });
 
-  it("disposes the runtime and closes the transport on shutdown without a response", () => {
+  it("disposes the runtime and closes the transport on shutdown without a response", async () => {
     const harness = createHarness();
     const host = startAgentHost({
       transport: harness.transport,
@@ -860,8 +860,8 @@ describe("agent worker host", () => {
 
     harness.dispatch({ id: "1", type: "shutdown" });
 
+    await vi.waitFor(() => expect(harness.close).toHaveBeenCalledTimes(1));
     expect(dispose).toHaveBeenCalledTimes(1);
-    expect(harness.close).toHaveBeenCalledTimes(1);
     expect(harness.responses()).toHaveLength(0);
   });
 });

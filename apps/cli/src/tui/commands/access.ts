@@ -23,6 +23,7 @@ export function idleOnly(action: string, scope: TuiAccessScope = "all"): TuiAcce
 /** 面板内动作的 access；与命令分开声明，但共用同一条判定与文案。 */
 export const PANEL_ACTION_ACCESS = {
   resumeSession: ALWAYS_AVAILABLE,
+  deleteSession: idleOnly("删除会话", "active"),
   selectModel: idleOnly("切换模型"),
   saveConfig: idleOnly("修改模型配置"),
 } as const;

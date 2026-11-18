@@ -730,6 +730,9 @@ describe("ephemeral conversation runtime", () => {
         await tick();
         await inner.saveContextState(conversationId, state);
       },
+      close: async () => {
+        await inner.close();
+      },
     };
     const raceChanges: AgentEventEnvelope[] = [];
     const racing = createTestRuntime({

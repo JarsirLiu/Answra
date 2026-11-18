@@ -39,6 +39,8 @@ export interface CodingHost {
    */
   setWorkspaceRoot(workspaceRoot: string | null): Promise<void>;
   dispose(): void;
+  /** 退出屏障：abort 活动 run、等待最终落账并关闭 store；可重复调用。 */
+  shutdown(): Promise<void>;
 }
 
 export function startCodingHost({
@@ -69,6 +71,7 @@ export function startCodingHost({
   runtime.setWorkspaceRoot(workspaceRoot);
 
   let disposed = false;
+  let shutdownPromise: Promise<void> | undefined;
   return {
     runtime,
     ...(catalog ? { catalog } : {}),
@@ -85,6 +88,19 @@ export function startCodingHost({
       void tools.dispose().catch((error: unknown) => {
         console.warn("[coding] tool cleanup failed", error);
       });
+    },
+    shutdown() {
+      shutdownPromise ??= (async () => {
+        await agentRuntime.shutdown();
+        disposed = true;
+        runtime.dispose();
+        skillsReady?.dispose();
+        await tools.dispose().catch((error: unknown) => {
+          console.warn("[coding] tool cleanup failed", error);
+        });
+        await store.close();
+      })();
+      return shutdownPromise;
     },
   };
 }
