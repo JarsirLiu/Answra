@@ -35,16 +35,21 @@ describe("runInkTui", () => {
     await tick();
     expect(sent).toEqual(["first"]);
     expect(store.getSnapshot()).toMatchObject({ queued: 1, phase: "running" });
+    expect(store.getSnapshot().queuedPrompts).toMatchObject([
+      { text: "second", imageCount: 0, status: "queued" },
+    ]);
 
     waits.shift()?.();
     await tick();
     await tick();
     expect(sent).toEqual(["first", "second"]);
     expect(store.getSnapshot().queued).toBe(0);
+    expect(store.getSnapshot().queuedPrompts).toEqual([]);
 
     waits.shift()?.();
     await tick();
     expect(store.getSnapshot().phase).toBe("idle");
+    expect(store.getSnapshot().queuedPrompts).toEqual([]);
     finish();
     store.dispose();
   });
@@ -422,6 +427,7 @@ describe("runInkTui", () => {
 
     expect(session.cancel).toHaveBeenCalledTimes(1);
     expect(store.getSnapshot()).toMatchObject({ queued: 0, phase: "cancelling" });
+    expect(store.getSnapshot().queuedPrompts).toEqual([]);
 
     waits.shift()?.();
     await tick();

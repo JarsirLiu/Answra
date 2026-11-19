@@ -12,6 +12,7 @@ export type TuiSessionFactory = (
 ) => CodingSession;
 
 interface QueuedTurn {
+  readonly id: string;
   readonly text: string;
   readonly images: readonly ImageAttachment[];
 }
@@ -22,6 +23,7 @@ interface SessionRuntime {
   readonly queue: QueuedTurn[];
   busy: boolean;
   cancelRequested: boolean;
+  sendingId?: string;
 }
 
 export interface TuiRunControllerOptions {
@@ -36,6 +38,7 @@ export class TuiRunController {
   private readonly resolveAccessToken: () => Promise<string | undefined>;
   private readonly runtimes = new Map<string, SessionRuntime>();
   private activeId?: string;
+  private queuedSequence = 0;
 
   constructor({ store, createSession, resolveAccessToken }: TuiRunControllerOptions) {
     this.store = store;
@@ -77,7 +80,11 @@ export class TuiRunController {
     const runtime = this.activeRuntime();
     if (runtime === undefined) return;
     if (text.trim().length === 0 && images.length === 0) return;
-    runtime.queue.push({ text, images });
+    runtime.queue.push({
+      id: `queued-prompt-${++this.queuedSequence}`,
+      text,
+      images,
+    });
     this.sync(runtime);
     void this.drain(runtime);
   }
@@ -87,6 +94,7 @@ export class TuiRunController {
     if (runtime === undefined || !runtime.busy) return false;
     runtime.cancelRequested = true;
     runtime.queue.length = 0;
+    runtime.sendingId = undefined;
     this.sync(runtime);
     runtime.session.cancel();
     return true;
@@ -162,7 +170,14 @@ export class TuiRunController {
 
   private sync(runtime: SessionRuntime): void {
     if (runtime !== this.activeRuntime()) return;
-    this.store.setQueued(runtime.queue.length);
+    this.store.setQueuedPrompts(
+      runtime.queue.map((turn) => ({
+        id: turn.id,
+        text: turn.text,
+        imageCount: turn.images.length,
+        status: turn.id === runtime.sendingId ? "sending" : "queued",
+      })),
+    );
     if (runtime.busy) {
       if (runtime.cancelRequested) this.store.markCancelling();
       else this.store.beginRun();
@@ -173,22 +188,27 @@ export class TuiRunController {
 
   private async drain(runtime: SessionRuntime): Promise<void> {
     if (runtime.busy) return;
-    const turn = runtime.queue.shift();
+    const turn = runtime.queue[0];
     if (turn === undefined) {
       this.sync(runtime);
       return;
     }
     runtime.busy = true;
     runtime.cancelRequested = false;
+    runtime.sendingId = turn.id;
     this.sync(runtime);
     let failed = false;
     try {
       const runId = await runtime.session.send(turn.text, turn.images);
+      if (runtime.queue[0] === turn) runtime.queue.shift();
+      runtime.sendingId = undefined;
+      this.sync(runtime);
       if (runtime.cancelRequested) runtime.session.cancel();
       await runtime.session.wait(runId);
     } catch (error) {
       failed = true;
       runtime.queue.length = 0;
+      runtime.sendingId = undefined;
       if (runtime === this.activeRuntime()) this.store.fail(messageOf(error));
       else {
         this.store.notify({
@@ -200,6 +220,7 @@ export class TuiRunController {
     } finally {
       runtime.busy = false;
       runtime.cancelRequested = false;
+      runtime.sendingId = undefined;
     }
     if (!failed && runtime.queue.length > 0) {
       void this.drain(runtime);

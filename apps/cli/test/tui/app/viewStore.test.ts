@@ -255,16 +255,24 @@ describe("TuiViewStore", () => {
     const store = new TuiViewStore();
     store.initialize(snapshot);
 
-    store.setQueued(2);
+    store.setQueuedPrompts([
+      { id: "queued-1", text: "sending", imageCount: 0, status: "sending" },
+      { id: "queued-2", text: "waiting", imageCount: 1, status: "queued" },
+    ]);
     store.notify({ key: "session", text: "会话已清除。", tone: "success" });
     expect(store.getSnapshot()).toMatchObject({
-      queued: 2,
+      queued: 1,
+      queuedPrompts: [
+        { id: "queued-1", text: "sending", status: "sending" },
+        { id: "queued-2", text: "waiting", imageCount: 1, status: "queued" },
+      ],
       notifications: { current: { text: "会话已清除。" } },
     });
 
     store.reset({ conversationId: "conversation-1", eventRevision: 9, messages: [] });
     expect(store.getSnapshot()).toMatchObject({
       queued: 0,
+      queuedPrompts: [],
       notifications: { current: null },
       view: { eventRevision: 9, messages: [] },
       localError: undefined,

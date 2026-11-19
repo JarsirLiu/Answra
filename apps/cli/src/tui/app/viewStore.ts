@@ -25,6 +25,14 @@ const TUI_EVENT_QUEUE_MAX = 2_048;
 
 export type TuiRunPhase = "idle" | "running" | "cancelling";
 
+/** 本地输入队列的展示投影；不是 transcript 消息，也不代表 run 已启动。 */
+export interface TuiQueuedPrompt {
+  readonly id: string;
+  readonly text: string;
+  readonly imageCount: number;
+  readonly status: "queued" | "sending";
+}
+
 export interface TuiState {
   view: ConversationView;
   /** 压缩边界来自 conversation snapshot，只用于 TUI 展示。 */
@@ -32,7 +40,9 @@ export interface TuiState {
   /** 手动 `/compact` 正在等待首帧 snapshot；与 run phase 分开。 */
   compactionActive: boolean;
   phase: TuiRunPhase;
+  /** 等待当前回合结束的 prompt 数量；不包含正在发送的第一项。 */
   queued: number;
+  queuedPrompts: readonly TuiQueuedPrompt[];
   modelLabel: string;
   modelConfigured: boolean;
   authAvailable: boolean;
@@ -54,6 +64,7 @@ export class TuiViewStore {
     compactionActive: false,
     phase: "idle",
     queued: 0,
+    queuedPrompts: [],
     modelLabel: "",
     modelConfigured: false,
     authAvailable: false,
@@ -104,6 +115,7 @@ export class TuiViewStore {
       compactionActive: false,
       phase: "idle",
       queued: 0,
+      queuedPrompts: [],
       localError: undefined,
     });
   }
@@ -147,14 +159,17 @@ export class TuiViewStore {
       compactionBoundaries: [],
       compactionActive: false,
       queued: 0,
+      queuedPrompts: [],
       localError: undefined,
       notifications: EMPTY_NOTIFICATION_STATE,
     });
   }
 
-  setQueued(count: number): void {
-    if (this.state.queued === count) return;
-    this.setState({ ...this.state, queued: count });
+  setQueuedPrompts(queuedPrompts: readonly TuiQueuedPrompt[]): void {
+    const queued = queuedPrompts.filter((prompt) => prompt.status === "queued").length;
+    if (this.state.queued === queued && sameQueuedPrompts(this.state.queuedPrompts, queuedPrompts))
+      return;
+    this.setState({ ...this.state, queued, queuedPrompts });
   }
 
   setModelLabel(modelLabel: string): void {
@@ -299,6 +314,19 @@ export class TuiViewStore {
     this.state = next;
     for (const listener of this.listeners) listener();
   }
+}
+
+function sameQueuedPrompts(a: readonly TuiQueuedPrompt[], b: readonly TuiQueuedPrompt[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every(
+      (prompt, index) =>
+        prompt.id === b[index]?.id &&
+        prompt.text === b[index]?.text &&
+        prompt.imageCount === b[index]?.imageCount &&
+        prompt.status === b[index]?.status,
+    )
+  );
 }
 
 function boundariesFromSnapshot(

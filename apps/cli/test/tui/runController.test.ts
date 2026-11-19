@@ -147,6 +147,65 @@ describe("TuiRunController", () => {
     expect(active.sent).toEqual(["next"]);
   });
 
+  it("keeps a prompt visible while the host accepts it", async () => {
+    const store = new TuiViewStore();
+    const active = createSession("conversation-1");
+    store.initialize(snapshot("conversation-1"));
+    const controller = createController(active.session, store);
+    let accept!: (runId: string) => void;
+    vi.mocked(active.session.send).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          accept = resolve;
+        }),
+    );
+
+    controller.submit("first");
+    await Promise.resolve();
+    expect(store.getSnapshot().queuedPrompts).toMatchObject([
+      { text: "first", imageCount: 0, status: "sending" },
+    ]);
+
+    accept("run-1");
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(store.getSnapshot().queuedPrompts).toEqual([]);
+
+    active.waits.shift()?.();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  it("does not drop a prompt queued after cancellation clears an in-flight send", async () => {
+    const store = new TuiViewStore();
+    const active = createSession("conversation-1");
+    store.initialize(snapshot("conversation-1"));
+    const controller = createController(active.session, store);
+    let accept!: (runId: string) => void;
+    vi.mocked(active.session.send).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          accept = resolve;
+        }),
+    );
+
+    controller.submit("first");
+    await Promise.resolve();
+    controller.cancel();
+    controller.submit("second");
+    expect(store.getSnapshot().queuedPrompts).toMatchObject([{ text: "second", status: "queued" }]);
+
+    accept("run-1");
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(store.getSnapshot().queuedPrompts).toMatchObject([{ text: "second", status: "queued" }]);
+
+    active.waits.shift()?.();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(active.sent).toEqual(["second"]);
+  });
+
   it("refuses to delete a busy target and leaves idle runtimes closable", async () => {
     const store = new TuiViewStore();
     const active = createSession("conversation-1");

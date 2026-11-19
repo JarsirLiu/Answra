@@ -19,6 +19,7 @@ import { SessionsPanel } from "../panels/SessionsPanel";
 import { StatusPanel } from "../panels/StatusPanel";
 import { ContextPruningNotice } from "../transcript/ContextPruningNotice";
 import { COMPACTION_FAILURE_TEXT, COMPACTION_SPINNER_MESSAGE } from "../transcript/compactionText";
+import { QueuedPrompts } from "../transcript/QueuedPrompts";
 import { SelectionContext } from "../transcript/SelectableText";
 import { VirtualTranscript } from "../transcript/VirtualTranscript";
 import type { TuiViewStore } from "./viewStore";
@@ -160,6 +161,7 @@ export function App({
           view={state.view}
           workspaceRoot={workspaceRoot}
         />
+        <QueuedPrompts prompts={state.queuedPrompts} />
         {activity}
         <NotificationLine notification={state.notifications.current} />
         {transcriptMode ? (
