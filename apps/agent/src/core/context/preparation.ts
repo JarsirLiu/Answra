@@ -29,7 +29,8 @@ import {
 } from "./pruning/prune";
 import { calibrateContextTokens, estimateContextRequestTokens } from "./tokenEstimate";
 import { trimContextRequest } from "./trim";
-import { type ContextStateStore, ContextUsageAnchorTracker } from "./usageAnchor";
+import type { ContextStateStore } from "./usageAnchor";
+import { ContextStateCoordinator } from "./usageState";
 
 export interface ContextPreparationOptions {
   compactor: ContextCompactor;
@@ -75,7 +76,7 @@ export class ContextPreparation {
   private readonly fixedBudget?: ResolvedContextBudget;
   private readonly contextWindow?: () => number | undefined;
   private readonly toolResultPruning: ToolResultPruningPolicy;
-  private readonly usageAnchors: ContextUsageAnchorTracker;
+  private readonly contextState: ContextStateCoordinator;
   private readonly store: ContextStateStore;
   private readonly now: () => Date;
 
@@ -94,7 +95,7 @@ export class ContextPreparation {
     this.toolResultPruning = toolResultPruning;
     this.store = contextStateStore;
     this.now = now;
-    this.usageAnchors = new ContextUsageAnchorTracker({
+    this.contextState = new ContextStateCoordinator({
       store: contextStateStore,
       now,
     });
@@ -238,9 +239,9 @@ export class ContextPreparation {
           }
         : {}),
     };
-    await this.saveStatus(conversationId, usage, pruning, prunedToolCallIds);
+    await this.contextState.savePreparedStatus(conversationId, usage, pruning, prunedToolCallIds);
 
-    this.usageAnchors.stage(conversationId, {
+    this.contextState.stage(conversationId, {
       estimatedTokens: estimatedUsage.usedTokens,
       projectionChanged,
     });
@@ -270,30 +271,7 @@ export class ContextPreparation {
 
   /** 消费 run 事件：首步 usage 维护锚点；provider 输入 usage 持久化供恢复。 */
   async recordRunEvent(conversationId: string, event: AgentEvent): Promise<void> {
-    await this.usageAnchors.recordRunEvent(conversationId, event);
-    if (event.type !== "context-usage-changed") return;
-    await this.updateUsageFromStep(conversationId, event.usedTokens);
-  }
-
-  private async updateUsageFromStep(conversationId: string, usedTokens: number): Promise<void> {
-    try {
-      const state = await this.store.loadContextState(conversationId);
-      if (!state?.usage) return;
-      await this.store.saveContextState(conversationId, {
-        ...state,
-        usage: {
-          ...state.usage,
-          usedTokens,
-          source: "provider",
-          updatedAt: this.now().toISOString(),
-        },
-      });
-    } catch (error) {
-      console.warn("[context-preparation] usage save failed", {
-        conversationId,
-        error: errorText(error),
-      });
-    }
+    await this.contextState.recordRunEvent(conversationId, event);
   }
 
   private resolveBudget(): ResolvedContextBudget {
@@ -302,33 +280,6 @@ export class ContextPreparation {
     return contextWindow === undefined
       ? resolveContextBudget()
       : resolveContextBudget(contextBudgetPolicyForWindow(contextWindow));
-  }
-
-  private async saveStatus(
-    conversationId: string,
-    usage: ContextUsage,
-    pruning: ContextPruningStatus | undefined,
-    prunedToolCallIds: readonly string[],
-  ): Promise<void> {
-    try {
-      const state = (await this.store.loadContextState(conversationId)) ?? { checkpoints: [] };
-      const {
-        pruning: _previousPruning,
-        prunedToolCallIds: _previousPrunedToolCallIds,
-        ...rest
-      } = state;
-      await this.store.saveContextState(conversationId, {
-        ...rest,
-        usage,
-        ...(pruning ? { pruning } : {}),
-        ...(prunedToolCallIds.length > 0 ? { prunedToolCallIds } : {}),
-      });
-    } catch (error) {
-      console.warn("[context-preparation] status save failed", {
-        conversationId,
-        error: errorText(error),
-      });
-    }
   }
 
   /** 只有达到清理触发点且净节省达到门槛时才替换请求；重建后重复同一判断。 */
