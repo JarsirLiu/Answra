@@ -370,6 +370,35 @@ describe("conversation projection", () => {
     expect(view.contextPruning).toMatchObject({ prunedCount: 2, savedTokens: 30_000 });
   });
 
+  it("updates context usage from the usage event without a snapshot", () => {
+    const view = applyConversationSnapshot(EMPTY_CONVERSATION_VIEW, {
+      conversationId: CONVERSATION,
+      eventRevision: 3,
+      activeRunId: "run-1",
+      messages: [{ id: "run-1", role: "assistant", text: "", images: [], status: "streaming" }],
+      contextUsage: {
+        contextWindow: 256_000,
+        usedTokens: 2_400,
+        inputLimit: 216_000,
+        compactAt: 216_000,
+        pruneAt: 172_000,
+        pruneTarget: 40_000,
+        updatedAt: "2026-11-14T10:00:00.000Z",
+      },
+    });
+
+    const next = applyAgentEvent(
+      view,
+      envelope(4, { type: "context-usage-changed", usedTokens: 2_700 }),
+    );
+
+    expect(next.contextUsage).toMatchObject({
+      usedTokens: 2_700,
+      inputLimit: 216_000,
+      updatedAt: "2026-11-07T00:00:00.000Z",
+    });
+  });
+
   it("ignores old revisions and other conversations", () => {
     const view: ConversationView = { eventRevision: 5, messages: [] };
     expect(applyAgentEvent(view, envelope(5, { type: "start" }))).toBe(view);

@@ -371,6 +371,27 @@ describe("ContextPreparation", () => {
     expect((await store.loadContextState("conversation-1"))?.usageAnchor).toEqual(previousAnchor);
   });
 
+  it("persists context usage from every context usage event", async () => {
+    const store = await preparedStore();
+    const preparationInstance = preparation(store, { budget: PRUNE_ONLY_BUDGET });
+    await preparationInstance.prepareRequest({
+      conversationId: "conversation-1",
+      getAccessToken: async () => "token",
+      modelRequest: { system: "", messages: [{ role: "user", content: "hi" }] },
+      rebuild: async () => {
+        throw new Error("不应重建");
+      },
+    });
+
+    await preparationInstance.recordRunEvent("conversation-1", {
+      type: "context-usage-changed",
+      usedTokens: 2_700,
+    });
+
+    expect((await store.loadContextState("conversation-1"))?.usage?.usedTokens).toBe(2_700);
+    expect((await store.load("conversation-1")).contextUsage?.usedTokens).toBe(2_700);
+  });
+
   it("clears a stale anchor when a projection-changing run completes without usage", async () => {
     const store = await preparedStore();
     const messages = Array.from({ length: 3 }, (_, index) =>

@@ -261,6 +261,7 @@ export class MemoryConversationStore implements ConversationStore {
     if (
       event.type === "step-started" ||
       event.type === "step-finished" ||
+      event.type === "context-usage-changed" ||
       event.type === "part-state-changed"
     ) {
       session.snapshot = { ...session.snapshot, eventRevision: aggregateRevision };

@@ -148,6 +148,17 @@ export function applyAgentEvent(
     }
     return next;
   }
+  if (event.type === "context-usage-changed") {
+    if (next.contextUsage === undefined) return next;
+    return {
+      ...next,
+      contextUsage: {
+        ...next.contextUsage,
+        usedTokens: event.usedTokens,
+        updatedAt: envelope.occurredAt,
+      },
+    };
+  }
   const hasMessage = next.messages.some((message) => message.id === envelope.runId);
   if (!hasMessage) return event.type === "error" ? { ...next, error: event.errorText } : next;
   if (

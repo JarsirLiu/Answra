@@ -114,8 +114,11 @@ export function normalizeStreamPart(
       return { type: "file", mediaType: part.file.mediaType, base64: part.file.base64 };
     case "start-step":
       return [stepStarted(context.stepIndex), ...part.warnings.map(normalizeWarning)];
-    case "finish-step":
-      return stepFinished(context.stepIndex, part);
+    case "finish-step": {
+      const finished = stepFinished(context.stepIndex, part);
+      const usage = contextUsageChanged(part.usage);
+      return usage === undefined ? finished : [finished, usage];
+    }
     case "error":
       return { type: "error", errorText: modelErrorText(part.error) };
     case "raw":
@@ -139,6 +142,15 @@ function stepFinished(index: number, part: FinishStepPart): AgentExecutionEvent 
     finishReason,
     usage: normalizeUsage(part.usage),
   };
+}
+
+function contextUsageChanged(usage: FinishStepPart["usage"]): AgentEvent | undefined {
+  const usedTokens =
+    usage.totalTokens ??
+    (usage.inputTokens === undefined ? undefined : usage.inputTokens + (usage.outputTokens ?? 0));
+  return usedTokens === undefined || usedTokens <= 0
+    ? undefined
+    : { type: "context-usage-changed", usedTokens };
 }
 
 function normalizeSource(source: SourcePart): AgentStreamEvent {

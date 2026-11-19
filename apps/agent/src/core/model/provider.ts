@@ -32,6 +32,7 @@ export function createModelProvider({
     name: MODEL_PROVIDER_NAME,
     baseURL: endpoint.baseUrl,
     apiKey: accessToken || "local",
+    includeUsage: true,
     ...(headers === undefined ? {} : { headers: { ...headers } }),
     fetch: createRetryingFetch(baseFetch, {
       ...(runId ? { runId } : {}),

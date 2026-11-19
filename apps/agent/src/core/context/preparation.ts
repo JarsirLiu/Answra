@@ -247,7 +247,6 @@ export class ContextPreparation {
     return { request: final, compaction, usage };
   }
 
-  /** 消费 run 事件：首步 usage 成功后写入锚点，失败或投影变化后清理。 */
   /**
    * provider 超限后的唯一兜底入口：强制压缩并按软目标裁剪。
    * 只有真正完成压缩才返回可重试请求；熔断、失败、取消都返回 undefined。
@@ -259,8 +258,31 @@ export class ContextPreparation {
     return prepared.compaction.status === "compacted" ? prepared.request : undefined;
   }
 
+  /** 消费 run 事件：首步 usage 维护锚点；每个模型 step 的 context usage 持久化供恢复。 */
   async recordRunEvent(conversationId: string, event: AgentEvent): Promise<void> {
     await this.usageAnchors.recordRunEvent(conversationId, event);
+    if (event.type !== "context-usage-changed") return;
+    await this.updateUsageFromStep(conversationId, event.usedTokens);
+  }
+
+  private async updateUsageFromStep(conversationId: string, usedTokens: number): Promise<void> {
+    try {
+      const state = await this.store.loadContextState(conversationId);
+      if (!state?.usage) return;
+      await this.store.saveContextState(conversationId, {
+        ...state,
+        usage: {
+          ...state.usage,
+          usedTokens,
+          updatedAt: this.now().toISOString(),
+        },
+      });
+    } catch (error) {
+      console.warn("[context-preparation] usage save failed", {
+        conversationId,
+        error: errorText(error),
+      });
+    }
   }
 
   private resolveBudget(): ResolvedContextBudget {

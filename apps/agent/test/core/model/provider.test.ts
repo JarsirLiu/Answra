@@ -31,6 +31,7 @@ describe("createModelProvider", () => {
       expect.objectContaining({
         baseURL: endpoint.baseUrl,
         apiKey: "key-1",
+        includeUsage: true,
         headers: { "User-Agent": "answra-cli/0.1.0" },
       }),
     );

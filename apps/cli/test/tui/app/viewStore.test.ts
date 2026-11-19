@@ -85,6 +85,32 @@ describe("TuiViewStore", () => {
     store.dispose();
   });
 
+  it("updates context usage from a usage event before the run finishes", () => {
+    const store = new TuiViewStore();
+    store.initialize({
+      ...snapshot,
+      contextUsage: {
+        contextWindow: 256_000,
+        usedTokens: 2_400,
+        inputLimit: 216_000,
+        compactAt: 216_000,
+        pruneAt: 172_000,
+        pruneTarget: 40_000,
+        updatedAt: "2026-11-14T10:00:00.000Z",
+      },
+    });
+
+    store.applyEvent(envelope(4, { type: "context-usage-changed", usedTokens: 2_700 }));
+    store.flush();
+
+    expect(store.getSnapshot().view.contextUsage).toMatchObject({
+      usedTokens: 2_700,
+      inputLimit: 216_000,
+    });
+    expect(store.getSnapshot().view.eventRevision).toBe(4);
+    store.dispose();
+  });
+
   it("filters background conversation updates and resets the revision on switch", () => {
     const store = new TuiViewStore();
     store.initialize(snapshot);
