@@ -3,6 +3,7 @@ import { render } from "ink-testing-library";
 import { describe, expect, it, vi } from "vitest";
 import { App } from "../../../src/tui/app/App";
 import { TuiViewStore } from "../../../src/tui/app/viewStore";
+import { POINTER } from "../../../src/tui/chrome/theme";
 import { PromptInput } from "../../../src/tui/composer/PromptInput";
 import { Welcome } from "../../../src/tui/transcript/Transcript";
 import {
@@ -35,7 +36,7 @@ describe("TUI rendering", () => {
     const frame = instance.lastFrame();
     expect(frame).toContain("✓ Base URL");
     expect(frame).toContain("✓ API Key");
-    expect(frame).toContain("❯ 模型 ID");
+    expect(frame).toContain(`${POINTER} 模型 ID`);
     expect(frame).not.toContain("已完成");
     expect(frame).not.toContain("待填写");
     instance.unmount();
@@ -138,7 +139,7 @@ describe("TUI rendering", () => {
     await nextFrame();
 
     expect(instance.lastFrame()).toContain("Answra Code");
-    expect(instance.lastFrame()).toContain("❯");
+    expect(instance.lastFrame()).toContain(POINTER);
     expect(instance.lastFrame()).toContain("coding.engineer");
     instance.unmount();
     store.dispose();

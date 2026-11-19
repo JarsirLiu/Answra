@@ -1,4 +1,4 @@
-/** 对齐 Claude Code dark theme 的终端色板；只放 TUI 颜色，不放业务状态。 */
+/** 对齐 Claude Code dark theme 的终端色板与跨终端符号；不放业务状态。 */
 export const TUI_THEME = {
   claude: "#d77757",
   claudeShimmer: "#f59575",
@@ -23,4 +23,5 @@ export const TUI_THEME = {
 
 export const SPINNER_FRAMES = ["·", "✢", "✳", "✶", "✻", "✽", "✻", "✶", "✳", "✢"] as const;
 export const BLACK_CIRCLE = "⏺";
-export const POINTER = "❯";
+/** Windows 控制台字体常缺 U+276F 字形，聚焦指针回退为 ASCII。 */
+export const POINTER = process.platform === "win32" ? ">" : "❯";

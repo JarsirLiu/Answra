@@ -42,4 +42,3 @@ CLI `/sessions` 列表把“当前会话”标记和短 ID、时间、标题混�
 - `pnpm --filter @answra/cli exec vitest run test/tui/panels/sessionsPanel.test.tsx`：11 项通过；覆盖无当前会话标记、焦点指针和固定列对齐。
 - `pnpm exec biome check apps/cli/src/tui/panels/SessionsPanel.tsx apps/cli/test/tui/panels/sessionsPanel.test.tsx`：通过。
 - `pnpm notes:check`：通过。
-- `pnpm --filter @answra/cli typecheck`：被工作区已有的 `apps/cli/test/tui/app/zz-dump-full-sessions.test.tsx` 未使用 `nextFrame` 导入阻断；与本次文件无关。
