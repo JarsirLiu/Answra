@@ -1,5 +1,5 @@
 import { render as inkRender } from "ink";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../../../src/tui/app/App";
 import { TuiViewStore } from "../../../src/tui/app/viewStore";
 import { CursorProbeStdin, CursorProbeStdout, nextFrame, PANEL_HANDLERS } from "../tuiTestHarness";
@@ -7,7 +7,12 @@ import { CursorProbeStdin, CursorProbeStdout, nextFrame, PANEL_HANDLERS } from "
 const STREAM_DELTAS = 10;
 
 describe("TUI streaming", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("does not repaint the run spinner on every streamed text delta", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
     const store = new TuiViewStore();
     store.initialize({
       conversationId: "conversation-1",
@@ -65,7 +70,7 @@ describe("TUI streaming", () => {
     const streamed = stdout.chunks.slice(frameStart).join("");
     expect(streamed).toContain("• item 0");
     expect(streamed).not.toContain(`${String.fromCharCode(27)}[1;1H${String.fromCharCode(27)}[J`);
-    expect(streamed.match(/esc to interrupt/g)?.length ?? 0).toBeLessThanOrEqual(4);
+    expect(streamed.match(/esc to interrupt/g)?.length ?? 0).toBe(0);
 
     instance.unmount();
     store.dispose();

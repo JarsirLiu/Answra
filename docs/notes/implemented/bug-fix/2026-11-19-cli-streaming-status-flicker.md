@@ -40,12 +40,12 @@ CLI TUI 在 AI 流式输出 Markdown 时，底部活动行（spinner 与 `esc to
 
 - Windows 底部保留一行未使用空间；这是当前 stock Ink 下避免整屏清除的最小代价。非 Windows 无此空行。
 - 活动行固定在底部，滚动历史时 spinner 仍可见；transcript 视口高度在 spinner 出现/消失时变化一次，属于可接受的一次性布局变化。
-- 回归测试必须继续断言流式分片中没有 `ESC[1;1H ESC[J`，且 spinner 重写次数受限；不要把 activity 再放回 `VirtualTranscript` 的滚动内容。
+- 回归测试必须继续断言流式分片中没有 `ESC[1;1H ESC[J`，并在冻结 `Spinner` 动画定时器后要求基线帧之外 spinner 重写次数为 0；不要把 activity 再放回 `VirtualTranscript` 的滚动内容，也不要用墙钟阈值代替重绘断言。测试时序修正见[CLI TUI 测试不再用墙钟猜测渲染完成](../testing/2026-11-19-cli-tui-render-timing.md)。
 - 升级 Ink 或调整 `alternateScreen` / 根高度时，重新检查 Windows 全屏清除与底部空行行为。
 
 ## 验证
 
-- `apps/cli/test/tui/app/tui.streaming.test.tsx`：10 个流式文本 delta，断言 spinner 文案重写次数 ≤4，并断言分片中没有 `ESC[1;1H ESC[J`。修复前同等场景为 30 次 spinner 重写并每帧整屏清除。
+- `apps/cli/test/tui/app/tui.streaming.test.tsx`：10 个流式文本 delta，冻结 spinner 的 `setInterval` 后断言基线帧之外 spinner 文案重写次数为 0，并断言分片中没有 `ESC[1;1H ESC[J`。修复前同等场景为 30 次 spinner 重写并每帧整屏清除。
 - `apps/cli/test/tui/transcript/tui.transcript.test.tsx` 的拖拽自动滚动用例改为选择实际注册过内容行的行号，避免视口高度变化后按压到空白行；断言仍要求选区起点每 tick 上移 2 行。
 - `pnpm --filter @answra/cli test`：61 个测试文件、386 个测试通过。
 - 需要在 Windows Terminal 与 conhost 手动观察流式 Markdown、窗口 resize、Ctrl+O transcript 切换与退出 alt screen。
