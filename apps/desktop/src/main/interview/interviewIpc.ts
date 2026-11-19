@@ -42,6 +42,36 @@ export function registerInterviewIpc(agent: AgentService) {
     );
   });
 
+  ipcMain.handle(InterviewChannels.IntakeOpen, async (event) => {
+    if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用");
+    return agent.openInterviewIntake();
+  });
+
+  ipcMain.handle(InterviewChannels.IntakeMessage, async (event, payload: unknown) => {
+    if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用");
+    const text = (payload as { text?: unknown } | null)?.text;
+    if (typeof text !== "string" || !text.trim() || text.length > 32_000)
+      throw new Error("面试消息无效");
+    return agent.sendInterviewIntakeMessage(text);
+  });
+
+  ipcMain.handle(InterviewChannels.IntakeSnapshot, async (event) => {
+    if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用");
+    return agent.getInterviewIntakeSnapshot();
+  });
+
+  ipcMain.handle(InterviewChannels.IntakeEvents, async (event, payload: unknown) => {
+    if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用");
+    const afterRevision = (payload as { afterRevision?: unknown } | null)?.afterRevision;
+    if (
+      typeof afterRevision !== "number" ||
+      !Number.isSafeInteger(afterRevision) ||
+      afterRevision < 0
+    )
+      throw new Error("面试事件请求无效");
+    return agent.readInterviewIntakeEvents(afterRevision);
+  });
+
   ipcMain.handle(InterviewChannels.CaptureReady, async (event, payload: unknown) => {
     if (!isWindowFromSender(getWindow(), event) || !isSessionPayload(payload))
       throw new Error("非法调用方");
@@ -123,6 +153,10 @@ export function registerInterviewIpc(agent: AgentService) {
       session.defaultSession.setPermissionCheckHandler(null);
       ipcMain.removeHandler(InterviewChannels.Start);
       ipcMain.removeHandler(InterviewChannels.Message);
+      ipcMain.removeHandler(InterviewChannels.IntakeOpen);
+      ipcMain.removeHandler(InterviewChannels.IntakeMessage);
+      ipcMain.removeHandler(InterviewChannels.IntakeSnapshot);
+      ipcMain.removeHandler(InterviewChannels.IntakeEvents);
       ipcMain.removeHandler(InterviewChannels.CaptureReady);
       ipcMain.removeHandler(InterviewChannels.CaptureFailed);
       ipcMain.removeHandler(InterviewChannels.Stop);

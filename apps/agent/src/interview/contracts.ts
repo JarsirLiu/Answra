@@ -2,6 +2,7 @@
  * Interview domain contracts. These types describe meaning inside the Agent;
  * IPC DTOs and provider wire formats must be mapped at their own boundaries.
  */
+import type { InterviewProfileSeed } from "@answra/shared";
 
 export type Brand<T, Name extends string> = T & { readonly __brand: Name };
 
@@ -11,6 +12,16 @@ export type ConversationId = Brand<string, "ConversationId">;
 export type UtteranceId = Brand<string, "UtteranceId">;
 export type TurnId = Brand<string, "TurnId">;
 export type ReplyGeneration = Brand<number, "ReplyGeneration">;
+
+/** intake / rehearsal 共用的单次模型运行输入；opening 只影响模型上下文，不是持久状态。 */
+export interface InterviewAgentInput {
+  conversationId: string;
+  runId: string;
+  workspaceRoot: string | null;
+  interviewDataRoot: string | null;
+  profileSeed: InterviewProfileSeed | null;
+  opening: boolean;
+}
 
 export function sessionId(value: string): SessionId {
   return nonEmptyId(value, "sessionId") as SessionId;

@@ -1,5 +1,4 @@
-/** 面试演练 Agent：组装演练提示、记忆路径、工作区上下文与授权工具。 */
-import type { InterviewProfileSeed } from "@answra/shared";
+/** 面试演练 Agent：组装演练提示、画像只读上下文、工作区上下文与授权工具。 */
 import { buildWorkspaceSystemContext } from "../conversation/turn/workspaceContext";
 import type { AgentDefinition } from "../core/agent/definition";
 import { agentId } from "../core/agent/definition";
@@ -9,19 +8,11 @@ import type { ToolRegistry } from "../core/tool";
 import { latestCheckpoint } from "../core/transcript/contextCheckpoint";
 import { projectConversationMessages } from "../core/transcript/projection";
 import type { ConversationStore } from "../core/transcript/store";
-import {
-  buildInterviewMemorySystemContext,
-  INTERVIEW_REHEARSAL_SYSTEM_PROMPT,
-  INTERVIEW_REHEARSAL_TOOLS,
-} from "./rehearsal/profile";
+import type { InterviewAgentInput } from "./contracts";
+import { buildInterviewMemorySystemContext } from "./profileContext";
+import { INTERVIEW_REHEARSAL_SYSTEM_PROMPT, INTERVIEW_REHEARSAL_TOOLS } from "./rehearsal/profile";
 
-export interface InterviewRehearsalInput {
-  conversationId: string;
-  runId: string;
-  workspaceRoot: string | null;
-  interviewDataRoot: string | null;
-  profileSeed: InterviewProfileSeed | null;
-}
+export type InterviewRehearsalInput = InterviewAgentInput;
 
 export const INTERVIEW_REHEARSAL_AGENT_ID = agentId("interview.rehearsal");
 

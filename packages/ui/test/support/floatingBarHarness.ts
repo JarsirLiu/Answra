@@ -1,4 +1,5 @@
 import type { ConversationMessage, ConversationSnapshot } from "@answra/shared";
+import { ActiveInterviewIntakeConversationId } from "@answra/shared";
 import type { AgentEventEnvelope, AgentStreamEvent } from "@answra/shared/schema";
 import { fireEvent, screen } from "@testing-library/react";
 import type { UIMessageChunk } from "ai";
@@ -169,6 +170,41 @@ export function createConversationBridge() {
       });
       return { runId: "run-1", snapshot };
     }),
+    openInterviewIntake: vi.fn(async () => {
+      const snapshot = saveSnapshot({
+        conversationId: ActiveInterviewIntakeConversationId,
+        eventRevision: 0,
+        messages: [
+          {
+            id: "intake-opening",
+            role: "assistant",
+            text: "我先看一下你的简历和项目。",
+            images: [],
+            status: "complete",
+          },
+        ],
+      });
+      return { snapshot };
+    }),
+    sendInterviewIntakeMessage: vi.fn(async (text: string) => {
+      const prior = snapshotFor(ActiveInterviewIntakeConversationId);
+      const snapshot = saveSnapshot({
+        ...prior,
+        messages: [
+          ...prior.messages,
+          {
+            id: `user-${prior.messages.length + 1}`,
+            role: "user",
+            text,
+            images: [],
+            status: "complete",
+          },
+        ],
+      });
+      return { runId: "run-1", snapshot };
+    }),
+    getInterviewIntakeSnapshot: vi.fn(async () => snapshotFor(ActiveInterviewIntakeConversationId)),
+    readInterviewIntakeEvents: vi.fn(async () => []),
     cancelConversationRun: vi.fn(),
     onConversationEvent: vi.fn((listener: (event: AgentEventEnvelope) => void) => {
       let scopeId = "";

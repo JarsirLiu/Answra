@@ -68,6 +68,13 @@ export interface ConversationStore {
     eventRevision?: number,
     authorAgentId?: string,
   ): Promise<ConversationMessage>;
+  /** 追加一次无 user 消息的开场 assistant 占位；已有活动 run 时拒绝。 */
+  beginOpeningRun(
+    conversationId: string,
+    runId: string,
+    eventRevision?: number,
+    authorAgentId?: string,
+  ): Promise<void>;
   /** 认领发给 targetAgentId 的交接记录并追加目标 Bot 的 assistant 占位。 */
   beginHandoffRun(
     conversationId: string,

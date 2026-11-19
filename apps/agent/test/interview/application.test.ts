@@ -115,4 +115,27 @@ describe("InterviewApplication", () => {
       }),
     );
   });
+
+  it("opens with an assistant placeholder and no user message", async () => {
+    const { app, getInput, executor } = createHarness();
+
+    const result = await app.open("conversation-1");
+
+    expect(result.runId).toBe("run-1");
+    expect(result.snapshot.messages).toEqual([
+      expect.objectContaining({ id: "run-1", role: "assistant", status: "streaming" }),
+    ]);
+    expect(getInput()).toEqual(expect.objectContaining({ opening: true }));
+    expect(executor.startRun).toHaveBeenCalledOnce();
+  });
+
+  it("does not start a second opening when the session already has messages", async () => {
+    const { app, executor } = createHarness();
+
+    await app.open("conversation-1");
+    const result = await app.open("conversation-1");
+
+    expect(result.runId).toBeUndefined();
+    expect(executor.startRun).toHaveBeenCalledOnce();
+  });
 });

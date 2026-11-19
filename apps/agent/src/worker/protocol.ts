@@ -129,6 +129,15 @@ export type AgentCommand =
   | { id: string; type: "workspace-context"; root: string | null }
   | { id: string; type: "interview-context"; root: string | null; seed: InterviewProfileSeed }
   | { id: string; type: "interview-message"; conversationId: string; text: string }
+  | { id: string; type: "interview-intake-open"; conversationId: string }
+  | { id: string; type: "interview-intake-message"; conversationId: string; text: string }
+  | { id: string; type: "interview-intake-snapshot"; conversationId: string }
+  | {
+      id: string;
+      type: "interview-intake-events";
+      conversationId: string;
+      afterRevision: number;
+    }
   | ({ id: string; type: "chat-send"; accessToken: string } & ChatSendCommand)
   | ({ id: string; type: "team-send"; accessToken: string } & TeamSendCommand)
   | ({ id: string; type: "answer-run"; accessToken: string } & AnswerRunCommand)

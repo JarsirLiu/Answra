@@ -686,6 +686,10 @@ describe("ephemeral conversation runtime", () => {
         await tick();
         return inner.beginReplyRun(conversationId, runId, eventRevision, authorAgentId);
       },
+      beginOpeningRun: async (conversationId, runId, eventRevision, authorAgentId) => {
+        await tick();
+        await inner.beginOpeningRun(conversationId, runId, eventRevision, authorAgentId);
+      },
       beginHandoffRun: async (conversationId, runId, targetAgentId, eventRevision) => {
         await tick();
         return inner.beginHandoffRun(conversationId, runId, targetAgentId, eventRevision);

@@ -35,6 +35,10 @@ const harness = vi.hoisted(() => {
       | undefined,
     startInterview: vi.fn(async () => undefined),
     sendInterviewMessage: vi.fn(async () => ({ runId: "run-1", snapshot: {} })),
+    openInterviewIntake: vi.fn(async () => ({ snapshot: { conversationId: "interview-intake" } })),
+    sendInterviewIntakeMessage: vi.fn(async () => ({ runId: "run-2", snapshot: {} })),
+    getInterviewIntakeSnapshot: vi.fn(async () => ({ conversationId: "interview-intake" })),
+    readInterviewIntakeEvents: vi.fn(async () => []),
     markInterviewCaptureReady: vi.fn(async () => undefined),
     failInterviewCapture: vi.fn(async () => undefined),
     stopInterview: vi.fn(async () => undefined),
@@ -98,6 +102,10 @@ describe("interview IPC", () => {
     const agent = {
       startInterview: harness.startInterview,
       sendInterviewMessage: harness.sendInterviewMessage,
+      openInterviewIntake: harness.openInterviewIntake,
+      sendInterviewIntakeMessage: harness.sendInterviewIntakeMessage,
+      getInterviewIntakeSnapshot: harness.getInterviewIntakeSnapshot,
+      readInterviewIntakeEvents: harness.readInterviewIntakeEvents,
       markInterviewCaptureReady: harness.markInterviewCaptureReady,
       failInterviewCapture: harness.failInterviewCapture,
       stopInterview: harness.stopInterview,
@@ -132,6 +140,26 @@ describe("interview IPC", () => {
       ActiveInterviewConversationId,
       "介绍一下你的项目",
     );
+
+    const intakeOpen = harness.handlers.get(InterviewChannels.IntakeOpen);
+    if (!intakeOpen) throw new Error("intake open handler not registered");
+    await intakeOpen(senderEvent);
+    expect(agent.openInterviewIntake).toHaveBeenCalledOnce();
+
+    const intakeMessage = harness.handlers.get(InterviewChannels.IntakeMessage);
+    if (!intakeMessage) throw new Error("intake message handler not registered");
+    await intakeMessage(senderEvent, { text: "补充一下项目背景" });
+    expect(agent.sendInterviewIntakeMessage).toHaveBeenCalledWith("补充一下项目背景");
+
+    const intakeSnapshot = harness.handlers.get(InterviewChannels.IntakeSnapshot);
+    if (!intakeSnapshot) throw new Error("intake snapshot handler not registered");
+    await intakeSnapshot(senderEvent);
+    expect(agent.getInterviewIntakeSnapshot).toHaveBeenCalledOnce();
+
+    const intakeEvents = harness.handlers.get(InterviewChannels.IntakeEvents);
+    if (!intakeEvents) throw new Error("intake events handler not registered");
+    await intakeEvents(senderEvent, { afterRevision: 3 });
+    expect(agent.readInterviewIntakeEvents).toHaveBeenCalledWith(3);
 
     const permissionHandler = harness.permissionHandler;
     if (!permissionHandler) throw new Error("microphone permission handler not registered");

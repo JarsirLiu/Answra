@@ -9,14 +9,13 @@ import { DEFAULT_COMPACTION_PROFILE } from "../core/context/compaction/profile";
 import { ContextPreparation } from "../core/context/preparation";
 import { createUserMessage } from "../core/transcript/message";
 import type { ConversationStore } from "../core/transcript/store";
-import type { InterviewRehearsalInput } from "./agent";
-import type { CommittedInterviewTurn } from "./contracts";
+import type { CommittedInterviewTurn, InterviewAgentInput } from "./contracts";
 import { InterviewReplyLoop } from "./reply/loop";
 
 export interface InterviewApplicationOptions {
   agentRuntime: AgentRuntime;
   store: ConversationStore;
-  executor: AgentExecutor<InterviewRehearsalInput>;
+  executor: AgentExecutor<InterviewAgentInput>;
   /** 面试演练回复的 assistant 消息归属。 */
   authorAgentId: AgentId;
   requestAccessToken: () => Promise<string>;
@@ -28,7 +27,7 @@ export interface InterviewApplicationOptions {
 export class InterviewApplication {
   private readonly agentRuntime: AgentRuntime;
   private readonly store: ConversationStore;
-  private readonly executor: AgentExecutor<InterviewRehearsalInput>;
+  private readonly executor: AgentExecutor<InterviewAgentInput>;
   private readonly authorAgentId: AgentId;
   private readonly requestAccessToken: () => Promise<string>;
   private readonly onSnapshot: (snapshot: ConversationSnapshot) => Promise<void>;
@@ -93,6 +92,17 @@ export class InterviewApplication {
     this.replyLoop.start();
   }
 
+  /**
+   * 打开 intake 会话：已有消息或活动 run 时只恢复页面；
+   * 空会话启动一次普通开场 run，不写假的 user 消息。
+   */
+  async open(conversationId: string): Promise<{ snapshot: ConversationSnapshot; runId?: string }> {
+    const snapshot = await this.createConversation(conversationId);
+    if (snapshot.messages.length > 0 || snapshot.activeRunId) return { snapshot };
+    const started = await this.startReply(conversationId, { opening: true });
+    return { snapshot: started.snapshot, runId: started.runId };
+  }
+
   turnSettled(
     conversationId: string,
     turns: readonly CommittedInterviewTurn[],
@@ -107,7 +117,7 @@ export class InterviewApplication {
     text: string,
   ): Promise<{ runId: string; snapshot: ConversationSnapshot }> {
     const trimmed = text.trim();
-    if (!trimmed || trimmed.length > 32_000) throw new Error("演练消息无效或过长");
+    if (!trimmed || trimmed.length > 32_000) throw new Error("面试消息无效或过长");
     const appended = await this.store.appendUserMessage(
       conversationId,
       createUserMessage(randomUUID(), { text: trimmed, images: [] }),
@@ -148,6 +158,10 @@ export class InterviewApplication {
     return this.agentRuntime.readEventsForRun(runId);
   }
 
+  readEvents(conversationId: string, afterRevision: number): Promise<AgentEventEnvelope[]> {
+    return this.agentRuntime.readEvents(conversationId, afterRevision);
+  }
+
   private async appendUserTurn(
     conversationId: string,
     turns: readonly CommittedInterviewTurn[],
@@ -164,7 +178,9 @@ export class InterviewApplication {
 
   private async startReply(
     conversationId: string,
+    options: { opening?: boolean } = {},
   ): Promise<{ runId: string; snapshot: ConversationSnapshot }> {
+    const opening = options.opening === true;
     const handle = await this.executor.startRun<ConversationSnapshot>({
       conversationId,
       getAccessToken: this.requestAccessToken,
@@ -187,7 +203,16 @@ export class InterviewApplication {
           onStatus: async () => this.onSnapshot(await this.loadRecoverySnapshot(conversationId)),
         }),
       prepareRun: async ({ runId, eventRevision }) => {
-        await this.store.beginReplyRun(conversationId, runId, eventRevision, this.authorAgentId);
+        if (opening) {
+          await this.store.beginOpeningRun(
+            conversationId,
+            runId,
+            eventRevision,
+            this.authorAgentId,
+          );
+        } else {
+          await this.store.beginReplyRun(conversationId, runId, eventRevision, this.authorAgentId);
+        }
         const snapshot = await this.loadRecoverySnapshot(conversationId);
         await this.onSnapshot(snapshot);
         return {
@@ -197,6 +222,7 @@ export class InterviewApplication {
             workspaceRoot: this.workspaceRoot,
             interviewDataRoot: this.interviewDataRoot,
             profileSeed: this.profileSeed,
+            opening,
           },
           prepared: snapshot,
         };

@@ -101,6 +101,37 @@ export class MemoryConversationStore implements ConversationStore {
     if (last?.role !== "user" || last.status !== "complete")
       throw new Error("没有可回复的用户消息");
     const previous = cloneRecord(session);
+    this.appendAssistantPlaceholder(session, runId, eventRevision, authorAgentId);
+    await this.commitMutation(conversationId, previous, {
+      kind: "run-started",
+      dirtyMessageIds: [runId],
+    });
+    return cloneMessage(last);
+  }
+
+  async beginOpeningRun(
+    conversationId: string,
+    runId: string,
+    eventRevision = 0,
+    authorAgentId?: string,
+  ): Promise<void> {
+    const session = this.requireSession(conversationId);
+    if (session.snapshot.activeRunId) throw new Error("当前回复尚未完成");
+    if (session.snapshot.messages.length > 0) throw new Error("开场只能用于空会话");
+    const previous = cloneRecord(session);
+    this.appendAssistantPlaceholder(session, runId, eventRevision, authorAgentId);
+    await this.commitMutation(conversationId, previous, {
+      kind: "run-started",
+      dirtyMessageIds: [runId],
+    });
+  }
+
+  private appendAssistantPlaceholder(
+    session: Session,
+    runId: string,
+    eventRevision: number,
+    authorAgentId?: string,
+  ): void {
     const assistant = createAssistantMessage(runId, authorAgentId);
     session.snapshot = {
       ...session.snapshot,
@@ -109,11 +140,6 @@ export class MemoryConversationStore implements ConversationStore {
       eventRevision: Math.max(session.snapshot.eventRevision, eventRevision),
       ...(authorAgentId ? { activeAgentId: authorAgentId } : {}),
     };
-    await this.commitMutation(conversationId, previous, {
-      kind: "run-started",
-      dirtyMessageIds: [assistant.id],
-    });
-    return cloneMessage(last);
   }
 
   async beginHandoffRun(

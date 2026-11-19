@@ -18,6 +18,7 @@ import type { ExecutionStore } from "./execution/store";
 import { createInterviewRehearsalAgent, INTERVIEW_REHEARSAL_AGENT_ID } from "./interview/agent";
 import { InterviewApplication } from "./interview/application";
 import type { InterviewDomainEvent } from "./interview/contracts";
+import { createInterviewIntakeAgent, INTERVIEW_INTAKE_AGENT_ID } from "./interview/intake/agent";
 import { InterviewRuntime } from "./interview/runtime";
 import type { RecognizerSource } from "./interview/transcription/local/recognizerPort";
 import type { TenVadSource } from "./interview/vad/tenVadEngine";
@@ -155,6 +156,12 @@ export function startAgentHost({
       tools,
     }),
   );
+  const interviewIntakeAgent = agentRuntime.registerAgent(
+    createInterviewIntakeAgent({
+      store,
+      tools,
+    }),
+  );
   const runtime = new ConversationApplication({
     agentRuntime,
     store,
@@ -183,6 +190,21 @@ export function startAgentHost({
     onTurnCommitted: (turn) => emitInterviewEvent({ type: "turn-committed", turn }),
     onError: (stage, error) => {
       console.warn("[interview-reply] failed", {
+        stage,
+        error: error instanceof Error ? error.message : "unknown",
+      });
+    },
+  });
+  const interviewIntake = new InterviewApplication({
+    agentRuntime,
+    store,
+    executor: interviewIntakeAgent,
+    authorAgentId: INTERVIEW_INTAKE_AGENT_ID,
+    requestAccessToken: () => requestAccessToken({ forceRefresh: false }),
+    onSnapshot: async (snapshot) => emitConversationSnapshot(snapshot),
+    onTurnCommitted: () => undefined,
+    onError: (stage, error) => {
+      console.warn("[interview-intake] failed", {
         stage,
         error: error instanceof Error ? error.message : "unknown",
       });
@@ -218,6 +240,7 @@ export function startAgentHost({
     // 运行时马上关闭：挂起内容不做异步结算，显式丢弃而非冒险 race。
     interviewRuntime.dispose();
     void interview.stop();
+    void interviewIntake.stop();
     rejectTokenRequests();
     skillsReady?.dispose();
     void tools.dispose().catch((error: unknown) => {
@@ -232,6 +255,9 @@ export function startAgentHost({
       await interview
         .stop()
         .catch((error: unknown) => console.warn("[interview-reply] stop failed", error));
+      await interviewIntake
+        .stop()
+        .catch((error: unknown) => console.warn("[interview-intake] stop failed", error));
       await agentRuntime.shutdown();
       disposed = true;
       rejectTokenRequests();
@@ -344,15 +370,26 @@ export function startAgentHost({
       case "workspace-context":
         runtime.setWorkspaceRoot(command.root);
         interview.setWorkspaceRoot(command.root);
+        interviewIntake.setWorkspaceRoot(command.root);
         // 工作区来源的 skill 随工作区变化重扫；结果迟到会被 catalog 自身丢弃。
         void skillsReady?.setWorkspaceRoot(command.root);
         return undefined;
       case "interview-context":
         interview.setInterviewDataRoot(command.root);
         interview.setProfileSeed(command.seed);
+        interviewIntake.setInterviewDataRoot(command.root);
+        interviewIntake.setProfileSeed(command.seed);
         return undefined;
       case "interview-message":
         return interview.sendText(command.conversationId, command.text);
+      case "interview-intake-open":
+        return interviewIntake.open(command.conversationId);
+      case "interview-intake-message":
+        return interviewIntake.sendText(command.conversationId, command.text);
+      case "interview-intake-snapshot":
+        return interviewIntake.getSnapshot(command.conversationId);
+      case "interview-intake-events":
+        return interviewIntake.readEvents(command.conversationId, command.afterRevision);
       case "chat-send":
         return runtime.enqueue(
           command.botId,

@@ -108,6 +108,7 @@ describe("event schema", () => {
       { type: "run-state-changed", state: "running", attempt: 1 },
       { type: "step-started", stepId: "step-1", index: 0 },
       { type: "step-finished", stepId: "step-1", index: 0, state: "completed" },
+      { type: "context-usage-changed", usedTokens: 10 },
       { type: "part-state-changed", partId: "part-1", kind: "text", state: "started" },
     ] as const;
 
@@ -117,9 +118,9 @@ describe("event schema", () => {
       expect(agentDurableEventSchema.parse(event)).toEqual(event);
     }
 
-    expect(agentExecutionEventSchema.options).toHaveLength(4);
-    expect(agentEventSchema.options).toHaveLength(32);
-    expect(agentDurableEventSchema.options).toHaveLength(28);
+    expect(agentExecutionEventSchema.options).toHaveLength(5);
+    expect(agentEventSchema.options).toHaveLength(33);
+    expect(agentDurableEventSchema.options).toHaveLength(29);
   });
 
   it("rejects provider-only fields that are not part of the app contract", () => {

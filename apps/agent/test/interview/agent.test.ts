@@ -2,6 +2,41 @@ import { describe, expect, it } from "vitest";
 import { createBuiltinToolRegistry } from "../../src/core/tool";
 import { MemoryConversationStore } from "../../src/core/transcript/memoryStore";
 import { createInterviewRehearsalAgent } from "../../src/interview/agent";
+import {
+  createInterviewIntakeAgent,
+  INTERVIEW_INTAKE_AGENT_ID,
+} from "../../src/interview/intake/agent";
+import { INTERVIEW_INTAKE_OPENING_PROMPT } from "../../src/interview/intake/profile";
+
+describe("interview intake agent", () => {
+  it("adds the opening prompt to the model request without writing a user message", async () => {
+    const store = new MemoryConversationStore();
+    await store.create("interview-intake");
+    const tools = createBuiltinToolRegistry();
+    const agent = createInterviewIntakeAgent({ store, tools });
+
+    const request = await agent.prepare(
+      {
+        conversationId: "interview-intake",
+        runId: "run-1",
+        workspaceRoot: "C:/workspace",
+        interviewDataRoot: "C:/data/interview",
+        profileSeed: null,
+        opening: true,
+      },
+      new AbortController().signal,
+    );
+
+    expect(request.system).toContain("面试资料整理者");
+    expect(request.messages).toEqual([{ role: "user", content: INTERVIEW_INTAKE_OPENING_PROMPT }]);
+    expect(Object.keys(request.tools ?? {})).toEqual(
+      expect.arrayContaining(["Read", "Grep", "Edit"]),
+    );
+    expect(await store.load("interview-intake")).toEqual(expect.objectContaining({ messages: [] }));
+    expect(agent.id).toBe(INTERVIEW_INTAKE_AGENT_ID);
+    await tools.dispose();
+  });
+});
 
 describe("interview rehearsal agent", () => {
   it("references the private memory path without injecting its contents", async () => {
@@ -17,6 +52,7 @@ describe("interview rehearsal agent", () => {
         workspaceRoot: "C:/workspace",
         interviewDataRoot: "C:/data/interview",
         profileSeed: null,
+        opening: false,
       },
       new AbortController().signal,
     );
@@ -25,9 +61,9 @@ describe("interview rehearsal agent", () => {
     expect(request.system).toContain("面试演练官");
     expect(request.system).toContain("<target-role>");
     expect(request.system).not.toContain("上次修改：");
-    expect(Object.keys(request.tools ?? {})).toEqual(
-      expect.arrayContaining(["Read", "Grep", "Edit", "RunCommand"]),
-    );
+    expect(Object.keys(request.tools ?? {})).toEqual(expect.arrayContaining(["Read", "Grep"]));
+    expect(Object.keys(request.tools ?? {})).not.toContain("Edit");
+    expect(Object.keys(request.tools ?? {})).not.toContain("RunCommand");
     await tools.dispose();
   });
 
@@ -44,6 +80,7 @@ describe("interview rehearsal agent", () => {
         workspaceRoot: null,
         interviewDataRoot: null,
         profileSeed: null,
+        opening: false,
       },
       new AbortController().signal,
     );
@@ -75,6 +112,7 @@ describe("interview rehearsal agent", () => {
           projects: [{ id: "manual:1", name: "桌面助手", location: "D:/code/app" }],
           updatedAt: "2026-11-19T08:00:00.000Z",
         },
+        opening: false,
       },
       new AbortController().signal,
     );

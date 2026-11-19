@@ -116,7 +116,7 @@ apps/agent             平台无关的 Agent 运行时（不依赖 Electron/Reac
   src/core/skill       skill 来源扫描、frontmatter 校验、索引渲染与按名加载
   src/execution        run/attempt/step 事件、状态、进程内 store 和投影
   src/conversation     对话领域：turn、agent、profiles、tools 子域
-  src/interview        面试语音领域：audio、transcription、turns、vad、reply 与 worker adapter
+  src/interview        面试领域：intake 资料整理、profile 上下文、rehearsal 与 audio/transcription/turns/vad/reply
   scripts/db           开发期 DB 生成与校验；不进入运行时 bundle
 examples/vad-asr-eval  独立 workspace 的可选 VAD/ASR 评测：按需安装，不进根 workspace、依赖安装或常规门禁
 scripts/architecture   架构守护脚本（深导入/依赖环/平台越界检查）

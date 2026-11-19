@@ -2,6 +2,8 @@
 
 状态：提案
 
+> 2026-11-19 已实现：[面试 intake 对话页与画像补全](../../implemented/feature/2026-11-19-interview-intake-conversation.md) 将完成/跳过后直接进入对话，由 AI 读取资料并补全 `profile.xml`；本文的静态“制作中”卡片和“制作能力接入中”占位待该提案评审后取代。
+
 ## 问题
 
 当前面试入口点击“开始面试演练”后，会把一句流程说明当作**用户消息**发给 Agent：`START_REHEARSAL_MESSAGE` 要求模型“先检查面试记忆和简历是否存在，再引导我补充信息”。这条消息会永久留在 transcript 里，于是出现两个问题：

@@ -6,7 +6,7 @@ import type {
   DesktopBridge,
 } from "@answra/shared";
 import { LoaderCircle, X } from "lucide-react";
-import { type RefObject, useRef, useState } from "react";
+import { type ReactNode, type RefObject, useRef, useState } from "react";
 import { ICON_SM } from "../../tokens";
 import {
   AssistantMessage,
@@ -42,6 +42,12 @@ interface ChatPanelProps {
   draft: string;
   attachments: ChatAttachment[];
   fileInputRef: RefObject<HTMLInputElement | null>;
+  title?: string;
+  variant?: "chat" | "interview";
+  inputLabel?: string;
+  placeholder?: string;
+  showAttachments?: boolean;
+  headerAction?: ReactNode;
   onDraftChange: (value: string) => void;
   onAttachmentChange: (file: File | null) => void;
   onAttachmentRemove: (id: string) => void;
@@ -99,6 +105,12 @@ export function ChatPanel({
   draft,
   attachments,
   fileInputRef,
+  title = "AI 对话",
+  variant = "chat",
+  inputLabel = "补充问题",
+  placeholder,
+  showAttachments = true,
+  headerAction,
   onDraftChange,
   onAttachmentChange,
   onAttachmentRemove,
@@ -152,51 +164,52 @@ export function ChatPanel({
         `boundary:${boundary.id}:${boundary.summary.length}:${boundary.instructions?.length ?? 0}`,
     ),
   ].join("|");
+  const headerActions =
+    headerAction || onClear || sessions !== undefined || onNewConversation ? (
+      <div className="panel-header-action chat-panel-header-actions">
+        {headerAction}
+        {sessions !== undefined && (
+          <SurfaceButton
+            aria-label={historyOpen ? "返回对话" : "查看会话历史"}
+            disabled={Boolean(historyDisabledReason) && !historyOpen}
+            onClick={() => setHistoryOpen((open) => !open)}
+            variant="quiet"
+          >
+            {historyOpen ? "返回" : "历史"}
+          </SurfaceButton>
+        )}
+        {onNewConversation && (
+          <SurfaceButton
+            aria-label="新建对话"
+            disabled={Boolean(historyDisabledReason)}
+            onClick={() => {
+              setHistoryOpen(false);
+              onNewConversation();
+            }}
+            variant="quiet"
+          >
+            新对话
+          </SurfaceButton>
+        )}
+        {onClear && (
+          <SurfaceButton
+            aria-label={clearDisabledReason ?? "清空对话历史"}
+            disabled={Boolean(clearDisabledReason)}
+            onClick={onClear}
+            variant="quiet"
+          >
+            清空
+          </SurfaceButton>
+        )}
+      </div>
+    ) : undefined;
   return (
     <PanelShell
       context={attachments.length ? "截图已添加，可补充问题" : undefined}
-      headerAction={
-        onClear || sessions !== undefined || onNewConversation ? (
-          <div className="panel-header-action chat-panel-header-actions">
-            {sessions !== undefined && (
-              <SurfaceButton
-                aria-label={historyOpen ? "返回对话" : "查看会话历史"}
-                disabled={Boolean(historyDisabledReason) && !historyOpen}
-                onClick={() => setHistoryOpen((open) => !open)}
-                variant="quiet"
-              >
-                {historyOpen ? "返回" : "历史"}
-              </SurfaceButton>
-            )}
-            {onNewConversation && (
-              <SurfaceButton
-                aria-label="新建对话"
-                disabled={Boolean(historyDisabledReason)}
-                onClick={() => {
-                  setHistoryOpen(false);
-                  onNewConversation();
-                }}
-                variant="quiet"
-              >
-                新对话
-              </SurfaceButton>
-            )}
-            {onClear && (
-              <SurfaceButton
-                aria-label={clearDisabledReason ?? "清空对话历史"}
-                disabled={Boolean(clearDisabledReason)}
-                onClick={onClear}
-                variant="quiet"
-              >
-                清空
-              </SurfaceButton>
-            )}
-          </div>
-        ) : undefined
-      }
+      headerAction={headerActions}
       onClose={onClose}
-      title="AI 对话"
-      variant="chat"
+      title={title}
+      variant={variant}
     >
       {historyOpen ? (
         <ChatHistoryPanel
@@ -279,34 +292,38 @@ export function ChatPanel({
             {!connectionNotice && error && <ModelErrorNotice message={error} onSignIn={onSignIn} />}
           </MessageStream>
           <ConversationComposer
-            inputLabel="补充问题"
+            inputLabel={inputLabel}
             inputRef={composerInputRef}
-            onAddAttachment={() => fileInputRef.current?.click()}
+            onAddAttachment={showAttachments ? () => fileInputRef.current?.click() : undefined}
             onPasteImages={(files) => {
-              if (files[0]) onAttachmentChange(files[0]);
+              if (showAttachments && files[0]) onAttachmentChange(files[0]);
             }}
             onStop={onCancel}
             onSubmit={onSend}
             onValueChange={onDraftChange}
             placeholder={
-              attachments.length ? "补充问题或说明…" : "输入问题，或先从模式功能添加截图…"
+              placeholder ??
+              (attachments.length ? "补充问题或说明…" : "输入问题，或先从模式功能添加截图…")
             }
+            showAttachmentButton={showAttachments}
             streaming={streaming}
             disabled={sending}
             submitDisabled={!draft.trim() && attachments.length === 0}
             value={draft}
           >
-            <input
-              accept="image/*"
-              aria-label="选择截图图片"
-              className="file-input-hidden"
-              onChange={(event) => {
-                onAttachmentChange(event.target.files?.[0] ?? null);
-                event.target.value = "";
-              }}
-              ref={fileInputRef}
-              type="file"
-            />
+            {showAttachments ? (
+              <input
+                accept="image/*"
+                aria-label="选择截图图片"
+                className="file-input-hidden"
+                onChange={(event) => {
+                  onAttachmentChange(event.target.files?.[0] ?? null);
+                  event.target.value = "";
+                }}
+                ref={fileInputRef}
+                type="file"
+              />
+            ) : null}
             {attachments.map((att) => (
               <div className="attachment-preview" key={att.id}>
                 <img alt="待发送截图预览" src={att.previewUrl} />

@@ -63,7 +63,10 @@
 | `src/conversation/profiles` | Conversation 内部提示词、上下文策略与工具授权清单 | 只声明授权 `ToolId[]`，不接收 renderer 提供的任意 prompt 或工具实现 |
 | `src/<domain>/tools` | 领域专属工具实现，实现 `core/tool` 契约 | 不执行桌面平台能力；不得由 desktop 反向 RPC 代执行 |
 | `src/interview` | 语音采集后的转录、turn 与自动回复领域，包括 worker DTO adapter | 与 Conversation 保持平级，不把面试状态塞进会话目录；领域逻辑不放入 `worker/` |
-| `src/interview/runtime.ts` | 面试媒体生命周期组合：连接 audio ingress、VAD、ASR、turn assembler/settler 与 InterviewApplication | 只编排领域端口，不定义 worker 协议或模型执行策略 |
+| `src/interview/runtime.ts` | 面试媒体生命周期组合：连接 audio ingress、VAD、ASR、turn assembler/settler 与演练 InterviewApplication | 只编排领域端口，不定义 worker 协议或模型执行策略 |
+| `src/interview/application.ts` | 面试文本会话用例：user 消息落账、assistant run 认领、snapshot/事件与无 user 消息开场占位 | 不定义 Agent prompt/工具；不启动音频 |
+| `src/interview/intake` | 资料整理 Agent：读取简历/项目并维护 `profile.xml`；开场指令只进入模型请求 | 不接收 renderer 任意 prompt/工具；不启动音频；不与演练 transcript 混用 |
+| `src/interview/profileContext.ts` | 画像路径、XML 格式与引导种子的只读上下文 | 不做文件读写；写入规则只注入 intake |
 | 平台能力与工具 | 采集、键鼠注入、窗口、密钥等桌面平台实现留在 desktop；Agent 工具由 Agent 注册并在 Agent 进程执行 | desktop 可注入工作区根目录等授权上下文，不得代执行 Agent 工具或通过反向 RPC 提供工具能力 |
 
 入口规则：desktop 只从 `@answra/agent`（`exports` 的 `.`）导入；CLI 或其他客户端组装领域 Bot 时使用 `@answra/agent/composition`，不得深导入。本包不产出独立构建产物，由 desktop 的 `build:electron` 或 CLI 的 `build` 一并 bundle。

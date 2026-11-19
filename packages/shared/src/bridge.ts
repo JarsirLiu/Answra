@@ -15,6 +15,7 @@ import type {
   ConversationSnapshot,
   DesktopAnnouncement,
   InterviewChange,
+  InterviewIntakeOpenResult,
   InterviewOnboardingPatch,
   InterviewOnboardingState,
   InterviewPcmFrame,
@@ -176,6 +177,16 @@ export interface DesktopBridge {
     conversationId: string,
     text: string,
   ) => Promise<{ runId: string; snapshot: ConversationSnapshot }>;
+  /** 打开固定 intake 会话；空会话会启动一次开场回复，已有内容只返回快照。 */
+  openInterviewIntake?: () => Promise<InterviewIntakeOpenResult>;
+  /** 发送 intake 对话消息；conversation ID 由主进程固定，不暴露给 renderer。 */
+  sendInterviewIntakeMessage?: (
+    text: string,
+  ) => Promise<{ runId: string; snapshot: ConversationSnapshot }>;
+  /** 读取 intake 会话的权威 snapshot。 */
+  getInterviewIntakeSnapshot?: () => Promise<ConversationSnapshot>;
+  /** 读取 intake 会话在指定 revision 之后的事件。 */
+  readInterviewIntakeEvents?: (afterRevision: number) => Promise<AgentEventEnvelope[]>;
   stopInterview?: (sessionId: string) => Promise<void>;
   markInterviewCaptureReady?: (sessionId: string) => Promise<void>;
   failInterviewCapture?: (sessionId: string) => Promise<void>;

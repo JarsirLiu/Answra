@@ -1,7 +1,7 @@
 import type { DesktopBridge } from "@answra/shared";
 import { SurfaceButton } from "../components/controls/SurfaceButton";
 import { PanelShell } from "../components/panels/PanelShell";
-import { InterviewAvatarPanel } from "../interview/avatar/InterviewAvatarPanel";
+import { InterviewIntakePanel } from "../interview/intake/InterviewIntakePanel";
 import { InterviewOnboardingPanel } from "../interview/onboarding/InterviewOnboardingPanel";
 import { useInterviewOnboarding } from "../interview/onboarding/useInterviewOnboarding";
 import "../interview/onboarding/onboarding.css";
@@ -11,7 +11,7 @@ interface InterviewFeaturePanelProps {
   onClose: () => void;
 }
 
-/** 面试入口：未完成时显示引导；完成/跳过后进入面试分身制作态。 */
+/** 面试入口：未完成时显示引导；完成/跳过后直接进入 intake 对话。 */
 export function InterviewFeaturePanel({ platform, onClose }: InterviewFeaturePanelProps) {
   const onboarding = useInterviewOnboarding(platform);
 
@@ -43,11 +43,10 @@ export function InterviewFeaturePanel({ platform, onClose }: InterviewFeaturePan
 
   if (onboarding.state) {
     return (
-      <InterviewAvatarPanel
-        error={onboarding.error}
+      <InterviewIntakePanel
         onClose={onClose}
-        onReopen={onboarding.reopen}
-        state={onboarding.state}
+        onReopenOnboarding={onboarding.reopen}
+        platform={platform}
       />
     );
   }

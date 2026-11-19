@@ -1,5 +1,6 @@
 import { AgentConnectionSupervisor, type InterviewWorkerEvent } from "@answra/agent";
 import {
+  ActiveInterviewIntakeConversationId,
   type AgentConnectionState,
   type BotSummary,
   type ConversationModelConfig,
@@ -11,6 +12,7 @@ import {
   type ConversationSessionScope,
   type ConversationSnapshot,
   emptyInterviewProfileSeed,
+  type InterviewIntakeOpenResult,
   type InterviewPcmFrame,
   type InterviewProfileSeed,
   type ManualCompactionResult,
@@ -166,14 +168,50 @@ export class AgentService {
     if (!text.trim() || text.length > 32_000) throw new Error("演练消息无效或过长");
     await this.start();
     this.trackConversation(conversationId);
-    await this.workerHost.request("workspace-context", { root: this.deps.getWorkspaceRoot() });
-    await this.sendInterviewContext();
-    const { config } = await this.deps.resolveModel();
-    await this.ensureConfigured(config);
+    await this.prepareInterviewModel();
     return (await this.workerHost.request("interview-message", {
       conversationId,
       text,
     })) as { runId: string; snapshot: ConversationSnapshot };
+  }
+
+  async openInterviewIntake(): Promise<InterviewIntakeOpenResult> {
+    await this.start();
+    this.trackConversation(ActiveInterviewIntakeConversationId);
+    await this.prepareInterviewModel();
+    return (await this.workerHost.request("interview-intake-open", {
+      conversationId: ActiveInterviewIntakeConversationId,
+    })) as InterviewIntakeOpenResult;
+  }
+
+  async sendInterviewIntakeMessage(
+    text: string,
+  ): Promise<{ runId: string; snapshot: ConversationSnapshot }> {
+    if (!text.trim() || text.length > 32_000) throw new Error("面试消息无效或过长");
+    await this.start();
+    this.trackConversation(ActiveInterviewIntakeConversationId);
+    await this.prepareInterviewModel();
+    return (await this.workerHost.request("interview-intake-message", {
+      conversationId: ActiveInterviewIntakeConversationId,
+      text,
+    })) as { runId: string; snapshot: ConversationSnapshot };
+  }
+
+  async getInterviewIntakeSnapshot(): Promise<ConversationSnapshot> {
+    await this.start();
+    this.trackConversation(ActiveInterviewIntakeConversationId);
+    return (await this.workerHost.request("interview-intake-snapshot", {
+      conversationId: ActiveInterviewIntakeConversationId,
+    })) as ConversationSnapshot;
+  }
+
+  async readInterviewIntakeEvents(afterRevision: number) {
+    await this.start();
+    this.trackConversation(ActiveInterviewIntakeConversationId);
+    return this.workerHost.request("interview-intake-events", {
+      conversationId: ActiveInterviewIntakeConversationId,
+      afterRevision,
+    });
   }
 
   cancel(runId: string): void {
@@ -259,10 +297,7 @@ export class AgentService {
     // 未登录/未配置时显式失败，不进入「只采集不回复」的降级状态。
     await this.start();
     this.trackConversation(conversationId);
-    await this.workerHost.request("workspace-context", { root: this.deps.getWorkspaceRoot() });
-    await this.sendInterviewContext();
-    const { config } = await this.deps.resolveModel();
-    await this.ensureConfigured(config);
+    await this.prepareInterviewModel();
     await this.workerHost.request("interview-start", { sessionId, conversationId });
   }
 
@@ -287,6 +322,14 @@ export class AgentService {
 
   async stop(): Promise<void> {
     await this.connection.dispose();
+  }
+
+  /** 面试语音与 intake 共用：工作区、画像种子、模型端点和凭据都要先下发。 */
+  private async prepareInterviewModel(): Promise<void> {
+    await this.workerHost.request("workspace-context", { root: this.deps.getWorkspaceRoot() });
+    await this.sendInterviewContext();
+    const { config } = await this.deps.resolveModel();
+    await this.ensureConfigured(config);
   }
 
   /** 演练记忆目录由桌面组合根注入；Agent 只拿路径，不自行猜 userData。 */
@@ -330,9 +373,14 @@ export class AgentService {
   private async refreshKnownSnapshots(): Promise<void> {
     for (const conversationId of [...this.knownConversationIds]) {
       try {
-        const snapshot = (await this.workerHost.request("snapshot", {
-          conversationId,
-        })) as ConversationSnapshot;
+        const snapshot =
+          conversationId === ActiveInterviewIntakeConversationId
+            ? ((await this.workerHost.request("interview-intake-snapshot", {
+                conversationId,
+              })) as ConversationSnapshot)
+            : ((await this.workerHost.request("snapshot", {
+                conversationId,
+              })) as ConversationSnapshot);
         this.workerHost.publishSnapshot(snapshot);
       } catch (error) {
         this.deps.log?.("[agent-service] 重连后刷新会话快照失败", error);

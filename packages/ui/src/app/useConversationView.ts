@@ -13,6 +13,10 @@ import {
 export interface UseConversationViewOptions extends ConversationProjectionOptions {
   enabled?: boolean;
   create?: boolean;
+  /** 领域自己的权威快照读取；缺省走通用 conversation bridge。 */
+  getSnapshot?: (conversationId: string) => Promise<import("@answra/shared").ConversationSnapshot>;
+  /** 领域自己的事件读取；缺省走通用 conversation bridge。 */
+  readEvents?: (conversationId: string, afterRevision: number) => Promise<AgentEventEnvelope[]>;
 }
 export interface ConversationViewHandle {
   view: ConversationView;
@@ -58,6 +62,13 @@ export function useConversationView(
     viewRef.current = next;
     setView(next);
   }, []);
+  const readEvents = useCallback(
+    async (conversationId: string, afterRevision: number) => {
+      const reader = optionsRef.current.readEvents ?? platform?.readConversationEvents;
+      return (await reader?.(conversationId, afterRevision)) ?? [];
+    },
+    [platform],
+  );
   const drainEvents = useCallback(async () => {
     if (drainingRef.current || initializingRef.current || !activeIdRef.current) return;
     drainingRef.current = true;
@@ -73,7 +84,7 @@ export function useConversationView(
             (revision) => revision > nextRevision,
           );
           if (!hasLaterEvent) return;
-          const recovered = await platform?.readConversationEvents?.(conversationId, cursor);
+          const recovered = await readEvents(conversationId, cursor);
           if (activeIdRef.current !== conversationId || generation !== generationRef.current)
             return;
           for (const event of recovered ?? [])
@@ -90,7 +101,7 @@ export function useConversationView(
       drainingRef.current = false;
       if (pendingEventsRef.current.has(viewRef.current.eventRevision + 1)) void drainEvents();
     }
-  }, [commit, platform]);
+  }, [commit, readEvents]);
   const receiveEvent = useCallback(
     (event: AgentEventEnvelope) => {
       if (!activeIdRef.current || conversationOf(event) !== activeIdRef.current) return;
@@ -147,11 +158,7 @@ export function useConversationView(
       viewRef.current = next;
       setView(next);
       try {
-        const events =
-          (await platform?.readConversationEvents?.(
-            snapshot.conversationId,
-            snapshot.eventRevision,
-          )) ?? [];
+        const events = await readEvents(snapshot.conversationId, snapshot.eventRevision);
         if (activeIdRef.current !== snapshot.conversationId || generation !== generationRef.current)
           return;
         for (const event of events) pendingEventsRef.current.set(event.aggregateRevision, event);
@@ -162,7 +169,7 @@ export function useConversationView(
         }
       }
     },
-    [drainEvents, platform],
+    [drainEvents, readEvents],
   );
   const receiveSnapshot = useCallback(
     (snapshot: import("@answra/shared").ConversationSnapshot) => {
@@ -203,10 +210,10 @@ export function useConversationView(
       const snapshot =
         create && platform?.createConversation
           ? await platform.createConversation(id)
-          : await platform?.getConversationSnapshot?.(id);
+          : await (optionsRef.current.getSnapshot?.(id) ?? platform?.getConversationSnapshot?.(id));
       if (cancelled || generation !== generationRef.current || !snapshot) return;
       commitSnapshot(snapshot, false);
-      const events = (await platform?.readConversationEvents?.(id, snapshot.eventRevision)) ?? [];
+      const events = await readEvents(id, snapshot.eventRevision);
       if (cancelled || generation !== generationRef.current) return;
       for (const event of events) pendingEventsRef.current.set(event.aggregateRevision, event);
       initializingRef.current = false;
@@ -222,7 +229,7 @@ export function useConversationView(
       cancelled = true;
       if (generation === generationRef.current) initializingRef.current = false;
     };
-  }, [activeId, create, enabled, platform, commitSnapshot, drainEvents]);
+  }, [activeId, create, enabled, platform, commitSnapshot, drainEvents, readEvents]);
 
   const waitForRun = useCallback((runId: string) => {
     const done = finishedRef.current.get(runId);

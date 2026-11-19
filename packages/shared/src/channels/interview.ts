@@ -1,10 +1,14 @@
-import type { ConversationSnapshot } from "../schema";
+import type { AgentEventEnvelope, ConversationSnapshot } from "../schema";
 
 /** 面试采集、音频流和回答状态的 IPC 频道和载荷契约。 */
 export const InterviewChannels = {
   Start: "answra:interview:start",
   Message: "answra:interview:message",
   Stop: "answra:interview:stop",
+  IntakeOpen: "answra:interview:intake-open",
+  IntakeMessage: "answra:interview:intake-message",
+  IntakeSnapshot: "answra:interview:intake-snapshot",
+  IntakeEvents: "answra:interview:intake-events",
   CaptureReady: "answra:interview:capture-ready",
   CaptureFailed: "answra:interview:capture-failed",
   AudioFrame: "answra:interview:audio-frame",
@@ -106,6 +110,12 @@ export function emptyInterviewProfileSeed(): InterviewProfileSeed {
   return { targetRole: "", resume: null, projects: [], updatedAt: "" };
 }
 
+/** intake 打开结果：已有 transcript 时只返回快照；空会话会启动一次开场回复。 */
+export interface InterviewIntakeOpenResult {
+  snapshot: ConversationSnapshot;
+  runId?: string;
+}
+
 /** Renderer may only change draft fields; importing a resume and finalizing stay separate. */
 export interface InterviewOnboardingPatch {
   step?: InterviewOnboardingStep;
@@ -164,6 +174,22 @@ export interface InterviewChannelMap {
     response: { runId: string; snapshot: ConversationSnapshot };
   };
   [InterviewChannels.Stop]: { request: { sessionId: string }; response: undefined };
+  [InterviewChannels.IntakeOpen]: {
+    request: undefined;
+    response: InterviewIntakeOpenResult;
+  };
+  [InterviewChannels.IntakeMessage]: {
+    request: { text: string };
+    response: { runId: string; snapshot: ConversationSnapshot };
+  };
+  [InterviewChannels.IntakeSnapshot]: {
+    request: undefined;
+    response: ConversationSnapshot;
+  };
+  [InterviewChannels.IntakeEvents]: {
+    request: { afterRevision: number };
+    response: AgentEventEnvelope[];
+  };
   [InterviewChannels.CaptureReady]: { request: { sessionId: string }; response: undefined };
   [InterviewChannels.CaptureFailed]: { request: { sessionId: string }; response: undefined };
   [InterviewChannels.AudioFrame]: { request: InterviewPcmFrame; response: undefined };
@@ -209,3 +235,4 @@ export interface InterviewChannelMap {
 export const ActiveExamConversationId = "active-exam-conversation";
 export const ActiveChatConversationId = "active-chat-conversation";
 export const ActiveInterviewConversationId = "active-interview-conversation";
+export const ActiveInterviewIntakeConversationId = "interview-intake";
