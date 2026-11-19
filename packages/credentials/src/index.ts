@@ -1,4 +1,6 @@
 /** 共享本地模型凭据：OS keychain 端口与 @napi-rs/keyring 适配器；不读写模型配置文件。 */
+import { createRequire } from "node:module";
+
 export const MODEL_CREDENTIAL_SERVICE = "Answra";
 export const MODEL_CREDENTIAL_ACCOUNT = "local-model-api-key";
 
@@ -65,9 +67,11 @@ export class KeychainModelCredentialStore implements ModelCredentialStore {
     if (this.entry === undefined) {
       this.entry = this.createEntry(this.service, this.account).catch((error: unknown) => {
         this.entry = undefined;
-        throw new CredentialStoreUnavailableError("系统凭据库不可用，无法读取或保存 API Key。", {
-          cause: error,
-        });
+        const detail = error instanceof Error && error.message ? `（${error.message}）` : "";
+        throw new CredentialStoreUnavailableError(
+          `系统凭据库不可用，无法读取或保存 API Key。${detail}`,
+          { cause: error },
+        );
       });
     }
     return this.entry;
@@ -80,7 +84,21 @@ export function createSystemModelCredentialStore(
   return new KeychainModelCredentialStore(options);
 }
 
+/** 桌面主进程把本包打进 asar 内的 CJS bundle（有 __filename）；CLI bundle 是 ESM。 */
+declare const __filename: string | undefined;
+
+/**
+ * 原生模块按 CJS 解析：asar 内的 ESM 裸说明符解析不可靠，会让安装版凭据库失效。
+ * ESM 宿主（CLI）没有 __filename，仍走动态 import。
+ */
+async function loadKeyring(): Promise<typeof import("@napi-rs/keyring")> {
+  if (typeof __filename === "string") {
+    return createRequire(__filename)("@napi-rs/keyring");
+  }
+  return import("@napi-rs/keyring");
+}
+
 async function createSystemEntry(service: string, account: string): Promise<CredentialEntry> {
-  const { Entry } = await import("@napi-rs/keyring");
+  const { Entry } = await loadKeyring();
   return new Entry(service, account);
 }

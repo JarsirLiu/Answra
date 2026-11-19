@@ -6,8 +6,9 @@
  *    不允许相对路径穿透到其它包内部。
  * 2. forbidCycles —— workspace 依赖图必须无环。
  * 3. rendererIsolation —— electron / node: 模块仅允许在
- *    apps/desktop 的 src/main、src/preload、构建脚本 scripts
- *    与 apps/agent（平台无关的 Agent 运行时，在 utility process 里跑）中使用；
+ *    apps/desktop 的 src/main、src/preload、构建脚本 scripts、
+ *    apps/agent（平台无关的 Agent 运行时，在 utility process 里跑）
+ *    与 Node-only 的 packages/config、packages/credentials 中使用；
  *    渲染层（packages/ui、desktop renderer）必须通过 DesktopBridge。
  * 4. forbidLocalListeners —— src 里不得 createServer/listen（测试除外）：
  *    进程间通信只用 IPC / 管道 / utilityProcess。
@@ -209,7 +210,9 @@ function checkImports(pkg) {
           normalized.startsWith("apps/cli/scripts/") ||
           // 共享客户端配置是 Node-only 库，只允许 desktop main 与 CLI 消费；
           // renderer/preload 仍禁止 node 内置。
-          normalized.startsWith("packages/config/src/");
+          normalized.startsWith("packages/config/src/") ||
+          // OS 凭据库是 Node-only：需要 node:module 以 CJS 解析原生 keychain 模块。
+          normalized.startsWith("packages/credentials/src/");
         if (!allowed) {
           errors.push(`${rel}: "${spec}" 仅允许在 apps/desktop 的 main/preload 中使用`);
         }

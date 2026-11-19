@@ -119,6 +119,33 @@ describe("floating bar settings", () => {
     expect(screen.queryByRole("button", { name: "保存" })).not.toBeInTheDocument();
   });
 
+  it("keeps local model configuration when the saved key cannot be read", async () => {
+    const bridge = {
+      ...createConversationBridge(),
+      getConversationConfig: vi.fn().mockResolvedValue({
+        source: "local",
+        localAvailable: true,
+        baseUrl: "http://127.0.0.1:1234/v1",
+        model: "local-model",
+        answerModel: "",
+        configured: true,
+      }),
+      getConversationApiKey: vi
+        .fn()
+        .mockRejectedValue(new Error("CredentialStoreUnavailableError: 系统凭据库不可用")),
+    };
+    render(<FloatingBarApp bridge={bridge} />);
+    fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
+
+    // 凭据库读不到 Key 只降级为提示，不能把「模型」分组整块丢掉
+    await screen.findByRole("heading", { name: "模型" });
+    expect(screen.getByPlaceholderText("http://127.0.0.1:1234/v1")).toHaveValue(
+      "http://127.0.0.1:1234/v1",
+    );
+    expect(screen.getByText(/无法读取已保存的 API Key/)).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("keeps ambient and stealth settings independent", async () => {
     const bridge = {
       close: vi.fn(),

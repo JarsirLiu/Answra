@@ -150,19 +150,25 @@ export function SettingsPanel({
   useEffect(() => {
     if (!getConversationConfig) return;
     let cancelled = false;
-    Promise.all([
-      getConversationConfig(),
-      getConversationApiKey?.() ?? Promise.resolve({ apiKey: null }),
-    ])
-      .then(([view, key]) => {
+    getConversationConfig()
+      .then((view) => {
         if (cancelled) return;
         setModelView(view);
         setSource(view.source);
         setBaseUrl(view.baseUrl);
         setModel(view.model);
-        setApiKey(key.apiKey ?? "");
       })
-      .catch(() => undefined);
+      .catch((error: unknown) => {
+        if (!cancelled) setModelError(error instanceof Error ? error.message : "无法读取模型配置");
+      });
+    // 本机凭据库不可用只影响已保存 Key 的回填；配置与「模型」分组照常展示。
+    getConversationApiKey?.()
+      .then((key) => {
+        if (!cancelled) setApiKey(key.apiKey ?? "");
+      })
+      .catch(() => {
+        if (!cancelled) setModelNotice("无法读取已保存的 API Key，如需更换请重新填写");
+      });
     return () => {
       cancelled = true;
     };
