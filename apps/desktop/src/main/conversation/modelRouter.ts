@@ -18,7 +18,10 @@ import { type StoredModelSettings, toView, validateModelSettings } from "./model
  */
 
 /** 能力来自发布清单的功能位，而不是 profile 名字；开发态始终允许本地来源。 */
-export function isLocalModelAvailable(isPackaged: boolean, features: readonly FeatureId[]): boolean {
+export function isLocalModelAvailable(
+  isPackaged: boolean,
+  features: readonly FeatureId[],
+): boolean {
   return !isPackaged || features.includes("local-model");
 }
 
