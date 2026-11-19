@@ -52,42 +52,58 @@ export type InterviewOnboardingStep = (typeof INTERVIEW_ONBOARDING_STEPS)[number
 export const INTERVIEW_ONBOARDING_STATUSES = ["pending", "completed", "skipped"] as const;
 export type InterviewOnboardingStatus = (typeof INTERVIEW_ONBOARDING_STATUSES)[number];
 
+export const INTERVIEW_ONBOARDING_STATE_VERSION = 2;
+/** Agent 维护的画像文件；desktop 只在首次引导完成时创建，之后由 AI 读写。 */
+export const INTERVIEW_PROFILE_FILE = "profile.xml";
+export const INTERVIEW_PROFILE_VERSION = 1;
 export const INTERVIEW_RESUME_TEXT_MAX_CHARS = 200_000;
-export const INTERVIEW_RESUME_FILE_MAX_BYTES = 2_000_000;
+export const INTERVIEW_RESUME_FILE_MAX_BYTES = 20 * 1024 * 1024;
 export const INTERVIEW_RESUME_FILE_NAME_MAX_LENGTH = 200;
+export const INTERVIEW_RESUME_PATH_MAX_LENGTH = 1_024;
 export const INTERVIEW_PROJECTS_MAX = 20;
 export const INTERVIEW_PROJECT_ID_MAX_LENGTH = 160;
 export const INTERVIEW_PROJECT_NAME_MAX_LENGTH = 120;
-export const INTERVIEW_PROJECT_ROLE_MAX_LENGTH = 80;
-export const INTERVIEW_PROJECT_PERIOD_MAX_LENGTH = 80;
+export const INTERVIEW_PROJECT_LOCATION_MAX_LENGTH = 1_024;
 export const INTERVIEW_PROJECT_SUMMARY_MAX_LENGTH = 500;
-export const INTERVIEW_PROJECT_EVIDENCE_MAX_LENGTH = 1_000;
 export const INTERVIEW_TARGET_ROLE_MAX_LENGTH = 120;
 
-/** A project candidate extracted from the selected resume; evidence stays local to the panel. */
+/** 用户手动录入的项目；AI 制作画像时按 location 读取代码。 */
 export interface InterviewOnboardingProject {
   id: string;
   name: string;
-  role?: string;
-  period?: string;
+  /** 本地路径或仓库地址；缺省表示 AI 只能从简历正文里找。 */
+  location?: string;
   summary?: string;
-  evidence?: string;
 }
 
 export interface InterviewOnboardingResume {
   id: string;
   fileName: string;
-  projects: InterviewOnboardingProject[];
+  /** 原生文件框选出的绝对路径；AI 直接读取，不复制正文。 */
+  sourcePath: string;
 }
 
 export interface InterviewOnboardingState {
-  version: 1;
+  version: typeof INTERVIEW_ONBOARDING_STATE_VERSION;
   status: InterviewOnboardingStatus;
   step: InterviewOnboardingStep;
   resume: InterviewOnboardingResume | null;
+  projects: InterviewOnboardingProject[];
   selectedProjectIds: string[];
   targetRole: string;
   updatedAt: string;
+}
+
+/** 引导交给 Agent 的只读种子；画像由 Agent 维护，种子只用于首次创建或感知用户最近的修改。 */
+export interface InterviewProfileSeed {
+  targetRole: string;
+  resume: InterviewOnboardingResume | null;
+  projects: InterviewOnboardingProject[];
+  updatedAt: string;
+}
+
+export function emptyInterviewProfileSeed(): InterviewProfileSeed {
+  return { targetRole: "", resume: null, projects: [], updatedAt: "" };
 }
 
 /** Renderer may only change draft fields; importing a resume and finalizing stay separate. */
@@ -109,6 +125,7 @@ export interface InterviewResumeImportRequest {
 
 export interface InterviewProjectAddRequest {
   name: string;
+  location?: string;
   summary?: string;
 }
 

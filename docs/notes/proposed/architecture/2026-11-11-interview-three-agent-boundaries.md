@@ -2,6 +2,8 @@
 
 状态：提案
 
+> 2026-11-19：画像格式已改为 `interview/profile.xml`（见[面试引导与画像记忆](../feature/2026-11-11-interview-onboarding-and-avatar.md)）。本文的 `CandidateProfile` + `profile.md` 投影方案尚未实施，三 Agent 落地时需按新格式重新评审；当前仍由单个演练官维护 `profile.xml`。
+
 ## 问题
 
 当前面试域只有一个 `interview.rehearsal` Agent。它在同一份 prompt 里同时承担三种互相冲突的身份：

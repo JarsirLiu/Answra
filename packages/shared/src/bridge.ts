@@ -187,9 +187,9 @@ export interface DesktopBridge {
   // ---- 面试首次引导（面试面板内三步；浏览器预览/测试环境可未实现） ----
   /** 读取首次引导状态；未实现时 UI 视为已完成，直接显示演练面板。 */
   getInterviewOnboardingState?: () => Promise<InterviewOnboardingState>;
-  /** 主进程弹出系统文件框并导入 .md/.txt 简历；取消时 state 不变。 */
+  /** 主进程弹出系统文件框并记录 .md/.txt/.pdf/.doc/.docx 简历的绝对路径；取消时 state 不变。 */
   pickInterviewResume?: () => Promise<InterviewResumePickResult>;
-  /** 导入粘贴的简历文本；与文件选择共用解析和持久化路径。 */
+  /** 导入粘贴的简历文本；主进程写入受管文本文件并记录其路径。 */
   importInterviewResume?: (
     request: InterviewResumeImportRequest,
   ) => Promise<InterviewOnboardingState>;

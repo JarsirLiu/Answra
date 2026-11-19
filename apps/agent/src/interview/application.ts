@@ -1,6 +1,6 @@
 /** Interview application：拥有演练文本/语音回合、transcript 写入、回复 run 与 snapshot 发布。 */
 import { randomUUID } from "node:crypto";
-import type { ConversationSnapshot } from "@answra/shared";
+import type { ConversationSnapshot, InterviewProfileSeed } from "@answra/shared";
 import type { AgentEventEnvelope, AgentRunSnapshot } from "@answra/shared/schema";
 import type { AgentExecutor, AgentId } from "../core/agent/definition";
 import type { AgentRuntime } from "../core/agent/runtime";
@@ -37,6 +37,7 @@ export class InterviewApplication {
   private readonly replyLoop: InterviewReplyLoop;
   private workspaceRoot: string | null = null;
   private interviewDataRoot: string | null = null;
+  private profileSeed: InterviewProfileSeed | null = null;
 
   constructor(options: InterviewApplicationOptions) {
     this.agentRuntime = options.agentRuntime;
@@ -82,6 +83,10 @@ export class InterviewApplication {
 
   setInterviewDataRoot(root: string | null): void {
     this.interviewDataRoot = root;
+  }
+
+  setProfileSeed(seed: InterviewProfileSeed | null): void {
+    this.profileSeed = seed;
   }
 
   start(): void {
@@ -191,6 +196,7 @@ export class InterviewApplication {
             runId,
             workspaceRoot: this.workspaceRoot,
             interviewDataRoot: this.interviewDataRoot,
+            profileSeed: this.profileSeed,
           },
           prepared: snapshot,
         };

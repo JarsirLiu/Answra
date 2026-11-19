@@ -281,10 +281,55 @@
 
 用户反馈面试引导与主内容面板共用高度，导致笔记本看起来过长，并要求面试改为独立浮窗。新的窗口形态、IPC、焦点/隐身、截图与生命周期方案见[独立面试窗口](../architecture/2026-11-12-interview-window.md)。本文此前“不新增独立原生向导窗口”“首版复用面试面板”的暂缓决定待该提案评审后更新；评审前当前实现仍以主面板为准。
 
+## 2026-11-19 调整：简历只存路径、项目手动录入、画像改为 profile.xml
+
+用户明确产品意图：引导阶段不要求把简历解析成项目卡片；只需要记住简历地址和用户手动添加的项目，等“制作面试分身”时由 AI 自己读简历、看项目代码，写用户画像。此前“复制简历正文 + 启发式抽项目 + 只允许 md/txt”的实现与该目标相反。
+
+- **简历**：原生文件框放宽到 `.md`、`.txt`、`.pdf`、`.doc`、`.docx`，只记录绝对路径 `sourcePath` 和文件名，不再 `fs.readFile` 复制正文，也不再写 `resumes/<id>.txt`。粘贴文本仍保留为兜底，但由主进程写入受管文本文件并记录其路径，AI 读的仍是路径。PDF/Word 读取复用 Agent `Read` 已有的 `pdfjs-dist` / `word-extractor`，不新增解析库。
+- **项目**：onboarding 状态把项目从 `resume.projects` 提升为顶层 `projects`，项目改为用户手动添加，字段为名称、位置（仓库地址或本地路径）和一句话说明；不再运行 `extractResumeProjects` 启发式，删除该实现及其测试。项目不再要求先有简历。
+- **画像格式**：新增 `interview/profile.xml`，它是唯一画像记忆。预设字段只有目标岗位、简历文件名/绝对路径、项目（名称/位置/说明）和 `<memory>` 自由文本区；其余事实由 AI 写进 `<memory>`，不新增固定字段。XML 的层级便于未来浮窗卡片直接引用 `<target-role>`、`<projects>/<project>` 等字段，也允许结构化字段和自由文本共存。XML 不是给用户看的，用户通过对话让 AI 读改。示例：
+
+  ```xml
+  <profile version="1" updated="2026-11-19T08:00:00.000Z">
+    <target-role>高级前端工程师</target-role>
+    <resume>
+      <file>简历.pdf</file>
+      <path>D:\docs\简历.pdf</path>
+    </resume>
+    <projects>
+      <project id="manual:...">
+        <name>桌面助手</name>
+        <location>D:\code\app</location>
+        <summary>负责引导与面试面板</summary>
+      </project>
+    </projects>
+    <memory>自由文本：经历、优势、披露边界、待确认项等。</memory>
+    <history>
+      <change at="2026-11-19T08:00:00.000Z" source="onboarding">引导完成时创建画像</change>
+    </history>
+  </profile>
+  ```
+- **写入权**：`complete()` 在画像不存在且有可用资料时创建首份画像，已有画像绝不覆盖；没有资料时不写空文件，留给 AI 在首次会话创建。之后画像由 AI 独占维护。AI 可以在用户换简历、改项目地址或修正经历时直接更新 `<resume>`、`<projects>` 和 `<memory>`，并更新 `updated`、追加 `<history>`。这正是高概率场景：用户改完简历会直接让 AI 看新文件。
+- **引导种子**：`wizard.json`（由 `onboarding.json` 迁移而来）只保存向导状态和用户最近一次输入，不再是画像事实源。每次 `interview-start` 前，desktop 通过 `interview-context` 把目标岗位、简历路径、选中项目和 `updatedAt` 作为只读种子下发给 Agent。种子只用于画像不存在时创建、或补画像缺失字段，不按时间戳自动覆盖画像；用户明确说改过简历/项目时，AI 再按种子或用户给的新路径更新。
+- **不再写 profile.md**：删除 `interviewProfileDraft.ts` 和受管区块。`profile.md` 的 Markdown 没有稳定字段，无法支撑未来卡片引用，也会和 AI 自由编辑产生两份事实。
+- **替代方案**：固定字段的 JSON 画像（舍弃：用户情况无法穷举，字段僵化）；纯 Markdown 画像（舍弃：未来浮窗卡片无法可靠取字段）；onboarding 和 AI 同时写画像（舍弃：重跑引导会覆盖 AI 整理结果，格式也会漂移）；不可变 seed 文件（舍弃：简历和项目地址会变，AI 必须能改）；把 seed 直接写进画像（舍弃：重跑引导与 AI 编辑互相覆盖）。
+- **后果**：引导完成代表 `wizard.json` 已保存；有可用资料时还会创建首份 `profile.xml`。“制作面试分身”的 AI 读取、跟随简历链接和 clone 项目仍留给后续阶段。重新引导只更新 `wizard.json`，画像要等 AI 在下次会话按种子补全，或用户直接让 AI 修改。项目位置可以是 URL，但当前不校验可达性。
+- **与三 Agent 分工的偏差**：当前还没有 `interview.intake`，暂由演练官维护画像；三 Agent 落地后写入权应移交 intake，演练官改为只读。本次也取代提案中“system 上下文不注入绝对路径”的约束：Agent 需要简历绝对路径才能读取，提示词改为禁止向用户展示路径和画像原文。
+- **验证**：`interviewOnboardingStore.test.ts` 覆盖路径导入不复制正文、粘贴文本写受管文件、替换简历不删除用户原文件、无简历添加项目、`wizard.json` 迁移、v1 迁移、完成时创建 `profile.xml`、不覆盖已有画像、画像创建失败时状态保持 `pending` 且可重试、XML 转义；`interviewOnboardingIpc.test.ts` 覆盖路径载荷与项目位置校验；`agent.test.ts` 覆盖 `profile.xml` 路径、XML 字段提示和只读种子上下文；`InterviewOnboardingPanel.test.tsx` 覆盖无简历也能手动添加项目、位置输入与提交；shared/agent/desktop/UI typecheck、相关 vitest、Biome 通过。
+
+## 2026-11-19 完善：头像状态、旧画像处理与引导面板拆分
+
+线上没有真实用户数据，旧 `profile.md` 不迁移：不增加一次性导入、备份或兼容读取；新安装只认 `profile.xml`。如果未来出现旧数据，再按独立 Note 处理。
+
+- **头像状态**：`InterviewAvatarPanel` 不再只按 `status === "completed"` 分支，而是先派生 `hasMaterials = resume || selected projects || targetRole`。有资料且 completed 才显示“制作中 / 简历和项目已保存”；有资料但 skipped 显示“资料已保存 / 继续完善”；无资料时无论 completed 还是 skipped 都显示“还没有面试资料”，completed 的空状态提示进入面试后由 AI 建立画像。避免两类假状态：skipped 有资料却说没有资料，completed 空资料却说已保存。
+- **面板拆分**：`InterviewOnboardingPanel` 从 477 行降到 261 行，只保留跨步骤状态（busy、粘贴框、选中项目、目标岗位）、导航和页脚；步骤视图拆到 `steps/InterviewOnboardingResumeStep.tsx`、`steps/InterviewOnboardingProjectsStep.tsx`、`steps/InterviewOnboardingReadyStep.tsx`。项目添加表单状态留在项目步骤，粘贴框状态留在外壳（页脚需要据此隐藏“下一步”）。行为、选择器和文案不变。
+- **替代方案**：把 `skipped` 当作 `completed` 显示（舍弃：跳过引导不等于画像已制作）；让每个步骤组件自持选中项目/目标岗位（舍弃：页脚主操作需要读取它们，会引入跨组件回写）；继续留在单文件（舍弃：477 行超过 400 行审查线，步骤边界已经清晰）。
+- **验证**：`InterviewOnboardingPanel.test.tsx` 12 项通过，覆盖 completed 有资料、skipped 有资料、completed 空资料；`@answra/ui` typecheck、Biome 通过；`pnpm verify` 通过（工作区另有一个未跟踪的 CLI 调试测试，验证时临时移出，测试后已恢复，未修改该文件）。
+
 ## 风险
 
-- 简历解析质量不稳定：PDF 版式复杂、扫描件或中英混排可能提取失败；必须提供启发式兜底、手动添加和明确失败提示，不能把不完整结果当成档案已完成。
-- 项目识别依赖模型：模型可能把职责拆成项目、合并多个项目或漏掉简历里的项目；项目卡片必须可编辑、可手动补充，且展示原文供对照。
+- 简历读取质量不稳定：PDF 版式复杂、扫描件或中英混排可能在 Agent `Read` 时提取失败；必须明确失败提示，允许用户手动补项目或直接给新路径，不能把读不到当成画像已完成。
+- 项目识别依赖模型：模型可能把职责拆成项目、合并多个项目或漏掉简历里的项目；项目必须可手动添加/修改，画像以用户确认和手动项目为准，不依赖自动抽取。
 - 向导 Bot 可能问得过多或重复：需要完整度清单、单问题约束和“可以随时结束”；否则引导会变成审讯。
 - 档案写入可能覆盖用户修改：需要 revision、变更摘要和确认；向导重开时先读最新档案。
 - 候选人 Bot 可能过度自信或编造：必须要求证据字段、gap 诚实和“没有就说没有”；用固定评测样例回归。

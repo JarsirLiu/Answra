@@ -26,10 +26,11 @@ import type { InterviewOnboardingStore } from "../src/main/interview/interviewOn
 
 function state() {
   return {
-    version: 1 as const,
+    version: 2 as const,
     status: "pending" as const,
     step: "resume" as const,
     resume: null,
+    projects: [],
     selectedProjectIds: [],
     targetRole: "",
     updatedAt: "2026-11-11T08:00:00.000Z",
@@ -90,7 +91,11 @@ describe("interview onboarding IPC", () => {
     const imported = {
       ...state(),
       step: "projects" as const,
-      resume: { id: "resume-1", fileName: "resume.md", projects: [] },
+      resume: {
+        id: "resume-1",
+        fileName: "resume.md",
+        sourcePath: "D:\\docs\\resume.md",
+      },
     };
     const onboarding = store({
       importResume: vi.fn(async () => imported),
@@ -99,7 +104,10 @@ describe("interview onboarding IPC", () => {
     });
     const ipc = registerInterviewOnboardingIpc({
       store: onboarding,
-      pickResumeFile: vi.fn(async () => ({ fileName: "resume.md", text: "简历正文" })),
+      pickResumeFile: vi.fn(async () => ({
+        fileName: "resume.md",
+        sourcePath: "D:\\docs\\resume.md",
+      })),
     });
     const event = { sender: harness.window.webContents };
 
@@ -109,7 +117,7 @@ describe("interview onboarding IPC", () => {
     });
     expect(onboarding.importResume).toHaveBeenCalledWith({
       fileName: "resume.md",
-      text: "简历正文",
+      sourcePath: "D:\\docs\\resume.md",
     });
 
     await handler(InterviewChannels.OnboardingUpdate)(event, {
@@ -125,10 +133,12 @@ describe("interview onboarding IPC", () => {
 
     await handler(InterviewChannels.OnboardingAddProject)(event, {
       name: "手写项目",
+      location: "D:\\code\\project",
       summary: "一句话说明",
     });
     expect(onboarding.addProject).toHaveBeenCalledWith({
       name: "手写项目",
+      location: "D:\\code\\project",
       summary: "一句话说明",
     });
     ipc.dispose();

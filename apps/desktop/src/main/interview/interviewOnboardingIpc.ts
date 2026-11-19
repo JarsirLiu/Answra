@@ -1,5 +1,6 @@
 import {
   INTERVIEW_PROJECT_ID_MAX_LENGTH,
+  INTERVIEW_PROJECT_LOCATION_MAX_LENGTH,
   INTERVIEW_PROJECT_NAME_MAX_LENGTH,
   INTERVIEW_PROJECT_SUMMARY_MAX_LENGTH,
   INTERVIEW_PROJECTS_MAX,
@@ -18,7 +19,7 @@ import type { InterviewOnboardingStore } from "./interviewOnboardingStore";
 
 export interface InterviewOnboardingIpcOptions {
   store: InterviewOnboardingStore;
-  pickResumeFile: () => Promise<{ fileName: string; text: string } | null>;
+  pickResumeFile: () => Promise<{ fileName: string; sourcePath: string } | null>;
 }
 
 /** 面试首次引导 IPC：来源、载荷校验全部在 main 边界完成，preload 只转发。 */
@@ -142,18 +143,27 @@ function parsePatch(value: unknown): InterviewOnboardingPatch {
 
 function parseProject(value: unknown): InterviewProjectAddRequest {
   if (typeof value !== "object" || value === null) throw new Error("项目内容无效");
-  const raw = value as { name?: unknown; summary?: unknown };
+  const raw = value as { name?: unknown; location?: unknown; summary?: unknown };
   if (
     typeof raw.name !== "string" ||
     !raw.name.trim() ||
     raw.name.length > INTERVIEW_PROJECT_NAME_MAX_LENGTH
   )
     throw new Error("项目名称无效");
+  if (raw.location !== undefined && typeof raw.location !== "string")
+    throw new Error("项目位置无效");
+  if (
+    typeof raw.location === "string" &&
+    raw.location.trim().length > INTERVIEW_PROJECT_LOCATION_MAX_LENGTH
+  )
+    throw new Error("项目位置过长");
   if (raw.summary !== undefined && typeof raw.summary !== "string") throw new Error("项目说明无效");
   if (typeof raw.summary === "string" && raw.summary.length > INTERVIEW_PROJECT_SUMMARY_MAX_LENGTH)
     throw new Error("项目说明过长");
+  const location = typeof raw.location === "string" ? raw.location.trim() : "";
   return {
     name: raw.name.trim(),
+    ...(location ? { location } : {}),
     ...(typeof raw.summary === "string" && raw.summary.trim()
       ? { summary: raw.summary.trim() }
       : {}),

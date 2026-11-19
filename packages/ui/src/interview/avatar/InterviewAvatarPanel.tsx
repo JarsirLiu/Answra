@@ -21,15 +21,27 @@ export function InterviewAvatarPanel({
   onReopen,
 }: InterviewAvatarPanelProps) {
   const completed = state.status === "completed";
-  const selected = state.resume
-    ? state.resume.projects.filter((project) => state.selectedProjectIds.includes(project.id))
-    : [];
+  const selected = state.projects.filter((project) =>
+    state.selectedProjectIds.includes(project.id),
+  );
+  const hasMaterials = Boolean(state.resume || selected.length > 0 || state.targetRole.trim());
+  const showProgress = completed && hasMaterials;
+  let title = "还没有面试资料";
+  let description = completed ? "进入面试后，AI 会先帮你建立画像。" : "补一份简历，就能开始制作。";
+  if (hasMaterials) {
+    title = "资料已保存";
+    description = "资料已保存；继续完善后再开始制作。";
+    if (showProgress) {
+      title = "面试分身制作中";
+      description = "简历和项目已保存；制作能力接入中。";
+    }
+  }
 
   return (
     <section aria-label="面试分身" className="interview-avatar">
       <header className="interview-avatar-top">
         <span className="interview-avatar-brand">面试分身</span>
-        <span className="interview-avatar-state">{completed ? "制作中" : "待完善"}</span>
+        <span className="interview-avatar-state">{showProgress ? "制作中" : "待完善"}</span>
         <IconButton icon={X} label="收起面板" onClick={onClose} variant="quiet" />
       </header>
 
@@ -39,11 +51,11 @@ export function InterviewAvatarPanel({
         </div>
 
         <div className="interview-avatar-copy">
-          <h1>{completed ? "面试分身制作中" : "还没有面试资料"}</h1>
-          <p>{completed ? "正在读取简历、项目和面试文档。" : "补一份简历，就能开始制作。"}</p>
+          <h1>{title}</h1>
+          <p>{description}</p>
         </div>
 
-        {completed ? (
+        {showProgress ? (
           <ol aria-label="制作进度" className="interview-avatar-steps">
             <li>
               <span className="interview-avatar-step-icon">
@@ -90,13 +102,13 @@ export function InterviewAvatarPanel({
         <div className="interview-avatar-actions">
           <SurfaceButton
             onClick={() => void onReopen()}
-            variant={completed ? "default" : "primary"}
+            variant={showProgress ? "default" : "primary"}
           >
-            {completed ? "修改资料" : "完善面试资料"}
+            {showProgress ? "修改资料" : hasMaterials ? "继续完善" : "完善面试资料"}
           </SurfaceButton>
         </div>
 
-        {completed ? <p className="interview-avatar-note">制作能力接入中</p> : null}
+        {showProgress ? <p className="interview-avatar-note">制作能力接入中</p> : null}
       </div>
     </section>
   );

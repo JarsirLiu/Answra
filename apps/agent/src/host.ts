@@ -349,6 +349,7 @@ export function startAgentHost({
         return undefined;
       case "interview-context":
         interview.setInterviewDataRoot(command.root);
+        interview.setProfileSeed(command.seed);
         return undefined;
       case "interview-message":
         return interview.sendText(command.conversationId, command.text);

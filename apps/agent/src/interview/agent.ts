@@ -1,4 +1,5 @@
 /** 面试演练 Agent：组装演练提示、记忆路径、工作区上下文与授权工具。 */
+import type { InterviewProfileSeed } from "@answra/shared";
 import { buildWorkspaceSystemContext } from "../conversation/turn/workspaceContext";
 import type { AgentDefinition } from "../core/agent/definition";
 import { agentId } from "../core/agent/definition";
@@ -19,6 +20,7 @@ export interface InterviewRehearsalInput {
   runId: string;
   workspaceRoot: string | null;
   interviewDataRoot: string | null;
+  profileSeed: InterviewProfileSeed | null;
 }
 
 export const INTERVIEW_REHEARSAL_AGENT_ID = agentId("interview.rehearsal");
@@ -57,7 +59,7 @@ export function createInterviewRehearsalAgent({
       return {
         system: [
           INTERVIEW_REHEARSAL_SYSTEM_PROMPT,
-          buildInterviewMemorySystemContext(input.interviewDataRoot),
+          buildInterviewMemorySystemContext(input.interviewDataRoot, input.profileSeed),
           buildWorkspaceSystemContext(input.workspaceRoot),
         ].join("\n\n"),
         messages,

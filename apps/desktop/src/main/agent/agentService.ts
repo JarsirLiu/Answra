@@ -1,17 +1,19 @@
 import { AgentConnectionSupervisor, type InterviewWorkerEvent } from "@answra/agent";
-import type {
-  AgentConnectionState,
-  BotSummary,
-  ConversationModelConfig,
-  ConversationSelection,
-  ConversationSendCommand,
-  ConversationSendRequest,
-  ConversationSendResponse,
-  ConversationSessionPage,
-  ConversationSessionScope,
-  ConversationSnapshot,
-  InterviewPcmFrame,
-  ManualCompactionResult,
+import {
+  type AgentConnectionState,
+  type BotSummary,
+  type ConversationModelConfig,
+  type ConversationSelection,
+  type ConversationSendCommand,
+  type ConversationSendRequest,
+  type ConversationSendResponse,
+  type ConversationSessionPage,
+  type ConversationSessionScope,
+  type ConversationSnapshot,
+  emptyInterviewProfileSeed,
+  type InterviewPcmFrame,
+  type InterviewProfileSeed,
+  type ManualCompactionResult,
 } from "@answra/shared";
 import type { AgentEventEnvelope } from "@answra/shared/schema";
 import type { ResolvedModel } from "../conversation/modelRouter";
@@ -29,6 +31,8 @@ export interface AgentServiceDeps {
   resolveModel: (options?: { forceRefresh?: boolean }) => Promise<ResolvedModel>;
   getWorkspaceRoot: () => string | null;
   getInterviewDataRoot: () => string;
+  /** 读取最近一次引导输入；画像由 Agent 维护，这里只提供只读种子。 */
+  readInterviewProfileSeed?: () => Promise<InterviewProfileSeed>;
   log?: (message: string, error?: unknown) => void;
 }
 
@@ -287,7 +291,21 @@ export class AgentService {
 
   /** 演练记忆目录由桌面组合根注入；Agent 只拿路径，不自行猜 userData。 */
   private async sendInterviewContext(): Promise<void> {
-    await this.workerHost.request("interview-context", { root: this.deps.getInterviewDataRoot() });
+    const seed = await this.readProfileSeed();
+    await this.workerHost.request("interview-context", {
+      root: this.deps.getInterviewDataRoot(),
+      seed,
+    });
+  }
+
+  private async readProfileSeed(): Promise<InterviewProfileSeed> {
+    if (!this.deps.readInterviewProfileSeed) return emptyInterviewProfileSeed();
+    try {
+      return await this.deps.readInterviewProfileSeed();
+    } catch (error) {
+      this.deps.log?.("[agent-service] 读取引导画像种子失败", error);
+      return emptyInterviewProfileSeed();
+    }
   }
 
   /** 配置只在真正变化时下发：登录/登出/服务端端点变更都会自然触发一次重下发。 */

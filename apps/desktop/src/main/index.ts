@@ -1,7 +1,11 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { sharedConfigPath } from "@answra/config";
-import type { ReleaseManifest } from "@answra/shared";
+import {
+  emptyInterviewProfileSeed,
+  type InterviewProfileSeed,
+  type ReleaseManifest,
+} from "@answra/shared";
 import { app, type BrowserWindow, shell } from "electron";
 import { AgentService } from "./agent/agentService";
 import { createAmbientThemeController } from "./ambient";
@@ -67,6 +71,8 @@ let disposeInterview: () => void = () => undefined;
 let disposeInterviewOnboarding: () => void = () => undefined;
 let bindInterviewWindow: (window: BrowserWindow) => void = () => undefined;
 let getWorkspaceRoot: () => string | null = () => null;
+let readInterviewProfileSeed: () => Promise<InterviewProfileSeed> = async () =>
+  emptyInterviewProfileSeed();
 let disposeWorkspace: (() => void) | undefined;
 let updateController: ReturnType<typeof createUpdateController> | undefined;
 let disposeUpdateIpc: (() => void) | undefined;
@@ -111,6 +117,7 @@ const agentService = new AgentService({
   resolveModel: (options) => modelRouter.resolve(options),
   getWorkspaceRoot: () => getWorkspaceRoot(),
   getInterviewDataRoot: () => interviewDataRoot,
+  readInterviewProfileSeed: () => readInterviewProfileSeed(),
   log: (message, error) => console.warn(message, error),
 });
 
@@ -165,8 +172,10 @@ if (!app.requestSingleInstanceLock()) {
       const { registerInterviewOnboardingIpc } = await import("./interview/interviewOnboardingIpc");
       const { pickInterviewResume } = await import("./interview/pickResumeFile");
       const interview = registerInterviewIpc(agentService);
+      const onboardingStore = createInterviewOnboardingStore({ dataRoot: interviewDataRoot });
+      readInterviewProfileSeed = () => onboardingStore.readSeed();
       const onboarding = registerInterviewOnboardingIpc({
-        store: createInterviewOnboardingStore({ dataRoot: interviewDataRoot }),
+        store: onboardingStore,
         pickResumeFile: () => pickInterviewResume(getWindow() ?? null),
       });
       stopInterview = () => interview.stopActive();

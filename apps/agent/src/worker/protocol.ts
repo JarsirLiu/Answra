@@ -5,6 +5,7 @@ import type {
   ConversationSelection,
   ConversationSnapshot,
   InterviewPcmFrame,
+  InterviewProfileSeed,
   TeamSendCommand,
 } from "@answra/shared";
 import type { AgentEventEnvelope } from "@answra/shared/schema";
@@ -126,7 +127,7 @@ export type AgentCommand =
   | { type: "interview-audio-frame"; frame: InterviewPcmFrame }
   | { id: string; type: "configure"; config: ConversationModelConfig }
   | { id: string; type: "workspace-context"; root: string | null }
-  | { id: string; type: "interview-context"; root: string | null }
+  | { id: string; type: "interview-context"; root: string | null; seed: InterviewProfileSeed }
   | { id: string; type: "interview-message"; conversationId: string; text: string }
   | ({ id: string; type: "chat-send"; accessToken: string } & ChatSendCommand)
   | ({ id: string; type: "team-send"; accessToken: string } & TeamSendCommand)

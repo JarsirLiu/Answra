@@ -1,17 +1,16 @@
-import {
-  INTERVIEW_PROJECT_NAME_MAX_LENGTH,
-  INTERVIEW_PROJECT_SUMMARY_MAX_LENGTH,
-  INTERVIEW_TARGET_ROLE_MAX_LENGTH,
-  type InterviewOnboardingState,
-  type InterviewProjectAddRequest,
-  type InterviewResumeImportRequest,
+/** 面试首次引导的外壳：持有跨步骤状态、busy 与导航；步骤视图在 steps/。 */
+import type {
+  InterviewOnboardingState,
+  InterviewProjectAddRequest,
+  InterviewResumeImportRequest,
 } from "@answra/shared";
-import { FileSearch, FileText, Plus, X } from "lucide-react";
+import { X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { IconButton } from "../../components/controls/IconButton";
 import { SurfaceButton } from "../../components/controls/SurfaceButton";
-import { InterviewOnboardingArt } from "./InterviewOnboardingArt";
-import { InterviewReadyPoster } from "./InterviewReadyPoster";
+import { InterviewOnboardingProjectsStep } from "./steps/InterviewOnboardingProjectsStep";
+import { InterviewOnboardingReadyStep } from "./steps/InterviewOnboardingReadyStep";
+import { InterviewOnboardingResumeStep } from "./steps/InterviewOnboardingResumeStep";
 import "./onboarding.css";
 
 interface InterviewOnboardingPanelProps {
@@ -30,7 +29,6 @@ interface InterviewOnboardingPanelProps {
   onClose: () => void;
 }
 
-/** 面试首次引导的广告式弹窗；不接 Bot，也不在客户端生成任何档案事实。 */
 export function InterviewOnboardingPanel({
   state,
   error,
@@ -45,9 +43,6 @@ export function InterviewOnboardingPanel({
   const [busy, setBusy] = useState(false);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
-  const [addOpen, setAddOpen] = useState(false);
-  const [addName, setAddName] = useState("");
-  const [addSummary, setAddSummary] = useState("");
   const [selected, setSelected] = useState<Set<string>>(() => new Set(state.selectedProjectIds));
   const [targetRole, setTargetRole] = useState(state.targetRole);
 
@@ -56,17 +51,18 @@ export function InterviewOnboardingPanel({
     setTargetRole(state.targetRole);
   }, [state.selectedProjectIds, state.targetRole]);
 
-  const projects = state.resume?.projects ?? [];
-  const selectedProjects = projects.filter((project) => selected.has(project.id));
+  const selectedProjects = state.projects.filter((project) => selected.has(project.id));
   const stepIndex = state.step === "resume" ? 0 : state.step === "projects" ? 1 : 2;
 
-  async function perform(action: () => Promise<void>): Promise<void> {
-    if (busy) return;
+  async function perform(action: () => Promise<void>): Promise<boolean> {
+    if (busy) return false;
     setBusy(true);
     try {
       await action();
+      return true;
     } catch {
       // 错误已由 useInterviewOnboarding 收敛为 error 文案。
+      return false;
     } finally {
       setBusy(false);
     }
@@ -82,23 +78,23 @@ export function InterviewOnboardingPanel({
   }
 
   function selectAll(): void {
-    setSelected(new Set(projects.map((project) => project.id)));
+    setSelected(new Set(state.projects.map((project) => project.id)));
   }
 
   function clearSelected(): void {
     setSelected(new Set());
   }
 
-  function pickResume(): Promise<void> {
+  function pickResume(): Promise<boolean> {
     return perform(async () => {
       const cancelled = await onPickResume();
       if (!cancelled) setPasteOpen(false);
     });
   }
 
-  function importResume(): Promise<void> {
+  function importResume(): Promise<boolean> {
     const text = pasteText.trim();
-    if (!text) return Promise.resolve();
+    if (!text) return Promise.resolve(false);
     return perform(async () => {
       await onImportResume({ fileName: "粘贴的简历.txt", text });
       setPasteText("");
@@ -106,40 +102,26 @@ export function InterviewOnboardingPanel({
     });
   }
 
-  function addProject(): Promise<void> {
-    const name = addName.trim();
-    if (!name) return Promise.resolve();
-    return perform(async () => {
-      await onAddProject({
-        name,
-        ...(addSummary.trim() ? { summary: addSummary.trim() } : {}),
-      });
-      setAddName("");
-      setAddSummary("");
-      setAddOpen(false);
-    });
-  }
-
-  function continueFromResume(): Promise<void> {
+  function continueFromResume(): Promise<boolean> {
     return perform(() => onUpdate({ step: "projects" }));
   }
 
-  function continueFromProjects(): Promise<void> {
+  function continueFromProjects(): Promise<boolean> {
     return perform(() => onUpdate({ step: "ready", selectedProjectIds: [...selected] }));
   }
 
-  function backToResume(): Promise<void> {
+  function backToResume(): Promise<boolean> {
     return perform(() => onUpdate({ step: "resume" }));
   }
 
-  function backToProjects(): Promise<void> {
+  function backToProjects(): Promise<boolean> {
     return perform(() =>
       onUpdate({ step: "projects", selectedProjectIds: [...selected], targetRole }),
     );
   }
 
   /** 跳过当前步骤；没有简历时不提供跳过入口，避免一步结束整个引导。 */
-  function skipStep(): Promise<void> {
+  function skipStep(): Promise<boolean> {
     if (state.step === "resume") {
       if (!state.resume) return perform(onSkip);
       return perform(() => onUpdate({ step: "projects" }));
@@ -150,7 +132,7 @@ export function InterviewOnboardingPanel({
     return perform(onSkip);
   }
 
-  function complete(): Promise<void> {
+  function complete(): Promise<boolean> {
     return perform(async () => {
       await onUpdate({ step: "ready", selectedProjectIds: [...selected], targetRole });
       await onComplete();
@@ -192,229 +174,42 @@ export function InterviewOnboardingPanel({
       ) : null}
 
       {state.step === "resume" ? (
-        <section
-          aria-labelledby="interview-onboarding-resume-title"
-          className="interview-onboarding-hero"
-        >
-          <div className="interview-onboarding-art-slot">
-            <InterviewOnboardingArt />
-          </div>
-          <div className="interview-onboarding-copy">
-            <h1 id="interview-onboarding-resume-title">先让面试分身认识你</h1>
-            <p className="interview-onboarding-lead">用真实简历，讲你真正做过的项目。</p>
-
-            {state.resume ? (
-              <div className="interview-onboarding-file">
-                <FileText aria-hidden="true" size={16} />
-                <div>
-                  <strong>{state.resume.fileName}</strong>
-                  <span>已识别 {state.resume.projects.length} 个项目</span>
-                </div>
-              </div>
-            ) : null}
-
-            {pasteOpen ? (
-              <div className="interview-onboarding-paste">
-                <label htmlFor="interview-onboarding-paste-text">粘贴简历文本</label>
-                <textarea
-                  id="interview-onboarding-paste-text"
-                  onChange={(event) => setPasteText(event.target.value)}
-                  placeholder="把简历正文粘贴到这里"
-                  rows={4}
-                  value={pasteText}
-                />
-                <div className="interview-onboarding-actions">
-                  <SurfaceButton
-                    disabled={busy || !pasteText.trim()}
-                    onClick={() => void importResume()}
-                    variant="primary"
-                  >
-                    导入简历文本
-                  </SurfaceButton>
-                  <SurfaceButton onClick={() => setPasteOpen(false)} variant="quiet">
-                    取消
-                  </SurfaceButton>
-                </div>
-              </div>
-            ) : null}
-
-            {!pasteOpen ? (
-              <div className="interview-onboarding-actions">
-                <SurfaceButton disabled={busy} onClick={() => void pickResume()}>
-                  {state.resume ? "换一份简历" : "上传简历"}
-                </SurfaceButton>
-                <SurfaceButton onClick={() => setPasteOpen(true)} variant="quiet">
-                  粘贴文本
-                </SurfaceButton>
-              </div>
-            ) : null}
-          </div>
-        </section>
+        <InterviewOnboardingResumeStep
+          busy={busy}
+          onImportResume={() => void importResume()}
+          onPickResume={() => void pickResume()}
+          paste={{
+            open: pasteOpen,
+            text: pasteText,
+            onOpen: () => setPasteOpen(true),
+            onClose: () => setPasteOpen(false),
+            onChange: setPasteText,
+          }}
+          state={state}
+        />
       ) : null}
 
       {state.step === "projects" ? (
-        <section
-          aria-labelledby="interview-onboarding-projects-title"
-          className="interview-onboarding-body"
-        >
-          <h1 id="interview-onboarding-projects-title">挑出你想重点讲的项目</h1>
-          {projects.length > 0 ? (
-            <p className="interview-onboarding-lead">默认全选，之后还能补。</p>
-          ) : null}
-
-          {projects.length > 0 && state.resume ? (
-            <div className="interview-onboarding-source">
-              <FileText aria-hidden="true" size={14} />
-              <span>{state.resume.fileName}</span>
-              <strong>{projects.length} 个项目</strong>
-            </div>
-          ) : null}
-
-          {projects.length === 0 && !addOpen ? (
-            <div className="interview-onboarding-empty">
-              <span aria-hidden="true" className="interview-onboarding-empty__art">
-                <span className="interview-onboarding-empty__ghost is-back" />
-                <span className="interview-onboarding-empty__ghost is-front">
-                  <span className="interview-onboarding-empty__line" />
-                  <span className="interview-onboarding-empty__line is-short" />
-                </span>
-                <span className="interview-onboarding-empty__lens">
-                  <FileSearch size={16} strokeWidth={1.8} />
-                </span>
-              </span>
-              <strong>{state.resume ? "没识别到项目" : "还没有简历"}</strong>
-              <p>{state.resume ? "换份简历，或手动补一个。" : "上传一份简历后再挑项目。"}</p>
-              <div className="interview-onboarding-empty__actions">
-                <SurfaceButton disabled={busy} onClick={() => void pickResume()} size="sm">
-                  {state.resume ? "换份简历" : "上传简历"}
-                </SurfaceButton>
-                {state.resume ? (
-                  <SurfaceButton onClick={() => setAddOpen(true)} size="sm">
-                    <Plus aria-hidden="true" size={14} />
-                    手动添加
-                  </SurfaceButton>
-                ) : null}
-              </div>
-            </div>
-          ) : projects.length > 0 ? (
-            <>
-              <div className="interview-onboarding-selection-tools">
-                <span>
-                  已选 {selectedProjects.length} / {projects.length}
-                </span>
-                <SurfaceButton onClick={selectAll} size="sm" variant="quiet">
-                  全选
-                </SurfaceButton>
-                <SurfaceButton onClick={clearSelected} size="sm" variant="quiet">
-                  清空
-                </SurfaceButton>
-              </div>
-              <div className="interview-project-list">
-                {projects.map((project) => {
-                  const checkboxId = `interview-project-${project.id}`;
-                  return (
-                    <div
-                      className={`interview-project-card${selected.has(project.id) ? " is-selected" : ""}`}
-                      key={project.id}
-                    >
-                      <input
-                        checked={selected.has(project.id)}
-                        id={checkboxId}
-                        onChange={() => toggleProject(project.id)}
-                        type="checkbox"
-                      />
-                      <span className="interview-project-content">
-                        <label className="interview-project-title" htmlFor={checkboxId}>
-                          {project.name}
-                        </label>
-                        {project.role || project.period ? (
-                          <span className="interview-project-meta">
-                            {project.role ? (
-                              <span className="interview-project-chip">{project.role}</span>
-                            ) : null}
-                            {project.period ? (
-                              <span className="interview-project-chip is-quiet">
-                                {project.period}
-                              </span>
-                            ) : null}
-                          </span>
-                        ) : null}
-                        {project.summary ? (
-                          <span className="interview-project-summary">{project.summary}</span>
-                        ) : null}
-                        {project.evidence ? (
-                          <details>
-                            <summary>查看原文片段</summary>
-                            <pre>{project.evidence}</pre>
-                          </details>
-                        ) : null}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          ) : null}
-
-          {addOpen ? (
-            <div className="interview-onboarding-paste">
-              <label htmlFor="interview-onboarding-project-name">项目名称</label>
-              <input
-                id="interview-onboarding-project-name"
-                maxLength={INTERVIEW_PROJECT_NAME_MAX_LENGTH}
-                onChange={(event) => setAddName(event.target.value)}
-                value={addName}
-              />
-              <label htmlFor="interview-onboarding-project-summary">一句话说明（可选）</label>
-              <textarea
-                id="interview-onboarding-project-summary"
-                maxLength={INTERVIEW_PROJECT_SUMMARY_MAX_LENGTH}
-                onChange={(event) => setAddSummary(event.target.value)}
-                rows={2}
-                value={addSummary}
-              />
-              <div className="interview-onboarding-actions">
-                <SurfaceButton disabled={busy || !addName.trim()} onClick={() => void addProject()}>
-                  添加项目
-                </SurfaceButton>
-                <SurfaceButton onClick={() => setAddOpen(false)} variant="quiet">
-                  取消
-                </SurfaceButton>
-              </div>
-            </div>
-          ) : projects.length > 0 ? (
-            <SurfaceButton onClick={() => setAddOpen(true)} variant="quiet">
-              <Plus aria-hidden="true" size={14} />
-              手动加一个项目
-            </SurfaceButton>
-          ) : null}
-        </section>
+        <InterviewOnboardingProjectsStep
+          busy={busy}
+          onAddProject={onAddProject}
+          onClearSelected={clearSelected}
+          onPickResume={() => void pickResume()}
+          onSelectAll={selectAll}
+          onToggleProject={toggleProject}
+          runAction={perform}
+          selected={selected}
+          state={state}
+        />
       ) : null}
 
       {state.step === "ready" ? (
-        <section
-          aria-labelledby="interview-onboarding-ready-title"
-          className="interview-onboarding-body interview-onboarding-ready"
-        >
-          <h1 id="interview-onboarding-ready-title">开始制作面试分身</h1>
-          <p className="interview-onboarding-lead">最后确认一下，马上开始制作。</p>
-
-          <InterviewReadyPoster
-            fileName={state.resume?.fileName ?? null}
-            projects={selectedProjects}
-          />
-
-          <label className="interview-onboarding-field" htmlFor="interview-onboarding-target-role">
-            目标岗位（可选）
-            <input
-              id="interview-onboarding-target-role"
-              maxLength={INTERVIEW_TARGET_ROLE_MAX_LENGTH}
-              onChange={(event) => setTargetRole(event.target.value)}
-              placeholder="例如：高级前端工程师"
-              value={targetRole}
-            />
-          </label>
-        </section>
+        <InterviewOnboardingReadyStep
+          onTargetRoleChange={setTargetRole}
+          selectedProjects={selectedProjects}
+          state={state}
+          targetRole={targetRole}
+        />
       ) : null}
 
       <footer className="interview-onboarding-footer">
