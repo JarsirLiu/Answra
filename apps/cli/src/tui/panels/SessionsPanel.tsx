@@ -1,4 +1,4 @@
-/** `/sessions` 会话浏览器：列表随选中项滚动、当前会话高亮、Enter 恢复、Ctrl+Y 复制 ID、Ctrl+D 二次确认删除。 */
+/** `/sessions` 会话浏览器：固定列展示并随焦点滚动；处理恢复、复制 ID 与二次确认删除。 */
 import type { ConversationSessionSummary } from "@answra/shared";
 import { Box, Text, useInput, useWindowSize } from "ink";
 import { useEffect, useState } from "react";
@@ -9,12 +9,12 @@ import type { SessionsPanelData } from "./panel";
 
 const VISIBLE_SESSIONS = 12;
 const PAGE_STEP = VISIBLE_SESSIONS - 1;
-/** 标记列（`❯` + 状态勾 + 空格）宽度；标题按剩余终端宽度截断，不折行。 */
-const LABEL_PREFIX_COLUMNS = 3;
-/** 行首左对齐的短 ID 与时间戳占位：`xxxxxxxx` + 两个空格 + `YYYY-MM-DD HH:mm` + 两个空格。 */
+/** 固定展示列：焦点标记 + 空格 + 短 ID + 空格 + 时间戳 + 空格。 */
+const LABEL_PREFIX_COLUMNS = 2;
 const ID_LENGTH = 8;
 const STAMP_LENGTH = 16;
-const ID_AND_STAMP_COLUMNS = ID_LENGTH + STAMP_LENGTH + 4;
+const SESSION_ID_COLUMNS = ID_LENGTH + 1;
+const SESSION_STAMP_COLUMNS = STAMP_LENGTH + 1;
 
 type LoadState =
   | { readonly kind: "loading" }
@@ -48,10 +48,6 @@ export function SessionsPanel({
       .then((data) => {
         if (!alive) return;
         setState({ kind: "ready", data });
-        const currentIndex = data.sessions.findIndex(
-          (item) => item.conversationId === data.current,
-        );
-        if (currentIndex > 0) setSelected(currentIndex);
       })
       .catch((cause: unknown) => {
         if (alive) setState({ kind: "error", message: messageOf(cause) });
@@ -63,8 +59,10 @@ export function SessionsPanel({
 
   const { columns } = useWindowSize();
   const sessions = state.kind === "ready" ? state.data.sessions : [];
-  const current = state.kind === "ready" ? state.data.current : "";
-  const titleColumns = Math.max(8, columns - LABEL_PREFIX_COLUMNS - ID_AND_STAMP_COLUMNS);
+  const titleColumns = Math.max(
+    1,
+    columns - LABEL_PREFIX_COLUMNS - SESSION_ID_COLUMNS - SESSION_STAMP_COLUMNS,
+  );
   const maxStart = Math.max(0, sessions.length - VISIBLE_SESSIONS);
   const windowStart = Math.min(Math.max(0, selected - VISIBLE_SESSIONS + 1), maxStart);
   const visible = sessions.slice(windowStart, windowStart + VISIBLE_SESSIONS);
@@ -91,14 +89,13 @@ export function SessionsPanel({
 
   const removeSelected = async (item: ConversationSessionSummary): Promise<void> => {
     if (busy) return;
-    const isCurrent = item.conversationId === current;
     setBusy(true);
     setError(undefined);
     setNotice(undefined);
     setPendingDelete(undefined);
     try {
       await remove(item.conversationId);
-      if (isCurrent) {
+      if (state.kind === "ready" && item.conversationId === state.data.current) {
         close();
         return;
       }
@@ -248,25 +245,17 @@ export function SessionsPanel({
         {above > 0 ? <Text dimColor> ↑ {above} more…</Text> : null}
         {visible.map((item, index) => {
           const focused = windowStart + index === selected;
-          const isCurrent = item.conversationId === current;
           const rowColor = focused ? TUI_THEME.suggestion : TUI_THEME.text;
           return (
             <Box key={item.conversationId}>
-              <Text color={rowColor}>{focused ? POINTER : " "}</Text>
-              <Text color={isCurrent ? TUI_THEME.success : TUI_THEME.inactive}>
-                {" "}
-                {isCurrent ? "✓" : " "}
-              </Text>
+              <Text color={rowColor}>{focused ? POINTER : " "} </Text>
               <Text bold={focused} color={rowColor}>
-                {" "}
-                {sessionId(item)}
+                {sessionId(item).padEnd(ID_LENGTH)}{" "}
               </Text>
-              <Text dimColor> {sessionStamp(item)}</Text>
+              <Text dimColor>{sessionStamp(item)} </Text>
               <Text bold={focused} color={rowColor} wrap="truncate">
-                {" "}
                 {truncateToWidth(sessionTitle(item), titleColumns)}
               </Text>
-              {isCurrent ? <Text dimColor> Current session</Text> : null}
             </Box>
           );
         })}

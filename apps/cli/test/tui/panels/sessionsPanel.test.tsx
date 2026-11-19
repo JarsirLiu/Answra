@@ -1,5 +1,6 @@
 import { render } from "ink-testing-library";
 import { describe, expect, it, vi } from "vitest";
+import { POINTER } from "../../../src/tui/chrome/theme";
 import { SessionsPanel } from "../../../src/tui/panels/SessionsPanel";
 
 function tick(): Promise<void> {
@@ -32,18 +33,47 @@ describe("SessionsPanel", () => {
         resume={resume}
       />,
     );
-    await vi.waitFor(() => expect(instance.lastFrame()).toContain("Current session"));
+    await vi.waitFor(() => expect(instance.lastFrame()).toContain("title-conversation-a"));
 
     const frame = instance.lastFrame() ?? "";
     expect(frame).toContain("历史会话");
     expect(frame).toContain("conversa");
     expect(frame).toContain("title-conversation-b");
+    expect(frame).not.toContain("Current session");
+    const focusedLine = frame.split("\n").find((line) => line.includes("title-conversation-a"));
+    expect(focusedLine).toContain(`${POINTER} conversa`);
 
     instance.stdin.write("\u001b[B");
     await tick();
     instance.stdin.write("\r");
     await vi.waitFor(() => expect(resume).toHaveBeenCalledWith("conversation-b"));
     expect(close).toHaveBeenCalledTimes(1);
+    instance.unmount();
+  });
+
+  it("keeps session columns aligned and titles on one line", async () => {
+    const instance = render(
+      <SessionsPanel
+        close={vi.fn()}
+        load={async () => ({
+          current: "conversation-a",
+          sessions: [
+            session("conversation-a", "A long title that must stay in the same row"),
+            session("conversation-b", "Another long title that must stay in the same row"),
+          ],
+        })}
+        remove={vi.fn()}
+        resume={vi.fn()}
+      />,
+    );
+
+    await vi.waitFor(() => expect(instance.lastFrame()).toContain("Another long title"));
+    const rows = (instance.lastFrame() ?? "")
+      .split("\n")
+      .filter((line) => line.includes("long title"));
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.indexOf("2026-11-17")).toBe(rows[1]?.indexOf("2026-11-17"));
+    expect(rows[0]?.indexOf("A long title")).toBe(rows[1]?.indexOf("Another long title"));
     instance.unmount();
   });
 
