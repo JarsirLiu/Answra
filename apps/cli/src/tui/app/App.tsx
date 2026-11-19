@@ -25,6 +25,9 @@ import type { TuiViewStore } from "./viewStore";
 
 const NO_SUBSCRIBE = () => () => {};
 const ZERO_VERSION = () => 0;
+// Ink full-clears every fullscreen frame on Windows. Leave one row unused so the frame
+// stays in incremental rendering and streaming text does not repaint the whole viewport.
+const WINDOWS_RESERVED_FRAME_ROWS = 1;
 const SETUP_HINTS: Record<TuiSetupStep, string> = {
   "base-url": "输入 Base URL，例如 http://127.0.0.1:11434/v1 · Enter 继续",
   "api-key": "输入 API Key，本地端点可留空 · Enter 继续",
@@ -67,12 +70,37 @@ export function App({
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
   const { exit } = useApp();
   const { rows } = useWindowSize();
+  const frameHeight =
+    process.platform === "win32" ? Math.max(1, rows - WINDOWS_RESERVED_FRAME_ROWS) : rows;
   const compaction = state.view.contextCompaction;
   const compacting = state.compactionActive || compaction?.state === "started";
   const busy = state.phase !== "idle" || compacting;
   const compactionFailed = compaction?.state === "failed";
   const [transcriptMode, setTranscriptMode] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const activity =
+    busy || compactionFailed || state.view.contextPruning ? (
+      <Box flexDirection="column">
+        {compactionFailed ? (
+          <Box paddingX={1}>
+            <Text color={TUI_THEME.error} wrap="truncate">
+              {COMPACTION_FAILURE_TEXT}
+            </Text>
+          </Box>
+        ) : null}
+        {!busy && state.view.contextPruning ? (
+          <ContextPruningNotice status={state.view.contextPruning} />
+        ) : null}
+        {busy ? (
+          <Spinner
+            color={compacting ? TUI_THEME.compaction : undefined}
+            message={compacting ? COMPACTION_SPINNER_MESSAGE : undefined}
+            phase={state.phase}
+            queued={state.queued}
+          />
+        ) : null}
+      </Box>
+    ) : null;
   useSyncExternalStore(
     selectionStore?.subscribe ?? NO_SUBSCRIBE,
     selectionStore?.getVersion ?? ZERO_VERSION,
@@ -121,34 +149,10 @@ export function App({
 
   return (
     <SelectionContext.Provider value={selectionStore}>
-      <Box flexDirection="column" height={rows} width="100%">
+      <Box flexDirection="column" height={frameHeight} width="100%">
         <VirtualTranscript
           compactionBoundaries={state.compactionBoundaries}
           transcriptMode={transcriptMode}
-          footer={
-            busy || compactionFailed || state.view.contextPruning ? (
-              <Box flexDirection="column">
-                {compactionFailed ? (
-                  <Box paddingX={1}>
-                    <Text color={TUI_THEME.error} wrap="truncate">
-                      {COMPACTION_FAILURE_TEXT}
-                    </Text>
-                  </Box>
-                ) : null}
-                {!busy && state.view.contextPruning ? (
-                  <ContextPruningNotice status={state.view.contextPruning} />
-                ) : null}
-                {busy ? (
-                  <Spinner
-                    color={compacting ? TUI_THEME.compaction : undefined}
-                    message={compacting ? COMPACTION_SPINNER_MESSAGE : undefined}
-                    phase={state.phase}
-                    queued={state.queued}
-                  />
-                ) : null}
-              </Box>
-            ) : undefined
-          }
           localError={state.localError}
           modelConfigured={state.modelConfigured}
           pointerSource={pointerSource}
@@ -156,6 +160,7 @@ export function App({
           view={state.view}
           workspaceRoot={workspaceRoot}
         />
+        {activity}
         <NotificationLine notification={state.notifications.current} />
         {transcriptMode ? (
           <Box paddingX={1}>

@@ -29,7 +29,7 @@ import {
 } from "./virtualLayout";
 
 const OVERSCAN_LINES = 60;
-const FOOTER_ESTIMATE_LINES = 3;
+const TAIL_ESTIMATE_LINES = 3;
 const WHEEL_SCROLL_LINES = 3;
 const EMPTY_HEIGHTS: ReadonlyMap<string, number> = new Map();
 
@@ -50,7 +50,7 @@ type VirtualItem =
       readonly id: string;
       readonly boundary: TuiCompactionBoundary;
     }
-  | { readonly kind: "footer"; readonly id: "__footer__"; readonly node: ReactNode };
+  | { readonly kind: "tail"; readonly id: "__tail__"; readonly node: ReactNode };
 
 export function VirtualTranscript({
   view,
@@ -61,7 +61,6 @@ export function VirtualTranscript({
   setupStep,
   transcriptMode,
   expandedToolIds,
-  footer,
   pointerSource,
 }: {
   view: ConversationView;
@@ -72,7 +71,6 @@ export function VirtualTranscript({
   setupStep?: TuiSetupStep;
   transcriptMode: boolean;
   expandedToolIds?: ReadonlySet<string>;
-  footer?: ReactNode;
   pointerSource?: PointerSource;
 }) {
   const selectionStore = useContext(SelectionContext);
@@ -90,18 +88,15 @@ export function VirtualTranscript({
 
   const items = useMemo<VirtualItem[]>(() => {
     const messageItems = mergeCompactionBoundaries(view.messages, compactionBoundaries);
-    const tail = <TranscriptTail localError={localError} view={view} />;
-    const tailNode =
-      footer === undefined ? (
-        tail
-      ) : (
-        <>
-          {tail}
-          {footer}
-        </>
-      );
-    return [...messageItems, { kind: "footer", id: "__footer__", node: tailNode }];
-  }, [view, compactionBoundaries, footer, localError]);
+    return [
+      ...messageItems,
+      {
+        kind: "tail",
+        id: "__tail__",
+        node: <TranscriptTail localError={localError} view={view} />,
+      },
+    ];
+  }, [view, compactionBoundaries, localError]);
 
   const lastThinkingMessageId = useMemo(() => lastThinkingId(view.messages), [view.messages]);
   const heights = useMemo(
@@ -113,7 +108,7 @@ export function VirtualTranscript({
             ? estimateMessageHeight(item.message, columns, transcriptMode, expandedToolIds)
             : item.kind === "compaction-boundary"
               ? estimateCompactionBoundaryHeight(item.boundary, columns, transcriptMode)
-              : FOOTER_ESTIMATE_LINES),
+              : TAIL_ESTIMATE_LINES),
       ),
     [items, measuredValues, columns, transcriptMode, expandedToolIds],
   );
@@ -255,7 +250,6 @@ export function VirtualTranscript({
           workspaceRoot={workspaceRoot}
         />
         <TranscriptTail localError={localError} view={view} />
-        {footer}
       </Box>
     );
   }
@@ -289,7 +283,7 @@ export function VirtualTranscript({
                   ? `${columns}:${transcriptMode}:${expandedKey}:${showReasoning}:${messageMeasureKey(item.message)}`
                   : item.kind === "compaction-boundary"
                     ? `compaction-boundary:${columns}:${transcriptMode}:${item.boundary.summary?.length ?? 0}:${item.boundary.summarizedMessages ?? 0}:${item.boundary.instructions?.length ?? 0}`
-                    : `footer:${columns}`
+                    : tailMeasureKey(view, localError, columns)
               }
               onMeasure={handleMeasure}
             >
@@ -376,6 +370,18 @@ function baseOffset(scroll: ScrollState, maxOffset: number): number {
 
 function pageStep(viewportHeight: number): number {
   return Math.max(1, viewportHeight - 1);
+}
+
+function tailMeasureKey(
+  view: ConversationView,
+  localError: string | undefined,
+  columns: number,
+): string {
+  const retry =
+    view.retry === undefined
+      ? ""
+      : `${view.retry.kind}:${view.retry.attempt}:${view.retry.maxRetries}:${view.retry.statusCode ?? ""}:${view.retry.finished}`;
+  return `tail:${columns}:${view.error?.length ?? 0}:${localError?.length ?? 0}:${retry}`;
 }
 
 function lastThinkingId(messages: readonly ConversationViewMessage[]): string | undefined {

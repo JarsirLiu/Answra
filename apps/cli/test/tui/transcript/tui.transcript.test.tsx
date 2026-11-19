@@ -396,8 +396,10 @@ describe("TUI transcript interaction", () => {
     await new Promise((resolve) => setTimeout(resolve, 100));
     selectionStore.commitFrame();
 
+    const pressRow = [1, 2, 3].find((row) => selectionStore.hasLine(row));
+    expect(pressRow).toBeDefined();
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
-    pointer.emit({ kind: "press", point: { row: 1, col: 0 } });
+    pointer.emit({ kind: "press", point: { row: pressRow ?? 1, col: 0 } });
     pointer.emit({ kind: "drag", point: { row: 0, col: 0 } });
     const afterFirstTick = selectionStore.getBounds()?.start.row ?? 0;
 

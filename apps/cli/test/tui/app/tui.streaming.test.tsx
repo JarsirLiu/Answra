@@ -1,0 +1,73 @@
+import { render as inkRender } from "ink";
+import { describe, expect, it, vi } from "vitest";
+import { App } from "../../../src/tui/app/App";
+import { TuiViewStore } from "../../../src/tui/app/viewStore";
+import { CursorProbeStdin, CursorProbeStdout, nextFrame, PANEL_HANDLERS } from "../tuiTestHarness";
+
+const STREAM_DELTAS = 10;
+
+describe("TUI streaming", () => {
+  it("does not repaint the run spinner on every streamed text delta", async () => {
+    const store = new TuiViewStore();
+    store.initialize({
+      conversationId: "conversation-1",
+      eventRevision: 1,
+      messages: [
+        { id: "user-1", role: "user", text: "question", images: [], status: "complete" },
+        { id: "run-1", role: "assistant", text: "", images: [], status: "streaming" },
+      ],
+    });
+    store.beginRun();
+    const stdout = new CursorProbeStdout();
+    const stdin = new CursorProbeStdin();
+    const instance = inkRender(
+      <App
+        botName="coding.engineer"
+        onCancel={vi.fn()}
+        onSubmit={vi.fn()}
+        store={store}
+        panelHandlers={PANEL_HANDLERS}
+        workspaceRoot="D:\\workspace"
+      />,
+      {
+        stdout: stdout as unknown as NodeJS.WriteStream,
+        stdin: stdin as unknown as NodeJS.ReadStream,
+        interactive: true,
+        alternateScreen: true,
+        exitOnCtrlC: false,
+        patchConsole: false,
+        incrementalRendering: true,
+        maxFps: 60,
+      },
+    );
+    await nextFrame();
+    await instance.waitUntilRenderFlush();
+    const frameStart = stdout.chunks.length;
+
+    for (let index = 0; index < STREAM_DELTAS; index += 1) {
+      store.applyEvent({
+        schemaVersion: 1,
+        eventId: `event-${index + 2}`,
+        conversationId: "conversation-1",
+        runId: "run-1",
+        attemptId: "run-1:attempt:1",
+        sequence: index + 2,
+        aggregateRevision: index + 2,
+        producerId: "test",
+        occurredAt: "2026-11-13T00:00:00.000Z",
+        event: { type: "text-delta", partId: "text-1", delta: `- item ${index}\n` },
+      });
+      store.flush();
+      await nextFrame();
+      await instance.waitUntilRenderFlush();
+    }
+
+    const streamed = stdout.chunks.slice(frameStart).join("");
+    expect(streamed).toContain("• item 0");
+    expect(streamed).not.toContain(`${String.fromCharCode(27)}[1;1H${String.fromCharCode(27)}[J`);
+    expect(streamed.match(/esc to interrupt/g)?.length ?? 0).toBeLessThanOrEqual(4);
+
+    instance.unmount();
+    store.dispose();
+  });
+});
