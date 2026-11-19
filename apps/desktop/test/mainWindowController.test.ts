@@ -40,7 +40,7 @@ vi.mock("electron", async () => {
   }
 
   return {
-    app: { isPackaged: false },
+    app: { isPackaged: false, getAppPath: () => "C:/app" },
     BrowserWindow: MockBrowserWindow,
     screen: {
       getPrimaryDisplay: () => ({ workArea: { x: 0, y: 0, width: 1280, height: 800 } }),

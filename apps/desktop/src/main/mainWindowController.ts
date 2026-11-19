@@ -71,6 +71,7 @@ export function createMainWindowController(host: MainWindowControllerHost) {
       hasShadow: false,
       roundedCorners: true,
       show: false,
+      ...(app.isPackaged ? {} : { icon: path.join(app.getAppPath(), "build/icon.png") }),
       // macOS panels stay available across Spaces and above full-screen applications.
       ...(process.platform === "darwin" ? { type: "panel" as const } : {}),
       // Create the Windows HWND non-activating; windowSurfaceRegistry owns later reassertions.
