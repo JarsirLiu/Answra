@@ -42,8 +42,6 @@ export interface TuiRunOptions {
   startRemoteHost?: () => Promise<RemoteHostHandle>;
 }
 
-const LOGIN_PROGRESS_TIMEOUT_MS = 5_000;
-
 export type TuiRunner = (options: TuiRunOptions) => Promise<number>;
 
 export function createInkTuiRunner(): TuiRunner {
@@ -124,7 +122,7 @@ export async function runInkTui({
       text: "正在打开浏览器登录 Answra 账号……",
       tone: "info",
       priority: "high",
-      timeoutMs: LOGIN_PROGRESS_TIMEOUT_MS,
+      timeoutMs: null,
     });
     try {
       const status = await remoteAuth.login({
@@ -137,7 +135,7 @@ export async function runInkTui({
                 text: "浏览器已打开，请在 Answra 网站完成登录；完成后 CLI 会自动继续。",
                 tone: "info",
                 priority: "high",
-                timeoutMs: LOGIN_PROGRESS_TIMEOUT_MS,
+                timeoutMs: null,
               });
             } catch {
               store.notify({
@@ -153,7 +151,7 @@ export async function runInkTui({
               text: "请在浏览器完成 Answra 登录；完成后 CLI 会自动继续。",
               tone: "info",
               priority: "high",
-              timeoutMs: LOGIN_PROGRESS_TIMEOUT_MS,
+              timeoutMs: null,
             });
           }
         },
@@ -170,9 +168,17 @@ export async function runInkTui({
           }),
       });
       store.setAuthStatus(status);
+      store.notify({
+        key: "login",
+        text: `已登录 Answra 账号${status.account === null ? "。" : `：${status.account}。`}`,
+        tone: "success",
+        priority: "high",
+      });
+    } catch (error) {
+      store.dismissNotification("login");
+      throw error;
     } finally {
       authCodeResolver = undefined;
-      store.dismissNotification("login");
       store.dismissNotification("login-code");
     }
   };

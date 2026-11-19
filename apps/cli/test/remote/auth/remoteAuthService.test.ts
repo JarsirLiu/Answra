@@ -76,7 +76,7 @@ describe("RemoteAuthService", () => {
 
     const page = new URL(authorizeUrl);
     expect(page.origin).toBe("http://127.0.0.1:3100");
-    expect(page.pathname).toBe("/zh/cli/authorize");
+    expect(page.pathname).toBe("/zh/desktop/authorize");
     expect(page.searchParams.get("redirect_uri")).toBe(
       "http://127.0.0.1:3100/zh/cli/authorize/callback",
     );

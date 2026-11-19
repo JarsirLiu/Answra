@@ -1,7 +1,7 @@
 /** AnswraSite 账号授权与令牌端点；站点地址由组合根决定，默认官方域名。 */
 import { REMOTE_SERVICE_BASE_URL } from "@answra/shared/schema";
 
-export const CLI_AUTHORIZE_PAGE_PATH = "/cli/authorize";
+export const CLI_AUTHORIZE_PAGE_PATH = "/desktop/authorize";
 export const CLI_AUTHORIZE_CALLBACK_PATH = "/cli/authorize/callback";
 
 export const SERVICE_AUTH_PATHS = {

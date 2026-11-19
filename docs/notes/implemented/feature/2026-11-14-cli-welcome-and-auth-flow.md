@@ -15,13 +15,13 @@ CLI 已有 PKCE 登录实现，但 TUI 欢迎页没有账号状态，也不能�
 ## 影响表面
 
 - 首次 TUI 进入时可见登录状态和可信工作区提醒。
-- `/login` 打开 AnswraSite 授权页；网站授权完成后通过一次性 loopback 回调自动把结果交给 CLI，不要求用户复制授权码。
+- `/login` 打开 AnswraSite 现有 `/desktop/authorize` 授权页；网站授权完成后通过一次性 loopback 回调自动把结果交给 CLI，不要求用户复制授权码。网站登录态过期时保留授权参数，账号登录成功后回到授权页继续授权。
 - `/status` 展示账户与 CLI 状态；`/logout` 同步更新欢迎区和状态面板。
 - token 只由 `RemoteAuthService` 写入 OS keychain，欢迎页和 notice 不显示 token。
 
 ## 决定
 
-把已有 `RemoteAuthPort` 接入 TUI，欢迎页显示工作区、账号状态和安全提示；提供 `/login`、`/status`、`/logout`。`/status` 打开包含账户信息的 Status 面板，不另造 `/account` 命令。CLI 在授权期间绑定 `127.0.0.1` 的随机端口和固定回调路径；浏览器始终在 AnswraSite 完成登录、账号校验和授权确认。回调接收器只接收 `code/state`，不提供登录页面、不读取网站 Cookie、不保存账号逻辑；`RemoteAuthService` 校验 state 并完成 exchange。顶层 `answra auth` 命令保留为非 TTY/脚本入口。
+把已有 `RemoteAuthPort` 接入 TUI，欢迎页显示工作区、账号状态和安全提示；提供 `/login`、`/status`、`/logout`。`/status` 打开包含账户信息的 Status 面板，不另造 `/account` 命令。CLI 在授权期间绑定 `127.0.0.1` 的随机端口和固定回调路径；浏览器打开网站已有的 `/desktop/authorize`，始终在 AnswraSite 完成登录、账号校验和授权确认。登录态过期时，该页将完整授权请求保存在 `callbackUrl`，网站登录成功后返回授权页继续授权。回调接收器只接收 `code/state`，不读取网站 Cookie、不保存账号逻辑；`RemoteAuthService` 校验 state 并完成 exchange。顶层 `answra auth` 命令保留为非 TTY/脚本入口。
 
 ## 曾考虑的替代方案
 
@@ -41,5 +41,5 @@ CLI 已有 PKCE 登录实现，但 TUI 欢迎页没有账号状态，也不能�
 
 - CLI 45 个测试文件、270 个测试通过；登录服务和 TUI 命令测试覆盖登录状态与反馈。
 - CLI 类型检查、Biome 检查和构建通过。
-- 生产网站回调页返回 200，显示“CLI 登录完成”和“授权结果已发送”，不要求复制授权码。
+- 网站 `/desktop/authorize` 的授权页和登录后回跳行为已经过代码核对；CLI 链接使用该路径。生产端到端授权仍需通过真实 CLI 浏览器闭环验证。
 - Windows 真实 CLI 浏览器授权闭环尚需用户本机运行 `pnpm dev:cli` 验证。

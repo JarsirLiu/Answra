@@ -89,6 +89,81 @@ describe("runInkTui", () => {
     store.dispose();
   });
 
+  it("keeps login feedback visible while browser authorization is pending and confirms the account", async () => {
+    const { session } = createSession();
+    const store = new TuiViewStore();
+    let finishLogin!: (status: {
+      signedIn: boolean;
+      expiresAt: number | null;
+      account: string | null;
+    }) => void;
+    const remoteAuth = createRemoteAuth(false);
+    vi.mocked(remoteAuth.login).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishLogin = resolve;
+        }),
+    );
+    const { props, finish } = await start(
+      session,
+      store,
+      false,
+      createModelSettings(),
+      createModelCredentials(),
+      createModelCatalog(),
+      undefined,
+      remoteAuth,
+    );
+
+    props.onSubmit("/login");
+    await tick();
+
+    expect(store.getSnapshot().notifications.current).toMatchObject({
+      text: "正在打开浏览器登录 Answra 账号……",
+      timeoutMs: null,
+    });
+    expect(store.getSnapshot()).toMatchObject({ authSignedIn: false });
+
+    finishLogin({ signedIn: true, expiresAt: null, account: "tester@example.com" });
+    await vi.waitFor(() =>
+      expect(store.getSnapshot().notifications.current?.text).toBe(
+        "已登录 Answra 账号：tester@example.com。",
+      ),
+    );
+    expect(store.getSnapshot()).toMatchObject({
+      authSignedIn: true,
+      authAccount: "tester@example.com",
+    });
+
+    finish();
+    store.dispose();
+  });
+
+  it("clears the pending login notice and reports authorization failures", async () => {
+    const { session } = createSession();
+    const store = new TuiViewStore();
+    const remoteAuth = createRemoteAuth(false);
+    vi.mocked(remoteAuth.login).mockRejectedValue(new Error("授权已取消。"));
+    const { props, finish } = await start(
+      session,
+      store,
+      false,
+      createModelSettings(),
+      createModelCredentials(),
+      createModelCatalog(),
+      undefined,
+      remoteAuth,
+    );
+
+    props.onSubmit("/login");
+    await vi.waitFor(() =>
+      expect(store.getSnapshot().notifications.current?.text).toBe("授权已取消。"),
+    );
+
+    finish();
+    store.dispose();
+  });
+
   it("starts a persistent remote host from /remote and stops it when the TUI exits", async () => {
     const { session } = createSession();
     const store = new TuiViewStore();
