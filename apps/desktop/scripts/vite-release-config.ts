@@ -1,13 +1,20 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import type { FeatureId, ReleaseProfile } from "@answra/shared";
+import type { FeatureId } from "@answra/shared";
 
-type ProfileDecision = { include: FeatureId[]; exclude: FeatureId[] };
-export type ProfileDecisions = Record<ReleaseProfile, ProfileDecision>;
+export interface ProfileDecision {
+  include: FeatureId[];
+  exclude: FeatureId[];
+}
+export type ProfileDecisions = Record<string, ProfileDecision>;
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
 function isDecision(value: unknown, featureIds: readonly string[]): value is ProfileDecision {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
-  const { include, exclude } = value as Record<string, unknown>;
+  if (!isPlainObject(value)) return false;
+  const { include, exclude } = value;
   if (!Array.isArray(include) || !Array.isArray(exclude)) return false;
   const decisions = [...include, ...exclude];
   return (
@@ -34,13 +41,14 @@ export async function readViteReleaseConfig(): Promise<ProfileDecisions> {
   ) {
     throw new Error("共享功能目录无效或为空");
   }
-  const profiles = await readJson("release-profiles.json");
-  if (typeof profiles !== "object" || profiles === null || Array.isArray(profiles)) {
-    throw new Error("Vite Profile 配置必须与 ReleaseProfile 联合保持一致");
+  const config = await readJson("release-profiles.json");
+  if (!isPlainObject(config) || config.schemaVersion !== 2 || !isPlainObject(config.profiles)) {
+    throw new Error("发布 Profile 配置必须是 schemaVersion=2 的 profiles 对象");
   }
+  const profiles = config.profiles;
   const decisions = Object.values(profiles);
   if (decisions.length === 0 || !decisions.every((decision) => isDecision(decision, featureIds))) {
-    throw new Error("Vite Profile 配置必须与 ReleaseProfile 联合保持一致");
+    throw new Error("发布 Profile 必须为目录中每项功能明确选择包含或排除");
   }
   return profiles as ProfileDecisions;
 }

@@ -11,6 +11,7 @@ declare global {
   const __ANSWRA_FEATURE_ANNOUNCEMENTS__: boolean;
   const __ANSWRA_FEATURE_UPDATES__: boolean;
   const __ANSWRA_FEATURE_STEALTH__: boolean;
+  const __ANSWRA_FEATURE_LOCAL_MODEL__: boolean;
 
   interface Window {
     /** preload 注入的桌面平台桥（见 apps/desktop/src/preload/index.ts）。 */

@@ -1,8 +1,9 @@
 import { copyFile, mkdir, rm, writeFile } from "node:fs/promises";
 import { build } from "esbuild";
+import { EXTRA_TARGETS, featureDefines, resolveEntry } from "../release-features.mjs";
 import { resolveReleaseProfile } from "./release-profile.mjs";
 
-const manifest = await resolveReleaseProfile();
+const { manifest } = await resolveReleaseProfile();
 await rm("out", { recursive: true, force: true });
 await mkdir("out", { recursive: true });
 await writeFile("out/release-manifest.json", `${JSON.stringify(manifest, null, 2)}\n`);
@@ -10,28 +11,8 @@ const auditDirectory = `.release-audit/${manifest.profile}`;
 await rm(auditDirectory, { recursive: true, force: true });
 await mkdir(auditDirectory, { recursive: true });
 
-const featureDefines = Object.fromEntries(
-  [
-    "answer",
-    "chat",
-    "workspace",
-    "interview",
-    "settings",
-    "account",
-    "announcements",
-    "updates",
-    "stealth",
-  ].map((feature) => [
-    `__ANSWRA_FEATURE_${feature.toUpperCase()}__`,
-    String(manifest.features.includes(feature)),
-  ]),
-);
-const agentWorkerEntry = manifest.features.includes("interview")
-  ? "src/main/conversation/worker.ts"
-  : "src/main/conversation/workerAnswer.ts";
-const preloadEntry = manifest.features.includes("interview")
-  ? "src/preload/index.ts"
-  : "src/preload/answer.ts";
+const agentWorkerEntry = resolveEntry("agent-worker", manifest.features);
+const preloadEntry = resolveEntry("preload", manifest.features);
 
 const bundleOptions = {
   bundle: true,
@@ -39,7 +20,7 @@ const bundleOptions = {
   sourcemap: false,
   legalComments: "none",
   define: {
-    ...featureDefines,
+    ...featureDefines(manifest.features),
     __ANSWRA_RELEASE_MANIFEST__: JSON.stringify(JSON.stringify(manifest)),
   },
 };
@@ -114,27 +95,23 @@ const buildTargets = [
       outfile: "out/main/conversation/worker.cjs",
     },
   },
-  ...(manifest.features.includes("chat")
-    ? [
-        {
-          name: "grep-worker",
-          options: {
-            ...bundleOptions,
-            define: {
-              ...bundleOptions.define,
-              ...ripgrepDefine,
-            },
-            entryPoints: ["src/main/conversation/grepWorker.ts"],
-            platform: "node",
-            format: "cjs",
-            target: "node22.14",
-            metafile: true,
-            external: ["electron", "koffi"],
-            outfile: "out/main/conversation/grepWorker.cjs",
-          },
-        },
-      ]
-    : []),
+  ...EXTRA_TARGETS.filter((target) => manifest.features.includes(target.when)).map((target) => ({
+    name: target.name,
+    options: {
+      ...bundleOptions,
+      define: {
+        ...bundleOptions.define,
+        ...ripgrepDefine,
+      },
+      entryPoints: [target.entry],
+      platform: "node",
+      format: "cjs",
+      target: target.target,
+      metafile: true,
+      external: ["electron", "koffi"],
+      outfile: target.outfile,
+    },
+  })),
 ];
 
 const results = await Promise.all(buildTargets.map(({ options }) => build(options)));

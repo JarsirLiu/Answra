@@ -3,7 +3,7 @@ import {
   type ConversationModelConfig,
   type ConversationModelSettings,
   type ConversationModelSettingsView,
-  type ReleaseProfile,
+  type FeatureId,
 } from "@answra/shared";
 import { type StoredModelSettings, toView, validateModelSettings } from "./modelSettings";
 
@@ -13,13 +13,13 @@ import { type StoredModelSettings, toView, validateModelSettings } from "./model
  * - `local`：用本机保存的 OpenAI 兼容端点，不需要登录，Key 只在本机。
  * - `cloud`：用云端订阅下发的端点，需要登录态与访问令牌。
  *
- * 打包版 `full` 仍 `localAvailable=false`，本地来源在存储层就被折叠成云端，避免绕过订阅；
- * `answer` 打包版允许本地来源，方便用户自带 OpenAI 兼容模型。开发态始终允许。
+ * 打包版是否开放本地来源由发布清单里的 `local-model` 功能位决定：
+ * 未包含时本地来源在存储层就被折叠成云端，避免绕过订阅；开发态始终允许。
  */
 
-/** 打包版仅 answer profile 开放本地模型；full 保持云端订阅门禁。 */
-export function isLocalModelAvailable(isPackaged: boolean, profile: ReleaseProfile): boolean {
-  return !isPackaged || profile === "answer";
+/** 能力来自发布清单的功能位，而不是 profile 名字；开发态始终允许本地来源。 */
+export function isLocalModelAvailable(isPackaged: boolean, features: readonly FeatureId[]): boolean {
+  return !isPackaged || features.includes("local-model");
 }
 
 /** 设置存储端口；`ModelSettingsStore` 是主进程实现，测试用内存假件替换。 */

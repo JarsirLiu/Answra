@@ -7,5 +7,6 @@
   "account",
   "announcements",
   "updates",
-  "stealth"
+  "stealth",
+  "local-model"
 ]

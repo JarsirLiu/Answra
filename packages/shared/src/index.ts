@@ -127,7 +127,6 @@ export {
 export {
   FEATURE_IDS,
   type FeatureId,
-  RELEASE_PROFILES,
   type ReleaseManifest,
   type ReleaseProfile,
 } from "./release";

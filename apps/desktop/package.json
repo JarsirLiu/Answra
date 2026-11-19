@@ -16,6 +16,7 @@
     "build:cli": "pnpm --filter @answra/cli build",
     "build:electron": "node ./scripts/build-electron.mjs",
     "audit:packaged": "node ./scripts/audit-packaged-input.mjs",
+    "profiles:check": "node ./scripts/check-release-parity.mjs",
     "vad:prepare": "node ./scripts/prepare-ten-vad.mjs",
     "asr:prepare": "node ./scripts/prepare-asr.mjs",
     "skills:prepare": "node ./scripts/prepare-skills.mjs",

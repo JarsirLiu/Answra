@@ -128,7 +128,7 @@
 
 ## 质量门禁
 
-- `pnpm verify` = biome lint + 全包 typecheck + `db:check` + vitest + 架构守护 + `tokens:check`；其中 Note 检查走 `pnpm notes:hint`（只提示、不阻断本地提交）；husky pre-push 自动执行。
+- `pnpm verify` = biome lint + 全包 typecheck + `db:check` + vitest + 发布 Profile 规范化检查（`profiles:check`）+ 架构守护 + `tokens:check`；其中 Note 检查走 `pnpm notes:hint`（只提示、不阻断本地提交）；husky pre-push 自动执行。
 - `pnpm notes:check`（严格）保留给 CI 与发布前：缺少配套 Note、Note 格式不完整或本地链接失效时失败。CI（`.github/workflows/ci.yml`）以 `--base` 比较目标分支执行严格模式。
 - 提交前自检与门禁执行要点（范围意图、Note 配对、全量门禁、diff 自审、秘密与工件、Conventional Commits）收编在 `.agents/skills/answra-code/SKILL.md` 终篇，不再单设 skill。
 - 写代码与评审的工程规范见 `.agents/skills/answra-code/SKILL.md`：前置条件闸门（事实不足必须停下并客观告知）、代码落层判断、契约与类型纪律、状态与行为的显式来源（禁推演状态）、防御性代码预算、魔法值清零、规模预算（函数/文件/目录）、co-location、可读性、并行模块纪律。

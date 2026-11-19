@@ -1,8 +1,9 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { extname, join, relative } from "node:path";
+import { EXTRA_TARGETS, FEATURES, resolveEntry } from "../release-features.mjs";
 import { resolveReleaseProfile } from "./release-profile.mjs";
 
-const manifest = await resolveReleaseProfile();
+const { manifest } = await resolveReleaseProfile();
 const sourceRoots = ["out", "dist"];
 const forbiddenExtensions = new Set([".map", ".ts", ".tsx", ".mts", ".cts"]);
 const violations = [];
@@ -33,31 +34,11 @@ if (JSON.stringify(builtManifest) !== JSON.stringify(manifest)) {
 }
 
 const auditDirectory = `.release-audit/${manifest.profile}`;
-const featureModulePatterns = {
-  chat: [
-    "packages/ui/src/components/panels/ChatPanel",
-    "agent/src/conversation/application.ts",
-    "agent/src/conversation/profiles/registry.ts",
-  ],
-  workspace: [
-    "packages/ui/src/components/panels/workspace/",
-    "src/main/workspace/composition.ts",
-    "src/main/workspace/fileProtocol.ts",
-    "src/main/workspace/workspaceIpc.ts",
-    "src/main/workspace/workspaceService.ts",
-    "agent/src/core/tool/",
-  ],
-  interview: [
-    "packages/ui/src/components/panels/InterviewCapturePanel",
-    "src/main/interview/",
-    "src/main/conversation/worker.ts",
-    "src/main/conversation/workerTransport.ts",
-    "agent/src/interview/audio/",
-    "agent/src/interview/turns/",
-    "agent/src/interview/vad/",
-    "agent/src/interview/transcription/",
-  ],
-};
+const featureModulePatterns = Object.fromEntries(
+  Object.entries(FEATURES)
+    .filter(([, definition]) => definition.forbiddenModules.length > 0)
+    .map(([feature, definition]) => [feature, definition.forbiddenModules]),
+);
 
 function auditEsbuildMetafile(name, contents, expectedEntry) {
   const report = JSON.parse(contents);
@@ -90,14 +71,15 @@ function auditEsbuildMetafile(name, contents, expectedEntry) {
 
 const expectedEntries = {
   main: "src/main/index.ts",
-  preload: manifest.profile === "answer" ? "src/preload/answer.ts" : "src/preload/index.ts",
+  preload: resolveEntry("preload", manifest.features),
   "selection-preload": "src/preload/selection.ts",
-  "agent-worker": manifest.features.includes("interview")
-    ? "src/main/conversation/worker.ts"
-    : "src/main/conversation/workerAnswer.ts",
-  ...(manifest.features.includes("chat")
-    ? { "grep-worker": "src/main/conversation/grepWorker.ts" }
-    : {}),
+  "agent-worker": resolveEntry("agent-worker", manifest.features),
+  ...Object.fromEntries(
+    EXTRA_TARGETS.filter((target) => manifest.features.includes(target.when)).map((target) => [
+      target.name,
+      target.entry,
+    ]),
+  ),
 };
 for (const name of Object.keys(expectedEntries)) {
   auditEsbuildMetafile(

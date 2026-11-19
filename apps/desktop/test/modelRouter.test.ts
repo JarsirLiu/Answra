@@ -227,17 +227,16 @@ describe("model router source selection", () => {
 });
 
 describe("local model availability", () => {
-  it("allows local models in the packaged answer profile", () => {
-    expect(isLocalModelAvailable(true, "answer")).toBe(true);
+  it("allows local models when the release manifest carries the feature", () => {
+    expect(isLocalModelAvailable(true, ["answer", "local-model"])).toBe(true);
   });
 
-  it("keeps the packaged full profile on cloud", () => {
-    expect(isLocalModelAvailable(true, "full")).toBe(false);
+  it("keeps packaged builds without the feature on cloud", () => {
+    expect(isLocalModelAvailable(true, ["answer", "interview"])).toBe(false);
   });
 
-  it("allows local models in development for both profiles", () => {
-    expect(isLocalModelAvailable(false, "answer")).toBe(true);
-    expect(isLocalModelAvailable(false, "full")).toBe(true);
+  it("allows local models in development regardless of the manifest", () => {
+    expect(isLocalModelAvailable(false, ["answer"])).toBe(true);
   });
 });
 

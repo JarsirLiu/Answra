@@ -1,6 +1,6 @@
-import type { FeatureId, ReleaseProfile } from "@answra/shared";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
+import { featureDefines } from "./release-features.mjs";
 import { createRendererGraphAudit } from "./scripts/renderer-graph-audit";
 import { readViteReleaseConfig } from "./scripts/vite-release-config";
 
@@ -10,28 +10,15 @@ export default defineConfig(({ mode }) => {
   if (!Object.hasOwn(profileDecisions, mode)) {
     throw new Error(`必须使用已登记的构建 Profile 启动 Vite：${mode}`);
   }
-  const profile = mode as ReleaseProfile;
-  const decision = profileDecisions[profile];
+  const decision = profileDecisions[mode];
+  if (!decision) throw new Error(`必须使用已登记的构建 Profile 启动 Vite：${mode}`);
   const features = decision.include;
-  const manifest = { schemaVersion: 1, profile, features };
-  const define = Object.fromEntries(
-    [
-      "answer",
-      "chat",
-      "workspace",
-      "interview",
-      "settings",
-      "account",
-      "announcements",
-      "updates",
-      "stealth",
-    ].map((feature) => [
-      `__ANSWRA_FEATURE_${feature.toUpperCase()}__`,
-      String(features.includes(feature as FeatureId)),
-    ]),
-  );
-  define.__ANSWRA_RELEASE_MANIFEST__ = JSON.stringify(JSON.stringify(manifest));
-  const rendererGraphAudit: Plugin = createRendererGraphAudit(profile);
+  const manifest = { schemaVersion: 2, profile: mode, features };
+  const define: Record<string, string> = {
+    ...featureDefines(features),
+    __ANSWRA_RELEASE_MANIFEST__: JSON.stringify(JSON.stringify(manifest)),
+  };
+  const rendererGraphAudit: Plugin = createRendererGraphAudit(mode);
   return {
     base: "./",
     plugins: [react(), rendererGraphAudit],

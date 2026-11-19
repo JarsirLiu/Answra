@@ -1,28 +1,50 @@
 {
-  "answer": {
-    "include": [
-      "answer",
-      "workspace",
-      "settings",
-      "account",
-      "announcements",
-      "updates",
-      "stealth"
-    ],
-    "exclude": ["chat", "interview"]
-  },
-  "full": {
-    "include": [
-      "answer",
-      "chat",
-      "workspace",
-      "interview",
-      "settings",
-      "account",
-      "announcements",
-      "updates",
-      "stealth"
-    ],
-    "exclude": []
+  "schemaVersion": 2,
+  "profiles": {
+    "answer": {
+      "include": [
+        "answer",
+        "workspace",
+        "settings",
+        "account",
+        "announcements",
+        "updates",
+        "stealth",
+        "local-model"
+      ],
+      "exclude": ["chat", "interview"],
+      "builder": {
+        "extraResources": [],
+        "asarUnpack": ["**/node_modules/@napi-rs/keyring*/**"],
+        "filesExclude": ["**/node_modules/sherpa-onnx-node/**", "**/node_modules/sherpa-onnx-*/**"]
+      }
+    },
+    "full": {
+      "include": [
+        "answer",
+        "chat",
+        "workspace",
+        "interview",
+        "settings",
+        "account",
+        "announcements",
+        "updates",
+        "stealth"
+      ],
+      "exclude": ["local-model"],
+      "builder": {
+        "appId": "dev.answra.desktop.internal",
+        "productName": "Answra Internal",
+        "output": "release/full",
+        "nsisArtifactName": "Answra-Internal-Setup-${arch}.${ext}",
+        "extraResourcesAppend": [
+          {
+            "from": "resources/asr",
+            "to": "asr",
+            "filter": ["**/*"]
+          }
+        ]
+      }
+    }
   }
 }

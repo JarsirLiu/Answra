@@ -73,3 +73,7 @@
 - answer 与 full renderer 的工作区 lazy chunk 仍较大；后续可单独优化体积。
 - 不同 Profile 的组合入口可能行为漂移；共享答题链路继续由同一 runtime 与 UI 组件提供，功能 UI 与 worker 要有各自测试。
 - electron-builder 与 pnpm 对 optional native dependencies 的处理依赖锁文件和打包配置；`afterPack` 审计失败时不得发布。
+
+## 后续变更（2026-11-19）
+
+Profile 集合已改为配置驱动：`release-profiles.json` 升 `schemaVersion: 2`，合法 Profile 由 `profiles` 键决定，`ReleaseProfile` 不再是封闭联合；功能目录新增 `local-model`，入口选择与 electron-builder 覆盖改由 `release-features.mjs` 数据表驱动，并新增 `pnpm profiles:check` 门禁。本文中“当前 Profile 为 answer 与 full”“封闭联合”“按 Profile 名选择入口/打包配置”的描述已被 [发布 Profile 改为数据驱动](2026-11-19-release-profile-data-driven.md) 取代；功能裁切原则、入口拆分和构建审计约束仍然有效。

@@ -8,6 +8,7 @@
     ".": "./src/index.ts",
     "./channels": "./src/channels.ts",
     "./env": "./src/env.ts",
+    "./release-features.json": "./src/release-features.json",
     "./schema": "./src/schema/index.ts",
     "./surfaces": "./src/surfaces/index.ts"
   },

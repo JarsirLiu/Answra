@@ -99,7 +99,7 @@ const modelSettings = new ModelSettingsStore({
 });
 const modelRouter = new ModelRouter({
   store: modelSettings,
-  localAvailable: isLocalModelAvailable(app.isPackaged, releaseManifest.profile),
+  localAvailable: isLocalModelAvailable(app.isPackaged, releaseManifest.features),
   cloud: {
     modelConfig: () => authService.getDesktopModelConfig(),
     hasSession: () => authService.hasSession(),

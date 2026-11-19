@@ -20,7 +20,7 @@
 - 开发态继续允许本地来源。
 - 打包 `answer` profile 允许本地来源：设置页显示「模型」分组，可填 OpenAI 兼容地址、模型 ID 和可选 API Key；答题请求走 `auth: "local"`，不要求登录，也不触发云端令牌刷新。
 - 打包 `full` profile 保持 `localAvailable=false`：本地来源仍在视图与保存层折叠为云端，避免绕过订阅门禁。
-- 判定集中在 `isLocalModelAvailable(isPackaged, profile)`；Profile 来自构建期注入的 `__ANSWRA_RELEASE_MANIFEST__`，不在运行时猜测。
+- 判定集中在 `isLocalModelAvailable(isPackaged, features)`；功能位来自构建期注入的 `__ANSWRA_RELEASE_MANIFEST__`（`local-model`），不在运行时猜测 Profile 或目录名。
 
 ## 影响表面
 
@@ -53,6 +53,10 @@
 
 ## 验证
 
-- `apps/desktop/test/modelRouter.test.ts` 覆盖：answer 打包版允许、full 打包版拒绝、开发态两种 Profile 都允许；既有本地/云端 resolve 与保存门禁测试保持通过。
+- `apps/desktop/test/modelRouter.test.ts` 覆盖：清单含 `local-model` 时允许、缺省时拒绝、开发态始终允许；既有本地/云端 resolve 与保存门禁测试保持通过。
 - 命令：`pnpm --filter @answra/desktop test -- modelRouter`、`pnpm --filter @answra/desktop typecheck`。
 - 待实机：构建 answer 安装包，确认设置页出现「模型」分组、保存后无需登录即可答题；full 安装包仍不显示该分组。
+
+## 后续变更（2026-11-19）
+
+「本地模型」已建模为功能位 `local-model`，`answer` Profile 包含、`full` 排除，可用性只读发布清单；本文中“新增独立 feature ID 舍弃”的判断已被 [发布 Profile 改为数据驱动](../architecture/2026-11-19-release-profile-data-driven.md) 取代。安装版曾因 UI 静默吞掉 Key 读取错误而整块隐藏「模型」分组，修复见 [安装版设置页丢失模型分组](../bug-fix/2026-11-19-settings-model-group-hidden-by-keychain.md)。
