@@ -281,6 +281,7 @@ describe("TUI compaction", () => {
       contextUsage: {
         contextWindow: 256_000,
         usedTokens: 45_000,
+        source: "provider",
         inputLimit: 216_000,
         compactAt: 216_000,
         pruneAt: 172_000,

@@ -60,6 +60,7 @@ export class AgentWorkerProcess implements AgentWorkerHostPort {
         resolveSessionsRoot(),
         resolveBuiltinSkillsRoot(),
         resolveUserSkillsRoot(),
+        path.join(app.getPath("userData"), "AGENTS.md"),
       ],
       {
         cwd: app.getPath("userData"),

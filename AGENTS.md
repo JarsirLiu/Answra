@@ -53,6 +53,7 @@
 | `src/core/model` | AI SDK/provider 边界归一化、共享模型输入校验与 HTTP 重试原语 | 不放 Conversation profile 或 transcript 规则 |
 | `src/core/tool` | 跨领域工具契约、静态注册表与单次调用执行管理；通用工具在 `builtin/` | 不导入领域、不写工具事件；领域专属工具留在 `<domain>/tools/`，执行器只返回结果 |
 | `src/core/skill` | 三类来源的 skill 扫描、frontmatter 校验、索引渲染与按名查表契约 | 不读领域 prompt、不接受模型传入路径；宿主注入根目录，缺省即没有 skill |
+| `src/core/instruction` | 全局与项目 `AGENTS.md` 的发现、逐层读取、去重和 system prompt 渲染 | 不 import 领域或配置包、不猜测配置目录、不写 transcript；宿主注入全局文件路径，发现边界止于项目根 |
 | `src/execution` | run/attempt/step 状态迁移规则、事件 envelope 工厂、进程内 store 和查询投影 | 跨包事件 payload 与状态词汇唯一来自 `packages/shared/src/schema/`；当前只实现进程内 store，不得声称已有 durable store 或恢复流程 |
 | `src/conversation/application.ts` | Conversation 唯一编排循环：按 Bot/团队选择创建会话、运行当前 Bot、执行交接链 | 只组合 catalog/store/run；不复制消息或 run 语义，不让 renderer 选择 Bot 之外的能力 |
 | `src/conversation/turn` | Conversation transcript 回合认领、模型上下文与应用事件回调 | 模型执行/run 生命周期由 `core/agent` 负责；不定义共享执行状态 schema |

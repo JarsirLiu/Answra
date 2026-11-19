@@ -6,6 +6,7 @@ import { CursorProbeStdin, CursorProbeStdout, nextFrame } from "../tuiTestHarnes
 const USAGE = {
   contextWindow: 258_000,
   usedTokens: 45_000,
+  source: "provider" as const,
   inputLimit: 216_000,
   compactAt: 216_000,
   pruneAt: 172_000,

@@ -155,6 +155,7 @@ export function applyAgentEvent(
       contextUsage: {
         ...next.contextUsage,
         usedTokens: event.usedTokens,
+        source: "provider",
         updatedAt: envelope.occurredAt,
       },
     };

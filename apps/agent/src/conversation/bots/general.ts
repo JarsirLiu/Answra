@@ -1,4 +1,5 @@
 import type { AgentRuntime } from "../../core/agent/runtime";
+import type { InstructionLoader } from "../../core/instruction";
 import type { SkillCatalog } from "../../core/skill/catalog";
 import type { ToolRegistry } from "../../core/tool";
 import type { ConversationStore } from "../../core/transcript/store";
@@ -10,16 +11,19 @@ export function createGeneralConversationBot({
   store,
   tools,
   skills,
+  instructions,
 }: {
   agentRuntime: AgentRuntime;
   store: ConversationStore;
   tools: ToolRegistry;
   skills?: SkillCatalog;
+  instructions?: InstructionLoader;
 }): ConversationBot {
   return createConversationBot({
     agentRuntime,
     store,
     tools,
     ...(skills ? { skills } : {}),
+    ...(instructions ? { instructions } : {}),
   });
 }

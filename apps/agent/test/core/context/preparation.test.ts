@@ -447,7 +447,7 @@ describe("ContextPreparation", () => {
     expect(result).toEqual({ system: "small", messages: [] });
   });
 
-  it("persists the final request usage and applied pruning for snapshots", async () => {
+  it("does not publish estimated context usage before a model response", async () => {
     const store = await preparedStore();
     const onStatus = vi.fn();
     const messages = Array.from({ length: 6 }, (_, index) =>
@@ -467,17 +467,47 @@ describe("ContextPreparation", () => {
     const state = await store.loadContextState("conversation-1");
     const snapshot = await store.load("conversation-1");
     expect(state?.usage).toMatchObject({
-      usedTokens: estimateContextRequestTokens(result),
       inputLimit: 800,
       compactAt: 750,
       pruneAt: 500,
       pruneTarget: 100,
+    });
+    expect(state?.usage).toMatchObject({
+      usedTokens: estimateContextRequestTokens(result),
+      source: "estimate",
     });
     expect(state?.pruning).toMatchObject({ trigger: "auto", prunedCount: expect.any(Number) });
     expect(state?.pruning?.savedTokens).toBeGreaterThan(0);
     expect(snapshot.contextUsage).toEqual(state?.usage);
     expect(snapshot.contextPruning).toEqual(state?.pruning);
     expect(onStatus).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the latest provider usage when preparing the next request", async () => {
+    const store = await preparedStore();
+    const instance = preparation(store, { toolResultPruning: NO_PROTECTION });
+    const inputUsage = {
+      contextWindow: 1_050,
+      usedTokens: 417,
+      inputLimit: 800,
+      compactAt: 750,
+      pruneAt: 500,
+      pruneTarget: 100,
+      updatedAt: "2026-11-19T10:00:00.000Z",
+      source: "provider" as const,
+    };
+    await store.saveContextState("conversation-1", { checkpoints: [], usage: inputUsage });
+
+    await instance.prepareRequest({
+      conversationId: "conversation-1",
+      getAccessToken: async () => "token",
+      modelRequest: { system: "x".repeat(600), messages: [] },
+      rebuild: async () => {
+        throw new Error("不应重建");
+      },
+    });
+
+    expect((await store.loadContextState("conversation-1"))?.usage).toEqual(inputUsage);
   });
 
   it("clears a previous pruning status when the next request does not prune", async () => {
@@ -619,6 +649,39 @@ describe("ContextPreparation", () => {
       state: "succeeded",
       trigger: "manual",
     });
+  });
+
+  it("does not trim to the post-compaction target when manual summary generation fails", async () => {
+    const store = await preparedStore();
+    const generate = vi.fn(async () => {
+      throw new Error("模型不支持 temperature");
+    });
+    const modelRequest = {
+      system: "x".repeat(6_000),
+      messages: [
+        { role: "user" as const, content: "旧上下文" },
+        { role: "assistant" as const, content: "a".repeat(2_400) },
+        { role: "user" as const, content: "当前问题" },
+      ],
+    };
+    const originalEstimate = estimateContextRequestTokens(modelRequest);
+
+    const result = await preparation(store, { budget: REBUILD_BUDGET, generate }).compactNow({
+      conversationId: "conversation-1",
+      getAccessToken: async () => "token",
+      modelRequest,
+      rebuild: async () => {
+        throw new Error("摘要失败时不应重建");
+      },
+    });
+
+    expect(result).toMatchObject({
+      status: "failed",
+      errorText: "模型不支持 temperature",
+      usage: { usedTokens: originalEstimate },
+    });
+    expect((await store.loadContextState("conversation-1"))?.checkpoints).toHaveLength(0);
+    expect(generate).toHaveBeenCalledOnce();
   });
 
   it("passes one-shot manual instructions into the summary prompt", async () => {

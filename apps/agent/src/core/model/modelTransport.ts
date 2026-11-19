@@ -6,7 +6,6 @@ import { requestHeadersFor } from "./requestHeaders";
 import type { RetryAttempt } from "./retryFetch";
 
 type StreamTextOptions = Parameters<typeof streamText>[0];
-type GenerateTextOptions = Parameters<typeof generateTextSdk>[0];
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 
 export type ModelStreamOptions = DistributiveOmit<
@@ -76,12 +75,10 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
 export async function generateModelText({
   transport,
   prompt,
-  temperature,
   signal,
 }: {
   transport: ModelTransportOptions;
   prompt: string;
-  temperature?: GenerateTextOptions["temperature"];
   signal?: AbortSignal;
 }): Promise<string> {
   const provider = createProvider(transport);
@@ -89,7 +86,6 @@ export async function generateModelText({
   const result = await generateTextSdk({
     model: provider(transport.endpoint.model),
     prompt,
-    ...(temperature === undefined ? {} : { temperature }),
     ...(headers === undefined ? {} : { headers }),
     ...(signal === undefined ? {} : { abortSignal: signal }),
     maxRetries: 0,

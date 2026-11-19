@@ -25,6 +25,8 @@ export interface AgentWorkerOptions {
   builtinSkillsRoot?: string;
   /** 由 AgentService 解析的用户级 skill 目录（~/.answra/skills）。 */
   userSkillsRoot?: string;
+  /** 用户级 AGENTS.md 路径；缺省只加载工作区。 */
+  globalInstructionFile?: string;
   /** 测试注入：绕过从磁盘加载预编译资源。 */
   vad?: TenVadSource;
   /** 测试注入：绕过从磁盘加载本地模型。 */
@@ -63,6 +65,9 @@ export function startAgentWorker(
     ...(sessionStore ? { store: sessionStore, catalog: sessionStore } : {}),
     ...(grepWorkerPath && existsSync(grepWorkerPath) ? { grepWorkerPath } : {}),
     ...(skillRoots ? { skillRoots } : {}),
+    ...(options?.globalInstructionFile
+      ? { globalInstructionFile: options.globalInstructionFile }
+      : {}),
   });
 }
 

@@ -89,7 +89,6 @@ export class AgentRuntime {
         ...(this.tokenProvider === undefined ? {} : { tokenProvider: this.tokenProvider }),
       },
       prompt,
-      temperature: 0,
       ...(signal === undefined ? {} : { signal }),
     });
   }

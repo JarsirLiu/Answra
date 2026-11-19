@@ -2,7 +2,7 @@ import type { ConversationCapabilityEndpoint } from "@answra/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { generateTextSdk, streamTextSdk } = vi.hoisted(() => ({
-  generateTextSdk: vi.fn(async () => ({ text: "ok" })),
+  generateTextSdk: vi.fn(async (_options: unknown) => ({ text: "ok" })),
   streamTextSdk: vi.fn(() => ({ fullStream: [] })),
 }));
 
@@ -57,5 +57,6 @@ describe("modelTransport", () => {
         maxRetries: 0,
       }),
     );
+    expect(generateTextSdk.mock.calls[0]?.[0]).not.toHaveProperty("temperature");
   });
 });

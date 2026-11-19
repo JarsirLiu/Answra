@@ -37,7 +37,10 @@ export function StatusPanel({
         <StatusRow label="版本" value={CLI_VERSION} />
         <StatusRow label="账户" value={accountText} />
         <StatusRow label="模型" value={model || "未配置"} />
-        <StatusRow label="上下文" value={contextLabel(contextUsage)} />
+        <StatusRow
+          label="上下文"
+          value={contextLabel(contextUsage?.source === "provider" ? contextUsage : undefined)}
+        />
         <StatusRow label="工作区" value={workspaceRoot} />
         {!authAvailable ? (
           <Text dimColor>当前构建未启用账户登录。</Text>

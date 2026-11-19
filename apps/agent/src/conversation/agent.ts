@@ -9,6 +9,8 @@ import type {
 } from "../core/agent/definition";
 import { agentId } from "../core/agent/definition";
 import { createToolStepLimit } from "../core/agent/toolStepLimit";
+import type { InstructionLoader } from "../core/instruction";
+import { createInstructionLoader, renderInstructionContext } from "../core/instruction";
 import type { SkillCatalog } from "../core/skill/catalog";
 import { renderSkillIndex, selectSkills } from "../core/skill/guidance";
 import type { ToolRegistry } from "../core/tool";
@@ -56,6 +58,8 @@ export interface ConversationAgentOptions {
   profile?: ConversationAgentProfile;
   /** 会话级 skill 目录；缺省表示本会话没有可用 skill。 */
   skills?: SkillCatalog;
+  /** AGENTS.md 加载器；缺省只加载当前工作区，不读全局文件。 */
+  instructions?: InstructionLoader;
   /** 测试或结构化输出实现注入；缺省视为普通回复。 */
   result?: (input: ConversationAgentInput, runId: string) => Promise<BotTurnResult | undefined>;
 }
@@ -68,6 +72,7 @@ export function createConversationAgentDefinition({
   discovery = GENERAL_DISCOVERY,
   profile = CHAT_PROFILES["general-chat"],
   skills,
+  instructions = createInstructionLoader({ globalFile: null }),
   result,
 }: ConversationAgentOptions): AgentDefinition<ConversationAgentInput> {
   return {
@@ -87,6 +92,9 @@ export function createConversationAgentDefinition({
         ...(input.viewerAgentId ? { viewerAgentId: input.viewerAgentId } : {}),
         ...(input.agentNames ? { agentNames: input.agentNames } : {}),
       });
+      const instructionContext = renderInstructionContext(
+        await instructions.load(input.workspaceRoot),
+      );
       const authorizedToolIds = skills
         ? [...activeProfile.tools, SKILL_TOOL_ID]
         : activeProfile.tools;
@@ -108,6 +116,7 @@ export function createConversationAgentDefinition({
             activeProfile.systemPrompt,
             buildEnvironmentSystemContext(readRuntimeEnvironment()),
             buildWorkspaceSystemContext(input.workspaceRoot),
+            ...(instructionContext ? [instructionContext] : []),
             ...(skillIndex ? [skillIndex] : []),
           ].join("\n\n")
         : activeProfile.systemPrompt;

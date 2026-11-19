@@ -5,6 +5,7 @@ import type {
   BotTurnResult,
 } from "../../core/agent/definition";
 import type { AgentRuntime } from "../../core/agent/runtime";
+import type { InstructionLoader } from "../../core/instruction";
 import type { SkillCatalog } from "../../core/skill/catalog";
 import type { ToolRegistry } from "../../core/tool";
 import type { ConversationStore } from "../../core/transcript/store";
@@ -21,6 +22,7 @@ export interface ConversationBotOptions {
   store: ConversationStore;
   tools: ToolRegistry;
   skills?: SkillCatalog;
+  instructions?: InstructionLoader;
   id?: AgentId;
   identity?: BotIdentity;
   discovery?: BotDiscovery;
@@ -33,6 +35,7 @@ export function createConversationBot({
   store,
   tools,
   skills,
+  instructions,
   id,
   identity,
   discovery,
@@ -43,6 +46,7 @@ export function createConversationBot({
     store,
     tools,
     ...(skills ? { skills } : {}),
+    ...(instructions ? { instructions } : {}),
     ...(id ? { id } : {}),
     ...(identity ? { identity } : {}),
     ...(discovery ? { discovery } : {}),

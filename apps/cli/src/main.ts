@@ -12,6 +12,7 @@ import { createOpenAiModelCatalog } from "./adapters/openAiModelCatalog";
 import { createSharedModelStore } from "./adapters/sharedModelStore";
 import { runCli } from "./cli/runCli";
 import { isPackagedCliRuntime, resolveCliCloudEndpoints } from "./config/cloudEndpoints";
+import { resolveCliInstructionFile } from "./config/instructionFile";
 import { resolveCliSkillRoots } from "./config/skillRoots";
 import { ModelSettingsService } from "./model/settingsService";
 import { resolveCliDeviceDescriptor } from "./remote/auth/deviceInfo";
@@ -86,6 +87,7 @@ async function main(): Promise<void> {
               workspaceRoot,
               store: sessionStore,
               catalog: sessionStore,
+              globalInstructionFile: resolveCliInstructionFile(),
               skillRoots: resolveCliSkillRoots(workspaceRoot),
             }),
           ),

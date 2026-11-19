@@ -26,7 +26,7 @@ export function StatusLine({
   contextUsage?: ContextUsage;
 }) {
   const context =
-    contextUsage === undefined
+    contextUsage === undefined || contextUsage.source !== "provider"
       ? undefined
       : `ctx ${formatContextTokens(contextUsage.usedTokens)}/${formatContextTokens(
           contextUsage.inputLimit,

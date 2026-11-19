@@ -117,10 +117,11 @@ export const contextCompactionBoundarySchema = z.strictObject({
   /** 本次手动压缩附带的一次性摘要指令；自动压缩不产生。 */
   instructions: z.string().optional(),
 });
-/** 当前模型请求的估算占用和关键预算阈值；只用于 UI 解释，不参与压缩决策。 */
+/** 最近一次模型 step 的 provider 输入用量与关键预算阈值；只用于 UI，不参与压缩决策。 */
 export const contextUsageSchema = z.strictObject({
   contextWindow: z.number().int().positive(),
   usedTokens: z.number().int().nonnegative(),
+  source: z.enum(["estimate", "provider"]).optional(),
   inputLimit: z.number().int().positive(),
   compactAt: z.number().int().positive(),
   pruneAt: z.number().int().nonnegative(),

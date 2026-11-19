@@ -60,7 +60,7 @@ export function buildCodingWorkspaceContext(workspaceRoot: string | null): strin
     "# 工作区",
     `当前工作目录：${workspaceRoot}`,
     "相对路径以该目录为基线；工作区不是访问边界，用户明确指向其他目录时可以使用绝对路径。",
-    "目录中存在 AGENTS.md 时，先阅读并遵守其中的约定。",
+    "AGENTS.md 会自动加入上下文；若上下文中没有对应内容，可按需读取工作区文件确认。",
   ].join("\n");
 }
 

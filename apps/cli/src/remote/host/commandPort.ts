@@ -14,6 +14,7 @@ import type {
   RemoteModelConfig,
   RemoteModelSettingsView,
 } from "@answra/shared/schema";
+import { resolveCliInstructionFile } from "../../config/instructionFile";
 import { resolveCliSkillRoots } from "../../config/skillRoots";
 import type { ModelSettings } from "../../model/ports";
 
@@ -46,6 +47,7 @@ export function createRemoteCodingHost({
       for (const listener of snapshotListeners) listener(snapshot);
     },
     workspaceRoot,
+    globalInstructionFile: resolveCliInstructionFile(),
     skillRoots: resolveCliSkillRoots(workspaceRoot),
   });
 

@@ -184,7 +184,7 @@ describe("normalizeStreamPart", () => {
           outputTokenDetails: { textTokens: 2, reasoningTokens: 1 },
         },
       },
-      { type: "context-usage-changed", usedTokens: 5 },
+      { type: "context-usage-changed", usedTokens: 2 },
       {
         type: "finish",
         finishReason: "stop",

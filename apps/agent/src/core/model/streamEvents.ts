@@ -145,9 +145,7 @@ function stepFinished(index: number, part: FinishStepPart): AgentExecutionEvent 
 }
 
 function contextUsageChanged(usage: FinishStepPart["usage"]): AgentEvent | undefined {
-  const usedTokens =
-    usage.totalTokens ??
-    (usage.inputTokens === undefined ? undefined : usage.inputTokens + (usage.outputTokens ?? 0));
+  const usedTokens = usage.inputTokens;
   return usedTokens === undefined || usedTokens <= 0
     ? undefined
     : { type: "context-usage-changed", usedTokens };

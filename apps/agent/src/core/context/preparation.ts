@@ -204,15 +204,14 @@ export class ContextPreparation {
         savedTokens: rebuiltPruned.savedTokens,
       };
     } else {
-      final = trimContextRequest(initial.request, budget, {
-        ...(forceCompact ? { targetTokens: budget.postCompactTarget } : {}),
-      });
+      final = trimContextRequest(initial.request, budget);
       projectionChanged = projectionChanged || final !== initial.request;
     }
 
-    const usage: ContextUsage = {
+    const estimatedUsage: ContextUsage = {
       contextWindow: budget.contextWindow,
       usedTokens: estimateContextRequestTokens(final),
+      source: "estimate",
       inputLimit: budget.inputLimit,
       compactAt: budget.compactAt,
       pruneAt: budget.pruneAt,
@@ -225,13 +224,24 @@ export class ContextPreparation {
             trigger: trigger ?? "auto",
             prunedCount: finalPruning.prunedCount,
             savedTokens: finalPruning.savedTokens,
-            updatedAt: usage.updatedAt,
+            updatedAt: estimatedUsage.updatedAt,
           }
         : undefined;
+    const previousUsage = state?.usage;
+    const usage: ContextUsage = {
+      ...estimatedUsage,
+      ...(previousUsage
+        ? {
+            usedTokens: previousUsage.usedTokens,
+            source: previousUsage.source,
+            updatedAt: previousUsage.updatedAt,
+          }
+        : {}),
+    };
     await this.saveStatus(conversationId, usage, pruning, prunedToolCallIds);
 
     this.usageAnchors.stage(conversationId, {
-      estimatedTokens: usage.usedTokens,
+      estimatedTokens: estimatedUsage.usedTokens,
       projectionChanged,
     });
     if (onStatus) {
@@ -258,7 +268,7 @@ export class ContextPreparation {
     return prepared.compaction.status === "compacted" ? prepared.request : undefined;
   }
 
-  /** 消费 run 事件：首步 usage 维护锚点；每个模型 step 的 context usage 持久化供恢复。 */
+  /** 消费 run 事件：首步 usage 维护锚点；provider 输入 usage 持久化供恢复。 */
   async recordRunEvent(conversationId: string, event: AgentEvent): Promise<void> {
     await this.usageAnchors.recordRunEvent(conversationId, event);
     if (event.type !== "context-usage-changed") return;
@@ -274,6 +284,7 @@ export class ContextPreparation {
         usage: {
           ...state.usage,
           usedTokens,
+          source: "provider",
           updatedAt: this.now().toISOString(),
         },
       });

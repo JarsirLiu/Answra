@@ -2,6 +2,7 @@
 import type { ConversationSnapshot } from "@answra/shared";
 import type { AgentEventEnvelope } from "@answra/shared/schema";
 import { AgentRuntime } from "../core/agent/runtime";
+import { createInstructionLoader } from "../core/instruction";
 import { createLazySkillCatalog } from "../core/skill/catalog";
 import type { SkillRoots } from "../core/skill/contracts";
 import { createBuiltinToolRegistry } from "../core/tool";
@@ -21,6 +22,8 @@ export interface CodingHostOptions {
   catalog?: ConversationSessionCatalog;
   executionStore?: ExecutionStore;
   workspaceRoot?: string | null;
+  /** 用户级 AGENTS.md 绝对路径；缺省只加载工作区。 */
+  globalInstructionFile?: string | null;
   /** 宿主注入的 Grep WASI worker 脚本路径；缺省时在 Agent 进程内执行。 */
   grepWorkerPath?: string;
   /**
@@ -51,10 +54,15 @@ export function startCodingHost({
   catalog,
   executionStore = new MemoryExecutionStore(),
   workspaceRoot = null,
+  globalInstructionFile = null,
   grepWorkerPath,
   skillRoots,
 }: CodingHostOptions): CodingHost {
   const agentRuntime = new AgentRuntime({ executionStore, emitEvent, tokenProvider });
+  const instructions = createInstructionLoader({
+    globalFile: globalInstructionFile,
+    onWarning: (message) => console.warn("[coding][instruction]", message),
+  });
   const skillsReady = skillRoots ? createLazySkillCatalog(skillRoots) : undefined;
   const skills = skillsReady?.catalog;
   const tools = createBuiltinToolRegistry({
@@ -65,6 +73,7 @@ export function startCodingHost({
     agentRuntime,
     store,
     tools,
+    instructions,
     ...(skills ? { skills } : {}),
   });
   const runtime = new CodingApplication({ agentRuntime, store, bot, onSnapshot });

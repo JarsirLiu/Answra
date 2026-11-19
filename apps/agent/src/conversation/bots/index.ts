@@ -1,5 +1,6 @@
 /** Conversation Bot 装配入口；新增 Bot 时在这里注册，不修改会话编排。 */
 import type { AgentRuntime } from "../../core/agent/runtime";
+import type { InstructionLoader } from "../../core/instruction";
 import type { SkillCatalog } from "../../core/skill/catalog";
 import type { ToolRegistry } from "../../core/tool";
 import type { ConversationStore } from "../../core/transcript/store";
@@ -15,11 +16,13 @@ export function createConversationBots({
   store,
   tools,
   skills,
+  instructions,
 }: {
   agentRuntime: AgentRuntime;
   store: ConversationStore;
   tools: ToolRegistry;
   skills?: SkillCatalog;
+  instructions?: InstructionLoader;
 }): readonly ConversationBot[] {
   return [
     createGeneralConversationBot({
@@ -27,6 +30,7 @@ export function createConversationBots({
       store,
       tools,
       ...(skills ? { skills } : {}),
+      ...(instructions ? { instructions } : {}),
     }),
   ];
 }

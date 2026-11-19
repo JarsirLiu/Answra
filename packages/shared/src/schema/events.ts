@@ -30,7 +30,7 @@ const executionEventOptions = [
     finishReason: agentFinishReasonSchema.optional(),
     usage: agentUsageSchema.optional(),
   }),
-  /** Provider-reported context size after a model step; drives live usage UI and recovery state. */
+  /** Provider-reported input token count after a model step; drives live usage UI and recovery state. */
   z.strictObject({
     type: z.literal("context-usage-changed"),
     usedTokens: z.number().int().nonnegative(),

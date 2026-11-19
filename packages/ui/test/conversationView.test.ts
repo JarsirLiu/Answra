@@ -352,6 +352,7 @@ describe("conversation projection", () => {
       contextUsage: {
         contextWindow: 256_000,
         usedTokens: 45_000,
+        source: "provider",
         inputLimit: 216_000,
         compactAt: 216_000,
         pruneAt: 172_000,
@@ -379,6 +380,7 @@ describe("conversation projection", () => {
       contextUsage: {
         contextWindow: 256_000,
         usedTokens: 2_400,
+        source: "estimate",
         inputLimit: 216_000,
         compactAt: 216_000,
         pruneAt: 172_000,
@@ -394,6 +396,7 @@ describe("conversation projection", () => {
 
     expect(next.contextUsage).toMatchObject({
       usedTokens: 2_700,
+      source: "provider",
       inputLimit: 216_000,
       updatedAt: "2026-11-07T00:00:00.000Z",
     });

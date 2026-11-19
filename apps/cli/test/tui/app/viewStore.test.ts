@@ -92,6 +92,7 @@ describe("TuiViewStore", () => {
       contextUsage: {
         contextWindow: 256_000,
         usedTokens: 2_400,
+        source: "estimate",
         inputLimit: 216_000,
         compactAt: 216_000,
         pruneAt: 172_000,
@@ -105,6 +106,7 @@ describe("TuiViewStore", () => {
 
     expect(store.getSnapshot().view.contextUsage).toMatchObject({
       usedTokens: 2_700,
+      source: "provider",
       inputLimit: 216_000,
     });
     expect(store.getSnapshot().view.eventRevision).toBe(4);

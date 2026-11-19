@@ -114,6 +114,7 @@ apps/agent             平台无关的 Agent 运行时（不依赖 Electron/Reac
   src/core/run         进程内 run 取消与完成等待原语
   src/core/model       provider 适配、模型流归一化、图片输入与 HTTP 重试
   src/core/skill       skill 来源扫描、frontmatter 校验、索引渲染与按名加载
+  src/core/instruction 全局与项目 AGENTS.md 发现、读取与 system prompt 渲染
   src/execution        run/attempt/step 事件、状态、进程内 store 和投影
   src/conversation     对话领域：turn、agent、profiles、tools 子域
   src/interview        面试领域：intake 资料整理、profile 上下文、rehearsal 与 audio/transcription/turns/vad/reply
