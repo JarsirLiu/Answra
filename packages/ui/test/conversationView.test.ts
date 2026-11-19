@@ -245,6 +245,103 @@ describe("conversation projection", () => {
     expect(finished.messages[0]?.parts?.[0]).toMatchObject({ state: "failed" });
   });
 
+  it("preserves event-updated provider usage when snapshot carries estimate", () => {
+    const withProvider: ConversationView = {
+      eventRevision: 2,
+      messages: [],
+      contextUsage: {
+        contextWindow: 200_000,
+        usedTokens: 15_000,
+        source: "provider",
+        inputLimit: 180_000,
+        compactAt: 180_000,
+        pruneAt: 160_000,
+        pruneTarget: 140_000,
+        updatedAt: "2026-11-19T12:00:00.000Z",
+      },
+    };
+    const snapshot = applyConversationSnapshot(withProvider, {
+      conversationId: CONVERSATION,
+      eventRevision: 3,
+      messages: [],
+      contextUsage: {
+        contextWindow: 200_000,
+        usedTokens: 12_000,
+        source: "estimate",
+        inputLimit: 180_000,
+        compactAt: 180_000,
+        pruneAt: 160_000,
+        pruneTarget: 140_000,
+        updatedAt: "2026-11-19T12:00:00.000Z",
+      },
+    });
+
+    expect(snapshot.contextUsage).toMatchObject({
+      usedTokens: 15_000,
+      source: "provider",
+    });
+  });
+
+  it("accepts snapshot provider usage over view estimate", () => {
+    const withEstimate: ConversationView = {
+      eventRevision: 2,
+      messages: [],
+      contextUsage: {
+        contextWindow: 200_000,
+        usedTokens: 12_000,
+        source: "estimate",
+        inputLimit: 180_000,
+        compactAt: 180_000,
+        pruneAt: 160_000,
+        pruneTarget: 140_000,
+        updatedAt: "2026-11-19T12:00:00.000Z",
+      },
+    };
+    const snapshot = applyConversationSnapshot(withEstimate, {
+      conversationId: CONVERSATION,
+      eventRevision: 3,
+      messages: [],
+      contextUsage: {
+        contextWindow: 200_000,
+        usedTokens: 15_000,
+        source: "provider",
+        inputLimit: 180_000,
+        compactAt: 180_000,
+        pruneAt: 160_000,
+        pruneTarget: 140_000,
+        updatedAt: "2026-11-19T12:00:00.000Z",
+      },
+    });
+
+    expect(snapshot.contextUsage).toMatchObject({
+      usedTokens: 15_000,
+      source: "provider",
+    });
+  });
+
+  it("initializes contextUsage from snapshot when view has none", () => {
+    const snapshot = applyConversationSnapshot(EMPTY_CONVERSATION_VIEW, {
+      conversationId: CONVERSATION,
+      eventRevision: 1,
+      messages: [],
+      contextUsage: {
+        contextWindow: 200_000,
+        usedTokens: 5_000,
+        source: "estimate",
+        inputLimit: 180_000,
+        compactAt: 180_000,
+        pruneAt: 160_000,
+        pruneTarget: 140_000,
+        updatedAt: "2026-11-19T12:00:00.000Z",
+      },
+    });
+
+    expect(snapshot.contextUsage).toMatchObject({
+      usedTokens: 5_000,
+      source: "estimate",
+    });
+  });
+
   it.each([
     ["completed", "complete"],
     ["failed", "failed"],

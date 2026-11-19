@@ -90,7 +90,12 @@ export function applyConversationSnapshot(
     retryRunId: keepRetry ? view.retryRunId : undefined,
     contextCompaction: snapshot.contextCompaction,
     contextCompactionBoundaries: snapshot.contextCompactionBoundaries,
-    contextUsage: snapshot.contextUsage,
+    contextUsage:
+      snapshot.contextUsage?.source === "provider" ||
+      !view.contextUsage ||
+      view.contextUsage.source !== "provider"
+        ? snapshot.contextUsage
+        : view.contextUsage,
     contextPruning: snapshot.contextPruning,
     // A snapshot is the server's current conversation truth. Do not carry a
     // terminal error from the previous run into a cleared or resumed view.
