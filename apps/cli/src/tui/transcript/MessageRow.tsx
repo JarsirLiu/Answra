@@ -34,7 +34,7 @@ export const MessageRow = memo(function MessageRow({
     );
   }
   return (
-    <Box flexDirection="column" marginTop={1} width="100%">
+    <Box flexDirection="column" width="100%">
       {renderParts(message, expandThinking, showReasoning, expandedToolIds)}
     </Box>
   );
@@ -49,9 +49,11 @@ function renderParts(
   const parts = message.parts ?? [];
   if (parts.length === 0) {
     return message.text.length === 0 ? null : (
-      <MessageResponse>
-        <MarkdownText text={message.text} />
-      </MessageResponse>
+      <Box marginTop={1}>
+        <MessageResponse>
+          <MarkdownText text={message.text} />
+        </MessageResponse>
+      </Box>
     );
   }
   return groupMessageParts(parts).map((part) =>
@@ -86,15 +88,17 @@ function PartRow({
 }) {
   if (part.kind === "text") {
     return (
-      <MessageResponse>
-        <MarkdownText text={part.text} />
-      </MessageResponse>
+      <Box marginTop={1}>
+        <MessageResponse>
+          <MarkdownText text={part.text} />
+        </MessageResponse>
+      </Box>
     );
   }
   if (part.kind === "reasoning") {
     if (!showReasoning) return null;
     return (
-      <Box flexDirection="column">
+      <Box flexDirection="column" marginTop={1}>
         <MessageResponse dim>
           <Text dimColor italic>
             {"∴ Thinking"}

@@ -40,29 +40,28 @@ export function estimateMessageHeight(
   }
   const parts = message.parts ?? [];
   if (parts.length === 0) return countTextLines(message.text, width) + 1;
-  let height = 1;
+  let height = 0;
   for (const part of groupMessageParts(parts)) {
     if (part.kind === "tool-group") {
-      height += estimateToolGroupHeight(
-        part,
-        width,
-        expandThinking || expandedToolIds?.has(part.id) === true,
-      );
+      height +=
+        1 +
+        estimateToolGroupHeight(
+          part,
+          width,
+          expandThinking || expandedToolIds?.has(part.id) === true,
+        );
       continue;
     }
     if (part.kind === "text") {
-      height += countTextLines(part.text, width);
+      height += 1 + countTextLines(part.text, width);
       continue;
     }
     if (part.kind === "reasoning") {
-      height += expandThinking ? countTextLines(part.text, width) + 1 : 1;
+      height += 1 + (expandThinking ? countTextLines(part.text, width) + 1 : 1);
       continue;
     }
-    height += estimateToolHeight(
-      part,
-      width,
-      expandThinking || expandedToolIds?.has(part.id) === true,
-    );
+    height +=
+      1 + estimateToolHeight(part, width, expandThinking || expandedToolIds?.has(part.id) === true);
   }
   return Math.max(MIN_MESSAGE_HEIGHT, height);
 }

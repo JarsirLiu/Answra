@@ -57,6 +57,38 @@ describe("virtual transcript layout", () => {
     expect(estimateMessageHeight(message, 80, true)).toBeGreaterThan(2);
   });
 
+  it("reserves a margin for every assistant block", () => {
+    const read = (id: string, path: string) => ({
+      id,
+      kind: "tool" as const,
+      toolCallId: id,
+      toolName: "Read",
+      state: "completed" as const,
+      input: { file_path: path },
+      output: {
+        type: "text",
+        filePath: path,
+        content: "x",
+        numLines: 1,
+        startLine: 1,
+        totalLines: 1,
+      },
+    });
+    const message = {
+      id: "assistant-1",
+      role: "assistant" as const,
+      text: "",
+      status: "complete" as const,
+      images: [],
+      parts: [
+        read("tool-1", "src/a.ts"),
+        read("tool-2", "src/b.ts"),
+        { id: "text-1", kind: "text" as const, text: "收尾说明", state: "completed" as const },
+      ],
+    };
+    expect(estimateMessageHeight(message, 80, false)).toBe(4);
+  });
+
   it("reserves metadata lines only for the Compact summary metadata branch", () => {
     const boundary = {
       id: "compaction-1",
