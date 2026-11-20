@@ -44,7 +44,7 @@ describe("TUI transcript interaction", () => {
     store.dispose();
   });
 
-  it("renders image attachments on user messages", async () => {
+  it("renders an inline image reference without a duplicate attachment row", async () => {
     const store = new TuiViewStore();
     store.initialize({
       conversationId: "conversation-image",
@@ -53,7 +53,7 @@ describe("TUI transcript interaction", () => {
         {
           id: "user-1",
           role: "user",
-          text: "look",
+          text: "[Image #1] look",
           status: "complete",
           images: [{ name: "capture.png", dataUrl: "data:image/png;base64,QUJD" }],
           parts: [],
@@ -71,8 +71,10 @@ describe("TUI transcript interaction", () => {
       />,
     );
     await new Promise((resolve) => setTimeout(resolve, 200));
-    expect(instance.lastFrame()).toContain("[Image #1]");
-    expect(instance.lastFrame()).toContain("capture.png");
+    const frame = instance.lastFrame() ?? "";
+    expect(frame).toContain("[Image #1]");
+    expect(frame).not.toContain("capture.png");
+    expect(frame.split("[Image #1]").length - 1).toBe(1);
     instance.unmount();
     store.dispose();
   });

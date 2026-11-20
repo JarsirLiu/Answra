@@ -17,7 +17,3 @@ export type ImageMediaType = (typeof SUPPORTED_IMAGE_MEDIA_TYPES)[number];
 export function isSupportedImageMediaType(value: string): value is ImageMediaType {
   return (SUPPORTED_IMAGE_MEDIA_TYPES as readonly string[]).includes(value);
 }
-
-export function imageLabel(index: number): string {
-  return `[Image #${index + 1}]`;
-}

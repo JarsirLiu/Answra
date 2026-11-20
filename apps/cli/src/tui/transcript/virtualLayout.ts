@@ -36,9 +36,7 @@ export function estimateMessageHeight(
   const width = Math.max(8, columns - 2);
   if (message.role === "user") {
     const textHeight = message.text.length === 0 ? 0 : countTextLines(message.text, width);
-    const imageCount = message.images?.length ?? 0;
-    const imageGap = textHeight > 0 && imageCount > 0 ? 1 : 0;
-    return Math.max(MIN_MESSAGE_HEIGHT, textHeight + imageCount + imageGap + 1);
+    return Math.max(MIN_MESSAGE_HEIGHT, textHeight + 1);
   }
   const parts = message.parts ?? [];
   if (parts.length === 0) return countTextLines(message.text, width) + 1;
@@ -115,7 +113,6 @@ export function buildOffsets(heights: readonly number[]): number[] {
 
 export function messageMeasureKey(message: ConversationViewMessage): string {
   let key = `${message.text.length}:${message.parts?.length ?? 0}`;
-  key += `|images:${message.images?.length ?? 0}:${message.images?.map((image) => image.name.length).join(",") ?? ""}`;
   for (const part of message.parts ?? []) {
     if (part.kind === "tool") {
       const outputLength = typeof part.output === "string" ? part.output.length : 0;

@@ -23,7 +23,7 @@ Agent 侧的 shared 契约、transcript 持久化和模型投影本来就支持�
 - `apps/cli/src/tui/composer/PromptInput.tsx`：Ctrl+V、图片路径粘贴、附件展示、空输入 Backspace 删除、图片-only 提交。
 - `apps/cli/src/tui/app/App.tsx`、`runTui.tsx`：透传 reader；队列改为 `{ text, images }`。
 - `apps/cli/src/session/codingSession.ts`：`send(text, images = [])`。
-- `apps/cli/src/tui/transcript/UserImages.tsx`（新增）、`MessageRow.tsx`、`virtualLayout.ts`：渲染图片并计入虚拟列表高度。
+- `apps/cli/src/tui/transcript/UserImages.tsx`（新增，后续已删除）、`MessageRow.tsx`、`virtualLayout.ts`：渲染图片并计入虚拟列表高度；重复附件行由 `2026-11-20-cli-user-message-duplicate-image-row.md` 移除。
 - `apps/agent/src/coding/application.ts`、`apps/agent/src/coding/context.ts`：最小图片透传；不改 `core/agent`、worker 协议、shared schema 或 desktop。
 
 ## 决定
@@ -60,8 +60,8 @@ src/session/codingSession.ts              用例参数透传
 - 粘贴内容若是绝对图片路径（单行或多行，每行一个），读取文件并转成 data URL；路径不是图片或读取失败时保留为文本或给出错误。
 - 输入框上方显示 `[Image #1] name` 等附件；空输入时 Backspace 删除最后一张，Esc/Ctrl+C 清空附件。
 - 允许图片-only 提交；有图片时 Enter 不再被“空输入”拦截。
-- transcript 的 user 消息显示 `[Image #n] name`；不在终端渲染位图。
-- 虚拟列表把图片行计入高度估算和测量 key。
+- transcript 的 user 消息显示 `[Image #n] name`；不在终端渲染位图。（该附件行已被 `2026-11-20-cli-user-message-duplicate-image-row.md` 移除，图片只保留正文中的内联引用。）
+- 虚拟列表把图片行计入高度估算和测量 key。（该预留已随附件行移除。）
 
 ### 3. 明确不做
 
