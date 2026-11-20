@@ -2,7 +2,7 @@
   "name": "@answra/desktop",
   "version": "0.1.1",
   "private": true,
-  "description": "Electron 桌面壳：main/preload/renderer 三进程，renderer 只做薄壳，业务 UI 在 @answra/ui。",
+  "description": "AI 面试与笔试助手",
   "type": "module",
   "main": "out/main/index.cjs",
   "scripts": {
