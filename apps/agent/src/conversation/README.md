@@ -26,7 +26,7 @@ conversation/
 
 ## `profiles/`
 
-定义 Bot 的提示词、是否读取历史、时间上下文和工具授权。它们是 Agent 内部静态注册，不接受 renderer 动态注入。
+定义 Bot 的提示词、是否读取历史和工具授权。它们是 Agent 内部静态注册，不接受 renderer 动态注入；当前时间由 `core/agent` 在注册边界统一追加。
 
 - `registry.ts`：通用聊天 profile 类型与静态注册表。
 - 截图答题策略在 `apps/agent/src/answer/agent.ts`，不使用通用聊天历史或工具。

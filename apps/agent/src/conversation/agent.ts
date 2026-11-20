@@ -87,7 +87,6 @@ export function createConversationAgentDefinition({
         conversationId: input.conversationId,
         request: input.request,
         includeHistory: activeProfile.includeHistory,
-        injectTime: activeProfile.injectTime ?? false,
         store,
         ...(input.viewerAgentId ? { viewerAgentId: input.viewerAgentId } : {}),
         ...(input.agentNames ? { agentNames: input.agentNames } : {}),

@@ -31,7 +31,7 @@ conversation/
     modelMessages.ts        模型输入与历史上下文构造
     streamJournal.ts        模型事件写入 session 与回合诊断指标
     requestContent.ts       请求与图片边界校验
-    timeReminder.ts         仅授权 profile 使用的时间上下文
+    # 时间上下文已上移至 core/context 与 core/agent 统一注入
   profiles/                 场景提示词、上下文策略与工具授权
   tools/                    Conversation 自有工具、工作区默认根与静态注册
 ```

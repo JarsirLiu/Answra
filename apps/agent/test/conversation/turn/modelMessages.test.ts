@@ -91,7 +91,6 @@ describe("conversation model messages", () => {
       conversationId: "tools",
       request: request(),
       includeHistory: true,
-      injectTime: false,
       store,
     });
 
@@ -135,7 +134,6 @@ describe("conversation model messages", () => {
       conversationId: "legacy",
       request: request(),
       includeHistory: true,
-      injectTime: false,
       store: legacyStore([
         {
           id: "user-1",
@@ -209,7 +207,6 @@ describe("conversation model messages", () => {
       conversationId: "legacy",
       request: request(),
       includeHistory: true,
-      injectTime: false,
       store: legacyStore([
         {
           id: "run-1",

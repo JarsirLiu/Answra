@@ -67,6 +67,8 @@ export interface AgentDefinition<Input> {
   readonly identity: BotIdentity;
   readonly discovery: BotDiscovery;
   readonly modelRoute: AgentModelRoute;
+  /** 默认每次准备都追加当前时间；一次性答题等无需时间事实的定义显式设为 false。 */
+  readonly currentTimeContext?: boolean;
   prepare(
     input: Input,
     signal: AbortSignal,

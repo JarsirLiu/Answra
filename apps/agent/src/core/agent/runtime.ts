@@ -5,6 +5,7 @@ import type { ExecutionStore } from "../../execution/store";
 import { generateModelText } from "../model/modelTransport";
 import { validateEndpoint } from "../model/providerFetch";
 import { RunRegistry } from "../run/registry";
+import { withCurrentTimeContext } from "./currentTimeContext";
 import type {
   AgentDefinition,
   AgentExecutor,
@@ -39,10 +40,11 @@ export class AgentRuntime {
   }
 
   registerAgent<Input>(definition: AgentDefinition<Input>): AgentExecutor<Input> {
-    this.agentRegistry.register(definition.id);
+    const agent = withCurrentTimeContext(definition);
+    this.agentRegistry.register(agent.id);
     return {
-      startRun: (request) => this.startRun(definition, request),
-      prepare: (input, signal) => definition.prepare(input, signal),
+      startRun: (request) => this.startRun(agent, request),
+      prepare: (input, signal) => agent.prepare(input, signal),
     };
   }
 

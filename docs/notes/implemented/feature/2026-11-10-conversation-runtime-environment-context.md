@@ -105,7 +105,7 @@ POSIX 示例：
 - `environmentContext.test.ts`：Windows/POSIX 文案、未知平台回退、环境段不出现工具名。
 - `runtime.test.ts`：Windows 忽略 `SHELL`、POSIX 返回配置 shell、`buildShellInvocation` 与 resolver 的 executable 一致。
 - `application.test.ts`：通用聊天请求包含 `# 运行环境`、`Shell：` 和 `命令语法：`，且顺序在工作区段之前；Answer 请求不包含环境段。
-- 命令：`pnpm --filter @answra/agent exec vitest run test/conversation/turn/environmentContext.test.ts test/conversation/turn/timeReminder.test.ts test/core/tool/shell/runtime.test.ts test/conversation/application.test.ts`（49 项通过）。
+- 命令：`pnpm --filter @answra/agent exec vitest run test/conversation/turn/environmentContext.test.ts test/core/context/currentTime.test.ts test/core/tool/shell/runtime.test.ts test/conversation/application.test.ts`（49 项通过）。
 - `pnpm --filter @answra/agent typecheck`、`pnpm lint` 通过。
 - 全量 `pnpm --filter @answra/agent test` 中 395 项通过；6 个既有 shell 进程树/会话用例因 PowerShell 启动和 5 秒测试超时失败，另行跟踪，不属于本次环境上下文改动。
 - 真实模型 function calling 与「Windows 下实际生成 PowerShell 命令」尚未人工验收；自动化只证明请求包含预期环境事实。

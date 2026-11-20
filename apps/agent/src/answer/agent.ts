@@ -31,6 +31,7 @@ export const screenshotAnswerAgent: AgentDefinition<ConversationSendRequest> = {
   },
   discovery: { visibleTo: { kind: "bots", agentIds: [] } },
   modelRoute: "answer",
+  currentTimeContext: false,
   async prepare(request) {
     const content = [
       ...(request.text.trim() ? [{ type: "text" as const, text: request.text }] : []),

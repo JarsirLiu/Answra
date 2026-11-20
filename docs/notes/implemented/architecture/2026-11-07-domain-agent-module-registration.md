@@ -161,7 +161,7 @@ TranscriptStore 是 Conversation 与 Interview 已经共享的实际数据能力
 | `application.ts` | `sendMessage` 校验输入并写 user transcript；调用已注册 executor，在 `onRunPrepared` 中以分配的 runId/cursor 写 assistant 占位并发布 snapshot；订阅该 run 的文本事件写回 transcript；`getSnapshot` 组合 transcript 与保存的恢复 cursor。 | 从 `ConversationRuntime.sendChat/getSnapshot` 拆分 |
 | `agent.ts` | `generalConversationAgent` 注册通用对话 system prompt、历史上下文策略、工具白名单与模型路由。 | 从 `conversation/profiles/registry.ts` 迁移 |
 | `context/messages.ts` | `buildConversationMessages` 组装对话历史；只读取 TranscriptStore，不读取 UI 状态。 | 从 `turn/modelMessages.ts` 拆分 |
-| `context/timeReminder.ts` | `buildTimeReminder` 追加对话专属时间提示。 | 从 `conversation/turn/timeReminder.ts` 迁移 |
+| `context/timeReminder.ts` | 时间提示已上移至 `core/context/currentTime.ts`，由 `core/agent/currentTimeContext.ts` 统一注入。 | 后续变更：不再由 Conversation 拥有 |
 | `context/workspaceContext.ts` | `buildWorkspaceSystemContext` 只为有工作区工具授权的定义构造系统上下文。 | 从 `conversation/turn/workspaceContext.ts` 迁移；保留当前未提交实现和测试内容 |
 | `tools/types.ts` | 对话工具 ID 与工具调用上下文类型。 | 保留并调整文件头职责 |
 | `tools/registry.ts` | `createConversationTools` 按 Agent 定义的静态白名单构造工具集。 | 从 `conversation/tools/registry.ts` 改名 |
@@ -233,7 +233,7 @@ Interview 模块拥有“识别 turn → 写用户 transcript → 启动回复 �
 | `errorSummary.ts` | provider 错误压缩。 | 已迁至 `core/model/errorSummary.ts` |
 | `modelMessages.ts` | Conversation 历史与本轮图片转换成 AI SDK messages。 | `conversation/context/messages.ts` + `core/model/imageInput.ts` |
 | `requestContent.ts` | 用户请求校验与图片 data URL 解码。 | 对话/答题各自 `request.ts` 做入口校验；通用图片解码进 `core/model/imageInput.ts` |
-| `timeReminder.ts`、`workspaceContext.ts` | 对话产品策略。 | `conversation/context/`；不进入 AgentRuntime |
+| `workspaceContext.ts` | 对话产品策略。 | `conversation/turn/`；时间上下文已改由 `core/agent` 统一注入 |
 | `runtime.ts`、`chatRuntime.ts` | ConversationStore、Answer 策略和执行器的组合。 | 删除；由 ConversationModule、AnswerModule、AgentRuntime 各自承担清晰职责 |
 
 `conversation/README.md` 的职责说明并入该目录下新的职责表；当前未提交的 `workspaceContext.ts`、对应测试和 Note 必须原样保留，实施迁移时一起移动/更新，不能覆盖或丢弃。

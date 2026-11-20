@@ -294,7 +294,7 @@ interface AgentRunHandle<Prepared> {
 
 ```text
 core/transcript/projection.ts   按 audience/author 过滤并映射角色与内容
-conversation/turn/modelMessages.ts  只保留请求构建、时间提醒等对话领域输入
+conversation/turn/modelMessages.ts  只保留请求构建等对话领域输入；时间由 core/agent 统一注入
 core/team/context.ts            提供 Bot 展示名与交接前缀渲染
 ```
 
@@ -508,7 +508,7 @@ core          ──/-> conversation / interview
   - `AgentRegistry` 保存身份/发现策略，提供 `assertTeamMembers`、`assertDiscoveryReferences`；`ConversationApplication` 启动期校验团队成员已在运行时注册。
   - `core/team/types.ts`、`core/team/directory.ts`：可见目录、交接校验、团队定义校验。
 - 投影与归属：
-  - 新增 `core/transcript/projection.ts`；`conversation/turn/modelMessages.ts` 只保留请求构建与时间提醒。
+  - 新增 `core/transcript/projection.ts`；`conversation/turn/modelMessages.ts` 只保留请求构建，时间由 `core/agent` 统一注入。
   - Answer 的 ephemeral assistant 与 Interview 的 reply assistant 都写入 `authorAgentId`。
 - Host：
   - Conversation `onSnapshot` 已接到 `conversation-snapshot`。
