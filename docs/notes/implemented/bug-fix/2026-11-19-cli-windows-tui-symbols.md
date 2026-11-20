@@ -11,7 +11,7 @@ Windows 的 `cmd.exe` / Windows Terminal 配合部分中文字体时，CLI TUI �
 - 代码/模块：`apps/cli/src/tui/chrome/theme.ts`
 - 测试：`apps/cli/test/tui/app/tui.render.test.tsx`
 - UI 表面：所有通过共享 `POINTER` 渲染聚焦状态的 TUI 列表与输入框；`ModelPicker`、`ModelSetupPanel` 等面板内仍硬编码的 `❯` / `✓` 不在本次范围
-- 相关 Note：`docs/notes/implemented/architecture/2026-11-13-cli-tui-conversation-interaction-rebuild.md`、`docs/notes/implemented/feature/2026-11-19-cli-session-list-aligned-columns.md`
+- 相关 Note：`docs/notes/implemented/architecture/2026-11-13-cli-tui-conversation-interaction-rebuild.md`、`docs/notes/implemented/feature/2026-11-19-cli-session-list-aligned-columns.md`、`docs/notes/implemented/bug-fix/2026-11-20-cli-compaction-origin-double-circle.md`
 
 ## 根因
 

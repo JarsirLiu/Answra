@@ -21,16 +21,14 @@ export function CompactionBoundaryRow({
   boundary: TuiCompactionBoundary;
   expanded: boolean;
 }) {
-  return (
-    <Box flexDirection="column" width="100%">
+  if (boundary.summary === undefined) {
+    return (
       <Box marginY={1}>
         <SelectableText dimColor>{COMPACTION_BOUNDARY_TEXT}</SelectableText>
       </Box>
-      {boundary.summary === undefined ? null : (
-        <CompactionSummary boundary={boundary} expanded={expanded} />
-      )}
-    </Box>
-  );
+    );
+  }
+  return <CompactionSummary boundary={boundary} expanded={expanded} />;
 }
 
 function CompactionSummary({
@@ -41,35 +39,44 @@ function CompactionSummary({
   expanded: boolean;
 }) {
   const hasMetadata = hasCompactionMetadata(boundary);
-  const collapsed = hasMetadata ? (
-    <Box flexDirection="column">
-      {boundary.summarizedMessages === undefined ? null : (
-        <SelectableText dimColor>
-          {compactionSummaryCountText(boundary.summarizedMessages)}
-        </SelectableText>
-      )}
-      {boundary.instructions === undefined ? null : (
-        <SelectableText dimColor>{compactionContextText(boundary.instructions)}</SelectableText>
-      )}
-      <SelectableText dimColor>{COMPACTION_SUMMARY_HINT}</SelectableText>
-    </Box>
-  ) : (
-    <SelectableText dimColor>{COMPACTION_SUMMARY_FALLBACK_HINT}</SelectableText>
-  );
+  const collapsedMetadata = hasMetadata ? (
+    <MessageResponse>
+      <Box flexDirection="column">
+        {boundary.summarizedMessages === undefined ? null : (
+          <SelectableText dimColor>
+            {compactionSummaryCountText(boundary.summarizedMessages)}
+          </SelectableText>
+        )}
+        {boundary.instructions === undefined ? null : (
+          <SelectableText dimColor>{compactionContextText(boundary.instructions)}</SelectableText>
+        )}
+        <SelectableText dimColor>{COMPACTION_SUMMARY_HINT}</SelectableText>
+      </Box>
+    </MessageResponse>
+  ) : null;
 
   return (
-    <Box flexDirection="row" marginTop={1} width="100%">
-      <Box flexShrink={0} width={2}>
-        <SelectableText color={TUI_THEME.text}>{BLACK_CIRCLE}</SelectableText>
+    <Box flexDirection="column" marginTop={1} width="100%">
+      <Box flexDirection="row">
+        <Box flexShrink={0} width={2}>
+          <SelectableText color={TUI_THEME.text}>{BLACK_CIRCLE}</SelectableText>
+        </Box>
+        <Box flexDirection="column">
+          <SelectableText bold>
+            {hasMetadata ? COMPACTION_SUMMARY_TITLE : COMPACTION_SUMMARY_FALLBACK_TITLE}
+            {!hasMetadata && !expanded ? (
+              <SelectableText dimColor> {COMPACTION_SUMMARY_FALLBACK_HINT}</SelectableText>
+            ) : null}
+          </SelectableText>
+        </Box>
       </Box>
-      <Box flexDirection="column" flexGrow={1} flexShrink={1}>
-        <SelectableText bold>
-          {hasMetadata ? COMPACTION_SUMMARY_TITLE : COMPACTION_SUMMARY_FALLBACK_TITLE}
-        </SelectableText>
+      {expanded ? (
         <MessageResponse>
-          {expanded ? <SelectableText>{boundary.summary}</SelectableText> : collapsed}
+          <SelectableText>{boundary.summary}</SelectableText>
         </MessageResponse>
-      </Box>
+      ) : (
+        collapsedMetadata
+      )}
     </Box>
   );
 }

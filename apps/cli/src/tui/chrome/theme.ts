@@ -22,6 +22,7 @@ export const TUI_THEME = {
 } as const;
 
 export const SPINNER_FRAMES = ["·", "✢", "✳", "✶", "✻", "✽", "✻", "✶", "✳", "✢"] as const;
-export const BLACK_CIRCLE = "⏺";
+/** 对齐 Claude Code：Windows 控制台缺少 U+23FA 字形，改用实心小圆点。 */
+export const BLACK_CIRCLE = process.platform === "win32" ? "●" : "⏺";
 /** Windows 控制台字体常缺 U+276F 字形，聚焦指针回退为 ASCII。 */
 export const POINTER = process.platform === "win32" ? ">" : "❯";

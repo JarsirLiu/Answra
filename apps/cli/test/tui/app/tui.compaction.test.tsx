@@ -2,7 +2,12 @@ import { render as inkRender } from "ink";
 import { describe, expect, it, vi } from "vitest";
 import { App } from "../../../src/tui/app/App";
 import { TuiViewStore } from "../../../src/tui/app/viewStore";
+import { BLACK_CIRCLE } from "../../../src/tui/chrome/theme";
 import { CursorProbeStdin, CursorProbeStdout, nextFrame, PANEL_HANDLERS } from "../tuiTestHarness";
+
+function countBlackCircles(frame: string): number {
+  return frame.split(BLACK_CIRCLE).length - 1;
+}
 
 describe("TUI compaction", () => {
   it("shows Claude-style compaction progress and leaves a compacted boundary", async () => {
@@ -198,12 +203,15 @@ describe("TUI compaction", () => {
     expect(collapsed).not.toContain("Summarized 8 messages up to this point");
     expect(collapsed).toContain("(ctrl+o to expand)");
     expect(collapsed).not.toContain("继续实现压缩");
+    expect(countBlackCircles(collapsed)).toBe(1);
 
     stdin.write("\u000f");
     await nextFrame();
     await instance.waitUntilRenderFlush();
 
-    expect(stdout.chunks.join("")).toContain("继续实现压缩");
+    const expanded = stdout.chunks.join("");
+    expect(expanded).toContain("继续实现压缩");
+    expect(countBlackCircles(expanded)).toBe(2);
     instance.unmount();
     store.dispose();
   });

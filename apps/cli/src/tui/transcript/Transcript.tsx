@@ -1,7 +1,7 @@
 /** transcript 内容投影：Claude 风格欢迎区、消息列表与 run 错误/重试行。 */
 import type { ConversationView } from "@answra/ui/conversation-view";
 import { Box, Text } from "ink";
-import { TUI_THEME } from "../chrome/theme";
+import { BLACK_CIRCLE, TUI_THEME } from "../chrome/theme";
 import type { TuiSetupStep } from "../modelSetup";
 import { MessageRow } from "./MessageRow";
 import { ModelSetupPanel } from "./ModelSetupPanel";
@@ -59,7 +59,7 @@ export function Welcome({
   return (
     <Box flexDirection="column" marginTop={1}>
       <SelectableText bold color={TUI_THEME.claude}>
-        ⏺ 欢迎使用 Answra Code！
+        {BLACK_CIRCLE} 欢迎使用 Answra Code！
       </SelectableText>
       {modelConfigured ? (
         <>
