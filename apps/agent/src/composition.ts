@@ -6,41 +6,45 @@ export {
   CODING_DISCOVERY,
   CODING_IDENTITY,
   type CodingAgentInput,
-  createCodingAgentDefinition,
-} from "./coding/agent";
+  createAgentDefinition as createCodingAgentDefinition,
+} from "./bots/coding/agent";
+export { type CodingBot, createCodingBot } from "./bots/coding/bot";
+export { CODING_POLICY, type CodingPolicy } from "./bots/coding/policy";
 export {
-  CodingApplication,
-  type CodingApplicationOptions,
-} from "./coding/application";
-export { type CodingBot, createCodingBot } from "./coding/bot";
-export { type CodingHost, type CodingHostOptions, startCodingHost } from "./coding/host";
-export { CODING_POLICY, type CodingPolicy } from "./coding/policy";
-export {
-  CONVERSATION_AGENT_ID,
   CONVERSATION_TEAM_ID,
   type ConversationAgentInput,
   type ConversationAgentOptions,
   type ConversationAgentProfile,
-  createConversationAgentDefinition,
+  createAgentDefinition as createConversationAgentDefinition,
+  GENERAL_AGENT_ID as CONVERSATION_AGENT_ID,
   GENERAL_DISCOVERY,
   GENERAL_IDENTITY,
-} from "./conversation/agent";
-export {
-  ConversationApplication,
-  type ConversationApplicationOptions,
-} from "./conversation/application";
+} from "./bots/general/agent";
 export {
   type ConversationBot,
-  type ConversationBotCatalog,
   type ConversationBotOptions,
-  createConversationBot,
-  createConversationBots,
-} from "./conversation/bots";
+  createGeneralBot as createConversationBot,
+} from "./bots/general/bot";
 export {
   CHAT_PROFILES,
   type ChatProfile,
   type ChatProfileId,
-} from "./conversation/profiles/registry";
+} from "./bots/general/profile";
+export {
+  type BotFactoryDeps,
+  createGeneralConversationBot,
+} from "./bots/registry";
+export {
+  CodingApplication,
+  type CodingApplicationOptions,
+} from "./coding/application";
+export { type CodingHost, type CodingHostOptions, startCodingHost } from "./coding/host";
+export {
+  ConversationApplication,
+  type ConversationApplicationOptions,
+} from "./conversation/application";
+export { createConversationBots } from "./conversation/bots";
+export type { ConversationBotCatalog } from "./conversation/bots/types";
 export {
   type AgentDefinition,
   type AgentExecutor,

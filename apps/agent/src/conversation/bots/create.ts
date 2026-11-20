@@ -1,3 +1,9 @@
+import {
+  type ConversationAgentInput,
+  type ConversationAgentProfile,
+  createAgentDefinition,
+} from "../../bots/general/agent";
+import { CHAT_PROFILES } from "../../bots/general/profile";
 import type {
   AgentId,
   BotDiscovery,
@@ -9,12 +15,6 @@ import type { InstructionLoader } from "../../core/instruction";
 import type { SkillCatalog } from "../../core/skill/catalog";
 import type { ToolRegistry } from "../../core/tool";
 import type { ConversationStore } from "../../core/transcript/store";
-import {
-  type ConversationAgentInput,
-  type ConversationAgentProfile,
-  createConversationAgentDefinition,
-} from "../agent";
-import { CHAT_PROFILES } from "../profiles/registry";
 import type { ConversationBot } from "./types";
 
 export interface ConversationBotOptions {
@@ -42,7 +42,7 @@ export function createConversationBot({
   profile = CHAT_PROFILES["general-chat"],
   result,
 }: ConversationBotOptions): ConversationBot {
-  const definition = createConversationAgentDefinition({
+  const definition = createAgentDefinition({
     store,
     tools,
     ...(skills ? { skills } : {}),

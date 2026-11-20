@@ -1,6 +1,7 @@
 /** CLI coding host 组合根：装配 AgentRuntime、工具、coding Bot 与单 Bot 会话用例。 */
 import type { ConversationSnapshot } from "@answra/shared";
 import type { AgentEventEnvelope } from "@answra/shared/schema";
+import { createCodingBot } from "../bots/coding/bot";
 import { AgentRuntime } from "../core/agent/runtime";
 import { createInstructionLoader } from "../core/instruction";
 import { createLazySkillCatalog } from "../core/skill/catalog";
@@ -12,7 +13,6 @@ import type { ConversationStore } from "../core/transcript/store";
 import { MemoryExecutionStore } from "../execution/memoryStore";
 import type { ExecutionStore } from "../execution/store";
 import { CodingApplication } from "./application";
-import { createCodingBot } from "./bot";
 
 export interface CodingHostOptions {
   emitEvent: (event: AgentEventEnvelope) => void;

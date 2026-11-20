@@ -2,13 +2,16 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { CODING_AGENT_ID, createCodingAgentDefinition } from "../../../src/coding/agent";
-import { CODING_POLICY } from "../../../src/coding/policy";
 import {
-  CONVERSATION_AGENT_ID,
-  createConversationAgentDefinition,
-} from "../../../src/conversation/agent";
-import { CHAT_PROFILES } from "../../../src/conversation/profiles/registry";
+  CODING_AGENT_ID,
+  createAgentDefinition as createCodingAgentDefinition,
+} from "../../../src/bots/coding/agent";
+import { CODING_POLICY } from "../../../src/bots/coding/policy";
+import {
+  GENERAL_AGENT_ID as CONVERSATION_AGENT_ID,
+  createAgentDefinition as createConversationAgentDefinition,
+} from "../../../src/bots/general/agent";
+import { CHAT_PROFILES } from "../../../src/bots/general/profile";
 import { createBuiltinToolRegistry } from "../../../src/core/tool";
 import { MemoryConversationStore } from "../../../src/core/transcript/memoryStore";
 import { createUserMessage } from "../../../src/core/transcript/message";
