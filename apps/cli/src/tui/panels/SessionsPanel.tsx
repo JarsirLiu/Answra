@@ -248,11 +248,9 @@ export function SessionsPanel({
           const rowColor = focused ? TUI_THEME.suggestion : TUI_THEME.text;
           return (
             <Box key={item.conversationId}>
-              <Text color={rowColor}>{focused ? POINTER : " "} </Text>
-              <Text bold={focused} color={rowColor}>
-                {sessionId(item).padEnd(ID_LENGTH)}{" "}
+              <Text color={rowColor}>
+                {focused ? POINTER : " "} {sessionId(item)} {sessionStamp(item)}{" "}
               </Text>
-              <Text dimColor>{sessionStamp(item)} </Text>
               <Text bold={focused} color={rowColor} wrap="truncate">
                 {truncateToWidth(sessionTitle(item), titleColumns)}
               </Text>
