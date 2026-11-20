@@ -201,7 +201,7 @@ definition.prepare()
 - `ContextPreparation` 是唯一编排入口；领域 application 只传最终 draft、`rebuild` 回调和 conversation id。
 - 压缩发生在 `beginRun` 之后；自动压缩保留当前用户回合，手动压缩只保留摘要，详见[上下文压缩只保留摘要与当前用户回合](./2026-11-17-context-compaction-user-turn-retention.md)。
 - 压缩后上下文应回到 `postCompactTarget` 附近；2026-11-17 起该值为 16k，如果摘要 + 当前回合仍超过 `inputLimit`，进入确定性裁剪。
-- 摘要输入包含用户/助手正文与截断后的工具调用/结果；`reasoning` 仍不进入摘要。工具结果上限与截断规则见[上下文压缩只保留摘要与当前用户回合](./2026-11-17-context-compaction-user-turn-retention.md)。
+- 摘要输入包含用户/助手正文与完整工具调用/结果；`reasoning` 仍不进入摘要。2026-11-20 起不再做 2k/40k 预截断，超限时逐条丢弃最旧消息，见[摘要输入从最近检查点开始且不再预截断工具内容](../simplification/2026-11-20-lossless-compaction-input.md)。
 - 摘要渲染必须补充图片处理：至少保留图片名称/描述，或把原图保留到 archive；不能像当前 `renderMessagesForSummary` 一样直接忽略。
 
 ### 7. 控制面与可观察性
@@ -238,7 +238,7 @@ definition.prepare()
 - Conversation、Coding、Interview 已接入同一条 `prepareContext` 路径。
 - 第二阶段已按 Claude Code 对照修订并落地：清理对象从“重复工具结果”改为“旧工具结果”，新增 `core/tool/toolNames.ts`、`core/context/pruning/policy.ts`、`core/context/pruning/prune.ts`；`ContextPreparation` 在压缩前和重建后各清理一次。不引入 `error-text`，不清 thinking，不持久化清理水位。
 - 第三阶段 usage 锚点已落地：`ContextState.usageAnchor` 保存成功 run **首个 step** 的 `usage.inputTokens` 与同一请求的保守估算；`ContextPreparation` 用两者比例校准下一次阈值判断。prune、compact 或 trim 改变投影后，当前请求立即改用全量估算；成功 run 重新记录锚点，失败、中断或缺少 usage 时清理已失效锚点。锚点只校准估算，不替代保守估算，不改变 256k/216k/172k/40k/132k 预算值。
-- 摘要输入已按 2026-11-17 的压缩策略扩展：`renderMessagesForSummary` 读取 `ConversationMessage.text`，并渲染截断后的工具调用输入/结果；`reasoning` 仍排除，不使用 `message.reasoning`。工具结果的单项与总量上限、保留边界见[上下文压缩只保留摘要与当前用户回合](./2026-11-17-context-compaction-user-turn-retention.md)。
+- 摘要输入已按 2026-11-17 的压缩策略扩展：`renderMessagesForSummary` 读取 `ConversationMessage.text`，并渲染完整工具调用输入/结果；`reasoning` 仍排除，不使用 `message.reasoning`。2026-11-20 起删除单项与总量预截断，超限时逐条丢弃最旧消息，见[摘要输入从最近检查点开始且不再预截断工具内容](../simplification/2026-11-20-lossless-compaction-input.md)。
 - 压缩写入已允许在活动 run 内保存 `ContextState`：此前 `MemoryConversationStore.saveContextState` 的 `activeRunId` 守卫会让真实自动压缩在 `beginRun` 之后必然失败。`prepareContext` 现在接收 run 的 `AbortSignal`，摘要生成被取消时记录 `failed`、不产生 checkpoint，原始 transcript 保持不变。
 - 存储边界保持 `ConversationStore` / `ExecutionStore` 端口：当前仍是内存 adapter，checkpoint、压缩状态和 usage 锚点都经 `ConversationStore.loadContextState/saveContextState` 保存；SQLite adapter 接入时不需要改压缩或锚点逻辑。SQLite 本身仍未实现，按 [可切换的内存与 SQLite 存储边界](../../proposed/architecture/2026-11-08-switchable-memory-sqlite-storage.md) 单独推进。
 - CLI 手动 `/compact` 现已经 `ContextPreparation.compactNow` 执行，支持一次性摘要指令、熔断绕过和 usage 刷新；`CodingApplication.compactConversation` 只做用例编排，运行中拒绝，取消通过 `AbortSignal` 记录 `failed`。CLI 在 snapshot 中回放成功摘要边界，TUI 显示 Claude 风格 Spinner/边界/失败文案，见[手动压缩的自定义摘要指令与摘要展示](../../implemented/feature/2026-11-14-manual-compaction-instructions-and-summary.md)。
@@ -322,7 +322,7 @@ definition.prepare()
 - `compactAt` 与 `inputLimit` 重合，触发点没有额外余量，安全裕量完全依赖 12k `safetyTokens`；估算误差超过该值时必须由硬兜底裁剪接管，不能继续发送。
 - 固定开销和图片估算仍可能偏差；256k 窗口的 provider 语义（总窗口还是输入窗口）必须确认，不能假设所有模型一致。
 - 当前 store 仍是进程内实现，usage 锚点重启后会丢失；这不影响本提案的输入预算，但不能宣称持久恢复。切换 SQLite 时 checkpoint、压缩状态和 usage 锚点必须随 `ConversationStore` 一起恢复。
-- 摘要输入只保留可见正文后，旧工具结果中的关键错误、路径和命令输出不会进入新 checkpoint；transcript 仍保留原文，但摘要模型可能丢失这些事实。若实际影响任务连续性，需要另立“工具事实摘要”决策，不能重新把 reasoning 或工具正文偷偷塞回摘要。
+- 摘要模型可能忽略完整工具结果中的关键错误、路径和命令输出；transcript 仍保留原文，但新 checkpoint 可能丢失这些事实。若实际影响任务连续性，需要另立“工具事实摘要”决策，不能重新把 reasoning 或工具正文偷偷塞回摘要。
 - 摘要渲染目前只保留图片文件名/media type，不保留图片内容；不补图片描述或 archive 时，压缩后模型仍无法回忆旧图片中的视觉事实。
 - 工具结果可能包含敏感内容；清理只减少模型输入，不减少 transcript 存储或审计面，存储清理仍需独立 Note。
 - 预算和清理横跨 Agent、desktop、CLI 和模型能力配置；如果各宿主各自维护默认值，会重新出现“不由用户控制”的漂移。

@@ -162,7 +162,7 @@ describe("context compaction", () => {
     expect(generate).not.toHaveBeenCalled();
   });
 
-  it("drops the oldest complete turn when the summary request overflows", async () => {
+  it("drops the oldest message when the summary request overflows", async () => {
     const generate = vi
       .fn<(input: SummaryGeneratorInput) => Promise<string>>()
       .mockRejectedValueOnce(new Error("prompt is too long: 200000 tokens > 128000 maximum"))
@@ -170,7 +170,7 @@ describe("context compaction", () => {
 
     const result = await compactContext({
       messages: [
-        message("m1", "第一轮"),
+        message("m1", "最早需求"),
         message("m2", "第一轮回复", "assistant"),
         message("m3", "第二轮"),
         message("m4", "第二轮回复", "assistant"),
@@ -185,8 +185,9 @@ describe("context compaction", () => {
 
     expect(generate).toHaveBeenCalledTimes(2);
     const retryPrompt = generate.mock.calls[1]?.[0]?.prompt ?? "";
-    expect(retryPrompt).toContain("已省略最早的 2 条消息");
-    expect(retryPrompt).not.toContain("第一轮");
+    expect(retryPrompt).toContain("已省略最早的 1 条消息");
+    expect(retryPrompt).not.toContain("最早需求");
+    expect(retryPrompt).toContain("第一轮回复");
     if (result.status !== "compacted") throw new Error("expected compaction");
     expect(result.state.checkpoints.at(-1)?.summary).toBe("截断后的摘要");
   });
@@ -234,7 +235,7 @@ describe("context compaction", () => {
     expect(result.state.checkpoints.at(-1)?.summary).toContain("[摘要因长度限制已截断]");
   });
 
-  it("stops retrying after the bounded overflow attempts", async () => {
+  it("drops messages until one remains, then fails on overflow", async () => {
     const generate = vi.fn<(input: SummaryGeneratorInput) => Promise<string>>(async () => {
       throw new Error("prompt is too long");
     });
@@ -257,7 +258,9 @@ describe("context compaction", () => {
       }),
     ).rejects.toThrow("prompt is too long");
 
-    expect(generate).toHaveBeenCalledTimes(4);
+    expect(generate).toHaveBeenCalledTimes(5);
+    const lastPrompt = generate.mock.calls.at(-1)?.[0]?.prompt ?? "";
+    expect(lastPrompt).toContain("已省略最早的 4 条消息");
   });
 
   it("fails closed when the model returns an empty summary", async () => {

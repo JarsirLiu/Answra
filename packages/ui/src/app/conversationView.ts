@@ -32,6 +32,7 @@ export {
   contextPruningLabel,
   contextUsagePercent,
   formatContextTokens,
+  isReportedContextUsage,
 } from "./contextUsage";
 
 export interface ConversationView {
@@ -90,12 +91,7 @@ export function applyConversationSnapshot(
     retryRunId: keepRetry ? view.retryRunId : undefined,
     contextCompaction: snapshot.contextCompaction,
     contextCompactionBoundaries: snapshot.contextCompactionBoundaries,
-    contextUsage:
-      snapshot.contextUsage?.source === "provider" ||
-      !view.contextUsage ||
-      view.contextUsage.source !== "provider"
-        ? snapshot.contextUsage
-        : view.contextUsage,
+    contextUsage: selectSnapshotContextUsage(view.contextUsage, snapshot.contextUsage),
     contextPruning: snapshot.contextPruning,
     // A snapshot is the server's current conversation truth. Do not carry a
     // terminal error from the previous run into a cleared or resumed view.
@@ -340,4 +336,26 @@ function formatToolValue(value: unknown): string {
   } catch {
     return "工具已返回结果";
   }
+}
+
+/**
+ * snapshot 更新 usage 的规则：provider 总是覆盖；压缩后的估算只在时间更新时覆盖旧 provider。
+ * 普通发送前的估算沿用旧值，不允许把 provider 实测回退成准备阶段估算。
+ */
+function selectSnapshotContextUsage(
+  current: ContextUsage | undefined,
+  incoming: ContextUsage | undefined,
+): ContextUsage | undefined {
+  if (incoming === undefined) return current?.source === "provider" ? current : incoming;
+  if (current === undefined) return incoming;
+  if (incoming.source === "provider") return incoming;
+  if (current.source !== "provider") return incoming;
+  if (incoming.source !== "compaction") return current;
+  return isNewerContextUsage(incoming, current) ? incoming : current;
+}
+
+function isNewerContextUsage(next: ContextUsage, current: ContextUsage): boolean {
+  const nextTime = Date.parse(next.updatedAt);
+  const currentTime = Date.parse(current.updatedAt);
+  return Number.isFinite(nextTime) && Number.isFinite(currentTime) && nextTime > currentTime;
 }

@@ -1,6 +1,10 @@
 /** `/status` 面板：展示当前会话、模型、上下文用量与 Answra 账户状态；不显示令牌。 */
 import type { ContextUsage } from "@answra/shared";
-import { contextUsagePercent, formatContextTokens } from "@answra/ui/conversation-view";
+import {
+  contextUsagePercent,
+  formatContextTokens,
+  isReportedContextUsage,
+} from "@answra/ui/conversation-view";
 import { Box, Text, useInput } from "ink";
 import { CLI_VERSION } from "../../version";
 import { PanelFrame } from "../chrome/PanelFrame";
@@ -39,7 +43,11 @@ export function StatusPanel({
         <StatusRow label="模型" value={model || "未配置"} />
         <StatusRow
           label="上下文"
-          value={contextLabel(contextUsage?.source === "provider" ? contextUsage : undefined)}
+          value={contextLabel(
+            contextUsage !== undefined && isReportedContextUsage(contextUsage)
+              ? contextUsage
+              : undefined,
+          )}
         />
         <StatusRow label="工作区" value={workspaceRoot} />
         {!authAvailable ? (
@@ -55,7 +63,7 @@ export function StatusPanel({
 function contextLabel(usage: ContextUsage | undefined): string {
   if (usage === undefined) return "尚未准备请求";
   return `${contextUsagePercent(usage)}%（${formatContextTokens(usage.usedTokens)} / ${formatContextTokens(
-    usage.inputLimit,
+    usage.contextWindow,
   )}）`;
 }
 

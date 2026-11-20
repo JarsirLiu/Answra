@@ -319,6 +319,80 @@ describe("conversation projection", () => {
     });
   });
 
+  it("accepts a newer post-compaction estimate over the previous provider usage", () => {
+    const withProvider: ConversationView = {
+      eventRevision: 2,
+      messages: [],
+      contextUsage: {
+        contextWindow: 200_000,
+        usedTokens: 212_300,
+        source: "provider",
+        inputLimit: 180_000,
+        compactAt: 180_000,
+        pruneAt: 160_000,
+        pruneTarget: 140_000,
+        updatedAt: "2026-11-20T12:00:00.000Z",
+      },
+    };
+    const snapshot = applyConversationSnapshot(withProvider, {
+      conversationId: CONVERSATION,
+      eventRevision: 3,
+      messages: [],
+      contextUsage: {
+        contextWindow: 200_000,
+        usedTokens: 50_000,
+        source: "compaction",
+        inputLimit: 180_000,
+        compactAt: 180_000,
+        pruneAt: 160_000,
+        pruneTarget: 140_000,
+        updatedAt: "2026-11-20T12:00:01.000Z",
+      },
+    });
+
+    expect(snapshot.contextUsage).toMatchObject({
+      usedTokens: 50_000,
+      source: "compaction",
+    });
+  });
+
+  it("keeps provider usage when an older compaction snapshot arrives", () => {
+    const withProvider: ConversationView = {
+      eventRevision: 3,
+      messages: [],
+      contextUsage: {
+        contextWindow: 200_000,
+        usedTokens: 45_000,
+        source: "provider",
+        inputLimit: 180_000,
+        compactAt: 180_000,
+        pruneAt: 160_000,
+        pruneTarget: 140_000,
+        updatedAt: "2026-11-20T12:00:01.000Z",
+      },
+    };
+    const snapshot = applyConversationSnapshot(withProvider, {
+      conversationId: CONVERSATION,
+      eventRevision: 4,
+      messages: [],
+      contextUsage: {
+        contextWindow: 200_000,
+        usedTokens: 50_000,
+        source: "compaction",
+        inputLimit: 180_000,
+        compactAt: 180_000,
+        pruneAt: 160_000,
+        pruneTarget: 140_000,
+        updatedAt: "2026-11-20T12:00:00.000Z",
+      },
+    });
+
+    expect(snapshot.contextUsage).toMatchObject({
+      usedTokens: 45_000,
+      source: "provider",
+    });
+  });
+
   it("initializes contextUsage from snapshot when view has none", () => {
     const snapshot = applyConversationSnapshot(EMPTY_CONVERSATION_VIEW, {
       conversationId: CONVERSATION,

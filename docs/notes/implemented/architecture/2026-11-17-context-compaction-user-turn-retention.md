@@ -19,7 +19,7 @@
   - `apps/agent/src/core/context/budget.ts`：新增 `summaryMaxTokens`，`postCompactTarget` 下调到 16k。
   - `apps/agent/src/core/context/compaction/profile.ts`：删除 `retainRecentMessages`，只保留最少摘要条数。
   - `apps/agent/src/core/context/compaction/plan.ts`：新增 `CompactionRetention`，按保留策略选择检查点边界。
-  - `apps/agent/src/core/context/compaction/transcript.ts`：摘要输入渲染工具调用/结果，带单项和总量截断。
+  - `apps/agent/src/core/context/compaction/transcript.ts`：摘要输入渲染工具调用/结果；2026-11-20 起不再做单项或总量截断。
   - `apps/agent/src/core/context/compaction/prompt.ts`：明确工具结果已进入摘要输入，新增摘要缩短提示。
   - `apps/agent/src/core/context/compaction/compact.ts`、`compactor.ts`：传入保留策略和摘要上限，执行缩短与硬截断兜底。
   - `apps/agent/src/core/context/preparation.ts`：区分手动、自动和 provider 超限恢复；压缩路径强制清理当前回合旧工具结果。
@@ -56,14 +56,9 @@ Codex 本地摘要压缩只保留真实用户消息（上限 20k token），从�
 `renderMessagesForSummary` 现在渲染：
 
 - 用户/助手正文和图片文件名；
-- 工具名、截断后的输入、状态、截断后的结果或错误原文。
+- 工具名、完整输入、状态、完整结果或错误原文。
 
-截断规则：
-
-- 工具结果最多 2,000 字符：保留开头 1,200 和结尾 800，中间标注 `[已截断]`。
-- 工具输入最多 1,000 字符：保留开头 600 和结尾 400。
-- 所有工具片段合计最多 40,000 字符，超出时从旧到新移除并标注 `[更早工具结果未进入摘要]`。
-- 思考（reasoning）仍不进入摘要输入。
+2026-11-20 起删除单项和总量截断：摘要请求超限时由 `compact.ts` 逐条丢弃最旧消息并标注 `omittedMessages`。原因和代价见[摘要输入从最近检查点开始且不再预截断工具内容](../simplification/2026-11-20-lossless-compaction-input.md)。思考（reasoning）仍不进入摘要输入。
 
 ### 3. 摘要长度上限与压缩后预算
 
@@ -78,7 +73,7 @@ Codex 本地摘要压缩只保留真实用户消息（上限 20k token），从�
 
 - 跳过普通 prune 的 `pruneAt` 和 `minPruneSaving` 门槛，因为压缩已改变投影前缀；
 - 目标为 `postCompactTarget`；
-- 只清理 `Read` / `Grep` / `RunCommand` 的文本结果，保护最近 3 个可清结果和最近 1 条模型消息；
+- 只清理 `Read` / `Grep` / `RunCommand` 的文本结果；2026-11-20 起不再保护最近结果，见[压缩路径取消“最近工具结果”保护](../simplification/2026-11-20-compaction-clears-all-tool-results.md)；
 - 清理结果合并进 `prunedToolCallIds` 水印，跨轮继续生效。
 
 普通请求前的 prune 仍保持原有触发点和最小净节省门槛。
@@ -135,7 +130,7 @@ Codex 本地摘要压缩只保留真实用户消息（上限 20k token），从�
 - `pnpm lint`：Biome 检查通过。
 - 自动化覆盖：
   - `plan.test.ts`：`"none"` 摘要全部、`"current-user-turn"` 保留当前回合、无用户消息回退、检查点边界、最少摘要条数。
-  - `transcript.test.ts`：工具调用/结果进入摘要、头尾截断、总量截断、思考排除。
+  - `transcript.test.ts`：工具调用/结果进入摘要、完整工具内容保留、思考排除。
   - `compact.test.ts`：手动摘要全部、摘要缩短、缩短失败硬截断、摘要请求超限重试。
   - `tokenEstimate.test.ts`：按 token 预算截断。
   - `preparation.test.ts`：手动/自动/恢复保留边界、压缩路径强制清理、trim、watermark 与 usage 锚点。
@@ -143,7 +138,7 @@ Codex 本地摘要压缩只保留真实用户消息（上限 20k token），从�
 
 ## 风险
 
-- 摘要质量成为唯一的历史载体；如果摘要漏掉工具结果中的关键事实，模型会重新读文件或重跑命令。缓解：摘要输入包含截断后的工具结果，提示词强制保留路径、命令、错误和验证结论。
+- 摘要质量成为唯一的历史载体；如果摘要漏掉工具结果中的关键事实，模型会重新读文件或重跑命令。缓解：摘要输入包含完整工具结果，提示词强制保留路径、命令、错误和验证结论。
 - 丢弃最近 assistant 消息会丢失精确的编辑状态，模型需要重新读取文件；这是对齐 Codex 的有意代价，换取更小的压缩后上下文。
 - 当前用户请求本身可能很大（例如粘贴大段代码），压缩无法缩小它；此时总占用会高于 16k，但仍保留请求完整性。
 - 恢复路径保留当前用户回合，可能仍包含较多工具结果；只能清理白名单旧结果，不能保证一定降到目标。
@@ -151,3 +146,9 @@ Codex 本地摘要压缩只保留真实用户消息（上限 20k token），从�
 - 中文 token 估算按逐字符计数偏保守，实际 tokenizer 可能不同；预算以估算为准。
 - 固定 system/tools 开销无法压缩；`postCompactTarget=16k` 在工具 schema 很大时可能只能达到 16k-20k。
 - 旧会话已保存的检查点不会追溯缩小；只有下一次压缩使用新规则，用户可能看到一次旧状态与新预算并存的过渡期。
+
+## 后续变更
+
+2026-11-20 起压缩路径取消“最近 3 个可清结果 / 最近 1 条模型消息”的保护，当前回合中的白名单工具结果按目标全部清理；普通请求前清理规则不变。原因、代价和重新引入条件见[压缩路径取消“最近工具结果”保护](../simplification/2026-11-20-compaction-clears-all-tool-results.md)。
+
+2026-11-20 起摘要输入从最近检查点开始，但不再对工具输入/结果做 2k/40k 预截断；摘要请求超限时逐条丢弃最旧消息。原因、代价和重新引入条件见[摘要输入从最近检查点开始且不再预截断工具内容](../simplification/2026-11-20-lossless-compaction-input.md)。

@@ -71,6 +71,19 @@ const REBUILD_BUDGET: ContextBudgetPolicy = {
   summaryMaxTokens: 500,
 };
 
+const CLEAR_TAIL_BUDGET: ContextBudgetPolicy = {
+  contextWindow: 3_000,
+  maxOutputTokens: 50,
+  safetyTokens: 100,
+  fixedOverheadTokens: 100,
+  compactionBuffer: 1_000,
+  pruneAt: 500,
+  pruneTarget: 10,
+  minPruneSaving: 400,
+  postCompactTarget: 40,
+  summaryMaxTokens: 500,
+};
+
 function message(id: string, text: string): ConversationMessage {
   return {
     id,
@@ -649,6 +662,70 @@ describe("ContextPreparation", () => {
       state: "succeeded",
       trigger: "manual",
     });
+  });
+
+  it("replaces old provider usage with the post-compaction estimate", async () => {
+    const store = await preparedStore();
+    const rebuilt = { system: "small", messages: [] };
+    const previousUsage = {
+      contextWindow: 1_050,
+      usedTokens: 212_300,
+      inputLimit: 800,
+      compactAt: 750,
+      pruneAt: 500,
+      pruneTarget: 100,
+      source: "provider" as const,
+      updatedAt: "2026-11-19T10:00:00.000Z",
+    };
+    await store.saveContextState("conversation-1", {
+      checkpoints: [],
+      usage: previousUsage,
+    });
+
+    const result = await preparation(store, { generate: async () => "压缩后的摘要" }).compactNow({
+      conversationId: "conversation-1",
+      getAccessToken: async () => "token",
+      modelRequest: { system: "small", messages: [] },
+      rebuild: async () => rebuilt,
+    });
+
+    expect(result).toEqual({
+      status: "compacted",
+      usage: expect.objectContaining({
+        usedTokens: estimateContextRequestTokens(rebuilt),
+        source: "compaction",
+      }),
+    });
+    expect((await store.loadContextState("conversation-1"))?.usage).toMatchObject({
+      usedTokens: estimateContextRequestTokens(rebuilt),
+      source: "compaction",
+    });
+  });
+
+  it("clears every clearable tool result in the compaction tail without protecting recent ones", async () => {
+    const store = await preparedStore();
+    const rebuilt = {
+      system: "",
+      messages: Array.from({ length: 6 }, (_, index) =>
+        toolResult("r".repeat(400), `call-${index}`),
+      ),
+    };
+
+    const result = await preparation(store, {
+      budget: CLEAR_TAIL_BUDGET,
+    }).compactNow({
+      conversationId: "conversation-1",
+      getAccessToken: async () => "token",
+      modelRequest: { system: "", messages: [] },
+      rebuild: async () => rebuilt,
+    });
+
+    expect(result.status).toBe("compacted");
+    const state = await store.loadContextState("conversation-1");
+    expect(state?.pruning).toMatchObject({ prunedCount: 6 });
+    expect(state?.prunedToolCallIds).toEqual(
+      Array.from({ length: 6 }, (_, index) => `call-${index}`),
+    );
   });
 
   it("does not trim to the post-compaction target when manual summary generation fails", async () => {

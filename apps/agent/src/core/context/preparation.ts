@@ -229,16 +229,17 @@ export class ContextPreparation {
           }
         : undefined;
     const previousUsage = state?.usage;
-    const usage: ContextUsage = {
-      ...estimatedUsage,
-      ...(previousUsage
-        ? {
-            usedTokens: previousUsage.usedTokens,
-            source: previousUsage.source,
-            updatedAt: previousUsage.updatedAt,
-          }
-        : {}),
-    };
+    const usage: ContextUsage =
+      compaction.status === "compacted"
+        ? { ...estimatedUsage, source: "compaction" }
+        : previousUsage
+          ? {
+              ...estimatedUsage,
+              usedTokens: previousUsage.usedTokens,
+              source: previousUsage.source,
+              updatedAt: previousUsage.updatedAt,
+            }
+          : estimatedUsage;
     await this.contextState.savePreparedStatus(conversationId, usage, pruning, prunedToolCallIds);
 
     this.contextState.stage(conversationId, {
@@ -367,21 +368,12 @@ function normalizeCompactionInstructions(value: string | undefined): string | un
   return trimmed;
 }
 
-/** 压缩路径只保护最近 3 个可清结果和当前模型消息，避免当前回合占满预算。 */
-const COMPACTION_PROTECTED_RECENT_RESULTS = 3;
-const COMPACTION_PROTECTED_RECENT_MESSAGES = 1;
-
+/** 压缩路径取消“最近结果”保护：保留尾段中的可清结果按目标清理，关键结果由摘要承载。 */
 function compactionToolResultPruning(policy: ToolResultPruningPolicy): ToolResultPruningPolicy {
   return {
     ...policy,
-    protectedRecentResults: Math.min(
-      policy.protectedRecentResults,
-      COMPACTION_PROTECTED_RECENT_RESULTS,
-    ),
-    protectedRecentMessages: Math.min(
-      policy.protectedRecentMessages,
-      COMPACTION_PROTECTED_RECENT_MESSAGES,
-    ),
+    protectedRecentResults: 0,
+    protectedRecentMessages: 0,
   };
 }
 

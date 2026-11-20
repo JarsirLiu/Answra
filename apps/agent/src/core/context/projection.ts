@@ -25,5 +25,5 @@ export function projectContextMessages({
 }
 
 function summaryMessageText(summary: string): string {
-  return `以下内容是对更早会话的摘要，作为当前对话的既有上下文：\n\n${summary}`;
+  return `以下是之前会话的摘要。基于摘要继续，不要重复已完成的工作；需要时重新读取文件或验证，不要臆测摘要未包含的细节。\n\n${summary}`;
 }

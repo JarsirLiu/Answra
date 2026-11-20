@@ -1,15 +1,5 @@
-/** 把 transcript 渲染成摘要模型可读的正文；思考不进入摘要，工具结果按预算截断。 */
+/** 把 transcript 渲染成摘要模型可读的正文；思考不进入摘要，工具内容按原样保留。 */
 import type { ConversationMessage, ConversationMessagePart } from "@answra/shared";
-
-const TOOL_RESULT_MAX_CHARS = 2_000;
-const TOOL_RESULT_HEAD_CHARS = 1_200;
-const TOOL_RESULT_TAIL_CHARS = 800;
-const TOOL_INPUT_MAX_CHARS = 1_000;
-const TOOL_INPUT_HEAD_CHARS = 600;
-const TOOL_INPUT_TAIL_CHARS = 400;
-const TOOL_SECTION_MAX_CHARS = 40_000;
-const TRUNCATED_MARKER = "[已截断]";
-const OMITTED_TOOL_RESULTS = "[更早工具结果未进入摘要]";
 
 type ToolPart = Extract<ConversationMessagePart, { kind: "tool" }>;
 
@@ -20,24 +10,18 @@ interface RenderedMessage {
 }
 
 export function renderMessagesForSummary(messages: readonly ConversationMessage[]): string {
-  const rendered = messages.map(renderMessage).filter(hasContent);
-  capToolSections(rendered);
-  return rendered
+  return messages
+    .map(renderMessage)
     .filter(hasContent)
     .map((message) => [message.heading, ...message.body, ...message.tools].join("\n"))
     .join("\n\n");
 }
 
-/** 摘要请求超限时丢弃最旧的一轮用户回合；只有一轮时返回 undefined。 */
-export function dropOldestSummaryTurn(
+/** 摘要请求超限时丢弃最旧的一条消息；只剩一条时返回 undefined。 */
+export function dropOldestSummaryMessage(
   messages: readonly ConversationMessage[],
 ): ConversationMessage[] | undefined {
-  const firstUser = messages.findIndex((message) => message.role === "user");
-  if (firstUser < 0) return messages.length > 1 ? messages.slice(1) : undefined;
-  const nextUser = messages.findIndex(
-    (message, index) => index > firstUser && message.role === "user",
-  );
-  return nextUser < 0 ? undefined : messages.slice(nextUser);
+  return messages.length <= 1 ? undefined : messages.slice(1);
 }
 
 function renderMessage(message: ConversationMessage): RenderedMessage {
@@ -67,15 +51,9 @@ function renderImage(image: { name: string; dataUrl: string }): string {
 function renderToolPart(part: ToolPart): string {
   const lines = [`[工具调用 ${part.toolName}]`];
   const input = toolInputText(part);
-  if (input)
-    lines.push(
-      `输入: ${truncateToolText(input, TOOL_INPUT_MAX_CHARS, TOOL_INPUT_HEAD_CHARS, TOOL_INPUT_TAIL_CHARS)}`,
-    );
+  if (input) lines.push(`输入: ${input}`);
   const result = toolResultText(part);
-  if (result)
-    lines.push(
-      `[工具结果] ${truncateToolText(result, TOOL_RESULT_MAX_CHARS, TOOL_RESULT_HEAD_CHARS, TOOL_RESULT_TAIL_CHARS)}`,
-    );
+  if (result) lines.push(`[工具结果] ${result}`);
   return lines.join("\n");
 }
 
@@ -106,43 +84,4 @@ function stringifyToolValue(value: unknown): string {
   } catch {
     return String(value);
   }
-}
-
-function truncateToolText(
-  text: string,
-  maxChars: number,
-  headChars: number,
-  tailChars: number,
-): string {
-  if (text.length <= maxChars) return text;
-  const marker = `\n...${TRUNCATED_MARKER}...\n`;
-  const budget = Math.max(0, maxChars - marker.length);
-  const head = Math.min(headChars, budget);
-  const tail = Math.min(tailChars, budget - head);
-  const tailText = tail > 0 ? text.slice(-tail) : "";
-  return `${text.slice(0, head)}${marker}${tailText}`;
-}
-
-function capToolSections(rendered: RenderedMessage[]): void {
-  let total = rendered.reduce(
-    (sum, message) => sum + message.tools.reduce((count, tool) => count + tool.length + 1, 0),
-    0,
-  );
-  let omitted = false;
-  for (const message of rendered) {
-    while (total > TOOL_SECTION_MAX_CHARS && message.tools.length > 0) {
-      const removed = message.tools.shift();
-      if (!removed) break;
-      total -= removed.length + 1;
-      omitted = true;
-    }
-    if (total <= TOOL_SECTION_MAX_CHARS) break;
-  }
-  if (!omitted) return;
-  const firstWithTools = rendered.find((message) => message.tools.length > 0);
-  if (firstWithTools) {
-    firstWithTools.tools.unshift(OMITTED_TOOL_RESULTS);
-    return;
-  }
-  rendered.find((message) => message.body.length > 0)?.body.unshift(OMITTED_TOOL_RESULTS);
 }

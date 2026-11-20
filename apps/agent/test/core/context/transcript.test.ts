@@ -93,19 +93,17 @@ describe("context summary transcript", () => {
     expect(transcript).toBe("");
   });
 
-  it("keeps the head and tail of an oversized tool result and marks the truncation", () => {
+  it("keeps the full oversized tool result without truncation", () => {
     const output = `${"H".repeat(1_200)}MIDDLE_MARKER${"T".repeat(800)}`;
     const transcript = renderMessagesForSummary([
       message("a1", "assistant", "", [toolPart("a1-tool", output)]),
     ]);
 
-    expect(transcript).toContain("[已截断]");
-    expect(transcript).toContain("H".repeat(100));
-    expect(transcript).toContain("T".repeat(100));
-    expect(transcript).not.toContain("MIDDLE_MARKER");
+    expect(transcript).toContain(output);
+    expect(transcript).not.toContain("[已截断]");
   });
 
-  it("drops the oldest tool sections when the total tool budget is exhausted", () => {
+  it("keeps every tool result when many messages contain large outputs", () => {
     const messages = Array.from({ length: 30 }, (_, index) =>
       message(`a${index}`, "assistant", "", [
         toolPart(`tool-${index}`, `old-${index}-${"x".repeat(2_000)}`),
@@ -114,8 +112,8 @@ describe("context summary transcript", () => {
 
     const transcript = renderMessagesForSummary(messages);
 
-    expect(transcript).toContain("[更早工具结果未进入摘要]");
-    expect(transcript).not.toContain("old-0-");
+    expect(transcript).toContain("old-0-");
     expect(transcript).toContain("old-29-");
+    expect(transcript).not.toContain("[更早工具结果未进入摘要]");
   });
 });

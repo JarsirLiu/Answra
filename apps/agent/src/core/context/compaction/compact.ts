@@ -8,9 +8,7 @@ import { estimateTextTokens, truncateTextToTokenBudget } from "../tokenEstimate"
 import { type CompactionRetention, type CompactionSkipReason, decideCompaction } from "./plan";
 import type { CompactionProfile } from "./profile";
 import { buildSummaryPrompt, buildSummaryShorteningPrompt } from "./prompt";
-import { dropOldestSummaryTurn, renderMessagesForSummary } from "./transcript";
-
-const MAX_SUMMARY_OVERFLOW_RETRIES = 3;
+import { dropOldestSummaryMessage, renderMessagesForSummary } from "./transcript";
 
 export interface SummaryGeneratorInput {
   prompt: string;
@@ -74,7 +72,6 @@ export async function compactContext({
   await onStarted?.();
   let messagesToSummarize = [...plan.messagesToSummarize];
   let omittedMessages = 0;
-  let overflowRetries = 0;
   let summary: string;
   for (;;) {
     const prompt = buildSummaryPrompt({
@@ -88,11 +85,9 @@ export async function compactContext({
       break;
     } catch (error) {
       if (!isContextOverflowError(error)) throw error;
-      if (overflowRetries >= MAX_SUMMARY_OVERFLOW_RETRIES) throw error;
-      const truncated = dropOldestSummaryTurn(messagesToSummarize);
+      const truncated = dropOldestSummaryMessage(messagesToSummarize);
       if (!truncated) throw error;
-      overflowRetries += 1;
-      omittedMessages += messagesToSummarize.length - truncated.length;
+      omittedMessages += 1;
       messagesToSummarize = truncated;
     }
   }

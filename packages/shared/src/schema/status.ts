@@ -121,7 +121,7 @@ export const contextCompactionBoundarySchema = z.strictObject({
 export const contextUsageSchema = z.strictObject({
   contextWindow: z.number().int().positive(),
   usedTokens: z.number().int().nonnegative(),
-  source: z.enum(["estimate", "provider"]).optional(),
+  source: z.enum(["estimate", "compaction", "provider"]).optional(),
   inputLimit: z.number().int().positive(),
   compactAt: z.number().int().positive(),
   pruneAt: z.number().int().nonnegative(),

@@ -48,3 +48,7 @@ CLI TUI 底部状态行只显示 `ctx 21%`。百分比丢掉了绝对量信息�
 
 - `npx vitest run test/tui/app/tui.compaction.test.tsx test/tui/chrome/statusLine.test.tsx`：2 个文件全部通过，断言 `ctx 45k/216k` 且不再出现 `21%`。
 - `npx tsc --noEmit`：exit 0。
+
+## 后续变更
+
+2026-11-20 起分母改为模型实际上下文窗口 `contextWindow`（256k），不再是 `inputLimit`（216k）；状态行与 `/status` 使用同一窗口基准。原因与取舍见[CLI 上下文用量分母改为模型上下文窗口](2026-11-20-cli-context-usage-window-denominator.md)。本 Note 的“显示具体 token 对而不是百分比”仍然有效。

@@ -7,8 +7,13 @@ export function formatContextTokens(tokens: number): string {
 }
 
 export function contextUsagePercent(usage: ContextUsage): number {
-  if (usage.inputLimit <= 0) return 0;
-  return Math.min(100, Math.round((usage.usedTokens / usage.inputLimit) * 100));
+  if (usage.contextWindow <= 0) return 0;
+  return Math.min(100, Math.round((usage.usedTokens / usage.contextWindow) * 100));
+}
+
+/** 只有 provider 实测和压缩后重建估算可作为当前展示值；普通发送前估算不展示。 */
+export function isReportedContextUsage(usage: ContextUsage): boolean {
+  return usage.source === "provider" || usage.source === "compaction";
 }
 
 export function contextPruningLabel(status: ContextPruningStatus): string {

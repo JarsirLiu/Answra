@@ -1,6 +1,6 @@
 /** 底部状态行：Bot/模型可收缩，上下文用量与阶段固定可见，工作区只占剩余列并截断中间。 */
 import type { ContextUsage } from "@answra/shared";
-import { formatContextTokens } from "@answra/ui/conversation-view";
+import { formatContextTokens, isReportedContextUsage } from "@answra/ui/conversation-view";
 import { Box, Text } from "ink";
 import type { TuiRunPhase } from "../app/viewStore";
 
@@ -26,10 +26,10 @@ export function StatusLine({
   contextUsage?: ContextUsage;
 }) {
   const context =
-    contextUsage === undefined || contextUsage.source !== "provider"
+    contextUsage === undefined || !isReportedContextUsage(contextUsage)
       ? undefined
       : `ctx ${formatContextTokens(contextUsage.usedTokens)}/${formatContextTokens(
-          contextUsage.inputLimit,
+          contextUsage.contextWindow,
         )}`;
   return (
     <Box flexDirection="row" width="100%">
