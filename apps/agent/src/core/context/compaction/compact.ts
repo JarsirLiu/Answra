@@ -1,12 +1,15 @@
 /** 通用摘要压缩用例：读取检查点、选择旧消息、调用模型并写回新检查点。 */
 import type { ConversationMessage } from "@answra/shared";
 import { isContextOverflowError } from "../../model/contextOverflow";
-import { type ContextCheckpoint, latestCheckpoint } from "../../transcript/contextCheckpoint";
+import {
+  type ContextCheckpoint,
+  cloneContextCheckpoint,
+  latestCheckpoint,
+} from "../../transcript/contextCheckpoint";
 import type { ContextState } from "../../transcript/contextState";
 import { DEFAULT_SUMMARY_MAX_TOKENS } from "../budget";
 import { estimateTextTokens, truncateTextToTokenBudget } from "../tokenEstimate";
-import { type CompactionRetention, type CompactionSkipReason, decideCompaction } from "./plan";
-import type { CompactionProfile } from "./profile";
+import { type CompactionSkipReason, decideCompaction } from "./plan";
 import { buildSummaryPrompt, buildSummaryShorteningPrompt } from "./prompt";
 import { dropOldestSummaryMessage, renderMessagesForSummary } from "./transcript";
 
@@ -22,14 +25,13 @@ export type CompactionAttempt =
       status: "compacted";
       state: ContextState;
       summarizedMessages: number;
+      retainedUserMessages: number;
     }
   | { status: "skipped"; reason: CompactionSkipReason };
 
 export async function compactContext({
   messages,
   state,
-  profile,
-  retention,
   triggerTokens,
   contextTokens,
   force = false,
@@ -42,8 +44,6 @@ export async function compactContext({
 }: {
   messages: readonly ConversationMessage[];
   state: ContextState | undefined;
-  profile: CompactionProfile;
-  retention: CompactionRetention;
   triggerTokens: number;
   contextTokens?: number;
   /** 手动压缩跳过触发点判断。 */
@@ -61,8 +61,6 @@ export async function compactContext({
   const decision = decideCompaction({
     messages,
     checkpoint: previous,
-    profile,
-    retention,
     triggerTokens,
     force,
     ...(contextTokens === undefined ? {} : { contextTokens }),
@@ -102,6 +100,7 @@ export async function compactContext({
     summary,
     previous,
     summarized: plan.messagesToSummarize,
+    retainedUserMessages: plan.retainedUserMessages,
     ...(instructions ? { instructions } : {}),
     now,
   });
@@ -114,6 +113,7 @@ export async function compactContext({
       checkpoints: [...base.checkpoints, checkpoint],
     },
     summarizedMessages: plan.messagesToSummarize.length,
+    retainedUserMessages: plan.retainedUserMessages.length,
   };
 }
 
@@ -159,22 +159,25 @@ function createCheckpoint({
   summary,
   previous,
   summarized,
+  retainedUserMessages,
   instructions,
   now,
 }: {
   summary: string;
   previous: ContextCheckpoint | undefined;
   summarized: readonly ConversationMessage[];
+  retainedUserMessages: readonly ConversationMessage[];
   instructions?: string;
   now: () => Date;
 }): ContextCheckpoint {
   const last = summarized.at(-1);
   if (!last) throw new Error("没有可摘要的消息");
-  return {
+  return cloneContextCheckpoint({
     summary,
     throughMessageId: last.id,
     createdAt: now().toISOString(),
     messageCount: (previous?.messageCount ?? 0) + summarized.length,
+    ...(retainedUserMessages.length > 0 ? { retainedUserMessages: [...retainedUserMessages] } : {}),
     ...(instructions ? { instructions } : {}),
-  };
+  });
 }

@@ -152,3 +152,5 @@ Codex 本地摘要压缩只保留真实用户消息（上限 20k token），从�
 2026-11-20 起压缩路径取消“最近 3 个可清结果 / 最近 1 条模型消息”的保护，当前回合中的白名单工具结果按目标全部清理；普通请求前清理规则不变。原因、代价和重新引入条件见[压缩路径取消“最近工具结果”保护](../simplification/2026-11-20-compaction-clears-all-tool-results.md)。
 
 2026-11-20 起摘要输入从最近检查点开始，但不再对工具输入/结果做 2k/40k 预截断；摘要请求超限时逐条丢弃最旧消息。原因、代价和重新引入条件见[摘要输入从最近检查点开始且不再预截断工具内容](../simplification/2026-11-20-lossless-compaction-input.md)。
+
+2026-11-20 起取消 `minimumMessagesToSummarize`、`lastUserMessageIndex` 和 `current-user-turn` 保留策略，改为 token 驱动的全量 pending 摘要，并从完整 transcript 保留最近用户消息。原因、代价和防回退约束见 [Codex 对齐的 token 驱动上下文压缩](./2026-11-20-codex-aligned-token-driven-compaction.md)。

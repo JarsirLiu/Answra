@@ -107,8 +107,8 @@ export async function handleCompact(args: readonly string[], deps: TuiCommandDep
       deps,
       COMPACTION_NOTICE_KEY,
       result.reason === "insufficient-messages"
-        ? "没有足够的旧消息可压缩。"
-        : "当前没有可压缩的上下文。",
+        ? "当前没有可压缩的上下文。"
+        : "当前无法压缩上下文。",
       "info",
     );
     return;

@@ -14,7 +14,6 @@ import type { AgentRuntime } from "../core/agent/runtime";
 import type { BotSummary } from "../core/bot/contracts";
 import { assertBotDiscoveryReferences, assertCanHandoff } from "../core/bot/directory";
 import { ContextCompactor } from "../core/context/compaction/compactor";
-import { DEFAULT_COMPACTION_PROFILE } from "../core/context/compaction/profile";
 import { ContextPreparation } from "../core/context/preparation";
 import { validateModelRequest } from "../core/model/requestContent";
 import { assertHandoffTask } from "../core/team/handoff";
@@ -83,7 +82,6 @@ export class ConversationApplication {
     this.onTeamError = onTeamError;
     this.contextCompactor = new ContextCompactor({
       store,
-      profile: DEFAULT_COMPACTION_PROFILE,
       generate: ({ prompt, accessToken, signal }) =>
         agentRuntime.generateText({
           prompt,

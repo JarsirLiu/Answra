@@ -5,6 +5,7 @@ import type {
   ConversationMessagePart,
   ConversationSnapshot,
 } from "@answra/shared";
+import { cloneContextCheckpoint } from "../contextCheckpoint";
 import type { ContextState } from "../contextState";
 
 export function restoreConversationSnapshot(snapshot: ConversationSnapshot): ConversationSnapshot {
@@ -22,7 +23,7 @@ export function restoreConversationSnapshot(snapshot: ConversationSnapshot): Con
 export function restoreContextState(state: ContextState): ContextState {
   return {
     ...state,
-    checkpoints: state.checkpoints.map((checkpoint) => ({ ...checkpoint })),
+    checkpoints: state.checkpoints.map(cloneContextCheckpoint),
     ...(state.compaction ? { compaction: restoreCompaction(state.compaction) } : {}),
     ...(state.usageAnchor ? { usageAnchor: { ...state.usageAnchor } } : {}),
     ...(state.usage ? { usage: { ...state.usage } } : {}),

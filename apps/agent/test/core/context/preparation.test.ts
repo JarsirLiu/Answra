@@ -1,4 +1,5 @@
 import { type ConversationMessage, MANUAL_COMPACTION_INSTRUCTIONS_MAX_CHARS } from "@answra/shared";
+import type { AgentEvent, AgentEventEnvelope } from "@answra/shared/schema";
 import type { ModelMessage } from "ai";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -9,17 +10,13 @@ import {
   ContextCompactor,
   type ContextSummaryGenerator,
 } from "../../../src/core/context/compaction/compactor";
-import type { CompactionProfile } from "../../../src/core/context/compaction/profile";
 import { ContextPreparation } from "../../../src/core/context/preparation";
 import type { ToolResultPruningPolicy } from "../../../src/core/context/pruning/policy";
 import { PRUNED_TOOL_RESULT_TEXT } from "../../../src/core/context/pruning/prune";
 import { estimateContextRequestTokens } from "../../../src/core/context/tokenEstimate";
 import { READ_TOOL_NAME } from "../../../src/core/tool/names";
+import type { ContextCheckpoint } from "../../../src/core/transcript/contextCheckpoint";
 import { MemoryConversationStore } from "../../../src/core/transcript/memoryStore";
-
-const PROFILE: CompactionProfile = {
-  minimumMessagesToSummarize: 1,
-};
 
 const SMALL_BUDGET: ContextBudgetPolicy = {
   contextWindow: 1_050,
@@ -94,6 +91,35 @@ function message(id: string, text: string): ConversationMessage {
   };
 }
 
+function checkpoint(throughMessageId: string): ContextCheckpoint {
+  return {
+    summary: "旧摘要",
+    throughMessageId,
+    createdAt: "2026-11-14T10:00:00.000Z",
+    messageCount: 2,
+  };
+}
+
+function eventEnvelope(
+  conversationId: string,
+  runId: string,
+  aggregateRevision: number,
+  event: AgentEvent,
+): AgentEventEnvelope {
+  return {
+    schemaVersion: 1,
+    eventId: `event-${aggregateRevision}`,
+    conversationId,
+    runId,
+    attemptId: `${runId}:attempt:1`,
+    sequence: aggregateRevision,
+    aggregateRevision,
+    producerId: "test",
+    occurredAt: "2026-11-14T10:00:00.000Z",
+    event,
+  };
+}
+
 async function preparedStore(): Promise<MemoryConversationStore> {
   const store = new MemoryConversationStore();
   await store.create("conversation-1");
@@ -105,7 +131,6 @@ async function preparedStore(): Promise<MemoryConversationStore> {
 function preparation(
   store: MemoryConversationStore,
   options: {
-    profile?: CompactionProfile;
     generate?: ContextSummaryGenerator;
     budget?: ContextBudgetPolicy;
     contextWindow?: () => number | undefined;
@@ -115,7 +140,6 @@ function preparation(
 ): ContextPreparation {
   const compactor = new ContextCompactor({
     store,
-    profile: options.profile ?? PROFILE,
     generate: options.generate ?? (async () => "压缩后的摘要"),
     ...(options.now ? { now: options.now } : {}),
   });
@@ -167,12 +191,91 @@ describe("ContextPreparation", () => {
     expect(rebuild).toHaveBeenCalledOnce();
     expect(result).toEqual({ system: "small", messages: [] });
     expect((await store.loadContextState("conversation-1"))?.checkpoints.at(-1)).toMatchObject({
-      throughMessageId: "m1",
+      throughMessageId: "m2",
+      retainedUserMessages: [{ id: "m1" }, { id: "m2" }],
     });
+  });
+
+  it("auto-compacts a single user turn while its tool loop is still running", async () => {
+    const store = new MemoryConversationStore();
+    await store.create("conversation-1");
+    await store.beginRun("conversation-1", "run-1", message("m1", "修复这个 bug"));
+    for (let index = 0; index < 6; index += 1) {
+      const toolCallId = `call-${index}`;
+      await store.applyAgentEvent(
+        "conversation-1",
+        eventEnvelope("conversation-1", "run-1", index * 2 + 1, {
+          type: "tool-call",
+          toolCallId,
+          toolName: READ_TOOL_NAME,
+          input: { path: `src/file-${index}.ts` },
+        }),
+      );
+      await store.applyAgentEvent(
+        "conversation-1",
+        eventEnvelope("conversation-1", "run-1", index * 2 + 2, {
+          type: "tool-result",
+          toolCallId,
+          output: `文件内容 ${index}`,
+        }),
+      );
+    }
+    const generate = vi.fn<ContextSummaryGenerator>(async ({ prompt }) => {
+      expect(prompt).toContain("文件内容 5");
+      return "工具循环摘要";
+    });
+    const rebuild = vi.fn(async () => ({ system: "small", messages: [] }));
+
+    const result = await preparation(store, { generate }).prepareRequest({
+      conversationId: "conversation-1",
+      getAccessToken: async () => "token",
+      modelRequest: { system: "x".repeat(4_000), messages: [] },
+      rebuild,
+    });
+
+    expect(result).toEqual({ system: "small", messages: [] });
+    expect(generate).toHaveBeenCalledOnce();
+    expect(rebuild).toHaveBeenCalledOnce();
+    expect((await store.loadContextState("conversation-1"))?.checkpoints.at(-1)).toMatchObject({
+      throughMessageId: "run-1",
+      retainedUserMessages: [{ id: "m1" }],
+    });
+  });
+
+  it("protects retained user messages and the summary when trimming the rebuilt request", async () => {
+    const store = await preparedStore();
+    const rebuilt = {
+      system: "",
+      messages: [
+        { role: "user" as const, content: "原始需求一" },
+        { role: "user" as const, content: "原始需求二" },
+        { role: "user" as const, content: "压缩摘要" },
+        { role: "user" as const, content: `旧尾段${"t".repeat(2_000)}` },
+        { role: "assistant" as const, content: `旧回复${"a".repeat(2_000)}` },
+        { role: "user" as const, content: "当前请求" },
+      ],
+    };
+
+    const result = await preparation(store, { budget: CLEAR_TAIL_BUDGET }).recoverRequest({
+      conversationId: "conversation-1",
+      getAccessToken: async () => "token",
+      modelRequest: { system: "", messages: [] },
+      rebuild: async () => rebuilt,
+    });
+
+    expect(result?.messages.map((message) => message.content)).toEqual([
+      "原始需求一",
+      "原始需求二",
+      "压缩摘要",
+      "当前请求",
+    ]);
   });
 
   it("trims the oldest complete turn when compaction cannot reduce the request", async () => {
     const store = await preparedStore();
+    await store.saveContextState("conversation-1", {
+      checkpoints: [checkpoint("m2")],
+    });
     const generate = vi.fn(async () => "不应调用");
     const messages: ModelMessage[] = [
       { role: "user", content: "o".repeat(400) },
@@ -181,7 +284,6 @@ describe("ContextPreparation", () => {
     ];
 
     const result = await preparation(store, {
-      profile: { minimumMessagesToSummarize: 2 },
       generate,
     }).prepareRequest({
       conversationId: "conversation-1",
@@ -198,11 +300,13 @@ describe("ContextPreparation", () => {
 
   it("fails closed when the current request alone exceeds the input limit", async () => {
     const store = await preparedStore();
+    await store.saveContextState("conversation-1", {
+      checkpoints: [checkpoint("m2")],
+    });
     const generate = vi.fn(async () => "不应调用");
 
     await expect(
       preparation(store, {
-        profile: { minimumMessagesToSummarize: 2 },
         generate,
       }).prepareRequest({
         conversationId: "conversation-1",
@@ -219,6 +323,9 @@ describe("ContextPreparation", () => {
 
   it("prunes old tool results before compaction and skips rebuild below the compaction line", async () => {
     const store = await preparedStore();
+    await store.saveContextState("conversation-1", {
+      checkpoints: [checkpoint("m2")],
+    });
     const messages = Array.from({ length: 6 }, (_, index) =>
       toolResult("r".repeat(400), `call-${index}`),
     );
@@ -861,17 +968,41 @@ describe("ContextPreparation", () => {
     });
   });
 
-  it("skips manual compaction when there are not enough messages to summarize", async () => {
+  it("compacts a single pending user message on demand", async () => {
     const store = new MemoryConversationStore();
     await store.create("conversation-1");
     await store.appendUserMessage("conversation-1", message("m1", "只有一条"));
+    const generate = vi.fn(async () => "单条摘要");
+    const rebuild = vi.fn(async () => ({ system: "small", messages: [] }));
+
+    await expect(
+      preparation(store, { generate }).compactNow({
+        conversationId: "conversation-1",
+        getAccessToken: async () => "token",
+        modelRequest: { system: "small", messages: [] },
+        rebuild,
+      }),
+    ).resolves.toEqual({ status: "compacted", usage: expect.any(Object) });
+
+    expect(generate).toHaveBeenCalledOnce();
+    expect(rebuild).toHaveBeenCalledOnce();
+    expect((await store.loadContextState("conversation-1"))?.checkpoints.at(-1)).toMatchObject({
+      throughMessageId: "m1",
+      retainedUserMessages: [{ id: "m1" }],
+    });
+  });
+
+  it("skips manual compaction when the checkpoint already covers the transcript", async () => {
+    const store = new MemoryConversationStore();
+    await store.create("conversation-1");
+    await store.appendUserMessage("conversation-1", message("m1", "已压缩"));
+    await store.saveContextState("conversation-1", {
+      checkpoints: [checkpoint("m1")],
+    });
     const generate = vi.fn(async () => "不应调用");
 
     await expect(
-      preparation(store, {
-        profile: { minimumMessagesToSummarize: 2 },
-        generate,
-      }).compactNow({
+      preparation(store, { generate }).compactNow({
         conversationId: "conversation-1",
         getAccessToken: async () => "token",
         modelRequest: { system: "small", messages: [] },
@@ -882,7 +1013,6 @@ describe("ContextPreparation", () => {
     ).resolves.toEqual({ status: "skipped", reason: "insufficient-messages" });
 
     expect(generate).not.toHaveBeenCalled();
-    expect((await store.loadContextState("conversation-1"))?.compaction).toBeUndefined();
   });
 
   it("bypasses the automatic failure breaker without counting a manual failure", async () => {

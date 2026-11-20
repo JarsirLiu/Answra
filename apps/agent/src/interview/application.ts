@@ -5,7 +5,6 @@ import type { AgentEventEnvelope, AgentRunSnapshot } from "@answra/shared/schema
 import type { AgentExecutor, AgentId } from "../core/agent/definition";
 import type { AgentRuntime } from "../core/agent/runtime";
 import { ContextCompactor } from "../core/context/compaction/compactor";
-import { DEFAULT_COMPACTION_PROFILE } from "../core/context/compaction/profile";
 import { ContextPreparation } from "../core/context/preparation";
 import { createUserMessage } from "../core/transcript/message";
 import type { ConversationStore } from "../core/transcript/store";
@@ -47,7 +46,6 @@ export class InterviewApplication {
     this.onSnapshot = options.onSnapshot;
     this.contextCompactor = new ContextCompactor({
       store: options.store,
-      profile: DEFAULT_COMPACTION_PROFILE,
       generate: ({ prompt, accessToken, signal }) =>
         options.agentRuntime.generateText({
           prompt,

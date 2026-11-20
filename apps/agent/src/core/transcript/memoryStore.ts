@@ -6,6 +6,7 @@ import type {
 } from "@answra/shared";
 import type { AgentEventEnvelope, AgentStreamEvent, RunOutcome } from "@answra/shared/schema";
 import { compactionBoundaries } from "./contextBoundary";
+import { cloneContextCheckpoint } from "./contextCheckpoint";
 import type { ContextState } from "./contextState";
 import type {
   ConversationSessionMetadata,
@@ -517,7 +518,7 @@ function snapshotOf(session: Session): ConversationSnapshot {
 
 function cloneContextState(state: ContextState): ContextState {
   return {
-    checkpoints: state.checkpoints.map((checkpoint) => ({ ...checkpoint })),
+    checkpoints: state.checkpoints.map(cloneContextCheckpoint),
     ...(state.compaction ? { compaction: { ...state.compaction } } : {}),
     ...(state.usageAnchor ? { usageAnchor: { ...state.usageAnchor } } : {}),
     ...(state.usage ? { usage: { ...state.usage } } : {}),

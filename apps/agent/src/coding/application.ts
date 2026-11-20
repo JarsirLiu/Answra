@@ -15,7 +15,6 @@ import {
 import type { AgentRunHandle } from "../core/agent/definition";
 import type { AgentRuntime } from "../core/agent/runtime";
 import { ContextCompactor } from "../core/context/compaction/compactor";
-import { DEFAULT_COMPACTION_PROFILE } from "../core/context/compaction/profile";
 import { ContextPreparation } from "../core/context/preparation";
 import { validateModelRequest } from "../core/model/requestContent";
 import { createUserMessage } from "../core/transcript/message";
@@ -56,7 +55,6 @@ export class CodingApplication {
     this.onSnapshot = onSnapshot;
     this.contextCompactor = new ContextCompactor({
       store,
-      profile: DEFAULT_COMPACTION_PROFILE,
       generate: ({ prompt, accessToken, signal }) =>
         agentRuntime.generateText({
           prompt,

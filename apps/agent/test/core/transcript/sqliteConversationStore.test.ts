@@ -117,6 +117,54 @@ describe("SQLite conversation store", () => {
     });
   });
 
+  it("round-trips retained user messages in the latest checkpoint", async () => {
+    const root = await createRoot();
+    const store = storeFor(root);
+    await store.create("coding-retained", undefined, { scope: "coding" });
+    await store.appendUserMessage("coding-retained", {
+      id: "user-1",
+      role: "user",
+      text: "保留原始任务",
+      images: [],
+      status: "complete",
+    });
+    await store.saveContextState("coding-retained", {
+      checkpoints: [
+        {
+          summary: "旧摘要",
+          throughMessageId: "user-1",
+          createdAt: "2026-11-20T10:00:00.000Z",
+          messageCount: 1,
+          retainedUserMessages: [
+            {
+              id: "user-1",
+              role: "user",
+              text: "保留原始任务",
+              images: [],
+              status: "complete",
+            },
+          ],
+        },
+      ],
+    });
+
+    const reloaded = storeFor(root);
+    await reloaded.load("coding-retained");
+
+    expect(
+      (await reloaded.loadContextState("coding-retained"))?.checkpoints.at(-1)
+        ?.retainedUserMessages,
+    ).toEqual([
+      {
+        id: "user-1",
+        role: "user",
+        text: "保留原始任务",
+        images: [],
+        status: "complete",
+      },
+    ]);
+  });
+
   it("lists a corrupt state row without parsing and fails only when opened", async () => {
     const root = await createRoot();
     const store = storeFor(root);

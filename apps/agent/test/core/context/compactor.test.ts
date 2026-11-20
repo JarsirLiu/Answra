@@ -1,12 +1,7 @@
 import type { ConversationMessage, ConversationSnapshot } from "@answra/shared";
 import { describe, expect, it, vi } from "vitest";
 import { ContextCompactor } from "../../../src/core/context/compaction/compactor";
-import type { CompactionProfile } from "../../../src/core/context/compaction/profile";
 import { MemoryConversationStore } from "../../../src/core/transcript/memoryStore";
-
-const PROFILE: CompactionProfile = {
-  minimumMessagesToSummarize: 1,
-};
 
 const TRIGGER_TOKENS = 750;
 
@@ -42,7 +37,6 @@ describe("ContextCompactor", () => {
     const snapshots: ConversationSnapshot[] = [];
     const compactor = new ContextCompactor({
       store,
-      profile: PROFILE,
       generate: async () => "压缩后的摘要",
       onSnapshot: (snapshot) => {
         snapshots.push(snapshot);
@@ -57,7 +51,11 @@ describe("ContextCompactor", () => {
       contextTokens: TRIGGER_TOKENS,
     });
 
-    expect(compacted.status).toBe("compacted");
+    expect(compacted).toMatchObject({
+      status: "compacted",
+      summarizedMessages: 2,
+      retainedUserMessages: 2,
+    });
     expect(snapshots.map((snapshot) => snapshot.contextCompaction?.state)).toEqual([
       "started",
       "succeeded",
@@ -65,7 +63,7 @@ describe("ContextCompactor", () => {
     expect((await store.load("conversation-1")).contextCompaction).toMatchObject({
       state: "succeeded",
       trigger: "auto",
-      summarizedMessages: 1,
+      summarizedMessages: 2,
       finishedAt: "2026-11-13T10:00:00.000Z",
     });
     expect((await store.loadContextState("conversation-1"))?.usageAnchor).toBeUndefined();
@@ -76,7 +74,6 @@ describe("ContextCompactor", () => {
     await store.beginRun("conversation-1", "run-1", message("m3", "当前请求"));
     const compactor = new ContextCompactor({
       store,
-      profile: PROFILE,
       generate: async () => "压缩后的摘要",
     });
 
@@ -91,7 +88,8 @@ describe("ContextCompactor", () => {
     expect((await store.load("conversation-1")).activeRunId).toBe("run-1");
     expect((await store.loadContextState("conversation-1"))?.checkpoints.at(-1)).toMatchObject({
       summary: "压缩后的摘要",
-      throughMessageId: "m2",
+      throughMessageId: "run-1",
+      retainedUserMessages: [{ id: "m1" }, { id: "m2" }, { id: "m3" }],
     });
   });
 
@@ -101,7 +99,6 @@ describe("ContextCompactor", () => {
     const messagesBefore = (await store.load("conversation-1")).messages;
     const compactor = new ContextCompactor({
       store,
-      profile: PROFILE,
       generate: async ({ signal }) => {
         expect(signal).toBe(controller.signal);
         controller.abort();
@@ -130,7 +127,6 @@ describe("ContextCompactor", () => {
     const snapshots: ConversationSnapshot[] = [];
     const compactor = new ContextCompactor({
       store,
-      profile: PROFILE,
       generate: async () => {
         throw new Error("摘要模型不可用");
       },
@@ -164,7 +160,6 @@ describe("ContextCompactor", () => {
     });
     const compactor = new ContextCompactor({
       store,
-      profile: PROFILE,
       generate,
       now: () => new Date("2026-11-14T10:00:00.000Z"),
     });
@@ -206,7 +201,7 @@ describe("ContextCompactor", () => {
       .mockRejectedValueOnce(new Error("失败一"))
       .mockRejectedValueOnce(new Error("失败二"))
       .mockResolvedValueOnce("成功摘要");
-    const compactor = new ContextCompactor({ store, profile: PROFILE, generate });
+    const compactor = new ContextCompactor({ store, generate });
     const prepare = () =>
       compactor.prepare({
         conversationId: "conversation-1",
@@ -230,7 +225,6 @@ describe("ContextCompactor", () => {
     const generate = vi.fn(async () => "不应调用");
     const compactor = new ContextCompactor({
       store,
-      profile: PROFILE,
       generate,
     });
 

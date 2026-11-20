@@ -4,12 +4,7 @@ import {
   compactContext,
   type SummaryGeneratorInput,
 } from "../../../src/core/context/compaction/compact";
-import type { CompactionProfile } from "../../../src/core/context/compaction/profile";
 import { CONTEXT_SUMMARY_PROMPT } from "../../../src/core/context/compaction/prompt";
-
-const PROFILE: CompactionProfile = {
-  minimumMessagesToSummarize: 1,
-};
 
 const TRIGGER_TOKENS = 1;
 
@@ -21,17 +16,40 @@ function message(
   return { id, role, text, images: [], status: "complete" };
 }
 
+function toolMessage(id: string, toolName: string, output: string): ConversationMessage {
+  return {
+    id,
+    role: "assistant",
+    text: "",
+    images: [],
+    status: "complete",
+    parts: [
+      {
+        id: `${id}-part`,
+        kind: "tool",
+        toolCallId: `${id}-call`,
+        toolName,
+        state: "completed",
+        input: { path: "src/example.ts" },
+        output,
+      },
+    ],
+  };
+}
+
 describe("context compaction", () => {
-  it("uses the single universal prompt and records the summarized boundary", async () => {
+  it("summarizes the whole pending interval and records retained user messages", async () => {
     const generate = vi.fn<(input: SummaryGeneratorInput) => Promise<string>>(
       async () => "## 当前目标\n继续实现压缩",
     );
 
     const result = await compactContext({
-      messages: [message("m1", "旧需求"), message("m2", "保留需求")],
+      messages: [
+        message("m1", "旧需求"),
+        message("m2", "旧回答", "assistant"),
+        message("m3", "保留需求"),
+      ],
       state: undefined,
-      profile: PROFILE,
-      retention: "current-user-turn",
       triggerTokens: TRIGGER_TOKENS,
       generate,
       now: () => new Date("2026-11-13T10:00:00.000Z"),
@@ -41,45 +59,40 @@ describe("context compaction", () => {
     const prompt = generate.mock.calls[0]?.[0]?.prompt ?? "";
     expect(prompt).toContain(CONTEXT_SUMMARY_PROMPT);
     expect(prompt).toContain("旧需求");
-    expect(prompt).not.toContain("保留需求");
-    expect(result.status).toBe("compacted");
+    expect(prompt).toContain("旧回答");
+    expect(prompt).toContain("保留需求");
     if (result.status !== "compacted") throw new Error("expected compaction");
-    expect(result.summarizedMessages).toBe(1);
-    expect(result.state).toEqual({
-      checkpoints: [
-        {
-          summary: "## 当前目标\n继续实现压缩",
-          throughMessageId: "m1",
-          createdAt: "2026-11-13T10:00:00.000Z",
-          messageCount: 1,
-        },
-      ],
+    expect(result.summarizedMessages).toBe(3);
+    expect(result.retainedUserMessages).toBe(2);
+    expect(result.state.checkpoints.at(-1)).toMatchObject({
+      summary: "## 当前目标\n继续实现压缩",
+      throughMessageId: "m3",
+      createdAt: "2026-11-13T10:00:00.000Z",
+      messageCount: 3,
+      retainedUserMessages: [{ id: "m1" }, { id: "m3" }],
     });
   });
 
-  it("summarizes the whole tail for manual compaction", async () => {
+  it("includes assistant tool calls and tool results in the summary input", async () => {
     const generate = vi.fn<(input: SummaryGeneratorInput) => Promise<string>>(
-      async () => "手动压缩摘要",
+      async () => "工具摘要",
     );
 
-    const result = await compactContext({
+    await compactContext({
       messages: [
-        message("m1", "旧需求"),
-        message("m2", "旧回答", "assistant"),
-        message("m3", "最后需求"),
+        message("m1", "读取文件"),
+        toolMessage("m2", "read", "文件正文"),
+        message("m3", "继续修改"),
       ],
       state: undefined,
-      profile: PROFILE,
-      retention: "none",
       triggerTokens: TRIGGER_TOKENS,
       generate,
     });
 
     const prompt = generate.mock.calls[0]?.[0]?.prompt ?? "";
-    expect(prompt).toContain("最后需求");
-    if (result.status !== "compacted") throw new Error("expected compaction");
-    expect(result.summarizedMessages).toBe(3);
-    expect(result.state.checkpoints.at(-1)?.throughMessageId).toBe("m3");
+    expect(prompt).toContain("[工具调用 read]");
+    expect(prompt).toContain("src/example.ts");
+    expect(prompt).toContain("文件正文");
   });
 
   it("appends one-shot manual instructions without replacing the base prompt", async () => {
@@ -90,8 +103,6 @@ describe("context compaction", () => {
     const result = await compactContext({
       messages: [message("m1", "旧需求"), message("m2", "保留需求")],
       state: undefined,
-      profile: PROFILE,
-      retention: "current-user-turn",
       triggerTokens: TRIGGER_TOKENS,
       instructions: "重点保留数据库迁移决定",
       generate,
@@ -116,7 +127,8 @@ describe("context compaction", () => {
         message("m1", "已压缩一"),
         message("m2", "已压缩二"),
         message("m3", "新消息"),
-        message("m4", "保留消息"),
+        message("m4", "新回复", "assistant"),
+        message("m5", "保留消息"),
       ],
       state: {
         checkpoints: [
@@ -128,8 +140,6 @@ describe("context compaction", () => {
           },
         ],
       },
-      profile: PROFILE,
-      retention: "current-user-turn",
       triggerTokens: TRIGGER_TOKENS,
       generate,
     });
@@ -140,11 +150,14 @@ describe("context compaction", () => {
     expect(prompt).not.toContain("已压缩一");
     if (result.status !== "compacted") throw new Error("expected compaction");
     expect(result.state.checkpoints).toHaveLength(2);
-    expect(result.state.checkpoints.at(-1)?.throughMessageId).toBe("m3");
-    expect(result.state.checkpoints.at(-1)?.messageCount).toBe(3);
+    expect(result.state.checkpoints.at(-1)).toMatchObject({
+      throughMessageId: "m5",
+      messageCount: 5,
+      retainedUserMessages: [{ id: "m1" }, { id: "m2" }, { id: "m3" }, { id: "m5" }],
+    });
   });
 
-  it("returns a skip reason without calling the model when no compaction is needed", async () => {
+  it("returns below-threshold without calling the model when no compaction is needed", async () => {
     const generate = vi.fn<(input: SummaryGeneratorInput) => Promise<string>>(
       async () => "不应调用",
     );
@@ -152,13 +165,37 @@ describe("context compaction", () => {
     const result = await compactContext({
       messages: [message("m1", "短消息")],
       state: undefined,
-      profile: PROFILE,
-      retention: "current-user-turn",
       triggerTokens: 100,
       generate,
     });
 
     expect(result).toEqual({ status: "skipped", reason: "below-threshold" });
+    expect(generate).not.toHaveBeenCalled();
+  });
+
+  it("returns insufficient-messages when the checkpoint already covers the transcript", async () => {
+    const generate = vi.fn<(input: SummaryGeneratorInput) => Promise<string>>(
+      async () => "不应调用",
+    );
+
+    const result = await compactContext({
+      messages: [message("m1", "已压缩")],
+      state: {
+        checkpoints: [
+          {
+            summary: "旧摘要",
+            throughMessageId: "m1",
+            createdAt: "2026-11-12T00:00:00.000Z",
+            messageCount: 1,
+          },
+        ],
+      },
+      triggerTokens: TRIGGER_TOKENS,
+      force: true,
+      generate,
+    });
+
+    expect(result).toEqual({ status: "skipped", reason: "insufficient-messages" });
     expect(generate).not.toHaveBeenCalled();
   });
 
@@ -177,8 +214,6 @@ describe("context compaction", () => {
         message("m5", "保留消息"),
       ],
       state: undefined,
-      profile: PROFILE,
-      retention: "current-user-turn",
       triggerTokens: TRIGGER_TOKENS,
       generate,
     });
@@ -201,8 +236,6 @@ describe("context compaction", () => {
     const result = await compactContext({
       messages: [message("m1", "旧需求"), message("m2", "保留需求")],
       state: undefined,
-      profile: PROFILE,
-      retention: "current-user-turn",
       triggerTokens: TRIGGER_TOKENS,
       summaryMaxTokens: 50,
       generate,
@@ -224,8 +257,6 @@ describe("context compaction", () => {
     const result = await compactContext({
       messages: [message("m1", "旧需求"), message("m2", "保留需求")],
       state: undefined,
-      profile: PROFILE,
-      retention: "current-user-turn",
       triggerTokens: TRIGGER_TOKENS,
       summaryMaxTokens: 50,
       generate,
@@ -251,16 +282,14 @@ describe("context compaction", () => {
           message("m6", "六"),
         ],
         state: undefined,
-        profile: PROFILE,
-        retention: "current-user-turn",
         triggerTokens: TRIGGER_TOKENS,
         generate,
       }),
     ).rejects.toThrow("prompt is too long");
 
-    expect(generate).toHaveBeenCalledTimes(5);
+    expect(generate).toHaveBeenCalledTimes(6);
     const lastPrompt = generate.mock.calls.at(-1)?.[0]?.prompt ?? "";
-    expect(lastPrompt).toContain("已省略最早的 4 条消息");
+    expect(lastPrompt).toContain("已省略最早的 5 条消息");
   });
 
   it("fails closed when the model returns an empty summary", async () => {
@@ -268,8 +297,6 @@ describe("context compaction", () => {
       compactContext({
         messages: [message("m1", "旧需求"), message("m2", "保留需求")],
         state: undefined,
-        profile: PROFILE,
-        retention: "current-user-turn",
         triggerTokens: TRIGGER_TOKENS,
         generate: async () => "   ",
       }),

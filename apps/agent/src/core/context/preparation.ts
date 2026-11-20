@@ -16,7 +16,6 @@ import {
   resolveContextBudget,
 } from "./budget";
 import type { ContextCompactor } from "./compaction/compactor";
-import type { CompactionRetention } from "./compaction/plan";
 import {
   assertToolResultPruningPolicy,
   DEFAULT_TOOL_RESULT_PRUNING_POLICY,
@@ -148,7 +147,6 @@ export class ContextPreparation {
       });
     }
     let projectionChanged = initial.changed;
-    const retention: CompactionRetention = trigger === "manual" ? "none" : "current-user-turn";
 
     const compaction = await this.compactor.prepare({
       conversationId,
@@ -156,7 +154,6 @@ export class ContextPreparation {
       triggerTokens: budget.compactAt,
       contextTokens: initial.tokens,
       summaryMaxTokens: budget.summaryMaxTokens,
-      retention,
       ...(signal === undefined ? {} : { signal }),
       ...(trigger === undefined ? {} : { trigger }),
       ...(forceCompact ? { force: true } : {}),
@@ -197,7 +194,8 @@ export class ContextPreparation {
       projectionChanged = projectionChanged || rebuiltPruned.changed;
       final = trimContextRequest(rebuiltPruned.request, budget, {
         targetTokens: budget.postCompactTarget,
-        preserveLeadingMessages: 1,
+        // 投影顺序是“保留用户消息 + 摘要 + 尾段”，两者都必须留在受保护前缀里。
+        preserveLeadingMessages: compaction.retainedUserMessages + 1,
       });
       projectionChanged = projectionChanged || final !== rebuiltPruned.request;
       finalPruning = {

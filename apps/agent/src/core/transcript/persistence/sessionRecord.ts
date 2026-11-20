@@ -9,16 +9,23 @@ import {
   conversationSnapshotSchema,
 } from "@answra/shared/schema";
 import { z } from "zod";
+import { cloneContextCheckpoint } from "../contextCheckpoint";
 import type { ContextState } from "../contextState";
 import type { ConversationSessionRecord } from "../memoryStore";
 import type { ConversationSessionMetadata } from "../store";
 import { restoreContextState, restoreConversationSnapshot } from "./restore";
+
+const retainedUserMessageSchema = conversationMessageSchema.refine(
+  (message) => message.role === "user",
+  { message: "压缩保留消息必须是用户消息" },
+);
 
 const checkpointSchema = z.strictObject({
   summary: z.string(),
   throughMessageId: z.string(),
   createdAt: z.string().datetime(),
   messageCount: z.number().int().nonnegative(),
+  retainedUserMessages: z.array(retainedUserMessageSchema).optional(),
   instructions: z.string().optional(),
 });
 
@@ -222,7 +229,7 @@ function toPersistedContextState(
   const { prunedToolCallIds, ...rest } = state;
   return {
     ...rest,
-    checkpoints: rest.checkpoints.map((checkpoint) => ({ ...checkpoint })),
+    checkpoints: rest.checkpoints.map(cloneContextCheckpoint),
     ...(prunedToolCallIds ? { prunedToolCallIds: [...prunedToolCallIds] } : {}),
   };
 }

@@ -9,8 +9,7 @@ import {
   markContextCompactionSucceeded,
   startContextCompaction,
 } from "./lifecycle";
-import type { CompactionRetention, CompactionSkipReason } from "./plan";
-import type { CompactionProfile } from "./profile";
+import type { CompactionSkipReason } from "./plan";
 
 export interface ContextSummaryRequest extends SummaryGeneratorInput {
   accessToken: string;
@@ -20,7 +19,6 @@ export type ContextSummaryGenerator = (input: ContextSummaryRequest) => Promise<
 
 export interface ContextCompactorOptions {
   store: ConversationStore;
-  profile: CompactionProfile;
   generate: ContextSummaryGenerator;
   onSnapshot?: (snapshot: ConversationSnapshot) => void | Promise<void>;
   now?: () => Date;
@@ -30,7 +28,7 @@ const COMPACTION_FAILURE_LIMIT = 3;
 const COMPACTION_RETRY_COOLDOWN_MS = 5 * 60_000;
 
 export type ContextCompactionOutcome =
-  | { status: "compacted"; summarizedMessages: number }
+  | { status: "compacted"; summarizedMessages: number; retainedUserMessages: number }
   | { status: "skipped"; reason: CompactionSkipReason | "breaker-open" }
   | { status: "failed"; errorText: string }
   | { status: "aborted" };
@@ -44,11 +42,9 @@ export interface ContextCompactionRequest {
   triggerTokens: number;
   /** 最终模型请求的保守 token 估算；缺省时退回 transcript 估算。 */
   contextTokens?: number;
-  /** 压缩后保留的原始消息范围；手动压缩可只留摘要。 */
-  retention?: CompactionRetention;
   /** 摘要输出上限；缺省使用 256k 窗口的基准值。 */
   summaryMaxTokens?: number;
-  /** 手动压缩跳过触发点判断，但仍保留最少消息数与保留尾段约束。 */
+  /** 手动压缩跳过触发点判断；只要 checkpoint 之后仍有消息就允许压缩。 */
   force?: boolean;
   /** 手动压缩的一次性摘要偏好；自动与超限兜底不传。 */
   instructions?: string;
@@ -58,20 +54,12 @@ export interface ContextCompactionRequest {
 
 export class ContextCompactor {
   private readonly store: ConversationStore;
-  private readonly profile: CompactionProfile;
   private readonly generate: ContextSummaryGenerator;
   private readonly onSnapshot?: ContextCompactorOptions["onSnapshot"];
   private readonly now: () => Date;
 
-  constructor({
-    store,
-    profile,
-    generate,
-    onSnapshot,
-    now = () => new Date(),
-  }: ContextCompactorOptions) {
+  constructor({ store, generate, onSnapshot, now = () => new Date() }: ContextCompactorOptions) {
     this.store = store;
-    this.profile = profile;
     this.generate = generate;
     this.onSnapshot = onSnapshot;
     this.now = now;
@@ -85,7 +73,6 @@ export class ContextCompactor {
     trigger = "auto",
     triggerTokens,
     contextTokens,
-    retention = "current-user-turn",
     summaryMaxTokens,
     force,
     instructions,
@@ -100,8 +87,6 @@ export class ContextCompactor {
       const result = await compactContext({
         messages: snapshot.messages,
         state,
-        profile: this.profile,
-        retention,
         triggerTokens,
         force: force === true,
         ...(contextTokens === undefined ? {} : { contextTokens }),
@@ -138,7 +123,11 @@ export class ContextCompactor {
         ...successState,
         compaction: markContextCompactionSucceeded(status, result.summarizedMessages, this.now),
       });
-      return { status: "compacted", summarizedMessages: result.summarizedMessages };
+      return {
+        status: "compacted",
+        summarizedMessages: result.summarizedMessages,
+        retainedUserMessages: result.retainedUserMessages,
+      };
     } catch (error) {
       if (isAbortError(error)) {
         await this.recordAborted(conversationId, state);
