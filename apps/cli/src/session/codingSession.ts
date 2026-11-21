@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type {
   ConversationModelConfig,
   ConversationSendRequest,
+  ConversationSendResult,
   ConversationSessionPage,
   ConversationSessionSummary,
   ConversationSnapshot,
@@ -42,6 +43,15 @@ export interface CodingSessionHost {
     request: ConversationSendRequest,
     accessToken: string,
   ): Promise<{ runId: string }>;
+  enqueue(
+    conversationId: string,
+    request: ConversationSendRequest,
+    accessToken: string,
+  ): Promise<ConversationSendResult>;
+  waitForQueueStart(
+    conversationId: string,
+    queueId: string,
+  ): Promise<{ queueId: string; runId: string; snapshot: ConversationSnapshot }>;
   cancel(runId: string): void;
   waitForRun(runId: string): Promise<void>;
   dispose(): void;
@@ -231,6 +241,30 @@ export class CodingSession {
     }
   }
 
+  /**
+   * 交给 host 队列接受一条用户消息。已有活动 run 时 host 返回 queued，
+   * 消息会在当前 step 结束后自动开始；不等待 run 开始。
+   */
+  async enqueue(
+    text: string,
+    images: readonly ImageAttachment[] = [],
+  ): Promise<ConversationSendResult> {
+    if (this.closed) throw new Error("会话已关闭。");
+    if (!this.opened) throw new Error("会话尚未打开。");
+    const request = { text, images: [...images] };
+    const accepted = await this.host.enqueue(this.conversationId, request, this.accessToken);
+    if (accepted.status === "started") this.activeRunId = accepted.runId;
+    return accepted;
+  }
+
+  async waitForQueueStart(
+    queueId: string,
+  ): Promise<{ queueId: string; runId: string; snapshot: ConversationSnapshot }> {
+    const started = await this.host.waitForQueueStart(this.conversationId, queueId);
+    this.activeRunId = started.runId;
+    return started;
+  }
+
   async wait(runId: string): Promise<void> {
     try {
       await this.host.waitForRun(runId);
@@ -242,8 +276,13 @@ export class CodingSession {
   cancel(): boolean {
     const runId = this.activeRunId;
     if (runId === undefined) return false;
-    this.host.cancel(runId);
+    this.cancelRun(runId);
     return true;
+  }
+
+  cancelRun(runId: string): void {
+    this.host.cancel(runId);
+    if (this.activeRunId === runId) this.activeRunId = undefined;
   }
 
   close(): void {

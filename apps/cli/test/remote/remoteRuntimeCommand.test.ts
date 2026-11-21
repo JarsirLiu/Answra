@@ -84,6 +84,26 @@ function createDependencies(
       messages: [],
     })),
     send: vi.fn(async () => ({ runId: "run-1" })),
+    enqueue: vi.fn(async (conversationId) => ({
+      queueId: "queue-1",
+      status: "started" as const,
+      position: 0 as const,
+      runId: "run-1",
+      snapshot: {
+        conversationId,
+        eventRevision: 0,
+        messages: [],
+      },
+    })),
+    waitForQueueStart: vi.fn(async (conversationId, queueId) => ({
+      queueId,
+      runId: "run-1",
+      snapshot: {
+        conversationId,
+        eventRevision: 0,
+        messages: [],
+      },
+    })),
     cancel: vi.fn(),
     waitForRun: vi.fn(async () => {}),
     dispose: vi.fn(),

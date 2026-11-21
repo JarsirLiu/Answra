@@ -16,6 +16,8 @@ import { assertBotDiscoveryReferences, assertCanHandoff } from "../core/bot/dire
 import { ContextCompactor } from "../core/context/compaction/compactor";
 import { ContextPreparation } from "../core/context/preparation";
 import { validateModelRequest } from "../core/model/requestContent";
+import type { TurnQueueOutcome } from "../core/queue/turnQueue";
+import { TurnQueueRegistry } from "../core/queue/turnQueueRegistry";
 import { assertHandoffTask } from "../core/team/handoff";
 import {
   assertTeamPreset,
@@ -32,11 +34,6 @@ import type {
 import { CONVERSATION_AGENT_ID, CONVERSATION_TEAM_ID, type ConversationAgentInput } from "./agent";
 import type { ConversationBot, ConversationBotCatalog } from "./bots/types";
 import { CHAT_PROFILES, type ChatProfileId } from "./profiles/registry";
-import {
-  ConversationQueue,
-  type ConversationQueueOutcome,
-  type ConversationQueueStartResult,
-} from "./queue/conversationQueue";
 
 const MAX_USER_MESSAGE_CHARS = 32_000;
 const MANUAL_COMPACTION_AGENT_RUN = "manual-compaction";
@@ -64,8 +61,8 @@ export class ConversationApplication {
   private readonly contextPreparation: ContextPreparation;
   private readonly onSnapshot?: ConversationApplicationOptions["onSnapshot"];
   private readonly onTeamError?: ConversationApplicationOptions["onTeamError"];
-  private readonly queues = new Map<string, ConversationQueue>();
-  private readonly runConversations = new Map<string, string>();
+  private readonly turns = new TurnQueueRegistry();
+  private closing = false;
   private workspaceRoot: string | null = null;
 
   constructor({
@@ -157,7 +154,7 @@ export class ConversationApplication {
 
   /** 用户显式清空会话；仓储只允许清空空闲会话，并返回清空后的 snapshot。 */
   async clearConversation(conversationId: string): Promise<ConversationSnapshot> {
-    this.queues.get(conversationId)?.cancelPending();
+    this.turns.cancelPending(conversationId);
     const eventRevision = await this.agentRuntime.getConversationRevision(conversationId);
     await this.store.clear(conversationId, eventRevision);
     return this.loadRecoverySnapshot(conversationId);
@@ -215,8 +212,7 @@ export class ConversationApplication {
     const seed = this.seedForBot((requested ?? this.requireBot(this.defaultBotId)).id);
     await this.store.create(conversationId, seed, this.sessionMetadata());
     const getAccessToken = async () => accessToken;
-    const queue = this.queueFor(conversationId);
-    const accepted = await queue.enqueue(async (): Promise<ConversationQueueStartResult> => {
+    return this.turns.enqueue(conversationId, async () => {
       const snapshot = await this.loadRecoverySnapshot(conversationId);
       const activeAgentId = snapshot.activeAgentId ?? seed.activeAgentId;
       if (requested && requested.id !== activeAgentId) {
@@ -229,7 +225,7 @@ export class ConversationApplication {
         trigger: { kind: "user", request },
         getAccessToken,
       });
-      this.runConversations.set(handle.runId, conversationId);
+      this.turns.trackRun(conversationId, handle.runId);
       const completion = this.continueTeamTurn({
         conversationId,
         from: entry,
@@ -240,10 +236,9 @@ export class ConversationApplication {
           this.onTeamError?.(error);
           throw error;
         })
-        .finally(() => this.runConversations.delete(handle.runId));
+        .finally(() => this.turns.untrackRun(handle.runId));
       return { runId: handle.runId, snapshot: handle.prepared, completion };
     });
-    return accepted;
   }
 
   async send(
@@ -256,7 +251,7 @@ export class ConversationApplication {
     if (accepted.status === "started") {
       return { runId: accepted.runId, snapshot: accepted.snapshot };
     }
-    const started = await this.queueFor(conversationId).waitForStart(accepted.queueId);
+    const started = await this.turns.waitForStart(conversationId, accepted.queueId);
     return { runId: started.runId, snapshot: started.snapshot };
   }
 
@@ -283,8 +278,7 @@ export class ConversationApplication {
     const seed = this.seedForTeam(preset);
     await this.store.create(conversationId, seed, this.sessionMetadata());
     const getAccessToken = async () => accessToken;
-    const queue = this.queueFor(conversationId);
-    const accepted = await queue.enqueue(async (): Promise<ConversationQueueStartResult> => {
+    return this.turns.enqueue(conversationId, async () => {
       const snapshot = await this.loadRecoverySnapshot(conversationId);
       if (
         snapshot.participantAgentIds &&
@@ -302,7 +296,7 @@ export class ConversationApplication {
         trigger: { kind: "user", request },
         getAccessToken,
       });
-      this.runConversations.set(first.runId, conversationId);
+      this.turns.trackRun(conversationId, first.runId);
       const completion = this.continueTeamTurn({
         conversationId,
         from: entry,
@@ -313,10 +307,9 @@ export class ConversationApplication {
           this.onTeamError?.(error);
           throw error;
         })
-        .finally(() => this.runConversations.delete(first.runId));
+        .finally(() => this.turns.untrackRun(first.runId));
       return { runId: first.runId, snapshot: first.prepared, completion };
     });
-    return accepted;
   }
 
   async sendTeamMessage(
@@ -325,9 +318,8 @@ export class ConversationApplication {
     request: ConversationSendRequest,
     accessToken: string,
   ): Promise<{ runId: string; snapshot: ConversationSnapshot }> {
-    const queue = this.queueFor(conversationId);
     const accepted = await this.enqueueTeamMessage(teamId, conversationId, request, accessToken);
-    const completion = await queue.wait(accepted.queueId);
+    const completion = await this.turns.wait(conversationId, accepted.queueId);
     if (completion.failure !== undefined) throw completion.failure.error;
     const snapshot = await this.loadRecoverySnapshot(conversationId);
     if (!completion.runId) throw new Error("团队回合未启动");
@@ -344,12 +336,14 @@ export class ConversationApplication {
     from: ConversationBot;
     handle: AgentRunHandle<ConversationSnapshot>;
     getAccessToken: () => Promise<string>;
-  }): Promise<ConversationQueueOutcome> {
+  }): Promise<TurnQueueOutcome> {
+    const queueId = this.turns.activeQueueId(conversationId);
     let current = from;
     let currentHandle = handle;
     for (;;) {
       const outcome = await currentHandle.done;
       if (outcome !== "completed") return toQueueOutcome(outcome);
+      if (this.hasQueuedAhead(conversationId, queueId)) return "completed";
       const result = await currentHandle.result;
       if (!result) return "completed";
       assertHandoffTask(result.task);
@@ -395,8 +389,14 @@ export class ConversationApplication {
   }
 
   private hasQueuedMessages(conversationId: string): boolean {
-    const queue = this.queues.get(conversationId);
-    return queue?.activeQueueId !== undefined || (queue?.queuedCount ?? 0) > 0;
+    return this.turns.hasQueued(conversationId);
+  }
+
+  /** 只判断当前 team turn 之后是否已有用户 turn；handoff 链自身仍属于同一个队列项。 */
+  private hasQueuedAhead(conversationId: string, queueId: string | undefined): boolean {
+    if (this.turns.queuedCount(conversationId) > 0) return true;
+    const activeQueueId = this.turns.activeQueueId(conversationId);
+    return queueId !== undefined && activeQueueId !== undefined && activeQueueId !== queueId;
   }
 
   private startBot({
@@ -410,9 +410,11 @@ export class ConversationApplication {
     trigger: { kind: "user"; request: ConversationSendRequest } | { kind: "handoff" };
     getAccessToken: () => Promise<string>;
   }): Promise<AgentRunHandle<ConversationSnapshot>> {
+    if (this.closing) throw new Error("会话正在关闭");
     return bot.executor.startRun<ConversationSnapshot>({
       conversationId,
       getAccessToken,
+      shouldYield: () => this.turns.queuedCount(conversationId) > 0,
       prepareContext: (modelRequest, rebuild, signal) =>
         this.contextPreparation.prepareRequest({
           conversationId,
@@ -514,8 +516,14 @@ export class ConversationApplication {
   }
 
   cancel(runId: string): void {
-    const conversationId = this.runConversations.get(runId);
-    if (conversationId !== undefined) this.queueFor(conversationId).cancelPending();
+    const conversationId = this.turns.conversationForRun(runId);
+    if (conversationId !== undefined) {
+      this.turns.cancelPending(conversationId);
+      const activeRunId = this.turns.activeRunId(conversationId);
+      if (activeRunId !== undefined && activeRunId !== runId) {
+        this.agentRuntime.cancel(activeRunId);
+      }
+    }
     this.agentRuntime.cancel(runId);
   }
 
@@ -525,13 +533,13 @@ export class ConversationApplication {
   ): Promise<{
     queueId: string;
     runId?: string;
-    outcome: ConversationQueueOutcome;
+    outcome: TurnQueueOutcome;
   }> {
-    return this.requireQueue(conversationId).wait(queueId);
+    return this.turns.wait(conversationId, queueId);
   }
 
   getQueuePosition(conversationId: string, queueId: string): number | undefined {
-    return this.queues.get(conversationId)?.position(queueId);
+    return this.turns.position(conversationId, queueId);
   }
 
   waitForRun(runId: string): Promise<void> {
@@ -546,25 +554,16 @@ export class ConversationApplication {
     return this.agentRuntime.readEventsForRun(runId);
   }
 
+  /** 关闭队列消费：只阻止/取消尚未启动的 turn，活动 run 由调用方统一 abort。 */
+  cancelPendingTurns(): void {
+    this.closing = true;
+    this.turns.dispose();
+  }
+
   dispose(): void {
-    for (const queue of this.queues.values()) queue.dispose();
-    this.queues.clear();
-    this.runConversations.clear();
+    this.closing = true;
+    this.turns.dispose();
     this.agentRuntime.dispose();
-  }
-
-  private queueFor(conversationId: string): ConversationQueue {
-    const existing = this.queues.get(conversationId);
-    if (existing) return existing;
-    const queue = new ConversationQueue();
-    this.queues.set(conversationId, queue);
-    return queue;
-  }
-
-  private requireQueue(conversationId: string): ConversationQueue {
-    const queue = this.queues.get(conversationId);
-    if (!queue) throw new Error("会话队列不存在");
-    return queue;
   }
 
   get activeRunCount(): number {
@@ -572,7 +571,7 @@ export class ConversationApplication {
   }
 }
 
-function toQueueOutcome(outcome: string): ConversationQueueOutcome {
+function toQueueOutcome(outcome: string): TurnQueueOutcome {
   if (outcome === "aborted" || outcome === "superseded") return "aborted";
   if (outcome === "failed" || outcome === "orphaned") return "failed";
   return "completed";

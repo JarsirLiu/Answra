@@ -1,4 +1,4 @@
-/** CLI coding 单 Bot 会话用例：创建、发送、取消与 transcript 更新；不包含 team/handoff。 */
+﻿/** CLI coding 单 Bot 会话用例：创建、发送、取消与 transcript 更新；不包含 team/handoff。 */
 import { randomUUID } from "node:crypto";
 import type {
   ConversationModelConfig,
@@ -8,15 +8,12 @@ import type {
   ManualCompactionResult,
 } from "@answra/shared";
 import type { AgentEventEnvelope } from "@answra/shared/schema";
-import {
-  ConversationQueue,
-  type ConversationQueueStartResult,
-} from "../conversation/queue/conversationQueue";
 import type { AgentRunHandle } from "../core/agent/definition";
 import type { AgentRuntime } from "../core/agent/runtime";
 import { ContextCompactor } from "../core/context/compaction/compactor";
 import { ContextPreparation } from "../core/context/preparation";
 import { validateModelRequest } from "../core/model/requestContent";
+import { TurnQueueRegistry } from "../core/queue/turnQueueRegistry";
 import { createUserMessage } from "../core/transcript/message";
 import type {
   ConversationSessionMetadata,
@@ -43,8 +40,8 @@ export class CodingApplication {
   private readonly contextCompactor: ContextCompactor;
   private readonly contextPreparation: ContextPreparation;
   private readonly onSnapshot?: CodingApplicationOptions["onSnapshot"];
-  private readonly queues = new Map<string, ConversationQueue>();
-  private readonly runConversations = new Map<string, string>();
+  private readonly turns = new TurnQueueRegistry();
+  private closing = false;
   private workspaceRoot: string | null = null;
 
   constructor({ agentRuntime, store, bot, onSnapshot }: CodingApplicationOptions) {
@@ -87,7 +84,7 @@ export class CodingApplication {
   }
 
   async clearConversation(conversationId: string): Promise<ConversationSnapshot> {
-    this.queues.get(conversationId)?.cancelPending();
+    this.turns.cancelPending(conversationId);
     const eventRevision = await this.agentRuntime.getConversationRevision(conversationId);
     await this.store.clear(conversationId, eventRevision);
     return this.store.load(conversationId);
@@ -133,17 +130,15 @@ export class CodingApplication {
     if (!request.text.trim() && request.images.length === 0) throw new Error("消息内容不能为空");
     await this.store.create(conversationId, this.seed(), this.sessionMetadata());
     const getAccessToken = async () => accessToken;
-    const queue = this.queueFor(conversationId);
-    const accepted = await queue.enqueue(async (): Promise<ConversationQueueStartResult> => {
+    return this.turns.enqueue(conversationId, async () => {
       const handle = await this.startRun({ conversationId, request, getAccessToken });
-      this.runConversations.set(handle.runId, conversationId);
+      this.turns.trackRun(conversationId, handle.runId);
       const completion = this.agentRuntime.waitForRun(handle.runId).then(async () => {
-        this.runConversations.delete(handle.runId);
+        this.turns.untrackRun(handle.runId);
         return "completed" as const;
       });
       return { runId: handle.runId, snapshot: handle.prepared, completion };
     });
-    return accepted;
   }
 
   async send(
@@ -155,7 +150,7 @@ export class CodingApplication {
     if (accepted.status === "started") {
       return { runId: accepted.runId, snapshot: accepted.snapshot };
     }
-    const started = await this.queueFor(conversationId).waitForStart(accepted.queueId);
+    const started = await this.turns.waitForStart(conversationId, accepted.queueId);
     return { runId: started.runId, snapshot: started.snapshot };
   }
 
@@ -164,46 +159,43 @@ export class CodingApplication {
   }
 
   cancel(runId: string): void {
-    const conversationId = this.runConversations.get(runId);
-    if (conversationId !== undefined) this.queueFor(conversationId).cancelPending();
+    const conversationId = this.turns.conversationForRun(runId);
+    if (conversationId !== undefined) {
+      this.turns.cancelPending(conversationId);
+      const activeRunId = this.turns.activeRunId(conversationId);
+      if (activeRunId !== undefined && activeRunId !== runId) {
+        this.agentRuntime.cancel(activeRunId);
+      }
+    }
     this.agentRuntime.cancel(runId);
   }
 
   waitForQueue(conversationId: string, queueId: string) {
-    return this.requireQueue(conversationId).wait(queueId);
+    return this.turns.wait(conversationId, queueId);
   }
 
   waitForQueueStart(conversationId: string, queueId: string) {
-    return this.requireQueue(conversationId).waitForStart(queueId);
+    return this.turns.waitForStart(conversationId, queueId);
   }
 
   getQueuePosition(conversationId: string, queueId: string): number | undefined {
-    return this.queues.get(conversationId)?.position(queueId);
+    return this.turns.position(conversationId, queueId);
   }
 
   waitForRun(runId: string): Promise<void> {
     return this.agentRuntime.waitForRun(runId);
   }
 
+  /** 关闭队列消费：只阻止/取消尚未启动的 turn，活动 run 由调用方统一 abort。 */
+  cancelPendingTurns(): void {
+    this.closing = true;
+    this.turns.dispose();
+  }
+
   dispose(): void {
-    for (const queue of this.queues.values()) queue.dispose();
-    this.queues.clear();
-    this.runConversations.clear();
+    this.closing = true;
+    this.turns.dispose();
     this.agentRuntime.dispose();
-  }
-
-  private queueFor(conversationId: string): ConversationQueue {
-    const existing = this.queues.get(conversationId);
-    if (existing) return existing;
-    const queue = new ConversationQueue();
-    this.queues.set(conversationId, queue);
-    return queue;
-  }
-
-  private requireQueue(conversationId: string): ConversationQueue {
-    const queue = this.queues.get(conversationId);
-    if (!queue) throw new Error("会话队列不存在");
-    return queue;
   }
 
   get activeRunCount(): number {
@@ -221,8 +213,7 @@ export class CodingApplication {
   }
 
   private hasQueuedMessages(conversationId: string): boolean {
-    const queue = this.queues.get(conversationId);
-    return queue?.activeQueueId !== undefined || (queue?.queuedCount ?? 0) > 0;
+    return this.turns.hasQueued(conversationId);
   }
 
   private startRun({
@@ -234,9 +225,11 @@ export class CodingApplication {
     request: ConversationSendRequest;
     getAccessToken: () => Promise<string>;
   }): Promise<AgentRunHandle<ConversationSnapshot>> {
+    if (this.closing) throw new Error("会话正在关闭");
     return this.bot.executor.startRun<ConversationSnapshot>({
       conversationId,
       getAccessToken,
+      shouldYield: () => this.turns.queuedCount(conversationId) > 0,
       prepareContext: (modelRequest, rebuild, signal) =>
         this.contextPreparation.prepareRequest({
           conversationId,

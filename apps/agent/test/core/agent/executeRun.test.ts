@@ -26,6 +26,10 @@ describe("agent run outcome", () => {
     expect(runOutcome(false, completedMetrics, "tool-calls")).toBe("failed");
   });
 
+  it("completes a run that yields to queued input after a tool step", () => {
+    expect(runOutcome(false, completedMetrics, "tool-calls", true)).toBe("completed");
+  });
+
   it("completes a run with a terminal text answer", () => {
     expect(runOutcome(false, completedMetrics, "stop")).toBe("completed");
   });

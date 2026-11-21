@@ -1,6 +1,7 @@
 /** 执行已注册 Agent 的 AI SDK 流、HTTP 重试与 run 终态；不读取或写入 transcript。 */
 import type { ConversationCapabilityEndpoint } from "@answra/shared";
 import type { AgentEvent, RunOutcome } from "@answra/shared/schema";
+import type { StopCondition, ToolSet } from "ai";
 import type { ExecutionStore } from "../../execution/store";
 import { isContextOverflowError } from "../model/contextOverflow";
 import { summarizeModelError } from "../model/errorSummary";
@@ -42,6 +43,7 @@ export async function executeRun<Input, Prepared>({
   const startedAt = Date.now();
   let finishReason: string | undefined;
   let executionStarted = false;
+  let yieldedToQueue = false;
   let outcome: RunOutcome = "failed";
 
   try {
@@ -55,13 +57,19 @@ export async function executeRun<Input, Prepared>({
 
     const accessToken = await request.getAccessToken();
     const liveOutput = createLiveToolOutputRelay(journal);
-    let modelRequest = await prepareModelRequest({
-      definition,
-      request,
-      input,
-      signal: controller.signal,
-      emitter: { toolOutput: liveOutput.emit },
-    });
+    let modelRequest = withQueueYield(
+      await prepareModelRequest({
+        definition,
+        request,
+        input,
+        signal: controller.signal,
+        emitter: { toolOutput: liveOutput.emit },
+      }),
+      request.shouldYield,
+      () => {
+        yieldedToQueue = true;
+      },
+    );
     await journal.notify(await executionStore.transition(runId, "running"));
     logRunStarted({ runId, agentId: definition.id, endpoint });
 
@@ -205,7 +213,9 @@ export async function executeRun<Input, Prepared>({
         if (recoveredRequest !== undefined && !controller.signal.aborted) {
           attempt.discard();
           contextRecovered = true;
-          modelRequest = recoveredRequest;
+          modelRequest = withQueueYield(recoveredRequest, request.shouldYield, () => {
+            yieldedToQueue = true;
+          });
           continue;
         }
         if (controller.signal.aborted) {
@@ -234,7 +244,7 @@ export async function executeRun<Input, Prepared>({
       });
     }
   } finally {
-    outcome = runOutcome(controller.signal.aborted, journal.metrics, finishReason);
+    outcome = runOutcome(controller.signal.aborted, journal.metrics, finishReason, yieldedToQueue);
     if (executionStarted) {
       const terminal = await executionStore.finishRun(runId, outcome);
       if (terminal) await journal.notify(terminal);
@@ -271,10 +281,32 @@ export function runOutcome(
   cancelled: boolean,
   metrics: ReturnType<typeof createExecutionJournal>["metrics"],
   finishReason: string | undefined,
+  yieldedToQueue = false,
 ): Extract<RunOutcome, "completed" | "failed" | "aborted"> {
   if (cancelled || metrics.aborted) return "aborted";
-  if (metrics.failed || !metrics.finished || finishReason === "tool-calls") return "failed";
+  if (metrics.failed || !metrics.finished) return "failed";
+  if (finishReason === "tool-calls" && !yieldedToQueue) return "failed";
   return "completed";
+}
+
+function withQueueYield(
+  modelRequest: AgentModelRequest,
+  shouldYield: (() => boolean) | undefined,
+  onYield: () => void,
+): AgentModelRequest {
+  if (shouldYield === undefined) return modelRequest;
+  const existing =
+    modelRequest.stopWhen === undefined
+      ? []
+      : Array.isArray(modelRequest.stopWhen)
+        ? modelRequest.stopWhen
+        : [modelRequest.stopWhen];
+  const yieldCondition: StopCondition<ToolSet> = () => {
+    if (!shouldYield()) return false;
+    onYield();
+    return true;
+  };
+  return { ...modelRequest, stopWhen: [...existing, yieldCondition] };
 }
 
 function errorText(error: unknown): string {

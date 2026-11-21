@@ -31,6 +31,10 @@ export function createAgentCodingSessionHost(host: CodingHost): CodingSessionHos
     send: async (conversationId, request, accessToken) => {
       return host.runtime.send(conversationId, request, accessToken);
     },
+    enqueue: (conversationId, request, accessToken) =>
+      host.runtime.enqueue(conversationId, request, accessToken),
+    waitForQueueStart: (conversationId, queueId) =>
+      host.runtime.waitForQueueStart(conversationId, queueId),
     cancel: (runId) => host.runtime.cancel(runId),
     waitForRun: (runId) => host.runtime.waitForRun(runId),
     dispose: () => host.dispose(),

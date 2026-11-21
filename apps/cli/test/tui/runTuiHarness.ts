@@ -112,23 +112,94 @@ export function createSession(initialSnapshot: ConversationSnapshot = snapshot) 
   const sent: string[] = [];
   const sentImages: Array<readonly { name: string; dataUrl: string }[]> = [];
   const waits: Array<() => void> = [];
+  let activeRunId: string | undefined;
+  let sequence = 0;
+  const pending: Array<{
+    queueId: string;
+    text: string;
+    images: readonly { name: string; dataUrl: string }[];
+    started: Promise<{ queueId: string; runId: string; snapshot: ConversationSnapshot }>;
+    resolve: (value: { queueId: string; runId: string; snapshot: ConversationSnapshot }) => void;
+    reject: (error: Error) => void;
+  }> = [];
+  const startNext = (): void => {
+    if (activeRunId !== undefined) return;
+    const next = pending.shift();
+    if (next === undefined) return;
+    sent.push(next.text);
+    sentImages.push(next.images);
+    activeRunId = `run-${sent.length}`;
+    next.resolve({ queueId: next.queueId, runId: activeRunId, snapshot: initialSnapshot });
+  };
+  const cancel = vi.fn();
   const session = {
     currentConversationId: initialSnapshot.conversationId,
     modelConfig: modelConfig("test-model"),
     open: vi.fn(async () => initialSnapshot),
     refresh: vi.fn(async () => initialSnapshot),
-    send: vi.fn(async (text: string, images: readonly { name: string; dataUrl: string }[] = []) => {
-      sent.push(text);
-      sentImages.push(images);
-      return `run-${sent.length}`;
+    send: vi.fn(async () => {
+      throw new Error("unexpected send");
+    }),
+    enqueue: vi.fn(
+      async (text: string, images: readonly { name: string; dataUrl: string }[] = []) => {
+        if (activeRunId === undefined) {
+          sent.push(text);
+          sentImages.push(images);
+          activeRunId = `run-${sent.length}`;
+          return {
+            queueId: `queue-${activeRunId}`,
+            status: "started" as const,
+            position: 0 as const,
+            runId: activeRunId,
+            snapshot: initialSnapshot,
+          };
+        }
+        const queueId = `queue-${++sequence}`;
+        let resolveStart!: (value: {
+          queueId: string;
+          runId: string;
+          snapshot: ConversationSnapshot;
+        }) => void;
+        let rejectStart!: (error: Error) => void;
+        const started = new Promise<{
+          queueId: string;
+          runId: string;
+          snapshot: ConversationSnapshot;
+        }>((resolve, reject) => {
+          resolveStart = resolve;
+          rejectStart = reject;
+        });
+        pending.push({
+          queueId,
+          text,
+          images,
+          started,
+          resolve: resolveStart,
+          reject: rejectStart,
+        });
+        return { queueId, status: "queued" as const, position: pending.length };
+      },
+    ),
+    waitForQueueStart: vi.fn((queueId: string) => {
+      const entry = pending.find((item) => item.queueId === queueId);
+      if (entry === undefined) return Promise.reject(new Error("queued prompt not found"));
+      return entry.started;
     }),
     wait: vi.fn(
       () =>
         new Promise<void>((resolve) => {
-          waits.push(resolve);
+          waits.push(() => {
+            resolve();
+            activeRunId = undefined;
+            startNext();
+          });
         }),
     ),
-    cancel: vi.fn(),
+    cancel,
+    cancelRun: vi.fn((runId: string) => {
+      cancel(runId);
+      for (const entry of pending.splice(0)) entry.reject(new Error("queued prompt cancelled"));
+    }),
     clear: vi.fn(async () => initialSnapshot),
     compact: vi.fn(async () => ({
       result: { status: "compacted" as const },

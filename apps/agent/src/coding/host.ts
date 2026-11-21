@@ -100,6 +100,7 @@ export function startCodingHost({
     },
     shutdown() {
       shutdownPromise ??= (async () => {
+        runtime.cancelPendingTurns();
         await agentRuntime.shutdown();
         disposed = true;
         runtime.dispose();

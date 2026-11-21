@@ -107,6 +107,22 @@ function createDependencies(
       tokens.push(token);
       return { runId: "run-1" };
     }),
+    enqueue: vi.fn(async (_conversationId, request, token) => {
+      sent.push(request);
+      tokens.push(token);
+      return {
+        queueId: "queue-1",
+        status: "started" as const,
+        position: 0 as const,
+        runId: "run-1",
+        snapshot,
+      };
+    }),
+    waitForQueueStart: vi.fn(async (_conversationId, queueId) => ({
+      queueId,
+      runId: "run-1",
+      snapshot,
+    })),
     cancel: vi.fn(),
     waitForRun: vi.fn(async () => {}),
     dispose: vi.fn(),

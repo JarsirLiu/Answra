@@ -31,6 +31,18 @@ function createHost(overrides: Partial<CodingSessionHost> = {}): CodingSessionHo
       snapshot,
     })),
     send: vi.fn(async () => ({ runId: "run-1" })),
+    enqueue: vi.fn(async () => ({
+      queueId: "queue-1",
+      status: "started" as const,
+      position: 0 as const,
+      runId: "run-1",
+      snapshot,
+    })),
+    waitForQueueStart: vi.fn(async (conversationId: string, queueId: string) => ({
+      queueId,
+      runId: "run-1",
+      snapshot: { ...snapshot, conversationId },
+    })),
     cancel: vi.fn(),
     waitForRun: vi.fn(async () => {}),
     dispose: vi.fn(),
@@ -144,6 +156,39 @@ describe("CodingSession", () => {
     );
     expect(session.cancel()).toBe(true);
     expect(host.cancel).toHaveBeenCalledWith("run-1");
+  });
+
+  it("passes queued acceptance through the host and activates the started run", async () => {
+    const queuedHost = createHost({
+      enqueue: vi.fn(async () => ({ queueId: "queue-2", status: "queued" as const, position: 1 })),
+      waitForQueueStart: vi.fn(async () => ({
+        queueId: "queue-2",
+        runId: "run-2",
+        snapshot,
+      })),
+    });
+    const session = createSession(queuedHost);
+    await session.open();
+
+    await expect(session.enqueue("next")).resolves.toEqual({
+      queueId: "queue-2",
+      status: "queued",
+      position: 1,
+    });
+    expect(queuedHost.enqueue).toHaveBeenCalledWith(
+      "conversation-1",
+      { text: "next", images: [] },
+      "token",
+    );
+    expect(session.cancel()).toBe(false);
+
+    await expect(session.waitForQueueStart("queue-2")).resolves.toEqual({
+      queueId: "queue-2",
+      runId: "run-2",
+      snapshot,
+    });
+    expect(session.cancel()).toBe(true);
+    expect(queuedHost.cancel).toHaveBeenCalledWith("run-2");
   });
 
   it("sends image attachments with the prompt", async () => {

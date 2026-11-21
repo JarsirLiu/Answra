@@ -99,9 +99,9 @@ export interface AgentRunRequest<Input, Prepared> {
     signal: AbortSignal,
   ) => Promise<AgentModelRequest>;
   /**
-   * provider 明确报上下文超限时的单次兜底；返回 undefined 表示放弃恢复。
-   * 调用方保证每个 run 最多调用一次，且只在尚未产生模型内容时调用。
-   * 恢复在同一 run 内重试，不写 transcript、不启动新 run、不转移 Bot。
+   * provider 明确声明上下文溢出时的单次恢复；返回 undefined 表示不恢复。
+   * 调用方保证每次 run 至多一次，且只在尚未产生模型内容时调用。
+   * 恢复后同一 run 继续，不重写 transcript、不重新进入 run、不切换 Bot。
    */
   recoverContext?: (
     modelRequest: AgentModelRequest,
@@ -109,6 +109,11 @@ export interface AgentRunRequest<Input, Prepared> {
     error: unknown,
     signal: AbortSignal,
   ) => Promise<AgentModelRequest | undefined>;
+  /**
+   * 当前会话是否还有等待下发的用户输入。返回 true 时，活动 run 在当前 step
+   * 完成后结束，由会话队列立即启动下一条消息，而不是等整个 run 完成。
+   */
+  shouldYield?: () => boolean;
   /** Called in event order after each envelope is appended to ExecutionStore. */
   onEvent: (event: AgentEventEnvelope) => Promise<void>;
 }

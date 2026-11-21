@@ -432,7 +432,7 @@ describe("runInkTui", () => {
     waits.shift()?.();
     await tick();
     await tick();
-    expect(session.send).toHaveBeenCalledTimes(1);
+    expect(session.enqueue).toHaveBeenCalledTimes(2);
     expect(store.getSnapshot().phase).toBe("idle");
     finish();
     store.dispose();

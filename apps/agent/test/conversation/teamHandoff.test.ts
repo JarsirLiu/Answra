@@ -42,6 +42,10 @@ function eventEnvelope(
 }
 
 type RecordedInput = { agentId: AgentId; input: ConversationAgentInput };
+type ScriptedResult =
+  | BotTurnResult
+  | undefined
+  | ((input: ConversationAgentInput) => BotTurnResult | undefined);
 
 function createScriptedExecutor({
   conversationId,
@@ -51,26 +55,30 @@ function createScriptedExecutor({
   sequence,
   onInput,
   onRequest,
+  gate,
 }: {
   conversationId: string;
   text: string;
-  result: BotTurnResult | undefined;
+  result: ScriptedResult;
   revision: { value: number };
   sequence: { value: number };
   onInput: (input: ConversationAgentInput) => void;
   onRequest: (request: AgentRunRequest<ConversationAgentInput, unknown>) => void;
+  gate?: Promise<void>;
 }): AgentExecutor<ConversationAgentInput> {
   return {
     async startRun<Prepared>(
       request: AgentRunRequest<ConversationAgentInput, Prepared>,
     ): Promise<AgentRunHandle<Prepared>> {
       onRequest(request);
+      if (gate) await gate;
       const runId = `run-${++sequence.value}`;
       const prepared = await request.prepareRun({
         runId,
         eventRevision: revision.value,
       });
       onInput(prepared.input);
+      const resolvedResult = typeof result === "function" ? result(prepared.input) : result;
 
       let currentRevision = revision.value;
       const stream: AgentEvent[] = [
@@ -96,7 +104,7 @@ function createScriptedExecutor({
         runId,
         eventRevision: currentRevision,
         prepared: prepared.prepared,
-        result: Promise.resolve(result),
+        result: Promise.resolve(resolvedResult),
         done: Promise.resolve("completed" as const),
       };
     },
@@ -110,10 +118,12 @@ function createHarness({
   candidateResult,
   candidateText = "我先整理一下。",
   intakeText = "我来接管。",
+  gate,
 }: {
-  candidateResult: BotTurnResult | undefined;
+  candidateResult: ScriptedResult;
   candidateText?: string;
   intakeText?: string;
+  gate?: Promise<void>;
 }) {
   const store = new MemoryConversationStore();
   const conversationId = "handoff-conversation";
@@ -131,6 +141,7 @@ function createHarness({
     sequence,
     onInput: (input) => inputs.push({ agentId: candidate, input }),
     onRequest: (request) => requests.push(request),
+    gate,
   });
   const intakeExecutor = createScriptedExecutor({
     conversationId,
@@ -300,5 +311,51 @@ describe("ConversationApplication team handoff", () => {
     expect(snapshot.messages.map((message) => message.audience?.kind)).toEqual(["user", "user"]);
     expect(snapshot.activeAgentId).toBe(candidate);
     expect(snapshot.activeRunId).toBeUndefined();
+  });
+
+  it("skips the handoff chain when a user turn is already queued", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const harness = createHarness({
+      candidateResult: (input) =>
+        input.request.text === "first"
+          ? { kind: "handoff", to: intake, task: "handoff after first" }
+          : undefined,
+      gate,
+    });
+
+    const first = harness.app.enqueueTeamMessage(
+      "interview",
+      harness.conversationId,
+      { text: "first", images: [] },
+      "token",
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const second = await harness.app.enqueueTeamMessage(
+      "interview",
+      harness.conversationId,
+      { text: "second", images: [] },
+      "token",
+    );
+    expect(second.status).toBe("queued");
+
+    release();
+    const accepted = await first;
+    expect(accepted.status).toBe("started");
+    await harness.app.waitForQueue(harness.conversationId, accepted.queueId);
+    await harness.app.waitForQueue(harness.conversationId, second.queueId);
+
+    expect(harness.inputs.map((recorded) => recorded.agentId)).toEqual([candidate, candidate]);
+    const snapshot = await harness.app.getSnapshot(harness.conversationId);
+    expect(snapshot.messages.map((message) => message.text)).toEqual([
+      "first",
+      "我先整理一下。",
+      "second",
+      "我先整理一下。",
+    ]);
+    expect(snapshot.messages.some((message) => message.audience?.kind === "bot")).toBe(false);
+    expect(snapshot.activeAgentId).toBe(candidate);
   });
 });

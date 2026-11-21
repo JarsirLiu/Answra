@@ -25,7 +25,7 @@ const TUI_EVENT_QUEUE_MAX = 2_048;
 
 export type TuiRunPhase = "idle" | "running" | "cancelling";
 
-/** 本地输入队列的展示投影；不是 transcript 消息，也不代表 run 已启动。 */
+/** host 排队 turn 的展示投影；不是 transcript 消息，也不代表 run 已启动。 */
 export interface TuiQueuedPrompt {
   readonly id: string;
   readonly text: string;
@@ -40,7 +40,7 @@ export interface TuiState {
   /** 手动 `/compact` 正在等待首帧 snapshot；与 run phase 分开。 */
   compactionActive: boolean;
   phase: TuiRunPhase;
-  /** 等待当前回合结束的 prompt 数量；不包含正在发送的第一项。 */
+  /** 已交给 host、尚未开始 run 的 turn 数量；不包含正在提交的第一项。 */
   queued: number;
   queuedPrompts: readonly TuiQueuedPrompt[];
   modelLabel: string;

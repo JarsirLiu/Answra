@@ -46,6 +46,7 @@
 | `src/client` | 平台无关连接客户端：worker host 端口、连接状态机、退避重试与状态快照 | 不依赖 Electron；不写 transcript 或 `AgentEventEnvelope`；desktop/CLI 只做 host 与传输适配 |
 | `src/worker` | 线协议 `AgentCommand` / `AgentFrame`，跨进程唯一契约 | 只放协议类型；命令/帧变更必须同步 desktop worker |
 | `src/core/run` | 跨领域进程内 run 取消与完成等待原语 | 不保存持久化 run 状态；不放产品策略 |
+| `src/core/queue` | 跨领域单会话 turn 串行队列、排队位置/完成等待与按会话 run 关联 | 不实现模型、transcript 或产品策略；coding 与 conversation 共用，不得留在任一领域目录 |
 | `src/core/agent` | 静态 Agent 注册、模型路由、AI SDK 执行、统一当前时间上下文与事件写入 | 不读写 transcript、不包含领域 prompt/工具授权；领域注入注册后的 executor |
 | `src/core/bot` | Bot 身份/发现契约、启动期不可变目录与会话参与者可见性校验 | 不持有 store、不创建 run、不 import 领域、不定义 prompt；独立助手与团队共用同一目录 |
 | `src/core/team` | 团队预置与交接任务校验 | 只描述预置成员；不持有 Bot 身份、执行器或 profile |
@@ -86,8 +87,9 @@
 | `src/adapters` | `@answra/config` 共享文件实现、OpenAI 兼容 `/models` 模型目录、`@answra/agent/composition` 的 `CodingHost` 到 CLI 端口映射 | 不复制 Agent 运行时语义，不承载模型合并规则 |
 | `src/remote` | 远程 host/controller 适配与 CLI 本地密钥存储 | 不实现信令/WebRTC 状态机；key 不进共享 config；TUI 不 import |
 | `src/presentation` | Agent 事件到非 TTY 文本、工具行与模型摘要格式化 | 纯投影，不读写会话或进程 |
-| `src/tui` | TUI 组合根：`runTui.tsx` 只做启动、登录/设置、命令与面板接线及渲染；备用屏幕用 Ink 原生 `alternateScreen` | 不 import Electron/desktop 或 `@answra/config`；不承载 Agent 命令分派、命令可用性规则或每会话 queue；不保存运行状态 |
-| `src/tui/runController.ts` | 每会话运行控制器：`CodingSession`、独立 queue、busy/cancel、切换/新建/删除 | 不 import Ink/React/Node 进程；不创建第二套事件或 run 状态；后台完成只更新快照，不覆盖活动 phase |
+| `src/tui` | TUI 组合根：`runTui.tsx` 只做启动、登录/设置、命令与面板接线及渲染；备用屏幕用 Ink 原生 `alternateScreen` | 不 import Electron/desktop 或 `@answra/config`；`runTui.tsx` 不承载 Agent 命令分派、命令可用性规则或每会话 queue，也不保存运行状态 |
+| `src/tui/runController.ts` | 每会话运行控制器：`CodingSession` 注册、切换/新建/删除与活动会话投影 | 不 import Ink/React/Node 进程；不创建第二套事件或 run 状态；后台完成只更新快照，不覆盖活动 phase |
+| `src/tui/sessionRunQueue.ts` | 单会话提交到 host 队列、取消代际、busy 与排队投影 | 不 import Ink/React/Node 进程；不复制 Agent 队列位置或模型/transcript 语义 |
 | `src/tui/panelHandlers.ts` | 面板动作到控制器与模型配置端口的接线 | 不判断 busy、不持有运行状态、不 import Ink |
 | `src/tui/app` | 根布局与 view store：snapshot/事件 -> TuiState；按活动 `conversationId` 过滤 | store 是唯一 writer；不解析工具输出；切换会话重置 revision |
 | `src/tui/transcript` | 虚拟 transcript、消息行、Markdown、选区文本与高度估算 | 只处理消息顺序、虚拟化与滚动；工具语义只走 `transcript/tool/` |

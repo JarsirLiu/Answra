@@ -267,6 +267,7 @@ export function startAgentHost({
       await interviewIntake
         .stop()
         .catch((error: unknown) => console.warn("[interview-intake] stop failed", error));
+      runtime.cancelPendingTurns();
       await agentRuntime.shutdown();
       disposed = true;
       rejectTokenRequests();

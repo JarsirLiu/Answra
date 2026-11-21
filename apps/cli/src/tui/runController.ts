@@ -1,9 +1,10 @@
-/** TUI 会话运行编排：每个会话独立 queue/busy/cancel，并把活动会话投影到 view store。 */
+/** TUI 会话运行编排：每会话复用 host 队列，活动会话投影到 view store。 */
 import type { ConversationModelConfig, ConversationSnapshot } from "@answra/shared";
 import type { ImageAttachment } from "../image/attachment";
 import type { CodingSession } from "../session/codingSession";
 import type { TuiViewStore } from "./app/viewStore";
 import type { TuiRuntime } from "./commands/access";
+import { SessionRunQueue } from "./sessionRunQueue";
 
 export type TuiSessionFactory = (
   model: ConversationModelConfig,
@@ -11,19 +12,10 @@ export type TuiSessionFactory = (
   conversationId?: string,
 ) => CodingSession;
 
-interface QueuedTurn {
-  readonly id: string;
-  readonly text: string;
-  readonly images: readonly ImageAttachment[];
-}
-
 interface SessionRuntime {
   conversationId: string;
   readonly session: CodingSession;
-  readonly queue: QueuedTurn[];
-  busy: boolean;
-  cancelRequested: boolean;
-  sendingId?: string;
+  readonly runs: SessionRunQueue;
 }
 
 export interface TuiRunControllerOptions {
@@ -38,7 +30,6 @@ export class TuiRunController {
   private readonly resolveAccessToken: () => Promise<string | undefined>;
   private readonly runtimes = new Map<string, SessionRuntime>();
   private activeId?: string;
-  private queuedSequence = 0;
 
   constructor({ store, createSession, resolveAccessToken }: TuiRunControllerOptions) {
     this.store = store;
@@ -56,12 +47,16 @@ export class TuiRunController {
       this.activeId = existing.conversationId;
       return existing;
     }
-    const runtime: SessionRuntime = {
+    let runtime: SessionRuntime;
+    const runs = new SessionRunQueue({
+      session: next,
+      onChange: () => this.sync(runtime),
+      onFailure: (error) => this.reportFailure(runtime, error),
+    });
+    runtime = {
       conversationId: next.currentConversationId,
       session: next,
-      queue: [],
-      busy: false,
-      cancelRequested: false,
+      runs,
     };
     this.runtimes.set(runtime.conversationId, runtime);
     this.activeId = runtime.conversationId;
@@ -69,41 +64,26 @@ export class TuiRunController {
   }
 
   runtime(): TuiRuntime {
+    const active = this.activeRuntime();
     return {
-      runActive: [...this.runtimes.values()].some((item) => item.busy),
-      activeRunActive: this.activeRuntime()?.busy ?? false,
+      runActive: [...this.runtimes.values()].some((item) => item.runs.busy),
+      activeRunActive: active?.runs.busy ?? false,
       compactionActive: this.store.getSnapshot().compactionActive,
     };
   }
 
   submit(text: string, images: readonly ImageAttachment[] = []): void {
-    const runtime = this.activeRuntime();
-    if (runtime === undefined) return;
-    if (text.trim().length === 0 && images.length === 0) return;
-    runtime.queue.push({
-      id: `queued-prompt-${++this.queuedSequence}`,
-      text,
-      images,
-    });
-    this.sync(runtime);
-    void this.drain(runtime);
+    this.activeRuntime()?.runs.submit(text, images);
   }
 
   cancel(): boolean {
-    const runtime = this.activeRuntime();
-    if (runtime === undefined || !runtime.busy) return false;
-    runtime.cancelRequested = true;
-    runtime.queue.length = 0;
-    runtime.sendingId = undefined;
-    this.sync(runtime);
-    runtime.session.cancel();
-    return true;
+    return this.activeRuntime()?.runs.cancel() ?? false;
   }
 
   async activate(conversationId: string): Promise<void> {
     if (this.activeSession?.currentConversationId === conversationId) return;
     if (this.store.getSnapshot().compactionActive) {
-      throw new Error("正在压缩上下文，先按 Esc 取消或等待完成后再恢复会话。");
+      throw new Error("正在压缩上下文，等压缩完成后再切换会话。");
     }
     const existing = this.runtimes.get(conversationId);
     if (existing !== undefined) {
@@ -115,7 +95,7 @@ export class TuiRunController {
     }
     const current = this.activeSession;
     if (current === undefined) throw new Error("尚未配置模型。");
-    if (this.createSession === undefined) throw new Error("当前 TUI 未提供会话工厂。");
+    if (this.createSession === undefined) throw new Error("当前 TUI 未提供会话创建器");
     const token = await this.resolveAccessToken();
     const next = this.createSession(current.modelConfig, token, conversationId);
     const snapshot = await next.open();
@@ -128,8 +108,9 @@ export class TuiRunController {
     const runtime = this.activeRuntime();
     if (runtime === undefined) throw new Error("尚未配置模型。");
     if (this.store.getSnapshot().compactionActive) {
-      throw new Error("正在压缩上下文，先按 Esc 取消或等待完成后再新建会话。");
+      throw new Error("正在压缩上下文，等压缩完成后再新建会话。");
     }
+    if (runtime.runs.busy) throw new Error("当前会话仍有运行或排队消息，结束后再新建。");
     const previousId = runtime.session.currentConversationId;
     const snapshot = await runtime.session.startNewConversation();
     this.runtimes.delete(previousId);
@@ -142,12 +123,14 @@ export class TuiRunController {
 
   async delete(conversationId: string): Promise<ConversationSnapshot | undefined> {
     const target = this.runtimes.get(conversationId);
-    if (target?.busy) {
-      throw new Error(`会话 ${conversationId} 正在运行，先切回并按 Esc 中断或等待结束后再删除。`);
+    if (target?.runs.busy) {
+      throw new Error(`会话 ${conversationId} 正在运行或排队，先切换回会话执行 Esc 中断。`);
     }
     const active = this.activeRuntime();
     if (active === undefined) throw new Error("尚未配置模型。");
-    if (active.busy) throw new Error("当前运行中，先按 Esc 中断或等待本轮结束后再删除会话。");
+    if (active.runs.busy) {
+      throw new Error("当前会话正在运行或排队，先执行 Esc 中断再删除会话。");
+    }
     const previousId = active.session.currentConversationId;
     const next = await active.session.deleteSession(conversationId);
     if (target !== undefined && target !== active) {
@@ -170,63 +153,24 @@ export class TuiRunController {
 
   private sync(runtime: SessionRuntime): void {
     if (runtime !== this.activeRuntime()) return;
-    this.store.setQueuedPrompts(
-      runtime.queue.map((turn) => ({
-        id: turn.id,
-        text: turn.text,
-        imageCount: turn.images.length,
-        status: turn.id === runtime.sendingId ? "sending" : "queued",
-      })),
-    );
-    if (runtime.busy) {
-      if (runtime.cancelRequested) this.store.markCancelling();
+    this.store.setQueuedPrompts(runtime.runs.prompts);
+    if (runtime.runs.busy) {
+      if (runtime.runs.cancellingRun) this.store.markCancelling();
       else this.store.beginRun();
       return;
     }
     this.store.finishRun();
   }
 
-  private async drain(runtime: SessionRuntime): Promise<void> {
-    if (runtime.busy) return;
-    const turn = runtime.queue[0];
-    if (turn === undefined) {
-      this.sync(runtime);
-      return;
+  private reportFailure(runtime: SessionRuntime, error: unknown): void {
+    if (runtime === this.activeRuntime()) this.store.fail(messageOf(error));
+    else {
+      this.store.notify({
+        key: `run-error:${runtime.conversationId}`,
+        text: `后台会话 ${runtime.conversationId} 发送失败：${messageOf(error)}`,
+        tone: "error",
+      });
     }
-    runtime.busy = true;
-    runtime.cancelRequested = false;
-    runtime.sendingId = turn.id;
-    this.sync(runtime);
-    let failed = false;
-    try {
-      const runId = await runtime.session.send(turn.text, turn.images);
-      if (runtime.queue[0] === turn) runtime.queue.shift();
-      runtime.sendingId = undefined;
-      this.sync(runtime);
-      if (runtime.cancelRequested) runtime.session.cancel();
-      await runtime.session.wait(runId);
-    } catch (error) {
-      failed = true;
-      runtime.queue.length = 0;
-      runtime.sendingId = undefined;
-      if (runtime === this.activeRuntime()) this.store.fail(messageOf(error));
-      else {
-        this.store.notify({
-          key: `run-error:${runtime.conversationId}`,
-          text: `后台会话 ${runtime.conversationId} 运行失败：${messageOf(error)}`,
-          tone: "error",
-        });
-      }
-    } finally {
-      runtime.busy = false;
-      runtime.cancelRequested = false;
-      runtime.sendingId = undefined;
-    }
-    if (!failed && runtime.queue.length > 0) {
-      void this.drain(runtime);
-      return;
-    }
-    this.sync(runtime);
   }
 }
 

@@ -9,7 +9,9 @@ import type { SessionsPanelData } from "./panel";
 
 const VISIBLE_SESSIONS = 12;
 const PAGE_STEP = VISIBLE_SESSIONS - 1;
-/** 固定展示列：焦点标记 + 空格 + 短 ID + 空格 + 时间戳 + 空格。 */
+/** `PanelFrame` 内容区左右各 padding 2 列；标题列必须扣除，否则长标题会挤压固定列。 */
+const PANEL_CONTENT_PADDING_COLUMNS = 4;
+/** 固定展示列：焦点标记 + 空格 + 8 位 ID + 空格 + 时间戳 + 空格。 */
 const LABEL_PREFIX_COLUMNS = 2;
 const ID_LENGTH = 8;
 const STAMP_LENGTH = 16;
@@ -61,7 +63,11 @@ export function SessionsPanel({
   const sessions = state.kind === "ready" ? state.data.sessions : [];
   const titleColumns = Math.max(
     1,
-    columns - LABEL_PREFIX_COLUMNS - SESSION_ID_COLUMNS - SESSION_STAMP_COLUMNS,
+    columns -
+      PANEL_CONTENT_PADDING_COLUMNS -
+      LABEL_PREFIX_COLUMNS -
+      SESSION_ID_COLUMNS -
+      SESSION_STAMP_COLUMNS,
   );
   const maxStart = Math.max(0, sessions.length - VISIBLE_SESSIONS);
   const windowStart = Math.min(Math.max(0, selected - VISIBLE_SESSIONS + 1), maxStart);

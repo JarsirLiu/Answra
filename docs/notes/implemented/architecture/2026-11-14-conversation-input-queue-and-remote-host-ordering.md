@@ -15,7 +15,9 @@
 
 ## 后果与防回退
 
-同一 `conversationId` 只允许一个完整用户回合运行，下一条消息在当前 Bot 与 handoff 链全部完成后按 FIFO 启动。队列目前是进程内内存结构，host 重启会丢失未启动消息；未来若需要恢复，必须单独增加 durable queue、幂等键与恢复游标，不能把当前数组隐式升级为持久化。
+同一 `conversationId` 只允许一个完整用户回合运行，下一条消息按 FIFO 启动。队列目前是进程内内存结构，host 重启会丢失未启动消息；未来若需要恢复，必须单独增加 durable queue、幂等键与恢复游标，不能把当前数组隐式升级为持久化。
+
+后续变更：本 Note 中“当前 Bot 与 handoff 链全部完成后启动下一条”的边界已被 `2026-11-21-agent-step-boundary-queue.md` 取代。活动 run 在 step 结束且队列有 pending 时让位，排队用户输入优先于团队交接；通用队列已下沉到 `core/queue`。
 
 ## 验证
 

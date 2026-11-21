@@ -31,6 +31,7 @@ export class AgentRuntime {
   private readonly tokenProvider?: AgentRuntimeOptions["tokenProvider"];
   private readonly unsubscribeEvents: () => void;
   private readonly internalSessionId = randomUUID();
+  private shuttingDown = false;
   private routes?: AgentModelRoutes;
 
   constructor({ executionStore, emitEvent, tokenProvider }: AgentRuntimeOptions) {
@@ -121,11 +122,13 @@ export class AgentRuntime {
 
   /** 宿主退出：先取消并等待所有 run 的最终消息落账，再释放事件订阅。 */
   async shutdown(): Promise<void> {
+    this.shuttingDown = true;
     await this.runs.abortAllAndWait();
     this.unsubscribeEvents();
   }
 
   dispose(): void {
+    this.shuttingDown = true;
     this.runs.abortAll();
     this.unsubscribeEvents();
   }
@@ -138,6 +141,7 @@ export class AgentRuntime {
     definition: AgentDefinition<Input>,
     request: AgentRunRequest<Input, Prepared>,
   ): Promise<AgentRunHandle<Prepared>> {
+    if (this.shuttingDown) throw new Error("Agent 运行时正在关闭");
     this.agentRegistry.require(definition.id);
     const endpoint = this.requireRoutes()[definition.modelRoute];
     const runId = randomUUID();
@@ -151,6 +155,10 @@ export class AgentRuntime {
     } catch (error) {
       this.runs.finish(runId);
       throw error;
+    }
+    if (this.shuttingDown) {
+      this.runs.finish(runId);
+      throw new Error("Agent 运行时正在关闭");
     }
 
     const done: Promise<RunOutcome> = executeRun({

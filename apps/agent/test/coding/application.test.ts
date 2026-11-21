@@ -24,8 +24,16 @@ function endpoint(port: number) {
 
 function streamBody(text: string): string {
   return [
-    `data: ${JSON.stringify({ id: "test", object: "chat.completion.chunk", created: 1, model: "text.chat", choices: [{ index: 0, delta: { role: "assistant", reasoning_content: "分析中", content: text }, finish_reason: null }] })}\n\n`,
+    `data: ${JSON.stringify({ id: "test", object: "chat.completion.chunk", created: 1, model: "text.chat", choices: [{ index: 0, delta: { role: "assistant", reasoning_content: "thinking", content: text }, finish_reason: null }] })}\n\n`,
     `data: ${JSON.stringify({ id: "test", object: "chat.completion.chunk", created: 1, model: "text.chat", choices: [{ index: 0, delta: {}, finish_reason: "stop" }] })}\n\n`,
+    "data: [DONE]\n\n",
+  ].join("");
+}
+
+function toolCallBody(name: string, input: unknown): string {
+  return [
+    `data: ${JSON.stringify({ id: "test", object: "chat.completion.chunk", created: 1, model: "text.chat", choices: [{ index: 0, delta: { role: "assistant", tool_calls: [{ index: 0, id: "call-1", type: "function", function: { name, arguments: JSON.stringify(input) } }] }, finish_reason: null }] })}\n\n`,
+    `data: ${JSON.stringify({ id: "test", object: "chat.completion.chunk", created: 1, model: "text.chat", choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }] })}\n\n`,
     "data: [DONE]\n\n",
   ].join("");
 }
@@ -36,11 +44,15 @@ describe("CLI coding host", () => {
   let events: AgentEventEnvelope[];
   let host: CodingHost;
   let holdResponse = false;
+  let responseGate: Promise<void> | undefined;
+  let respond: ((call: number) => string) | undefined;
 
   beforeEach(async () => {
     requests = [];
     events = [];
     holdResponse = false;
+    responseGate = undefined;
+    respond = undefined;
     server = createServer(async (request, response) => {
       const chunks: Buffer[] = [];
       for await (const chunk of request) chunks.push(Buffer.from(chunk));
@@ -54,8 +66,9 @@ describe("CLI coding host", () => {
         authorization: request.headers.authorization,
       });
       if (holdResponse) return;
+      if (responseGate) await responseGate;
       response.writeHead(200, { "content-type": "text/event-stream" });
-      response.end(streamBody("已读取"));
+      response.end(respond?.(requests.length) ?? streamBody("\u5df2\u8bfb\u53d6"));
     });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const address = server.address();
@@ -158,6 +171,54 @@ describe("CLI coding host", () => {
     expect(JSON.stringify(requests.at(-1)?.messages)).toContain(dataUrl);
   });
 
+  it("yields the active run after a tool step when another message is queued", async () => {
+    let release!: () => void;
+    responseGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    respond = (call) =>
+      call === 1
+        ? toolCallBody("Read", { file_path: "D:/coding-workspace/missing.txt" })
+        : streamBody("continued");
+    await host.runtime.createConversation("coding-step-queue");
+
+    const first = await host.runtime.enqueue(
+      "coding-step-queue",
+      { text: "first", images: [] },
+      ACCESS_TOKEN,
+    );
+    if (first.status !== "started") throw new Error("first message did not start");
+    const second = await host.runtime.enqueue(
+      "coding-step-queue",
+      { text: "second requirement", images: [] },
+      ACCESS_TOKEN,
+    );
+    expect(second).toMatchObject({ status: "queued", position: 1 });
+    release();
+
+    const started = await host.runtime.waitForQueueStart("coding-step-queue", second.queueId);
+    await host.runtime.waitForRun(started.runId);
+    await host.runtime.waitForRun(first.runId);
+
+    expect(requests).toHaveLength(2);
+    expect(JSON.stringify(requests[1]?.messages)).toContain("second requirement");
+    expect(
+      events.some(
+        (envelope) =>
+          envelope.runId === first.runId &&
+          envelope.event.type === "run-state-changed" &&
+          envelope.event.state === "completed",
+      ),
+    ).toBe(true);
+    const final = await host.runtime.getSnapshot("coding-step-queue");
+    expect(final.messages.map((message) => message.role)).toEqual([
+      "user",
+      "assistant",
+      "user",
+      "assistant",
+    ]);
+  });
+
   it("cancels an active coding run", async () => {
     holdResponse = true;
     await host.runtime.createConversation("coding-cancel");
@@ -185,6 +246,29 @@ describe("CLI coding host", () => {
 
     const final = await host.runtime.getSnapshot("coding-cancel");
     expect(final.messages.at(-1)?.status).toBe("interrupted");
+  });
+
+  it("does not start queued turns while shutting down", async () => {
+    holdResponse = true;
+    await host.runtime.createConversation("coding-shutdown");
+    const first = await host.runtime.enqueue(
+      "coding-shutdown",
+      { text: "first", images: [] },
+      ACCESS_TOKEN,
+    );
+    expect(first.status).toBe("started");
+    await expect.poll(() => requests.length, { timeout: 5_000, interval: 10 }).toBe(1);
+    const second = await host.runtime.enqueue(
+      "coding-shutdown",
+      { text: "second", images: [] },
+      ACCESS_TOKEN,
+    );
+    expect(second).toMatchObject({ status: "queued", position: 1 });
+
+    await host.shutdown();
+
+    expect(requests).toHaveLength(1);
+    await expect.poll(() => host.runtime.activeRunCount, { timeout: 5_000, interval: 10 }).toBe(0);
   });
 });
 

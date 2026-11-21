@@ -17,6 +17,10 @@ function createSession(conversationId: string) {
   let currentId = conversationId;
   const sent: string[] = [];
   const waits: Array<() => void> = [];
+  const start = (text: string): string => {
+    sent.push(text);
+    return `run-${sent.length}`;
+  };
   const session = {
     get currentConversationId() {
       return currentId;
@@ -24,10 +28,18 @@ function createSession(conversationId: string) {
     modelConfig: model,
     open: vi.fn(async () => snapshot(currentId)),
     refresh: vi.fn(async () => snapshot(currentId)),
-    send: vi.fn(async (text: string) => {
-      sent.push(text);
-      return `run-${sent.length}`;
+    send: vi.fn(async (text: string) => start(text)),
+    enqueue: vi.fn(async (text: string) => {
+      const runId = start(text);
+      return {
+        queueId: `queue-${runId}`,
+        status: "started" as const,
+        position: 0 as const,
+        runId,
+        snapshot: snapshot(currentId),
+      };
     }),
+    waitForQueueStart: vi.fn(),
     wait: vi.fn(
       () =>
         new Promise<void>((resolve) => {
@@ -35,6 +47,7 @@ function createSession(conversationId: string) {
         }),
     ),
     cancel: vi.fn(),
+    cancelRun: vi.fn(),
     clear: vi.fn(async () => snapshot(currentId)),
     compact: vi.fn(async () => ({
       result: { status: "compacted" as const },
@@ -127,8 +140,8 @@ describe("TuiRunController", () => {
     await Promise.resolve();
 
     expect(controller.cancel()).toBe(true);
-    expect(foreground.session.cancel).toHaveBeenCalledTimes(1);
-    expect(background.session.cancel).not.toHaveBeenCalled();
+    expect(foreground.session.cancelRun).toHaveBeenCalledTimes(1);
+    expect(background.session.cancelRun).not.toHaveBeenCalled();
     expect(store.getSnapshot()).toMatchObject({ phase: "cancelling", queued: 0 });
   });
 
@@ -153,10 +166,17 @@ describe("TuiRunController", () => {
     store.initialize(snapshot("conversation-1"));
     const controller = createController(active.session, store);
     let accept!: (runId: string) => void;
-    vi.mocked(active.session.send).mockImplementationOnce(
+    vi.mocked(active.session.enqueue).mockImplementationOnce(
       () =>
         new Promise((resolve) => {
-          accept = resolve;
+          accept = (runId) =>
+            resolve({
+              queueId: `queue-${runId}`,
+              status: "started",
+              position: 0,
+              runId,
+              snapshot: snapshot("conversation-1"),
+            });
         }),
     );
 
@@ -182,10 +202,17 @@ describe("TuiRunController", () => {
     store.initialize(snapshot("conversation-1"));
     const controller = createController(active.session, store);
     let accept!: (runId: string) => void;
-    vi.mocked(active.session.send).mockImplementationOnce(
+    vi.mocked(active.session.enqueue).mockImplementationOnce(
       () =>
         new Promise((resolve) => {
-          accept = resolve;
+          accept = (runId) =>
+            resolve({
+              queueId: `queue-${runId}`,
+              status: "started",
+              position: 0,
+              runId,
+              snapshot: snapshot("conversation-1"),
+            });
         }),
     );
 
@@ -198,12 +225,51 @@ describe("TuiRunController", () => {
     accept("run-1");
     await Promise.resolve();
     await Promise.resolve();
-    expect(store.getSnapshot().queuedPrompts).toMatchObject([{ text: "second", status: "queued" }]);
+    await Promise.resolve();
+    expect(active.sent).toEqual(["second"]);
+    expect(store.getSnapshot().queuedPrompts).toEqual([]);
 
     active.waits.shift()?.();
     await Promise.resolve();
     await Promise.resolve();
-    expect(active.sent).toEqual(["second"]);
+    expect(store.getSnapshot().phase).toBe("idle");
+  });
+
+  it("keeps a host-queued prompt until the host starts it", async () => {
+    const store = new TuiViewStore();
+    const active = createSession("conversation-1");
+    store.initialize(snapshot("conversation-1"));
+    const controller = createController(active.session, store);
+    vi.mocked(active.session.enqueue).mockResolvedValueOnce({
+      queueId: "queue-1",
+      status: "queued",
+      position: 1,
+    });
+    let start!: (runId: string) => void;
+    vi.mocked(active.session.waitForQueueStart).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          start = (runId) =>
+            resolve({ queueId: "queue-1", runId, snapshot: snapshot("conversation-1") });
+        }),
+    );
+
+    controller.submit("queued");
+    await Promise.resolve();
+    expect(store.getSnapshot().queuedPrompts).toMatchObject([
+      { text: "queued", imageCount: 0, status: "queued" },
+    ]);
+
+    start("run-1");
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(store.getSnapshot().queuedPrompts).toEqual([]);
+    expect(active.waits).toHaveLength(1);
+
+    active.waits.shift()?.();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(store.getSnapshot().phase).toBe("idle");
   });
 
   it("refuses to delete a busy target and leaves idle runtimes closable", async () => {
