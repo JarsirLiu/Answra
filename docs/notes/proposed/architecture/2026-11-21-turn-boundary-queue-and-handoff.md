@@ -26,7 +26,7 @@
   - `packages/shared/src/schema/events.ts`：继续使用 `turn-handoff`，不新增 handoff Turn 事件。
   - `packages/shared/src/schema/status.ts`：`TurnSource` 不增加 `handoff`。
 - 运行时：
-  - `apps/agent/src/core/session/contracts.ts`：`TurnStart`、`TurnHandoff`、`StepStart`、`StepHandoff`、`StepRunContext` 与 assistant `messageId` 归属。
+  - `apps/agent/src/core/session/contracts.ts`：`TurnRunContext`、`TurnStart`、`TurnHandoff`、`StepStart`、`StepHandoff`、`StepRunContext` 与 assistant `messageId` 归属。
   - `apps/agent/src/core/session/scheduler.ts`：Turn 边界 FIFO、取消 queued、活动 Turn 不被排队消息切断。
   - `apps/agent/src/core/session/turnExecutor.ts`：同 Turn handoff 循环、最大 step 数、失败传播。
   - `apps/agent/src/core/session/projection.ts`、`recovery.ts`：Turn 状态、队列、assistant 消息 id、恢复收口。
@@ -140,11 +140,11 @@
 - `core/session` 已实现 Turn 边界 FIFO、同 Turn handoff、handoff 非法失败、活动 Turn 取消整条链、恢复收口与 queued 继续。
 - `SessionTurnExecutor` 现在由宿主注入 `createMessageId`，每个实际发言的 Bot 获得独立 assistant `messageId`；同一 Bot 的多个 step 复用，handoff 事件 envelope 记录来源 Bot 的 `messageId`。
 - `SessionProjection` 从 `step-started` 与 `turn-handoff` 统一收集 assistant 消息 id，并按 id 去重；多 step 不会产生重复消息，handoff 后新 Bot 的 step 产生新 id。
-- `StepStart.handoff` 已携带 `fromAgentId`、`task`、`sourceMessageId`，并让目标 Bot 的每个 step 都持有同一份交接输入；`StepStart.input` 同时提供 Turn 用户输入，供领域适配器构建目标 Bot 输入；`StepRunContext.events` 提供只接受模型流事件的串行 sink，`step-*` 与 usage 仍由 `SessionStepExecutor` 独占。
-- 已新增 `SessionStepRunner` 与 `PreparationStepContextManager`：StepRunner 使用真实 `streamModel` 路径执行单次 provider 请求，调用 ContextManager 准备/恢复上下文，消费模型流并写模型事件；provider 内部的 step framing 被过滤，不占用 Session 的 step 身份。
-- 已新增 `conversation/stepRunner.ts`：按 `StepStart.agentId` 解析 Conversation Bot，handoff task 优先于 Turn 用户输入，并通过 `AgentExecutor.result` 把 `BotTurnResult` 映射为 `TurnHandoff`；目标 Bot 的每个 step 复用同一份交接输入，不新开 Turn 或队列项。
-- 自动化证据：`pnpm --filter @answra/agent test` 通过 778 个测试；其中 Session/StepRunner 目标集 63 个测试，覆盖“交接链完成后才启动 queued 用户 Turn”“取消交接链后 queued 用户 Turn 继续”“handoff 输入传给目标 Bot 的每个 step”“step 事件 sink 按序写入 journal”“context overflow 仅恢复一次”以及“Conversation handoff 输入与结果映射”。
-- 未完成：业务 application 迁移、worker/desktop/CLI 投影、旧 `shouldYield` 路径删除、transcript 写入 `turn_id`。Conversation 领域 StepRunner 绑定已具备，但尚未替换 `ConversationApplication` 的旧 run 执行链；因此本 Note 仍为提案，不迁移到 `implemented/`。
+- `StepStart.handoff` 已携带 `fromAgentId`、`task`、`sourceMessageId`，并让目标 Bot 的每个 step 都持有同一份交接输入；`StepStart.input` 同时提供 Turn 用户输入，供领域适配器构建目标 Bot 输入；`StepRunContext.events` 提供只接受模型流事件的串行 sink，`StepRunContext.runtime` 提供当前 Turn 的 access token 解析，`step-*` 与 usage 仍由 `SessionStepExecutor` 独占。
+- 已新增 `ProviderStepRunner` 与 `PreparationStepContextManager`：StepRunner 使用真实 `streamModel` 路径执行单次 provider 请求，调用 ContextManager 准备/恢复上下文，消费模型流并写模型事件；provider 内部的 step framing 被过滤，不占用 Session 的 step 身份。
+- 已新增 `conversation/stepBinding.ts`：按 `StepStart.agentId` 解析 Conversation Bot，handoff task 优先于 Turn 用户输入，并通过 `AgentExecutor.result` 把 `BotTurnResult` 映射为 `TurnHandoff`；目标 Bot 的每个 step 复用同一份交接输入，不新开 Turn 或队列项。`conversation` 只保留绑定，不再有 `ConversationStepRunner` 薄包装。
+- 自动化证据：`pnpm --filter @answra/agent test` 通过 782 个测试；其中 Session/StepRunner 目标集 63 个测试，覆盖“交接链完成后才启动 queued 用户 Turn”“取消交接链后 queued 用户 Turn 继续”“每个 queued Turn 使用自己的运行时 access token”“恢复时注入运行时且未恢复队列 fail-closed”“handoff 输入传给目标 Bot 的每个 step”“step 事件 sink 按序写入 journal”“context overflow 仅恢复一次”以及“Conversation handoff 输入与结果映射”。
+- 未完成：业务 application 迁移、worker/desktop/CLI 投影、旧 `shouldYield` 路径删除、transcript 写入 `turn_id`。Conversation 领域 Step 绑定已具备，但尚未替换 `ConversationApplication` 的旧 run 执行链；因此本 Note 仍为提案，不迁移到 `implemented/`。
 
 ## 模块边界
 

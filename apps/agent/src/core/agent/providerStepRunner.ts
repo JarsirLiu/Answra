@@ -32,9 +32,8 @@ type StepModelStream = (input: {
   signal: AbortSignal;
 }) => AsyncIterable<TextStreamPart<ToolSet>>;
 
-export interface SessionStepRunnerOptions {
+export interface ProviderStepRunnerOptions {
   endpoint: ConversationCapabilityEndpoint;
-  getAccessToken: () => Promise<string>;
   prepare: (
     step: StepStart,
     signal: AbortSignal,
@@ -47,26 +46,23 @@ export interface SessionStepRunnerOptions {
 }
 
 /** 单次模型请求；同一 Step 内的工具执行仍由 AI SDK 负责。 */
-export class SessionStepRunner implements StepRunner {
+export class ProviderStepRunner implements StepRunner {
   private readonly endpoint: ConversationCapabilityEndpoint;
-  private readonly getAccessToken: () => Promise<string>;
-  private readonly prepareRequest: SessionStepRunnerOptions["prepare"];
+  private readonly prepareRequest: ProviderStepRunnerOptions["prepare"];
   private readonly contextManager?: StepContextManager;
-  private readonly resolveHandoff?: SessionStepRunnerOptions["resolveHandoff"];
-  private readonly tokenProvider?: SessionStepRunnerOptions["tokenProvider"];
+  private readonly resolveHandoff?: ProviderStepRunnerOptions["resolveHandoff"];
+  private readonly tokenProvider?: ProviderStepRunnerOptions["tokenProvider"];
   private readonly stream: StepModelStream;
 
   constructor({
     endpoint,
-    getAccessToken,
     prepare,
     contextManager,
     resolveHandoff,
     tokenProvider,
     stream = streamModel,
-  }: SessionStepRunnerOptions) {
+  }: ProviderStepRunnerOptions) {
     this.endpoint = endpoint;
-    this.getAccessToken = getAccessToken;
     this.prepareRequest = prepare;
     this.contextManager = contextManager;
     this.resolveHandoff = resolveHandoff;
@@ -87,7 +83,7 @@ export class SessionStepRunner implements StepRunner {
     if (this.contextManager !== undefined) {
       modelRequest = await this.contextManager.prepare({
         conversationId: step.sessionId,
-        getAccessToken: this.getAccessToken,
+        getAccessToken: context.runtime.getAccessToken,
         modelRequest,
         rebuild: () => this.prepareRequest(step, signal, emitter),
         signal,
@@ -95,7 +91,7 @@ export class SessionStepRunner implements StepRunner {
     }
     if (signal.aborted) return { outcome: "aborted" };
 
-    const accessToken = await this.getAccessToken();
+    const accessToken = await context.runtime.getAccessToken();
     let contextRecovered = false;
 
     for (;;) {
@@ -186,7 +182,7 @@ export class SessionStepRunner implements StepRunner {
         const recovered = await this.contextManager
           .recover({
             conversationId: step.sessionId,
-            getAccessToken: this.getAccessToken,
+            getAccessToken: context.runtime.getAccessToken,
             modelRequest,
             rebuild: () => this.prepareRequest(step, signal, emitter),
             signal,

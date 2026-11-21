@@ -3,14 +3,20 @@ import type { TextStreamPart, ToolSet } from "ai";
 import { describe, expect, it, vi } from "vitest";
 import type { AgentModelRequest } from "../../../src/core/agent/definition";
 import {
-  SessionStepRunner,
-  type SessionStepRunnerOptions,
-} from "../../../src/core/agent/sessionStepRunner";
+  ProviderStepRunner,
+  type ProviderStepRunnerOptions,
+} from "../../../src/core/agent/providerStepRunner";
 import type { StepContextManager } from "../../../src/core/context/stepContextManager";
 import type { StepRunContext, StepStart } from "../../../src/core/session/contracts";
 import { MemorySessionJournal } from "../../../src/core/session/memoryJournal";
 import { SessionStepExecutor } from "../../../src/core/session/stepExecutor";
-import { TEST_SESSION_ID, TEST_STEP_ID, TEST_TURN_ID, userMessage } from "../session/fixtures";
+import {
+  TEST_SESSION_ID,
+  TEST_STEP_ID,
+  TEST_TURN_ID,
+  TEST_TURN_RUNTIME,
+  userMessage,
+} from "../session/fixtures";
 
 const MODEL_REQUEST: AgentModelRequest = {
   system: "base",
@@ -40,6 +46,7 @@ function eventSink(): { context: StepRunContext; events: AgentStreamEvent[] } {
         },
         flush: async () => undefined,
       },
+      runtime: TEST_TURN_RUNTIME,
     },
   };
 }
@@ -51,7 +58,7 @@ function partsStream(parts: readonly unknown[]): AsyncIterable<TextStreamPart<To
 }
 
 function scriptedStream(scripts: unknown[][]): {
-  stream: SessionStepRunnerOptions["stream"];
+  stream: ProviderStepRunnerOptions["stream"];
   options: Array<Record<string, unknown>>;
 } {
   const options: Array<Record<string, unknown>> = [];
@@ -61,7 +68,7 @@ function scriptedStream(scripts: unknown[][]): {
     const parts = scripts[index] ?? [];
     index += 1;
     return partsStream(parts);
-  }) as SessionStepRunnerOptions["stream"];
+  }) as ProviderStepRunnerOptions["stream"];
   return { stream, options };
 }
 
@@ -77,16 +84,15 @@ function completedParts(text: string): unknown[] {
   ];
 }
 
-function createRunner(overrides: Partial<SessionStepRunnerOptions> = {}): SessionStepRunner {
-  return new SessionStepRunner({
+function createRunner(overrides: Partial<ProviderStepRunnerOptions> = {}): ProviderStepRunner {
+  return new ProviderStepRunner({
     endpoint: { baseUrl: "http://127.0.0.1:1234/v1", model: "test.chat" },
-    getAccessToken: async () => "token",
     prepare: async () => MODEL_REQUEST,
     ...overrides,
   });
 }
 
-describe("SessionStepRunner", () => {
+describe("ProviderStepRunner", () => {
   it("prepares context, streams model events and returns finish facts", async () => {
     const { context, events } = eventSink();
     const { stream, options } = scriptedStream([completedParts("hello")]);
@@ -182,6 +188,24 @@ describe("SessionStepRunner", () => {
     expect(events.some((event) => event.type === "error")).toBe(false);
   });
 
+  it("uses the turn runtime access token for the provider request", async () => {
+    const { context } = eventSink();
+    let capturedToken: string | undefined;
+    const stream: NonNullable<ProviderStepRunnerOptions["stream"]> = ({ transport }) => {
+      capturedToken = transport.accessToken;
+      return partsStream(completedParts("done"));
+    };
+    const runtime = { getAccessToken: async () => "turn-token" };
+
+    await createRunner({ stream }).run(
+      stepStart(),
+      { ...context, runtime },
+      new AbortController().signal,
+    );
+
+    expect(capturedToken).toBe("turn-token");
+  });
+
   it("keeps Session step ownership separate from provider step framing", async () => {
     const journal = new MemorySessionJournal();
     const { stream } = scriptedStream([completedParts("hello")]);
@@ -190,7 +214,7 @@ describe("SessionStepRunner", () => {
       runner: createRunner({ stream }),
     });
 
-    await executor.run(stepStart(), new AbortController().signal);
+    await executor.run(stepStart(), TEST_TURN_RUNTIME, new AbortController().signal);
 
     const events = await journal.readAfter(TEST_SESSION_ID, 0);
     expect(events.map((event) => event.event.type)).toEqual([

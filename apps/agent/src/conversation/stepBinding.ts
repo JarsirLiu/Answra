@@ -1,16 +1,8 @@
 /** Conversation 领域 Step 绑定：按 agentId 解析 Bot、构建模型输入并解析交接结果；不写 transcript 或 Turn 状态。 */
-import type { ConversationCapabilityEndpoint, ConversationSendRequest } from "@answra/shared";
+import type { ConversationSendRequest } from "@answra/shared";
 import type { ConversationAgentInput } from "../bots/general/agent";
 import type { AgentModelRequest, AgentToolOutputEmitter } from "../core/agent/definition";
-import { SessionStepRunner, type SessionStepRunnerOptions } from "../core/agent/sessionStepRunner";
-import type { StepContextManager } from "../core/context/stepContextManager";
-import type {
-  StepRunContext,
-  StepRunner,
-  StepRunnerResult,
-  StepStart,
-  TurnHandoff,
-} from "../core/session/contracts";
+import type { StepStart, TurnHandoff } from "../core/session/contracts";
 import type { ConversationBotCatalog } from "./bots/types";
 
 export interface ConversationStepBindingOptions {
@@ -58,44 +50,6 @@ export function createConversationStepBinding({
       return result === undefined ? undefined : { toAgentId: result.to, task: result.task };
     },
   };
-}
-
-export interface ConversationStepRunnerOptions extends ConversationStepBindingOptions {
-  endpoint: ConversationCapabilityEndpoint;
-  getAccessToken: () => Promise<string>;
-  contextManager?: StepContextManager;
-  tokenProvider?: SessionStepRunnerOptions["tokenProvider"];
-  stream?: SessionStepRunnerOptions["stream"];
-}
-
-/** 把 Conversation 的 prepare/handoff 绑定接到真实 provider StepRunner。 */
-export class ConversationStepRunner implements StepRunner {
-  private readonly runner: SessionStepRunner;
-
-  constructor({
-    catalog,
-    workspaceRoot,
-    endpoint,
-    getAccessToken,
-    contextManager,
-    tokenProvider,
-    stream,
-  }: ConversationStepRunnerOptions) {
-    const binding = createConversationStepBinding({ catalog, workspaceRoot });
-    this.runner = new SessionStepRunner({
-      endpoint,
-      getAccessToken,
-      prepare: (step, signal, emitter) => binding.prepare(step, signal, emitter),
-      resolveHandoff: (step) => binding.resolveHandoff(step),
-      ...(contextManager === undefined ? {} : { contextManager }),
-      ...(tokenProvider === undefined ? {} : { tokenProvider }),
-      ...(stream === undefined ? {} : { stream }),
-    });
-  }
-
-  run(step: StepStart, context: StepRunContext, signal: AbortSignal): Promise<StepRunnerResult> {
-    return this.runner.run(step, context, signal);
-  }
 }
 
 function requestFor(step: StepStart): ConversationSendRequest {

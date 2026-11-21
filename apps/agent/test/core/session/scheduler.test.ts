@@ -6,11 +6,18 @@ import type {
   TurnExecutor,
   TurnFinish,
   TurnId,
+  TurnRunContext,
   TurnStart,
 } from "../../../src/core/session/contracts";
 import { MemorySessionJournal } from "../../../src/core/session/memoryJournal";
 import { TurnScheduler } from "../../../src/core/session/scheduler";
-import { TEST_SESSION_ID, TEST_TURN_ID, TEST_TURN_ID_2, userMessage } from "./fixtures";
+import {
+  TEST_SESSION_ID,
+  TEST_TURN_ID,
+  TEST_TURN_ID_2,
+  TEST_TURN_RUNTIME,
+  userMessage,
+} from "./fixtures";
 
 interface Deferred<T> {
   promise: Promise<T>;
@@ -30,11 +37,13 @@ function deferred<T>(): Deferred<T> {
 
 class FakeTurnExecutor implements TurnExecutor {
   readonly starts: TurnStart[] = [];
+  readonly runtimes: TurnRunContext[] = [];
   private readonly runs = new Map<string, Deferred<TurnFinish>>();
   private readonly starters = new Map<string, Deferred<TurnStart>>();
 
-  run(turn: TurnStart, signal: AbortSignal): Promise<TurnFinish> {
+  run(turn: TurnStart, runtime: TurnRunContext, signal: AbortSignal): Promise<TurnFinish> {
     this.starts.push(turn);
+    this.runtimes.push(runtime);
     const run = deferred<TurnFinish>();
     this.runs.set(turn.turnId, run);
     this.starters.get(turn.turnId)?.resolve(turn);
@@ -118,6 +127,7 @@ function submitUser(scheduler: TurnScheduler, messageId: string) {
     source: "user",
     agentId: "general",
     input: userMessage(messageId),
+    runtime: TEST_TURN_RUNTIME,
   });
 }
 
@@ -317,10 +327,29 @@ describe("TurnScheduler", () => {
     });
 
     expect(executor.starts).toEqual([]);
-    await scheduler.resume();
+    await scheduler.resume(TEST_TURN_RUNTIME);
     await executor.started(TEST_TURN_ID);
 
+    expect(executor.runtimes).toEqual([TEST_TURN_RUNTIME]);
     expect(scheduler.snapshot().queue).toEqual([TEST_TURN_ID_2]);
+  });
+
+  it("refuses to start unrecovered queued turns without a runtime", async () => {
+    const journal = new MemorySessionJournal();
+    await journal.append(
+      TEST_SESSION_ID,
+      { type: "turn-queued", source: "user", input: userMessage("turn-1"), agentId: "general" },
+      { turnId: TEST_TURN_ID },
+    );
+    const executor = new FakeTurnExecutor();
+    const scheduler = await TurnScheduler.create({
+      sessionId: TEST_SESSION_ID,
+      journal,
+      executor,
+    });
+
+    await expect(submitUser(scheduler, "turn-2")).rejects.toThrow("queued Turn 缺少运行时上下文");
+    expect(executor.starts).toEqual([]);
   });
 
   it("does not retry a turn that was already running before resume", async () => {
@@ -352,7 +381,7 @@ describe("TurnScheduler", () => {
       executor,
     });
 
-    await scheduler.resume();
+    await scheduler.resume(TEST_TURN_RUNTIME);
 
     expect(executor.starts).toEqual([]);
     expect(scheduler.snapshot().activeTurnId).toBe(TEST_TURN_ID);

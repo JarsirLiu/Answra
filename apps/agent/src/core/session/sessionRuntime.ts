@@ -9,6 +9,7 @@ import type {
   SessionRecoveryPlan,
   TurnExecutor,
   TurnId,
+  TurnRunContext,
   TurnSubmission,
   TurnSubmissionResult,
 } from "./contracts";
@@ -73,14 +74,14 @@ export class SessionRuntime {
     return this.journal.readAfter(sessionId, after);
   }
 
-  /** 启动恢复只允许在 scheduler 创建前执行；返回恢复前计划，恢复后状态用 snapshot 读取。 */
-  async recover(sessionId: SessionId): Promise<SessionRecoveryPlan> {
+  /** 启动恢复只允许在 scheduler 创建前执行；queued Turn 必须注入当前宿主运行时。 */
+  async recover(sessionId: SessionId, runtime: TurnRunContext): Promise<SessionRecoveryPlan> {
     if (this.schedulers.has(sessionId)) {
       throw new Error(`会话已启动，不能执行启动恢复：${sessionId}`);
     }
     const plan = await recoverSession(this.journal, sessionId);
     const scheduler = await this.scheduler(sessionId);
-    await scheduler.resume();
+    await scheduler.resume(runtime);
     return plan;
   }
 

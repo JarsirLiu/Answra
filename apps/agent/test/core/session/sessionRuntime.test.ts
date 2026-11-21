@@ -10,6 +10,7 @@ import type {
   TurnExecutor,
   TurnFinish,
   TurnId,
+  TurnRunContext,
   TurnStart,
 } from "../../../src/core/session/contracts";
 import { MemorySessionJournal } from "../../../src/core/session/memoryJournal";
@@ -21,6 +22,7 @@ import {
   TEST_STEP_ID,
   TEST_TURN_ID,
   TEST_TURN_ID_2,
+  TEST_TURN_RUNTIME,
   userMessage,
 } from "./fixtures";
 
@@ -40,6 +42,25 @@ function deferred<T>(): Deferred<T> {
 class StopRunner implements StepRunner {
   async run(): Promise<StepRunnerResult> {
     return { outcome: "completed", finishReason: "stop" };
+  }
+}
+
+class TokenRecordingRunner implements StepRunner {
+  readonly tokens: string[] = [];
+  readonly firstStarted = deferred<void>();
+  private readonly releaseFirst = deferred<void>();
+
+  async run(step: StepStart, context: StepRunContext): Promise<StepRunnerResult> {
+    this.tokens.push(await context.runtime.getAccessToken());
+    if (step.turnId === TEST_TURN_ID) {
+      this.firstStarted.resolve();
+      await this.releaseFirst.promise;
+    }
+    return { outcome: "completed", finishReason: "stop" };
+  }
+
+  release(): void {
+    this.releaseFirst.resolve();
   }
 }
 
@@ -112,7 +133,7 @@ class BlockingTurnExecutor implements TurnExecutor {
   readonly starts: TurnStart[] = [];
   private readonly runs = new Map<string, Deferred<TurnFinish>>();
 
-  run(turn: TurnStart): Promise<TurnFinish> {
+  run(turn: TurnStart, _runtime: TurnRunContext): Promise<TurnFinish> {
     this.starts.push(turn);
     const run = deferred<TurnFinish>();
     this.runs.set(turn.turnId, run);
@@ -150,12 +171,17 @@ function createSessionRuntime() {
   return { journal, runtime };
 }
 
-function submitUser(runtime: SessionRuntime, messageId: string) {
+function submitUser(
+  runtime: SessionRuntime,
+  messageId: string,
+  turnRuntime: TurnRunContext = TEST_TURN_RUNTIME,
+) {
   return runtime.submit({
     sessionId: TEST_SESSION_ID,
     source: "user",
     agentId: "general",
     input: userMessage(messageId),
+    runtime: turnRuntime,
   });
 }
 
@@ -181,6 +207,30 @@ describe("SessionRuntime", () => {
     });
     expect(await runtime.events(TEST_SESSION_ID)).toHaveLength(5);
     expect((await journal.readAfter(TEST_SESSION_ID, 0)).at(-1)?.event.type).toBe("turn-finished");
+  });
+
+  it("keeps each queued turn's runtime context", async () => {
+    const journal = new MemorySessionJournal();
+    const runner = new TokenRecordingRunner();
+    const executor = new SessionTurnExecutor({
+      journal,
+      stepExecutor: new SessionStepExecutor({ journal, runner }),
+      createMessageId: sequentialMessageIds(),
+    });
+    const runtime = new SessionRuntime({ journal, executor });
+
+    await submitUser(runtime, "turn-1", {
+      getAccessToken: async () => "token-1",
+    });
+    await runner.firstStarted.promise;
+    await submitUser(runtime, "turn-2", {
+      getAccessToken: async () => "token-2",
+    });
+
+    runner.release();
+    await runtime.waitForIdle(TEST_SESSION_ID);
+
+    expect(runner.tokens).toEqual(["token-1", "token-2"]);
   });
 
   it("finishes a handoff chain before starting a queued user turn", async () => {
@@ -318,7 +368,7 @@ describe("SessionRuntime", () => {
       { turnId: TEST_TURN_ID_2 },
     );
 
-    const plan = await runtime.recover(TEST_SESSION_ID);
+    const plan = await runtime.recover(TEST_SESSION_ID, TEST_TURN_RUNTIME);
 
     expect(plan.interruptedTurnIds).toEqual([TEST_TURN_ID]);
     expect(plan.interruptedStepIds).toEqual([TEST_STEP_ID]);
@@ -351,7 +401,9 @@ describe("SessionRuntime", () => {
     await submitUser(runtime, "turn-1");
     await runtime.waitForIdle(TEST_SESSION_ID);
 
-    await expect(runtime.recover(TEST_SESSION_ID)).rejects.toThrow("不能执行启动恢复");
+    await expect(runtime.recover(TEST_SESSION_ID, TEST_TURN_RUNTIME)).rejects.toThrow(
+      "不能执行启动恢复",
+    );
   });
 
   it("delegates manual compaction without creating a turn", async () => {

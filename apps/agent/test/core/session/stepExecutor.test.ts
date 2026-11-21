@@ -7,7 +7,13 @@ import type {
 } from "../../../src/core/session/contracts";
 import { MemorySessionJournal } from "../../../src/core/session/memoryJournal";
 import { SessionStepExecutor } from "../../../src/core/session/stepExecutor";
-import { TEST_SESSION_ID, TEST_STEP_ID, TEST_TURN_ID } from "./fixtures";
+import {
+  TEST_ACCESS_TOKEN,
+  TEST_SESSION_ID,
+  TEST_STEP_ID,
+  TEST_TURN_ID,
+  TEST_TURN_RUNTIME,
+} from "./fixtures";
 
 class FakeStepRunner implements StepRunner {
   readonly calls: StepStart[] = [];
@@ -51,7 +57,9 @@ describe("SessionStepExecutor", () => {
     });
     const executor = new SessionStepExecutor({ journal, runner });
 
-    await expect(executor.run(stepStart(), new AbortController().signal)).resolves.toMatchObject({
+    await expect(
+      executor.run(stepStart(), TEST_TURN_RUNTIME, new AbortController().signal),
+    ).resolves.toMatchObject({
       stepId: TEST_STEP_ID,
       outcome: "completed",
       finishReason: "stop",
@@ -79,6 +87,22 @@ describe("SessionStepExecutor", () => {
     });
   });
 
+  it("passes the turn runtime to the step runner", async () => {
+    const journal = new MemorySessionJournal();
+    let receivedToken: string | undefined;
+    const runner: StepRunner = {
+      async run(_step, context): Promise<StepRunnerResult> {
+        receivedToken = await context.runtime.getAccessToken();
+        return { outcome: "completed", finishReason: "stop" };
+      },
+    };
+    const executor = new SessionStepExecutor({ journal, runner });
+
+    await executor.run(stepStart(), TEST_TURN_RUNTIME, new AbortController().signal);
+
+    expect(receivedToken).toBe(TEST_ACCESS_TOKEN);
+  });
+
   it("writes model stream events through the step event sink in order", async () => {
     const journal = new MemorySessionJournal();
     const runner: StepRunner = {
@@ -92,7 +116,7 @@ describe("SessionStepExecutor", () => {
     };
     const executor = new SessionStepExecutor({ journal, runner });
 
-    await executor.run(stepStart(), new AbortController().signal);
+    await executor.run(stepStart(), TEST_TURN_RUNTIME, new AbortController().signal);
 
     const events = await journal.readAfter(TEST_SESSION_ID, 0);
     expect(events.map((event) => event.event.type)).toEqual([
@@ -137,7 +161,9 @@ describe("SessionStepExecutor", () => {
     };
     const executor = new SessionStepExecutor({ journal, runner });
 
-    await expect(executor.run(stepStart(), new AbortController().signal)).resolves.toEqual({
+    await expect(
+      executor.run(stepStart(), TEST_TURN_RUNTIME, new AbortController().signal),
+    ).resolves.toEqual({
       stepId: TEST_STEP_ID,
       outcome: "failed",
       errorText: "journal write failed",
@@ -158,7 +184,9 @@ describe("SessionStepExecutor", () => {
     };
     const executor = new SessionStepExecutor({ journal, runner });
 
-    await expect(executor.run(stepStart(), new AbortController().signal)).resolves.toEqual({
+    await expect(
+      executor.run(stepStart(), TEST_TURN_RUNTIME, new AbortController().signal),
+    ).resolves.toEqual({
       stepId: TEST_STEP_ID,
       outcome: "failed",
       errorText: "provider failed",
@@ -177,7 +205,7 @@ describe("SessionStepExecutor", () => {
     const controller = new AbortController();
     controller.abort();
 
-    await expect(executor.run(stepStart(), controller.signal)).resolves.toEqual({
+    await expect(executor.run(stepStart(), TEST_TURN_RUNTIME, controller.signal)).resolves.toEqual({
       stepId: TEST_STEP_ID,
       outcome: "aborted",
     });
@@ -190,7 +218,9 @@ describe("SessionStepExecutor", () => {
     const runner = new FakeStepRunner({ outcome: "aborted" });
     const executor = new SessionStepExecutor({ journal, runner });
 
-    await expect(executor.run(stepStart(), new AbortController().signal)).resolves.toEqual({
+    await expect(
+      executor.run(stepStart(), TEST_TURN_RUNTIME, new AbortController().signal),
+    ).resolves.toEqual({
       stepId: TEST_STEP_ID,
       outcome: "aborted",
     });

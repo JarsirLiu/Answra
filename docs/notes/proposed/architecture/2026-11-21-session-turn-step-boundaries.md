@@ -9,9 +9,11 @@
 - 已新增 SQLite v2 schema 与 `20261121120000_add_session_turns`：回填历史消息 `turn_id` 和 `session_turns`；尚未接新 runtime 写入。
 - 已新增 `core/session/scheduler.ts`：每会话 FIFO、单活动 Turn、queued 取消、手动压缩排序、`resume` 与 `waitForIdle`；`SessionCompactor` 仍为端口，未接真实压缩实现。
 - 已新增 `stepExecutor.ts` 与 `turnExecutor.ts`：StepExecutor 写 `step-*`/usage，TurnExecutor 只写 `turn-handoff` 并返回 `TurnFinish`。
-- 已新增 `sessionStepRunner.ts` 与 `stepContextManager.ts`：StepRunner 使用真实 AI SDK/provider 流执行单次请求，ContextManager 委托 `ContextPreparation` 准备与恢复上下文。
-- 已新增 `conversation/stepRunner.ts`：按 `StepStart.agentId` 解析 Conversation Bot、用 `StepStart.input`/`StepStart.handoff` 构建领域输入，并通过 `AgentExecutor.result` 解析同 Turn handoff；业务执行链尚未接入。
+- 已新增 `providerStepRunner.ts` 与 `stepContextManager.ts`：`ProviderStepRunner` 使用真实 AI SDK/provider 流执行单次请求，ContextManager 委托 `ContextPreparation` 准备与恢复上下文。
+- 已新增 `conversation/stepBinding.ts`：按 `StepStart.agentId` 解析 Conversation Bot、用 `StepStart.input`/`StepStart.handoff` 构建领域输入，并通过 `AgentExecutor.result` 解析同 Turn handoff；业务执行链尚未接入。
+- 命名决定：通用 provider 执行器叫 `ProviderStepRunner`，不把 `Session` 写进实现名；`conversation` 只保留 `createConversationStepBinding`，不再有 `ConversationStepRunner` 薄包装，`conversation` 仅表示对话模式。
 - 已新增 `sessionRuntime.ts`：按 session 创建 scheduler，提供 submit/cancel/compact/snapshot/events/recover/waitForIdle；snapshot 与 events 直接读 journal，不复制 turn/queue 状态。
+- 已新增 `TurnRunContext`：每次提交携带 `getAccessToken`，由 Scheduler 按 Turn 保存在内存并传给 Turn/StepExecutor；不写入 journal、不进投影，queued Turn 各自使用提交时的鉴权上下文。恢复时必须由宿主向 `recover` 重新注入，否则拒绝启动未恢复 queued Turn。
 - 已新增恢复写回：`recoverSession` 把未完成 Step、Turn、Compaction 收口为 failed/interrupted，重复调用不重复追加；`SessionRuntime.recover` 恢复后继续消费 queued Turn，并拒绝已启动 session 的启动恢复。
 - `turn-finished` 与 `step-finished` 增加可选 `errorText`，失败不再只能靠自由文本或日志观察。
 - 状态词汇只保留在 `packages/shared/src/schema/status.ts`：`StepOutcome` 复用 `TurnOutcome`；`CompactionProjection.state` 直接使用 `ContextCompactionState`，`compaction-finished` 投影为 `succeeded`，不再维护 `finished` 投影子集。
@@ -164,6 +166,7 @@ SessionRuntime
 - `SessionProjection`：从事件重建消息、turn、队列位置、压缩边界和 usage；UI 只读投影。
 - `TurnScheduler`：同一 session 同一时刻最多一个活动 turn；队列 FIFO；手动压缩是独立操作。
 - `TurnExecutor`：只负责一轮问答；内部调用 StepExecutor 和 ContextManager，不直接操作队列。
+- `TurnRunContext`：单次 Turn 的内存运行时依赖（当前为模型 access token）；不进入 journal，queued Turn 各自持有，恢复时由宿主重新注入。
 - `StepExecutor`：一次模型请求 + 工具执行；不读写 transcript，不改变 turn 状态。
 - `ContextManager`：session 级上下文状态 + step 前准备；自动/手动压缩都由它执行。
 - `ToolRuntime`：继续作为工具执行底层；工具结果写 step 事件，不决定 turn 状态。
@@ -319,8 +322,8 @@ tool-*               继续由现有工具事件承载
 | 1b 持久化 v2 | 已完成（schema/回填） | `session_turns`、消息 `turn_id`、旧会话回填、v1 fixture | 旧会话回填正确；消息 id/正文不变 |
 | 2 Scheduler 与队列 | 已完成（内存版） | `TurnScheduler` 每会话串行、FIFO、取消、queued 投影、手动压缩排序、`resume` | 活动 turn 不被排队消息切断；queued 可取消；测试通过 |
 | 3 Turn 与 handoff | 已完成（端口级） | `SessionTurnExecutor`、同 Turn handoff、终态结果与 `errorText`；按 Bot 分配 assistant `messageId`，handoff envelope 记录来源消息；`StepStart.handoff` 把来源与任务传给目标 Bot 的每个 step | 多 Bot 同一 turn；队列不插入 handoff；每个 Bot 一条 assistant 消息 |
-| 4 Step 执行 | 已完成（端口级 + provider adapter + Conversation 绑定） | `SessionStepExecutor`、`StepRunner` 端口、`SessionStepRunner` 真实 provider 流、`StepContextManager` adapter、`StepRunContext.events` 模型流 sink、step 事件/usage；`conversation/stepRunner.ts` 按 agentId 绑定 Bot 输入与 handoff；业务执行链待接 | 每个 step 有 agent/model/usage；不改 turn；交接输入进入目标 step |
-| 4.5 SessionRuntime 与恢复 | 已完成（内存版） | `SessionRuntime` 门面、恢复写回、queued 继续、facade 测试 | 恢复只写一次；启动后拒绝 recover；不接业务 |
+| 4 Step 执行 | 已完成（端口级 + provider adapter + Conversation 绑定） | `SessionStepExecutor`、`StepRunner` 端口、`ProviderStepRunner` 真实 provider 流、`StepContextManager` adapter、`StepRunContext.events` 模型流 sink、step 事件/usage；`conversation/stepBinding.ts` 按 agentId 绑定 Bot 输入与 handoff；业务执行链待接 | 每个 step 有 agent/model/usage；不改 turn；交接输入进入目标 step |
+| 4.5 SessionRuntime 与恢复 | 已完成（内存版） | `SessionRuntime` 门面、恢复写回、queued 继续、`TurnRunContext` 按 Turn 隔离、未恢复 queued Turn fail-closed、facade 测试 | 每个 queued Turn 使用自己的运行时；恢复只写一次；启动后拒绝 recover；不接业务 |
 | 5 自动压缩 | 未开始 | ContextManager step 前准备；超限 fail-closed；overflow 一次恢复 | 长工具循环每 step 都准备；353k 不再发出 |
 | 6 手动压缩 | 未开始 | Scheduler 维护操作；operation 事件；取消/失败结果 | 不创建 turn；活动 turn 后执行；失败不坏 checkpoint |
 | 7 UI/协议 | 未开始 | envelope、worker、desktop IPC、CLI 投影 | turn/step/压缩/队列分别显示；旧字段删除 |
@@ -346,12 +349,16 @@ interface TurnScheduler {
   resume(sessionId: string): Promise<void>;
 }
 
+interface TurnRunContext {
+  getAccessToken: () => Promise<string>;
+}
+
 interface TurnExecutor {
-  run(turn: TurnStart, signal: AbortSignal): Promise<TurnFinish>;
+  run(turn: TurnStart, runtime: TurnRunContext, signal: AbortSignal): Promise<TurnFinish>;
 }
 
 interface StepExecutor {
-  run(step: StepStart, signal: AbortSignal): Promise<StepResult>;
+  run(step: StepStart, runtime: TurnRunContext, signal: AbortSignal): Promise<StepResult>;
 }
 
 interface ContextManager {
@@ -370,9 +377,9 @@ interface SessionJournal {
 }
 ```
 
-`SessionRuntime` 只按 session 创建 Scheduler；`snapshot`/`events` 直接读 journal，`recover` 在 Scheduler 创建前写回未完成事实，随后 `resume` 消费 queued Turn。已启动 session 不允许再执行启动恢复。
+`SessionRuntime` 只按 session 创建 Scheduler；`snapshot`/`events` 直接读 journal，`recover` 在 Scheduler 创建前写回未完成事实，随后用宿主注入的 `TurnRunContext` 执行 `resume`，继续消费 queued Turn。已启动 session 不允许再执行启动恢复；未注入运行时的 queued Turn 不会被启动。
 
-`TurnSubmission` 由 Scheduler 接收，只含 `sessionId/source/agentId/input?`，没有 `turnId`；Scheduler 分配后生成带 `turnId` 的 `TurnStart` 交给 `TurnExecutor`。`TurnExecutor.run` 只返回 `TurnFinish`，终态事件由 Scheduler 写入，避免双 writer。`SessionCompactor` 只执行手动压缩；事件和 checkpoint 由其实现写，Scheduler 只负责“活动 Turn 后、下一条 queued 前”的排序。
+`TurnSubmission` 由 Scheduler 接收，含 `sessionId/source/agentId/input?` 与内存 `runtime`，没有 `turnId`；Scheduler 分配后生成带 `turnId` 的 `TurnStart`，并把提交时的 `runtime` 随 queued Turn 一起保存。`TurnExecutor.run` 只返回 `TurnFinish`，终态事件由 Scheduler 写入，避免双 writer。`SessionCompactor` 只执行手动压缩；事件和 checkpoint 由其实现写，Scheduler 只负责“活动 Turn 后、下一条 queued 前”的排序。
 
 `TurnStart` 至少包含 `sessionId/turnId/source/agentId/input?`，`TurnProjection` 额外包含 `status/activeAgentId/assistantMessageIds/handoffCount/finishReason/errorText/createdAt/startedAt/finishedAt`。`StepStart` 至少包含 `sessionId/turnId/messageId/stepId/agentId/modelId/index`。
 
@@ -398,7 +405,7 @@ pnpm notes:check
 pnpm verify
 ```
 
-本轮阶段 2-4.5 验证：`pnpm --filter @answra/agent test` 通过 778 个测试；其中 Session/StepRunner 目标集 63 个测试；`pnpm --filter @answra/shared test -- test/schema.test.ts` 通过 21 个测试；`pnpm exec biome check` 目标文件通过；`pnpm --filter @answra/agent typecheck` 通过。
+本轮阶段 2-4.5 验证：`pnpm --filter @answra/agent test` 通过 782 个测试；其中 Session/StepRunner 目标集 63 个测试，覆盖 queued Turn 运行时隔离、恢复注入与未恢复 fail-closed；`pnpm --filter @answra/shared test -- test/schema.test.ts` 通过 21 个测试；`pnpm exec biome check` 目标文件通过；`pnpm --filter @answra/agent typecheck` 通过。
 
 #### 15.6 实现时禁止
 

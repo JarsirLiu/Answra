@@ -7,6 +7,7 @@ conversation/
   application.ts  唯一编排循环：按 Bot/团队选择创建会话、运行当前 Bot、执行交接链
   bots/           每个 Bot 的执行器、身份与 profile 装配
   profiles/       Bot 使用的提示词、上下文策略和工具白名单
+  stepBinding.ts  Step 到 Conversation Bot 输入与交接结果的绑定
   turn/           transcript 回合认领和模型上下文准备
 ```
 

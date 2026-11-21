@@ -11,7 +11,7 @@ import { MemorySessionJournal } from "../../../src/core/session/memoryJournal";
 import { projectSession } from "../../../src/core/session/projection";
 import { SessionStepExecutor } from "../../../src/core/session/stepExecutor";
 import { SessionTurnExecutor } from "../../../src/core/session/turnExecutor";
-import { TEST_SESSION_ID, TEST_TURN_ID, userMessage } from "./fixtures";
+import { TEST_SESSION_ID, TEST_TURN_ID, TEST_TURN_RUNTIME, userMessage } from "./fixtures";
 
 class ScriptedStepRunner implements StepRunner {
   readonly calls: StepStart[] = [];
@@ -83,7 +83,9 @@ describe("SessionTurnExecutor", () => {
     );
     const executor = createExecutor(journal, runner);
 
-    await expect(executor.run(turnStart(), new AbortController().signal)).resolves.toEqual({
+    await expect(
+      executor.run(turnStart(), TEST_TURN_RUNTIME, new AbortController().signal),
+    ).resolves.toEqual({
       turnId: TEST_TURN_ID,
       outcome: "completed",
       reason: "completed",
@@ -112,7 +114,9 @@ describe("SessionTurnExecutor", () => {
     );
     const executor = createExecutor(journal, runner);
 
-    await expect(executor.run(turnStart(), new AbortController().signal)).resolves.toEqual({
+    await expect(
+      executor.run(turnStart(), TEST_TURN_RUNTIME, new AbortController().signal),
+    ).resolves.toEqual({
       turnId: TEST_TURN_ID,
       outcome: "completed",
       reason: "completed",
@@ -161,7 +165,7 @@ describe("SessionTurnExecutor", () => {
     );
     const executor = createExecutor(journal, runner);
 
-    await executor.run(turnStart(), new AbortController().signal);
+    await executor.run(turnStart(), TEST_TURN_RUNTIME, new AbortController().signal);
 
     const handoff = {
       fromAgentId: "general",
@@ -191,7 +195,7 @@ describe("SessionTurnExecutor", () => {
     });
     const executor = createExecutor(journal, runner);
 
-    const finish = await executor.run(turnStart(), new AbortController().signal);
+    const finish = await executor.run(turnStart(), TEST_TURN_RUNTIME, new AbortController().signal);
 
     expect(finish).toMatchObject({ outcome: "failed", reason: "handoff-failed" });
     expect(finish.errorText).toContain("交接内容");
@@ -208,7 +212,9 @@ describe("SessionTurnExecutor", () => {
     };
     const executor = createExecutor(journal, runner);
 
-    await expect(executor.run(turnStart(), new AbortController().signal)).resolves.toMatchObject({
+    await expect(
+      executor.run(turnStart(), TEST_TURN_RUNTIME, new AbortController().signal),
+    ).resolves.toMatchObject({
       turnId: TEST_TURN_ID,
       outcome: "failed",
       reason: "unknown",
@@ -230,7 +236,7 @@ describe("SessionTurnExecutor", () => {
     );
     const executor = createExecutor(journal, runner, 2);
 
-    const finish = await executor.run(turnStart(), new AbortController().signal);
+    const finish = await executor.run(turnStart(), TEST_TURN_RUNTIME, new AbortController().signal);
 
     expect(finish).toMatchObject({ outcome: "failed", reason: "unknown" });
     expect(finish.errorText).toContain("最大 step 数");
@@ -244,7 +250,7 @@ describe("SessionTurnExecutor", () => {
     const controller = new AbortController();
     controller.abort();
 
-    await expect(executor.run(turnStart(), controller.signal)).resolves.toEqual({
+    await expect(executor.run(turnStart(), TEST_TURN_RUNTIME, controller.signal)).resolves.toEqual({
       turnId: TEST_TURN_ID,
       outcome: "aborted",
       reason: "cancelled",

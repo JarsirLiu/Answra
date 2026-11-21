@@ -16,6 +16,7 @@ import type {
   TurnFinish,
   TurnId,
   TurnProjection,
+  TurnRunContext,
   TurnStart,
   TurnSubmission,
   TurnSubmissionResult,
@@ -42,8 +43,15 @@ export interface ManualCompactionRequest {
   instructions?: string;
 }
 
+interface QueuedTurn {
+  start: TurnStart;
+  /** 从 journal 恢复的 queued Turn 没有原提交上下文；resume 必须重新注入，否则 fail-closed。 */
+  runtime?: TurnRunContext;
+}
+
 interface ActiveTurn {
   start: TurnStart;
+  runtime: TurnRunContext;
   controller: AbortController;
   cancelRequested: boolean;
 }
@@ -63,7 +71,7 @@ export class TurnScheduler {
   private readonly createTurnId: () => TurnId;
   private readonly createOperationId: () => string;
   private projection: SessionProjection;
-  private readonly queued = new Map<TurnId, TurnStart>();
+  private readonly queued = new Map<TurnId, QueuedTurn>();
   private active?: ActiveTurn;
   private maintenance?: PendingCompaction;
   private readonly maintenanceQueue: PendingCompaction[] = [];
@@ -93,6 +101,7 @@ export class TurnScheduler {
     }
     const assignedTurnId = this.resolveTurnId(submission);
     return this.mutate(async () => {
+      this.assertQueuedRuntime();
       if (this.projection.turns.some((turn) => turn.turnId === assignedTurnId)) {
         throw new Error(`Turn 已存在：${assignedTurnId}`);
       }
@@ -104,7 +113,7 @@ export class TurnScheduler {
         ...(submission.input === undefined ? {} : { input: submission.input }),
       };
       await this.append(event, { turnId: assignedTurnId });
-      this.queued.set(assignedTurnId, start);
+      this.queued.set(assignedTurnId, { start, runtime: submission.runtime });
       await this.scheduleNext();
       return {
         turnId: assignedTurnId,
@@ -149,10 +158,10 @@ export class TurnScheduler {
     return result;
   }
 
-  async resume(): Promise<void> {
+  async resume(runtime: TurnRunContext): Promise<void> {
     await this.mutate(async () => {
       await this.refresh();
-      this.hydrateQueued();
+      this.hydrateQueued(runtime);
       await this.scheduleNext();
     });
   }
@@ -192,10 +201,28 @@ export class TurnScheduler {
     };
   }
 
-  private hydrateQueued(): void {
+  private hydrateQueued(runtime?: TurnRunContext): void {
     for (const turn of this.projection.turns) {
-      if (turn.status !== "queued" || this.queued.has(turn.turnId)) continue;
-      this.queued.set(turn.turnId, this.startFromProjection(turn));
+      if (turn.status !== "queued") continue;
+      const existing = this.queued.get(turn.turnId);
+      if (existing !== undefined) {
+        if (existing.runtime === undefined && runtime !== undefined) {
+          this.queued.set(turn.turnId, { ...existing, runtime });
+        }
+        continue;
+      }
+      this.queued.set(turn.turnId, {
+        start: this.startFromProjection(turn),
+        ...(runtime === undefined ? {} : { runtime }),
+      });
+    }
+  }
+
+  private assertQueuedRuntime(): void {
+    for (const [turnId, queued] of this.queued) {
+      if (queued.runtime === undefined) {
+        throw new Error(`queued Turn 缺少运行时上下文，请先 recover：${turnId}`);
+      }
     }
   }
 
@@ -212,16 +239,19 @@ export class TurnScheduler {
       this.notifyIdle();
       return;
     }
-    const start = this.queued.get(nextTurnId);
-    if (start === undefined) throw new Error(`缺少 queued Turn 输入：${nextTurnId}`);
-    await this.startTurn(start);
+    const queued = this.queued.get(nextTurnId);
+    if (queued === undefined) throw new Error(`缺少 queued Turn 输入：${nextTurnId}`);
+    if (queued.runtime === undefined) {
+      throw new Error(`queued Turn 缺少运行时上下文，请先 recover：${nextTurnId}`);
+    }
+    await this.startTurn(queued.start, queued.runtime);
   }
 
-  private async startTurn(start: TurnStart): Promise<void> {
+  private async startTurn(start: TurnStart, runtime: TurnRunContext): Promise<void> {
     const controller = new AbortController();
     await this.append({ type: "turn-started", agentId: start.agentId }, { turnId: start.turnId });
     this.queued.delete(start.turnId);
-    const active: ActiveTurn = { start, controller, cancelRequested: false };
+    const active: ActiveTurn = { start, runtime, controller, cancelRequested: false };
     this.active = active;
     void this.executeTurn(active);
   }
@@ -229,7 +259,7 @@ export class TurnScheduler {
   private async executeTurn(active: ActiveTurn): Promise<void> {
     let finish: TurnFinish;
     try {
-      finish = await this.executor.run(active.start, active.controller.signal);
+      finish = await this.executor.run(active.start, active.runtime, active.controller.signal);
       if (finish.turnId !== active.start.turnId) {
         throw new Error(`TurnExecutor 返回了不同的 turnId：${finish.turnId}`);
       }
@@ -298,13 +328,13 @@ export class TurnScheduler {
   private async cancelQueuedTurns(only?: TurnId): Promise<void> {
     const targets = only === undefined ? [...this.queued.keys()] : [only];
     for (const target of targets) {
-      const start = this.queued.get(target);
-      if (start === undefined) continue;
+      const queued = this.queued.get(target);
+      if (queued === undefined) continue;
       await this.append(
         { type: "turn-finished", status: "aborted", reason: "cancelled" },
-        { turnId: start.turnId },
+        { turnId: queued.start.turnId },
       );
-      this.queued.delete(start.turnId);
+      this.queued.delete(queued.start.turnId);
     }
   }
 

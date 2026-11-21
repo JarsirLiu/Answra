@@ -4,10 +4,9 @@ import type { ConversationAgentInput } from "../../src/bots/general/agent";
 import type { ConversationBot } from "../../src/conversation/bots/types";
 import { CHAT_PROFILES } from "../../src/conversation/profiles/registry";
 import {
-  ConversationStepRunner,
-  type ConversationStepRunnerOptions,
+  type ConversationStepBindingOptions,
   createConversationStepBinding,
-} from "../../src/conversation/stepRunner";
+} from "../../src/conversation/stepBinding";
 import type {
   AgentExecutor,
   AgentId,
@@ -15,11 +14,21 @@ import type {
   BotTurnResult,
 } from "../../src/core/agent/definition";
 import { agentId } from "../../src/core/agent/definition";
+import {
+  ProviderStepRunner,
+  type ProviderStepRunnerOptions,
+} from "../../src/core/agent/providerStepRunner";
 import { createBotCatalog } from "../../src/core/bot/catalog";
 import type { StepStart } from "../../src/core/session/contracts";
 import { MemorySessionJournal } from "../../src/core/session/memoryJournal";
 import { SessionStepExecutor } from "../../src/core/session/stepExecutor";
-import { TEST_SESSION_ID, TEST_STEP_ID, TEST_TURN_ID, userMessage } from "../core/session/fixtures";
+import {
+  TEST_SESSION_ID,
+  TEST_STEP_ID,
+  TEST_TURN_ID,
+  TEST_TURN_RUNTIME,
+  userMessage,
+} from "../core/session/fixtures";
 
 const MODEL_REQUEST: AgentModelRequest = {
   system: "base",
@@ -98,9 +107,12 @@ function partsStream(parts: readonly unknown[]): AsyncIterable<TextStreamPart<To
   })();
 }
 
+type ConversationRunnerOptions = ConversationStepBindingOptions &
+  Omit<ProviderStepRunnerOptions, "prepare" | "resolveHandoff">;
+
 function runnerOptions(
-  overrides: Partial<ConversationStepRunnerOptions> = {},
-): ConversationStepRunnerOptions {
+  overrides: Partial<ConversationRunnerOptions> = {},
+): ConversationRunnerOptions {
   return {
     catalog: createBotCatalog([
       createBot(candidate, "候选人", createExecutor()),
@@ -108,12 +120,23 @@ function runnerOptions(
     ]),
     workspaceRoot: () => "D:/workspace",
     endpoint: { baseUrl: "http://127.0.0.1:1234/v1", model: "test.chat" },
-    getAccessToken: async () => "token",
     ...overrides,
   };
 }
 
-describe("ConversationStepRunner", () => {
+function createRunner(options: ConversationRunnerOptions): ProviderStepRunner {
+  const binding = createConversationStepBinding(options);
+  return new ProviderStepRunner({
+    endpoint: options.endpoint,
+    prepare: binding.prepare,
+    resolveHandoff: binding.resolveHandoff,
+    ...(options.contextManager === undefined ? {} : { contextManager: options.contextManager }),
+    ...(options.tokenProvider === undefined ? {} : { tokenProvider: options.tokenProvider }),
+    ...(options.stream === undefined ? {} : { stream: options.stream }),
+  });
+}
+
+describe("Conversation step binding", () => {
   it("uses the handoff task as the target Bot input and keeps the Turn input available", async () => {
     let prepared: ConversationAgentInput | undefined;
     const options = runnerOptions({
@@ -206,7 +229,7 @@ describe("ConversationStepRunner", () => {
   it("runs the real StepExecutor path and returns the target Bot handoff", async () => {
     const journal = new MemorySessionJournal();
     const onPrepare = vi.fn();
-    const runner = new ConversationStepRunner(
+    const runner = createRunner(
       runnerOptions({
         catalog: createBotCatalog([
           createBot(
@@ -232,6 +255,7 @@ describe("ConversationStepRunner", () => {
           sourceMessageId: "assistant-candidate",
         },
       }),
+      TEST_TURN_RUNTIME,
       new AbortController().signal,
     );
 

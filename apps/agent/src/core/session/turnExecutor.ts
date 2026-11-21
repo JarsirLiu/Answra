@@ -9,6 +9,7 @@ import type {
   TurnExecutor,
   TurnFinish,
   TurnHandoff,
+  TurnRunContext,
   TurnStart,
 } from "./contracts";
 import { stepId } from "./contracts";
@@ -49,7 +50,7 @@ export class SessionTurnExecutor implements TurnExecutor {
     this.maxSteps = maxSteps;
   }
 
-  async run(turn: TurnStart, signal: AbortSignal): Promise<TurnFinish> {
+  async run(turn: TurnStart, runtime: TurnRunContext, signal: AbortSignal): Promise<TurnFinish> {
     let agentId = turn.agentId;
     let messageId = this.createMessageId();
     let handoff: StepHandoff | undefined;
@@ -77,6 +78,7 @@ export class SessionTurnExecutor implements TurnExecutor {
           ...(turn.input === undefined ? {} : { input: turn.input }),
           ...(handoff === undefined ? {} : { handoff }),
         },
+        runtime,
         signal,
       );
 

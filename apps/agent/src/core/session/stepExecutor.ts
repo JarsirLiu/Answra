@@ -8,6 +8,7 @@ import type {
   StepRunner,
   StepRunnerResult,
   StepStart,
+  TurnRunContext,
 } from "./contracts";
 import type { SessionJournal, SessionJournalAppend } from "./journal";
 import { sessionErrorText } from "./sessionErrorText";
@@ -26,7 +27,7 @@ export class SessionStepExecutor implements StepExecutor {
     this.runner = runner;
   }
 
-  async run(step: StepStart, signal: AbortSignal): Promise<StepResult> {
+  async run(step: StepStart, runtime: TurnRunContext, signal: AbortSignal): Promise<StepResult> {
     if (signal.aborted) return { stepId: step.stepId, outcome: "aborted" };
 
     const metadata = this.metadata(step);
@@ -44,6 +45,7 @@ export class SessionStepExecutor implements StepExecutor {
 
     const context: StepRunContext = {
       events: new JournalStepEventSink(this.journal, step, metadata),
+      runtime,
     };
     let result = await this.executeRunner(step, context, signal);
     try {

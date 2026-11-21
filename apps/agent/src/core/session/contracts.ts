@@ -36,12 +36,20 @@ export function stepId(value: string): StepId {
   return requireId(value, "Step ID") as StepId;
 }
 
+/** 每次 Turn 的运行时依赖；只存在内存，不进入 journal，也不跨进程持久化。 */
+export interface TurnRunContext {
+  /** 解析当前 Turn 的模型访问令牌；恢复时必须由宿主重新注入。 */
+  getAccessToken: () => Promise<string>;
+}
+
 export interface TurnSubmission {
   sessionId: SessionId;
   source: TurnSource;
   agentId: string;
   /** 用户输入；opening/reply 等无新用户消息的 Turn 可以缺省。 */
   input?: ConversationMessage;
+  /** 本次提交专属的运行时依赖；不会被写入事件或投影。 */
+  runtime: TurnRunContext;
 }
 
 export interface TurnSubmissionResult {
@@ -166,6 +174,8 @@ export interface StepEventSink {
 /** StepRunner 的运行时上下文；目标 Bot 的 prompt 由领域适配器按 agentId 解析。 */
 export interface StepRunContext {
   events: StepEventSink;
+  /** 当前 Turn 的运行时依赖；同一 Turn 的所有 step 共享，不落 journal。 */
+  runtime: TurnRunContext;
 }
 
 /** 一次 provider 请求及其工具执行的输入；不包含领域 prompt 或工具实现。 */
@@ -196,7 +206,7 @@ export interface StepResult {
 
 /** 一次 provider 请求与工具执行的端口；独占 step-* 与 usage，模型流事件经 StepEventSink 写入，不能改 Turn 状态。 */
 export interface StepExecutor {
-  run(step: StepStart, signal: AbortSignal): Promise<StepResult>;
+  run(step: StepStart, runtime: TurnRunContext, signal: AbortSignal): Promise<StepResult>;
 }
 
 /**
@@ -217,7 +227,7 @@ export interface StepRunner {
 
 /** 一轮问答的执行端口；终态由 Scheduler 写入，执行器只返回结果。 */
 export interface TurnExecutor {
-  run(turn: TurnStart, signal: AbortSignal): Promise<TurnFinish>;
+  run(turn: TurnStart, runtime: TurnRunContext, signal: AbortSignal): Promise<TurnFinish>;
 }
 
 export interface SessionCompactionRequest {
