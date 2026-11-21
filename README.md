@@ -1,27 +1,86 @@
-# 会议辅助工具
+<div align="center">
 
-面向办公会议场景的本地优先桌面助手，使用 React、TypeScript 和 Electron 构建界面。
+# Answra
 
-## 当前范围
+**面向工作与学习场景的本地优先 AI 助手**
 
-- 三段式悬浮导航：模式选择、模式功能、笔记/资料/设置等全局入口。
-- 按需展开的对话、笔记、参考资料和设置面板。
-- 支持应用内区域截图、添加本地图片、填写补充问题并作为同一条消息发送。
-- 对话回复为演示内容，尚未连接后端或 AI 模型。
-- Windows 面试语音试用接入会议系统声音与候选人麦克风，经本地 VAD/ASR 后在面板按说话方显示识别文本和 VAD 端点；当前不生成回答。
-- 隐身模式通过 Electron 窗口捕获保护请求系统排除应用表面；实际效果需按 Electron 和 Windows 版本验证。
-- CLI coding 模式（`answra code`）复用独立 `coding.engineer` Bot 与 coding 工具；TTY 下进入 Ink TUI，支持运行中排队、`/help`、`/clear`、`/exit`、prompt/管道一次性执行与 `--no-alt-screen`。
+在桌面端准备面试、辅助会议，在终端中协作编程，并通过安全的 P2P 连接管理远程设备。
+
+[![Node.js](https://img.shields.io/badge/Node.js-%3E%3D22.13-111827?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org/)
+[![pnpm](https://img.shields.io/badge/pnpm-11.9-F69220?style=flat-square&logo=pnpm&logoColor=white)](https://pnpm.io/)
+[![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial-111827?style=flat-square)](LICENSE)
+
+</div>
+
+## 产品演示
+
+<!-- 视频发布后，将下方占位内容替换为视频链接或 GitHub 支持的演示资源。 -->
+
+<div align="center">
+
+*产品演示视频即将上线*
+
+</div>
+
+## 快速导航
+
+[产品能力](#产品能力) · [开始开发](#开始开发) · [架构概览](#架构概览) · [常用命令](#常用命令) · [参与开发](#参与开发)
+
+## 为什么是 Answra
+
+Answra 把桌面辅助、终端编码和远程连接放在同一个本地优先工作流中。它不要求你切换多个工具，也不把个人模型配置和工作数据交给云端托管。
+
+| 场景 | 你可以用 Answra 做什么 |
+| --- | --- |
+| **面试准备** | 用本地语音识别进行模拟面试，整理回答建议与知识点 |
+| **屏幕问答** | 截取应用内区域，让 AI 结合图片快速分析技术问题 |
+| **编程协作** | 在终端中让 Coding Agent 搜索代码、修改文件并执行命令 |
+| **远程工作** | 通过 P2P 连接控制远程 CLI，并使用本地密钥保护访问 |
+
+## 产品能力
+
+### 桌面助手
+
+- **实时面试准备**：基于本地 VAD/ASR 识别语音，模拟面试场景并生成回答建议。
+- **屏幕智能问答**：截取应用内区域或上传图片，实时分析技术问题和知识点。
+- **低干扰工作流**：通过 Electron 窗口捕获保护减少屏幕共享或录屏时的干扰。
+- **悬浮条界面**：使用模式选择、功能面板和设置三段式导航，按需展开对话、笔记与参考资料。
+
+### 终端 Coding Agent
+
+- **代码协作**：运行 `answra code` 进入 TUI，支持文件读写、ripgrep 搜索和 shell 执行。
+- **会话管理**：多会话并行，支持 SQLite 持久化、列表、恢复和删除。
+- **模型配置**：通过 `/config` 管理模型端点与 API Key，密钥使用 OS keychain 存储。
+- **高效交互**：提供 `/help`、`/sessions`、`/model`、`/summarize` 等 Slash 命令，以及命令提示和参数补全。
+- **上下文控制**：自动压缩超限对话，支持手动摘要和 token 预算可视化。
+
+### 远程操控
+
+- **P2P 连接**：基于 WebRTC DataChannel，无需中继服务器。
+- **设备配对**：使用 `answra remote host` 开启宿主，使用 `answra remote control` 连接远程 CLI。
+- **安全访问**：访问密钥在本地受保护存储，并支持密钥轮换。
+
+## 工程基础
+
+- **本地优先**：模型配置、会话记录和凭据按职责分离，本地存储，API Key 不进入共享配置文件。
+- **跨客户端 Agent**：同一套 Agent 运行时同时服务桌面 utility process 与 CLI 独立进程。
+- **可靠数据层**：SQLite 使用 baseline + append-only migration ledger，并覆盖升级、幂等性和回滚测试。
+- **类型安全边界**：通过 `ChannelMap` 维护 IPC 频道映射，隔离 main、preload 与 renderer。
+- **离线语音能力**：使用 TEN VAD + Paraformer ASR，语音识别链路可完全离线运行。
+- **架构守护**：自动检查深导入、依赖环和平台边界越界。
 
 工程决策、功能方案、缺陷复盘和架构边界统一记录在[工程 Note](docs/README.md)。
 
-## 环境要求
+## 开始开发
+
+### 环境要求
 
 - Node.js 22.13 或更新版本（pnpm 11.9 的最低要求）
 - CLI 运行时目标为 Node 22.13；安装包复用 Electron 35.0.0 内置的 Node 22.14，不额外携带 Node sidecar
 - pnpm 11.9.0，建议通过 Corepack 管理
 - Windows 可运行原生 Electron 桌面窗口；其他平台可通过 `pnpm dev:web` 预览 renderer
 
-## 开发
+### 启动项目
 
 ```powershell
 corepack enable
@@ -35,40 +94,14 @@ pnpm dev
 
 面试语音运行还需要 TEN VAD 与 Paraformer 模型。上面两条 prepare 命令会下载并校验资源；ASR 模型约 82 MB，支持断点续传。`bootstrap` 不包含这两类语音资源。
 
-## 检查
+### 质量检查
 
 ```powershell
 pnpm verify   # lint + typecheck + db:check + test + architecture:check（Note 检查仅提示，不阻断）
 pnpm build
 ```
 
-Windows 安装包通过 `pnpm dist:win` 构建，当前为未签名的 NSIS 安装包，不需要代码签名证书。安装包会把 CLI bundle 放到 `resources/cli/main.mjs`，并在安装目录提供复用 `Answra.exe` 的 `answra.cmd`；该目录不会自动加入 PATH。
-
-## 发版与分发
-
-打包产物（安装包、blockmap 差量文件、`latest.yml` 清单）由 electron-builder 的 `publish` 配置指向腾讯云 COS 的 `download/latest/` 目录；桌面端 `electron-updater` 启动后按该清单静默检查更新、退出时自动安装，官网下载按钮也指向同一地址。
-
-```powershell
-# 1. 改 apps/desktop/package.json 的 version（electron-updater 按 semver 判断新版本）
-# 2. 品牌图标变更时重新生成 build/ 下图标
-pnpm --filter @answra/desktop icons
-# 3. 打包并上传（密钥走环境变量，不入库）
-$env:COS_SECRET_ID="..."; $env:COS_SECRET_KEY="..."
-pnpm release:win
-```
-
-`release:win` = `dist:win` + `apps/desktop/scripts/upload-to-cos.mjs`（同时归档到 `download/v{版本}/` 便于回滚）；加 `--dry-run` 参数可只列出待上传产物。
-
-macOS 安装包（dmg + zip，arm64/x64 各一份，未签名）只能在 macOS 上打包：
-
-```powershell
-# 本机（macOS）：构建并上传
-pnpm release:mac
-```
-
-CI 侧使用 `.github/workflows/release.yml`（`Release`）：打 `v*` tag 或手动触发后，`windows-latest` 跑 `dist:win`、`macos-14` 跑 `dist:mac`，两个平台各自产出安装包作为 workflow artifact；随后唯一的 publish 作业把它们合并、校验 tag 与 `apps/desktop/package.json` 版本一致、上传到 COS 的 `download/latest/` 与 `download/v{版本}/`，tag 构建还会附到 GitHub Release。需要仓库 Secrets：`COS_SECRET_ID`、`COS_SECRET_KEY`。应用内更新两平台统一走「下载更新 → 进度条 → 安装/换装重启」（mac 未签名构建用自研换装脚本，替换方案与真机验收点见 `docs/notes/implemented/feature/2026-11-01-cross-platform-auto-update.md`）；未签名 mac 包首次启动需右键「打开」。
-
-## 仓库结构
+## 架构概览
 
 pnpm workspace monorepo：包间依赖只走 `workspace:*` 与各包 `exports` 声明的公开入口；IPC 频道与载荷类型集中在 `@answra/shared`；渲染层 UI 与平台能力（DesktopBridge）解耦，`packages/ui` 不允许直接接触 Electron。
 
@@ -127,7 +160,7 @@ docs/notes             按生命周期与类别管理的工程 Note
 docs                   Note 索引
 ```
 
-常用命令：
+### 常用命令
 
 | 命令 | 说明 |
 | --- | --- |
