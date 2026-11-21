@@ -48,19 +48,20 @@ export async function loadMigrationFiles(): Promise<LoadedMigration[]> {
 }
 
 export function renderRegistry(files: readonly LoadedMigration[]): string {
-  const lines = ["/** 由 `pnpm db:generate` 生成；请勿手工编辑。 */"];
-  lines.push('import type { Migration } from "./types";');
+  const lines = ["/** 由 `pnpm db:generate` 生成；请勿手工编辑。 */", ""];
   for (const [index, { filePath }] of files.entries()) {
     const name = path.basename(filePath, ".ts");
     lines.push(`import { migration as migration${index} } from "./migrations/${name}";`);
   }
-  lines.push("");
+  lines.push('import type { Migration } from "./types";', "");
   if (files.length === 0) {
     lines.push("export const MIGRATIONS: readonly Migration[] = [];");
   } else {
-    lines.push("export const MIGRATIONS: readonly Migration[] = [");
-    for (const [index] of files.entries()) lines.push(`  migration${index},`);
-    lines.push("];");
+    lines.push(
+      `export const MIGRATIONS: readonly Migration[] = [${files
+        .map((_, index) => `migration${index}`)
+        .join(", ")}];`,
+    );
   }
   lines.push("");
   return lines.join("\n");

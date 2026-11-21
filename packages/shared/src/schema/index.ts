@@ -33,6 +33,8 @@ export {
   agentEventSchema,
   agentExecutionEventSchema,
   agentStreamEventSchema,
+  type SessionEventEnvelope,
+  sessionEventEnvelopeSchema,
 } from "./events";
 export * from "./remote";
 export {
@@ -63,12 +65,14 @@ export {
   agentRunStateSchema,
   agentToolCallStateSchema,
   agentUsageSchema,
+  type CompactionReason,
   type ContextCompactionBoundary,
   type ContextCompactionState,
   type ContextCompactionStatus,
   type ContextCompactionTrigger,
   type ContextPruningStatus,
   type ContextUsage,
+  compactionReasonSchema,
   contextCompactionBoundarySchema,
   contextCompactionSchema,
   contextCompactionStateSchema,
@@ -79,6 +83,14 @@ export {
   type ManualCompactionResult,
   type RunOutcome,
   runOutcomeSchema,
+  type TurnFinishReason,
+  type TurnOutcome,
+  type TurnSource,
+  type TurnStatus,
+  turnFinishReasonSchema,
+  turnOutcomeSchema,
+  turnSourceSchema,
+  turnStatusSchema,
 } from "./status";
 export {
   type EditDiffDisplay,

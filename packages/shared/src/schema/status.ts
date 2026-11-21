@@ -23,6 +23,25 @@ export const agentRunStateSchema = z.enum([
   "orphaned",
 ]);
 export const runOutcomeSchema = z.enum(["completed", "failed", "aborted", "superseded"]);
+/** 用户可见的 turn 生命周期；step 活动、压缩和重试都不是 turn 状态。 */
+export const turnStatusSchema = z.enum(["queued", "running", "completed", "failed", "aborted"]);
+/** Turn 终态；`queued`/`running` 只存在于活动投影。 */
+export const turnOutcomeSchema = z.enum(["completed", "failed", "aborted"]);
+/** Turn 输入来源；handoff 是同一 Turn 内的事件，不是新 Turn 来源。 */
+export const turnSourceSchema = z.enum(["user", "reply", "opening", "worker", "external"]);
+/** Turn 终态原因；失败原因必须可观察，不能只靠自由文本。 */
+export const turnFinishReasonSchema = z.enum([
+  "completed",
+  "interrupted",
+  "handoff-failed",
+  "context-exhausted",
+  "model-error",
+  "tool-error",
+  "cancelled",
+  "unknown",
+]);
+/** 压缩触发原因；自动阈值与 provider 溢出恢复必须区分。 */
+export const compactionReasonSchema = z.enum(["threshold", "provider-overflow", "manual"]);
 /** Lifecycle of a model-requested tool call. */
 export const agentToolCallStateSchema = z.enum([
   "input-streaming",
@@ -145,6 +164,11 @@ export const agentRunSnapshotSchema = z.strictObject({
 });
 export type AgentRunState = z.infer<typeof agentRunStateSchema>;
 export type RunOutcome = z.infer<typeof runOutcomeSchema>;
+export type TurnStatus = z.infer<typeof turnStatusSchema>;
+export type TurnOutcome = z.infer<typeof turnOutcomeSchema>;
+export type TurnSource = z.infer<typeof turnSourceSchema>;
+export type TurnFinishReason = z.infer<typeof turnFinishReasonSchema>;
+export type CompactionReason = z.infer<typeof compactionReasonSchema>;
 export type AgentRetry = z.infer<typeof agentRetrySchema>;
 export type AgentToolCallState = z.infer<typeof agentToolCallStateSchema>;
 export type AgentMessageState = z.infer<typeof agentMessageStateSchema>;

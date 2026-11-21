@@ -46,6 +46,35 @@ describe("conversation projection", () => {
     expect(next.messages[1]).toMatchObject({ text: "先说经历", status: "streaming" });
   });
 
+  it("ignores turn and compaction events until the UI turn projection is migrated", () => {
+    const base: ConversationView = {
+      eventRevision: 1,
+      activeRunId: "run-1",
+      messages: [
+        { id: "run-1", role: "assistant", text: "answer", images: [], status: "complete" },
+      ],
+    };
+
+    const afterTurn = applyAgentEvent(
+      base,
+      envelope(2, { type: "turn-started", agentId: "general" }),
+    );
+    const afterCompaction = applyAgentEvent(
+      afterTurn,
+      envelope(3, {
+        type: "compaction-finished",
+        summarizedMessages: 2,
+        summary: "摘要",
+      }),
+    );
+
+    expect(afterCompaction).toMatchObject({
+      eventRevision: 3,
+      activeRunId: "run-1",
+      messages: base.messages,
+    });
+  });
+
   it("keeps reasoning and rate-limit retry as separate explicit states", () => {
     const base: ConversationView = {
       eventRevision: 1,

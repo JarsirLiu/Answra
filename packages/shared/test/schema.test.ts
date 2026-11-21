@@ -12,6 +12,8 @@ import {
   conversationMessageSchema,
   conversationSnapshotSchema,
   editDiffDisplaySchema,
+  sessionEventEnvelopeSchema,
+  turnSourceSchema,
 } from "../src/schema";
 
 describe("event schema", () => {
@@ -106,7 +108,35 @@ describe("event schema", () => {
   it("includes every execution event in the complete and durable catalogs", () => {
     const events = [
       { type: "run-state-changed", state: "running", attempt: 1 },
-      { type: "step-started", stepId: "step-1", index: 0 },
+      {
+        type: "turn-queued",
+        source: "user",
+        input: {
+          id: "message-1",
+          role: "user",
+          text: "hello",
+          images: [],
+          status: "complete",
+        },
+        agentId: "general",
+      },
+      { type: "turn-started", agentId: "general" },
+      { type: "turn-finished", status: "completed", reason: "completed" },
+      {
+        type: "turn-handoff",
+        fromAgentId: "general",
+        toAgentId: "intake",
+        task: "整理资料",
+      },
+      { type: "compaction-started", trigger: "auto", reason: "threshold" },
+      {
+        type: "compaction-finished",
+        summarizedMessages: 2,
+        summary: "摘要",
+        usage: { inputTokens: 10, outputTokens: 4 },
+      },
+      { type: "compaction-failed", errorText: "summary failed" },
+      { type: "step-started", stepId: "step-1", index: 0, agentId: "general", modelId: "model-a" },
       { type: "step-finished", stepId: "step-1", index: 0, state: "completed" },
       { type: "context-usage-changed", usedTokens: 10 },
       { type: "part-state-changed", partId: "part-1", kind: "text", state: "started" },
@@ -118,9 +148,9 @@ describe("event schema", () => {
       expect(agentDurableEventSchema.parse(event)).toEqual(event);
     }
 
-    expect(agentExecutionEventSchema.options).toHaveLength(5);
-    expect(agentEventSchema.options).toHaveLength(33);
-    expect(agentDurableEventSchema.options).toHaveLength(29);
+    expect(agentExecutionEventSchema.options).toHaveLength(12);
+    expect(agentEventSchema.options).toHaveLength(40);
+    expect(agentDurableEventSchema.options).toHaveLength(36);
   });
 
   it("rejects provider-only fields that are not part of the app contract", () => {
@@ -148,6 +178,32 @@ describe("event schema", () => {
       event: { type: "text-delta", partId: "text-1", delta: "answer" },
     });
     expect(envelope.event).toEqual({ type: "text-delta", partId: "text-1", delta: "answer" });
+  });
+
+  it("keeps handoff inside a turn instead of treating it as a turn source", () => {
+    expect(turnSourceSchema.options).not.toContain("handoff");
+  });
+
+  it("carries turn, message and compaction identity in the session envelope", () => {
+    expect(
+      sessionEventEnvelopeSchema.parse({
+        schemaVersion: 1,
+        eventId: "event-3",
+        sessionId: "conversation",
+        turnId: "turn-1",
+        messageId: "message-1",
+        operationId: "operation-1",
+        sequence: 3,
+        producerId: "agent-local-1",
+        occurredAt: "2026-11-06T00:00:02.000Z",
+        event: { type: "turn-finished", status: "completed", reason: "completed" },
+      }),
+    ).toMatchObject({
+      sessionId: "conversation",
+      turnId: "turn-1",
+      messageId: "message-1",
+      operationId: "operation-1",
+    });
   });
 
   it("accepts execution facts needed for future hosted adapters", () => {

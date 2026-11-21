@@ -19,6 +19,7 @@ CREATE INDEX sessions_scope_workspace_updated
 CREATE TABLE session_messages (
   conversation_id TEXT NOT NULL,
   message_id TEXT NOT NULL,
+  turn_id TEXT,
   seq INTEGER NOT NULL,
   role TEXT NOT NULL,
   status TEXT NOT NULL,
@@ -30,6 +31,29 @@ CREATE TABLE session_messages (
 
 CREATE INDEX session_messages_seq
   ON session_messages(conversation_id, seq DESC);
+
+CREATE INDEX session_messages_turn
+  ON session_messages(conversation_id, turn_id, seq);
+
+CREATE TABLE session_turns (
+  conversation_id TEXT NOT NULL,
+  turn_id TEXT NOT NULL,
+  seq INTEGER NOT NULL,
+  source TEXT NOT NULL,
+  status TEXT NOT NULL,
+  finish_reason TEXT,
+  entry_agent_id TEXT,
+  active_agent_id TEXT,
+  input_message_id TEXT,
+  origin_session_id TEXT,
+  origin_turn_id TEXT,
+  origin_agent_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (conversation_id, turn_id),
+  UNIQUE (conversation_id, seq),
+  FOREIGN KEY (conversation_id) REFERENCES sessions(conversation_id) ON DELETE CASCADE
+);
 
 CREATE TABLE session_message_drafts (
   conversation_id TEXT NOT NULL,

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { conversationMessageSchema } from "./conversation";
 import {
   agentFinishReasonSchema,
   agentPartKindSchema,
@@ -7,6 +8,11 @@ import {
   agentRetryWaitSchema,
   agentRunStateSchema,
   agentUsageSchema,
+  compactionReasonSchema,
+  contextCompactionTriggerSchema,
+  turnFinishReasonSchema,
+  turnOutcomeSchema,
+  turnSourceSchema,
 } from "./status";
 
 /** Complete shared catalog of Agent event payloads and their single envelope. */
@@ -17,10 +23,49 @@ const executionEventOptions = [
     attempt: z.number().int().positive(),
     retry: agentRetryWaitSchema.optional(),
   }),
+  /** 用户输入被接纳；turnId 在 envelope，payload 保留可重放的消息内容。 */
+  z.strictObject({
+    type: z.literal("turn-queued"),
+    source: turnSourceSchema,
+    input: conversationMessageSchema.optional(),
+    agentId: z.string(),
+  }),
+  z.strictObject({
+    type: z.literal("turn-started"),
+    agentId: z.string(),
+  }),
+  z.strictObject({
+    type: z.literal("turn-finished"),
+    status: turnOutcomeSchema,
+    reason: turnFinishReasonSchema.optional(),
+  }),
+  z.strictObject({
+    type: z.literal("turn-handoff"),
+    fromAgentId: z.string(),
+    toAgentId: z.string(),
+    task: z.string(),
+  }),
+  z.strictObject({
+    type: z.literal("compaction-started"),
+    trigger: contextCompactionTriggerSchema,
+    reason: compactionReasonSchema.optional(),
+  }),
+  z.strictObject({
+    type: z.literal("compaction-finished"),
+    summarizedMessages: z.number().int().nonnegative(),
+    summary: z.string(),
+    usage: agentUsageSchema.optional(),
+  }),
+  z.strictObject({
+    type: z.literal("compaction-failed"),
+    errorText: z.string(),
+  }),
   z.strictObject({
     type: z.literal("step-started"),
     stepId: z.string(),
     index: z.number().int().nonnegative(),
+    agentId: z.string().optional(),
+    modelId: z.string().optional(),
   }),
   z.strictObject({
     type: z.literal("step-finished"),
@@ -216,8 +261,24 @@ export const agentEventEnvelopeSchema = z.strictObject({
   event: agentEventSchema,
 });
 
+/** Session journal 的目标 envelope；迁移期与旧 run envelope 并存，稳定后删旧字段。 */
+export const sessionEventEnvelopeSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  eventId: z.string(),
+  sessionId: z.string(),
+  turnId: z.string().optional(),
+  messageId: z.string().optional(),
+  stepId: z.string().optional(),
+  operationId: z.string().optional(),
+  sequence: z.number().int().positive(),
+  producerId: z.string(),
+  occurredAt: z.string().datetime(),
+  event: agentEventSchema,
+});
+
 export type AgentExecutionEvent = z.infer<typeof agentExecutionEventSchema>;
 export type AgentStreamEvent = z.infer<typeof agentStreamEventSchema>;
 export type AgentEvent = z.infer<typeof agentEventSchema>;
 export type AgentDurableEvent = z.infer<typeof agentDurableEventSchema>;
 export type AgentEventEnvelope = z.infer<typeof agentEventEnvelopeSchema>;
+export type SessionEventEnvelope = z.infer<typeof sessionEventEnvelopeSchema>;

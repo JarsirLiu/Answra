@@ -4,6 +4,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import type { SessionRecordPayload } from "../../../src/core/transcript/persistence/sessionRecord";
+import { MIGRATIONS } from "../../../src/core/transcript/persistence/sqlite/migration/registry.gen";
 import {
   ConversationSessionConflictError,
   ConversationSessionCorruptError,
@@ -434,13 +435,19 @@ describe("SQLite conversation store", () => {
     expect((await first.list({ scope: "coding" })).items).toHaveLength(2);
   });
 
-  it("initializes a new database with an empty migration ledger", async () => {
+  it("initializes a new database with the current migration ledger", async () => {
     const root = await createRoot();
     storeFor(root);
 
     const db = new DatabaseSync(path.join(root, "sessions.sqlite"));
-    expect(db.prepare("SELECT COUNT(*) AS count FROM _migrations").get()).toEqual({ count: 0 });
-    db.close();
+    try {
+      const rows = db.prepare("SELECT id FROM _migrations ORDER BY id ASC").all() as unknown as {
+        id: string;
+      }[];
+      expect(rows.map((row) => row.id)).toEqual(MIGRATIONS.map((migration) => migration.id));
+    } finally {
+      db.close();
+    }
   });
 
   it("ignores PRAGMA user_version when the migration ledger is current", async () => {

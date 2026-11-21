@@ -153,6 +153,11 @@ export type {
   ConversationMessagePart,
   ManualCompactionResult,
   MessageAudience,
+  SessionEventEnvelope,
+  TurnFinishReason,
+  TurnOutcome,
+  TurnSource,
+  TurnStatus,
 } from "./schema";
 export {
   AGENT_CONNECTION_TARGET,

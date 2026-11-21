@@ -164,6 +164,16 @@ export function applyAgentEvent(
   const hasMessage = next.messages.some((message) => message.id === envelope.runId);
   if (!hasMessage) return event.type === "error" ? { ...next, error: event.errorText } : next;
   if (
+    event.type === "turn-queued" ||
+    event.type === "turn-started" ||
+    event.type === "turn-finished" ||
+    event.type === "turn-handoff" ||
+    event.type === "compaction-started" ||
+    event.type === "compaction-finished" ||
+    event.type === "compaction-failed"
+  )
+    return next;
+  if (
     event.type === "step-started" ||
     event.type === "step-finished" ||
     event.type === "part-state-changed"

@@ -289,7 +289,14 @@ export class MemoryConversationStore implements ConversationStore {
       event.type === "step-started" ||
       event.type === "step-finished" ||
       event.type === "context-usage-changed" ||
-      event.type === "part-state-changed"
+      event.type === "part-state-changed" ||
+      event.type === "turn-queued" ||
+      event.type === "turn-started" ||
+      event.type === "turn-finished" ||
+      event.type === "turn-handoff" ||
+      event.type === "compaction-started" ||
+      event.type === "compaction-finished" ||
+      event.type === "compaction-failed"
     ) {
       session.snapshot = { ...session.snapshot, eventRevision: aggregateRevision };
       return;

@@ -1,4 +1,6 @@
 {
-  "schemaChecksum": "0a5e98ec2e7e790e315a8facb00e4a506b2780eab37be338657fcba3744dd9b0",
-  "migrations": {}
+  "schemaChecksum": "0ef292ed080f87885e409b84b88e8396635b759cfb1ff2d0ad522db8c073ac3b",
+  "migrations": {
+    "20261121120000_add_session_turns": "5faa739d4c6ba4db46f587f7a46ec1c66e36518909f17b45f0525e3f4d9f3f4b"
+  }
 }
