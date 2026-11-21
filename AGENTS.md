@@ -48,7 +48,7 @@
 | `src/core/run` | 跨领域进程内 run 取消与完成等待原语 | 不保存持久化 run 状态；不放产品策略 |
 | `src/core/queue` | 跨领域单会话 turn 串行队列、排队位置/完成等待与按会话 run 关联 | 不实现模型、transcript 或产品策略；coding 与 conversation 共用，不得留在任一领域目录 |
 | `src/core/agent` | 静态 Agent 注册、模型路由、AI SDK 执行、统一当前时间上下文与事件写入 | 不读写 transcript、不包含领域 prompt/工具授权；领域注入注册后的 executor |
-| `src/core/session` | Session/Turn/Step journal、投影、恢复、FIFO 调度与 step/turn 执行编排（当前为内存与端口级） | 不写领域 prompt/工具或 transcript；Scheduler 只写 `turn-*`，StepExecutor 只写 `step-*`/usage，TurnExecutor 只写 `turn-handoff`；真实 provider/context/compaction 尚未接入 |
+| `src/core/session` | Session/Turn/Step journal、投影、恢复写回、SessionRuntime 门面、FIFO 调度与 step/turn 执行编排（当前为内存与端口级） | 不写领域 prompt/工具或 transcript；Scheduler 只写 `turn-*`，StepExecutor 只写 `step-*`/usage，TurnExecutor 只写 `turn-handoff`；SessionRuntime 不复制 turn/queue 状态；真实 provider/context/compaction 尚未接入 |
 | `src/core/bot` | Bot 身份/发现契约、启动期不可变目录与会话参与者可见性校验 | 不持有 store、不创建 run、不 import 领域、不定义 prompt；独立助手与团队共用同一目录 |
 | `src/core/team` | 团队预置与交接任务校验 | 只描述预置成员；不持有 Bot 身份、执行器或 profile |
 | `src/core/transcript` | Conversation、Answer、Interview 共用的消息 transcript、活动 run 认领、恢复游标端口、内存与 SQLite（`node:sqlite`）适配器；SQLite 使用 `schema.ts` baseline、`_migrations` 账本与 append-only migration | 不保存 Agent 事件、不包含领域产品策略；SQLite 适配器按 scope 写入 `sessions.sqlite` 并迁移旧 JSON，`answer` 只走内存、不读盘不落盘；不得用全局 `SCHEMA_VERSION` 或删库处理版本升级 |

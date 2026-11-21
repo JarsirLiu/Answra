@@ -141,7 +141,7 @@ apps/agent             平台无关的 Agent 运行时（不依赖 Electron/Reac
   src/answer/host.ts    Answer-only worker 组合入口
   src/answer/application.ts  截图答题一次性用例与 transcript 生命周期
   src/core/agent        静态 Agent 注册、AI SDK 执行与 run 生命周期
-  src/core/session      Session/Turn/Step journal、投影、FIFO 调度与 step/turn 执行编排（当前为内存与端口级）
+  src/core/session      Session/Turn/Step journal、投影、恢复写回、SessionRuntime 门面、FIFO 调度与 step/turn 执行编排（当前为内存与端口级）
   src/core/bot          Bot 身份/发现契约、启动期不可变目录与会话参与者可见性
   src/core/team         团队预置与交接任务校验
   src/core/transcript   Conversation、Answer、Interview 共用的 transcript 端口、内存与 SQLite 适配器（baseline + _migrations 迁移）；answer 仅内存

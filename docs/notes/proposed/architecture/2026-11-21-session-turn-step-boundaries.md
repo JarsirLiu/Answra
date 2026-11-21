@@ -4,14 +4,16 @@
 
 ## 当前状态
 
-- 本文是设计提案；阶段 0-4 的内存/端口版已落地，尚未接业务执行链和真实 provider。
-- 已新增 `Turn/Step/Compaction` 事件、`SessionEventEnvelope`、`core/session` 的 contracts/eventFactory/journal/memoryJournal/projection/recovery，并补了目标测试。
+- 本文是设计提案；阶段 0-4.5 的内存/端口版已落地，尚未接业务执行链和真实 provider。
+- 已新增 `Turn/Step/Compaction` 事件、`SessionEventEnvelope`、`core/session` 的 contracts/eventFactory/journal/memoryJournal/projection/recovery/sessionRuntime，并补了目标测试。
 - 已新增 SQLite v2 schema 与 `20261121120000_add_session_turns`：回填历史消息 `turn_id` 和 `session_turns`；尚未接新 runtime 写入。
 - 已新增 `core/session/scheduler.ts`：每会话 FIFO、单活动 Turn、queued 取消、手动压缩排序、`resume` 与 `waitForIdle`；`SessionCompactor` 仍为端口，未接真实压缩实现。
 - 已新增 `stepExecutor.ts` 与 `turnExecutor.ts`：StepExecutor 写 `step-*`/usage，TurnExecutor 只写 `turn-handoff` 并返回 `TurnFinish`；真实 AI SDK/provider/ContextManager 尚未接入。
+- 已新增 `sessionRuntime.ts`：按 session 创建 scheduler，提供 submit/cancel/compact/snapshot/events/recover/waitForIdle；snapshot 与 events 直接读 journal，不复制 turn/queue 状态。
+- 已新增恢复写回：`recoverSession` 把未完成 Step、Turn、Compaction 收口为 failed/interrupted，重复调用不重复追加；`SessionRuntime.recover` 恢复后继续消费 queued Turn，并拒绝已启动 session 的启动恢复。
 - `turn-finished` 与 `step-finished` 增加可选 `errorText`，失败不再只能靠自由文本或日志观察。
 - 状态词汇只保留在 `packages/shared/src/schema/status.ts`：`StepOutcome` 复用 `TurnOutcome`；`CompactionProjection.state` 直接使用 `ContextCompactionState`，`compaction-finished` 投影为 `succeeded`，不再维护 `finished` 投影子集。
-- 阶段 0-2 已提交；阶段 3-4 端口级实现已通过目标测试。全量 `pnpm verify` 本轮仍有无头 UI/desktop 测试在并行负载下偶发超时（隔离重跑通过），Session/shared 检查均通过。
+- 阶段 0-2 已提交；阶段 3-4.5 端口级实现已通过目标测试，全量 `pnpm verify` 通过。
 - 压缩会话后继续时，先读“执行交接”“持久化与迁移”和“模块边界”，再从第一个未完成阶段开始，不要直接改 `ConversationApplication` 或 `executeRun.ts`。
 
 ## 问题
@@ -314,16 +316,27 @@ tool-*               继续由现有工具事件承载
 | 1 Journal 与投影 | 已完成（内存版） | `SessionJournal`、`SessionProjection`、重放与幂等测试 | 同一事件流重建一致；崩溃重放不重复 |
 | 1b 持久化 v2 | 已完成（schema/回填） | `session_turns`、消息 `turn_id`、旧会话回填、v1 fixture | 旧会话回填正确；消息 id/正文不变 |
 | 2 Scheduler 与队列 | 已完成（内存版） | `TurnScheduler` 每会话串行、FIFO、取消、queued 投影、手动压缩排序、`resume` | 活动 turn 不被排队消息切断；queued 可取消；测试通过 |
-| 3 Turn 与 handoff | 已完成（端口级） | `SessionTurnExecutor`、同 Turn handoff、终态结果与 `errorText`；assistant 消息落账待接业务 | 多 Bot 同一 turn；队列不插入 handoff |
+| 3 Turn 与 handoff | 已完成（端口级） | `SessionTurnExecutor`、同 Turn handoff、终态结果与 `errorText`；按 Bot 分配 assistant `messageId`，handoff envelope 记录来源消息；transcript 落账待接业务 | 多 Bot 同一 turn；队列不插入 handoff；每个 Bot 一条 assistant 消息 |
 | 4 Step 执行 | 已完成（端口级） | `SessionStepExecutor`、`StepRunner` 端口、step 事件/usage、step 失败可观察；真实 provider 待适配 | 每个 step 有 agent/model/usage；不改 turn |
+| 4.5 SessionRuntime 与恢复 | 已完成（内存版） | `SessionRuntime` 门面、恢复写回、queued 继续、facade 测试 | 恢复只写一次；启动后拒绝 recover；不接业务 |
 | 5 自动压缩 | 未开始 | ContextManager step 前准备；超限 fail-closed；overflow 一次恢复 | 长工具循环每 step 都准备；353k 不再发出 |
 | 6 手动压缩 | 未开始 | Scheduler 维护操作；operation 事件；取消/失败结果 | 不创建 turn；活动 turn 后执行；失败不坏 checkpoint |
 | 7 UI/协议 | 未开始 | envelope、worker、desktop IPC、CLI 投影 | turn/step/压缩/队列分别显示；旧字段删除 |
-| 8 恢复与门禁 | 未开始 | 启动恢复、架构检查、文档与 Note 更新 | 恢复测试通过；`pnpm verify` 通过 |
+| 8 恢复与门禁 | 部分完成 | 启动恢复写回已完成；跨领域恢复、架构检查、CLI/desktop 恢复接入与门禁待做 | 恢复测试通过；`pnpm verify` 通过 |
 
 #### 15.3 契约草案
 
 ```ts
+interface SessionRuntime {
+  submit(submission: TurnSubmission): Promise<TurnSubmissionResult>;
+  cancel(sessionId: SessionId, turnId: TurnId, options?: CancelTurnOptions): Promise<void>;
+  compact(sessionId: SessionId, request?: ManualCompactionRequest): Promise<ManualCompactionResult>;
+  snapshot(sessionId: SessionId): Promise<SessionProjection>;
+  events(sessionId: SessionId, after?: number): Promise<SessionEventEnvelope[]>;
+  recover(sessionId: SessionId): Promise<SessionRecoveryPlan>;
+  waitForIdle(sessionId: SessionId): Promise<void>;
+}
+
 interface TurnScheduler {
   submit(sessionId: string, input: UserInput): Promise<{ turnId: string; position: number }>;
   cancel(sessionId: string, turnId: string, options?: { cancelQueued?: boolean }): Promise<void>;
@@ -355,6 +368,8 @@ interface SessionJournal {
 }
 ```
 
+`SessionRuntime` 只按 session 创建 Scheduler；`snapshot`/`events` 直接读 journal，`recover` 在 Scheduler 创建前写回未完成事实，随后 `resume` 消费 queued Turn。已启动 session 不允许再执行启动恢复。
+
 `TurnSubmission` 由 Scheduler 接收，只含 `sessionId/source/agentId/input?`，没有 `turnId`；Scheduler 分配后生成带 `turnId` 的 `TurnStart` 交给 `TurnExecutor`。`TurnExecutor.run` 只返回 `TurnFinish`，终态事件由 Scheduler 写入，避免双 writer。`SessionCompactor` 只执行手动压缩；事件和 checkpoint 由其实现写，Scheduler 只负责“活动 Turn 后、下一条 queued 前”的排序。
 
 `TurnStart` 至少包含 `sessionId/turnId/source/agentId/input?`，`TurnProjection` 额外包含 `status/activeAgentId/assistantMessageIds/handoffCount/finishReason/errorText/createdAt/startedAt/finishedAt`。`StepStart` 至少包含 `sessionId/turnId/messageId/stepId/agentId/modelId/index`。
@@ -368,7 +383,7 @@ interface SessionJournal {
 - Step：每个 provider 请求独立 step；agent/model/usage 归属正确；step 不改 turn；异常写 `step-finished.errorText`，已取消不启动 provider。
 - 自动压缩：每个 step 前超限都压缩；压缩失败不请求 provider；overflow 只恢复一次。
 - 手动压缩：不创建 turn；活动 turn 后执行；失败保留旧 checkpoint；可取消。
-- 恢复：turn-started 无终态、running tool、compaction-started 无终态。
+- 恢复：turn-started 无终态、running tool、compaction-started 无终态；写回后重复恢复不再追加；queued Turn 仍可继续。
 - 事件：重放幂等；`step-*` 不改 turn；`turn-*` 不携带 provider usage。
 - 架构：`core/context` 不读 turn/queue；`core/queue` 不 import model/context；`core/agent` 不写 transcript context state。
 
@@ -381,7 +396,7 @@ pnpm notes:check
 pnpm verify
 ```
 
-本轮阶段 2-4 验证：`pnpm --filter @answra/agent test -- test/core/session` 通过 38 个测试；`pnpm --filter @answra/shared test -- test/schema.test.ts` 通过 20 个测试；`pnpm exec biome check` 目标文件通过；`pnpm --filter @answra/agent typecheck` 通过。
+本轮阶段 2-4.5 验证：`pnpm --filter @answra/agent test -- test/core/session` 通过 44 个测试；`pnpm --filter @answra/shared test -- test/schema.test.ts` 通过 21 个测试；`pnpm exec biome check` 目标文件通过；`pnpm --filter @answra/agent typecheck` 通过。
 
 #### 15.6 实现时禁止
 
@@ -613,6 +628,7 @@ CREATE TABLE session_turns (
 ## 与现有决定的关系
 
 - 本提案修正 [Agent 在 step 边界消费用户排队消息](../../implemented/architecture/2026-11-21-agent-step-boundary-queue.md)：排队从 step 边界改到 turn 边界，`shouldYield` 不再属于 step。
+- 用户排队消息与 Bot 交接的交互细则见 [用户排队消息与 Bot 交接的 Turn 边界规则](./2026-11-21-turn-boundary-queue-and-handoff.md)。
 - 本提案延续 [Codex 对齐的 token 驱动上下文压缩](../../implemented/architecture/2026-11-20-codex-aligned-token-driven-compaction.md) 的“每次模型请求前准备”意图，并把它落实到 step。
 - 本提案替代此前“保留 run 作为执行层”的表述；`run` 不再作为架构概念，当前执行循环只作为 turn 内部实现。
 - 不照搬 opencode 的内部 `TurnTransition` 或 V1 run 状态；只采用“单一持久真相、step 归属消息、压缩独立生命周期、输入投递显式化”的原则。

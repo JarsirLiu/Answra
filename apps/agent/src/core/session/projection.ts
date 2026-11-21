@@ -179,10 +179,7 @@ function applyTurnHandoff(
     {
       activeAgentId: event.toAgentId,
       handoffCount: turn.handoffCount + 1,
-      assistantMessageIds:
-        envelope.messageId === undefined
-          ? turn.assistantMessageIds
-          : [...turn.assistantMessageIds, envelope.messageId],
+      assistantMessageIds: withAssistantMessageId(turn.assistantMessageIds, envelope.messageId),
     },
     {},
   );
@@ -212,7 +209,13 @@ function applyStepStarted(
     status: "running",
     startedAt: envelope.occurredAt,
   };
-  return { ...state, steps: [...state.steps, step] };
+  const withMessage = applyTurnUpdate(
+    state,
+    id,
+    { assistantMessageIds: withAssistantMessageId(turn.assistantMessageIds, envelope.messageId) },
+    {},
+  );
+  return { ...withMessage, steps: [...withMessage.steps, step] };
 }
 
 function applyStepFinished(
@@ -303,6 +306,14 @@ function applyTurnUpdate(
     ...stateUpdate,
     turns: state.turns.map((turn) => (turn.turnId === id ? { ...turn, ...update } : turn)),
   };
+}
+
+function withAssistantMessageId(
+  current: readonly string[],
+  messageId: string | undefined,
+): readonly string[] {
+  if (messageId === undefined || current.includes(messageId)) return current;
+  return [...current, messageId];
 }
 
 function updateCompaction(

@@ -59,10 +59,12 @@ function createExecutor(
   maxSteps?: number,
 ): SessionTurnExecutor {
   const ids = ["step-1", "step-2", "step-3", "step-4"];
+  const messageIds = ["assistant-1", "assistant-2", "assistant-3", "assistant-4"];
   return new SessionTurnExecutor({
     journal,
     stepExecutor: new SessionStepExecutor({ journal, runner }),
     createStepId: () => stepId(ids.shift() ?? `step-${ids.length}`),
+    createMessageId: () => messageIds.shift() ?? "assistant-fallback",
     ...(maxSteps === undefined ? {} : { maxSteps }),
   });
 }
@@ -84,6 +86,7 @@ describe("SessionTurnExecutor", () => {
 
     expect(runner.calls.map((step) => step.index)).toEqual([0, 1]);
     expect(runner.calls.map((step) => step.agentId)).toEqual(["general", "general"]);
+    expect(runner.calls.map((step) => step.messageId)).toEqual(["assistant-1", "assistant-1"]);
     const events = await journal.readAfter(TEST_SESSION_ID, 0);
     expect(events.some((event) => event.event.type === "turn-finished")).toBe(false);
     const projection = projectSession(TEST_SESSION_ID, events);
@@ -110,11 +113,16 @@ describe("SessionTurnExecutor", () => {
     });
 
     expect(runner.calls.map((step) => step.agentId)).toEqual(["general", "intake"]);
+    expect(runner.calls.map((step) => step.messageId)).toEqual(["assistant-1", "assistant-2"]);
     const events = await journal.readAfter(TEST_SESSION_ID, 0);
-    expect(events.find((event) => event.event.type === "turn-handoff")?.event).toMatchObject({
-      fromAgentId: "general",
-      toAgentId: "intake",
-      task: "整理简历资料",
+    const handoff = events.find((event) => event.event.type === "turn-handoff");
+    expect(handoff).toMatchObject({
+      messageId: "assistant-1",
+      event: {
+        fromAgentId: "general",
+        toAgentId: "intake",
+        task: "整理简历资料",
+      },
     });
     const projection = projectSession(TEST_SESSION_ID, events);
     expect(projection.turns).toHaveLength(1);
@@ -122,6 +130,7 @@ describe("SessionTurnExecutor", () => {
       status: "running",
       activeAgentId: "intake",
       handoffCount: 1,
+      assistantMessageIds: ["assistant-1", "assistant-2"],
     });
   });
 

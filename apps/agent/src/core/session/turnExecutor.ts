@@ -19,6 +19,8 @@ const DEFAULT_MAX_TURN_STEPS = 32;
 export interface SessionTurnExecutorOptions {
   journal: SessionJournal;
   stepExecutor: StepExecutor;
+  /** assistant 消息 id 由 transcript 宿主提供；TurnExecutor 不拥有消息身份。 */
+  createMessageId: () => string;
   createStepId?: () => StepId;
   maxSteps?: number;
 }
@@ -27,11 +29,13 @@ export class SessionTurnExecutor implements TurnExecutor {
   private readonly journal: SessionJournal;
   private readonly stepExecutor: StepExecutor;
   private readonly createStepId: () => StepId;
+  private readonly createMessageId: () => string;
   private readonly maxSteps: number;
 
   constructor({
     journal,
     stepExecutor,
+    createMessageId,
     createStepId = () => stepId(randomUUID()),
     maxSteps = DEFAULT_MAX_TURN_STEPS,
   }: SessionTurnExecutorOptions) {
@@ -40,11 +44,13 @@ export class SessionTurnExecutor implements TurnExecutor {
     this.journal = journal;
     this.stepExecutor = stepExecutor;
     this.createStepId = createStepId;
+    this.createMessageId = createMessageId;
     this.maxSteps = maxSteps;
   }
 
   async run(turn: TurnStart, signal: AbortSignal): Promise<TurnFinish> {
     let agentId = turn.agentId;
+    let messageId = this.createMessageId();
     let index = 0;
 
     while (true) {
@@ -65,6 +71,7 @@ export class SessionTurnExecutor implements TurnExecutor {
           stepId: this.createStepId(),
           index,
           agentId,
+          messageId,
         },
         signal,
       );
@@ -80,8 +87,9 @@ export class SessionTurnExecutor implements TurnExecutor {
         const handoffError = validateHandoff(agentId, result.handoff);
         if (handoffError !== undefined)
           return finish(turn, "failed", "handoff-failed", handoffError);
-        await this.appendHandoff(turn, agentId, result.handoff);
+        await this.appendHandoff(turn, agentId, messageId, result.handoff);
         agentId = result.handoff.toAgentId.trim();
+        messageId = this.createMessageId();
         index += 1;
         continue;
       }
@@ -98,6 +106,7 @@ export class SessionTurnExecutor implements TurnExecutor {
   private async appendHandoff(
     turn: TurnStart,
     fromAgentId: string,
+    messageId: string,
     handoff: TurnHandoff,
   ): Promise<void> {
     await this.journal.append(
@@ -108,7 +117,7 @@ export class SessionTurnExecutor implements TurnExecutor {
         toAgentId: handoff.toAgentId.trim(),
         task: handoff.task.trim(),
       },
-      { turnId: turn.turnId },
+      { turnId: turn.turnId, messageId },
     );
   }
 }

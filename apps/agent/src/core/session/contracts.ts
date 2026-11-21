@@ -153,7 +153,8 @@ export interface StepStart {
   index: number;
   agentId: string;
   modelId?: string;
-  messageId?: string;
+  /** 当前 Bot 回复的 assistant 消息 id；同一 Bot 的多个 step 复用。 */
+  messageId: string;
 }
 
 /** StepExecutor 的完成结果；handoff 只由 TurnExecutor 消费。 */

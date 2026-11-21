@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { stepId } from "../../../src/core/session/contracts";
 import { projectSession } from "../../../src/core/session/projection";
 import {
   sessionEvent,
@@ -36,7 +37,7 @@ describe("session projection", () => {
     expect(projection.turns[1]).toMatchObject({ status: "queued" });
   });
 
-  it("keeps handoff in the same turn and tracks assistant messages", () => {
+  it("keeps handoff in the same turn and tracks one assistant message per Bot", () => {
     const projection = projectSession(TEST_SESSION_ID, [
       sessionEvent(
         1,
@@ -46,8 +47,38 @@ describe("session projection", () => {
       sessionEvent(2, { type: "turn-started", agentId: "general" }, { turnId: TEST_TURN_ID }),
       sessionEvent(
         3,
+        { type: "step-started", stepId: "step-1", index: 0, agentId: "general" },
+        { turnId: TEST_TURN_ID, stepId: TEST_STEP_ID, messageId: "assistant-1" },
+      ),
+      sessionEvent(
+        4,
+        { type: "step-finished", stepId: "step-1", index: 0, state: "completed" },
+        { turnId: TEST_TURN_ID, stepId: TEST_STEP_ID },
+      ),
+      sessionEvent(
+        5,
+        { type: "step-started", stepId: "step-2", index: 1, agentId: "general" },
+        { turnId: TEST_TURN_ID, stepId: stepId("step-2"), messageId: "assistant-1" },
+      ),
+      sessionEvent(
+        6,
+        { type: "step-finished", stepId: "step-2", index: 1, state: "completed" },
+        { turnId: TEST_TURN_ID, stepId: stepId("step-2") },
+      ),
+      sessionEvent(
+        7,
         { type: "turn-handoff", fromAgentId: "general", toAgentId: "intake", task: "整理资料" },
-        { turnId: TEST_TURN_ID, messageId: "handoff-message" },
+        { turnId: TEST_TURN_ID, messageId: "assistant-1" },
+      ),
+      sessionEvent(
+        8,
+        { type: "step-started", stepId: "step-3", index: 2, agentId: "intake" },
+        { turnId: TEST_TURN_ID, stepId: stepId("step-3"), messageId: "assistant-2" },
+      ),
+      sessionEvent(
+        9,
+        { type: "step-finished", stepId: "step-3", index: 2, state: "completed" },
+        { turnId: TEST_TURN_ID, stepId: stepId("step-3") },
       ),
     ]);
 
@@ -56,7 +87,7 @@ describe("session projection", () => {
       status: "running",
       activeAgentId: "intake",
       handoffCount: 1,
-      assistantMessageIds: ["handoff-message"],
+      assistantMessageIds: ["assistant-1", "assistant-2"],
     });
   });
 
