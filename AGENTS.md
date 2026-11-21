@@ -16,6 +16,8 @@
                      ←  @answra/cli
 @answra/shared  ←  @answra/remote  ←  @answra/remote-node  ←  @answra/cli
                                                           ←  @answra/desktop(main)
+@answra/shared  ←  @answra/remote  ←  @answra/mobile
+@answra/shared  ←  @answra/mobile
 ```
 
 - 依赖必须单向，禁止环（`pnpm architecture:check` 强制）。
@@ -25,6 +27,7 @@
 - `@answra/credentials` 是 Node-only OS 凭据库：只封装本地模型 API Key 的 keychain 读写，不读写 `config.json`、不依赖 Electron/CLI/Agent；keychain 不可用时 fail-closed，不回退明文。桌面 main 与 CLI 共用固定 service/account。
 - `@answra/remote` 是平台无关的远程连接核心：只放远程帧编解码、host/controller 端口、配对/信令状态机与 fake ports；只能依赖 `@answra/shared`，不得 import Electron/Node/React/Ink/Agent/CLI/desktop。WebRTC、WebSocket、OS keychain 由各宿主适配。
 - `@answra/remote-node` 是 Node-only 远程适配库：只封装信令 HTTP/WebSocket、计时器、`node-datachannel` WebRTC 与 `startRemoteHost` 组合；只能依赖 `@answra/remote`、`@answra/shared` 与 Node 内置模块，不得 import Electron/React/Ink/Agent/CLI/desktop。CLI 与桌面 main 共用，controller 侧不得依赖该包。
+- `apps/mobile` 是 Android-first Expo/RN 移动端 controller：只依赖 `@answra/shared` 与 `@answra/remote`；不得 import `@answra/agent`、`@answra/remote-node`、`@answra/config`、`@answra/credentials`、`@answra/ui`、desktop 或 CLI。WebRTC/WebSocket/SecureStore 只在 `src/transport`、`src/auth`、`src/credentials` 适配。
 - `@answra/skills` 是纯内容包：只放内置 skill 的 Markdown 与资源，不含运行时代码；宿主解析目录后注入 agent，agent 不 import 该包。
 - Agent 事件 payload 的唯一目录与 envelope 定义在 `packages/shared/src/schema/events.ts`；状态词汇/快照单独定义在 `status.ts`。`AgentDurableEvent` 仅规定未来适配器的事件资格，不代表已有持久化实现。
 - `apps/` 只放可启动单元（`desktop` 是 Electron 壳，`agent` 由 utility process 拉起并保留独立为常驻 sidecar 的可能，`cli` 是独立终端宿主）；纯库放 `packages/`。
@@ -114,6 +117,23 @@
 - 安装包分发复用 Electron 35.0.0 的 Node 22.14（`ELECTRON_RUN_AS_NODE=1`）运行 CLI bundle，不新增 Node sidecar、不启动 GUI。
 - CLI 使用 ESM（`dist/main.mjs`）：Ink 8 与 yoga-layout 含 top-level await，不能打成 CJS；安装包通过 electron-builder `extraResources` 分发 `resources/cli/main.mjs`，Windows 的 `answra.cmd` 只复用同目录 `Answra.exe`；不新增 CLI 可执行文件，shim 不自动注册 PATH。
 - `apps/desktop` 锁定 Electron 35.0.0（Node 22.14），捕获保护已在 Windows 11 实测通过；升级前按 `docs/notes/implemented/bug-fix/2026-10-11-electron-capture-protection-compatibility.md` 重跑系统截图/录屏验收。desktop worker 与 CLI bundle target 统一为 `node22.14`。
+
+## 移动端入口（apps/mobile）
+
+| 目录 | 职责 | 约束 |
+| --- | --- | --- |
+| `src/app` | Expo Router 路由与页面装配 | 只做路由和 UI 接线；不实现连接、认证或协议 |
+| `src/core` | 平台无关连接用例、端口、host 元数据与会话投影 | 禁止 import React/RN/Expo/Node；不创建 WebSocket/PeerConnection |
+| `src/transport` | RN WebSocket、`react-native-webrtc`、NetInfo、AppState 与计时器适配 | 只实现端口；不复制 `RemoteControllerSession`/重连策略 |
+| `src/auth` | OAuth PKCE、深链回调与 token 刷新 | 不读写 host key；不把 token 放进日志或 URL |
+| `src/credentials` | `expo-secure-store` 的 auth token 与 host key 适配 | 只读写 SecureStore；AsyncStorage 只放非 secret 元数据 |
+| `src/state` | 移动视图状态与选择器 | 不复制连接状态、run 状态或 transcript |
+| `src/ui` | RN 原语、token 与页面 | 不 import `@answra/remote`，不创建 peer 或命令 |
+
+- 移动端只复用 `@answra/remote` 的 controller 会话/重连/命令语义；不新增第二套退避、错误码或草稿状态。
+- 不配置 TURN/relay、不做桌面本地 H5 服务、不做手机本地 Agent；P2P 失败显式 `remote-unreachable`。
+- Android 首版只做前台文本会话；iOS 复用同一 Expo/RN 工程；鸿蒙不承诺原生，后续 H5/ArkWeb 另评。
+- Phase 0 只落骨架、端口、fake 与占位页面；真实 auth、WebRTC、SecureStore 和会话 UI 按移动端 Note 分阶段接入。
 
 ## IPC 约定（三层类型安全）
 

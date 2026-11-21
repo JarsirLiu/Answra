@@ -1,0 +1,19 @@
+{
+  "expo": {
+    "name": "Answra",
+    "slug": "answra-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "answra-mobile",
+    "userInterfaceStyle": "dark",
+    "plugins": ["expo-router"],
+    "ios": {
+      "supportsTablet": false
+    },
+    "android": {
+      "package": "dev.answra.mobile",
+      "permissions": ["android.permission.INTERNET", "android.permission.ACCESS_NETWORK_STATE"],
+      "predictiveBackGestureEnabled": false
+    }
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "name": "@answra/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Answra 移动端远程 controller：Android-first Expo/RN 宿主。",
+  "type": "module",
+  "main": "expo-router/entry",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "doctor": "expo-doctor",
+    "prebuild:android": "expo prebuild --platform android --no-install",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@answra/remote": "workspace:*",
+    "@answra/shared": "workspace:*",
+    "@expo/log-box": "~58.0.15",
+    "@expo/metro-runtime": "~58.0.17",
+    "@react-native-community/netinfo": "12.0.1",
+    "expo": "~58.0.26",
+    "expo-constants": "~58.0.16",
+    "expo-crypto": "~58.0.8",
+    "expo-linking": "~58.0.17",
+    "expo-router": "~58.0.32",
+    "expo-secure-store": "~58.0.3",
+    "expo-status-bar": "~58.0.5",
+    "expo-web-browser": "~58.1.0",
+    "react": "19.3.0",
+    "react-native": "0.88.1",
+    "react-native-safe-area-context": "5.11.1",
+    "react-native-screens": "4.30.1",
+    "react-native-webrtc": "155.0.1"
+  },
+  "devDependencies": {
+    "@types/react": "~19.3.0",
+    "babel-preset-expo": "~58.0.26",
+    "expo-doctor": "^1.21.8",
+    "typescript": "~6.0.3",
+    "vitest": "^5.0.3"
+  }
+}

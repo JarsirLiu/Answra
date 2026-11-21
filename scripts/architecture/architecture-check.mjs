@@ -22,6 +22,20 @@ import process from "node:process";
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const SKIP_DIRS = new Set(["node_modules", "dist", "out", "release"]);
 
+const MOBILE_ALLOWED_WORKSPACE_PACKAGES = new Set(["@answra/remote", "@answra/shared"]);
+const MOBILE_CORE_FORBIDDEN_SPECS = new Set([
+  "react",
+  "react-dom",
+  "react-native",
+  "react-native-webrtc",
+  "@react-native-community/netinfo",
+]);
+
+function workspacePackageName(spec) {
+  if (!spec.startsWith("@")) return spec.split("/")[0];
+  return spec.split("/").slice(0, 2).join("/");
+}
+
 const errors = [];
 /** 包名 -> 该包源码里 import 的 workspace 包入口集合 */
 const depGraph = new Map();
@@ -166,6 +180,28 @@ function checkImports(pkg) {
       }
 
       // 1. workspace 包导入：必须是该包 exports 声明的入口
+      // 8. mobile 宿主只允许 shared/remote；core 不得沾 React Native/Expo。
+      if (normalizedRel.startsWith("apps/mobile/")) {
+        if (
+          spec.startsWith("@answra/") &&
+          !MOBILE_ALLOWED_WORKSPACE_PACKAGES.has(workspacePackageName(spec))
+        ) {
+          errors.push(
+            `${rel}: apps/mobile 只能依赖 @answra/shared 与 @answra/remote，禁止导入 "${spec}"`,
+          );
+        }
+      }
+      if (
+        normalizedRel.startsWith("apps/mobile/src/core/") &&
+        (MOBILE_CORE_FORBIDDEN_SPECS.has(spec) ||
+          spec.startsWith("expo") ||
+          spec.startsWith("@expo/") ||
+          spec.startsWith("@react-native") ||
+          spec.startsWith("react-native"))
+      ) {
+        errors.push(`${rel}: apps/mobile/src/core 必须保持平台无关，禁止导入 "${spec}"`);
+      }
+
       if (spec.startsWith("@answra/")) {
         imports.add(spec);
         const targetPkgName = dirByPkgName.has(spec)

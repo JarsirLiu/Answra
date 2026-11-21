@@ -57,7 +57,7 @@ Answra 把桌面辅助、终端编码和远程连接放在同一个本地优先�
 ### 远程操控
 
 - **P2P 连接**：基于 WebRTC DataChannel，无需中继服务器。
-- **设备配对**：使用 `answra remote host` 开启宿主，使用 `answra remote control` 连接远程 CLI。
+- **设备配对**：使用 `answra remote host` 开启桌面宿主；手机 controller 在 `apps/mobile`，Phase 0 只落路由与端口骨架。
 - **安全访问**：访问密钥在本地受保护存储，并支持密钥轮换。
 
 ## 工程基础
@@ -128,10 +128,18 @@ apps/cli              独立终端宿主：coding Bot 的 CLI 入口、模型配
   src/model            CLI 模型设置域：选择、优先级与应用服务端口
   src/session          单活动 run 的 CodingSession 用例：新建/恢复/列表/删除
   src/adapters         @answra/config 共享文件实现与 @answra/agent/composition 端口映射；keychain 由 main 注入
-  src/remote           远程 host/controller 适配与 CLI 本地密钥存储
+  src/remote           远程 host 适配与 CLI 本地密钥存储
   src/presentation     Agent 事件与模型摘要到文本/工具行的纯投影
   src/tui              TUI 组合根：app/ 根布局与 view store，transcript/ 虚拟列表与工具展示，composer/ 输入，chrome/ 状态行，commands/ slash 命令与 access，panels/ 面板，notices/ 通知中心，interaction/ 指针/选区/剪贴板
   src/transport        stdin/stdout/stderr 适配
+apps/mobile            Android-first Expo/RN 移动端 controller（Phase 0 骨架：路由、端口与 fake，真实 auth/WebRTC 待接入）
+  src/app              Expo Router 路由与页面装配
+  src/core             平台无关连接/端口/投影；禁止 RN/Expo
+  src/transport        RN WebSocket、react-native-webrtc、NetInfo、AppState 适配
+  src/auth             OAuth PKCE、深链回调与 token 刷新
+  src/credentials      expo-secure-store 的 auth token 与 host key 适配
+  src/state            移动视图 store
+  src/ui               RN 原语、token 与页面
 apps/agent             平台无关的 Agent 运行时（不依赖 Electron/React），由 desktop 的 utility process 拉起
   src/index.ts         公共入口：desktop worker 的唯一导入面
   src/composition.ts   跨客户端组装入口：CLI 等客户端按领域组装 Bot 与 Conversation Application
@@ -175,6 +183,10 @@ docs                   Note 索引
 | `pnpm --filter @answra/cli test` | CLI 配置、会话、TUI 组件、view store 与命令分派测试 |
 | `pnpm --filter @answra/cli smoke:electron` | 构建后用 Electron 35.0.0 的 Node 22.14 跑 CLI 与本地假模型端点 smoke |
 | `node apps/cli/dist/main.mjs code "..."` | 以系统 Node 22.13+ 运行 CLI；也可用 `ELECTRON_RUN_AS_NODE=1` 复用 Electron 35.0.0 的 Node |
+| `pnpm --filter @answra/mobile start` | 启动 Expo 开发服务器；`android`/`ios` 脚本进入对应平台 |
+| `pnpm --filter @answra/mobile typecheck` | 移动端 TypeScript 检查 |
+| `pnpm --filter @answra/mobile test` | 移动端 core/transport 单元测试 |
+| `pnpm --filter @answra/mobile exec expo-doctor` | 检查 Expo 配置、依赖版本与 Metro 配置 |
 | `pnpm build` | 全 workspace 构建（desktop: esbuild + vite） |
 | `pnpm typecheck` | 各包依次 `tsc --noEmit`（desktop 按进程分三个编译单元） |
 | `pnpm test` | 各包测试（ui 使用 vitest + jsdom） |
