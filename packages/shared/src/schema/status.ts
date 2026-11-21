@@ -25,8 +25,10 @@ export const agentRunStateSchema = z.enum([
 export const runOutcomeSchema = z.enum(["completed", "failed", "aborted", "superseded"]);
 /** 用户可见的 turn 生命周期；step 活动、压缩和重试都不是 turn 状态。 */
 export const turnStatusSchema = z.enum(["queued", "running", "completed", "failed", "aborted"]);
-/** Turn 终态；`queued`/`running` 只存在于活动投影。 */
+/** Turn/Step 共用的终态词汇；`queued`/`running` 只存在于活动投影。 */
 export const turnOutcomeSchema = z.enum(["completed", "failed", "aborted"]);
+/** Step 终态复用同一组词汇，禁止再定义第二份 completed/failed/aborted。 */
+export const stepOutcomeSchema = turnOutcomeSchema;
 /** Turn 输入来源；handoff 是同一 Turn 内的事件，不是新 Turn 来源。 */
 export const turnSourceSchema = z.enum(["user", "reply", "opening", "worker", "external"]);
 /** Turn 终态原因；失败原因必须可观察，不能只靠自由文本。 */
@@ -166,6 +168,7 @@ export type AgentRunState = z.infer<typeof agentRunStateSchema>;
 export type RunOutcome = z.infer<typeof runOutcomeSchema>;
 export type TurnStatus = z.infer<typeof turnStatusSchema>;
 export type TurnOutcome = z.infer<typeof turnOutcomeSchema>;
+export type StepOutcome = z.infer<typeof stepOutcomeSchema>;
 export type TurnSource = z.infer<typeof turnSourceSchema>;
 export type TurnFinishReason = z.infer<typeof turnFinishReasonSchema>;
 export type CompactionReason = z.infer<typeof compactionReasonSchema>;

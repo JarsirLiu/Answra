@@ -104,6 +104,55 @@ describe("session projection", () => {
     });
   });
 
+  it("keeps terminal turn and step error text observable", () => {
+    const projection = projectSession(TEST_SESSION_ID, [
+      sessionEvent(
+        1,
+        { type: "turn-queued", source: "user", input: userMessage(), agentId: "general" },
+        { turnId: TEST_TURN_ID },
+      ),
+      sessionEvent(2, { type: "turn-started", agentId: "general" }, { turnId: TEST_TURN_ID }),
+      sessionEvent(
+        3,
+        {
+          type: "step-started",
+          stepId: "step-1",
+          index: 0,
+          agentId: "general",
+        },
+        { turnId: TEST_TURN_ID, stepId: TEST_STEP_ID },
+      ),
+      sessionEvent(
+        4,
+        {
+          type: "step-finished",
+          stepId: "step-1",
+          index: 0,
+          state: "failed",
+          errorText: "tool failed",
+        },
+        { turnId: TEST_TURN_ID, stepId: TEST_STEP_ID },
+      ),
+      sessionEvent(
+        5,
+        {
+          type: "turn-finished",
+          status: "failed",
+          reason: "tool-error",
+          errorText: "tool failed",
+        },
+        { turnId: TEST_TURN_ID },
+      ),
+    ]);
+
+    expect(projection.steps[0]?.errorText).toBe("tool failed");
+    expect(projection.turns[0]).toMatchObject({
+      status: "failed",
+      finishReason: "tool-error",
+      errorText: "tool failed",
+    });
+  });
+
   it("projects context usage and compaction lifecycle", () => {
     const projection = projectSession(TEST_SESSION_ID, [
       sessionEvent(1, { type: "context-usage-changed", usedTokens: 120 }),
@@ -132,7 +181,7 @@ describe("session projection", () => {
       operationId: "operation-1",
       trigger: "auto",
       reason: "threshold",
-      status: "finished",
+      state: "succeeded",
       summarizedMessages: 3,
       summary: "摘要",
     });

@@ -157,6 +157,7 @@ function applyTurnFinished(
     {
       status: event.status,
       finishReason: event.reason ?? finishReasonForOutcome(event.status),
+      ...(event.errorText === undefined ? {} : { errorText: event.errorText }),
       finishedAt: envelope.occurredAt,
     },
     { activeTurnId: state.activeTurnId === id ? undefined : state.activeTurnId },
@@ -228,6 +229,7 @@ function applyStepFinished(
     status: event.state,
     ...(event.finishReason === undefined ? {} : { finishReason: event.finishReason }),
     ...(event.usage === undefined ? {} : { usage: event.usage }),
+    ...(event.errorText === undefined ? {} : { errorText: event.errorText }),
     finishedAt: envelope.occurredAt,
   };
   return {
@@ -250,7 +252,7 @@ function applyCompactionStarted(
     operationId,
     trigger: event.trigger,
     ...(event.reason === undefined ? {} : { reason: event.reason }),
-    status: "started",
+    state: "started",
     startedAt: envelope.occurredAt,
   };
   return { ...state, compactions: [...state.compactions, compaction] };
@@ -266,7 +268,7 @@ function applyCompactionFinished(
   if (event.type !== "compaction-finished") return state;
   return updateCompaction(state, operationId, {
     ...existing,
-    status: "finished",
+    state: "succeeded",
     summarizedMessages: event.summarizedMessages,
     summary: event.summary,
     ...(event.usage === undefined ? {} : { usage: event.usage }),
@@ -284,7 +286,7 @@ function applyCompactionFailed(
   if (event.type !== "compaction-failed") return state;
   return updateCompaction(state, operationId, {
     ...existing,
-    status: "failed",
+    state: "failed",
     errorText: event.errorText,
     finishedAt: envelope.occurredAt,
   });

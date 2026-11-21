@@ -1,9 +1,13 @@
 /** Session/Turn/Step 运行时的内部契约；不包含领域 prompt、工具或持久化实现。 */
 import type {
+  AgentFinishReason,
   AgentUsage,
   CompactionReason,
+  ContextCompactionState,
+  ContextCompactionTrigger,
   ConversationMessage,
   ManualCompactionResult,
+  StepOutcome,
   TurnFinishReason,
   TurnOutcome,
   TurnSource,
@@ -70,6 +74,7 @@ export interface TurnProjection {
   assistantMessageIds: readonly string[];
   handoffCount: number;
   finishReason?: TurnFinishReason;
+  errorText?: string;
   createdAt: string;
   startedAt?: string;
   finishedAt?: string;
@@ -83,18 +88,19 @@ export interface StepProjection {
   index: number;
   agentId?: string;
   modelId?: string;
-  status: "running" | "completed" | "failed" | "aborted";
+  status: "running" | StepOutcome;
   finishReason?: string;
   usage?: AgentUsage;
+  errorText?: string;
   startedAt: string;
   finishedAt?: string;
 }
 
 export interface CompactionProjection {
   operationId: string;
-  trigger: "auto" | "manual";
+  trigger: ContextCompactionTrigger;
   reason?: CompactionReason;
-  status: "started" | "finished" | "failed";
+  state: ContextCompactionState;
   summarizedMessages?: number;
   summary?: string;
   usage?: AgentUsage;
@@ -130,6 +136,55 @@ export interface TurnFinish {
   turnId: TurnId;
   outcome: TurnOutcome;
   reason?: TurnFinishReason;
+  errorText?: string;
+}
+
+/** 当前 Bot 在 step 正常结束后请求交接；交接不是新 Turn。 */
+export interface TurnHandoff {
+  toAgentId: string;
+  task: string;
+}
+
+/** 一次 provider 请求及其工具执行的输入；不包含领域 prompt 或工具实现。 */
+export interface StepStart {
+  sessionId: SessionId;
+  turnId: TurnId;
+  stepId: StepId;
+  index: number;
+  agentId: string;
+  modelId?: string;
+  messageId?: string;
+}
+
+/** StepExecutor 的完成结果；handoff 只由 TurnExecutor 消费。 */
+export interface StepResult {
+  stepId: StepId;
+  outcome: StepOutcome;
+  finishReason?: AgentFinishReason;
+  usage?: AgentUsage;
+  errorText?: string;
+  handoff?: TurnHandoff;
+}
+
+/** 一次 provider 请求与工具执行的端口；只能写 step-*，不能改 Turn 状态。 */
+export interface StepExecutor {
+  run(step: StepStart, signal: AbortSignal): Promise<StepResult>;
+}
+
+/**
+ * 真实 provider/工具执行器返回的事实；step 事件由 SessionStepExecutor 统一写。
+ * handoff 目标必须由宿主在返回前校验可见性；TurnExecutor 只做非空与自交接校验。
+ */
+export interface StepRunnerResult {
+  outcome: StepOutcome;
+  finishReason?: AgentFinishReason;
+  usage?: AgentUsage;
+  errorText?: string;
+  handoff?: TurnHandoff;
+}
+
+export interface StepRunner {
+  run(step: StepStart, signal: AbortSignal): Promise<StepRunnerResult>;
 }
 
 /** 一轮问答的执行端口；终态由 Scheduler 写入，执行器只返回结果。 */

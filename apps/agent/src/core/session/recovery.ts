@@ -15,7 +15,7 @@ export function planSessionRecovery(
     .filter((step) => step.status === "running")
     .map((step) => step.stepId);
   const interruptedCompactionIds = projection.compactions
-    .filter((compaction) => compaction.status === "started")
+    .filter((compaction) => compaction.state === "started")
     .map((compaction) => compaction.operationId);
 
   return {

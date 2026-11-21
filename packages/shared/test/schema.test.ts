@@ -13,6 +13,8 @@ import {
   conversationSnapshotSchema,
   editDiffDisplaySchema,
   sessionEventEnvelopeSchema,
+  stepOutcomeSchema,
+  turnOutcomeSchema,
   turnSourceSchema,
 } from "../src/schema";
 
@@ -182,6 +184,38 @@ describe("event schema", () => {
 
   it("keeps handoff inside a turn instead of treating it as a turn source", () => {
     expect(turnSourceSchema.options).not.toContain("handoff");
+  });
+
+  it("shares one terminal outcome vocabulary between turn and step events", () => {
+    expect(stepOutcomeSchema.options).toEqual(turnOutcomeSchema.options);
+    expect(() =>
+      agentEventSchema.parse({
+        type: "step-finished",
+        stepId: "step-1",
+        index: 0,
+        state: "running",
+      }),
+    ).toThrow();
+  });
+
+  it("carries terminal error text for turn and step observability", () => {
+    expect(
+      agentEventSchema.parse({
+        type: "turn-finished",
+        status: "failed",
+        reason: "model-error",
+        errorText: "model failed",
+      }),
+    ).toMatchObject({ errorText: "model failed" });
+    expect(
+      agentEventSchema.parse({
+        type: "step-finished",
+        stepId: "step-1",
+        index: 0,
+        state: "failed",
+        errorText: "tool failed",
+      }),
+    ).toMatchObject({ errorText: "tool failed" });
   });
 
   it("carries turn, message and compaction identity in the session envelope", () => {

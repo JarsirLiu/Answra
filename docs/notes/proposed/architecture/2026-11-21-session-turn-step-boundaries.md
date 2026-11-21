@@ -4,12 +4,14 @@
 
 ## 当前状态
 
-- 本文是设计提案；阶段 0+1 与阶段 2 的内存版已落地，尚未接业务执行链。
+- 本文是设计提案；阶段 0-4 的内存/端口版已落地，尚未接业务执行链和真实 provider。
 - 已新增 `Turn/Step/Compaction` 事件、`SessionEventEnvelope`、`core/session` 的 contracts/eventFactory/journal/memoryJournal/projection/recovery，并补了目标测试。
 - 已新增 SQLite v2 schema 与 `20261121120000_add_session_turns`：回填历史消息 `turn_id` 和 `session_turns`；尚未接新 runtime 写入。
-- 已新增 `core/session/scheduler.ts`：每会话 FIFO、单活动 Turn、queued 取消、手动压缩排序、`resume` 与 `waitForIdle`；`TurnExecutor`/`SessionCompactor` 仍为端口，未接真实模型或压缩实现。
-- 本轮 `pnpm verify`、`pnpm notes:check` 通过。
-- 当前工作区不提交；`README.md` 的用户原有修改保持不动。
+- 已新增 `core/session/scheduler.ts`：每会话 FIFO、单活动 Turn、queued 取消、手动压缩排序、`resume` 与 `waitForIdle`；`SessionCompactor` 仍为端口，未接真实压缩实现。
+- 已新增 `stepExecutor.ts` 与 `turnExecutor.ts`：StepExecutor 写 `step-*`/usage，TurnExecutor 只写 `turn-handoff` 并返回 `TurnFinish`；真实 AI SDK/provider/ContextManager 尚未接入。
+- `turn-finished` 与 `step-finished` 增加可选 `errorText`，失败不再只能靠自由文本或日志观察。
+- 状态词汇只保留在 `packages/shared/src/schema/status.ts`：`StepOutcome` 复用 `TurnOutcome`；`CompactionProjection.state` 直接使用 `ContextCompactionState`，`compaction-finished` 投影为 `succeeded`，不再维护 `finished` 投影子集。
+- 阶段 0-2 已提交；阶段 3-4 端口级实现已通过目标测试。全量 `pnpm verify` 本轮仍有无头 UI/desktop 测试在并行负载下偶发超时（隔离重跑通过），Session/shared 检查均通过。
 - 压缩会话后继续时，先读“执行交接”“持久化与迁移”和“模块边界”，再从第一个未完成阶段开始，不要直接改 `ConversationApplication` 或 `executeRun.ts`。
 
 ## 问题
@@ -312,8 +314,8 @@ tool-*               继续由现有工具事件承载
 | 1 Journal 与投影 | 已完成（内存版） | `SessionJournal`、`SessionProjection`、重放与幂等测试 | 同一事件流重建一致；崩溃重放不重复 |
 | 1b 持久化 v2 | 已完成（schema/回填） | `session_turns`、消息 `turn_id`、旧会话回填、v1 fixture | 旧会话回填正确；消息 id/正文不变 |
 | 2 Scheduler 与队列 | 已完成（内存版） | `TurnScheduler` 每会话串行、FIFO、取消、queued 投影、手动压缩排序、`resume` | 活动 turn 不被排队消息切断；queued 可取消；测试通过 |
-| 3 Turn 与 handoff | 未开始 | `TurnExecutor`、assistant 消息、handoff 链、turn 终态 | 多 Bot 同一 turn；队列不插入 handoff |
-| 4 Step 执行 | 未开始 | `StepExecutor` 一次 provider 请求；工具归属 step；provider 重试 | 每个 step 有 agent/model/usage；不改 turn |
+| 3 Turn 与 handoff | 已完成（端口级） | `SessionTurnExecutor`、同 Turn handoff、终态结果与 `errorText`；assistant 消息落账待接业务 | 多 Bot 同一 turn；队列不插入 handoff |
+| 4 Step 执行 | 已完成（端口级） | `SessionStepExecutor`、`StepRunner` 端口、step 事件/usage、step 失败可观察；真实 provider 待适配 | 每个 step 有 agent/model/usage；不改 turn |
 | 5 自动压缩 | 未开始 | ContextManager step 前准备；超限 fail-closed；overflow 一次恢复 | 长工具循环每 step 都准备；353k 不再发出 |
 | 6 手动压缩 | 未开始 | Scheduler 维护操作；operation 事件；取消/失败结果 | 不创建 turn；活动 turn 后执行；失败不坏 checkpoint |
 | 7 UI/协议 | 未开始 | envelope、worker、desktop IPC、CLI 投影 | turn/step/压缩/队列分别显示；旧字段删除 |
@@ -330,11 +332,11 @@ interface TurnScheduler {
 }
 
 interface TurnExecutor {
-  run(turn: TurnRecord, signal: AbortSignal): Promise<TurnOutcome>;
+  run(turn: TurnStart, signal: AbortSignal): Promise<TurnFinish>;
 }
 
 interface StepExecutor {
-  run(input: StepInput, signal: AbortSignal): Promise<StepOutcome>;
+  run(step: StepStart, signal: AbortSignal): Promise<StepResult>;
 }
 
 interface ContextManager {
@@ -355,13 +357,15 @@ interface SessionJournal {
 
 `TurnSubmission` 由 Scheduler 接收，只含 `sessionId/source/agentId/input?`，没有 `turnId`；Scheduler 分配后生成带 `turnId` 的 `TurnStart` 交给 `TurnExecutor`。`TurnExecutor.run` 只返回 `TurnFinish`，终态事件由 Scheduler 写入，避免双 writer。`SessionCompactor` 只执行手动压缩；事件和 checkpoint 由其实现写，Scheduler 只负责“活动 Turn 后、下一条 queued 前”的排序。
 
-`TurnRecord` 至少包含 `sessionId/turnId/source/status/agentId/activeAgentId/input/assistantMessageIds/handoffCount/finishReason/createdAt/startedAt/finishedAt`。`StepInput` 至少包含 `sessionId/turnId/messageId/stepId/agentId/modelId/index`。
+`TurnStart` 至少包含 `sessionId/turnId/source/agentId/input?`，`TurnProjection` 额外包含 `status/activeAgentId/assistantMessageIds/handoffCount/finishReason/errorText/createdAt/startedAt/finishedAt`。`StepStart` 至少包含 `sessionId/turnId/messageId/stepId/agentId/modelId/index`。
+
+`SessionTurnExecutor` 只消费 `StepExecutor`：`tool-calls` 继续下一 step，handoff 写 `turn-handoff` 后同 Turn 切换 `agentId`，其余终态返回给 Scheduler。`SessionStepExecutor` 通过 `StepRunner` 端口执行真实请求；runner 异常转成 `step-finished: failed` 的 `errorText`，不自行写 `turn-finished`。
 
 #### 15.4 必须锁住的测试
 
 - Scheduler：FIFO、活动 turn 不被打断、取消活动 turn 与取消 queued turn 分开。
-- Turn：completed/failed/aborted；handoff 不新开 turn；handoff 失败传播。
-- Step：每个 provider 请求独立 step；agent/model/usage 归属正确；step 不改 turn。
+- Turn：completed/failed/aborted；handoff 不新开 turn；handoff 失败与最大 step 数传播；不写 `turn-finished`。
+- Step：每个 provider 请求独立 step；agent/model/usage 归属正确；step 不改 turn；异常写 `step-finished.errorText`，已取消不启动 provider。
 - 自动压缩：每个 step 前超限都压缩；压缩失败不请求 provider；overflow 只恢复一次。
 - 手动压缩：不创建 turn；活动 turn 后执行；失败保留旧 checkpoint；可取消。
 - 恢复：turn-started 无终态、running tool、compaction-started 无终态。
@@ -377,7 +381,7 @@ pnpm notes:check
 pnpm verify
 ```
 
-本轮阶段 2 验证：`pnpm --filter @answra/agent test -- test/core/session` 通过 27 个测试；`pnpm exec biome check apps/agent/src/core/session apps/agent/test/core/session` 通过；`pnpm --filter @answra/agent typecheck` 通过。
+本轮阶段 2-4 验证：`pnpm --filter @answra/agent test -- test/core/session` 通过 38 个测试；`pnpm --filter @answra/shared test -- test/schema.test.ts` 通过 20 个测试；`pnpm exec biome check` 目标文件通过；`pnpm --filter @answra/agent typecheck` 通过。
 
 #### 15.6 实现时禁止
 
@@ -617,9 +621,10 @@ CREATE TABLE session_turns (
 
 - `core/transcript`：session 历史、消息 id、context state；不解释 turn 状态和模型请求。
 - `core/session`：journal 与 projection；唯一真相和重建入口。
-- `core/queue` / TurnScheduler：turn 生命周期、FIFO、取消、手动压缩调度；不 import model/context。
-- `core/agent` / TurnExecutor：turn 内的 handoff 链和 step 编排；不定义压缩阈值、不读写 transcript context state。
-- `core/agent` / StepExecutor：一次模型请求与工具执行；不改变 turn 状态。
+- `core/session` / TurnScheduler：turn 生命周期、FIFO、取消、手动压缩调度；不 import model/context。
+- `core/session` / TurnExecutor：turn 内的 handoff 链和 step 编排；不定义压缩阈值、不读写 transcript context state。
+- `core/session` / StepExecutor：一次模型请求与工具执行；不改变 turn 状态。
+- `core/agent`：静态注册、模型路由与 AI SDK 执行适配；不拥有 turn 调度或终态写入。
 - `core/context` / ContextManager：session 级上下文状态、自动/手动压缩、usage/checkpoint；不读取队列或 turn 状态机。
 - 领域 application：只提交 Turn、取消 Turn、请求压缩；不复制 handoff、队列或压缩逻辑。
 - CLI/desktop UI：只消费 turn 状态、step 活动和压缩操作投影；不自己推导状态。

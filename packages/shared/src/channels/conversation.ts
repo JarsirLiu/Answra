@@ -5,6 +5,7 @@ import type {
   ConversationSessionScope,
   ConversationSnapshot,
   ManualCompactionResult,
+  TurnOutcome,
 } from "../schema";
 
 export type {
@@ -199,7 +200,7 @@ export type ConversationSendResponse = ConversationSendResult | ConversationRunR
 export interface ConversationQueueCompletion {
   queueId: string;
   runId?: string;
-  outcome: "completed" | "failed" | "aborted";
+  outcome: TurnOutcome;
 }
 
 export interface ChatSendCommand {
@@ -237,7 +238,7 @@ export interface ConversationChannelMap {
   };
   [ConversationChannels.WaitQueue]: {
     request: { conversationId: string; queueId: string };
-    response: { queueId: string; runId?: string; outcome: "completed" | "failed" | "aborted" };
+    response: { queueId: string; runId?: string; outcome: TurnOutcome };
   };
   [ConversationChannels.QueuePosition]: {
     request: { conversationId: string; queueId: string };

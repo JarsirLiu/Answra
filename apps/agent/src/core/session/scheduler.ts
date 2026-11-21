@@ -23,6 +23,7 @@ import type {
 import { turnId } from "./contracts";
 import type { SessionJournal, SessionJournalAppend } from "./journal";
 import { applySessionEvent, projectSession } from "./projection";
+import { sessionErrorText } from "./sessionErrorText";
 
 const STARTED_POSITION = 0;
 const FIRST_QUEUED_POSITION = 1;
@@ -232,11 +233,12 @@ export class TurnScheduler {
       if (finish.turnId !== active.start.turnId) {
         throw new Error(`TurnExecutor 返回了不同的 turnId：${finish.turnId}`);
       }
-    } catch {
+    } catch (error) {
       finish = {
         turnId: active.start.turnId,
         outcome: active.cancelRequested ? "aborted" : "failed",
         reason: active.cancelRequested ? "cancelled" : "unknown",
+        ...(active.cancelRequested ? {} : { errorText: sessionErrorText(error) }),
       };
     }
     if (active.cancelRequested) {
@@ -250,6 +252,7 @@ export class TurnScheduler {
           type: "turn-finished",
           status: finish.outcome,
           reason: finish.reason ?? defaultFinishReason(finish.outcome),
+          ...(finish.errorText === undefined ? {} : { errorText: finish.errorText }),
         },
         { turnId: finish.turnId },
       );

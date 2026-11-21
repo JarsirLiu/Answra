@@ -10,6 +10,7 @@ import {
   agentUsageSchema,
   compactionReasonSchema,
   contextCompactionTriggerSchema,
+  stepOutcomeSchema,
   turnFinishReasonSchema,
   turnOutcomeSchema,
   turnSourceSchema,
@@ -38,6 +39,7 @@ const executionEventOptions = [
     type: z.literal("turn-finished"),
     status: turnOutcomeSchema,
     reason: turnFinishReasonSchema.optional(),
+    errorText: z.string().optional(),
   }),
   z.strictObject({
     type: z.literal("turn-handoff"),
@@ -71,9 +73,10 @@ const executionEventOptions = [
     type: z.literal("step-finished"),
     stepId: z.string(),
     index: z.number().int().nonnegative(),
-    state: z.enum(["completed", "failed", "aborted"]),
+    state: stepOutcomeSchema,
     finishReason: agentFinishReasonSchema.optional(),
     usage: agentUsageSchema.optional(),
+    errorText: z.string().optional(),
   }),
   /** Provider-reported input token count after a model step; drives live usage UI and recovery state. */
   z.strictObject({

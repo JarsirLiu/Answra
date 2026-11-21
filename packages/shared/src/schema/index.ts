@@ -83,6 +83,8 @@ export {
   type ManualCompactionResult,
   type RunOutcome,
   runOutcomeSchema,
+  type StepOutcome,
+  stepOutcomeSchema,
   type TurnFinishReason,
   type TurnOutcome,
   type TurnSource,
