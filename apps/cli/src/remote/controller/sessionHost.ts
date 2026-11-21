@@ -1,5 +1,5 @@
-/** 把 RemoteControllerSession 适配回 CLI 现有 CodingSessionHost；TUI 不感知远程。 */
-import type { RemoteControllerSession } from "@answra/remote";
+/** 把 RemoteControllerSession/Connection 适配成 CLI 现有 CodingSessionHost；TUI 不感知远程。 */
+import type { HostModelSettingsPort, RemoteControllerSession } from "@answra/remote";
 import { RemoteOperationError, remoteError } from "@answra/remote";
 import type { ConversationModelConfig } from "@answra/shared";
 import type {
@@ -9,10 +9,32 @@ import type {
 } from "@answra/shared/schema";
 import type { CodingSessionHost } from "../../session/codingSession";
 
-export interface RemoteControllerSessionHostOptions {
-  session: RemoteControllerSession;
+export interface RemoteControllerClient<TState extends string = string> {
+  createConversation(conversationId: string): Promise<ConversationSnapshot>;
+  clearConversation(conversationId: string): Promise<ConversationSnapshot>;
+  snapshot(conversationId: string): Promise<ConversationSnapshot>;
+  readEvents(conversationId: string, afterRevision: number): Promise<AgentEventEnvelope[]>;
+  send(
+    command: Parameters<RemoteControllerSession["send"]>[0],
+  ): ReturnType<RemoteControllerSession["send"]>;
+  waitQueueStart(
+    conversationId: string,
+    queueId: string,
+  ): Promise<{ queueId: string; runId: string; snapshot: ConversationSnapshot }>;
+  cancel(runId: string): Promise<void>;
+  applyModel(config: RemoteModelConfig): Promise<void>;
+  settings(): HostModelSettingsPort;
+  onSnapshot(listener: (snapshot: ConversationSnapshot) => void): () => void;
+  onEvent(listener: (event: AgentEventEnvelope) => void): () => void;
+  onState(listener: (state: TState) => void): () => void;
+  close(): void;
+}
+
+export interface RemoteControllerSessionHostOptions<TState extends string = string> {
+  session: RemoteControllerClient<TState>;
   emitEvent(event: AgentEventEnvelope): void;
   onSnapshot?(snapshot: ConversationSnapshot): void;
+  onResyncError?(error: unknown): void;
 }
 
 interface RunWaiter {
@@ -20,31 +42,41 @@ interface RunWaiter {
   reject(error: RemoteOperationError): void;
 }
 
-export function createRemoteControllerSessionHost({
+export function createRemoteControllerSessionHost<TState extends string = string>({
   session,
   emitEvent,
   onSnapshot,
-}: RemoteControllerSessionHostOptions): CodingSessionHost {
+  onResyncError,
+}: RemoteControllerSessionHostOptions<TState>): CodingSessionHost {
   const terminalRuns = new Set<string>();
   const runWaiters = new Map<string, RunWaiter[]>();
+  const conversations = new Set<string>();
+  const revisions = new Map<string, number>();
   let pendingConfigure: Promise<void> | undefined;
   let pendingCancel: Promise<void> | undefined;
   let closed = false;
+  let degraded = false;
+  let resyncing = false;
 
   session.onSnapshot((snapshot) => {
-    onSnapshot?.(snapshot);
+    applySnapshot(snapshot);
   });
   session.onEvent((event) => {
-    emitEvent(event);
-    if (isTerminalRunEvent(event)) {
-      terminalRuns.add(event.runId);
-      settleRunWaiters(runWaiters, terminalRuns, event.runId);
-    }
+    applyEvent(event);
   });
   session.onState((state) => {
     if (state === "closed") {
       closed = true;
       rejectRunWaiters(runWaiters);
+      return;
+    }
+    if (state === "interrupted" || state === "reconnecting") {
+      degraded = true;
+      return;
+    }
+    if (state === "ready" && degraded) {
+      degraded = false;
+      void resyncConversations();
     }
   });
 
@@ -57,11 +89,17 @@ export function createRemoteControllerSessionHost({
     },
     async createConversation(conversationId) {
       await takePendingConfigure();
-      return session.createConversation(conversationId);
+      const snapshot = await session.createConversation(conversationId);
+      conversations.add(conversationId);
+      revisions.set(conversationId, snapshot.eventRevision);
+      return snapshot;
     },
     async clearConversation(conversationId) {
       await takePendingConfigure();
-      return session.clearConversation(conversationId);
+      const snapshot = await session.clearConversation(conversationId);
+      conversations.add(conversationId);
+      revisions.set(conversationId, snapshot.eventRevision);
+      return snapshot;
     },
     async enqueue(conversationId, request, _accessToken: string) {
       await takePendingConfigure();
@@ -108,6 +146,38 @@ export function createRemoteControllerSessionHost({
       session.close();
     },
   };
+
+  function applySnapshot(snapshot: ConversationSnapshot): void {
+    revisions.set(snapshot.conversationId, snapshot.eventRevision);
+    onSnapshot?.(snapshot);
+  }
+
+  function applyEvent(event: AgentEventEnvelope): void {
+    const current = revisions.get(event.conversationId) ?? 0;
+    revisions.set(event.conversationId, Math.max(current, event.aggregateRevision));
+    emitEvent(event);
+    if (isTerminalRunEvent(event)) {
+      terminalRuns.add(event.runId);
+      settleRunWaiters(runWaiters, terminalRuns, event.runId);
+    }
+  }
+
+  async function resyncConversations(): Promise<void> {
+    if (resyncing) return;
+    resyncing = true;
+    try {
+      for (const conversationId of conversations) {
+        const snapshot = await session.snapshot(conversationId);
+        applySnapshot(snapshot);
+        const events = await session.readEvents(conversationId, revisions.get(conversationId) ?? 0);
+        for (const event of events) applyEvent(event);
+      }
+    } catch (error) {
+      onResyncError?.(error);
+    } finally {
+      resyncing = false;
+    }
+  }
 
   async function takePendingConfigure(): Promise<void> {
     const pending = pendingConfigure;

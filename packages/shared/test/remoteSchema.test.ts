@@ -173,10 +173,16 @@ describe("signaling frame schema", () => {
   });
 
   it("round-trips WebRTC negotiation frames", () => {
-    const offer = { type: "offer", fromPeerId: "host-1", sdp: "v=0" } as const;
+    const offer = {
+      type: "offer",
+      fromPeerId: "host-1",
+      connectionId: "connection-1",
+      sdp: "v=0",
+    } as const;
     const candidate = {
       type: "ice-candidate",
       fromPeerId: "controller-1",
+      connectionId: "connection-1",
       candidate: { candidate: "candidate:1", sdpMid: "0", sdpMLineIndex: 0 },
     } as const;
 

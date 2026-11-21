@@ -40,6 +40,7 @@ export class RemoteHostSession {
   private readonly leaseId: string;
   private readonly now: () => Date;
   private readonly unsubscribers: Unsubscribe[] = [];
+  private readonly closedListeners = new Set<() => void>();
   private activeSessionId?: string;
   private pendingSessionId?: string;
   private authAttempted = false;
@@ -84,6 +85,11 @@ export class RemoteHostSession {
         if (this.welcomed) this.send({ type: "event", event });
       }),
     );
+  }
+
+  onClosed(listener: () => void): Unsubscribe {
+    this.closedListeners.add(listener);
+    return () => this.closedListeners.delete(listener);
   }
 
   close(): void {
@@ -282,6 +288,7 @@ export class RemoteHostSession {
   }
 
   private cleanup(): void {
+    const wasClosed = this.closed;
     this.closed = true;
     this.welcomed = false;
     this.activeSessionId = undefined;
@@ -289,5 +296,9 @@ export class RemoteHostSession {
     this.authAttempted = false;
     for (const unsubscribe of this.unsubscribers) unsubscribe();
     this.unsubscribers.length = 0;
+    if (!wasClosed) {
+      for (const listener of this.closedListeners) listener();
+      this.closedListeners.clear();
+    }
   }
 }

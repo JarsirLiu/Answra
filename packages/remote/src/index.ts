@@ -49,6 +49,31 @@ export {
 } from "./protocol/codec";
 export { RemoteOperationError, remoteError, toRemoteError } from "./protocol/errors";
 export {
+  isTerminalRemoteError,
+  toRemoteUnreachable,
+} from "./reconnect/errors";
+export {
+  REMOTE_RECONNECT_BASE_DELAYS_MS,
+  REMOTE_RECONNECT_JITTER_RATIO,
+  REMOTE_RECONNECT_MAX_ATTEMPTS,
+  REMOTE_RECONNECT_MAX_ELAPSED_MS,
+  type RemoteReconnectDecision,
+  RemoteReconnectPolicy,
+  type RemoteReconnectPolicyOptions,
+} from "./reconnect/policy";
+export {
+  type RemoteControllerAttempt,
+  RemoteControllerConnection,
+  type RemoteControllerConnectionOptions,
+  type RemoteControllerConnectionState,
+} from "./reconnect/remoteControllerConnection";
+export {
+  type RemoteHostAttempt,
+  RemoteHostConnection,
+  type RemoteHostConnectionOptions,
+  type RemoteHostConnectionState,
+} from "./reconnect/remoteHostConnection";
+export {
   REMOTE_SIGNALING_JOIN_TIMEOUT_MS,
   type RemoteSignalingJoined,
   type RemoteSignalingSessionOptions,

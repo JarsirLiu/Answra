@@ -46,16 +46,19 @@ export const signalingFrameSchema = z.discriminatedUnion("type", [
   z.strictObject({
     type: z.literal("offer"),
     fromPeerId: z.string(),
+    connectionId: z.string().min(1),
     sdp: z.string(),
   }),
   z.strictObject({
     type: z.literal("answer"),
     fromPeerId: z.string(),
+    connectionId: z.string().min(1),
     sdp: z.string(),
   }),
   z.strictObject({
     type: z.literal("ice-candidate"),
     fromPeerId: z.string(),
+    connectionId: z.string().min(1),
     candidate: remoteIceCandidateSchema,
   }),
   z.strictObject({

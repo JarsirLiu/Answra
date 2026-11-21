@@ -52,6 +52,8 @@ export class RemoteSignalingSession {
   private currentState: RemoteSignalingState = "idle";
   private joinedInfo?: RemoteSignalingJoined;
   private currentPeer?: SignalingPeer;
+  private currentConnectionId?: string;
+  private connectionSequence = 0;
   private joinPromise?: Promise<RemoteSignalingJoined>;
   private joinResolve?: (joined: RemoteSignalingJoined) => void;
   private joinReject?: (error: RemoteOperationError) => void;
@@ -98,6 +100,10 @@ export class RemoteSignalingSession {
     return this.currentPeer;
   }
 
+  connectionId(): string | undefined {
+    return this.currentConnectionId;
+  }
+
   join(): Promise<RemoteSignalingJoined> {
     if (this.closed) {
       return Promise.reject(
@@ -142,7 +148,13 @@ export class RemoteSignalingSession {
 
   sendOffer(sdp: string): void {
     this.requirePeer();
-    this.sendFrame(this.negotiation.offer(sdp));
+    const connectionId = this.currentConnectionId;
+    if (connectionId === undefined) {
+      throw new RemoteOperationError(
+        remoteError("invalid-command", "connection id is not assigned"),
+      );
+    }
+    this.sendFrame(this.negotiation.offer(sdp, connectionId));
   }
 
   sendAnswer(sdp: string): void {
@@ -319,6 +331,7 @@ export class RemoteSignalingSession {
     const peer = this.currentPeer;
     if (peer?.peerId !== peerId) return;
     this.currentPeer = undefined;
+    this.currentConnectionId = undefined;
     this.negotiation.reset();
     this.setState("waiting");
     for (const listener of this.peerLeftListeners) listener(peer);
@@ -328,6 +341,16 @@ export class RemoteSignalingSession {
     if (this.currentPeer?.peerId !== frame.fromPeerId) {
       this.fail(remoteError("invalid-frame", "unexpected remote offer"));
       return;
+    }
+    if (this.role === "controller") {
+      if (
+        this.currentConnectionId !== undefined &&
+        this.currentConnectionId !== frame.connectionId
+      ) {
+        return;
+      }
+      if (this.negotiation.connectionId() === frame.connectionId) return;
+      this.currentConnectionId = frame.connectionId;
     }
     try {
       const sdp = this.negotiation.acceptOffer(frame);
@@ -340,6 +363,9 @@ export class RemoteSignalingSession {
   private acceptAnswer(frame: Extract<SignalingFrame, { type: "answer" }>): void {
     if (this.currentPeer?.peerId !== frame.fromPeerId) {
       this.fail(remoteError("invalid-frame", "unexpected remote answer"));
+      return;
+    }
+    if (this.currentConnectionId !== frame.connectionId) {
       return;
     }
     try {
@@ -355,6 +381,9 @@ export class RemoteSignalingSession {
       this.fail(remoteError("invalid-frame", "ice candidate from an unknown peer"));
       return;
     }
+    if (this.currentConnectionId !== frame.connectionId) {
+      return;
+    }
     try {
       const candidate = this.negotiation.acceptIceCandidate(frame);
       for (const listener of this.iceCandidateListeners) listener(candidate);
@@ -366,6 +395,10 @@ export class RemoteSignalingSession {
   private acceptPeer(peer: SignalingPeer): void {
     this.currentPeer = peer;
     this.negotiation.reset();
+    this.currentConnectionId =
+      this.role === "host"
+        ? `${this.peerId}:${peer.peerId}:${++this.connectionSequence}`
+        : undefined;
     this.setState("ready");
     for (const listener of this.peerJoinedListeners) listener(peer);
     for (const waiter of this.peerWaiters) waiter.resolve(peer);

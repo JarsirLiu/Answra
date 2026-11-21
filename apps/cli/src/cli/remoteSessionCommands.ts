@@ -3,6 +3,7 @@ import type { ModelCredentialStore } from "@answra/credentials";
 import {
   createRemoteCredentialRecord,
   isRemoteHostAccessKeyActive,
+  RemoteControllerConnection,
   RemoteControllerSession,
   type RemoteHostAccessKeyRecord,
 } from "@answra/remote";
@@ -202,35 +203,50 @@ export async function runRemoteAttachCommand(
   }
 
   const peerId = runtime.createId();
-  const signaling = await connectRemoteSignaling({
-    service: runtime.signaling,
+  const connection = new RemoteControllerConnection({
     timers: runtime.timers,
-    role: "controller",
-    roomId: credential.roomId,
-    peerId,
-  });
-  const link = runtime.createLink({ role: "controller", signaling });
-  const session = new RemoteControllerSession({
-    link,
-    sessionId: runtime.createId(),
-    peerId,
-    credential,
+    createAttempt: async () => {
+      const signaling = await connectRemoteSignaling({
+        service: runtime.signaling,
+        timers: runtime.timers,
+        role: "controller",
+        roomId: credential.roomId,
+        peerId,
+      });
+      const link = runtime.createLink({ role: "controller", signaling });
+      const session = new RemoteControllerSession({
+        link,
+        sessionId: runtime.createId(),
+        peerId,
+        credential,
+      });
+      const unsubscribeSignaling = signaling.onState((state) => {
+        if (state === "closed") session.close();
+      });
+      return {
+        session,
+        close() {
+          unsubscribeSignaling();
+          session.close();
+          signaling.close();
+        },
+      };
+    },
   });
 
   let welcome: Awaited<ReturnType<RemoteControllerSession["connect"]>>;
-  const removeInterrupt = deps.onInterrupt(() => session.close());
+  const removeInterrupt = deps.onInterrupt(() => connection.close());
   try {
-    welcome = await session.connect();
+    welcome = await connection.connect();
     if (enteredCredential) await remote.credentials.write(credential);
   } catch (error) {
-    session.close();
-    signaling.close();
+    connection.close();
     throw error;
   } finally {
     removeInterrupt();
   }
 
-  const modelSettings = createRemoteModelSettings(session.settings());
+  const modelSettings = createRemoteModelSettings(connection.settings());
   let model: Awaited<ReturnType<typeof modelSettings.resolve>>;
   try {
     const snapshot = await modelSettings.snapshot();
@@ -239,13 +255,12 @@ export async function runRemoteAttachCommand(
     }
     model = await modelSettings.resolve([]);
   } catch (error) {
-    session.close();
-    signaling.close();
+    connection.close();
     throw error;
   }
   const store = new TuiViewStore();
   const codingHost = createRemoteControllerSessionHost({
-    session,
+    session: connection,
     emitEvent: (event) => store.applyEvent(event),
     onSnapshot: (value) => store.applySnapshot(value),
   });
@@ -271,7 +286,7 @@ export async function runRemoteAttachCommand(
   } finally {
     codingSession.close();
     store.dispose();
-    signaling.close();
+    connection.close();
   }
 }
 
