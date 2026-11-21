@@ -1,5 +1,6 @@
-/** 把 transcript 渲染成摘要模型可读的正文；思考不进入摘要，工具内容按原样保留。 */
+/** 把 transcript 渲染成摘要模型可读的正文；思考不进入摘要，已清理工具结果只保留占位符。 */
 import type { ConversationMessage, ConversationMessagePart } from "@answra/shared";
+import { PRUNED_TOOL_RESULT_TEXT } from "../pruning/clearedResult";
 
 type ToolPart = Extract<ConversationMessagePart, { kind: "tool" }>;
 
@@ -9,9 +10,15 @@ interface RenderedMessage {
   tools: string[];
 }
 
-export function renderMessagesForSummary(messages: readonly ConversationMessage[]): string {
+export function renderMessagesForSummary({
+  messages,
+  prunedToolCallIds,
+}: {
+  messages: readonly ConversationMessage[];
+  prunedToolCallIds: ReadonlySet<string>;
+}): string {
   return messages
-    .map(renderMessage)
+    .map((message) => renderMessage(message, prunedToolCallIds))
     .filter(hasContent)
     .map((message) => [message.heading, ...message.body, ...message.tools].join("\n"))
     .join("\n\n");
@@ -24,7 +31,10 @@ export function dropOldestSummaryMessage(
   return messages.length <= 1 ? undefined : messages.slice(1);
 }
 
-function renderMessage(message: ConversationMessage): RenderedMessage {
+function renderMessage(
+  message: ConversationMessage,
+  prunedToolCallIds: ReadonlySet<string>,
+): RenderedMessage {
   const heading =
     message.role === "user"
       ? "### 用户"
@@ -35,7 +45,7 @@ function renderMessage(message: ConversationMessage): RenderedMessage {
   for (const image of message.images) body.push(renderImage(image));
   const tools = (message.parts ?? [])
     .filter((part): part is ToolPart => part.kind === "tool")
-    .map(renderToolPart);
+    .map((part) => renderToolPart(part, prunedToolCallIds));
   return { heading: heading + audiences, body, tools };
 }
 
@@ -48,10 +58,14 @@ function renderImage(image: { name: string; dataUrl: string }): string {
   return mediaType ? `[图片：${image.name}（${mediaType}）]` : `[图片：${image.name}]`;
 }
 
-function renderToolPart(part: ToolPart): string {
+function renderToolPart(part: ToolPart, prunedToolCallIds: ReadonlySet<string>): string {
   const lines = [`[工具调用 ${part.toolName}]`];
   const input = toolInputText(part);
   if (input) lines.push(`输入: ${input}`);
+  if (prunedToolCallIds.has(part.toolCallId)) {
+    lines.push(`[工具结果] ${PRUNED_TOOL_RESULT_TEXT}`);
+    return lines.join("\n");
+  }
   const result = toolResultText(part);
   if (result) lines.push(`[工具结果] ${result}`);
   return lines.join("\n");

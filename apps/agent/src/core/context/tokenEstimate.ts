@@ -93,7 +93,10 @@ export function calibrateContextTokens(
   if (!anchor || estimatedTokens <= 0 || anchor.inputTokens <= 0 || anchor.estimatedTokens <= 0) {
     return estimatedTokens;
   }
-  return Math.max(1, Math.round((estimatedTokens * anchor.inputTokens) / anchor.estimatedTokens));
+  return Math.max(
+    estimatedTokens,
+    Math.round((estimatedTokens * anchor.inputTokens) / anchor.estimatedTokens),
+  );
 }
 
 function estimateModelMessageTokens(message: ModelMessage): number {

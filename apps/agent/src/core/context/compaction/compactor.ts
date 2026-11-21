@@ -10,6 +10,7 @@ import {
   startContextCompaction,
 } from "./lifecycle";
 import type { CompactionSkipReason } from "./plan";
+import type { CompactionView } from "./view";
 
 export interface ContextSummaryRequest extends SummaryGeneratorInput {
   accessToken: string;
@@ -40,8 +41,10 @@ export interface ContextCompactionRequest {
   trigger?: ContextCompactionTrigger;
   /** 摘要压缩触发点；由 ContextPreparation 按真实模型请求预算传入。 */
   triggerTokens: number;
-  /** 最终模型请求的保守 token 估算；缺省时退回 transcript 估算。 */
-  contextTokens?: number;
+  /** 清理后的最终模型请求 token；摘要触发与摘要渲染共享同一视图。 */
+  finalRequestTokens: number;
+  /** 最终模型请求已清理的 toolCallId；摘要渲染必须应用同一水印。 */
+  prunedToolCallIds: readonly string[];
   /** 摘要输出上限；缺省使用 256k 窗口的基准值。 */
   summaryMaxTokens?: number;
   /** 手动压缩跳过触发点判断；只要 checkpoint 之后仍有消息就允许压缩。 */
@@ -72,24 +75,29 @@ export class ContextCompactor {
     signal,
     trigger = "auto",
     triggerTokens,
-    contextTokens,
+    finalRequestTokens,
+    prunedToolCallIds,
     summaryMaxTokens,
     force,
     instructions,
     bypassFailureBreaker = false,
   }: ContextCompactionRequest): Promise<ContextCompactionOutcome> {
     const snapshot = await this.store.load(conversationId);
+    const view: CompactionView = {
+      messages: snapshot.messages,
+      finalRequestTokens,
+      prunedToolCallIds: new Set(prunedToolCallIds),
+    };
     let state = (await this.store.loadContextState(conversationId)) ?? { checkpoints: [] };
     if (!bypassFailureBreaker && this.isFailureBreakerOpen(state)) {
       return { status: "skipped", reason: "breaker-open" };
     }
     try {
       const result = await compactContext({
-        messages: snapshot.messages,
+        view,
         state,
         triggerTokens,
         force: force === true,
-        ...(contextTokens === undefined ? {} : { contextTokens }),
         ...(summaryMaxTokens === undefined ? {} : { summaryMaxTokens }),
         ...(instructions === undefined ? {} : { instructions }),
         signal,

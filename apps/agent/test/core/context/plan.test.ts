@@ -38,11 +38,16 @@ function plan(
   options: {
     checkpoint?: ContextCheckpoint;
     triggerTokens?: number;
+    finalRequestTokens?: number;
     force?: boolean;
   } = {},
 ) {
   return planCompaction({
-    messages,
+    view: {
+      messages,
+      finalRequestTokens: options.finalRequestTokens ?? TRIGGER_TOKENS,
+      prunedToolCallIds: new Set(),
+    },
     checkpoint: options.checkpoint,
     triggerTokens: options.triggerTokens ?? TRIGGER_TOKENS,
     ...(options.force ? { force: true } : {}),
@@ -163,7 +168,11 @@ describe("context compaction plan", () => {
 
     expect(
       decideCompaction({
-        messages,
+        view: {
+          messages,
+          finalRequestTokens: TRIGGER_TOKENS,
+          prunedToolCallIds: new Set(),
+        },
         checkpoint: checkpoint("m1"),
         triggerTokens: TRIGGER_TOKENS,
         force: true,
@@ -176,5 +185,16 @@ describe("context compaction plan", () => {
 
     expect(result?.messagesToSummarize.map((item) => item.id)).toEqual(["m1"]);
     expect(result?.retainedUserMessages.map((item) => item.id)).toEqual(["m1"]);
+  });
+
+  it("uses finalRequestTokens instead of estimating the raw transcript again", () => {
+    const messages = [message("m1", "x".repeat(4_000))];
+
+    expect(plan(messages, { triggerTokens: 100, finalRequestTokens: 50 })).toBeUndefined();
+    expect(
+      plan(messages, { triggerTokens: 100, finalRequestTokens: 100 })?.messagesToSummarize.map(
+        (item) => item.id,
+      ),
+    ).toEqual(["m1"]);
   });
 });

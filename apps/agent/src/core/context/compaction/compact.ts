@@ -12,6 +12,7 @@ import { estimateTextTokens, truncateTextToTokenBudget } from "../tokenEstimate"
 import { type CompactionSkipReason, decideCompaction } from "./plan";
 import { buildSummaryPrompt, buildSummaryShorteningPrompt } from "./prompt";
 import { dropOldestSummaryMessage, renderMessagesForSummary } from "./transcript";
+import type { CompactionView } from "./view";
 
 export interface SummaryGeneratorInput {
   prompt: string;
@@ -30,10 +31,9 @@ export type CompactionAttempt =
   | { status: "skipped"; reason: CompactionSkipReason };
 
 export async function compactContext({
-  messages,
+  view,
   state,
   triggerTokens,
-  contextTokens,
   force = false,
   instructions,
   summaryMaxTokens = DEFAULT_SUMMARY_MAX_TOKENS,
@@ -42,10 +42,9 @@ export async function compactContext({
   now = () => new Date(),
   onStarted,
 }: {
-  messages: readonly ConversationMessage[];
+  view: CompactionView;
   state: ContextState | undefined;
   triggerTokens: number;
-  contextTokens?: number;
   /** 手动压缩跳过触发点判断。 */
   force?: boolean;
   /** 摘要输出上限；超过时先请求模型缩短，再确定性截断。 */
@@ -59,11 +58,10 @@ export async function compactContext({
 }): Promise<CompactionAttempt> {
   const previous = latestCheckpoint(state);
   const decision = decideCompaction({
-    messages,
+    view,
     checkpoint: previous,
     triggerTokens,
     force,
-    ...(contextTokens === undefined ? {} : { contextTokens }),
   });
   if (decision.status === "skip") return { status: "skipped", reason: decision.reason };
   const plan = decision.plan;
@@ -74,7 +72,10 @@ export async function compactContext({
   for (;;) {
     const prompt = buildSummaryPrompt({
       ...(previous ? { previousSummary: previous.summary } : {}),
-      transcript: renderMessagesForSummary(messagesToSummarize),
+      transcript: renderMessagesForSummary({
+        messages: messagesToSummarize,
+        prunedToolCallIds: view.prunedToolCallIds,
+      }),
       omittedMessages,
       ...(instructions ? { instructions } : {}),
     });

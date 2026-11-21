@@ -116,7 +116,7 @@ describe("context token estimate", () => {
     };
 
     expect(calibrateContextTokens(100, anchor)).toBe(150);
-    expect(calibrateContextTokens(100, { ...anchor, inputTokens: 100 })).toBe(50);
+    expect(calibrateContextTokens(100, { ...anchor, inputTokens: 100 })).toBe(100);
     expect(calibrateContextTokens(100, undefined)).toBe(100);
     expect(calibrateContextTokens(100, { ...anchor, estimatedTokens: 0 })).toBe(100);
   });

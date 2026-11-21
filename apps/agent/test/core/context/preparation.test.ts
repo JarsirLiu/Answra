@@ -242,6 +242,100 @@ describe("ContextPreparation", () => {
     });
   });
 
+  it("summarizes the transcript with the merged pruning watermark", async () => {
+    const store = new MemoryConversationStore();
+    await store.create("conversation-1");
+    await store.beginRun("conversation-1", "run-1", message("m1", "读取文件"));
+    await store.applyAgentEvent(
+      "conversation-1",
+      eventEnvelope("conversation-1", "run-1", 1, {
+        type: "tool-call",
+        toolCallId: "call-1",
+        toolName: READ_TOOL_NAME,
+        input: { path: "src/file.ts" },
+      }),
+    );
+    await store.applyAgentEvent(
+      "conversation-1",
+      eventEnvelope("conversation-1", "run-1", 2, {
+        type: "tool-result",
+        toolCallId: "call-1",
+        output: "RAW_OLD_RESULT",
+      }),
+    );
+    await store.saveContextState("conversation-1", {
+      checkpoints: [],
+      prunedToolCallIds: ["call-1"],
+    });
+    const generate = vi.fn<ContextSummaryGenerator>(async ({ prompt }) => {
+      expect(prompt).toContain(`[工具结果] ${PRUNED_TOOL_RESULT_TEXT}`);
+      expect(prompt).toContain("src/file.ts");
+      expect(prompt).not.toContain("RAW_OLD_RESULT");
+      return "清理后摘要";
+    });
+
+    const result = await preparation(store, { generate }).compactNow({
+      conversationId: "conversation-1",
+      getAccessToken: async () => "token",
+      modelRequest: { system: "small", messages: [] },
+      rebuild: async () => ({ system: "small", messages: [] }),
+    });
+
+    expect(result.status).toBe("compacted");
+    expect(generate).toHaveBeenCalledOnce();
+  });
+
+  it("summarizes newly pruned tool results instead of the raw transcript", async () => {
+    const store = new MemoryConversationStore();
+    await store.create("conversation-1");
+    await store.beginRun("conversation-1", "run-1", message("m1", "读取文件"));
+    for (let index = 0; index < 6; index += 1) {
+      const toolCallId = `call-${index}`;
+      await store.applyAgentEvent(
+        "conversation-1",
+        eventEnvelope("conversation-1", "run-1", index * 2 + 1, {
+          type: "tool-call",
+          toolCallId,
+          toolName: READ_TOOL_NAME,
+          input: { path: `src/file-${index}.ts` },
+        }),
+      );
+      await store.applyAgentEvent(
+        "conversation-1",
+        eventEnvelope("conversation-1", "run-1", index * 2 + 2, {
+          type: "tool-result",
+          toolCallId,
+          output: `RAW_RESULT_${index}`,
+        }),
+      );
+    }
+    const generate = vi.fn<ContextSummaryGenerator>(async ({ prompt }) => {
+      expect(prompt).toContain(PRUNED_TOOL_RESULT_TEXT);
+      expect(prompt).toContain("src/file-0.ts");
+      expect(prompt).not.toContain("RAW_RESULT_0");
+      return "清理后摘要";
+    });
+    const messages = Array.from({ length: 6 }, (_, index) =>
+      toolResult("r".repeat(400), `call-${index}`),
+    );
+
+    const result = await preparation(store, {
+      generate,
+      toolResultPruning: NO_PROTECTION,
+    }).compactNow({
+      conversationId: "conversation-1",
+      getAccessToken: async () => "token",
+      modelRequest: { system: "x".repeat(4_000), messages },
+      rebuild: async () => ({ system: "small", messages: [] }),
+    });
+
+    expect(result.status).toBe("compacted");
+    expect(generate).toHaveBeenCalledOnce();
+    expect((await store.loadContextState("conversation-1"))?.prunedToolCallIds).toEqual([
+      ...Array.from({ length: 6 }, (_, index) => `call-${index}`),
+    ]);
+  });
+
   it("protects retained user messages and the summary when trimming the rebuilt request", async () => {
     const store = await preparedStore();
     const rebuilt = {

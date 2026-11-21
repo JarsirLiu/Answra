@@ -21,6 +21,7 @@ Codex 的本地压缩直接使用完整历史加摘要提示词，只在 provide
   - [上下文压缩只保留摘要与当前用户回合，工具结果进入摘要输入](../architecture/2026-11-17-context-compaction-user-turn-retention.md)
   - [256k 上下文预算与旧工具结果清理](../architecture/2026-11-13-context-budget-and-tool-result-clearing.md)
   - [压缩路径取消“最近工具结果”保护](./2026-11-20-compaction-clears-all-tool-results.md)
+  - [摘要压缩共享清理后的上下文视图](../architecture/2026-11-21-compaction-shares-pruned-context-view.md)
   - [压缩成功后刷新上下文用量](../bug-fix/2026-11-20-refresh-context-usage-after-compaction.md)
 
 ## 决定
@@ -37,7 +38,7 @@ Codex 的本地压缩直接使用完整历史加摘要提示词，只在 provide
 
 - 删除 `TOOL_RESULT_MAX_CHARS`、`TOOL_INPUT_MAX_CHARS`、`TOOL_SECTION_MAX_CHARS`。
 - 删除 `truncateToolText()`、`capToolSections()`、`[已截断]`、`[更早工具结果未进入摘要]`。
-- 工具输入和结果原样进入摘要 prompt。
+- 未被清理的工具输入和结果原样进入摘要 prompt；已应用到最终模型请求的旧工具结果必须按同一 `prunedToolCallIds` 水印渲染为 `[旧工具结果已清理]`，见[摘要压缩共享清理后的上下文视图](../architecture/2026-11-21-compaction-shares-pruned-context-view.md)。
 - 继续排除 reasoning、图片二进制和重复 text parts；图片只保留文件名与 media type。
 - 保留“渲染成文本”这一步：`SummaryGenerator` 接的是 prompt 字符串，序列化不等于有损预处理。
 
@@ -86,6 +87,7 @@ Codex 的本地压缩直接使用完整历史加摘要提示词，只在 provide
 - 单个巨大工具输出仍可能让摘要请求超限；此时只能逐条丢弃，最坏会丢掉大部分历史并标注不完整。
 - 摘要输入必须继续从最近检查点开始；不得为了“看得更全”回退到每次重读全部 transcript。
 - `renderMessagesForSummary` 不得重新引入按字符数截断工具输入/结果；需要控制大小时走预算或 provider 能力，不在渲染层静默丢事实。
+- 已清理工具结果的“无损”边界是：未清理内容完整进入摘要；清理水印内的结果只保留占位符，不得恢复原文。
 - overflow 必须逐条减少消息并收敛；不得恢复固定次数上限后直接失败。
 - 摘要注入前缀必须保留“避免重复工作”和“需要时重新读取/验证”，否则模型容易在压缩后重复执行已完成操作。
 

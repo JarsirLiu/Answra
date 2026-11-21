@@ -48,7 +48,8 @@ describe("ContextCompactor", () => {
       conversationId: "conversation-1",
       getAccessToken: async () => "token",
       triggerTokens: TRIGGER_TOKENS,
-      contextTokens: TRIGGER_TOKENS,
+      finalRequestTokens: TRIGGER_TOKENS,
+      prunedToolCallIds: [],
     });
 
     expect(compacted).toMatchObject({
@@ -81,7 +82,8 @@ describe("ContextCompactor", () => {
       conversationId: "conversation-1",
       getAccessToken: async () => "token",
       triggerTokens: TRIGGER_TOKENS,
-      contextTokens: TRIGGER_TOKENS,
+      finalRequestTokens: TRIGGER_TOKENS,
+      prunedToolCallIds: [],
     });
 
     expect(compacted.status).toBe("compacted");
@@ -110,7 +112,8 @@ describe("ContextCompactor", () => {
       conversationId: "conversation-1",
       getAccessToken: async () => "token",
       triggerTokens: TRIGGER_TOKENS,
-      contextTokens: TRIGGER_TOKENS,
+      finalRequestTokens: TRIGGER_TOKENS,
+      prunedToolCallIds: [],
       signal: controller.signal,
     });
 
@@ -139,7 +142,8 @@ describe("ContextCompactor", () => {
       conversationId: "conversation-1",
       getAccessToken: async () => "token",
       triggerTokens: TRIGGER_TOKENS,
-      contextTokens: TRIGGER_TOKENS,
+      finalRequestTokens: TRIGGER_TOKENS,
+      prunedToolCallIds: [],
     });
 
     expect(compacted).toMatchObject({ status: "failed" });
@@ -168,7 +172,8 @@ describe("ContextCompactor", () => {
         conversationId: "conversation-1",
         getAccessToken: async () => "token",
         triggerTokens: TRIGGER_TOKENS,
-        contextTokens: TRIGGER_TOKENS,
+        finalRequestTokens: TRIGGER_TOKENS,
+        prunedToolCallIds: [],
       });
 
     await expect(prepare()).resolves.toMatchObject({ status: "failed" });
@@ -187,7 +192,8 @@ describe("ContextCompactor", () => {
         conversationId: "conversation-1",
         getAccessToken: async () => "token",
         triggerTokens: TRIGGER_TOKENS,
-        contextTokens: TRIGGER_TOKENS,
+        finalRequestTokens: TRIGGER_TOKENS,
+        prunedToolCallIds: [],
         bypassFailureBreaker: true,
       }),
     ).resolves.toMatchObject({ status: "failed" });
@@ -207,7 +213,8 @@ describe("ContextCompactor", () => {
         conversationId: "conversation-1",
         getAccessToken: async () => "token",
         triggerTokens: TRIGGER_TOKENS,
-        contextTokens: TRIGGER_TOKENS,
+        finalRequestTokens: TRIGGER_TOKENS,
+        prunedToolCallIds: [],
       });
 
     await prepare();
@@ -233,6 +240,8 @@ describe("ContextCompactor", () => {
         conversationId: "conversation-1",
         getAccessToken,
         triggerTokens: TRIGGER_TOKENS,
+        finalRequestTokens: TRIGGER_TOKENS - 1,
+        prunedToolCallIds: [],
       }),
     ).resolves.toEqual({ status: "skipped", reason: "below-threshold" });
 

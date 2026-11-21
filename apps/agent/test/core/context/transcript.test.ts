@@ -1,6 +1,7 @@
 import type { ConversationMessage, ConversationMessagePart } from "@answra/shared";
 import { describe, expect, it } from "vitest";
 import { renderMessagesForSummary } from "../../../src/core/context/compaction/transcript";
+import { PRUNED_TOOL_RESULT_TEXT } from "../../../src/core/context/pruning/clearedResult";
 
 function message(
   id: string,
@@ -38,9 +39,16 @@ function toolPart(id: string, output = "工具原始输出"): ConversationMessag
   };
 }
 
+function render(messages: readonly ConversationMessage[], pruned: readonly string[] = []): string {
+  return renderMessagesForSummary({
+    messages,
+    prunedToolCallIds: new Set(pruned),
+  });
+}
+
 describe("context summary transcript", () => {
   it("renders message bodies and tool details while excluding reasoning and duplicate parts", () => {
-    const transcript = renderMessagesForSummary([
+    const transcript = render([
       message("u1", "user", "用户正文", [textPart("u1-part", "part 用户正文")]),
       message("a1", "assistant", "助手正文", [
         reasoningPart("a1-reasoning", "内部思考"),
@@ -64,7 +72,7 @@ describe("context summary transcript", () => {
   });
 
   it("keeps image names and media types without rendering image bytes", () => {
-    const transcript = renderMessagesForSummary([
+    const transcript = render([
       {
         id: "u1",
         role: "user",
@@ -79,7 +87,7 @@ describe("context summary transcript", () => {
   });
 
   it("omits messages without a visible body", () => {
-    const transcript = renderMessagesForSummary([
+    const transcript = render([
       {
         id: "empty",
         role: "assistant",
@@ -95,9 +103,7 @@ describe("context summary transcript", () => {
 
   it("keeps the full oversized tool result without truncation", () => {
     const output = `${"H".repeat(1_200)}MIDDLE_MARKER${"T".repeat(800)}`;
-    const transcript = renderMessagesForSummary([
-      message("a1", "assistant", "", [toolPart("a1-tool", output)]),
-    ]);
+    const transcript = render([message("a1", "assistant", "", [toolPart("a1-tool", output)])]);
 
     expect(transcript).toContain(output);
     expect(transcript).not.toContain("[已截断]");
@@ -110,10 +116,21 @@ describe("context summary transcript", () => {
       ]),
     );
 
-    const transcript = renderMessagesForSummary(messages);
+    const transcript = render(messages);
 
     expect(transcript).toContain("old-0-");
     expect(transcript).toContain("old-29-");
     expect(transcript).not.toContain("[更早工具结果未进入摘要]");
+  });
+
+  it("renders pruned tool results as the shared placeholder while keeping the tool input", () => {
+    const transcript = render(
+      [message("a1", "assistant", "", [toolPart("a1-tool", "RAW_TOOL_RESULT")])],
+      ["call-a1-tool"],
+    );
+
+    expect(transcript).toContain(`[工具结果] ${PRUNED_TOOL_RESULT_TEXT}`);
+    expect(transcript).toContain("secret.txt");
+    expect(transcript).not.toContain("RAW_TOOL_RESULT");
   });
 });

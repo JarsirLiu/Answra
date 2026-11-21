@@ -5,11 +5,11 @@ import {
   messagesAfterCheckpoint,
 } from "../../transcript/contextCheckpoint";
 import {
-  estimateMessagesTokens,
   estimateMessageTokens,
   estimateTextTokens,
   truncateTextToTokenBudget,
 } from "../tokenEstimate";
+import type { CompactionView } from "./view";
 
 /** 压缩后以原始消息保留的用户消息总 token 预算；与 Codex 的默认量级对齐。 */
 export const RETAINED_USER_MESSAGE_TOKEN_BUDGET = 20_000;
@@ -33,23 +33,18 @@ export type CompactionPlanDecision =
   | { status: "skip"; reason: CompactionSkipReason };
 
 interface CompactionPlanInput {
-  messages: readonly ConversationMessage[];
+  view: CompactionView;
   checkpoint: ContextCheckpoint | undefined;
   triggerTokens: number;
-  /** 最终模型请求的估算值；缺省时退回摘要 + checkpoint 后消息的旧估算。 */
-  contextTokens?: number;
   /** 手动压缩跳过触发点判断；只要 checkpoint 之后仍有消息就允许压缩。 */
   force?: boolean;
 }
 
 /** 决定是否压缩以及跳过原因；调用方不得再自行复制这套判定。 */
 export function decideCompaction(input: CompactionPlanInput): CompactionPlanDecision {
-  const pending = messagesAfterCheckpoint(input.messages, input.checkpoint);
+  const pending = messagesAfterCheckpoint(input.view.messages, input.checkpoint);
   if (!pending) return { status: "skip", reason: "checkpoint-invalid" };
-  const estimatedTokens =
-    input.contextTokens ??
-    estimateTextTokens(input.checkpoint?.summary ?? "") + estimateMessagesTokens(pending);
-  if (!input.force && estimatedTokens < input.triggerTokens) {
+  if (!input.force && input.view.finalRequestTokens < input.triggerTokens) {
     return { status: "skip", reason: "below-threshold" };
   }
   if (pending.length === 0) return { status: "skip", reason: "insufficient-messages" };
@@ -59,7 +54,7 @@ export function decideCompaction(input: CompactionPlanInput): CompactionPlanDeci
       messagesToSummarize: pending,
       // 摘要覆盖到当前最后一条消息，因此保留范围可以跨过旧 checkpoint；
       // 这样长工具循环没有新的用户消息时，原始任务仍不会从投影中消失。
-      retainedUserMessages: selectRecentUserMessages(input.messages),
+      retainedUserMessages: selectRecentUserMessages(input.view.messages),
     },
   };
 }

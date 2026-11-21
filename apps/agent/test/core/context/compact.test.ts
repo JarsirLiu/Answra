@@ -1,12 +1,35 @@
 import type { ConversationMessage } from "@answra/shared";
 import { describe, expect, it, vi } from "vitest";
 import {
-  compactContext,
+  compactContext as compactContextUseCase,
   type SummaryGeneratorInput,
 } from "../../../src/core/context/compaction/compact";
 import { CONTEXT_SUMMARY_PROMPT } from "../../../src/core/context/compaction/prompt";
+import { PRUNED_TOOL_RESULT_TEXT } from "../../../src/core/context/pruning/clearedResult";
 
 const TRIGGER_TOKENS = 1;
+
+type CompactContextInput = Omit<Parameters<typeof compactContextUseCase>[0], "view"> & {
+  messages: readonly ConversationMessage[];
+  finalRequestTokens?: number;
+  prunedToolCallIds?: readonly string[];
+};
+
+function compactContext({
+  messages,
+  finalRequestTokens = TRIGGER_TOKENS,
+  prunedToolCallIds = [],
+  ...input
+}: CompactContextInput) {
+  return compactContextUseCase({
+    ...input,
+    view: {
+      messages,
+      finalRequestTokens,
+      prunedToolCallIds: new Set(prunedToolCallIds),
+    },
+  });
+}
 
 function message(
   id: string,
@@ -93,6 +116,29 @@ describe("context compaction", () => {
     expect(prompt).toContain("[工具调用 read]");
     expect(prompt).toContain("src/example.ts");
     expect(prompt).toContain("文件正文");
+  });
+
+  it("replaces pruned tool results with the shared placeholder in the summary input", async () => {
+    const generate = vi.fn<(input: SummaryGeneratorInput) => Promise<string>>(
+      async () => "清理后的工具摘要",
+    );
+
+    await compactContext({
+      messages: [
+        message("m1", "读取文件"),
+        toolMessage("m2", "read", "RAW_OLD_RESULT"),
+        message("m3", "继续修改"),
+      ],
+      prunedToolCallIds: ["m2-call"],
+      state: undefined,
+      triggerTokens: TRIGGER_TOKENS,
+      generate,
+    });
+
+    const prompt = generate.mock.calls[0]?.[0]?.prompt ?? "";
+    expect(prompt).toContain(`[工具结果] ${PRUNED_TOOL_RESULT_TEXT}`);
+    expect(prompt).toContain("src/example.ts");
+    expect(prompt).not.toContain("RAW_OLD_RESULT");
   });
 
   it("appends one-shot manual instructions without replacing the base prompt", async () => {
@@ -225,6 +271,29 @@ describe("context compaction", () => {
     expect(retryPrompt).toContain("第一轮回复");
     if (result.status !== "compacted") throw new Error("expected compaction");
     expect(result.state.checkpoints.at(-1)?.summary).toBe("截断后的摘要");
+  });
+
+  it("keeps the pruning watermark when overflow drops older messages", async () => {
+    const generate = vi
+      .fn<(input: SummaryGeneratorInput) => Promise<string>>()
+      .mockRejectedValueOnce(new Error("prompt is too long: 200000 tokens > 128000 maximum"))
+      .mockResolvedValueOnce("截断后的摘要");
+
+    await compactContext({
+      messages: [
+        message("m1", "最早需求"),
+        toolMessage("m2", "read", "RAW_OLD_RESULT"),
+        message("m3", "后续需求"),
+      ],
+      prunedToolCallIds: ["m2-call"],
+      state: undefined,
+      triggerTokens: TRIGGER_TOKENS,
+      generate,
+    });
+
+    const retryPrompt = generate.mock.calls[1]?.[0]?.prompt ?? "";
+    expect(retryPrompt).toContain(PRUNED_TOOL_RESULT_TEXT);
+    expect(retryPrompt).not.toContain("RAW_OLD_RESULT");
   });
 
   it("shortens a summary that exceeds the summary token budget", async () => {

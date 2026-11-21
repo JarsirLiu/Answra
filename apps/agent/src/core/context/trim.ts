@@ -1,16 +1,21 @@
 /** 压缩后仍超过输入硬上限时，按完整轮次做确定性裁剪；不发送静默截断的请求。 */
 import type { ModelMessage } from "ai";
+import type { ContextUsageAnchor } from "../transcript/contextState";
 import {
   ContextLimitExceededError,
   type ContextModelRequest,
   type ResolvedContextBudget,
 } from "./budget";
-import { estimateContextRequestTokens } from "./tokenEstimate";
+import { calibrateContextTokens, estimateContextRequestTokens } from "./tokenEstimate";
 
 export function trimContextRequest(
   request: ContextModelRequest,
   budget: ResolvedContextBudget,
-  options: { targetTokens?: number; preserveLeadingMessages?: number } = {},
+  options: {
+    targetTokens?: number;
+    preserveLeadingMessages?: number;
+    usageAnchor?: ContextUsageAnchor;
+  } = {},
 ): ContextModelRequest {
   const targetTokens = options.targetTokens ?? budget.inputLimit;
   const preserved = Math.max(
@@ -18,13 +23,18 @@ export function trimContextRequest(
     Math.min(options.preserveLeadingMessages ?? 0, request.messages.length),
   );
   const prefix = request.messages.slice(0, preserved);
+  const estimateTokens = (messages: readonly ModelMessage[]) =>
+    calibrateContextTokens(
+      estimateContextRequestTokens({ ...request, messages: [...messages] }),
+      options.usageAnchor,
+    );
   let messages = request.messages;
-  while (estimateContextRequestTokens({ ...request, messages }) >= targetTokens) {
+  while (estimateTokens(messages) >= targetTokens) {
     const trimmed = dropOldestTurn(messages.slice(preserved));
     if (!trimmed) break;
     messages = [...prefix, ...trimmed];
   }
-  const estimatedTokens = estimateContextRequestTokens({ ...request, messages });
+  const estimatedTokens = estimateTokens(messages);
   if (estimatedTokens >= budget.inputLimit) {
     throw new ContextLimitExceededError({
       estimatedTokens,

@@ -2,9 +2,10 @@
 import type { ModelMessage, ToolResultPart } from "ai";
 import type { ContextModelRequest } from "../budget";
 import { estimateContextRequestTokens } from "../tokenEstimate";
+import { PRUNED_TOOL_RESULT_TEXT } from "./clearedResult";
 import type { ToolResultPruningPolicy } from "./policy";
 
-export const PRUNED_TOOL_RESULT_TEXT = "[旧工具结果已清理]";
+export { PRUNED_TOOL_RESULT_TEXT };
 
 /** 清理水印的容量上限；超出后丢弃最旧的 ID，未命中的结果最多再清一次。 */
 export const PRUNED_TOOL_CALL_ID_LIMIT = 2_000;
