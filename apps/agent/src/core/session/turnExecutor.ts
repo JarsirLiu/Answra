@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { assertHandoffTask } from "../team/handoff";
 import type {
   StepExecutor,
+  StepHandoff,
   StepId,
   StepResult,
   TurnExecutor,
@@ -51,6 +52,7 @@ export class SessionTurnExecutor implements TurnExecutor {
   async run(turn: TurnStart, signal: AbortSignal): Promise<TurnFinish> {
     let agentId = turn.agentId;
     let messageId = this.createMessageId();
+    let handoff: StepHandoff | undefined;
     let index = 0;
 
     while (true) {
@@ -72,6 +74,8 @@ export class SessionTurnExecutor implements TurnExecutor {
           index,
           agentId,
           messageId,
+          ...(turn.input === undefined ? {} : { input: turn.input }),
+          ...(handoff === undefined ? {} : { handoff }),
         },
         signal,
       );
@@ -84,12 +88,20 @@ export class SessionTurnExecutor implements TurnExecutor {
         return finish(turn, "failed", "model-error", result.errorText);
 
       if (result.handoff !== undefined) {
-        const handoffError = validateHandoff(agentId, result.handoff);
+        const fromAgentId = agentId;
+        const nextHandoff = normalizeHandoff(result.handoff);
+        const handoffError = validateHandoff(fromAgentId, nextHandoff);
         if (handoffError !== undefined)
           return finish(turn, "failed", "handoff-failed", handoffError);
-        await this.appendHandoff(turn, agentId, messageId, result.handoff);
-        agentId = result.handoff.toAgentId.trim();
+        const sourceMessageId = messageId;
+        await this.appendHandoff(turn, fromAgentId, sourceMessageId, nextHandoff);
+        agentId = nextHandoff.toAgentId;
         messageId = this.createMessageId();
+        handoff = {
+          fromAgentId,
+          task: nextHandoff.task,
+          sourceMessageId,
+        };
         index += 1;
         continue;
       }
@@ -114,18 +126,24 @@ export class SessionTurnExecutor implements TurnExecutor {
       {
         type: "turn-handoff",
         fromAgentId,
-        toAgentId: handoff.toAgentId.trim(),
-        task: handoff.task.trim(),
+        toAgentId: handoff.toAgentId,
+        task: handoff.task,
       },
       { turnId: turn.turnId, messageId },
     );
   }
 }
 
+function normalizeHandoff(handoff: TurnHandoff): TurnHandoff {
+  return {
+    toAgentId: handoff.toAgentId.trim(),
+    task: handoff.task.trim(),
+  };
+}
+
 function validateHandoff(fromAgentId: string, handoff: TurnHandoff): string | undefined {
-  const toAgentId = handoff.toAgentId.trim();
-  if (!toAgentId) return "交接目标不能为空";
-  if (toAgentId === fromAgentId) return "交接目标不能是当前 Bot";
+  if (!handoff.toAgentId) return "交接目标不能为空";
+  if (handoff.toAgentId === fromAgentId) return "交接目标不能是当前 Bot";
   try {
     assertHandoffTask(handoff.task);
     return undefined;

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type {
+  StepRunContext,
   StepRunner,
   StepRunnerResult,
   StepStart,
@@ -20,7 +21,11 @@ class ScriptedStepRunner implements StepRunner {
     this.results = results;
   }
 
-  async run(step: StepStart, _signal: AbortSignal): Promise<StepRunnerResult> {
+  async run(
+    step: StepStart,
+    _context: StepRunContext,
+    _signal: AbortSignal,
+  ): Promise<StepRunnerResult> {
     this.calls.push(step);
     const result = this.results.shift();
     if (result === undefined) throw new Error("测试没有配置下一个 step 结果");
@@ -87,6 +92,7 @@ describe("SessionTurnExecutor", () => {
     expect(runner.calls.map((step) => step.index)).toEqual([0, 1]);
     expect(runner.calls.map((step) => step.agentId)).toEqual(["general", "general"]);
     expect(runner.calls.map((step) => step.messageId)).toEqual(["assistant-1", "assistant-1"]);
+    expect(runner.calls.map((step) => step.handoff)).toEqual([undefined, undefined]);
     const events = await journal.readAfter(TEST_SESSION_ID, 0);
     expect(events.some((event) => event.event.type === "turn-finished")).toBe(false);
     const projection = projectSession(TEST_SESSION_ID, events);
@@ -114,6 +120,14 @@ describe("SessionTurnExecutor", () => {
 
     expect(runner.calls.map((step) => step.agentId)).toEqual(["general", "intake"]);
     expect(runner.calls.map((step) => step.messageId)).toEqual(["assistant-1", "assistant-2"]);
+    expect(runner.calls.map((step) => step.handoff)).toEqual([
+      undefined,
+      {
+        fromAgentId: "general",
+        task: "整理简历资料",
+        sourceMessageId: "assistant-1",
+      },
+    ]);
     const events = await journal.readAfter(TEST_SESSION_ID, 0);
     const handoff = events.find((event) => event.event.type === "turn-handoff");
     expect(handoff).toMatchObject({
@@ -132,6 +146,40 @@ describe("SessionTurnExecutor", () => {
       handoffCount: 1,
       assistantMessageIds: ["assistant-1", "assistant-2"],
     });
+  });
+
+  it("keeps the handoff input for every step of the target Bot", async () => {
+    const journal = await startedJournal();
+    const runner = new ScriptedStepRunner(
+      {
+        outcome: "completed",
+        finishReason: "stop",
+        handoff: { toAgentId: "intake", task: "整理简历资料" },
+      },
+      { outcome: "completed", finishReason: "tool-calls" },
+      { outcome: "completed", finishReason: "stop" },
+    );
+    const executor = createExecutor(journal, runner);
+
+    await executor.run(turnStart(), new AbortController().signal);
+
+    const handoff = {
+      fromAgentId: "general",
+      task: "整理简历资料",
+      sourceMessageId: "assistant-1",
+    };
+    expect(runner.calls.map((step) => step.agentId)).toEqual(["general", "intake", "intake"]);
+    expect(runner.calls.map((step) => step.messageId)).toEqual([
+      "assistant-1",
+      "assistant-2",
+      "assistant-2",
+    ]);
+    expect(runner.calls.map((step) => step.handoff)).toEqual([undefined, handoff, handoff]);
+    expect(runner.calls.map((step) => step.input)).toEqual([
+      userMessage(),
+      userMessage(),
+      userMessage(),
+    ]);
   });
 
   it("fails the turn when a handoff target or task is invalid", async () => {

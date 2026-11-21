@@ -448,6 +448,8 @@ export function startAgentHost({
         return undefined;
       case "wait-queue":
         return runtime.waitForQueue(command.conversationId, command.queueId);
+      case "wait-queue-start":
+        return runtime.waitForQueueStart(command.conversationId, command.queueId);
       case "queue-position":
         return runtime.getQueuePosition(command.conversationId, command.queueId);
       case "ping":

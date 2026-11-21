@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { StepRunner, StepRunnerResult, StepStart } from "../../../src/core/session/contracts";
+import type {
+  StepRunContext,
+  StepRunner,
+  StepRunnerResult,
+  StepStart,
+} from "../../../src/core/session/contracts";
 import { MemorySessionJournal } from "../../../src/core/session/memoryJournal";
 import { SessionStepExecutor } from "../../../src/core/session/stepExecutor";
 import { TEST_SESSION_ID, TEST_STEP_ID, TEST_TURN_ID } from "./fixtures";
@@ -12,7 +17,11 @@ class FakeStepRunner implements StepRunner {
     this.results = results;
   }
 
-  async run(step: StepStart, _signal: AbortSignal): Promise<StepRunnerResult> {
+  async run(
+    step: StepStart,
+    _context: StepRunContext,
+    _signal: AbortSignal,
+  ): Promise<StepRunnerResult> {
     this.calls.push(step);
     const result = this.results.shift();
     if (result === undefined) throw new Error("测试没有配置下一个 step 结果");
@@ -67,6 +76,76 @@ describe("SessionStepExecutor", () => {
         finishReason: "stop",
         usage: { inputTokens: 10, outputTokens: 4 },
       },
+    });
+  });
+
+  it("writes model stream events through the step event sink in order", async () => {
+    const journal = new MemorySessionJournal();
+    const runner: StepRunner = {
+      async run(_step, context): Promise<StepRunnerResult> {
+        await Promise.all([
+          context.events.append({ type: "text-delta", partId: "text-1", delta: "a" }),
+          context.events.append({ type: "text-delta", partId: "text-1", delta: "b" }),
+        ]);
+        return { outcome: "completed", finishReason: "stop" };
+      },
+    };
+    const executor = new SessionStepExecutor({ journal, runner });
+
+    await executor.run(stepStart(), new AbortController().signal);
+
+    const events = await journal.readAfter(TEST_SESSION_ID, 0);
+    expect(events.map((event) => event.event.type)).toEqual([
+      "step-started",
+      "text-delta",
+      "text-delta",
+      "step-finished",
+    ]);
+    expect(events.slice(1, 3)).toMatchObject([
+      {
+        turnId: TEST_TURN_ID,
+        stepId: TEST_STEP_ID,
+        messageId: "assistant-1",
+        event: { type: "text-delta", delta: "a" },
+      },
+      {
+        turnId: TEST_TURN_ID,
+        stepId: TEST_STEP_ID,
+        messageId: "assistant-1",
+        event: { type: "text-delta", delta: "b" },
+      },
+    ]);
+  });
+
+  it("turns a step event sink failure into an observable failed step", async () => {
+    class FailingStreamJournal extends MemorySessionJournal {
+      override async append(
+        sessionId: Parameters<MemorySessionJournal["append"]>[0],
+        event: Parameters<MemorySessionJournal["append"]>[1],
+        metadata?: Parameters<MemorySessionJournal["append"]>[2],
+      ) {
+        if (event.type === "text-delta") throw new Error("journal write failed");
+        return super.append(sessionId, event, metadata);
+      }
+    }
+    const journal = new FailingStreamJournal();
+    const runner: StepRunner = {
+      async run(_step, context): Promise<StepRunnerResult> {
+        await context.events.append({ type: "text-delta", partId: "text-1", delta: "a" });
+        return { outcome: "completed", finishReason: "stop" };
+      },
+    };
+    const executor = new SessionStepExecutor({ journal, runner });
+
+    await expect(executor.run(stepStart(), new AbortController().signal)).resolves.toEqual({
+      stepId: TEST_STEP_ID,
+      outcome: "failed",
+      errorText: "journal write failed",
+    });
+
+    const events = await journal.readAfter(TEST_SESSION_ID, 0);
+    expect(events[1]).toMatchObject({
+      event: { type: "step-finished", state: "failed", errorText: "journal write failed" },
     });
   });
 

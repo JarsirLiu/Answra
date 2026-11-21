@@ -770,6 +770,30 @@ describe("agent worker host", () => {
     });
   });
 
+  it("routes wait-queue-start through the conversation queue", async () => {
+    const harness = createHarness();
+    const host = startAgentHost({
+      transport: harness.transport,
+      vad: silenceVadSource(),
+      recognizer: scriptedRecognizer("识别文本"),
+    });
+    const waitForStart = vi
+      .spyOn(host.runtime, "waitForQueueStart")
+      .mockRejectedValue(new Error("queue missing"));
+
+    harness.dispatch({
+      id: "wait-start-1",
+      type: "wait-queue-start",
+      conversationId: "conversation-1",
+      queueId: "queue-missing",
+    });
+    await vi.waitFor(() => expect(harness.responses()).toHaveLength(1));
+
+    expect(waitForStart).toHaveBeenCalledWith("conversation-1", "queue-missing");
+    expect(harness.responses()[0]).toMatchObject({ id: "wait-start-1", ok: false });
+    host.dispose();
+  });
+
   it("reports a command failure in the response frame instead of throwing", async () => {
     const harness = createHarness();
     startAgentHost({

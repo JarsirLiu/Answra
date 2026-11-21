@@ -1,6 +1,6 @@
 /** 执行已注册 Agent 的 AI SDK 流、HTTP 重试与 run 终态；不读取或写入 transcript。 */
 import type { ConversationCapabilityEndpoint } from "@answra/shared";
-import type { AgentEvent, RunOutcome } from "@answra/shared/schema";
+import type { RunOutcome } from "@answra/shared/schema";
 import type { StopCondition, ToolSet } from "ai";
 import type { ExecutionStore } from "../../execution/store";
 import { isContextOverflowError } from "../model/contextOverflow";
@@ -13,11 +13,9 @@ import type {
   AgentRunRequest,
   AgentToolOutputEmitter,
 } from "./definition";
+import { createLiveToolOutputRelay } from "./liveToolOutput";
 import { consumeModelAttempt, createModelAttemptSink } from "./modelAttempt";
 import { createExecutionJournal } from "./streamJournal";
-
-/** 单次工具调用实时输出的字符上限，避免长命令把事件日志撑爆。 */
-const MAX_LIVE_TOOL_OUTPUT_CHARS = 8_000;
 
 export async function executeRun<Input, Prepared>({
   definition,
@@ -315,32 +313,6 @@ function errorText(error: unknown): string {
     : typeof error === "string"
       ? error
       : "工具执行失败";
-}
-
-/**
- * Serializes live tool output into the journal so deltas always precede the tool's
- * terminal event. Deltas are capped per tool call; the final result still carries
- * the full (budgeted) output.
- */
-function createLiveToolOutputRelay(writer: { append(event: AgentEvent): Promise<void> }) {
-  let chain: Promise<void> = Promise.resolve();
-  const emittedChars = new Map<string, number>();
-  return {
-    emit(toolCallId: string, delta: string): void {
-      if (!delta) return;
-      const emitted = emittedChars.get(toolCallId) ?? 0;
-      if (emitted >= MAX_LIVE_TOOL_OUTPUT_CHARS) return;
-      const room = MAX_LIVE_TOOL_OUTPUT_CHARS - emitted;
-      const chunk = delta.length > room ? delta.slice(0, room) : delta;
-      emittedChars.set(toolCallId, emitted + chunk.length);
-      chain = chain
-        .then(() => writer.append({ type: "tool-output-delta", toolCallId, delta: chunk }))
-        .catch(() => undefined);
-    },
-    flush(): Promise<void> {
-      return chain;
-    },
-  };
 }
 
 function logRunStarted({

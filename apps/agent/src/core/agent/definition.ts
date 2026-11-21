@@ -132,7 +132,13 @@ export interface AgentExecutor<Input> {
     request: AgentRunRequest<Input, Prepared>,
   ): Promise<AgentRunHandle<Prepared>>;
   /** 只读模型请求投影；不创建 run、不写 ExecutionStore、不执行工具。 */
-  prepare(input: Input, signal: AbortSignal): Promise<AgentModelRequest>;
+  prepare(
+    input: Input,
+    signal: AbortSignal,
+    emitter?: AgentToolOutputEmitter,
+  ): Promise<AgentModelRequest>;
+  /** 只解析正常结束后的结构化结果；不启动 run、不写事件。 */
+  result?(input: Input, runId: string): Promise<BotTurnResult | undefined>;
 }
 
 export type AgentModelRoutes = Readonly<Record<AgentModelRoute, ConversationCapabilityEndpoint>>;

@@ -1,8 +1,10 @@
-/** 一次 provider 请求与工具执行：只写 step-* 与 usage 事件，不改变 Turn 状态。 */
-import type { AgentEvent } from "@answra/shared/schema";
+/** 一次 provider 请求与工具执行：独占 step-* 与 usage 事件，模型流事件经 sink 写入；不改变 Turn 状态。 */
+import type { AgentEvent, AgentStreamEvent } from "@answra/shared/schema";
 import type {
+  StepEventSink,
   StepExecutor,
   StepResult,
+  StepRunContext,
   StepRunner,
   StepRunnerResult,
   StepStart,
@@ -40,7 +42,15 @@ export class SessionStepExecutor implements StepExecutor {
       metadata,
     );
 
-    const result = await this.executeRunner(step, signal);
+    const context: StepRunContext = {
+      events: new JournalStepEventSink(this.journal, step, metadata),
+    };
+    let result = await this.executeRunner(step, context, signal);
+    try {
+      await context.events.flush();
+    } catch (error) {
+      result = { outcome: "failed", errorText: sessionErrorText(error) };
+    }
     await this.append(
       step,
       {
@@ -66,9 +76,13 @@ export class SessionStepExecutor implements StepExecutor {
     return { ...result, stepId: step.stepId };
   }
 
-  private async executeRunner(step: StepStart, signal: AbortSignal): Promise<StepRunnerResult> {
+  private async executeRunner(
+    step: StepStart,
+    context: StepRunContext,
+    signal: AbortSignal,
+  ): Promise<StepRunnerResult> {
     try {
-      return await this.runner.run(step, signal);
+      return await this.runner.run(step, context, signal);
     } catch (error) {
       if (signal.aborted) return { outcome: "aborted" };
       return { outcome: "failed", errorText: sessionErrorText(error) };
@@ -89,5 +103,34 @@ export class SessionStepExecutor implements StepExecutor {
     metadata: SessionJournalAppend,
   ): Promise<void> {
     await this.journal.append(step.sessionId, event, metadata);
+  }
+}
+
+/** 串行写入模型流事件；失败延迟到 flush 统一报告，避免丢失 step 终态。 */
+class JournalStepEventSink implements StepEventSink {
+  private chain: Promise<void> = Promise.resolve();
+  private failure: unknown;
+
+  constructor(
+    private readonly journal: SessionJournal,
+    private readonly step: StepStart,
+    private readonly metadata: SessionJournalAppend,
+  ) {}
+
+  append(event: AgentStreamEvent): Promise<void> {
+    this.chain = this.chain.then(async () => {
+      if (this.failure !== undefined) return;
+      try {
+        await this.journal.append(this.step.sessionId, event, this.metadata);
+      } catch (error) {
+        this.failure = error;
+      }
+    });
+    return this.chain;
+  }
+
+  async flush(): Promise<void> {
+    await this.chain;
+    if (this.failure !== undefined) throw this.failure;
   }
 }

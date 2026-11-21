@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type {
   SessionCompactionRequest,
   SessionCompactor,
+  StepRunContext,
   StepRunner,
   StepRunnerResult,
   StepStart,
@@ -85,7 +86,11 @@ class AbortableHandoffRunner implements StepRunner {
   readonly calls: StepStart[] = [];
   readonly intakeStarted = deferred<void>();
 
-  async run(step: StepStart, signal: AbortSignal): Promise<StepRunnerResult> {
+  async run(
+    step: StepStart,
+    _context: StepRunContext,
+    signal: AbortSignal,
+  ): Promise<StepRunnerResult> {
     this.calls.push(step);
     if (step.turnId === TEST_TURN_ID && step.agentId === "general") {
       return {

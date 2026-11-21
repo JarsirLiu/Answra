@@ -538,6 +538,17 @@ export class ConversationApplication {
     return this.turns.wait(conversationId, queueId);
   }
 
+  waitForQueueStart(
+    conversationId: string,
+    queueId: string,
+  ): Promise<{
+    queueId: string;
+    runId: string;
+    snapshot: ConversationSnapshot;
+  }> {
+    return this.turns.waitForStart(conversationId, queueId);
+  }
+
   getQueuePosition(conversationId: string, queueId: string): number | undefined {
     return this.turns.position(conversationId, queueId);
   }

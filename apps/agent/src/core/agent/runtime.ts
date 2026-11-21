@@ -42,10 +42,12 @@ export class AgentRuntime {
 
   registerAgent<Input>(definition: AgentDefinition<Input>): AgentExecutor<Input> {
     const agent = withCurrentTimeContext(definition);
+    const result = agent.result;
     this.agentRegistry.register(agent.id);
     return {
       startRun: (request) => this.startRun(agent, request),
-      prepare: (input, signal) => agent.prepare(input, signal),
+      prepare: (input, signal, emitter) => agent.prepare(input, signal, emitter),
+      ...(result ? { result: (input: Input, runId: string) => result(input, runId) } : {}),
     };
   }
 

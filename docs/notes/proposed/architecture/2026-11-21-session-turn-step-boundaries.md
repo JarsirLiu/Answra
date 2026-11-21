@@ -4,16 +4,18 @@
 
 ## 当前状态
 
-- 本文是设计提案；阶段 0-4.5 的内存/端口版已落地，尚未接业务执行链和真实 provider。
+- 本文是设计提案；阶段 0-4.5 的内存/端口版已落地，真实 provider StepRunner adapter 已提供，尚未接业务执行链。
 - 已新增 `Turn/Step/Compaction` 事件、`SessionEventEnvelope`、`core/session` 的 contracts/eventFactory/journal/memoryJournal/projection/recovery/sessionRuntime，并补了目标测试。
 - 已新增 SQLite v2 schema 与 `20261121120000_add_session_turns`：回填历史消息 `turn_id` 和 `session_turns`；尚未接新 runtime 写入。
 - 已新增 `core/session/scheduler.ts`：每会话 FIFO、单活动 Turn、queued 取消、手动压缩排序、`resume` 与 `waitForIdle`；`SessionCompactor` 仍为端口，未接真实压缩实现。
-- 已新增 `stepExecutor.ts` 与 `turnExecutor.ts`：StepExecutor 写 `step-*`/usage，TurnExecutor 只写 `turn-handoff` 并返回 `TurnFinish`；真实 AI SDK/provider/ContextManager 尚未接入。
+- 已新增 `stepExecutor.ts` 与 `turnExecutor.ts`：StepExecutor 写 `step-*`/usage，TurnExecutor 只写 `turn-handoff` 并返回 `TurnFinish`。
+- 已新增 `sessionStepRunner.ts` 与 `stepContextManager.ts`：StepRunner 使用真实 AI SDK/provider 流执行单次请求，ContextManager 委托 `ContextPreparation` 准备与恢复上下文。
+- 已新增 `conversation/stepRunner.ts`：按 `StepStart.agentId` 解析 Conversation Bot、用 `StepStart.input`/`StepStart.handoff` 构建领域输入，并通过 `AgentExecutor.result` 解析同 Turn handoff；业务执行链尚未接入。
 - 已新增 `sessionRuntime.ts`：按 session 创建 scheduler，提供 submit/cancel/compact/snapshot/events/recover/waitForIdle；snapshot 与 events 直接读 journal，不复制 turn/queue 状态。
 - 已新增恢复写回：`recoverSession` 把未完成 Step、Turn、Compaction 收口为 failed/interrupted，重复调用不重复追加；`SessionRuntime.recover` 恢复后继续消费 queued Turn，并拒绝已启动 session 的启动恢复。
 - `turn-finished` 与 `step-finished` 增加可选 `errorText`，失败不再只能靠自由文本或日志观察。
 - 状态词汇只保留在 `packages/shared/src/schema/status.ts`：`StepOutcome` 复用 `TurnOutcome`；`CompactionProjection.state` 直接使用 `ContextCompactionState`，`compaction-finished` 投影为 `succeeded`，不再维护 `finished` 投影子集。
-- 阶段 0-2 已提交；阶段 3-4.5 端口级实现已通过目标测试，全量 `pnpm verify` 通过。
+- 阶段 0-2 已提交；阶段 3-4.5 端口级实现与 StepRunner adapter 已通过目标测试，全量 `pnpm verify` 曾通过；当前工作区并行改动会影响全量门禁。
 - 压缩会话后继续时，先读“执行交接”“持久化与迁移”和“模块边界”，再从第一个未完成阶段开始，不要直接改 `ConversationApplication` 或 `executeRun.ts`。
 
 ## 问题
@@ -316,8 +318,8 @@ tool-*               继续由现有工具事件承载
 | 1 Journal 与投影 | 已完成（内存版） | `SessionJournal`、`SessionProjection`、重放与幂等测试 | 同一事件流重建一致；崩溃重放不重复 |
 | 1b 持久化 v2 | 已完成（schema/回填） | `session_turns`、消息 `turn_id`、旧会话回填、v1 fixture | 旧会话回填正确；消息 id/正文不变 |
 | 2 Scheduler 与队列 | 已完成（内存版） | `TurnScheduler` 每会话串行、FIFO、取消、queued 投影、手动压缩排序、`resume` | 活动 turn 不被排队消息切断；queued 可取消；测试通过 |
-| 3 Turn 与 handoff | 已完成（端口级） | `SessionTurnExecutor`、同 Turn handoff、终态结果与 `errorText`；按 Bot 分配 assistant `messageId`，handoff envelope 记录来源消息；transcript 落账待接业务 | 多 Bot 同一 turn；队列不插入 handoff；每个 Bot 一条 assistant 消息 |
-| 4 Step 执行 | 已完成（端口级） | `SessionStepExecutor`、`StepRunner` 端口、step 事件/usage、step 失败可观察；真实 provider 待适配 | 每个 step 有 agent/model/usage；不改 turn |
+| 3 Turn 与 handoff | 已完成（端口级） | `SessionTurnExecutor`、同 Turn handoff、终态结果与 `errorText`；按 Bot 分配 assistant `messageId`，handoff envelope 记录来源消息；`StepStart.handoff` 把来源与任务传给目标 Bot 的每个 step | 多 Bot 同一 turn；队列不插入 handoff；每个 Bot 一条 assistant 消息 |
+| 4 Step 执行 | 已完成（端口级 + provider adapter + Conversation 绑定） | `SessionStepExecutor`、`StepRunner` 端口、`SessionStepRunner` 真实 provider 流、`StepContextManager` adapter、`StepRunContext.events` 模型流 sink、step 事件/usage；`conversation/stepRunner.ts` 按 agentId 绑定 Bot 输入与 handoff；业务执行链待接 | 每个 step 有 agent/model/usage；不改 turn；交接输入进入目标 step |
 | 4.5 SessionRuntime 与恢复 | 已完成（内存版） | `SessionRuntime` 门面、恢复写回、queued 继续、facade 测试 | 恢复只写一次；启动后拒绝 recover；不接业务 |
 | 5 自动压缩 | 未开始 | ContextManager step 前准备；超限 fail-closed；overflow 一次恢复 | 长工具循环每 step 都准备；353k 不再发出 |
 | 6 手动压缩 | 未开始 | Scheduler 维护操作；operation 事件；取消/失败结果 | 不创建 turn；活动 turn 后执行；失败不坏 checkpoint |
@@ -396,7 +398,7 @@ pnpm notes:check
 pnpm verify
 ```
 
-本轮阶段 2-4.5 验证：`pnpm --filter @answra/agent test -- test/core/session` 通过 44 个测试；`pnpm --filter @answra/shared test -- test/schema.test.ts` 通过 21 个测试；`pnpm exec biome check` 目标文件通过；`pnpm --filter @answra/agent typecheck` 通过。
+本轮阶段 2-4.5 验证：`pnpm --filter @answra/agent test` 通过 778 个测试；其中 Session/StepRunner 目标集 63 个测试；`pnpm --filter @answra/shared test -- test/schema.test.ts` 通过 21 个测试；`pnpm exec biome check` 目标文件通过；`pnpm --filter @answra/agent typecheck` 通过。
 
 #### 15.6 实现时禁止
 

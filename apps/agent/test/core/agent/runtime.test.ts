@@ -36,6 +36,30 @@ describe("AgentRuntime static registration", () => {
     expect(runtime.chatContextWindow()).toBe(128_000);
   });
 
+  it("exposes static result resolution without starting a run", async () => {
+    runtime = new AgentRuntime({
+      executionStore: new MemoryExecutionStore(),
+      emitEvent: () => undefined,
+    });
+    const definition: AgentDefinition<{ prompt: string }> = {
+      ...createFailingDefinition("test.agent"),
+      prepare: async () => ({ system: "", messages: [] }),
+      result: async (input) => ({
+        kind: "handoff",
+        to: agentId("target.agent"),
+        task: input.prompt,
+      }),
+    };
+    const executor = runtime.registerAgent(definition);
+
+    await expect(executor.result?.({ prompt: "请继续" }, "step-1")).resolves.toEqual({
+      kind: "handoff",
+      to: "target.agent",
+      task: "请继续",
+    });
+    expect(runtime.activeRunCount).toBe(0);
+  });
+
   it("waits for the domain event callback and publishes the run cursor before its first event", async () => {
     const observed: string[] = [];
     const emitted: AgentEventEnvelope[] = [];
