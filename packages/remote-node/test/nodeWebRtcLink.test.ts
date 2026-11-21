@@ -6,7 +6,7 @@ import {
 import { createFakeSignalingServer, flushFakeSignaling } from "@answra/remote/testing";
 import type { RemoteFrame } from "@answra/shared/schema";
 import { afterEach, describe, expect, it } from "vitest";
-import { NodeWebRtcLink } from "../../../src/remote/transport/nodeWebRtcLink";
+import { NodeWebRtcLink } from "../src/nodeWebRtcLink";
 
 const realTimers: RemoteSignalingTimers = {
   after(delayMs, callback) {

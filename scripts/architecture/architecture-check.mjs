@@ -208,6 +208,8 @@ function checkImports(pkg) {
           normalized.startsWith("apps/agent/scripts/") ||
           normalized.startsWith("apps/cli/src/") ||
           normalized.startsWith("apps/cli/scripts/") ||
+          // Node 宿主的远程适配只允许在 remote-node 内使用 Node 模块与原生依赖。
+          normalized.startsWith("packages/remote-node/src/") ||
           // 共享客户端配置是 Node-only 库，只允许 desktop main 与 CLI 消费；
           // renderer/preload 仍禁止 node 内置。
           normalized.startsWith("packages/config/src/") ||

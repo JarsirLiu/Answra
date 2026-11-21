@@ -14,8 +14,8 @@
                                    ←  @answra/cli
 @answra/credentials  ←  @answra/desktop(main)
                      ←  @answra/cli
-@answra/shared  ←  @answra/remote  ←  @answra/cli
-                                   ←  @answra/desktop(main)
+@answra/shared  ←  @answra/remote  ←  @answra/remote-node  ←  @answra/cli
+                                                          ←  @answra/desktop(main)
 ```
 
 - 依赖必须单向，禁止环（`pnpm architecture:check` 强制）。
@@ -24,6 +24,7 @@
 - `@answra/config` 是 Node-only 客户端配置库：只存本地模型地址/模型 ID 等非 secret 字段；API Key 由 `@answra/credentials` 写入 OS keychain，登录令牌仍由桌面 `safeStorage` 负责，CLI 不得解密桌面 `safeStorage` 文件。
 - `@answra/credentials` 是 Node-only OS 凭据库：只封装本地模型 API Key 的 keychain 读写，不读写 `config.json`、不依赖 Electron/CLI/Agent；keychain 不可用时 fail-closed，不回退明文。桌面 main 与 CLI 共用固定 service/account。
 - `@answra/remote` 是平台无关的远程连接核心：只放远程帧编解码、host/controller 端口、配对/信令状态机与 fake ports；只能依赖 `@answra/shared`，不得 import Electron/Node/React/Ink/Agent/CLI/desktop。WebRTC、WebSocket、OS keychain 由各宿主适配。
+- `@answra/remote-node` 是 Node-only 远程适配库：只封装信令 HTTP/WebSocket、计时器、`node-datachannel` WebRTC 与 `startRemoteHost` 组合；只能依赖 `@answra/remote`、`@answra/shared` 与 Node 内置模块，不得 import Electron/React/Ink/Agent/CLI/desktop。CLI 与桌面 main 共用，controller 侧不得依赖该包。
 - `@answra/skills` 是纯内容包：只放内置 skill 的 Markdown 与资源，不含运行时代码；宿主解析目录后注入 agent，agent 不 import 该包。
 - Agent 事件 payload 的唯一目录与 envelope 定义在 `packages/shared/src/schema/events.ts`；状态词汇/快照单独定义在 `status.ts`。`AgentDurableEvent` 仅规定未来适配器的事件资格，不代表已有持久化实现。
 - `apps/` 只放可启动单元（`desktop` 是 Electron 壳，`agent` 由 utility process 拉起并保留独立为常驻 sidecar 的可能，`cli` 是独立终端宿主）；纯库放 `packages/`。
@@ -34,6 +35,7 @@
 | --- | --- | --- |
 | `src/main` | 窗口管理、生命周期、按领域拆分的 IPC handler（`src/main/ipc/*Ipc.ts`、`src/main/connection/*Ipc.ts`、`src/main/conversation/sessionIpc.ts`） | 可用 electron / node 内置模块 |
 | `src/main/connection` | Agent worker 连接状态 IPC、窗口广播与 Electron worker host 适配 | 状态机与重试策略在 `@answra/agent`，不得在 desktop 复制连接语义 |
+| `src/main/remote` | 桌面远程 host 生命周期、加密 host key、Agent 命令端口与远程 IPC | 信令/WebRTC/重试在 `@answra/remote` 与 `@answra/remote-node`，不得复制协议；host key 只走 `safeStorage` |
 | `src/preload` | `contextBridge` 暴露唯一 `window.answra` API 面 | 只做转发，不放业务逻辑 |
 | `src/renderer` | 薄壳：挂载 `<FloatingBarApp/>` | 禁止 import electron / node 模块 |
 
@@ -86,7 +88,7 @@
 | `src/model` | CLI 模型设置域：选择、优先级、应用服务、持久化端口与模型目录端口 | 不 import `tui`/`cli`/`adapters`，不碰 `node:fs`、Ink 或终端输出 |
 | `src/session` | `CodingSession` 单活动 run 用例、新建/恢复/列表/删除与窄宿主端口 | 不实现模型调用、TUI 或进程 I/O |
 | `src/adapters` | `@answra/config` 共享文件实现、OpenAI 兼容 `/models` 模型目录、`@answra/agent/composition` 的 `CodingHost` 到 CLI 端口映射 | 不复制 Agent 运行时语义，不承载模型合并规则 |
-| `src/remote` | 远程 host/controller 适配与 CLI 本地密钥存储 | 不实现信令/WebRTC 状态机；key 不进共享 config；TUI 不 import |
+| `src/remote` | CLI 远程 host 适配与 host key 存储 | 信令/WebRTC 只调用 `@answra/remote-node`；不保留 controller 入口；key 不进共享 config；TUI 不 import |
 | `src/presentation` | Agent 事件到非 TTY 文本、工具行与模型摘要格式化 | 纯投影，不读写会话或进程 |
 | `src/tui` | TUI 组合根：`runTui.tsx` 只做启动、登录/设置、命令与面板接线及渲染；备用屏幕用 Ink 原生 `alternateScreen` | 不 import Electron/desktop 或 `@answra/config`；`runTui.tsx` 不承载 Agent 命令分派、命令可用性规则或每会话 queue，也不保存运行状态 |
 | `src/tui/runController.ts` | 每会话运行控制器：`CodingSession` 注册、切换/新建/删除与活动会话投影 | 不 import Ink/React/Node 进程；不创建第二套事件或 run 状态；后台完成只更新快照，不覆盖活动 phase |
@@ -106,7 +108,7 @@
 
 - CLI 只从 `@answra/agent/composition` 组装 coding host，不使用 worker 线协议、不启动 VAD/ASR、不 import `conversation`/`interview` 领域。
 - CLI 模型配置只从 `@answra/config` 读取文件实现与纯合并函数；`src/model` 不碰文件路径，真实读写由 `main.ts` 注入 `src/adapters/sharedModelStore.ts`。模型列表只经 `ModelCatalog` 端口与 `src/adapters/openAiModelCatalog.ts` 访问当前端点。API Key 只走环境变量/参数或 `@answra/credentials` 的 OS keychain（TUI 的 `/config` 从 keychain 回填、默认掩码、`Ctrl+R` 显示/隐藏；未修改时不重写），不进入共享文件；keychain 不可用时 fail-closed。
-- CLI 远程 key 只经 `answra remote key` 交互输入，不接受 argv；host 记录只存 secret 哈希，controller 存完整 key 的受保护文件，均不进入共享模型配置。
+- CLI 远程只保留 host：`answra remote host` 等待 PC/手机 controller；host 记录只存 secret 哈希，不进入共享模型配置。CLI 不保留 controller attach 与 controller 密钥文件。
 - CLI 会话历史由 `main.ts` 注入 `SqliteConversationStore(resolveDefaultConfigDir()/cli/sessions)`；数据库为根目录下 `sessions.sqlite`，旧 JSON 首次启动导入 `legacy/`；列表按 `(updated_at, conversation_id)` keyset 游标分页（默认 50、上限 200），`/sessions` 按页追加；`src/session` 只切会话，`/new`、`/sessions`、`/resume`、`/delete` 走 `CodingSession` 与 catalog，host 由 `runInteractive` 统一 dispose。
 - CLI 运行时目标为 Node >=22.13，构建 target 为 `node22.14`，与仓库开发、CI 与 pnpm 下限一致。
 - 安装包分发复用 Electron 35.0.0 的 Node 22.14（`ELECTRON_RUN_AS_NODE=1`）运行 CLI bundle，不新增 Node sidecar、不启动 GUI。

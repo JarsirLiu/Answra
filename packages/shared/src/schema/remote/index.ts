@@ -68,6 +68,18 @@ export {
   remoteModelSourceSchema,
 } from "./modelSettings";
 export {
+  type RemoteBotList,
+  type RemoteEventList,
+  type RemoteQueueCompletion,
+  type RemoteQueueStart,
+  type RemoteSendResult,
+  remoteBotListSchema,
+  remoteEventListSchema,
+  remoteQueueCompletionSchema,
+  remoteQueueStartSchema,
+  remoteSendResultSchema,
+} from "./results";
+export {
   REMOTE_DATA_CHANNEL_LABEL,
   REMOTE_DATA_CHANNEL_PROTOCOL,
   REMOTE_SERVICE_BASE_URL,

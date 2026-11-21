@@ -18,7 +18,7 @@ const remoteSendRequestSchema = z.strictObject({
   images: z.array(remoteImageSchema),
 });
 
-/** CLI 远程首版只开放 coding / multi-bot；answer.run 不进远程命令面。 */
+/** 远程命令面首版开放 chat/team；answer.run 不进远程命令面。 */
 export const remoteSendCommandSchema = z.discriminatedUnion("operation", [
   z.strictObject({
     operation: z.literal("chat.send"),
@@ -65,6 +65,7 @@ export const remoteCommandSchema = z.discriminatedUnion("type", [
   }),
   z.strictObject({
     type: z.literal("cancel"),
+    conversationId: z.string(),
     runId: z.string(),
   }),
   z.strictObject({

@@ -15,6 +15,7 @@ import { Tooltip } from "../controls/Tooltip";
 import { AccountPanel } from "./AccountPanel";
 import { AnnouncementList } from "./AnnouncementList";
 import { PanelShell, type PanelTab } from "./PanelShell";
+import { RemoteHostSettings } from "./RemoteHostSettings";
 import { UpdateSettingsGroup } from "./UpdateSettingsGroup";
 import "./SettingsPanel.css";
 
@@ -463,6 +464,8 @@ export function SettingsPanel({
               )}
             </section>
           )}
+
+          <RemoteHostSettings bridge={bridge} signedIn={signedIn} />
 
           <UpdateSettingsGroup bridge={bridge} />
         </div>

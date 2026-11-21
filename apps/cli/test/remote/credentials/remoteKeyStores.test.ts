@@ -2,13 +2,11 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
-  createRemoteCredentialRecord,
   createRemoteHostAccessKeyRecord,
   generateRemoteAccessKey,
   isRemoteHostAccessKeyActive,
 } from "@answra/remote";
 import { afterEach, describe, expect, it } from "vitest";
-import { createFileRemoteCredentialStore } from "../../../src/remote/credentials/fileRemoteCredentialStore";
 import { createFileRemoteHostKeyStore } from "../../../src/remote/credentials/fileRemoteHostKeyStore";
 
 const NOW = new Date("2026-11-13T00:00:00.000Z");
@@ -52,23 +50,6 @@ describe("remote key file stores", () => {
     if (revoked === null) throw new Error("revoked host key missing");
     expect(revoked.revokedAt).toBe(NOW.toISOString());
     expect(isRemoteHostAccessKeyActive(revoked, NOW)).toBe(false);
-  });
-
-  it("persists and deletes the controller credential", async () => {
-    const directory = await createDirectory();
-    const filePath = path.join(directory, "remote", "controller.json");
-    const generated = generateRemoteAccessKey({ now: NOW });
-    const credential = createRemoteCredentialRecord(generated.key, {
-      savedAt: NOW,
-      label: "work",
-    });
-    const store = createFileRemoteCredentialStore(filePath);
-
-    await store.write(credential);
-    expect(await createFileRemoteCredentialStore(filePath).read()).toEqual(credential);
-
-    await store.delete();
-    expect(await createFileRemoteCredentialStore(filePath).read()).toBeNull();
   });
 
   it("persists a permanent connection code without an expiry across store reloads", async () => {

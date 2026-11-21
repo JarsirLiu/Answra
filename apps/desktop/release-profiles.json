@@ -15,7 +15,11 @@
       "exclude": ["chat", "interview"],
       "builder": {
         "extraResources": [],
-        "asarUnpack": ["**/node_modules/@napi-rs/keyring*/**"],
+        "asarUnpack": [
+          "**/node_modules/@napi-rs/keyring*/**",
+          "**/node_modules/node-datachannel/**",
+          "**/node_modules/@node-datachannel/**"
+        ],
         "filesExclude": ["**/node_modules/sherpa-onnx-node/**", "**/node_modules/sherpa-onnx-*/**"]
       }
     },

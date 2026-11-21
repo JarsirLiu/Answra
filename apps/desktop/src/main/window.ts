@@ -9,6 +9,8 @@ import {
   ConversationChannels,
   type ConversationSnapshot,
   type RegionSelection,
+  RemoteHostChannels,
+  type RemoteHostStatus,
   type ReplyBarAction,
   type ReplyBarState,
   SurfaceChannels,
@@ -138,6 +140,12 @@ export function sendConnectionState(state: AgentConnectionState): void {
 export function sendAuthStatus(status: AuthStatus): void {
   for (const target of [getWindow(), getReplyBarWindow()]) {
     if (target && !target.isDestroyed()) target.webContents.send(AuthChannels.Status, status);
+  }
+}
+export function sendRemoteHostStatus(status: RemoteHostStatus): void {
+  const mainWindow = getWindow();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(RemoteHostChannels.Status, status);
   }
 }
 export function isStealthEnabled(): boolean {

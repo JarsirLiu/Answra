@@ -1,29 +1,26 @@
 import {
-  createRemoteCredentialRecord,
   createRemoteHostAccessKeyRecord,
   generateRemoteAccessKey,
-  RemoteHostSession,
   type RemoteSignalingTimers,
 } from "@answra/remote";
 import {
   createFakeHostCommandPort,
-  createFakeRemoteLinkPair,
   createFakeSignalingServer,
-  createMemoryCredentialStore,
   createMemoryHostKeyStore,
 } from "@answra/remote/testing";
+import type {
+  RemoteHostHandle,
+  RemoteRuntimeDependencies,
+  RemoteSignalingService,
+} from "@answra/remote-node";
 import { describe, expect, it, vi } from "vitest";
 import type { CliDependencies, RemoteKeyDependencies } from "../../src/cli/dependencies";
 import { runCli } from "../../src/cli/runCli";
 import type { ModelSettingsStore } from "../../src/model/ports";
 import { ModelSettingsService } from "../../src/model/settingsService";
-import type { RemoteHostHandle } from "../../src/remote/host/startRemoteHost";
-import type { RemoteRuntimeDependencies } from "../../src/remote/runtimeDependencies";
-import type { RemoteSignalingService } from "../../src/remote/signaling/remoteSignalingService";
 import type { CodingSessionHost } from "../../src/session/codingSession";
 import type { InputPort } from "../../src/transport/input";
 import type { OutputPort } from "../../src/transport/output";
-import type { TuiRunOptions } from "../../src/tui/runTui";
 
 const NOW = new Date("2026-11-14T00:00:00.000Z");
 
@@ -55,8 +52,6 @@ function createInput(isTTY: boolean): InputPort {
 function createRemoteKeys(overrides: Partial<RemoteKeyDependencies> = {}): RemoteKeyDependencies {
   return {
     hostKeys: createMemoryHostKeyStore(),
-    credentials: createMemoryCredentialStore(),
-    promptSecret: vi.fn(async () => ""),
     now: () => NOW,
     ...overrides,
   };
@@ -156,7 +151,7 @@ async function waitFor(predicate: () => boolean): Promise<void> {
   throw new Error("condition was not met");
 }
 
-describe("answra remote host/attach", () => {
+describe("answra remote host", () => {
   it("starts a host with the selected key and stops on interrupt", async () => {
     const generated = generateRemoteAccessKey({ now: NOW });
     const record = await createRemoteHostAccessKeyRecord(generated);
@@ -229,84 +224,12 @@ describe("answra remote host/attach", () => {
     }
   });
 
-  it("attaches as controller and opens the remote coding TUI", async () => {
-    const generated = generateRemoteAccessKey({ now: NOW });
-    const record = await createRemoteHostAccessKeyRecord(generated);
-    const credential = createRemoteCredentialRecord(generated.key, { savedAt: NOW });
-    const hostPort = createFakeHostCommandPort();
-    const links = createFakeRemoteLinkPair();
-    const hostSession = new RemoteHostSession({
-      host: hostPort,
-      link: links.host,
-      hostKeys: createMemoryHostKeyStore([record]),
-      hostId: "host-1",
-      workspaceRoot: "D:/remote-workspace",
-      now: () => NOW,
-    });
-    const signaling = createSignalingService();
-    let nextId = 0;
-    let tuiOptions: TuiRunOptions | undefined;
-    const deps = createDependencies(
-      createRemoteKeys({ credentials: createMemoryCredentialStore(credential) }),
-      {
-        signaling: signaling.service,
-        timers,
-        createLink: () => links.controller,
-        createId: () => `peer-${++nextId}`,
-      },
-      {
-        input: createInput(true),
-        runTui: async (options) => {
-          tuiOptions = options;
-          if (options.session === undefined) throw new Error("remote TUI session missing");
-          await options.session.open();
-          return 0;
-        },
-      },
-    );
-
-    try {
-      await expect(runCli(["remote", "attach", "--no-alt-screen"], deps)).resolves.toBe(0);
-      expect(tuiOptions?.model).toBe("local-model");
-      expect(tuiOptions?.workspaceRoot).toBe("D:/remote-workspace");
-      expect(tuiOptions?.altScreen).toBe(false);
-      expect(hostPort.appliedModels).toHaveLength(1);
-    } finally {
-      hostSession.close();
-      links.disconnect();
-      signaling.disconnect();
-    }
-  });
-
-  it("prompts securely for a connection code when no controller credential is stored", async () => {
-    const signaling = createSignalingService();
-    const output = createOutput();
-    const remoteKeys = createRemoteKeys();
-    const deps = createDependencies(
-      remoteKeys,
-      {
-        signaling: signaling.service,
-        timers,
-        createLink: () => {
-          throw new Error("unexpected link");
-        },
-        createId: () => "controller-1",
-      },
-      { input: createInput(true), output },
-    );
-
-    try {
-      await expect(runCli(["remote", "attach"], deps)).resolves.toBe(2);
-      expect(output.stderr).toContain("远程访问密钥格式无效");
-      expect(remoteKeys.promptSecret).toHaveBeenCalledWith("输入远程连接码：");
-    } finally {
-      signaling.disconnect();
-    }
-  });
-
   it("keeps host handles typed for future command wiring", () => {
     const handle: RemoteHostHandle = {
       done: Promise.resolve(),
+      state: () => "waiting",
+      onState: () => () => undefined,
+      onError: () => () => undefined,
       stop: async () => {},
     };
     expect(handle).toBeDefined();

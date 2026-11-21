@@ -144,25 +144,13 @@ describe("parseCliOptions", () => {
       action: "key-revoke",
       keyId: "abc",
     });
-    expect(parseCliOptions(["remote", "key", "set"])).toEqual({
-      kind: "remote",
-      action: "key-set",
-    });
-    expect(parseCliOptions(["remote", "key", "show"])).toEqual({
-      kind: "remote",
-      action: "key-show",
-    });
-    expect(parseCliOptions(["remote", "key", "forget"])).toEqual({
-      kind: "remote",
-      action: "key-forget",
-    });
     expect(parseCliOptions(["remote", "--help"])).toEqual({
       kind: "remote",
       action: "help",
     });
   });
 
-  it("parses remote host and attach commands", () => {
+  it("parses remote host commands", () => {
     expect(parseCliOptions(["remote", "host"])).toEqual({
       kind: "remote",
       action: "host",
@@ -175,24 +163,13 @@ describe("parseCliOptions", () => {
         cwd: "D:/workspace",
       },
     );
-    expect(parseCliOptions(["remote", "attach"])).toEqual({
-      kind: "remote",
-      action: "attach",
-    });
-    expect(parseCliOptions(["remote", "attach", "--no-alt-screen"])).toEqual({
-      kind: "remote",
-      action: "attach",
-      altScreen: false,
-    });
   });
 
-  it("rejects invalid remote host and attach commands", () => {
+  it("rejects invalid remote host commands and removed controller commands", () => {
     expectUsageError(["remote", "host", "extra"], "remote host 不接受位置参数：extra");
     expectUsageError(["remote", "host", "--bad"], "未知选项：--bad");
     expectUsageError(["remote", "host", "--key-id"], "选项 --key-id 缺少值。");
-    expectUsageError(["remote", "attach", "extra"], "remote attach 不接受位置参数：extra");
-    expectUsageError(["remote", "attach", "--bad"], "未知选项：--bad");
-    expectUsageError(["remote", "attach", "--no-alt-screen=true"], "--no-alt-screen 不接受值。");
+    expectUsageError(["remote", "attach"], "缺少 remote 子命令（host|key）");
   });
 
   it("rejects invalid remote key commands", () => {

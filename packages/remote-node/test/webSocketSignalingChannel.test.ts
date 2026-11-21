@@ -1,9 +1,6 @@
 import type { SignalingFrame } from "@answra/shared/schema";
 import { describe, expect, it } from "vitest";
-import {
-  type WebSocketLike,
-  WebSocketSignalingChannel,
-} from "../../../src/remote/signaling/webSocketSignalingChannel";
+import { type WebSocketLike, WebSocketSignalingChannel } from "../src/webSocketSignalingChannel";
 
 class FakeSocket implements WebSocketLike {
   readyState = 0;

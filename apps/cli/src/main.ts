@@ -6,6 +6,11 @@ import process from "node:process";
 import { SqliteConversationStore, startCodingHost } from "@answra/agent/composition";
 import { resolveDefaultConfigDir } from "@answra/config";
 import { createSystemModelCredentialStore } from "@answra/credentials";
+import {
+  createNodeSignalingTimers,
+  createRemoteSignalingService,
+  NodeWebRtcLink,
+} from "@answra/remote-node";
 import { createAgentCodingSessionHost } from "./adapters/agentCodingHost";
 import { withLocalProviderProfiles } from "./adapters/localProviderProfiles";
 import { createOpenAiModelCatalog } from "./adapters/openAiModelCatalog";
@@ -19,12 +24,8 @@ import { resolveCliDeviceDescriptor } from "./remote/auth/deviceInfo";
 import { createKeychainServiceAuthStore } from "./remote/auth/keychainServiceAuthStore";
 import { createLocalAuthorizationCallback } from "./remote/auth/localAuthCallback";
 import { RemoteAuthService } from "./remote/auth/remoteAuthService";
-import { createFileRemoteCredentialStore } from "./remote/credentials/fileRemoteCredentialStore";
 import { createFileRemoteHostKeyStore } from "./remote/credentials/fileRemoteHostKeyStore";
 import { createRemoteCodingHost } from "./remote/host/commandPort";
-import { createNodeSignalingTimers } from "./remote/signaling/nodeTimers";
-import { createRemoteSignalingService } from "./remote/signaling/remoteSignalingService";
-import { NodeWebRtcLink } from "./remote/transport/nodeWebRtcLink";
 import { createProcessInput } from "./transport/input";
 import { openSystemBrowser } from "./transport/openBrowser";
 import { createStreamOutput } from "./transport/output";
@@ -64,8 +65,6 @@ async function main(): Promise<void> {
         modelCatalog: createOpenAiModelCatalog(),
         remoteKeys: {
           hostKeys: createFileRemoteHostKeyStore(),
-          credentials: createFileRemoteCredentialStore(),
-          promptSecret,
         },
         remoteAuth,
         remoteRuntime: {

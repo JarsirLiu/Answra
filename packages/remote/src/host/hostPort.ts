@@ -23,7 +23,7 @@ export interface HostModelSettingsPort {
 }
 
 /**
- * 远程 host 的命令门面：CLI 用 CodingApplication 适配，桌面用 AgentService 适配。
+ * 远程 host 的命令门面：各宿主用本地 Agent 应用适配（CLI CodingApplication、桌面 AgentService）。
  * 端口不持有传输、不接收 accessToken，也不复制 Agent 领域逻辑。
  */
 export interface HostCommandPort {
@@ -42,7 +42,7 @@ export interface HostCommandPort {
     queueId: string,
   ): Promise<{ queueId: string; runId: string; snapshot: ConversationSnapshot }>;
   waitQueue(conversationId: string, queueId: string): Promise<ConversationQueueCompletion>;
-  cancel(runId: string): void;
+  cancel(conversationId: string, runId: string): void;
   listBots?(): Promise<BotSummary[]>;
   selectBot?(conversationId: string, botId: string): Promise<void>;
   /** 把已选模型应用到 host 运行时；模型设置本身走 settings()。 */

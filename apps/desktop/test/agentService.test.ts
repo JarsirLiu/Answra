@@ -27,6 +27,14 @@ class FakeWorker extends EventEmitter {
       reply(emptySnapshot(command.conversationId));
       return;
     }
+    if (command.type === "wait-queue-start") {
+      reply({
+        queueId: command.queueId,
+        runId: "run-1",
+        snapshot: emptySnapshot(command.conversationId),
+      });
+      return;
+    }
     if (command.type === "shutdown") {
       queueMicrotask(() => this.emit("exit", 0));
       return;
@@ -121,6 +129,26 @@ describe("AgentService connection lifecycle", () => {
 
     await vi.waitFor(() => {
       expect(snapshots).toContainEqual(emptySnapshot("conversation-1"));
+    });
+    await service.stop();
+  });
+
+  it("waits for a queued conversation turn to start through the worker", async () => {
+    const service = createService();
+    await service.start();
+
+    const started = await service.waitForConversationQueueStart("conversation-1", "queue-1");
+
+    expect(started).toEqual({
+      queueId: "queue-1",
+      runId: "run-1",
+      snapshot: emptySnapshot("conversation-1"),
+    });
+    expect(lastWorker().postMessage).toHaveBeenCalledWith({
+      id: expect.any(String),
+      type: "wait-queue-start",
+      conversationId: "conversation-1",
+      queueId: "queue-1",
     });
     await service.stop();
   });

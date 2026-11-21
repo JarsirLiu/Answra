@@ -8,6 +8,7 @@ export const remoteRoleSchema = z.enum(["host", "controller"]);
 
 /** Host 实际可提供的远程能力；controller 只按这里声明渲染入口。 */
 export const remoteCapabilitySchema = z.enum([
+  "conversation",
   "coding",
   "multi-bot",
   "team",

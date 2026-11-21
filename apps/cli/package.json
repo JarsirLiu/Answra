@@ -23,6 +23,7 @@
     "@answra/config": "workspace:*",
     "@answra/credentials": "workspace:*",
     "@answra/remote": "workspace:*",
+    "@answra/remote-node": "workspace:*",
     "@answra/shared": "workspace:*",
     "@answra/skills": "workspace:*",
     "@answra/ui": "workspace:*",

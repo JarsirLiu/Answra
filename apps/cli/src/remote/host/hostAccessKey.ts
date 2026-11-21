@@ -76,7 +76,7 @@ export function formatCreatedHostAccessKey(created: CreatedHostAccessKey): strin
     `Key ID: ${created.record.keyId}`,
     `Expires: ${created.record.expiresAt}`,
     "",
-    "在 controller 上运行 `answra remote key set` 并粘贴此密钥。",
+    "在 controller 应用中输入此连接码。",
     "",
   ].join("\n");
 }

@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  remoteCapabilitiesSchema,
   remoteCommandSchema,
   remoteErrorSchema,
   remoteFrameSchema,
   remoteModelSettingsViewSchema,
+  remoteSendResultSchema,
   signalingFrameSchema,
 } from "../src/schema";
 
@@ -21,6 +23,12 @@ const eventEnvelope = {
 } as const;
 
 describe("remote frame schema", () => {
+  it("accepts desktop conversation and session capabilities", () => {
+    const capabilities = ["conversation", "sessions"] as const;
+
+    expect(remoteCapabilitiesSchema.parse(capabilities)).toEqual(capabilities);
+  });
+
   it("round-trips handshake, command result, snapshot and event frames", () => {
     const hello = {
       type: "hello",
@@ -125,6 +133,34 @@ describe("remote frame schema", () => {
         remoteErrorSchema.parse({ code, message: "remote failure", retryable: false }),
       ).toEqual({ code, message: "remote failure", retryable: false });
     }
+  });
+
+  it("validates command results instead of trusting unknown payloads", () => {
+    const started = {
+      queueId: "queue-1",
+      status: "started",
+      position: 0,
+      runId: "run-1",
+      snapshot: { conversationId: "conversation-1", eventRevision: 0, messages: [] },
+    } as const;
+    expect(remoteSendResultSchema.parse(started)).toEqual(started);
+    expect(
+      remoteSendResultSchema.safeParse({
+        ...started,
+        runId: undefined,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("requires a conversation id for cancel commands", () => {
+    expect(remoteCommandSchema.safeParse({ type: "cancel", runId: "run-1" }).success).toBe(false);
+    expect(
+      remoteCommandSchema.parse({
+        type: "cancel",
+        conversationId: "conversation-1",
+        runId: "run-1",
+      }),
+    ).toEqual({ type: "cancel", conversationId: "conversation-1", runId: "run-1" });
   });
 
   it("parses host commands without access tokens", () => {

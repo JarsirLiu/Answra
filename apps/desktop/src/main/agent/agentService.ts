@@ -144,6 +144,19 @@ export class AgentService {
     };
   }
 
+  async waitForConversationQueueStart(
+    conversationId: string,
+    queueId: string,
+  ): Promise<{ queueId: string; runId: string; snapshot: ConversationSnapshot }> {
+    await this.start();
+    this.trackConversation(conversationId);
+    return (await this.workerHost.request("wait-queue-start", { conversationId, queueId })) as {
+      queueId: string;
+      runId: string;
+      snapshot: ConversationSnapshot;
+    };
+  }
+
   async getConversationQueuePosition(
     conversationId: string,
     queueId: string,
@@ -250,10 +263,16 @@ export class AgentService {
     })) as ConversationSnapshot;
   }
 
-  async createConversation(conversationId: string, selection?: ConversationSelection) {
+  async createConversation(
+    conversationId: string,
+    selection?: ConversationSelection,
+  ): Promise<ConversationSnapshot> {
     await this.start();
     this.trackConversation(conversationId);
-    return this.workerHost.request("create-conversation", { conversationId, selection });
+    return (await this.workerHost.request("create-conversation", {
+      conversationId,
+      selection,
+    })) as ConversationSnapshot;
   }
 
   async createAnswerConversation(conversationId: string) {
@@ -286,10 +305,13 @@ export class AgentService {
     })) as { result: ManualCompactionResult; snapshot: ConversationSnapshot };
   }
 
-  async readEvents(conversationId: string, afterRevision: number) {
+  async readEvents(conversationId: string, afterRevision: number): Promise<AgentEventEnvelope[]> {
     await this.start();
     this.trackConversation(conversationId);
-    return this.workerHost.request("read-events", { conversationId, afterRevision });
+    return (await this.workerHost.request("read-events", {
+      conversationId,
+      afterRevision,
+    })) as AgentEventEnvelope[];
   }
 
   async startInterview(sessionId: string, conversationId: string): Promise<void> {

@@ -46,11 +46,8 @@ export async function handleRemote(args: readonly string[], deps: TuiCommandDeps
 function remoteNotice(remote: RemoteHostInfo): TuiNotification {
   const lines =
     remote.code === undefined
-      ? ["已恢复持久远程连接。其他设备可以继续使用原连接码运行 answra remote attach。"]
-      : [
-          "远程连接已开启。请在其他设备运行 answra remote attach，并输入下面的连接码：",
-          remote.code,
-        ];
+      ? ["已恢复持久远程连接。其他设备可以继续使用原连接码。"]
+      : ["远程连接已开启。请在其他设备输入下面的连接码：", remote.code];
   return {
     key: REMOTE_NOTICE_KEY,
     text: [

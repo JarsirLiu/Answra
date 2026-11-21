@@ -4,6 +4,8 @@ import {
   type BotSummary,
   type ConversationSessionPage,
   type ConversationSnapshot,
+  conversationSessionPageSchema,
+  conversationSnapshotSchema,
   REMOTE_PROTOCOL_VERSION,
   type RemoteCapability,
   type RemoteCommand,
@@ -16,6 +18,12 @@ import {
   type RemoteSendCommand,
   type RemoteSessionListQuery,
   type RemoteWelcome,
+  remoteBotListSchema,
+  remoteEventListSchema,
+  remoteModelSettingsViewSchema,
+  remoteQueueCompletionSchema,
+  remoteQueueStartSchema,
+  remoteSendResultSchema,
 } from "@answra/shared/schema";
 import { parseRemoteAccessKey, type RemoteCredentialRecord } from "../access/accessKey";
 import type { HostModelSettingsPort } from "../host/hostPort";
@@ -36,6 +44,7 @@ export interface RemoteControllerSessionOptions {
 interface PendingCommand {
   resolve: (value: unknown) => void;
   reject: (error: RemoteOperationError) => void;
+  parse: (value: unknown) => unknown;
 }
 
 /** controller 侧远程会话：握手、命令请求关联与 host 事实订阅。 */
@@ -66,7 +75,7 @@ export class RemoteControllerSession {
     sessionId,
     peerId,
     credential,
-    capabilities = ["coding", "model-settings"],
+    capabilities = [],
   }: RemoteControllerSessionOptions) {
     this.link = link;
     this.sessionId = sessionId;
@@ -135,70 +144,79 @@ export class RemoteControllerSession {
     conversationId: string,
     selection?: RemoteConversationSelection,
   ): Promise<ConversationSnapshot> {
-    const value = await this.sendCommand({
-      type: "create-conversation",
-      conversationId,
-      ...(selection === undefined ? {} : { selection }),
-    });
-    return value as ConversationSnapshot;
+    return this.sendCommand(
+      {
+        type: "create-conversation",
+        conversationId,
+        ...(selection === undefined ? {} : { selection }),
+      },
+      (value) => conversationSnapshotSchema.parse(value),
+    );
   }
 
   async clearConversation(conversationId: string): Promise<ConversationSnapshot> {
-    const value = await this.sendCommand({ type: "clear-conversation", conversationId });
-    return value as ConversationSnapshot;
+    return this.sendCommand({ type: "clear-conversation", conversationId }, (value) =>
+      conversationSnapshotSchema.parse(value),
+    );
   }
 
   async snapshot(conversationId: string): Promise<ConversationSnapshot> {
-    const value = await this.sendCommand({ type: "snapshot", conversationId });
-    return value as ConversationSnapshot;
+    return this.sendCommand({ type: "snapshot", conversationId }, (value) =>
+      conversationSnapshotSchema.parse(value),
+    );
   }
 
   async readEvents(conversationId: string, afterRevision: number): Promise<AgentEventEnvelope[]> {
-    const value = await this.sendCommand({ type: "read-events", conversationId, afterRevision });
-    return value as AgentEventEnvelope[];
+    return this.sendCommand({ type: "read-events", conversationId, afterRevision }, (value) =>
+      remoteEventListSchema.parse(value),
+    );
   }
 
   async listSessions(query?: RemoteSessionListQuery): Promise<ConversationSessionPage> {
-    const value = await this.sendCommand({
-      type: "list-sessions",
-      ...(query === undefined ? {} : { query }),
-    });
-    return value as ConversationSessionPage;
+    return this.sendCommand(
+      {
+        type: "list-sessions",
+        ...(query === undefined ? {} : { query }),
+      },
+      (value) => conversationSessionPageSchema.parse(value),
+    );
   }
 
   async send(command: RemoteSendCommand): Promise<ConversationSendResult> {
-    const value = await this.sendCommand({ type: "send", command });
-    return value as ConversationSendResult;
+    return this.sendCommand({ type: "send", command }, (value) =>
+      remoteSendResultSchema.parse(value),
+    );
   }
 
   async waitQueue(conversationId: string, queueId: string): Promise<ConversationQueueCompletion> {
-    const value = await this.sendCommand({ type: "wait-queue", conversationId, queueId });
-    return value as ConversationQueueCompletion;
+    return this.sendCommand({ type: "wait-queue", conversationId, queueId }, (value) =>
+      remoteQueueCompletionSchema.parse(value),
+    );
   }
 
   async waitQueueStart(
     conversationId: string,
     queueId: string,
   ): Promise<{ queueId: string; runId: string; snapshot: ConversationSnapshot }> {
-    const value = await this.sendCommand({ type: "wait-queue-start", conversationId, queueId });
-    return value as { queueId: string; runId: string; snapshot: ConversationSnapshot };
+    return this.sendCommand({ type: "wait-queue-start", conversationId, queueId }, (value) =>
+      remoteQueueStartSchema.parse(value),
+    );
   }
 
-  async cancel(runId: string): Promise<void> {
-    await this.sendCommand({ type: "cancel", runId });
+  async cancel(conversationId: string, runId: string): Promise<void> {
+    await this.sendCommand({ type: "cancel", conversationId, runId }, () => undefined);
   }
 
   async listBots(): Promise<BotSummary[]> {
-    const value = await this.sendCommand({ type: "list-bots" });
-    return value as BotSummary[];
+    return this.sendCommand({ type: "list-bots" }, (value) => remoteBotListSchema.parse(value));
   }
 
   async selectBot(conversationId: string, botId: string): Promise<void> {
-    await this.sendCommand({ type: "select-bot", conversationId, botId });
+    await this.sendCommand({ type: "select-bot", conversationId, botId }, () => undefined);
   }
 
   applyModel(config: RemoteModelConfig): Promise<void> {
-    return this.sendCommand({ type: "apply-model", config }).then(() => undefined);
+    return this.sendCommand({ type: "apply-model", config }, () => undefined);
   }
 
   settings(): HostModelSettingsPort {
@@ -221,28 +239,30 @@ export class RemoteControllerSession {
   }
 
   private settingsSnapshot(): Promise<RemoteModelSettingsView> {
-    return this.sendCommand({ type: "settings-snapshot" }) as Promise<RemoteModelSettingsView>;
+    return this.sendCommand({ type: "settings-snapshot" }, (value) =>
+      remoteModelSettingsViewSchema.parse(value),
+    );
   }
 
   private settingsAddLocal(input: RemoteLocalModelInput): Promise<RemoteModelSettingsView> {
-    return this.sendCommand({
-      type: "settings-add-local",
-      input,
-    }) as Promise<RemoteModelSettingsView>;
+    return this.sendCommand({ type: "settings-add-local", input }, (value) =>
+      remoteModelSettingsViewSchema.parse(value),
+    );
   }
 
   private settingsSwitchChatModel(chatModel: string): Promise<RemoteModelSettingsView> {
-    return this.sendCommand({
-      type: "settings-switch-chat-model",
-      chatModel,
-    }) as Promise<RemoteModelSettingsView>;
+    return this.sendCommand({ type: "settings-switch-chat-model", chatModel }, (value) =>
+      remoteModelSettingsViewSchema.parse(value),
+    );
   }
 
   private settingsClearLocal(): Promise<RemoteModelSettingsView> {
-    return this.sendCommand({ type: "settings-clear-local" }) as Promise<RemoteModelSettingsView>;
+    return this.sendCommand({ type: "settings-clear-local" }, (value) =>
+      remoteModelSettingsViewSchema.parse(value),
+    );
   }
 
-  private sendCommand(command: RemoteCommand): Promise<unknown> {
+  private sendCommand<T>(command: RemoteCommand, parse: (value: unknown) => T): Promise<T> {
     if (this.closed || this.currentState !== "ready") {
       return Promise.reject(
         new RemoteOperationError(remoteError("remote-disconnected", "remote session is not ready")),
@@ -251,8 +271,12 @@ export class RemoteControllerSession {
 
     this.requestSequence += 1;
     const requestId = `request-${this.sessionId}-${this.requestSequence}`;
-    return new Promise<unknown>((resolve, reject) => {
-      this.pending.set(requestId, { resolve, reject });
+    return new Promise<T>((resolve, reject) => {
+      this.pending.set(requestId, {
+        resolve: (value) => resolve(value as T),
+        reject,
+        parse,
+      });
       try {
         this.link.send({ type: "command", requestId, command });
       } catch {
@@ -337,7 +361,13 @@ export class RemoteControllerSession {
     const pending = this.pending.get(requestId);
     if (pending === undefined) return;
     this.pending.delete(requestId);
-    pending.resolve(value);
+    try {
+      pending.resolve(pending.parse(value));
+    } catch {
+      pending.reject(
+        new RemoteOperationError(remoteError("invalid-frame", "remote command result is invalid")),
+      );
+    }
   }
 
   private rejectCommand(requestId: string, error: RemoteError): void {

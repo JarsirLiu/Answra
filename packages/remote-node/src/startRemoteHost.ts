@@ -2,11 +2,14 @@
 import {
   type HostCommandPort,
   RemoteHostConnection,
+  type RemoteHostConnectionState,
   type RemoteHostKeyStore,
   RemoteHostSession,
+  type RemoteOperationError,
+  type Unsubscribe,
 } from "@answra/remote";
-import type { RemoteRuntimeDependencies } from "../runtimeDependencies";
-import { connectRemoteSignaling } from "../signaling/connectRemoteSignaling";
+import { connectRemoteSignaling } from "./connectRemoteSignaling";
+import type { RemoteRuntimeDependencies } from "./runtimeDependencies";
 
 export interface StartRemoteHostOptions {
   runtime: RemoteRuntimeDependencies;
@@ -19,6 +22,9 @@ export interface StartRemoteHostOptions {
 
 export interface RemoteHostHandle {
   readonly done: Promise<void>;
+  state(): RemoteHostConnectionState;
+  onState(listener: (state: RemoteHostConnectionState) => void): Unsubscribe;
+  onError(listener: (error: RemoteOperationError) => void): Unsubscribe;
   stop(): Promise<void>;
 }
 
@@ -71,6 +77,9 @@ export async function startRemoteHost({
 
   return {
     done: connection.done,
+    state: () => connection.state(),
+    onState: (listener) => connection.onState(listener),
+    onError: (listener) => connection.onError(listener),
     stop: () => connection.stop(),
   };
 }

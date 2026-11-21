@@ -43,7 +43,7 @@
 
 - 可观察结果：controller 在声明 `sessions` 的 host 上能拿到摘要分页；不支持时收到 `invalid-command`。
 - 自动化验证：`session.test.ts` 覆盖命令路由；codec 覆盖新命令；host 缺少 `listSessions` 时稳定失败。
-- 需要的实机验证：桌面 host 适配完成后，用 CLI controller 和移动端分别验证分页、空列表、host 切换。
+- 需要的实机验证：桌面 host 适配完成后，用另一台电脑和移动端 controller 分别验证分页、空列表、host 切换。
 
 ## 风险
 

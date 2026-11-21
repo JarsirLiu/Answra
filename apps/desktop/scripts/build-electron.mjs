@@ -49,7 +49,7 @@ const buildTargets = [
       format: "cjs",
       metafile: true,
       // electron-updater 与原生 keychain 保持外部依赖：它们内部按 Electron 运行时解析路径，不可打包。
-      external: ["electron", "koffi", "electron-updater", "@napi-rs/keyring"],
+      external: ["electron", "koffi", "electron-updater", "@napi-rs/keyring", "node-datachannel"],
       outfile: "out/main/index.cjs",
     },
   },

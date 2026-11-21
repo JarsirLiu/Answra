@@ -1,13 +1,13 @@
 /** CLI 应用层依赖端口；main.ts 注入真实实现，测试注入 fake。 */
 import type { ModelCredentialStore } from "@answra/credentials";
-import type { RemoteCredentialStore, RemoteHostKeyStore } from "@answra/remote";
+import type { RemoteHostKeyStore } from "@answra/remote";
+import type { RemoteRuntimeDependencies } from "@answra/remote-node";
 import type { ConversationSnapshot } from "@answra/shared";
 import type { AgentEventEnvelope } from "@answra/shared/schema";
 import type { ModelCatalog } from "../model/catalog";
 import type { ModelSettings } from "../model/ports";
 import type { RemoteAuthPort } from "../remote/auth/remoteAuthService";
 import type { RemoteCodingHost, RemoteCodingHostOptions } from "../remote/host/commandPort";
-import type { RemoteRuntimeDependencies } from "../remote/runtimeDependencies";
 import type { CodingSessionHost } from "../session/codingSession";
 import type { InputPort } from "../transport/input";
 import type { OpenBrowser } from "../transport/openBrowser";
@@ -22,8 +22,6 @@ export interface SessionHostOptions {
 
 export interface RemoteKeyDependencies {
   hostKeys: RemoteHostKeyStore;
-  credentials: RemoteCredentialStore;
-  promptSecret(label: string): Promise<string>;
   now?(): Date;
 }
 

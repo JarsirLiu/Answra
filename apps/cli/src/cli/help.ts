@@ -8,16 +8,15 @@ export const CLI_HELP = `Answra CLI
   answra config unset
   answra auth <login|status|logout>
   answra remote host [--key-id <keyId>] [--cwd <目录>]
-  answra remote attach [--no-alt-screen]
-  answra remote key <create|list|revoke|set|show|forget>
+  answra remote key <create|list|revoke>
   answra --help
   answra --version
 
 命令:
   code     启动独立 coding Bot 的编码会话；TTY 下进入交互 TUI
   config   查看或保存桌面端与 CLI 共享的本地模型配置
-  auth     登录 Answra 账号；远程 host/attach 的服务准入凭据
-  remote   启动远程 host、连接 controller 或管理访问密钥；运行 answra remote --help 查看详情
+  auth     登录 Answra 账号；远程 host 的服务准入凭据
+  remote   启动远程 host 或管理访问密钥；运行 answra remote --help 查看详情
 
 code 选项:
   --cwd <目录>          工作区根目录，默认当前目录
@@ -46,13 +45,12 @@ code 选项:
   如果浏览器无法返回 CLI，登录会超时并明确提示重新发起授权。
   TUI 内可使用 /login、/status、/logout 完成同一套流程；登录状态只显示账号，不显示令牌。
   登录凭据只保存在 OS keychain；answra auth logout 撤销并删除本机登录态。
-  远程 host/attach 需要登录；控制 host 还需要该 host 的远程访问密钥。
+  远程 host 需要登录；controller 使用该 host 的远程访问密钥接入。
 
 远程访问密钥:
   host 上运行 answra remote key create 生成，默认 7 天、只显示一次；
-  另一台 CLI 首次运行 answra remote attach 时输入连接码，会安全保存到本机；
-  key list/show 只显示 keyId 与过期时间，不显示 secret；
-  key revoke 撤销 host 密钥，key forget 删除本机 controller 密钥。
+  key list 只显示 keyId 与过期时间，不显示 secret；
+  key revoke 撤销 host 密钥。
 
 输入:
   提供 prompt 时作为单条消息发送并退出。

@@ -84,7 +84,11 @@ describe("release profile resolution", () => {
     const { builder } = await resolveReleaseProfile(["--profile=answer"]);
     const config = applyReleaseBuilder(structuredClone(packageJson.build), builder);
     expect(config.extraResources).toEqual([]);
-    expect(config.asarUnpack).toEqual(["**/node_modules/@napi-rs/keyring*/**"]);
+    expect(config.asarUnpack).toEqual([
+      "**/node_modules/@napi-rs/keyring*/**",
+      "**/node_modules/node-datachannel/**",
+      "**/node_modules/@node-datachannel/**",
+    ]);
     expect(config.files).toContain("!**/node_modules/sherpa-onnx-node/**");
     expect(config.appId).toBe("dev.answra.desktop");
   });

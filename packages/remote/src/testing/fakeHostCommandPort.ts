@@ -29,6 +29,7 @@ export interface FakeHostCommandPortOptions {
 export interface FakeHostCommandPort extends HostCommandPort {
   readonly sentCommands: RemoteSendCommand[];
   readonly cancelledRunIds: string[];
+  readonly cancelledConversationIds: string[];
   readonly appliedModels: RemoteModelConfig[];
   emitEvent(event: AgentEventEnvelope): void;
   emitSnapshot(snapshot: ConversationSnapshot): void;
@@ -42,6 +43,7 @@ export function createFakeHostCommandPort(
   const sessionPage = options.sessionPage ?? createFakeSessionPage();
   const sentCommands: RemoteSendCommand[] = [];
   const cancelledRunIds: string[] = [];
+  const cancelledConversationIds: string[] = [];
   const appliedModels: RemoteModelConfig[] = [];
   const events: AgentEventEnvelope[] = [];
   const eventListeners = new Set<(event: AgentEventEnvelope) => void>();
@@ -87,6 +89,7 @@ export function createFakeHostCommandPort(
   return {
     sentCommands,
     cancelledRunIds,
+    cancelledConversationIds,
     appliedModels,
     capabilities: () => capabilities,
     async createConversation(conversationId) {
@@ -131,7 +134,8 @@ export function createFakeHostCommandPort(
     async waitQueueStart(_conversationId, queueId) {
       return { queueId, runId: `run-${runSequence}`, snapshot: currentSnapshot };
     },
-    cancel(runId) {
+    cancel(conversationId, runId) {
+      cancelledConversationIds.push(conversationId);
       cancelledRunIds.push(runId);
     },
     async listBots() {

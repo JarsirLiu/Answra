@@ -1,0 +1,25 @@
+{
+  "name": "@answra/remote-node",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Node 宿主的远程连接适配：信令 WebSocket、WebRTC DataChannel、计时器与 host 常驻运行时。",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@answra/remote": "workspace:*",
+    "@answra/shared": "workspace:*",
+    "node-datachannel": "0.33.6"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "typescript": "~5.9.3",
+    "vitest": "^5.0.3"
+  }
+}

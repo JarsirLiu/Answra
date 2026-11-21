@@ -18,6 +18,11 @@ export {
   type RemoteHostAccessKeyRecord,
 } from "./access/accessKey";
 export {
+  createJsonRemoteHostKeyStore,
+  REMOTE_HOST_KEY_FILE_VERSION,
+  type RemoteHostKeyFilePort,
+} from "./access/hostKeyFile";
+export {
   RemoteControllerSession,
   type RemoteControllerSessionOptions,
   type RemoteControllerState,

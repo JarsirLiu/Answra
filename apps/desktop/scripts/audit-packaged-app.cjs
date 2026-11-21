@@ -41,7 +41,8 @@ const bundledOnlyPrefixes = ["prosemirror-", "rehype-", "remark-"];
  * 原生 external 依赖：由 esbuild external + electron-builder asarUnpack 提供，
  * 必须出现在 app.asar.unpacked，不能按 bundled-only 拒绝。
  */
-const nativeRuntimePackages = /^@napi-rs\/keyring(?:-|$)/;
+const nativeRuntimePackages =
+  /^(?:@napi-rs\/keyring(?:-|$)|node-datachannel(?:-|$)|@node-datachannel\/)/;
 
 function runtimePackageName(entry) {
   return /(?:^|\/)node_modules\/((?:@[^/]+\/)?[^/]+)\//.exec(entry)?.[1];
@@ -90,7 +91,7 @@ module.exports = async function auditPackagedApp(context) {
     violations.push(`app.asar 包含已由 bundle 覆盖的运行时依赖：${packageName}`);
   }
 
-  for (const dependency of ["@napi-rs/keyring"]) {
+  for (const dependency of ["@napi-rs/keyring", "node-datachannel"]) {
     try {
       await stat(join(resourcesDir, "app.asar.unpacked", "node_modules", dependency));
     } catch (error) {

@@ -32,6 +32,8 @@ import { loadDevDotEnv } from "./devEnv";
 import { registerAmbientIpc } from "./ipc/ambientIpc";
 import { registerWindowIpc } from "./ipc/windowIpc";
 import { activateMainWindow } from "./mainWindowActivation";
+import { DesktopRemoteHostService } from "./remote/host/desktopRemoteHostService";
+import { registerRemoteHostIpc } from "./remote/remoteIpc";
 import { registerSurfaceIpc } from "./surface/surfaceIpc";
 import { applyPendingUpdateOnLaunch } from "./updater/applyPendingUpdate";
 import { createMacSwapInstaller } from "./updater/macUpdateSwap";
@@ -86,15 +88,20 @@ const answraDataRoot = join(app.getPath("appData"), "Answra");
 const interviewDataRoot = join(answraDataRoot, "interview");
 mkdirSync(interviewDataRoot, { recursive: true });
 
+const cloudEndpoints = resolveCloudEndpoints(process.env, { isPackaged: app.isPackaged });
+let remoteAuthStatusHandler: ((signedIn: boolean) => void) | undefined;
 const authService = new AuthService({
-  endpoints: resolveCloudEndpoints(process.env, { isPackaged: app.isPackaged }),
+  endpoints: cloudEndpoints,
   device: () => resolveDeviceDescriptor(configDir),
   credentials: new FileAuthCredentialStore(configDir),
   pendingStore: new FilePendingAuthStore(configDir),
   openExternal: (url) => shell.openExternal(url),
   // 打包版只认深链；开发态用环回回调，避免 dev 进程的协议注册体验问题。
   callbackChannel: app.isPackaged ? deepLinkCallbackChannel : loopbackCallbackChannel,
-  onStatus: sendAuthStatus,
+  onStatus: (status) => {
+    sendAuthStatus(status);
+    remoteAuthStatusHandler?.(status.signedIn);
+  },
 });
 
 // 模型调用的端点与令牌都来自登录态：这里传惰性闭包，登录/刷新后自动生效，无需重启。
@@ -120,6 +127,17 @@ const agentService = new AgentService({
   readInterviewProfileSeed: () => readInterviewProfileSeed(),
   log: (message, error) => console.warn(message, error),
 });
+const remoteHostService = new DesktopRemoteHostService({
+  configDir,
+  apiBaseUrl: cloudEndpoints.apiBaseUrl,
+  getAccessToken: () => authService.getAccessToken(),
+  getWorkspaceRoot: () => getWorkspaceRoot(),
+  agent: agentService,
+  log: (message, error) => console.warn(message, error),
+});
+remoteAuthStatusHandler = (signedIn) => {
+  void remoteHostService.onAuthStatus(signedIn);
+};
 
 // 授权回跳可能早于服务就绪（冷启动走深链）：先排队，等 restore 载入待处理登录后再消费。
 const queuedAuthUrls: string[] = [];
@@ -191,6 +209,7 @@ if (!app.requestSingleInstanceLock()) {
     registerConversationSessionIpc(agentService);
     registerConnectionIpc(agentService);
     registerAuthIpc(authService);
+    registerRemoteHostIpc(remoteHostService);
     const startAgent = () => {
       void agentService
         .start()
@@ -248,6 +267,7 @@ if (!app.requestSingleInstanceLock()) {
 async function shutdownForQuit(): Promise<void> {
   disposeUpdateIpc?.();
   updateController?.dispose();
+  await remoteHostService.dispose();
   authService.dispose();
   try {
     await stopInterview();

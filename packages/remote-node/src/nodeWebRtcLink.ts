@@ -30,7 +30,7 @@ export interface NodeWebRtcLinkOptions {
 }
 
 /**
- * CLI 的 WebRTC DataChannel 传输。只负责一条连接：应用 offer/answer 与 ICE、
+ * Node 宿主的 WebRTC DataChannel 传输。只负责一条连接：应用 offer/answer 与 ICE、
  * 收发 RemoteFrame。构造前信令必须已经 ready；host 构造时创建 DataChannel 并
  * 自动触发 offer。node-datachannel 在 createDataChannel/setRemoteDescription
  * 时自动推进协商，此处不重复调用 setLocalDescription；重连和连接重建在组合层处理。

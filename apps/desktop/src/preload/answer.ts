@@ -12,6 +12,8 @@ import {
   type ConversationSnapshot,
   type DesktopBridge,
   type RegionCaptureOptions,
+  RemoteHostChannels,
+  type RemoteHostStatus,
   type ReplyBarAction,
   type ReplyBarPlacement,
   type ReplyBarState,
@@ -90,6 +92,15 @@ const bridge: DesktopBridge = {
       listener(snapshot);
     ipcRenderer.on(ConversationChannels.SnapshotChanged, wrapped);
     return () => ipcRenderer.removeListener(ConversationChannels.SnapshotChanged, wrapped);
+  },
+  getRemoteHostStatus: () => ipcRenderer.invoke(RemoteHostChannels.GetStatus),
+  connectRemoteHost: () => ipcRenderer.invoke(RemoteHostChannels.Connect),
+  disconnectRemoteHost: () => ipcRenderer.invoke(RemoteHostChannels.Disconnect),
+  onRemoteHostStatus: (listener: (status: RemoteHostStatus) => void) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, status: RemoteHostStatus) =>
+      listener(status);
+    ipcRenderer.on(RemoteHostChannels.Status, wrapped);
+    return () => ipcRenderer.removeListener(RemoteHostChannels.Status, wrapped);
   },
   getConversationConfig: () => ipcRenderer.invoke(ConversationChannels.GetConfig),
   configureConversation: (settings: ConversationModelSettings) =>

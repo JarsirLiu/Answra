@@ -1,43 +1,20 @@
-/** CLI 远程会话命令：host 常驻与 controller attach 的组合接线。 */
-import type { ModelCredentialStore } from "@answra/credentials";
+/** CLI 远程 host 命令：启动常驻 host、生成连接码并管理 host 访问密钥。 */
+import { isRemoteHostAccessKeyActive, type RemoteHostAccessKeyRecord } from "@answra/remote";
 import {
-  createRemoteCredentialRecord,
-  isRemoteHostAccessKeyActive,
-  RemoteControllerConnection,
-  RemoteControllerSession,
-  type RemoteHostAccessKeyRecord,
-} from "@answra/remote";
+  type RemoteHostHandle,
+  type RemoteRuntimeDependencies,
+  startRemoteHost,
+} from "@answra/remote-node";
 import { CLI_API_KEY } from "@answra/shared";
 import type { CliOptions } from "../config/cliOptions";
 import { resolveWorkspaceRoot } from "../config/workspace";
 import { resolveModelAccessToken } from "../model/accessToken";
-import { createRemoteModelSettings } from "../remote/controller/modelSettings";
-import { createRemoteControllerSessionHost } from "../remote/controller/sessionHost";
 import { createRemoteCodingHost } from "../remote/host/commandPort";
 import { createHostAccessKey } from "../remote/host/hostAccessKey";
-import { type RemoteHostHandle, startRemoteHost } from "../remote/host/startRemoteHost";
-import type { RemoteRuntimeDependencies } from "../remote/runtimeDependencies";
-import { connectRemoteSignaling } from "../remote/signaling/connectRemoteSignaling";
-import { CodingSession } from "../session/codingSession";
-import { TuiViewStore } from "../tui/app/viewStore";
 import type { CliDependencies, RemoteKeyDependencies } from "./dependencies";
 import { CliUsageError } from "./errors";
 
 type RemoteOptions = Extract<CliOptions, { kind: "remote" }>;
-
-const REMOTE_MODEL_CREDENTIALS: ModelCredentialStore = {
-  read: async () => null,
-  write: async () => {
-    throw new Error("远程会话不保存本机模型 Key；请在 host 本机配置。");
-  },
-  clear: async () => {
-    throw new Error("远程会话不保存本机模型 Key；请在 host 本机配置。");
-  },
-};
-
-const EMPTY_MODEL_CATALOG = {
-  list: async () => [],
-};
 
 export async function runRemoteHostCommand(
   options: Extract<RemoteOptions, { action: "host" }>,
@@ -176,120 +153,6 @@ export async function startRemoteHostWithConnectionCode(
   }
 }
 
-export async function runRemoteAttachCommand(
-  options: Extract<RemoteOptions, { action: "attach" }>,
-  remote: RemoteKeyDependencies,
-  deps: CliDependencies,
-  now: Date,
-): Promise<number> {
-  requireInteractive(deps, "remote attach");
-  const runtime = requireRemoteRuntime(deps);
-  let credential = await remote.credentials.read();
-  let enteredCredential = false;
-  if (credential === null) {
-    const code = await remote.promptSecret("输入远程连接码：");
-    try {
-      credential = createRemoteCredentialRecord(code, { savedAt: now });
-    } catch (error) {
-      throw new CliUsageError(error instanceof Error ? error.message : "远程连接码格式无效。");
-    }
-    enteredCredential = true;
-  }
-  if (credential.expiresAt !== undefined) {
-    const expiresAt = Date.parse(credential.expiresAt);
-    if (Number.isFinite(expiresAt) && expiresAt <= now.getTime()) {
-      throw new CliUsageError("保存的 controller 密钥已过期。先在 host 上重新生成并运行 key set。");
-    }
-  }
-
-  const peerId = runtime.createId();
-  const connection = new RemoteControllerConnection({
-    timers: runtime.timers,
-    createAttempt: async () => {
-      const signaling = await connectRemoteSignaling({
-        service: runtime.signaling,
-        timers: runtime.timers,
-        role: "controller",
-        roomId: credential.roomId,
-        peerId,
-      });
-      const link = runtime.createLink({ role: "controller", signaling });
-      const session = new RemoteControllerSession({
-        link,
-        sessionId: runtime.createId(),
-        peerId,
-        credential,
-      });
-      const unsubscribeSignaling = signaling.onState((state) => {
-        if (state === "closed") session.close();
-      });
-      return {
-        session,
-        close() {
-          unsubscribeSignaling();
-          session.close();
-          signaling.close();
-        },
-      };
-    },
-  });
-
-  let welcome: Awaited<ReturnType<RemoteControllerSession["connect"]>>;
-  const removeInterrupt = deps.onInterrupt(() => connection.close());
-  try {
-    welcome = await connection.connect();
-    if (enteredCredential) await remote.credentials.write(credential);
-  } catch (error) {
-    connection.close();
-    throw error;
-  } finally {
-    removeInterrupt();
-  }
-
-  const modelSettings = createRemoteModelSettings(connection.settings());
-  let model: Awaited<ReturnType<typeof modelSettings.resolve>>;
-  try {
-    const snapshot = await modelSettings.snapshot();
-    if (!snapshot.configured) {
-      throw new CliUsageError("远程 host 尚未配置模型。先在 host 上运行 `answra config set`。");
-    }
-    model = await modelSettings.resolve([]);
-  } catch (error) {
-    connection.close();
-    throw error;
-  }
-  const store = new TuiViewStore();
-  const codingHost = createRemoteControllerSessionHost({
-    session: connection,
-    emitEvent: (event) => store.applyEvent(event),
-    onSnapshot: (value) => store.applySnapshot(value),
-  });
-  const codingSession = new CodingSession({
-    host: codingHost,
-    conversationId: deps.createConversationId(),
-    model,
-    accessToken: "",
-  });
-
-  try {
-    return await deps.runTui({
-      session: codingSession,
-      model: model.chat.model,
-      store,
-      modelSettings,
-      modelCredentials: REMOTE_MODEL_CREDENTIALS,
-      modelCatalog: EMPTY_MODEL_CATALOG,
-      botName: "coding.engineer",
-      workspaceRoot: welcome.workspaceRoot,
-      altScreen: options.altScreen !== false,
-    });
-  } finally {
-    codingSession.close();
-    store.dispose();
-    connection.close();
-  }
-}
-
 async function selectHostKey(
   remote: RemoteKeyDependencies,
   keyId: string | undefined,
@@ -324,10 +187,4 @@ function requireRemoteRuntime(deps: CliDependencies): RemoteRuntimeDependencies 
 function requireRemoteKeys(deps: CliDependencies): RemoteKeyDependencies {
   if (deps.remoteKeys === undefined) throw new Error("远程密钥依赖未注入。");
   return deps.remoteKeys;
-}
-
-function requireInteractive(deps: CliDependencies, command: string): void {
-  if (!deps.input.isTTY) {
-    throw new CliUsageError(`${command} 需要交互终端，避免密钥写入日志。`);
-  }
 }

@@ -295,6 +295,8 @@ interface HostModelSettingsPort {
 - host 必须显式开启远程模式，并本地显示“远程已连接”、controller 标识、密钥剩余时间和断开/撤销入口。远程 shell 等同本机 shell，key-only 不能省略 host 侧状态与撤销。
 - 首版一个 active controller；其他连接只读或拒绝，避免两个输入源同时 send/select/handoff。多 controller 共享控制另立提案。
 - 密钥泄露等同于 host 远程执行权限；默认一周窗口、每设备独立密钥、host 可见和可撤销是首版安全边界。不要通过 argv 传 key，使用交互输入、密钥文件或 keychain。
+> 后续变更（2026-11-21）：CLI controller 已移除，CLI 只保留 host；目标 controller 改为另一台电脑或手机。以下 `remote attach`、`key set/show/forget` 描述仅记录历史方案，不再是当前 CLI 表面。
+
 - CLI 首版已落地 key 管理命令、host 侧 key 校验，以及 `remote host` / `remote attach` 到信令、WebRTC、host/controller 会话的组合接线；本地 compose 的真实服务端链路已验证，公网 NAT/网络矩阵仍未实机验证：
   - `answra remote key create [--days 7|30] [--label <name>]` 在 host 生成 `answra1.<roomId>.<keyId>.<secret>`，只打印一次；secret 为 32 字节随机值。
   - `answra remote key list` / `revoke <keyId>` 管理 host 记录；`key set` 在 controller 遮罩输入并保存完整 key；`key show` / `forget` 只管理本机摘要。

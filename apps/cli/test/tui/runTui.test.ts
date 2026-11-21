@@ -202,7 +202,7 @@ describe("runInkTui", () => {
     expect(startRemoteHost).toHaveBeenCalledTimes(1);
     expect(store.getSnapshot().notifications.current?.text).toBe(
       [
-        "远程连接已开启。请在其他设备运行 answra remote attach，并输入下面的连接码：",
+        "远程连接已开启。请在其他设备输入下面的连接码：",
         "answra1.room.key.secret",
         "Key ID: key-id",
         "连接码会持久保存，直到在 host 上撤销。",

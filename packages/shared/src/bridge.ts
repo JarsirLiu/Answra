@@ -23,6 +23,8 @@ import type {
   InterviewResumeImportRequest,
   InterviewResumePickResult,
   RegionCaptureOptions,
+  RemoteHostConnectResult,
+  RemoteHostStatus,
   ReplyBarAction,
   ReplyBarPlacement,
   ReplyBarState,
@@ -161,6 +163,11 @@ export interface DesktopBridge {
   getConnectionState?: () => Promise<AgentConnectionState>;
   /** 订阅 Agent worker 连接状态变更；返回取消订阅函数。 */
   onConnectionState?: (listener: (state: AgentConnectionState) => void) => () => void;
+  // ---- 桌面远程 host（PC/移动端 controller 连接本机 Agent）----
+  getRemoteHostStatus?: () => Promise<RemoteHostStatus>;
+  connectRemoteHost?: () => Promise<RemoteHostConnectResult>;
+  disconnectRemoteHost?: () => Promise<RemoteHostStatus>;
+  onRemoteHostStatus?: (listener: (status: RemoteHostStatus) => void) => () => void;
   // ---- 模型来源（本地自定义端点 / 云端订阅；可选，实现由 preload 注入） ----
   /** 读取当前模型来源与本地端点摘要（不含 API Key）。 */
   getConversationConfig?: () => Promise<ConversationModelSettingsView>;
