@@ -18,6 +18,19 @@ describe("remote frame codec", () => {
     expect(decodeRemoteFrame(encodeRemoteFrame(frame))).toEqual(frame);
   });
 
+  it("round-trips a paginated session list command", () => {
+    const frame = {
+      type: "command",
+      requestId: "request-2",
+      command: {
+        type: "list-sessions",
+        query: { cursor: "cursor-1", limit: 50 },
+      },
+    } as const;
+
+    expect(decodeRemoteFrame(encodeRemoteFrame(frame))).toEqual(frame);
+  });
+
   it("round-trips the dedicated access-key auth frame", () => {
     const frame = {
       type: "auth",

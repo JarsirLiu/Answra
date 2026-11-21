@@ -106,6 +106,12 @@ describe("remote host/controller sessions", () => {
     const snapshot = await controller.snapshot("conversation-2");
     expect(snapshot.conversationId).toBe("conversation-2");
 
+    const sessions = await controller.listSessions({ limit: 50 });
+    expect(sessions.items[0]).toMatchObject({
+      conversationId: "conversation-1",
+      scope: "conversation",
+    });
+
     const bots = await controller.listBots();
     expect(bots[0]?.id).toBe("coding.engineer");
 
@@ -169,6 +175,20 @@ describe("remote host/controller sessions", () => {
     expect(snapshots[0]?.eventRevision).toBe(3);
     expect(events).toHaveLength(1);
     expect(events[0]?.eventId).toBe("event-4");
+
+    controller.close();
+    host.close();
+    link.disconnect();
+  });
+
+  it("rejects session list when the host does not expose history", async () => {
+    const { controller, host, hostPort, link } = await createSessions();
+    delete hostPort.listSessions;
+    await controller.connect();
+
+    await expect(controller.listSessions()).rejects.toMatchObject({
+      code: "invalid-command",
+    });
 
     controller.close();
     host.close();

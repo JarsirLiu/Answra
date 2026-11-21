@@ -1,6 +1,7 @@
 import type {
   AgentEventEnvelope,
   BotSummary,
+  ConversationSessionPage,
   ConversationSnapshot,
   RemoteModelConfig,
   RemoteModelSettingsView,
@@ -13,6 +14,24 @@ export function createFakeConversationSnapshot(
     conversationId: "conversation-1",
     eventRevision: 0,
     messages: [],
+    ...overrides,
+  };
+}
+
+export function createFakeSessionPage(
+  overrides: Partial<ConversationSessionPage> = {},
+): ConversationSessionPage {
+  return {
+    items: [
+      {
+        conversationId: "conversation-1",
+        scope: "conversation",
+        title: "Remote session",
+        messageCount: 2,
+        createdAt: "2026-11-13T00:00:00.000Z",
+        updatedAt: "2026-11-13T00:01:00.000Z",
+      },
+    ],
     ...overrides,
   };
 }

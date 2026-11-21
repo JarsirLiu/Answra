@@ -8,14 +8,17 @@ export {
   remoteRoleSchema,
 } from "./capabilities";
 export {
+  REMOTE_SESSION_LIST_MAX_LIMIT,
   type RemoteCommand,
   type RemoteConversationSelection,
   type RemoteImage,
   type RemoteSendCommand,
   type RemoteSendRequest,
+  type RemoteSessionListQuery,
   remoteCommandSchema,
   remoteConversationSelectionSchema,
   remoteSendCommandSchema,
+  remoteSessionListQuerySchema,
 } from "./commands";
 export {
   type RemoteError,

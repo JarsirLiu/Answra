@@ -13,6 +13,7 @@ export const remoteCapabilitySchema = z.enum([
   "team",
   "handoff",
   "model-settings",
+  "sessions",
 ]);
 
 export const remoteCapabilitiesSchema = z.array(remoteCapabilitySchema);

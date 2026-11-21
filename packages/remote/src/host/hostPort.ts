@@ -2,6 +2,7 @@ import type { ConversationQueueCompletion, ConversationSendResult } from "@answr
 import type {
   AgentEventEnvelope,
   BotSummary,
+  ConversationSessionPage,
   ConversationSnapshot,
   RemoteCapability,
   RemoteConversationSelection,
@@ -9,6 +10,7 @@ import type {
   RemoteModelConfig,
   RemoteModelSettingsView,
   RemoteSendCommand,
+  RemoteSessionListQuery,
 } from "@answra/shared/schema";
 import type { Unsubscribe } from "../ports/subscription";
 
@@ -33,6 +35,7 @@ export interface HostCommandPort {
   clearConversation(conversationId: string): Promise<ConversationSnapshot>;
   snapshot(conversationId: string): Promise<ConversationSnapshot>;
   readEvents(conversationId: string, afterRevision: number): Promise<AgentEventEnvelope[]>;
+  listSessions?(query?: RemoteSessionListQuery): Promise<ConversationSessionPage>;
   send(command: RemoteSendCommand): Promise<ConversationSendResult>;
   waitQueueStart(
     conversationId: string,

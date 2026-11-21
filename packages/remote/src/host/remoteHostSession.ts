@@ -238,6 +238,8 @@ export class RemoteHostSession {
         return this.host.snapshot(command.conversationId);
       case "read-events":
         return this.host.readEvents(command.conversationId, command.afterRevision);
+      case "list-sessions":
+        return this.requireListSessions()(command.query);
       case "list-bots":
         return this.requireListBots()();
       case "select-bot":
@@ -254,6 +256,15 @@ export class RemoteHostSession {
       case "settings-clear-local":
         return this.host.settings().clearLocal();
     }
+  }
+
+  private requireListSessions(): NonNullable<HostCommandPort["listSessions"]> {
+    if (this.host.listSessions === undefined) {
+      throw new RemoteOperationError(
+        remoteError("invalid-command", "list-sessions is unsupported"),
+      );
+    }
+    return this.host.listSessions.bind(this.host);
   }
 
   private requireListBots(): NonNullable<HostCommandPort["listBots"]> {

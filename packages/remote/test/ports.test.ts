@@ -90,6 +90,9 @@ describe("fake host command port", () => {
     expect(result).toMatchObject({ status: "started", runId: "run-1", position: 0 });
     expect(host.sentCommands).toHaveLength(1);
 
+    const page = await host.listSessions?.();
+    expect(page?.items[0]?.conversationId).toBe("conversation-1");
+
     const event = createFakeAgentEvent(2);
     host.emitEvent(event);
     expect(await host.readEvents("conversation-1", 1)).toEqual([event]);

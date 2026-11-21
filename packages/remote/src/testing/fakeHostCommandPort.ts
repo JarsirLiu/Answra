@@ -1,6 +1,7 @@
 ﻿import type {
   AgentEventEnvelope,
   BotSummary,
+  ConversationSessionPage,
   ConversationSnapshot,
   RemoteCapability,
   RemoteLocalModelInput,
@@ -14,6 +15,7 @@ import {
   createFakeBotSummary,
   createFakeConversationSnapshot,
   createFakeModelSettingsView,
+  createFakeSessionPage,
 } from "./fixtures";
 
 export interface FakeHostCommandPortOptions {
@@ -21,6 +23,7 @@ export interface FakeHostCommandPortOptions {
   snapshot?: ConversationSnapshot;
   modelSettings?: RemoteModelSettingsView;
   bots?: readonly BotSummary[];
+  sessionPage?: ConversationSessionPage;
 }
 
 export interface FakeHostCommandPort extends HostCommandPort {
@@ -36,6 +39,7 @@ export function createFakeHostCommandPort(
 ): FakeHostCommandPort {
   const capabilities = options.capabilities ?? ["coding", "model-settings"];
   const bots = options.bots ?? [createFakeBotSummary()];
+  const sessionPage = options.sessionPage ?? createFakeSessionPage();
   const sentCommands: RemoteSendCommand[] = [];
   const cancelledRunIds: string[] = [];
   const appliedModels: RemoteModelConfig[] = [];
@@ -106,6 +110,9 @@ export function createFakeHostCommandPort(
     },
     async readEvents(_conversationId, afterRevision) {
       return events.filter((event) => event.aggregateRevision > afterRevision);
+    },
+    async listSessions() {
+      return sessionPage;
     },
     async send(command) {
       sentCommands.push(command);

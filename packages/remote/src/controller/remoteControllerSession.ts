@@ -2,6 +2,7 @@ import type { ConversationQueueCompletion, ConversationSendResult } from "@answr
 import {
   type AgentEventEnvelope,
   type BotSummary,
+  type ConversationSessionPage,
   type ConversationSnapshot,
   REMOTE_PROTOCOL_VERSION,
   type RemoteCapability,
@@ -13,6 +14,7 @@ import {
   type RemoteModelConfig,
   type RemoteModelSettingsView,
   type RemoteSendCommand,
+  type RemoteSessionListQuery,
   type RemoteWelcome,
 } from "@answra/shared/schema";
 import { parseRemoteAccessKey, type RemoteCredentialRecord } from "../access/accessKey";
@@ -154,6 +156,14 @@ export class RemoteControllerSession {
   async readEvents(conversationId: string, afterRevision: number): Promise<AgentEventEnvelope[]> {
     const value = await this.sendCommand({ type: "read-events", conversationId, afterRevision });
     return value as AgentEventEnvelope[];
+  }
+
+  async listSessions(query?: RemoteSessionListQuery): Promise<ConversationSessionPage> {
+    const value = await this.sendCommand({
+      type: "list-sessions",
+      ...(query === undefined ? {} : { query }),
+    });
+    return value as ConversationSessionPage;
   }
 
   async send(command: RemoteSendCommand): Promise<ConversationSendResult> {

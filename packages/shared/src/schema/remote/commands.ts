@@ -1,9 +1,16 @@
 import { z } from "zod";
 import { remoteLocalModelInputSchema, remoteModelConfigSchema } from "./modelSettings";
 
+export const REMOTE_SESSION_LIST_MAX_LIMIT = 200;
+
 const remoteImageSchema = z.strictObject({
   name: z.string(),
   dataUrl: z.string(),
+});
+
+export const remoteSessionListQuerySchema = z.strictObject({
+  cursor: z.string().optional(),
+  limit: z.number().int().positive().max(REMOTE_SESSION_LIST_MAX_LIMIT).optional(),
 });
 
 const remoteSendRequestSchema = z.strictObject({
@@ -70,6 +77,10 @@ export const remoteCommandSchema = z.discriminatedUnion("type", [
     afterRevision: z.number().int().nonnegative(),
   }),
   z.strictObject({
+    type: z.literal("list-sessions"),
+    query: remoteSessionListQuerySchema.optional(),
+  }),
+  z.strictObject({
     type: z.literal("list-bots"),
   }),
   z.strictObject({
@@ -101,4 +112,5 @@ export type RemoteImage = z.infer<typeof remoteImageSchema>;
 export type RemoteSendRequest = z.infer<typeof remoteSendRequestSchema>;
 export type RemoteSendCommand = z.infer<typeof remoteSendCommandSchema>;
 export type RemoteConversationSelection = z.infer<typeof remoteConversationSelectionSchema>;
+export type RemoteSessionListQuery = z.infer<typeof remoteSessionListQuerySchema>;
 export type RemoteCommand = z.infer<typeof remoteCommandSchema>;

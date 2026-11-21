@@ -137,6 +137,18 @@ describe("remote frame schema", () => {
       },
     } as const;
     expect(remoteCommandSchema.parse(command)).toEqual(command);
+
+    const listSessions = {
+      type: "list-sessions",
+      query: { cursor: "cursor-1", limit: 50 },
+    } as const;
+    expect(remoteCommandSchema.parse(listSessions)).toEqual(listSessions);
+    expect(
+      remoteCommandSchema.safeParse({
+        ...listSessions,
+        query: { ...listSessions.query, scope: "interview" },
+      }).success,
+    ).toBe(false);
     expect(
       remoteCommandSchema.safeParse({
         ...command,

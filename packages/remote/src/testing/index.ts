@@ -22,5 +22,6 @@ export {
   createFakeConversationSnapshot,
   createFakeModelConfig,
   createFakeModelSettingsView,
+  createFakeSessionPage,
 } from "./fixtures";
 export { createMemoryCredentialStore, createMemoryHostKeyStore } from "./memoryStores";
