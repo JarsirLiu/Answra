@@ -131,6 +131,7 @@
 | `src/ui` | RN 原语、token 与页面 | 不 import `@answra/remote`，不创建 peer 或命令 |
 
 - 移动端只复用 `@answra/remote` 的 controller 会话/重连/命令语义；不新增第二套退避、错误码或草稿状态。
+- 移动端原生构建走 EAS 云构建；不提交生成的 `android/`/`ios/`，签名凭据由 EAS 远程管理，不入库。
 - 不配置 TURN/relay、不做桌面本地 H5 服务、不做手机本地 Agent；P2P 失败显式 `remote-unreachable`。
 - Android 首版只做前台文本会话；iOS 复用同一 Expo/RN 工程；鸿蒙不承诺原生，后续 H5/ArkWeb 另评。
 - Phase 0 只落骨架、端口、fake 与占位页面；真实 auth、WebRTC、SecureStore 和会话 UI 按移动端 Note 分阶段接入。

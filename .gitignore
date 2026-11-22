@@ -39,3 +39,11 @@ apps/agent/examples/vad-asr-eval/out/
 
 # Local read-only Claude Code reference tree used for behavior porting; not source, not committed.
 Claude-Code/
+
+# Mobile generated native projects, local Expo cache, and EAS credentials.
+apps/mobile/android/
+apps/mobile/ios/
+apps/mobile/.expo/
+apps/mobile/web-build/
+apps/mobile/credentials.json
+apps/mobile/google-services.json

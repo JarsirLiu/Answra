@@ -187,6 +187,7 @@ docs                   Note 索引
 | `pnpm --filter @answra/mobile typecheck` | 移动端 TypeScript 检查 |
 | `pnpm --filter @answra/mobile test` | 移动端 core/transport 单元测试 |
 | `pnpm --filter @answra/mobile exec expo-doctor` | 检查 Expo 配置、依赖版本与 Metro 配置 |
+| `cd apps/mobile && eas build --platform android --profile preview` | EAS 云构建 Android APK；需先 `eas login` 与 `eas init` |
 | `pnpm build` | 全 workspace 构建（desktop: esbuild + vite） |
 | `pnpm typecheck` | 各包依次 `tsc --noEmit`（desktop 按进程分三个编译单元） |
 | `pnpm test` | 各包测试（ui 使用 vitest + jsdom） |
