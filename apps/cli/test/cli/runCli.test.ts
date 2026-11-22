@@ -68,6 +68,7 @@ function createModelSettings(initial: ClientConfig | null = null): ModelSettings
 const snapshot: ConversationSnapshot = {
   conversationId: "conversation-1",
   eventRevision: 0,
+  lastSeq: 0,
   messages: [],
 };
 

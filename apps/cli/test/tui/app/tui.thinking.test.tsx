@@ -10,6 +10,7 @@ describe("TUI thinking", () => {
     store.initialize({
       conversationId: "conversation-1",
       eventRevision: 0,
+      lastSeq: 0,
       messages: [
         {
           id: "assistant-1",
@@ -57,6 +58,7 @@ describe("TUI thinking", () => {
     store.initialize({
       conversationId: "conversation-1",
       eventRevision: 0,
+      lastSeq: 0,
       messages: [
         {
           id: "user-1",

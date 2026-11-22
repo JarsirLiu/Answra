@@ -31,6 +31,12 @@ export type ConversationStoreMutation =
   | { kind: "cleared" }
   | { kind: "event"; event: AgentEventEnvelope };
 
+/** 清空会话时要写回 snapshot 的旧 wire 游标；durable 游标固定归零。 */
+export interface ConversationClearCursor {
+  /** 聚合 revision；P2 第 3 步随 envelope 一起删除。 */
+  eventRevision?: number;
+}
+
 export interface HandoffMessageInput {
   id: string;
   fromAgentId: string;
@@ -62,9 +68,14 @@ export interface ConversationStore {
   scopeOf(conversationId: string): Promise<ConversationSessionScope | undefined>;
   /**
    * 仅空闲清理：会话没有活动 run 时才清空消息；仍有活动 run 时 no-op。
-   * 清空并记录覆盖到的事件 revision；UI 由发起操作的一方清理本地投影。
+   * 清空即重置：durable 游标归零，调用方负责同时清空 journal。
    */
-  clear(conversationId: string, eventRevision?: number): Promise<void>;
+  clear(conversationId: string, cursor?: ConversationClearCursor): Promise<void>;
+  /**
+   * 单调推进 snapshot 的 durable 游标；只由 Session 桥接在 transcript 写回后调用。
+   * 小于等于当前游标的写入是同一条事实的重复投影，直接忽略。
+   */
+  advanceLastSeq(conversationId: string, sequence: number): Promise<void>;
   load(conversationId: string): Promise<ConversationSnapshot>;
   beginRun(
     conversationId: string,

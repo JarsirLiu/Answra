@@ -27,24 +27,19 @@ export {
   type AgentEvent,
   type AgentEventEnvelope,
   type AgentExecutionEvent,
+  type AgentLiveOnlyEvent,
   type AgentStreamEvent,
   agentDurableEventSchema,
   agentEventEnvelopeSchema,
   agentEventSchema,
   agentExecutionEventSchema,
+  agentLiveOnlyEventSchema,
   agentStreamEventSchema,
   type SessionEventEnvelope,
   sessionEventEnvelopeSchema,
 } from "./events";
 export * from "./remote";
-export {
-  type ConversationSessionPage,
-  type ConversationSessionScope,
-  type ConversationSessionSummary,
-  conversationSessionPageSchema,
-  conversationSessionScopeSchema,
-  conversationSessionSummarySchema,
-} from "./session";
+export * from "./session";
 export {
   type AgentFinishReason,
   type AgentMessageState,

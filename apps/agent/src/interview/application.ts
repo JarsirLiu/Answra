@@ -17,6 +17,7 @@ import type { SessionJournal } from "../core/session/journal";
 import { MemorySessionJournal } from "../core/session/memoryJournal";
 import { SessionRecoveryCoordinator } from "../core/session/recoveryCoordinator";
 import { SessionEventProjector } from "../core/session/sessionEventProjector";
+import { SessionFrameBus, toLiveFrame } from "../core/session/sessionFrameBus";
 import { SessionRuntime } from "../core/session/sessionRuntime";
 import { SessionRuntimeJournal } from "../core/session/sessionRuntimeJournal";
 import { SessionStepExecutor } from "../core/session/stepExecutor";
@@ -41,6 +42,8 @@ export interface InterviewApplicationOptions {
   sessionJournal?: SessionJournal;
   /** UI 事件 store；缺省复用 AgentRuntime 的事件存储。 */
   executionStore?: ExecutionStore;
+  /** durable/live 帧广播口；宿主传入同一实例即可跨领域共享。 */
+  sessionFrames?: SessionFrameBus;
   /** 测试注入的 StepRunner；生产由 ProviderStepRunner 提供。 */
   stepRunner?: StepRunner;
   onSnapshot: (snapshot: ConversationSnapshot) => Promise<void>;
@@ -57,6 +60,7 @@ export class InterviewApplication {
   private readonly onError: InterviewApplicationOptions["onError"];
   private readonly contextCompactor: ContextCompactor;
   private readonly contextPreparation: ContextPreparation;
+  private readonly sessionFrames: SessionFrameBus;
   private readonly projector: SessionEventProjector;
   private readonly bridge: SessionTranscriptBridge;
   private readonly sessionRuntime: SessionRuntime;
@@ -75,6 +79,7 @@ export class InterviewApplication {
     this.requestAccessToken = options.requestAccessToken;
     this.onSnapshot = options.onSnapshot;
     this.onError = options.onError;
+    this.sessionFrames = options.sessionFrames ?? new SessionFrameBus();
     this.contextCompactor = new ContextCompactor({
       store: options.store,
       generate: ({ prompt, accessToken, signal }) =>
@@ -102,6 +107,7 @@ export class InterviewApplication {
     this.bridge = new SessionTranscriptBridge({ store: options.store });
     const journal = new SessionRuntimeJournal({
       journal: options.sessionJournal ?? new MemorySessionJournal(),
+      frames: this.sessionFrames,
       projector: this.projector,
       bridge: this.bridge,
       onDurableEvent: (id, event) => this.contextPreparation.recordRunEvent(id, event),
@@ -147,6 +153,8 @@ export class InterviewApplication {
       eventRevision: async (id) => (await this.store.load(id)).eventRevision,
       seedRevision: (id, revision) => this.projector.seed(id, revision),
       revision: (id) => this.projector.revision(id),
+      journalLastSeq: (id) => this.runtimeJournal.lastSequence(id),
+      seedLastSeq: (id, sequence) => this.store.advanceLastSeq(id, sequence),
       suspendUi: (id, suspended) => this.projector.suspend(id, suspended),
       restoreTranscript: (id, plan, revision) => this.bridge.recover(id, plan, revision),
       onRecovered: async (id, plan) => {
@@ -334,6 +342,8 @@ export class InterviewApplication {
   }
 
   private async onStepStream(step: StepStart, event: AgentStreamEvent): Promise<void> {
+    const live = toLiveFrame(step, event);
+    if (live !== undefined) this.sessionFrames.publishLive(live);
     await this.projector.applyLive(step, event);
     await this.bridge.applyLive(step.sessionId, step.messageId, event);
   }

@@ -62,7 +62,11 @@ const stateSnapshotSchema = conversationSnapshotSchema.omit({
   messages: true,
   activeRunId: true,
   eventRevision: true,
+  lastSeq: true,
 });
+
+/** 旧 JSON 全量记录从没有 durable 游标；读取时按 0 恢复。 */
+const legacySnapshotSchema = conversationSnapshotSchema.omit({ lastSeq: true });
 
 export const sessionStatePayloadSchema = z.strictObject({
   schemaVersion: z.literal(1),
@@ -80,7 +84,7 @@ export const sessionRecordSchema = z.strictObject({
   title: z.string().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
-  snapshot: conversationSnapshotSchema,
+  snapshot: legacySnapshotSchema,
   contextState: contextStateSchema.optional(),
   seed: seedSchema.optional(),
 });
@@ -119,6 +123,7 @@ export function splitSessionRecord(record: ConversationSessionRecord): SplitSess
     messages,
     activeRunId: _activeRunId,
     eventRevision: _eventRevision,
+    lastSeq: _lastSeq,
     ...snapshot
   } = record.snapshot;
   return {

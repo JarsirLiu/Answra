@@ -32,6 +32,7 @@ describe("conversation projection", () => {
   it("keeps snapshot messages and appends streamed text to the active assistant", () => {
     const view = applyConversationSnapshot(EMPTY_CONVERSATION_VIEW, {
       conversationId: CONVERSATION,
+      lastSeq: 0,
       eventRevision: 1,
       activeRunId: "run-1",
       messages: [
@@ -122,6 +123,7 @@ describe("conversation projection", () => {
   it("shows the accepted run indicator until an explicit stream event arrives", () => {
     const accepted = applyConversationSnapshot(EMPTY_CONVERSATION_VIEW, {
       conversationId: CONVERSATION,
+      lastSeq: 0,
       eventRevision: 0,
       activeRunId: "run-1",
       messages: [{ id: "run-1", role: "assistant", text: "", images: [], status: "streaming" }],
@@ -137,6 +139,7 @@ describe("conversation projection", () => {
   it("restores assistant text, reasoning, and tool activity from transcript parts", () => {
     const restored = applyConversationSnapshot(EMPTY_CONVERSATION_VIEW, {
       conversationId: CONVERSATION,
+      lastSeq: 0,
       eventRevision: 8,
       messages: [
         {
@@ -181,6 +184,7 @@ describe("conversation projection", () => {
   it("synthesizes ordered parts for legacy messages without persisted parts", () => {
     const restored = applyConversationSnapshot(EMPTY_CONVERSATION_VIEW, {
       conversationId: CONVERSATION,
+      lastSeq: 0,
       eventRevision: 1,
       messages: [
         {
@@ -291,6 +295,7 @@ describe("conversation projection", () => {
     };
     const snapshot = applyConversationSnapshot(withProvider, {
       conversationId: CONVERSATION,
+      lastSeq: 0,
       eventRevision: 3,
       messages: [],
       contextUsage: {
@@ -328,6 +333,7 @@ describe("conversation projection", () => {
     };
     const snapshot = applyConversationSnapshot(withEstimate, {
       conversationId: CONVERSATION,
+      lastSeq: 0,
       eventRevision: 3,
       messages: [],
       contextUsage: {
@@ -365,6 +371,7 @@ describe("conversation projection", () => {
     };
     const snapshot = applyConversationSnapshot(withProvider, {
       conversationId: CONVERSATION,
+      lastSeq: 0,
       eventRevision: 3,
       messages: [],
       contextUsage: {
@@ -402,6 +409,7 @@ describe("conversation projection", () => {
     };
     const snapshot = applyConversationSnapshot(withProvider, {
       conversationId: CONVERSATION,
+      lastSeq: 0,
       eventRevision: 4,
       messages: [],
       contextUsage: {
@@ -425,6 +433,7 @@ describe("conversation projection", () => {
   it("initializes contextUsage from snapshot when view has none", () => {
     const snapshot = applyConversationSnapshot(EMPTY_CONVERSATION_VIEW, {
       conversationId: CONVERSATION,
+      lastSeq: 0,
       eventRevision: 1,
       messages: [],
       contextUsage: {
@@ -517,6 +526,7 @@ describe("conversation projection", () => {
     };
     const next = applyConversationSnapshot(view, {
       conversationId: CONVERSATION,
+      lastSeq: 0,
       eventRevision: 3,
       messages: [],
     });
@@ -526,6 +536,7 @@ describe("conversation projection", () => {
   it("carries context compaction state from the snapshot", () => {
     const view = applyConversationSnapshot(EMPTY_CONVERSATION_VIEW, {
       conversationId: CONVERSATION,
+      lastSeq: 0,
       eventRevision: 3,
       messages: [],
       contextCompaction: {
@@ -547,6 +558,7 @@ describe("conversation projection", () => {
   it("carries context usage and pruning state from the snapshot", () => {
     const view = applyConversationSnapshot(EMPTY_CONVERSATION_VIEW, {
       conversationId: CONVERSATION,
+      lastSeq: 0,
       eventRevision: 3,
       messages: [],
       contextUsage: {
@@ -574,6 +586,7 @@ describe("conversation projection", () => {
   it("updates context usage from the usage event without a snapshot", () => {
     const view = applyConversationSnapshot(EMPTY_CONVERSATION_VIEW, {
       conversationId: CONVERSATION,
+      lastSeq: 0,
       eventRevision: 3,
       activeRunId: "run-1",
       messages: [{ id: "run-1", role: "assistant", text: "", images: [], status: "streaming" }],

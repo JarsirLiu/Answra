@@ -67,6 +67,13 @@ export const conversationSnapshotSchema = z.strictObject({
   conversationId: z.string(),
   /** Conversation event revision before the most recent run; UI replays that run from the event store. */
   eventRevision: z.number().int().nonnegative(),
+  /**
+   * 已投影进该 snapshot 的最后一条 durable 事实 `seq`；客户端从这里继续读帧。
+   *
+   * 与 `eventRevision` 不是同一个计数：它只数 journal 事实，不含 live 增量；
+   * 属于运行期游标，不持久化，恢复时由 journal 末尾重新 seed。
+   */
+  lastSeq: z.number().int().nonnegative(),
   messages: z.array(conversationMessageSchema),
   activeRunId: z.string().optional(),
   /** Bot that currently owns the conversation; absent for single-Agent conversations. */

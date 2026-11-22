@@ -147,6 +147,7 @@ describe("floating bar conversation", () => {
         snapshot: {
           conversationId: ActiveChatConversationId,
           eventRevision: 0,
+          lastSeq: 0,
           activeRunId: "run-delayed",
           messages: [
             {
@@ -196,6 +197,7 @@ describe("floating bar conversation", () => {
         snapshot: {
           conversationId: ActiveChatConversationId,
           eventRevision: 0,
+          lastSeq: 0,
           activeRunId: "run-accepted",
           messages: [
             {

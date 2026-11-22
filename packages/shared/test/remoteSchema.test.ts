@@ -77,7 +77,12 @@ describe("remote frame schema", () => {
 
     const snapshot = {
       type: "snapshot",
-      snapshot: { conversationId: "conversation-1", eventRevision: 0, messages: [] },
+      snapshot: {
+        conversationId: "conversation-1",
+        eventRevision: 0,
+        lastSeq: 0,
+        messages: [],
+      },
     };
     expect(remoteFrameSchema.parse(snapshot)).toEqual(snapshot);
 
@@ -141,7 +146,12 @@ describe("remote frame schema", () => {
       status: "started",
       position: 0,
       runId: "run-1",
-      snapshot: { conversationId: "conversation-1", eventRevision: 0, messages: [] },
+      snapshot: {
+        conversationId: "conversation-1",
+        eventRevision: 0,
+        lastSeq: 0,
+        messages: [],
+      },
     } as const;
     expect(remoteSendResultSchema.parse(started)).toEqual(started);
     expect(

@@ -10,7 +10,7 @@ const model: ConversationModelConfig = {
 };
 
 function snapshot(conversationId: string, revision = 0): ConversationSnapshot {
-  return { conversationId, eventRevision: revision, messages: [] };
+  return { conversationId, eventRevision: revision, lastSeq: 0, messages: [] };
 }
 
 function createSession(conversationId: string) {

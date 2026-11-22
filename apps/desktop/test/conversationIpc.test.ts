@@ -57,7 +57,12 @@ const service = {
   createAnswerConversation: vi.fn().mockResolvedValue(undefined),
   compactConversation: vi.fn().mockResolvedValue({
     result: { status: "compacted" },
-    snapshot: { conversationId: ActiveChatConversationId, eventRevision: 1, messages: [] },
+    snapshot: {
+      conversationId: ActiveChatConversationId,
+      eventRevision: 1,
+      lastSeq: 0,
+      messages: [],
+    },
   }),
   onEvent: shared.onEvent,
   onSnapshot: shared.onSnapshot,

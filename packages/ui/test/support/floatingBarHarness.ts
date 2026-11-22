@@ -141,6 +141,7 @@ export function createConversationBridge() {
             const snapshot = saveSnapshot({
               conversationId: command.conversationId,
               eventRevision: 1,
+              lastSeq: 1,
               messages: [userMessage, assistantMessage],
               activeRunId: "run-1",
             });
@@ -174,6 +175,7 @@ export function createConversationBridge() {
       const snapshot = saveSnapshot({
         conversationId: ActiveInterviewIntakeConversationId,
         eventRevision: 0,
+        lastSeq: 0,
         messages: [
           {
             id: "intake-opening",
@@ -318,7 +320,7 @@ export function createConversationBridge() {
 }
 
 function emptySnapshot(id = conversationId): ConversationSnapshot {
-  return { conversationId: id, eventRevision: 0, messages: [] };
+  return { conversationId: id, eventRevision: 0, lastSeq: 0, messages: [] };
 }
 
 export function clickAnswerScreenshot() {

@@ -22,6 +22,7 @@ describe("TUI compaction", () => {
     store.initialize({
       conversationId: "conversation-1",
       eventRevision: 1,
+      lastSeq: 0,
       messages: [message],
       contextCompaction: {
         state: "started",
@@ -60,6 +61,7 @@ describe("TUI compaction", () => {
     store.applySnapshot({
       conversationId: "conversation-1",
       eventRevision: 2,
+      lastSeq: 0,
       messages: [message],
       contextCompaction: {
         state: "succeeded",
@@ -85,6 +87,7 @@ describe("TUI compaction", () => {
     store.initialize({
       conversationId: "conversation-1",
       eventRevision: 1,
+      lastSeq: 0,
       messages: [
         {
           id: "message-1",
@@ -153,6 +156,7 @@ describe("TUI compaction", () => {
     store.initialize({
       conversationId: "conversation-1",
       eventRevision: 1,
+      lastSeq: 0,
       messages: [
         {
           id: "message-1",
@@ -221,6 +225,7 @@ describe("TUI compaction", () => {
     store.initialize({
       conversationId: "conversation-1",
       eventRevision: 1,
+      lastSeq: 0,
       messages: [
         {
           id: "message-1",
@@ -277,6 +282,7 @@ describe("TUI compaction", () => {
     store.initialize({
       conversationId: "conversation-1",
       eventRevision: 1,
+      lastSeq: 0,
       messages: [
         {
           id: "message-1",

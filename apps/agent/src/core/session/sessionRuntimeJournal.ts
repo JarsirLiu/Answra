@@ -1,16 +1,23 @@
 /**
- * 把 journal append 串成唯一的写入顺序：先落 journal 事实，再投影 UI 事件，
- * 最后写 transcript 并带上同一 revision 游标。transcript 失败不回滚已追加的事实。
+ * 把 journal append 串成唯一的写入顺序：先落 journal 事实，再广播同一事实的
+ * `SessionFrame`，然后投影旧 wire 事件，最后写 transcript。transcript 失败不回滚已追加的事实。
+ *
+ * 新增消费者只订阅 frame；旧 projector 只服务尚未迁移的 wire。
  */
 import type { AgentDurableEvent, SessionEventEnvelope } from "@answra/shared/schema";
+import { toSessionFrame } from "@answra/shared/schema";
 import type { SessionId } from "./contracts";
 import { sessionId } from "./contracts";
 import type { SessionJournal, SessionJournalAppend } from "./journal";
 import type { SessionEventProjector } from "./sessionEventProjector";
+import type { SessionFrameBus } from "./sessionFrameBus";
 import type { SessionTranscriptBridge } from "./transcriptBridge";
 
 export interface SessionRuntimeJournalOptions {
   journal: SessionJournal;
+  /** durable 事实帧的进程内广播口；不保存历史，也不分配游标。 */
+  frames: SessionFrameBus;
+  /** 旧 wire 的兼容投影；P2 删除后只剩 journal → frames → transcript。 */
   projector: SessionEventProjector;
   bridge: SessionTranscriptBridge;
   /** Turn/Step/压缩边界后的快照推送；不参与事实写入。 */
@@ -29,6 +36,7 @@ export interface SessionRuntimeJournalOptions {
 
 export class SessionRuntimeJournal implements SessionJournal {
   private readonly journal: SessionJournal;
+  private readonly frames: SessionFrameBus;
   private readonly projector: SessionEventProjector;
   private readonly bridge: SessionTranscriptBridge;
   private readonly onBoundary: SessionRuntimeJournalOptions["onBoundary"];
@@ -37,6 +45,7 @@ export class SessionRuntimeJournal implements SessionJournal {
 
   constructor(options: SessionRuntimeJournalOptions) {
     this.journal = options.journal;
+    this.frames = options.frames;
     this.projector = options.projector;
     this.bridge = options.bridge;
     this.onBoundary = options.onBoundary;
@@ -53,6 +62,7 @@ export class SessionRuntimeJournal implements SessionJournal {
       await this.authorizeHandoff(sessionId, event);
     }
     const envelope = await this.journal.append(sessionId, event, metadata);
+    this.frames.publish(toSessionFrame(envelope));
     await this.projector.apply(envelope);
     await this.bridge.apply(envelope, await this.projector.revision(sessionId));
     if (this.onDurableEvent !== undefined) await this.onDurableEvent(sessionId, event);
@@ -62,6 +72,14 @@ export class SessionRuntimeJournal implements SessionJournal {
 
   readAfter(sessionId: SessionId, sequence: number): Promise<SessionEventEnvelope[]> {
     return this.journal.readAfter(sessionId, sequence);
+  }
+
+  lastSequence(sessionId: SessionId): Promise<number> {
+    return this.journal.lastSequence(sessionId);
+  }
+
+  clear(sessionId: SessionId): Promise<void> {
+    return this.journal.clear(sessionId);
   }
 
   /**

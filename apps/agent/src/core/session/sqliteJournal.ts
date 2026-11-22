@@ -32,8 +32,23 @@ const READ_AFTER_SQL = `
   ORDER BY seq ASC
 `;
 
+const LAST_SEQUENCE_SQL = `
+  SELECT COALESCE(MAX(seq), 0) AS last_sequence
+  FROM session_events
+  WHERE conversation_id = ?
+`;
+
+const CLEAR_SQL = `
+  DELETE FROM session_events
+  WHERE conversation_id = ?
+`;
+
 interface SequenceRow {
   next_sequence: number;
+}
+
+interface LastSequenceRow {
+  last_sequence: number;
 }
 
 interface StoredEventRow {
@@ -87,6 +102,20 @@ export class SqliteSessionJournal implements SessionJournal {
       .prepare(READ_AFTER_SQL)
       .all(sessionId, sequence) as unknown as StoredEventRow[];
     return rows.map((row) => parseEnvelope(sessionId, row));
+  }
+
+  async lastSequence(sessionId: SessionId): Promise<number> {
+    this.assertOpen();
+    const row = this.db.prepare(LAST_SEQUENCE_SQL).get(sessionId) as LastSequenceRow | undefined;
+    if (row === undefined) throw new Error(`无法读取 Session event sequence：${sessionId}`);
+    return row.last_sequence;
+  }
+
+  async clear(sessionId: SessionId): Promise<void> {
+    this.assertOpen();
+    withImmediateTransaction(this.db, () => {
+      this.db.prepare(CLEAR_SQL).run(sessionId);
+    });
   }
 
   close(): void {

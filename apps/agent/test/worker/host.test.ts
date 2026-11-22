@@ -701,7 +701,7 @@ describe("agent worker host", () => {
     expect(snapshot).toMatchObject({
       id: "2",
       ok: true,
-      value: { conversationId: "c1", eventRevision: 0, messages: [] },
+      value: { conversationId: "c1", eventRevision: 0, lastSeq: 0, messages: [] },
     });
 
     harness.dispatch({

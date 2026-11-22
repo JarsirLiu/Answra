@@ -34,6 +34,14 @@ export class MemorySessionJournal implements SessionJournal {
       .filter((event) => event.sequence > sequence)
       .map(cloneEnvelope);
   }
+
+  async lastSequence(sessionId: SessionId): Promise<number> {
+    return this.events.get(sessionId)?.at(-1)?.sequence ?? 0;
+  }
+
+  async clear(sessionId: SessionId): Promise<void> {
+    this.events.delete(sessionId);
+  }
 }
 
 function cloneEnvelope(envelope: SessionEventEnvelope): SessionEventEnvelope {

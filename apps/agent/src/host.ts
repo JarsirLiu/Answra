@@ -10,6 +10,7 @@ import { createBotCatalog } from "./core/bot/catalog";
 import { createInstructionLoader } from "./core/instruction";
 import type { SessionJournal } from "./core/session/journal";
 import { MemorySessionJournal } from "./core/session/memoryJournal";
+import { SessionFrameBus } from "./core/session/sessionFrameBus";
 import { createLazySkillCatalog } from "./core/skill/catalog";
 import type { SkillRoots } from "./core/skill/contracts";
 import { createBuiltinToolRegistry } from "./core/tool";
@@ -147,6 +148,8 @@ export function startAgentHost({
   });
   const skillsReady = skillRoots ? createLazySkillCatalog(skillRoots) : undefined;
   const skills = skillsReady?.catalog;
+  // 一个 agent 进程只有一个帧广播口：领域只发布，宿主决定谁订阅。
+  const sessionFrames = new SessionFrameBus();
   const instructions = createInstructionLoader({
     globalFile: globalInstructionFile,
     onWarning: (message) => console.warn("[conversation][instruction]", message),
@@ -181,6 +184,7 @@ export function startAgentHost({
     store,
     catalog: conversationCatalog,
     sessionJournal,
+    sessionFrames,
     onSnapshot: async (snapshot) => emitConversationSnapshot(snapshot),
     onTeamError: (error) => {
       console.warn("[conversation][team] failed", {
@@ -202,6 +206,7 @@ export function startAgentHost({
     authorAgentId: INTERVIEW_REHEARSAL_AGENT_ID,
     requestAccessToken: () => requestAccessToken({ forceRefresh: false }),
     sessionJournal,
+    sessionFrames,
     onSnapshot: async (snapshot) => emitConversationSnapshot(snapshot),
     onTurnCommitted: (turn) => emitInterviewEvent({ type: "turn-committed", turn }),
     onError: (stage, error) => {
@@ -218,6 +223,7 @@ export function startAgentHost({
     authorAgentId: INTERVIEW_INTAKE_AGENT_ID,
     requestAccessToken: () => requestAccessToken({ forceRefresh: false }),
     sessionJournal,
+    sessionFrames,
     onSnapshot: async (snapshot) => emitConversationSnapshot(snapshot),
     onTurnCommitted: () => undefined,
     onError: (stage, error) => {

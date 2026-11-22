@@ -45,6 +45,25 @@ describe("MemorySessionJournal", () => {
     await expect(journal.readAfter(TEST_SESSION_ID, -1)).rejects.toThrow("非负整数");
   });
 
+  it("reports the last sequence and restarts numbering after clear", async () => {
+    const journal = new MemorySessionJournal();
+    expect(await journal.lastSequence(TEST_SESSION_ID)).toBe(0);
+
+    await journal.append(TEST_SESSION_ID, { type: "turn-started", agentId: "general" });
+    await journal.append(TEST_SESSION_ID, { type: "turn-started", agentId: "general" });
+    expect(await journal.lastSequence(TEST_SESSION_ID)).toBe(2);
+
+    await journal.clear(TEST_SESSION_ID);
+
+    expect(await journal.lastSequence(TEST_SESSION_ID)).toBe(0);
+    expect(await journal.readAfter(TEST_SESSION_ID, 0)).toEqual([]);
+    const next = await journal.append(TEST_SESSION_ID, {
+      type: "turn-started",
+      agentId: "general",
+    });
+    expect(next.sequence).toBe(1);
+  });
+
   it("keeps session logs isolated", async () => {
     const journal = new MemorySessionJournal();
     await journal.append(TEST_SESSION_ID, { type: "turn-started", agentId: "general" });

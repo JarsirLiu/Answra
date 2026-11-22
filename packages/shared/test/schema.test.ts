@@ -5,6 +5,7 @@ import {
   agentEventEnvelopeSchema,
   agentEventSchema,
   agentExecutionEventSchema,
+  agentLiveOnlyEventSchema,
   agentRunSnapshotSchema,
   agentStreamEventSchema,
   contextCompactionStateSchema,
@@ -107,9 +108,16 @@ describe("event schema", () => {
     expect(agentStreamEventSchema.options).toHaveLength(28);
   });
 
-  it("includes every execution event in the complete and durable catalogs", () => {
+  it("keeps derived run lifecycle out of the durable and live catalogs", () => {
+    const derived = { type: "run-state-changed", state: "running", attempt: 1 } as const;
+    expect(agentExecutionEventSchema.parse(derived)).toEqual(derived);
+    expect(agentEventSchema.parse(derived)).toEqual(derived);
+    expect(agentDurableEventSchema.safeParse(derived).success).toBe(false);
+    expect(agentLiveOnlyEventSchema.safeParse(derived).success).toBe(false);
+  });
+
+  it("includes every session fact in the complete and durable catalogs", () => {
     const events = [
-      { type: "run-state-changed", state: "running", attempt: 1 },
       {
         type: "turn-queued",
         source: "user",
@@ -153,7 +161,8 @@ describe("event schema", () => {
 
     expect(agentExecutionEventSchema.options).toHaveLength(13);
     expect(agentEventSchema.options).toHaveLength(41);
-    expect(agentDurableEventSchema.options).toHaveLength(37);
+    expect(agentDurableEventSchema.options).toHaveLength(36);
+    expect(agentLiveOnlyEventSchema.options).toHaveLength(4);
   });
 
   it("rejects provider-only fields that are not part of the app contract", () => {
@@ -329,6 +338,7 @@ describe("conversation message audience", () => {
     const snapshot = {
       conversationId: "conv-1",
       eventRevision: 3,
+      lastSeq: 0,
       messages: [],
       activeAgentId: "intake",
       participantAgentIds: ["candidate", "intake"],
@@ -343,6 +353,7 @@ describe("conversation message audience", () => {
     const snapshot = {
       conversationId: "conv-1",
       eventRevision: 4,
+      lastSeq: 0,
       messages: [],
       contextCompaction: {
         state: "started",
@@ -361,6 +372,7 @@ describe("conversation message audience", () => {
     const snapshot = {
       conversationId: "conv-1",
       eventRevision: 5,
+      lastSeq: 0,
       messages: [],
       contextCompactionBoundaries: [
         {

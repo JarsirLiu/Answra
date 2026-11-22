@@ -54,6 +54,7 @@ describe("useConversationView recovery", () => {
     const snapshot: ConversationSnapshot = {
       conversationId: "conversation-1",
       eventRevision: 0,
+      lastSeq: 0,
       activeRunId: "run-1",
       messages: [{ id: "run-1", role: "assistant", text: "", images: [], status: "streaming" }],
     };
@@ -85,6 +86,7 @@ describe("useConversationView recovery", () => {
         async (): Promise<ConversationSnapshot> => ({
           conversationId: "conversation-1",
           eventRevision: 0,
+          lastSeq: 0,
           activeRunId: "run-1",
           messages: [
             { id: "run-1", role: "assistant", text: "A", images: [], status: "streaming" },
@@ -118,6 +120,7 @@ describe("useConversationView recovery", () => {
       applySnapshot?.({
         conversationId: "conversation-1",
         eventRevision: 1,
+        lastSeq: 0,
         activeRunId: "run-1",
         messages: [{ id: "run-1", role: "assistant", text: "A", images: [], status: "streaming" }],
       });
@@ -146,13 +149,19 @@ describe("useConversationView recovery", () => {
       publishSnapshot?.({
         conversationId: "conversation-1",
         eventRevision: 0,
+        lastSeq: 0,
         messages: [
           { id: "user-1", role: "user", text: "已结算语音", images: [], status: "complete" },
         ],
       }),
     );
     await act(async () => {
-      initialSnapshot.resolve({ conversationId: "conversation-1", eventRevision: 0, messages: [] });
+      initialSnapshot.resolve({
+        conversationId: "conversation-1",
+        eventRevision: 0,
+        lastSeq: 0,
+        messages: [],
+      });
     });
 
     expect(screen.getByRole("status")).toHaveTextContent("已结算语音");
@@ -167,6 +176,7 @@ describe("useConversationView recovery", () => {
       getConversationSnapshot: vi.fn(async () => ({
         conversationId: "conversation-1",
         eventRevision: 0,
+        lastSeq: 0,
         messages: [],
       })),
       readConversationEvents: vi.fn(async (_id: string, afterRevision: number) =>
@@ -197,6 +207,7 @@ describe("useConversationView recovery", () => {
       publishSnapshot?.({
         conversationId: "conversation-1",
         eventRevision: 0,
+        lastSeq: 0,
         activeRunId: "run-1",
         messages: [{ id: "run-1", role: "assistant", text: "", images: [], status: "streaming" }],
       }),
@@ -211,6 +222,7 @@ describe("useConversationView recovery", () => {
       getConversationSnapshot: vi.fn(async () => ({
         conversationId: "conversation-1",
         eventRevision: 0,
+        lastSeq: 0,
         messages: [],
       })),
       readConversationEvents: vi.fn(async () => []),
@@ -229,6 +241,7 @@ describe("useConversationView recovery", () => {
       getConversationSnapshot: vi.fn(async () => ({
         conversationId: "conversation-1",
         eventRevision: 0,
+        lastSeq: 0,
         messages: [],
       })),
       readConversationEvents: vi.fn(async () => []),

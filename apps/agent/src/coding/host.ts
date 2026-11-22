@@ -5,6 +5,7 @@ import { createCodingBot } from "../bots/coding/bot";
 import { AgentRuntime } from "../core/agent/runtime";
 import { createInstructionLoader } from "../core/instruction";
 import type { SessionJournal } from "../core/session/journal";
+import { SessionFrameBus } from "../core/session/sessionFrameBus";
 import { createLazySkillCatalog } from "../core/skill/catalog";
 import type { SkillRoots } from "../core/skill/contracts";
 import { createBuiltinToolRegistry } from "../core/tool";
@@ -85,6 +86,7 @@ export function startCodingHost({
     store,
     bot,
     ...(sessionJournal ? { sessionJournal } : {}),
+    sessionFrames: new SessionFrameBus(),
     onSnapshot,
   });
   runtime.setWorkspaceRoot(workspaceRoot);

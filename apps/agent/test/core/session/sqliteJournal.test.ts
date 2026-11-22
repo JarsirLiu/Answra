@@ -149,6 +149,34 @@ describe("SqliteSessionJournal", () => {
     expect(projection.steps[0]?.status).toBe("failed");
   });
 
+  it("reports the last sequence across a reopen and restarts numbering after clear", async () => {
+    const root = await createRoot();
+    const journal = journalFor(root);
+    expect(await journal.lastSequence(TEST_SESSION_ID)).toBe(0);
+
+    await appendQueuedTurn(journal);
+    await journal.append(
+      TEST_SESSION_ID,
+      { type: "turn-started", agentId: "general" },
+      { turnId: TEST_TURN_ID },
+    );
+    expect(await journal.lastSequence(TEST_SESSION_ID)).toBe(2);
+    journal.close();
+
+    const reopened = journalFor(root);
+    expect(await reopened.lastSequence(TEST_SESSION_ID)).toBe(2);
+
+    await reopened.clear(TEST_SESSION_ID);
+
+    expect(await reopened.lastSequence(TEST_SESSION_ID)).toBe(0);
+    const next = await reopened.append(
+      TEST_SESSION_ID,
+      { type: "turn-started", agentId: "general" },
+      { turnId: TEST_TURN_ID },
+    );
+    expect(next.sequence).toBe(1);
+  });
+
   it("keeps session logs isolated", async () => {
     const root = await createRoot();
     const journal = journalFor(root);

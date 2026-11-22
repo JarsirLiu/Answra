@@ -1,7 +1,9 @@
-/** 唯一写入顺序：journal → UI 投影 → transcript → durable 观察点 → 边界快照。 */
+/** 唯一写入顺序：journal → frame 广播 → 旧 UI 投影 → transcript → durable 观察点 → 边界快照。 */
+import type { SessionFrame } from "@answra/shared/schema";
 import { describe, expect, it, vi } from "vitest";
 import { MemorySessionJournal } from "../../../src/core/session/memoryJournal";
 import { SessionEventProjector } from "../../../src/core/session/sessionEventProjector";
+import { SessionFrameBus } from "../../../src/core/session/sessionFrameBus";
 import { SessionRuntimeJournal } from "../../../src/core/session/sessionRuntimeJournal";
 import { SessionTranscriptBridge } from "../../../src/core/session/transcriptBridge";
 import { MemoryConversationStore } from "../../../src/core/transcript/memoryStore";
@@ -32,14 +34,19 @@ async function setup() {
 describe("SessionRuntimeJournal", () => {
   it("observes a durable event only after it is projected and written to transcript", async () => {
     const { store, base, projector, bridge } = await setup();
-    const observed: Array<{ event: string; messages: number }> = [];
+    const observed: Array<{ event: string; messages: number; lastSeq: number }> = [];
     const journal = new SessionRuntimeJournal({
       journal: base,
+      frames: new SessionFrameBus(),
       projector,
       bridge,
       onDurableEvent: async (sessionId, event) => {
         const snapshot = await store.load(sessionId);
-        observed.push({ event: event.type, messages: snapshot.messages.length });
+        observed.push({
+          event: event.type,
+          messages: snapshot.messages.length,
+          lastSeq: snapshot.lastSeq,
+        });
       },
     });
 
@@ -48,7 +55,8 @@ describe("SessionRuntimeJournal", () => {
       { type: "turn-queued", source: "user", agentId: "general", input: userMessage() },
       { turnId: TEST_TURN_ID },
     );
-    expect(observed[0]).toEqual({ event: "turn-queued", messages: 0 });
+    // 观察点必须看到已推进的 durable 游标，否则恢复会从旧位置重放这条事实。
+    expect(observed[0]).toEqual({ event: "turn-queued", messages: 0, lastSeq: 1 });
 
     await journal.append(
       TEST_SESSION_ID,
@@ -57,7 +65,38 @@ describe("SessionRuntimeJournal", () => {
     );
 
     // 观察点看到的是已落库并已写回 transcript 的状态：user + assistant 占位。
-    expect(observed[1]).toEqual({ event: "turn-started", messages: 2 });
+    expect(observed[1]).toEqual({ event: "turn-started", messages: 2, lastSeq: 2 });
+  });
+
+  it("broadcasts every durable fact as a SessionFrame with the journal cursor", async () => {
+    const { base, projector, bridge } = await setup();
+    const frames = new SessionFrameBus();
+    const received: SessionFrame[] = [];
+    frames.subscribe({ onFrame: (frame) => received.push(frame) });
+    const journal = new SessionRuntimeJournal({ journal: base, frames, projector, bridge });
+
+    await journal.append(
+      TEST_SESSION_ID,
+      { type: "turn-queued", source: "user", agentId: "general", input: userMessage() },
+      { turnId: TEST_TURN_ID },
+    );
+    await journal.append(
+      TEST_SESSION_ID,
+      { type: "turn-started", agentId: "general" },
+      { turnId: TEST_TURN_ID, messageId: "assistant-1" },
+    );
+
+    expect(
+      received.map((frame) => ({ seq: frame.seq, type: frame.event.type, turnId: frame.turnId })),
+    ).toEqual([
+      { seq: 1, type: "turn-queued", turnId: TEST_TURN_ID },
+      { seq: 2, type: "turn-started", turnId: TEST_TURN_ID },
+    ]);
+    expect(received[1]?.messageId).toBe("assistant-1");
+    // frame 只是事实的传输形态：不改写 journal 游标，也不产生额外事实。
+    const rows = await base.readAfter(TEST_SESSION_ID, 0);
+    expect(rows.map((row) => row.sequence)).toEqual([1, 2]);
+    expect(await journal.lastSequence(TEST_SESSION_ID)).toBe(2);
   });
 
   it("runs the boundary hook after the durable observer", async () => {
@@ -65,6 +104,7 @@ describe("SessionRuntimeJournal", () => {
     const order: string[] = [];
     const journal = new SessionRuntimeJournal({
       journal: base,
+      frames: new SessionFrameBus(),
       projector,
       bridge,
       onDurableEvent: (_id, event) => {
@@ -94,6 +134,7 @@ describe("SessionRuntimeJournal", () => {
     const order: string[] = [];
     const journal = new SessionRuntimeJournal({
       journal: base,
+      frames: new SessionFrameBus(),
       projector,
       bridge,
       onBoundary: () => {
@@ -122,6 +163,7 @@ describe("SessionRuntimeJournal", () => {
     const authorize = vi.fn(async () => undefined);
     const journal = new SessionRuntimeJournal({
       journal: base,
+      frames: new SessionFrameBus(),
       projector,
       bridge,
       authorizeHandoff: authorize,

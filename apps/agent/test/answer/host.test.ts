@@ -34,13 +34,13 @@ describe("answer worker host", () => {
     expect(harness.responses()[1]).toMatchObject({
       id: "clear",
       ok: true,
-      value: { conversationId: "answer-1", eventRevision: 0, messages: [] },
+      value: { conversationId: "answer-1", eventRevision: 0, lastSeq: 0, messages: [] },
     });
     expect(harness.snapshots()).toEqual([
       {
         version: 1,
         type: "conversation-snapshot",
-        snapshot: { conversationId: "answer-1", eventRevision: 0, messages: [] },
+        snapshot: { conversationId: "answer-1", eventRevision: 0, lastSeq: 0, messages: [] },
       },
     ]);
     host.dispose();

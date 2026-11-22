@@ -7,6 +7,7 @@ import { DEFAULT_NOTIFICATION_TIMEOUT_MS } from "../../../src/tui/notices/notifi
 const snapshot: ConversationSnapshot = {
   conversationId: "conversation-1",
   eventRevision: 3,
+  lastSeq: 0,
   activeRunId: "run-1",
   messages: [
     {
@@ -122,6 +123,7 @@ describe("TuiViewStore", () => {
     const target: ConversationSnapshot = {
       conversationId: "conversation-2",
       eventRevision: 2,
+      lastSeq: 0,
       messages: [{ id: "run-2", role: "assistant", text: "two", images: [], status: "complete" }],
     };
     store.switchConversation(target);
@@ -155,6 +157,7 @@ describe("TuiViewStore", () => {
     const base: ConversationSnapshot = {
       conversationId: "conversation-1",
       eventRevision: 3,
+      lastSeq: 0,
       messages: [message],
       contextCompaction: {
         state: "started",
@@ -195,7 +198,7 @@ describe("TuiViewStore", () => {
       },
     ]);
 
-    store.reset({ conversationId: "conversation-1", eventRevision: 6, messages: [] });
+    store.reset({ conversationId: "conversation-1", eventRevision: 6, lastSeq: 0, messages: [] });
     expect(store.getSnapshot().compactionBoundaries).toEqual([]);
     store.dispose();
   });
@@ -205,6 +208,7 @@ describe("TuiViewStore", () => {
     store.initialize({
       conversationId: "conversation-1",
       eventRevision: 2,
+      lastSeq: 0,
       messages: [
         {
           id: "message-1",
@@ -269,7 +273,7 @@ describe("TuiViewStore", () => {
       notifications: { current: { text: "会话已清除。" } },
     });
 
-    store.reset({ conversationId: "conversation-1", eventRevision: 9, messages: [] });
+    store.reset({ conversationId: "conversation-1", eventRevision: 9, lastSeq: 0, messages: [] });
     expect(store.getSnapshot()).toMatchObject({
       queued: 0,
       queuedPrompts: [],

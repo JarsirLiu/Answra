@@ -28,6 +28,8 @@ function plan(interrupted: boolean): SessionRecoveryPlan {
   };
 }
 
+const LAST_SEQ = 11;
+
 function createCoordinator({
   revision = 7,
   interrupted = true,
@@ -58,6 +60,13 @@ function createCoordinator({
       calls.push("revision");
       return revision;
     }),
+    journalLastSeq: vi.fn(async () => {
+      calls.push("journalLastSeq");
+      return LAST_SEQ;
+    }),
+    seedLastSeq: vi.fn(async () => {
+      calls.push("seedLastSeq");
+    }),
     suspendUi: vi.fn((_id: SessionId, suspended: boolean) => {
       calls.push(suspended ? "suspend" : "resume");
     }),
@@ -83,12 +92,15 @@ describe("SessionRecoveryCoordinator", () => {
       "suspend",
       "recoverFacts",
       "resume",
+      "journalLastSeq",
+      "seedLastSeq",
       "revision",
       "restoreTranscript",
       "resumeQueued",
       "onRecovered",
     ]);
     expect(ports.seedRevision).toHaveBeenCalledWith(SESSION, 7);
+    expect(ports.seedLastSeq).toHaveBeenCalledWith(SESSION, LAST_SEQ);
     expect(ports.restoreTranscript).toHaveBeenCalledWith(SESSION, plan(true), 7);
     expect(ports.resumeQueued).toHaveBeenCalledWith(SESSION, RUNTIME);
   });

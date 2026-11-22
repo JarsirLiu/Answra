@@ -40,6 +40,7 @@ import { MemorySessionJournal } from "../core/session/memoryJournal";
 import { SessionRecoveryCoordinator } from "../core/session/recoveryCoordinator";
 import { sessionErrorText } from "../core/session/sessionErrorText";
 import { SessionEventProjector } from "../core/session/sessionEventProjector";
+import { SessionFrameBus, toLiveFrame } from "../core/session/sessionFrameBus";
 import { SessionRuntime } from "../core/session/sessionRuntime";
 import { SessionRuntimeJournal } from "../core/session/sessionRuntimeJournal";
 import { SessionStepExecutor } from "../core/session/stepExecutor";
@@ -77,6 +78,8 @@ export interface ConversationApplicationOptions {
   sessionJournal?: SessionJournal;
   /** UI 事件 store；缺省复用 AgentRuntime 的事件存储。 */
   executionStore?: ExecutionStore;
+  /** durable/live 帧广播口；宿主传入同一实例即可跨领域共享。 */
+  sessionFrames?: SessionFrameBus;
   /** 测试注入的 StepRunner；生产由 ProviderStepRunner 提供。 */
   stepRunner?: StepRunner;
   /** 每段 run 启动与交接写入后的权威 snapshot 推送。 */
@@ -93,6 +96,7 @@ export class ConversationApplication {
   private readonly defaultBotId: AgentId;
   private readonly contextCompactor: ContextCompactor;
   private readonly contextPreparation: ContextPreparation;
+  private readonly sessionFrames: SessionFrameBus;
   private readonly projector: SessionEventProjector;
   private readonly bridge: SessionTranscriptBridge;
   private readonly sessionRuntime: SessionRuntime;
@@ -112,6 +116,7 @@ export class ConversationApplication {
     presets = [],
     sessionJournal,
     executionStore,
+    sessionFrames,
     stepRunner,
     onSnapshot,
     onTeamError,
@@ -120,6 +125,7 @@ export class ConversationApplication {
     this.store = store;
     this.onSnapshot = onSnapshot;
     this.onTeamError = onTeamError;
+    this.sessionFrames = sessionFrames ?? new SessionFrameBus();
     this.contextCompactor = new ContextCompactor({
       store,
       generate: ({ prompt, accessToken, signal }) =>
@@ -147,6 +153,7 @@ export class ConversationApplication {
 
     const journal = new SessionRuntimeJournal({
       journal: sessionJournal ?? new MemorySessionJournal(),
+      frames: this.sessionFrames,
       projector: this.projector,
       bridge: this.bridge,
       onDurableEvent: (id, event) => this.contextPreparation.recordRunEvent(id, event),
@@ -201,6 +208,8 @@ export class ConversationApplication {
       eventRevision: async (id) => (await this.store.load(id)).eventRevision,
       seedRevision: (id, revision) => this.projector.seed(id, revision),
       revision: (id) => this.projector.revision(id),
+      journalLastSeq: (id) => this.runtimeJournal.lastSequence(id),
+      seedLastSeq: (id, sequence) => this.store.advanceLastSeq(id, sequence),
       suspendUi: (id, suspended) => this.projector.suspend(id, suspended),
       restoreTranscript: (id, plan, revision) => this.bridge.recover(id, plan, revision),
       onRecovered: async (id, plan) => {
@@ -291,7 +300,10 @@ export class ConversationApplication {
     await this.agentRuntime.resetExecution(conversationId);
     this.tokens.delete(conversationId);
     this.recovery.forget(session);
-    await this.store.clear(conversationId, await this.projector.revision(conversationId));
+    await this.store.clear(conversationId, {
+      eventRevision: await this.projector.revision(conversationId),
+    });
+    await this.runtimeJournal.clear(session);
     return this.loadRecoverySnapshot(conversationId);
   }
 
@@ -491,6 +503,8 @@ export class ConversationApplication {
   }
 
   private async onStepStream(step: StepStart, event: AgentStreamEvent): Promise<void> {
+    const live = toLiveFrame(step, event);
+    if (live !== undefined) this.sessionFrames.publishLive(live);
     await this.projector.applyLive(step, event);
     await this.bridge.applyLive(step.sessionId, step.messageId, event);
   }

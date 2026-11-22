@@ -80,7 +80,7 @@ export class AnswerApplication {
 
   async clearConversation(conversationId: string): Promise<ConversationSnapshot> {
     const eventRevision = await this.agentRuntime.getConversationRevision(conversationId);
-    await this.store.clear(conversationId, eventRevision);
+    await this.store.clear(conversationId, { eventRevision });
     return this.getSnapshot(conversationId);
   }
 
@@ -122,7 +122,7 @@ export class AnswerApplication {
     if (envelope.event.type !== "run-state-changed") return;
     if (!isTerminalOutcome(envelope.event.state)) return;
     if (envelope.event.state !== "failed")
-      await this.store.clear(conversationId, envelope.aggregateRevision);
+      await this.store.clear(conversationId, { eventRevision: envelope.aggregateRevision });
   }
 }
 

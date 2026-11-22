@@ -71,6 +71,7 @@ describe("TUI rendering", () => {
     store.initialize({
       conversationId: "conversation-1",
       eventRevision: 1,
+      lastSeq: 0,
       messages: [
         { id: "user-1", role: "user", text: "question", images: [], status: "complete" },
         { id: "run-1", role: "assistant", text: "", images: [], status: "streaming" },
@@ -125,7 +126,12 @@ describe("TUI rendering", () => {
 
   it("mounts the app shell with welcome, prompt, and status line", async () => {
     const store = new TuiViewStore();
-    store.initialize({ conversationId: "conversation-1", eventRevision: 0, messages: [] });
+    store.initialize({
+      conversationId: "conversation-1",
+      eventRevision: 0,
+      lastSeq: 0,
+      messages: [],
+    });
     const instance = render(
       <App
         botName="coding.engineer"
@@ -147,7 +153,12 @@ describe("TUI rendering", () => {
 
   it("shows the API key setup hint and masks the input", async () => {
     const store = new TuiViewStore();
-    store.initialize({ conversationId: "conversation-1", eventRevision: 0, messages: [] });
+    store.initialize({
+      conversationId: "conversation-1",
+      eventRevision: 0,
+      lastSeq: 0,
+      messages: [],
+    });
     store.setModelConfigured(false);
     store.setSetupStep("api-key");
     const instance = render(
@@ -173,7 +184,12 @@ describe("TUI rendering", () => {
 
   it("closes the command palette without cancelling the active run on Escape", async () => {
     const store = new TuiViewStore();
-    store.initialize({ conversationId: "conversation-1", eventRevision: 0, messages: [] });
+    store.initialize({
+      conversationId: "conversation-1",
+      eventRevision: 0,
+      lastSeq: 0,
+      messages: [],
+    });
     store.beginRun();
     const onCancel = vi.fn();
     const instance = render(

@@ -94,6 +94,24 @@ describe("SQLite conversation store", () => {
     ]);
   });
 
+  it("keeps the durable cursor in memory only and restores it from zero", async () => {
+    const root = await createRoot();
+    const store = storeFor(root);
+    await store.create("coding-cursor", undefined, { scope: "coding" });
+    await store.appendUserMessage("coding-cursor", {
+      id: "user-1",
+      role: "user",
+      text: "继续",
+      images: [],
+      status: "complete",
+    });
+    await store.advanceLastSeq("coding-cursor", 12);
+    expect((await store.load("coding-cursor")).lastSeq).toBe(12);
+
+    const reloaded = storeFor(root);
+    expect((await reloaded.load("coding-cursor")).lastSeq).toBe(0);
+  });
+
   it("round-trips the pruning watermark with the context state", async () => {
     const root = await createRoot();
     const store = storeFor(root);

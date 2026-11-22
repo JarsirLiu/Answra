@@ -13,6 +13,7 @@ export function createFakeConversationSnapshot(
   return {
     conversationId: "conversation-1",
     eventRevision: 0,
+    lastSeq: 0,
     messages: [],
     ...overrides,
   };

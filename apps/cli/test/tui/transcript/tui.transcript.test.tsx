@@ -16,6 +16,7 @@ describe("TUI transcript interaction", () => {
     store.initialize({
       conversationId: "conversation-1",
       eventRevision: 0,
+      lastSeq: 0,
       messages: [
         {
           id: "assistant-1",
@@ -49,6 +50,7 @@ describe("TUI transcript interaction", () => {
     store.initialize({
       conversationId: "conversation-image",
       eventRevision: 0,
+      lastSeq: 0,
       messages: [
         {
           id: "user-1",
@@ -84,6 +86,7 @@ describe("TUI transcript interaction", () => {
     store.initialize({
       conversationId: "conversation-1",
       eventRevision: 0,
+      lastSeq: 0,
       messages: Array.from({ length: 40 }, (_, index) => ({
         id: `assistant-${index}`,
         role: "assistant" as const,
@@ -124,6 +127,7 @@ describe("TUI transcript interaction", () => {
     store.initialize({
       conversationId: "conversation-1",
       eventRevision: 0,
+      lastSeq: 0,
       messages: Array.from({ length: 20 }, (_, index) => ({
         id: `assistant-${index}`,
         role: "assistant" as const,
@@ -193,7 +197,7 @@ describe("TUI transcript interaction", () => {
         },
       ],
     }));
-    store.initialize({ conversationId: "conversation-1", eventRevision: 0, messages });
+    store.initialize({ conversationId: "conversation-1", eventRevision: 0, lastSeq: 0, messages });
     const instance = render(
       <App
         botName="coding.engineer"
@@ -228,6 +232,7 @@ describe("TUI transcript interaction", () => {
       store.applySnapshot({
         conversationId: "conversation-1",
         eventRevision: revision,
+        lastSeq: 0,
         messages,
       });
       await new Promise((resolve) => setTimeout(resolve, 100));
@@ -242,7 +247,12 @@ describe("TUI transcript interaction", () => {
 
   it("copies the active selection with Ctrl+Shift+C and clears it with Escape", async () => {
     const store = new TuiViewStore();
-    store.initialize({ conversationId: "conversation-1", eventRevision: 0, messages: [] });
+    store.initialize({
+      conversationId: "conversation-1",
+      eventRevision: 0,
+      lastSeq: 0,
+      messages: [],
+    });
     const selectionStore = new TuiSelectionStore();
     selectionStore.registerLine({ row: 0, left: 0, text: "hello" });
     selectionStore.commitFrame();
@@ -284,7 +294,12 @@ describe("TUI transcript interaction", () => {
 
   it("selects all visible transcript lines with Ctrl+Shift+A", async () => {
     const store = new TuiViewStore();
-    store.initialize({ conversationId: "conversation-1", eventRevision: 0, messages: [] });
+    store.initialize({
+      conversationId: "conversation-1",
+      eventRevision: 0,
+      lastSeq: 0,
+      messages: [],
+    });
     const onSelectAll = vi.fn();
     const instance = render(
       <App
@@ -312,6 +327,7 @@ describe("TUI transcript interaction", () => {
     store.initialize({
       conversationId: "conversation-1",
       eventRevision: 0,
+      lastSeq: 0,
       messages: Array.from({ length: 40 }, (_, index) => ({
         id: `assistant-${index}`,
         role: "assistant" as const,
@@ -363,6 +379,7 @@ describe("TUI transcript interaction", () => {
     store.initialize({
       conversationId: "conversation-1",
       eventRevision: 0,
+      lastSeq: 0,
       messages: Array.from({ length: 40 }, (_, index) => ({
         id: `assistant-${index}`,
         role: "assistant" as const,

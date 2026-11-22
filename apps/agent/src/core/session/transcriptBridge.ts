@@ -32,6 +32,12 @@ export class SessionTranscriptBridge {
   }
 
   async apply(envelope: SessionEventEnvelope, eventRevision = 0): Promise<void> {
+    await this.project(envelope, eventRevision);
+    // 只有投影成功才推进游标：失败时客户端必须能从旧游标重读这条事实。
+    await this.store.advanceLastSeq(envelope.sessionId, envelope.sequence);
+  }
+
+  private async project(envelope: SessionEventEnvelope, eventRevision: number): Promise<void> {
     switch (envelope.event.type) {
       case "turn-queued":
         this.state(envelope).input = envelope.event.input;
@@ -191,6 +197,14 @@ export class TranscriptSessionJournal implements SessionJournal {
 
   readAfter(sessionId: SessionId, sequence: number): Promise<SessionEventEnvelope[]> {
     return this.journal.readAfter(sessionId, sequence);
+  }
+
+  lastSequence(sessionId: SessionId): Promise<number> {
+    return this.journal.lastSequence(sessionId);
+  }
+
+  clear(sessionId: SessionId): Promise<void> {
+    return this.journal.clear(sessionId);
   }
 }
 

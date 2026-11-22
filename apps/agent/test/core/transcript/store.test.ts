@@ -393,11 +393,38 @@ describe("memory conversation transcript store", () => {
         attempt: 1,
       }),
     );
-    await store.clear("session-revision", 1);
+    await store.clear("session-revision", { eventRevision: 1 });
     await expect(store.load("session-revision")).resolves.toMatchObject({
       eventRevision: 4,
       messages: [],
     });
+  });
+
+  it("advances the durable cursor monotonically and treats duplicate frames as no-ops", async () => {
+    const store = new MemoryConversationStore();
+    await store.create("session-cursor");
+    expect((await store.load("session-cursor")).lastSeq).toBe(0);
+
+    await store.advanceLastSeq("session-cursor", 3);
+    await store.advanceLastSeq("session-cursor", 2);
+    expect((await store.load("session-cursor")).lastSeq).toBe(3);
+
+    await store.advanceLastSeq("session-cursor", 4);
+    expect((await store.load("session-cursor")).lastSeq).toBe(4);
+  });
+
+  it("resets the durable cursor when the conversation is cleared", async () => {
+    const store = new MemoryConversationStore();
+    await store.create("session-cursor-reset");
+    await store.advanceLastSeq("session-cursor-reset", 7);
+    await store.clear("session-cursor-reset");
+    expect((await store.load("session-cursor-reset")).lastSeq).toBe(0);
+  });
+
+  it("rejects a durable cursor that is not a non-negative integer", async () => {
+    const store = new MemoryConversationStore();
+    await store.create("session-cursor-invalid");
+    await expect(store.advanceLastSeq("session-cursor-invalid", -1)).rejects.toThrow("非负整数");
   });
 
   it("rejects an event envelope addressed to another conversation", async () => {
@@ -628,7 +655,7 @@ describe("memory conversation team metadata and handoff", () => {
       }),
     );
     await store.setActiveAgent("team", "intake");
-    await store.clear("team", 6);
+    await store.clear("team", { eventRevision: 6 });
 
     const snapshot = await store.load("team");
     expect(snapshot.messages).toEqual([]);

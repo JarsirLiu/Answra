@@ -33,6 +33,7 @@ function legacyStore(messages: ConversationMessage[]): ConversationStore {
   const snapshot: ConversationSnapshot = {
     conversationId: "legacy",
     eventRevision: 0,
+    lastSeq: 0,
     messages,
   };
   return {

@@ -15,6 +15,7 @@ import { compactionBoundaries } from "./contextBoundary";
 import { cloneContextCheckpoint } from "./contextCheckpoint";
 import type { ContextState } from "./contextState";
 import type {
+  ConversationClearCursor,
   ConversationSessionMetadata,
   ConversationSessionSeed,
   ConversationStore,
@@ -52,6 +53,7 @@ export class MemoryConversationStore implements ConversationStore {
       snapshot: {
         conversationId,
         eventRevision: 0,
+        lastSeq: 0,
         messages: [],
         ...(seed ? seedSnapshot(seed) : {}),
       },
@@ -73,17 +75,28 @@ export class MemoryConversationStore implements ConversationStore {
     return snapshotOf(this.requireSession(conversationId));
   }
 
-  async clear(conversationId: string, eventRevision = 0): Promise<void> {
+  async clear(conversationId: string, cursor: ConversationClearCursor = {}): Promise<void> {
     const session = this.sessions.get(conversationId);
     if (!session || session.snapshot.activeRunId) return;
     session.contextState = undefined;
     session.snapshot = {
       conversationId,
-      eventRevision: Math.max(session.snapshot.eventRevision, eventRevision),
+      eventRevision: Math.max(session.snapshot.eventRevision, cursor.eventRevision ?? 0),
+      // 清空会同时清空 journal，seq 从 1 重新开始；游标必须归零，否则新事实会被旧游标吞掉。
+      lastSeq: 0,
       messages: [],
       ...(session.seed ? seedSnapshot(session.seed) : {}),
     };
     await this.afterMutation(conversationId, { kind: "cleared" });
+  }
+
+  async advanceLastSeq(conversationId: string, sequence: number): Promise<void> {
+    if (!Number.isInteger(sequence) || sequence < 0) {
+      throw new Error("会话 durable 游标必须是非负整数");
+    }
+    const session = this.requireSession(conversationId);
+    if (sequence <= session.snapshot.lastSeq) return;
+    session.snapshot = { ...session.snapshot, lastSeq: sequence };
   }
 
   async beginRun(
@@ -472,6 +485,7 @@ export class MemoryConversationStore implements ConversationStore {
     session.snapshot = {
       conversationId,
       eventRevision: Math.max(session.snapshot.eventRevision, eventRevision),
+      lastSeq: session.snapshot.lastSeq,
       messages: [
         ...(preserveHistory ? session.snapshot.messages.map(cloneMessage) : []),
         normalizeUserMessage(userMessage),

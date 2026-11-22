@@ -50,11 +50,13 @@ function createDependencies(
     createConversation: vi.fn(async () => ({
       conversationId: "conversation-1",
       eventRevision: 0,
+      lastSeq: 0,
       messages: [],
     })),
     clearConversation: vi.fn(async () => ({
       conversationId: "conversation-1",
       eventRevision: 0,
+      lastSeq: 0,
       messages: [],
     })),
     send: vi.fn(async () => ({ runId: "run-1" })),
@@ -66,6 +68,7 @@ function createDependencies(
       snapshot: {
         conversationId: "conversation-1",
         eventRevision: 0,
+        lastSeq: 0,
         messages: [],
       },
     })),
@@ -75,6 +78,7 @@ function createDependencies(
       snapshot: {
         conversationId: "conversation-1",
         eventRevision: 0,
+        lastSeq: 0,
         messages: [],
       },
     })),

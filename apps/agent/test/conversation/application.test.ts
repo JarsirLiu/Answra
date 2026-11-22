@@ -674,9 +674,13 @@ describe("ephemeral conversation runtime", () => {
         await tick();
         return inner.scopeOf(conversationId);
       },
-      clear: async (conversationId) => {
+      clear: async (conversationId, cursor) => {
         await tick();
-        await inner.clear(conversationId);
+        await inner.clear(conversationId, cursor);
+      },
+      advanceLastSeq: async (conversationId, sequence) => {
+        await tick();
+        await inner.advanceLastSeq(conversationId, sequence);
       },
       load: async (conversationId) => {
         await tick();

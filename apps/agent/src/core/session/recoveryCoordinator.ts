@@ -1,5 +1,6 @@
 /**
- * 启动恢复的唯一顺序：先对齐 UI revision，再收口未完成事实，最后写回 transcript。
+ * 启动恢复的唯一顺序：先对齐 UI revision，再收口未完成事实，然后 seed durable 游标，
+ * 最后写回 transcript。
  *
  * 恢复是跨领域需求（Conversation / Interview / Coding），顺序一旦分叉就会出现
  * 不同的 revision 语义；因此这里只编排注入端口，不持有领域状态。
@@ -16,6 +17,10 @@ export interface SessionRecoveryPorts {
   eventRevision(sessionId: SessionId): Promise<number>;
   seedRevision(sessionId: SessionId, revision: number): Promise<void>;
   revision(sessionId: SessionId): Promise<number>;
+  /** journal 已落库的最大 durable seq；恢复后用它 seed 快照游标。 */
+  journalLastSeq(sessionId: SessionId): Promise<number>;
+  /** 把 transcript 快照游标推进到该 seq；晚于它的事实由客户端按帧重放。 */
+  seedLastSeq(sessionId: SessionId, sequence: number): Promise<void>;
   /** 恢复写回属于旧进程事实，期间必须暂停该 session 的 UI 投影。 */
   suspendUi(sessionId: SessionId, suspended: boolean): void;
   restoreTranscript(
@@ -64,6 +69,8 @@ export class SessionRecoveryCoordinator {
     } finally {
       this.ports.suspendUi(sessionId, false);
     }
+    // 恢复事实已经写回 transcript；把游标 seed 到 journal 末尾，重启后不重放整本 journal。
+    await this.ports.seedLastSeq(sessionId, await this.ports.journalLastSeq(sessionId));
     await this.ports.restoreTranscript(sessionId, plan, await this.ports.revision(sessionId));
     // 必须晚于 transcript 写回：queued Turn 一启动就会读 transcript 建 user/assistant 消息。
     await this.ports.resumeQueued(sessionId, runtime);

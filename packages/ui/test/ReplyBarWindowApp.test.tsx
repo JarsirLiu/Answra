@@ -21,6 +21,7 @@ let clipboardOverridden = false;
 const snapshot: ConversationSnapshot = {
   conversationId,
   eventRevision: 1,
+  lastSeq: 0,
   activeRunId: runId,
   messages: [
     {
@@ -242,6 +243,7 @@ describe("ReplyBarWindowApp live conversation popover", () => {
     bridge.getConversationSnapshot.mockResolvedValue({
       conversationId,
       eventRevision: 0,
+      lastSeq: 0,
       activeRunId: runId,
       messages: [
         { id: "user-1", role: "user", text: "请回答", images: [], status: "complete" },

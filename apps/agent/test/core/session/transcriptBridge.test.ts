@@ -122,6 +122,8 @@ describe("SessionTranscriptBridge", () => {
     ]);
     expect(snapshot.activeRunId).toBeUndefined();
     expect(await journal.readAfter(TEST_SESSION_ID, 0)).toHaveLength(6);
+    // 每条 durable 事实投影成功后，快照游标与 journal 末尾保持一致。
+    expect(snapshot.lastSeq).toBe(await journal.lastSequence(TEST_SESSION_ID));
   });
 
   it("keeps each handoff Bot's assistant message and transfers the active agent", async () => {
@@ -264,7 +266,7 @@ describe("SessionTranscriptBridge", () => {
   });
 
   it("rejects a step whose assistant message has no placeholder", async () => {
-    const { journal } = await setup();
+    const { store, journal } = await setup();
     await expect(
       journal.append(
         TEST_SESSION_ID,
@@ -277,5 +279,8 @@ describe("SessionTranscriptBridge", () => {
         { turnId: TEST_TURN_ID, stepId: TEST_STEP_ID, messageId: "assistant-1" },
       ),
     ).rejects.toThrow("缺少 assistant 占位");
+    // 投影失败时游标不推进：事实已落 journal，客户端仍能从旧游标重读它。
+    expect((await store.load(TEST_SESSION_ID)).lastSeq).toBe(0);
+    expect(await journal.readAfter(TEST_SESSION_ID, 0)).toHaveLength(1);
   });
 });

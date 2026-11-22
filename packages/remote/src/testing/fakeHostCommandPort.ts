@@ -96,6 +96,7 @@ export function createFakeHostCommandPort(
       currentSnapshot = {
         conversationId,
         eventRevision: currentSnapshot.eventRevision,
+        lastSeq: 0,
         messages: [],
       };
       return currentSnapshot;

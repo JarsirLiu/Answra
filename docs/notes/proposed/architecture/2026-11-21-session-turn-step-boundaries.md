@@ -645,6 +645,7 @@ interface WorkerTurnInput {
 - 用户 Turn 的 `turnId` 复用用户消息 id；无用户消息的 opening/reply/worker Turn 由运行时生成确定性的 `turnId`。
 - 旧事件不迁移。当前 execution store 是进程内内存实现，没有持久事件表；历史事件本来不跨重启。
 - 持久 `state_json` 本来就不保存 `activeRunId`；迁移不重写它。旧活动 run 在进程重启时已失效，新 runtime 不继承。
+- 落地方式（统一 `SessionFrame`、拆分 durable/live 通道、四层命名与禁词、P1-P4 阶段）见[统一 SessionFrame 线协议与四层命名](./2026-11-22-session-frame-contract-and-naming.md)。
 
 #### 17.2 v2 表结构
 
