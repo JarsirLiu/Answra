@@ -218,6 +218,23 @@ describe("session projection", () => {
     });
   });
 
+  it("projects a cancelled compaction as aborted instead of failed", () => {
+    const projection = projectSession(TEST_SESSION_ID, [
+      sessionEvent(
+        1,
+        { type: "compaction-started", trigger: "manual", reason: "manual" },
+        { operationId: "operation-1" },
+      ),
+      sessionEvent(2, { type: "compaction-aborted" }, { operationId: "operation-1" }),
+    ]);
+
+    expect(projection.compactions[0]).toMatchObject({
+      operationId: "operation-1",
+      state: "aborted",
+      finishedAt: "2026-11-21T00:00:00.000Z",
+    });
+  });
+
   it("terminates a queued turn as aborted and removes it from the queue", () => {
     const projection = projectSession(TEST_SESSION_ID, [
       sessionEvent(

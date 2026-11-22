@@ -20,8 +20,10 @@ export interface ManualCompactionOptions {
 /** 会话用例所需的最小宿主端口；由 adapters 映射到 @answra/agent/composition。 */
 export interface CodingSessionHost {
   configure(model: ConversationModelConfig): void;
-  createConversation(conversationId: string): Promise<ConversationSnapshot>;
-  getSnapshot?(conversationId: string): Promise<ConversationSnapshot>;
+  /** 打开/新建会话；带令牌时可在同一次调用内恢复并继续消费 queued Turn。 */
+  createConversation(conversationId: string, accessToken?: string): Promise<ConversationSnapshot>;
+  /** 读取快照并完成启动恢复；没有令牌时恢复中的排队消息无法继续。 */
+  getSnapshot?(conversationId: string, accessToken?: string): Promise<ConversationSnapshot>;
   listSessions?(query: {
     workspaceRoot?: string;
     cursor?: string;
@@ -32,7 +34,7 @@ export interface CodingSessionHost {
     workspaceRoot?: string,
   ): Promise<ConversationSessionSummary | undefined>;
   deleteSession?(conversationId: string): Promise<void>;
-  clearConversation(conversationId: string): Promise<ConversationSnapshot>;
+  clearConversation(conversationId: string, accessToken?: string): Promise<ConversationSnapshot>;
   compactConversation?(
     conversationId: string,
     accessToken: string,
@@ -109,7 +111,7 @@ export class CodingSession {
     if (this.closed) throw new Error("会话已关闭。");
     if (this.snapshot !== undefined) return this.snapshot;
     this.host.configure(this.model);
-    const snapshot = await this.host.createConversation(this.conversationId);
+    const snapshot = await this.host.createConversation(this.conversationId, this.accessToken);
     this.snapshot = snapshot;
     this.opened = true;
     return snapshot;
@@ -118,7 +120,7 @@ export class CodingSession {
   async startNewConversation(): Promise<ConversationSnapshot> {
     this.requireIdle("新建会话");
     const conversationId = this.createConversationId();
-    const snapshot = await this.host.createConversation(conversationId);
+    const snapshot = await this.host.createConversation(conversationId, this.accessToken);
     this.conversationId = conversationId;
     this.snapshot = snapshot;
     this.opened = true;
@@ -130,7 +132,7 @@ export class CodingSession {
     if (this.closed) throw new Error("会话已关闭。");
     if (!this.opened) return this.open();
     if (this.host.getSnapshot === undefined) throw new Error("当前宿主不支持读取会话快照。");
-    const snapshot = await this.host.getSnapshot(this.conversationId);
+    const snapshot = await this.host.getSnapshot(this.conversationId, this.accessToken);
     this.snapshot = snapshot;
     return snapshot;
   }
@@ -138,7 +140,7 @@ export class CodingSession {
   async resume(conversationId: string): Promise<ConversationSnapshot> {
     this.requireIdle("恢复会话");
     if (this.host.getSnapshot === undefined) throw new Error("当前宿主不支持恢复会话。");
-    const snapshot = await this.host.getSnapshot(conversationId);
+    const snapshot = await this.host.getSnapshot(conversationId, this.accessToken);
     this.conversationId = conversationId;
     this.snapshot = snapshot;
     this.opened = true;
@@ -179,7 +181,7 @@ export class CodingSession {
     if (this.closed) throw new Error("会话已关闭。");
     if (!this.opened) throw new Error("会话尚未打开。");
     if (this.activeRunId !== undefined || this.sending) throw new Error("上一轮尚未结束。");
-    const snapshot = await this.host.clearConversation(this.conversationId);
+    const snapshot = await this.host.clearConversation(this.conversationId, this.accessToken);
     this.snapshot = snapshot;
     return snapshot;
   }

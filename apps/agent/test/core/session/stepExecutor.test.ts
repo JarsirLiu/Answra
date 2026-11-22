@@ -42,6 +42,7 @@ function stepStart(): StepStart {
     stepId: TEST_STEP_ID,
     index: 0,
     agentId: "general",
+    source: "user",
     modelId: "model-a",
     messageId: "assistant-1",
   };
@@ -103,13 +104,15 @@ describe("SessionStepExecutor", () => {
     expect(receivedToken).toBe(TEST_ACCESS_TOKEN);
   });
 
-  it("writes model stream events through the step event sink in order", async () => {
+  it("writes only durable model events in order and drops live-only deltas", async () => {
     const journal = new MemorySessionJournal();
     const runner: StepRunner = {
       async run(_step, context): Promise<StepRunnerResult> {
         await Promise.all([
+          context.events.append({ type: "text-start", partId: "text-1" }),
           context.events.append({ type: "text-delta", partId: "text-1", delta: "a" }),
           context.events.append({ type: "text-delta", partId: "text-1", delta: "b" }),
+          context.events.append({ type: "text-end", partId: "text-1" }),
         ]);
         return { outcome: "completed", finishReason: "stop" };
       },
@@ -121,8 +124,8 @@ describe("SessionStepExecutor", () => {
     const events = await journal.readAfter(TEST_SESSION_ID, 0);
     expect(events.map((event) => event.event.type)).toEqual([
       "step-started",
-      "text-delta",
-      "text-delta",
+      "text-start",
+      "text-end",
       "step-finished",
     ]);
     expect(events.slice(1, 3)).toMatchObject([
@@ -130,15 +133,67 @@ describe("SessionStepExecutor", () => {
         turnId: TEST_TURN_ID,
         stepId: TEST_STEP_ID,
         messageId: "assistant-1",
-        event: { type: "text-delta", delta: "a" },
+        event: { type: "text-start", partId: "text-1" },
       },
       {
         turnId: TEST_TURN_ID,
         stepId: TEST_STEP_ID,
         messageId: "assistant-1",
-        event: { type: "text-delta", delta: "b" },
+        event: { type: "text-end", partId: "text-1" },
       },
     ]);
+  });
+
+  it("forwards every model event to the live observer while journaling only durable events", async () => {
+    const journal = new MemorySessionJournal();
+    const observed: string[] = [];
+    const runner: StepRunner = {
+      async run(_step, context): Promise<StepRunnerResult> {
+        await context.events.append({ type: "text-start", partId: "text-1" });
+        await context.events.append({ type: "text-delta", partId: "text-1", delta: "a" });
+        await context.events.append({ type: "text-delta", partId: "text-1", delta: "b" });
+        await context.events.append({ type: "text-end", partId: "text-1" });
+        return { outcome: "completed", finishReason: "stop" };
+      },
+    };
+    const executor = new SessionStepExecutor({
+      journal,
+      runner,
+      onStreamEvent: (step, event) => {
+        expect(step.stepId).toBe(TEST_STEP_ID);
+        observed.push(event.type);
+      },
+    });
+
+    await executor.run(stepStart(), TEST_TURN_RUNTIME, new AbortController().signal);
+
+    expect(observed).toEqual(["text-start", "text-delta", "text-delta", "text-end"]);
+    const events = await journal.readAfter(TEST_SESSION_ID, 0);
+    expect(events.map((event) => event.event.type)).toEqual([
+      "step-started",
+      "text-start",
+      "text-end",
+      "step-finished",
+    ]);
+  });
+
+  it("does not fail the step when a live-only event has no journal counterpart", async () => {
+    const journal = new MemorySessionJournal();
+    const runner: StepRunner = {
+      async run(_step, context): Promise<StepRunnerResult> {
+        await context.events.append({ type: "reasoning-delta", partId: "r-1", delta: "x" });
+        return { outcome: "completed", finishReason: "stop" };
+      },
+    };
+    const executor = new SessionStepExecutor({
+      journal,
+      runner,
+      onStreamEvent: () => undefined,
+    });
+
+    await expect(
+      executor.run(stepStart(), TEST_TURN_RUNTIME, new AbortController().signal),
+    ).resolves.toMatchObject({ outcome: "completed" });
   });
 
   it("turns a step event sink failure into an observable failed step", async () => {
@@ -148,14 +203,14 @@ describe("SessionStepExecutor", () => {
         event: Parameters<MemorySessionJournal["append"]>[1],
         metadata?: Parameters<MemorySessionJournal["append"]>[2],
       ) {
-        if (event.type === "text-delta") throw new Error("journal write failed");
+        if (event.type === "text-end") throw new Error("journal write failed");
         return super.append(sessionId, event, metadata);
       }
     }
     const journal = new FailingStreamJournal();
     const runner: StepRunner = {
       async run(_step, context): Promise<StepRunnerResult> {
-        await context.events.append({ type: "text-delta", partId: "text-1", delta: "a" });
+        await context.events.append({ type: "text-end", partId: "text-1" });
         return { outcome: "completed", finishReason: "stop" };
       },
     };

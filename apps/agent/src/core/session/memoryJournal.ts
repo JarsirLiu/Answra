@@ -1,5 +1,5 @@
 /** 进程内 SessionJournal 实现；只服务阶段 1 测试与 answer-only 会话。 */
-import type { AgentEvent, SessionEventEnvelope } from "@answra/shared/schema";
+import type { AgentDurableEvent, SessionEventEnvelope } from "@answra/shared/schema";
 import type { SessionId } from "./contracts";
 import { createSessionEvent } from "./eventFactory";
 import type { SessionJournal, SessionJournalAppend } from "./journal";
@@ -9,7 +9,7 @@ export class MemorySessionJournal implements SessionJournal {
 
   async append(
     sessionId: SessionId,
-    event: AgentEvent,
+    event: AgentDurableEvent,
     metadata: SessionJournalAppend = {},
   ): Promise<SessionEventEnvelope> {
     const events = this.events.get(sessionId) ?? [];

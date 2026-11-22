@@ -72,6 +72,8 @@ function applyEvent(state: SessionProjection, envelope: SessionEventEnvelope): S
       return applyCompactionFinished(state, envelope);
     case "compaction-failed":
       return applyCompactionFailed(state, envelope);
+    case "compaction-aborted":
+      return applyCompactionAborted(state, envelope);
     default:
       return state;
   }
@@ -120,6 +122,7 @@ function applyTurnStarted(
       status: "running",
       agentId: event.agentId,
       activeAgentId: event.agentId,
+      assistantMessageIds: withAssistantMessageId(turn.assistantMessageIds, envelope.messageId),
       startedAt: envelope.occurredAt,
     },
     {
@@ -291,6 +294,19 @@ function applyCompactionFailed(
     ...existing,
     state: "failed",
     errorText: event.errorText,
+    finishedAt: envelope.occurredAt,
+  });
+}
+
+function applyCompactionAborted(
+  state: SessionProjection,
+  envelope: SessionEventEnvelope,
+): SessionProjection {
+  const operationId = requireOperationId(envelope);
+  const existing = requireCompaction(state, operationId);
+  return updateCompaction(state, operationId, {
+    ...existing,
+    state: "aborted",
     finishedAt: envelope.occurredAt,
   });
 }

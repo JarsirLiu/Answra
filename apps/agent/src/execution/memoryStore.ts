@@ -139,6 +139,20 @@ export class MemoryExecutionStore implements ExecutionStore {
     return this.conversationRevisions.get(conversationId) ?? 0;
   }
 
+  async seedConversationRevision(conversationId: string, revision: number): Promise<void> {
+    if (!Number.isInteger(revision) || revision < 0)
+      throw new Error("Event revision 必须是非负整数");
+    const current = this.conversationRevisions.get(conversationId) ?? 0;
+    this.conversationRevisions.set(conversationId, Math.max(current, revision));
+  }
+
+  async resetConversation(conversationId: string): Promise<void> {
+    for (const [runId, record] of this.runs) {
+      if (record.conversationId === conversationId) this.runs.delete(runId);
+    }
+    this.conversationRevisions.delete(conversationId);
+  }
+
   async readEvents(conversationId: string, afterRevision: number): Promise<AgentEventEnvelope[]> {
     return [...this.runs.values()]
       .filter((record) => record.conversationId === conversationId)

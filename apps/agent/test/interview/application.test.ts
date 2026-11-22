@@ -1,7 +1,14 @@
-import type { AgentEventEnvelope } from "@answra/shared/schema";
+import type { ConversationSnapshot } from "@answra/shared";
 import { describe, expect, it, vi } from "vitest";
-import type { AgentExecutor, AgentRunRequest } from "../../src/core/agent/definition";
+import type { AgentExecutor, AgentModelRequest } from "../../src/core/agent/definition";
+import type {
+  StepRunContext,
+  StepRunner,
+  StepRunnerResult,
+  StepStart,
+} from "../../src/core/session/contracts";
 import { MemoryConversationStore } from "../../src/core/transcript/memoryStore";
+import { MemoryExecutionStore } from "../../src/execution/memoryStore";
 import type { InterviewRehearsalInput } from "../../src/interview/agent";
 import { INTERVIEW_REHEARSAL_AGENT_ID } from "../../src/interview/agent";
 import { InterviewApplication } from "../../src/interview/application";
@@ -11,6 +18,8 @@ import {
   sessionId,
   turnId,
 } from "../../src/interview/contracts";
+
+const MODEL_REQUEST: AgentModelRequest = { system: "interview", messages: [] };
 
 function turn(): CommittedInterviewTurn {
   return {
@@ -24,34 +33,47 @@ function turn(): CommittedInterviewTurn {
   };
 }
 
-function createHarness() {
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve: () => void = () => undefined;
+  const promise = new Promise<void>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
+}
+
+function createHarness({ hold }: { hold?: boolean } = {}) {
   const store = new MemoryConversationStore();
-  const snapshots: unknown[] = [];
-  let preparedRequest: AgentRunRequest<InterviewRehearsalInput, unknown> | undefined;
-  let preparedInput: InterviewRehearsalInput | undefined;
+  const snapshots: ConversationSnapshot[] = [];
+  const prepared: InterviewRehearsalInput[] = [];
+  const steps: StepStart[] = [];
+  const gate = hold ? deferred() : undefined;
   const executor: AgentExecutor<InterviewRehearsalInput> = {
-    startRun: vi.fn(async (request) => {
-      preparedRequest = request;
-      const prepared = await request.prepareRun({ runId: "run-1", eventRevision: 0 });
-      preparedInput = prepared.input;
-      return {
-        runId: "run-1",
-        eventRevision: 0,
-        prepared: prepared.prepared,
-        result: Promise.resolve(undefined),
-        done: Promise.resolve("completed" as const),
-      };
+    startRun: vi.fn(async () => {
+      throw new Error("Interview 不应再使用 AgentRuntime.startRun");
     }),
-    prepare: vi.fn(async () => {
-      throw new Error("not used");
+    prepare: vi.fn(async (input) => {
+      prepared.push(input);
+      return MODEL_REQUEST;
     }),
+  };
+  const stepRunner: StepRunner = {
+    async run(step: StepStart, _context: StepRunContext): Promise<StepRunnerResult> {
+      steps.push(step);
+      if (gate) await gate.promise;
+      return { outcome: "completed", finishReason: "stop" };
+    },
   };
   const agentRuntime = {
     cancel: vi.fn(),
     waitForRun: vi.fn(async () => undefined),
     getRun: vi.fn(async () => undefined),
-    readEventsForRun: vi.fn(async () => [] as AgentEventEnvelope[]),
-    readEvents: vi.fn(async () => [] as AgentEventEnvelope[]),
+    readEventsForRun: vi.fn(async () => []),
+    readEvents: vi.fn(async () => []),
+    chatContextWindow: () => undefined,
+    chatEndpoint: () => ({ baseUrl: "http://localhost", model: "text.chat" }),
+    eventStore: () => new MemoryExecutionStore(),
+    generateText: vi.fn(async () => "summary"),
+    modelTokenProvider: () => async () => "token",
   } as unknown as ConstructorParameters<typeof InterviewApplication>[0]["agentRuntime"];
   const app = new InterviewApplication({
     agentRuntime,
@@ -59,6 +81,7 @@ function createHarness() {
     executor,
     authorAgentId: INTERVIEW_REHEARSAL_AGENT_ID,
     requestAccessToken: vi.fn(async () => "token"),
+    stepRunner,
     onSnapshot: async (snapshot) => {
       snapshots.push(snapshot);
     },
@@ -70,72 +93,75 @@ function createHarness() {
   return {
     app,
     snapshots,
-    executor,
-    getPrepared: () => preparedRequest,
-    getInput: () => preparedInput,
+    prepared,
+    steps,
+    release: () => gate?.resolve(),
   };
 }
 
 describe("InterviewApplication", () => {
-  it("writes the user turn, publishes its snapshot, and starts the interview Agent", async () => {
-    const { app, snapshots, getPrepared } = createHarness();
+  it("writes the user turn, publishes its snapshot, and replies through one Session Turn", async () => {
+    const { app, snapshots, steps } = createHarness();
 
     await app.createConversation("conversation-1");
     app.start();
     await app.turnSettled("conversation-1", [turn()], "请自我介绍");
 
-    expect(snapshots).toHaveLength(2);
-    expect((snapshots[0] as { messages: Array<{ role: string; text: string }> }).messages).toEqual([
+    expect(snapshots[0]?.messages).toEqual([
       expect.objectContaining({ role: "user", text: "请自我介绍" }),
     ]);
-    expect((snapshots[1] as { messages: Array<{ role: string }> }).messages.at(-1)?.role).toBe(
-      "assistant",
+    const activeRunId = (await app.getSnapshot("conversation-1")).activeRunId;
+    if (activeRunId === undefined) throw new Error("reply should own an assistant placeholder");
+    await app.waitForRun(activeRunId);
+    expect(steps).toHaveLength(1);
+    expect(steps[0]).toEqual(
+      expect.objectContaining({ sessionId: "conversation-1", source: "reply", index: 0 }),
     );
-    const preparedRequest = getPrepared();
-    expect(preparedRequest).toBeDefined();
-    if (!preparedRequest) throw new Error("missing prepared request");
-    expect(await preparedRequest.getAccessToken()).toBe("token");
+    const snapshot = await app.getSnapshot("conversation-1");
+    expect(snapshot.messages.map((message) => [message.role, message.status])).toEqual([
+      ["user", "complete"],
+      ["assistant", "complete"],
+    ]);
   });
 
-  it("sends rehearsal text through the same reply path with memory context", async () => {
-    const { app, snapshots, getInput } = createHarness();
+  it("sends rehearsal text through the same reply path and resolves by message id", async () => {
+    const { app, snapshots, steps } = createHarness();
 
     await app.createConversation("conversation-1");
     const result = await app.sendText("conversation-1", "帮我看一下简历");
+    await app.waitForRun(result.runId);
 
-    expect(result.runId).toBe("run-1");
-    expect(snapshots).toHaveLength(2);
-    expect((snapshots[0] as { messages: Array<{ role: string; text: string }> }).messages).toEqual([
+    expect(result.snapshot.messages[0]).toEqual(
       expect.objectContaining({ role: "user", text: "帮我看一下简历" }),
-    ]);
-    expect(getInput()).toEqual(
-      expect.objectContaining({
-        workspaceRoot: "C:/workspace",
-        interviewDataRoot: "C:/data/interview",
-      }),
     );
+    expect(snapshots.some((snapshot) => snapshot.activeRunId === result.runId)).toBe(true);
+    expect(steps[0]).toEqual(expect.objectContaining({ source: "reply" }));
   });
 
   it("opens with an assistant placeholder and no user message", async () => {
-    const { app, getInput, executor } = createHarness();
+    const { app, steps, release } = createHarness({ hold: true });
 
     const result = await app.open("conversation-1");
 
-    expect(result.runId).toBe("run-1");
+    expect(result.runId).toBeDefined();
     expect(result.snapshot.messages).toEqual([
-      expect.objectContaining({ id: "run-1", role: "assistant", status: "streaming" }),
+      expect.objectContaining({ role: "assistant", status: "streaming" }),
     ]);
-    expect(getInput()).toEqual(expect.objectContaining({ opening: true }));
-    expect(executor.startRun).toHaveBeenCalledOnce();
+    release();
+    await app.waitForRun(result.runId as string);
+    expect(steps[0]).toEqual(expect.objectContaining({ source: "opening", index: 0 }));
+    expect((await app.getSnapshot("conversation-1")).messages).toEqual([
+      expect.objectContaining({ role: "assistant", status: "complete" }),
+    ]);
   });
 
   it("does not start a second opening when the session already has messages", async () => {
-    const { app, executor } = createHarness();
+    const { app, steps } = createHarness();
 
     await app.open("conversation-1");
     const result = await app.open("conversation-1");
 
     expect(result.runId).toBeUndefined();
-    expect(executor.startRun).toHaveBeenCalledOnce();
+    expect(steps).toHaveLength(1);
   });
 });

@@ -670,6 +670,10 @@ describe("ephemeral conversation runtime", () => {
         await tick();
         return inner.create(conversationId, seed);
       },
+      scopeOf: async (conversationId) => {
+        await tick();
+        return inner.scopeOf(conversationId);
+      },
       clear: async (conversationId) => {
         await tick();
         await inner.clear(conversationId);
@@ -693,6 +697,22 @@ describe("ephemeral conversation runtime", () => {
       beginHandoffRun: async (conversationId, runId, targetAgentId, eventRevision) => {
         await tick();
         return inner.beginHandoffRun(conversationId, runId, targetAgentId, eventRevision);
+      },
+      beginSessionTurn: async (conversationId, input) => {
+        await tick();
+        await inner.beginSessionTurn(conversationId, input);
+      },
+      beginSessionAssistant: async (conversationId, messageId, authorAgentId, eventRevision) => {
+        await tick();
+        await inner.beginSessionAssistant(conversationId, messageId, authorAgentId, eventRevision);
+      },
+      applySessionStreamEvent: async (conversationId, messageId, event) => {
+        await tick();
+        await inner.applySessionStreamEvent(conversationId, messageId, event);
+      },
+      finishSessionAssistant: async (conversationId, messageId, outcome, eventRevision) => {
+        await tick();
+        await inner.finishSessionAssistant(conversationId, messageId, outcome, eventRevision);
       },
       appendHandoffMessage: async (conversationId, handoff) => {
         await tick();

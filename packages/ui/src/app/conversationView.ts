@@ -170,7 +170,8 @@ export function applyAgentEvent(
     event.type === "turn-handoff" ||
     event.type === "compaction-started" ||
     event.type === "compaction-finished" ||
-    event.type === "compaction-failed"
+    event.type === "compaction-failed" ||
+    event.type === "compaction-aborted"
   )
     return next;
   if (

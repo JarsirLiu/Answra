@@ -51,9 +51,8 @@
 | `src/client` | 平台无关连接客户端：worker host 端口、连接状态机、退避重试与状态快照 | 不依赖 Electron；不写 transcript 或 `AgentEventEnvelope`；desktop/CLI 只做 host 与传输适配 |
 | `src/worker` | 线协议 `AgentCommand` / `AgentFrame`，跨进程唯一契约 | 只放协议类型；命令/帧变更必须同步 desktop worker |
 | `src/core/run` | 跨领域进程内 run 取消与完成等待原语 | 不保存持久化 run 状态；不放产品策略 |
-| `src/core/queue` | 跨领域单会话 turn 串行队列、排队位置/完成等待与按会话 run 关联 | 不实现模型、transcript 或产品策略；coding 与 conversation 共用，不得留在任一领域目录 |
 | `src/core/agent` | 静态 Agent 注册、模型路由、AI SDK 执行、统一当前时间上下文与事件写入 | 不读写 transcript、不包含领域 prompt/工具授权；领域注入注册后的 executor |
-| `src/core/session` | Session/Turn/Step journal、投影、恢复写回、SessionRuntime 门面、FIFO 调度与 step/turn 执行编排（当前为内存与端口级） | 不写领域 prompt/工具或 transcript；Scheduler 只写 `turn-*`，StepExecutor 只写 `step-*`/usage，TurnExecutor 只写 `turn-handoff`；SessionRuntime 不复制 turn/queue 状态；真实 provider/context/compaction 尚未接入 |
+| `src/core/session` | Session/Turn/Step journal 与投影、恢复写回、SessionRuntime 门面、共享恢复协调器（`recoveryCoordinator`）、UI 兼容投影（`sessionEventProjector`）、journal 写入顺序（`sessionRuntimeJournal`）、FIFO 调度与 step/turn 执行编排 | 不写领域 prompt/工具或 transcript；Scheduler 只写 `turn-*`，StepExecutor 只写 `step-*`/usage，TurnExecutor 只写 `turn-handoff`，Compactor 经 `SessionRuntimeJournal.appendCompaction` 只写 `compaction-*`；SessionRuntime 不复制 turn/queue 状态；恢复只由会话所属领域触发，顺序固定为事实收口 → transcript 写回 → queued 续跑，跨领域恢复或提前续跑都会写坏 Turn |
 | `src/core/bot` | Bot 身份/发现契约、启动期不可变目录与会话参与者可见性校验 | 不持有 store、不创建 run、不 import 领域、不定义 prompt；独立助手与团队共用同一目录 |
 | `src/core/team` | 团队预置与交接任务校验 | 只描述预置成员；不持有 Bot 身份、执行器或 profile |
 | `src/core/transcript` | Conversation、Answer、Interview 共用的消息 transcript、活动 run 认领、恢复游标端口、内存与 SQLite（`node:sqlite`）适配器；SQLite 使用 `schema.ts` baseline、`_migrations` 账本与 append-only migration | 不保存 Agent 事件、不包含领域产品策略；SQLite 适配器按 scope 写入 `sessions.sqlite` 并迁移旧 JSON，`answer` 只走内存、不读盘不落盘；不得用全局 `SCHEMA_VERSION` 或删库处理版本升级 |
@@ -67,7 +66,7 @@
 | `src/conversation/agent.ts`、`src/answer/agent.ts` | 各领域静态 Agent 定义，组装 prompt、上下文和授权工具 | 不接收 renderer 提供的任意 prompt 或工具实现 |
 | `src/conversation/bots` | Conversation Bot 工厂：把身份、执行器与 profile 装配成目录项 | 新增 Bot 不改会话编排；不接收 renderer 注入 prompt、工具或发现关系 |
 | `src/answer/application.ts` | 截图答题用例、一次性 transcript 清理和事件回调 | 不实现模型调用、重试或第二套事件；答题会话只在内存，不持久化 |
-| `src/coding` | CLI coding 领域：独立 Bot、prompt/policy、transcript 上下文、单 Bot 会话用例与 host 装配 | 不 import `conversation`/`interview`；不启动 VAD/ASR；不做 team/handoff |
+| `src/coding` | CLI coding 领域：独立 Bot、prompt/policy、transcript 上下文、`StepStart` 绑定与单 Bot 会话用例；Turn/Step 状态与恢复由 `core/session` 持有 | 不 import `conversation`/`interview`；不启动 VAD/ASR；不做 team/handoff；排队按 Turn 原子启动，不在 tool step 间插入下一条消息 |
 | `src/conversation/profiles` | Conversation 内部提示词、上下文策略与工具授权清单 | 只声明授权 `ToolId[]`，不接收 renderer 提供的任意 prompt 或工具实现 |
 | `src/<domain>/tools` | 领域专属工具实现，实现 `core/tool` 契约 | 不执行桌面平台能力；不得由 desktop 反向 RPC 代执行 |
 | `src/interview` | 语音采集后的转录、turn 与自动回复领域，包括 worker DTO adapter | 与 Conversation 保持平级，不把面试状态塞进会话目录；领域逻辑不放入 `worker/` |

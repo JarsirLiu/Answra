@@ -34,6 +34,10 @@ export interface ExecutionStore {
   ): Promise<AgentEventEnvelope>;
   getRun(runId: string): Promise<AgentRunSnapshot | undefined>;
   getConversationRevision(conversationId: string): Promise<number>;
+  /** 用 transcript 的持久游标初始化事件 revision；只补齐计数器，不产生事件。 */
+  seedConversationRevision(conversationId: string, revision: number): Promise<void>;
+  /** 会话被清空时丢弃该会话的事件与 revision，让 UI 游标从零重新对齐。 */
+  resetConversation(conversationId: string): Promise<void>;
   readEvents(conversationId: string, afterRevision: number): Promise<AgentEventEnvelope[]>;
   readEventsForRun(runId: string): Promise<AgentEventEnvelope[]>;
   subscribe(listener: (event: AgentEventEnvelope) => void): () => void;

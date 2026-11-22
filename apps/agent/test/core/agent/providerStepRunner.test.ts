@@ -30,6 +30,7 @@ function stepStart(): StepStart {
     stepId: TEST_STEP_ID,
     index: 0,
     agentId: "general",
+    source: "user",
     messageId: "assistant-1",
     input: userMessage(),
   };
@@ -221,7 +222,6 @@ describe("ProviderStepRunner", () => {
       "step-started",
       "start",
       "text-start",
-      "text-delta",
       "text-end",
       "finish",
       "step-finished",

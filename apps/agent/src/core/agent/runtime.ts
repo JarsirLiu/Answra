@@ -70,6 +70,11 @@ export class AgentRuntime {
     };
   }
 
+  /** 当前 chat 端点；Session StepRunner 用它执行单次 provider 请求。 */
+  chatEndpoint(): NonNullable<AgentModelRoutes>["chat"] {
+    return this.requireRoutes().chat;
+  }
+
   /** 当前 chat 端点的非 secret 上下文窗口；未声明时由领域使用内部保守预算。 */
   chatContextWindow(): number | undefined {
     return this.routes?.chat.contextWindow;
@@ -118,8 +123,23 @@ export class AgentRuntime {
     return this.executionStore.readEvents(conversationId, afterRevision);
   }
 
+  /** 供跨领域 UI 投影共享同一个 revision 计数器；不暴露可变状态。 */
+  eventStore(): ExecutionStore {
+    return this.executionStore;
+  }
+
+  /** 暴露反向令牌刷新端口，供 Session StepRunner 的 provider 请求复用。 */
+  modelTokenProvider(): AgentRuntimeOptions["tokenProvider"] {
+    return this.tokenProvider;
+  }
+
   readEventsForRun(runId: string): Promise<AgentEventEnvelope[]> {
     return this.executionStore.readEventsForRun(runId);
+  }
+
+  /** 清空会话后同步重置事件游标；renderer 才会从 revision 0 重新消费。 */
+  resetExecution(conversationId: string): Promise<void> {
+    return this.executionStore.resetConversation(conversationId);
   }
 
   /** 宿主退出：先取消并等待所有 run 的最终消息落账，再释放事件订阅。 */

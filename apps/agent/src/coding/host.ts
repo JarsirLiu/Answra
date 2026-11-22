@@ -4,6 +4,7 @@ import type { AgentEventEnvelope } from "@answra/shared/schema";
 import { createCodingBot } from "../bots/coding/bot";
 import { AgentRuntime } from "../core/agent/runtime";
 import { createInstructionLoader } from "../core/instruction";
+import type { SessionJournal } from "../core/session/journal";
 import { createLazySkillCatalog } from "../core/skill/catalog";
 import type { SkillRoots } from "../core/skill/contracts";
 import { createBuiltinToolRegistry } from "../core/tool";
@@ -21,6 +22,8 @@ export interface CodingHostOptions {
   store?: ConversationStore;
   catalog?: ConversationSessionCatalog;
   executionStore?: ExecutionStore;
+  /** durable session journal；CLI 宿主注入 SQLite 实现，缺省为内存实现。 */
+  sessionJournal?: SessionJournal;
   workspaceRoot?: string | null;
   /** 用户级 AGENTS.md 绝对路径；缺省只加载工作区。 */
   globalInstructionFile?: string | null;
@@ -53,6 +56,7 @@ export function startCodingHost({
   store = new MemoryConversationStore(),
   catalog,
   executionStore = new MemoryExecutionStore(),
+  sessionJournal,
   workspaceRoot = null,
   globalInstructionFile = null,
   grepWorkerPath,
@@ -76,7 +80,13 @@ export function startCodingHost({
     instructions,
     ...(skills ? { skills } : {}),
   });
-  const runtime = new CodingApplication({ agentRuntime, store, bot, onSnapshot });
+  const runtime = new CodingApplication({
+    agentRuntime,
+    store,
+    bot,
+    ...(sessionJournal ? { sessionJournal } : {}),
+    onSnapshot,
+  });
   runtime.setWorkspaceRoot(workspaceRoot);
 
   let disposed = false;
@@ -100,7 +110,7 @@ export function startCodingHost({
     },
     shutdown() {
       shutdownPromise ??= (async () => {
-        runtime.cancelPendingTurns();
+        await runtime.shutdown();
         await agentRuntime.shutdown();
         disposed = true;
         runtime.dispose();
@@ -108,6 +118,7 @@ export function startCodingHost({
         await tools.dispose().catch((error: unknown) => {
           console.warn("[coding] tool cleanup failed", error);
         });
+        sessionJournal?.close?.();
         await store.close();
       })();
       return shutdownPromise;

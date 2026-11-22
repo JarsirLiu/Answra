@@ -1,5 +1,9 @@
 /** 一次 provider 请求与工具执行：独占 step-* 与 usage 事件，模型流事件经 sink 写入；不改变 Turn 状态。 */
-import type { AgentEvent, AgentStreamEvent } from "@answra/shared/schema";
+import {
+  type AgentDurableEvent,
+  type AgentStreamEvent,
+  agentDurableEventSchema,
+} from "@answra/shared/schema";
 import type {
   StepEventSink,
   StepExecutor,
@@ -13,18 +17,27 @@ import type {
 import type { SessionJournal, SessionJournalAppend } from "./journal";
 import { sessionErrorText } from "./sessionErrorText";
 
+export type StepStreamObserver = (step: StepStart, event: AgentStreamEvent) => void | Promise<void>;
+
 export interface SessionStepExecutorOptions {
   journal: SessionJournal;
   runner: StepRunner;
+  /**
+   * 实时流出口：接收本轮 step 的全部模型事件，包括不落 journal 的 live-only 增量。
+   * 宿主须自行过滤增量与 durable 事件，避免同一事件被重复投影。
+   */
+  onStreamEvent?: StepStreamObserver;
 }
 
 export class SessionStepExecutor implements StepExecutor {
   private readonly journal: SessionJournal;
   private readonly runner: StepRunner;
+  private readonly onStreamEvent?: StepStreamObserver;
 
-  constructor({ journal, runner }: SessionStepExecutorOptions) {
+  constructor({ journal, runner, onStreamEvent }: SessionStepExecutorOptions) {
     this.journal = journal;
     this.runner = runner;
+    this.onStreamEvent = onStreamEvent;
   }
 
   async run(step: StepStart, runtime: TurnRunContext, signal: AbortSignal): Promise<StepResult> {
@@ -44,7 +57,7 @@ export class SessionStepExecutor implements StepExecutor {
     );
 
     const context: StepRunContext = {
-      events: new JournalStepEventSink(this.journal, step, metadata),
+      events: new JournalStepEventSink(this.journal, step, metadata, this.onStreamEvent),
       runtime,
     };
     let result = await this.executeRunner(step, context, signal);
@@ -101,14 +114,14 @@ export class SessionStepExecutor implements StepExecutor {
 
   private async append(
     step: StepStart,
-    event: AgentEvent,
+    event: AgentDurableEvent,
     metadata: SessionJournalAppend,
   ): Promise<void> {
     await this.journal.append(step.sessionId, event, metadata);
   }
 }
 
-/** 串行写入模型流事件；失败延迟到 flush 统一报告，避免丢失 step 终态。 */
+/** 串行写入 durable 模型事件并转发实时流；高频增量不落 journal，失败延迟到 flush 统一报告。 */
 class JournalStepEventSink implements StepEventSink {
   private chain: Promise<void> = Promise.resolve();
   private failure: unknown;
@@ -117,13 +130,20 @@ class JournalStepEventSink implements StepEventSink {
     private readonly journal: SessionJournal,
     private readonly step: StepStart,
     private readonly metadata: SessionJournalAppend,
+    private readonly observer?: StepStreamObserver,
   ) {}
 
   append(event: AgentStreamEvent): Promise<void> {
+    const durable = agentDurableEventSchema.safeParse(event);
+    const observer = this.observer;
+    if (!durable.success && observer === undefined) return Promise.resolve();
     this.chain = this.chain.then(async () => {
       if (this.failure !== undefined) return;
       try {
-        await this.journal.append(this.step.sessionId, event, this.metadata);
+        if (observer !== undefined) await observer(this.step, event);
+        if (durable.success) {
+          await this.journal.append(this.step.sessionId, durable.data, this.metadata);
+        }
       } catch (error) {
         this.failure = error;
       }

@@ -22,8 +22,9 @@ execution/session lifecycle and normalized model stream facts:
 
 - Execution and session lifecycle: `run-state-changed`, `turn-queued`,
   `turn-started`, `turn-finished`, `turn-handoff`, `compaction-started`,
-  `compaction-finished`, `compaction-failed`, `step-started`, `step-finished`,
-  `context-usage-changed`, `part-state-changed`.
+  `compaction-finished`, `compaction-failed`, `compaction-aborted`,
+  `step-started`, `step-finished`, `context-usage-changed`,
+  `part-state-changed`.
 - Generation: `start`, `finish`, `abort`, `error`.
 - Text: `text-start`, `text-delta`, `text-end`.
 - Reasoning: `reasoning-start`, `reasoning-delta`, `reasoning-end`.

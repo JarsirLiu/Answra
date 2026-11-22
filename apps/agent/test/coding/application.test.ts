@@ -1,14 +1,18 @@
 import { createServer, type Server } from "node:http";
 import { CODING_AGENT_ID, type CodingHost, startCodingHost } from "@answra/agent/composition";
 import type { AgentEventEnvelope } from "@answra/shared/schema";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CodingAgentInput } from "../../src/coding/agent";
 import { CodingApplication } from "../../src/coding/application";
 import type { CodingBot } from "../../src/coding/bot";
 import { CODING_POLICY } from "../../src/coding/policy";
-import type { AgentExecutor, AgentRunRequest } from "../../src/core/agent/definition";
+import type { AgentExecutor } from "../../src/core/agent/definition";
 import type { AgentRuntime } from "../../src/core/agent/runtime";
+import { type StepRunner, sessionId, stepId, turnId } from "../../src/core/session/contracts";
+import { MemorySessionJournal } from "../../src/core/session/memoryJournal";
 import { MemoryConversationStore } from "../../src/core/transcript/memoryStore";
+import { createUserMessage } from "../../src/core/transcript/message";
+import { MemoryExecutionStore } from "../../src/execution/memoryStore";
 
 type RecordedRequest = {
   messages: Array<{ role: string; content: unknown }>;
@@ -68,7 +72,7 @@ describe("CLI coding host", () => {
       if (holdResponse) return;
       if (responseGate) await responseGate;
       response.writeHead(200, { "content-type": "text/event-stream" });
-      response.end(respond?.(requests.length) ?? streamBody("\u5df2\u8bfb\u53d6"));
+      response.end(respond?.(requests.length) ?? streamBody("已读取"));
     });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const address = server.address();
@@ -171,46 +175,45 @@ describe("CLI coding host", () => {
     expect(JSON.stringify(requests.at(-1)?.messages)).toContain(dataUrl);
   });
 
-  it("yields the active run after a tool step when another message is queued", async () => {
-    let release!: () => void;
-    responseGate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+  it("starts a queued turn only after the active turn finishes", async () => {
     respond = (call) =>
       call === 1
         ? toolCallBody("Read", { file_path: "D:/coding-workspace/missing.txt" })
-        : streamBody("continued");
-    await host.runtime.createConversation("coding-step-queue");
+        : streamBody(call === 2 ? "continued" : "second answer");
+    await host.runtime.createConversation("coding-turn-queue");
 
     const first = await host.runtime.enqueue(
-      "coding-step-queue",
+      "coding-turn-queue",
       { text: "first", images: [] },
       ACCESS_TOKEN,
     );
     if (first.status !== "started") throw new Error("first message did not start");
     const second = await host.runtime.enqueue(
-      "coding-step-queue",
+      "coding-turn-queue",
       { text: "second requirement", images: [] },
       ACCESS_TOKEN,
     );
     expect(second).toMatchObject({ status: "queued", position: 1 });
-    release();
 
-    const started = await host.runtime.waitForQueueStart("coding-step-queue", second.queueId);
+    const started = await host.runtime.waitForQueueStart("coding-turn-queue", second.queueId);
     await host.runtime.waitForRun(started.runId);
     await host.runtime.waitForRun(first.runId);
 
-    expect(requests).toHaveLength(2);
-    expect(JSON.stringify(requests[1]?.messages)).toContain("second requirement");
-    expect(
-      events.some(
-        (envelope) =>
-          envelope.runId === first.runId &&
-          envelope.event.type === "run-state-changed" &&
-          envelope.event.state === "completed",
-      ),
-    ).toBe(true);
-    const final = await host.runtime.getSnapshot("coding-step-queue");
+    const order = events.map((event) => event);
+    const firstCompleted = order.findIndex(
+      (event) =>
+        event.runId === first.runId &&
+        event.event.type === "run-state-changed" &&
+        event.event.state === "completed",
+    );
+    const secondStarted = order.findIndex((event) => event.runId === started.runId);
+    expect(firstCompleted).toBeGreaterThanOrEqual(0);
+    expect(secondStarted).toBeGreaterThan(firstCompleted);
+
+    // 第一 turn 的 tool 调用后继续同一 Turn，不把队列消息插进 step 之间。
+    expect(requests).toHaveLength(3);
+    expect(JSON.stringify(requests.at(-1)?.messages)).toContain("second requirement");
+    const final = await host.runtime.getSnapshot("coding-turn-queue");
     expect(final.messages.map((message) => message.role)).toEqual([
       "user",
       "assistant",
@@ -219,7 +222,7 @@ describe("CLI coding host", () => {
     ]);
   });
 
-  it("cancels an active coding run", async () => {
+  it("cancels an active coding run and the queued turns behind it", async () => {
     holdResponse = true;
     await host.runtime.createConversation("coding-cancel");
     const { runId } = await host.runtime.send(
@@ -227,6 +230,12 @@ describe("CLI coding host", () => {
       { text: "运行一个长任务", images: [] },
       ACCESS_TOKEN,
     );
+    const queued = await host.runtime.enqueue(
+      "coding-cancel",
+      { text: "排队任务", images: [] },
+      ACCESS_TOKEN,
+    );
+    if (queued.status !== "queued") throw new Error("second message should be queued");
 
     host.runtime.cancel(runId);
 
@@ -242,10 +251,16 @@ describe("CLI coding host", () => {
         { timeout: 5_000, interval: 10 },
       )
       .toBe(true);
-    await expect.poll(() => host.runtime.activeRunCount, { timeout: 5_000, interval: 10 }).toBe(0);
+    await host.runtime.waitForRun(runId);
+    await expect(host.runtime.waitForQueue("coding-cancel", queued.queueId)).resolves.toMatchObject(
+      { outcome: "aborted" },
+    );
 
     const final = await host.runtime.getSnapshot("coding-cancel");
-    expect(final.messages.at(-1)?.status).toBe("interrupted");
+    expect(final.messages.map((message) => [message.role, message.status])).toEqual([
+      ["user", "complete"],
+      ["assistant", "interrupted"],
+    ]);
   });
 
   it("does not start queued turns while shutting down", async () => {
@@ -268,52 +283,286 @@ describe("CLI coding host", () => {
     await host.shutdown();
 
     expect(requests).toHaveLength(1);
-    await expect.poll(() => host.runtime.activeRunCount, { timeout: 5_000, interval: 10 }).toBe(0);
+    await expect(
+      host.runtime.waitForQueue("coding-shutdown", second.queueId),
+    ).resolves.toMatchObject({ outcome: "aborted" });
   });
 });
 
-describe("CodingApplication context recovery wiring", () => {
-  it("wires provider overflow recovery into the coding run", async () => {
+function codingSeed() {
+  return {
+    activeAgentId: CODING_AGENT_ID,
+    participantAgentIds: [CODING_AGENT_ID],
+    bots: [{ id: CODING_AGENT_ID, name: "Coding 助手", role: "engineer" }],
+  };
+}
+
+function fakeRuntime(): AgentRuntime {
+  return {
+    cancel: vi.fn(),
+    dispose: vi.fn(),
+    resetExecution: vi.fn(async () => undefined),
+    chatContextWindow: () => undefined,
+    chatEndpoint: () => ({ baseUrl: "http://127.0.0.1:1/v1", model: "test" }),
+    configureModelRoutes: vi.fn(),
+    generateText: vi.fn(async () => "summary"),
+    modelTokenProvider: () => async () => "token",
+  } as unknown as AgentRuntime;
+}
+
+function makeBot(): CodingBot {
+  const executor: AgentExecutor<CodingAgentInput> = {
+    startRun: async () => {
+      throw new Error("Session 底座不应调用 startRun");
+    },
+    prepare: async () => ({ system: "", messages: [] }),
+  };
+  return {
+    id: CODING_AGENT_ID,
+    identity: {
+      name: "Coding 助手",
+      role: "engineer",
+      responsibility: "测试 coding 会话。",
+      owns: ["coding"],
+    },
+    discovery: { visibleTo: { kind: "bots", agentIds: [] } },
+    domain: "coding",
+    executor,
+    policy: CODING_POLICY,
+  };
+}
+
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve: () => void = () => undefined;
+  const promise = new Promise<void>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
+}
+
+function makeApp({
+  store,
+  journal,
+  events,
+  runner,
+}: {
+  store: MemoryConversationStore;
+  journal: MemorySessionJournal;
+  events: MemoryExecutionStore;
+  runner: StepRunner;
+}): CodingApplication {
+  return new CodingApplication({
+    agentRuntime: fakeRuntime(),
+    store,
+    bot: makeBot(),
+    sessionJournal: journal,
+    executionStore: events,
+    stepRunner: runner,
+    onSnapshot: () => undefined,
+  });
+}
+
+describe("CodingApplication queue and recovery", () => {
+  it("runs queued turns in order after the active turn finishes", async () => {
     const store = new MemoryConversationStore();
-    const requests: Array<AgentRunRequest<CodingAgentInput, unknown>> = [];
-    const executor: AgentExecutor<CodingAgentInput> = {
-      async startRun<Prepared>(request: AgentRunRequest<CodingAgentInput, Prepared>) {
-        requests.push(request);
-        const prepared = await request.prepareRun({ runId: "coding-run", eventRevision: 0 });
-        return {
-          runId: "coding-run",
-          eventRevision: 0,
-          prepared: prepared.prepared,
-          result: Promise.resolve(undefined),
-          done: Promise.resolve("completed" as const),
-        };
+    const journal = new MemorySessionJournal();
+    const events = new MemoryExecutionStore();
+    const gate = deferred();
+    const stepMessages: string[] = [];
+    const runner: StepRunner = {
+      async run(step) {
+        stepMessages.push(step.messageId);
+        await gate.promise;
+        return { outcome: "completed", finishReason: "stop" };
       },
-      prepare: async () => ({ system: "", messages: [] }),
     };
-    const bot: CodingBot = {
-      id: CODING_AGENT_ID,
-      identity: {
-        name: "Coding assistant",
-        role: "coding",
-        responsibility: "Verify recovery wiring.",
-        owns: ["coding"],
+    const app = makeApp({ store, journal, events, runner });
+    await app.createConversation("coding-queue");
+
+    const first = await app.enqueue("coding-queue", { text: "first", images: [] }, "token");
+    if (first.status !== "started") throw new Error("first message did not start");
+    const second = await app.enqueue("coding-queue", { text: "second", images: [] }, "token");
+    expect(second).toMatchObject({ status: "queued", position: 1 });
+
+    gate.resolve();
+    const started = await app.waitForQueueStart("coding-queue", second.queueId);
+    await app.waitForRun(started.runId);
+    await app.waitForRun(first.runId);
+
+    expect(stepMessages).toEqual([first.runId, started.runId]);
+    const snapshot = await app.getSnapshot("coding-queue");
+    expect(snapshot.messages.map((message) => [message.role, message.status])).toEqual([
+      ["user", "complete"],
+      ["assistant", "complete"],
+      ["user", "complete"],
+      ["assistant", "complete"],
+    ]);
+  });
+
+  it("records manual compaction lifecycle in the session journal", async () => {
+    const store = new MemoryConversationStore();
+    const journal = new MemorySessionJournal();
+    const events = new MemoryExecutionStore();
+    const runner: StepRunner = {
+      async run() {
+        return { outcome: "completed", finishReason: "stop" };
       },
-      discovery: { visibleTo: { kind: "bots", agentIds: [CODING_AGENT_ID] } },
-      domain: "coding",
-      executor,
-      policy: CODING_POLICY,
     };
-    const agentRuntime = {
-      waitForRun: async () => undefined,
-      cancel: () => undefined,
-      chatContextWindow: () => undefined,
-    } as unknown as AgentRuntime;
-    const app = new CodingApplication({ agentRuntime, store, bot });
+    const app = makeApp({ store, journal, events, runner });
+    await app.createConversation("coding-compact");
+    const { runId } = await app.send("coding-compact", { text: "旧问题", images: [] }, "token");
+    await app.waitForRun(runId);
 
-    await app.createConversation("coding-wiring");
-    await app.send("coding-wiring", { text: "hello", images: [] }, "token");
+    const { result } = await app.compactConversation("coding-compact", "token");
+    expect(result.status).toBe("compacted");
 
-    expect(requests).toHaveLength(1);
-    expect(requests[0]?.recoverContext).toBeTypeOf("function");
+    const rows = await journal.readAfter(sessionId("coding-compact"), 0);
+    const compaction = rows.filter((row) => row.event.type.startsWith("compaction-"));
+    expect(compaction.map((row) => row.event.type)).toEqual([
+      "compaction-started",
+      "compaction-finished",
+    ]);
+    expect(compaction[0]?.operationId).toBeDefined();
+    expect(compaction[1]?.operationId).toBe(compaction[0]?.operationId);
+    expect(compaction[0]?.event).toMatchObject({ trigger: "manual", reason: "manual" });
+  });
+
+  it("cancels queued turns when the active run is cancelled", async () => {
+    const store = new MemoryConversationStore();
+    const journal = new MemorySessionJournal();
+    const events = new MemoryExecutionStore();
+    const runner: StepRunner = {
+      run: (_step, _context, signal) =>
+        new Promise((resolve) => {
+          if (signal.aborted) {
+            resolve({ outcome: "aborted" });
+            return;
+          }
+          signal.addEventListener("abort", () => resolve({ outcome: "aborted" }), { once: true });
+        }),
+    };
+    const app = makeApp({ store, journal, events, runner });
+    await app.createConversation("coding-stop");
+
+    const first = await app.enqueue("coding-stop", { text: "first", images: [] }, "token");
+    if (first.status !== "started") throw new Error("first message did not start");
+    const second = await app.enqueue("coding-stop", { text: "second", images: [] }, "token");
+    if (second.status !== "queued") throw new Error("second message should be queued");
+
+    app.cancel(first.runId);
+    await app.waitForRun(first.runId);
+    await expect(app.waitForQueue("coding-stop", second.queueId)).resolves.toMatchObject({
+      outcome: "aborted",
+    });
+
+    const snapshot = await app.getSnapshot("coding-stop");
+    expect(snapshot.messages.map((message) => [message.role, message.status])).toEqual([
+      ["user", "complete"],
+      ["assistant", "interrupted"],
+    ]);
+  });
+
+  it("closes the interrupted message on startup recovery and accepts the next turn", async () => {
+    const store = new MemoryConversationStore();
+    const journal = new MemorySessionJournal();
+    const events = new MemoryExecutionStore();
+    const conversationId = "coding-recovery";
+    const id = sessionId(conversationId);
+    const turn = turnId("turn-1");
+    const message = "assistant-1";
+    await store.create(conversationId, codingSeed(), { scope: "coding" });
+    await store.beginSessionTurn(conversationId, {
+      turnId: turn,
+      messageId: message,
+      authorAgentId: CODING_AGENT_ID,
+      userMessage: createUserMessage("user-1", { text: "旧问题", images: [] }),
+    });
+    await journal.append(
+      id,
+      {
+        type: "turn-queued",
+        source: "user",
+        agentId: CODING_AGENT_ID,
+        input: createUserMessage("user-1", { text: "旧问题", images: [] }),
+      },
+      { turnId: turn },
+    );
+    await journal.append(
+      id,
+      { type: "turn-started", agentId: CODING_AGENT_ID },
+      { turnId: turn, messageId: message },
+    );
+    await journal.append(
+      id,
+      { type: "step-started", stepId: "step-1", index: 0, agentId: CODING_AGENT_ID },
+      { turnId: turn, stepId: stepId("step-1"), messageId: message },
+    );
+
+    const runner: StepRunner = {
+      async run() {
+        return { outcome: "completed", finishReason: "stop" };
+      },
+    };
+    const app = makeApp({ store, journal, events, runner });
+
+    const recovered = await app.getSnapshot(conversationId);
+    expect(recovered.activeRunId).toBeUndefined();
+    expect(recovered.messages.map((item) => [item.role, item.status])).toEqual([
+      ["user", "complete"],
+      ["assistant", "interrupted"],
+    ]);
+
+    const { runId } = await app.send(conversationId, { text: "继续", images: [] }, "token");
+    await app.waitForRun(runId);
+    const final = await app.getSnapshot(conversationId);
+    expect(final.messages.map((item) => [item.role, item.status])).toEqual([
+      ["user", "complete"],
+      ["assistant", "interrupted"],
+      ["user", "complete"],
+      ["assistant", "complete"],
+    ]);
+  });
+
+  it("resumes a queued turn from a previous process only when a token is supplied", async () => {
+    const store = new MemoryConversationStore();
+    const journal = new MemorySessionJournal();
+    const events = new MemoryExecutionStore();
+    const conversationId = "coding-queued-recovery";
+    const id = sessionId(conversationId);
+    const turn = turnId("turn-1");
+    await store.create(conversationId, codingSeed(), { scope: "coding" });
+    await journal.append(
+      id,
+      {
+        type: "turn-queued",
+        source: "user",
+        agentId: CODING_AGENT_ID,
+        input: createUserMessage("user-1", { text: "排队问题", images: [] }),
+      },
+      { turnId: turn },
+    );
+
+    const runner: StepRunner = {
+      async run() {
+        return { outcome: "completed", finishReason: "stop" };
+      },
+    };
+    const app = makeApp({ store, journal, events, runner });
+
+    // 没有令牌就恢复会把排队消息烧成一条失败回复，因此必须先拒绝。
+    await expect(app.getSnapshot(conversationId)).rejects.toThrow("排队消息需要访问令牌才能继续");
+
+    const recovered = await app.getSnapshot(conversationId, "token");
+    await app.waitForQueue(conversationId, "turn-1");
+    const snapshot = await app.getSnapshot(conversationId);
+    expect(recovered.messages.map((item) => [item.role, item.status])).toEqual([
+      ["user", "complete"],
+      ["assistant", "streaming"],
+    ]);
+    expect(snapshot.messages.map((item) => [item.role, item.status])).toEqual([
+      ["user", "complete"],
+      ["assistant", "complete"],
+    ]);
+    expect(snapshot.activeRunId).toBeUndefined();
   });
 });

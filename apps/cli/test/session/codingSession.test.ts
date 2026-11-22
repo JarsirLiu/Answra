@@ -78,7 +78,7 @@ describe("CodingSession", () => {
 
     expect(order).toEqual(["configure", "create"]);
     expect(host.configure).toHaveBeenCalledWith(model);
-    expect(host.createConversation).toHaveBeenCalledWith("conversation-1");
+    expect(host.createConversation).toHaveBeenCalledWith("conversation-1", "token");
   });
 
   it("refreshes the latest snapshot without requiring an idle session", async () => {
@@ -89,7 +89,7 @@ describe("CodingSession", () => {
     await session.send("hello");
 
     await expect(session.refresh()).resolves.toBe(latest);
-    expect(host.getSnapshot).toHaveBeenCalledWith("conversation-1");
+    expect(host.getSnapshot).toHaveBeenCalledWith("conversation-1", "token");
     expect(session.modelConfig).toBe(model);
   });
 
@@ -100,7 +100,7 @@ describe("CodingSession", () => {
     await session.open();
 
     await expect(session.clear()).resolves.toBe(cleared);
-    expect(host.clearConversation).toHaveBeenCalledWith("conversation-1");
+    expect(host.clearConversation).toHaveBeenCalledWith("conversation-1", "token");
   });
 
   it("delegates manual compaction and caches the returned snapshot", async () => {
@@ -308,7 +308,7 @@ describe("CodingSession", () => {
     await expect(session.startNewConversation()).resolves.toMatchObject({
       conversationId: "conversation-2",
     });
-    expect(host.createConversation).toHaveBeenLastCalledWith("conversation-2");
+    expect(host.createConversation).toHaveBeenLastCalledWith("conversation-2", "token");
     expect(session.currentConversationId).toBe("conversation-2");
   });
 
@@ -357,6 +357,6 @@ describe("CodingSession", () => {
       conversationId: "conversation-3",
     });
     expect(host.deleteSession).toHaveBeenCalledWith("conversation-1");
-    expect(host.createConversation).toHaveBeenLastCalledWith("conversation-3");
+    expect(host.createConversation).toHaveBeenLastCalledWith("conversation-3", "token");
   });
 });

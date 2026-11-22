@@ -117,6 +117,7 @@ async function createScheduler(compactor?: SessionCompactor) {
     ...(compactor === undefined ? {} : { compactor }),
     createTurnId: () => TEST_TURN_ID_2,
     createOperationId: () => "generated-operation",
+    createMessageId: () => "assistant-message",
   });
   return { journal, executor, scheduler };
 }
@@ -137,10 +138,12 @@ describe("TurnScheduler", () => {
 
     await expect(submitUser(scheduler, "turn-1")).resolves.toEqual({
       turnId: TEST_TURN_ID,
+      messageId: "assistant-message",
       position: 0,
     });
     await expect(submitUser(scheduler, "turn-2")).resolves.toEqual({
       turnId: TEST_TURN_ID_2,
+      messageId: "assistant-message",
       position: 1,
     });
 
@@ -302,6 +305,36 @@ describe("TurnScheduler", () => {
     expect(scheduler.snapshot().turns).toEqual([]);
   });
 
+  it("cancels a manual compaction when the host signal aborts", async () => {
+    const compactor: SessionCompactor = {
+      compact: (_request, signal) =>
+        new Promise((resolve) => {
+          if (signal.aborted) {
+            resolve({ status: "failed", errorText: "已取消" });
+            return;
+          }
+          signal.addEventListener(
+            "abort",
+            () => resolve({ status: "failed", errorText: "已取消" }),
+            {
+              once: true,
+            },
+          );
+        }),
+    };
+    const { scheduler } = await createScheduler(compactor);
+    const controller = new AbortController();
+
+    const compaction = scheduler.requestCompaction({
+      operationId: "operation-1",
+      signal: controller.signal,
+    });
+    controller.abort();
+
+    await expect(compaction).resolves.toEqual({ status: "failed", errorText: "已取消" });
+    await scheduler.waitForIdle();
+  });
+
   it("resumes queued turns from the journal", async () => {
     const journal = new MemorySessionJournal();
     await journal.append(
@@ -332,6 +365,61 @@ describe("TurnScheduler", () => {
 
     expect(executor.runtimes).toEqual([TEST_TURN_RUNTIME]);
     expect(scheduler.snapshot().queue).toEqual([TEST_TURN_ID_2]);
+  });
+
+  it("resolves waits for a terminal turn rebuilt from the journal", async () => {
+    const journal = new MemorySessionJournal();
+    await journal.append(
+      TEST_SESSION_ID,
+      { type: "turn-queued", source: "user", input: userMessage("turn-1"), agentId: "general" },
+      { turnId: TEST_TURN_ID },
+    );
+    await journal.append(
+      TEST_SESSION_ID,
+      { type: "turn-started", agentId: "general" },
+      { turnId: TEST_TURN_ID, messageId: "assistant-1" },
+    );
+    await journal.append(
+      TEST_SESSION_ID,
+      { type: "turn-finished", status: "failed", reason: "interrupted", errorText: "中断" },
+      { turnId: TEST_TURN_ID },
+    );
+    const scheduler = await TurnScheduler.create({
+      sessionId: TEST_SESSION_ID,
+      journal,
+      executor: new FakeTurnExecutor(),
+    });
+
+    await expect(scheduler.waitForTurn(TEST_TURN_ID)).resolves.toEqual({
+      runId: "assistant-1",
+      outcome: "failed",
+      errorText: "中断",
+    });
+    await expect(scheduler.waitForTurnStart(TEST_TURN_ID)).resolves.toBe("assistant-1");
+  });
+
+  it("resolves a cancelled queued turn without waiting for a scheduler that will never start it", async () => {
+    const journal = new MemorySessionJournal();
+    await journal.append(
+      TEST_SESSION_ID,
+      { type: "turn-queued", source: "user", input: userMessage("turn-2"), agentId: "general" },
+      { turnId: TEST_TURN_ID_2 },
+    );
+    await journal.append(
+      TEST_SESSION_ID,
+      { type: "turn-finished", status: "aborted", reason: "cancelled" },
+      { turnId: TEST_TURN_ID_2 },
+    );
+    const scheduler = await TurnScheduler.create({
+      sessionId: TEST_SESSION_ID,
+      journal,
+      executor: new FakeTurnExecutor(),
+    });
+
+    await expect(scheduler.waitForTurn(TEST_TURN_ID_2)).resolves.toEqual({ outcome: "aborted" });
+    await expect(scheduler.waitForTurnStart(TEST_TURN_ID_2)).rejects.toThrow(
+      "Turn 已结束且没有 assistant 消息",
+    );
   });
 
   it("refuses to start unrecovered queued turns without a runtime", async () => {

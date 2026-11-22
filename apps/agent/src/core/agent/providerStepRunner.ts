@@ -33,7 +33,10 @@ type StepModelStream = (input: {
 }) => AsyncIterable<TextStreamPart<ToolSet>>;
 
 export interface ProviderStepRunnerOptions {
-  endpoint: ConversationCapabilityEndpoint;
+  /** 固定端点（测试与单端点宿主）；与 getEndpoint 二选一。 */
+  endpoint?: ConversationCapabilityEndpoint;
+  /** 延迟解析当前模型端点，供启动后才收到 configure 的宿主使用。 */
+  getEndpoint?: () => ConversationCapabilityEndpoint;
   prepare: (
     step: StepStart,
     signal: AbortSignal,
@@ -47,7 +50,7 @@ export interface ProviderStepRunnerOptions {
 
 /** 单次模型请求；同一 Step 内的工具执行仍由 AI SDK 负责。 */
 export class ProviderStepRunner implements StepRunner {
-  private readonly endpoint: ConversationCapabilityEndpoint;
+  private readonly getEndpoint: () => ConversationCapabilityEndpoint;
   private readonly prepareRequest: ProviderStepRunnerOptions["prepare"];
   private readonly contextManager?: StepContextManager;
   private readonly resolveHandoff?: ProviderStepRunnerOptions["resolveHandoff"];
@@ -56,13 +59,16 @@ export class ProviderStepRunner implements StepRunner {
 
   constructor({
     endpoint,
+    getEndpoint,
     prepare,
     contextManager,
     resolveHandoff,
     tokenProvider,
     stream = streamModel,
   }: ProviderStepRunnerOptions) {
-    this.endpoint = endpoint;
+    if (endpoint === undefined && getEndpoint === undefined)
+      throw new Error("ProviderStepRunner 缺少模型端点");
+    this.getEndpoint = getEndpoint ?? (() => endpoint as ConversationCapabilityEndpoint);
     this.prepareRequest = prepare;
     this.contextManager = contextManager;
     this.resolveHandoff = resolveHandoff;
@@ -110,7 +116,7 @@ export class ProviderStepRunner implements StepRunner {
         },
       });
       const transport: ModelTransportOptions = {
-        endpoint: this.endpoint,
+        endpoint: this.getEndpoint(),
         accessToken,
         conversationId: step.sessionId,
         runId: step.stepId,

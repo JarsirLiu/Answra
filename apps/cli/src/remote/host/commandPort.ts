@@ -54,9 +54,11 @@ export function createRemoteCodingHost({
   const settings = createHostModelSettings(modelSettings);
   const port: HostCommandPort = {
     capabilities: () => CAPABILITIES,
-    createConversation: (conversationId) => coding.runtime.createConversation(conversationId),
-    clearConversation: (conversationId) => coding.runtime.clearConversation(conversationId),
-    snapshot: (conversationId) => coding.runtime.getSnapshot(conversationId),
+    createConversation: (conversationId) =>
+      coding.runtime.createConversation(conversationId, accessToken),
+    clearConversation: (conversationId) =>
+      coding.runtime.clearConversation(conversationId, accessToken),
+    snapshot: (conversationId) => coding.runtime.getSnapshot(conversationId, accessToken),
     readEvents: (conversationId, afterRevision) =>
       coding.runtime.readEventsAfter(conversationId, afterRevision),
     async send(command) {

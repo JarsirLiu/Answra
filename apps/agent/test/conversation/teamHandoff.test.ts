@@ -1,190 +1,104 @@
 import type { ConversationSnapshot } from "@answra/shared";
-import type { AgentEvent, AgentEventEnvelope } from "@answra/shared/schema";
 import { describe, expect, it, vi } from "vitest";
-import type { ConversationAgentInput } from "../../src/conversation/agent";
 import { ConversationApplication } from "../../src/conversation/application";
 import type { ConversationBot } from "../../src/conversation/bots/types";
 import { CHAT_PROFILES } from "../../src/conversation/profiles/registry";
-import type {
-  AgentExecutor,
-  AgentId,
-  AgentRunHandle,
-  AgentRunRequest,
-  BotTurnResult,
-} from "../../src/core/agent/definition";
 import { agentId } from "../../src/core/agent/definition";
 import type { AgentRuntime } from "../../src/core/agent/runtime";
 import { createBotCatalog } from "../../src/core/bot/catalog";
+import type { StepRunner, StepRunnerResult, TurnHandoff } from "../../src/core/session/contracts";
+import { sessionId } from "../../src/core/session/contracts";
+import { MemorySessionJournal } from "../../src/core/session/memoryJournal";
 import type { TeamPreset } from "../../src/core/team/preset";
 import { MemoryConversationStore } from "../../src/core/transcript/memoryStore";
+import { MemoryExecutionStore } from "../../src/execution/memoryStore";
 
 const candidate = agentId("candidate");
 const intake = agentId("intake");
 
-function eventEnvelope(
-  conversationId: string,
-  runId: string,
-  aggregateRevision: number,
-  event: AgentEvent,
-): AgentEventEnvelope {
-  return {
-    schemaVersion: 1,
-    eventId: `event-${aggregateRevision}`,
-    conversationId,
-    runId,
-    attemptId: `${runId}:attempt:1`,
-    sequence: aggregateRevision,
-    aggregateRevision,
-    producerId: "test",
-    occurredAt: "2026-11-11T00:00:00.000Z",
-    event,
-  };
-}
+type InputRecord = { agentId: string; text: string };
 
-type RecordedInput = { agentId: AgentId; input: ConversationAgentInput };
-type ScriptedResult =
-  | BotTurnResult
-  | undefined
-  | ((input: ConversationAgentInput) => BotTurnResult | undefined);
-
-function createScriptedExecutor({
-  conversationId,
-  text,
-  result,
-  revision,
-  sequence,
-  onInput,
-  onRequest,
+function scriptedRunner({
+  inputs,
+  resultFor,
+  textFor,
   gate,
 }: {
-  conversationId: string;
-  text: string;
-  result: ScriptedResult;
-  revision: { value: number };
-  sequence: { value: number };
-  onInput: (input: ConversationAgentInput) => void;
-  onRequest: (request: AgentRunRequest<ConversationAgentInput, unknown>) => void;
+  inputs: InputRecord[];
+  resultFor: (stepAgentId: string) => TurnHandoff | undefined;
+  textFor: (stepAgentId: string, index: number) => string;
   gate?: Promise<void>;
-}): AgentExecutor<ConversationAgentInput> {
+}): StepRunner {
   return {
-    async startRun<Prepared>(
-      request: AgentRunRequest<ConversationAgentInput, Prepared>,
-    ): Promise<AgentRunHandle<Prepared>> {
-      onRequest(request);
+    async run(step, context, signal) {
       if (gate) await gate;
-      const runId = `run-${++sequence.value}`;
-      const prepared = await request.prepareRun({
-        runId,
-        eventRevision: revision.value,
+      if (signal.aborted) return { outcome: "aborted" };
+      inputs.push({
+        agentId: step.agentId,
+        text: step.handoff?.task ?? step.input?.text ?? "",
       });
-      onInput(prepared.input);
-      const resolvedResult = typeof result === "function" ? result(prepared.input) : result;
-
-      let currentRevision = revision.value;
-      const stream: AgentEvent[] = [
-        { type: "text-start", partId: "text" },
-        { type: "text-delta", partId: "text", delta: text },
-        { type: "text-end", partId: "text" },
-      ];
-      for (const event of stream) {
-        currentRevision += 1;
-        await request.onEvent(eventEnvelope(conversationId, runId, currentRevision, event));
-      }
-      currentRevision += 1;
-      await request.onEvent(
-        eventEnvelope(conversationId, runId, currentRevision, {
-          type: "run-state-changed",
-          state: "completed",
-          attempt: 1,
-        }),
-      );
-      revision.value = currentRevision;
-
-      return {
-        runId,
-        eventRevision: currentRevision,
-        prepared: prepared.prepared,
-        result: Promise.resolve(resolvedResult),
-        done: Promise.resolve("completed" as const),
+      await context.events.append({ type: "text-start", partId: "text" });
+      await context.events.append({
+        type: "text-delta",
+        partId: "text",
+        delta: textFor(step.agentId, step.index),
+      });
+      await context.events.append({ type: "text-end", partId: "text" });
+      const handoff = resultFor(step.agentId);
+      const result: StepRunnerResult = {
+        outcome: "completed",
+        finishReason: "stop",
+        ...(handoff === undefined ? {} : { handoff }),
       };
-    },
-    prepare: async () => {
-      throw new Error("not used");
+      return result;
     },
   };
 }
 
 function createHarness({
-  candidateResult,
-  candidateText = "我先整理一下。",
-  intakeText = "我来接管。",
+  candidateHandoff,
   gate,
+  journal = new MemorySessionJournal(),
 }: {
-  candidateResult: ScriptedResult;
-  candidateText?: string;
-  intakeText?: string;
+  candidateHandoff?: TurnHandoff;
   gate?: Promise<void>;
+  journal?: MemorySessionJournal;
 }) {
   const store = new MemoryConversationStore();
   const conversationId = "handoff-conversation";
-  const revision = { value: 0 };
-  const sequence = { value: 0 };
-  const inputs: RecordedInput[] = [];
+  const inputs: InputRecord[] = [];
   const snapshots: ConversationSnapshot[] = [];
-  const requests: Array<AgentRunRequest<ConversationAgentInput, unknown>> = [];
-
-  const candidateExecutor = createScriptedExecutor({
-    conversationId,
-    text: candidateText,
-    result: candidateResult,
-    revision,
-    sequence,
-    onInput: (input) => inputs.push({ agentId: candidate, input }),
-    onRequest: (request) => requests.push(request),
+  const runner = scriptedRunner({
+    inputs,
     gate,
+    resultFor: (agent) => (agent === candidate ? candidateHandoff : undefined),
+    textFor: (agent) => (agent === candidate ? "我先整理一下。" : "我来接管。"),
   });
-  const intakeExecutor = createScriptedExecutor({
-    conversationId,
-    text: intakeText,
-    result: undefined,
-    revision,
-    sequence,
-    onInput: (input) => inputs.push({ agentId: intake, input }),
-    onRequest: (request) => requests.push(request),
-  });
-
-  const candidateBot: ConversationBot = {
-    id: candidate,
+  const makeBot = (id: typeof candidate): ConversationBot => ({
+    id,
     identity: {
-      name: "候选人",
-      role: "candidate",
-      responsibility: "准备候选人材料。",
-      owns: ["candidate"],
+      name: id === candidate ? "候选人" : "面试向导",
+      role: id === candidate ? "candidate" : "intake",
+      responsibility: "处理当前任务。",
+      owns: [id],
     },
     discovery: { visibleTo: { kind: "team", teamId: "interview" } },
     domain: "conversation",
-    executor: candidateExecutor,
-    policy: CHAT_PROFILES["general-chat"],
-  };
-  const intakeBot: ConversationBot = {
-    id: intake,
-    identity: {
-      name: "面试向导",
-      role: "intake",
-      responsibility: "接管会话并推进面试准备。",
-      owns: ["intake"],
+    executor: {
+      startRun: async () => {
+        throw new Error("Session 底座不应再调用 startRun");
+      },
+      prepare: async () => {
+        throw new Error("注入的 StepRunner 不需要 prepare");
+      },
     },
-    discovery: { visibleTo: { kind: "team", teamId: "interview" } },
-    domain: "conversation",
-    executor: intakeExecutor,
     policy: CHAT_PROFILES["general-chat"],
-  };
+  });
   const preset: TeamPreset = {
     teamId: "interview",
     entryBotId: candidate,
     memberBotIds: [candidate, intake],
   };
-
   const agentRuntime = {
     assertRegistered: vi.fn(),
     assertTeamMembers: vi.fn(),
@@ -192,33 +106,31 @@ function createHarness({
     cancel: vi.fn(),
     waitForRun: vi.fn(async () => undefined),
     getRun: vi.fn(async () => undefined),
-    readEventsForRun: vi.fn(async () => [] as AgentEventEnvelope[]),
-    readEvents: vi.fn(async () => [] as AgentEventEnvelope[]),
-    getConversationRevision: vi.fn(async () => revision.value),
+    readEventsForRun: vi.fn(async () => []),
     activeRunCount: 0,
+    chatContextWindow: () => undefined,
   } as unknown as AgentRuntime;
 
   const app = new ConversationApplication({
     agentRuntime,
     store,
-    catalog: createBotCatalog([candidateBot, intakeBot]),
+    catalog: createBotCatalog([makeBot(candidate), makeBot(intake)]),
     presets: [preset],
+    sessionJournal: journal,
+    executionStore: new MemoryExecutionStore(),
+    stepRunner: runner,
     onSnapshot: (snapshot) => {
       snapshots.push(snapshot);
     },
   });
 
-  return { app, store, conversationId, inputs, snapshots, requests };
+  return { app, store, conversationId, inputs, snapshots, journal };
 }
 
 describe("ConversationApplication team handoff", () => {
   it("runs the source Bot, writes one handoff record, then lets the target Bot reply", async () => {
     const harness = createHarness({
-      candidateResult: {
-        kind: "handoff",
-        to: intake,
-        task: "请接管整理并继续追问。",
-      },
+      candidateHandoff: { toAgentId: intake, task: "请接管整理并继续追问。" },
     });
 
     const result = await harness.app.sendTeamMessage(
@@ -228,7 +140,7 @@ describe("ConversationApplication team handoff", () => {
       "token",
     );
 
-    expect(result.runId).toBe("run-1");
+    expect(result.runId).toBeTruthy();
     expect(result.snapshot.messages).toHaveLength(4);
     expect(
       result.snapshot.messages.map((message) => ({
@@ -271,12 +183,13 @@ describe("ConversationApplication team handoff", () => {
     expect(result.snapshot.activeAgentId).toBe(intake);
     expect(result.snapshot.activeRunId).toBeUndefined();
     expect(harness.inputs.map((recorded) => recorded.agentId)).toEqual([candidate, intake]);
-    expect(harness.inputs[1]?.input.request.text).toBe("请接管整理并继续追问。");
+    expect(harness.inputs[1]?.text).toBe("请接管整理并继续追问。");
     expect(harness.snapshots.length).toBeGreaterThanOrEqual(3);
   });
 
-  it("wires provider overflow recovery into the existing Bot run", async () => {
-    const harness = createHarness({ candidateResult: undefined });
+  it("records durable step boundaries in the session journal", async () => {
+    const journal = new MemorySessionJournal();
+    const harness = createHarness({ candidateHandoff: undefined, journal });
 
     await harness.app.sendTeamMessage(
       "interview",
@@ -285,17 +198,22 @@ describe("ConversationApplication team handoff", () => {
       "token",
     );
 
-    expect(harness.requests).toHaveLength(1);
-    expect(harness.requests[0]?.recoverContext).toBeTypeOf("function");
+    const events = await journal.readAfter(sessionId("handoff-conversation"), 0);
+    expect(events.map((event) => event.event.type)).toEqual([
+      "turn-queued",
+      "turn-started",
+      "step-started",
+      "text-start",
+      "text-end",
+      "step-finished",
+      "turn-finished",
+    ]);
+    expect(events.every((event) => event.sequence > 0)).toBe(true);
   });
 
   it("rejects an invisible handoff target without writing a handoff record", async () => {
     const harness = createHarness({
-      candidateResult: {
-        kind: "handoff",
-        to: agentId("outsider"),
-        task: "越权接管",
-      },
+      candidateHandoff: { toAgentId: agentId("outsider"), task: "越权接管" },
     });
 
     await expect(
@@ -313,17 +231,14 @@ describe("ConversationApplication team handoff", () => {
     expect(snapshot.activeRunId).toBeUndefined();
   });
 
-  it("skips the handoff chain when a user turn is already queued", async () => {
+  it("finishes the handoff chain before starting a queued user turn", async () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
     const harness = createHarness({
-      candidateResult: (input) =>
-        input.request.text === "first"
-          ? { kind: "handoff", to: intake, task: "handoff after first" }
-          : undefined,
       gate,
+      candidateHandoff: { toAgentId: intake, task: "handoff after first" },
     });
 
     const first = harness.app.enqueueTeamMessage(
@@ -347,15 +262,23 @@ describe("ConversationApplication team handoff", () => {
     await harness.app.waitForQueue(harness.conversationId, accepted.queueId);
     await harness.app.waitForQueue(harness.conversationId, second.queueId);
 
-    expect(harness.inputs.map((recorded) => recorded.agentId)).toEqual([candidate, candidate]);
+    expect(harness.inputs.map((recorded) => recorded.agentId)).toEqual([
+      candidate,
+      intake,
+      candidate,
+      intake,
+    ]);
     const snapshot = await harness.app.getSnapshot(harness.conversationId);
     expect(snapshot.messages.map((message) => message.text)).toEqual([
       "first",
       "我先整理一下。",
+      "handoff after first",
+      "我来接管。",
       "second",
       "我先整理一下。",
+      "handoff after first",
+      "我来接管。",
     ]);
-    expect(snapshot.messages.some((message) => message.audience?.kind === "bot")).toBe(false);
-    expect(snapshot.activeAgentId).toBe(candidate);
+    expect(snapshot.activeAgentId).toBe(intake);
   });
 });

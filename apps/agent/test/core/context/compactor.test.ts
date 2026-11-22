@@ -1,5 +1,6 @@
 import type { ConversationMessage, ConversationSnapshot } from "@answra/shared";
 import { describe, expect, it, vi } from "vitest";
+import type { ContextCompactionFact } from "../../../src/core/context/compaction/compactor";
 import { ContextCompactor } from "../../../src/core/context/compaction/compactor";
 import { MemoryConversationStore } from "../../../src/core/transcript/memoryStore";
 
@@ -247,5 +248,173 @@ describe("ContextCompactor", () => {
 
     expect(getAccessToken).not.toHaveBeenCalled();
     expect(generate).not.toHaveBeenCalled();
+  });
+
+  it("reports one operation id across the compaction lifecycle", async () => {
+    const store = await preparedStore();
+    const facts: ContextCompactionFact[] = [];
+    const compactor = new ContextCompactor({
+      store,
+      generate: async () => "压缩后的摘要",
+      onCompaction: (fact) => {
+        facts.push(fact);
+      },
+      now: () => new Date("2026-11-13T10:00:00.000Z"),
+    });
+
+    const compacted = await compactor.prepare({
+      conversationId: "conversation-1",
+      getAccessToken: async () => "token",
+      triggerTokens: TRIGGER_TOKENS,
+      finalRequestTokens: TRIGGER_TOKENS,
+      prunedToolCallIds: [],
+    });
+
+    expect(compacted).toMatchObject({ status: "compacted" });
+    expect(facts.map((fact) => fact.event.type)).toEqual([
+      "compaction-started",
+      "compaction-finished",
+    ]);
+    expect(new Set(facts.map((fact) => fact.operationId)).size).toBe(1);
+    expect(facts[0]?.event).toMatchObject({
+      type: "compaction-started",
+      trigger: "auto",
+      reason: "threshold",
+    });
+    expect(facts[1]?.event).toMatchObject({
+      type: "compaction-finished",
+      summarizedMessages: 2,
+      summary: "压缩后的摘要",
+    });
+    expect(facts[0]?.conversationId).toBe("conversation-1");
+  });
+
+  it("reuses the Scheduler operation id for manual compaction", async () => {
+    const store = await preparedStore();
+    const facts: ContextCompactionFact[] = [];
+    const compactor = new ContextCompactor({
+      store,
+      generate: async () => "手动摘要",
+      onCompaction: (fact) => {
+        facts.push(fact);
+      },
+    });
+
+    await compactor.prepare({
+      conversationId: "conversation-1",
+      getAccessToken: async () => "token",
+      trigger: "manual",
+      operationId: "operation-manual",
+      force: true,
+      bypassFailureBreaker: true,
+      triggerTokens: TRIGGER_TOKENS,
+      finalRequestTokens: 0,
+      prunedToolCallIds: [],
+    });
+
+    expect(facts.map((fact) => fact.operationId)).toEqual(["operation-manual", "operation-manual"]);
+    expect(facts[0]?.event).toMatchObject({
+      type: "compaction-started",
+      trigger: "manual",
+      reason: "manual",
+    });
+  });
+
+  it("reports cancellation as aborted and failure as failed", async () => {
+    const abortedStore = await preparedStore();
+    const abortedFacts: ContextCompactionFact[] = [];
+    const controller = new AbortController();
+    const aborted = new ContextCompactor({
+      store: abortedStore,
+      generate: async () => {
+        controller.abort();
+        throw new DOMException("aborted", "AbortError");
+      },
+      onCompaction: (fact) => {
+        abortedFacts.push(fact);
+      },
+    });
+
+    await expect(
+      aborted.prepare({
+        conversationId: "conversation-1",
+        getAccessToken: async () => "token",
+        triggerTokens: TRIGGER_TOKENS,
+        finalRequestTokens: TRIGGER_TOKENS,
+        prunedToolCallIds: [],
+        signal: controller.signal,
+      }),
+    ).resolves.toEqual({ status: "aborted" });
+    expect(abortedFacts.map((fact) => fact.event.type)).toEqual([
+      "compaction-started",
+      "compaction-aborted",
+    ]);
+
+    const failedStore = await preparedStore();
+    const failedFacts: ContextCompactionFact[] = [];
+    const failed = new ContextCompactor({
+      store: failedStore,
+      generate: async () => {
+        throw new Error("摘要模型不可用");
+      },
+      onCompaction: (fact) => {
+        failedFacts.push(fact);
+      },
+    });
+
+    await failed.prepare({
+      conversationId: "conversation-1",
+      getAccessToken: async () => "token",
+      triggerTokens: TRIGGER_TOKENS,
+      finalRequestTokens: TRIGGER_TOKENS,
+      prunedToolCallIds: [],
+    });
+    expect(failedFacts[1]?.event).toMatchObject({
+      type: "compaction-failed",
+      errorText: "摘要模型不可用",
+    });
+  });
+
+  it("does not report a skipped compaction", async () => {
+    const store = await preparedStore();
+    const facts: ContextCompactionFact[] = [];
+    const compactor = new ContextCompactor({
+      store,
+      generate: async () => "不应调用",
+      onCompaction: (fact) => {
+        facts.push(fact);
+      },
+    });
+
+    await compactor.prepare({
+      conversationId: "conversation-1",
+      getAccessToken: async () => "token",
+      triggerTokens: TRIGGER_TOKENS,
+      finalRequestTokens: TRIGGER_TOKENS - 1,
+      prunedToolCallIds: [],
+    });
+
+    expect(facts).toEqual([]);
+  });
+
+  it("keeps compacting when the journal observer rejects", async () => {
+    const store = await preparedStore();
+    const compactor = new ContextCompactor({
+      store,
+      generate: async () => "压缩后的摘要",
+      onCompaction: async () => {
+        throw new Error("journal 不可写");
+      },
+    });
+
+    await expect(
+      compactor.prepare({
+        conversationId: "conversation-1",
+        getAccessToken: async () => "token",
+        triggerTokens: TRIGGER_TOKENS,
+        finalRequestTokens: TRIGGER_TOKENS,
+        prunedToolCallIds: [],
+      }),
+    ).resolves.toMatchObject({ status: "compacted" });
   });
 });

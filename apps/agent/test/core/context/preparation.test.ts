@@ -585,6 +585,67 @@ describe("ContextPreparation", () => {
     expect((await store.loadContextState("conversation-1"))?.usageAnchor).toEqual(previousAnchor);
   });
 
+  it("commits the anchor from a durable turn-finished without a run-state event", async () => {
+    const store = await preparedStore();
+    const preparationInstance = preparation(store, { budget: PRUNE_ONLY_BUDGET });
+    const result = await preparationInstance.prepareRequest({
+      conversationId: "conversation-1",
+      getAccessToken: async () => "token",
+      modelRequest: { system: "", messages: [{ role: "user", content: "hi" }] },
+      rebuild: async () => {
+        throw new Error("不应重建");
+      },
+    });
+
+    await preparationInstance.recordRunEvent("conversation-1", {
+      type: "step-finished",
+      stepId: "step-0",
+      index: 0,
+      state: "completed",
+      usage: { inputTokens: 321, outputTokens: 1 },
+    });
+    await preparationInstance.recordRunEvent("conversation-1", {
+      type: "turn-finished",
+      status: "completed",
+      reason: "completed",
+    });
+
+    expect(await store.loadContextState("conversation-1")).toMatchObject({
+      usageAnchor: {
+        inputTokens: 321,
+        estimatedTokens: estimateContextRequestTokens(result),
+      },
+    });
+  });
+
+  it("discards a pending anchor when a durable turn is aborted", async () => {
+    const store = await preparedStore();
+    const preparationInstance = preparation(store, { budget: PRUNE_ONLY_BUDGET });
+    await preparationInstance.prepareRequest({
+      conversationId: "conversation-1",
+      getAccessToken: async () => "token",
+      modelRequest: { system: "", messages: [{ role: "user", content: "hi" }] },
+      rebuild: async () => {
+        throw new Error("不应重建");
+      },
+    });
+    await preparationInstance.recordRunEvent("conversation-1", {
+      type: "step-finished",
+      stepId: "step-0",
+      index: 0,
+      state: "completed",
+      usage: { inputTokens: 321, outputTokens: 1 },
+    });
+
+    await preparationInstance.recordRunEvent("conversation-1", {
+      type: "turn-finished",
+      status: "aborted",
+      reason: "cancelled",
+    });
+
+    expect((await store.loadContextState("conversation-1"))?.usageAnchor).toBeUndefined();
+  });
+
   it("persists context usage from every context usage event", async () => {
     const store = await preparedStore();
     const preparationInstance = preparation(store, { budget: PRUNE_ONLY_BUDGET });

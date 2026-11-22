@@ -39,6 +39,7 @@ function turnStart(): TurnStart {
     turnId: TEST_TURN_ID,
     source: "user",
     agentId: "general",
+    messageId: "assistant-1",
     input: userMessage(),
   };
 }
@@ -53,7 +54,7 @@ async function startedJournal(): Promise<MemorySessionJournal> {
   await journal.append(
     TEST_SESSION_ID,
     { type: "turn-started", agentId: "general" },
-    { turnId: TEST_TURN_ID },
+    { turnId: TEST_TURN_ID, messageId: "assistant-1" },
   );
   return journal;
 }
@@ -64,7 +65,7 @@ function createExecutor(
   maxSteps?: number,
 ): SessionTurnExecutor {
   const ids = ["step-1", "step-2", "step-3", "step-4"];
-  const messageIds = ["assistant-1", "assistant-2", "assistant-3", "assistant-4"];
+  const messageIds = ["assistant-2", "assistant-3", "assistant-4"];
   return new SessionTurnExecutor({
     journal,
     stepExecutor: new SessionStepExecutor({ journal, runner }),

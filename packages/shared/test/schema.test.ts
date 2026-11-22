@@ -138,6 +138,7 @@ describe("event schema", () => {
         usage: { inputTokens: 10, outputTokens: 4 },
       },
       { type: "compaction-failed", errorText: "summary failed" },
+      { type: "compaction-aborted" },
       { type: "step-started", stepId: "step-1", index: 0, agentId: "general", modelId: "model-a" },
       { type: "step-finished", stepId: "step-1", index: 0, state: "completed" },
       { type: "context-usage-changed", usedTokens: 10 },
@@ -150,9 +151,9 @@ describe("event schema", () => {
       expect(agentDurableEventSchema.parse(event)).toEqual(event);
     }
 
-    expect(agentExecutionEventSchema.options).toHaveLength(12);
-    expect(agentEventSchema.options).toHaveLength(40);
-    expect(agentDurableEventSchema.options).toHaveLength(36);
+    expect(agentExecutionEventSchema.options).toHaveLength(13);
+    expect(agentEventSchema.options).toHaveLength(41);
+    expect(agentDurableEventSchema.options).toHaveLength(37);
   });
 
   it("rejects provider-only fields that are not part of the app contract", () => {
@@ -238,6 +239,22 @@ describe("event schema", () => {
       messageId: "message-1",
       operationId: "operation-1",
     });
+  });
+
+  it("rejects live-only stream deltas in the session journal envelope", () => {
+    expect(
+      sessionEventEnvelopeSchema.safeParse({
+        schemaVersion: 1,
+        eventId: "event-4",
+        sessionId: "conversation",
+        turnId: "turn-1",
+        messageId: "message-1",
+        sequence: 4,
+        producerId: "agent-local-1",
+        occurredAt: "2026-11-06T00:00:03.000Z",
+        event: { type: "text-delta", partId: "text-1", delta: "a" },
+      }).success,
+    ).toBe(false);
   });
 
   it("accepts execution facts needed for future hosted adapters", () => {

@@ -5,8 +5,10 @@ import type { CodingSessionHost } from "../session/codingSession";
 export function createAgentCodingSessionHost(host: CodingHost): CodingSessionHost {
   return {
     configure: (model) => host.runtime.configure(model),
-    createConversation: (conversationId) => host.runtime.createConversation(conversationId),
-    getSnapshot: (conversationId) => host.runtime.getSnapshot(conversationId),
+    createConversation: (conversationId, accessToken) =>
+      host.runtime.createConversation(conversationId, accessToken),
+    getSnapshot: (conversationId, accessToken) =>
+      host.runtime.getSnapshot(conversationId, accessToken),
     listSessions: async (query) => {
       if (!host.catalog) throw new Error("当前宿主不支持会话历史。");
       return host.catalog.list({
@@ -25,7 +27,8 @@ export function createAgentCodingSessionHost(host: CodingHost): CodingSessionHos
       if (!host.catalog) throw new Error("当前宿主不支持会话历史。");
       return host.catalog.delete(conversationId);
     },
-    clearConversation: (conversationId) => host.runtime.clearConversation(conversationId),
+    clearConversation: (conversationId, accessToken) =>
+      host.runtime.clearConversation(conversationId, accessToken),
     compactConversation: (conversationId, accessToken, options) =>
       host.runtime.compactConversation(conversationId, accessToken, options),
     send: async (conversationId, request, accessToken) => {

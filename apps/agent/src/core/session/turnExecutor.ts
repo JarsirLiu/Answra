@@ -52,7 +52,7 @@ export class SessionTurnExecutor implements TurnExecutor {
 
   async run(turn: TurnStart, runtime: TurnRunContext, signal: AbortSignal): Promise<TurnFinish> {
     let agentId = turn.agentId;
-    let messageId = this.createMessageId();
+    let messageId = turn.messageId;
     let handoff: StepHandoff | undefined;
     let index = 0;
 
@@ -74,6 +74,7 @@ export class SessionTurnExecutor implements TurnExecutor {
           stepId: this.createStepId(),
           index,
           agentId,
+          source: turn.source,
           messageId,
           ...(turn.input === undefined ? {} : { input: turn.input }),
           ...(handoff === undefined ? {} : { handoff }),

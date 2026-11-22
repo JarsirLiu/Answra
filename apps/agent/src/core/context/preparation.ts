@@ -1,5 +1,6 @@
 /** 最终模型请求的上下文准备编排：usage 校准、旧工具结果清理、摘要压缩、重建与硬兜底裁剪。 */
 import {
+  type CompactionReason,
   type ContextCompactionTrigger,
   type ContextPruningStatus,
   type ContextUsage,
@@ -48,6 +49,10 @@ export interface ContextPreparationRequest {
   rebuild: () => Promise<ContextModelRequest>;
   signal?: AbortSignal;
   trigger?: ContextCompactionTrigger;
+  /** 压缩来源；缺省由压缩器按 trigger 推导，provider 超限恢复显式传 provider-overflow。 */
+  reason?: CompactionReason;
+  /** 手动压缩沿用 Scheduler 的操作 id；自动压缩由压缩器生成。 */
+  operationId?: string;
   /** provider 已报上下文超限时强制压缩，跳过普通触发阈值。 */
   forceCompact?: boolean;
   /** 手动操作可越过失败熔断；自动与 provider 超限恢复不得越过。 */
@@ -60,7 +65,7 @@ export interface ContextPreparationRequest {
 
 export type ManualCompactionRequest = Omit<
   ContextPreparationRequest,
-  "forceCompact" | "trigger" | "bypassFailureBreaker"
+  "forceCompact" | "trigger" | "bypassFailureBreaker" | "reason"
 >;
 
 interface PreparedContext {
@@ -112,6 +117,7 @@ export class ContextPreparation {
       ...(instructions === undefined ? {} : { compactionInstructions: instructions }),
       forceCompact: true,
       trigger: "manual",
+      reason: "manual",
       bypassFailureBreaker: true,
     });
     return manualCompactionResult(prepared.compaction, prepared.usage);
@@ -124,6 +130,8 @@ export class ContextPreparation {
     rebuild,
     signal,
     trigger,
+    reason,
+    operationId,
     forceCompact = false,
     bypassFailureBreaker = false,
     compactionInstructions,
@@ -157,6 +165,8 @@ export class ContextPreparation {
       summaryMaxTokens: budget.summaryMaxTokens,
       ...(signal === undefined ? {} : { signal }),
       ...(trigger === undefined ? {} : { trigger }),
+      ...(reason === undefined ? {} : { reason }),
+      ...(operationId === undefined ? {} : { operationId }),
       ...(forceCompact ? { force: true } : {}),
       ...(bypassFailureBreaker ? { bypassFailureBreaker: true } : {}),
       ...(compactionInstructions === undefined ? {} : { instructions: compactionInstructions }),
@@ -265,7 +275,11 @@ export class ContextPreparation {
   async recoverRequest(
     request: Omit<ContextPreparationRequest, "forceCompact">,
   ): Promise<ContextModelRequest | undefined> {
-    const prepared = await this.prepare({ ...request, forceCompact: true });
+    const prepared = await this.prepare({
+      ...request,
+      forceCompact: true,
+      reason: "provider-overflow",
+    });
     return prepared.compaction.status === "compacted" ? prepared.request : undefined;
   }
 

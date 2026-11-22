@@ -8,6 +8,8 @@ import { createConversationBots } from "./conversation/bots";
 import { AgentRuntime } from "./core/agent/runtime";
 import { createBotCatalog } from "./core/bot/catalog";
 import { createInstructionLoader } from "./core/instruction";
+import type { SessionJournal } from "./core/session/journal";
+import { MemorySessionJournal } from "./core/session/memoryJournal";
 import { createLazySkillCatalog } from "./core/skill/catalog";
 import type { SkillRoots } from "./core/skill/contracts";
 import { createBuiltinToolRegistry } from "./core/tool";
@@ -44,6 +46,8 @@ export interface AgentHostOptions {
   store?: ConversationStore;
   catalog?: ConversationSessionCatalog;
   executionStore?: ExecutionStore;
+  /** durable session journal；desktop 宿主注入 SQLite 实现，测试可用内存实现。 */
+  sessionJournal?: SessionJournal;
   /**
    * 面试 VAD 的资源来源（预编译 TEN VAD wasm 由 desktop 组合根读盘后注入）。
    * 未注入时 interview-start 会显式失败：不静默降级为无 VAD 会话。
@@ -93,6 +97,7 @@ export function startAgentHost({
   store = new MemoryConversationStore(),
   catalog,
   executionStore = new MemoryExecutionStore(),
+  sessionJournal = new MemorySessionJournal(),
   vad,
   recognizer,
   turnSettler,
@@ -175,6 +180,7 @@ export function startAgentHost({
     agentRuntime,
     store,
     catalog: conversationCatalog,
+    sessionJournal,
     onSnapshot: async (snapshot) => emitConversationSnapshot(snapshot),
     onTeamError: (error) => {
       console.warn("[conversation][team] failed", {
@@ -195,6 +201,7 @@ export function startAgentHost({
     executor: interviewAgent,
     authorAgentId: INTERVIEW_REHEARSAL_AGENT_ID,
     requestAccessToken: () => requestAccessToken({ forceRefresh: false }),
+    sessionJournal,
     onSnapshot: async (snapshot) => emitConversationSnapshot(snapshot),
     onTurnCommitted: (turn) => emitInterviewEvent({ type: "turn-committed", turn }),
     onError: (stage, error) => {
@@ -210,6 +217,7 @@ export function startAgentHost({
     executor: interviewIntakeAgent,
     authorAgentId: INTERVIEW_INTAKE_AGENT_ID,
     requestAccessToken: () => requestAccessToken({ forceRefresh: false }),
+    sessionJournal,
     onSnapshot: async (snapshot) => emitConversationSnapshot(snapshot),
     onTurnCommitted: () => undefined,
     onError: (stage, error) => {
@@ -250,6 +258,8 @@ export function startAgentHost({
     interviewRuntime.dispose();
     void interview.stop();
     void interviewIntake.stop();
+    interview.dispose();
+    interviewIntake.dispose();
     rejectTokenRequests();
     skillsReady?.dispose();
     void tools.dispose().catch((error: unknown) => {
@@ -262,12 +272,12 @@ export function startAgentHost({
     shutdownPromise ??= (async () => {
       interviewRuntime.dispose();
       await interview
-        .stop()
+        .shutdown()
         .catch((error: unknown) => console.warn("[interview-reply] stop failed", error));
       await interviewIntake
-        .stop()
+        .shutdown()
         .catch((error: unknown) => console.warn("[interview-intake] stop failed", error));
-      runtime.cancelPendingTurns();
+      await runtime.shutdown();
       await agentRuntime.shutdown();
       disposed = true;
       rejectTokenRequests();
@@ -276,6 +286,7 @@ export function startAgentHost({
       await tools.dispose().catch((error: unknown) => {
         console.warn("[agent] tool cleanup failed", error);
       });
+      sessionJournal.close?.();
       await store.close();
     })();
     return shutdownPromise;
@@ -392,6 +403,10 @@ export function startAgentHost({
         return undefined;
       case "interview-message":
         return interview.sendText(command.conversationId, command.text);
+      case "interview-snapshot":
+        return interview.getSnapshot(command.conversationId);
+      case "interview-events":
+        return interview.readEvents(command.conversationId, command.afterRevision);
       case "interview-intake-open":
         return interviewIntake.open(command.conversationId);
       case "interview-intake-message":
@@ -444,7 +459,10 @@ export function startAgentHost({
       case "append-user-message":
         return runtime.appendUserMessage(command.conversationId, command.text);
       case "cancel":
+        // 三个领域都可能持有该 runId；未知领域不做任何事。
         runtime.cancel(command.runId);
+        interview.cancel(command.runId);
+        interviewIntake.cancel(command.runId);
         return undefined;
       case "wait-queue":
         return runtime.waitForQueue(command.conversationId, command.queueId);

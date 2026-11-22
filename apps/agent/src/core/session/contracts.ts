@@ -54,6 +54,8 @@ export interface TurnSubmission {
 
 export interface TurnSubmissionResult {
   turnId: TurnId;
+  /** 当前 Turn 首条 assistant 消息 id；renderer 以此作为 runId 与取消键。 */
+  messageId: string;
   /** 0 表示已启动；正整数表示仍在队列中的位置。 */
   position: number;
 }
@@ -68,6 +70,8 @@ export interface TurnStart {
   turnId: TurnId;
   source: TurnSource;
   agentId: string;
+  /** 当前 Bot 首条 assistant 消息 id；由宿主注入的工厂生成，Scheduler 写入 turn-started。 */
+  messageId: string;
   /** 用户输入；opening/reply 等无新用户消息的 Turn 可以缺省。 */
   input?: ConversationMessage;
 }
@@ -166,8 +170,9 @@ export interface StepHandoff {
 
 /** StepRunner 只能写模型流事件；step-* 与 usage 由 SessionStepExecutor 独占。 */
 export interface StepEventSink {
+  /** live-only 增量由宿主实时消费；journal 实现只持久化 durable 事件。 */
   append(event: AgentStreamEvent): Promise<void>;
-  /** 等待已排队的模型事件全部写入 journal。 */
+  /** 等待已排队的 durable 事件写入 journal；live-only 增量不在此等待。 */
   flush(): Promise<void>;
 }
 
@@ -185,6 +190,8 @@ export interface StepStart {
   stepId: StepId;
   index: number;
   agentId: string;
+  /** Turn 的提交来源；领域用它区分 opening 与 reply，不从消息或运行状态推演。 */
+  source: TurnSource;
   modelId?: string;
   /** 当前 Bot 回复的 assistant 消息 id；同一 Bot 的多个 step 复用。 */
   messageId: string;

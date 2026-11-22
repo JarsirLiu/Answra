@@ -1,4 +1,8 @@
-import type { AgentEvent, ConversationMessage, SessionEventEnvelope } from "@answra/shared/schema";
+import type {
+  AgentDurableEvent,
+  ConversationMessage,
+  SessionEventEnvelope,
+} from "@answra/shared/schema";
 import {
   type StepId,
   sessionId,
@@ -31,7 +35,7 @@ export function userMessage(id = "message-1", text = "hello"): ConversationMessa
 
 export function sessionEvent(
   sequence: number,
-  event: AgentEvent,
+  event: AgentDurableEvent,
   options: {
     turnId?: TurnId;
     messageId?: string;

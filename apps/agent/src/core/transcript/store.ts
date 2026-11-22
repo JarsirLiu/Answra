@@ -5,7 +5,7 @@ import type {
   ConversationSessionScope,
   ConversationSnapshot,
 } from "@answra/shared";
-import type { AgentEventEnvelope } from "@answra/shared/schema";
+import type { AgentEventEnvelope, AgentStreamEvent, TurnOutcome } from "@answra/shared/schema";
 import type { ContextState } from "./contextState";
 
 /** Team metadata attached to a conversation; identities stay in the Agent registry. */
@@ -38,6 +38,16 @@ export interface HandoffMessageInput {
   task: string;
 }
 
+/** 新 Session 运行时在 turn 开始时安装 transcript 消息所需的最小事实。 */
+export interface SessionTurnStartInput {
+  turnId: string;
+  messageId: string;
+  authorAgentId: string;
+  /** 无新用户消息的 opening/reply Turn 可以缺省。 */
+  userMessage?: ConversationMessage;
+  eventRevision?: number;
+}
+
 /**
  * Conversation、Answer 与 Interview 共用的 transcript 仓储端口。
  * 约束会话消息、活动回合认领、Bot 归属和事件恢复游标；不指定内存或磁盘实现。
@@ -48,6 +58,8 @@ export interface ConversationStore {
     seed?: ConversationSessionSeed,
     metadata?: ConversationSessionMetadata,
   ): Promise<ConversationSnapshot>;
+  /** 会话所属产品面；不存在时返回 undefined。跨领域 replay 不允许在错误领域执行恢复。 */
+  scopeOf(conversationId: string): Promise<ConversationSessionScope | undefined>;
   /**
    * 仅空闲清理：会话没有活动 run 时才清空消息；仍有活动 run 时 no-op。
    * 清空并记录覆盖到的事件 revision；UI 由发起操作的一方清理本地投影。
@@ -82,6 +94,28 @@ export interface ConversationStore {
     targetAgentId: string,
     eventRevision?: number,
   ): Promise<ConversationMessage>;
+  /** 新 Session 运行时：在 turn 开始时安装 user 消息与首条 assistant 占位。 */
+  beginSessionTurn(conversationId: string, input: SessionTurnStartInput): Promise<void>;
+  /** 新 Session 运行时：为交接目标 Bot 追加 assistant 占位。 */
+  beginSessionAssistant(
+    conversationId: string,
+    messageId: string,
+    authorAgentId: string,
+    eventRevision?: number,
+  ): Promise<void>;
+  /** 新 Session 运行时：按 assistant messageId 写回模型流事件，不依赖旧 runId。 */
+  applySessionStreamEvent(
+    conversationId: string,
+    messageId: string,
+    event: AgentStreamEvent,
+  ): Promise<void>;
+  /** 新 Session 运行时：收口指定 assistant 消息。 */
+  finishSessionAssistant(
+    conversationId: string,
+    messageId: string,
+    outcome: TurnOutcome,
+    eventRevision?: number,
+  ): Promise<void>;
   /** 写入一条已完成的 Bot→Bot 交接记录；不产生事件，不推进 revision。 */
   appendHandoffMessage(
     conversationId: string,

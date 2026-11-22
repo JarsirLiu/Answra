@@ -1,5 +1,6 @@
 import { AgentConnectionSupervisor, type InterviewWorkerEvent } from "@answra/agent";
 import {
+  ActiveInterviewConversationId,
   ActiveInterviewIntakeConversationId,
   type AgentConnectionState,
   type BotSummary,
@@ -258,7 +259,7 @@ export class AgentService {
   async getSnapshot(conversationId: string): Promise<ConversationSnapshot> {
     await this.start();
     this.trackConversation(conversationId);
-    return (await this.workerHost.request("snapshot", {
+    return (await this.workerHost.request(snapshotCommandFor(conversationId), {
       conversationId,
     })) as ConversationSnapshot;
   }
@@ -308,7 +309,7 @@ export class AgentService {
   async readEvents(conversationId: string, afterRevision: number): Promise<AgentEventEnvelope[]> {
     await this.start();
     this.trackConversation(conversationId);
-    return (await this.workerHost.request("read-events", {
+    return (await this.workerHost.request(eventsCommandFor(conversationId), {
       conversationId,
       afterRevision,
     })) as AgentEventEnvelope[];
@@ -391,24 +392,34 @@ export class AgentService {
     }
   }
 
-  /** worker 重启后内存 transcript 为空；按已知会话逐个取权威空快照推给窗口。 */
+  /** worker 重启后内存 transcript 为空；按已知会话逐个取权威快照推给窗口。 */
   private async refreshKnownSnapshots(): Promise<void> {
     for (const conversationId of [...this.knownConversationIds]) {
       try {
-        const snapshot =
-          conversationId === ActiveInterviewIntakeConversationId
-            ? ((await this.workerHost.request("interview-intake-snapshot", {
-                conversationId,
-              })) as ConversationSnapshot)
-            : ((await this.workerHost.request("snapshot", {
-                conversationId,
-              })) as ConversationSnapshot);
+        const snapshot = (await this.workerHost.request(snapshotCommandFor(conversationId), {
+          conversationId,
+        })) as ConversationSnapshot;
         this.workerHost.publishSnapshot(snapshot);
       } catch (error) {
         this.deps.log?.("[agent-service] 重连后刷新会话快照失败", error);
       }
     }
   }
+}
+
+/** 固定面试会话必须走所属领域的恢复；conversation 运行时不能替其他领域执行恢复。 */
+function snapshotCommandFor(conversationId: string) {
+  if (conversationId === ActiveInterviewConversationId) return "interview-snapshot" as const;
+  if (conversationId === ActiveInterviewIntakeConversationId)
+    return "interview-intake-snapshot" as const;
+  return "snapshot" as const;
+}
+
+function eventsCommandFor(conversationId: string) {
+  if (conversationId === ActiveInterviewConversationId) return "interview-events" as const;
+  if (conversationId === ActiveInterviewIntakeConversationId)
+    return "interview-intake-events" as const;
+  return "read-events" as const;
 }
 
 function validateSendRequest(request: ConversationSendRequest): void {

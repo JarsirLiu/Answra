@@ -62,6 +62,10 @@ const executionEventOptions = [
     type: z.literal("compaction-failed"),
     errorText: z.string(),
   }),
+  /** 宿主取消压缩；与 failed 分开，避免恢复后把用户主动取消误报成失败。 */
+  z.strictObject({
+    type: z.literal("compaction-aborted"),
+  }),
   z.strictObject({
     type: z.literal("step-started"),
     stepId: z.string(),
@@ -276,7 +280,7 @@ export const sessionEventEnvelopeSchema = z.strictObject({
   sequence: z.number().int().positive(),
   producerId: z.string(),
   occurredAt: z.string().datetime(),
-  event: agentEventSchema,
+  event: agentDurableEventSchema,
 });
 
 export type AgentExecutionEvent = z.infer<typeof agentExecutionEventSchema>;

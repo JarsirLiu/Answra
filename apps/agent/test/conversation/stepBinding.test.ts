@@ -84,6 +84,7 @@ function stepStart(overrides: Partial<StepStart> = {}): StepStart {
     stepId: TEST_STEP_ID,
     index: 0,
     agentId: intake,
+    source: "user",
     messageId: "assistant-intake",
     ...overrides,
   };
@@ -274,7 +275,6 @@ describe("Conversation step binding", () => {
       "step-started",
       "start",
       "text-start",
-      "text-delta",
       "text-end",
       "finish",
       "step-finished",

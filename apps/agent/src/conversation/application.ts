@@ -1,4 +1,7 @@
-/** Conversation application：唯一会话编排循环、transcript 认领与注册 Agent 的执行接线。 */
+/**
+ * Conversation application：唯一会话编排循环。Session 底座拥有 Turn/Step 状态与恢复，
+ * transcript 继续负责历史展示；本文件只做领域装配、宿主端口与兼容 DTO 的接线。
+ */
 import { randomUUID } from "node:crypto";
 import type {
   ConversationModelConfig,
@@ -8,17 +11,40 @@ import type {
   ConversationSnapshot,
   ManualCompactionResult,
 } from "@answra/shared";
-import type { AgentEventEnvelope, AgentRunSnapshot } from "@answra/shared/schema";
-import type { AgentId, AgentRunHandle } from "../core/agent/definition";
+import type {
+  AgentEventEnvelope,
+  AgentRunSnapshot,
+  AgentStreamEvent,
+  TurnOutcome,
+} from "@answra/shared/schema";
+import type { ConversationAgentInput } from "../bots/general/agent";
+import { type AgentId, agentId } from "../core/agent/definition";
+import { ProviderStepRunner } from "../core/agent/providerStepRunner";
 import type { AgentRuntime } from "../core/agent/runtime";
 import type { BotSummary } from "../core/bot/contracts";
 import { assertBotDiscoveryReferences, assertCanHandoff } from "../core/bot/directory";
 import { ContextCompactor } from "../core/context/compaction/compactor";
 import { ContextPreparation } from "../core/context/preparation";
+import { PreparationStepContextManager } from "../core/context/stepContextManager";
 import { validateModelRequest } from "../core/model/requestContent";
-import type { TurnQueueOutcome } from "../core/queue/turnQueue";
-import { TurnQueueRegistry } from "../core/queue/turnQueueRegistry";
-import { assertHandoffTask } from "../core/team/handoff";
+import type {
+  SessionCompactionRequest,
+  SessionId,
+  StepRunner,
+  StepStart,
+  TurnId,
+} from "../core/session/contracts";
+import { sessionId as asSessionId, turnId as asTurnId } from "../core/session/contracts";
+import type { SessionJournal } from "../core/session/journal";
+import { MemorySessionJournal } from "../core/session/memoryJournal";
+import { SessionRecoveryCoordinator } from "../core/session/recoveryCoordinator";
+import { sessionErrorText } from "../core/session/sessionErrorText";
+import { SessionEventProjector } from "../core/session/sessionEventProjector";
+import { SessionRuntime } from "../core/session/sessionRuntime";
+import { SessionRuntimeJournal } from "../core/session/sessionRuntimeJournal";
+import { SessionStepExecutor } from "../core/session/stepExecutor";
+import { SessionTranscriptBridge } from "../core/session/transcriptBridge";
+import { SessionTurnExecutor } from "../core/session/turnExecutor";
 import {
   assertTeamPreset,
   createTeamPresetCatalog,
@@ -31,12 +57,14 @@ import type {
   ConversationSessionSeed,
   ConversationStore,
 } from "../core/transcript/store";
-import { CONVERSATION_AGENT_ID, CONVERSATION_TEAM_ID, type ConversationAgentInput } from "./agent";
+import { MemoryExecutionStore } from "../execution/memoryStore";
+import type { ExecutionStore } from "../execution/store";
+import { CONVERSATION_AGENT_ID, CONVERSATION_TEAM_ID } from "./agent";
 import type { ConversationBot, ConversationBotCatalog } from "./bots/types";
 import { CHAT_PROFILES, type ChatProfileId } from "./profiles/registry";
+import { createConversationStepBinding } from "./stepBinding";
 
 const MAX_USER_MESSAGE_CHARS = 32_000;
-const MANUAL_COMPACTION_AGENT_RUN = "manual-compaction";
 
 export interface ConversationApplicationOptions {
   agentRuntime: AgentRuntime;
@@ -45,6 +73,12 @@ export interface ConversationApplicationOptions {
   catalog: ConversationBotCatalog;
   /** 团队预置；缺省时把 conversation 入口 Bot 作为单成员团队。 */
   presets?: readonly TeamPreset[];
+  /** durable session journal；缺省使用内存实现，桌面宿主注入 SQLite 实现。 */
+  sessionJournal?: SessionJournal;
+  /** UI 事件 store；缺省复用 AgentRuntime 的事件存储。 */
+  executionStore?: ExecutionStore;
+  /** 测试注入的 StepRunner；生产由 ProviderStepRunner 提供。 */
+  stepRunner?: StepRunner;
   /** 每段 run 启动与交接写入后的权威 snapshot 推送。 */
   onSnapshot?: (snapshot: ConversationSnapshot) => void | Promise<void>;
   /** 后台交接链失败；不静默吞掉，也不伪造第二条 AI 消息。 */
@@ -59,9 +93,15 @@ export class ConversationApplication {
   private readonly defaultBotId: AgentId;
   private readonly contextCompactor: ContextCompactor;
   private readonly contextPreparation: ContextPreparation;
+  private readonly projector: SessionEventProjector;
+  private readonly bridge: SessionTranscriptBridge;
+  private readonly sessionRuntime: SessionRuntime;
+  private readonly recovery: SessionRecoveryCoordinator;
+  private readonly runtimeJournal: SessionRuntimeJournal;
   private readonly onSnapshot?: ConversationApplicationOptions["onSnapshot"];
   private readonly onTeamError?: ConversationApplicationOptions["onTeamError"];
-  private readonly turns = new TurnQueueRegistry();
+  private readonly tokens = new Map<string, () => Promise<string>>();
+  private readonly turnByRun = new Map<string, { sessionId: SessionId; turnId: TurnId }>();
   private closing = false;
   private workspaceRoot: string | null = null;
 
@@ -70,6 +110,9 @@ export class ConversationApplication {
     store,
     catalog,
     presets = [],
+    sessionJournal,
+    executionStore,
+    stepRunner,
     onSnapshot,
     onTeamError,
   }: ConversationApplicationOptions) {
@@ -86,11 +129,83 @@ export class ConversationApplication {
           ...(signal ? { signal } : {}),
         }),
       ...(onSnapshot ? { onSnapshot } : {}),
+      // 压缩可能发生在 step 中间；事实仍必须经唯一写入链进入 journal 与 transcript。
+      onCompaction: (fact) => this.runtimeJournal.appendCompaction(fact),
     });
     this.contextPreparation = new ContextPreparation({
       compactor: this.contextCompactor,
       contextStateStore: store,
       contextWindow: () => this.agentRuntime.chatContextWindow(),
+    });
+    const events =
+      executionStore ??
+      (typeof agentRuntime.eventStore === "function"
+        ? agentRuntime.eventStore()
+        : new MemoryExecutionStore());
+    this.projector = new SessionEventProjector({ store: events });
+    this.bridge = new SessionTranscriptBridge({ store });
+
+    const journal = new SessionRuntimeJournal({
+      journal: sessionJournal ?? new MemorySessionJournal(),
+      projector: this.projector,
+      bridge: this.bridge,
+      onDurableEvent: (id, event) => this.contextPreparation.recordRunEvent(id, event),
+      onBoundary: (id) => this.pushSnapshot(id),
+      authorizeHandoff: async (id, handoff) => {
+        const snapshot = await this.loadRecoverySnapshot(id);
+        assertCanHandoff({
+          participants: snapshot.participantAgentIds ?? this.catalog.ids(),
+          from: agentId(handoff.fromAgentId),
+          to: agentId(handoff.toAgentId),
+          catalog: this.catalog,
+          teams: this.presets.teams(),
+        });
+      },
+    });
+    // 压缩器先于 journal 构造（journal 又依赖 preparation），因此观察口只在运行期解引用。
+    this.runtimeJournal = journal;
+    const binding = createConversationStepBinding({
+      catalog,
+      workspaceRoot: () => this.workspaceRoot,
+    });
+    const runner =
+      stepRunner ??
+      new ProviderStepRunner({
+        getEndpoint: () => this.agentRuntime.chatEndpoint(),
+        prepare: binding.prepare,
+        contextManager: new PreparationStepContextManager(this.contextPreparation),
+        resolveHandoff: binding.resolveHandoff,
+        tokenProvider: this.agentRuntime.modelTokenProvider?.(),
+      });
+    const stepExecutor = new SessionStepExecutor({
+      journal,
+      runner,
+      onStreamEvent: (step, event) => this.onStepStream(step, event),
+    });
+    const turnExecutor = new SessionTurnExecutor({
+      journal,
+      stepExecutor,
+      createMessageId: () => randomUUID(),
+    });
+    this.sessionRuntime = new SessionRuntime({
+      journal,
+      executor: turnExecutor,
+      compactor: {
+        compact: (request, signal) => this.compactWithRuntime(request, signal),
+      },
+      createMessageId: () => randomUUID(),
+    });
+    this.recovery = new SessionRecoveryCoordinator({
+      recoverFacts: (id) => this.sessionRuntime.recoverFacts(id),
+      resumeQueued: (id, runtime) => this.sessionRuntime.resumeQueued(id, runtime),
+      eventRevision: async (id) => (await this.store.load(id)).eventRevision,
+      seedRevision: (id, revision) => this.projector.seed(id, revision),
+      revision: (id) => this.projector.revision(id),
+      suspendUi: (id, suspended) => this.projector.suspend(id, suspended),
+      restoreTranscript: (id, plan, revision) => this.bridge.recover(id, plan, revision),
+      onRecovered: async (id, plan) => {
+        if (plan.interruptedTurnIds.length > 0) await this.pushSnapshot(id);
+      },
     });
 
     this.catalog = catalog;
@@ -119,11 +234,29 @@ export class ConversationApplication {
     };
   }
 
+  private tokenProvider(conversationId: string): () => Promise<string> {
+    return this.tokens.get(conversationId) ?? (() => Promise.reject(new Error("会话缺少访问令牌")));
+  }
+
+  /**
+   * 启动恢复只允许在 scheduler 创建前执行：先对齐 UI revision，再收口中断 Turn。
+   * 顺序与并发去重由 `SessionRecoveryCoordinator` 统一持有。
+   */
+  private async ensureRecovered(conversationId: string): Promise<SessionId> {
+    const id = asSessionId(conversationId);
+    await this.recovery.ensure(id, { getAccessToken: this.tokenProvider(conversationId) });
+    return id;
+  }
+
   listBots(): readonly BotSummary[] {
     return this.catalog.list();
   }
 
-  getSnapshot(conversationId: string): Promise<ConversationSnapshot> {
+  async getSnapshot(conversationId: string): Promise<ConversationSnapshot> {
+    // Interview/Answer 等其他产品面共用 transcript 与事件游标；恢复必须由所属领域执行。
+    // 旧会话可能没有 metadata.scope，按 conversation 处理，避免跳过既有恢复。
+    const scope = await this.store.scopeOf(conversationId);
+    if (scope === undefined || scope === "conversation") await this.ensureRecovered(conversationId);
     return this.loadRecoverySnapshot(conversationId);
   }
 
@@ -132,10 +265,9 @@ export class ConversationApplication {
   }
 
   readEventsAfter(conversationId: string, revision: number): Promise<AgentEventEnvelope[]> {
-    return this.agentRuntime.readEvents(conversationId, revision);
+    return this.projector.readEvents(conversationId, revision);
   }
 
-  /** 新建会话；selection 缺省使用 conversation 入口 Bot。已存在会话不接受不同参与者。 */
   async createConversation(
     conversationId: string,
     selection?: ConversationSelection,
@@ -149,47 +281,42 @@ export class ConversationApplication {
     ) {
       throw new Error("会话已存在且 Bot 参与者不同");
     }
+    await this.ensureRecovered(conversationId);
     return this.loadRecoverySnapshot(conversationId);
   }
 
-  /** 用户显式清空会话；仓储只允许清空空闲会话，并返回清空后的 snapshot。 */
   async clearConversation(conversationId: string): Promise<ConversationSnapshot> {
-    this.turns.cancelPending(conversationId);
-    const eventRevision = await this.agentRuntime.getConversationRevision(conversationId);
-    await this.store.clear(conversationId, eventRevision);
+    const session = await this.ensureRecovered(conversationId);
+    await this.sessionRuntime.cancelSession(session);
+    await this.agentRuntime.resetExecution(conversationId);
+    this.tokens.delete(conversationId);
+    this.recovery.forget(session);
+    await this.store.clear(conversationId, await this.projector.revision(conversationId));
     return this.loadRecoverySnapshot(conversationId);
   }
 
-  /** 手动压缩当前会话；不追加用户消息，也不创建 Agent run。 */
   async compactConversation(
     conversationId: string,
     accessToken: string,
     { signal, instructions }: { signal?: AbortSignal; instructions?: string } = {},
   ): Promise<{ result: ManualCompactionResult; snapshot: ConversationSnapshot }> {
-    if (this.agentRuntime.activeRunCount > 0) throw new Error("上一轮尚未结束");
-    if (this.hasQueuedMessages(conversationId)) throw new Error("仍有排队消息");
+    const session = await this.ensureRecovered(conversationId);
+    if (await this.hasQueuedMessages(conversationId)) throw new Error("仍有排队消息");
     const snapshot = await this.loadRecoverySnapshot(conversationId);
     const bot = this.requireBot(snapshot.activeAgentId ?? this.defaultBotId);
     if (!bot.policy.includeHistory) throw new Error("当前 Bot 不保留历史，无法压缩");
-    const controller = new AbortController();
-    const abortSignal = signal ?? controller.signal;
-    const input = this.manualCompactionInput(conversationId, bot);
-    const modelRequest = await bot.executor.prepare(input, abortSignal);
-    const result = await this.contextPreparation.compactNow({
-      conversationId,
-      getAccessToken: async () => accessToken,
-      modelRequest,
-      rebuild: () => bot.executor.prepare(input, abortSignal),
-      signal: abortSignal,
-      ...(instructions === undefined ? {} : { compactionInstructions: instructions }),
-      onStatus: () => this.pushSnapshot(conversationId),
+    this.tokens.set(conversationId, async () => accessToken);
+    const result = await this.sessionRuntime.compact(session, {
+      ...(instructions === undefined ? {} : { instructions }),
     });
+    if (signal?.aborted) throw new Error("压缩已取消");
     return { result, snapshot: await this.loadRecoverySnapshot(conversationId) };
   }
 
   async appendUserMessage(conversationId: string, text: string): Promise<ConversationSnapshot> {
     if (typeof text !== "string" || !text.trim() || text.length > MAX_USER_MESSAGE_CHARS)
       throw new Error("消息内容无效或过长");
+    await this.ensureRecovered(conversationId);
     return this.store.appendUserMessage(
       conversationId,
       createUserMessage(randomUUID(), { text: text.trim(), images: [] }),
@@ -200,6 +327,68 @@ export class ConversationApplication {
     this.agentRuntime.configureModelRoutes({ chat: config.chat, answer: config.answer });
   }
 
+  private async submitTurn({
+    botId,
+    conversationId,
+    request,
+    accessToken,
+    teamId,
+  }: {
+    botId?: string;
+    conversationId: string;
+    request: ConversationSendRequest;
+    accessToken: string;
+    teamId?: string;
+  }): Promise<{
+    session: SessionId;
+    turnId: TurnId;
+    runId: string;
+    seed: ConversationSessionSeed;
+    requested?: ConversationBot;
+  }> {
+    validateModelRequest(request);
+    // 配置门禁必须在入队前完成：否则命令已返回成功，失败只发生在后台。
+    if (this.agentRuntime.chatEndpoint !== undefined) this.agentRuntime.chatEndpoint();
+    if (this.closing) throw new Error("会话正在关闭");
+    const requested = botId ? this.requireBot(botId) : undefined;
+    const preset = teamId === undefined ? undefined : this.presets.require(teamId);
+    const seed = this.seedForBot((requested ?? this.requireBot(this.defaultBotId)).id);
+    const teamSeed = preset === undefined ? seed : this.seedForTeam(preset);
+    await this.store.create(conversationId, teamSeed, this.sessionMetadata());
+    const session = await this.ensureRecovered(conversationId);
+    const snapshot = await this.loadRecoverySnapshot(conversationId);
+    if (
+      preset !== undefined &&
+      snapshot.participantAgentIds &&
+      !sameParticipants(snapshot.participantAgentIds, teamSeed.participantAgentIds)
+    ) {
+      throw new Error("会话已存在且 Bot 参与者不同");
+    }
+    const activeAgentId = snapshot.activeAgentId ?? teamSeed.activeAgentId;
+    if (requested && requested.id !== activeAgentId) {
+      throw new Error(`会话当前由 ${activeAgentId} 接待，不能直接切换到 ${requested.id}`);
+    }
+    const entry = this.requireBot(activeAgentId);
+    if (snapshot.participantAgentIds?.includes(entry.id) === false)
+      throw new Error(`Bot 不属于当前会话参与者：${entry.id}`);
+    this.tokens.set(conversationId, async () => accessToken);
+    const submission = await this.sessionRuntime.submit({
+      sessionId: session,
+      source: "user",
+      agentId: entry.id,
+      input: createUserMessage(randomUUID(), request),
+      runtime: { getAccessToken: async () => accessToken },
+    });
+    this.turnByRun.set(submission.messageId, { sessionId: session, turnId: submission.turnId });
+    return {
+      session,
+      turnId: submission.turnId,
+      runId: submission.messageId,
+      seed: teamSeed,
+      ...(requested ? { requested } : {}),
+    };
+  }
+
   /** 发送一条用户消息；botId 缺省时沿用会话 activeAgentId，显式 Bot 必须与当前接待者一致。 */
   async enqueue(
     botId: string | undefined,
@@ -207,38 +396,22 @@ export class ConversationApplication {
     request: ConversationSendRequest,
     accessToken: string,
   ): Promise<ConversationSendResult> {
-    validateModelRequest(request);
-    const requested = botId ? this.requireBot(botId) : undefined;
-    const seed = this.seedForBot((requested ?? this.requireBot(this.defaultBotId)).id);
-    await this.store.create(conversationId, seed, this.sessionMetadata());
-    const getAccessToken = async () => accessToken;
-    return this.turns.enqueue(conversationId, async () => {
-      const snapshot = await this.loadRecoverySnapshot(conversationId);
-      const activeAgentId = snapshot.activeAgentId ?? seed.activeAgentId;
-      if (requested && requested.id !== activeAgentId) {
-        throw new Error(`会话当前由 ${activeAgentId} 接待，不能直接切换到 ${requested.id}`);
-      }
-      const entry = this.requireBot(activeAgentId);
-      const handle = await this.startBot({
-        conversationId,
-        bot: entry,
-        trigger: { kind: "user", request },
-        getAccessToken,
-      });
-      this.turns.trackRun(conversationId, handle.runId);
-      const completion = this.continueTeamTurn({
-        conversationId,
-        from: entry,
-        handle,
-        getAccessToken,
-      })
-        .catch((error: unknown) => {
-          this.onTeamError?.(error);
-          throw error;
-        })
-        .finally(() => this.turns.untrackRun(handle.runId));
-      return { runId: handle.runId, snapshot: handle.prepared, completion };
-    });
+    const accepted = await this.submitTurn({ botId, conversationId, request, accessToken });
+    const position = this.sessionRuntime.cachedPosition(accepted.session, accepted.turnId);
+    if (position !== 0 && position !== undefined) {
+      return {
+        queueId: accepted.turnId,
+        status: "queued",
+        position,
+      };
+    }
+    return {
+      queueId: accepted.turnId,
+      status: "started",
+      position: 0,
+      runId: accepted.runId,
+      snapshot: await this.loadRecoverySnapshot(conversationId),
+    };
   }
 
   async send(
@@ -251,8 +424,9 @@ export class ConversationApplication {
     if (accepted.status === "started") {
       return { runId: accepted.runId, snapshot: accepted.snapshot };
     }
-    const started = await this.turns.waitForStart(conversationId, accepted.queueId);
-    return { runId: started.runId, snapshot: started.snapshot };
+    const session = await this.ensureRecovered(conversationId);
+    const runId = await this.sessionRuntime.waitForTurnStart(session, asTurnId(accepted.queueId));
+    return { runId, snapshot: await this.loadRecoverySnapshot(conversationId) };
   }
 
   /** `chat-send` 的迁移入口：profile 仅用于校验，Bot 由目录或会话决定。 */
@@ -266,50 +440,29 @@ export class ConversationApplication {
     return this.send(undefined, conversationId, request, accessToken);
   }
 
-  /** `team-send`：显式团队入口；等待整条交接链回到 idle 后返回最终 snapshot。 */
   async enqueueTeamMessage(
     teamId: string,
     conversationId: string,
     request: ConversationSendRequest,
     accessToken: string,
   ): Promise<ConversationSendResult> {
-    validateModelRequest(request);
-    const preset = this.presets.require(teamId);
-    const seed = this.seedForTeam(preset);
-    await this.store.create(conversationId, seed, this.sessionMetadata());
-    const getAccessToken = async () => accessToken;
-    return this.turns.enqueue(conversationId, async () => {
-      const snapshot = await this.loadRecoverySnapshot(conversationId);
-      if (
-        snapshot.participantAgentIds &&
-        !sameParticipants(snapshot.participantAgentIds, seed.participantAgentIds)
-      ) {
-        throw new Error("会话已存在且 Bot 参与者不同");
-      }
-      const entry = this.requireBot(snapshot.activeAgentId ?? preset.entryBotId);
-      const participants = snapshot.participantAgentIds ?? preset.memberBotIds;
-      if (!participants.includes(entry.id))
-        throw new Error(`Bot 不属于当前会话参与者：${entry.id}`);
-      const first = await this.startBot({
-        conversationId,
-        bot: entry,
-        trigger: { kind: "user", request },
-        getAccessToken,
-      });
-      this.turns.trackRun(conversationId, first.runId);
-      const completion = this.continueTeamTurn({
-        conversationId,
-        from: entry,
-        handle: first,
-        getAccessToken,
-      })
-        .catch((error: unknown) => {
-          this.onTeamError?.(error);
-          throw error;
-        })
-        .finally(() => this.turns.untrackRun(first.runId));
-      return { runId: first.runId, snapshot: first.prepared, completion };
+    const accepted = await this.submitTurn({
+      conversationId,
+      request,
+      accessToken,
+      teamId,
     });
+    const position = this.sessionRuntime.cachedPosition(accepted.session, accepted.turnId);
+    if (position !== 0 && position !== undefined) {
+      return { queueId: accepted.turnId, status: "queued", position };
+    }
+    return {
+      queueId: accepted.turnId,
+      status: "started",
+      position: 0,
+      runId: accepted.runId,
+      snapshot: await this.loadRecoverySnapshot(conversationId),
+    };
   }
 
   async sendTeamMessage(
@@ -319,57 +472,55 @@ export class ConversationApplication {
     accessToken: string,
   ): Promise<{ runId: string; snapshot: ConversationSnapshot }> {
     const accepted = await this.enqueueTeamMessage(teamId, conversationId, request, accessToken);
-    const completion = await this.turns.wait(conversationId, accepted.queueId);
-    if (completion.failure !== undefined) throw completion.failure.error;
-    const snapshot = await this.loadRecoverySnapshot(conversationId);
-    if (!completion.runId) throw new Error("团队回合未启动");
-    return { runId: completion.runId, snapshot };
+    const session = await this.ensureRecovered(conversationId);
+    const turnId = asTurnId(accepted.queueId);
+    const completion = await this.sessionRuntime.waitForTurn(session, turnId);
+    if (completion.outcome === "failed") {
+      const error = new Error(completion.errorText ?? "团队回合执行失败");
+      this.onTeamError?.(error);
+      throw error;
+    }
+    const acceptedRunId = "runId" in accepted ? accepted.runId : completion.runId;
+    if (completion.outcome === "aborted")
+      return {
+        runId: acceptedRunId ?? "",
+        snapshot: await this.loadRecoverySnapshot(conversationId),
+      };
+    const runId = completion.runId ?? acceptedRunId ?? "";
+    return { runId, snapshot: await this.loadRecoverySnapshot(conversationId) };
   }
 
-  private async continueTeamTurn({
-    conversationId,
-    from,
-    handle,
-    getAccessToken,
-  }: {
-    conversationId: string;
-    from: ConversationBot;
-    handle: AgentRunHandle<ConversationSnapshot>;
-    getAccessToken: () => Promise<string>;
-  }): Promise<TurnQueueOutcome> {
-    const queueId = this.turns.activeQueueId(conversationId);
-    let current = from;
-    let currentHandle = handle;
-    for (;;) {
-      const outcome = await currentHandle.done;
-      if (outcome !== "completed") return toQueueOutcome(outcome);
-      if (this.hasQueuedAhead(conversationId, queueId)) return "completed";
-      const result = await currentHandle.result;
-      if (!result) return "completed";
-      assertHandoffTask(result.task);
-      const snapshot = await this.loadRecoverySnapshot(conversationId);
-      assertCanHandoff({
-        participants: snapshot.participantAgentIds ?? [current.id],
-        from: current.id,
-        to: result.to,
-        catalog: this.catalog,
-        teams: this.presets.teams(),
-      });
-      await this.store.appendHandoffMessage(conversationId, {
-        id: randomUUID(),
-        fromAgentId: current.id,
-        toAgentId: result.to,
-        task: result.task,
-      });
-      await this.pushSnapshot(conversationId);
-      const next = this.requireBot(result.to);
-      currentHandle = await this.startBot({
+  private async onStepStream(step: StepStart, event: AgentStreamEvent): Promise<void> {
+    await this.projector.applyLive(step, event);
+    await this.bridge.applyLive(step.sessionId, step.messageId, event);
+  }
+
+  private async compactWithRuntime(
+    request: SessionCompactionRequest,
+    signal: AbortSignal,
+  ): Promise<ManualCompactionResult> {
+    const conversationId = request.sessionId;
+    const snapshot = await this.loadRecoverySnapshot(conversationId);
+    const bot = this.requireBot(snapshot.activeAgentId ?? this.defaultBotId);
+    if (!bot.policy.includeHistory)
+      return { status: "failed", errorText: "当前 Bot 不保留历史，无法压缩" };
+    const input = this.manualCompactionInput(conversationId, bot);
+    const prepare = () => bot.executor.prepare(input, signal);
+    try {
+      return await this.contextPreparation.compactNow({
         conversationId,
-        bot: next,
-        trigger: { kind: "handoff" },
-        getAccessToken,
+        operationId: request.operationId,
+        getAccessToken: this.tokenProvider(conversationId),
+        modelRequest: await prepare(),
+        rebuild: prepare,
+        signal,
+        ...(request.instructions === undefined
+          ? {}
+          : { compactionInstructions: request.instructions }),
+        onStatus: () => this.pushSnapshot(conversationId),
       });
-      current = next;
+    } catch (error) {
+      return { status: "failed", errorText: sessionErrorText(error) };
     }
   }
 
@@ -388,87 +539,8 @@ export class ConversationApplication {
     };
   }
 
-  private hasQueuedMessages(conversationId: string): boolean {
-    return this.turns.hasQueued(conversationId);
-  }
-
-  /** 只判断当前 team turn 之后是否已有用户 turn；handoff 链自身仍属于同一个队列项。 */
-  private hasQueuedAhead(conversationId: string, queueId: string | undefined): boolean {
-    if (this.turns.queuedCount(conversationId) > 0) return true;
-    const activeQueueId = this.turns.activeQueueId(conversationId);
-    return queueId !== undefined && activeQueueId !== undefined && activeQueueId !== queueId;
-  }
-
-  private startBot({
-    conversationId,
-    bot,
-    trigger,
-    getAccessToken,
-  }: {
-    conversationId: string;
-    bot: ConversationBot;
-    trigger: { kind: "user"; request: ConversationSendRequest } | { kind: "handoff" };
-    getAccessToken: () => Promise<string>;
-  }): Promise<AgentRunHandle<ConversationSnapshot>> {
-    if (this.closing) throw new Error("会话正在关闭");
-    return bot.executor.startRun<ConversationSnapshot>({
-      conversationId,
-      getAccessToken,
-      shouldYield: () => this.turns.queuedCount(conversationId) > 0,
-      prepareContext: (modelRequest, rebuild, signal) =>
-        this.contextPreparation.prepareRequest({
-          conversationId,
-          getAccessToken,
-          modelRequest,
-          rebuild,
-          signal,
-          onStatus: () => this.pushSnapshot(conversationId),
-        }),
-      recoverContext: (modelRequest, rebuild, _error, signal) =>
-        this.contextPreparation.recoverRequest({
-          conversationId,
-          getAccessToken,
-          modelRequest,
-          rebuild,
-          signal,
-          onStatus: () => this.pushSnapshot(conversationId),
-        }),
-      prepareRun: async ({ runId, eventRevision }) => {
-        const request =
-          trigger.kind === "user"
-            ? trigger.request
-            : {
-                text: (
-                  await this.store.beginHandoffRun(conversationId, runId, bot.id, eventRevision)
-                ).text,
-                images: [],
-              };
-        if (trigger.kind === "user") {
-          await this.store.beginRun(
-            conversationId,
-            runId,
-            createUserMessage(randomUUID(), request),
-            eventRevision,
-            bot.id,
-          );
-        }
-        const snapshot = await this.loadRecoverySnapshot(conversationId);
-        await this.pushSnapshotValue(snapshot);
-        return {
-          input: {
-            conversationId,
-            runId,
-            request,
-            profile: bot.policy,
-            workspaceRoot: this.workspaceRoot,
-            viewerAgentId: bot.id,
-            agentNames: new Map(this.catalog.list().map((member) => [member.id, member.name])),
-          },
-          prepared: snapshot,
-        };
-      },
-      onEvent: (event) => this.applyRunEvent(conversationId, event),
-    });
+  private async hasQueuedMessages(conversationId: string): Promise<boolean> {
+    return (await this.sessionRuntime.queuedCount(asSessionId(conversationId))) > 0;
   }
 
   private requireBot(agentId: string): ConversationBot {
@@ -510,21 +582,31 @@ export class ConversationApplication {
     await this.onSnapshot(snapshot);
   }
 
-  private async applyRunEvent(conversationId: string, envelope: AgentEventEnvelope): Promise<void> {
-    await this.store.applyAgentEvent(conversationId, envelope);
-    await this.contextPreparation.recordRunEvent(conversationId, envelope.event);
+  cancel(runId: string): void {
+    const owner = this.turnByRun.get(runId) ?? {
+      sessionId: undefined,
+      turnId: undefined,
+    };
+    const session = owner.sessionId ?? this.projectorRunSession(runId);
+    const turnId = owner.turnId ?? this.projectorRunTurn(runId);
+    if (session !== undefined && turnId !== undefined) {
+      void this.sessionRuntime.cancel(session, turnId).catch((error: unknown) => {
+        this.onTeamError?.(error);
+      });
+      return;
+    }
+    // Answer/Interview 等非 Session 执行仍走 AgentRuntime 的 run 取消。
+    this.agentRuntime.cancel(runId);
   }
 
-  cancel(runId: string): void {
-    const conversationId = this.turns.conversationForRun(runId);
-    if (conversationId !== undefined) {
-      this.turns.cancelPending(conversationId);
-      const activeRunId = this.turns.activeRunId(conversationId);
-      if (activeRunId !== undefined && activeRunId !== runId) {
-        this.agentRuntime.cancel(activeRunId);
-      }
-    }
-    this.agentRuntime.cancel(runId);
+  private projectorRunSession(runId: string): SessionId | undefined {
+    const id = this.projector.conversationForRun(runId);
+    return id === undefined ? undefined : asSessionId(id);
+  }
+
+  private projectorRunTurn(runId: string): TurnId | undefined {
+    const id = this.projector.turnForRun(runId);
+    return id === undefined ? undefined : asTurnId(id);
   }
 
   waitForQueue(
@@ -533,9 +615,13 @@ export class ConversationApplication {
   ): Promise<{
     queueId: string;
     runId?: string;
-    outcome: TurnQueueOutcome;
+    outcome: TurnOutcome;
   }> {
-    return this.turns.wait(conversationId, queueId);
+    const session = asSessionId(conversationId);
+    return this.sessionRuntime.waitForTurn(session, asTurnId(queueId)).then((completion) => ({
+      queueId,
+      ...completion,
+    }));
   }
 
   waitForQueueStart(
@@ -546,15 +632,25 @@ export class ConversationApplication {
     runId: string;
     snapshot: ConversationSnapshot;
   }> {
-    return this.turns.waitForStart(conversationId, queueId);
+    const session = asSessionId(conversationId);
+    return this.sessionRuntime.waitForTurnStart(session, asTurnId(queueId)).then(async (runId) => ({
+      queueId,
+      runId,
+      snapshot: await this.loadRecoverySnapshot(conversationId),
+    }));
   }
 
   getQueuePosition(conversationId: string, queueId: string): number | undefined {
-    return this.turns.position(conversationId, queueId);
+    // 同步契约由内存 projection 提供；异步 scheduler 尚未创建时直接返回 undefined。
+    const pending = this.sessionRuntime.position(asSessionId(conversationId), asTurnId(queueId));
+    void pending;
+    return this.sessionRuntime.cachedPosition(asSessionId(conversationId), asTurnId(queueId));
   }
 
   waitForRun(runId: string): Promise<void> {
-    return this.agentRuntime.waitForRun(runId);
+    const owner = this.turnByRun.get(runId);
+    if (owner === undefined) return Promise.resolve();
+    return this.sessionRuntime.waitForTurn(owner.sessionId, owner.turnId).then(() => undefined);
   }
 
   getExecutionRun(runId: string): Promise<AgentRunSnapshot | undefined> {
@@ -568,12 +664,18 @@ export class ConversationApplication {
   /** 关闭队列消费：只阻止/取消尚未启动的 turn，活动 run 由调用方统一 abort。 */
   cancelPendingTurns(): void {
     this.closing = true;
-    this.turns.dispose();
+    this.sessionRuntime.dispose();
+  }
+
+  /** 退出屏障：阻止新 Turn 后等待活动/排队 Turn 的终态落盘，供 store 关闭前调用。 */
+  async shutdown(): Promise<void> {
+    this.closing = true;
+    await this.sessionRuntime.shutdown();
   }
 
   dispose(): void {
     this.closing = true;
-    this.turns.dispose();
+    this.sessionRuntime.dispose();
     this.agentRuntime.dispose();
   }
 
@@ -582,11 +684,7 @@ export class ConversationApplication {
   }
 }
 
-function toQueueOutcome(outcome: string): TurnQueueOutcome {
-  if (outcome === "aborted" || outcome === "superseded") return "aborted";
-  if (outcome === "failed" || outcome === "orphaned") return "failed";
-  return "completed";
-}
+const MANUAL_COMPACTION_AGENT_RUN = "manual-compaction";
 
 function withConversationPreset(
   presets: readonly TeamPreset[],

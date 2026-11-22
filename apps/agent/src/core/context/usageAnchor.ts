@@ -47,6 +47,12 @@ export class ContextUsageAnchorTracker {
       }
       return;
     }
+    // Session 底座用 Turn 终态替代 run 终态；两者语义一致，不能只认旧事件。
+    if (event.type === "turn-finished") {
+      if (event.status === "completed") await this.commit(conversationId);
+      else await this.discard(conversationId);
+      return;
+    }
     if (event.type !== "run-state-changed") return;
     if (event.state === "completed") {
       await this.commit(conversationId);

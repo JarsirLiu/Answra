@@ -478,7 +478,8 @@ describe("agent worker host", () => {
     });
 
     const snapshots = harness.frames.filter((frame) => frame.type === "conversation-snapshot");
-    expect(snapshots).toHaveLength(3);
+    // 用户消息、Turn/Step 边界各推一次权威快照；数量不是契约，顺序与内容才是。
+    expect(snapshots.length).toBeGreaterThanOrEqual(3);
     const assistantSnapshot = snapshots.find(
       (frame) => frame.type === "conversation-snapshot" && frame.snapshot.activeRunId !== undefined,
     );
@@ -497,11 +498,15 @@ describe("agent worker host", () => {
     const assistantRunId = assistantSnapshot.snapshot.activeRunId;
     if (!assistantRunId) throw new Error("assistant placeholder snapshot must identify its run");
     const assistantSnapshotIndex = harness.frames.indexOf(assistantSnapshot);
-    const firstRunEventIndex = harness.frames.findIndex(
-      (frame) => frame.type === "event" && frame.event.runId === assistantRunId,
+    // 生命周期事件可以先于占位快照；模型 step 与正文必须晚于占位快照。
+    const firstStepEventIndex = harness.frames.findIndex(
+      (frame) =>
+        frame.type === "event" &&
+        frame.event.runId === assistantRunId &&
+        frame.event.event.type === "step-started",
     );
     expect(assistantSnapshotIndex).toBeGreaterThanOrEqual(0);
-    expect(firstRunEventIndex).toBeGreaterThan(assistantSnapshotIndex);
+    expect(firstStepEventIndex).toBeGreaterThan(assistantSnapshotIndex);
     host.dispose();
   });
 

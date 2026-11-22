@@ -28,11 +28,10 @@ export class DraftCheckpointScheduler {
     this.now = options.now ?? (() => Date.now());
   }
 
-  schedule(conversationId: string, envelope: AgentEventEnvelope): void {
-    const messageId = envelope.runId;
+  schedule(conversationId: string, messageId: string, event: AgentEventEnvelope["event"]): void {
     if (!this.options.isTarget(conversationId, messageId)) return;
-    const added = checkpointChars(envelope.event);
-    const boundary = isCheckpointBoundary(envelope.event);
+    const added = checkpointChars(event);
+    const boundary = isCheckpointBoundary(event);
     if (added === 0 && !boundary) return;
     let checkpoint = this.checkpoints.get(conversationId);
     if (!checkpoint || checkpoint.messageId !== messageId) {

@@ -167,6 +167,7 @@ function createSessionRuntime() {
     journal,
     executor,
     createTurnId: () => TEST_TURN_ID_2,
+    createMessageId: () => "assistant-message",
   });
   return { journal, runtime };
 }
@@ -191,6 +192,7 @@ describe("SessionRuntime", () => {
 
     await expect(submitUser(runtime, "turn-1")).resolves.toEqual({
       turnId: TEST_TURN_ID,
+      messageId: "assistant-message",
       position: 0,
     });
     await runtime.waitForIdle(TEST_SESSION_ID);
@@ -241,12 +243,17 @@ describe("SessionRuntime", () => {
       stepExecutor: new SessionStepExecutor({ journal, runner }),
       createMessageId: sequentialMessageIds(),
     });
-    const runtime = new SessionRuntime({ journal, executor });
+    const runtime = new SessionRuntime({
+      journal,
+      executor,
+      createMessageId: () => "assistant-message",
+    });
 
     await submitUser(runtime, "turn-1");
     await runner.intakeStarted.promise;
     await expect(submitUser(runtime, "turn-2")).resolves.toEqual({
       turnId: TEST_TURN_ID_2,
+      messageId: "assistant-message",
       position: 1,
     });
 
@@ -368,7 +375,8 @@ describe("SessionRuntime", () => {
       { turnId: TEST_TURN_ID_2 },
     );
 
-    const plan = await runtime.recover(TEST_SESSION_ID, TEST_TURN_RUNTIME);
+    const plan = await runtime.recoverFacts(TEST_SESSION_ID);
+    await runtime.resumeQueued(TEST_SESSION_ID, TEST_TURN_RUNTIME);
 
     expect(plan.interruptedTurnIds).toEqual([TEST_TURN_ID]);
     expect(plan.interruptedStepIds).toEqual([TEST_STEP_ID]);
@@ -401,7 +409,7 @@ describe("SessionRuntime", () => {
     await submitUser(runtime, "turn-1");
     await runtime.waitForIdle(TEST_SESSION_ID);
 
-    await expect(runtime.recover(TEST_SESSION_ID, TEST_TURN_RUNTIME)).rejects.toThrow(
+    await expect(runtime.resumeQueued(TEST_SESSION_ID, TEST_TURN_RUNTIME)).rejects.toThrow(
       "不能执行启动恢复",
     );
   });

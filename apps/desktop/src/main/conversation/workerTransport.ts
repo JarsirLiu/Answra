@@ -9,7 +9,7 @@ import type {
   SkillRoots,
   TenVadSource,
 } from "@answra/agent";
-import { SqliteConversationStore, startAgentHost } from "@answra/agent";
+import { SqliteConversationStore, SqliteSessionJournal, startAgentHost } from "@answra/agent";
 import { createParaformerRecognizerModule } from "../interview/asrRecognizer";
 import { createTenVadFileSource } from "../interview/tenVadResources";
 
@@ -58,11 +58,16 @@ export function startAgentWorker(
       ? undefined
       : new SqliteConversationStore(options.sessionsRoot);
   const skillRoots = resolveSkillRoots(options);
+  const sessionJournal =
+    options?.sessionsRoot === undefined
+      ? undefined
+      : new SqliteSessionJournal(options.sessionsRoot);
   return startAgentHost({
     transport,
     vad,
     recognizer,
     ...(sessionStore ? { store: sessionStore, catalog: sessionStore } : {}),
+    ...(sessionJournal ? { sessionJournal } : {}),
     ...(grepWorkerPath && existsSync(grepWorkerPath) ? { grepWorkerPath } : {}),
     ...(skillRoots ? { skillRoots } : {}),
     ...(options?.globalInstructionFile

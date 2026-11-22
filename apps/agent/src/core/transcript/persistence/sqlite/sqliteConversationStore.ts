@@ -3,10 +3,11 @@ import { resolve } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import type {
   ConversationSessionPage,
+  ConversationSessionScope,
   ConversationSessionSummary,
   ConversationSnapshot,
 } from "@answra/shared";
-import type { AgentEventEnvelope } from "@answra/shared/schema";
+import type { AgentEventEnvelope, AgentStreamEvent } from "@answra/shared/schema";
 import type {
   ConversationMessageCatalog,
   ConversationMessagePage,
@@ -129,6 +130,12 @@ export class SqliteConversationStore
     if (!loaded) throw new Error("会话不存在");
     this.restoreLoadedSession(loaded);
     return super.load(conversationId);
+  }
+
+  /** 只读 scope：不触发草稿合并或 revision 写入，用于跨领域恢复守卫。 */
+  override async scopeOf(conversationId: string): Promise<ConversationSessionScope | undefined> {
+    if (this.sessions.has(conversationId)) return super.scopeOf(conversationId);
+    return this.readSession(conversationId)?.scope;
   }
 
   async list(query: ConversationSessionQuery = {}): Promise<ConversationSessionPage> {
@@ -263,7 +270,16 @@ export class SqliteConversationStore
     envelope: AgentEventEnvelope,
   ): Promise<void> {
     await super.applyAgentEvent(conversationId, envelope);
-    this.checkpoints.schedule(conversationId, envelope);
+    this.checkpoints.schedule(conversationId, envelope.runId, envelope.event);
+  }
+
+  override async applySessionStreamEvent(
+    conversationId: string,
+    messageId: string,
+    event: AgentStreamEvent,
+  ): Promise<void> {
+    await super.applySessionStreamEvent(conversationId, messageId, event);
+    this.checkpoints.schedule(conversationId, messageId, event);
   }
 
   protected override async afterMutation(

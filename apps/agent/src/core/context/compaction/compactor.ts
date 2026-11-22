@@ -1,5 +1,12 @@
 /** 自动摘要压缩的运行时编排：状态推送、检查点保存和失败回退。 */
-import type { ContextCompactionTrigger, ConversationSnapshot } from "@answra/shared";
+import { randomUUID } from "node:crypto";
+import type {
+  AgentDurableEvent,
+  CompactionReason,
+  ContextCompactionTrigger,
+  ConversationSnapshot,
+} from "@answra/shared";
+import { latestCheckpoint } from "../../transcript/contextCheckpoint";
 import type { ContextState } from "../../transcript/contextState";
 import type { ConversationStore } from "../../transcript/store";
 import { compactContext, type SummaryGeneratorInput } from "./compact";
@@ -18,10 +25,26 @@ export interface ContextSummaryRequest extends SummaryGeneratorInput {
 
 export type ContextSummaryGenerator = (input: ContextSummaryRequest) => Promise<string>;
 
+/** 压缩生命周期事实；只携带 session journal 需要的最小身份，不复制上下文状态。 */
+export interface ContextCompactionFact {
+  conversationId: string;
+  operationId: string;
+  /** 只能是 compaction-*，避免观察口被拿去写其他 durable 事实。 */
+  event: Extract<AgentDurableEvent, { type: `compaction-${string}` }>;
+}
+
+/**
+ * 压缩事实观察口；由宿主接到 session journal。
+ * 返回值不参与判定，失败时不阻断压缩，否则一次磁盘错误会让已经成功的摘要提交变成失败。
+ */
+export type ContextCompactionObserver = (fact: ContextCompactionFact) => Promise<unknown> | unknown;
+
 export interface ContextCompactorOptions {
   store: ConversationStore;
   generate: ContextSummaryGenerator;
   onSnapshot?: (snapshot: ConversationSnapshot) => void | Promise<void>;
+  /** 生命周期事实出口；自动与手动压缩共用同一条写入链。 */
+  onCompaction?: ContextCompactionObserver;
   now?: () => Date;
 }
 
@@ -39,6 +62,10 @@ export interface ContextCompactionRequest {
   getAccessToken: () => Promise<string>;
   signal?: AbortSignal;
   trigger?: ContextCompactionTrigger;
+  /** 抖动来源；缺省按 manual → manual、其余 → threshold 推导。 */
+  reason?: CompactionReason;
+  /** 手动压缩由 Scheduler 提供；自动压缩缺省时本地生成。 */
+  operationId?: string;
   /** 摘要压缩触发点；由 ContextPreparation 按真实模型请求预算传入。 */
   triggerTokens: number;
   /** 清理后的最终模型请求 token；摘要触发与摘要渲染共享同一视图。 */
@@ -59,12 +86,20 @@ export class ContextCompactor {
   private readonly store: ConversationStore;
   private readonly generate: ContextSummaryGenerator;
   private readonly onSnapshot?: ContextCompactorOptions["onSnapshot"];
+  private readonly onCompaction?: ContextCompactionObserver;
   private readonly now: () => Date;
 
-  constructor({ store, generate, onSnapshot, now = () => new Date() }: ContextCompactorOptions) {
+  constructor({
+    store,
+    generate,
+    onSnapshot,
+    onCompaction,
+    now = () => new Date(),
+  }: ContextCompactorOptions) {
     this.store = store;
     this.generate = generate;
     this.onSnapshot = onSnapshot;
+    this.onCompaction = onCompaction;
     this.now = now;
   }
 
@@ -74,6 +109,8 @@ export class ContextCompactor {
     getAccessToken,
     signal,
     trigger = "auto",
+    reason,
+    operationId = randomUUID(),
     triggerTokens,
     finalRequestTokens,
     prunedToolCallIds,
@@ -92,6 +129,10 @@ export class ContextCompactor {
     if (!bypassFailureBreaker && this.isFailureBreakerOpen(state)) {
       return { status: "skipped", reason: "breaker-open" };
     }
+    // started 落库成功后才允许写终态：否则 journal 里会出现没有起点的 finished/failed，
+    // 投影会拒绝整条会话。
+    let startedRecorded = false;
+    const reasonForEvent = reason ?? (trigger === "manual" ? "manual" : "threshold");
     try {
       const result = await compactContext({
         view,
@@ -117,6 +158,11 @@ export class ContextCompactor {
             }),
           };
           await this.persist(conversationId, state);
+          startedRecorded = await this.observe({
+            conversationId,
+            operationId,
+            event: { type: "compaction-started", trigger, reason: reasonForEvent },
+          });
         },
       });
       if (result.status === "skipped") return result;
@@ -127,10 +173,22 @@ export class ContextCompactor {
         compactionRetryAt: _retryAt,
         ...successState
       } = result.state;
-      await this.persist(conversationId, {
+      const nextState: ContextState = {
         ...successState,
         compaction: markContextCompactionSucceeded(status, result.summarizedMessages, this.now),
-      });
+      };
+      await this.persist(conversationId, nextState);
+      if (startedRecorded) {
+        await this.observe({
+          conversationId,
+          operationId,
+          event: {
+            type: "compaction-finished",
+            summarizedMessages: result.summarizedMessages,
+            summary: latestCheckpoint(nextState)?.summary ?? "",
+          },
+        });
+      }
       return {
         status: "compacted",
         summarizedMessages: result.summarizedMessages,
@@ -139,11 +197,25 @@ export class ContextCompactor {
     } catch (error) {
       if (isAbortError(error)) {
         await this.recordAborted(conversationId, state);
+        if (startedRecorded) {
+          await this.observe({
+            conversationId,
+            operationId,
+            event: { type: "compaction-aborted" },
+          });
+        }
         return { status: "aborted" };
       }
       await this.recordFailure(conversationId, state, error, {
         countFailure: trigger !== "manual",
       });
+      if (startedRecorded) {
+        await this.observe({
+          conversationId,
+          operationId,
+          event: { type: "compaction-failed", errorText: errorText(error) },
+        });
+      }
       return { status: "failed", errorText: errorText(error) };
     }
   }
@@ -165,6 +237,22 @@ export class ContextCompactor {
         conversationId,
         error: errorText(error),
       });
+    }
+  }
+
+  /** 事实写入失败只记录，不阻断压缩；返回是否已被宿主接受。 */
+  private async observe(fact: ContextCompactionFact): Promise<boolean> {
+    if (this.onCompaction === undefined) return true;
+    try {
+      await this.onCompaction(fact);
+      return true;
+    } catch (error) {
+      console.error("[context-compaction] journal fact failed", {
+        conversationId: fact.conversationId,
+        type: fact.event.type,
+        error: errorText(error),
+      });
+      return false;
     }
   }
 

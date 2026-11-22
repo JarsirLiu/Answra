@@ -2,9 +2,15 @@
 import type {
   ConversationMessage,
   ConversationMessagePart,
+  ConversationSessionScope,
   ConversationSnapshot,
 } from "@answra/shared";
-import type { AgentEventEnvelope, AgentStreamEvent, RunOutcome } from "@answra/shared/schema";
+import type {
+  AgentEventEnvelope,
+  AgentStreamEvent,
+  RunOutcome,
+  TurnOutcome,
+} from "@answra/shared/schema";
 import { compactionBoundaries } from "./contextBoundary";
 import { cloneContextCheckpoint } from "./contextCheckpoint";
 import type { ContextState } from "./contextState";
@@ -14,6 +20,7 @@ import type {
   ConversationStore,
   ConversationStoreMutation,
   HandoffMessageInput,
+  SessionTurnStartInput,
 } from "./store";
 
 export interface ConversationSessionRecord {
@@ -56,6 +63,10 @@ export class MemoryConversationStore implements ConversationStore {
     this.sessions.set(conversationId, session);
     await this.afterMutation(conversationId, { kind: "created" });
     return snapshotOf(session);
+  }
+
+  async scopeOf(conversationId: string): Promise<ConversationSessionScope | undefined> {
+    return this.sessions.get(conversationId)?.metadata?.scope;
   }
 
   async load(conversationId: string): Promise<ConversationSnapshot> {
@@ -173,6 +184,75 @@ export class MemoryConversationStore implements ConversationStore {
       dirtyMessageIds: [assistant.id],
     });
     return cloneMessage(last);
+  }
+
+  async beginSessionTurn(conversationId: string, input: SessionTurnStartInput): Promise<void> {
+    const session = this.requireSession(conversationId);
+    if (input.userMessage !== undefined) {
+      await this.beginRun(
+        conversationId,
+        input.messageId,
+        input.userMessage,
+        input.eventRevision ?? 0,
+        input.authorAgentId,
+      );
+      return;
+    }
+    if (session.snapshot.messages.length === 0) {
+      await this.beginOpeningRun(
+        conversationId,
+        input.messageId,
+        input.eventRevision ?? 0,
+        input.authorAgentId,
+      );
+      return;
+    }
+    await this.beginReplyRun(
+      conversationId,
+      input.messageId,
+      input.eventRevision ?? 0,
+      input.authorAgentId,
+    );
+  }
+
+  async beginSessionAssistant(
+    conversationId: string,
+    messageId: string,
+    authorAgentId: string,
+    eventRevision = 0,
+  ): Promise<void> {
+    await this.beginHandoffRun(conversationId, messageId, authorAgentId, eventRevision);
+  }
+
+  async applySessionStreamEvent(
+    conversationId: string,
+    messageId: string,
+    event: AgentStreamEvent,
+  ): Promise<void> {
+    const session = this.requireSession(conversationId);
+    const message = session.snapshot.messages.find((item) => item.id === messageId);
+    if (!message) throw new Error("会话没有匹配的助手消息");
+    const nextMessage = applyTranscriptEvent(message, message.parts ?? [], event);
+    if (!nextMessage) return;
+    session.snapshot = {
+      ...session.snapshot,
+      messages: session.snapshot.messages.map((item) =>
+        item.id === messageId ? nextMessage : item,
+      ),
+    };
+  }
+
+  async finishSessionAssistant(
+    conversationId: string,
+    messageId: string,
+    outcome: TurnOutcome,
+    eventRevision = 0,
+  ): Promise<void> {
+    this.finishAssistant(conversationId, messageId, outcome, eventRevision);
+    await this.afterMutation(conversationId, {
+      kind: "run-finished",
+      dirtyMessageIds: [messageId],
+    });
   }
 
   async appendHandoffMessage(
@@ -296,7 +376,8 @@ export class MemoryConversationStore implements ConversationStore {
       event.type === "turn-handoff" ||
       event.type === "compaction-started" ||
       event.type === "compaction-finished" ||
-      event.type === "compaction-failed"
+      event.type === "compaction-failed" ||
+      event.type === "compaction-aborted"
     ) {
       session.snapshot = { ...session.snapshot, eventRevision: aggregateRevision };
       return;
@@ -326,12 +407,23 @@ export class MemoryConversationStore implements ConversationStore {
   ): void {
     const session = this.requireSession(conversationId);
     if (session.snapshot.activeRunId !== runId) return;
+    this.finishAssistant(conversationId, runId, outcome, eventRevision);
+  }
+
+  private finishAssistant(
+    conversationId: string,
+    messageId: string,
+    outcome: RunOutcome,
+    eventRevision = 0,
+  ): void {
+    const session = this.requireSession(conversationId);
+    if (!session.snapshot.messages.some((message) => message.id === messageId)) return;
     session.snapshot = {
       ...session.snapshot,
-      eventRevision,
-      activeRunId: undefined,
+      eventRevision: Math.max(session.snapshot.eventRevision, eventRevision),
+      ...(session.snapshot.activeRunId === messageId ? { activeRunId: undefined } : {}),
       messages: session.snapshot.messages.map((message) =>
-        message.id === runId
+        message.id === messageId
           ? {
               ...message,
               parts: settleInterruptedParts(message.parts, outcome),

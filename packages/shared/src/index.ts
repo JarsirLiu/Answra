@@ -149,6 +149,7 @@ export type {
   AgentExecutionEvent,
   AgentStreamEvent,
   BotSummary,
+  CompactionReason,
   ContextCompactionBoundary,
   ContextCompactionState,
   ContextCompactionStatus,

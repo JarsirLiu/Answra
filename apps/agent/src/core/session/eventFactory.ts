@@ -1,6 +1,6 @@
 /** 生成 SessionJournal 的目标 envelope；不决定事件语义，也不写投影。 */
 import { randomUUID } from "node:crypto";
-import type { AgentEvent, SessionEventEnvelope } from "@answra/shared/schema";
+import type { AgentDurableEvent, SessionEventEnvelope } from "@answra/shared/schema";
 import type { SessionId, StepId, TurnId } from "./contracts";
 
 const DEFAULT_PRODUCER_ID = "answra-agent";
@@ -19,7 +19,7 @@ export interface SessionEventContext {
 
 export function createSessionEvent(
   context: SessionEventContext,
-  event: AgentEvent,
+  event: AgentDurableEvent,
 ): SessionEventEnvelope {
   if (!Number.isInteger(context.sequence) || context.sequence < 1) {
     throw new Error("Session event sequence 必须是正整数");
