@@ -1,7 +1,8 @@
-import type { AgentEvent, AgentEventEnvelope } from "@answra/shared/schema";
+import type { AgentDurableEvent } from "@answra/shared/schema";
 import { describe, expect, it } from "vitest";
 import { createStreamPresenter } from "../../src/presentation/streamPresenter";
 import type { OutputPort } from "../../src/transport/output";
+import { liveFrame, sessionFrame } from "../frameFixtures";
 
 function createOutput(): OutputPort & { stdout: string; stderr: string } {
   const output = {
@@ -19,20 +20,9 @@ function createOutput(): OutputPort & { stdout: string; stderr: string } {
 
 let sequence = 0;
 
-function envelope(event: AgentEvent): AgentEventEnvelope {
+function frame(event: AgentDurableEvent) {
   sequence += 1;
-  return {
-    schemaVersion: 1,
-    eventId: `event-${sequence}`,
-    conversationId: "conversation-1",
-    runId: "run-1",
-    attemptId: "attempt-1",
-    sequence,
-    aggregateRevision: 0,
-    producerId: "test",
-    occurredAt: new Date().toISOString(),
-    event,
-  };
+  return sessionFrame(sequence, event, { turnId: "turn-1", messageId: "message-1" });
 }
 
 describe("stream presenter", () => {
@@ -40,11 +30,26 @@ describe("stream presenter", () => {
     const output = createOutput();
     const presenter = createStreamPresenter(output);
 
-    presenter.present(envelope({ type: "text-start", partId: "text-1" }));
-    presenter.present(envelope({ type: "text-delta", partId: "text-1", delta: "hello" }));
-    presenter.present(envelope({ type: "text-delta", partId: "text-1", delta: " world" }));
-    presenter.present(envelope({ type: "text-end", partId: "text-1" }));
-    presenter.present(envelope({ type: "text-delta", partId: "text-2", delta: "next" }));
+    presenter.presentFrame(frame({ type: "text-start", partId: "text-1" }));
+    presenter.presentLive(
+      liveFrame(
+        { type: "text-delta", partId: "text-1", delta: "hello" },
+        { messageId: "message-1" },
+      ),
+    );
+    presenter.presentLive(
+      liveFrame(
+        { type: "text-delta", partId: "text-1", delta: " world" },
+        { messageId: "message-1" },
+      ),
+    );
+    presenter.presentFrame(frame({ type: "text-end", partId: "text-1" }));
+    presenter.presentLive(
+      liveFrame(
+        { type: "text-delta", partId: "text-2", delta: "next" },
+        { messageId: "message-1" },
+      ),
+    );
     presenter.finish();
 
     expect(output.stdout).toBe("hello world\nnext\n");
@@ -56,16 +61,16 @@ describe("stream presenter", () => {
     const output = createOutput();
     const presenter = createStreamPresenter(output);
 
-    presenter.present(
-      envelope({
+    presenter.presentFrame(
+      frame({
         type: "tool-execution-started",
         toolCallId: "tool-1",
         toolName: "workspace.read",
         input: { file_path: "src/a.ts" },
       }),
     );
-    presenter.present(
-      envelope({
+    presenter.presentFrame(
+      frame({
         type: "tool-execution-finished",
         toolCallId: "tool-1",
         toolName: "workspace.read",
@@ -74,16 +79,16 @@ describe("stream presenter", () => {
         durationMs: 12,
       }),
     );
-    presenter.present(
-      envelope({
+    presenter.presentFrame(
+      frame({
         type: "tool-execution-started",
         toolCallId: "tool-2",
         toolName: "workspace.edit",
         input: { path: "src/b.ts" },
       }),
     );
-    presenter.present(
-      envelope({
+    presenter.presentFrame(
+      frame({
         type: "tool-execution-finished",
         toolCallId: "tool-2",
         toolName: "workspace.edit",
@@ -102,9 +107,14 @@ describe("stream presenter", () => {
     const output = createOutput();
     const presenter = createStreamPresenter(output);
 
-    presenter.present(envelope({ type: "text-delta", partId: "text-1", delta: "partial" }));
-    presenter.present(envelope({ type: "error", errorText: "boom" }));
-    presenter.present(envelope({ type: "run-state-changed", state: "failed", attempt: 1 }));
+    presenter.presentLive(
+      liveFrame(
+        { type: "text-delta", partId: "text-1", delta: "partial" },
+        { messageId: "message-1" },
+      ),
+    );
+    presenter.presentFrame(frame({ type: "error", errorText: "boom" }));
+    presenter.presentFrame(frame({ type: "turn-finished", status: "failed" }));
     presenter.finish();
 
     expect(output.stdout).toBe("partial\n");
@@ -112,11 +122,23 @@ describe("stream presenter", () => {
     expect(presenter.exitCode).toBe(1);
   });
 
-  it("maps cancelled runs to exit code 130", () => {
+  it("reports a failed turn without a prior stream error once", () => {
     const output = createOutput();
     const presenter = createStreamPresenter(output);
 
-    presenter.present(envelope({ type: "run-state-changed", state: "aborted", attempt: 1 }));
+    presenter.presentFrame(frame({ type: "turn-finished", status: "failed" }));
+    presenter.presentFrame(frame({ type: "turn-finished", status: "failed" }));
+
+    expect(output.stdout).toBe("");
+    expect(output.stderr).toBe("run failed\n");
+    expect(presenter.exitCode).toBe(1);
+  });
+
+  it("maps aborted turns to exit code 130", () => {
+    const output = createOutput();
+    const presenter = createStreamPresenter(output);
+
+    presenter.presentFrame(frame({ type: "turn-finished", status: "aborted" }));
 
     expect(output.stderr).toBe("cancelled\n");
     expect(presenter.exitCode).toBe(130);
@@ -126,8 +148,8 @@ describe("stream presenter", () => {
     const output = createOutput();
     const presenter = createStreamPresenter(output);
 
-    presenter.present(
-      envelope({
+    presenter.presentFrame(
+      frame({
         type: "retry",
         kind: "rate-limit",
         attempt: 2,

@@ -1,4 +1,16 @@
-import type { AgentEventEnvelope, DesktopBridge } from "@answra/shared";
+/**
+ * 会话视图的唯一游标与折叠入口。
+ *
+ * 会话路径吃 `SessionFrame`（durable，按 `seq` 重放）与 `LiveFrame`（可丢增量）；
+ * Answer 在 P3 前仍吃旧 `AgentEventEnvelope`，两条通道不混用、不合并状态。
+ */
+import type {
+  AgentEventEnvelope,
+  ConversationSnapshot,
+  DesktopBridge,
+  LiveFrame,
+  SessionFrame,
+} from "@answra/shared";
 import type { RunOutcome } from "@answra/shared/schema";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -8,22 +20,34 @@ import {
   type ConversationView,
   conversationOf,
   EMPTY_CONVERSATION_VIEW,
+  foldConversationFrame,
+  overlayLiveFrame,
 } from "./conversationView";
+
+/** durable 帧或 Answer shim 的旧 envelope；由 `transport` 决定实际来源。 */
+type ViewPayload = SessionFrame | AgentEventEnvelope;
+
+/** 事实通道：`events` 只服务 P3 前的 Answer。 */
+export type ConversationTransport = "frames" | "events";
 
 export interface UseConversationViewOptions extends ConversationProjectionOptions {
   enabled?: boolean;
   create?: boolean;
+  transport?: ConversationTransport;
   /** 领域自己的权威快照读取；缺省走通用 conversation bridge。 */
-  getSnapshot?: (conversationId: string) => Promise<import("@answra/shared").ConversationSnapshot>;
-  /** 领域自己的事件读取；缺省走通用 conversation bridge。 */
-  readEvents?: (conversationId: string, afterRevision: number) => Promise<AgentEventEnvelope[]>;
+  getSnapshot?: (conversationId: string) => Promise<ConversationSnapshot>;
 }
+
 export interface ConversationViewHandle {
   view: ConversationView;
   selectConversation: (conversationId: string | undefined) => void;
-  applySnapshot: (snapshot: import("@answra/shared").ConversationSnapshot) => void;
-  reconcileRunSnapshot: (snapshot: import("@answra/shared").ConversationSnapshot) => Promise<void>;
-  waitForRun: (runId: string) => Promise<RunOutcome>;
+  applySnapshot: (snapshot: ConversationSnapshot) => void;
+  reconcileSnapshot: (snapshot: ConversationSnapshot) => Promise<void>;
+  /**
+   * 等待一次活动结束：`frames` 传 Turn id，`events`（Answer shim）传 run id。
+   * 终态只认各自通道的终态事实。
+   */
+  waitForOutcome: (activityId: string) => Promise<RunOutcome>;
   getView: () => ConversationView;
   clear: () => void;
 }
@@ -33,7 +57,7 @@ export function useConversationView(
   conversationId: string | undefined,
   options: UseConversationViewOptions = {},
 ): ConversationViewHandle {
-  const { enabled = true, create = true } = options;
+  const { enabled = true, create = true, transport = "frames" } = options;
   const [activeId, setActiveId] = useState(conversationId);
   const [view, setView] = useState(EMPTY_CONVERSATION_VIEW);
   const activeIdRef = useRef(conversationId);
@@ -42,157 +66,186 @@ export function useConversationView(
   const generationRef = useRef(0);
   const waitersRef = useRef(new Map<string, (outcome: RunOutcome) => void>());
   const finishedRef = useRef(new Map<string, RunOutcome>());
-  const pendingEventsRef = useRef(new Map<number, AgentEventEnvelope>());
-  const drainingRef = useRef(false);
+  const syncingRef = useRef(false);
+  const resyncRef = useRef(false);
   const initializingRef = useRef(false);
   optionsRef.current = options;
 
-  const commit = useCallback((event: AgentEventEnvelope) => {
-    if (!activeIdRef.current || conversationOf(event) !== activeIdRef.current) return;
-    const outcome = terminalOutcome(event);
-    if (outcome) {
-      const waiter = waitersRef.current.get(event.runId);
-      if (waiter) {
-        waitersRef.current.delete(event.runId);
-        waiter(outcome);
-      } else finishedRef.current.set(event.runId, outcome);
+  const resolveOutcome = useCallback((activityId: string, outcome: RunOutcome) => {
+    const waiter = waitersRef.current.get(activityId);
+    if (waiter !== undefined) {
+      waitersRef.current.delete(activityId);
+      waiter(outcome);
+      return;
     }
-    const next = applyAgentEvent(viewRef.current, event, optionsRef.current);
+    finishedRef.current.set(activityId, outcome);
+  }, []);
+
+  /** 折叠一条本会话载荷；返回 false 表示游标有缺口，调用方必须整段重读。 */
+  const applySequential = useCallback(
+    (payload: ViewPayload): boolean => {
+      const current = viewRef.current;
+      if (payloadSession(payload) !== activeIdRef.current) return true;
+      const cursor = payloadCursor(payload);
+      const known = cursorOf(current, transport);
+      if (cursor <= known) return true;
+      if (cursor !== known + 1) return false;
+      const terminal = payloadOutcome(payload);
+      if (terminal !== undefined) resolveOutcome(terminal.activityId, terminal.outcome);
+      const next = applyPayload(current, payload, optionsRef.current);
+      if (next === current) return true;
+      viewRef.current = next;
+      setView(next);
+      return true;
+    },
+    [resolveOutcome, transport],
+  );
+
+  const readAfter = useCallback(
+    async (id: string, cursor: number): Promise<ViewPayload[]> => {
+      if (transport === "frames") return (await platform?.readSessionFrames?.(id, cursor)) ?? [];
+      return (await platform?.readConversationEvents?.(id, cursor)) ?? [];
+    },
+    [platform, transport],
+  );
+
+  /** 按当前游标整段重读，直到缺口标记清零；失败只留标记，由下一次到达触发重试。 */
+  const syncCursor = useCallback(async () => {
+    if (syncingRef.current || initializingRef.current || !activeIdRef.current) return;
+    syncingRef.current = true;
+    const generation = generationRef.current;
+    const id = activeIdRef.current;
+    try {
+      while (resyncRef.current) {
+        resyncRef.current = false;
+        const payloads = await readAfter(id, cursorOf(viewRef.current, transport));
+        if (generation !== generationRef.current || activeIdRef.current !== id) return;
+        for (const payload of payloads) {
+          if (!applySequential(payload)) resyncRef.current = true;
+        }
+      }
+    } catch (error) {
+      resyncRef.current = true;
+      console.error("[conversation-view] failed to sync session frames", error);
+    } finally {
+      syncingRef.current = false;
+    }
+  }, [applySequential, readAfter, transport]);
+
+  const receive = useCallback(
+    (payload: ViewPayload) => {
+      if (!activeIdRef.current || payloadSession(payload) !== activeIdRef.current) return;
+      if (initializingRef.current) {
+        resyncRef.current = true;
+        return;
+      }
+      if (!applySequential(payload)) resyncRef.current = true;
+      if (resyncRef.current) void syncCursor();
+    },
+    [applySequential, syncCursor],
+  );
+  const receiveLive = useCallback((frame: LiveFrame) => {
+    if (!activeIdRef.current || frame.sessionId !== activeIdRef.current) return;
+    const next: ConversationView = overlayLiveFrame(viewRef.current, frame, optionsRef.current);
     if (next === viewRef.current) return;
     viewRef.current = next;
     setView(next);
   }, []);
-  const readEvents = useCallback(
-    async (conversationId: string, afterRevision: number) => {
-      const reader = optionsRef.current.readEvents ?? platform?.readConversationEvents;
-      return (await reader?.(conversationId, afterRevision)) ?? [];
-    },
-    [platform],
+
+  const isStaleSnapshot = useCallback(
+    (snapshot: ConversationSnapshot) =>
+      transport === "frames"
+        ? snapshot.lastSeq < viewRef.current.lastSeq
+        : snapshot.eventRevision < viewRef.current.eventRevision,
+    [transport],
   );
-  const drainEvents = useCallback(async () => {
-    if (drainingRef.current || initializingRef.current || !activeIdRef.current) return;
-    drainingRef.current = true;
-    const generation = generationRef.current;
-    const conversationId = activeIdRef.current;
-    try {
-      for (;;) {
-        if (generation !== generationRef.current) return;
-        const cursor = viewRef.current.eventRevision;
-        const nextRevision = cursor + 1;
-        if (!pendingEventsRef.current.has(nextRevision)) {
-          const hasLaterEvent = [...pendingEventsRef.current.keys()].some(
-            (revision) => revision > nextRevision,
-          );
-          if (!hasLaterEvent) return;
-          const recovered = await readEvents(conversationId, cursor);
-          if (activeIdRef.current !== conversationId || generation !== generationRef.current)
-            return;
-          for (const event of recovered ?? [])
-            pendingEventsRef.current.set(event.aggregateRevision, event);
-          if (!pendingEventsRef.current.has(nextRevision)) return;
-        }
-        const event = pendingEventsRef.current.get(nextRevision);
-        if (!event) return;
-        if (generation !== generationRef.current) return;
-        pendingEventsRef.current.delete(nextRevision);
-        commit(event);
+
+  const commitSnapshot = useCallback(
+    (snapshot: ConversationSnapshot, invalidateInitialization: boolean): boolean => {
+      if (activeIdRef.current !== snapshot.conversationId) return false;
+      if (isStaleSnapshot(snapshot)) return false;
+      if (invalidateInitialization) {
+        generationRef.current += 1;
+        initializingRef.current = false;
       }
-    } finally {
-      drainingRef.current = false;
-      if (pendingEventsRef.current.has(viewRef.current.eventRevision + 1)) void drainEvents();
-    }
-  }, [commit, readEvents]);
-  const receiveEvent = useCallback(
-    (event: AgentEventEnvelope) => {
-      if (!activeIdRef.current || conversationOf(event) !== activeIdRef.current) return;
-      if (event.aggregateRevision <= viewRef.current.eventRevision) return;
-      pendingEventsRef.current.set(event.aggregateRevision, event);
-      void drainEvents();
+      const next = applyConversationSnapshot(viewRef.current, snapshot, optionsRef.current);
+      viewRef.current = next;
+      setView(next);
+      return true;
     },
-    [drainEvents],
+    [isStaleSnapshot],
+  );
+  const applySnapshot = useCallback(
+    (snapshot: ConversationSnapshot) => {
+      if (!commitSnapshot(snapshot, true)) return;
+      resyncRef.current = true;
+      void syncCursor();
+    },
+    [commitSnapshot, syncCursor],
+  );
+  const reconcileSnapshot = useCallback(
+    async (snapshot: ConversationSnapshot) => {
+      if (activeIdRef.current !== snapshot.conversationId) return;
+      if (isStaleSnapshot(snapshot)) return;
+      const generation = ++generationRef.current;
+      initializingRef.current = true;
+      resyncRef.current = false;
+      const next = applyConversationSnapshot(viewRef.current, snapshot, optionsRef.current);
+      viewRef.current = next;
+      setView(next);
+      try {
+        const payloads = await readAfter(snapshot.conversationId, cursorOf(next, transport));
+        if (generation !== generationRef.current) return;
+        for (const payload of payloads) {
+          if (!applySequential(payload)) resyncRef.current = true;
+        }
+      } finally {
+        if (generation === generationRef.current) {
+          initializingRef.current = false;
+          if (resyncRef.current) void syncCursor();
+        }
+      }
+    },
+    [applySequential, isStaleSnapshot, readAfter, syncCursor, transport],
+  );
+  const receiveSnapshot = useCallback(
+    (snapshot: ConversationSnapshot) => {
+      void reconcileSnapshot(snapshot).catch((error: unknown) => {
+        console.error("[conversation-view] failed to recover snapshot frames", error);
+      });
+    },
+    [reconcileSnapshot],
   );
 
   const selectConversation = useCallback((id: string | undefined) => {
     activeIdRef.current = id;
     generationRef.current += 1;
-    pendingEventsRef.current.clear();
+    resyncRef.current = false;
     initializingRef.current = false;
     viewRef.current = EMPTY_CONVERSATION_VIEW;
     setView(EMPTY_CONVERSATION_VIEW);
     setActiveId(id);
   }, []);
-  const commitSnapshot = useCallback(
-    (
-      snapshot: import("@answra/shared").ConversationSnapshot,
-      invalidateInitialization: boolean,
-    ) => {
-      if (activeIdRef.current !== snapshot.conversationId) return;
-      if (snapshot.eventRevision < viewRef.current.eventRevision) return;
-      if (invalidateInitialization) {
-        generationRef.current += 1;
-        initializingRef.current = false;
-      }
-      for (const revision of pendingEventsRef.current.keys()) {
-        if (revision <= snapshot.eventRevision) pendingEventsRef.current.delete(revision);
-      }
-      const next = applyConversationSnapshot(viewRef.current, snapshot, optionsRef.current);
-      viewRef.current = next;
-      setView(next);
-      void drainEvents();
-    },
-    [drainEvents],
-  );
-  const applySnapshot = useCallback(
-    (snapshot: import("@answra/shared").ConversationSnapshot) => {
-      commitSnapshot(snapshot, true);
-    },
-    [commitSnapshot],
-  );
-  const reconcileRunSnapshot = useCallback(
-    async (snapshot: import("@answra/shared").ConversationSnapshot) => {
-      if (activeIdRef.current !== snapshot.conversationId) return;
-      const generation = ++generationRef.current;
-      initializingRef.current = true;
-      pendingEventsRef.current.clear();
-      const next = applyConversationSnapshot(viewRef.current, snapshot, optionsRef.current);
-      viewRef.current = next;
-      setView(next);
-      try {
-        const events = await readEvents(snapshot.conversationId, snapshot.eventRevision);
-        if (activeIdRef.current !== snapshot.conversationId || generation !== generationRef.current)
-          return;
-        for (const event of events) pendingEventsRef.current.set(event.aggregateRevision, event);
-      } finally {
-        if (generation === generationRef.current) {
-          initializingRef.current = false;
-          await drainEvents();
-        }
-      }
-    },
-    [drainEvents, readEvents],
-  );
-  const receiveSnapshot = useCallback(
-    (snapshot: import("@answra/shared").ConversationSnapshot) => {
-      void reconcileRunSnapshot(snapshot).catch((error: unknown) => {
-        console.error("[conversation-view] failed to recover snapshot events", error);
-      });
-    },
-    [reconcileRunSnapshot],
-  );
 
   useEffect(() => {
     if (activeIdRef.current === conversationId) return;
-    activeIdRef.current = conversationId;
-    generationRef.current += 1;
-    viewRef.current = EMPTY_CONVERSATION_VIEW;
-    setView(EMPTY_CONVERSATION_VIEW);
-    setActiveId(conversationId);
-  }, [conversationId]);
+    selectConversation(conversationId);
+  }, [conversationId, selectConversation]);
 
   useEffect(() => {
-    if (!enabled || !platform?.onConversationEvent) return;
-    return platform.onConversationEvent(receiveEvent);
-  }, [enabled, platform, receiveEvent]);
+    if (!enabled) return;
+    if (transport === "frames") {
+      const offFrame = platform?.onSessionFrame?.(receive);
+      const offLive = platform?.onLiveFrame?.(receiveLive);
+      if (!offFrame && !offLive) return;
+      return () => {
+        offFrame?.();
+        offLive?.();
+      };
+    }
+    if (!platform?.onConversationEvent) return;
+    return platform.onConversationEvent(receive);
+  }, [enabled, platform, receive, receiveLive, transport]);
 
   useEffect(() => {
     if (!enabled || !platform?.onConversationSnapshot) return;
@@ -205,7 +258,7 @@ export function useConversationView(
     const generation = ++generationRef.current;
     let cancelled = false;
     initializingRef.current = true;
-    pendingEventsRef.current.clear();
+    resyncRef.current = false;
     const initialize = async () => {
       const snapshot =
         create && platform?.createConversation
@@ -213,82 +266,116 @@ export function useConversationView(
           : await (optionsRef.current.getSnapshot?.(id) ?? platform?.getConversationSnapshot?.(id));
       if (cancelled || generation !== generationRef.current || !snapshot) return;
       commitSnapshot(snapshot, false);
-      const events = await readEvents(id, snapshot.eventRevision);
+      const payloads = await readAfter(id, cursorOf(viewRef.current, transport));
       if (cancelled || generation !== generationRef.current) return;
-      for (const event of events) pendingEventsRef.current.set(event.aggregateRevision, event);
-      initializingRef.current = false;
-      await drainEvents();
-    };
-    void initialize().finally(() => {
-      if (generation === generationRef.current) {
-        initializingRef.current = false;
-        void drainEvents();
+      for (const payload of payloads) {
+        if (!applySequential(payload)) resyncRef.current = true;
       }
-    });
+    };
+    void initialize()
+      .catch((error: unknown) => {
+        console.error("[conversation-view] failed to initialize view", error);
+      })
+      .finally(() => {
+        if (generation !== generationRef.current) return;
+        initializingRef.current = false;
+        if (resyncRef.current) void syncCursor();
+      });
     return () => {
       cancelled = true;
       if (generation === generationRef.current) initializingRef.current = false;
     };
-  }, [activeId, create, enabled, platform, commitSnapshot, drainEvents, readEvents]);
+  }, [
+    activeId,
+    applySequential,
+    commitSnapshot,
+    create,
+    enabled,
+    platform,
+    readAfter,
+    syncCursor,
+    transport,
+  ]);
 
-  const waitForRun = useCallback((runId: string) => {
-    const done = finishedRef.current.get(runId);
-    if (done) {
-      finishedRef.current.delete(runId);
+  const waitForOutcome = useCallback((activityId: string) => {
+    const done = finishedRef.current.get(activityId);
+    if (done !== undefined) {
+      finishedRef.current.delete(activityId);
       return Promise.resolve(done);
     }
-    return new Promise<RunOutcome>((resolve) => waitersRef.current.set(runId, resolve));
+    return new Promise<RunOutcome>((resolve) => waitersRef.current.set(activityId, resolve));
   }, []);
   const clear = useCallback(() => {
-    // 链路断开时在途 run 不会再收到终态事件：清空必须同时结束等待者，
-    // 否则发送方会永远停在等待 run 完成的状态。
+    // 链路断开时在途活动不会再收到终态事实：清空必须同时结束等待者，
+    // 否则发送方会永远停在等待完成的状态。
     generationRef.current += 1;
     initializingRef.current = false;
-    pendingEventsRef.current.clear();
+    resyncRef.current = false;
     for (const resolve of waitersRef.current.values()) resolve("aborted");
     waitersRef.current.clear();
     finishedRef.current.clear();
-    const next = {
-      ...viewRef.current,
-      // 新 worker 的 transcript 与 revision 都从头开始，旧游标必须归零，
-      // 否则重连后的空快照和第一轮事件都会被当成过期而丢弃。
-      eventRevision: 0,
-      messages: [],
-      activeRunId: undefined,
-      retry: undefined,
-      retryRunId: undefined,
-      error: undefined,
-      contextCompaction: undefined,
-      contextCompactionBoundaries: undefined,
-      contextUsage: undefined,
-      contextPruning: undefined,
-    };
-    viewRef.current = next;
-    setView(next);
+    // 新 worker 的 transcript 与序号都从头开始，旧游标必须归零，
+    // 否则重连后的空快照和第一批事实都会被当成过期而丢弃。
+    viewRef.current = EMPTY_CONVERSATION_VIEW;
+    setView(EMPTY_CONVERSATION_VIEW);
   }, []);
+
   return {
     view,
     selectConversation,
     applySnapshot,
-    reconcileRunSnapshot,
-    waitForRun,
+    reconcileSnapshot,
+    waitForOutcome,
     getView: () => viewRef.current,
     clear,
   };
 }
 
-function terminalOutcome(event: AgentEventEnvelope): RunOutcome | undefined {
-  if (event.event.type !== "run-state-changed") return undefined;
-  switch (event.event.state) {
+function isSessionFrame(payload: ViewPayload): payload is SessionFrame {
+  return "seq" in payload;
+}
+
+function cursorOf(view: ConversationView, transport: ConversationTransport): number {
+  return transport === "frames" ? view.lastSeq : view.eventRevision;
+}
+
+function payloadSession(payload: ViewPayload): string {
+  return isSessionFrame(payload) ? payload.sessionId : conversationOf(payload);
+}
+
+function payloadCursor(payload: ViewPayload): number {
+  return isSessionFrame(payload) ? payload.seq : payload.aggregateRevision;
+}
+
+function applyPayload(
+  view: ConversationView,
+  payload: ViewPayload,
+  options: ConversationProjectionOptions,
+): ConversationView {
+  return isSessionFrame(payload)
+    ? foldConversationFrame(view, payload, options)
+    : applyAgentEvent(view, payload, options);
+}
+
+/** 终态事实到等待键的映射：Turn 用 `turnId`，Answer shim 用 envelope 的 `runId`。 */
+function payloadOutcome(
+  payload: ViewPayload,
+): { activityId: string; outcome: RunOutcome } | undefined {
+  if (isSessionFrame(payload)) {
+    if (payload.event.type !== "turn-finished" || payload.turnId === undefined) return undefined;
+    return { activityId: payload.turnId, outcome: payload.event.status };
+  }
+  if (payload.event.type !== "run-state-changed") return undefined;
+  switch (payload.event.state) {
     case "completed":
-      return "completed";
+      return { activityId: payload.runId, outcome: "completed" };
     case "failed":
     case "orphaned":
-      return "failed";
+      return { activityId: payload.runId, outcome: "failed" };
     case "aborted":
-      return "aborted";
+      return { activityId: payload.runId, outcome: "aborted" };
     case "superseded":
-      return "superseded";
+      return { activityId: payload.runId, outcome: "superseded" };
     case "queued":
     case "claimed":
     case "running":

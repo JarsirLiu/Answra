@@ -35,11 +35,13 @@ function createHarness() {
   let sequence = 0;
   const startReply = vi.fn(async () => {
     sequence += 1;
-    const runId = `run-${sequence}`;
-    replies.set(runId, deferred());
-    return { runId };
+    const turnId = `turn-${sequence}`;
+    replies.set(turnId, deferred());
+    return { turnId };
   });
-  const waitForReply = vi.fn((runId: string) => replies.get(runId)?.promise ?? Promise.resolve());
+  const waitForReply = vi.fn((_conversationId: string, turnId: string) => {
+    return replies.get(turnId)?.promise ?? Promise.resolve();
+  });
   const loop = new InterviewReplyLoop({
     ports: { appendUserTurn, startReply, cancelReply, waitForReply, onError },
   });
@@ -50,8 +52,8 @@ function createHarness() {
     cancelReply,
     waitForReply,
     onError,
-    finish: (runId?: string) => {
-      const id = runId ?? `run-${sequence}`;
+    finish: (turnId?: string) => {
+      const id = turnId ?? `turn-${sequence}`;
       replies.get(id)?.resolve();
     },
   };
@@ -99,12 +101,12 @@ describe("interview reply loop", () => {
     const next = harness.loop.turnSettled("conversation-1", [turn("u2")], "第二句");
     await new Promise<void>((resolve) => setImmediate(resolve));
 
-    // 确认后的 turn 请求取消旧 run；旧 run 未落账前不追加消息。
+    // 确认后的 turn 请求取消旧 Turn；旧 Turn 未落账前不追加消息。
     expect(harness.appendUserTurn).toHaveBeenCalledTimes(1);
     expect(harness.startReply).toHaveBeenCalledTimes(1);
-    expect(harness.cancelReply).toHaveBeenCalledWith("run-1");
+    expect(harness.cancelReply).toHaveBeenCalledWith("conversation-1", "turn-1");
 
-    harness.finish("run-1");
+    harness.finish("turn-1");
     await next;
 
     expect(harness.appendUserTurn).toHaveBeenCalledTimes(2);
@@ -144,9 +146,9 @@ describe("interview reply loop", () => {
     const stopped = harness.loop.stop();
     await new Promise<void>((resolve) => setImmediate(resolve));
 
-    expect(harness.cancelReply).toHaveBeenCalledWith("run-1");
+    expect(harness.cancelReply).toHaveBeenCalledWith("conversation-1", "turn-1");
 
-    harness.finish("run-1");
+    harness.finish("turn-1");
     await Promise.all([queued, stopped]);
 
     // 停止后不再启动第二回复，但排队中的用户消息仍然落账。

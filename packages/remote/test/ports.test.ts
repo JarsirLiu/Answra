@@ -87,7 +87,7 @@ describe("fake host command port", () => {
       conversationId: "conversation-1",
       request: { text: "hello", images: [] },
     });
-    expect(result).toMatchObject({ status: "started", runId: "run-1", position: 0 });
+    expect(result).toMatchObject({ status: "started", turnId: "turn-1", position: 0 });
     expect(host.sentCommands).toHaveLength(1);
 
     const page = await host.listSessions?.();

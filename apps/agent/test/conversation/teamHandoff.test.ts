@@ -140,7 +140,7 @@ describe("ConversationApplication team handoff", () => {
       "token",
     );
 
-    expect(result.runId).toBeTruthy();
+    expect(result.turnId).toBeTruthy();
     expect(result.snapshot.messages).toHaveLength(4);
     expect(
       result.snapshot.messages.map((message) => ({
@@ -181,7 +181,7 @@ describe("ConversationApplication team handoff", () => {
       },
     ]);
     expect(result.snapshot.activeAgentId).toBe(intake);
-    expect(result.snapshot.activeRunId).toBeUndefined();
+    expect(result.snapshot.activeMessageId).toBeUndefined();
     expect(harness.inputs.map((recorded) => recorded.agentId)).toEqual([candidate, intake]);
     expect(harness.inputs[1]?.text).toBe("请接管整理并继续追问。");
     expect(harness.snapshots.length).toBeGreaterThanOrEqual(3);
@@ -228,7 +228,7 @@ describe("ConversationApplication team handoff", () => {
     const snapshot = await harness.app.getSnapshot(harness.conversationId);
     expect(snapshot.messages.map((message) => message.audience?.kind)).toEqual(["user", "user"]);
     expect(snapshot.activeAgentId).toBe(candidate);
-    expect(snapshot.activeRunId).toBeUndefined();
+    expect(snapshot.activeMessageId).toBeUndefined();
   });
 
   it("finishes the handoff chain before starting a queued user turn", async () => {

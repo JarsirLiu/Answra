@@ -25,7 +25,7 @@ export class SessionRunQueue {
   private readonly turns: QueuedTurn[] = [];
   private readonly sendingIds = new Set<string>();
   private inFlight = 0;
-  private activeRunId?: string;
+  private activeTurnId?: string;
   private cancelling = false;
   private cancelVersion = 0;
   private sequence = 0;
@@ -73,7 +73,7 @@ export class SessionRunQueue {
     this.sendingIds.clear();
     this.cancelling = this.inFlight > 0;
     this.notify();
-    if (this.activeRunId !== undefined) this.session.cancelRun(this.activeRunId);
+    if (this.activeTurnId !== undefined) this.session.cancelTurn(this.activeTurnId);
     return true;
   }
 
@@ -94,7 +94,7 @@ export class SessionRunQueue {
     this.inFlight += 1;
     this.sendingIds.add(turn.id);
     this.notify();
-    let runId: string | undefined;
+    let turnId: string | undefined;
     try {
       const accepted = await this.session.enqueue(turn.text, turn.images);
       this.sendingIds.delete(turn.id);
@@ -103,15 +103,15 @@ export class SessionRunQueue {
         await this.discardAccepted(accepted);
         return;
       }
-      runId = accepted.status === "started" ? accepted.runId : await this.waitForStart(accepted);
+      turnId = accepted.status === "started" ? accepted.turnId : await this.waitForStart(accepted);
       if (turn.generation !== this.cancelVersion) {
-        if (runId !== undefined) this.session.cancelRun(runId);
+        if (turnId !== undefined) this.session.cancelTurn(turnId);
         return;
       }
       this.removeTurn(turn);
-      this.activeRunId = runId;
+      this.activeTurnId = turnId;
       this.notify();
-      await this.session.wait(runId);
+      await this.session.wait(turnId);
     } catch (error) {
       if (turn.generation === this.cancelVersion) {
         this.removeTurn(turn);
@@ -120,7 +120,7 @@ export class SessionRunQueue {
     } finally {
       this.inFlight -= 1;
       this.sendingIds.delete(turn.id);
-      if (this.activeRunId === runId) this.activeRunId = undefined;
+      if (this.activeTurnId === turnId) this.activeTurnId = undefined;
       if (this.cancelling && this.inFlight === 0) this.cancelling = false;
       this.notify();
       this.startQueued();
@@ -129,17 +129,17 @@ export class SessionRunQueue {
 
   private async waitForStart(accepted: Extract<ConversationSendResult, { status: "queued" }>) {
     const started = await this.session.waitForQueueStart(accepted.queueId);
-    return started.runId;
+    return started.turnId;
   }
 
   private async discardAccepted(accepted: ConversationSendResult): Promise<void> {
     if (accepted.status === "started") {
-      this.session.cancelRun(accepted.runId);
+      this.session.cancelTurn(accepted.turnId);
       return;
     }
     try {
       const started = await this.session.waitForQueueStart(accepted.queueId);
-      this.session.cancelRun(started.runId);
+      this.session.cancelTurn(started.turnId);
     } catch {
       return;
     }

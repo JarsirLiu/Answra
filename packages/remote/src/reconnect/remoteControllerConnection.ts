@@ -191,12 +191,12 @@ export class RemoteControllerConnection {
   async waitQueueStart(
     conversationId: string,
     queueId: string,
-  ): Promise<{ queueId: string; runId: string; snapshot: ConversationSnapshot }> {
+  ): Promise<{ queueId: string; turnId: string; snapshot: ConversationSnapshot }> {
     return this.requireSession().waitQueueStart(conversationId, queueId);
   }
 
-  async cancel(conversationId: string, runId: string): Promise<void> {
-    return this.requireSession().cancel(conversationId, runId);
+  async cancel(conversationId: string, turnId: string): Promise<void> {
+    return this.requireSession().cancel(conversationId, turnId);
   }
 
   async listBots(): Promise<BotSummary[]> {

@@ -1,10 +1,10 @@
-import type { AgentEventEnvelope, ReplyBarActivity } from "@answra/shared";
+import type { AgentStreamEvent, ReplyBarActivity } from "@answra/shared";
 
 export function projectReplyActivity(
   current: ReplyBarActivity[],
-  envelope: Pick<AgentEventEnvelope, "runId" | "event">,
+  payload: { messageId: string; event: AgentStreamEvent },
 ): ReplyBarActivity[] {
-  const stream = envelope.event;
+  const stream = payload.event;
   const add = (activity: ReplyBarActivity, merge = false) => {
     const index = merge
       ? current.findIndex((item) => item.id === activity.id && item.kind === activity.kind)
@@ -53,14 +53,14 @@ export function projectReplyActivity(
     });
   if (stream.type === "error")
     return add({
-      id: `${envelope.runId}:error`,
+      id: `${payload.messageId}:error`,
       kind: "error",
       label: "模型错误",
       text: stream.errorText,
     });
   if (stream.type === "start")
     return add({
-      id: `${envelope.runId}:start`,
+      id: `${payload.messageId}:start`,
       kind: "status",
       label: "模型已连接，等待输出",
       text: "",

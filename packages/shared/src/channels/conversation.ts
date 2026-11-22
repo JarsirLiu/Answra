@@ -27,6 +27,8 @@ export const ConversationChannels = {
   QueuePosition: "answra:conversation:queue-position",
   AppendUserMessage: "answra:conversation:append-user-message",
   Cancel: "answra:conversation:cancel",
+  /** Answer 在迁移到 SessionRuntime 前的按 run 取消；P3 随 shim 删除。 */
+  CancelAnswerRun: "answra:conversation:cancel-answer-run",
   GetSnapshot: "answra:conversation:get-snapshot",
   Create: "answra:conversation:create",
   ReadEvents: "answra:conversation:read-events",
@@ -187,27 +189,37 @@ export interface ConversationSendRequest {
   images: Array<{ name: string; dataUrl: string }>;
 }
 
-/** Host 接受用户消息后的排队结果；queued 表示尚未创建 Agent run。 */
+/** Host 接受用户消息后的排队结果；queued 表示尚未创建 Agent Turn。 */
 export type ConversationSendResult =
   | {
       queueId: string;
       status: "started";
       position: 0;
-      runId: string;
+      turnId: string;
       snapshot: ConversationSnapshot;
     }
   | { queueId: string; status: "queued"; position: number };
 
-export interface ConversationRunResult {
+/** 同步等待型发送（CLI / 团队消息）的完成结果。 */
+export interface ConversationTurnResult {
+  turnId: string;
+  snapshot: ConversationSnapshot;
+}
+
+/** Answer 在 P3 前仍按 run 标识；随 envelope shim 一起删除。 */
+export interface AnswerRunSendResult {
   runId: string;
   snapshot: ConversationSnapshot;
 }
 
-export type ConversationSendResponse = ConversationSendResult | ConversationRunResult;
+export type ConversationSendResponse =
+  | ConversationSendResult
+  | ConversationTurnResult
+  | AnswerRunSendResult;
 
 export interface ConversationQueueCompletion {
   queueId: string;
-  runId?: string;
+  turnId?: string;
   outcome: TurnOutcome;
 }
 
@@ -246,7 +258,7 @@ export interface ConversationChannelMap {
   };
   [ConversationChannels.WaitQueue]: {
     request: { conversationId: string; queueId: string };
-    response: { queueId: string; runId?: string; outcome: TurnOutcome };
+    response: { queueId: string; turnId?: string; outcome: TurnOutcome };
   };
   [ConversationChannels.QueuePosition]: {
     request: { conversationId: string; queueId: string };
@@ -256,7 +268,14 @@ export interface ConversationChannelMap {
     request: { conversationId: string; text: string };
     response: ConversationSnapshot;
   };
-  [ConversationChannels.Cancel]: { request: { runId: string }; response: undefined };
+  [ConversationChannels.Cancel]: {
+    request: { conversationId: string; turnId: string };
+    response: undefined;
+  };
+  [ConversationChannels.CancelAnswerRun]: {
+    request: { runId: string };
+    response: undefined;
+  };
   [ConversationChannels.GetSnapshot]: {
     request: { conversationId: string };
     response: ConversationSnapshot;

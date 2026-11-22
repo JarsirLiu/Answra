@@ -102,20 +102,23 @@ describe("CLI coding host", () => {
     expect(created.activeAgentId).toBe(CODING_AGENT_ID);
     expect(created.participantAgentIds).toEqual([CODING_AGENT_ID]);
 
-    const { runId, snapshot } = await host.runtime.send(
+    const { turnId, snapshot } = await host.runtime.send(
       "coding-session",
       { text: "读取 README 并概述结构", images: [] },
       ACCESS_TOKEN,
     );
-    expect(snapshot.activeRunId).toBe(runId);
-    await host.runtime.waitForRun(runId);
+    expect(snapshot.activeTurnId).toBe(turnId);
+    // envelope 的 runId 仍是该 Turn 的首条 assistant 消息 id。
+    const messageId = snapshot.messages.at(-1)?.id;
+    expect(snapshot.activeMessageId).toBe(messageId);
+    await host.runtime.waitForTurn("coding-session", turnId);
 
     const final = await host.runtime.getSnapshot("coding-session");
     expect(final.messages.map((message) => [message.role, message.text, message.status])).toEqual([
       ["user", "读取 README 并概述结构", "complete"],
       ["assistant", "已读取", "complete"],
     ]);
-    expect(final.activeRunId).toBeUndefined();
+    expect(final.activeMessageId).toBeUndefined();
 
     const body = JSON.stringify(requests.at(-1));
     expect(body).toContain("命令行编码助手");
@@ -127,9 +130,9 @@ describe("CLI coding host", () => {
     expect(body).not.toContain("WriteStdin");
     expect(body).not.toContain("通用 AI 助手");
     expect(requests.at(-1)?.authorization).toBe(`Bearer ${ACCESS_TOKEN}`);
-    expect(events.some((event) => event.runId === runId && event.event.type === "text-delta")).toBe(
-      true,
-    );
+    expect(
+      events.some((event) => event.runId === messageId && event.event.type === "text-delta"),
+    ).toBe(true);
   });
 
   it("publishes durable and live frames through the coding host bus", async () => {
@@ -141,12 +144,12 @@ describe("CLI coding host", () => {
     });
 
     await host.runtime.createConversation("coding-frames");
-    const { runId } = await host.runtime.send(
+    const { turnId } = await host.runtime.send(
       "coding-frames",
       { text: "读取 README", images: [] },
       ACCESS_TOKEN,
     );
-    await host.runtime.waitForRun(runId);
+    await host.runtime.waitForTurn("coding-frames", turnId);
 
     expect(frames.map((frame) => frame.seq)).toEqual(frames.map((_, index) => index + 1));
     expect(frames[0]?.event.type).toBe("turn-queued");
@@ -168,12 +171,12 @@ describe("CLI coding host", () => {
     await host.runtime.createConversation("coding-images");
     const image = { name: "capture.png", dataUrl: "data:image/png;base64,QUJD" };
 
-    const { runId } = await host.runtime.send(
+    const { turnId } = await host.runtime.send(
       "coding-images",
       { text: "看这张图", images: [image] },
       ACCESS_TOKEN,
     );
-    await host.runtime.waitForRun(runId);
+    await host.runtime.waitForTurn("coding-images", turnId);
 
     const snapshot = await host.runtime.getSnapshot("coding-images");
     expect(snapshot.messages[0]?.images).toEqual([image]);
@@ -183,12 +186,12 @@ describe("CLI coding host", () => {
   it("accepts an image-only message", async () => {
     await host.runtime.createConversation("coding-image-only");
 
-    const { runId } = await host.runtime.send(
+    const { turnId } = await host.runtime.send(
       "coding-image-only",
       { text: "", images: [{ name: "capture.png", dataUrl: "data:image/png;base64,QUJD" }] },
       ACCESS_TOKEN,
     );
-    await host.runtime.waitForRun(runId);
+    await host.runtime.waitForTurn("coding-image-only", turnId);
 
     expect(JSON.stringify(requests.at(-1)?.messages)).toContain("data:image/png;base64,QUJD");
   });
@@ -201,13 +204,13 @@ describe("CLI coding host", () => {
       { text: "看这张图", images: [{ name: "capture.png", dataUrl }] },
       ACCESS_TOKEN,
     );
-    await host.runtime.waitForRun(first.runId);
+    await host.runtime.waitForTurn("coding-image-history", first.turnId);
     const second = await host.runtime.send(
       "coding-image-history",
       { text: "继续", images: [] },
       ACCESS_TOKEN,
     );
-    await host.runtime.waitForRun(second.runId);
+    await host.runtime.waitForTurn("coding-image-history", second.turnId);
 
     expect(JSON.stringify(requests.at(-1)?.messages)).toContain(dataUrl);
   });
@@ -233,17 +236,21 @@ describe("CLI coding host", () => {
     expect(second).toMatchObject({ status: "queued", position: 1 });
 
     const started = await host.runtime.waitForQueueStart("coding-turn-queue", second.queueId);
-    await host.runtime.waitForRun(started.runId);
-    await host.runtime.waitForRun(first.runId);
+    await host.runtime.waitForTurn("coding-turn-queue", started.turnId);
+    await host.runtime.waitForTurn("coding-turn-queue", first.turnId);
 
+    const firstMessageId = first.snapshot.activeMessageId;
+    expect(firstMessageId).toBeDefined();
     const order = events.map((event) => event);
     const firstCompleted = order.findIndex(
       (event) =>
-        event.runId === first.runId &&
+        event.runId === firstMessageId &&
         event.event.type === "run-state-changed" &&
         event.event.state === "completed",
     );
-    const secondStarted = order.findIndex((event) => event.runId === started.runId);
+    const secondStarted = order.findIndex(
+      (event) => event.runId === started.snapshot.activeMessageId,
+    );
     expect(firstCompleted).toBeGreaterThanOrEqual(0);
     expect(secondStarted).toBeGreaterThan(firstCompleted);
 
@@ -262,11 +269,13 @@ describe("CLI coding host", () => {
   it("cancels an active coding run and the queued turns behind it", async () => {
     holdResponse = true;
     await host.runtime.createConversation("coding-cancel");
-    const { runId } = await host.runtime.send(
+    const { turnId, snapshot } = await host.runtime.send(
       "coding-cancel",
       { text: "运行一个长任务", images: [] },
       ACCESS_TOKEN,
     );
+    const messageId = snapshot.activeMessageId;
+    expect(messageId).toBeDefined();
     const queued = await host.runtime.enqueue(
       "coding-cancel",
       { text: "排队任务", images: [] },
@@ -274,21 +283,21 @@ describe("CLI coding host", () => {
     );
     if (queued.status !== "queued") throw new Error("second message should be queued");
 
-    host.runtime.cancel(runId);
+    host.runtime.cancel("coding-cancel", turnId);
 
     await expect
       .poll(
         () =>
           events.some(
             (event) =>
-              event.runId === runId &&
+              event.runId === messageId &&
               event.event.type === "run-state-changed" &&
               event.event.state === "aborted",
           ),
         { timeout: 5_000, interval: 10 },
       )
       .toBe(true);
-    await host.runtime.waitForRun(runId);
+    await host.runtime.waitForTurn("coding-cancel", turnId);
     await expect(host.runtime.waitForQueue("coding-cancel", queued.queueId)).resolves.toMatchObject(
       { outcome: "aborted" },
     );
@@ -423,10 +432,13 @@ describe("CodingApplication queue and recovery", () => {
 
     gate.resolve();
     const started = await app.waitForQueueStart("coding-queue", second.queueId);
-    await app.waitForRun(started.runId);
-    await app.waitForRun(first.runId);
+    await app.waitForTurn("coding-queue", started.turnId);
+    await app.waitForTurn("coding-queue", first.turnId);
 
-    expect(stepMessages).toEqual([first.runId, started.runId]);
+    expect(stepMessages).toEqual([
+      first.snapshot.activeMessageId,
+      started.snapshot.activeMessageId,
+    ]);
     const snapshot = await app.getSnapshot("coding-queue");
     expect(snapshot.messages.map((message) => [message.role, message.status])).toEqual([
       ["user", "complete"],
@@ -447,8 +459,8 @@ describe("CodingApplication queue and recovery", () => {
     };
     const app = makeApp({ store, journal, events, runner });
     await app.createConversation("coding-compact");
-    const { runId } = await app.send("coding-compact", { text: "旧问题", images: [] }, "token");
-    await app.waitForRun(runId);
+    const { turnId } = await app.send("coding-compact", { text: "旧问题", images: [] }, "token");
+    await app.waitForTurn("coding-compact", turnId);
 
     const { result } = await app.compactConversation("coding-compact", "token");
     expect(result.status).toBe("compacted");
@@ -486,8 +498,8 @@ describe("CodingApplication queue and recovery", () => {
     const second = await app.enqueue("coding-stop", { text: "second", images: [] }, "token");
     if (second.status !== "queued") throw new Error("second message should be queued");
 
-    app.cancel(first.runId);
-    await app.waitForRun(first.runId);
+    app.cancel("coding-stop", first.turnId);
+    await app.waitForTurn("coding-stop", first.turnId);
     await expect(app.waitForQueue("coding-stop", second.queueId)).resolves.toMatchObject({
       outcome: "aborted",
     });
@@ -543,14 +555,14 @@ describe("CodingApplication queue and recovery", () => {
     const app = makeApp({ store, journal, events, runner });
 
     const recovered = await app.getSnapshot(conversationId);
-    expect(recovered.activeRunId).toBeUndefined();
+    expect(recovered.activeMessageId).toBeUndefined();
     expect(recovered.messages.map((item) => [item.role, item.status])).toEqual([
       ["user", "complete"],
       ["assistant", "interrupted"],
     ]);
 
-    const { runId } = await app.send(conversationId, { text: "继续", images: [] }, "token");
-    await app.waitForRun(runId);
+    const next = await app.send(conversationId, { text: "继续", images: [] }, "token");
+    await app.waitForTurn(conversationId, next.turnId);
     const final = await app.getSnapshot(conversationId);
     expect(final.messages.map((item) => [item.role, item.status])).toEqual([
       ["user", "complete"],
@@ -600,6 +612,6 @@ describe("CodingApplication queue and recovery", () => {
       ["user", "complete"],
       ["assistant", "complete"],
     ]);
-    expect(snapshot.activeRunId).toBeUndefined();
+    expect(snapshot.activeMessageId).toBeUndefined();
   });
 });

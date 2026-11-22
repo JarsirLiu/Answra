@@ -114,7 +114,7 @@ export function ChatFeaturePanel({
   }
 
   async function startNewConversation(): Promise<void> {
-    if (conversation.activeRunId || conversation.sendPending) return;
+    if (conversation.replyPending) return;
     setFailure(undefined);
     try {
       await sessions.newConversation();
@@ -128,14 +128,14 @@ export function ChatFeaturePanel({
   }
 
   function resumeConversation(conversationId: string): void {
-    if (conversation.activeRunId || conversation.sendPending) return;
+    if (conversation.replyPending) return;
     setFailure(undefined);
     conversation.clearMessages();
     sessions.resumeConversation(conversationId);
   }
 
   async function deleteConversation(conversationId: string): Promise<void> {
-    if (conversation.activeRunId || conversation.sendPending) return;
+    if (conversation.replyPending) return;
     setFailure(undefined);
     const wasActive = conversationId === sessions.activeConversationId;
     try {
@@ -164,8 +164,8 @@ export function ChatFeaturePanel({
       connection={connection}
       contextCompaction={conversation.contextCompaction}
       compactionBoundaries={conversation.contextCompactionBoundaries}
-      streaming={Boolean(conversation.activeRunId)}
-      sending={conversation.sendPending && !conversation.activeRunId}
+      streaming={Boolean(conversation.activeMessageId)}
+      sending={conversation.sendPending && !conversation.activeMessageId}
       retry={conversation.retry}
       thinkingMs={conversation.thinkingMs}
       messages={conversation.messages}
@@ -179,7 +179,7 @@ export function ChatFeaturePanel({
       onSend={send}
       onClear={bridge?.clearConversationMessages ? () => void clearConversation() : undefined}
       clearDisabledReason={
-        conversation.activeRunId || conversation.sendPending
+        conversation.replyPending
           ? "回复完成后才能清空"
           : conversation.messages.length === 0
             ? "暂无可清空的对话"
@@ -188,9 +188,7 @@ export function ChatFeaturePanel({
       sessions={sessions.sessions}
       activeConversationId={sessions.activeConversationId}
       historyError={sessions.error}
-      historyDisabledReason={
-        conversation.activeRunId || conversation.sendPending ? "回复完成后才能切换会话" : undefined
-      }
+      historyDisabledReason={conversation.replyPending ? "回复完成后才能切换会话" : undefined}
       historyHasMore={sessions.hasMore}
       historyLoading={sessions.loadingMore}
       onLoadMoreHistory={() => void sessions.loadMore()}

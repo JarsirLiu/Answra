@@ -72,7 +72,8 @@ async function runOnce(
 ): Promise<number> {
   const presenter = createStreamPresenter(deps.output);
   const host = deps.createSessionHost({
-    emitEvent: (event) => presenter.present(event),
+    onSessionFrame: (frame) => presenter.presentFrame(frame),
+    onLiveFrame: (frame) => presenter.presentLive(frame),
     workspaceRoot,
   });
   const session = new CodingSession({
@@ -89,8 +90,8 @@ async function runOnce(
 
   try {
     await session.open();
-    const runId = await session.send(text);
-    await session.wait(runId);
+    const turnId = await session.send(text);
+    await session.wait(turnId);
     return presenter.exitCode;
   } finally {
     removeInterrupt();
@@ -108,13 +109,19 @@ async function runInteractive(
   altScreen: boolean,
   deps: CliDependencies,
 ): Promise<number> {
-  const store = new TuiViewStore();
   let session: CodingSession | undefined;
   let host: CodingSessionHost | undefined;
+  const store = new TuiViewStore({
+    readFrames: (conversationId, afterSeq) => {
+      if (host === undefined) throw new Error("Agent host 尚未创建");
+      return host.readFrames(conversationId, afterSeq);
+    },
+  });
 
   const ensureHost = (): CodingSessionHost => {
     host ??= deps.createSessionHost({
-      emitEvent: (event) => store.applyEvent(event),
+      onSessionFrame: (frame) => store.applyFrame(frame),
+      onLiveFrame: (frame) => store.applyLiveFrame(frame),
       onSnapshot: (snapshot) => store.applySnapshot(snapshot),
       workspaceRoot,
     });

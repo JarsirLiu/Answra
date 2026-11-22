@@ -60,13 +60,17 @@ const seedSchema = z.strictObject({
 
 const stateSnapshotSchema = conversationSnapshotSchema.omit({
   messages: true,
-  activeRunId: true,
+  activeTurnId: true,
+  activeMessageId: true,
   eventRevision: true,
   lastSeq: true,
 });
 
 /** 旧 JSON 全量记录从没有 durable 游标；读取时按 0 恢复。 */
-const legacySnapshotSchema = conversationSnapshotSchema.omit({ lastSeq: true });
+const legacySnapshotSchema = conversationSnapshotSchema
+  .omit({ lastSeq: true })
+  /** 更早的记录把活动消息存成 `activeRunId`；只做读入兼容，恢复时丢弃。 */
+  .extend({ activeRunId: z.string().optional() });
 
 export const sessionStatePayloadSchema = z.strictObject({
   schemaVersion: z.literal(1),
@@ -121,7 +125,8 @@ export function splitSessionRecord(record: ConversationSessionRecord): SplitSess
   if (!record.metadata) throw new Error("会话缺少 metadata，拒绝持久化");
   const {
     messages,
-    activeRunId: _activeRunId,
+    activeTurnId: _activeTurnId,
+    activeMessageId: _activeMessageId,
     eventRevision: _eventRevision,
     lastSeq: _lastSeq,
     ...snapshot
@@ -144,6 +149,8 @@ export function splitLegacySessionRecord(record: SessionRecordPayload): SplitSes
   const {
     messages,
     activeRunId: _activeRunId,
+    activeTurnId: _activeTurnId,
+    activeMessageId: _activeMessageId,
     eventRevision: _eventRevision,
     ...snapshot
   } = record.snapshot;

@@ -79,8 +79,9 @@ const bridge: DesktopBridge = {
     ipcRenderer.invoke(ConversationChannels.QueuePosition, { conversationId, queueId }),
   appendConversationUserMessage: (conversationId: string, text: string) =>
     ipcRenderer.invoke(ConversationChannels.AppendUserMessage, { conversationId, text }),
+  /** Answer 窗口仍按 run 取消；P3 迁移后改为 cancelTurn。 */
   cancelConversationRun: (runId: string) =>
-    ipcRenderer.send(ConversationChannels.Cancel, { runId }),
+    ipcRenderer.send(ConversationChannels.CancelAnswerRun, { runId }),
   onConversationEvent: (listener: (event: AgentEventEnvelope) => void) => {
     const wrapped = (_event: Electron.IpcRendererEvent, event: AgentEventEnvelope) =>
       listener(event);

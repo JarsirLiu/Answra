@@ -101,7 +101,7 @@ export class SessionRuntime {
     await scheduler.resume(runtime);
   }
 
-  /** 等待 Turn 启动并返回首条 assistant 消息 id；renderer 以它作为 runId。 */
+  /** 等待 Turn 启动并返回首条 assistant 消息 id；取消与渲染都以 Turn 定位。 */
   async waitForTurnStart(sessionId: SessionId, target: TurnId): Promise<string> {
     const scheduler = await this.scheduler(sessionId);
     return scheduler.waitForTurnStart(target);
@@ -110,14 +110,14 @@ export class SessionRuntime {
   async waitForTurn(
     sessionId: SessionId,
     target: TurnId,
-  ): Promise<{ runId?: string; outcome: TurnOutcome; errorText?: string }> {
+  ): Promise<{ messageId?: string; outcome: TurnOutcome; errorText?: string }> {
     const scheduler = await this.scheduler(sessionId);
     return scheduler.waitForTurn(target);
   }
 
-  async runIdFor(sessionId: SessionId, target: TurnId): Promise<string | undefined> {
+  async messageIdFor(sessionId: SessionId, target: TurnId): Promise<string | undefined> {
     const scheduler = await this.scheduler(sessionId);
-    return scheduler.runIdFor(target);
+    return scheduler.messageIdFor(target);
   }
 
   async position(sessionId: SessionId, target: TurnId): Promise<number | undefined> {

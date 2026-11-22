@@ -1,11 +1,11 @@
 /** Non-TTY tool lines; summaries come from the shared presentation model. */
-import type { AgentEventEnvelope } from "@answra/shared/schema";
+import type { AgentStreamEvent } from "@answra/shared/schema";
 import { presentToolCall } from "@answra/ui/tool-presentation";
 import { toolLabel } from "./toolLabels";
 import { formatToolSummary } from "./toolSummary";
 
-type ToolStarted = Extract<AgentEventEnvelope["event"], { type: "tool-execution-started" }>;
-type ToolFinished = Extract<AgentEventEnvelope["event"], { type: "tool-execution-finished" }>;
+type ToolStarted = Extract<AgentStreamEvent, { type: "tool-execution-started" }>;
+type ToolFinished = Extract<AgentStreamEvent, { type: "tool-execution-finished" }>;
 
 const MAX_ERROR_CHARS = 200;
 

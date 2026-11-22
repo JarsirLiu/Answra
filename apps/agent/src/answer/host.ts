@@ -152,8 +152,10 @@ export function startAnswerAgentHost({
       }
       case "append-user-message":
         return answer.appendUserMessage(command.conversationId, command.text);
-      case "cancel":
+      case "cancel-run":
         answer.cancel(command.runId);
+        return undefined;
+      case "cancel-turn":
         return undefined;
       case "session-list":
       case "session-delete":

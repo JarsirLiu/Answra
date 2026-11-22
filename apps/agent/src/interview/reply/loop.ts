@@ -1,5 +1,5 @@
 /**
- * 面试语音的回复状态机：持有当前回复 run，负责结算后启动回复。
+ * 面试语音的回复状态机：持有当前回复 Turn，负责结算后启动回复。
  * 它不碰采集、VAD、ASR、模型或传输；这些只经端口注入。
  *
  * 语音开口只进入 ASR 链路；确认的 turn 才会通过端口中断当前回复，
@@ -14,11 +14,11 @@ export interface InterviewReplyPorts {
     turns: readonly CommittedInterviewTurn[],
     text: string,
   ): Promise<void>;
-  /** 回复最后一条 user 消息；返回 run 身份。 */
-  startReply(conversationId: string): Promise<{ runId: string }>;
-  cancelReply(runId: string): void;
-  /** run 落账完成信号，成功与 interrupted 都必须 resolve。 */
-  waitForReply(runId: string): Promise<void>;
+  /** 回复最后一条 user 消息；返回 Turn 身份。 */
+  startReply(conversationId: string): Promise<{ turnId: string }>;
+  cancelReply(conversationId: string, turnId: string): void;
+  /** Turn 落账完成信号，成功与 interrupted 都必须 resolve。 */
+  waitForReply(conversationId: string, turnId: string): Promise<void>;
   onError(stage: "append" | "reply", error: unknown): void;
 }
 
@@ -27,7 +27,8 @@ export interface InterviewReplyLoopOptions {
 }
 
 interface ActiveReply {
-  readonly runId: string;
+  readonly conversationId: string;
+  readonly turnId: string;
   readonly done: Promise<void>;
 }
 
@@ -89,11 +90,16 @@ export class InterviewReplyLoop {
 
   private async startReply(conversationId: string, sessionEpoch: number): Promise<void> {
     try {
-      const { runId } = await this.ports.startReply(conversationId);
-      const active: ActiveReply = { runId, done: this.ports.waitForReply(runId) };
+      const { turnId } = await this.ports.startReply(conversationId);
+      const active: ActiveReply = {
+        conversationId,
+        turnId,
+        done: this.ports.waitForReply(conversationId, turnId),
+      };
       this.active = active;
-      // startReply 可能等待令牌；会话停止或切换期间得到的迟到 run 仍需取消。
-      if (this.stopped || sessionEpoch !== this.sessionEpoch) this.ports.cancelReply(runId);
+      // startReply 可能等待令牌；会话停止或切换期间得到的迟到 Turn 仍需取消。
+      if (this.stopped || sessionEpoch !== this.sessionEpoch)
+        this.ports.cancelReply(conversationId, turnId);
       void active.done
         .then(() => {
           if (this.active === active) this.active = undefined;
@@ -111,7 +117,7 @@ export class InterviewReplyLoop {
     const active = this.active;
     if (!active) return;
     this.active = undefined;
-    this.ports.cancelReply(active.runId);
+    this.ports.cancelReply(active.conversationId, active.turnId);
     try {
       await active.done;
     } catch (error) {
@@ -123,7 +129,7 @@ export class InterviewReplyLoop {
     const active = this.active;
     if (!active) return;
     this.active = undefined;
-    this.ports.cancelReply(active.runId);
+    this.ports.cancelReply(active.conversationId, active.turnId);
     try {
       await active.done;
     } catch (error) {

@@ -113,24 +113,25 @@ export function createSession(initialSnapshot: ConversationSnapshot = snapshot) 
   const sent: string[] = [];
   const sentImages: Array<readonly { name: string; dataUrl: string }[]> = [];
   const waits: Array<() => void> = [];
-  let activeRunId: string | undefined;
+  let activeTurnId: string | undefined;
   let sequence = 0;
+  type Started = { queueId: string; turnId: string; snapshot: ConversationSnapshot };
   const pending: Array<{
     queueId: string;
     text: string;
     images: readonly { name: string; dataUrl: string }[];
-    started: Promise<{ queueId: string; runId: string; snapshot: ConversationSnapshot }>;
-    resolve: (value: { queueId: string; runId: string; snapshot: ConversationSnapshot }) => void;
+    started: Promise<Started>;
+    resolve: (value: Started) => void;
     reject: (error: Error) => void;
   }> = [];
   const startNext = (): void => {
-    if (activeRunId !== undefined) return;
+    if (activeTurnId !== undefined) return;
     const next = pending.shift();
     if (next === undefined) return;
     sent.push(next.text);
     sentImages.push(next.images);
-    activeRunId = `run-${sent.length}`;
-    next.resolve({ queueId: next.queueId, runId: activeRunId, snapshot: initialSnapshot });
+    activeTurnId = `turn-${sent.length}`;
+    next.resolve({ queueId: next.queueId, turnId: activeTurnId, snapshot: initialSnapshot });
   };
   const cancel = vi.fn();
   const session = {
@@ -143,30 +144,22 @@ export function createSession(initialSnapshot: ConversationSnapshot = snapshot) 
     }),
     enqueue: vi.fn(
       async (text: string, images: readonly { name: string; dataUrl: string }[] = []) => {
-        if (activeRunId === undefined) {
+        if (activeTurnId === undefined) {
           sent.push(text);
           sentImages.push(images);
-          activeRunId = `run-${sent.length}`;
+          activeTurnId = `turn-${sent.length}`;
           return {
-            queueId: `queue-${activeRunId}`,
+            queueId: `queue-${activeTurnId}`,
             status: "started" as const,
             position: 0 as const,
-            runId: activeRunId,
+            turnId: activeTurnId,
             snapshot: initialSnapshot,
           };
         }
         const queueId = `queue-${++sequence}`;
-        let resolveStart!: (value: {
-          queueId: string;
-          runId: string;
-          snapshot: ConversationSnapshot;
-        }) => void;
+        let resolveStart!: (value: Started) => void;
         let rejectStart!: (error: Error) => void;
-        const started = new Promise<{
-          queueId: string;
-          runId: string;
-          snapshot: ConversationSnapshot;
-        }>((resolve, reject) => {
+        const started = new Promise<Started>((resolve, reject) => {
           resolveStart = resolve;
           rejectStart = reject;
         });
@@ -191,14 +184,14 @@ export function createSession(initialSnapshot: ConversationSnapshot = snapshot) 
         new Promise<void>((resolve) => {
           waits.push(() => {
             resolve();
-            activeRunId = undefined;
+            activeTurnId = undefined;
             startNext();
           });
         }),
     ),
     cancel,
-    cancelRun: vi.fn((runId: string) => {
-      cancel(runId);
+    cancelTurn: vi.fn((turnId: string) => {
+      cancel(turnId);
       for (const entry of pending.splice(0)) entry.reject(new Error("queued prompt cancelled"));
     }),
     clear: vi.fn(async () => initialSnapshot),

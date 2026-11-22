@@ -1,13 +1,45 @@
-import type { AgentEventEnvelope } from "@answra/shared/schema";
+import type {
+  AgentDurableEvent,
+  AgentEventEnvelope,
+  AgentLiveOnlyEvent,
+  LiveFrame,
+  SessionFrame,
+} from "@answra/shared/schema";
+import { SESSION_FRAME_SCHEMA_VERSION } from "@answra/shared/schema";
 import { describe, expect, it } from "vitest";
 import {
   applyAgentEvent,
   applyConversationSnapshot,
   type ConversationView,
   EMPTY_CONVERSATION_VIEW,
+  foldConversationFrame,
+  overlayLiveFrame,
 } from "../src/app/conversationView";
 
 const CONVERSATION = "active-interview-conversation";
+
+function frame(
+  seq: number,
+  event: AgentDurableEvent,
+  ids: { turnId?: string; messageId?: string } = {},
+): SessionFrame {
+  return {
+    schemaVersion: SESSION_FRAME_SCHEMA_VERSION,
+    sessionId: CONVERSATION,
+    seq,
+    eventId: `event-${seq}`,
+    occurredAt: "2026-11-07T00:00:00.000Z",
+    producerId: "test",
+    ...(ids.turnId === undefined ? {} : { turnId: ids.turnId }),
+    ...(ids.messageId === undefined ? {} : { messageId: ids.messageId }),
+    event,
+  };
+}
+
+/** live 增量没有序号，只影响瞬时观感；durable 帧到达后覆盖。 */
+function live(event: AgentLiveOnlyEvent, messageId = "run-1"): LiveFrame {
+  return { sessionId: CONVERSATION, messageId, event };
+}
 
 function envelope(
   aggregateRevision: number,
@@ -34,74 +66,86 @@ describe("conversation projection", () => {
       conversationId: CONVERSATION,
       lastSeq: 0,
       eventRevision: 1,
-      activeRunId: "run-1",
+      activeMessageId: "run-1",
       messages: [
         { id: "user-1", role: "user", text: "请自我介绍", images: [], status: "complete" },
         { id: "run-1", role: "assistant", text: "", images: [], status: "streaming" },
       ],
     });
-    const next = applyAgentEvent(
+    const next = overlayLiveFrame(
       view,
-      envelope(2, { type: "text-delta", partId: "text-1", delta: "先说经历" }),
+      live({ type: "text-delta", partId: "text-1", delta: "先说经历" }),
     );
     expect(next.messages[1]).toMatchObject({ text: "先说经历", status: "streaming" });
   });
 
-  it("ignores turn and compaction events until the UI turn projection is migrated", () => {
+  it("claims the active Turn and message from durable turn frames", () => {
     const base: ConversationView = {
+      lastSeq: 0,
       eventRevision: 1,
-      activeRunId: "run-1",
       messages: [
         { id: "run-1", role: "assistant", text: "answer", images: [], status: "complete" },
       ],
     };
 
-    const afterTurn = applyAgentEvent(
+    const afterTurn = foldConversationFrame(
       base,
-      envelope(2, { type: "turn-started", agentId: "general" }),
+      frame(
+        1,
+        { type: "turn-started", agentId: "general" },
+        { turnId: "turn-1", messageId: "run-1" },
+      ),
     );
-    const afterCompaction = applyAgentEvent(
+    const afterCompaction = foldConversationFrame(
       afterTurn,
-      envelope(3, {
-        type: "compaction-finished",
-        summarizedMessages: 2,
-        summary: "摘要",
-      }),
+      frame(
+        2,
+        { type: "compaction-finished", summarizedMessages: 2, summary: "摘要" },
+        { turnId: "turn-1", messageId: "run-1" },
+      ),
     );
 
+    expect(afterTurn).toMatchObject({ activeTurnId: "turn-1", activeMessageId: "run-1" });
     expect(afterCompaction).toMatchObject({
-      eventRevision: 3,
-      activeRunId: "run-1",
-      messages: base.messages,
+      lastSeq: 2,
+      activeTurnId: "turn-1",
+      activeMessageId: "run-1",
     });
+    // 压缩只推进游标，不改写已落账消息。
+    expect(afterCompaction.messages).toEqual(base.messages);
   });
 
   it("keeps reasoning and rate-limit retry as separate explicit states", () => {
     const base: ConversationView = {
+      lastSeq: 0,
       eventRevision: 1,
-      activeRunId: "run-1",
+      activeTurnId: "turn-1",
+      activeMessageId: "run-1",
       messages: [{ id: "run-1", role: "assistant", text: "", status: "streaming" }],
     };
-    const thinking = applyAgentEvent(
+    const thinking = foldConversationFrame(
       base,
-      envelope(2, { type: "reasoning-start", partId: "reasoning-1" }),
+      frame(
+        1,
+        { type: "reasoning-start", partId: "reasoning-1" },
+        { turnId: "turn-1", messageId: "run-1" },
+      ),
     );
     expect(thinking.messages[0]?.thinking).toBe(true);
-    const retrying = applyAgentEvent(
+    const retrying = foldConversationFrame(
       thinking,
-      envelope(3, {
-        type: "run-state-changed",
-        state: "retry-wait",
-        attempt: 1,
-        retry: {
+      frame(
+        2,
+        {
+          type: "retry",
           kind: "rate-limit",
           attempt: 1,
           maxRetries: 5,
           delayMs: 5_000,
           statusCode: 429,
-          scheduledAt: "2026-11-07T00:00:00.000Z",
         },
-      }),
+        { turnId: "turn-1", messageId: "run-1" },
+      ),
     );
     expect(retrying.messages[0]?.thinking).toBe(true);
     expect(retrying.retry).toMatchObject({
@@ -110,28 +154,33 @@ describe("conversation projection", () => {
       maxRetries: 5,
       statusCode: 429,
     });
-    expect(retrying.retryRunId).toBe("run-1");
+    expect(retrying.retryMessageId).toBe("run-1");
 
-    const resumed = applyAgentEvent(
+    const resumed = foldConversationFrame(
       retrying,
-      envelope(4, { type: "run-state-changed", state: "running", attempt: 2 }),
+      frame(3, { type: "start" }, { turnId: "turn-1", messageId: "run-1" }),
     );
     expect(resumed.retry).toBeUndefined();
-    expect(resumed.retryRunId).toBeUndefined();
+    expect(resumed.retryMessageId).toBeUndefined();
   });
 
-  it("shows the accepted run indicator until an explicit stream event arrives", () => {
+  it("shows the accepted turn indicator until an explicit stream frame arrives", () => {
     const accepted = applyConversationSnapshot(EMPTY_CONVERSATION_VIEW, {
       conversationId: CONVERSATION,
       lastSeq: 0,
       eventRevision: 0,
-      activeRunId: "run-1",
+      activeTurnId: "turn-1",
+      activeMessageId: "run-1",
       messages: [{ id: "run-1", role: "assistant", text: "", images: [], status: "streaming" }],
     });
     expect(accepted.messages[0]?.waitingForStream).toBe(true);
-    const thinking = applyAgentEvent(
+    const thinking = foldConversationFrame(
       accepted,
-      envelope(1, { type: "reasoning-start", partId: "reasoning-1" }),
+      frame(
+        1,
+        { type: "reasoning-start", partId: "reasoning-1" },
+        { turnId: "turn-1", messageId: "run-1" },
+      ),
     );
     expect(thinking.messages[0]).toMatchObject({ waitingForStream: false, thinking: true });
   });
@@ -203,55 +252,58 @@ describe("conversation projection", () => {
 
   it("keeps text and tool parts in event order while streaming", () => {
     let view: ConversationView = {
+      lastSeq: 0,
       eventRevision: 1,
-      activeRunId: "run-1",
+      activeTurnId: "turn-1",
+      activeMessageId: "run-1",
       messages: [{ id: "run-1", role: "assistant", text: "", status: "streaming", parts: [] }],
     };
-    view = applyAgentEvent(
+    const ids = { turnId: "turn-1", messageId: "run-1" };
+    view = overlayLiveFrame(view, live({ type: "text-delta", partId: "text-1", delta: "先" }));
+    view = foldConversationFrame(
       view,
-      envelope(2, { type: "text-delta", partId: "text-1", delta: "先" }),
+      frame(1, { type: "tool-input-start", toolCallId: "tool-1", toolName: "Read" }, ids),
     );
-    view = applyAgentEvent(
+    view = foldConversationFrame(
       view,
-      envelope(3, {
-        type: "tool-input-start",
-        toolCallId: "tool-1",
-        toolName: "Read",
-      }),
+      frame(
+        2,
+        {
+          type: "tool-call",
+          toolCallId: "tool-1",
+          toolName: "Read",
+          input: { file_path: "a.ts" },
+        },
+        ids,
+      ),
     );
-    view = applyAgentEvent(
+    view = foldConversationFrame(
       view,
-      envelope(4, {
-        type: "tool-call",
-        toolCallId: "tool-1",
-        toolName: "Read",
-        input: { file_path: "a.ts" },
-      }),
+      frame(
+        3,
+        {
+          type: "tool-execution-finished",
+          toolCallId: "tool-1",
+          toolName: "Read",
+          input: { file_path: "a.ts" },
+          result: { success: true, output: "content" },
+          durationMs: 1,
+        },
+        ids,
+      ),
     );
-    view = applyAgentEvent(
-      view,
-      envelope(5, {
-        type: "tool-execution-finished",
-        toolCallId: "tool-1",
-        toolName: "Read",
-        input: { file_path: "a.ts" },
-        result: { success: true, output: "content" },
-        durationMs: 1,
-      }),
-    );
-    view = applyAgentEvent(
-      view,
-      envelope(6, { type: "text-delta", partId: "text-2", delta: "后" }),
-    );
+    view = overlayLiveFrame(view, live({ type: "text-delta", partId: "text-2", delta: "后" }));
 
     expect(view.messages[0]?.parts?.map((part) => part.kind)).toEqual(["text", "tool", "text"]);
     expect(view.messages[0]?.text).toBe("先后");
   });
 
-  it("settles a running tool part when the run fails", () => {
+  it("settles a running tool part when the turn fails", () => {
     const view: ConversationView = {
+      lastSeq: 0,
       eventRevision: 1,
-      activeRunId: "run-1",
+      activeTurnId: "turn-1",
+      activeMessageId: "run-1",
       messages: [
         {
           id: "run-1",
@@ -270,9 +322,13 @@ describe("conversation projection", () => {
         },
       ],
     };
-    const finished = applyAgentEvent(
+    const finished = foldConversationFrame(
       view,
-      envelope(2, { type: "run-state-changed", state: "failed", attempt: 2 }),
+      frame(
+        2,
+        { type: "turn-finished", status: "failed" },
+        { turnId: "turn-1", messageId: "run-1" },
+      ),
     );
 
     expect(finished.messages[0]?.parts?.[0]).toMatchObject({ state: "failed" });
@@ -280,6 +336,7 @@ describe("conversation projection", () => {
 
   it("preserves event-updated provider usage when snapshot carries estimate", () => {
     const withProvider: ConversationView = {
+      lastSeq: 0,
       eventRevision: 2,
       messages: [],
       contextUsage: {
@@ -318,6 +375,7 @@ describe("conversation projection", () => {
 
   it("accepts snapshot provider usage over view estimate", () => {
     const withEstimate: ConversationView = {
+      lastSeq: 0,
       eventRevision: 2,
       messages: [],
       contextUsage: {
@@ -356,6 +414,7 @@ describe("conversation projection", () => {
 
   it("accepts a newer post-compaction estimate over the previous provider usage", () => {
     const withProvider: ConversationView = {
+      lastSeq: 0,
       eventRevision: 2,
       messages: [],
       contextUsage: {
@@ -394,6 +453,7 @@ describe("conversation projection", () => {
 
   it("keeps provider usage when an older compaction snapshot arrives", () => {
     const withProvider: ConversationView = {
+      lastSeq: 0,
       eventRevision: 3,
       messages: [],
       contextUsage: {
@@ -462,23 +522,25 @@ describe("conversation projection", () => {
     ["orphaned", "failed"],
   ] as const)("maps the %s run terminal state to %s", (runState, messageStatus) => {
     const view: ConversationView = {
+      lastSeq: 0,
       eventRevision: 1,
-      activeRunId: "run-1",
+      activeMessageId: "run-1",
       messages: [{ id: "run-1", role: "assistant", text: "说到一半", status: "streaming" }],
     };
     const finished = applyAgentEvent(
       view,
       envelope(2, { type: "run-state-changed", state: runState, attempt: 1 }),
     );
-    expect(finished.activeRunId).toBeUndefined();
+    expect(finished.activeMessageId).toBeUndefined();
     expect(finished.messages[0]).toMatchObject({ status: messageStatus, thinking: false });
   });
 
   it("keeps a failed retry as a static Wi-Fi record", () => {
     const view: ConversationView = {
+      lastSeq: 0,
       eventRevision: 1,
-      activeRunId: "run-1",
-      retryRunId: "run-1",
+      activeMessageId: "run-1",
+      retryMessageId: "run-1",
       retry: { kind: "rate-limit", attempt: 5, maxRetries: 5 },
       messages: [{ id: "run-1", role: "assistant", text: "", status: "streaming" }],
     };
@@ -487,14 +549,15 @@ describe("conversation projection", () => {
       envelope(2, { type: "run-state-changed", state: "failed", attempt: 6 }),
     );
     expect(finished.retry).toMatchObject({ attempt: 5, maxRetries: 5, finished: true });
-    expect(finished.retryRunId).toBe("run-1");
+    expect(finished.retryMessageId).toBe("run-1");
   });
 
   it("clears a retry record when the run completes successfully", () => {
     const view: ConversationView = {
+      lastSeq: 0,
       eventRevision: 1,
-      activeRunId: "run-1",
-      retryRunId: "run-1",
+      activeMessageId: "run-1",
+      retryMessageId: "run-1",
       retry: { kind: "rate-limit", attempt: 1, maxRetries: 5 },
       messages: [{ id: "run-1", role: "assistant", text: "答案", status: "streaming" }],
     };
@@ -503,14 +566,15 @@ describe("conversation projection", () => {
       envelope(2, { type: "run-state-changed", state: "completed", attempt: 2 }),
     );
     expect(finished.retry).toBeUndefined();
-    expect(finished.retryRunId).toBeUndefined();
+    expect(finished.retryMessageId).toBeUndefined();
     expect(finished.messages[0]?.status).toBe("complete");
   });
 
   it("clears a previous model error when the next run starts", () => {
     const view: ConversationView = {
+      lastSeq: 0,
       eventRevision: 1,
-      activeRunId: "run-1",
+      activeMessageId: "run-1",
       error: "Cannot connect to API",
       messages: [{ id: "run-2", role: "assistant", text: "", status: "streaming" }],
     };
@@ -520,6 +584,7 @@ describe("conversation projection", () => {
 
   it("does not carry a previous model error into a fresh snapshot", () => {
     const view: ConversationView = {
+      lastSeq: 0,
       eventRevision: 2,
       error: "模型流未提供终态",
       messages: [{ id: "run-1", role: "assistant", text: "", status: "failed" }],
@@ -588,7 +653,7 @@ describe("conversation projection", () => {
       conversationId: CONVERSATION,
       lastSeq: 0,
       eventRevision: 3,
-      activeRunId: "run-1",
+      activeMessageId: "run-1",
       messages: [{ id: "run-1", role: "assistant", text: "", images: [], status: "streaming" }],
       contextUsage: {
         contextWindow: 256_000,
@@ -602,9 +667,13 @@ describe("conversation projection", () => {
       },
     });
 
-    const next = applyAgentEvent(
+    const next = foldConversationFrame(
       view,
-      envelope(4, { type: "context-usage-changed", usedTokens: 2_700 }),
+      frame(
+        4,
+        { type: "context-usage-changed", usedTokens: 2_700 },
+        { turnId: "turn-1", messageId: "run-1" },
+      ),
     );
 
     expect(next.contextUsage).toMatchObject({
@@ -615,8 +684,14 @@ describe("conversation projection", () => {
     });
   });
 
-  it("ignores old revisions and other conversations", () => {
-    const view: ConversationView = { eventRevision: 5, messages: [] };
+  it("ignores an old Answer revision and a replayed frame seq", () => {
+    const view: ConversationView = { lastSeq: 5, eventRevision: 5, messages: [] };
     expect(applyAgentEvent(view, envelope(5, { type: "start" }))).toBe(view);
+    expect(
+      foldConversationFrame(
+        view,
+        frame(5, { type: "turn-started", agentId: "general" }, { turnId: "turn-1" }),
+      ),
+    ).toBe(view);
   });
 });

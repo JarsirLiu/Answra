@@ -6,6 +6,7 @@ import { TuiViewStore } from "../../../src/tui/app/viewStore";
 import { POINTER } from "../../../src/tui/chrome/theme";
 import { PromptInput } from "../../../src/tui/composer/PromptInput";
 import { Welcome } from "../../../src/tui/transcript/Transcript";
+import { liveFrame } from "../../frameFixtures";
 import {
   CursorProbeStdin,
   CursorProbeStdout,
@@ -103,19 +104,13 @@ describe("TUI rendering", () => {
 
     await nextFrame();
     await instance.waitUntilRenderFlush();
-    store.applyEvent({
-      schemaVersion: 1,
-      eventId: "event-2",
-      conversationId: "conversation-1",
-      runId: "run-1",
-      attemptId: "run-1:attempt:1",
-      sequence: 2,
-      aggregateRevision: 2,
-      producerId: "test",
-      occurredAt: "2026-11-13T00:00:00.000Z",
-      event: { type: "text-delta", partId: "text-1", delta: "assistant-visible-text" },
-    });
-    store.flush();
+    store.applyLiveFrame(
+      liveFrame(
+        { type: "text-delta", partId: "text-1", delta: "assistant-visible-text" },
+        { messageId: "run-1" },
+      ),
+    );
+    store.flushLive();
     await nextFrame();
     await instance.waitUntilRenderFlush();
 

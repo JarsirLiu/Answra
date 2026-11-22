@@ -120,7 +120,7 @@ describe("SessionTranscriptBridge", () => {
         parts: [{ id: "text-1", kind: "text", text: "你好", state: "completed" }],
       },
     ]);
-    expect(snapshot.activeRunId).toBeUndefined();
+    expect(snapshot.activeMessageId).toBeUndefined();
     expect(await journal.readAfter(TEST_SESSION_ID, 0)).toHaveLength(6);
     // 每条 durable 事实投影成功后，快照游标与 journal 末尾保持一致。
     expect(snapshot.lastSeq).toBe(await journal.lastSequence(TEST_SESSION_ID));
@@ -167,7 +167,7 @@ describe("SessionTranscriptBridge", () => {
       { id: "assistant-2", authorAgentId: "intake", status: "complete", text: "已整理" },
     ]);
     expect(snapshot.activeAgentId).toBe("intake");
-    expect(snapshot.activeRunId).toBeUndefined();
+    expect(snapshot.activeMessageId).toBeUndefined();
   });
 
   it("settles an aborted turn as interrupted", async () => {
@@ -229,7 +229,7 @@ describe("SessionTranscriptBridge", () => {
       status: "interrupted",
       text: "半句",
     });
-    expect(snapshot.activeRunId).toBeUndefined();
+    expect(snapshot.activeMessageId).toBeUndefined();
   });
 
   it("restores a queued turn's input after a worker restart", async () => {

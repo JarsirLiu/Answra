@@ -1,6 +1,6 @@
 /** CLI coding host 组合根：装配 AgentRuntime、工具、coding Bot 与单 Bot 会话用例。 */
 import type { ConversationSnapshot } from "@answra/shared";
-import type { AgentEventEnvelope } from "@answra/shared/schema";
+import type { AgentEventEnvelope, LiveFrame, SessionFrame } from "@answra/shared/schema";
 import { createCodingBot } from "../bots/coding/bot";
 import { AgentRuntime } from "../core/agent/runtime";
 import { createInstructionLoader } from "../core/instruction";
@@ -17,7 +17,12 @@ import type { ExecutionStore } from "../execution/store";
 import { CodingApplication } from "./application";
 
 export interface CodingHostOptions {
+  /** 旧 envelope 出口：CLI TUI 已改吃帧，仍保留给远程 host 与 Presenter 之外的工具。 */
   emitEvent: (event: AgentEventEnvelope) => void;
+  /** durable 事实帧监听；与 `sessionFrames` 二选一，宿主按需要选择消费方式。 */
+  onSessionFrame?: (frame: SessionFrame) => void;
+  /** live 增量帧监听；允许丢失，不参与重放。 */
+  onLiveFrame?: (frame: LiveFrame) => void;
   onSnapshot?: (snapshot: ConversationSnapshot) => void | Promise<void>;
   tokenProvider?: (options: { forceRefresh: boolean }) => Promise<string>;
   store?: ConversationStore;
@@ -56,6 +61,8 @@ export interface CodingHost {
 
 export function startCodingHost({
   emitEvent,
+  onSessionFrame,
+  onLiveFrame,
   onSnapshot,
   tokenProvider,
   store = new MemoryConversationStore(),
@@ -95,6 +102,13 @@ export function startCodingHost({
     onSnapshot,
   });
   runtime.setWorkspaceRoot(workspaceRoot);
+  const unsubscribeFrames =
+    onSessionFrame === undefined && onLiveFrame === undefined
+      ? undefined
+      : sessionFrames.subscribe({
+          ...(onSessionFrame === undefined ? {} : { onFrame: onSessionFrame }),
+          ...(onLiveFrame === undefined ? {} : { onLiveFrame }),
+        });
 
   let disposed = false;
   let shutdownPromise: Promise<void> | undefined;
@@ -110,6 +124,7 @@ export function startCodingHost({
     dispose() {
       if (disposed) return;
       disposed = true;
+      unsubscribeFrames?.();
       runtime.dispose();
       skillsReady?.dispose();
       void tools.dispose().catch((error: unknown) => {
@@ -121,6 +136,7 @@ export function startCodingHost({
         await runtime.shutdown();
         await agentRuntime.shutdown();
         disposed = true;
+        unsubscribeFrames?.();
         runtime.dispose();
         skillsReady?.dispose();
         await tools.dispose().catch((error: unknown) => {

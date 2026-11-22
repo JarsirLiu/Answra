@@ -145,7 +145,7 @@ export function ReplyBarWindowApp({ bridge }: ReplyBarWindowAppProps) {
   );
   const popover = expanded ? (
     <ReplyConversationPopover
-      activeRunId={conversation.activeRunId}
+      activeMessageId={conversation.activeMessageId}
       retry={conversation.retry}
       error={conversation.error ?? state.replyError}
       connection={connection}

@@ -85,11 +85,11 @@ export class TurnScheduler {
   private readonly maintenanceQueue: PendingCompaction[] = [];
   private mutation = Promise.resolve();
   private readonly idleWaiters: Array<() => void> = [];
-  private readonly turnStartWaiters = new Map<TurnId, Array<(runId: string) => void>>();
+  private readonly turnStartWaiters = new Map<TurnId, Array<(messageId: string) => void>>();
   private readonly turnFinishWaiters = new Map<TurnId, Array<(outcome: TurnOutcome) => void>>();
   private readonly finishedTurns = new Map<
     TurnId,
-    { runId: string; outcome: TurnOutcome; errorText?: string }
+    { messageId: string; outcome: TurnOutcome; errorText?: string }
   >();
 
   private constructor(options: TurnSchedulerOptions, projection: SessionProjection) {
@@ -201,7 +201,7 @@ export class TurnScheduler {
   /** 等待 Turn 真正开始；已结束的 Turn 也返回其首条 assistant 消息 id。 */
   waitForTurnStart(turnId: TurnId): Promise<string> {
     const finished = this.finishedTurns.get(turnId);
-    if (finished !== undefined) return Promise.resolve(finished.runId);
+    if (finished !== undefined) return Promise.resolve(finished.messageId);
     if (this.active?.start.turnId === turnId) return Promise.resolve(this.active.start.messageId);
     const projected = this.projection.turns.find((turn) => turn.turnId === turnId);
     if (projected !== undefined && isTerminalTurnStatus(projected.status)) {
@@ -220,7 +220,7 @@ export class TurnScheduler {
   /** 等待 Turn 结束；队列取消也返回终态，避免 IPC 等待方永久挂起。 */
   waitForTurn(
     turnId: TurnId,
-  ): Promise<{ runId?: string; outcome: TurnOutcome; errorText?: string }> {
+  ): Promise<{ messageId?: string; outcome: TurnOutcome; errorText?: string }> {
     const finished = this.finishedTurns.get(turnId);
     if (finished !== undefined) return Promise.resolve(finished);
     const projected = this.projection.turns.find((turn) => turn.turnId === turnId);
@@ -231,9 +231,9 @@ export class TurnScheduler {
       projectedStatus !== undefined &&
       isTerminalTurnStatus(projectedStatus)
     ) {
-      const runId = projected.assistantMessageIds[0];
+      const messageId = projected.assistantMessageIds[0];
       return Promise.resolve({
-        ...(runId === undefined ? {} : { runId }),
+        ...(messageId === undefined ? {} : { messageId }),
         outcome: projectedStatus,
         ...(projected.errorText === undefined ? {} : { errorText: projected.errorText }),
       });
@@ -242,16 +242,16 @@ export class TurnScheduler {
       const waiters = this.turnFinishWaiters.get(turnId) ?? [];
       waiters.push((finishOutcome) => {
         const finished = this.finishedTurns.get(turnId);
-        resolve(finished ?? { outcome: finishOutcome, runId: this.runIdFor(turnId) });
+        resolve(finished ?? { outcome: finishOutcome, messageId: this.messageIdFor(turnId) });
       });
       this.turnFinishWaiters.set(turnId, waiters);
     });
   }
 
-  runIdFor(turnId: TurnId): string | undefined {
+  messageIdFor(turnId: TurnId): string | undefined {
     if (this.active?.start.turnId === turnId) return this.active.start.messageId;
     const finished = this.finishedTurns.get(turnId);
-    if (finished !== undefined) return finished.runId;
+    if (finished !== undefined) return finished.messageId;
     return this.projection.turns.find((turn) => turn.turnId === turnId)?.assistantMessageIds[0];
   }
 
@@ -412,16 +412,16 @@ export class TurnScheduler {
 
   private recordTurnFinished(
     turnId: TurnId,
-    runId: string,
+    messageId: string,
     outcome: TurnOutcome,
     errorText?: string,
   ): void {
     this.finishedTurns.set(turnId, {
-      runId,
+      messageId,
       outcome,
       ...(errorText === undefined ? {} : { errorText }),
     });
-    for (const resolve of this.turnStartWaiters.get(turnId) ?? []) resolve(runId);
+    for (const resolve of this.turnStartWaiters.get(turnId) ?? []) resolve(messageId);
     this.turnStartWaiters.delete(turnId);
     for (const resolve of this.turnFinishWaiters.get(turnId) ?? []) resolve(outcome);
     this.turnFinishWaiters.delete(turnId);

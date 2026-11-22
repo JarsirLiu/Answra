@@ -112,7 +112,7 @@ describe("InterviewApplication session recovery", () => {
     });
     const snapshot = await app.getSnapshot(conversationId);
 
-    expect(snapshot.activeRunId).toBeUndefined();
+    expect(snapshot.activeMessageId).toBeUndefined();
     expect(snapshot.messages.map((message) => message.status)).toEqual(["complete", "interrupted"]);
     // 恢复写入的旧进程终态必须被 UI 挂起，不能污染新进程的事件流。
     expect(emitted.filter((event) => event.runId === "assistant-1")).toEqual([]);
@@ -133,7 +133,7 @@ describe("InterviewApplication session recovery", () => {
     await app.createConversation(conversationId);
 
     const result = await app.sendText(conversationId, "继续");
-    await app.waitForRun(result.runId);
+    await app.waitForTurn(conversationId, result.turnId);
 
     expect((await app.getSnapshot(conversationId)).messages).toEqual([
       expect.objectContaining({ role: "user", text: "继续", status: "complete" }),

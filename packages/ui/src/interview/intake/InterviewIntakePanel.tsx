@@ -53,10 +53,10 @@ export function InterviewIntakePanel({
         void intake.send().catch(() => undefined);
       }}
       placeholder="回答 AI 的问题，或补充简历、项目信息…"
-      sending={intake.opening || (intake.sendPending && !intake.activeRunId)}
+      sending={intake.opening || (intake.sendPending && !intake.activeMessageId)}
       showAttachments={false}
       stealth={false}
-      streaming={Boolean(intake.activeRunId)}
+      streaming={Boolean(intake.activeMessageId)}
       title="面试分身"
       variant="interview"
     />

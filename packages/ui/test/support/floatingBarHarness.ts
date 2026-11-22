@@ -1,6 +1,14 @@
 import type { ConversationMessage, ConversationSnapshot } from "@answra/shared";
 import { ActiveInterviewIntakeConversationId } from "@answra/shared";
-import type { AgentEventEnvelope, AgentStreamEvent } from "@answra/shared/schema";
+import type {
+  AgentDurableEvent,
+  AgentEventEnvelope,
+  AgentLiveOnlyEvent,
+  AgentStreamEvent,
+  LiveFrame,
+  SessionFrame,
+} from "@answra/shared/schema";
+import { SESSION_FRAME_SCHEMA_VERSION } from "@answra/shared/schema";
 import { fireEvent, screen } from "@testing-library/react";
 import type { UIMessageChunk } from "ai";
 import { vi } from "vitest";
@@ -17,7 +25,45 @@ export const conversationState: {
   emittedConversationId: conversationId,
 };
 
+/** Answer（P3 前）仍吃 envelope；会话/面试吃帧，两条通道各自独立。 */
 export const conversationListeners = new Set<(event: AgentEventEnvelope) => void>();
+export const sessionFrameListeners = new Set<(frame: SessionFrame) => void>();
+export const liveFrameListeners = new Set<(frame: LiveFrame) => void>();
+
+export function publishSessionFrame(frame: SessionFrame) {
+  for (const listener of sessionFrameListeners) listener(frame);
+}
+
+export function publishLiveFrame(frame: LiveFrame) {
+  for (const listener of liveFrameListeners) listener(frame);
+}
+
+/** 构造测试用 durable 事实帧；seq 由调用方决定，便于断言缺口与重放。 */
+export function testFrame(
+  seq: number,
+  event: AgentDurableEvent,
+  ids: { sessionId?: string; turnId?: string; messageId?: string } = {},
+): SessionFrame {
+  return {
+    schemaVersion: SESSION_FRAME_SCHEMA_VERSION,
+    sessionId: ids.sessionId ?? conversationState.emittedConversationId,
+    seq,
+    eventId: `event-${seq}`,
+    occurredAt: "2026-11-07T00:00:00.000Z",
+    producerId: "test",
+    ...(ids.turnId === undefined ? {} : { turnId: ids.turnId }),
+    ...(ids.messageId === undefined ? {} : { messageId: ids.messageId }),
+    event,
+  };
+}
+
+export function testLiveFrame(
+  event: AgentLiveOnlyEvent,
+  messageId = "run-1",
+  sessionId = conversationState.emittedConversationId,
+): LiveFrame {
+  return { sessionId, messageId, event };
+}
 
 export function resetFloatingBarTestState() {
   localStorage.clear();
@@ -27,6 +73,8 @@ export function resetFloatingBarTestState() {
   conversationState.emit = undefined;
   conversationState.emittedConversationId = conversationId;
   conversationListeners.clear();
+  sessionFrameListeners.clear();
+  liveFrameListeners.clear();
 }
 
 function toStream(chunk: UIMessageChunk): AgentStreamEvent | undefined {
@@ -97,6 +145,7 @@ function toStream(chunk: UIMessageChunk): AgentStreamEvent | undefined {
 
 export function createConversationBridge() {
   const snapshots = new Map<string, ConversationSnapshot>();
+  const frameLog = new Map<string, SessionFrame[]>();
   const snapshotFor = (id: string) => snapshots.get(id) ?? emptySnapshot(id);
   const saveSnapshot = (snapshot: ConversationSnapshot) => {
     snapshots.set(snapshot.conversationId, snapshot);
@@ -107,10 +156,17 @@ export function createConversationBridge() {
     fitContent: vi.fn(),
     getConversationSnapshot: vi.fn().mockImplementation(async (id: string) => snapshotFor(id)),
     readConversationEvents: vi.fn().mockResolvedValue([]),
+    readSessionFrames: vi
+      .fn()
+      .mockImplementation(async (id: string, afterSeq: number) =>
+        (frameLog.get(id) ?? []).filter((frame) => frame.seq > afterSeq),
+      ),
     createConversation: vi
       .fn()
       .mockImplementation(async (id: string) => saveSnapshot(snapshotFor(id))),
     clearConversationMessages: vi.fn().mockImplementation(async (id: string) => {
+      // worker 清空会话时同时清空 journal 序号：帧从 1 重新开始，客户端游标也归零。
+      frameLog.delete(id);
       return saveSnapshot(emptySnapshot(id));
     }),
     sendConversationMessage: vi
@@ -122,7 +178,7 @@ export function createConversationBridge() {
           request?: { text?: string; images?: Array<{ name: string; dataUrl: string }> };
         }) => {
           conversationState.emittedConversationId = command.conversationId;
-          // send returns the transcript snapshot; subsequent model output is carried by envelopes.
+          // 发送只返回 transcript 快照；后续输出分别走 durable/live 帧与 Answer envelope。
           if (command.operation && command.request) {
             const userMessage: ConversationMessage = {
               id: `user-${command.conversationId.slice(-8)}`,
@@ -143,14 +199,27 @@ export function createConversationBridge() {
               eventRevision: 1,
               lastSeq: 1,
               messages: [userMessage, assistantMessage],
-              activeRunId: "run-1",
+              activeTurnId: "turn-1",
+              activeMessageId: "run-1",
             });
+            if (command.operation === "answer.run") return { runId: "run-1", snapshot };
             return {
-              runId: "run-1",
+              queueId: "turn-1",
+              status: "started" as const,
+              position: 0 as const,
+              turnId: "turn-1",
               snapshot,
             };
           }
-          return { runId: "run-1", snapshot: emptySnapshot(command.conversationId) };
+          if (command.operation === "answer.run")
+            return { runId: "run-1", snapshot: emptySnapshot(command.conversationId) };
+          return {
+            queueId: "turn-1",
+            status: "started" as const,
+            position: 0 as const,
+            turnId: "turn-1",
+            snapshot: emptySnapshot(command.conversationId),
+          };
         },
       ),
     sendInterviewMessage: vi.fn(async (id: string, text: string) => {
@@ -169,7 +238,7 @@ export function createConversationBridge() {
           },
         ],
       });
-      return { runId: "run-1", snapshot };
+      return { turnId: "turn-1", snapshot };
     }),
     openInterviewIntake: vi.fn(async () => {
       const snapshot = saveSnapshot({
@@ -203,33 +272,65 @@ export function createConversationBridge() {
           },
         ],
       });
-      return { runId: "run-1", snapshot };
+      return { turnId: "turn-1", snapshot };
     }),
     getInterviewIntakeSnapshot: vi.fn(async () => snapshotFor(ActiveInterviewIntakeConversationId)),
     readInterviewIntakeEvents: vi.fn(async () => []),
+    cancelTurn: vi.fn(),
     cancelConversationRun: vi.fn(),
+    onSessionFrame: vi.fn((listener: (frame: SessionFrame) => void) => {
+      sessionFrameListeners.add(listener);
+      return () => {
+        sessionFrameListeners.delete(listener);
+      };
+    }),
+    onLiveFrame: vi.fn((listener: (frame: LiveFrame) => void) => {
+      liveFrameListeners.add(listener);
+      return () => {
+        liveFrameListeners.delete(listener);
+      };
+    }),
     onConversationEvent: vi.fn((listener: (event: AgentEventEnvelope) => void) => {
       let scopeId = "";
       let revision = 0;
-      let seq = 0;
+      let sequence = 0;
       const messages: ConversationMessage[] = [];
       conversationListeners.add(listener);
-      const publish = (event: AgentEventEnvelope) => {
+      const turnIdFor = (runId: string) => (runId === "run-1" ? "turn-1" : `turn-${runId}`);
+      const publishEnvelope = (event: AgentEventEnvelope) => {
         conversationListeners.forEach((subscriber) => {
           subscriber(event);
         });
       };
+      /** durable 事实按会话游标追加；live 增量不进历史，允许丢失。 */
+      const publishFact = (id: string, event: AgentDurableEvent, runId: string) => {
+        const log = frameLog.get(id) ?? [];
+        const seq = (log.at(-1)?.seq ?? snapshotFor(id).lastSeq) + 1;
+        const frame = testFrame(seq, event, {
+          sessionId: id,
+          turnId: turnIdFor(runId),
+          messageId: runId,
+        });
+        log.push(frame);
+        frameLog.set(id, log);
+        saveSnapshot({ ...snapshotFor(id), lastSeq: seq });
+        publishSessionFrame(frame);
+      };
       conversationState.emit = ({ runId, chunk }) => {
-        if (scopeId !== conversationState.emittedConversationId) {
-          scopeId = conversationState.emittedConversationId;
+        const id = conversationState.emittedConversationId;
+        if (scopeId !== id) {
+          scopeId = id;
           revision = 1;
-          seq = 0;
+          sequence = 0;
           messages.length = 0;
         }
         const stream = toStream(chunk);
         if (stream) {
           revision += 1;
-          seq += 1;
+          sequence += 1;
+          if (isLiveOnly(stream))
+            publishLiveFrame({ sessionId: id, messageId: runId, event: stream });
+          else publishFact(id, stream, runId);
           if (stream.type === "text-delta") {
             const assistant = messages.find((message) => message.id === runId);
             if (assistant) assistant.text += stream.delta;
@@ -241,7 +342,7 @@ export function createConversationBridge() {
                 images: [],
                 status: "streaming",
               });
-            const snapshot = snapshotFor(conversationState.emittedConversationId);
+            const snapshot = snapshotFor(id);
             const assistantText =
               messages.find((message) => message.id === runId)?.text ?? stream.delta;
             saveSnapshot({
@@ -252,54 +353,62 @@ export function createConversationBridge() {
               ),
             });
           }
-          publish({
+          publishEnvelope({
             schemaVersion: 1,
             eventId: `event-${revision}`,
             attemptId: `${runId}:attempt:1`,
             producerId: "test",
             occurredAt: "2026-11-07T00:00:00.000Z",
             aggregateRevision: revision,
-            sequence: seq,
-            conversationId: conversationState.emittedConversationId,
+            sequence,
+            conversationId: id,
             runId,
             event: stream,
           });
         }
         if (chunk.type === "finish" || chunk.type === "abort") {
           revision += 1;
-          let assistant = messages.find((message) => message.id === runId);
-          if (!assistant) {
-            assistant = {
+          sequence += 1;
+          if (!messages.some((message) => message.id === runId)) {
+            messages.push({
               id: runId,
               role: "assistant",
               text: "",
               images: [],
               status: "complete",
-            };
-            messages.push(assistant);
+            });
           }
-          const snapshot = snapshotFor(conversationState.emittedConversationId);
+          const aborted = chunk.type === "abort";
+          publishFact(
+            id,
+            { type: "turn-finished", status: aborted ? "aborted" : "completed" },
+            runId,
+          );
+          const snapshot = snapshotFor(id);
           saveSnapshot({
             ...snapshot,
             eventRevision: revision,
-            activeRunId: undefined,
+            activeTurnId: undefined,
+            activeMessageId: undefined,
             messages: snapshot.messages.map((message) =>
-              message.id === runId ? { ...message, status: "complete" } : message,
+              message.id === runId
+                ? { ...message, status: aborted ? "interrupted" : "complete" }
+                : message,
             ),
           });
-          publish({
+          publishEnvelope({
             schemaVersion: 1,
             eventId: `event-${revision}`,
             attemptId: `${runId}:attempt:1`,
             producerId: "test",
             occurredAt: "2026-11-07T00:00:00.000Z",
             aggregateRevision: revision,
-            sequence: seq + 1,
-            conversationId: conversationState.emittedConversationId,
+            sequence,
+            conversationId: id,
             runId,
             event: {
               type: "run-state-changed",
-              state: chunk.type === "abort" ? "aborted" : "completed",
+              state: aborted ? "aborted" : "completed",
               attempt: 1,
             },
           });
@@ -321,6 +430,16 @@ export function createConversationBridge() {
 
 function emptySnapshot(id = conversationId): ConversationSnapshot {
   return { conversationId: id, eventRevision: 0, lastSeq: 0, messages: [] };
+}
+
+/** live-only 增量不进 durable 历史：它们只改变瞬时正文，由后续快照兜底。 */
+function isLiveOnly(event: AgentStreamEvent): event is AgentLiveOnlyEvent {
+  return (
+    event.type === "text-delta" ||
+    event.type === "reasoning-delta" ||
+    event.type === "tool-input-delta" ||
+    event.type === "tool-output-delta"
+  );
 }
 
 export function clickAnswerScreenshot() {

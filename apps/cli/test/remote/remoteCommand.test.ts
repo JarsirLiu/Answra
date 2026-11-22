@@ -59,12 +59,12 @@ function createDependencies(
       lastSeq: 0,
       messages: [],
     })),
-    send: vi.fn(async () => ({ runId: "run-1" })),
+    send: vi.fn(async () => ({ turnId: "turn-1" })),
     enqueue: vi.fn(async () => ({
       queueId: "queue-1",
       status: "started" as const,
       position: 0 as const,
-      runId: "run-1",
+      turnId: "turn-1",
       snapshot: {
         conversationId: "conversation-1",
         eventRevision: 0,
@@ -74,7 +74,7 @@ function createDependencies(
     })),
     waitForQueueStart: vi.fn(async (_conversationId, queueId) => ({
       queueId,
-      runId: "run-1",
+      turnId: "turn-1",
       snapshot: {
         conversationId: "conversation-1",
         eventRevision: 0,
@@ -83,7 +83,8 @@ function createDependencies(
       },
     })),
     cancel: vi.fn(),
-    waitForRun: vi.fn(async () => {}),
+    waitForTurn: vi.fn(async () => {}),
+    readFrames: vi.fn(async () => []),
     dispose: vi.fn(),
   };
   return {

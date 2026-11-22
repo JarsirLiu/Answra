@@ -70,7 +70,7 @@ export function createRemoteCodingHost({
     waitQueue: (conversationId, queueId) => coding.runtime.waitForQueue(conversationId, queueId),
     waitQueueStart: (conversationId, queueId) =>
       coding.runtime.waitForQueueStart(conversationId, queueId),
-    cancel: (_conversationId, runId) => coding.runtime.cancel(runId),
+    cancel: (conversationId, turnId) => coding.runtime.cancel(conversationId, turnId),
     applyModel: (config) => coding.runtime.configure(toConversationModelConfig(config)),
     settings: () => settings,
     onSnapshot(listener) {

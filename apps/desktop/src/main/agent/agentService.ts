@@ -143,12 +143,12 @@ export class AgentService {
   async waitForConversationQueue(
     conversationId: string,
     queueId: string,
-  ): Promise<{ queueId: string; runId?: string; outcome: "completed" | "failed" | "aborted" }> {
+  ): Promise<{ queueId: string; turnId?: string; outcome: "completed" | "failed" | "aborted" }> {
     await this.start();
     this.trackConversation(conversationId);
     return (await this.workerHost.request("wait-queue", { conversationId, queueId })) as {
       queueId: string;
-      runId?: string;
+      turnId?: string;
       outcome: "completed" | "failed" | "aborted";
     };
   }
@@ -156,12 +156,12 @@ export class AgentService {
   async waitForConversationQueueStart(
     conversationId: string,
     queueId: string,
-  ): Promise<{ queueId: string; runId: string; snapshot: ConversationSnapshot }> {
+  ): Promise<{ queueId: string; turnId: string; snapshot: ConversationSnapshot }> {
     await this.start();
     this.trackConversation(conversationId);
     return (await this.workerHost.request("wait-queue-start", { conversationId, queueId })) as {
       queueId: string;
-      runId: string;
+      turnId: string;
       snapshot: ConversationSnapshot;
     };
   }
@@ -186,7 +186,7 @@ export class AgentService {
   async sendInterviewMessage(
     conversationId: string,
     text: string,
-  ): Promise<{ runId: string; snapshot: ConversationSnapshot }> {
+  ): Promise<{ turnId: string; snapshot: ConversationSnapshot }> {
     if (!text.trim() || text.length > 32_000) throw new Error("演练消息无效或过长");
     await this.start();
     this.trackConversation(conversationId);
@@ -194,7 +194,7 @@ export class AgentService {
     return (await this.workerHost.request("interview-message", {
       conversationId,
       text,
-    })) as { runId: string; snapshot: ConversationSnapshot };
+    })) as { turnId: string; snapshot: ConversationSnapshot };
   }
 
   async openInterviewIntake(): Promise<InterviewIntakeOpenResult> {
@@ -208,7 +208,7 @@ export class AgentService {
 
   async sendInterviewIntakeMessage(
     text: string,
-  ): Promise<{ runId: string; snapshot: ConversationSnapshot }> {
+  ): Promise<{ turnId: string; snapshot: ConversationSnapshot }> {
     if (!text.trim() || text.length > 32_000) throw new Error("面试消息无效或过长");
     await this.start();
     this.trackConversation(ActiveInterviewIntakeConversationId);
@@ -216,7 +216,7 @@ export class AgentService {
     return (await this.workerHost.request("interview-intake-message", {
       conversationId: ActiveInterviewIntakeConversationId,
       text,
-    })) as { runId: string; snapshot: ConversationSnapshot };
+    })) as { turnId: string; snapshot: ConversationSnapshot };
   }
 
   async getInterviewIntakeSnapshot(): Promise<ConversationSnapshot> {
@@ -236,10 +236,18 @@ export class AgentService {
     });
   }
 
-  cancel(runId: string): void {
+  /** 取消指定 Turn；会话/面试/Coding 共用。 */
+  cancelTurn(conversationId: string, turnId: string): void {
     void this.workerHost
-      .request("cancel", { runId })
-      .catch((error: unknown) => console.warn("[agent-service] cancel failed", error));
+      .request("cancel-turn", { conversationId, turnId })
+      .catch((error: unknown) => console.warn("[agent-service] cancel-turn failed", error));
+  }
+
+  /** Answer 在迁到 SessionRuntime 前的按 run 取消；随 shim 一起删除。 */
+  cancelAnswerRun(runId: string): void {
+    void this.workerHost
+      .request("cancel-run", { runId })
+      .catch((error: unknown) => console.warn("[agent-service] cancel-run failed", error));
   }
 
   async listBots(): Promise<BotSummary[]> {

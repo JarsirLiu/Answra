@@ -152,8 +152,8 @@ const bridge: DesktopBridge = {
     ipcRenderer.invoke(ConversationChannels.QueuePosition, { conversationId, queueId }),
   appendConversationUserMessage: (conversationId: string, text: string) =>
     ipcRenderer.invoke(ConversationChannels.AppendUserMessage, { conversationId, text }),
-  cancelConversationRun: (runId: string) =>
-    ipcRenderer.send(ConversationChannels.Cancel, { runId }),
+  cancelTurn: (conversationId: string, turnId: string) =>
+    ipcRenderer.send(ConversationChannels.Cancel, { conversationId, turnId }),
   onConversationEvent: (listener: (event: AgentEventEnvelope) => void) => {
     const wrapped = (_event: Electron.IpcRendererEvent, event: AgentEventEnvelope) =>
       listener(event);

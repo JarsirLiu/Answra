@@ -19,7 +19,7 @@ export interface DesktopRemoteSessionQuery {
 
 export interface DesktopRemoteQueueStart {
   queueId: string;
-  runId: string;
+  turnId: string;
   snapshot: ConversationSnapshot;
 }
 
@@ -41,7 +41,7 @@ export interface DesktopRemoteAgentPort {
     conversationId: string,
     queueId: string,
   ): Promise<DesktopRemoteQueueStart>;
-  cancel(runId: string): void;
+  cancelTurn(conversationId: string, turnId: string): void;
   onSnapshot(listener: (snapshot: ConversationSnapshot) => void): () => void;
   onEvent(listener: (event: AgentEventEnvelope) => void): () => void;
 }

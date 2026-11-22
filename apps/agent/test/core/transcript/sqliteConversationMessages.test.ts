@@ -242,7 +242,7 @@ describe("SQLite conversation message rows", () => {
     repair.close();
 
     const restored = await store.load("coding-1");
-    expect(restored.activeRunId).toBeUndefined();
+    expect(restored.activeMessageId).toBeUndefined();
     expect(restored.messages.map((message) => message.id)).toEqual(["user-0"]);
 
     await store.appendUserMessage("coding-1", {
@@ -367,7 +367,7 @@ describe("SQLite conversation message rows", () => {
 
     const reloaded = storeFor(root);
     const snapshot = await reloaded.load("coding-1");
-    expect(snapshot.activeRunId).toBeUndefined();
+    expect(snapshot.activeMessageId).toBeUndefined();
     expect(snapshot.messages[1]).toMatchObject({
       id: "run-1",
       text: "partial answer",

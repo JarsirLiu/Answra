@@ -9,6 +9,7 @@ import type {
   ConversationSnapshot,
   ManualCompactionResult,
 } from "@answra/shared";
+import type { SessionFrame } from "@answra/shared/schema";
 import type { ImageAttachment } from "../image/attachment";
 
 /** 手动压缩的可选输入；指令只影响本次摘要，不写入会话或配置。 */
@@ -44,7 +45,7 @@ export interface CodingSessionHost {
     conversationId: string,
     request: ConversationSendRequest,
     accessToken: string,
-  ): Promise<{ runId: string }>;
+  ): Promise<{ turnId: string }>;
   enqueue(
     conversationId: string,
     request: ConversationSendRequest,
@@ -53,9 +54,11 @@ export interface CodingSessionHost {
   waitForQueueStart(
     conversationId: string,
     queueId: string,
-  ): Promise<{ queueId: string; runId: string; snapshot: ConversationSnapshot }>;
-  cancel(runId: string): void;
-  waitForRun(runId: string): Promise<void>;
+  ): Promise<{ queueId: string; turnId: string; snapshot: ConversationSnapshot }>;
+  cancel(conversationId: string, turnId: string): void;
+  waitForTurn(conversationId: string, turnId: string): Promise<void>;
+  /** 按 durable `seq` 读取事实帧，供 TUI 在缺口处整段重读。 */
+  readFrames(conversationId: string, afterSeq: number): Promise<SessionFrame[]>;
   dispose(): void;
   shutdown?(): Promise<void>;
 }
@@ -69,7 +72,7 @@ export interface CodingSessionOptions {
   workspaceRoot?: string;
 }
 
-/** 单活动 run 状态机；并发发送在进入 Agent 之前即被拒绝。 */
+/** 单活动 Turn 状态机；并发发送在进入 Agent 之前即被拒绝。 */
 export class CodingSession {
   private readonly host: CodingSessionHost;
   private readonly createConversationId: () => string;
@@ -81,7 +84,7 @@ export class CodingSession {
   private closed = false;
   private snapshot?: ConversationSnapshot;
   private sending = false;
-  private activeRunId?: string;
+  private activeTurnId?: string;
 
   constructor({
     host,
@@ -173,14 +176,14 @@ export class CodingSession {
   private requireIdle(action: string): void {
     if (this.closed) throw new Error("会话已关闭。");
     if (!this.opened) throw new Error("会话尚未打开。");
-    if (this.activeRunId !== undefined || this.sending)
+    if (this.activeTurnId !== undefined || this.sending)
       throw new Error(`上一轮尚未结束，不能${action}。`);
   }
 
   async clear(): Promise<ConversationSnapshot> {
     if (this.closed) throw new Error("会话已关闭。");
     if (!this.opened) throw new Error("会话尚未打开。");
-    if (this.activeRunId !== undefined || this.sending) throw new Error("上一轮尚未结束。");
+    if (this.activeTurnId !== undefined || this.sending) throw new Error("上一轮尚未结束。");
     const snapshot = await this.host.clearConversation(this.conversationId, this.accessToken);
     this.snapshot = snapshot;
     return snapshot;
@@ -191,7 +194,7 @@ export class CodingSession {
   ): Promise<{ result: ManualCompactionResult; snapshot: ConversationSnapshot }> {
     if (this.closed) throw new Error("会话已关闭。");
     if (!this.opened) throw new Error("会话尚未打开。");
-    if (this.activeRunId !== undefined || this.sending) throw new Error("上一轮尚未结束。");
+    if (this.activeTurnId !== undefined || this.sending) throw new Error("上一轮尚未结束。");
     if (this.host.compactConversation === undefined) {
       throw new Error("当前宿主不支持手动压缩。");
     }
@@ -212,7 +215,7 @@ export class CodingSession {
   /** 会话内切换模型；运行中的 run 保持原端点，拒绝切换而不是重建 run。 */
   setModel(model: ConversationModelConfig): void {
     if (this.closed) throw new Error("会话已关闭。");
-    if (this.activeRunId !== undefined || this.sending) {
+    if (this.activeTurnId !== undefined || this.sending) {
       throw new Error("当前运行中，不能切换模型。");
     }
     this.host.configure(model);
@@ -228,24 +231,24 @@ export class CodingSession {
   async send(text: string, images: readonly ImageAttachment[] = []): Promise<string> {
     if (this.closed) throw new Error("会话已关闭。");
     if (!this.opened) throw new Error("会话尚未打开。");
-    if (this.activeRunId !== undefined || this.sending) throw new Error("上一轮尚未结束。");
+    if (this.activeTurnId !== undefined || this.sending) throw new Error("上一轮尚未结束。");
     this.sending = true;
     try {
-      const { runId } = await this.host.send(
+      const { turnId } = await this.host.send(
         this.conversationId,
         { text, images: [...images] },
         this.accessToken,
       );
-      this.activeRunId = runId;
-      return runId;
+      this.activeTurnId = turnId;
+      return turnId;
     } finally {
       this.sending = false;
     }
   }
 
   /**
-   * 交给 host 队列接受一条用户消息。已有活动 run 时 host 返回 queued，
-   * 消息会在当前 step 结束后自动开始；不等待 run 开始。
+   * 交给 host 队列接受一条用户消息。已有活动 Turn 时 host 返回 queued，
+   * 消息会在当前 step 结束后自动开始；不等待 Turn 开始。
    */
   async enqueue(
     text: string,
@@ -255,36 +258,40 @@ export class CodingSession {
     if (!this.opened) throw new Error("会话尚未打开。");
     const request = { text, images: [...images] };
     const accepted = await this.host.enqueue(this.conversationId, request, this.accessToken);
-    if (accepted.status === "started") this.activeRunId = accepted.runId;
+    if (accepted.status === "started") this.activeTurnId = accepted.turnId;
     return accepted;
   }
 
   async waitForQueueStart(
     queueId: string,
-  ): Promise<{ queueId: string; runId: string; snapshot: ConversationSnapshot }> {
+  ): Promise<{ queueId: string; turnId: string; snapshot: ConversationSnapshot }> {
     const started = await this.host.waitForQueueStart(this.conversationId, queueId);
-    this.activeRunId = started.runId;
+    this.activeTurnId = started.turnId;
     return started;
   }
 
-  async wait(runId: string): Promise<void> {
+  async readFrames(afterSeq: number): Promise<SessionFrame[]> {
+    return this.host.readFrames(this.conversationId, afterSeq);
+  }
+
+  async wait(turnId: string): Promise<void> {
     try {
-      await this.host.waitForRun(runId);
+      await this.host.waitForTurn(this.conversationId, turnId);
     } finally {
-      if (this.activeRunId === runId) this.activeRunId = undefined;
+      if (this.activeTurnId === turnId) this.activeTurnId = undefined;
     }
   }
 
   cancel(): boolean {
-    const runId = this.activeRunId;
-    if (runId === undefined) return false;
-    this.cancelRun(runId);
+    const turnId = this.activeTurnId;
+    if (turnId === undefined) return false;
+    this.cancelTurn(turnId);
     return true;
   }
 
-  cancelRun(runId: string): void {
-    this.host.cancel(runId);
-    if (this.activeRunId === runId) this.activeRunId = undefined;
+  cancelTurn(turnId: string): void {
+    this.host.cancel(this.conversationId, turnId);
+    if (this.activeTurnId === turnId) this.activeTurnId = undefined;
   }
 
   close(): void {

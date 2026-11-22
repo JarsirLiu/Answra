@@ -30,12 +30,12 @@ function createSession(conversationId: string) {
     refresh: vi.fn(async () => snapshot(currentId)),
     send: vi.fn(async (text: string) => start(text)),
     enqueue: vi.fn(async (text: string) => {
-      const runId = start(text);
+      const turnId = start(text);
       return {
-        queueId: `queue-${runId}`,
+        queueId: `queue-${turnId}`,
         status: "started" as const,
         position: 0 as const,
-        runId,
+        turnId,
         snapshot: snapshot(currentId),
       };
     }),
@@ -47,7 +47,7 @@ function createSession(conversationId: string) {
         }),
     ),
     cancel: vi.fn(),
-    cancelRun: vi.fn(),
+    cancelTurn: vi.fn(),
     clear: vi.fn(async () => snapshot(currentId)),
     compact: vi.fn(async () => ({
       result: { status: "compacted" as const },
@@ -101,7 +101,7 @@ describe("TuiRunController", () => {
 
     vi.mocked(background.session.refresh).mockResolvedValue({
       ...snapshot("conversation-1", 7),
-      activeRunId: "run-1",
+      activeTurnId: "run-1",
     });
     await controller.activate("conversation-1");
 
@@ -140,8 +140,8 @@ describe("TuiRunController", () => {
     await Promise.resolve();
 
     expect(controller.cancel()).toBe(true);
-    expect(foreground.session.cancelRun).toHaveBeenCalledTimes(1);
-    expect(background.session.cancelRun).not.toHaveBeenCalled();
+    expect(foreground.session.cancelTurn).toHaveBeenCalledTimes(1);
+    expect(background.session.cancelTurn).not.toHaveBeenCalled();
     expect(store.getSnapshot()).toMatchObject({ phase: "cancelling", queued: 0 });
   });
 
@@ -165,16 +165,16 @@ describe("TuiRunController", () => {
     const active = createSession("conversation-1");
     store.initialize(snapshot("conversation-1"));
     const controller = createController(active.session, store);
-    let accept!: (runId: string) => void;
+    let accept!: (turnId: string) => void;
     vi.mocked(active.session.enqueue).mockImplementationOnce(
       () =>
         new Promise((resolve) => {
-          accept = (runId) =>
+          accept = (turnId) =>
             resolve({
-              queueId: `queue-${runId}`,
+              queueId: `queue-${turnId}`,
               status: "started",
               position: 0,
-              runId,
+              turnId,
               snapshot: snapshot("conversation-1"),
             });
         }),
@@ -201,16 +201,16 @@ describe("TuiRunController", () => {
     const active = createSession("conversation-1");
     store.initialize(snapshot("conversation-1"));
     const controller = createController(active.session, store);
-    let accept!: (runId: string) => void;
+    let accept!: (turnId: string) => void;
     vi.mocked(active.session.enqueue).mockImplementationOnce(
       () =>
         new Promise((resolve) => {
-          accept = (runId) =>
+          accept = (turnId) =>
             resolve({
-              queueId: `queue-${runId}`,
+              queueId: `queue-${turnId}`,
               status: "started",
               position: 0,
-              runId,
+              turnId,
               snapshot: snapshot("conversation-1"),
             });
         }),
@@ -245,12 +245,12 @@ describe("TuiRunController", () => {
       status: "queued",
       position: 1,
     });
-    let start!: (runId: string) => void;
+    let start!: (turnId: string) => void;
     vi.mocked(active.session.waitForQueueStart).mockImplementationOnce(
       () =>
         new Promise((resolve) => {
-          start = (runId) =>
-            resolve({ queueId: "queue-1", runId, snapshot: snapshot("conversation-1") });
+          start = (turnId) =>
+            resolve({ queueId: "queue-1", turnId, snapshot: snapshot("conversation-1") });
         }),
     );
 

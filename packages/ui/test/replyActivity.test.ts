@@ -1,16 +1,16 @@
-import type { AgentEventEnvelope, AgentStreamEvent } from "@answra/shared/schema";
+import type { AgentStreamEvent } from "@answra/shared/schema";
 import { describe, expect, it } from "vitest";
 import { projectReplyActivity } from "../src/app/replyActivity";
 
-const runId = "run-1";
+const messageId = "message-1";
 
 function event(
   revision: number,
   stream: AgentStreamEvent,
-): Pick<AgentEventEnvelope, "runId" | "event"> {
+): { messageId: string; event: AgentStreamEvent } {
   void revision;
   return {
-    runId,
+    messageId,
     event: stream,
   };
 }

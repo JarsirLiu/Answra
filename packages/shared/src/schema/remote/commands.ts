@@ -66,7 +66,7 @@ export const remoteCommandSchema = z.discriminatedUnion("type", [
   z.strictObject({
     type: z.literal("cancel"),
     conversationId: z.string(),
-    runId: z.string(),
+    turnId: z.string(),
   }),
   z.strictObject({
     type: z.literal("snapshot"),

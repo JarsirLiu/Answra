@@ -2,6 +2,7 @@ import { render as inkRender } from "ink";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../../../src/tui/app/App";
 import { TuiViewStore } from "../../../src/tui/app/viewStore";
+import { liveFrame } from "../../frameFixtures";
 import { CursorProbeStdin, CursorProbeStdout, nextFrame, PANEL_HANDLERS } from "../tuiTestHarness";
 
 const STREAM_DELTAS = 10;
@@ -51,19 +52,13 @@ describe("TUI streaming", () => {
     const frameStart = stdout.chunks.length;
 
     for (let index = 0; index < STREAM_DELTAS; index += 1) {
-      store.applyEvent({
-        schemaVersion: 1,
-        eventId: `event-${index + 2}`,
-        conversationId: "conversation-1",
-        runId: "run-1",
-        attemptId: "run-1:attempt:1",
-        sequence: index + 2,
-        aggregateRevision: index + 2,
-        producerId: "test",
-        occurredAt: "2026-11-13T00:00:00.000Z",
-        event: { type: "text-delta", partId: "text-1", delta: `- item ${index}\n` },
-      });
-      store.flush();
+      store.applyLiveFrame(
+        liveFrame(
+          { type: "text-delta", partId: "text-1", delta: `- item ${index}\n` },
+          { messageId: "run-1" },
+        ),
+      );
+      store.flushLive();
       await nextFrame();
       await instance.waitUntilRenderFlush();
     }

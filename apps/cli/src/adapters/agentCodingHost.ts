@@ -38,8 +38,10 @@ export function createAgentCodingSessionHost(host: CodingHost): CodingSessionHos
       host.runtime.enqueue(conversationId, request, accessToken),
     waitForQueueStart: (conversationId, queueId) =>
       host.runtime.waitForQueueStart(conversationId, queueId),
-    cancel: (runId) => host.runtime.cancel(runId),
-    waitForRun: (runId) => host.runtime.waitForRun(runId),
+    cancel: (conversationId, turnId) => host.runtime.cancel(conversationId, turnId),
+    waitForTurn: (conversationId, turnId) => host.runtime.waitForTurn(conversationId, turnId),
+    readFrames: (conversationId, afterSeq) =>
+      host.runtime.readFramesAfter(conversationId, afterSeq),
     dispose: () => host.dispose(),
     shutdown: () => host.shutdown(),
   };

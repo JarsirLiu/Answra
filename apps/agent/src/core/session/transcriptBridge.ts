@@ -154,7 +154,10 @@ export class SessionTranscriptBridge {
         eventRevision,
       );
     }
-    if (envelope.turnId !== undefined) this.turns.delete(envelope.turnId);
+    if (envelope.turnId !== undefined) {
+      await this.store.finishSessionTurn(envelope.sessionId, envelope.turnId);
+      this.turns.delete(envelope.turnId);
+    }
   }
 
   private async applyDurableStream(envelope: SessionEventEnvelope): Promise<void> {

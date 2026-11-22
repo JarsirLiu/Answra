@@ -238,7 +238,7 @@ export class SqliteConversationStore
       throw new ConversationSessionConflictError(conversationId);
     }
     const session = this.sessions.get(conversationId);
-    if (session?.snapshot.activeRunId) throw new Error("当前回复尚未完成，不能删除会话");
+    if (session?.snapshot.activeMessageId) throw new Error("当前回复尚未完成，不能删除会话");
     this.checkpoints.cancel(conversationId);
     if (session?.metadata?.scope === "answer") {
       this.forgetSession(conversationId);
@@ -431,7 +431,7 @@ export class SqliteConversationStore
     if (this.conflicted.has(conversationId)) return false;
     const session = this.sessions.get(conversationId);
     if (!session || session.metadata?.scope === "answer") return false;
-    if (session.snapshot.activeRunId !== messageId) return false;
+    if (session.snapshot.activeMessageId !== messageId) return false;
     const message = session.snapshot.messages.find((item) => item.id === messageId);
     return message?.role === "assistant" && message.status === "streaming";
   }

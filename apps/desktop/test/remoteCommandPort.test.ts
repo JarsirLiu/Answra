@@ -77,20 +77,20 @@ function createAgent(conversationIds: readonly string[] = ["conversation-1"]) {
         queueId: "queue-1",
         status: "started",
         position: 0,
-        runId: "run-1",
+        turnId: "turn-1",
         snapshot: snapshot(command.conversationId),
       };
     },
     async waitForConversationQueue(_conversationId, queueId) {
-      return { queueId, runId: "run-1", outcome: "completed" };
+      return { queueId, turnId: "turn-1", outcome: "completed" };
     },
     async waitForConversationQueueStart(
       conversationId: string,
       queueId: string,
     ): Promise<DesktopRemoteQueueStart> {
-      return { queueId, runId: "run-1", snapshot: snapshot(conversationId) };
+      return { queueId, turnId: "turn-1", snapshot: snapshot(conversationId) };
     },
-    cancel() {},
+    cancelTurn() {},
     onSnapshot(listener) {
       snapshotListeners.add(listener);
       return () => snapshotListeners.delete(listener);
@@ -174,7 +174,7 @@ describe("desktop remote command port", () => {
         conversationId: "conversation-1",
         request: { text: "hello", images: [] },
       }),
-    ).resolves.toMatchObject({ status: "started", runId: "run-1" });
+    ).resolves.toMatchObject({ status: "started", turnId: "turn-1" });
     expect(harness.sentConversationIds).toEqual(["conversation-1"]);
 
     const created = await port.createConversation("conversation-2", {
@@ -215,7 +215,7 @@ describe("desktop remote command port", () => {
     await port.listSessions?.();
     await expect(port.waitQueueStart("conversation-1", "queue-1")).resolves.toMatchObject({
       queueId: "queue-1",
-      runId: "run-1",
+      turnId: "turn-1",
       snapshot: { conversationId: "conversation-1" },
     });
   });
@@ -223,10 +223,10 @@ describe("desktop remote command port", () => {
   it("rejects cancel for conversations that were not listed or created remotely", async () => {
     const port = createDesktopRemoteCommandPort(createAgent().agent);
 
-    expect(() => port.cancel("interview-1", "run-1")).toThrow(RemoteOperationError);
+    expect(() => port.cancel("interview-1", "turn-1")).toThrow(RemoteOperationError);
 
     await port.listSessions?.();
-    expect(() => port.cancel("conversation-1", "run-1")).not.toThrow();
+    expect(() => port.cancel("conversation-1", "turn-1")).not.toThrow();
   });
 
   it("filters snapshots and events to visible conversations", async () => {

@@ -1,21 +1,25 @@
 import type { ConversationSnapshot, DesktopBridge } from "@answra/shared";
-import type { AgentEventEnvelope } from "@answra/shared/schema";
+import type { AgentDurableEvent, SessionFrame } from "@answra/shared/schema";
+import { SESSION_FRAME_SCHEMA_VERSION } from "@answra/shared/schema";
 import { act, render, renderHook, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { useConversationView } from "../src/app/useConversationView";
 
-function envelope(revision: number, delta: string): AgentEventEnvelope {
+function frame(
+  seq: number,
+  event: AgentDurableEvent,
+  ids: { turnId?: string; messageId?: string } = {},
+): SessionFrame {
   return {
-    schemaVersion: 1,
-    eventId: `event-${revision}`,
-    conversationId: "conversation-1",
-    runId: "run-1",
-    attemptId: "run-1:attempt:1",
-    sequence: revision,
-    aggregateRevision: revision,
-    producerId: "test",
+    schemaVersion: SESSION_FRAME_SCHEMA_VERSION,
+    sessionId: "conversation-1",
+    seq,
+    eventId: `event-${seq}`,
     occurredAt: "2026-11-07T00:00:00.000Z",
-    event: { type: "text-delta", partId: "part-1", delta },
+    producerId: "test",
+    ...(ids.turnId === undefined ? {} : { turnId: ids.turnId }),
+    ...(ids.messageId === undefined ? {} : { messageId: ids.messageId }),
+    event,
   };
 }
 
@@ -27,6 +31,7 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+/** 输出游标与消息正文：游标用于断言帧顺序，正文用于断言快照合并。 */
 function Harness({
   bridge,
   onApplySnapshot,
@@ -36,68 +41,114 @@ function Harness({
 }) {
   const { view, applySnapshot } = useConversationView(bridge, "conversation-1");
   onApplySnapshot?.(applySnapshot);
-  return <output>{view.messages.map((message) => message.text).join("|")}</output>;
+  return (
+    <output>{`${view.lastSeq}:${view.messages.map((message) => message.text).join("|")}`}</output>
+  );
+}
+
+function subscribeFrames(listeners: Set<(frame: SessionFrame) => void>) {
+  return (listener: (frame: SessionFrame) => void) => {
+    listeners.add(listener);
+    return () => listeners.delete(listener);
+  };
 }
 
 describe("useConversationView recovery", () => {
-  it("buffers live events during initialization, replays in order, and fills revision gaps", async () => {
-    const firstRead = deferred<AgentEventEnvelope[]>();
-    const listeners = new Set<(event: AgentEventEnvelope) => void>();
-    const readConversationEvents = vi
+  it("buffers durable frames during initialization, applies them in seq order, and re-reads the gap", async () => {
+    const firstRead = deferred<SessionFrame[]>();
+    const listeners = new Set<(frame: SessionFrame) => void>();
+    const history = [
+      frame(
+        3,
+        { type: "turn-finished", status: "completed" },
+        {
+          turnId: "turn-1",
+          messageId: "run-1",
+        },
+      ),
+    ];
+    const readSessionFrames = vi
       .fn()
       .mockImplementationOnce(() => firstRead.promise)
-      .mockImplementation(async (_id: string, afterRevision: number) =>
-        [envelope(2, "B"), envelope(3, "C")].filter(
-          (event) => event.aggregateRevision > afterRevision,
-        ),
+      .mockImplementation(async (_id: string, afterSeq: number) =>
+        history.filter((item) => item.seq > afterSeq),
       );
     const snapshot: ConversationSnapshot = {
       conversationId: "conversation-1",
       eventRevision: 0,
       lastSeq: 0,
-      activeRunId: "run-1",
+      activeMessageId: "run-1",
       messages: [{ id: "run-1", role: "assistant", text: "", images: [], status: "streaming" }],
     };
     const bridge = {
       getConversationSnapshot: vi.fn(async () => snapshot),
-      readConversationEvents,
-      onConversationEvent: vi.fn((listener: (event: AgentEventEnvelope) => void) => {
-        listeners.add(listener);
-        return () => listeners.delete(listener);
-      }),
+      readSessionFrames,
+      onSessionFrame: subscribeFrames(listeners),
+      onLiveFrame: vi.fn(() => () => undefined),
     } as unknown as DesktopBridge;
 
     render(<Harness bridge={bridge} />);
-    await waitFor(() => expect(readConversationEvents).toHaveBeenCalledWith("conversation-1", 0));
+    await waitFor(() => expect(readSessionFrames).toHaveBeenCalledWith("conversation-1", 0));
     act(() => {
-      for (const listener of listeners) listener(envelope(3, "C"));
+      for (const listener of listeners)
+        listener(
+          frame(
+            3,
+            { type: "turn-finished", status: "completed" },
+            {
+              turnId: "turn-1",
+              messageId: "run-1",
+            },
+          ),
+        );
     });
-    await act(async () => firstRead.resolve([envelope(1, "A")]));
+    await act(async () =>
+      firstRead.resolve([
+        frame(
+          1,
+          { type: "turn-started", agentId: "general" },
+          {
+            turnId: "turn-1",
+            messageId: "run-1",
+          },
+        ),
+        frame(
+          2,
+          { type: "step-started", stepId: "step-1", index: 0 },
+          {
+            turnId: "turn-1",
+            messageId: "run-1",
+          },
+        ),
+      ]),
+    );
 
-    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("ABC"));
-    expect(readConversationEvents).toHaveBeenLastCalledWith("conversation-1", 1);
+    // 初始化期间到达的第 3 帧被记为缺口，必须整段重读后按 seq 应用。
+    await waitFor(() => expect(readSessionFrames).toHaveBeenLastCalledWith("conversation-1", 2));
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("3:"));
   });
 
-  it("drains buffered live events when a later snapshot advances past a missing revision", async () => {
-    const listeners = new Set<(event: AgentEventEnvelope) => void>();
+  it("drains buffered durable frames when a later snapshot advances past a missing seq", async () => {
+    const listeners = new Set<(frame: SessionFrame) => void>();
     let applySnapshot: ((snapshot: ConversationSnapshot) => void) | undefined;
+    const history: SessionFrame[] = [];
     const bridge = {
       getConversationSnapshot: vi.fn(
         async (): Promise<ConversationSnapshot> => ({
           conversationId: "conversation-1",
           eventRevision: 0,
           lastSeq: 0,
-          activeRunId: "run-1",
+          activeMessageId: "run-1",
           messages: [
             { id: "run-1", role: "assistant", text: "A", images: [], status: "streaming" },
           ],
         }),
       ),
-      readConversationEvents: vi.fn(async () => []),
-      onConversationEvent: vi.fn((listener: (event: AgentEventEnvelope) => void) => {
-        listeners.add(listener);
-        return () => listeners.delete(listener);
-      }),
+      readSessionFrames: vi.fn(async (_id: string, afterSeq: number) =>
+        history.filter((item) => item.seq > afterSeq),
+      ),
+      onSessionFrame: subscribeFrames(listeners),
+      onLiveFrame: vi.fn(() => () => undefined),
     } as unknown as DesktopBridge;
 
     render(
@@ -108,25 +159,54 @@ describe("useConversationView recovery", () => {
         }}
       />,
     );
-    await waitFor(() => expect(bridge.readConversationEvents).toHaveBeenCalled());
+    await waitFor(() => expect(bridge.readSessionFrames).toHaveBeenCalled());
     act(() => {
-      for (const listener of listeners) listener(envelope(2, "B"));
+      for (const listener of listeners)
+        listener(
+          frame(
+            2,
+            { type: "turn-started", agentId: "general" },
+            {
+              turnId: "turn-1",
+              messageId: "run-1",
+            },
+          ),
+        );
     });
+    // 游标停在 0 时第 2 帧是缺口：只能整段重读，历史里还没有第 1 帧。
     await waitFor(() =>
-      expect(bridge.readConversationEvents).toHaveBeenLastCalledWith("conversation-1", 0),
+      expect(bridge.readSessionFrames).toHaveBeenLastCalledWith("conversation-1", 0),
     );
 
+    history.push(
+      frame(
+        1,
+        { type: "step-started", stepId: "step-1", index: 0 },
+        {
+          turnId: "turn-1",
+          messageId: "run-1",
+        },
+      ),
+      frame(
+        2,
+        { type: "turn-started", agentId: "general" },
+        {
+          turnId: "turn-1",
+          messageId: "run-1",
+        },
+      ),
+    );
     act(() => {
       applySnapshot?.({
         conversationId: "conversation-1",
         eventRevision: 1,
-        lastSeq: 0,
-        activeRunId: "run-1",
+        lastSeq: 1,
+        activeMessageId: "run-1",
         messages: [{ id: "run-1", role: "assistant", text: "A", images: [], status: "streaming" }],
       });
     });
 
-    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("AB"));
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("2:A"));
   });
 
   it("keeps a pushed transcript snapshot when an older initialization snapshot resolves later", async () => {
@@ -134,7 +214,8 @@ describe("useConversationView recovery", () => {
     let publishSnapshot: ((snapshot: ConversationSnapshot) => void) | undefined;
     const bridge = {
       getConversationSnapshot: vi.fn(() => initialSnapshot.promise),
-      onConversationEvent: vi.fn(() => () => undefined),
+      onSessionFrame: vi.fn(() => () => undefined),
+      onLiveFrame: vi.fn(() => () => undefined),
       onConversationSnapshot: vi.fn((listener: (snapshot: ConversationSnapshot) => void) => {
         publishSnapshot = listener;
         return () => {
@@ -167,11 +248,9 @@ describe("useConversationView recovery", () => {
     expect(screen.getByRole("status")).toHaveTextContent("已结算语音");
   });
 
-  it("replays live events when the pushed run snapshot arrives after them", async () => {
-    const listeners = new Set<(event: AgentEventEnvelope) => void>();
+  it("re-reads durable frames after a pushed turn snapshot arrives", async () => {
     let publishSnapshot: ((snapshot: ConversationSnapshot) => void) | undefined;
-    let eventHistoryAvailable = false;
-    const runEvent = envelope(1, "A");
+    const history: SessionFrame[] = [];
     const bridge = {
       getConversationSnapshot: vi.fn(async () => ({
         conversationId: "conversation-1",
@@ -179,13 +258,11 @@ describe("useConversationView recovery", () => {
         lastSeq: 0,
         messages: [],
       })),
-      readConversationEvents: vi.fn(async (_id: string, afterRevision: number) =>
-        eventHistoryAvailable && runEvent.aggregateRevision > afterRevision ? [runEvent] : [],
+      readSessionFrames: vi.fn(async (_id: string, afterSeq: number) =>
+        history.filter((item) => item.seq > afterSeq),
       ),
-      onConversationEvent: vi.fn((listener: (event: AgentEventEnvelope) => void) => {
-        listeners.add(listener);
-        return () => listeners.delete(listener);
-      }),
+      onSessionFrame: vi.fn(() => () => undefined),
+      onLiveFrame: vi.fn(() => () => undefined),
       onConversationSnapshot: vi.fn((listener: (snapshot: ConversationSnapshot) => void) => {
         publishSnapshot = listener;
         return () => {
@@ -195,29 +272,34 @@ describe("useConversationView recovery", () => {
     } as unknown as DesktopBridge;
 
     render(<Harness bridge={bridge} />);
-    await waitFor(() =>
-      expect(bridge.readConversationEvents).toHaveBeenCalledWith("conversation-1", 0),
-    );
+    await waitFor(() => expect(bridge.readSessionFrames).toHaveBeenCalledWith("conversation-1", 0));
 
-    act(() => {
-      for (const listener of listeners) listener(runEvent);
-    });
-    eventHistoryAvailable = true;
+    history.push(
+      frame(
+        1,
+        { type: "turn-started", agentId: "general" },
+        {
+          turnId: "turn-1",
+          messageId: "run-1",
+        },
+      ),
+    );
     act(() =>
       publishSnapshot?.({
         conversationId: "conversation-1",
         eventRevision: 0,
         lastSeq: 0,
-        activeRunId: "run-1",
+        activeTurnId: "turn-1",
+        activeMessageId: "run-1",
         messages: [{ id: "run-1", role: "assistant", text: "", images: [], status: "streaming" }],
       }),
     );
 
-    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("A"));
-    expect(bridge.readConversationEvents).toHaveBeenLastCalledWith("conversation-1", 0);
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("1:"));
+    expect(bridge.readSessionFrames).toHaveBeenLastCalledWith("conversation-1", 0);
   });
 
-  it("resolves in-flight run waiters as aborted when the view is cleared", async () => {
+  it("resolves in-flight turn waiters as aborted when the view is cleared", async () => {
     const bridge = {
       getConversationSnapshot: vi.fn(async () => ({
         conversationId: "conversation-1",
@@ -225,18 +307,18 @@ describe("useConversationView recovery", () => {
         lastSeq: 0,
         messages: [],
       })),
-      readConversationEvents: vi.fn(async () => []),
+      readSessionFrames: vi.fn(async () => []),
     } as unknown as DesktopBridge;
     const { result } = renderHook(() => useConversationView(bridge, "conversation-1"));
 
-    const outcome = result.current.waitForRun("run-1");
+    const outcome = result.current.waitForOutcome("turn-1");
     act(() => result.current.clear());
 
     await expect(outcome).resolves.toBe("aborted");
   });
 
-  it("resets the event revision when cleared so a restarted worker's events apply", async () => {
-    const listeners = new Set<(event: AgentEventEnvelope) => void>();
+  it("resets the frame cursor when cleared so a restarted worker's frames apply again", async () => {
+    const listeners = new Set<(frame: SessionFrame) => void>();
     const bridge = {
       getConversationSnapshot: vi.fn(async () => ({
         conversationId: "conversation-1",
@@ -244,26 +326,26 @@ describe("useConversationView recovery", () => {
         lastSeq: 0,
         messages: [],
       })),
-      readConversationEvents: vi.fn(async () => []),
-      onConversationEvent: vi.fn((listener: (event: AgentEventEnvelope) => void) => {
-        listeners.add(listener);
-        return () => listeners.delete(listener);
-      }),
+      readSessionFrames: vi.fn(async () => []),
+      onSessionFrame: subscribeFrames(listeners),
+      onLiveFrame: vi.fn(() => () => undefined),
     } as unknown as DesktopBridge;
     const { result } = renderHook(() => useConversationView(bridge, "conversation-1"));
     await waitFor(() => expect(listeners.size).toBe(1));
 
     act(() => {
-      for (const listener of listeners) listener(envelope(1, "old"));
+      for (const listener of listeners)
+        listener(frame(1, { type: "turn-started", agentId: "general" }, { turnId: "turn-1" }));
     });
-    await waitFor(() => expect(result.current.view.eventRevision).toBe(1));
+    await waitFor(() => expect(result.current.view.lastSeq).toBe(1));
 
     act(() => result.current.clear());
-    expect(result.current.view.eventRevision).toBe(0);
+    expect(result.current.view.lastSeq).toBe(0);
 
     act(() => {
-      for (const listener of listeners) listener(envelope(1, "new"));
+      for (const listener of listeners)
+        listener(frame(1, { type: "turn-started", agentId: "general" }, { turnId: "turn-1" }));
     });
-    await waitFor(() => expect(result.current.view.eventRevision).toBe(1));
+    await waitFor(() => expect(result.current.view.lastSeq).toBe(1));
   });
 });

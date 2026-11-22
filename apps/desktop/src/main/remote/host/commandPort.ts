@@ -88,9 +88,9 @@ export function createDesktopRemoteCommandPort(agent: DesktopRemoteAgentPort): H
       requireVisible(conversationId);
       return agent.waitForConversationQueueStart(conversationId, queueId);
     },
-    cancel(conversationId, runId) {
+    cancel(conversationId, turnId) {
       requireVisible(conversationId);
-      agent.cancel(runId);
+      agent.cancelTurn(conversationId, turnId);
     },
     applyModel: () => unsupportedModelSettings(),
     settings: () => settings,

@@ -1,4 +1,4 @@
-/** Interview intake 的唯一 renderer 状态入口：打开固定会话、发送文本并以 snapshot/事件为准。 */
+/** Interview intake 的唯一 renderer 状态入口：打开固定会话、发送文本并以 snapshot/事实帧为准。 */
 import type { ConversationSnapshot, DesktopBridge } from "@answra/shared";
 import { ActiveInterviewIntakeConversationId } from "@answra/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -8,7 +8,8 @@ import { useConversationView } from "../../app/useConversationView";
 export interface InterviewIntakeHandle {
   opening: boolean;
   messages: ConversationViewMessage[];
-  activeRunId?: string;
+  activeTurnId?: string;
+  activeMessageId?: string;
   error?: string;
   sendPending: boolean;
   draft: string;
@@ -31,21 +32,11 @@ export function useInterviewIntake(platform: DesktopBridge | undefined): Intervi
     if (!initialSnapshot) throw new Error("面试对话尚未打开");
     return initialSnapshot;
   }, [initialSnapshot]);
-  const readEvents = useCallback(
-    (_conversationId: string, afterRevision: number) =>
-      platform?.readInterviewIntakeEvents?.(afterRevision) ?? Promise.resolve([]),
-    [platform],
-  );
-  const { view, selectConversation, applySnapshot, reconcileRunSnapshot, waitForRun, getView } =
+  const { view, selectConversation, applySnapshot, reconcileSnapshot, waitForOutcome, getView } =
     useConversationView(
       platform,
       initialSnapshot ? ActiveInterviewIntakeConversationId : undefined,
-      {
-        enabled: Boolean(initialSnapshot),
-        create: false,
-        getSnapshot,
-        readEvents,
-      },
+      { enabled: Boolean(initialSnapshot), create: false, getSnapshot },
     );
 
   const open = useCallback(async () => {
@@ -87,9 +78,9 @@ export function useInterviewIntake(platform: DesktopBridge | undefined): Intervi
     try {
       const accepted = await platform.sendInterviewIntakeMessage(text);
       setInitialSnapshot(accepted.snapshot);
-      await reconcileRunSnapshot(accepted.snapshot);
+      await reconcileSnapshot(accepted.snapshot);
       setDraft("");
-      const outcome = await waitForRun(accepted.runId);
+      const outcome = await waitForOutcome(accepted.turnId);
       if (outcome === "aborted" || outcome === "superseded") return;
       const runError = getView().error;
       if (runError) throw new Error(runError);
@@ -100,11 +91,12 @@ export function useInterviewIntake(platform: DesktopBridge | undefined): Intervi
     } finally {
       setSendPending(false);
     }
-  }, [draft, platform, reconcileRunSnapshot, waitForRun, getView]);
+  }, [draft, platform, reconcileSnapshot, waitForOutcome, getView]);
 
   const cancel = useCallback(() => {
-    if (view.activeRunId) platform?.cancelConversationRun?.(view.activeRunId);
-  }, [platform, view.activeRunId]);
+    if (view.activeTurnId)
+      platform?.cancelTurn?.(ActiveInterviewIntakeConversationId, view.activeTurnId);
+  }, [platform, view.activeTurnId]);
 
   const retryOpen = useCallback(() => {
     void open();
@@ -113,7 +105,8 @@ export function useInterviewIntake(platform: DesktopBridge | undefined): Intervi
   return {
     opening,
     messages: view.messages,
-    activeRunId: view.activeRunId,
+    activeTurnId: view.activeTurnId,
+    activeMessageId: view.activeMessageId,
     error: openError ?? sendError ?? view.error,
     sendPending,
     draft,

@@ -10,7 +10,7 @@ export const remoteSendResultSchema = z.discriminatedUnion("status", [
     queueId: z.string(),
     status: z.literal("started"),
     position: z.literal(0),
-    runId: z.string(),
+    turnId: z.string(),
     snapshot: conversationSnapshotSchema,
   }),
   z.strictObject({
@@ -22,13 +22,13 @@ export const remoteSendResultSchema = z.discriminatedUnion("status", [
 
 export const remoteQueueCompletionSchema = z.strictObject({
   queueId: z.string(),
-  runId: z.string().optional(),
+  turnId: z.string().optional(),
   outcome: turnOutcomeSchema,
 });
 
 export const remoteQueueStartSchema = z.strictObject({
   queueId: z.string(),
-  runId: z.string(),
+  turnId: z.string(),
   snapshot: conversationSnapshotSchema,
 });
 

@@ -16,7 +16,7 @@ import "./ReplyConversationPopover.css";
 
 interface ReplyConversationPopoverProps {
   messages: ReplyConversationMessage[];
-  activeRunId?: string;
+  activeMessageId?: string;
   retry?: ConversationRetry;
   error?: string;
   /** Agent worker 链路状态；与模型重试/错误互斥展示。 */
@@ -33,7 +33,7 @@ interface ReplyConversationPopoverProps {
  */
 export function ReplyConversationPopover({
   messages,
-  activeRunId,
+  activeMessageId,
   retry,
   error,
   connection,
@@ -80,7 +80,7 @@ export function ReplyConversationPopover({
     >
       <header className="reply-conversation-header">
         <h2>当前对话</h2>
-        {activeRunId && <span className="reply-conversation-live">实时输出</span>}
+        {activeMessageId && <span className="reply-conversation-live">实时输出</span>}
       </header>
       <MessageStream
         ariaLabel="当前对话"
@@ -103,10 +103,10 @@ export function ReplyConversationPopover({
               </div>
             ) : (
               <AssistantMessage
-                caret={isActive(message, activeRunId) && hasStreamingText(message)}
+                caret={isActive(message, activeMessageId) && hasStreamingText(message)}
                 content={textContent(message)}
                 reasoning={reasoningText(message)}
-                streaming={isActive(message, activeRunId)}
+                streaming={isActive(message, activeMessageId)}
                 thinking={message.thinking === true}
               >
                 {message.activities
@@ -131,8 +131,8 @@ export function ReplyConversationPopover({
   );
 }
 
-function isActive(message: ReplyConversationMessage, activeRunId: string | undefined): boolean {
-  return message.id === activeRunId && message.status === "streaming";
+function isActive(message: ReplyConversationMessage, activeMessageId: string | undefined): boolean {
+  return message.id === activeMessageId && message.status === "streaming";
 }
 
 function reasoningText(message: ReplyConversationMessage): string {

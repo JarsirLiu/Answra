@@ -22,7 +22,7 @@ const snapshot: ConversationSnapshot = {
   conversationId,
   eventRevision: 1,
   lastSeq: 0,
-  activeRunId: runId,
+  activeMessageId: runId,
   messages: [
     {
       id: "user-1",
@@ -244,7 +244,7 @@ describe("ReplyBarWindowApp live conversation popover", () => {
       conversationId,
       eventRevision: 0,
       lastSeq: 0,
-      activeRunId: runId,
+      activeMessageId: runId,
       messages: [
         { id: "user-1", role: "user", text: "请回答", images: [], status: "complete" },
         {

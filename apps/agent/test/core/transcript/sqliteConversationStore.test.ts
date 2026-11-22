@@ -86,7 +86,7 @@ describe("SQLite conversation store", () => {
 
     const reloaded = storeFor(root);
     const snapshot = await reloaded.load("coding-2");
-    expect(snapshot.activeRunId).toBeUndefined();
+    expect(snapshot.activeMessageId).toBeUndefined();
     expect(snapshot.eventRevision).toBe(0);
     expect(snapshot.messages.map((message) => [message.id, message.status])).toEqual([
       ["user-1", "complete"],

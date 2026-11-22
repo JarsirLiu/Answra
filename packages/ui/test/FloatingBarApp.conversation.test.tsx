@@ -1,14 +1,17 @@
 import type { ConversationSnapshot } from "@answra/shared";
 import { ActiveChatConversationId, AGENT_SERVICE_DISCONNECTED_CODE } from "@answra/shared";
-import type { AgentEventEnvelope } from "@answra/shared/schema";
+import type { AgentDurableEvent, SessionFrame } from "@answra/shared/schema";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FloatingBarApp } from "../src/app/FloatingBarApp";
 import {
-  conversationListeners,
   conversationState,
   createConversationBridge,
+  publishLiveFrame,
+  publishSessionFrame,
   resetFloatingBarTestState,
+  testFrame,
+  testLiveFrame,
 } from "./support/floatingBarHarness";
 
 describe("floating bar conversation", () => {
@@ -93,11 +96,17 @@ describe("floating bar conversation", () => {
 
   it("keeps the draft visible while chat send is pending, then renders the returned snapshot", async () => {
     const bridge = createConversationBridge();
-    const earlyEvents: AgentEventEnvelope[] = [];
-    bridge.readConversationEvents.mockImplementation(async (_id, afterRevision) =>
-      earlyEvents.filter((event) => event.aggregateRevision > afterRevision),
+    const earlyFrames: SessionFrame[] = [];
+    bridge.readSessionFrames.mockImplementation(async (_id, afterSeq) =>
+      earlyFrames.filter((frame) => frame.seq > afterSeq),
     );
-    let acceptSend: (value: { runId: string; snapshot: ConversationSnapshot }) => void = () => {
+    let acceptSend: (value: {
+      queueId: string;
+      status: "started";
+      position: 0;
+      turnId: string;
+      snapshot: ConversationSnapshot;
+    }) => void = () => {
       throw new Error("send response was not initialized");
     };
     bridge.sendConversationMessage.mockImplementationOnce(
@@ -117,38 +126,39 @@ describe("floating bar conversation", () => {
     expect(input).toBeDisabled();
     await waitFor(() => expect(bridge.sendConversationMessage).toHaveBeenCalled());
 
-    const publishEarlyEvent = (aggregateRevision: number, event: AgentEventEnvelope["event"]) => {
-      const envelope: AgentEventEnvelope = {
-        schemaVersion: 1,
-        eventId: `early-${aggregateRevision}`,
-        conversationId: ActiveChatConversationId,
-        runId: "run-delayed",
-        attemptId: "run-delayed:attempt:1",
-        sequence: aggregateRevision,
-        aggregateRevision,
-        producerId: "test",
-        occurredAt: "2026-11-07T00:00:00.000Z",
-        event,
-      };
-      earlyEvents.push(envelope);
-      act(() => {
-        conversationListeners.forEach((listener) => {
-          listener(envelope);
-        });
+    const publishEarlyFrame = (seq: number, event: AgentDurableEvent) => {
+      const frame = testFrame(seq, event, {
+        sessionId: ActiveChatConversationId,
+        turnId: "turn-1",
+        messageId: "run-delayed",
       });
+      earlyFrames.push(frame);
+      act(() => publishSessionFrame(frame));
     };
-    publishEarlyEvent(1, { type: "run-state-changed", state: "running", attempt: 1 });
-    publishEarlyEvent(2, { type: "text-delta", partId: "text-1", delta: "模型已经开始回复" });
-    publishEarlyEvent(3, { type: "run-state-changed", state: "completed", attempt: 1 });
+    publishEarlyFrame(1, { type: "turn-started", agentId: "conversation.general" });
+    act(() =>
+      publishLiveFrame(
+        testLiveFrame(
+          { type: "text-delta", partId: "text-1", delta: "模型已经开始回复" },
+          "run-delayed",
+          ActiveChatConversationId,
+        ),
+      ),
+    );
+    publishEarlyFrame(2, { type: "turn-finished", status: "completed" });
 
     await act(async () => {
       acceptSend({
-        runId: "run-delayed",
+        queueId: "turn-1",
+        status: "started",
+        position: 0,
+        turnId: "turn-1",
         snapshot: {
           conversationId: ActiveChatConversationId,
           eventRevision: 0,
-          lastSeq: 0,
-          activeRunId: "run-delayed",
+          lastSeq: 2,
+          activeTurnId: "turn-1",
+          activeMessageId: "run-delayed",
           messages: [
             {
               id: "user-delayed",
@@ -160,9 +170,9 @@ describe("floating bar conversation", () => {
             {
               id: "run-delayed",
               role: "assistant",
-              text: "",
+              text: "模型已经开始回复",
               images: [],
-              status: "streaming",
+              status: "complete",
             },
           ],
         },
@@ -176,7 +186,13 @@ describe("floating bar conversation", () => {
 
   it("shows the run icon after Agent acceptance and replaces it with the thinking event", async () => {
     const bridge = createConversationBridge();
-    let acceptSend: (value: { runId: string; snapshot: ConversationSnapshot }) => void = () => {
+    let acceptSend: (value: {
+      queueId: string;
+      status: "started";
+      position: 0;
+      turnId: string;
+      snapshot: ConversationSnapshot;
+    }) => void = () => {
       throw new Error("send response was not initialized");
     };
     bridge.sendConversationMessage.mockImplementationOnce(
@@ -193,12 +209,16 @@ describe("floating bar conversation", () => {
     expect(screen.queryByRole("status", { name: "回复运行中" })).not.toBeInTheDocument();
     await act(async () => {
       acceptSend({
-        runId: "run-accepted",
+        queueId: "turn-1",
+        status: "started",
+        position: 0,
+        turnId: "turn-1",
         snapshot: {
           conversationId: ActiveChatConversationId,
           eventRevision: 0,
-          lastSeq: 0,
-          activeRunId: "run-accepted",
+          lastSeq: 1,
+          activeTurnId: "turn-1",
+          activeMessageId: "run-accepted",
           messages: [
             {
               id: "user-accepted",
@@ -220,38 +240,27 @@ describe("floating bar conversation", () => {
     });
 
     expect(await screen.findByRole("status", { name: "回复运行中" })).toBeInTheDocument();
-    const reasoningStart: AgentEventEnvelope = {
-      schemaVersion: 1,
-      eventId: "accepted-reasoning-start",
-      conversationId: ActiveChatConversationId,
-      runId: "run-accepted",
-      attemptId: "run-accepted:attempt:1",
-      sequence: 1,
-      aggregateRevision: 1,
-      producerId: "test",
-      occurredAt: "2026-11-07T00:00:00.000Z",
-      event: { type: "reasoning-start", partId: "reasoning-1" },
-    };
-    act(() => {
-      conversationListeners.forEach((listener) => {
-        listener(reasoningStart);
-      });
-    });
+    act(() =>
+      publishSessionFrame(
+        testFrame(
+          2,
+          { type: "reasoning-start", partId: "reasoning-1" },
+          { sessionId: ActiveChatConversationId, turnId: "turn-1", messageId: "run-accepted" },
+        ),
+      ),
+    );
     expect(await screen.findByText("思考中…")).toBeInTheDocument();
     expect(screen.queryByRole("status", { name: "回复运行中" })).not.toBeInTheDocument();
 
-    const completed: AgentEventEnvelope = {
-      ...reasoningStart,
-      eventId: "accepted-completed",
-      sequence: 2,
-      aggregateRevision: 2,
-      event: { type: "run-state-changed", state: "completed", attempt: 1 },
-    };
-    act(() => {
-      conversationListeners.forEach((listener) => {
-        listener(completed);
-      });
-    });
+    act(() =>
+      publishSessionFrame(
+        testFrame(
+          3,
+          { type: "turn-finished", status: "completed" },
+          { sessionId: ActiveChatConversationId, turnId: "turn-1", messageId: "run-accepted" },
+        ),
+      ),
+    );
   });
 
   it("prompts sign-in inside the conversation when the main process rejects a chat send", async () => {

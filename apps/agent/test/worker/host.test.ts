@@ -484,7 +484,8 @@ describe("agent worker host", () => {
     // 用户消息、Turn/Step 边界各推一次权威快照；数量不是契约，顺序与内容才是。
     expect(snapshots.length).toBeGreaterThanOrEqual(3);
     const assistantSnapshot = snapshots.find(
-      (frame) => frame.type === "conversation-snapshot" && frame.snapshot.activeRunId !== undefined,
+      (frame) =>
+        frame.type === "conversation-snapshot" && frame.snapshot.activeMessageId !== undefined,
     );
     if (snapshots[0]?.type !== "conversation-snapshot" || assistantSnapshot === undefined)
       throw new Error("interview reply must publish user and assistant snapshots");
@@ -492,20 +493,21 @@ describe("agent worker host", () => {
       expect.objectContaining({ role: "user", text: "请介绍一下你负责的项目" }),
     ]);
     expect(assistantSnapshot.snapshot).toMatchObject({
-      activeRunId: expect.any(String),
+      activeMessageId: expect.any(String),
       messages: [
         expect.objectContaining({ role: "user", text: "请介绍一下你负责的项目" }),
         expect.objectContaining({ role: "assistant", text: "", status: "streaming" }),
       ],
     });
-    const assistantRunId = assistantSnapshot.snapshot.activeRunId;
-    if (!assistantRunId) throw new Error("assistant placeholder snapshot must identify its run");
+    const assistantMessageId = assistantSnapshot.snapshot.activeMessageId;
+    if (!assistantMessageId)
+      throw new Error("assistant placeholder snapshot must identify its message");
     const assistantSnapshotIndex = harness.frames.indexOf(assistantSnapshot);
     // 生命周期事件可以先于占位快照；模型 step 与正文必须晚于占位快照。
     const firstStepEventIndex = harness.frames.findIndex(
       (frame) =>
         frame.type === "event" &&
-        frame.event.runId === assistantRunId &&
+        frame.event.runId === assistantMessageId &&
         frame.event.event.type === "step-started",
     );
     expect(assistantSnapshotIndex).toBeGreaterThanOrEqual(0);

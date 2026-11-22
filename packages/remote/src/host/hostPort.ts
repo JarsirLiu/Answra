@@ -40,9 +40,9 @@ export interface HostCommandPort {
   waitQueueStart(
     conversationId: string,
     queueId: string,
-  ): Promise<{ queueId: string; runId: string; snapshot: ConversationSnapshot }>;
+  ): Promise<{ queueId: string; turnId: string; snapshot: ConversationSnapshot }>;
   waitQueue(conversationId: string, queueId: string): Promise<ConversationQueueCompletion>;
-  cancel(conversationId: string, runId: string): void;
+  cancel(conversationId: string, turnId: string): void;
   listBots?(): Promise<BotSummary[]>;
   selectBot?(conversationId: string, botId: string): Promise<void>;
   /** 把已选模型应用到 host 运行时；模型设置本身走 settings()。 */

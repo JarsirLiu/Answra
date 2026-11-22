@@ -36,7 +36,7 @@ describe("memory conversation transcript store", () => {
 
     const snapshot = await store.load("interview");
     expect(snapshot.messages.map((message) => message.text)).toEqual(["我正在测试麦克风输入"]);
-    expect(snapshot.activeRunId).toBeUndefined();
+    expect(snapshot.activeMessageId).toBeUndefined();
   });
 
   it("projects checkpoint boundaries with summary text for transcript display", async () => {
@@ -92,7 +92,7 @@ describe("memory conversation transcript store", () => {
       ["user-1", "user", "complete"],
       ["run-1", "assistant", "streaming"],
     ]);
-    expect(snapshot.activeRunId).toBe("run-1");
+    expect(snapshot.activeMessageId).toBe("run-1");
   });
 
   it("rejects missing or active reply runs without changing the transcript", async () => {
@@ -143,7 +143,7 @@ describe("memory conversation transcript store", () => {
     const snapshot = await store.load("session-a");
     expect(snapshot.messages.map((message) => message.id)).toEqual(["user-1", "run-1"]);
     expect(snapshot.messages[1]).toMatchObject({ text: "answer", status: "complete" });
-    expect(snapshot.activeRunId).toBeUndefined();
+    expect(snapshot.activeMessageId).toBeUndefined();
     expect(snapshot.eventRevision).toBe(2);
   });
 
@@ -304,7 +304,7 @@ describe("memory conversation transcript store", () => {
       ["user-2", "第二题"],
       ["run-2", ""],
     ]);
-    expect(snapshot.activeRunId).toBe("run-2");
+    expect(snapshot.activeMessageId).toBe("run-2");
     expect(snapshot.eventRevision).toBe(before.eventRevision);
   });
 
@@ -327,7 +327,7 @@ describe("memory conversation transcript store", () => {
         status: "complete",
       }),
     ).rejects.toThrow("当前回复尚未完成");
-    expect((await store.load("session-f")).activeRunId).toBe("run-1");
+    expect((await store.load("session-f")).activeMessageId).toBe("run-1");
   });
 
   it("clears only when no run is active", async () => {
@@ -341,7 +341,7 @@ describe("memory conversation transcript store", () => {
       status: "complete",
     });
     await store.clear("session-g");
-    expect((await store.load("session-g")).activeRunId).toBe("run-1");
+    expect((await store.load("session-g")).activeMessageId).toBe("run-1");
     await store.applyAgentEvent(
       "session-g",
       eventEnvelope("session-g", "run-1", 1, {
@@ -557,7 +557,7 @@ describe("memory conversation team metadata and handoff", () => {
     const claimed = await store.beginHandoffRun("team", "run-2", "intake", 5);
     expect(claimed).toMatchObject({ id: "handoff-1", text: "简历缺项目指标，请接管整理" });
     const snapshot = await store.load("team");
-    expect(snapshot.activeRunId).toBe("run-2");
+    expect(snapshot.activeMessageId).toBe("run-2");
     expect(snapshot.activeAgentId).toBe("intake");
     expect(snapshot.eventRevision).toBe(before.eventRevision);
     expect(snapshot.messages.at(-1)).toMatchObject({

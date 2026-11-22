@@ -110,9 +110,10 @@ describe("InterviewApplication", () => {
     expect(snapshots[0]?.messages).toEqual([
       expect.objectContaining({ role: "user", text: "请自我介绍" }),
     ]);
-    const activeRunId = (await app.getSnapshot("conversation-1")).activeRunId;
-    if (activeRunId === undefined) throw new Error("reply should own an assistant placeholder");
-    await app.waitForRun(activeRunId);
+    const active = await app.getSnapshot("conversation-1");
+    if (active.activeTurnId === undefined || active.activeMessageId === undefined)
+      throw new Error("reply should own an assistant placeholder");
+    await app.waitForTurn("conversation-1", active.activeTurnId);
     expect(steps).toHaveLength(1);
     expect(steps[0]).toEqual(
       expect.objectContaining({ sessionId: "conversation-1", source: "reply", index: 0 }),
@@ -124,17 +125,19 @@ describe("InterviewApplication", () => {
     ]);
   });
 
-  it("sends rehearsal text through the same reply path and resolves by message id", async () => {
+  it("sends rehearsal text through the same reply path and resolves by turn id", async () => {
     const { app, snapshots, steps } = createHarness();
 
     await app.createConversation("conversation-1");
     const result = await app.sendText("conversation-1", "帮我看一下简历");
-    await app.waitForRun(result.runId);
+    await app.waitForTurn("conversation-1", result.turnId);
 
     expect(result.snapshot.messages[0]).toEqual(
       expect.objectContaining({ role: "user", text: "帮我看一下简历" }),
     );
-    expect(snapshots.some((snapshot) => snapshot.activeRunId === result.runId)).toBe(true);
+    const messageId = result.snapshot.activeMessageId;
+    expect(messageId).toBeDefined();
+    expect(snapshots.some((snapshot) => snapshot.activeMessageId === messageId)).toBe(true);
     expect(steps[0]).toEqual(expect.objectContaining({ source: "reply" }));
   });
 
@@ -143,12 +146,12 @@ describe("InterviewApplication", () => {
 
     const result = await app.open("conversation-1");
 
-    expect(result.runId).toBeDefined();
+    expect(result.turnId).toBeDefined();
     expect(result.snapshot.messages).toEqual([
       expect.objectContaining({ role: "assistant", status: "streaming" }),
     ]);
     release();
-    await app.waitForRun(result.runId as string);
+    await app.waitForTurn("conversation-1", result.turnId as string);
     expect(steps[0]).toEqual(expect.objectContaining({ source: "opening", index: 0 }));
     expect((await app.getSnapshot("conversation-1")).messages).toEqual([
       expect.objectContaining({ role: "assistant", status: "complete" }),
@@ -161,7 +164,7 @@ describe("InterviewApplication", () => {
     await app.open("conversation-1");
     const result = await app.open("conversation-1");
 
-    expect(result.runId).toBeUndefined();
+    expect(result.turnId).toBeUndefined();
     expect(steps).toHaveLength(1);
   });
 });

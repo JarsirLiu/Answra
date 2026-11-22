@@ -22,19 +22,20 @@ function createAgent(): DesktopRemoteAgentPort {
       queueId: "queue-1",
       status: "started",
       position: 0,
-      runId: "run-1",
+      turnId: "turn-1",
       snapshot: snapshot(command.conversationId),
     }),
     waitForConversationQueue: async (_conversationId, queueId) => ({
       queueId,
+      turnId: "turn-1",
       outcome: "completed",
     }),
     waitForConversationQueueStart: async (conversationId, queueId) => ({
       queueId,
-      runId: "run-1",
+      turnId: "turn-1",
       snapshot: snapshot(conversationId),
     }),
-    cancel: () => undefined,
+    cancelTurn: () => undefined,
     onSnapshot: () => () => undefined,
     onEvent: () => () => undefined,
   };

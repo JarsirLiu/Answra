@@ -1,17 +1,16 @@
-import type { ConversationSnapshot } from "@answra/shared";
-import type { AgentEventEnvelope } from "@answra/shared/schema";
+import type { ConversationSnapshot, SessionFrame } from "@answra/shared";
 import { describe, expect, it, vi } from "vitest";
 import { TuiViewStore } from "../../../src/tui/app/viewStore";
 import { DEFAULT_NOTIFICATION_TIMEOUT_MS } from "../../../src/tui/notices/notification";
+import { liveFrame, sessionFrame } from "../../frameFixtures";
 
 const snapshot: ConversationSnapshot = {
   conversationId: "conversation-1",
   eventRevision: 3,
   lastSeq: 0,
-  activeRunId: "run-1",
   messages: [
     {
-      id: "run-1",
+      id: "message-1",
       role: "assistant",
       text: "",
       images: [],
@@ -21,27 +20,8 @@ const snapshot: ConversationSnapshot = {
   ],
 };
 
-function envelope(
-  revision: number,
-  event: AgentEventEnvelope["event"],
-  conversationId = "conversation-1",
-): AgentEventEnvelope {
-  return {
-    schemaVersion: 1,
-    eventId: `event-${revision}`,
-    conversationId,
-    runId: "run-1",
-    attemptId: "attempt-1",
-    sequence: revision,
-    aggregateRevision: revision,
-    producerId: "test",
-    occurredAt: new Date().toISOString(),
-    event,
-  };
-}
-
 describe("TuiViewStore", () => {
-  it("initializes from a snapshot and applies batched text events", () => {
+  it("initializes from a snapshot and applies batched live text increments", () => {
     const store = new TuiViewStore();
     const listener = vi.fn();
     store.subscribe(listener);
@@ -49,44 +29,67 @@ describe("TuiViewStore", () => {
     store.initialize(snapshot);
     expect(store.getSnapshot().view.messages[0]?.parts).toEqual(snapshot.messages[0]?.parts);
 
-    store.applyEvent(envelope(4, { type: "text-delta", partId: "text-1", delta: "hel" }));
-    store.applyEvent(envelope(5, { type: "text-delta", partId: "text-1", delta: "lo" }));
+    store.applyLiveFrame(
+      liveFrame({ type: "text-delta", partId: "text-1", delta: "hel" }, { messageId: "message-1" }),
+    );
+    store.applyLiveFrame(
+      liveFrame({ type: "text-delta", partId: "text-1", delta: "lo" }, { messageId: "message-1" }),
+    );
     expect(store.getSnapshot().view.messages[0]?.text).toBe("");
 
-    store.flush();
+    store.flushLive();
     expect(store.getSnapshot().view.messages[0]?.text).toBe("hello");
     expect(listener).toHaveBeenCalledTimes(2);
     store.dispose();
   });
 
-  it("ignores stale snapshots and events", () => {
+  it("ignores a stale snapshot and a replayed durable frame", () => {
     const store = new TuiViewStore();
     store.initialize(snapshot);
-    store.applyEvent(envelope(6, { type: "text-delta", partId: "text-1", delta: "new" }));
-    store.flush();
+    store.applyFrame(
+      sessionFrame(
+        1,
+        { type: "turn-started", agentId: "coding.engineer" },
+        { turnId: "turn-1", messageId: "message-1" },
+      ),
+    );
 
-    store.applySnapshot({ ...snapshot, eventRevision: 4 });
-    store.applyEvent(envelope(5, { type: "text-delta", partId: "text-1", delta: "old" }));
-    store.flush();
+    const [firstMessage] = snapshot.messages;
+    if (firstMessage === undefined) throw new Error("fixture must contain one message");
+    store.applySnapshot({
+      ...snapshot,
+      lastSeq: 0,
+      messages: [{ ...firstMessage, text: "stale" }],
+    });
+    store.applyFrame(sessionFrame(1, { type: "context-usage-changed", usedTokens: 1 }));
 
-    expect(store.getSnapshot().view.eventRevision).toBe(6);
+    expect(store.getSnapshot().view.lastSeq).toBe(1);
+    expect(store.getSnapshot().view.messages[0]?.text).toBe("");
+    store.dispose();
+  });
+
+  it("flushes pending live increments before rejecting a stale snapshot", () => {
+    const store = new TuiViewStore();
+    store.initialize(snapshot);
+    store.applyFrame(
+      sessionFrame(
+        1,
+        { type: "turn-started", agentId: "coding.engineer" },
+        { turnId: "turn-1", messageId: "message-1" },
+      ),
+    );
+    store.applyLiveFrame(
+      liveFrame({ type: "text-delta", partId: "text-1", delta: "new" }, { messageId: "message-1" }),
+    );
+
+    store.applySnapshot({ ...snapshot, lastSeq: 0 });
+
+    expect(store.getSnapshot().view.lastSeq).toBe(1);
     expect(store.getSnapshot().view.messages[0]?.text).toBe("new");
     store.dispose();
   });
 
-  it("flushes pending events before rejecting a stale snapshot", () => {
-    const store = new TuiViewStore();
-    store.initialize(snapshot);
-    store.applyEvent(envelope(6, { type: "text-delta", partId: "text-1", delta: "new" }));
-
-    store.applySnapshot({ ...snapshot, eventRevision: 5 });
-
-    expect(store.getSnapshot().view.eventRevision).toBe(6);
-    expect(store.getSnapshot().view.messages[0]?.text).toBe("new");
-    store.dispose();
-  });
-
-  it("updates context usage from a usage event before the run finishes", () => {
+  it("updates context usage from a durable frame before the turn finishes", () => {
     const store = new TuiViewStore();
     store.initialize({
       ...snapshot,
@@ -102,46 +105,87 @@ describe("TuiViewStore", () => {
       },
     });
 
-    store.applyEvent(envelope(4, { type: "context-usage-changed", usedTokens: 2_700 }));
-    store.flush();
+    store.applyFrame(sessionFrame(1, { type: "context-usage-changed", usedTokens: 2_700 }));
 
     expect(store.getSnapshot().view.contextUsage).toMatchObject({
       usedTokens: 2_700,
       source: "provider",
       inputLimit: 216_000,
     });
-    expect(store.getSnapshot().view.eventRevision).toBe(4);
+    expect(store.getSnapshot().view.lastSeq).toBe(1);
     store.dispose();
   });
 
-  it("filters background conversation updates and resets the revision on switch", () => {
+  it("filters background conversation updates and resets the cursor on switch", () => {
     const store = new TuiViewStore();
     store.initialize(snapshot);
-    store.applyEvent(envelope(4, { type: "text-delta", partId: "text-1", delta: "one" }));
-    store.flush();
+    store.applyLiveFrame(
+      liveFrame({ type: "text-delta", partId: "text-1", delta: "one" }, { messageId: "message-1" }),
+    );
+    store.flushLive();
 
     const target: ConversationSnapshot = {
       conversationId: "conversation-2",
       eventRevision: 2,
       lastSeq: 0,
-      messages: [{ id: "run-2", role: "assistant", text: "two", images: [], status: "complete" }],
+      messages: [
+        { id: "message-2", role: "assistant", text: "two", images: [], status: "complete" },
+      ],
     };
     store.switchConversation(target);
-    expect(store.getSnapshot().view).toMatchObject({ eventRevision: 2 });
+    expect(store.getSnapshot().view).toMatchObject({ eventRevision: 2, lastSeq: 0 });
 
     store.applySnapshot({ ...snapshot, eventRevision: 99 });
-    store.applyEvent(envelope(5, { type: "text-delta", partId: "text-1", delta: "hidden" }));
-    store.flush();
+    store.applyLiveFrame(
+      liveFrame(
+        { type: "text-delta", partId: "text-1", delta: "hidden" },
+        { messageId: "message-1" },
+      ),
+    );
+    store.flushLive();
     expect(store.getSnapshot().view).toMatchObject({
       eventRevision: 2,
-      messages: [expect.objectContaining({ id: "run-2" })],
+      messages: [expect.objectContaining({ id: "message-2" })],
     });
 
     store.switchConversation(snapshot);
     expect(store.getSnapshot().view).toMatchObject({
       eventRevision: 3,
-      messages: [expect.objectContaining({ id: "run-1" })],
+      messages: [expect.objectContaining({ id: "message-1" })],
     });
+    store.dispose();
+  });
+
+  it("reloads the durable gap from the reader when a frame arrives out of order", async () => {
+    const frames: SessionFrame[] = [];
+    const readFrames = vi.fn(async (_conversationId: string, afterSeq: number) =>
+      frames.filter((frame) => frame.seq > afterSeq),
+    );
+    const store = new TuiViewStore({ readFrames });
+    store.initialize(snapshot);
+    await vi.waitFor(() => expect(readFrames).toHaveBeenCalledWith("conversation-1", 0));
+
+    const started = sessionFrame(
+      1,
+      { type: "turn-started", agentId: "coding.engineer" },
+      { turnId: "turn-1", messageId: "message-1" },
+    );
+    const finished = sessionFrame(
+      2,
+      { type: "turn-finished", status: "completed" },
+      { turnId: "turn-1", messageId: "message-1" },
+    );
+    frames.push(started, finished);
+    store.applyFrame(finished);
+
+    await vi.waitFor(() => expect(store.getSnapshot().view.lastSeq).toBe(2));
+    expect(readFrames).toHaveBeenLastCalledWith("conversation-1", 0);
+    expect(store.getSnapshot().view.messages[0]).toMatchObject({
+      id: "message-1",
+      status: "complete",
+    });
+    expect(store.getSnapshot().view.activeTurnId).toBeUndefined();
+    expect(store.getSnapshot().view.activeMessageId).toBeUndefined();
     store.dispose();
   });
 
@@ -348,8 +392,13 @@ describe("TuiViewStore", () => {
     store.subscribe(listener);
     store.dispose();
 
-    store.applyEvent(envelope(4, { type: "text-delta", partId: "text-1", delta: "late" }));
-    store.flush();
+    store.applyLiveFrame(
+      liveFrame(
+        { type: "text-delta", partId: "text-1", delta: "late" },
+        { messageId: "message-1" },
+      ),
+    );
+    store.flushLive();
 
     expect(listener).not.toHaveBeenCalled();
     expect(store.getSnapshot().view.messages).toEqual([]);

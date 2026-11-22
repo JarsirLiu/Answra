@@ -88,7 +88,7 @@ describe("ContextCompactor", () => {
     });
 
     expect(compacted.status).toBe("compacted");
-    expect((await store.load("conversation-1")).activeRunId).toBe("run-1");
+    expect((await store.load("conversation-1")).activeMessageId).toBe("run-1");
     expect((await store.loadContextState("conversation-1"))?.checkpoints.at(-1)).toMatchObject({
       summary: "压缩后的摘要",
       throughMessageId: "run-1",

@@ -1,5 +1,9 @@
 import { createServer, type Server } from "node:http";
-import { ActiveChatConversationId, ActiveExamConversationId } from "@answra/shared";
+import {
+  ActiveChatConversationId,
+  ActiveExamConversationId,
+  type ConversationSnapshot,
+} from "@answra/shared";
 import type { AgentEventEnvelope } from "@answra/shared/schema";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { screenshotAnswerAgent } from "../../src/answer/agent";
@@ -21,7 +25,10 @@ function createTestRuntime({
   emitEvent: (event: AgentEventEnvelope) => void;
   store?: ConversationStore;
   tokenProvider?: (options: { forceRefresh: boolean }) => Promise<string>;
-}): ConversationApplication & { runAnswer: AnswerApplication["run"] } {
+}): ConversationApplication & {
+  runAnswer: AnswerApplication["run"];
+  cancelAnswer: AnswerApplication["cancel"];
+} {
   const agentRuntime = new AgentRuntime({
     executionStore: new MemoryExecutionStore(),
     emitEvent,
@@ -43,7 +50,10 @@ function createTestRuntime({
     executor: agentRuntime.registerAgent(screenshotAnswerAgent),
     authorAgentId: screenshotAnswerAgent.id,
   });
-  return Object.assign(runtime, { runAnswer: answer.run.bind(answer) });
+  return Object.assign(runtime, {
+    runAnswer: answer.run.bind(answer),
+    cancelAnswer: answer.cancel.bind(answer),
+  });
 }
 
 type RecordedRequest = {
@@ -78,6 +88,13 @@ function streamEvents(events: AgentEventEnvelope[], runId?: string): AgentEventE
 
 function isFulfilled<T>(result: PromiseSettledResult<T>): result is PromiseFulfilledResult<T> {
   return result.status === "fulfilled";
+}
+
+/** 聊天发送只按 Turn 返回；envelope 的 runId 仍是该 Turn 首条 assistant 消息 id。 */
+function activeMessageOf(snapshot: ConversationSnapshot): string {
+  const id = snapshot.activeMessageId;
+  if (id === undefined) throw new Error("send 未产生活动 assistant 消息");
+  return id;
 }
 
 function endpoint(port: number) {
@@ -157,7 +174,7 @@ describe("ephemeral conversation runtime", () => {
       },
       ACCESS_TOKEN,
     );
-    expect(first.snapshot.activeRunId).toBe(first.runId);
+    expect(first.snapshot.activeMessageId).toBe(first.runId);
     const firstRunEvent = changes.find((event) => event.runId === first.runId);
     expect(firstRunEvent).toBeDefined();
     expect(first.snapshot.eventRevision).toBe((firstRunEvent?.aggregateRevision ?? 0) - 1);
@@ -218,7 +235,7 @@ describe("ephemeral conversation runtime", () => {
       { text: "普通聊天", images: [] },
       ACCESS_TOKEN,
     );
-    await waitForTerminal(chat.runId);
+    await waitForTerminal(activeMessageOf(chat.snapshot));
     expect(requests.at(-1)?.temperature).toBeUndefined();
     expect(requests.at(-1)?.reasoningEffort).toBeUndefined();
   });
@@ -267,7 +284,7 @@ describe("ephemeral conversation runtime", () => {
       },
       ACCESS_TOKEN,
     );
-    await waitForTerminal(first.runId);
+    await waitForTerminal(activeMessageOf(first.snapshot));
     const second = await runtime.sendChat(
       "general-chat",
       ActiveChatConversationId,
@@ -277,7 +294,7 @@ describe("ephemeral conversation runtime", () => {
       },
       ACCESS_TOKEN,
     );
-    await waitForTerminal(second.runId);
+    await waitForTerminal(activeMessageOf(second.snapshot));
 
     const chatPayload = JSON.stringify(requests[1]?.messages);
     expect(chatPayload).toContain("我叫小明");
@@ -306,7 +323,7 @@ describe("ephemeral conversation runtime", () => {
       { text: "读取工作区", images: [] },
       ACCESS_TOKEN,
     );
-    await waitForTerminal(chat.runId);
+    await waitForTerminal(activeMessageOf(chat.snapshot));
     const chatTools = JSON.stringify(requests.at(-1)?.tools);
     expect(chatTools).toContain("Read");
     expect(chatTools).toContain("Grep");
@@ -334,7 +351,7 @@ describe("ephemeral conversation runtime", () => {
       { text: "工作区是什么？", images: [] },
       ACCESS_TOKEN,
     );
-    await waitForTerminal(first.runId);
+    await waitForTerminal(activeMessageOf(first.snapshot));
     expect(JSON.stringify(requests.at(-1))).toContain("当前工作区根目录：D:/notes/first");
 
     runtime.setWorkspaceRoot("D:/notes/second");
@@ -344,7 +361,7 @@ describe("ephemeral conversation runtime", () => {
       { text: "现在工作区是什么？", images: [] },
       ACCESS_TOKEN,
     );
-    await waitForTerminal(second.runId);
+    await waitForTerminal(activeMessageOf(second.snapshot));
     expect(JSON.stringify(requests.at(-1))).toContain("D:/notes/second");
     expect(JSON.stringify(requests.at(-1))).not.toContain("D:/notes/first");
 
@@ -355,7 +372,7 @@ describe("ephemeral conversation runtime", () => {
       { text: "还能读文件吗？", images: [] },
       ACCESS_TOKEN,
     );
-    await waitForTerminal(third.runId);
+    await waitForTerminal(activeMessageOf(third.snapshot));
     expect(JSON.stringify(requests.at(-1))).toContain("尚未选择工作区目录");
 
     const answer = await runtime.runAnswer(
@@ -369,13 +386,13 @@ describe("ephemeral conversation runtime", () => {
   });
 
   it("injects runtime environment before the workspace only for tool-enabled chat profiles", async () => {
-    const { runId } = await runtime.sendChat(
+    const { snapshot } = await runtime.sendChat(
       "general-chat",
       "environment-context-chat",
       { text: "你运行在什么环境？", images: [] },
       ACCESS_TOKEN,
     );
-    await waitForTerminal(runId);
+    await waitForTerminal(activeMessageOf(snapshot));
 
     const chatBody = JSON.stringify(requests.at(-1));
     expect(chatBody).toContain("# 运行环境");
@@ -394,7 +411,7 @@ describe("ephemeral conversation runtime", () => {
   });
 
   it("injects current local time and time zone only for chat profiles", async () => {
-    const { runId } = await runtime.sendChat(
+    const { snapshot } = await runtime.sendChat(
       "general-chat",
       "time-inject-chat",
       {
@@ -403,7 +420,7 @@ describe("ephemeral conversation runtime", () => {
       },
       ACCESS_TOKEN,
     );
-    await waitForTerminal(runId);
+    await waitForTerminal(activeMessageOf(snapshot));
 
     const chatBody = JSON.stringify(requests.at(-1));
     expect(chatBody).toContain("<system-reminder>");
@@ -472,7 +489,7 @@ describe("ephemeral conversation runtime", () => {
       { text: "请取消", images: [] },
       ACCESS_TOKEN,
     );
-    runtime.cancel(runId);
+    runtime.cancelAnswer(runId);
     await waitForTerminal(runId);
 
     expect(
@@ -717,6 +734,10 @@ describe("ephemeral conversation runtime", () => {
       finishSessionAssistant: async (conversationId, messageId, outcome, eventRevision) => {
         await tick();
         await inner.finishSessionAssistant(conversationId, messageId, outcome, eventRevision);
+      },
+      finishSessionTurn: async (conversationId, turnId) => {
+        await tick();
+        await inner.finishSessionTurn(conversationId, turnId);
       },
       appendHandoffMessage: async (conversationId, handoff) => {
         await tick();

@@ -168,11 +168,25 @@ export const liveFrameSchema = z.strictObject({
 | 阶段 | 内容 | 出口条件 |
 | --- | --- | --- |
 | P1 加通道 | 新增 `sessionFrameSchema` / `liveFrameSchema`、`SessionFrameBus`；journal 与 bus 并行发布；旧 projector 保持 | 新 schema 有单测；`pnpm verify` 全绿；线上仍走旧协议 |
-| P2 换协议（含原 P3） | `SessionFrame` / `LiveFrame` 走完 worker、desktop IPC、remote 与 CLI；`conversationView.ts` 折叠事实并按 `seq` 补齐；删除 `SessionEventProjector` 与 `run-state-changed`（Answer 走临时 shim）；`cancelTurn(turnId)`、`ConversationSendResult.turnId`、snapshot `activeTurnId` + `activeMessageId`；`REMOTE_PROTOCOL_VERSION` 升到 `2` | 桌面、CLI、远程的会话/handoff/压缩/重连/取消测试通过；全仓 `\brunId\b` 归零（Answer shim 除外）；v1 controller 连 v2 host 被明确拒绝 |
+| P2a 切读取面（第 3a 步） | UI / CLI 改吃 `SessionFrame` / `LiveFrame`，取消与渲染改用 `activeTurnId` + `activeMessageId`；快照与频道契约一次改到位；服务端继续双发（projector 保留） | 桌面、CLI 的流式/工具/handoff/排队/取消/压缩后继续与改动前一致；`pnpm verify` 全绿 |
+| P2b 删写入面（第 3b 步） | 删除 `AgentEventEnvelope` 通道、`SessionEventProjector`、`run-state-changed`；恢复协调器端口收敛；remote 升 v2 并拒绝 v1 | 全仓 `\brunId\b` 归零（Answer shim 除外）；v1 controller 连 v2 host 被明确拒绝；`pnpm verify` 全绿 |
 | P3 删旧引擎 | Answer 迁到 `SessionRuntime`（内存 journal、单 Turn）；删除 `executeRun.ts` 与 Answer shim | `run-state-changed` 全仓归零；Answer 截图答题回归通过 |
 | P4 上锁 | `architecture:check` 增加禁词与 import 方向检查 | 故意引入 `runId` 时构建失败 |
 
-原 P3（取消语义）并入 P2：只要事件载荷从 envelope 换成 frame，所有宿主就必须同时切换；若远程仍留在 v1，桌面 renderer 会同时收到两种形状，等于再引入一个翻译层。因此协议只切断一次、版本只升一次，`turnId` 与 snapshot 字段在同一变更内完成。
+原 P3（取消语义）并入 P2：只要事件载荷从 envelope 换成 frame，所有宿主就必须同时切换；若远程仍留在 v1，桌面 renderer 会同时收到两种形状，等于再引入一个翻译层。因此 `turnId` 与 snapshot 字段必须与读取面切换在同一变更内完成。
+
+### 为什么 P2 拆成 3a / 3b（修订 2026-11-22）
+
+原计划把第 3 步作为单次提交完成。实际执行后确认这个粒度不可控：它要同时改 shared schema、transcript 活动槽位、worker 线协议、desktop IPC、UI 折叠、CLI 视图与远程协议，任一环节未完成整仓就无法编译；而 `pnpm verify` 一轮约 6–8 分钟，于是退化成"改一批 → 跨包不匹配 → 再改一批"的循环，无法判断还剩多少工作量。
+
+第 2 步已经把帧**并行双发**，因此可以按绞杀者模式拆成两段：
+
+- **3a 切读取面**：UI / CLI 只吃帧，取消改用 `activeTurnId`；服务端写入链保持 `journal → frame → 旧 projector → transcript`，`SessionEventProjector` 保留。
+- **3b 删写入面**：删除 `AgentEventEnvelope` 通道与 projector，收敛恢复端口，远程升 v2。
+
+"协议只断一次"的约束仍然成立：**对外可见的契约形状**（快照字段、发送/等待/取消的请求与响应、frame schema）在 3a 内一次改到位，3b 不再改动它们。被拆开的只是"删除旧通道"的时机；3b 不含任何消费方重写，只有删除与收口。
+
+这样做的代价是旧 envelope 在 3a 期间仍然存在（但已无 UI 消费者），收益是每段都能独立编译、独立验证、独立提交，不会出现长时间无法判断进度的中间态。
 
 ### P2 执行顺序
 
@@ -195,14 +209,46 @@ P2 内部再拆四个子步，前两步不改变线上行为，第三步是唯�
 - CLI 的 `CodingHost` 暴露同一个 bus（或等价端口），`viewStore` 暂不消费。
 - 出口：worker 往返、IPC 转发顺序、`read-frames` 边界测试；旧 UI 一行不改。
 
-**第 3 步：切换协议（唯一破坏点）**
+**第 3 步：切换协议（拆为 3a 切读取面 / 3b 删写入面）**
 
-- 折叠：新增 `applySessionFrame` / `applyLiveFrame`，按 D4 映射逐项落实现；`useConversationView` 改用 `seq`，删除 `cursor + 1` 补洞（durable 缺口改为整段重读，live 直接丢）。
-- 取消：`cancelTurn(turnId)` 贯穿 agent / worker / IPC / remote / CLI；`ConversationSendResult`、`waitQueueStart` 返回 `turnId`；snapshot 改为 `activeTurnId` + `activeMessageId`。
-- 远程：`remoteEventBatch` 换成帧批量、`throughRevision` 换成 `throughSeq`，`REMOTE_PROTOCOL_VERSION` 升到 `2`，v1 hello 明确拒绝，不做双命令兼容。
-- Answer 仍走 envelope：保留独立的 `applyAgentEvent` 与 envelope 订阅，标注为 P3 删除的临时路径，不与会话帧混用。
-- 删除会话/面试/Coding 路径的 `SessionEventProjector` 与 `run-state-changed`；`aggregateRevision` 只留在 Answer shim。
-- 出口：D4 映射逐项测试、幂等测试、重连/断线/取消/排队测试、v1→v2 拒绝测试；桌面与 CLI 实机验证。
+**3a 切读取面（对外契约一次改到位）**
+
+契约形状（3b 不再改动）：
+
+| 位置 | 3a 之后的形状 |
+| --- | --- |
+| `ConversationSnapshot` | `activeTurnId?`（取消定位）+ `activeMessageId?`（渲染定位），不再有 `activeRunId`；`eventRevision` 仅留给 Answer shim，`lastSeq` 是 durable 游标 |
+| `ConversationSendResult` | `started` 分支返回 `turnId`（原 `runId`） |
+| `ConversationTurnResult` | `{ turnId, snapshot }`，替换原 `ConversationRunResult` |
+| `ConversationQueueCompletion` / `WaitQueue` | `turnId?`，替换 `runId?` |
+| `ConversationChannels.Cancel` | `{ conversationId, turnId }` |
+| `DesktopBridge` | `cancelTurn(conversationId, turnId)`，替换 `cancelConversationRun(runId)` |
+| 面试 / intake 发送 | 返回 `{ turnId, snapshot }` |
+
+活动槽位所有权（唯一写入点，禁止别处推演）：
+
+- `beginSessionTurn` / `appendAssistantPlaceholder` / `beginMessages` 写 `activeTurnId` + `activeMessageId`。
+- `finishSessionAssistant` 只清 `activeMessageId`（handoff 时活动 Turn 未结束）。
+- `finishSessionTurn(conversationId, turnId)` 在 `turn-finished` 时清两者；Turn 不匹配时 no-op。
+- 旧记录兼容：持久化 schema 用 `.extend({ activeRunId: z.string().optional() })` 读入，恢复时连同 `activeTurnId` / `activeMessageId` / `lastSeq` 一起丢弃，不做字段迁移。
+
+其余 3a 工作：
+
+- `Scheduler` / `SessionRuntime` 内部命名统一为 `messageId`：`waitForTurnStart` 返回该 Turn 首条 assistant 消息 id，`waitForTurn` 返回 `{ messageId?, outcome, errorText? }`。
+- 面试回复循环改为 Turn 身份：`startReply → { turnId }`、`cancelReply(conversationId, turnId)`、`waitForReply(conversationId, turnId)`。
+- 折叠：新增 `foldConversationFrame` / `overlayLiveFrame`（即 D6 命名；早期草稿写作 `applySessionFrame` / `applyLiveFrame`，以 D6 为准）。按 D4 映射逐项实现；`useConversationView` 按 `seq` 幂等折叠，durable 缺口整段重读，live 直接丢，删除 `cursor + 1` 补洞；渲染与滚动按 `activeMessageId` 定位。
+- CLI：`viewStore` 折叠帧，`sessionRunQueue` / `runController` / `codingSession` / `presentation` 走 Turn 与帧。
+- 出口：`pnpm verify` + `pnpm notes:check` 全绿；桌面与 CLI 的流式文本、工具卡片、handoff 多消息、排队、取消、自动压缩后继续与改动前一致；旧 envelope 仍在双发但已无 UI 消费者。
+
+**3b 删写入面（纯删除与收口，不改契约）**
+
+- 删除 `SessionEventProjector`、`run-state-changed`、`ExecutionStore`；`SessionRuntimeJournal` 写入顺序收敛为 `journal → frame → transcript`。
+- `SessionRecoveryCoordinator` 端口收敛为 `recoverFacts → journalLastSeq → seedLastSeq → restoreTranscript → resumeQueued`，删除 `eventRevision` / `seedRevision` / `revision` / `suspendUi`。
+- `ConversationApplication` / `CodingApplication` 删除 `executionStore`、`projector`、`turnByRun`、`getExecutionRun`、`readExecutionEvents`；`readFramesAfter` 成为唯一读取口。
+- desktop / worker / preload 删除 `event`、`read-events` 通道与 `sendAgentEvent` 订阅；`startAgentHost` 的 `emitEvent` 只服务 Answer shim。
+- remote：`remoteEventBatch` 换成帧批量，`throughRevision` 换成 `throughSeq`，`REMOTE_PROTOCOL_VERSION` 升到 `2`，v1 hello 明确拒绝，不做双命令兼容。
+- Answer 仍走 envelope：保留独立 `applyAgentEvent` 与 envelope 订阅，标注为 P3 删除的临时路径，不与会话帧混用；`aggregateRevision` 只留在 Answer shim。
+- 出口：D4 映射逐项测试、幂等测试、重连/断线/取消/排队测试、v1→v2 拒绝测试；全仓 `\brunId\b` 归零（Answer shim 除外）；桌面与 CLI 实机验证。
 
 **第 4 步：Answer 迁移与上锁（原 P3/P4）**
 
@@ -233,7 +279,18 @@ P2 内部再拆四个子步，前两步不改变线上行为，第三步是唯�
   - desktop：`AgentWorkerProcess` 增加帧监听与分发；`AgentService.onSessionFrame` / `onLiveFrame` / `readFrames`；`window.ts` 的 `sendSessionFrame` / `sendLiveFrame`（reply 窗口按 `sessionId` 过滤）；`conversationIpc` 的 `ReadFrames` handler（`afterSeq` 必须为非负安全整数）与两个订阅注册；preload 暴露 `readSessionFrames` / `onSessionFrame` / `onLiveFrame`。
   - CLI：`CodingHostOptions.sessionFrames` 可注入，`CodingHost.sessionFrames` 暴露同一个 bus；`composition.ts` 导出 `SessionFrameBus` / `SessionFrameListener`；TUI 暂不消费。
   - 证据：`apps/agent/test/worker/host.test.ts`（实时上行、`seq` 连续、`read-frames` 边界与全量重读）、`apps/agent/test/coding/application.test.ts`（bus 发布 durable + live、注入同一 bus）、`apps/desktop/test/conversationIpc.test.ts`（读取、游标校验、订阅注册、帧不与旧事件混流）。
-- P2 第 3–4 步与 Answer 迁移未开始；线上仍走旧 `AgentEventEnvelope`。
+- **P2 第 3a 步（切读取面）已完成（2026-11-22）**：
+  - 决策：原"单次破坏性切换"改为 `3a 切读取面` + `3b 删写入面`，理由见上文「为什么 P2 拆成 3a / 3b」。
+  - `packages/shared`：快照改为 `activeTurnId` + `activeMessageId`；`ConversationSendResult.started.turnId`；`ConversationTurnResult` 替换 `ConversationRunResult`；`WaitQueue` / `ConversationQueueCompletion` 使用 `turnId`；`Cancel` 请求改为 `{ conversationId, turnId }`；`DesktopBridge` 改为 `cancelTurn`；面试 / intake 发送返回 `turnId`。
+  - `apps/agent`：transcript 活动槽位改名与写入规则（`beginSessionTurn` / `appendAssistantPlaceholder` / `beginMessages` 写 `activeTurnId`，`finishSessionAssistant` 只清 `activeMessageId`，新增 `finishSessionTurn` 由 `turn-finished` 调用）；`scheduler` / `sessionRuntime` 内部 `runId` → `messageId`；持久化与恢复对新字段做读入兼容并丢弃活动槽位；worker 取消拆为 `cancel-turn { conversationId, turnId }` 与 `cancel-run { runId }`（后者只服务 Answer shim），`host.ts` 按 `store.scopeOf` 路由、面试 scope 内按 `activeAgentId` 区分演练与 intake。
+  - `apps/desktop`：`agentService` / `conversationIpc` / `window` / preload 切到 `cancelTurn` 与帧通道；renderer 只消费 `SessionFrame` / `LiveFrame`。`ConversationSnapshot.activeTurnId` / `activeMessageId` 由进程内 transcript 维护，不再从 envelope 推导。
+  - `packages/ui`：新增 `foldConversationFrame`（durable，按 `seq` 幂等）与 `overlayLiveFrame`（可丢增量）；`useConversationView` 变成双通道游标机（`transport: "frames" | "events"`，缺口整段重读，`waitForOutcome(activityId)` 在 frames 通道传 `turnId`）；`ConversationView` 用 `activeTurnId` / `activeMessageId` / `lastSeq` / `retryMessageId`；`turn-handoff` 折叠为完成来源消息并清空 `activeMessageId`。
+  - Answer 在 P3 前保留 envelope shim：`applyAgentEvent`、`readConversationEvents`、`aggregateRevision`、`cancelConversationRun` 仍在，但只有 `useScreenshotAnswer` / `useReplyConversation` 显式传 `transport: "events"`；会话与面试路径禁止调用 `applyAgentEvent`。`run-state-changed` 只保留在 Answer shim，用于 retry / active / terminal 语义。
+  - `apps/cli`：`SessionHostOptions` 收敛为 `onSessionFrame` / `onLiveFrame` / `onSnapshot` / `workspaceRoot`；`CodingSession` 用 `turnId` / `waitForTurn` / `cancelTurn` / `readFrames`；`TuiViewStore` durable 帧即时折叠、live 帧 16ms 批处理、缺口整段重读（注入 `TuiFrameReader`）、snapshot 到达清空未应用的 live 增量；`streamPresenter` 改为 `presentFrame` / `presentLive`。CLI 仍向宿主传 `emitEvent: () => {}`，这是 3b 才删的过渡占位，不是新的消费路径。
+  - `packages/remote` / `apps/mobile`：controller 侧字段同步改为 `turnId`，远程命令与 `remoteCommandPort` 不再读 `runId`。
+  - 证据：`packages/ui/test/conversationView.test.ts`（帧折叠、handoff、重放幂等、Answer shim 分离）、`useConversationView.test.tsx`（帧通道游标、缺口重读、清空归零、`waitForOutcome`）、`apps/cli/test/tui/app/viewStore.test.ts`（live 批量、durable 折叠、stale snapshot、缺口整段重读）、`apps/cli/test/presentation/streamPresenter.test.ts`（turn 终态 exit code）、`apps/agent/test/worker/host.test.ts`（`cancel-turn` 与 Answer `cancel-run` 分流）、`apps/desktop/test/conversationIpc.test.ts`（`cancelTurn` 载荷校验）。`pnpm verify` 全绿。
+- **P2 第 3b 步（删写入面）未开始**：删除 `AgentEventEnvelope` 通道、`SessionEventProjector`、`run-state-changed`，清掉 CLI 的 `emitEvent: () => {}`，恢复协调器端口收敛，remote 升 v2 并拒绝 v1。
+- P2 第 4 步（Answer 迁移）与 P4 上锁未开始；线上仍双发 `AgentEventEnvelope`，但会话/面试/Coding 的 UI 与 CLI 消费者已全部切到帧。
 
 ## 曾考虑的替代方案
 

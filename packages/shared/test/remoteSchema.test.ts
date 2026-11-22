@@ -145,7 +145,7 @@ describe("remote frame schema", () => {
       queueId: "queue-1",
       status: "started",
       position: 0,
-      runId: "run-1",
+      turnId: "turn-1",
       snapshot: {
         conversationId: "conversation-1",
         eventRevision: 0,
@@ -157,20 +157,23 @@ describe("remote frame schema", () => {
     expect(
       remoteSendResultSchema.safeParse({
         ...started,
-        runId: undefined,
+        turnId: undefined,
       }).success,
     ).toBe(false);
   });
 
-  it("requires a conversation id for cancel commands", () => {
-    expect(remoteCommandSchema.safeParse({ type: "cancel", runId: "run-1" }).success).toBe(false);
+  it("requires a conversation id and turn id for cancel commands", () => {
+    expect(remoteCommandSchema.safeParse({ type: "cancel", turnId: "turn-1" }).success).toBe(false);
+    expect(
+      remoteCommandSchema.safeParse({ type: "cancel", conversationId: "conversation-1" }).success,
+    ).toBe(false);
     expect(
       remoteCommandSchema.parse({
         type: "cancel",
         conversationId: "conversation-1",
-        runId: "run-1",
+        turnId: "turn-1",
       }),
-    ).toEqual({ type: "cancel", conversationId: "conversation-1", runId: "run-1" });
+    ).toEqual({ type: "cancel", conversationId: "conversation-1", turnId: "turn-1" });
   });
 
   it("parses host commands without access tokens", () => {

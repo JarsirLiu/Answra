@@ -1,11 +1,11 @@
-/** TUI 投影 state：snapshot 初始化、事件批量归并和 run 阶段；不碰终端 I/O。 */
-import type { ConversationSnapshot } from "@answra/shared";
-import type { AgentEventEnvelope } from "@answra/shared/schema";
+/** TUI 投影 state：snapshot 初始化、事实帧折叠与 live 增量刷新；不碰终端 I/O。 */
+import type { ConversationSnapshot, LiveFrame, SessionFrame } from "@answra/shared";
 import {
-  applyAgentEvent,
   applyConversationSnapshot,
   type ConversationView,
   EMPTY_CONVERSATION_VIEW,
+  foldConversationFrame,
+  overlayLiveFrame,
 } from "@answra/ui/conversation-view";
 import type { TuiSetupStep } from "../modelSetup";
 import {
@@ -20,8 +20,14 @@ import {
 import type { TuiPanel } from "../panels/panel";
 import type { TuiCompactionBoundary } from "../transcript/compactionBoundary";
 
-const TUI_EVENT_BATCH_MS = 16;
-const TUI_EVENT_QUEUE_MAX = 2_048;
+const TUI_LIVE_BATCH_MS = 16;
+/** live 增量积压上限：超过就先刷新，避免长时间不渲染。 */
+const TUI_LIVE_QUEUE_MAX = 2_048;
+
+/** 缺口重读口：durable 帧不连续时整段重读，不在本地推演缺失状态。 */
+export interface TuiFrameReader {
+  readFrames(conversationId: string, afterSeq: number): Promise<SessionFrame[]>;
+}
 
 export type TuiRunPhase = "idle" | "running" | "cancelling";
 
@@ -56,7 +62,7 @@ export interface TuiState {
 
 type Listener = () => void;
 
-/** 单一 writer：snapshot 与事件都只经过这里更新 TUI state。 */
+/** 单一 writer：snapshot、durable 帧与 live 增量都只经过这里更新 TUI state。 */
 export class TuiViewStore {
   private state: TuiState = {
     view: EMPTY_CONVERSATION_VIEW,
@@ -72,11 +78,18 @@ export class TuiViewStore {
     notifications: EMPTY_NOTIFICATION_STATE,
   };
   private readonly listeners = new Set<Listener>();
-  private pending: AgentEventEnvelope[] = [];
+  private readonly reader?: TuiFrameReader;
+  private pendingLive: LiveFrame[] = [];
   private timer?: ReturnType<typeof setTimeout>;
   private notificationTimer?: ReturnType<typeof setTimeout>;
   private disposed = false;
   private activeConversationId?: string;
+  private syncing = false;
+  private resync = false;
+
+  constructor(reader?: TuiFrameReader) {
+    this.reader = reader;
+  }
 
   readonly subscribe = (listener: Listener): (() => void) => {
     this.listeners.add(listener);
@@ -86,9 +99,10 @@ export class TuiViewStore {
   readonly getSnapshot = (): TuiState => this.state;
 
   initialize(snapshot: ConversationSnapshot): void {
-    this.flush();
+    this.flushLive();
     this.activeConversationId = snapshot.conversationId;
-    if (snapshot.eventRevision < this.state.view.eventRevision) return;
+    if (snapshot.lastSeq < this.state.view.lastSeq) return;
+    this.pendingLive = [];
     this.setState({
       ...this.state,
       view: applyConversationSnapshot(EMPTY_CONVERSATION_VIEW, snapshot),
@@ -96,17 +110,20 @@ export class TuiViewStore {
       compactionActive: false,
       localError: undefined,
     });
+    this.resync = true;
+    void this.syncFrames();
   }
 
-  /** 切到另一会话：先丢弃旧视图的 revision 与事件，再接收目标会话快照。 */
+  /** 切到另一会话：先丢弃旧视图的游标与增量，再接收目标会话快照。 */
   switchConversation(snapshot: ConversationSnapshot): void {
     if (this.disposed) return;
-    this.flush();
+    this.flushLive();
     if (this.timer !== undefined) {
       clearTimeout(this.timer);
       this.timer = undefined;
     }
-    this.pending = [];
+    this.pendingLive = [];
+    this.resync = false;
     this.activeConversationId = snapshot.conversationId;
     this.setState({
       ...this.state,
@@ -118,25 +135,39 @@ export class TuiViewStore {
       queuedPrompts: [],
       localError: undefined,
     });
+    this.resync = true;
+    void this.syncFrames();
   }
 
   applySnapshot(snapshot: ConversationSnapshot): void {
     if (this.disposed || snapshot.conversationId !== this.activeConversationId) return;
-    this.flush();
-    if (snapshot.eventRevision < this.state.view.eventRevision) return;
+    this.flushLive();
+    if (snapshot.lastSeq < this.state.view.lastSeq) return;
+    // snapshot 已包含此前全部文本与事实，残留的 live 增量不得再叠加。
+    this.pendingLive = [];
     this.setState({
       ...this.state,
       view: applyConversationSnapshot(this.state.view, snapshot),
       compactionBoundaries: boundariesFromSnapshot(snapshot, this.state.compactionBoundaries),
       localError: undefined,
     });
+    this.resync = true;
+    void this.syncFrames();
   }
 
-  applyEvent(envelope: AgentEventEnvelope): void {
-    if (this.disposed || envelope.conversationId !== this.activeConversationId) return;
-    this.pending.push(envelope);
-    if (this.pending.length >= TUI_EVENT_QUEUE_MAX) {
-      this.flush();
+  /** 折叠一条 durable 事实帧；缺口交给整段重读，不做本地补洞。 */
+  applyFrame(frame: SessionFrame): void {
+    if (this.disposed || frame.sessionId !== this.activeConversationId) return;
+    this.foldFrame(frame);
+    if (this.resync) void this.syncFrames();
+  }
+
+  /** 收集 live 增量，按帧批量刷新，避免每个 delta 触发一次渲染。 */
+  applyLiveFrame(frame: LiveFrame): void {
+    if (this.disposed || frame.sessionId !== this.activeConversationId) return;
+    this.pendingLive.push(frame);
+    if (this.pendingLive.length >= TUI_LIVE_QUEUE_MAX) {
+      this.flushLive();
       return;
     }
     this.scheduleFlush();
@@ -145,12 +176,13 @@ export class TuiViewStore {
   /** `/clear` 后以空视图重建，避免旧 transcript 通过 snapshot 合并规则残留。 */
   reset(snapshot: ConversationSnapshot): void {
     if (this.disposed) return;
-    this.flush();
+    this.flushLive();
     if (this.timer !== undefined) {
       clearTimeout(this.timer);
       this.timer = undefined;
     }
-    this.pending = [];
+    this.pendingLive = [];
+    this.resync = false;
     this.activeConversationId = snapshot.conversationId;
     this.clearNotificationTimer();
     this.setState({
@@ -163,6 +195,8 @@ export class TuiViewStore {
       localError: undefined,
       notifications: EMPTY_NOTIFICATION_STATE,
     });
+    this.resync = true;
+    void this.syncFrames();
   }
 
   setQueuedPrompts(queuedPrompts: readonly TuiQueuedPrompt[]): void {
@@ -225,32 +259,33 @@ export class TuiViewStore {
     this.setState({ ...this.state, panel });
   }
 
-  flush(): void {
+  /** 应用已收集的 live 增量；snapshot 到达前它们是唯一的文本来源。 */
+  flushLive(): void {
     if (this.timer !== undefined) {
       clearTimeout(this.timer);
       this.timer = undefined;
     }
-    if (this.pending.length === 0) return;
-    const pending = this.pending;
-    this.pending = [];
+    if (this.pendingLive.length === 0) return;
+    const pending = this.pendingLive;
+    this.pendingLive = [];
     let view = this.state.view;
-    for (const envelope of pending) view = applyAgentEvent(view, envelope);
+    for (const frame of pending) view = overlayLiveFrame(view, frame);
     if (view === this.state.view) return;
     this.setState({ ...this.state, view });
   }
 
   beginCompaction(): void {
-    this.flush();
+    this.flushLive();
     this.setState({ ...this.state, compactionActive: true, localError: undefined });
   }
 
   finishCompaction(): void {
-    this.flush();
+    this.flushLive();
     this.setState({ ...this.state, compactionActive: false });
   }
 
   beginRun(): void {
-    this.flush();
+    this.flushLive();
     this.setState({ ...this.state, phase: "running", localError: undefined });
   }
 
@@ -259,12 +294,12 @@ export class TuiViewStore {
   }
 
   finishRun(): void {
-    this.flush();
+    this.flushLive();
     this.setState({ ...this.state, phase: "idle" });
   }
 
   fail(message: string): void {
-    this.flush();
+    this.flushLive();
     this.setState({ ...this.state, localError: message });
   }
 
@@ -273,7 +308,8 @@ export class TuiViewStore {
     if (this.timer !== undefined) clearTimeout(this.timer);
     this.timer = undefined;
     this.clearNotificationTimer();
-    this.pending = [];
+    this.pendingLive = [];
+    this.resync = false;
     this.listeners.clear();
   }
 
@@ -306,8 +342,42 @@ export class TuiViewStore {
     if (this.timer !== undefined) return;
     this.timer = setTimeout(() => {
       this.timer = undefined;
-      this.flush();
-    }, TUI_EVENT_BATCH_MS);
+      this.flushLive();
+    }, TUI_LIVE_BATCH_MS);
+  }
+
+  private foldFrame(frame: SessionFrame): void {
+    const view = this.state.view;
+    if (frame.seq <= view.lastSeq) return;
+    if (frame.seq !== view.lastSeq + 1) {
+      this.resync = true;
+      return;
+    }
+    const next = foldConversationFrame(view, frame);
+    if (next === view) return;
+    this.setState({ ...this.state, view: next });
+  }
+
+  /** durable 缺口只重读，不在本地推演：读取失败保留标记，下一次帧到达再试。 */
+  private async syncFrames(): Promise<void> {
+    if (this.syncing || !this.resync || this.disposed) return;
+    const conversationId = this.activeConversationId;
+    const reader = this.reader;
+    if (conversationId === undefined || reader === undefined) return;
+    this.syncing = true;
+    try {
+      while (this.resync && !this.disposed) {
+        this.resync = false;
+        const frames = await reader.readFrames(conversationId, this.state.view.lastSeq);
+        if (this.activeConversationId !== conversationId) return;
+        for (const frame of frames) this.foldFrame(frame);
+      }
+    } catch (error) {
+      this.resync = true;
+      console.error("[tui] failed to read session frames", error);
+    } finally {
+      this.syncing = false;
+    }
   }
 
   private setState(next: TuiState): void {

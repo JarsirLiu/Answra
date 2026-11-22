@@ -107,7 +107,9 @@ describe("ConversationApplication session integration", () => {
     }
     const replayed = await app.readEventsAfter("ui-conversation", 0);
 
-    expect(result.runId).toBeTruthy();
+    expect(result.turnId).toBeTruthy();
+    // envelope 的 runId 仍是首条 assistant 消息 id，取自提交时的权威快照。
+    const messageId = result.snapshot.activeMessageId;
     const revisions = emitted.map((event) => event.aggregateRevision);
     expect(revisions).toEqual(revisions.map((_, index) => index + 1));
     expect(emitted.filter((event) => event.event.type === "text-delta")).toHaveLength(2);
@@ -117,7 +119,7 @@ describe("ConversationApplication session integration", () => {
     const terminal = emitted.find(
       (event) =>
         event.event.type === "run-state-changed" &&
-        event.runId === result.runId &&
+        event.runId === messageId &&
         event.event.state === "completed",
     );
     expect(terminal).toBeDefined();
@@ -162,7 +164,7 @@ describe("ConversationApplication session integration", () => {
     });
     const snapshot = await app.getSnapshot(conversationId);
 
-    expect(snapshot.activeRunId).toBeUndefined();
+    expect(snapshot.activeMessageId).toBeUndefined();
     expect(snapshot.messages.map((message) => message.status)).toEqual(["complete", "interrupted"]);
     await expect(
       app.send(undefined, conversationId, { text: "继续", images: [] }, "token"),

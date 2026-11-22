@@ -28,7 +28,7 @@ export interface FakeHostCommandPortOptions {
 
 export interface FakeHostCommandPort extends HostCommandPort {
   readonly sentCommands: RemoteSendCommand[];
-  readonly cancelledRunIds: string[];
+  readonly cancelledTurnIds: string[];
   readonly cancelledConversationIds: string[];
   readonly appliedModels: RemoteModelConfig[];
   emitEvent(event: AgentEventEnvelope): void;
@@ -42,7 +42,7 @@ export function createFakeHostCommandPort(
   const bots = options.bots ?? [createFakeBotSummary()];
   const sessionPage = options.sessionPage ?? createFakeSessionPage();
   const sentCommands: RemoteSendCommand[] = [];
-  const cancelledRunIds: string[] = [];
+  const cancelledTurnIds: string[] = [];
   const cancelledConversationIds: string[] = [];
   const appliedModels: RemoteModelConfig[] = [];
   const events: AgentEventEnvelope[] = [];
@@ -50,7 +50,7 @@ export function createFakeHostCommandPort(
   const snapshotListeners = new Set<(snapshot: ConversationSnapshot) => void>();
   let currentSnapshot = options.snapshot ?? createFakeConversationSnapshot();
   let currentModelSettings = options.modelSettings ?? createFakeModelSettingsView();
-  let runSequence = 0;
+  let turnSequence = 0;
 
   const settings: HostModelSettingsPort = {
     async snapshot() {
@@ -88,7 +88,7 @@ export function createFakeHostCommandPort(
 
   return {
     sentCommands,
-    cancelledRunIds,
+    cancelledTurnIds,
     cancelledConversationIds,
     appliedModels,
     capabilities: () => capabilities,
@@ -120,24 +120,24 @@ export function createFakeHostCommandPort(
     },
     async send(command) {
       sentCommands.push(command);
-      runSequence += 1;
+      turnSequence += 1;
       return {
-        queueId: `queue-${runSequence}`,
+        queueId: `queue-${turnSequence}`,
         status: "started",
         position: 0,
-        runId: `run-${runSequence}`,
+        turnId: `turn-${turnSequence}`,
         snapshot: currentSnapshot,
       };
     },
     async waitQueue(_conversationId, queueId) {
-      return { queueId, runId: `run-${runSequence}`, outcome: "completed" };
+      return { queueId, turnId: `turn-${turnSequence}`, outcome: "completed" };
     },
     async waitQueueStart(_conversationId, queueId) {
-      return { queueId, runId: `run-${runSequence}`, snapshot: currentSnapshot };
+      return { queueId, turnId: `turn-${turnSequence}`, snapshot: currentSnapshot };
     },
-    cancel(conversationId, runId) {
+    cancel(conversationId, turnId) {
       cancelledConversationIds.push(conversationId);
-      cancelledRunIds.push(runId);
+      cancelledTurnIds.push(turnId);
     },
     async listBots() {
       return [...bots];

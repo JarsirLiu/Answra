@@ -232,7 +232,7 @@ export class RemoteHostSession {
       case "wait-queue-start":
         return this.host.waitQueueStart(command.conversationId, command.queueId);
       case "cancel":
-        this.host.cancel(command.conversationId, command.runId);
+        this.host.cancel(command.conversationId, command.turnId);
         return undefined;
       case "snapshot":
         return this.host.snapshot(command.conversationId);

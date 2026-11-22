@@ -391,7 +391,7 @@ describe("TurnScheduler", () => {
     });
 
     await expect(scheduler.waitForTurn(TEST_TURN_ID)).resolves.toEqual({
-      runId: "assistant-1",
+      messageId: "assistant-1",
       outcome: "failed",
       errorText: "中断",
     });

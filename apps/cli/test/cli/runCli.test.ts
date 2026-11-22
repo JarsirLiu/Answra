@@ -5,7 +5,6 @@ import type {
   ConversationSendRequest,
   ConversationSnapshot,
 } from "@answra/shared";
-import type { AgentEvent, AgentEventEnvelope } from "@answra/shared/schema";
 import { describe, expect, it, vi } from "vitest";
 import type { CliDependencies } from "../../src/cli/dependencies";
 import { CLI_HELP } from "../../src/cli/help";
@@ -16,6 +15,7 @@ import type { CodingSessionHost } from "../../src/session/codingSession";
 import type { InputPort } from "../../src/transport/input";
 import type { OutputPort } from "../../src/transport/output";
 import { CLI_VERSION } from "../../src/version";
+import { liveFrame, sessionFrame } from "../frameFixtures";
 
 function createOutput(): OutputPort & { stdout: string; stderr: string } {
   const output = {
@@ -74,22 +74,6 @@ const snapshot: ConversationSnapshot = {
 
 let sequence = 0;
 
-function envelope(event: AgentEvent): AgentEventEnvelope {
-  sequence += 1;
-  return {
-    schemaVersion: 1,
-    eventId: `event-${sequence}`,
-    conversationId: "conversation-1",
-    runId: "run-1",
-    attemptId: "attempt-1",
-    sequence,
-    aggregateRevision: 0,
-    producerId: "test",
-    occurredAt: new Date().toISOString(),
-    event,
-  };
-}
-
 function createDependencies(
   overrides: Partial<CliDependencies> & {
     sent?: ConversationSendRequest[];
@@ -106,7 +90,7 @@ function createDependencies(
     send: vi.fn(async (_conversationId, request, token) => {
       sent.push(request);
       tokens.push(token);
-      return { runId: "run-1" };
+      return { turnId: "turn-1" };
     }),
     enqueue: vi.fn(async (_conversationId, request, token) => {
       sent.push(request);
@@ -115,17 +99,18 @@ function createDependencies(
         queueId: "queue-1",
         status: "started" as const,
         position: 0 as const,
-        runId: "run-1",
+        turnId: "turn-1",
         snapshot,
       };
     }),
     waitForQueueStart: vi.fn(async (_conversationId, queueId) => ({
       queueId,
-      runId: "run-1",
+      turnId: "turn-1",
       snapshot,
     })),
     cancel: vi.fn(),
-    waitForRun: vi.fn(async () => {}),
+    waitForTurn: vi.fn(async () => {}),
+    readFrames: vi.fn(async () => []),
     dispose: vi.fn(),
   };
   const dependencies: CliDependencies = {
@@ -140,11 +125,23 @@ function createDependencies(
     modelSettings: createModelSettings(),
     modelCredentials: createModelCredentials(),
     modelCatalog: { list: vi.fn(async () => []) },
-    createSessionHost: vi.fn(({ emitEvent }) => {
+    createSessionHost: vi.fn(({ onSessionFrame, onLiveFrame }) => {
       const send = host.send;
       host.send = vi.fn(async (conversationId, request, token) => {
-        emitEvent(envelope({ type: "text-delta", partId: "text-1", delta: "hi" }));
-        emitEvent(envelope({ type: "text-end", partId: "text-1" }));
+        sequence += 1;
+        onLiveFrame(
+          liveFrame(
+            { type: "text-delta", partId: "text-1", delta: "hi" },
+            { messageId: "message-1" },
+          ),
+        );
+        onSessionFrame(
+          sessionFrame(
+            sequence,
+            { type: "text-end", partId: "text-1" },
+            { turnId: "turn-1", messageId: "message-1" },
+          ),
+        );
         return send(conversationId, request, token);
       });
       return host;

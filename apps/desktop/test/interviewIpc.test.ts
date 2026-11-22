@@ -34,9 +34,9 @@ const harness = vi.hoisted(() => {
       | ((credit: { sessionId: string; count: number }) => void)
       | undefined,
     startInterview: vi.fn(async () => undefined),
-    sendInterviewMessage: vi.fn(async () => ({ runId: "run-1", snapshot: {} })),
+    sendInterviewMessage: vi.fn(async () => ({ turnId: "turn-1", snapshot: {} })),
     openInterviewIntake: vi.fn(async () => ({ snapshot: { conversationId: "interview-intake" } })),
-    sendInterviewIntakeMessage: vi.fn(async () => ({ runId: "run-2", snapshot: {} })),
+    sendInterviewIntakeMessage: vi.fn(async () => ({ turnId: "turn-2", snapshot: {} })),
     getInterviewIntakeSnapshot: vi.fn(async () => ({ conversationId: "interview-intake" })),
     readInterviewIntakeEvents: vi.fn(async () => []),
     markInterviewCaptureReady: vi.fn(async () => undefined),

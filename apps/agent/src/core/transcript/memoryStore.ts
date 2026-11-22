@@ -77,7 +77,7 @@ export class MemoryConversationStore implements ConversationStore {
 
   async clear(conversationId: string, cursor: ConversationClearCursor = {}): Promise<void> {
     const session = this.sessions.get(conversationId);
-    if (!session || session.snapshot.activeRunId) return;
+    if (!session || session.snapshot.activeMessageId) return;
     session.contextState = undefined;
     session.snapshot = {
       conversationId,
@@ -105,9 +105,18 @@ export class MemoryConversationStore implements ConversationStore {
     userMessage: ConversationMessage,
     eventRevision = 0,
     authorAgentId?: string,
+    turnId?: string,
   ): Promise<void> {
     const previous = this.captureSession(conversationId);
-    this.beginMessages(conversationId, runId, userMessage, true, eventRevision, authorAgentId);
+    this.beginMessages(
+      conversationId,
+      runId,
+      userMessage,
+      true,
+      eventRevision,
+      authorAgentId,
+      turnId,
+    );
     await this.commitMutation(conversationId, previous, {
       kind: "run-started",
       dirtyMessageIds: [userMessage.id, runId],
@@ -119,14 +128,15 @@ export class MemoryConversationStore implements ConversationStore {
     runId: string,
     eventRevision = 0,
     authorAgentId?: string,
+    turnId?: string,
   ): Promise<ConversationMessage> {
     const session = this.requireSession(conversationId);
-    if (session.snapshot.activeRunId) throw new Error("当前回复尚未完成");
+    if (session.snapshot.activeMessageId) throw new Error("当前回复尚未完成");
     const last = session.snapshot.messages.at(-1);
     if (last?.role !== "user" || last.status !== "complete")
       throw new Error("没有可回复的用户消息");
     const previous = cloneRecord(session);
-    this.appendAssistantPlaceholder(session, runId, eventRevision, authorAgentId);
+    this.appendAssistantPlaceholder(session, runId, eventRevision, authorAgentId, turnId);
     await this.commitMutation(conversationId, previous, {
       kind: "run-started",
       dirtyMessageIds: [runId],
@@ -139,12 +149,13 @@ export class MemoryConversationStore implements ConversationStore {
     runId: string,
     eventRevision = 0,
     authorAgentId?: string,
+    turnId?: string,
   ): Promise<void> {
     const session = this.requireSession(conversationId);
-    if (session.snapshot.activeRunId) throw new Error("当前回复尚未完成");
+    if (session.snapshot.activeMessageId) throw new Error("当前回复尚未完成");
     if (session.snapshot.messages.length > 0) throw new Error("开场只能用于空会话");
     const previous = cloneRecord(session);
-    this.appendAssistantPlaceholder(session, runId, eventRevision, authorAgentId);
+    this.appendAssistantPlaceholder(session, runId, eventRevision, authorAgentId, turnId);
     await this.commitMutation(conversationId, previous, {
       kind: "run-started",
       dirtyMessageIds: [runId],
@@ -156,14 +167,16 @@ export class MemoryConversationStore implements ConversationStore {
     runId: string,
     eventRevision: number,
     authorAgentId?: string,
+    turnId?: string,
   ): void {
     const assistant = createAssistantMessage(runId, authorAgentId);
     session.snapshot = {
       ...session.snapshot,
       messages: [...session.snapshot.messages, assistant],
-      activeRunId: runId,
+      activeMessageId: runId,
       eventRevision: Math.max(session.snapshot.eventRevision, eventRevision),
       ...(authorAgentId ? { activeAgentId: authorAgentId } : {}),
+      ...(turnId === undefined ? {} : { activeTurnId: turnId }),
     };
   }
 
@@ -174,7 +187,7 @@ export class MemoryConversationStore implements ConversationStore {
     eventRevision = 0,
   ): Promise<ConversationMessage> {
     const session = this.requireSession(conversationId);
-    if (session.snapshot.activeRunId) throw new Error("当前回复尚未完成");
+    if (session.snapshot.activeMessageId) throw new Error("当前回复尚未完成");
     const last = session.snapshot.messages.at(-1);
     if (
       last?.role !== "assistant" ||
@@ -188,7 +201,7 @@ export class MemoryConversationStore implements ConversationStore {
     session.snapshot = {
       ...session.snapshot,
       messages: [...session.snapshot.messages, assistant],
-      activeRunId: runId,
+      activeMessageId: runId,
       eventRevision: Math.max(session.snapshot.eventRevision, eventRevision),
       activeAgentId: targetAgentId,
     };
@@ -208,6 +221,7 @@ export class MemoryConversationStore implements ConversationStore {
         input.userMessage,
         input.eventRevision ?? 0,
         input.authorAgentId,
+        input.turnId,
       );
       return;
     }
@@ -217,6 +231,7 @@ export class MemoryConversationStore implements ConversationStore {
         input.messageId,
         input.eventRevision ?? 0,
         input.authorAgentId,
+        input.turnId,
       );
       return;
     }
@@ -225,6 +240,7 @@ export class MemoryConversationStore implements ConversationStore {
       input.messageId,
       input.eventRevision ?? 0,
       input.authorAgentId,
+      input.turnId,
     );
   }
 
@@ -235,6 +251,17 @@ export class MemoryConversationStore implements ConversationStore {
     eventRevision = 0,
   ): Promise<void> {
     await this.beginHandoffRun(conversationId, messageId, authorAgentId, eventRevision);
+  }
+
+  async finishSessionTurn(conversationId: string, turnId: string): Promise<void> {
+    const session = this.sessions.get(conversationId);
+    if (!session || session.snapshot.activeTurnId !== turnId) return;
+    session.snapshot = {
+      ...session.snapshot,
+      activeTurnId: undefined,
+      activeMessageId: undefined,
+    };
+    await this.afterMutation(conversationId, { kind: "changed" });
   }
 
   async applySessionStreamEvent(
@@ -273,7 +300,7 @@ export class MemoryConversationStore implements ConversationStore {
     handoff: HandoffMessageInput,
   ): Promise<ConversationSnapshot> {
     const session = this.requireSession(conversationId);
-    if (session.snapshot.activeRunId) throw new Error("当前回复尚未完成");
+    if (session.snapshot.activeMessageId) throw new Error("当前回复尚未完成");
     if (handoff.fromAgentId === handoff.toAgentId) throw new Error("交接目标不能是当前 Bot");
     if (!handoff.task.trim() || handoff.task.length > MAX_HANDOFF_TASK_CHARS)
       throw new Error("交接内容无效或过长");
@@ -315,7 +342,7 @@ export class MemoryConversationStore implements ConversationStore {
     userMessage: ConversationMessage,
   ): Promise<ConversationSnapshot> {
     const session = this.requireSession(conversationId);
-    if (session.snapshot.activeRunId) throw new Error("当前回复尚未完成");
+    if (session.snapshot.activeMessageId) throw new Error("当前回复尚未完成");
     if (userMessage.role !== "user" || userMessage.status !== "complete")
       throw new Error("仅可追加已完成的用户消息");
     session.snapshot = {
@@ -373,11 +400,11 @@ export class MemoryConversationStore implements ConversationStore {
         });
         return;
       }
-      if (session.snapshot.activeRunId === runId)
+      if (session.snapshot.activeMessageId === runId)
         session.snapshot = { ...session.snapshot, eventRevision: aggregateRevision };
       return;
     }
-    if (session.snapshot.activeRunId !== runId) return;
+    if (session.snapshot.activeMessageId !== runId) return;
     if (
       event.type === "step-started" ||
       event.type === "step-finished" ||
@@ -401,7 +428,7 @@ export class MemoryConversationStore implements ConversationStore {
 
   private applyStreamEvent(conversationId: string, runId: string, event: AgentStreamEvent): void {
     const session = this.requireSession(conversationId);
-    if (session.snapshot.activeRunId !== runId) throw new Error("会话没有匹配的活动 run");
+    if (session.snapshot.activeMessageId !== runId) throw new Error("会话没有匹配的活动 run");
     const message = session.snapshot.messages.find((item) => item.id === runId);
     if (!message) throw new Error("会话没有匹配的助手消息");
     const nextMessage = applyTranscriptEvent(message, message.parts ?? [], event);
@@ -419,7 +446,7 @@ export class MemoryConversationStore implements ConversationStore {
     eventRevision = 0,
   ): void {
     const session = this.requireSession(conversationId);
-    if (session.snapshot.activeRunId !== runId) return;
+    if (session.snapshot.activeMessageId !== runId) return;
     this.finishAssistant(conversationId, runId, outcome, eventRevision);
   }
 
@@ -434,7 +461,7 @@ export class MemoryConversationStore implements ConversationStore {
     session.snapshot = {
       ...session.snapshot,
       eventRevision: Math.max(session.snapshot.eventRevision, eventRevision),
-      ...(session.snapshot.activeRunId === messageId ? { activeRunId: undefined } : {}),
+      ...(session.snapshot.activeMessageId === messageId ? { activeMessageId: undefined } : {}),
       messages: session.snapshot.messages.map((message) =>
         message.id === messageId
           ? {
@@ -477,9 +504,10 @@ export class MemoryConversationStore implements ConversationStore {
     preserveHistory: boolean,
     eventRevision: number,
     authorAgentId?: string,
+    turnId?: string,
   ): void {
     const session = this.requireSession(conversationId);
-    if (session.snapshot.activeRunId) throw new Error("当前回复尚未完成");
+    if (session.snapshot.activeMessageId) throw new Error("当前回复尚未完成");
     if (userMessage.role !== "user") throw new Error("run 必须从用户消息开始");
     if (!preserveHistory) session.contextState = undefined;
     session.snapshot = {
@@ -491,7 +519,8 @@ export class MemoryConversationStore implements ConversationStore {
         normalizeUserMessage(userMessage),
         createAssistantMessage(runId, authorAgentId),
       ],
-      activeRunId: runId,
+      activeMessageId: runId,
+      ...(turnId === undefined ? {} : { activeTurnId: turnId }),
       ...(session.seed ? seedSnapshot(session.seed) : {}),
       ...(authorAgentId ? { activeAgentId: authorAgentId } : {}),
     };

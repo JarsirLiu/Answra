@@ -10,7 +10,13 @@ import type {
   ConversationSnapshot,
   ManualCompactionResult,
 } from "@answra/shared";
-import type { AgentEventEnvelope, AgentStreamEvent, TurnOutcome } from "@answra/shared/schema";
+import type {
+  AgentEventEnvelope,
+  AgentStreamEvent,
+  SessionFrame,
+  TurnOutcome,
+} from "@answra/shared/schema";
+import { toSessionFrame } from "@answra/shared/schema";
 import { ProviderStepRunner } from "../core/agent/providerStepRunner";
 import type { AgentRuntime } from "../core/agent/runtime";
 import { ContextCompactor } from "../core/context/compaction/compactor";
@@ -22,7 +28,6 @@ import type {
   SessionId,
   StepRunner,
   StepStart,
-  TurnId,
 } from "../core/session/contracts";
 import { sessionId as asSessionId, turnId as asTurnId } from "../core/session/contracts";
 import type { SessionJournal } from "../core/session/journal";
@@ -56,10 +61,10 @@ export interface CodingApplicationOptions {
   bot: CodingBot;
   /** durable session journal；缺省使用内存实现，CLI 宿主注入 SQLite 实现。 */
   sessionJournal?: SessionJournal;
-  /** UI 事件 store；缺省复用 AgentRuntime 的事件存储。 */
-  executionStore?: ExecutionStore;
   /** durable/live 帧广播口；宿主传入同一实例即可跨领域共享。 */
   sessionFrames?: SessionFrameBus;
+  /** 旧 wire 投影的事件 store；3b 删除 envelope 通道时一并移除。 */
+  executionStore?: ExecutionStore;
   /** 测试注入的 StepRunner；生产由 ProviderStepRunner 提供。 */
   stepRunner?: StepRunner;
   /** 每段 run 启动后的权威 snapshot 推送。 */
@@ -80,7 +85,6 @@ export class CodingApplication {
   private readonly runtimeJournal: SessionRuntimeJournal;
   private readonly onSnapshot?: CodingApplicationOptions["onSnapshot"];
   private readonly tokens = new Map<string, () => Promise<string>>();
-  private readonly turnByRun = new Map<string, { sessionId: SessionId; turnId: TurnId }>();
   private closing = false;
   private workspaceRoot: string | null = null;
 
@@ -89,8 +93,8 @@ export class CodingApplication {
     store,
     bot,
     sessionJournal,
-    executionStore,
     sessionFrames,
+    executionStore,
     stepRunner,
     onSnapshot,
   }: CodingApplicationOptions) {
@@ -117,14 +121,14 @@ export class CodingApplication {
       contextStateStore: store,
       contextWindow: () => this.agentRuntime.chatContextWindow(),
     });
+    this.bridge = new SessionTranscriptBridge({ store });
+
     const events =
       executionStore ??
       (typeof agentRuntime.eventStore === "function"
         ? agentRuntime.eventStore()
         : new MemoryExecutionStore());
     this.projector = new SessionEventProjector({ store: events });
-    this.bridge = new SessionTranscriptBridge({ store });
-
     const journal = new SessionRuntimeJournal({
       journal: sessionJournal ?? new MemorySessionJournal(),
       frames: this.sessionFrames,
@@ -215,9 +219,6 @@ export class CodingApplication {
     await this.sessionRuntime.cancelSession(session);
     await this.agentRuntime.resetExecution(conversationId);
     this.tokens.delete(conversationId);
-    for (const [runId, owner] of this.turnByRun) {
-      if (owner.sessionId === session) this.turnByRun.delete(runId);
-    }
     this.recovery.forget(session);
     await this.store.clear(conversationId, {
       eventRevision: await this.projector.revision(conversationId),
@@ -251,6 +252,13 @@ export class CodingApplication {
     return this.loadSnapshot(conversationId);
   }
 
+  /** 按 durable `seq` 读取事实帧；CLI 的 transcript 直接按帧折叠。 */
+  async readFramesAfter(conversationId: string, afterSeq: number): Promise<SessionFrame[]> {
+    const rows = await this.runtimeJournal.readAfter(asSessionId(conversationId), afterSeq);
+    return rows.map(toSessionFrame);
+  }
+
+  /** 旧 wire 的按 revision 读取；3b 删除 envelope 通道时一并移除。 */
   readEventsAfter(conversationId: string, revision: number): Promise<AgentEventEnvelope[]> {
     return this.projector.readEvents(conversationId, revision);
   }
@@ -276,10 +284,7 @@ export class CodingApplication {
       input: createUserMessage(randomUUID(), request),
       runtime: { getAccessToken: async () => accessToken },
     });
-    this.turnByRun.set(submission.messageId, {
-      sessionId: session,
-      turnId: submission.turnId,
-    });
+    this.tokens.set(conversationId, async () => accessToken);
     const position = this.sessionRuntime.cachedPosition(session, submission.turnId);
     if (position !== 0 && position !== undefined) {
       return { queueId: submission.turnId, status: "queued", position };
@@ -288,7 +293,7 @@ export class CodingApplication {
       queueId: submission.turnId,
       status: "started",
       position: 0,
-      runId: submission.messageId,
+      turnId: submission.turnId,
       snapshot: await this.loadSnapshot(conversationId),
     };
   }
@@ -297,57 +302,55 @@ export class CodingApplication {
     conversationId: string,
     request: ConversationSendRequest,
     accessToken: string,
-  ): Promise<{ runId: string; snapshot: ConversationSnapshot }> {
+  ): Promise<{ turnId: string; snapshot: ConversationSnapshot }> {
     const accepted = await this.enqueue(conversationId, request, accessToken);
     if (accepted.status === "started") {
-      return { runId: accepted.runId, snapshot: accepted.snapshot };
+      return { turnId: accepted.turnId, snapshot: accepted.snapshot };
     }
-    const runId = await this.sessionRuntime.waitForTurnStart(
-      asSessionId(conversationId),
-      asTurnId(accepted.queueId),
-    );
-    return { runId, snapshot: await this.loadSnapshot(conversationId) };
+    return {
+      turnId: accepted.queueId,
+      snapshot: await this.loadSnapshot(conversationId),
+    };
   }
 
   configure(config: ConversationModelConfig): void {
     this.agentRuntime.configureModelRoutes({ chat: config.chat, answer: config.answer });
   }
 
-  cancel(runId: string): void {
-    const owner = this.ownerOf(runId);
-    if (owner !== undefined) {
-      // 保留旧行为：取消一个 run 时同时清空该会话尚未开始的 Turn。
-      void this.sessionRuntime
-        .cancel(owner.sessionId, owner.turnId, { cancelQueued: true })
-        .catch((error: unknown) => {
-          console.warn("[coding] cancel failed", {
-            runId,
-            error: error instanceof Error ? error.message : "unknown",
-          });
+  cancel(conversationId: string, turnId: string): void {
+    // 保留旧行为：取消一个 Turn 时同时清空该会话尚未开始的 Turn。
+    void this.sessionRuntime
+      .cancel(asSessionId(conversationId), asTurnId(turnId), { cancelQueued: true })
+      .catch((error: unknown) => {
+        console.warn("[coding] cancel failed", {
+          turnId,
+          error: error instanceof Error ? error.message : "unknown",
         });
-      return;
-    }
-    this.agentRuntime.cancel(runId);
+      });
   }
 
   waitForQueue(
     conversationId: string,
     queueId: string,
-  ): Promise<{ queueId: string; runId?: string; outcome: TurnOutcome }> {
+  ): Promise<{ queueId: string; turnId?: string; outcome: TurnOutcome }> {
     return this.sessionRuntime
       .waitForTurn(asSessionId(conversationId), asTurnId(queueId))
-      .then((completion) => ({ queueId, ...completion }));
+      .then((completion) => ({
+        queueId,
+        turnId: queueId,
+        outcome: completion.outcome,
+      }));
   }
 
   waitForQueueStart(
     conversationId: string,
     queueId: string,
-  ): Promise<{ queueId: string; runId: string; snapshot: ConversationSnapshot }> {
+  ): Promise<{ queueId: string; turnId: string; snapshot: ConversationSnapshot }> {
     return this.sessionRuntime
       .waitForTurnStart(asSessionId(conversationId), asTurnId(queueId))
-      .then(async (runId) => ({
+      .then(async () => ({
         queueId,
-        runId,
+        turnId: queueId,
         snapshot: await this.loadSnapshot(conversationId),
       }));
   }
@@ -356,13 +359,13 @@ export class CodingApplication {
     return this.sessionRuntime.cachedPosition(asSessionId(conversationId), asTurnId(queueId));
   }
 
-  waitForRun(runId: string): Promise<void> {
-    const owner = this.ownerOf(runId);
-    if (owner === undefined) return Promise.resolve();
-    return this.sessionRuntime.waitForTurn(owner.sessionId, owner.turnId).then(() => undefined);
+  waitForTurn(conversationId: string, turnId: string): Promise<void> {
+    return this.sessionRuntime
+      .waitForTurn(asSessionId(conversationId), asTurnId(turnId))
+      .then(() => undefined);
   }
 
-  /** 关闭队列消费：只阻止/取消尚未启动的 turn，活动 run 由调用方统一 abort。 */
+  /** 关闭队列消费：只阻止/取消尚未启动的 turn，活动 Turn 由调用方统一 abort。 */
   cancelPendingTurns(): void {
     this.closing = true;
     this.sessionRuntime.dispose();
@@ -409,15 +412,6 @@ export class CodingApplication {
 
   private loadSnapshot(conversationId: string): Promise<ConversationSnapshot> {
     return this.store.load(conversationId);
-  }
-
-  private ownerOf(runId: string): { sessionId: SessionId; turnId: TurnId } | undefined {
-    const known = this.turnByRun.get(runId);
-    if (known !== undefined) return known;
-    const session = this.projector.conversationForRun(runId);
-    const turn = this.projector.turnForRun(runId);
-    if (session === undefined || turn === undefined) return undefined;
-    return { sessionId: asSessionId(session), turnId: turn };
   }
 
   private async onStepStream(step: StepStart, event: AgentStreamEvent): Promise<void> {

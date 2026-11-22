@@ -83,20 +83,24 @@ export interface ConversationStore {
     userMessage: ConversationMessage,
     eventRevision?: number,
     authorAgentId?: string,
+    /** Session 路径写入活动 Turn；Answer 的旧 run 路径不传。 */
+    turnId?: string,
   ): Promise<void>;
-  /** 认领最后一条用户消息并追加 assistant 占位；不存在可回复消息或已有活动 run 时不写入。 */
+  /** 认领最后一条用户消息并追加 assistant 占位；不存在可回复消息或已有活动回复时不写入。 */
   beginReplyRun(
     conversationId: string,
     runId: string,
     eventRevision?: number,
     authorAgentId?: string,
+    turnId?: string,
   ): Promise<ConversationMessage>;
-  /** 追加一次无 user 消息的开场 assistant 占位；已有活动 run 时拒绝。 */
+  /** 追加一次无 user 消息的开场 assistant 占位；已有活动回复时拒绝。 */
   beginOpeningRun(
     conversationId: string,
     runId: string,
     eventRevision?: number,
     authorAgentId?: string,
+    turnId?: string,
   ): Promise<void>;
   /** 认领发给 targetAgentId 的交接记录并追加目标 Bot 的 assistant 占位。 */
   beginHandoffRun(
@@ -127,6 +131,8 @@ export interface ConversationStore {
     outcome: TurnOutcome,
     eventRevision?: number,
   ): Promise<void>;
+  /** 新 Session 运行时：Turn 结束时清空活动 Turn 与活动消息；不属于该 Turn 时 no-op。 */
+  finishSessionTurn(conversationId: string, turnId: string): Promise<void>;
   /** 写入一条已完成的 Bot→Bot 交接记录；不产生事件，不推进 revision。 */
   appendHandoffMessage(
     conversationId: string,

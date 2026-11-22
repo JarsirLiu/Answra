@@ -479,11 +479,23 @@ export function startAgentHost({
         });
       case "append-user-message":
         return runtime.appendUserMessage(command.conversationId, command.text);
-      case "cancel":
-        // 三个领域都可能持有该 runId；未知领域不做任何事。
-        runtime.cancel(command.runId);
-        interview.cancel(command.runId);
-        interviewIntake.cancel(command.runId);
+      case "cancel-turn": {
+        // 会话所属领域唯一：scope 不明的取消直接忽略，避免为别人的会话创建 Scheduler。
+        const scope = await store.scopeOf(command.conversationId);
+        if (scope === "interview") {
+          const snapshot = await store.load(command.conversationId);
+          if (snapshot.activeAgentId === INTERVIEW_INTAKE_AGENT_ID) {
+            interviewIntake.cancel(command.conversationId, command.turnId);
+          } else {
+            interview.cancel(command.conversationId, command.turnId);
+          }
+        } else if (scope === "conversation") {
+          runtime.cancel(command.conversationId, command.turnId);
+        }
+        return undefined;
+      }
+      case "cancel-run":
+        answer.cancel(command.runId);
         return undefined;
       case "wait-queue":
         return runtime.waitForQueue(command.conversationId, command.queueId);

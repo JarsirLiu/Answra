@@ -31,21 +31,22 @@ function createHost(overrides: Partial<CodingSessionHost> = {}): CodingSessionHo
       result: { status: "compacted" as const },
       snapshot,
     })),
-    send: vi.fn(async () => ({ runId: "run-1" })),
+    send: vi.fn(async () => ({ turnId: "turn-1" })),
     enqueue: vi.fn(async () => ({
       queueId: "queue-1",
       status: "started" as const,
       position: 0 as const,
-      runId: "run-1",
+      turnId: "turn-1",
       snapshot,
     })),
     waitForQueueStart: vi.fn(async (conversationId: string, queueId: string) => ({
       queueId,
-      runId: "run-1",
+      turnId: "turn-1",
       snapshot: { ...snapshot, conversationId },
     })),
     cancel: vi.fn(),
-    waitForRun: vi.fn(async () => {}),
+    waitForTurn: vi.fn(async () => {}),
+    readFrames: vi.fn(async () => []),
     dispose: vi.fn(),
     ...overrides,
   };
@@ -134,7 +135,7 @@ describe("CodingSession", () => {
     });
   });
 
-  it("rejects clearing while a run is active", async () => {
+  it("rejects clearing while a turn is active", async () => {
     const host = createHost();
     const session = createSession(host);
     await session.open();
@@ -144,27 +145,27 @@ describe("CodingSession", () => {
     expect(host.clearConversation).not.toHaveBeenCalled();
   });
 
-  it("sends one text-only request and tracks the active run", async () => {
+  it("sends one text-only request and tracks the active turn", async () => {
     const host = createHost();
     const session = createSession(host);
     await session.open();
 
-    await expect(session.send("hello")).resolves.toBe("run-1");
+    await expect(session.send("hello")).resolves.toBe("turn-1");
     expect(host.send).toHaveBeenCalledWith(
       "conversation-1",
       { text: "hello", images: [] },
       "token",
     );
     expect(session.cancel()).toBe(true);
-    expect(host.cancel).toHaveBeenCalledWith("run-1");
+    expect(host.cancel).toHaveBeenCalledWith("conversation-1", "turn-1");
   });
 
-  it("passes queued acceptance through the host and activates the started run", async () => {
+  it("passes queued acceptance through the host and activates the started turn", async () => {
     const queuedHost = createHost({
       enqueue: vi.fn(async () => ({ queueId: "queue-2", status: "queued" as const, position: 1 })),
       waitForQueueStart: vi.fn(async () => ({
         queueId: "queue-2",
-        runId: "run-2",
+        turnId: "turn-2",
         snapshot,
       })),
     });
@@ -185,11 +186,11 @@ describe("CodingSession", () => {
 
     await expect(session.waitForQueueStart("queue-2")).resolves.toEqual({
       queueId: "queue-2",
-      runId: "run-2",
+      turnId: "turn-2",
       snapshot,
     });
     expect(session.cancel()).toBe(true);
-    expect(queuedHost.cancel).toHaveBeenCalledWith("run-2");
+    expect(queuedHost.cancel).toHaveBeenCalledWith("conversation-1", "turn-2");
   });
 
   it("sends image attachments with the prompt", async () => {
@@ -198,7 +199,7 @@ describe("CodingSession", () => {
     await session.open();
     const image = { name: "capture.png", dataUrl: "data:image/png;base64,QUJD" };
 
-    await expect(session.send("look", [image])).resolves.toBe("run-1");
+    await expect(session.send("look", [image])).resolves.toBe("turn-1");
     expect(host.send).toHaveBeenCalledWith(
       "conversation-1",
       { text: "look", images: [image] },
@@ -207,11 +208,11 @@ describe("CodingSession", () => {
   });
 
   it("rejects a concurrent send before the first one resolves", async () => {
-    let resolveSend: (value: { runId: string }) => void = () => {};
+    let resolveSend: (value: { turnId: string }) => void = () => {};
     const host = createHost({
       send: vi.fn(
         () =>
-          new Promise<{ runId: string }>((resolve) => {
+          new Promise<{ turnId: string }>((resolve) => {
             resolveSend = resolve;
           }),
       ),
@@ -221,13 +222,13 @@ describe("CodingSession", () => {
 
     const first = session.send("first");
     await expect(session.send("second")).rejects.toThrowError("上一轮尚未结束。");
-    resolveSend({ runId: "run-1" });
-    await expect(first).resolves.toBe("run-1");
+    resolveSend({ turnId: "turn-1" });
+    await expect(first).resolves.toBe("turn-1");
   });
 
-  it("clears the active run after waiting, even when the wait fails", async () => {
+  it("clears the active turn after waiting, even when the wait fails", async () => {
     const host = createHost({
-      waitForRun: vi.fn(async () => {
+      waitForTurn: vi.fn(async () => {
         throw new Error("model failed");
       }),
     });
@@ -235,12 +236,21 @@ describe("CodingSession", () => {
     await session.open();
     await session.send("hello");
 
-    await expect(session.wait("run-1")).rejects.toThrowError("model failed");
+    await expect(session.wait("turn-1")).rejects.toThrowError("model failed");
     expect(session.cancel()).toBe(false);
-    await expect(session.send("again")).resolves.toBe("run-1");
+    await expect(session.send("again")).resolves.toBe("turn-1");
   });
 
-  it("returns false when cancelling without an active run", async () => {
+  it("reads durable frames through the host for the current conversation", async () => {
+    const host = createHost();
+    const session = createSession(host);
+    await session.open();
+
+    await expect(session.readFrames(3)).resolves.toEqual([]);
+    expect(host.readFrames).toHaveBeenCalledWith("conversation-1", 3);
+  });
+
+  it("returns false when cancelling without an active turn", async () => {
     const host = createHost();
     const session = createSession(host);
 
@@ -272,7 +282,7 @@ describe("CodingSession", () => {
     expect(host.configure).toHaveBeenCalledWith(nextModel);
   });
 
-  it("rejects switching models while a run is active", async () => {
+  it("rejects switching models while a turn is active", async () => {
     const host = createHost();
     const session = createSession(host);
     await session.open();

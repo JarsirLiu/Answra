@@ -173,7 +173,10 @@ export type AgentCommand =
       instructions?: string;
     }
   | { id: string; type: "append-user-message"; conversationId: string; text: string }
-  | { id: string; type: "cancel"; runId: string }
+  /** 取消指定 Turn；会话/面试/Coding 只认这个形状。 */
+  | { id: string; type: "cancel-turn"; conversationId: string; turnId: string }
+  /** Answer 在 P3 迁到 SessionRuntime 前仍按 run 取消；随 envelope shim 一起删除。 */
+  | { id: string; type: "cancel-run"; runId: string }
   | { id: string; type: "wait-queue"; conversationId: string; queueId: string }
   | { id: string; type: "wait-queue-start"; conversationId: string; queueId: string }
   | { id: string; type: "queue-position"; conversationId: string; queueId: string }

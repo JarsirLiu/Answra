@@ -4,14 +4,20 @@
  */
 import { randomUUID } from "node:crypto";
 import type { ConversationSnapshot, InterviewProfileSeed } from "@answra/shared";
-import type { AgentEventEnvelope, AgentRunSnapshot, AgentStreamEvent } from "@answra/shared/schema";
+import type {
+  AgentEventEnvelope,
+  AgentRunSnapshot,
+  AgentStreamEvent,
+  SessionFrame,
+} from "@answra/shared/schema";
+import { toSessionFrame } from "@answra/shared/schema";
 import type { AgentExecutor, AgentId } from "../core/agent/definition";
 import { ProviderStepRunner } from "../core/agent/providerStepRunner";
 import type { AgentRuntime } from "../core/agent/runtime";
 import { ContextCompactor } from "../core/context/compaction/compactor";
 import { ContextPreparation } from "../core/context/preparation";
 import { PreparationStepContextManager } from "../core/context/stepContextManager";
-import type { SessionId, StepRunner, StepStart, TurnId } from "../core/session/contracts";
+import type { SessionId, StepRunner, StepStart } from "../core/session/contracts";
 import { sessionId as asSessionId, turnId as asTurnId } from "../core/session/contracts";
 import type { SessionJournal } from "../core/session/journal";
 import { MemorySessionJournal } from "../core/session/memoryJournal";
@@ -67,7 +73,6 @@ export class InterviewApplication {
   private readonly recovery: SessionRecoveryCoordinator;
   private readonly runtimeJournal: SessionRuntimeJournal;
   private readonly replyLoop: InterviewReplyLoop;
-  private readonly turnByRun = new Map<string, { sessionId: SessionId; turnId: TurnId }>();
   private workspaceRoot: string | null = null;
   private interviewDataRoot: string | null = null;
   private profileSeed: InterviewProfileSeed | null = null;
@@ -167,11 +172,11 @@ export class InterviewApplication {
         appendUserTurn: (conversationId, turns, text) =>
           this.appendUserTurn(conversationId, turns, text, options.onTurnCommitted),
         startReply: async (conversationId) => {
-          const { runId } = await this.startReply(conversationId);
-          return { runId };
+          const { turnId } = await this.startReply(conversationId);
+          return { turnId };
         },
-        cancelReply: (runId) => this.cancel(runId),
-        waitForReply: (runId) => this.waitForRun(runId),
+        cancelReply: (conversationId, turnId) => this.cancel(conversationId, turnId),
+        waitForReply: (conversationId, turnId) => this.waitForTurn(conversationId, turnId),
         onError: options.onError,
       },
     });
@@ -197,11 +202,11 @@ export class InterviewApplication {
    * 打开演练会话：已有消息或活动 run 时只恢复页面；
    * 空会话启动一次 opening Turn，不写假的 user 消息。
    */
-  async open(conversationId: string): Promise<{ snapshot: ConversationSnapshot; runId?: string }> {
+  async open(conversationId: string): Promise<{ snapshot: ConversationSnapshot; turnId?: string }> {
     const snapshot = await this.createConversation(conversationId);
-    if (snapshot.messages.length > 0 || snapshot.activeRunId) return { snapshot };
+    if (snapshot.messages.length > 0 || snapshot.activeTurnId) return { snapshot };
     const started = await this.startReply(conversationId, "opening");
-    return { snapshot: started.snapshot, runId: started.runId };
+    return { snapshot: started.snapshot, turnId: started.turnId };
   }
 
   turnSettled(
@@ -216,7 +221,7 @@ export class InterviewApplication {
   async sendText(
     conversationId: string,
     text: string,
-  ): Promise<{ runId: string; snapshot: ConversationSnapshot }> {
+  ): Promise<{ turnId: string; snapshot: ConversationSnapshot }> {
     const trimmed = text.trim();
     if (!trimmed || trimmed.length > 32_000) throw new Error("面试消息无效或过长");
     await this.ensureRecovered(conversationId);
@@ -250,21 +255,18 @@ export class InterviewApplication {
     return this.loadRecoveredSnapshot(conversationId);
   }
 
-  cancel(runId: string): void {
-    const owner = this.ownerOf(runId);
-    if (owner === undefined) {
-      this.agentRuntime.cancel(runId);
-      return;
-    }
-    void this.sessionRuntime.cancel(owner.sessionId, owner.turnId).catch((error: unknown) => {
-      this.onError("reply", error);
-    });
+  cancel(conversationId: string, turnId: string): void {
+    void this.sessionRuntime
+      .cancel(asSessionId(conversationId), asTurnId(turnId))
+      .catch((error: unknown) => {
+        this.onError("reply", error);
+      });
   }
 
-  waitForRun(runId: string): Promise<void> {
-    const owner = this.ownerOf(runId);
-    if (owner === undefined) return this.agentRuntime.waitForRun(runId);
-    return this.sessionRuntime.waitForTurn(owner.sessionId, owner.turnId).then(() => undefined);
+  waitForTurn(conversationId: string, turnId: string): Promise<void> {
+    return this.sessionRuntime
+      .waitForTurn(asSessionId(conversationId), asTurnId(turnId))
+      .then(() => undefined);
   }
 
   getExecutionRun(runId: string): Promise<AgentRunSnapshot | undefined> {
@@ -277,6 +279,12 @@ export class InterviewApplication {
 
   readEvents(conversationId: string, afterRevision: number): Promise<AgentEventEnvelope[]> {
     return this.projector.readEvents(conversationId, afterRevision);
+  }
+
+  /** 按 durable `seq` 读取事实帧；面试演练的 UI 与文本会话共用。 */
+  async readFrames(conversationId: string, afterSeq: number): Promise<SessionFrame[]> {
+    const rows = await this.runtimeJournal.readAfter(asSessionId(conversationId), afterSeq);
+    return rows.map(toSessionFrame);
   }
 
   /** 立即中止活动 Turn；宿主硬退出时使用，正常退出走 `shutdown`。 */
@@ -316,7 +324,7 @@ export class InterviewApplication {
   private async startReply(
     conversationId: string,
     source: "opening" | "reply" = "reply",
-  ): Promise<{ runId: string; snapshot: ConversationSnapshot }> {
+  ): Promise<{ turnId: string; snapshot: ConversationSnapshot }> {
     // 端点未配置时在入队前失败：已写入的 user 消息保留，不产生空的 assistant 占位。
     if (typeof this.agentRuntime.chatEndpoint === "function") this.agentRuntime.chatEndpoint();
     const session = await this.ensureRecovered(conversationId);
@@ -326,9 +334,8 @@ export class InterviewApplication {
       agentId: this.authorAgentId,
       runtime: { getAccessToken: this.requestAccessToken },
     });
-    this.turnByRun.set(submission.messageId, { sessionId: session, turnId: submission.turnId });
     return {
-      runId: submission.messageId,
+      turnId: submission.turnId,
       snapshot: await this.loadRecoverySnapshot(conversationId),
     };
   }
@@ -346,16 +353,5 @@ export class InterviewApplication {
     if (live !== undefined) this.sessionFrames.publishLive(live);
     await this.projector.applyLive(step, event);
     await this.bridge.applyLive(step.sessionId, step.messageId, event);
-  }
-
-  /** runId 就是首条 assistant messageId；恢复后由投影反查所属 Turn。 */
-  private ownerOf(runId: string): { sessionId: SessionId; turnId: TurnId } | undefined {
-    const known = this.turnByRun.get(runId);
-    if (known !== undefined) return known;
-    const sessionId = this.projector.conversationForRun(runId);
-    const turnId = this.projector.turnForRun(runId);
-    return sessionId === undefined || turnId === undefined
-      ? undefined
-      : { sessionId: asSessionId(sessionId), turnId: asTurnId(turnId) };
   }
 }

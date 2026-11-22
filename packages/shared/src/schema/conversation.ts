@@ -75,7 +75,10 @@ export const conversationSnapshotSchema = z.strictObject({
    */
   lastSeq: z.number().int().nonnegative(),
   messages: z.array(conversationMessageSchema),
-  activeRunId: z.string().optional(),
+  /** 当前活动 Turn；取消按它定位，不按消息。 */
+  activeTurnId: z.string().optional(),
+  /** 当前正在流式写入的 assistant 消息；渲染与滚动按它定位。 */
+  activeMessageId: z.string().optional(),
   /** Bot that currently owns the conversation; absent for single-Agent conversations. */
   activeAgentId: z.string().optional(),
   /** Bots allowed to participate in this conversation. */

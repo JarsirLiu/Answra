@@ -2,8 +2,7 @@
 import type { ModelCredentialStore } from "@answra/credentials";
 import type { RemoteHostKeyStore } from "@answra/remote";
 import type { RemoteRuntimeDependencies } from "@answra/remote-node";
-import type { ConversationSnapshot } from "@answra/shared";
-import type { AgentEventEnvelope } from "@answra/shared/schema";
+import type { ConversationSnapshot, LiveFrame, SessionFrame } from "@answra/shared";
 import type { ModelCatalog } from "../model/catalog";
 import type { ModelSettings } from "../model/ports";
 import type { RemoteAuthPort } from "../remote/auth/remoteAuthService";
@@ -15,7 +14,8 @@ import type { OutputPort } from "../transport/output";
 import type { TuiRunner } from "../tui/runTui";
 
 export interface SessionHostOptions {
-  emitEvent: (event: AgentEventEnvelope) => void;
+  onSessionFrame: (frame: SessionFrame) => void;
+  onLiveFrame: (frame: LiveFrame) => void;
   onSnapshot?: (snapshot: ConversationSnapshot) => void;
   workspaceRoot: string;
 }

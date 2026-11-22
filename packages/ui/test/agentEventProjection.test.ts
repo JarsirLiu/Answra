@@ -12,7 +12,7 @@ describe("AgentEventEnvelope UI projection", () => {
       lastSeq: 0,
       eventRevision: 0,
       messages: [{ id: "run-1", role: "assistant", text: "", images: [], status: "streaming" }],
-      activeRunId: "run-1",
+      activeMessageId: "run-1",
     });
     const retry = applyAgentEvent(view, {
       schemaVersion: 1,

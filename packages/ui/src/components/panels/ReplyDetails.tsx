@@ -6,7 +6,7 @@ import { ReplyConversationPopover } from "./ReplyConversationPopover";
 interface ReplyDetailsProps {
   bridge?: DesktopBridge;
   /** 主回复投影；详情面板只渲染这份状态，不建立第二个事件订阅。 */
-  conversation: Pick<ConversationView, "messages" | "activeRunId" | "retry" | "error">;
+  conversation: Pick<ConversationView, "messages" | "activeMessageId" | "retry" | "error">;
   /** 本轮失败提示；与订阅错误合并，调用方传入的内容优先。 */
   error?: string;
   /** Agent worker 链路状态；与模型重试/错误互斥展示。 */
@@ -37,7 +37,7 @@ export function ReplyDetails({
           activities: message.activities ?? [],
         }),
       )}
-      activeRunId={conversation.activeRunId}
+      activeMessageId={conversation.activeMessageId}
       retry={conversation.retry}
       error={error ?? conversation.error}
       connection={connection}

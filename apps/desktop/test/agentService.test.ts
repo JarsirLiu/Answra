@@ -30,7 +30,7 @@ class FakeWorker extends EventEmitter {
     if (command.type === "wait-queue-start") {
       reply({
         queueId: command.queueId,
-        runId: "run-1",
+        turnId: "turn-1",
         snapshot: emptySnapshot(command.conversationId),
       });
       return;
@@ -141,7 +141,7 @@ describe("AgentService connection lifecycle", () => {
 
     expect(started).toEqual({
       queueId: "queue-1",
-      runId: "run-1",
+      turnId: "turn-1",
       snapshot: emptySnapshot("conversation-1"),
     });
     expect(lastWorker().postMessage).toHaveBeenCalledWith({

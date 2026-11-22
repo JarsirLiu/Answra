@@ -176,9 +176,21 @@ export function registerConversationIpc(service: AgentService, deps: Conversatio
       return service.readFrames(payload.conversationId, payload.afterSeq);
     },
   );
-  ipcMain.on(ConversationChannels.Cancel, (event, payload: { runId: string }) => {
+  ipcMain.on(
+    ConversationChannels.Cancel,
+    (event, payload: { conversationId: string; turnId: string }) => {
+      if (
+        !isWindowFromSender(getWindow(), event) ||
+        !isValidConversationId(payload?.conversationId) ||
+        typeof payload?.turnId !== "string"
+      )
+        return;
+      service.cancelTurn(payload.conversationId, payload.turnId);
+    },
+  );
+  ipcMain.on(ConversationChannels.CancelAnswerRun, (event, payload: { runId: string }) => {
     if (!isWindowFromSender(getWindow(), event) || typeof payload?.runId !== "string") return;
-    service.cancel(payload.runId);
+    service.cancelAnswerRun(payload.runId);
   });
   ipcMain.handle(ConversationChannels.GetConfig, async (event) => {
     if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用方");

@@ -152,11 +152,13 @@ export interface DesktopBridge {
   waitForConversationQueue?: (
     conversationId: string,
     queueId: string,
-  ) => Promise<{ queueId: string; runId?: string; outcome: "completed" | "failed" | "aborted" }>;
+  ) => Promise<{ queueId: string; turnId?: string; outcome: "completed" | "failed" | "aborted" }>;
   appendConversationUserMessage?: (
     conversationId: string,
     text: string,
   ) => Promise<ConversationSnapshot>;
+  cancelTurn?: (conversationId: string, turnId: string) => void;
+  /** Answer 在 P3 前仍按 run 取消；随 envelope shim 一起删除。 */
   cancelConversationRun?: (runId: string) => void;
   onConversationEvent?: (listener: (event: AgentEventEnvelope) => void) => () => void;
   /** 订阅 durable 事实帧；客户端按 `seq` 幂等折叠。 */
@@ -189,13 +191,13 @@ export interface DesktopBridge {
   sendInterviewMessage?: (
     conversationId: string,
     text: string,
-  ) => Promise<{ runId: string; snapshot: ConversationSnapshot }>;
+  ) => Promise<{ turnId: string; snapshot: ConversationSnapshot }>;
   /** 打开固定 intake 会话；空会话会启动一次开场回复，已有内容只返回快照。 */
   openInterviewIntake?: () => Promise<InterviewIntakeOpenResult>;
   /** 发送 intake 对话消息；conversation ID 由主进程固定，不暴露给 renderer。 */
   sendInterviewIntakeMessage?: (
     text: string,
-  ) => Promise<{ runId: string; snapshot: ConversationSnapshot }>;
+  ) => Promise<{ turnId: string; snapshot: ConversationSnapshot }>;
   /** 读取 intake 会话的权威 snapshot。 */
   getInterviewIntakeSnapshot?: () => Promise<ConversationSnapshot>;
   /** 读取 intake 会话在指定 revision 之后的事件。 */
