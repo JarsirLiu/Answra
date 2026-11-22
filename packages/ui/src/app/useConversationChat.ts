@@ -7,19 +7,20 @@ import { useConversationView } from "./useConversationView";
 function useAiConversation(
   platform: DesktopBridge | undefined,
   conversationId: string,
-  operation: "chat.send" | "answer.run" = "chat.send",
+  operation: "chat.send" | "answer.send" = "chat.send",
 ) {
-  const transport = operation === "chat.send" ? "frames" : "events";
   const { view, selectConversation, reconcileSnapshot, waitForOutcome, getView, clear } =
     useConversationView(platform, conversationId, {
-      trackActivities: operation === "answer.run",
-      transport,
+      trackActivities: operation === "answer.send",
     });
   const [sendPending, setSendPending] = useState(false);
   const [sendError, setSendError] = useState<string>();
   const [hideActivities, setHideActivities] = useState(false);
   const lastActivityMessageIdRef = useRef<string | undefined>(undefined);
   const cancelRequestedRef = useRef(false);
+  // 取消必须作用于本轮真正发送到的会话：Answer 每轮创建新的 screenshot 会话，
+  // hook 入参仍是固定答题会话，不能拿它当取消目标。
+  const activeConversationIdRef = useRef(conversationId);
   const [thinkingMs, setThinkingMs] = useState<number>();
   const runStartRef = useRef<number | undefined>(undefined);
   const thinkingSetRef = useRef(true);
@@ -56,12 +57,10 @@ function useAiConversation(
   }, [hideActivities, view.activeMessageId, view.messages]);
 
   const cancelActivity = useCallback(
-    (targetConversationId: string, activityId: string) => {
-      // 帧通道按 Turn 取消；Answer shim 在 P3 前仍按 run 取消。
-      if (transport === "frames") platform?.cancelTurn?.(targetConversationId, activityId);
-      else platform?.cancelConversationRun?.(activityId);
+    (targetConversationId: string, turnId: string) => {
+      platform?.cancelTurn?.(targetConversationId, turnId);
     },
-    [platform, transport],
+    [platform],
   );
 
   const send = useCallback(
@@ -79,6 +78,7 @@ function useAiConversation(
       setThinkingMs(undefined);
       runStartRef.current = Date.now();
       cancelRequestedRef.current = false;
+      activeConversationIdRef.current = targetConversationId;
       const previousAssistant = [...view.messages]
         .reverse()
         .find((message) => message.role === "assistant");
@@ -97,24 +97,18 @@ function useAiConversation(
           selectConversation(targetConversationId);
           await platform.createConversation?.(targetConversationId);
         }
-        const command =
-          operation === "chat.send"
-            ? {
-                operation,
-                conversationId: targetConversationId,
-                request: { text, images },
-              }
-            : { operation, conversationId: targetConversationId, request: { text, images } };
-        const accepted = await platform.sendConversationMessage(command);
+        const accepted = await platform.sendConversationMessage({
+          operation,
+          conversationId: targetConversationId,
+          request: { text, images },
+        });
         if (!("status" in accepted) || accepted.status === "started") {
           await reconcileSnapshot(accepted.snapshot);
         }
         onAccepted?.();
-        let activityId: string;
-        if ("runId" in accepted) {
-          activityId = accepted.runId;
-        } else if (!("status" in accepted) || accepted.status === "started") {
-          activityId = accepted.turnId;
+        let turnId: string;
+        if (!("status" in accepted) || accepted.status === "started") {
+          turnId = accepted.turnId;
         } else {
           if (!platform.waitForConversationQueue) throw new Error("当前宿主未提供排队消息等待能力");
           const queued = await platform.waitForConversationQueue(
@@ -126,15 +120,15 @@ function useAiConversation(
             throw new Error("模型请求失败");
           }
           if (!queued.turnId) throw new Error("排队消息未启动");
-          activityId = queued.turnId;
+          turnId = queued.turnId;
         }
-        if (cancelRequestedRef.current) cancelActivity(targetConversationId, activityId);
-        const outcome = await waitForOutcome(activityId);
-        if (outcome === "aborted" || outcome === "superseded") return "cancelled";
+        if (cancelRequestedRef.current) cancelActivity(targetConversationId, turnId);
+        const outcome = await waitForOutcome(turnId);
+        if (outcome === "aborted") return "cancelled";
         const runError = getView().error;
         if (runError) throw new Error(runError);
         if (outcome === "failed") throw new Error("模型请求失败");
-        return activityId;
+        return turnId;
       } catch (error) {
         // 链路断开由连接域统一提示；不要再把同一次失败渲染成模型错误。
         if (!isAgentServiceDisconnectedError(error)) {
@@ -160,12 +154,9 @@ function useAiConversation(
 
   const cancel = useCallback(() => {
     cancelRequestedRef.current = true;
-    if (transport === "frames") {
-      if (view.activeTurnId) platform?.cancelTurn?.(conversationId, view.activeTurnId);
-      return;
-    }
-    if (view.activeMessageId) platform?.cancelConversationRun?.(view.activeMessageId);
-  }, [conversationId, platform, transport, view.activeMessageId, view.activeTurnId]);
+    if (view.activeTurnId)
+      platform?.cancelTurn?.(activeConversationIdRef.current, view.activeTurnId);
+  }, [platform, view.activeTurnId]);
 
   const clearMessages = useCallback(() => {
     clear();
@@ -201,7 +192,7 @@ export function useGeneralChat(platform: DesktopBridge | undefined, conversation
 }
 
 export function useScreenshotAnswer(platform: DesktopBridge | undefined, conversationId: string) {
-  return useAiConversation(platform, conversationId, "answer.run");
+  return useAiConversation(platform, conversationId, "answer.send");
 }
 
 async function blobUrlToDataUrl(url: string): Promise<string> {

@@ -1,5 +1,4 @@
 import type {
-  AgentEventEnvelope,
   BotSummary,
   ConversationSessionPage,
   ConversationSessionScope,
@@ -11,7 +10,6 @@ import type {
 } from "../schema";
 
 export type {
-  AgentEventEnvelope,
   ContextCompactionStatus,
   ConversationMessage,
   ConversationSessionPage,
@@ -27,11 +25,8 @@ export const ConversationChannels = {
   QueuePosition: "answra:conversation:queue-position",
   AppendUserMessage: "answra:conversation:append-user-message",
   Cancel: "answra:conversation:cancel",
-  /** Answer 在迁移到 SessionRuntime 前的按 run 取消；P3 随 shim 删除。 */
-  CancelAnswerRun: "answra:conversation:cancel-answer-run",
   GetSnapshot: "answra:conversation:get-snapshot",
   Create: "answra:conversation:create",
-  ReadEvents: "answra:conversation:read-events",
   /** 读取模型来源与本地端点摘要（不含 API Key）。 */
   GetConfig: "answra:conversation:get-config",
   /** 切换模型来源并保存本地端点；Key 留空表示沿用已保存的值。 */
@@ -50,10 +45,8 @@ export const ConversationChannels = {
   ListSessions: "answra:conversation:list-sessions",
   /** 删除一个已落盘会话；活动 run 中的会话拒绝删除。 */
   DeleteSession: "answra:conversation:delete-session",
-  Event: "answra:conversation:event",
   /** Pushes the authoritative transcript snapshot after an Agent-owned transcript write. */
   SnapshotChanged: "answra:conversation:snapshot-changed",
-  /** durable 事实帧；P2 迁移期与 `Event` 并行，第 3 步切换后成为唯一事实通道。 */
   SessionFrame: "answra:conversation:session-frame",
   /** 高频增量帧；不参与重放，丢失只影响瞬时观感。 */
   LiveFrame: "answra:conversation:live-frame",
@@ -206,16 +199,7 @@ export interface ConversationTurnResult {
   snapshot: ConversationSnapshot;
 }
 
-/** Answer 在 P3 前仍按 run 标识；随 envelope shim 一起删除。 */
-export interface AnswerRunSendResult {
-  runId: string;
-  snapshot: ConversationSnapshot;
-}
-
-export type ConversationSendResponse =
-  | ConversationSendResult
-  | ConversationTurnResult
-  | AnswerRunSendResult;
+export type ConversationSendResponse = ConversationSendResult | ConversationTurnResult;
 
 export interface ConversationQueueCompletion {
   queueId: string;
@@ -238,13 +222,13 @@ export interface TeamSendCommand {
   request: ConversationSendRequest;
 }
 
-export interface AnswerRunCommand {
-  operation: "answer.run";
+export interface AnswerSendCommand {
+  operation: "answer.send";
   conversationId: string;
   request: ConversationSendRequest;
 }
 
-export type ConversationSendCommand = ChatSendCommand | TeamSendCommand | AnswerRunCommand;
+export type ConversationSendCommand = ChatSendCommand | TeamSendCommand | AnswerSendCommand;
 
 /** New-conversation selection: one Bot or a predefined team. */
 export type ConversationSelection =
@@ -272,10 +256,6 @@ export interface ConversationChannelMap {
     request: { conversationId: string; turnId: string };
     response: undefined;
   };
-  [ConversationChannels.CancelAnswerRun]: {
-    request: { runId: string };
-    response: undefined;
-  };
   [ConversationChannels.GetSnapshot]: {
     request: { conversationId: string };
     response: ConversationSnapshot;
@@ -283,10 +263,6 @@ export interface ConversationChannelMap {
   [ConversationChannels.Create]: {
     request: { conversationId: string; selection?: ConversationSelection };
     response: ConversationSnapshot;
-  };
-  [ConversationChannels.ReadEvents]: {
-    request: { conversationId: string; afterRevision: number };
-    response: AgentEventEnvelope[];
   };
   [ConversationChannels.GetConfig]: {
     request: undefined;
@@ -327,7 +303,6 @@ export interface ConversationChannelMap {
     request: { conversationId: string };
     response: undefined;
   };
-  [ConversationChannels.Event]: { request: undefined; response: undefined };
   [ConversationChannels.SnapshotChanged]: { request: undefined; response: ConversationSnapshot };
   [ConversationChannels.SessionFrame]: { request: undefined; response: SessionFrame };
   [ConversationChannels.LiveFrame]: { request: undefined; response: LiveFrame };

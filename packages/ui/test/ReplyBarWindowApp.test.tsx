@@ -5,15 +5,23 @@ import type {
   DesktopBridge,
   ReplyBarState,
 } from "@answra/shared";
-import type { AgentEventEnvelope } from "@answra/shared/schema";
+import type {
+  AgentDurableEvent,
+  AgentLiveOnlyEvent,
+  LiveFrame,
+  SessionFrame,
+} from "@answra/shared/schema";
+import { SESSION_FRAME_SCHEMA_VERSION } from "@answra/shared/schema";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ReplyBarWindowApp } from "../src/app/ReplyBarWindowApp";
 
 const conversationId = "screenshot-01234567-89ab-4cde-8fab-0123456789ab";
 const runId = "run-live";
+const turnId = "turn-live";
 let stateListener: ((state: ReplyBarState) => void) | undefined;
-let changeListener: ((event: unknown) => void) | undefined;
+let frameListener: ((frame: SessionFrame) => void) | undefined;
+let liveListener: ((frame: LiveFrame) => void) | undefined;
 let connectionListener: ((state: AgentConnectionState) => void) | undefined;
 let previousClipboard: PropertyDescriptor | undefined;
 let clipboardOverridden = false;
@@ -49,11 +57,17 @@ function createBridge() {
     getConversationSnapshot: vi.fn().mockResolvedValue(snapshot),
     // 这些用例只验证订阅；初始快照永不返回，避免异步 setState 落在 act 之外。
     getConnectionState: vi.fn(() => new Promise<AgentConnectionState>(() => undefined)),
-    readConversationEvents: vi.fn().mockResolvedValue([]),
-    onConversationEvent: vi.fn((listener: (event: AgentEventEnvelope) => void) => {
-      changeListener = (event) => listener(normalizeEvent(event));
+    readSessionFrames: vi.fn().mockResolvedValue([]),
+    onSessionFrame: vi.fn((listener: (frame: SessionFrame) => void) => {
+      frameListener = listener;
       return () => {
-        changeListener = undefined;
+        frameListener = undefined;
+      };
+    }),
+    onLiveFrame: vi.fn((listener: (frame: LiveFrame) => void) => {
+      liveListener = listener;
+      return () => {
+        liveListener = undefined;
       };
     }),
     onConnectionState: vi.fn((listener: (state: AgentConnectionState) => void) => {
@@ -74,37 +88,22 @@ function createBridge() {
   } satisfies Partial<DesktopBridge>;
 }
 
-function eventEnvelope(revision: number, event: AgentEventEnvelope["event"]): AgentEventEnvelope {
+function frame(seq: number, event: AgentDurableEvent): SessionFrame {
   return {
-    schemaVersion: 1,
-    eventId: `event-${revision}`,
-    conversationId,
-    runId,
-    attemptId: `${runId}:attempt:1`,
-    sequence: revision,
-    aggregateRevision: revision,
-    producerId: "test",
+    schemaVersion: SESSION_FRAME_SCHEMA_VERSION,
+    sessionId: conversationId,
+    seq,
+    eventId: `event-${seq}`,
     occurredAt: "2026-11-07T00:00:00.000Z",
+    producerId: "test",
+    turnId,
+    messageId: runId,
     event,
   };
 }
 
-function terminalEnvelope(revision: number): AgentEventEnvelope {
-  return eventEnvelope(revision, { type: "run-state-changed", state: "completed", attempt: 1 });
-}
-
-function normalizeEvent(input: unknown): AgentEventEnvelope {
-  const value = input as Record<string, unknown>;
-  if (value.type === "event") {
-    const event = value.event as Record<string, unknown>;
-    return eventEnvelope(Number(event.revision), event.stream as AgentEventEnvelope["event"]);
-  }
-  if (value.type === "run-finished") return terminalEnvelope(Number(value.revision));
-  return input as AgentEventEnvelope;
-}
-
-function normalizeEvents(inputs: readonly unknown[]): AgentEventEnvelope[] {
-  return inputs.map(normalizeEvent);
+function live(event: AgentLiveOnlyEvent): LiveFrame {
+  return { sessionId: conversationId, messageId: runId, event };
 }
 
 function connectedState(): AgentConnectionState {
@@ -169,7 +168,8 @@ describe("ReplyBarWindowApp live conversation popover", () => {
 
   beforeEach(() => {
     stateListener = undefined;
-    changeListener = undefined;
+    frameListener = undefined;
+    liveListener = undefined;
     connectionListener = undefined;
   });
 
@@ -187,19 +187,10 @@ describe("ReplyBarWindowApp live conversation popover", () => {
     expect(screen.getByText("文本").tagName).toBe("STRONG");
 
     act(() => {
-      changeListener?.({
-        type: "event",
-        event: {
-          conversationId,
-          runId,
-          revision: 2,
-          seq: 1,
-          stream: { type: "text-delta", partId: "text-1", delta: " 实时" },
-        },
-      });
+      liveListener?.(live({ type: "text-delta", partId: "text-1", delta: " 实时" }));
     });
     await waitFor(() => expect(screen.getByText("实时")).toBeInTheDocument());
-    expect(bridge.readConversationEvents).toHaveBeenCalledWith(conversationId, 1);
+    expect(bridge.readSessionFrames).toHaveBeenCalledWith(conversationId, 0);
   });
 
   it("shows the terminal service error instead of the reply error", async () => {
@@ -275,49 +266,20 @@ describe("ReplyBarWindowApp live conversation popover", () => {
     expect(popover.querySelector(".katex-display")).not.toBeNull();
   });
 
-  it("replays persisted stream events during initialization", async () => {
+  it("shows reasoning streamed live after initialization", async () => {
     const bridge = createBridge();
-    bridge.readConversationEvents
-      .mockResolvedValueOnce(
-        normalizeEvents([
-          {
-            type: "event",
-            event: {
-              conversationId,
-              runId,
-              revision: 2,
-              seq: 1,
-              stream: {
-                type: "reasoning-delta",
-                partId: "reasoning-1",
-                delta: "先检查条件",
-              },
-            },
-          },
-        ]),
-      )
-      .mockResolvedValueOnce([]);
     render(<ReplyBarWindowApp bridge={bridge as DesktopBridge} />);
     act(() => stateListener?.(replyState()));
-    await waitFor(() =>
-      expect(bridge.readConversationEvents).toHaveBeenCalledWith(conversationId, 1),
-    );
+    await waitFor(() => expect(bridge.readSessionFrames).toHaveBeenCalledWith(conversationId, 0));
     act(() => {
-      changeListener?.({
-        type: "run-finished",
-        conversationId,
-        runId,
-        revision: 3,
-        outcome: "completed",
-        message: { ...(snapshot.messages[1] as ConversationMessage), status: "complete" },
-      });
+      liveListener?.(live({ type: "reasoning-delta", partId: "reasoning-1", delta: "先检查条件" }));
+      frameListener?.(frame(1, { type: "turn-finished", status: "completed" }));
     });
     fireEvent.mouseEnter(document.querySelector(".reply-activity-viewport") as HTMLElement);
     const toggle = await screen.findByRole("button", { name: "切换思考过程" });
     expect(screen.queryByText("先检查条件")).not.toBeInTheDocument();
     fireEvent.click(toggle);
     expect(screen.getByText("先检查条件")).toBeInTheDocument();
-    expect(bridge.readConversationEvents).toHaveBeenCalledWith(conversationId, 1);
   });
 
   it("renders reasoning in a neutral collapsible block instead of italic answer text", async () => {
@@ -325,42 +287,23 @@ describe("ReplyBarWindowApp live conversation popover", () => {
     bridge.getConversationSnapshot.mockResolvedValue({
       ...snapshot,
       eventRevision: 1,
-      messages: [snapshot.messages[0], { ...snapshot.messages[1], text: "最终答案" }],
+      messages: [
+        snapshot.messages[0],
+        { ...(snapshot.messages[1] as ConversationMessage), text: "最终答案" },
+      ],
     });
-    bridge.readConversationEvents.mockResolvedValue(
-      normalizeEvents([
-        {
-          type: "event",
-          event: {
-            conversationId,
-            runId,
-            revision: 2,
-            seq: 1,
-            stream: {
-              type: "reasoning-delta",
-              partId: "reasoning-1",
-              delta: "先检查题目条件",
-            },
-          },
-        },
-        {
-          type: "event",
-          event: {
-            conversationId,
-            runId,
-            revision: 3,
-            seq: 1,
-            stream: { type: "text-delta", partId: "text-1", delta: "最终答案" },
-          },
-        },
-      ]),
-    );
     render(<ReplyBarWindowApp bridge={bridge as DesktopBridge} />);
     act(() => stateListener?.(replyState()));
     fireEvent.mouseEnter(document.querySelector(".reply-activity-viewport") as HTMLElement);
 
     expect(await screen.findByText("最终答案")).toBeInTheDocument();
-    const toggle = screen.getByRole("button", { name: "切换思考过程" });
+    act(() => {
+      liveListener?.(
+        live({ type: "reasoning-delta", partId: "reasoning-1", delta: "先检查题目条件" }),
+      );
+      frameListener?.(frame(1, { type: "turn-finished", status: "completed" }));
+    });
+    const toggle = await screen.findByRole("button", { name: "切换思考过程" });
     expect(toggle).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByText("先检查题目条件")).not.toBeInTheDocument();
     fireEvent.click(toggle);
@@ -375,29 +318,20 @@ describe("ReplyBarWindowApp live conversation popover", () => {
       ...snapshot,
       eventRevision: 1,
       // 本轮刚开口：只有思维链，回答正文尚未开始
-      messages: [snapshot.messages[0], { ...snapshot.messages[1], text: "" }],
+      messages: [
+        snapshot.messages[0],
+        { ...(snapshot.messages[1] as ConversationMessage), text: "" },
+      ],
     });
-    bridge.readConversationEvents.mockResolvedValue(
-      normalizeEvents([
-        {
-          type: "event",
-          event: {
-            conversationId,
-            runId,
-            revision: 2,
-            seq: 1,
-            stream: {
-              type: "reasoning-delta",
-              partId: "reasoning-1",
-              delta: "正在检查条件",
-            },
-          },
-        },
-      ]),
-    );
     render(<ReplyBarWindowApp bridge={bridge as DesktopBridge} />);
     act(() => stateListener?.(replyState()));
     fireEvent.mouseEnter(document.querySelector(".reply-activity-viewport") as HTMLElement);
+    await waitFor(() => expect(bridge.readSessionFrames).toHaveBeenCalledWith(conversationId, 0));
+    act(() => {
+      liveListener?.(
+        live({ type: "reasoning-delta", partId: "reasoning-1", delta: "正在检查条件" }),
+      );
+    });
 
     expect(await screen.findByText("思考中…")).toBeInTheDocument();
     expect(screen.getAllByText("思考中…")).toHaveLength(1);
@@ -407,16 +341,7 @@ describe("ReplyBarWindowApp live conversation popover", () => {
     );
 
     act(() => {
-      changeListener?.({
-        type: "event",
-        event: {
-          conversationId,
-          runId,
-          revision: 3,
-          seq: 1,
-          stream: { type: "text-delta", partId: "text-1", delta: "答案" },
-        },
-      });
+      liveListener?.(live({ type: "text-delta", partId: "text-1", delta: "答案" }));
     });
 
     const thoughtToggle = await screen.findByRole("button", { name: "切换思考过程" });
@@ -429,7 +354,10 @@ describe("ReplyBarWindowApp live conversation popover", () => {
     const bridge = createBridge();
     bridge.getConversationSnapshot.mockResolvedValue({
       ...snapshot,
-      messages: [snapshot.messages[0], { ...snapshot.messages[1], text: "" }],
+      messages: [
+        snapshot.messages[0],
+        { ...(snapshot.messages[1] as ConversationMessage), text: "" },
+      ],
     });
     render(<ReplyBarWindowApp bridge={bridge as DesktopBridge} />);
     act(() => stateListener?.(replyState()));
@@ -437,20 +365,13 @@ describe("ReplyBarWindowApp live conversation popover", () => {
     await screen.findByRole("region", { name: "当前对话" });
 
     act(() => {
-      changeListener?.({
-        type: "event",
-        event: {
-          conversationId,
-          runId,
-          revision: 2,
-          seq: 1,
-          stream: {
-            type: "reasoning-delta",
-            partId: "reasoning-1",
-            delta: "先检查题目条件。",
-          },
-        },
-      });
+      liveListener?.(
+        live({
+          type: "reasoning-delta",
+          partId: "reasoning-1",
+          delta: "先检查题目条件。",
+        }),
+      );
     });
     expect(await screen.findByText("先检查题目条件。")).toBeInTheDocument();
     const toggle = screen.getByRole("button", { name: "切换思考过程" });
@@ -458,20 +379,13 @@ describe("ReplyBarWindowApp live conversation popover", () => {
     expect(document.querySelector('[class*="trBody"]')).toBeNull();
 
     act(() => {
-      changeListener?.({
-        type: "event",
-        event: {
-          conversationId,
-          runId,
-          revision: 3,
-          seq: 1,
-          stream: {
-            type: "reasoning-delta",
-            partId: "reasoning-1",
-            delta: "继续逐步核对每个条件，并计算最终结果。",
-          },
-        },
-      });
+      liveListener?.(
+        live({
+          type: "reasoning-delta",
+          partId: "reasoning-1",
+          delta: "继续逐步核对每个条件，并计算最终结果。",
+        }),
+      );
     });
     expect(await screen.findByText(/继续逐步核对每个条件/)).toBeInTheDocument();
     expect(toggle).toHaveAttribute("aria-expanded", "false");
@@ -494,14 +408,7 @@ describe("ReplyBarWindowApp live conversation popover", () => {
 
     expect(screen.queryByRole("button", { name: "复制" })).not.toBeInTheDocument();
     act(() => {
-      changeListener?.({
-        type: "run-finished",
-        conversationId,
-        runId,
-        revision: 2,
-        outcome: "completed",
-        message: { ...(snapshot.messages[1] as ConversationMessage), status: "complete" },
-      });
+      frameListener?.(frame(1, { type: "turn-finished", status: "completed" }));
     });
 
     const copy = await screen.findByRole("button", { name: "复制" });
@@ -569,32 +476,14 @@ describe("ReplyBarWindowApp live conversation popover", () => {
     });
 
     act(() => {
-      changeListener?.({
-        type: "event",
-        event: {
-          conversationId,
-          runId,
-          revision: 2,
-          seq: 1,
-          stream: { type: "text-delta", partId: "text-1", delta: "更多内容" },
-        },
-      });
+      liveListener?.(live({ type: "text-delta", partId: "text-1", delta: "更多内容" }));
     });
     await waitFor(() => expect(scrollTop).toBe(1000));
 
     scrollTop = 100;
     fireEvent.scroll(scroll);
     act(() => {
-      changeListener?.({
-        type: "event",
-        event: {
-          conversationId,
-          runId,
-          revision: 3,
-          seq: 1,
-          stream: { type: "text-delta", partId: "text-1", delta: "新答案" },
-        },
-      });
+      liveListener?.(live({ type: "text-delta", partId: "text-1", delta: "新答案" }));
     });
     await waitFor(() => expect(screen.getByText(/新答案/)).toBeInTheDocument());
     expect(scrollTop).toBe(100);

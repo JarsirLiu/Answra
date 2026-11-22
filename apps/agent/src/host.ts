@@ -1,6 +1,5 @@
 import type { ConversationSnapshot } from "@answra/shared";
 import { INTERVIEW_AUDIO_CREDIT_BATCH } from "@answra/shared";
-import type { AgentEventEnvelope } from "@answra/shared/schema";
 import { screenshotAnswerAgent } from "./answer/agent";
 import { AnswerApplication } from "./answer/application";
 import { ConversationApplication } from "./conversation/application";
@@ -143,7 +142,6 @@ export function startAgentHost({
 
   const agentRuntime = new AgentRuntime({
     executionStore,
-    emitEvent: (event: AgentEventEnvelope) => transport.send({ version: 1, type: "event", event }),
     tokenProvider: requestAccessToken,
   });
   const skillsReady = skillRoots ? createLazySkillCatalog(skillRoots) : undefined;
@@ -197,6 +195,7 @@ export function startAgentHost({
     store,
     executor: answerAgent,
     authorAgentId: screenshotAnswerAgent.id,
+    sessionFrames,
   });
 
   const interview = new InterviewApplication({
@@ -443,7 +442,7 @@ export function startAgentHost({
           command.request,
           command.accessToken,
         );
-      case "answer-run":
+      case "answer-send":
         return answer.run(command.conversationId, command.request, command.accessToken);
       case "snapshot":
         return runtime.getSnapshot(command.conversationId);
@@ -455,18 +454,23 @@ export function startAgentHost({
       case "session-delete":
         if (!catalog) throw new Error("会话历史不可用");
         return catalog.delete(command.conversationId);
-      // envelope 读取只服务 Answer；会话/面试/Coding 的读取面是 read-frames。
-      case "read-events":
-        return answer.readEventsAfter(command.conversationId, command.afterRevision);
-      // 事实帧按 journal 读取，与会话所属领域无关；恢复仍由各自领域负责。
-      case "read-frames":
+      // 事实帧按 journal 读取：Answer 的 journal 只存在内存里，与会话共用读取契约。
+      case "read-frames": {
+        const scope = await store.scopeOf(command.conversationId);
+        if (scope === "answer")
+          return answer.readFramesAfter(command.conversationId, command.afterSeq);
         return runtime.readFramesAfter(command.conversationId, command.afterSeq);
+      }
       case "create-conversation":
         return runtime.createConversation(command.conversationId, command.selection);
       case "create-answer-conversation":
         return answer.createConversation(command.conversationId);
       case "clear-conversation": {
-        const snapshot = await runtime.clearConversation(command.conversationId);
+        const scope = await store.scopeOf(command.conversationId);
+        const snapshot =
+          scope === "answer"
+            ? await answer.clearConversation(command.conversationId)
+            : await runtime.clearConversation(command.conversationId);
         emitConversationSnapshot(snapshot);
         return snapshot;
       }
@@ -488,12 +492,11 @@ export function startAgentHost({
           }
         } else if (scope === "conversation") {
           runtime.cancel(command.conversationId, command.turnId);
+        } else if (scope === "answer") {
+          answer.cancel(command.conversationId, command.turnId);
         }
         return undefined;
       }
-      case "cancel-run":
-        answer.cancel(command.runId);
-        return undefined;
       case "wait-queue":
         return runtime.waitForQueue(command.conversationId, command.queueId);
       case "wait-queue-start":

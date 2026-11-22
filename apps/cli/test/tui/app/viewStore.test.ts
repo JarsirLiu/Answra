@@ -133,7 +133,7 @@ describe("TuiViewStore", () => {
       ],
     };
     store.switchConversation(target);
-    expect(store.getSnapshot().view).toMatchObject({ eventRevision: 2, lastSeq: 0 });
+    expect(store.getSnapshot().view.messages).toMatchObject([{ id: "message-2" }]);
 
     store.applySnapshot({ ...snapshot, eventRevision: 99 });
     store.applyLiveFrame(
@@ -143,16 +143,10 @@ describe("TuiViewStore", () => {
       ),
     );
     store.flushLive();
-    expect(store.getSnapshot().view).toMatchObject({
-      eventRevision: 2,
-      messages: [expect.objectContaining({ id: "message-2" })],
-    });
+    expect(store.getSnapshot().view.messages).toMatchObject([{ id: "message-2" }]);
 
     store.switchConversation(snapshot);
-    expect(store.getSnapshot().view).toMatchObject({
-      eventRevision: 3,
-      messages: [expect.objectContaining({ id: "message-1" })],
-    });
+    expect(store.getSnapshot().view.messages).toMatchObject([{ id: "message-1" }]);
     store.dispose();
   });
 
@@ -322,7 +316,7 @@ describe("TuiViewStore", () => {
       queued: 0,
       queuedPrompts: [],
       notifications: { current: null },
-      view: { eventRevision: 9, messages: [] },
+      view: { lastSeq: 0, messages: [] },
       localError: undefined,
     });
     store.dispose();

@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const shared = vi.hoisted(() => ({
   handlers: {} as Record<string, (...args: unknown[]) => unknown>,
-  onEvent: vi.fn(),
   onSessionFrame: vi.fn(),
   onLiveFrame: vi.fn(),
   onSnapshot: vi.fn(),
@@ -36,7 +35,6 @@ vi.mock("../src/main/window", () => ({
     window: { webContents: { id: string } },
     event: { sender: { id: string } },
   ) => window.webContents.id === event.sender.id,
-  sendConversationEvent: shared.send,
   sendConversationSnapshot: shared.sendSnapshot,
   sendSessionFrame: shared.sendFrame,
   sendLiveFrame: shared.sendLiveFrame,
@@ -55,11 +53,9 @@ const service = {
   getSnapshot: vi
     .fn()
     .mockResolvedValue({ conversationId: shared.replyConversationId, revision: 0, messages: [] }),
-  readEvents: vi.fn().mockResolvedValue([]),
   readFrames: vi.fn().mockResolvedValue([]),
   send: vi.fn(),
   cancelTurn: vi.fn(),
-  cancelAnswerRun: vi.fn(),
   clearConversation: vi.fn().mockResolvedValue(undefined),
   createConversation: vi.fn().mockResolvedValue(undefined),
   createAnswerConversation: vi.fn().mockResolvedValue(undefined),
@@ -72,7 +68,6 @@ const service = {
       messages: [],
     },
   }),
-  onEvent: shared.onEvent,
   onSessionFrame: shared.onSessionFrame,
   onLiveFrame: shared.onLiveFrame,
   onSnapshot: shared.onSnapshot,
@@ -123,7 +118,6 @@ function register(): void {
 describe("conversation IPC read access for reply renderer", () => {
   beforeEach(() => {
     shared.handlers = {};
-    shared.onEvent.mockClear();
     shared.onSessionFrame.mockClear();
     shared.onLiveFrame.mockClear();
     shared.onSnapshot.mockClear();
@@ -134,7 +128,6 @@ describe("conversation IPC read access for reply renderer", () => {
     shared.signedIn = true;
     shared.modelSource = "cloud";
     service.getSnapshot.mockClear();
-    service.readEvents.mockClear();
     service.readFrames.mockClear();
     service.send.mockClear();
     service.clearConversation.mockClear();
@@ -174,19 +167,12 @@ describe("conversation IPC read access for reply renderer", () => {
 
   it("allows the reply renderer to read only the active conversation", async () => {
     const getSnapshot = getHandler(ConversationChannels.GetSnapshot);
-    const readEvents = getHandler(ConversationChannels.ReadEvents);
     const readFrames = getHandler(ConversationChannels.ReadFrames);
     await expect(
       getSnapshot({ sender: { id: "reply" } }, { conversationId: shared.replyConversationId }),
     ).resolves.toMatchObject({
       revision: 0,
     });
-    await expect(
-      readEvents(
-        { sender: { id: "reply" } },
-        { conversationId: shared.replyConversationId, afterRevision: 0 },
-      ),
-    ).resolves.toEqual([]);
     await expect(
       readFrames(
         { sender: { id: "reply" } },
@@ -195,12 +181,6 @@ describe("conversation IPC read access for reply renderer", () => {
     ).resolves.toEqual([]);
     await expect(() =>
       getSnapshot({ sender: { id: "reply" } }, { conversationId: "other-conversation" }),
-    ).toThrow("非法调用方");
-    await expect(() =>
-      readEvents(
-        { sender: { id: "reply" } },
-        { conversationId: "other-conversation", afterRevision: 0 },
-      ),
     ).toThrow("非法调用方");
     await expect(() =>
       readFrames(
@@ -257,7 +237,6 @@ describe("conversation IPC read access for reply renderer", () => {
     service.onLiveFrame.mock.calls[0]?.[0](live);
     expect(shared.sendFrame).toHaveBeenCalledWith(frame);
     expect(shared.sendLiveFrame).toHaveBeenCalledWith(live);
-    expect(shared.send).not.toHaveBeenCalled();
   });
 
   it("lets the main renderer clear the current screenshot round", async () => {
@@ -299,11 +278,15 @@ describe("conversation IPC read access for reply renderer", () => {
       create({ sender: { id: "main" } }, { conversationId: ActiveExamConversationId }),
     ).resolves.toBeUndefined();
     expect(service.createAnswerConversation).toHaveBeenCalledWith(ActiveExamConversationId);
+    // 每轮截图使用新的一次性会话 id：必须同样走 answer 领域，不能以 conversation scope 落盘。
+    await expect(
+      create({ sender: { id: "main" } }, { conversationId: shared.replyConversationId }),
+    ).resolves.toBeUndefined();
+    expect(service.createAnswerConversation).toHaveBeenCalledWith(shared.replyConversationId);
     expect(service.createConversation).not.toHaveBeenCalled();
   });
 
   it("forwards the service change subscription to the window broadcaster", () => {
-    expect(shared.onEvent).toHaveBeenCalledWith(shared.send);
     expect(shared.onSessionFrame).toHaveBeenCalledWith(shared.sendFrame);
     expect(shared.onLiveFrame).toHaveBeenCalledWith(shared.sendLiveFrame);
     expect(shared.onSnapshot).toHaveBeenCalledWith(shared.sendSnapshot);
@@ -315,7 +298,7 @@ describe("conversation IPC read access for reply renderer", () => {
     const send = getHandler(ConversationChannels.Send);
     const event = { sender: { id: "main" } };
     const answerRun = {
-      operation: "answer.run",
+      operation: "answer.send",
       conversationId: "c-1",
       request: { text: "x", images: [] },
     };
@@ -336,13 +319,13 @@ describe("conversation IPC read access for reply renderer", () => {
   it("lets local model calls through without a login session", () => {
     shared.modelSource = "local";
     shared.signedIn = false;
-    service.send.mockResolvedValue({ runId: "run-1" });
+    service.send.mockResolvedValue({ turnId: "turn-1" });
 
     expect(() =>
       getHandler(ConversationChannels.Send)(
         { sender: { id: "main" } },
         {
-          operation: "answer.run",
+          operation: "answer.send",
           conversationId: "c-1",
           request: { text: "x", images: [] },
         },
@@ -354,18 +337,18 @@ describe("conversation IPC read access for reply renderer", () => {
   it("still sends cloud model calls once the account is signed in", async () => {
     shared.modelSource = "cloud";
     shared.signedIn = true;
-    service.send.mockResolvedValue({ runId: "run-1" });
+    service.send.mockResolvedValue({ turnId: "turn-1" });
 
     await expect(
       getHandler(ConversationChannels.Send)(
         { sender: { id: "main" } },
         {
-          operation: "answer.run",
+          operation: "answer.send",
           conversationId: "c-1",
           request: { text: "x", images: [] },
         },
       ),
-    ).resolves.toEqual({ runId: "run-1" });
+    ).resolves.toEqual({ turnId: "turn-1" });
     expect(service.send).toHaveBeenCalledTimes(1);
   });
 });
@@ -373,7 +356,6 @@ describe("conversation IPC read access for reply renderer", () => {
 describe("conversation IPC model settings", () => {
   beforeEach(() => {
     shared.handlers = {};
-    shared.onEvent.mockClear();
     shared.onSessionFrame.mockClear();
     shared.onLiveFrame.mockClear();
     shared.onSnapshot.mockClear();
@@ -384,7 +366,6 @@ describe("conversation IPC model settings", () => {
     shared.signedIn = true;
     shared.modelSource = "cloud";
     service.getSnapshot.mockClear();
-    service.readEvents.mockClear();
     service.readFrames.mockClear();
     service.send.mockClear();
     service.clearConversation.mockClear();

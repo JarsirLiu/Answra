@@ -9,7 +9,6 @@ describe("TUI tool presentation", () => {
       <Transcript
         view={{
           lastSeq: 0,
-          eventRevision: 0,
           messages: [
             {
               id: "assistant-1",
@@ -53,7 +52,6 @@ describe("TUI tool presentation", () => {
   it("keeps Grep matches collapsed until Ctrl+O expands the tool", async () => {
     const view = {
       lastSeq: 0,
-      eventRevision: 0,
       messages: [
         {
           id: "assistant-1",
@@ -109,7 +107,6 @@ describe("TUI tool presentation", () => {
       <Transcript
         view={{
           lastSeq: 0,
-          eventRevision: 0,
           messages: [
             {
               id: "assistant-1",
@@ -155,7 +152,6 @@ describe("TUI tool presentation", () => {
       <Transcript
         view={{
           lastSeq: 0,
-          eventRevision: 0,
           messages: [
             {
               id: "assistant-1",
@@ -217,7 +213,6 @@ describe("TUI tool presentation", () => {
   it("groups consecutive Read and Grep calls into one row until Ctrl+O", async () => {
     const view = {
       lastSeq: 0,
-      eventRevision: 0,
       messages: [
         {
           id: "assistant-1",
@@ -305,7 +300,6 @@ describe("TUI tool presentation", () => {
       <Transcript
         view={{
           lastSeq: 0,
-          eventRevision: 0,
           messages: [
             {
               id: "assistant-1",
@@ -352,7 +346,6 @@ describe("TUI tool presentation", () => {
       <Transcript
         view={{
           lastSeq: 0,
-          eventRevision: 0,
           messages: [
             {
               id: "assistant-1",
@@ -393,7 +386,6 @@ describe("TUI tool presentation", () => {
   it("expands one tool by id without expanding the whole transcript", async () => {
     const view = {
       lastSeq: 0,
-      eventRevision: 0,
       messages: [
         {
           id: "assistant-1",
@@ -446,7 +438,6 @@ describe("TUI tool presentation", () => {
         localError="send failed"
         view={{
           lastSeq: 0,
-          eventRevision: 0,
           messages: [
             {
               id: "user-1",

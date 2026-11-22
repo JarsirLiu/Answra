@@ -2,7 +2,6 @@ import type { ConversationMessage, ConversationSnapshot } from "@answra/shared";
 import { ActiveInterviewIntakeConversationId } from "@answra/shared";
 import type {
   AgentDurableEvent,
-  AgentEventEnvelope,
   AgentLiveOnlyEvent,
   AgentStreamEvent,
   LiveFrame,
@@ -25,8 +24,7 @@ export const conversationState: {
   emittedConversationId: conversationId,
 };
 
-/** Answer（P3 前）仍吃 envelope；会话/面试吃帧，两条通道各自独立。 */
-export const conversationListeners = new Set<(event: AgentEventEnvelope) => void>();
+/** Answer 与常驻会话共用同一条 durable 帧通道。 */
 export const sessionFrameListeners = new Set<(frame: SessionFrame) => void>();
 export const liveFrameListeners = new Set<(frame: LiveFrame) => void>();
 
@@ -72,7 +70,6 @@ export function resetFloatingBarTestState() {
   delete document.documentElement.dataset.stealth;
   conversationState.emit = undefined;
   conversationState.emittedConversationId = conversationId;
-  conversationListeners.clear();
   sessionFrameListeners.clear();
   liveFrameListeners.clear();
 }
@@ -151,11 +148,84 @@ export function createConversationBridge() {
     snapshots.set(snapshot.conversationId, snapshot);
     return snapshot;
   };
+  let scopeId = "";
+  const messages: ConversationMessage[] = [];
+  const turnIdFor = (runId: string) => (runId === "run-1" ? "turn-1" : `turn-${runId}`);
+  /** durable 事实按会话游标追加；live 增量不进历史，允许丢失。 */
+  const publishFact = (id: string, event: AgentDurableEvent, runId: string) => {
+    const log = frameLog.get(id) ?? [];
+    const seq = (log.at(-1)?.seq ?? snapshotFor(id).lastSeq) + 1;
+    const frame = testFrame(seq, event, {
+      sessionId: id,
+      turnId: turnIdFor(runId),
+      messageId: runId,
+    });
+    log.push(frame);
+    frameLog.set(id, log);
+    saveSnapshot({ ...snapshotFor(id), lastSeq: seq });
+    publishSessionFrame(frame);
+  };
+  conversationState.emit = ({ runId, chunk }) => {
+    const id = conversationState.emittedConversationId;
+    if (scopeId !== id) {
+      scopeId = id;
+      messages.length = 0;
+    }
+    const stream = toStream(chunk);
+    if (stream) {
+      if (isLiveOnly(stream)) publishLiveFrame({ sessionId: id, messageId: runId, event: stream });
+      else publishFact(id, stream, runId);
+      if (stream.type === "text-delta") {
+        const assistant = messages.find((message) => message.id === runId);
+        if (assistant) assistant.text += stream.delta;
+        else
+          messages.push({
+            id: runId,
+            role: "assistant",
+            text: stream.delta,
+            images: [],
+            status: "streaming",
+          });
+        const snapshot = snapshotFor(id);
+        const assistantText =
+          messages.find((message) => message.id === runId)?.text ?? stream.delta;
+        saveSnapshot({
+          ...snapshot,
+          messages: snapshot.messages.map((message) =>
+            message.id === runId ? { ...message, text: assistantText } : message,
+          ),
+        });
+      }
+    }
+    if (chunk.type === "finish" || chunk.type === "abort") {
+      if (!messages.some((message) => message.id === runId)) {
+        messages.push({
+          id: runId,
+          role: "assistant",
+          text: "",
+          images: [],
+          status: "complete",
+        });
+      }
+      const aborted = chunk.type === "abort";
+      publishFact(id, { type: "turn-finished", status: aborted ? "aborted" : "completed" }, runId);
+      const snapshot = snapshotFor(id);
+      saveSnapshot({
+        ...snapshot,
+        activeTurnId: undefined,
+        activeMessageId: undefined,
+        messages: snapshot.messages.map((message) =>
+          message.id === runId
+            ? { ...message, status: aborted ? "interrupted" : "complete" }
+            : message,
+        ),
+      });
+    }
+  };
   return {
     close: vi.fn(),
     fitContent: vi.fn(),
     getConversationSnapshot: vi.fn().mockImplementation(async (id: string) => snapshotFor(id)),
-    readConversationEvents: vi.fn().mockResolvedValue([]),
     readSessionFrames: vi
       .fn()
       .mockImplementation(async (id: string, afterSeq: number) =>
@@ -202,7 +272,7 @@ export function createConversationBridge() {
               activeTurnId: "turn-1",
               activeMessageId: "run-1",
             });
-            if (command.operation === "answer.run") return { runId: "run-1", snapshot };
+            if (command.operation === "answer.send") return { turnId: "turn-1", snapshot };
             return {
               queueId: "turn-1",
               status: "started" as const,
@@ -211,8 +281,8 @@ export function createConversationBridge() {
               snapshot,
             };
           }
-          if (command.operation === "answer.run")
-            return { runId: "run-1", snapshot: emptySnapshot(command.conversationId) };
+          if (command.operation === "answer.send")
+            return { turnId: "turn-1", snapshot: emptySnapshot(command.conversationId) };
           return {
             queueId: "turn-1",
             status: "started" as const,
@@ -277,7 +347,6 @@ export function createConversationBridge() {
     getInterviewIntakeSnapshot: vi.fn(async () => snapshotFor(ActiveInterviewIntakeConversationId)),
     readInterviewIntakeEvents: vi.fn(async () => []),
     cancelTurn: vi.fn(),
-    cancelConversationRun: vi.fn(),
     onSessionFrame: vi.fn((listener: (frame: SessionFrame) => void) => {
       sessionFrameListeners.add(listener);
       return () => {
@@ -288,135 +357,6 @@ export function createConversationBridge() {
       liveFrameListeners.add(listener);
       return () => {
         liveFrameListeners.delete(listener);
-      };
-    }),
-    onConversationEvent: vi.fn((listener: (event: AgentEventEnvelope) => void) => {
-      let scopeId = "";
-      let revision = 0;
-      let sequence = 0;
-      const messages: ConversationMessage[] = [];
-      conversationListeners.add(listener);
-      const turnIdFor = (runId: string) => (runId === "run-1" ? "turn-1" : `turn-${runId}`);
-      const publishEnvelope = (event: AgentEventEnvelope) => {
-        conversationListeners.forEach((subscriber) => {
-          subscriber(event);
-        });
-      };
-      /** durable 事实按会话游标追加；live 增量不进历史，允许丢失。 */
-      const publishFact = (id: string, event: AgentDurableEvent, runId: string) => {
-        const log = frameLog.get(id) ?? [];
-        const seq = (log.at(-1)?.seq ?? snapshotFor(id).lastSeq) + 1;
-        const frame = testFrame(seq, event, {
-          sessionId: id,
-          turnId: turnIdFor(runId),
-          messageId: runId,
-        });
-        log.push(frame);
-        frameLog.set(id, log);
-        saveSnapshot({ ...snapshotFor(id), lastSeq: seq });
-        publishSessionFrame(frame);
-      };
-      conversationState.emit = ({ runId, chunk }) => {
-        const id = conversationState.emittedConversationId;
-        if (scopeId !== id) {
-          scopeId = id;
-          revision = 1;
-          sequence = 0;
-          messages.length = 0;
-        }
-        const stream = toStream(chunk);
-        if (stream) {
-          revision += 1;
-          sequence += 1;
-          if (isLiveOnly(stream))
-            publishLiveFrame({ sessionId: id, messageId: runId, event: stream });
-          else publishFact(id, stream, runId);
-          if (stream.type === "text-delta") {
-            const assistant = messages.find((message) => message.id === runId);
-            if (assistant) assistant.text += stream.delta;
-            else
-              messages.push({
-                id: runId,
-                role: "assistant",
-                text: stream.delta,
-                images: [],
-                status: "streaming",
-              });
-            const snapshot = snapshotFor(id);
-            const assistantText =
-              messages.find((message) => message.id === runId)?.text ?? stream.delta;
-            saveSnapshot({
-              ...snapshot,
-              eventRevision: snapshot.eventRevision,
-              messages: snapshot.messages.map((message) =>
-                message.id === runId ? { ...message, text: assistantText } : message,
-              ),
-            });
-          }
-          publishEnvelope({
-            schemaVersion: 1,
-            eventId: `event-${revision}`,
-            attemptId: `${runId}:attempt:1`,
-            producerId: "test",
-            occurredAt: "2026-11-07T00:00:00.000Z",
-            aggregateRevision: revision,
-            sequence,
-            conversationId: id,
-            runId,
-            event: stream,
-          });
-        }
-        if (chunk.type === "finish" || chunk.type === "abort") {
-          revision += 1;
-          sequence += 1;
-          if (!messages.some((message) => message.id === runId)) {
-            messages.push({
-              id: runId,
-              role: "assistant",
-              text: "",
-              images: [],
-              status: "complete",
-            });
-          }
-          const aborted = chunk.type === "abort";
-          publishFact(
-            id,
-            { type: "turn-finished", status: aborted ? "aborted" : "completed" },
-            runId,
-          );
-          const snapshot = snapshotFor(id);
-          saveSnapshot({
-            ...snapshot,
-            eventRevision: revision,
-            activeTurnId: undefined,
-            activeMessageId: undefined,
-            messages: snapshot.messages.map((message) =>
-              message.id === runId
-                ? { ...message, status: aborted ? "interrupted" : "complete" }
-                : message,
-            ),
-          });
-          publishEnvelope({
-            schemaVersion: 1,
-            eventId: `event-${revision}`,
-            attemptId: `${runId}:attempt:1`,
-            producerId: "test",
-            occurredAt: "2026-11-07T00:00:00.000Z",
-            aggregateRevision: revision,
-            sequence,
-            conversationId: id,
-            runId,
-            event: {
-              type: "run-state-changed",
-              state: aborted ? "aborted" : "completed",
-              attempt: 1,
-            },
-          });
-        }
-      };
-      return () => {
-        conversationListeners.delete(listener);
-        if (conversationListeners.size === 0) conversationState.emit = undefined;
       };
     }),
     startRegionCapture: vi.fn().mockResolvedValue({

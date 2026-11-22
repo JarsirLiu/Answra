@@ -1,5 +1,4 @@
 import {
-  type AgentEventEnvelope,
   AmbientChannels,
   type AmbientColorPayload,
   AuthChannels,
@@ -11,12 +10,14 @@ import {
   type ConversationSendCommand,
   type ConversationSnapshot,
   type DesktopBridge,
+  type LiveFrame,
   type RegionCaptureOptions,
   RemoteHostChannels,
   type RemoteHostStatus,
   type ReplyBarAction,
   type ReplyBarPlacement,
   type ReplyBarState,
+  type SessionFrame,
   UpdateChannels,
   type UpdateStatus,
   WindowChannels,
@@ -69,8 +70,8 @@ const bridge: DesktopBridge = {
     ipcRenderer.invoke(ConversationChannels.Create, { conversationId }),
   clearConversationMessages: (conversationId: string) =>
     ipcRenderer.invoke(ConversationChannels.ClearMessages, { conversationId }),
-  readConversationEvents: (conversationId: string, afterRevision: number) =>
-    ipcRenderer.invoke(ConversationChannels.ReadEvents, { conversationId, afterRevision }),
+  readSessionFrames: (conversationId: string, afterSeq: number) =>
+    ipcRenderer.invoke(ConversationChannels.ReadFrames, { conversationId, afterSeq }),
   sendConversationMessage: (command: ConversationSendCommand) =>
     ipcRenderer.invoke(ConversationChannels.Send, command),
   waitForConversationQueue: (conversationId: string, queueId: string) =>
@@ -79,20 +80,23 @@ const bridge: DesktopBridge = {
     ipcRenderer.invoke(ConversationChannels.QueuePosition, { conversationId, queueId }),
   appendConversationUserMessage: (conversationId: string, text: string) =>
     ipcRenderer.invoke(ConversationChannels.AppendUserMessage, { conversationId, text }),
-  /** Answer 窗口仍按 run 取消；P3 迁移后改为 cancelTurn。 */
-  cancelConversationRun: (runId: string) =>
-    ipcRenderer.send(ConversationChannels.CancelAnswerRun, { runId }),
-  onConversationEvent: (listener: (event: AgentEventEnvelope) => void) => {
-    const wrapped = (_event: Electron.IpcRendererEvent, event: AgentEventEnvelope) =>
-      listener(event);
-    ipcRenderer.on(ConversationChannels.Event, wrapped);
-    return () => ipcRenderer.removeListener(ConversationChannels.Event, wrapped);
-  },
+  cancelTurn: (conversationId: string, turnId: string) =>
+    ipcRenderer.send(ConversationChannels.Cancel, { conversationId, turnId }),
   onConversationSnapshot: (listener: (snapshot: ConversationSnapshot) => void) => {
     const wrapped = (_event: Electron.IpcRendererEvent, snapshot: ConversationSnapshot) =>
       listener(snapshot);
     ipcRenderer.on(ConversationChannels.SnapshotChanged, wrapped);
     return () => ipcRenderer.removeListener(ConversationChannels.SnapshotChanged, wrapped);
+  },
+  onSessionFrame: (listener: (frame: SessionFrame) => void) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, frame: SessionFrame) => listener(frame);
+    ipcRenderer.on(ConversationChannels.SessionFrame, wrapped);
+    return () => ipcRenderer.removeListener(ConversationChannels.SessionFrame, wrapped);
+  },
+  onLiveFrame: (listener: (frame: LiveFrame) => void) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, frame: LiveFrame) => listener(frame);
+    ipcRenderer.on(ConversationChannels.LiveFrame, wrapped);
+    return () => ipcRenderer.removeListener(ConversationChannels.LiveFrame, wrapped);
   },
   getRemoteHostStatus: () => ipcRenderer.invoke(RemoteHostChannels.GetStatus),
   connectRemoteHost: () => ipcRenderer.invoke(RemoteHostChannels.Connect),

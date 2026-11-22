@@ -1,6 +1,5 @@
 import type {
   AgentDurableEvent,
-  AgentEventEnvelope,
   AgentLiveOnlyEvent,
   LiveFrame,
   SessionFrame,
@@ -8,7 +7,6 @@ import type {
 import { SESSION_FRAME_SCHEMA_VERSION } from "@answra/shared/schema";
 import { describe, expect, it } from "vitest";
 import {
-  applyAgentEvent,
   applyConversationSnapshot,
   type ConversationView,
   EMPTY_CONVERSATION_VIEW,
@@ -41,25 +39,6 @@ function live(event: AgentLiveOnlyEvent, messageId = "run-1"): LiveFrame {
   return { sessionId: CONVERSATION, messageId, event };
 }
 
-function envelope(
-  aggregateRevision: number,
-  event: AgentEventEnvelope["event"],
-  runId = "run-1",
-): AgentEventEnvelope {
-  return {
-    schemaVersion: 1,
-    eventId: `event-${aggregateRevision}`,
-    conversationId: CONVERSATION,
-    runId,
-    attemptId: `${runId}:attempt:1`,
-    sequence: aggregateRevision,
-    aggregateRevision,
-    producerId: "test",
-    occurredAt: "2026-11-07T00:00:00.000Z",
-    event,
-  };
-}
-
 describe("conversation projection", () => {
   it("keeps snapshot messages and appends streamed text to the active assistant", () => {
     const view = applyConversationSnapshot(EMPTY_CONVERSATION_VIEW, {
@@ -82,7 +61,6 @@ describe("conversation projection", () => {
   it("claims the active Turn and message from durable turn frames", () => {
     const base: ConversationView = {
       lastSeq: 0,
-      eventRevision: 1,
       messages: [
         { id: "run-1", role: "assistant", text: "answer", images: [], status: "complete" },
       ],
@@ -118,7 +96,6 @@ describe("conversation projection", () => {
   it("keeps reasoning and rate-limit retry as separate explicit states", () => {
     const base: ConversationView = {
       lastSeq: 0,
-      eventRevision: 1,
       activeTurnId: "turn-1",
       activeMessageId: "run-1",
       messages: [{ id: "run-1", role: "assistant", text: "", status: "streaming" }],
@@ -253,7 +230,6 @@ describe("conversation projection", () => {
   it("keeps text and tool parts in event order while streaming", () => {
     let view: ConversationView = {
       lastSeq: 0,
-      eventRevision: 1,
       activeTurnId: "turn-1",
       activeMessageId: "run-1",
       messages: [{ id: "run-1", role: "assistant", text: "", status: "streaming", parts: [] }],
@@ -301,7 +277,6 @@ describe("conversation projection", () => {
   it("settles a running tool part when the turn fails", () => {
     const view: ConversationView = {
       lastSeq: 0,
-      eventRevision: 1,
       activeTurnId: "turn-1",
       activeMessageId: "run-1",
       messages: [
@@ -337,7 +312,6 @@ describe("conversation projection", () => {
   it("preserves event-updated provider usage when snapshot carries estimate", () => {
     const withProvider: ConversationView = {
       lastSeq: 0,
-      eventRevision: 2,
       messages: [],
       contextUsage: {
         contextWindow: 200_000,
@@ -376,7 +350,6 @@ describe("conversation projection", () => {
   it("accepts snapshot provider usage over view estimate", () => {
     const withEstimate: ConversationView = {
       lastSeq: 0,
-      eventRevision: 2,
       messages: [],
       contextUsage: {
         contextWindow: 200_000,
@@ -415,7 +388,6 @@ describe("conversation projection", () => {
   it("accepts a newer post-compaction estimate over the previous provider usage", () => {
     const withProvider: ConversationView = {
       lastSeq: 0,
-      eventRevision: 2,
       messages: [],
       contextUsage: {
         contextWindow: 200_000,
@@ -454,7 +426,6 @@ describe("conversation projection", () => {
   it("keeps provider usage when an older compaction snapshot arrives", () => {
     const withProvider: ConversationView = {
       lastSeq: 0,
-      eventRevision: 3,
       messages: [],
       contextUsage: {
         contextWindow: 200_000,
@@ -518,18 +489,16 @@ describe("conversation projection", () => {
     ["completed", "complete"],
     ["failed", "failed"],
     ["aborted", "interrupted"],
-    ["superseded", "interrupted"],
-    ["orphaned", "failed"],
-  ] as const)("maps the %s run terminal state to %s", (runState, messageStatus) => {
+  ] as const)("maps the %s turn outcome to %s", (status, messageStatus) => {
     const view: ConversationView = {
-      lastSeq: 0,
-      eventRevision: 1,
+      lastSeq: 1,
+      activeTurnId: "turn-1",
       activeMessageId: "run-1",
       messages: [{ id: "run-1", role: "assistant", text: "说到一半", status: "streaming" }],
     };
-    const finished = applyAgentEvent(
+    const finished = foldConversationFrame(
       view,
-      envelope(2, { type: "run-state-changed", state: runState, attempt: 1 }),
+      frame(2, { type: "turn-finished", status }, { turnId: "turn-1", messageId: "run-1" }),
     );
     expect(finished.activeMessageId).toBeUndefined();
     expect(finished.messages[0]).toMatchObject({ status: messageStatus, thinking: false });
@@ -537,55 +506,60 @@ describe("conversation projection", () => {
 
   it("keeps a failed retry as a static Wi-Fi record", () => {
     const view: ConversationView = {
-      lastSeq: 0,
-      eventRevision: 1,
+      lastSeq: 1,
+      activeTurnId: "turn-1",
       activeMessageId: "run-1",
       retryMessageId: "run-1",
       retry: { kind: "rate-limit", attempt: 5, maxRetries: 5 },
       messages: [{ id: "run-1", role: "assistant", text: "", status: "streaming" }],
     };
-    const finished = applyAgentEvent(
+    const finished = foldConversationFrame(
       view,
-      envelope(2, { type: "run-state-changed", state: "failed", attempt: 6 }),
+      frame(
+        2,
+        { type: "turn-finished", status: "failed" },
+        { turnId: "turn-1", messageId: "run-1" },
+      ),
     );
     expect(finished.retry).toMatchObject({ attempt: 5, maxRetries: 5, finished: true });
     expect(finished.retryMessageId).toBe("run-1");
   });
 
-  it("clears a retry record when the run completes successfully", () => {
+  it("clears a retry record when the turn completes successfully", () => {
     const view: ConversationView = {
-      lastSeq: 0,
-      eventRevision: 1,
+      lastSeq: 1,
+      activeTurnId: "turn-1",
       activeMessageId: "run-1",
       retryMessageId: "run-1",
       retry: { kind: "rate-limit", attempt: 1, maxRetries: 5 },
       messages: [{ id: "run-1", role: "assistant", text: "答案", status: "streaming" }],
     };
-    const finished = applyAgentEvent(
+    const finished = foldConversationFrame(
       view,
-      envelope(2, { type: "run-state-changed", state: "completed", attempt: 2 }),
+      frame(
+        2,
+        { type: "turn-finished", status: "completed" },
+        { turnId: "turn-1", messageId: "run-1" },
+      ),
     );
     expect(finished.retry).toBeUndefined();
     expect(finished.retryMessageId).toBeUndefined();
     expect(finished.messages[0]?.status).toBe("complete");
   });
 
-  it("clears a previous model error when the next run starts", () => {
+  it("clears a previous model error when the next turn starts streaming", () => {
     const view: ConversationView = {
-      lastSeq: 0,
-      eventRevision: 1,
-      activeMessageId: "run-1",
+      lastSeq: 1,
       error: "Cannot connect to API",
       messages: [{ id: "run-2", role: "assistant", text: "", status: "streaming" }],
     };
-    const next = applyAgentEvent(view, envelope(2, { type: "start" }, "run-2"));
+    const next = foldConversationFrame(view, frame(2, { type: "start" }, { messageId: "run-2" }));
     expect(next.error).toBeUndefined();
   });
 
   it("does not carry a previous model error into a fresh snapshot", () => {
     const view: ConversationView = {
       lastSeq: 0,
-      eventRevision: 2,
       error: "模型流未提供终态",
       messages: [{ id: "run-1", role: "assistant", text: "", status: "failed" }],
     };
@@ -684,9 +658,8 @@ describe("conversation projection", () => {
     });
   });
 
-  it("ignores an old Answer revision and a replayed frame seq", () => {
-    const view: ConversationView = { lastSeq: 5, eventRevision: 5, messages: [] };
-    expect(applyAgentEvent(view, envelope(5, { type: "start" }))).toBe(view);
+  it("ignores a replayed frame seq", () => {
+    const view: ConversationView = { lastSeq: 5, messages: [] };
     expect(
       foldConversationFrame(
         view,

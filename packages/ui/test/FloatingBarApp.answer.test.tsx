@@ -54,7 +54,7 @@ describe("floating bar screenshot answer", () => {
       expect(sentId).toMatch(/^screenshot-/);
       expect(sentId).not.toBe(conversationId);
       expect(command).toMatchObject({
-        operation: "answer.run",
+        operation: "answer.send",
         request: {
           text: "",
           images: [expect.objectContaining({ dataUrl: "data:image/png;base64,QUJD" })],
@@ -242,7 +242,12 @@ describe("floating bar screenshot answer", () => {
 
     await waitFor(() => expect(bridge.sendConversationMessage).toHaveBeenCalled());
     fireEvent.click(screen.getByRole("button", { name: "取消回复并返回发送" }));
-    await waitFor(() => expect(bridge.cancelConversationRun).toHaveBeenCalledWith("run-1"));
+    await waitFor(() =>
+      expect(bridge.cancelTurn).toHaveBeenCalledWith(
+        expect.stringMatching(/^screenshot-/),
+        "turn-1",
+      ),
+    );
 
     expect(screen.getByRole("button", { name: "继续截图" })).toBeInTheDocument();
     expect(screen.queryByText(/演示回复/)).not.toBeInTheDocument();

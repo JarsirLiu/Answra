@@ -1,6 +1,5 @@
 import type {
   AgentConnectionState,
-  AgentEventEnvelope,
   AmbientColorPayload,
   AuthLoginResult,
   AuthStatus,
@@ -138,11 +137,7 @@ export interface DesktopBridge {
     conversationId: string,
     instructions?: string,
   ) => Promise<{ result: ManualCompactionResult; snapshot: ConversationSnapshot }>;
-  readConversationEvents?: (
-    conversationId: string,
-    afterRevision: number,
-  ) => Promise<AgentEventEnvelope[]>;
-  /** 按 durable `seq` 读取可重放事实帧；迁移期与事件通道并行。 */
+  /** 按 durable `seq` 读取可重放事实帧；客户端按 `seq` 幂等折叠并补齐缺口。 */
   readSessionFrames?: (conversationId: string, afterSeq: number) => Promise<SessionFrame[]>;
   sendConversationMessage?: (command: ConversationSendCommand) => Promise<ConversationSendResponse>;
   getConversationQueuePosition?: (
@@ -158,9 +153,6 @@ export interface DesktopBridge {
     text: string,
   ) => Promise<ConversationSnapshot>;
   cancelTurn?: (conversationId: string, turnId: string) => void;
-  /** Answer 在 P3 前仍按 run 取消；随 envelope shim 一起删除。 */
-  cancelConversationRun?: (runId: string) => void;
-  onConversationEvent?: (listener: (event: AgentEventEnvelope) => void) => () => void;
   /** 订阅 durable 事实帧；客户端按 `seq` 幂等折叠。 */
   onSessionFrame?: (listener: (frame: SessionFrame) => void) => () => void;
   /** 订阅 live 增量帧；允许丢失，不参与重放。 */

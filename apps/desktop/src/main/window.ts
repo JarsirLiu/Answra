@@ -1,7 +1,6 @@
 import { join } from "node:path";
 import {
   type AgentConnectionState,
-  type AgentEventEnvelope,
   AuthChannels,
   type AuthStatus,
   ConnectionChannels,
@@ -106,19 +105,6 @@ export function getReplyBarWindow(): BrowserWindow | undefined {
   ensureControllers();
   return replyBarController.getWindow();
 }
-export function sendConversationEvent(event: AgentEventEnvelope): void {
-  const mainWindow = getWindow();
-  if (mainWindow && !mainWindow.isDestroyed())
-    mainWindow.webContents.send(ConversationChannels.Event, event);
-  const replyWindow = getReplyBarWindow();
-  if (
-    event.conversationId === replyBarController.getConversationId() &&
-    replyWindow &&
-    !replyWindow.isDestroyed()
-  )
-    replyWindow.webContents.send(ConversationChannels.Event, event);
-}
-
 export function sendConversationSnapshot(snapshot: ConversationSnapshot): void {
   const mainWindow = getWindow();
   if (mainWindow && !mainWindow.isDestroyed())

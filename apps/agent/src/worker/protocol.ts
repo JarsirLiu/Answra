@@ -1,5 +1,5 @@
 import type {
-  AnswerRunCommand,
+  AnswerSendCommand,
   ChatSendCommand,
   ConversationModelConfig,
   ConversationSelection,
@@ -8,7 +8,7 @@ import type {
   InterviewProfileSeed,
   TeamSendCommand,
 } from "@answra/shared";
-import type { AgentEventEnvelope, LiveFrame, SessionFrame } from "@answra/shared/schema";
+import type { LiveFrame, SessionFrame } from "@answra/shared/schema";
 import type { ConversationSessionQuery } from "../core/transcript/catalog";
 
 export interface InterviewWorkerTranscriptChunk {
@@ -135,16 +135,14 @@ export type AgentCommand =
   | { id: string; type: "interview-intake-snapshot"; conversationId: string }
   | ({ id: string; type: "chat-send"; accessToken: string } & ChatSendCommand)
   | ({ id: string; type: "team-send"; accessToken: string } & TeamSendCommand)
-  | ({ id: string; type: "answer-run"; accessToken: string } & AnswerRunCommand)
+  | ({ id: string; type: "answer-send"; accessToken: string } & AnswerSendCommand)
   /** 宿主对 `token-request` 的回答：`accessToken` 与 `error` 二者必居其一。 */
   | { id: string; type: "token"; accessToken?: string; error?: string }
   | { id: string; type: "snapshot"; conversationId: string }
   | { id: string; type: "bot-list" }
   | { id: string; type: "session-list"; query?: ConversationSessionQuery }
   | { id: string; type: "session-delete"; conversationId: string }
-  /** Answer 在 P3 前仍按 revision 读取 envelope；会话/面试只读 `read-frames`。 */
-  | { id: string; type: "read-events"; conversationId: string; afterRevision: number }
-  /** 按 durable `seq` 读取可重放事实帧；会话、面试与 Coding 共用。 */
+  /** 按 durable `seq` 读取可重放事实帧；会话、面试、Coding 与 Answer 共用。 */
   | { id: string; type: "read-frames"; conversationId: string; afterSeq: number }
   | {
       id: string;
@@ -162,10 +160,8 @@ export type AgentCommand =
       instructions?: string;
     }
   | { id: string; type: "append-user-message"; conversationId: string; text: string }
-  /** 取消指定 Turn；会话/面试/Coding 只认这个形状。 */
+  /** 取消指定 Turn；会话/面试/Coding/Answer 共用同一形状。 */
   | { id: string; type: "cancel-turn"; conversationId: string; turnId: string }
-  /** Answer 在 P3 迁到 SessionRuntime 前仍按 run 取消；随 envelope shim 一起删除。 */
-  | { id: string; type: "cancel-run"; runId: string }
   | { id: string; type: "wait-queue"; conversationId: string; queueId: string }
   | { id: string; type: "wait-queue-start"; conversationId: string; queueId: string }
   | { id: string; type: "queue-position"; conversationId: string; queueId: string }
@@ -176,8 +172,6 @@ export type AgentCommand =
 export type AgentFrame =
   | { version: 1; type: "response"; id: string; ok: true; value?: unknown }
   | { version: 1; type: "response"; id: string; ok: false; error: string }
-  /** Answer 在 P3 前的 envelope 推送；会话/面试/Coding 只发帧。 */
-  | { version: 1; type: "event"; event: AgentEventEnvelope }
   /** durable 事实帧：可重放、带会话内连续 `seq`。 */
   | { version: 1; type: "session-frame"; frame: SessionFrame }
   /** live 增量帧：不可重放，丢失只影响瞬时观感。 */

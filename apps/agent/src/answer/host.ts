@@ -1,9 +1,7 @@
-import type { AgentEventEnvelope } from "@answra/shared/schema";
 import { AgentRuntime } from "../core/agent/runtime";
+import { SessionFrameBus } from "../core/session/sessionFrameBus";
 import { MemoryConversationStore } from "../core/transcript/memoryStore";
 import type { ConversationStore } from "../core/transcript/store";
-import { MemoryExecutionStore } from "../execution/memoryStore";
-import type { ExecutionStore } from "../execution/store";
 import type { AgentCommand, AgentFrame } from "../worker/protocol";
 import { screenshotAnswerAgent } from "./agent";
 import { AnswerApplication } from "./application";
@@ -24,14 +22,12 @@ export interface AnswerAgentHost {
 export interface AnswerAgentHostOptions {
   transport: AnswerAgentTransport;
   store?: ConversationStore;
-  executionStore?: ExecutionStore;
 }
 
 /** Composition root for the answer profile; it has no interview runtime or media dependencies. */
 export function startAnswerAgentHost({
   transport,
   store = new MemoryConversationStore(),
-  executionStore = new MemoryExecutionStore(),
 }: AnswerAgentHostOptions): AnswerAgentHost {
   const tokenRequests = new Map<
     string,
@@ -40,9 +36,9 @@ export function startAnswerAgentHost({
   let requestSequence = 0;
   let disposed = false;
   let shutdownPromise: Promise<void> | undefined;
+  // 一个 agent 进程只有一个帧广播口：领域只发布，宿主只做转发。
+  const sessionFrames = new SessionFrameBus();
   const agentRuntime = new AgentRuntime({
-    executionStore,
-    emitEvent: (event: AgentEventEnvelope) => transport.send({ version: 1, type: "event", event }),
     tokenProvider: () =>
       new Promise((resolve, reject) => {
         const id = `answer-token-request:${++requestSequence}`;
@@ -59,6 +55,17 @@ export function startAnswerAgentHost({
     store,
     executor: answerAgent,
     authorAgentId: screenshotAnswerAgent.id,
+    sessionFrames,
+  });
+  sessionFrames.subscribe({
+    onFrame: (frame) => {
+      if (disposed) return;
+      transport.send({ version: 1, type: "session-frame", frame });
+    },
+    onLiveFrame: (frame) => {
+      if (disposed) return;
+      transport.send({ version: 1, type: "live-frame", frame });
+    },
   });
 
   function dispose(): void {
@@ -72,10 +79,10 @@ export function startAnswerAgentHost({
   function shutdown(): Promise<void> {
     shutdownPromise ??= (async () => {
       await agentRuntime.shutdown();
+      await answer.shutdown();
       disposed = true;
       for (const settle of tokenRequests.values()) settle({ error: "本地 AI 服务已关闭" });
       tokenRequests.clear();
-      answer.dispose();
       await store.close();
     })();
     return shutdownPromise;
@@ -135,12 +142,12 @@ export function startAnswerAgentHost({
         return undefined;
       case "chat-send":
         throw new Error("对话功能不包含在此安装包中");
-      case "answer-run":
+      case "answer-send":
         return answer.run(command.conversationId, command.request, command.accessToken);
       case "snapshot":
         return answer.getSnapshot(command.conversationId);
-      case "read-events":
-        return answer.readEventsAfter(command.conversationId, command.afterRevision);
+      case "read-frames":
+        return answer.readFramesAfter(command.conversationId, command.afterSeq);
       case "create-conversation":
         return answer.createConversation(command.conversationId);
       case "create-answer-conversation":
@@ -152,10 +159,8 @@ export function startAnswerAgentHost({
       }
       case "append-user-message":
         return answer.appendUserMessage(command.conversationId, command.text);
-      case "cancel-run":
-        answer.cancel(command.runId);
-        return undefined;
       case "cancel-turn":
+        answer.cancel(command.conversationId, command.turnId);
         return undefined;
       case "session-list":
       case "session-delete":

@@ -16,7 +16,6 @@ import {
   isReplyBarConversationId,
   isReplyBarWindowFromSender,
   isWindowFromSender,
-  sendConversationEvent,
   sendConversationSnapshot,
   sendLiveFrame,
   sendSessionFrame,
@@ -46,7 +45,7 @@ export function registerConversationIpc(service: AgentService, deps: Conversatio
     if (
       payload?.operation !== "chat.send" &&
       payload?.operation !== "team.send" &&
-      payload?.operation !== "answer.run"
+      payload?.operation !== "answer.send"
     )
       throw new Error("AI 操作类型无效");
     if (
@@ -109,7 +108,7 @@ export function registerConversationIpc(service: AgentService, deps: Conversatio
       if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用方");
       if (payload.selection && !isValidSelection(payload.selection))
         throw new Error("Bot 选择无效");
-      if (payload.conversationId === ActiveExamConversationId) {
+      if (isAnswerConversationId(payload.conversationId)) {
         return service.createAnswerConversation(payload.conversationId);
       }
       return service.createConversation(payload.conversationId, payload.selection);
@@ -151,19 +150,6 @@ export function registerConversationIpc(service: AgentService, deps: Conversatio
     },
   );
   ipcMain.handle(
-    ConversationChannels.ReadEvents,
-    (event, payload: { conversationId: string; afterRevision: number }) => {
-      if (
-        !isValidConversationId(payload?.conversationId) ||
-        !Number.isSafeInteger(payload?.afterRevision) ||
-        payload.afterRevision < 0
-      )
-        throw new Error("会话请求无效");
-      if (!isConversationReadSender(event, payload.conversationId)) throw new Error("非法调用方");
-      return service.readEvents(payload.conversationId, payload.afterRevision);
-    },
-  );
-  ipcMain.handle(
     ConversationChannels.ReadFrames,
     (event, payload: { conversationId: string; afterSeq: number }) => {
       if (
@@ -188,10 +174,6 @@ export function registerConversationIpc(service: AgentService, deps: Conversatio
       service.cancelTurn(payload.conversationId, payload.turnId);
     },
   );
-  ipcMain.on(ConversationChannels.CancelAnswerRun, (event, payload: { runId: string }) => {
-    if (!isWindowFromSender(getWindow(), event) || typeof payload?.runId !== "string") return;
-    service.cancelAnswerRun(payload.runId);
-  });
   ipcMain.handle(ConversationChannels.GetConfig, async (event) => {
     if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用方");
     return deps.modelSettings.getView();
@@ -208,7 +190,6 @@ export function registerConversationIpc(service: AgentService, deps: Conversatio
     if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用方");
     return deps.modelSettings.clear();
   });
-  service.onEvent(sendConversationEvent);
   service.onSessionFrame(sendSessionFrame);
   service.onLiveFrame(sendLiveFrame);
   service.onSnapshot(sendConversationSnapshot);
@@ -248,6 +229,14 @@ function isClearableConversationId(conversationId: string): boolean {
   return (
     isChatConversationId(conversationId) ||
     CLEARABLE_CONVERSATION_IDS.has(conversationId) ||
+    isAnswerConversationId(conversationId)
+  );
+}
+
+/** 截图答题会话只在 agent 内存里：固定会话与每轮一次性会话都必须走 answer 领域创建。 */
+function isAnswerConversationId(conversationId: string): boolean {
+  return (
+    conversationId === ActiveExamConversationId ||
     conversationId.startsWith(SCREENSHOT_CONVERSATION_PREFIX)
   );
 }

@@ -144,6 +144,20 @@ export class SessionRuntime {
     (await pending).dispose();
   }
 
+  /**
+   * 丢弃会话的 scheduler 与投影。
+   *
+   * 清空 journal 后 `seq` 会从 1 重新开始；保留旧 scheduler 会让投影停止前进，
+   * 因此清空必须同时丢弃调度器，下一次 submit 重新从 journal 建立投影。
+   */
+  async forget(sessionId: SessionId): Promise<void> {
+    const pending = this.schedulers.get(sessionId);
+    this.schedulers.delete(sessionId);
+    this.readySchedulers.delete(sessionId);
+    if (pending === undefined) return;
+    (await pending).dispose();
+  }
+
   async cancelPending(sessionId: SessionId): Promise<void> {
     const pending = this.schedulers.get(sessionId);
     if (pending === undefined) return;

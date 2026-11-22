@@ -18,7 +18,7 @@ import {
   type InterviewProfileSeed,
   type ManualCompactionResult,
 } from "@answra/shared";
-import type { AgentEventEnvelope, LiveFrame, SessionFrame } from "@answra/shared/schema";
+import type { LiveFrame, SessionFrame } from "@answra/shared/schema";
 import type { ResolvedModel } from "../conversation/modelRouter";
 import { AgentWorkerProcess } from "./agentWorkerHost";
 
@@ -88,10 +88,6 @@ export class AgentService {
     return this.connection.subscribe(listener);
   }
 
-  onEvent(listener: (event: AgentEventEnvelope) => void): () => void {
-    return this.workerHost.onEvent(listener);
-  }
-
   onSessionFrame(listener: (frame: SessionFrame) => void): () => void {
     return this.workerHost.onSessionFrame(listener);
   }
@@ -133,7 +129,7 @@ export class AgentService {
         ? "chat-send"
         : command.operation === "team.send"
           ? "team-send"
-          : "answer-run";
+          : "answer-send";
     return (await this.workerHost.request(type, {
       ...command,
       accessToken,
@@ -227,18 +223,11 @@ export class AgentService {
     })) as ConversationSnapshot;
   }
 
-  /** 取消指定 Turn；会话/面试/Coding 共用。 */
+  /** 取消指定 Turn；会话/面试/Coding/Answer 共用。 */
   cancelTurn(conversationId: string, turnId: string): void {
     void this.workerHost
       .request("cancel-turn", { conversationId, turnId })
       .catch((error: unknown) => console.warn("[agent-service] cancel-turn failed", error));
-  }
-
-  /** Answer 在迁到 SessionRuntime 前的按 run 取消；随 shim 一起删除。 */
-  cancelAnswerRun(runId: string): void {
-    void this.workerHost
-      .request("cancel-run", { runId })
-      .catch((error: unknown) => console.warn("[agent-service] cancel-run failed", error));
   }
 
   async listBots(): Promise<BotSummary[]> {
@@ -311,15 +300,6 @@ export class AgentService {
       accessToken,
       ...(instructions === undefined ? {} : { instructions }),
     })) as { result: ManualCompactionResult; snapshot: ConversationSnapshot };
-  }
-
-  async readEvents(conversationId: string, afterRevision: number): Promise<AgentEventEnvelope[]> {
-    await this.start();
-    this.trackConversation(conversationId);
-    return (await this.workerHost.request("read-events", {
-      conversationId,
-      afterRevision,
-    })) as AgentEventEnvelope[];
   }
 
   async readFrames(conversationId: string, afterSeq: number): Promise<SessionFrame[]> {

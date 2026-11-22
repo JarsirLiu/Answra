@@ -78,6 +78,11 @@ export class AgentRuntime {
     return this.requireRoutes().chat;
   }
 
+  /** 当前 answer 端点；一次性答题的 StepRunner 用它执行单次 provider 请求。 */
+  answerEndpoint(): NonNullable<AgentModelRoutes>["answer"] {
+    return this.requireRoutes().answer;
+  }
+
   /** 当前 chat 端点的非 secret 上下文窗口；未声明时由领域使用内部保守预算。 */
   chatContextWindow(): number | undefined {
     return this.routes?.chat.contextWindow;

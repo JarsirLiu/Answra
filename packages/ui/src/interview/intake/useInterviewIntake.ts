@@ -81,7 +81,7 @@ export function useInterviewIntake(platform: DesktopBridge | undefined): Intervi
       await reconcileSnapshot(accepted.snapshot);
       setDraft("");
       const outcome = await waitForOutcome(accepted.turnId);
-      if (outcome === "aborted" || outcome === "superseded") return;
+      if (outcome === "aborted") return;
       const runError = getView().error;
       if (runError) throw new Error(runError);
       if (outcome === "failed") throw new Error("模型请求失败");

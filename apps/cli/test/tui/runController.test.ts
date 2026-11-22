@@ -102,11 +102,17 @@ describe("TuiRunController", () => {
     vi.mocked(background.session.refresh).mockResolvedValue({
       ...snapshot("conversation-1", 7),
       activeTurnId: "run-1",
+      messages: [
+        { id: "message-1", role: "assistant", text: "background", images: [], status: "streaming" },
+      ],
     });
     await controller.activate("conversation-1");
 
     expect(background.session.refresh).toHaveBeenCalledTimes(1);
-    expect(store.getSnapshot()).toMatchObject({ view: { eventRevision: 7 }, phase: "running" });
+    expect(store.getSnapshot()).toMatchObject({
+      view: { messages: [expect.objectContaining({ id: "message-1" })] },
+      phase: "running",
+    });
   });
 
   it("does not let a background completion change the foreground phase", async () => {
@@ -152,7 +158,7 @@ describe("TuiRunController", () => {
     const controller = createController(active.session, store);
 
     await controller.createNew();
-    expect(store.getSnapshot().view.eventRevision).toBe(0);
+    expect(store.getSnapshot().view.lastSeq).toBe(0);
     expect(controller.activeSession?.currentConversationId).toBe("conversation-1-next");
 
     controller.submit("next");

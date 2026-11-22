@@ -1,11 +1,8 @@
 /**
  * 唯一的会话视图折叠：snapshot 初始化，`SessionFrame` 折叠 durable 事实，
  * `LiveFrame` 叠加可丢的增量。
- *
- * 会话路径只吃 frame；`applyAgentEvent` 仅服务 P3 前仍走 envelope 的 Answer。
  */
 import type {
-  AgentEventEnvelope,
   AgentStreamEvent,
   ContextCompactionBoundary,
   ContextCompactionStatus,
@@ -43,8 +40,6 @@ export {
 } from "./contextUsage";
 
 export interface ConversationView {
-  /** Answer shim 的 envelope 游标；会话路径不再推进它。 */
-  eventRevision: number;
   /** durable frame 游标：缺口由整段重读补齐，不靠逐帧补洞。 */
   lastSeq: number;
   messages: ConversationViewMessage[];
@@ -62,7 +57,6 @@ export interface ConversationView {
 }
 
 export const EMPTY_CONVERSATION_VIEW: ConversationView = {
-  eventRevision: 0,
   lastSeq: 0,
   messages: [],
 };
@@ -70,15 +64,6 @@ export const EMPTY_CONVERSATION_VIEW: ConversationView = {
 export interface ConversationProjectionOptions {
   retainCapturedRound?: boolean;
   trackActivities?: boolean;
-}
-
-/** 旧 envelope 的 revision；只服务 Answer shim。 */
-export function eventRevision(event: AgentEventEnvelope): number {
-  return event.aggregateRevision;
-}
-
-export function conversationOf(event: AgentEventEnvelope): string {
-  return event.conversationId ?? "";
 }
 
 /** durable frame 的会话身份。 */
@@ -99,7 +84,6 @@ export function applyConversationSnapshot(
   if (options.retainCapturedRound && snapshot.messages.length === 0 && view.messages.length > 0)
     return {
       ...view,
-      eventRevision: snapshot.eventRevision,
       lastSeq: snapshot.lastSeq,
       activeTurnId: undefined,
       activeMessageId: undefined,
@@ -114,7 +98,6 @@ export function applyConversationSnapshot(
       ? view.retry
       : undefined;
   return {
-    eventRevision: snapshot.eventRevision,
     lastSeq: snapshot.lastSeq,
     messages: snapshot.messages.map((message) =>
       toViewMessage(message, prior.get(message.id), snapshot.activeMessageId === message.id),
@@ -264,98 +247,6 @@ export function overlayLiveFrame(
   return updateMessage(next, frame.messageId, (item) => ({ ...item, activities }));
 }
 
-/** P3 前 Answer 仍按旧 envelope 折叠；会话路径不得再调用它。 */
-export function applyAgentEvent(
-  view: ConversationView,
-  envelope: AgentEventEnvelope,
-  options: ConversationProjectionOptions = {},
-): ConversationView {
-  if (envelope.aggregateRevision <= view.eventRevision) return view;
-  const event = envelope.event;
-  let next = { ...view, eventRevision: envelope.aggregateRevision };
-  if (event.type === "run-state-changed") {
-    const messageStatus = conversationStatusForRunState(event.state);
-    if (!messageStatus) {
-      next = { ...next, activeMessageId: envelope.runId };
-      next = updateMessage(next, envelope.runId, (message) => ({
-        ...message,
-        waitingForStream: event.state === "claimed" || event.state === "running",
-      }));
-      if (event.state === "retry-wait" && event.retry)
-        next = { ...next, retry: event.retry, retryMessageId: envelope.runId };
-      if (event.state === "running" && next.retryMessageId === envelope.runId)
-        next = { ...next, retry: undefined, retryMessageId: undefined };
-    } else {
-      const retryBelongsToMessage =
-        next.retryMessageId === envelope.runId && next.retry !== undefined;
-      const failed = messageStatus === "failed";
-      const retry = next.retry;
-      next = {
-        ...next,
-        activeMessageId: next.activeMessageId === envelope.runId ? undefined : next.activeMessageId,
-        retry: retryBelongsToMessage
-          ? failed && retry
-            ? { ...retry, finished: true }
-            : undefined
-          : retry,
-        retryMessageId: retryBelongsToMessage && !failed ? undefined : next.retryMessageId,
-        messages: next.messages.map((message) =>
-          message.id === envelope.runId
-            ? {
-                ...message,
-                thinking: false,
-                waitingForStream: false,
-                status: messageStatus,
-                parts: message.parts
-                  ? settleConversationParts(message.parts, failed ? "failed" : "interrupted")
-                  : message.parts,
-              }
-            : message,
-        ),
-      };
-    }
-    return next;
-  }
-  if (event.type === "context-usage-changed") {
-    if (next.contextUsage === undefined) return next;
-    return {
-      ...next,
-      contextUsage: {
-        ...next.contextUsage,
-        usedTokens: event.usedTokens,
-        source: "provider",
-        updatedAt: envelope.occurredAt,
-      },
-    };
-  }
-  const hasMessage = next.messages.some((message) => message.id === envelope.runId);
-  if (!hasMessage) return event.type === "error" ? { ...next, error: event.errorText } : next;
-  if (
-    event.type === "turn-queued" ||
-    event.type === "turn-started" ||
-    event.type === "turn-finished" ||
-    event.type === "turn-handoff" ||
-    event.type === "compaction-started" ||
-    event.type === "compaction-finished" ||
-    event.type === "compaction-failed" ||
-    event.type === "compaction-aborted"
-  )
-    return next;
-  if (
-    event.type === "step-started" ||
-    event.type === "step-finished" ||
-    event.type === "part-state-changed"
-  )
-    return next;
-  if (event.type !== "start") {
-    next = updateMessage(next, envelope.runId, (message) => ({
-      ...message,
-      waitingForStream: false,
-    }));
-  }
-  return applyStreamEvent(next, envelope.runId, event, options);
-}
-
 function messageStatusForTurnStatus(
   status: Extract<SessionFrame["event"], { type: "turn-finished" }>["status"],
 ): ConversationMessage["status"] {
@@ -366,26 +257,6 @@ function messageStatusForTurnStatus(
       return "failed";
     case "aborted":
       return "interrupted";
-  }
-}
-
-function conversationStatusForRunState(
-  state: Extract<AgentEventEnvelope["event"], { type: "run-state-changed" }>["state"],
-): ConversationMessage["status"] | undefined {
-  switch (state) {
-    case "completed":
-      return "complete";
-    case "failed":
-    case "orphaned":
-      return "failed";
-    case "aborted":
-    case "superseded":
-      return "interrupted";
-    case "queued":
-    case "claimed":
-    case "running":
-    case "retry-wait":
-      return undefined;
   }
 }
 

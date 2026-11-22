@@ -15,7 +15,7 @@ import {
   type InterviewPcmFrame,
   isAgentServiceDisconnectedError,
 } from "@answra/shared";
-import type { AgentEventEnvelope, LiveFrame, SessionFrame } from "@answra/shared/schema";
+import type { LiveFrame, SessionFrame } from "@answra/shared/schema";
 import { app, type UtilityProcess, utilityProcess } from "electron";
 import type { ResolvedModel } from "../conversation/modelRouter";
 
@@ -39,7 +39,6 @@ export interface AgentWorkerProcessOptions {
 export class AgentWorkerProcess implements AgentWorkerHostPort {
   private worker?: UtilityProcess;
   private readonly pending = new Map<string, Pending>();
-  private readonly eventListeners = new Set<(event: AgentEventEnvelope) => void>();
   private readonly sessionFrameListeners = new Set<(frame: SessionFrame) => void>();
   private readonly liveFrameListeners = new Set<(frame: LiveFrame) => void>();
   private readonly snapshotListeners = new Set<(snapshot: ConversationSnapshot) => void>();
@@ -109,11 +108,6 @@ export class AgentWorkerProcess implements AgentWorkerHostPort {
     return () => {
       this.exitListeners.delete(listener);
     };
-  }
-
-  onEvent(listener: (event: AgentEventEnvelope) => void): () => void {
-    this.eventListeners.add(listener);
-    return () => this.eventListeners.delete(listener);
   }
 
   onSessionFrame(listener: (frame: SessionFrame) => void): () => void {
@@ -196,10 +190,6 @@ export class AgentWorkerProcess implements AgentWorkerHostPort {
 
   private onFrame(frame: AgentFrame): void {
     if (frame.version !== 1) return;
-    if (frame.type === "event") {
-      for (const listener of this.eventListeners) listener(frame.event);
-      return;
-    }
     if (frame.type === "session-frame") {
       for (const listener of this.sessionFrameListeners) listener(frame.frame);
       return;

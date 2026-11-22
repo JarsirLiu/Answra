@@ -1,6 +1,5 @@
 import {
   type AgentConnectionState,
-  type AgentEventEnvelope,
   AmbientChannels,
   type AmbientColorPayload,
   AuthChannels,
@@ -140,8 +139,6 @@ const bridge: DesktopBridge = {
     ipcRenderer.invoke(ConversationChannels.ClearMessages, { conversationId }),
   compactConversation: (conversationId: string, instructions?: string) =>
     ipcRenderer.invoke(ConversationChannels.Compact, { conversationId, instructions }),
-  readConversationEvents: (conversationId: string, afterRevision: number) =>
-    ipcRenderer.invoke(ConversationChannels.ReadEvents, { conversationId, afterRevision }),
   readSessionFrames: (conversationId: string, afterSeq: number) =>
     ipcRenderer.invoke(ConversationChannels.ReadFrames, { conversationId, afterSeq }),
   sendConversationMessage: (command: ConversationSendCommand) =>
@@ -154,12 +151,6 @@ const bridge: DesktopBridge = {
     ipcRenderer.invoke(ConversationChannels.AppendUserMessage, { conversationId, text }),
   cancelTurn: (conversationId: string, turnId: string) =>
     ipcRenderer.send(ConversationChannels.Cancel, { conversationId, turnId }),
-  onConversationEvent: (listener: (event: AgentEventEnvelope) => void) => {
-    const wrapped = (_event: Electron.IpcRendererEvent, event: AgentEventEnvelope) =>
-      listener(event);
-    ipcRenderer.on(ConversationChannels.Event, wrapped);
-    return () => ipcRenderer.removeListener(ConversationChannels.Event, wrapped);
-  },
   onConversationSnapshot: (listener: (snapshot: ConversationSnapshot) => void) => {
     const wrapped = (_event: Electron.IpcRendererEvent, snapshot: ConversationSnapshot) =>
       listener(snapshot);

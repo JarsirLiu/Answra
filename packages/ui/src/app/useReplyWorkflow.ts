@@ -246,6 +246,12 @@ export function useReplyWorkflow({
   const performSend = useCallback(async () => {
     const content = draft.trim();
     if (!content && attachments.length === 0) return;
+    // 上一轮会话（已完成或失败）仍留在 agent 内存里；新轮开始前显式释放。
+    if (conversationId) {
+      void platform?.clearConversationMessages?.(conversationId).catch((error: unknown) => {
+        console.warn("[reply] 清理上一轮会话失败", error);
+      });
+    }
     const nextConversationId = `screenshot-${crypto.randomUUID()}`;
     setConversationId(nextConversationId);
     onSetReplyPhase("streaming");
@@ -266,7 +272,7 @@ export function useReplyWorkflow({
     // 保留 conversationId 与已完成回复，让回复条进入完成态：用户可继续查看答案、
     // 展开详细面板看思考过程，或自行收起回退到发送条。
     onSetReplyPhase("done");
-  }, [attachments, draft, onSendError, onSetReplyPhase, sendMessage]);
+  }, [attachments, conversationId, draft, onSendError, onSetReplyPhase, platform, sendMessage]);
 
   actionHandler.current = (action) => {
     switch (action.type) {

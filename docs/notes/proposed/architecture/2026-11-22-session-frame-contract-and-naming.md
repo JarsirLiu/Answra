@@ -316,7 +316,17 @@ P2 内部再拆四个子步，前两步不改变线上行为，第三步是唯�
   - desktop：删除 `interviewIpc` 的 `IntakeEvents` handler / removeHandler、`AgentService.readInterviewIntakeEvents`、preload 对应方法与 `eventsCommandFor`（`readEvents` 固定走 `read-events`）；remote host 的 `DesktopRemoteAgentPort` 与 `createDesktopRemoteCommandPort` 改为 `readFrames` / `onSessionFrame` / `onLiveFrame`，并按 `sessionId` 过滤可见会话。
   - CLI：删除 `emitEvent: () => {}` 过渡占位；`remote/host/commandPort.ts` 改为转发宿主帧并经 `readFramesAfter` 提供历史。
   - 证据：agent `111 files / 842 tests`、remote `9 / 48`、cli `60 / 393`、desktop `54 / 378`、ui `49 / 346` 全绿；`pnpm verify` 全绿。测试改写要点：coding 用 `frames` / `live` 替代 envelope（队列顺序、取消、`text-delta`），conversation 聊天测试改用 `runtime.waitForTurn`，`sessionRuntimeIntegration` 断言帧契约与 `seq` 单调，interview 恢复测试断言新增 `turn-finished` 帧，`worker/host` 的 step 顺序断言改用 `session-frame`。
-- **P2 第 4 步（Answer 迁移）与 P4 上锁未开始**；线上仍双发 `AgentEventEnvelope`，但只有 Answer shim 消费。
+- **P3 第 3c 步（Answer 切帧 + 换引擎）已完成（2026-11-22）**：
+  - 决策：3c 是唯一改行为的一步，同时完成「Answer 迁移到内存 `SessionRuntime`」与「删除 Answer envelope 读取通道」，避免留下两套 UI 投影。3d 只做纯删除（`executeRun.ts`、`execution/`、`AgentEventEnvelope` / `AgentRunSnapshot` / `run-state-changed` / `eventRevision`）。
+  - agent：`AnswerApplication` 改为 `SessionRuntime` + `SessionTurnExecutor` + `SessionStepExecutor` + `ProviderStepRunner`，自建 `MemorySessionJournal`，帧经进程级 `SessionFrameBus` 发布；`SessionRuntime.forget(sessionId)` 新增（dispose scheduler 并移出缓存），成功/取消轮在终态帧后 `forget + clear journal + clear transcript`，失败轮保留到 UI 关闭。并发拒绝用 `active` 同步占位（第一个 `await` 之前检查并写入），文案保持「当前回复尚未完成」。
+  - 一次性语义：Answer 不读 transcript 历史、不落盘、不参与启动恢复；截图图片只存在于本轮 `turn-queued.input`，清空后随 journal 释放。
+  - 契约：操作名 `answer.run` → `answer.send`，类型 `AnswerSendCommand`，返回 `{ turnId, snapshot }`；删除 `ReadEvents` / `Event` / `CancelAnswerRun` / `AnswerRunSendResult` 及相关 bridge 方法。
+  - 路由修复：`conversationIpc` 的 `isAnswerConversationId` 同时识别 `ActiveExamConversationId` 与 `screenshot-` 前缀。此前每轮新截图会话由通用 `Create` 以 conversation scope 落盘，迁移后必须走 answer 领域，否则 journal 清空与帧路由都会错。
+  - desktop：worker 帧删除 `event` 上行与 `onEvent` 监听；preload（含 answer-only preload）补 `readSessionFrames` / `onSessionFrame` / `onLiveFrame` / `cancelTurn`；`window.ts` 删除 `sendConversationEvent`。
+  - UI：`useConversationView` 收敛为单帧通道（durable `seq` + live），`waitForOutcome` 只认 `turn-finished` 与 `TurnOutcome`；`conversationView` 删除 `applyAgentEvent` / `eventRevision` / `conversationOf`；`useConversationChat` 删除 transport 分支与 `cancelConversationRun`，取消目标改为本轮实际发送的会话 id（Answer 每轮新建 `screenshot-<uuid>`，hook 入参仍是固定答题会话）；`useReplyWorkflow` 在新轮发送前显式清理上一轮；`useInterviewIntake` 去掉不存在的 `superseded`。
+  - 证据：agent `111 files / 842 tests`、ui `48 / 343`、desktop `54 / 378`、cli typecheck 全绿；Answer 用例覆盖并发拒绝、失败轮保留、取消轮释放、401/刷新重试与异步 store 竞争；`pnpm verify` 全绿。
+  - 行为差异（有意）：`reasoning-delta` 属 live-only，不能从 journal 重放；回复面板的思维链改由 live 帧驱动，重连后的快照只恢复正文与工具活动。
+- **P3 第 3d 步（纯删除旧引擎）与 P4 上锁未开始**；`AgentEventEnvelope` / `executeRun.ts` / `execution/` / `eventRevision` 已无 UI 消费者，只剩 Answer 之外的死代码。
 
 ## 曾考虑的替代方案
 

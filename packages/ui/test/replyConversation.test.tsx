@@ -1,14 +1,20 @@
 import type { ConversationMessage, DesktopBridge } from "@answra/shared";
-import type { AgentEventEnvelope } from "@answra/shared/schema";
+import type {
+  AgentDurableEvent,
+  AgentLiveOnlyEvent,
+  LiveFrame,
+  SessionFrame,
+} from "@answra/shared/schema";
+import { SESSION_FRAME_SCHEMA_VERSION } from "@answra/shared/schema";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { useReplyConversation } from "../src/app/useReplyConversation";
 
 interface FakeSession {
-  eventRevision: number;
+  lastSeq: number;
   messages: ConversationMessage[];
-  events: AgentEventEnvelope[];
+  frames: SessionFrame[];
 }
 
 interface FakeStore {
@@ -19,43 +25,50 @@ interface FakeStore {
   clear: (conversationId: string) => void;
 }
 
-function envelope(
+function frame(
   conversationId: string,
-  revision: number,
-  event: AgentEventEnvelope["event"],
-): AgentEventEnvelope {
+  seq: number,
+  event: AgentDurableEvent,
+  ids: { turnId?: string; messageId?: string } = {},
+): SessionFrame {
   return {
-    schemaVersion: 1,
-    eventId: `event-${revision}`,
-    conversationId,
-    runId: "run-1",
-    attemptId: "run-1:attempt:1",
-    sequence: revision,
-    aggregateRevision: revision,
-    producerId: "test",
+    schemaVersion: SESSION_FRAME_SCHEMA_VERSION,
+    sessionId: conversationId,
+    seq,
+    eventId: `event-${seq}`,
     occurredAt: "2026-11-07T00:00:00.000Z",
+    producerId: "test",
+    ...(ids.turnId === undefined ? {} : { turnId: ids.turnId }),
+    ...(ids.messageId === undefined ? {} : { messageId: ids.messageId }),
     event,
   };
 }
 
 function createFakeStore(): FakeStore {
-  const listeners = new Set<(event: AgentEventEnvelope) => void>();
+  const frameListeners = new Set<(frame: SessionFrame) => void>();
+  const liveListeners = new Set<(frame: LiveFrame) => void>();
   const sessions = new Map<string, FakeSession>();
   const sessionOf = (id: string): FakeSession => {
     let session = sessions.get(id);
     if (!session) {
-      session = { eventRevision: 0, messages: [], events: [] };
+      session = { lastSeq: 0, messages: [], frames: [] };
       sessions.set(id, session);
     }
     return session;
   };
-  const publish = (id: string, event: AgentEventEnvelope["event"]) => {
+  const publishFrame = (id: string, event: AgentDurableEvent): void => {
     const session = sessionOf(id);
-    const revision = session.eventRevision + 1;
-    const item = envelope(id, revision, event);
-    session.eventRevision = revision;
-    session.events.push(item);
-    for (const listener of listeners) listener(item);
+    const item = frame(id, session.lastSeq + 1, event, {
+      turnId: "turn-1",
+      messageId: "run-1",
+    });
+    session.lastSeq = item.seq;
+    session.frames.push(item);
+    for (const listener of frameListeners) listener(item);
+  };
+  const publishLive = (id: string, event: AgentLiveOnlyEvent): void => {
+    const item: LiveFrame = { sessionId: id, messageId: "run-1", event };
+    for (const listener of liveListeners) listener(item);
   };
   return {
     bridge: {
@@ -63,21 +76,25 @@ function createFakeStore(): FakeStore {
         const session = sessionOf(id);
         return {
           conversationId: id,
-          eventRevision: session.eventRevision,
+          eventRevision: 0,
+          lastSeq: session.lastSeq,
           messages: session.messages.map((message) => ({ ...message })),
         };
       }),
-      readConversationEvents: vi.fn(async (id: string, after: number) =>
-        sessionOf(id).events.filter((event) => event.aggregateRevision > after),
+      readSessionFrames: vi.fn(async (id: string, after: number) =>
+        sessionOf(id).frames.filter((item) => item.seq > after),
       ),
-      onConversationEvent: vi.fn((listener: (event: AgentEventEnvelope) => void) => {
-        listeners.add(listener);
-        return () => listeners.delete(listener);
+      onSessionFrame: vi.fn((listener: (item: SessionFrame) => void) => {
+        frameListeners.add(listener);
+        return () => frameListeners.delete(listener);
+      }),
+      onLiveFrame: vi.fn((listener: (item: LiveFrame) => void) => {
+        liveListeners.add(listener);
+        return () => liveListeners.delete(listener);
       }),
     } as unknown as DesktopBridge,
     begin: (id) => {
       const session = sessionOf(id);
-      session.eventRevision = Math.max(session.eventRevision, 1);
       session.messages = [
         { id: "user-1", role: "user", text: "这题选什么", images: [], status: "complete" },
         { id: "run-1", role: "assistant", text: "", images: [], status: "streaming" },
@@ -87,17 +104,20 @@ function createFakeStore(): FakeStore {
       const session = sessionOf(id);
       const assistant = session.messages.find((message) => message.id === "run-1");
       if (assistant) assistant.text += text;
-      publish(id, { type: "text-delta", partId: "text-1", delta: text });
+      publishLive(id, { type: "text-delta", partId: "text-1", delta: text });
     },
     finish: (id) => {
       const session = sessionOf(id);
       const assistant = session.messages.find((message) => message.id === "run-1");
       if (assistant) assistant.status = "complete";
-      publish(id, { type: "run-state-changed", state: "completed", attempt: 1 });
+      publishFrame(id, { type: "turn-finished", status: "completed" });
     },
     clear: (id) => {
+      // 清空同时重置 transcript 与 journal 游标：下一次订阅看到的是真正的空会话。
       const session = sessionOf(id);
       session.messages = [];
+      session.frames = [];
+      session.lastSeq = 0;
     },
   };
 }

@@ -87,7 +87,7 @@ describe("runInkTui", () => {
     expect(session.send).not.toHaveBeenCalled();
     expect(store.getSnapshot()).toMatchObject({
       notifications: { current: { text: "会话已清除。" } },
-      view: { eventRevision: 0, messages: [] },
+      view: { lastSeq: 0, messages: [] },
     });
 
     finish();
@@ -276,7 +276,7 @@ describe("runInkTui", () => {
     );
     expect(target.session.open).toHaveBeenCalledTimes(1);
     expect(store.getSnapshot()).toMatchObject({
-      view: { eventRevision: 4 },
+      view: { messages: [expect.objectContaining({ id: "message-2" })] },
       phase: "idle",
       notifications: { current: { text: "已恢复会话：conversation-2" } },
     });
