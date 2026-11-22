@@ -326,7 +326,82 @@ P2 内部再拆四个子步，前两步不改变线上行为，第三步是唯�
   - UI：`useConversationView` 收敛为单帧通道（durable `seq` + live），`waitForOutcome` 只认 `turn-finished` 与 `TurnOutcome`；`conversationView` 删除 `applyAgentEvent` / `eventRevision` / `conversationOf`；`useConversationChat` 删除 transport 分支与 `cancelConversationRun`，取消目标改为本轮实际发送的会话 id（Answer 每轮新建 `screenshot-<uuid>`，hook 入参仍是固定答题会话）；`useReplyWorkflow` 在新轮发送前显式清理上一轮；`useInterviewIntake` 去掉不存在的 `superseded`。
   - 证据：agent `111 files / 842 tests`、ui `48 / 343`、desktop `54 / 378`、cli typecheck 全绿；Answer 用例覆盖并发拒绝、失败轮保留、取消轮释放、401/刷新重试与异步 store 竞争；`pnpm verify` 全绿。
   - 行为差异（有意）：`reasoning-delta` 属 live-only，不能从 journal 重放；回复面板的思维链改由 live 帧驱动，重连后的快照只恢复正文与工具活动。
-- **P3 第 3d 步（纯删除旧引擎）与 P4 上锁未开始**；`AgentEventEnvelope` / `executeRun.ts` / `execution/` / `eventRevision` 已无 UI 消费者，只剩 Answer 之外的死代码。
+- **P3 第 3d 步（纯删除旧引擎）与 P4 上锁未开始**；`AgentEventEnvelope` / `executeRun.ts` / `execution/` / `eventRevision` 已无 UI 消费者，只剩 Answer 之外的死代码。执行方案见下节。
+
+## 下一步执行方案（3d 纯删除与 P4 上锁）
+
+3c 之后，旧引擎只剩「调用方已消失的代码」，但**不能一次性 `git rm`**：`AgentExecutor` 仍是 Answer / Interview / Conversation 三处 step 绑定的类型，删除必须自内向外、每步可编译。
+
+### 3d-0 动手前复核的三个事实（本次盘点已确认）
+
+1. `apps/agent/src/core/agent/streamJournal.ts` 只被 `executeRun.ts` 引用（`createExecutionJournal` 的唯一调用点）→ 随它一起删。
+2. `AgentDefinition.result?(input, runId)` 的唯一调用点是 `apps/agent/src/conversation/stepBinding.ts:49`，实参已经是 `step.stepId` → 只需把形参改名，交接语义不变。
+3. `ConversationStore.beginSessionAssistant` 仍由 `transcriptBridge.ts:114` 生产调用，但它内部经 `beginHandoffRun` 写活动槽位 → 删除 `beginHandoffRun` 时必须把这段内联进 `beginSessionAssistant`，不能直接删。
+
+### 3d-1 删除 run 执行引擎（agent 内部，最大的一步）
+
+| 文件 | 动作 |
+| --- | --- |
+| `apps/agent/src/core/agent/executeRun.ts` | 删除 |
+| `apps/agent/src/core/agent/streamJournal.ts` | 删除 |
+| `apps/agent/src/execution/`（`store.ts` / `memoryStore.ts` / `events.ts`） | 整目录删除 |
+| `apps/agent/src/core/agent/runtime.ts` | 删 `executionStore` / `emitEvent` / `startRun` / `getRun` / `readEvents` / `readEventsForRun` / `getConversationRevision` / `resetConversation` / `requireExecutionStore`；保留 `registerAgent` 与 `prepare` |
+| `apps/agent/src/core/agent/definition.ts` | 删 `AgentRunPrepared` / `AgentRunRequest` / `AgentRunHandle` 与 `AgentExecutor.startRun`；`AgentDefinition.result?(input, stepId)` 形参改名 |
+| `apps/agent/src/core/context/usageAnchor.ts:56-68` | 删 `run-state-changed` 分支与注释，只认 `step-finished` + `turn-finished` |
+| `apps/agent/src/host.ts` | 删 `executionStore` 参数与 `MemoryExecutionStore` 默认注入 |
+| `apps/agent/test/execution/store.test.ts` | 删除 |
+
+出口：`apps/agent` typecheck + 测试绿；源码 `executionStore` / `startRun(` 归零。
+
+### 3d-2 删除 transcript 的 envelope 写入面与 `eventRevision`
+
+| 文件 | 动作 |
+| --- | --- |
+| `core/transcript/store.ts` | 删 `applyAgentEvent`、`AgentEventEnvelope` import、`beginRun` / `beginEphemeralRun` / `beginReplyRun` / `beginOpeningRun` / `beginHandoffRun` / `finishRun`，以及全部 `eventRevision` 形参；`ConversationClearCursor.eventRevision` 删除 |
+| `core/transcript/memoryStore.ts` | 同步删除上述实现与 `aggregateRevision` 折叠；`beginSessionAssistant` 内联原 `beginHandoffRun` 的槽位写入 |
+| `core/transcript/persistence/sqlite/sqliteConversationStore.ts` | 删 `applyAgentEvent` override |
+| `core/transcript/persistence/sessionRecord.ts`、`restore.ts` | 删 `eventRevision: true` omit 与 `eventRevision: 0` 初始化 |
+| `apps/agent/src/coding/application.ts:199` | 不再读 `load(...).eventRevision`（该处只用于透传，删除后不影响编译） |
+
+出口：`apps/`、`packages/` 源码 `eventRevision` 归零；transcript 测试的 revision 单调性断言**替换**为等价的 `lastSeq` 断言（字段退役，不是删断言）。
+
+### 3d-3 删除 shared 旧词汇（最后一步，避免中途失去类型）
+
+| 文件 | 动作 |
+| --- | --- |
+| `packages/shared/src/schema/events.ts` | 删 `agentExecutionEventSchema` / `agentEventSchema` / `agentEventEnvelopeSchema` / `AgentEventEnvelope` / `AgentExecutionEvent`，以及 `run-state-changed` 分支 |
+| `packages/shared/src/schema/status.ts` | 删 `AgentRunSnapshot` / `AgentRunState` / `runOutcomeSchema`（`RunOutcome` 随 3d-1、3d-2 一起消失） |
+| `packages/shared/src/schema/conversation.ts:69` | 删 `eventRevision` 字段与注释 |
+| `packages/shared/src/index.ts`、`schema/index.ts` | 同步 `exports` |
+
+出口：`AgentEventEnvelope` / `run-state-changed` / `eventRevision` 全仓源码归零。
+
+### 3d 测试 fixture 清理（随 3d-1..3d-3 各自一并提交，不单开一笔）
+
+`eventRevision: 0` 以快照字面量形式散布在 `packages/ui/test/support/floatingBarHarness.ts`、`apps/cli/test/**`、`apps/desktop/test/**`、`packages/remote/src/testing/*`；`apps/agent/test/**` 另有 envelope 构造（`modelMessages.test.ts`、`preparation.test.ts`、`transcript/store.test.ts`、`sqliteConversationMessages.test.ts`）与 `run-state-changed` 断言。处理口径：
+
+- 快照字面量：直接删字段，不改断言。
+- envelope 构造：换成 `SessionFrame` 或直接构造事件对象。
+- `run-state-changed` 断言：改写成对应的 `turn-*` / `step-*` 事实断言。
+
+### P4 上锁（在 3d 全绿之后单独一笔）
+
+1. `scripts/architecture/architecture-check.mjs` 新增 `forbidRetiredVocabulary`：扫描 `apps/**/src`、`packages/**/src`（排除 `.d.ts` 与 `packages/skills`），命中即 `errors.push`。
+2. **禁词用精确符号，不用 `\brun\b`**（修订 D3 的原始写法）：裸 `run` 会误伤 `core/tool/builtin/runCommand/` 里的 `executeRunCommand` 与 `run_command` 工具名。规则清单：`AgentEventEnvelope`、`AgentRunSnapshot`、`AgentRunState`、`agentEventEnvelopeSchema`、`agentEventSchema`、`run-state-changed`、`eventRevision`、`aggregateRevision`、`ExecutionStore`、`MemoryExecutionStore`、`executeRun`。
+3. 规则抽成纯函数（`scanRetiredVocabulary(code)`）并配 `node:test` 反例：违规样例必须返回错误、合法样例必须返回空。只靠 code review 无法阻止「半年后重新引入 run」，这条规则的价值就是把检测成本从人工降到 CI。
+4. 附加方向规则：`packages/ui/src` 不得 import `apps/`（3a 已达成，只是没有守护）。
+5. 出口：本地故意把 `AgentEventEnvelope` 写进 `packages/ui/src` 时 `pnpm architecture:check` 必须失败（验证后不提交该行）。
+
+### 提交切分
+
+| 顺序 | 提交信息（建议） | 门禁 |
+| --- | --- | --- |
+| 1 | `refactor(agent): 删除 run 执行引擎与 ExecutionStore` | agent 测试 + `pnpm verify` |
+| 2 | `refactor(agent): 删除 transcript envelope 写入面与 eventRevision` | 同上 |
+| 3 | `refactor(shared): 移除 run 事件词汇` | 同上 |
+| 4 | `chore(architecture): 锁定退役 run 词汇` | `architecture:check` 含反例 |
+
+风险：3d-2 是唯一可能触碰行为的步骤（活动槽位写入从 `beginHandoffRun` 内联），其余为纯删除；若 3d-2 出现 handoff 多消息回归，先回滚该笔，其余三笔独立有效。
 
 ## 曾考虑的替代方案
 
