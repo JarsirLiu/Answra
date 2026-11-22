@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { conversationSnapshotSchema } from "../conversation";
-import { agentEventEnvelopeSchema } from "../events";
+import { liveFrameSchema, sessionFrameSchema } from "../session/frame";
 import {
   remoteCapabilitiesSchema,
   remoteProtocolVersionSchema,
@@ -8,7 +8,6 @@ import {
 } from "./capabilities";
 import { remoteCommandSchema } from "./commands";
 import { remoteErrorSchema } from "./errors";
-import { remoteEventBatchSchema } from "./events";
 import { remoteModelSettingsViewSchema } from "./modelSettings";
 
 export const remoteHelloSchema = z.strictObject({
@@ -67,14 +66,14 @@ export const remoteSnapshotFrameSchema = z.strictObject({
   snapshot: conversationSnapshotSchema,
 });
 
-export const remoteEventFrameSchema = z.strictObject({
-  type: z.literal("event"),
-  event: agentEventEnvelopeSchema,
+export const remoteSessionFrameSchema = z.strictObject({
+  type: z.literal("session-frame"),
+  frame: sessionFrameSchema,
 });
 
-export const remoteEventsFrameSchema = z.strictObject({
-  type: z.literal("events"),
-  batch: remoteEventBatchSchema,
+export const remoteLiveFrameSchema = z.strictObject({
+  type: z.literal("live-frame"),
+  frame: liveFrameSchema,
 });
 
 export const remoteCloseFrameSchema = z.strictObject({
@@ -91,8 +90,8 @@ export const remoteFrameSchema = z.discriminatedUnion("type", [
   remoteCommandOkFrameSchema,
   remoteCommandErrorFrameSchema,
   remoteSnapshotFrameSchema,
-  remoteEventFrameSchema,
-  remoteEventsFrameSchema,
+  remoteSessionFrameSchema,
+  remoteLiveFrameSchema,
   remoteCloseFrameSchema,
 ]);
 
@@ -104,7 +103,7 @@ export type RemoteCommandFrame = z.infer<typeof remoteCommandFrameSchema>;
 export type RemoteCommandOkFrame = z.infer<typeof remoteCommandOkFrameSchema>;
 export type RemoteCommandErrorFrame = z.infer<typeof remoteCommandErrorFrameSchema>;
 export type RemoteSnapshotFrame = z.infer<typeof remoteSnapshotFrameSchema>;
-export type RemoteEventFrame = z.infer<typeof remoteEventFrameSchema>;
-export type RemoteEventsFrame = z.infer<typeof remoteEventsFrameSchema>;
+export type RemoteSessionFrame = z.infer<typeof remoteSessionFrameSchema>;
+export type RemoteLiveFrame = z.infer<typeof remoteLiveFrameSchema>;
 export type RemoteCloseFrame = z.infer<typeof remoteCloseFrameSchema>;
 export type RemoteFrame = z.infer<typeof remoteFrameSchema>;

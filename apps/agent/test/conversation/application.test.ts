@@ -1,9 +1,5 @@
 import { createServer, type Server } from "node:http";
-import {
-  ActiveChatConversationId,
-  ActiveExamConversationId,
-  type ConversationSnapshot,
-} from "@answra/shared";
+import { ActiveChatConversationId, ActiveExamConversationId } from "@answra/shared";
 import type { AgentEventEnvelope } from "@answra/shared/schema";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { screenshotAnswerAgent } from "../../src/answer/agent";
@@ -28,6 +24,7 @@ function createTestRuntime({
 }): ConversationApplication & {
   runAnswer: AnswerApplication["run"];
   cancelAnswer: AnswerApplication["cancel"];
+  readAnswerEventsAfter: AnswerApplication["readEventsAfter"];
 } {
   const agentRuntime = new AgentRuntime({
     executionStore: new MemoryExecutionStore(),
@@ -53,6 +50,7 @@ function createTestRuntime({
   return Object.assign(runtime, {
     runAnswer: answer.run.bind(answer),
     cancelAnswer: answer.cancel.bind(answer),
+    readAnswerEventsAfter: answer.readEventsAfter.bind(answer),
   });
 }
 
@@ -88,13 +86,6 @@ function streamEvents(events: AgentEventEnvelope[], runId?: string): AgentEventE
 
 function isFulfilled<T>(result: PromiseSettledResult<T>): result is PromiseFulfilledResult<T> {
   return result.status === "fulfilled";
-}
-
-/** 聊天发送只按 Turn 返回；envelope 的 runId 仍是该 Turn 首条 assistant 消息 id。 */
-function activeMessageOf(snapshot: ConversationSnapshot): string {
-  const id = snapshot.activeMessageId;
-  if (id === undefined) throw new Error("send 未产生活动 assistant 消息");
-  return id;
 }
 
 function endpoint(port: number) {
@@ -198,7 +189,9 @@ describe("ephemeral conversation runtime", () => {
     const snapshot = await runtime.getSnapshot("test-conversation");
     expect(snapshot.messages).toEqual([]);
     expect(snapshot.eventRevision).toBe(changes.at(-1)?.aggregateRevision);
-    expect(await runtime.readEventsAfter("test-conversation", 0)).toHaveLength(changes.length);
+    expect(await runtime.readAnswerEventsAfter("test-conversation", 0)).toHaveLength(
+      changes.length,
+    );
     expect(
       changes.filter(
         (change) => isTerminalEvent(change, first.runId) || isTerminalEvent(change, second.runId),
@@ -235,7 +228,7 @@ describe("ephemeral conversation runtime", () => {
       { text: "普通聊天", images: [] },
       ACCESS_TOKEN,
     );
-    await waitForTerminal(activeMessageOf(chat.snapshot));
+    await runtime.waitForTurn("chat-tuning-conversation", chat.turnId);
     expect(requests.at(-1)?.temperature).toBeUndefined();
     expect(requests.at(-1)?.reasoningEffort).toBeUndefined();
   });
@@ -284,7 +277,7 @@ describe("ephemeral conversation runtime", () => {
       },
       ACCESS_TOKEN,
     );
-    await waitForTerminal(activeMessageOf(first.snapshot));
+    await runtime.waitForTurn(ActiveChatConversationId, first.turnId);
     const second = await runtime.sendChat(
       "general-chat",
       ActiveChatConversationId,
@@ -294,7 +287,7 @@ describe("ephemeral conversation runtime", () => {
       },
       ACCESS_TOKEN,
     );
-    await waitForTerminal(activeMessageOf(second.snapshot));
+    await runtime.waitForTurn(ActiveChatConversationId, second.turnId);
 
     const chatPayload = JSON.stringify(requests[1]?.messages);
     expect(chatPayload).toContain("我叫小明");
@@ -323,7 +316,7 @@ describe("ephemeral conversation runtime", () => {
       { text: "读取工作区", images: [] },
       ACCESS_TOKEN,
     );
-    await waitForTerminal(activeMessageOf(chat.snapshot));
+    await runtime.waitForTurn("tools-authorized-chat", chat.turnId);
     const chatTools = JSON.stringify(requests.at(-1)?.tools);
     expect(chatTools).toContain("Read");
     expect(chatTools).toContain("Grep");
@@ -351,7 +344,7 @@ describe("ephemeral conversation runtime", () => {
       { text: "工作区是什么？", images: [] },
       ACCESS_TOKEN,
     );
-    await waitForTerminal(activeMessageOf(first.snapshot));
+    await runtime.waitForTurn("workspace-context-chat", first.turnId);
     expect(JSON.stringify(requests.at(-1))).toContain("当前工作区根目录：D:/notes/first");
 
     runtime.setWorkspaceRoot("D:/notes/second");
@@ -361,7 +354,7 @@ describe("ephemeral conversation runtime", () => {
       { text: "现在工作区是什么？", images: [] },
       ACCESS_TOKEN,
     );
-    await waitForTerminal(activeMessageOf(second.snapshot));
+    await runtime.waitForTurn("workspace-context-chat", second.turnId);
     expect(JSON.stringify(requests.at(-1))).toContain("D:/notes/second");
     expect(JSON.stringify(requests.at(-1))).not.toContain("D:/notes/first");
 
@@ -372,7 +365,7 @@ describe("ephemeral conversation runtime", () => {
       { text: "还能读文件吗？", images: [] },
       ACCESS_TOKEN,
     );
-    await waitForTerminal(activeMessageOf(third.snapshot));
+    await runtime.waitForTurn("workspace-context-chat", third.turnId);
     expect(JSON.stringify(requests.at(-1))).toContain("尚未选择工作区目录");
 
     const answer = await runtime.runAnswer(
@@ -386,13 +379,13 @@ describe("ephemeral conversation runtime", () => {
   });
 
   it("injects runtime environment before the workspace only for tool-enabled chat profiles", async () => {
-    const { snapshot } = await runtime.sendChat(
+    const { turnId } = await runtime.sendChat(
       "general-chat",
       "environment-context-chat",
       { text: "你运行在什么环境？", images: [] },
       ACCESS_TOKEN,
     );
-    await waitForTerminal(activeMessageOf(snapshot));
+    await runtime.waitForTurn("environment-context-chat", turnId);
 
     const chatBody = JSON.stringify(requests.at(-1));
     expect(chatBody).toContain("# 运行环境");
@@ -411,7 +404,7 @@ describe("ephemeral conversation runtime", () => {
   });
 
   it("injects current local time and time zone only for chat profiles", async () => {
-    const { snapshot } = await runtime.sendChat(
+    const { turnId } = await runtime.sendChat(
       "general-chat",
       "time-inject-chat",
       {
@@ -420,7 +413,7 @@ describe("ephemeral conversation runtime", () => {
       },
       ACCESS_TOKEN,
     );
-    await waitForTerminal(activeMessageOf(snapshot));
+    await runtime.waitForTurn("time-inject-chat", turnId);
 
     const chatBody = JSON.stringify(requests.at(-1));
     expect(chatBody).toContain("<system-reminder>");

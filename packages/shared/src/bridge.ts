@@ -200,8 +200,6 @@ export interface DesktopBridge {
   ) => Promise<{ turnId: string; snapshot: ConversationSnapshot }>;
   /** 读取 intake 会话的权威 snapshot。 */
   getInterviewIntakeSnapshot?: () => Promise<ConversationSnapshot>;
-  /** 读取 intake 会话在指定 revision 之后的事件。 */
-  readInterviewIntakeEvents?: (afterRevision: number) => Promise<AgentEventEnvelope[]>;
   stopInterview?: (sessionId: string) => Promise<void>;
   markInterviewCaptureReady?: (sessionId: string) => Promise<void>;
   failInterviewCapture?: (sessionId: string) => Promise<void>;

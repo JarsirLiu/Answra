@@ -5,7 +5,7 @@ import {
   SessionFrameBus,
   startCodingHost,
 } from "@answra/agent/composition";
-import type { AgentEventEnvelope, LiveFrame, SessionFrame } from "@answra/shared/schema";
+import type { LiveFrame, SessionFrame } from "@answra/shared/schema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CodingAgentInput } from "../../src/coding/agent";
 import { CodingApplication } from "../../src/coding/application";
@@ -17,7 +17,6 @@ import { type StepRunner, sessionId, stepId, turnId } from "../../src/core/sessi
 import { MemorySessionJournal } from "../../src/core/session/memoryJournal";
 import { MemoryConversationStore } from "../../src/core/transcript/memoryStore";
 import { createUserMessage } from "../../src/core/transcript/message";
-import { MemoryExecutionStore } from "../../src/execution/memoryStore";
 
 type RecordedRequest = {
   messages: Array<{ role: string; content: unknown }>;
@@ -50,7 +49,8 @@ function toolCallBody(name: string, input: unknown): string {
 describe("CLI coding host", () => {
   let server: Server;
   let requests: RecordedRequest[];
-  let events: AgentEventEnvelope[];
+  let frames: SessionFrame[];
+  let live: LiveFrame[];
   let host: CodingHost;
   let holdResponse = false;
   let responseGate: Promise<void> | undefined;
@@ -58,7 +58,8 @@ describe("CLI coding host", () => {
 
   beforeEach(async () => {
     requests = [];
-    events = [];
+    frames = [];
+    live = [];
     holdResponse = false;
     responseGate = undefined;
     respond = undefined;
@@ -84,8 +85,11 @@ describe("CLI coding host", () => {
     if (!address || typeof address === "string") throw new Error("test server did not bind");
 
     host = startCodingHost({
-      emitEvent: (event) => events.push(event),
       workspaceRoot: "D:/coding-workspace",
+    });
+    host.sessionFrames.subscribe({
+      onFrame: (frame) => frames.push(frame),
+      onLiveFrame: (frame) => live.push(frame),
     });
     host.runtime.configure({ chat: endpoint(address.port), answer: endpoint(address.port) });
   });
@@ -108,7 +112,7 @@ describe("CLI coding host", () => {
       ACCESS_TOKEN,
     );
     expect(snapshot.activeTurnId).toBe(turnId);
-    // envelope 的 runId 仍是该 Turn 的首条 assistant 消息 id。
+    // live 帧的 messageId 仍是该 Turn 的首条 assistant 消息 id。
     const messageId = snapshot.messages.at(-1)?.id;
     expect(snapshot.activeMessageId).toBe(messageId);
     await host.runtime.waitForTurn("coding-session", turnId);
@@ -131,7 +135,7 @@ describe("CLI coding host", () => {
     expect(body).not.toContain("通用 AI 助手");
     expect(requests.at(-1)?.authorization).toBe(`Bearer ${ACCESS_TOKEN}`);
     expect(
-      events.some((event) => event.runId === messageId && event.event.type === "text-delta"),
+      live.some((frame) => frame.messageId === messageId && frame.event.type === "text-delta"),
     ).toBe(true);
   });
 
@@ -159,7 +163,7 @@ describe("CLI coding host", () => {
 
   it("uses the injected frame bus instead of creating a private one", () => {
     const bus = new SessionFrameBus();
-    const injected = startCodingHost({ emitEvent: () => undefined, sessionFrames: bus });
+    const injected = startCodingHost({ sessionFrames: bus });
     try {
       expect(injected.sessionFrames).toBe(bus);
     } finally {
@@ -239,20 +243,14 @@ describe("CLI coding host", () => {
     await host.runtime.waitForTurn("coding-turn-queue", started.turnId);
     await host.runtime.waitForTurn("coding-turn-queue", first.turnId);
 
-    const firstMessageId = first.snapshot.activeMessageId;
-    expect(firstMessageId).toBeDefined();
-    const order = events.map((event) => event);
-    const firstCompleted = order.findIndex(
-      (event) =>
-        event.runId === firstMessageId &&
-        event.event.type === "run-state-changed" &&
-        event.event.state === "completed",
+    const firstFinished = frames.findIndex(
+      (frame) => frame.turnId === first.turnId && frame.event.type === "turn-finished",
     );
-    const secondStarted = order.findIndex(
-      (event) => event.runId === started.snapshot.activeMessageId,
+    const secondStarted = frames.findIndex(
+      (frame) => frame.turnId === started.turnId && frame.event.type === "turn-started",
     );
-    expect(firstCompleted).toBeGreaterThanOrEqual(0);
-    expect(secondStarted).toBeGreaterThan(firstCompleted);
+    expect(firstFinished).toBeGreaterThanOrEqual(0);
+    expect(secondStarted).toBeGreaterThan(firstFinished);
 
     // 第一 turn 的 tool 调用后继续同一 Turn，不把队列消息插进 step 之间。
     expect(requests).toHaveLength(3);
@@ -288,11 +286,11 @@ describe("CLI coding host", () => {
     await expect
       .poll(
         () =>
-          events.some(
-            (event) =>
-              event.runId === messageId &&
-              event.event.type === "run-state-changed" &&
-              event.event.state === "aborted",
+          frames.some(
+            (frame) =>
+              frame.turnId === turnId &&
+              frame.event.type === "turn-finished" &&
+              frame.event.status === "aborted",
           ),
         { timeout: 5_000, interval: 10 },
       )
@@ -347,7 +345,6 @@ function fakeRuntime(): AgentRuntime {
   return {
     cancel: vi.fn(),
     dispose: vi.fn(),
-    resetExecution: vi.fn(async () => undefined),
     chatContextWindow: () => undefined,
     chatEndpoint: () => ({ baseUrl: "http://127.0.0.1:1/v1", model: "test" }),
     configureModelRoutes: vi.fn(),
@@ -389,12 +386,10 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
 function makeApp({
   store,
   journal,
-  events,
   runner,
 }: {
   store: MemoryConversationStore;
   journal: MemorySessionJournal;
-  events: MemoryExecutionStore;
   runner: StepRunner;
 }): CodingApplication {
   return new CodingApplication({
@@ -402,7 +397,6 @@ function makeApp({
     store,
     bot: makeBot(),
     sessionJournal: journal,
-    executionStore: events,
     stepRunner: runner,
     onSnapshot: () => undefined,
   });
@@ -412,7 +406,6 @@ describe("CodingApplication queue and recovery", () => {
   it("runs queued turns in order after the active turn finishes", async () => {
     const store = new MemoryConversationStore();
     const journal = new MemorySessionJournal();
-    const events = new MemoryExecutionStore();
     const gate = deferred();
     const stepMessages: string[] = [];
     const runner: StepRunner = {
@@ -422,7 +415,7 @@ describe("CodingApplication queue and recovery", () => {
         return { outcome: "completed", finishReason: "stop" };
       },
     };
-    const app = makeApp({ store, journal, events, runner });
+    const app = makeApp({ store, journal, runner });
     await app.createConversation("coding-queue");
 
     const first = await app.enqueue("coding-queue", { text: "first", images: [] }, "token");
@@ -451,13 +444,12 @@ describe("CodingApplication queue and recovery", () => {
   it("records manual compaction lifecycle in the session journal", async () => {
     const store = new MemoryConversationStore();
     const journal = new MemorySessionJournal();
-    const events = new MemoryExecutionStore();
     const runner: StepRunner = {
       async run() {
         return { outcome: "completed", finishReason: "stop" };
       },
     };
-    const app = makeApp({ store, journal, events, runner });
+    const app = makeApp({ store, journal, runner });
     await app.createConversation("coding-compact");
     const { turnId } = await app.send("coding-compact", { text: "旧问题", images: [] }, "token");
     await app.waitForTurn("coding-compact", turnId);
@@ -479,7 +471,6 @@ describe("CodingApplication queue and recovery", () => {
   it("cancels queued turns when the active run is cancelled", async () => {
     const store = new MemoryConversationStore();
     const journal = new MemorySessionJournal();
-    const events = new MemoryExecutionStore();
     const runner: StepRunner = {
       run: (_step, _context, signal) =>
         new Promise((resolve) => {
@@ -490,7 +481,7 @@ describe("CodingApplication queue and recovery", () => {
           signal.addEventListener("abort", () => resolve({ outcome: "aborted" }), { once: true });
         }),
     };
-    const app = makeApp({ store, journal, events, runner });
+    const app = makeApp({ store, journal, runner });
     await app.createConversation("coding-stop");
 
     const first = await app.enqueue("coding-stop", { text: "first", images: [] }, "token");
@@ -514,7 +505,6 @@ describe("CodingApplication queue and recovery", () => {
   it("closes the interrupted message on startup recovery and accepts the next turn", async () => {
     const store = new MemoryConversationStore();
     const journal = new MemorySessionJournal();
-    const events = new MemoryExecutionStore();
     const conversationId = "coding-recovery";
     const id = sessionId(conversationId);
     const turn = turnId("turn-1");
@@ -552,7 +542,7 @@ describe("CodingApplication queue and recovery", () => {
         return { outcome: "completed", finishReason: "stop" };
       },
     };
-    const app = makeApp({ store, journal, events, runner });
+    const app = makeApp({ store, journal, runner });
 
     const recovered = await app.getSnapshot(conversationId);
     expect(recovered.activeMessageId).toBeUndefined();
@@ -575,7 +565,6 @@ describe("CodingApplication queue and recovery", () => {
   it("resumes a queued turn from a previous process only when a token is supplied", async () => {
     const store = new MemoryConversationStore();
     const journal = new MemorySessionJournal();
-    const events = new MemoryExecutionStore();
     const conversationId = "coding-queued-recovery";
     const id = sessionId(conversationId);
     const turn = turnId("turn-1");
@@ -596,7 +585,7 @@ describe("CodingApplication queue and recovery", () => {
         return { outcome: "completed", finishReason: "stop" };
       },
     };
-    const app = makeApp({ store, journal, events, runner });
+    const app = makeApp({ store, journal, runner });
 
     // 没有令牌就恢复会把排队消息烧成一条失败回复，因此必须先拒绝。
     await expect(app.getSnapshot(conversationId)).rejects.toThrow("排队消息需要访问令牌才能继续");

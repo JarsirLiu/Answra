@@ -1,6 +1,6 @@
 /** CLI coding host 组合根：装配 AgentRuntime、工具、coding Bot 与单 Bot 会话用例。 */
 import type { ConversationSnapshot } from "@answra/shared";
-import type { AgentEventEnvelope, LiveFrame, SessionFrame } from "@answra/shared/schema";
+import type { LiveFrame, SessionFrame } from "@answra/shared/schema";
 import { createCodingBot } from "../bots/coding/bot";
 import { AgentRuntime } from "../core/agent/runtime";
 import { createInstructionLoader } from "../core/instruction";
@@ -12,13 +12,9 @@ import { createBuiltinToolRegistry } from "../core/tool";
 import type { ConversationSessionCatalog } from "../core/transcript/catalog";
 import { MemoryConversationStore } from "../core/transcript/memoryStore";
 import type { ConversationStore } from "../core/transcript/store";
-import { MemoryExecutionStore } from "../execution/memoryStore";
-import type { ExecutionStore } from "../execution/store";
 import { CodingApplication } from "./application";
 
 export interface CodingHostOptions {
-  /** 旧 envelope 出口：CLI TUI 已改吃帧，仍保留给远程 host 与 Presenter 之外的工具。 */
-  emitEvent: (event: AgentEventEnvelope) => void;
   /** durable 事实帧监听；与 `sessionFrames` 二选一，宿主按需要选择消费方式。 */
   onSessionFrame?: (frame: SessionFrame) => void;
   /** live 增量帧监听；允许丢失，不参与重放。 */
@@ -27,7 +23,6 @@ export interface CodingHostOptions {
   tokenProvider?: (options: { forceRefresh: boolean }) => Promise<string>;
   store?: ConversationStore;
   catalog?: ConversationSessionCatalog;
-  executionStore?: ExecutionStore;
   /** durable session journal；CLI 宿主注入 SQLite 实现，缺省为内存实现。 */
   sessionJournal?: SessionJournal;
   /** 帧广播口；缺省在宿主内新建。CLI UI 暂不消费，供 P2 第 3 步切换。 */
@@ -60,14 +55,12 @@ export interface CodingHost {
 }
 
 export function startCodingHost({
-  emitEvent,
   onSessionFrame,
   onLiveFrame,
   onSnapshot,
   tokenProvider,
   store = new MemoryConversationStore(),
   catalog,
-  executionStore = new MemoryExecutionStore(),
   sessionJournal,
   sessionFrames = new SessionFrameBus(),
   workspaceRoot = null,
@@ -75,7 +68,7 @@ export function startCodingHost({
   grepWorkerPath,
   skillRoots,
 }: CodingHostOptions): CodingHost {
-  const agentRuntime = new AgentRuntime({ executionStore, emitEvent, tokenProvider });
+  const agentRuntime = new AgentRuntime({ tokenProvider });
   const instructions = createInstructionLoader({
     globalFile: globalInstructionFile,
     onWarning: (message) => console.warn("[coding][instruction]", message),

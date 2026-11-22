@@ -9,7 +9,7 @@ import type {
   ConversationSnapshot,
   TeamSendCommand,
 } from "@answra/shared";
-import type { AgentEventEnvelope } from "@answra/shared/schema";
+import type { LiveFrame, SessionFrame } from "@answra/shared/schema";
 
 export interface DesktopRemoteSessionQuery {
   scope?: ConversationSessionScope;
@@ -31,7 +31,7 @@ export interface DesktopRemoteAgentPort {
   ): Promise<ConversationSnapshot>;
   clearConversation(conversationId: string): Promise<ConversationSnapshot>;
   getSnapshot(conversationId: string): Promise<ConversationSnapshot>;
-  readEvents(conversationId: string, afterRevision: number): Promise<AgentEventEnvelope[]>;
+  readFrames(conversationId: string, afterSeq: number): Promise<SessionFrame[]>;
   send(command: ChatSendCommand | TeamSendCommand): Promise<ConversationSendResponse>;
   waitForConversationQueue(
     conversationId: string,
@@ -43,5 +43,6 @@ export interface DesktopRemoteAgentPort {
   ): Promise<DesktopRemoteQueueStart>;
   cancelTurn(conversationId: string, turnId: string): void;
   onSnapshot(listener: (snapshot: ConversationSnapshot) => void): () => void;
-  onEvent(listener: (event: AgentEventEnvelope) => void): () => void;
+  onSessionFrame(listener: (frame: SessionFrame) => void): () => void;
+  onLiveFrame(listener: (frame: LiveFrame) => void): () => void;
 }

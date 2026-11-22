@@ -227,15 +227,6 @@ export class AgentService {
     })) as ConversationSnapshot;
   }
 
-  async readInterviewIntakeEvents(afterRevision: number) {
-    await this.start();
-    this.trackConversation(ActiveInterviewIntakeConversationId);
-    return this.workerHost.request("interview-intake-events", {
-      conversationId: ActiveInterviewIntakeConversationId,
-      afterRevision,
-    });
-  }
-
   /** 取消指定 Turn；会话/面试/Coding 共用。 */
   cancelTurn(conversationId: string, turnId: string): void {
     void this.workerHost
@@ -325,7 +316,7 @@ export class AgentService {
   async readEvents(conversationId: string, afterRevision: number): Promise<AgentEventEnvelope[]> {
     await this.start();
     this.trackConversation(conversationId);
-    return (await this.workerHost.request(eventsCommandFor(conversationId), {
+    return (await this.workerHost.request("read-events", {
       conversationId,
       afterRevision,
     })) as AgentEventEnvelope[];
@@ -438,13 +429,6 @@ function snapshotCommandFor(conversationId: string) {
   if (conversationId === ActiveInterviewIntakeConversationId)
     return "interview-intake-snapshot" as const;
   return "snapshot" as const;
-}
-
-function eventsCommandFor(conversationId: string) {
-  if (conversationId === ActiveInterviewConversationId) return "interview-events" as const;
-  if (conversationId === ActiveInterviewIntakeConversationId)
-    return "interview-intake-events" as const;
-  return "read-events" as const;
 }
 
 function validateSendRequest(request: ConversationSendRequest): void {

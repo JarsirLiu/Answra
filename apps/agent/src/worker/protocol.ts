@@ -130,21 +130,9 @@ export type AgentCommand =
   | { id: string; type: "interview-context"; root: string | null; seed: InterviewProfileSeed }
   | { id: string; type: "interview-message"; conversationId: string; text: string }
   | { id: string; type: "interview-snapshot"; conversationId: string }
-  | {
-      id: string;
-      type: "interview-events";
-      conversationId: string;
-      afterRevision: number;
-    }
   | { id: string; type: "interview-intake-open"; conversationId: string }
   | { id: string; type: "interview-intake-message"; conversationId: string; text: string }
   | { id: string; type: "interview-intake-snapshot"; conversationId: string }
-  | {
-      id: string;
-      type: "interview-intake-events";
-      conversationId: string;
-      afterRevision: number;
-    }
   | ({ id: string; type: "chat-send"; accessToken: string } & ChatSendCommand)
   | ({ id: string; type: "team-send"; accessToken: string } & TeamSendCommand)
   | ({ id: string; type: "answer-run"; accessToken: string } & AnswerRunCommand)
@@ -154,8 +142,9 @@ export type AgentCommand =
   | { id: string; type: "bot-list" }
   | { id: string; type: "session-list"; query?: ConversationSessionQuery }
   | { id: string; type: "session-delete"; conversationId: string }
+  /** Answer 在 P3 前仍按 revision 读取 envelope；会话/面试只读 `read-frames`。 */
   | { id: string; type: "read-events"; conversationId: string; afterRevision: number }
-  /** 按 durable `seq` 读取可重放事实帧；与 `read-events` 并行存在。 */
+  /** 按 durable `seq` 读取可重放事实帧；会话、面试与 Coding 共用。 */
   | { id: string; type: "read-frames"; conversationId: string; afterSeq: number }
   | {
       id: string;
@@ -187,8 +176,9 @@ export type AgentCommand =
 export type AgentFrame =
   | { version: 1; type: "response"; id: string; ok: true; value?: unknown }
   | { version: 1; type: "response"; id: string; ok: false; error: string }
+  /** Answer 在 P3 前的 envelope 推送；会话/面试/Coding 只发帧。 */
   | { version: 1; type: "event"; event: AgentEventEnvelope }
-  /** durable 事实帧：可重放、带会话内连续 `seq`；迁移期与 `event` 并行。 */
+  /** durable 事实帧：可重放、带会话内连续 `seq`。 */
   | { version: 1; type: "session-frame"; frame: SessionFrame }
   /** live 增量帧：不可重放，丢失只影响瞬时观感。 */
   | { version: 1; type: "live-frame"; frame: LiveFrame }

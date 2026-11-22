@@ -31,7 +31,7 @@ export class SessionTranscriptBridge {
     this.store = store;
   }
 
-  async apply(envelope: SessionEventEnvelope, eventRevision = 0): Promise<void> {
+  async apply(envelope: SessionEventEnvelope, eventRevision = envelope.sequence): Promise<void> {
     await this.project(envelope, eventRevision);
     // 只有投影成功才推进游标：失败时客户端必须能从旧游标重读这条事实。
     await this.store.advanceLastSeq(envelope.sessionId, envelope.sequence);

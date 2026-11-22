@@ -11,12 +11,7 @@ import type {
   ConversationSnapshot,
   ManualCompactionResult,
 } from "@answra/shared";
-import type {
-  AgentEventEnvelope,
-  AgentStreamEvent,
-  SessionFrame,
-  TurnOutcome,
-} from "@answra/shared/schema";
+import type { AgentStreamEvent, SessionFrame, TurnOutcome } from "@answra/shared/schema";
 import { toSessionFrame } from "@answra/shared/schema";
 import type { ConversationAgentInput } from "../bots/general/agent";
 import { type AgentId, agentId } from "../core/agent/definition";
@@ -40,7 +35,6 @@ import type { SessionJournal } from "../core/session/journal";
 import { MemorySessionJournal } from "../core/session/memoryJournal";
 import { SessionRecoveryCoordinator } from "../core/session/recoveryCoordinator";
 import { sessionErrorText } from "../core/session/sessionErrorText";
-import { SessionEventProjector } from "../core/session/sessionEventProjector";
 import { SessionFrameBus, toLiveFrame } from "../core/session/sessionFrameBus";
 import { SessionRuntime } from "../core/session/sessionRuntime";
 import { SessionRuntimeJournal } from "../core/session/sessionRuntimeJournal";
@@ -59,8 +53,6 @@ import type {
   ConversationSessionSeed,
   ConversationStore,
 } from "../core/transcript/store";
-import { MemoryExecutionStore } from "../execution/memoryStore";
-import type { ExecutionStore } from "../execution/store";
 import { CONVERSATION_AGENT_ID, CONVERSATION_TEAM_ID } from "./agent";
 import type { ConversationBot, ConversationBotCatalog } from "./bots/types";
 import { CHAT_PROFILES, type ChatProfileId } from "./profiles/registry";
@@ -79,8 +71,6 @@ export interface ConversationApplicationOptions {
   sessionJournal?: SessionJournal;
   /** durable/live 帧广播口；宿主传入同一实例即可跨领域共享。 */
   sessionFrames?: SessionFrameBus;
-  /** 旧 wire 投影的事件 store；3b 删除 envelope 通道时一并移除。 */
-  executionStore?: ExecutionStore;
   /** 测试注入的 StepRunner；生产由 ProviderStepRunner 提供。 */
   stepRunner?: StepRunner;
   /** 每段 run 启动与交接写入后的权威 snapshot 推送。 */
@@ -98,7 +88,6 @@ export class ConversationApplication {
   private readonly contextCompactor: ContextCompactor;
   private readonly contextPreparation: ContextPreparation;
   private readonly sessionFrames: SessionFrameBus;
-  private readonly projector: SessionEventProjector;
   private readonly bridge: SessionTranscriptBridge;
   private readonly sessionRuntime: SessionRuntime;
   private readonly recovery: SessionRecoveryCoordinator;
@@ -116,7 +105,6 @@ export class ConversationApplication {
     presets = [],
     sessionJournal,
     sessionFrames,
-    executionStore,
     stepRunner,
     onSnapshot,
     onTeamError,
@@ -144,16 +132,9 @@ export class ConversationApplication {
       contextWindow: () => this.agentRuntime.chatContextWindow(),
     });
     this.bridge = new SessionTranscriptBridge({ store });
-    const events =
-      executionStore ??
-      (typeof agentRuntime.eventStore === "function"
-        ? agentRuntime.eventStore()
-        : new MemoryExecutionStore());
-    this.projector = new SessionEventProjector({ store: events });
     const journal = new SessionRuntimeJournal({
       journal: sessionJournal ?? new MemorySessionJournal(),
       frames: this.sessionFrames,
-      projector: this.projector,
       bridge: this.bridge,
       onDurableEvent: (id, event) => this.contextPreparation.recordRunEvent(id, event),
       onBoundary: (id) => this.pushSnapshot(id),
@@ -204,13 +185,9 @@ export class ConversationApplication {
     this.recovery = new SessionRecoveryCoordinator({
       recoverFacts: (id) => this.sessionRuntime.recoverFacts(id),
       resumeQueued: (id, runtime) => this.sessionRuntime.resumeQueued(id, runtime),
-      eventRevision: async (id) => (await this.store.load(id)).eventRevision,
-      seedRevision: (id, revision) => this.projector.seed(id, revision),
-      revision: (id) => this.projector.revision(id),
       journalLastSeq: (id) => this.runtimeJournal.lastSequence(id),
       seedLastSeq: (id, sequence) => this.store.advanceLastSeq(id, sequence),
-      suspendUi: (id, suspended) => this.projector.suspend(id, suspended),
-      restoreTranscript: (id, plan, revision) => this.bridge.recover(id, plan, revision),
+      restoreTranscript: (id, plan, lastSeq) => this.bridge.recover(id, plan, lastSeq),
       onRecovered: async (id, plan) => {
         if (plan.interruptedTurnIds.length > 0) await this.pushSnapshot(id);
       },
@@ -278,11 +255,6 @@ export class ConversationApplication {
     return rows.map(toSessionFrame);
   }
 
-  /** 旧 wire 的按 revision 读取；3b 删除 envelope 通道时一并移除。 */
-  readEventsAfter(conversationId: string, revision: number): Promise<AgentEventEnvelope[]> {
-    return this.projector.readEvents(conversationId, revision);
-  }
-
   async createConversation(
     conversationId: string,
     selection?: ConversationSelection,
@@ -303,11 +275,10 @@ export class ConversationApplication {
   async clearConversation(conversationId: string): Promise<ConversationSnapshot> {
     const session = await this.ensureRecovered(conversationId);
     await this.sessionRuntime.cancelSession(session);
-    await this.agentRuntime.resetExecution(conversationId);
     this.tokens.delete(conversationId);
     this.recovery.forget(session);
     await this.store.clear(conversationId, {
-      eventRevision: await this.projector.revision(conversationId),
+      eventRevision: (await this.store.load(conversationId)).eventRevision,
     });
     await this.runtimeJournal.clear(session);
     return this.loadRecoverySnapshot(conversationId);
@@ -507,7 +478,6 @@ export class ConversationApplication {
   private async onStepStream(step: StepStart, event: AgentStreamEvent): Promise<void> {
     const live = toLiveFrame(step, event);
     if (live !== undefined) this.sessionFrames.publishLive(live);
-    await this.projector.applyLive(step, event);
     await this.bridge.applyLive(step.sessionId, step.messageId, event);
   }
 

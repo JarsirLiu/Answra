@@ -1,9 +1,9 @@
 ﻿import type { RemoteHello } from "@answra/shared/schema";
 import { describe, expect, it } from "vitest";
 import {
-  createFakeAgentEvent,
   createFakeHostCommandPort,
   createFakeRemoteLinkPair,
+  createFakeSessionFrame,
   createFakeSignalingPair,
   flushFakeRemoteLink,
   flushFakeSignaling,
@@ -93,8 +93,8 @@ describe("fake host command port", () => {
     const page = await host.listSessions?.();
     expect(page?.items[0]?.conversationId).toBe("conversation-1");
 
-    const event = createFakeAgentEvent(2);
-    host.emitEvent(event);
-    expect(await host.readEvents("conversation-1", 1)).toEqual([event]);
+    const frame = createFakeSessionFrame(2);
+    host.emitFrame(frame);
+    expect(await host.readFrames("conversation-1", 1)).toEqual([frame]);
   });
 });

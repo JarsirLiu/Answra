@@ -8,7 +8,6 @@ import type {
   StepStart,
 } from "../../src/core/session/contracts";
 import { MemoryConversationStore } from "../../src/core/transcript/memoryStore";
-import { MemoryExecutionStore } from "../../src/execution/memoryStore";
 import type { InterviewRehearsalInput } from "../../src/interview/agent";
 import { INTERVIEW_REHEARSAL_AGENT_ID } from "../../src/interview/agent";
 import { InterviewApplication } from "../../src/interview/application";
@@ -68,10 +67,8 @@ function createHarness({ hold }: { hold?: boolean } = {}) {
     waitForRun: vi.fn(async () => undefined),
     getRun: vi.fn(async () => undefined),
     readEventsForRun: vi.fn(async () => []),
-    readEvents: vi.fn(async () => []),
     chatContextWindow: () => undefined,
     chatEndpoint: () => ({ baseUrl: "http://localhost", model: "text.chat" }),
-    eventStore: () => new MemoryExecutionStore(),
     generateText: vi.fn(async () => "summary"),
     modelTokenProvider: () => async () => "token",
   } as unknown as ConstructorParameters<typeof InterviewApplication>[0]["agentRuntime"];

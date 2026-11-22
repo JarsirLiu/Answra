@@ -1,5 +1,5 @@
-/** Session 底座接入 ConversationApplication 后的 UI 事件与断点恢复集成测试。 */
-import type { AgentEventEnvelope } from "@answra/shared/schema";
+/** Session 底座接入 ConversationApplication 后的帧广播与断点恢复集成测试。 */
+import type { LiveFrame, SessionFrame } from "@answra/shared/schema";
 import { describe, expect, it, vi } from "vitest";
 import { ConversationApplication } from "../../src/conversation/application";
 import type { ConversationBot } from "../../src/conversation/bots/types";
@@ -10,9 +10,9 @@ import { createBotCatalog } from "../../src/core/bot/catalog";
 import type { StepRunner } from "../../src/core/session/contracts";
 import { sessionId, stepId, turnId } from "../../src/core/session/contracts";
 import { MemorySessionJournal } from "../../src/core/session/memoryJournal";
+import { SessionFrameBus } from "../../src/core/session/sessionFrameBus";
 import { MemoryConversationStore } from "../../src/core/transcript/memoryStore";
 import { createUserMessage } from "../../src/core/transcript/message";
-import { MemoryExecutionStore } from "../../src/execution/memoryStore";
 
 const general = agentId("conversation.general");
 
@@ -52,12 +52,12 @@ function makeBot(): ConversationBot {
 function makeApp({
   store,
   journal,
-  events,
+  sessionFrames,
   runner,
 }: {
   store: MemoryConversationStore;
   journal: MemorySessionJournal;
-  events: MemoryExecutionStore;
+  sessionFrames?: SessionFrameBus;
   runner: StepRunner;
 }): ConversationApplication {
   return new ConversationApplication({
@@ -65,19 +65,23 @@ function makeApp({
     store,
     catalog: createBotCatalog([makeBot()]),
     sessionJournal: journal,
-    executionStore: events,
+    ...(sessionFrames === undefined ? {} : { sessionFrames }),
     stepRunner: runner,
     onSnapshot: () => undefined,
   });
 }
 
 describe("ConversationApplication session integration", () => {
-  it("projects live deltas and durable events into one monotonic UI revision stream", async () => {
+  it("broadcasts live deltas and durable facts as frames with one monotonic seq", async () => {
     const store = new MemoryConversationStore();
     const journal = new MemorySessionJournal();
-    const events = new MemoryExecutionStore();
-    const emitted: AgentEventEnvelope[] = [];
-    events.subscribe((event) => emitted.push(event));
+    const sessionFrames = new SessionFrameBus();
+    const frames: SessionFrame[] = [];
+    const live: LiveFrame[] = [];
+    sessionFrames.subscribe({
+      onFrame: (frame) => frames.push(frame),
+      onLiveFrame: (frame) => live.push(frame),
+    });
     const runner: StepRunner = {
       async run(_step, context) {
         await context.events.append({ type: "text-start", partId: "text" });
@@ -87,7 +91,7 @@ describe("ConversationApplication session integration", () => {
         return { outcome: "completed", finishReason: "stop" };
       },
     };
-    const app = makeApp({ store, journal, events, runner });
+    const app = makeApp({ store, journal, sessionFrames, runner });
 
     const result = await app.send(
       undefined,
@@ -95,41 +99,34 @@ describe("ConversationApplication session integration", () => {
       { text: "你好", images: [] },
       "token",
     );
-    for (
-      let attempt = 0;
-      attempt < 200 &&
-      emitted.every(
-        (event) => event.event.type !== "run-state-changed" || event.event.state !== "completed",
-      );
-      attempt += 1
-    ) {
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
-    const replayed = await app.readEventsAfter("ui-conversation", 0);
+    await app.waitForTurn("ui-conversation", result.turnId);
 
-    expect(result.turnId).toBeTruthy();
-    // envelope 的 runId 仍是首条 assistant 消息 id，取自提交时的权威快照。
+    // durable 帧的 seq 由 journal 单调分配，客户端据此补齐缺口。
+    expect(frames.map((frame) => frame.seq)).toEqual(frames.map((_, index) => index + 1));
+    // 增量只走 live 通道，不进入 durable 序列。
+    expect(live.filter((frame) => frame.event.type === "text-delta")).toHaveLength(2);
+    expect(frames.filter((frame) => frame.event.type === "text-start")).toHaveLength(1);
+    expect(frames.filter((frame) => frame.event.type === "text-end")).toHaveLength(1);
+    expect(frames.every((frame) => frame.sessionId === "ui-conversation")).toBe(true);
+
     const messageId = result.snapshot.activeMessageId;
-    const revisions = emitted.map((event) => event.aggregateRevision);
-    expect(revisions).toEqual(revisions.map((_, index) => index + 1));
-    expect(emitted.filter((event) => event.event.type === "text-delta")).toHaveLength(2);
-    expect(emitted.filter((event) => event.event.type === "text-start")).toHaveLength(1);
-    expect(emitted.filter((event) => event.event.type === "text-end")).toHaveLength(1);
-    expect(emitted.every((event) => event.conversationId === "ui-conversation")).toBe(true);
-    const terminal = emitted.find(
-      (event) =>
-        event.event.type === "run-state-changed" &&
-        event.runId === messageId &&
-        event.event.state === "completed",
+    expect(messageId).toBeDefined();
+    expect(live.every((frame) => frame.messageId === messageId)).toBe(true);
+    const terminal = frames.find(
+      (frame) =>
+        frame.event.type === "turn-finished" &&
+        frame.turnId === result.turnId &&
+        frame.event.status === "completed",
     );
     expect(terminal).toBeDefined();
-    expect(replayed.map((event) => event.aggregateRevision)).toEqual(revisions);
+
+    const replayed = await app.readFramesAfter("ui-conversation", 0);
+    expect(replayed.map((frame) => frame.seq)).toEqual(frames.map((frame) => frame.seq));
   });
 
   it("closes the interrupted assistant message on startup recovery", async () => {
     const store = new MemoryConversationStore();
     const journal = new MemorySessionJournal();
-    const events = new MemoryExecutionStore();
     const conversationId = "recovered-conversation";
     const id = sessionId(conversationId);
     await store.create(conversationId);
@@ -159,7 +156,6 @@ describe("ConversationApplication session integration", () => {
     const app = makeApp({
       store,
       journal,
-      events,
       runner: { run: async () => ({ outcome: "aborted" }) },
     });
     const snapshot = await app.getSnapshot(conversationId);

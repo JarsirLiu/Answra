@@ -52,9 +52,9 @@ export function createDesktopRemoteCommandPort(agent: DesktopRemoteAgentPort): H
       requireVisible(conversationId);
       return agent.getSnapshot(conversationId);
     },
-    async readEvents(conversationId, afterRevision) {
+    async readFrames(conversationId, afterSeq) {
       requireVisible(conversationId);
-      return agent.readEvents(conversationId, afterRevision);
+      return agent.readFrames(conversationId, afterSeq);
     },
     async listSessions(query?: RemoteSessionListQuery) {
       const page = await agent.listConversationSessions({
@@ -100,10 +100,16 @@ export function createDesktopRemoteCommandPort(agent: DesktopRemoteAgentPort): H
         listener(snapshot);
       });
     },
-    onEvent(listener) {
-      return agent.onEvent((event) => {
-        if (!visibleConversationIds.has(event.conversationId)) return;
-        listener(event);
+    onFrame(listener) {
+      return agent.onSessionFrame((frame) => {
+        if (!visibleConversationIds.has(frame.sessionId)) return;
+        listener(frame);
+      });
+    },
+    onLiveFrame(listener) {
+      return agent.onLiveFrame((frame) => {
+        if (!visibleConversationIds.has(frame.sessionId)) return;
+        listener(frame);
       });
     },
   };

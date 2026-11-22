@@ -1,7 +1,8 @@
 import type {
-  AgentEventEnvelope,
   ConversationSnapshot,
+  LiveFrame,
   RemoteWelcome,
+  SessionFrame,
 } from "@answra/shared/schema";
 import { describe, expect, it } from "vitest";
 import {
@@ -12,11 +13,12 @@ import {
   RemoteHostSession,
 } from "../src";
 import {
-  createFakeAgentEvent,
   createFakeConversationSnapshot,
   createFakeHostCommandPort,
+  createFakeLiveFrame,
   createFakeModelConfig,
   createFakeRemoteLinkPair,
+  createFakeSessionFrame,
   createMemoryHostKeyStore,
   flushFakeRemoteLink,
 } from "../src/testing";
@@ -153,14 +155,16 @@ describe("remote host/controller sessions", () => {
     link.disconnect();
   });
 
-  it("streams host snapshots and events after welcome", async () => {
+  it("streams host snapshots, durable frames and live frames after welcome", async () => {
     const { controller, host, hostPort, link } = await createSessions();
     await controller.connect();
 
     const snapshots: ConversationSnapshot[] = [];
-    const events: AgentEventEnvelope[] = [];
+    const frames: SessionFrame[] = [];
+    const liveFrames: LiveFrame[] = [];
     controller.onSnapshot((snapshot) => snapshots.push(snapshot));
-    controller.onEvent((event) => events.push(event));
+    controller.onFrame((frame) => frames.push(frame));
+    controller.onLiveFrame((frame) => liveFrames.push(frame));
 
     hostPort.emitSnapshot(
       createFakeConversationSnapshot({
@@ -168,14 +172,17 @@ describe("remote host/controller sessions", () => {
         eventRevision: 3,
       }),
     );
-    hostPort.emitEvent(createFakeAgentEvent(4));
+    hostPort.emitFrame(createFakeSessionFrame(4));
+    hostPort.emitLiveFrame(createFakeLiveFrame());
     await flushFakeRemoteLink();
 
     expect(snapshots).toHaveLength(1);
     expect(snapshots[0]?.conversationId).toBe("conversation-live");
     expect(snapshots[0]?.eventRevision).toBe(3);
-    expect(events).toHaveLength(1);
-    expect(events[0]?.eventId).toBe("event-4");
+    expect(frames).toHaveLength(1);
+    expect(frames[0]).toMatchObject({ seq: 4, eventId: "frame-4" });
+    expect(liveFrames).toHaveLength(1);
+    expect(liveFrames[0]?.event).toMatchObject({ type: "text-delta", delta: "hello" });
 
     controller.close();
     host.close();

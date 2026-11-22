@@ -88,8 +88,6 @@ async function main(): Promise<void> {
         createSessionHost: ({ onSessionFrame, onLiveFrame, onSnapshot, workspaceRoot }) =>
           createAgentCodingSessionHost(
             startCodingHost({
-              // 3a 后 CLI 不再消费 envelope；AgentRuntime 仍按旧通道产出，3b 删除时一并移除。
-              emitEvent: () => {},
               onSessionFrame,
               onLiveFrame,
               onSnapshot,

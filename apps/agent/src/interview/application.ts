@@ -4,12 +4,7 @@
  */
 import { randomUUID } from "node:crypto";
 import type { ConversationSnapshot, InterviewProfileSeed } from "@answra/shared";
-import type {
-  AgentEventEnvelope,
-  AgentRunSnapshot,
-  AgentStreamEvent,
-  SessionFrame,
-} from "@answra/shared/schema";
+import type { AgentStreamEvent, SessionFrame } from "@answra/shared/schema";
 import { toSessionFrame } from "@answra/shared/schema";
 import type { AgentExecutor, AgentId } from "../core/agent/definition";
 import { ProviderStepRunner } from "../core/agent/providerStepRunner";
@@ -22,7 +17,6 @@ import { sessionId as asSessionId, turnId as asTurnId } from "../core/session/co
 import type { SessionJournal } from "../core/session/journal";
 import { MemorySessionJournal } from "../core/session/memoryJournal";
 import { SessionRecoveryCoordinator } from "../core/session/recoveryCoordinator";
-import { SessionEventProjector } from "../core/session/sessionEventProjector";
 import { SessionFrameBus, toLiveFrame } from "../core/session/sessionFrameBus";
 import { SessionRuntime } from "../core/session/sessionRuntime";
 import { SessionRuntimeJournal } from "../core/session/sessionRuntimeJournal";
@@ -31,8 +25,6 @@ import { SessionTranscriptBridge } from "../core/session/transcriptBridge";
 import { SessionTurnExecutor } from "../core/session/turnExecutor";
 import { createUserMessage } from "../core/transcript/message";
 import type { ConversationStore } from "../core/transcript/store";
-import { MemoryExecutionStore } from "../execution/memoryStore";
-import type { ExecutionStore } from "../execution/store";
 import type { CommittedInterviewTurn, InterviewAgentInput } from "./contracts";
 import { InterviewReplyLoop } from "./reply/loop";
 import { createInterviewStepBinding } from "./stepBinding";
@@ -46,8 +38,6 @@ export interface InterviewApplicationOptions {
   requestAccessToken: () => Promise<string>;
   /** durable session journal；缺省使用内存实现，桌面宿主注入 SQLite 实现。 */
   sessionJournal?: SessionJournal;
-  /** UI 事件 store；缺省复用 AgentRuntime 的事件存储。 */
-  executionStore?: ExecutionStore;
   /** durable/live 帧广播口；宿主传入同一实例即可跨领域共享。 */
   sessionFrames?: SessionFrameBus;
   /** 测试注入的 StepRunner；生产由 ProviderStepRunner 提供。 */
@@ -67,7 +57,6 @@ export class InterviewApplication {
   private readonly contextCompactor: ContextCompactor;
   private readonly contextPreparation: ContextPreparation;
   private readonly sessionFrames: SessionFrameBus;
-  private readonly projector: SessionEventProjector;
   private readonly bridge: SessionTranscriptBridge;
   private readonly sessionRuntime: SessionRuntime;
   private readonly recovery: SessionRecoveryCoordinator;
@@ -103,17 +92,10 @@ export class InterviewApplication {
       contextWindow: () => options.agentRuntime.chatContextWindow(),
     });
 
-    const events =
-      options.executionStore ??
-      (typeof options.agentRuntime.eventStore === "function"
-        ? options.agentRuntime.eventStore()
-        : new MemoryExecutionStore());
-    this.projector = new SessionEventProjector({ store: events });
     this.bridge = new SessionTranscriptBridge({ store: options.store });
     const journal = new SessionRuntimeJournal({
       journal: options.sessionJournal ?? new MemorySessionJournal(),
       frames: this.sessionFrames,
-      projector: this.projector,
       bridge: this.bridge,
       onDurableEvent: (id, event) => this.contextPreparation.recordRunEvent(id, event),
       onBoundary: (id) => this.pushSnapshot(id),
@@ -155,13 +137,9 @@ export class InterviewApplication {
     this.recovery = new SessionRecoveryCoordinator({
       recoverFacts: (id) => this.sessionRuntime.recoverFacts(id),
       resumeQueued: (id, runtime) => this.sessionRuntime.resumeQueued(id, runtime),
-      eventRevision: async (id) => (await this.store.load(id)).eventRevision,
-      seedRevision: (id, revision) => this.projector.seed(id, revision),
-      revision: (id) => this.projector.revision(id),
       journalLastSeq: (id) => this.runtimeJournal.lastSequence(id),
       seedLastSeq: (id, sequence) => this.store.advanceLastSeq(id, sequence),
-      suspendUi: (id, suspended) => this.projector.suspend(id, suspended),
-      restoreTranscript: (id, plan, revision) => this.bridge.recover(id, plan, revision),
+      restoreTranscript: (id, plan, lastSeq) => this.bridge.recover(id, plan, lastSeq),
       onRecovered: async (id, plan) => {
         if (plan.interruptedTurnIds.length > 0) await this.pushSnapshot(id);
       },
@@ -269,18 +247,6 @@ export class InterviewApplication {
       .then(() => undefined);
   }
 
-  getExecutionRun(runId: string): Promise<AgentRunSnapshot | undefined> {
-    return this.agentRuntime.getRun(runId);
-  }
-
-  readExecutionEvents(runId: string): Promise<AgentEventEnvelope[]> {
-    return this.agentRuntime.readEventsForRun(runId);
-  }
-
-  readEvents(conversationId: string, afterRevision: number): Promise<AgentEventEnvelope[]> {
-    return this.projector.readEvents(conversationId, afterRevision);
-  }
-
   /** 按 durable `seq` 读取事实帧；面试演练的 UI 与文本会话共用。 */
   async readFrames(conversationId: string, afterSeq: number): Promise<SessionFrame[]> {
     const rows = await this.runtimeJournal.readAfter(asSessionId(conversationId), afterSeq);
@@ -351,7 +317,6 @@ export class InterviewApplication {
   private async onStepStream(step: StepStart, event: AgentStreamEvent): Promise<void> {
     const live = toLiveFrame(step, event);
     if (live !== undefined) this.sessionFrames.publishLive(live);
-    await this.projector.applyLive(step, event);
     await this.bridge.applyLive(step.sessionId, step.messageId, event);
   }
 }

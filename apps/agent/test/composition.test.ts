@@ -9,15 +9,11 @@ import {
   createConversationBot,
   createConversationBots,
   MemoryConversationStore,
-  MemoryExecutionStore,
 } from "@answra/agent/composition";
 import { describe, expect, it } from "vitest";
 
 function createComposition() {
-  const agentRuntime = new AgentRuntime({
-    executionStore: new MemoryExecutionStore(),
-    emitEvent: () => {},
-  });
+  const agentRuntime = new AgentRuntime({});
   return {
     agentRuntime,
     store: new MemoryConversationStore(),

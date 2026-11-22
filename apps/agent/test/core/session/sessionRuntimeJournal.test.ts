@@ -1,13 +1,11 @@
-/** 唯一写入顺序：journal → frame 广播 → 旧 UI 投影 → transcript → durable 观察点 → 边界快照。 */
+/** 唯一写入顺序：journal → frame 广播 → transcript → durable 观察点 → 边界快照。 */
 import type { SessionFrame } from "@answra/shared/schema";
 import { describe, expect, it, vi } from "vitest";
 import { MemorySessionJournal } from "../../../src/core/session/memoryJournal";
-import { SessionEventProjector } from "../../../src/core/session/sessionEventProjector";
 import { SessionFrameBus } from "../../../src/core/session/sessionFrameBus";
 import { SessionRuntimeJournal } from "../../../src/core/session/sessionRuntimeJournal";
 import { SessionTranscriptBridge } from "../../../src/core/session/transcriptBridge";
 import { MemoryConversationStore } from "../../../src/core/transcript/memoryStore";
-import { MemoryExecutionStore } from "../../../src/execution/memoryStore";
 import { TEST_SESSION_ID, TEST_TURN_ID, userMessage } from "./fixtures";
 
 async function setup() {
@@ -25,20 +23,17 @@ async function setup() {
     { scope: "conversation" },
   );
   const base = new MemorySessionJournal();
-  const events = new MemoryExecutionStore();
-  const projector = new SessionEventProjector({ store: events });
   const bridge = new SessionTranscriptBridge({ store });
-  return { store, base, events, projector, bridge };
+  return { store, base, bridge };
 }
 
 describe("SessionRuntimeJournal", () => {
-  it("observes a durable event only after it is projected and written to transcript", async () => {
-    const { store, base, projector, bridge } = await setup();
+  it("observes a durable event only after it is written to the transcript", async () => {
+    const { store, base, bridge } = await setup();
     const observed: Array<{ event: string; messages: number; lastSeq: number }> = [];
     const journal = new SessionRuntimeJournal({
       journal: base,
       frames: new SessionFrameBus(),
-      projector,
       bridge,
       onDurableEvent: async (sessionId, event) => {
         const snapshot = await store.load(sessionId);
@@ -69,11 +64,11 @@ describe("SessionRuntimeJournal", () => {
   });
 
   it("broadcasts every durable fact as a SessionFrame with the journal cursor", async () => {
-    const { base, projector, bridge } = await setup();
+    const { base, bridge } = await setup();
     const frames = new SessionFrameBus();
     const received: SessionFrame[] = [];
     frames.subscribe({ onFrame: (frame) => received.push(frame) });
-    const journal = new SessionRuntimeJournal({ journal: base, frames, projector, bridge });
+    const journal = new SessionRuntimeJournal({ journal: base, frames, bridge });
 
     await journal.append(
       TEST_SESSION_ID,
@@ -100,12 +95,11 @@ describe("SessionRuntimeJournal", () => {
   });
 
   it("runs the boundary hook after the durable observer", async () => {
-    const { base, projector, bridge } = await setup();
+    const { base, bridge } = await setup();
     const order: string[] = [];
     const journal = new SessionRuntimeJournal({
       journal: base,
       frames: new SessionFrameBus(),
-      projector,
       bridge,
       onDurableEvent: (_id, event) => {
         order.push(`observed:${event.type}`);
@@ -130,12 +124,11 @@ describe("SessionRuntimeJournal", () => {
   });
 
   it("writes compaction facts through the same ordered chain", async () => {
-    const { store, base, projector, bridge, events } = await setup();
+    const { store, base, bridge } = await setup();
     const order: string[] = [];
     const journal = new SessionRuntimeJournal({
       journal: base,
       frames: new SessionFrameBus(),
-      projector,
       bridge,
       onBoundary: () => {
         order.push("boundary");
@@ -152,19 +145,17 @@ describe("SessionRuntimeJournal", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]?.operationId).toBe("operation-1");
     expect(rows[0]?.event.type).toBe("compaction-started");
-    // 压缩事实不写 transcript 消息，也不进入任何 assistant run 的事件流。
+    // 压缩事实不写 transcript 消息；它只作为 durable 事实帧存在。
     expect((await store.load(TEST_SESSION_ID)).messages).toEqual([]);
-    expect(await events.readEventsForRun("operation-1")).toEqual([]);
     expect(order).toEqual(["boundary"]);
   });
 
   it("authorizes a handoff before appending it", async () => {
-    const { base, projector, bridge } = await setup();
+    const { base, bridge } = await setup();
     const authorize = vi.fn(async () => undefined);
     const journal = new SessionRuntimeJournal({
       journal: base,
       frames: new SessionFrameBus(),
-      projector,
       bridge,
       authorizeHandoff: authorize,
     });

@@ -1,15 +1,14 @@
 /**
  * 把 journal append 串成唯一的写入顺序：先落 journal 事实，再广播同一事实的
- * `SessionFrame`，然后投影旧 wire 事件，最后写 transcript。transcript 失败不回滚已追加的事实。
+ * `SessionFrame`，最后写 transcript。transcript 失败不回滚已追加的事实。
  *
- * 新增消费者只订阅 frame；旧 projector 只服务尚未迁移的 wire。
+ * 事实只有一个消费者方向：frame 供 UI/CLI 重放，transcript 供快照读取。
  */
 import type { AgentDurableEvent, SessionEventEnvelope } from "@answra/shared/schema";
 import { toSessionFrame } from "@answra/shared/schema";
 import type { SessionId } from "./contracts";
 import { sessionId } from "./contracts";
 import type { SessionJournal, SessionJournalAppend } from "./journal";
-import type { SessionEventProjector } from "./sessionEventProjector";
 import type { SessionFrameBus } from "./sessionFrameBus";
 import type { SessionTranscriptBridge } from "./transcriptBridge";
 
@@ -17,8 +16,6 @@ export interface SessionRuntimeJournalOptions {
   journal: SessionJournal;
   /** durable 事实帧的进程内广播口；不保存历史，也不分配游标。 */
   frames: SessionFrameBus;
-  /** 旧 wire 的兼容投影；P2 删除后只剩 journal → frames → transcript。 */
-  projector: SessionEventProjector;
   bridge: SessionTranscriptBridge;
   /** Turn/Step/压缩边界后的快照推送；不参与事实写入。 */
   onBoundary?: (sessionId: SessionId) => void | Promise<void>;
@@ -37,7 +34,6 @@ export interface SessionRuntimeJournalOptions {
 export class SessionRuntimeJournal implements SessionJournal {
   private readonly journal: SessionJournal;
   private readonly frames: SessionFrameBus;
-  private readonly projector: SessionEventProjector;
   private readonly bridge: SessionTranscriptBridge;
   private readonly onBoundary: SessionRuntimeJournalOptions["onBoundary"];
   private readonly authorizeHandoff: SessionRuntimeJournalOptions["authorizeHandoff"];
@@ -46,7 +42,6 @@ export class SessionRuntimeJournal implements SessionJournal {
   constructor(options: SessionRuntimeJournalOptions) {
     this.journal = options.journal;
     this.frames = options.frames;
-    this.projector = options.projector;
     this.bridge = options.bridge;
     this.onBoundary = options.onBoundary;
     this.authorizeHandoff = options.authorizeHandoff;
@@ -63,8 +58,7 @@ export class SessionRuntimeJournal implements SessionJournal {
     }
     const envelope = await this.journal.append(sessionId, event, metadata);
     this.frames.publish(toSessionFrame(envelope));
-    await this.projector.apply(envelope);
-    await this.bridge.apply(envelope, await this.projector.revision(sessionId));
+    await this.bridge.apply(envelope);
     if (this.onDurableEvent !== undefined) await this.onDurableEvent(sessionId, event);
     if (this.onBoundary !== undefined && isBoundary(event.type)) await this.onBoundary(sessionId);
     return envelope;
@@ -85,7 +79,7 @@ export class SessionRuntimeJournal implements SessionJournal {
   /**
    * 压缩事实的唯一写入入口。
    *
-   * 压缩器在 `core/context` 执行，但事实必须和 Turn/Step 走同一顺序：journal → UI 投影 →
+   * 压缩器在 `core/context` 执行，但事实必须和 Turn/Step 走同一顺序：journal → frame 广播 →
    * transcript → onDurableEvent → 边界快照。`operationId` 负责把 started 与终态关联起来。
    */
   appendCompaction(fact: {

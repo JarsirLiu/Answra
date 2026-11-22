@@ -423,16 +423,12 @@ export function startAgentHost({
         return interview.sendText(command.conversationId, command.text);
       case "interview-snapshot":
         return interview.getSnapshot(command.conversationId);
-      case "interview-events":
-        return interview.readEvents(command.conversationId, command.afterRevision);
       case "interview-intake-open":
         return interviewIntake.open(command.conversationId);
       case "interview-intake-message":
         return interviewIntake.sendText(command.conversationId, command.text);
       case "interview-intake-snapshot":
         return interviewIntake.getSnapshot(command.conversationId);
-      case "interview-intake-events":
-        return interviewIntake.readEvents(command.conversationId, command.afterRevision);
       case "chat-send":
         return runtime.enqueue(
           command.botId,
@@ -459,8 +455,9 @@ export function startAgentHost({
       case "session-delete":
         if (!catalog) throw new Error("会话历史不可用");
         return catalog.delete(command.conversationId);
+      // envelope 读取只服务 Answer；会话/面试/Coding 的读取面是 read-frames。
       case "read-events":
-        return runtime.readEventsAfter(command.conversationId, command.afterRevision);
+        return answer.readEventsAfter(command.conversationId, command.afterRevision);
       // 事实帧按 journal 读取，与会话所属领域无关；恢复仍由各自领域负责。
       case "read-frames":
         return runtime.readFramesAfter(command.conversationId, command.afterSeq);

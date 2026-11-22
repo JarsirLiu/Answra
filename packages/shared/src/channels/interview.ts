@@ -1,4 +1,4 @@
-import type { AgentEventEnvelope, ConversationSnapshot } from "../schema";
+import type { ConversationSnapshot } from "../schema";
 
 /** 面试采集、音频流和回答状态的 IPC 频道和载荷契约。 */
 export const InterviewChannels = {
@@ -8,7 +8,6 @@ export const InterviewChannels = {
   IntakeOpen: "answra:interview:intake-open",
   IntakeMessage: "answra:interview:intake-message",
   IntakeSnapshot: "answra:interview:intake-snapshot",
-  IntakeEvents: "answra:interview:intake-events",
   CaptureReady: "answra:interview:capture-ready",
   CaptureFailed: "answra:interview:capture-failed",
   AudioFrame: "answra:interview:audio-frame",
@@ -185,10 +184,6 @@ export interface InterviewChannelMap {
   [InterviewChannels.IntakeSnapshot]: {
     request: undefined;
     response: ConversationSnapshot;
-  };
-  [InterviewChannels.IntakeEvents]: {
-    request: { afterRevision: number };
-    response: AgentEventEnvelope[];
   };
   [InterviewChannels.CaptureReady]: { request: { sessionId: string }; response: undefined };
   [InterviewChannels.CaptureFailed]: { request: { sessionId: string }; response: undefined };

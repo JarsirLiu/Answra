@@ -1,20 +1,22 @@
 ﻿import type {
-  AgentEventEnvelope,
   BotSummary,
   ConversationSessionPage,
   ConversationSnapshot,
+  LiveFrame,
   RemoteCapability,
   RemoteLocalModelInput,
   RemoteModelConfig,
   RemoteModelSettingsView,
   RemoteSendCommand,
+  SessionFrame,
 } from "@answra/shared/schema";
 import type { HostCommandPort, HostModelSettingsPort } from "../host/hostPort";
 import {
-  createFakeAgentEvent,
   createFakeBotSummary,
   createFakeConversationSnapshot,
+  createFakeLiveFrame,
   createFakeModelSettingsView,
+  createFakeSessionFrame,
   createFakeSessionPage,
 } from "./fixtures";
 
@@ -31,7 +33,8 @@ export interface FakeHostCommandPort extends HostCommandPort {
   readonly cancelledTurnIds: string[];
   readonly cancelledConversationIds: string[];
   readonly appliedModels: RemoteModelConfig[];
-  emitEvent(event: AgentEventEnvelope): void;
+  emitFrame(frame: SessionFrame): void;
+  emitLiveFrame(frame: LiveFrame): void;
   emitSnapshot(snapshot: ConversationSnapshot): void;
 }
 
@@ -45,8 +48,9 @@ export function createFakeHostCommandPort(
   const cancelledTurnIds: string[] = [];
   const cancelledConversationIds: string[] = [];
   const appliedModels: RemoteModelConfig[] = [];
-  const events: AgentEventEnvelope[] = [];
-  const eventListeners = new Set<(event: AgentEventEnvelope) => void>();
+  const frames: SessionFrame[] = [];
+  const frameListeners = new Set<(frame: SessionFrame) => void>();
+  const liveFrameListeners = new Set<(frame: LiveFrame) => void>();
   const snapshotListeners = new Set<(snapshot: ConversationSnapshot) => void>();
   let currentSnapshot = options.snapshot ?? createFakeConversationSnapshot();
   let currentModelSettings = options.modelSettings ?? createFakeModelSettingsView();
@@ -112,8 +116,8 @@ export function createFakeHostCommandPort(
     async snapshot(conversationId) {
       return { ...currentSnapshot, conversationId };
     },
-    async readEvents(_conversationId, afterRevision) {
-      return events.filter((event) => event.aggregateRevision > afterRevision);
+    async readFrames(_conversationId, afterSeq) {
+      return frames.filter((frame) => frame.seq > afterSeq);
     },
     async listSessions() {
       return sessionPage;
@@ -151,13 +155,20 @@ export function createFakeHostCommandPort(
       snapshotListeners.add(listener);
       return () => snapshotListeners.delete(listener);
     },
-    onEvent(listener) {
-      eventListeners.add(listener);
-      return () => eventListeners.delete(listener);
+    onFrame(listener) {
+      frameListeners.add(listener);
+      return () => frameListeners.delete(listener);
     },
-    emitEvent(event) {
-      events.push(event);
-      for (const listener of eventListeners) listener(event);
+    onLiveFrame(listener) {
+      liveFrameListeners.add(listener);
+      return () => liveFrameListeners.delete(listener);
+    },
+    emitFrame(frame) {
+      frames.push(frame);
+      for (const listener of frameListeners) listener(frame);
+    },
+    emitLiveFrame(frame) {
+      for (const listener of liveFrameListeners) listener(frame);
     },
     emitSnapshot(snapshot) {
       currentSnapshot = snapshot;
@@ -166,12 +177,19 @@ export function createFakeHostCommandPort(
   };
 }
 
-export function createFakeAgentEventForConversation(
+export function createFakeSessionFrameForConversation(
   conversationId: string,
-  sequence = 1,
-): AgentEventEnvelope {
+  seq = 1,
+): SessionFrame {
   return {
-    ...createFakeAgentEvent(sequence),
-    conversationId,
+    ...createFakeSessionFrame(seq),
+    sessionId: conversationId,
+  };
+}
+
+export function createFakeLiveFrameForConversation(conversationId: string): LiveFrame {
+  return {
+    ...createFakeLiveFrame(),
+    sessionId: conversationId,
   };
 }

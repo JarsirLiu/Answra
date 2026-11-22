@@ -504,14 +504,14 @@ describe("agent worker host", () => {
       throw new Error("assistant placeholder snapshot must identify its message");
     const assistantSnapshotIndex = harness.frames.indexOf(assistantSnapshot);
     // 生命周期事件可以先于占位快照；模型 step 与正文必须晚于占位快照。
-    const firstStepEventIndex = harness.frames.findIndex(
+    const firstStepFrameIndex = harness.frames.findIndex(
       (frame) =>
-        frame.type === "event" &&
-        frame.event.runId === assistantMessageId &&
-        frame.event.event.type === "step-started",
+        frame.type === "session-frame" &&
+        frame.frame.messageId === assistantMessageId &&
+        frame.frame.event.type === "step-started",
     );
     expect(assistantSnapshotIndex).toBeGreaterThanOrEqual(0);
-    expect(firstStepEventIndex).toBeGreaterThan(assistantSnapshotIndex);
+    expect(firstStepFrameIndex).toBeGreaterThan(assistantSnapshotIndex);
     host.dispose();
   });
 

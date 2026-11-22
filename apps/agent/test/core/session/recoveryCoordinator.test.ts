@@ -31,11 +31,9 @@ function plan(interrupted: boolean): SessionRecoveryPlan {
 const LAST_SEQ = 11;
 
 function createCoordinator({
-  revision = 7,
   interrupted = true,
   failRecovery = false,
 }: {
-  revision?: number;
   interrupted?: boolean;
   failRecovery?: boolean;
 } = {}) {
@@ -49,26 +47,12 @@ function createCoordinator({
     resumeQueued: vi.fn(async (_id: SessionId, _runtime: TurnRunContext) => {
       calls.push("resumeQueued");
     }),
-    eventRevision: vi.fn(async () => {
-      calls.push("eventRevision");
-      return revision;
-    }),
-    seedRevision: vi.fn(async () => {
-      calls.push("seedRevision");
-    }),
-    revision: vi.fn(async () => {
-      calls.push("revision");
-      return revision;
-    }),
     journalLastSeq: vi.fn(async () => {
       calls.push("journalLastSeq");
       return LAST_SEQ;
     }),
-    seedLastSeq: vi.fn(async () => {
+    seedLastSeq: vi.fn(async (_id: SessionId, _sequence: number) => {
       calls.push("seedLastSeq");
-    }),
-    suspendUi: vi.fn((_id: SessionId, suspended: boolean) => {
-      calls.push(suspended ? "suspend" : "resume");
     }),
     restoreTranscript: vi.fn(async () => {
       calls.push("restoreTranscript");
@@ -81,27 +65,22 @@ function createCoordinator({
 }
 
 describe("SessionRecoveryCoordinator", () => {
-  it("runs seed, recover, transcript restore, then queued resume in one fixed order", async () => {
+  it("runs recover, cursor seed, transcript restore, then queued resume in one fixed order", async () => {
     const { coordinator, ports, calls } = createCoordinator();
 
     await coordinator.ensure(SESSION, RUNTIME);
 
     expect(calls).toEqual([
-      "eventRevision",
-      "seedRevision",
-      "suspend",
       "recoverFacts",
-      "resume",
       "journalLastSeq",
       "seedLastSeq",
-      "revision",
       "restoreTranscript",
       "resumeQueued",
       "onRecovered",
     ]);
-    expect(ports.seedRevision).toHaveBeenCalledWith(SESSION, 7);
     expect(ports.seedLastSeq).toHaveBeenCalledWith(SESSION, LAST_SEQ);
-    expect(ports.restoreTranscript).toHaveBeenCalledWith(SESSION, plan(true), 7);
+    // 恢复写回必须拿到同一个 cursor：晚于它的事实才由客户端按帧重放。
+    expect(ports.restoreTranscript).toHaveBeenCalledWith(SESSION, plan(true), LAST_SEQ);
     expect(ports.resumeQueued).toHaveBeenCalledWith(SESSION, RUNTIME);
   });
 
@@ -123,14 +102,13 @@ describe("SessionRecoveryCoordinator", () => {
     await Promise.all([coordinator.ensure(SESSION, RUNTIME), coordinator.ensure(SESSION, RUNTIME)]);
 
     expect(ports.recoverFacts).toHaveBeenCalledTimes(1);
-    expect(ports.suspendUi).toHaveBeenCalledTimes(2);
+    expect(ports.restoreTranscript).toHaveBeenCalledTimes(1);
   });
 
-  it("resumes UI projection even when recovery fails, and retries next time", async () => {
+  it("retries next time when recovery fails", async () => {
     const { coordinator, ports } = createCoordinator({ failRecovery: true });
 
     await expect(coordinator.ensure(SESSION, RUNTIME)).rejects.toThrow("recover failed");
-    expect(ports.suspendUi).toHaveBeenCalledWith(SESSION, false);
     expect(coordinator.isRecovered(SESSION)).toBe(false);
 
     ports.recoverFacts.mockImplementation(async () => plan(false));

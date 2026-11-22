@@ -1,9 +1,10 @@
 import { RemoteOperationError } from "@answra/remote";
 import type {
-  AgentEventEnvelope,
   ConversationSessionPage,
   ConversationSnapshot,
+  LiveFrame,
   RemoteModelConfig,
+  SessionFrame,
 } from "@answra/shared/schema";
 import { describe, expect, it } from "vitest";
 import type {
@@ -19,17 +20,22 @@ function snapshot(conversationId: string): ConversationSnapshot {
   return { conversationId, eventRevision: 0, lastSeq: 0, messages: [] };
 }
 
-function event(conversationId: string, sequence = 1): AgentEventEnvelope {
+function frame(conversationId: string, seq = 1): SessionFrame {
   return {
-    schemaVersion: 1,
-    eventId: `event-${sequence}`,
-    conversationId,
-    runId: "run-1",
-    attemptId: "attempt-1",
-    sequence,
-    aggregateRevision: sequence,
-    producerId: "desktop",
+    schemaVersion: 2,
+    sessionId: conversationId,
+    seq,
+    eventId: `frame-${seq}`,
     occurredAt: createdAt,
+    producerId: "desktop",
+    event: { type: "text-start", partId: "part-1" },
+  };
+}
+
+function liveFrame(conversationId: string): LiveFrame {
+  return {
+    sessionId: conversationId,
+    messageId: "assistant-1",
     event: { type: "text-delta", partId: "part-1", delta: "hello" },
   };
 }
@@ -49,7 +55,8 @@ function sessionPage(conversationIds: readonly string[]): ConversationSessionPag
 
 function createAgent(conversationIds: readonly string[] = ["conversation-1"]) {
   const snapshotListeners = new Set<(value: ConversationSnapshot) => void>();
-  const eventListeners = new Set<(value: AgentEventEnvelope) => void>();
+  const frameListeners = new Set<(value: SessionFrame) => void>();
+  const liveFrameListeners = new Set<(value: LiveFrame) => void>();
   const listQueries: Array<DesktopRemoteSessionQuery | undefined> = [];
   const sentConversationIds: string[] = [];
   const page = sessionPage(conversationIds);
@@ -68,8 +75,8 @@ function createAgent(conversationIds: readonly string[] = ["conversation-1"]) {
     async getSnapshot(conversationId) {
       return snapshot(conversationId);
     },
-    async readEvents(conversationId) {
-      return [event(conversationId)];
+    async readFrames(conversationId) {
+      return [frame(conversationId)];
     },
     async send(command) {
       sentConversationIds.push(command.conversationId);
@@ -95,9 +102,13 @@ function createAgent(conversationIds: readonly string[] = ["conversation-1"]) {
       snapshotListeners.add(listener);
       return () => snapshotListeners.delete(listener);
     },
-    onEvent(listener) {
-      eventListeners.add(listener);
-      return () => eventListeners.delete(listener);
+    onSessionFrame(listener) {
+      frameListeners.add(listener);
+      return () => frameListeners.delete(listener);
+    },
+    onLiveFrame(listener) {
+      liveFrameListeners.add(listener);
+      return () => liveFrameListeners.delete(listener);
     },
   };
 
@@ -108,8 +119,11 @@ function createAgent(conversationIds: readonly string[] = ["conversation-1"]) {
     emitSnapshot(value: ConversationSnapshot) {
       for (const listener of snapshotListeners) listener(value);
     },
-    emitEvent(value: AgentEventEnvelope) {
-      for (const listener of eventListeners) listener(value);
+    emitFrame(value: SessionFrame) {
+      for (const listener of frameListeners) listener(value);
+    },
+    emitLiveFrame(value: LiveFrame) {
+      for (const listener of liveFrameListeners) listener(value);
     },
   };
 }
@@ -147,7 +161,7 @@ describe("desktop remote command port", () => {
     const port = createDesktopRemoteCommandPort(createAgent().agent);
 
     await expect(port.snapshot("interview-1")).rejects.toMatchObject({ code: "not-found" });
-    await expect(port.readEvents("interview-1", 0)).rejects.toMatchObject({ code: "not-found" });
+    await expect(port.readFrames("interview-1", 0)).rejects.toMatchObject({ code: "not-found" });
     await expect(port.clearConversation("interview-1")).rejects.toMatchObject({
       code: "not-found",
     });
@@ -229,29 +243,37 @@ describe("desktop remote command port", () => {
     expect(() => port.cancel("conversation-1", "turn-1")).not.toThrow();
   });
 
-  it("filters snapshots and events to visible conversations", async () => {
+  it("filters snapshots, durable frames and live frames to visible conversations", async () => {
     const harness = createAgent(["conversation-1"]);
     const port = createDesktopRemoteCommandPort(harness.agent);
     const snapshots: string[] = [];
-    const events: string[] = [];
+    const frames: string[] = [];
+    const liveFrames: string[] = [];
     port.onSnapshot((value) => snapshots.push(value.conversationId));
-    port.onEvent((value) => events.push(value.conversationId));
+    port.onFrame((value) => frames.push(value.sessionId));
+    port.onLiveFrame((value) => liveFrames.push(value.sessionId));
 
     harness.emitSnapshot(snapshot("conversation-1"));
     harness.emitSnapshot(snapshot("interview-1"));
-    harness.emitEvent(event("conversation-1"));
-    harness.emitEvent(event("interview-1"));
+    harness.emitFrame(frame("conversation-1"));
+    harness.emitFrame(frame("interview-1"));
+    harness.emitLiveFrame(liveFrame("conversation-1"));
+    harness.emitLiveFrame(liveFrame("interview-1"));
 
     expect(snapshots).toEqual([]);
-    expect(events).toEqual([]);
+    expect(frames).toEqual([]);
+    expect(liveFrames).toEqual([]);
 
     await port.listSessions?.();
     harness.emitSnapshot(snapshot("conversation-1"));
     harness.emitSnapshot(snapshot("interview-1"));
-    harness.emitEvent(event("conversation-1"));
-    harness.emitEvent(event("interview-1"));
+    harness.emitFrame(frame("conversation-1"));
+    harness.emitFrame(frame("interview-1"));
+    harness.emitLiveFrame(liveFrame("conversation-1"));
+    harness.emitLiveFrame(liveFrame("interview-1"));
 
     expect(snapshots).toEqual(["conversation-1"]);
-    expect(events).toEqual(["conversation-1"]);
+    expect(frames).toEqual(["conversation-1"]);
+    expect(liveFrames).toEqual(["conversation-1"]);
   });
 });

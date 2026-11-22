@@ -9,16 +9,21 @@ import {
   signalingFrameSchema,
 } from "../src/schema";
 
-const eventEnvelope = {
-  schemaVersion: 1,
-  eventId: "event-1",
-  conversationId: "conversation-1",
-  runId: "run-1",
-  attemptId: "attempt-1",
-  sequence: 1,
-  aggregateRevision: 1,
-  producerId: "host-1",
+const sessionFrame = {
+  schemaVersion: 2,
+  sessionId: "conversation-1",
+  seq: 1,
+  eventId: "frame-1",
   occurredAt: "2026-11-13T00:00:00.000Z",
+  producerId: "host-1",
+  turnId: "turn-1",
+  messageId: "message-1",
+  event: { type: "text-start", partId: "text-1" },
+} as const;
+
+const liveFrame = {
+  sessionId: "conversation-1",
+  messageId: "message-1",
   event: { type: "text-delta", partId: "text-1", delta: "hello" },
 } as const;
 
@@ -29,7 +34,7 @@ describe("remote frame schema", () => {
     expect(remoteCapabilitiesSchema.parse(capabilities)).toEqual(capabilities);
   });
 
-  it("round-trips handshake, command result, snapshot and event frames", () => {
+  it("round-trips handshake, command result, snapshot, durable and live frames", () => {
     const hello = {
       type: "hello",
       protocolVersion: 1,
@@ -66,7 +71,7 @@ describe("remote frame schema", () => {
     } as const;
     expect(remoteFrameSchema.parse(welcome)).toEqual(welcome);
 
-    const commandOk = { type: "command-ok", requestId: "request-1", value: { runId: "run-1" } };
+    const commandOk = { type: "command-ok", requestId: "request-1", value: { turnId: "turn-1" } };
     expect(remoteFrameSchema.parse(commandOk)).toEqual(commandOk);
 
     const authError = {
@@ -86,8 +91,35 @@ describe("remote frame schema", () => {
     };
     expect(remoteFrameSchema.parse(snapshot)).toEqual(snapshot);
 
-    const event = { type: "event", event: eventEnvelope };
-    expect(remoteFrameSchema.parse(event)).toEqual(event);
+    const durable = { type: "session-frame", frame: sessionFrame };
+    expect(remoteFrameSchema.parse(durable)).toEqual(durable);
+
+    const live = { type: "live-frame", frame: liveFrame };
+    expect(remoteFrameSchema.parse(live)).toEqual(live);
+  });
+
+  it("reads history by durable seq and rejects live deltas on the durable channel", () => {
+    expect(
+      remoteCommandSchema.parse({
+        type: "read-frames",
+        conversationId: "conversation-1",
+        afterSeq: 3,
+      }),
+    ).toEqual({ type: "read-frames", conversationId: "conversation-1", afterSeq: 3 });
+    expect(
+      remoteCommandSchema.safeParse({
+        type: "read-frames",
+        conversationId: "conversation-1",
+        afterRevision: 3,
+      }).success,
+    ).toBe(false);
+    // `text-delta` 只走 live 通道，不得进入可重放的 durable 帧。
+    expect(
+      remoteFrameSchema.safeParse({
+        type: "session-frame",
+        frame: { ...sessionFrame, event: liveFrame.event },
+      }).success,
+    ).toBe(false);
   });
 
   it("rejects an unsupported protocol version and unknown frame fields", () => {

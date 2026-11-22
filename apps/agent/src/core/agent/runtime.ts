@@ -18,8 +18,9 @@ import { executeRun } from "./executeRun";
 import { AgentRegistry } from "./registry";
 
 export interface AgentRuntimeOptions {
-  executionStore: ExecutionStore;
-  emitEvent: (event: AgentEventEnvelope) => void;
+  /** Answer 的 envelope 写入与读取口；纯模型调用宿主（CLI coding）不需要。 */
+  executionStore?: ExecutionStore;
+  emitEvent?: (event: AgentEventEnvelope) => void;
   tokenProvider?: (options: { forceRefresh: boolean }) => Promise<string>;
 }
 
@@ -27,9 +28,9 @@ export interface AgentRuntimeOptions {
 export class AgentRuntime {
   private readonly agentRegistry = new AgentRegistry();
   private readonly runs = new RunRegistry();
-  private readonly executionStore: ExecutionStore;
+  private readonly executionStore?: ExecutionStore;
   private readonly tokenProvider?: AgentRuntimeOptions["tokenProvider"];
-  private readonly unsubscribeEvents: () => void;
+  private readonly unsubscribeEvents?: () => void;
   private readonly internalSessionId = randomUUID();
   private shuttingDown = false;
   private routes?: AgentModelRoutes;
@@ -37,7 +38,9 @@ export class AgentRuntime {
   constructor({ executionStore, emitEvent, tokenProvider }: AgentRuntimeOptions) {
     this.executionStore = executionStore;
     this.tokenProvider = tokenProvider;
-    this.unsubscribeEvents = executionStore.subscribe(emitEvent);
+    if (executionStore !== undefined && emitEvent !== undefined) {
+      this.unsubscribeEvents = executionStore.subscribe(emitEvent);
+    }
   }
 
   registerAgent<Input>(definition: AgentDefinition<Input>): AgentExecutor<Input> {
@@ -112,20 +115,15 @@ export class AgentRuntime {
   }
 
   getRun(runId: string): Promise<AgentRunSnapshot | undefined> {
-    return this.executionStore.getRun(runId);
+    return this.requireExecutionStore().getRun(runId);
   }
 
   getConversationRevision(conversationId: string): Promise<number> {
-    return this.executionStore.getConversationRevision(conversationId);
+    return this.requireExecutionStore().getConversationRevision(conversationId);
   }
 
   readEvents(conversationId: string, afterRevision: number): Promise<AgentEventEnvelope[]> {
-    return this.executionStore.readEvents(conversationId, afterRevision);
-  }
-
-  /** 供跨领域 UI 投影共享同一个 revision 计数器；不暴露可变状态。 */
-  eventStore(): ExecutionStore {
-    return this.executionStore;
+    return this.requireExecutionStore().readEvents(conversationId, afterRevision);
   }
 
   /** 暴露反向令牌刷新端口，供 Session StepRunner 的 provider 请求复用。 */
@@ -134,29 +132,36 @@ export class AgentRuntime {
   }
 
   readEventsForRun(runId: string): Promise<AgentEventEnvelope[]> {
-    return this.executionStore.readEventsForRun(runId);
+    return this.requireExecutionStore().readEventsForRun(runId);
   }
 
   /** 清空会话后同步重置事件游标；renderer 才会从 revision 0 重新消费。 */
   resetExecution(conversationId: string): Promise<void> {
-    return this.executionStore.resetConversation(conversationId);
+    return this.requireExecutionStore().resetConversation(conversationId);
   }
 
   /** 宿主退出：先取消并等待所有 run 的最终消息落账，再释放事件订阅。 */
   async shutdown(): Promise<void> {
     this.shuttingDown = true;
     await this.runs.abortAllAndWait();
-    this.unsubscribeEvents();
+    this.unsubscribeEvents?.();
   }
 
   dispose(): void {
     this.shuttingDown = true;
     this.runs.abortAll();
-    this.unsubscribeEvents();
+    this.unsubscribeEvents?.();
   }
 
   get activeRunCount(): number {
     return this.runs.activeCount;
+  }
+
+  private requireExecutionStore(): ExecutionStore {
+    if (this.executionStore === undefined) {
+      throw new Error("AgentRuntime 未配置 ExecutionStore，不能读写 envelope");
+    }
+    return this.executionStore;
   }
 
   private async startRun<Input, Prepared>(
@@ -167,7 +172,8 @@ export class AgentRuntime {
     this.agentRegistry.require(definition.id);
     const endpoint = this.requireRoutes()[definition.modelRoute];
     const runId = randomUUID();
-    const eventRevision = await this.executionStore.getConversationRevision(request.conversationId);
+    const executionStore = this.requireExecutionStore();
+    const eventRevision = await executionStore.getConversationRevision(request.conversationId);
     const controller = new AbortController();
     this.runs.register(runId, controller);
 
@@ -189,7 +195,7 @@ export class AgentRuntime {
       input: setup.input,
       runId,
       endpoint,
-      executionStore: this.executionStore,
+      executionStore,
       tokenProvider: this.tokenProvider,
       controller,
     });

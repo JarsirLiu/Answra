@@ -1,9 +1,9 @@
 import type { ConversationQueueCompletion, ConversationSendResult } from "@answra/shared";
 import type {
-  AgentEventEnvelope,
   BotSummary,
   ConversationSessionPage,
   ConversationSnapshot,
+  LiveFrame,
   RemoteCapability,
   RemoteConversationSelection,
   RemoteLocalModelInput,
@@ -11,6 +11,7 @@ import type {
   RemoteModelSettingsView,
   RemoteSendCommand,
   RemoteSessionListQuery,
+  SessionFrame,
 } from "@answra/shared/schema";
 import type { Unsubscribe } from "../ports/subscription";
 
@@ -34,7 +35,7 @@ export interface HostCommandPort {
   ): Promise<ConversationSnapshot>;
   clearConversation(conversationId: string): Promise<ConversationSnapshot>;
   snapshot(conversationId: string): Promise<ConversationSnapshot>;
-  readEvents(conversationId: string, afterRevision: number): Promise<AgentEventEnvelope[]>;
+  readFrames(conversationId: string, afterSeq: number): Promise<SessionFrame[]>;
   listSessions?(query?: RemoteSessionListQuery): Promise<ConversationSessionPage>;
   send(command: RemoteSendCommand): Promise<ConversationSendResult>;
   waitQueueStart(
@@ -49,5 +50,8 @@ export interface HostCommandPort {
   applyModel(config: RemoteModelConfig): void;
   settings(): HostModelSettingsPort;
   onSnapshot(listener: (snapshot: ConversationSnapshot) => void): Unsubscribe;
-  onEvent(listener: (event: AgentEventEnvelope) => void): Unsubscribe;
+  /** 可重放的 durable 事实帧；controller 按 `seq` 折叠。 */
+  onFrame(listener: (frame: SessionFrame) => void): Unsubscribe;
+  /** 瞬时增量帧；允许丢失，不参与重放。 */
+  onLiveFrame(listener: (frame: LiveFrame) => void): Unsubscribe;
 }

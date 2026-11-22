@@ -8,7 +8,6 @@ import { createBotCatalog } from "../../src/core/bot/catalog";
 import type { StepRunner, TurnHandoff } from "../../src/core/session/contracts";
 import type { TeamPreset } from "../../src/core/team/preset";
 import { MemoryConversationStore } from "../../src/core/transcript/memoryStore";
-import { MemoryExecutionStore } from "../../src/execution/memoryStore";
 
 const first = agentId("first");
 const second = agentId("second");
@@ -105,7 +104,6 @@ function createHarness({ handoff }: { handoff?: TurnHandoff } = {}) {
     store,
     catalog: createBotCatalog([bot(first), bot(second)]),
     presets: [preset, dualPreset],
-    executionStore: new MemoryExecutionStore(),
     stepRunner: runner,
     onSnapshot: () => undefined,
     onTeamError: (error) => errors.push(error),

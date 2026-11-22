@@ -1,11 +1,11 @@
 import type { ConversationQueueCompletion, ConversationSendResult } from "@answra/shared";
 import {
-  type AgentEventEnvelope,
   type BotSummary,
   type ConversationSessionPage,
   type ConversationSnapshot,
   conversationSessionPageSchema,
   conversationSnapshotSchema,
+  type LiveFrame,
   REMOTE_PROTOCOL_VERSION,
   type RemoteCapability,
   type RemoteCommand,
@@ -19,11 +19,12 @@ import {
   type RemoteSessionListQuery,
   type RemoteWelcome,
   remoteBotListSchema,
-  remoteEventListSchema,
+  remoteFrameListSchema,
   remoteModelSettingsViewSchema,
   remoteQueueCompletionSchema,
   remoteQueueStartSchema,
   remoteSendResultSchema,
+  type SessionFrame,
 } from "@answra/shared/schema";
 import { parseRemoteAccessKey, type RemoteCredentialRecord } from "../access/accessKey";
 import type { HostModelSettingsPort } from "../host/hostPort";
@@ -58,7 +59,8 @@ export class RemoteControllerSession {
   private readonly pending = new Map<string, PendingCommand>();
   private readonly unsubscribers: Unsubscribe[] = [];
   private readonly snapshotListeners = new Set<(snapshot: ConversationSnapshot) => void>();
-  private readonly eventListeners = new Set<(event: AgentEventEnvelope) => void>();
+  private readonly frameListeners = new Set<(frame: SessionFrame) => void>();
+  private readonly liveFrameListeners = new Set<(frame: LiveFrame) => void>();
   private readonly stateListeners = new Set<(state: RemoteControllerState) => void>();
   private readonly settingsPort: HostModelSettingsPort;
   private currentState: RemoteControllerState = "idle";
@@ -166,9 +168,9 @@ export class RemoteControllerSession {
     );
   }
 
-  async readEvents(conversationId: string, afterRevision: number): Promise<AgentEventEnvelope[]> {
-    return this.sendCommand({ type: "read-events", conversationId, afterRevision }, (value) =>
-      remoteEventListSchema.parse(value),
+  async readFrames(conversationId: string, afterSeq: number): Promise<SessionFrame[]> {
+    return this.sendCommand({ type: "read-frames", conversationId, afterSeq }, (value) =>
+      remoteFrameListSchema.parse(value),
     );
   }
 
@@ -228,9 +230,14 @@ export class RemoteControllerSession {
     return () => this.snapshotListeners.delete(listener);
   }
 
-  onEvent(listener: (event: AgentEventEnvelope) => void): Unsubscribe {
-    this.eventListeners.add(listener);
-    return () => this.eventListeners.delete(listener);
+  onFrame(listener: (frame: SessionFrame) => void): Unsubscribe {
+    this.frameListeners.add(listener);
+    return () => this.frameListeners.delete(listener);
+  }
+
+  onLiveFrame(listener: (frame: LiveFrame) => void): Unsubscribe {
+    this.liveFrameListeners.add(listener);
+    return () => this.liveFrameListeners.delete(listener);
   }
 
   onState(listener: (state: RemoteControllerState) => void): Unsubscribe {
@@ -332,8 +339,11 @@ export class RemoteControllerSession {
       case "snapshot":
         for (const listener of this.snapshotListeners) listener(frame.snapshot);
         return;
-      case "event":
-        for (const listener of this.eventListeners) listener(frame.event);
+      case "session-frame":
+        for (const listener of this.frameListeners) listener(frame.frame);
+        return;
+      case "live-frame":
+        for (const listener of this.liveFrameListeners) listener(frame.frame);
         return;
       case "close":
         this.close();

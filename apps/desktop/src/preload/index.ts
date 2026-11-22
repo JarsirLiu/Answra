@@ -205,8 +205,6 @@ const bridge: DesktopBridge = {
   sendInterviewIntakeMessage: (text: string) =>
     ipcRenderer.invoke(InterviewChannels.IntakeMessage, { text }),
   getInterviewIntakeSnapshot: () => ipcRenderer.invoke(InterviewChannels.IntakeSnapshot),
-  readInterviewIntakeEvents: (afterRevision: number) =>
-    ipcRenderer.invoke(InterviewChannels.IntakeEvents, { afterRevision }),
   stopInterview: (sessionId: string) => ipcRenderer.invoke(InterviewChannels.Stop, { sessionId }),
   markInterviewCaptureReady: (sessionId: string) =>
     ipcRenderer.invoke(InterviewChannels.CaptureReady, { sessionId }),

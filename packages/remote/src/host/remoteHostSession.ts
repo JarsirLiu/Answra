@@ -81,8 +81,13 @@ export class RemoteHostSession {
       }),
     );
     this.unsubscribers.push(
-      this.host.onEvent((event) => {
-        if (this.welcomed) this.send({ type: "event", event });
+      this.host.onFrame((frame) => {
+        if (this.welcomed) this.send({ type: "session-frame", frame });
+      }),
+    );
+    this.unsubscribers.push(
+      this.host.onLiveFrame((frame) => {
+        if (this.welcomed) this.send({ type: "live-frame", frame });
       }),
     );
   }
@@ -236,8 +241,8 @@ export class RemoteHostSession {
         return undefined;
       case "snapshot":
         return this.host.snapshot(command.conversationId);
-      case "read-events":
-        return this.host.readEvents(command.conversationId, command.afterRevision);
+      case "read-frames":
+        return this.host.readFrames(command.conversationId, command.afterSeq);
       case "list-sessions":
         return this.requireListSessions()(command.query);
       case "list-bots":

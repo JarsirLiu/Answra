@@ -11,7 +11,6 @@ import { sessionId } from "../../src/core/session/contracts";
 import { MemorySessionJournal } from "../../src/core/session/memoryJournal";
 import type { TeamPreset } from "../../src/core/team/preset";
 import { MemoryConversationStore } from "../../src/core/transcript/memoryStore";
-import { MemoryExecutionStore } from "../../src/execution/memoryStore";
 
 const candidate = agentId("candidate");
 const intake = agentId("intake");
@@ -117,7 +116,6 @@ function createHarness({
     catalog: createBotCatalog([makeBot(candidate), makeBot(intake)]),
     presets: [preset],
     sessionJournal: journal,
-    executionStore: new MemoryExecutionStore(),
     stepRunner: runner,
     onSnapshot: (snapshot) => {
       snapshots.push(snapshot);

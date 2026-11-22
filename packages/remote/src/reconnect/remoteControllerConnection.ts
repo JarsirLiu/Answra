@@ -1,12 +1,13 @@
 import type { ConversationQueueCompletion, ConversationSendResult } from "@answra/shared";
 import type {
-  AgentEventEnvelope,
   BotSummary,
   ConversationSnapshot,
+  LiveFrame,
   RemoteCapability,
   RemoteModelConfig,
   RemoteSendCommand,
   RemoteWelcome,
+  SessionFrame,
 } from "@answra/shared/schema";
 import type { RemoteControllerSession } from "../controller/remoteControllerSession";
 import type { HostModelSettingsPort } from "../host/hostPort";
@@ -50,7 +51,8 @@ export class RemoteControllerConnection {
   private readonly stateListeners = new Set<(state: RemoteControllerConnectionState) => void>();
   private readonly sessionListeners = new Set<(session: RemoteControllerSession) => void>();
   private readonly snapshotListeners = new Set<(snapshot: ConversationSnapshot) => void>();
-  private readonly eventListeners = new Set<(event: AgentEventEnvelope) => void>();
+  private readonly frameListeners = new Set<(frame: SessionFrame) => void>();
+  private readonly liveFrameListeners = new Set<(frame: LiveFrame) => void>();
   private readonly errorListeners = new Set<(error: RemoteOperationError) => void>();
   private currentState: RemoteControllerConnectionState = "idle";
   private current?: RemoteControllerAttempt;
@@ -151,9 +153,14 @@ export class RemoteControllerConnection {
     return () => this.snapshotListeners.delete(listener);
   }
 
-  onEvent(listener: (event: AgentEventEnvelope) => void): Unsubscribe {
-    this.eventListeners.add(listener);
-    return () => this.eventListeners.delete(listener);
+  onFrame(listener: (frame: SessionFrame) => void): Unsubscribe {
+    this.frameListeners.add(listener);
+    return () => this.frameListeners.delete(listener);
+  }
+
+  onLiveFrame(listener: (frame: LiveFrame) => void): Unsubscribe {
+    this.liveFrameListeners.add(listener);
+    return () => this.liveFrameListeners.delete(listener);
   }
 
   onError(listener: (error: RemoteOperationError) => void): Unsubscribe {
@@ -176,8 +183,8 @@ export class RemoteControllerConnection {
     return this.requireSession().snapshot(conversationId);
   }
 
-  async readEvents(conversationId: string, afterRevision: number): Promise<AgentEventEnvelope[]> {
-    return this.requireSession().readEvents(conversationId, afterRevision);
+  async readFrames(conversationId: string, afterSeq: number): Promise<SessionFrame[]> {
+    return this.requireSession().readFrames(conversationId, afterSeq);
   }
 
   async send(command: RemoteSendCommand): Promise<ConversationSendResult> {
@@ -283,8 +290,11 @@ export class RemoteControllerConnection {
       attempt.session.onSnapshot((snapshot) => {
         for (const listener of this.snapshotListeners) listener(snapshot);
       }),
-      attempt.session.onEvent((event) => {
-        for (const listener of this.eventListeners) listener(event);
+      attempt.session.onFrame((frame) => {
+        for (const listener of this.frameListeners) listener(frame);
+      }),
+      attempt.session.onLiveFrame((frame) => {
+        for (const listener of this.liveFrameListeners) listener(frame);
       }),
       attempt.session.onState((state) => {
         if (state === "closed") this.handleAttemptClosed(generation);

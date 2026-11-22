@@ -73,9 +73,9 @@ export const remoteCommandSchema = z.discriminatedUnion("type", [
     conversationId: z.string(),
   }),
   z.strictObject({
-    type: z.literal("read-events"),
+    type: z.literal("read-frames"),
     conversationId: z.string(),
-    afterRevision: z.number().int().nonnegative(),
+    afterSeq: z.number().int().nonnegative(),
   }),
   z.strictObject({
     type: z.literal("list-sessions"),

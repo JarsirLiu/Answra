@@ -134,7 +134,7 @@ export const liveFrameSchema = z.strictObject({
 - 提交返回 `turnId`，排队项与活动槽位都以 Turn 为单位（与 `TurnScheduler` 一致）。
 - 取消活动 Turn 时，queued Turn 保持原语义（同时取消，已在底座实现）。
 - `ConversationSnapshot.activeRunId` → `activeTurnId` + `activeMessageId`。
-- 远程协议 `REMOTE_PROTOCOL_VERSION` 从 `1` 升到 `2`（`packages/shared/src/schema/remote/capabilities.ts:4`）。旧 host 与旧 controller 握手时应明确拒绝，不做双命令兼容。
+- 远程协议 `REMOTE_PROTOCOL_VERSION` **保持 `1`，直接在 v1 上替换线协议形状**（修订见下文「为什么 remote 不升版本」）。原提案是从 `1` 升到 `2` 并拒绝 v1 握手，但因远程从未上线、没有已发布客户端，升版只会产生一份永远不会被使用的 v2 词汇，因此舍弃。
 
 ### D6 折叠只有一份
 
@@ -169,7 +169,7 @@ export const liveFrameSchema = z.strictObject({
 | --- | --- | --- |
 | P1 加通道 | 新增 `sessionFrameSchema` / `liveFrameSchema`、`SessionFrameBus`；journal 与 bus 并行发布；旧 projector 保持 | 新 schema 有单测；`pnpm verify` 全绿；线上仍走旧协议 |
 | P2a 切读取面（第 3a 步） | UI / CLI 改吃 `SessionFrame` / `LiveFrame`，取消与渲染改用 `activeTurnId` + `activeMessageId`；快照与频道契约一次改到位；服务端继续双发（projector 保留） | 桌面、CLI 的流式/工具/handoff/排队/取消/压缩后继续与改动前一致；`pnpm verify` 全绿 |
-| P2b 删写入面（第 3b 步） | 删除 `AgentEventEnvelope` 通道、`SessionEventProjector`、`run-state-changed`；恢复协调器端口收敛；remote 升 v2 并拒绝 v1 | 全仓 `\brunId\b` 归零（Answer shim 除外）；v1 controller 连 v2 host 被明确拒绝；`pnpm verify` 全绿 |
+| P2b 删写入面（第 3b 步） | 删除 `AgentEventEnvelope` 通道、`SessionEventProjector`、`run-state-changed`；恢复协调器端口收敛；remote 保持 v1 直接换成帧线协议 | 全仓 `\brunId\b` 归零（Answer shim 除外）；remote 命令/帧契约只剩 `read-frames` / `session-frame` / `live-frame`；`pnpm verify` 全绿 |
 | P3 删旧引擎 | Answer 迁到 `SessionRuntime`（内存 journal、单 Turn）；删除 `executeRun.ts` 与 Answer shim | `run-state-changed` 全仓归零；Answer 截图答题回归通过 |
 | P4 上锁 | `architecture:check` 增加禁词与 import 方向检查 | 故意引入 `runId` 时构建失败 |
 
@@ -187,6 +187,26 @@ export const liveFrameSchema = z.strictObject({
 "协议只断一次"的约束仍然成立：**对外可见的契约形状**（快照字段、发送/等待/取消的请求与响应、frame schema）在 3a 内一次改到位，3b 不再改动它们。被拆开的只是"删除旧通道"的时机；3b 不含任何消费方重写，只有删除与收口。
 
 这样做的代价是旧 envelope 在 3a 期间仍然存在（但已无 UI 消费者），收益是每段都能独立编译、独立验证、独立提交，不会出现长时间无法判断进度的中间态。
+
+### 为什么 3b 不能再拆成 agent / CLI / remote 三笔（修订 2026-11-22）
+
+3b 原计划按「agent 删写入面 → CLI 适配 → remote 帧化」拆成三笔提交。实施时确认这个粒度不成立：
+
+`CodingHostOptions.emitEvent` 是 CLI 与桌面 remote host 把 envelope 转发给 controller 的唯一入口，而 `HostCommandPort.readEvents` / `onEvent`、remote 线协议 `event` / `events` 帧、`read-events` 命令又都还是 envelope 形状。删掉 agent 写入面后，两个 remote host 立刻失去历史读取面与实时流，无法编译；反之若先改 remote，CLI/桌面也没有帧可转发。
+
+因此 3b 合并为**一笔提交**：agent 删除 + remote 帧化 + CLI/桌面宿主适配一起落盘。中间不存在可编译的半删状态，门禁只在一个完整状态上变绿。3a 已经把对外契约形状定死，所以合并的只是「删除时机」，不是「一次改两种形状」。
+
+### 为什么 remote 不升版本（修订 2026-11-22）
+
+原提案要求 `REMOTE_PROTOCOL_VERSION` 升到 `2` 并拒绝 v1 握手。实施时确认 **remote 从未上线**：没有已发布 host、没有已发布 controller，移动端只有 Phase 0 骨架且不消费帧。
+
+升版的前提是「存在需要被拒绝的旧客户端」；该前提不存在，升到 v2 只会留下一份永远不会被使用的 v1 兼容分支与一套 v2 词汇。因此决定：
+
+- `REMOTE_PROTOCOL_VERSION` 保持 `1`，直接替换 v1 的线协议形状。
+- 删除 `events` 帧与 `remoteEventBatchSchema`（本就没有消费者），新增 `session-frame` / `live-frame` 帧与 `read-frames` 命令。
+- `read-events` 命令与 `event` 帧**不删除**，但只允许服务 Answer 的 envelope shim（P3 一并删除）；会话 / 面试 / Coding 只走帧。
+
+代价是「同一版本号对应两种形状」这件事在语义上不严谨；接受理由是这套协议没有任何外部部署，版本号在此刻没有兼容性职责。若将来需要兼容，应以届时实际发布的形状为 v1 基线。
 
 ### P2 执行顺序
 
@@ -243,12 +263,12 @@ P2 内部再拆四个子步，前两步不改变线上行为，第三步是唯�
 **3b 删写入面（纯删除与收口，不改契约）**
 
 - 删除 `SessionEventProjector`、`run-state-changed`、`ExecutionStore`；`SessionRuntimeJournal` 写入顺序收敛为 `journal → frame → transcript`。
-- `SessionRecoveryCoordinator` 端口收敛为 `recoverFacts → journalLastSeq → seedLastSeq → restoreTranscript → resumeQueued`，删除 `eventRevision` / `seedRevision` / `revision` / `suspendUi`。
-- `ConversationApplication` / `CodingApplication` 删除 `executionStore`、`projector`、`turnByRun`、`getExecutionRun`、`readExecutionEvents`；`readFramesAfter` 成为唯一读取口。
-- desktop / worker / preload 删除 `event`、`read-events` 通道与 `sendAgentEvent` 订阅；`startAgentHost` 的 `emitEvent` 只服务 Answer shim。
-- remote：`remoteEventBatch` 换成帧批量，`throughRevision` 换成 `throughSeq`，`REMOTE_PROTOCOL_VERSION` 升到 `2`，v1 hello 明确拒绝，不做双命令兼容。
+- `SessionRecoveryCoordinator` 端口收敛为 `recoverFacts → journalLastSeq → seedLastSeq → restoreTranscript(…, lastSeq) → resumeQueued → onRecovered`，删除 `eventRevision` / `seedRevision` / `revision` / `suspendUi`；恢复写回的收口事实作为新的 durable 帧广播，不再挂起 UI。
+- `ConversationApplication` / `CodingApplication` / `InterviewApplication` 删除 `executionStore`、`projector`、`turnByRun`、`getExecutionRun`、`readExecutionEvents`；`readFramesAfter` 成为唯一读取口。`AgentRuntime` 的 `executionStore` / `emitEvent` 改为可选并新增 `requireExecutionStore()`，只有 Answer shim 构造时注入。
+- desktop / worker / preload 删除面试事件读取口（`InterviewChannels.IntakeEvents`、`readInterviewIntakeEvents`、`interview-events` / `interview-intake-events` 命令，UI 无消费者）；`AgentService.readEvents` 固定路由 `read-events`，只服务 Answer。
+- remote：`remoteEventListSchema` → `remoteFrameListSchema`，`throughRevision` → `afterSeq`，`HostCommandPort.readEvents` / `onEvent` → `readFrames` / `onFrame` / `onLiveFrame`；线协议新增 `session-frame` / `live-frame`，删除无人消费的 `events` 帧；命令 `read-events` → `read-frames`；`REMOTE_PROTOCOL_VERSION` 保持 `1`。
 - Answer 仍走 envelope：保留独立 `applyAgentEvent` 与 envelope 订阅，标注为 P3 删除的临时路径，不与会话帧混用；`aggregateRevision` 只留在 Answer shim。
-- 出口：D4 映射逐项测试、幂等测试、重连/断线/取消/排队测试、v1→v2 拒绝测试；全仓 `\brunId\b` 归零（Answer shim 除外）；桌面与 CLI 实机验证。
+- 出口：D4 映射逐项测试、幂等测试、重连/断线/取消/排队测试、remote 帧往返测试；会话/面试/Coding 的 `\brunId\b` 与 `AgentEventEnvelope` 归零（Answer shim 除外）；桌面与 CLI 实机验证。
 
 **第 4 步：Answer 迁移与上锁（原 P3/P4）**
 
@@ -289,8 +309,14 @@ P2 内部再拆四个子步，前两步不改变线上行为，第三步是唯�
   - `apps/cli`：`SessionHostOptions` 收敛为 `onSessionFrame` / `onLiveFrame` / `onSnapshot` / `workspaceRoot`；`CodingSession` 用 `turnId` / `waitForTurn` / `cancelTurn` / `readFrames`；`TuiViewStore` durable 帧即时折叠、live 帧 16ms 批处理、缺口整段重读（注入 `TuiFrameReader`）、snapshot 到达清空未应用的 live 增量；`streamPresenter` 改为 `presentFrame` / `presentLive`。CLI 仍向宿主传 `emitEvent: () => {}`，这是 3b 才删的过渡占位，不是新的消费路径。
   - `packages/remote` / `apps/mobile`：controller 侧字段同步改为 `turnId`，远程命令与 `remoteCommandPort` 不再读 `runId`。
   - 证据：`packages/ui/test/conversationView.test.ts`（帧折叠、handoff、重放幂等、Answer shim 分离）、`useConversationView.test.tsx`（帧通道游标、缺口重读、清空归零、`waitForOutcome`）、`apps/cli/test/tui/app/viewStore.test.ts`（live 批量、durable 折叠、stale snapshot、缺口整段重读）、`apps/cli/test/presentation/streamPresenter.test.ts`（turn 终态 exit code）、`apps/agent/test/worker/host.test.ts`（`cancel-turn` 与 Answer `cancel-run` 分流）、`apps/desktop/test/conversationIpc.test.ts`（`cancelTurn` 载荷校验）。`pnpm verify` 全绿。
-- **P2 第 3b 步（删写入面）未开始**：删除 `AgentEventEnvelope` 通道、`SessionEventProjector`、`run-state-changed`，清掉 CLI 的 `emitEvent: () => {}`，恢复协调器端口收敛，remote 升 v2 并拒绝 v1。
-- P2 第 4 步（Answer 迁移）与 P4 上锁未开始；线上仍双发 `AgentEventEnvelope`，但会话/面试/Coding 的 UI 与 CLI 消费者已全部切到帧。
+- **P2 第 3b 步（删写入面）已完成（2026-11-22）**：
+  - agent：删除 `sessionEventProjector.ts` 与其测试；`SessionRuntimeJournal` 写入顺序变为 `journal → frames → transcript`；`SessionTranscriptBridge` 用 `envelope.sequence` 推进 `lastSeq`（`eventRevision` 不再由 projector 推导）；三个 application 删除 `executionStore` / `projector` / `readEventsAfter` / `resetExecution` 与 `applyLive` 投影调用；`AgentRuntime` 的 `executionStore` / `emitEvent` 改为可选并新增 `requireExecutionStore()`；`CodingHostOptions` 删除 `emitEvent` / `executionStore`；worker 协议删除 `interview-events` / `interview-intake-events`；`host.ts` 的 `read-events` 只路由 Answer；`composition.ts` 不再导出 `MemoryExecutionStore` / `ExecutionStore`。
+  - 恢复：`SessionRecoveryCoordinator` 端口收敛为 `recoverFacts → journalLastSeq → seedLastSeq → restoreTranscript → resumeQueued → onRecovered`；恢复写回不再挂起 UI，收口事实作为新的 durable 帧广播（`turn-finished{status:"failed", reason:"interrupted"}`），transcript 映射为 `interrupted`。
+  - shared：删除 `InterviewChannels.IntakeEvents`、`readInterviewIntakeEvents`、`remoteEventBatchSchema` / `RemoteEventBatch`、`remoteEventListSchema` / `RemoteEventList`；新增 `remoteFrameListSchema` / `RemoteFrameList`。remote 线协议删除 `event` / `events` 帧与 `read-events` 命令，改为 `session-frame` / `live-frame` 与 `read-frames` + `afterSeq`；`REMOTE_PROTOCOL_VERSION` 保持 `1`（理由见上文修订）。
+  - desktop：删除 `interviewIpc` 的 `IntakeEvents` handler / removeHandler、`AgentService.readInterviewIntakeEvents`、preload 对应方法与 `eventsCommandFor`（`readEvents` 固定走 `read-events`）；remote host 的 `DesktopRemoteAgentPort` 与 `createDesktopRemoteCommandPort` 改为 `readFrames` / `onSessionFrame` / `onLiveFrame`，并按 `sessionId` 过滤可见会话。
+  - CLI：删除 `emitEvent: () => {}` 过渡占位；`remote/host/commandPort.ts` 改为转发宿主帧并经 `readFramesAfter` 提供历史。
+  - 证据：agent `111 files / 842 tests`、remote `9 / 48`、cli `60 / 393`、desktop `54 / 378`、ui `49 / 346` 全绿；`pnpm verify` 全绿。测试改写要点：coding 用 `frames` / `live` 替代 envelope（队列顺序、取消、`text-delta`），conversation 聊天测试改用 `runtime.waitForTurn`，`sessionRuntimeIntegration` 断言帧契约与 `seq` 单调，interview 恢复测试断言新增 `turn-finished` 帧，`worker/host` 的 step 顺序断言改用 `session-frame`。
+- **P2 第 4 步（Answer 迁移）与 P4 上锁未开始**；线上仍双发 `AgentEventEnvelope`，但只有 Answer shim 消费。
 
 ## 曾考虑的替代方案
 
@@ -315,11 +341,11 @@ P2 内部再拆四个子步，前两步不改变线上行为，第三步是唯�
 - 需要的实机验证：
   - 桌面：长会话自动压缩后继续、断网重连、取消活动 Turn 后立即发送下一条。
   - CLI：排队 Turn 原子启动、`/compact` 期间取消、进程重启后 queued Turn 续跑。
-  - 远程：v1 controller 连 v2 host 必须被明确拒绝，不得静默降级。
+  - 远程：controller 接收 durable / live 帧，重连后按 `seq` 重读补齐；`read-frames` 边界（`afterSeq` 非负）被拒绝非法载荷。
 
 ## 风险
 
-- **P2 的协议版本升级对旧客户端是硬切断。** 移动端目前只有 Phase 0 骨架、没有会话 UI，因此现在升级的代价最低；若延后到移动端上线，则必须同时维护两套 controller。这是本提案建议尽早执行 P2 的主要理由。
+- **remote 在 v1 上原地换形状，版本号不再表达兼容性。** 前提是远程从未上线；若在此之后发布过任何 host / controller，就必须先升版本再改形状，否则旧客户端会收到无法解析的帧。这条约束必须在下次改远程协议前重新核对。
 - **live 通道变"可丢"后，极端情况下文本会短暂停在旧内容再跳到完整值。** 这是有意接受的代价，换取的是取消 revision 连续不变量；若实测观感不可接受，补救方式是提高 delta 发送频率，而不是恢复无空洞要求。
 - **Answer 在 P3 之前仍依赖 shim。** shim 期间必须显式标注为临时路径并在 P3 同一变更内删除；不得让 shim 成为长期第二引擎。
 - **`compaction-*` 不进入折叠。** 压缩状态继续只走 `ConversationSnapshot`，因为压缩是会话级事实，没有 `messageId` 归属；若未来要显示压缩进度流，需单独提案，不得复用消息事件。

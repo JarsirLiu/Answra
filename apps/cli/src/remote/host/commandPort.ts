@@ -8,11 +8,12 @@ import {
 } from "@answra/remote";
 import type { ConversationModelConfig } from "@answra/shared";
 import type {
-  AgentEventEnvelope,
   ConversationSnapshot,
+  LiveFrame,
   RemoteCapability,
   RemoteModelConfig,
   RemoteModelSettingsView,
+  SessionFrame,
 } from "@answra/shared/schema";
 import { resolveCliInstructionFile } from "../../config/instructionFile";
 import { resolveCliSkillRoots } from "../../config/skillRoots";
@@ -37,11 +38,15 @@ export function createRemoteCodingHost({
   accessToken,
 }: RemoteCodingHostOptions): RemoteCodingHost {
   const snapshotListeners = new Set<(snapshot: ConversationSnapshot) => void>();
-  const eventListeners = new Set<(event: AgentEventEnvelope) => void>();
+  const frameListeners = new Set<(frame: SessionFrame) => void>();
+  const liveFrameListeners = new Set<(frame: LiveFrame) => void>();
 
   const coding = startCodingHost({
-    emitEvent: (event) => {
-      for (const listener of eventListeners) listener(event);
+    onSessionFrame: (frame) => {
+      for (const listener of frameListeners) listener(frame);
+    },
+    onLiveFrame: (frame) => {
+      for (const listener of liveFrameListeners) listener(frame);
     },
     onSnapshot: (snapshot) => {
       for (const listener of snapshotListeners) listener(snapshot);
@@ -59,8 +64,8 @@ export function createRemoteCodingHost({
     clearConversation: (conversationId) =>
       coding.runtime.clearConversation(conversationId, accessToken),
     snapshot: (conversationId) => coding.runtime.getSnapshot(conversationId, accessToken),
-    readEvents: (conversationId, afterRevision) =>
-      coding.runtime.readEventsAfter(conversationId, afterRevision),
+    readFrames: (conversationId, afterSeq) =>
+      coding.runtime.readFramesAfter(conversationId, afterSeq),
     async send(command) {
       if (command.operation !== "chat.send") {
         throw new RemoteOperationError(remoteError("invalid-command", "team send is unsupported"));
@@ -77,9 +82,13 @@ export function createRemoteCodingHost({
       snapshotListeners.add(listener);
       return () => snapshotListeners.delete(listener);
     },
-    onEvent(listener) {
-      eventListeners.add(listener);
-      return () => eventListeners.delete(listener);
+    onFrame(listener) {
+      frameListeners.add(listener);
+      return () => frameListeners.delete(listener);
+    },
+    onLiveFrame(listener) {
+      liveFrameListeners.add(listener);
+      return () => liveFrameListeners.delete(listener);
     },
   };
 

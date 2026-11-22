@@ -60,18 +60,6 @@ export function registerInterviewIpc(agent: AgentService) {
     return agent.getInterviewIntakeSnapshot();
   });
 
-  ipcMain.handle(InterviewChannels.IntakeEvents, async (event, payload: unknown) => {
-    if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用");
-    const afterRevision = (payload as { afterRevision?: unknown } | null)?.afterRevision;
-    if (
-      typeof afterRevision !== "number" ||
-      !Number.isSafeInteger(afterRevision) ||
-      afterRevision < 0
-    )
-      throw new Error("面试事件请求无效");
-    return agent.readInterviewIntakeEvents(afterRevision);
-  });
-
   ipcMain.handle(InterviewChannels.CaptureReady, async (event, payload: unknown) => {
     if (!isWindowFromSender(getWindow(), event) || !isSessionPayload(payload))
       throw new Error("非法调用方");
@@ -156,7 +144,6 @@ export function registerInterviewIpc(agent: AgentService) {
       ipcMain.removeHandler(InterviewChannels.IntakeOpen);
       ipcMain.removeHandler(InterviewChannels.IntakeMessage);
       ipcMain.removeHandler(InterviewChannels.IntakeSnapshot);
-      ipcMain.removeHandler(InterviewChannels.IntakeEvents);
       ipcMain.removeHandler(InterviewChannels.CaptureReady);
       ipcMain.removeHandler(InterviewChannels.CaptureFailed);
       ipcMain.removeHandler(InterviewChannels.Stop);

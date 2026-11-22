@@ -27,20 +27,16 @@ export {
   remoteErrorSchema,
 } from "./errors";
 export {
-  type RemoteEventBatch,
-  remoteEventBatchSchema,
-} from "./events";
-export {
   type RemoteAuth,
   type RemoteAuthErrorFrame,
   type RemoteCloseFrame,
   type RemoteCommandErrorFrame,
   type RemoteCommandFrame,
   type RemoteCommandOkFrame,
-  type RemoteEventFrame,
-  type RemoteEventsFrame,
   type RemoteFrame,
   type RemoteHello,
+  type RemoteLiveFrame,
+  type RemoteSessionFrame,
   type RemoteSnapshotFrame,
   type RemoteWelcome,
   remoteAuthErrorFrameSchema,
@@ -49,10 +45,10 @@ export {
   remoteCommandErrorFrameSchema,
   remoteCommandFrameSchema,
   remoteCommandOkFrameSchema,
-  remoteEventFrameSchema,
-  remoteEventsFrameSchema,
   remoteFrameSchema,
   remoteHelloSchema,
+  remoteLiveFrameSchema,
+  remoteSessionFrameSchema,
   remoteSnapshotFrameSchema,
   remoteWelcomeSchema,
 } from "./frames";
@@ -69,12 +65,12 @@ export {
 } from "./modelSettings";
 export {
   type RemoteBotList,
-  type RemoteEventList,
+  type RemoteFrameList,
   type RemoteQueueCompletion,
   type RemoteQueueStart,
   type RemoteSendResult,
   remoteBotListSchema,
-  remoteEventListSchema,
+  remoteFrameListSchema,
   remoteQueueCompletionSchema,
   remoteQueueStartSchema,
   remoteSendResultSchema,

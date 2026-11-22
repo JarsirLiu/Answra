@@ -1,10 +1,11 @@
 import type {
-  AgentEventEnvelope,
   BotSummary,
   ConversationSessionPage,
   ConversationSnapshot,
+  LiveFrame,
   RemoteModelConfig,
   RemoteModelSettingsView,
+  SessionFrame,
 } from "@answra/shared/schema";
 
 export function createFakeConversationSnapshot(
@@ -37,17 +38,22 @@ export function createFakeSessionPage(
   };
 }
 
-export function createFakeAgentEvent(sequence = 1): AgentEventEnvelope {
+export function createFakeSessionFrame(seq = 1): SessionFrame {
   return {
-    schemaVersion: 1,
-    eventId: `event-${sequence}`,
-    conversationId: "conversation-1",
-    runId: "run-1",
-    attemptId: "attempt-1",
-    sequence,
-    aggregateRevision: sequence,
-    producerId: "fake-host",
+    schemaVersion: 2,
+    sessionId: "conversation-1",
+    seq,
+    eventId: `frame-${seq}`,
     occurredAt: "2026-11-13T00:00:00.000Z",
+    producerId: "fake-host",
+    event: { type: "text-start", partId: "text-1" },
+  };
+}
+
+export function createFakeLiveFrame(): LiveFrame {
+  return {
+    sessionId: "conversation-1",
+    messageId: "assistant-1",
     event: { type: "text-delta", partId: "text-1", delta: "hello" },
   };
 }
