@@ -60,6 +60,9 @@ function createHarness() {
     dispatch: (command: AgentCommand) => listener?.(command),
     responses: () => frames.filter((frame) => frame.type === "response"),
     tokenRequests: () => frames.filter((frame) => frame.type === "token-request"),
+    sessionFrames: () =>
+      frames.flatMap((frame) => (frame.type === "session-frame" ? [frame.frame] : [])),
+    liveFrames: () => frames.flatMap((frame) => (frame.type === "live-frame" ? [frame.frame] : [])),
   };
 }
 
@@ -823,6 +826,68 @@ describe("agent worker host", () => {
       ok: false,
       error: "云端模型服务尚未就绪",
     });
+  });
+
+  it("forwards durable frames and replays them from a seq cursor", async () => {
+    const baseUrl = await startChatServer("收到");
+    const harness = createHarness();
+    const host = startAgentHost({
+      transport: harness.transport,
+      vad: silenceVadSource(),
+      recognizer: scriptedRecognizer("识别文本"),
+    });
+    host.runtime.configure({
+      chat: { baseUrl, model: "text.chat" },
+      answer: { baseUrl, model: "image.answer" },
+    });
+
+    harness.dispatch({ id: "create", type: "create-conversation", conversationId: "c-frames" });
+    await vi.waitFor(() => expect(harness.responses()).toHaveLength(1));
+    harness.dispatch({
+      id: "send",
+      type: "chat-send",
+      operation: "chat.send",
+      conversationId: "c-frames",
+      request: { text: "你好", images: [] },
+      accessToken: "test-token",
+    });
+    await vi.waitFor(() => expect(harness.responses()).toHaveLength(2));
+    expect(harness.responses()[1]).toMatchObject({ id: "send", ok: true });
+
+    // 帧随事实写入实时上行；send 返回时 Turn 仍在执行，因此等 turn-finished 再收口断言。
+    await vi.waitFor(() =>
+      expect(harness.sessionFrames().at(-1)?.event.type).toBe("turn-finished"),
+    );
+    const pushed = harness.sessionFrames();
+    expect(pushed[0]?.event.type).toBe("turn-queued");
+    expect(pushed.map((frame) => frame.seq)).toEqual(pushed.map((_, index) => index + 1));
+    expect(harness.liveFrames().length).toBeGreaterThan(0);
+
+    // read-frames 按 seq 边界补齐：只返回严格大于游标的事实。
+    const lastSeq = pushed.at(-1)?.seq;
+    expect(lastSeq).toBeDefined();
+    harness.dispatch({
+      id: "read",
+      type: "read-frames",
+      conversationId: "c-frames",
+      afterSeq: (lastSeq ?? 0) - 1,
+    });
+    await vi.waitFor(() => expect(harness.responses()).toHaveLength(3));
+    const oneFrame = harness.responses()[2];
+    if (oneFrame?.ok !== true) throw new Error("read-frames 未成功");
+    expect(oneFrame.value).toEqual([pushed.at(-1)]);
+
+    harness.dispatch({
+      id: "read-all",
+      type: "read-frames",
+      conversationId: "c-frames",
+      afterSeq: 0,
+    });
+    await vi.waitFor(() => expect(harness.responses()).toHaveLength(4));
+    const allFrames = harness.responses()[3];
+    if (allFrames?.ok !== true) throw new Error("read-frames 未成功");
+    expect(allFrames.value).toEqual(pushed);
+    host.dispose();
   });
 
   it("asks the host for a fresh token on 401 and answers its own reverse request", async () => {

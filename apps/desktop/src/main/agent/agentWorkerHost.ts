@@ -15,7 +15,7 @@ import {
   type InterviewPcmFrame,
   isAgentServiceDisconnectedError,
 } from "@answra/shared";
-import type { AgentEventEnvelope } from "@answra/shared/schema";
+import type { AgentEventEnvelope, LiveFrame, SessionFrame } from "@answra/shared/schema";
 import { app, type UtilityProcess, utilityProcess } from "electron";
 import type { ResolvedModel } from "../conversation/modelRouter";
 
@@ -40,6 +40,8 @@ export class AgentWorkerProcess implements AgentWorkerHostPort {
   private worker?: UtilityProcess;
   private readonly pending = new Map<string, Pending>();
   private readonly eventListeners = new Set<(event: AgentEventEnvelope) => void>();
+  private readonly sessionFrameListeners = new Set<(frame: SessionFrame) => void>();
+  private readonly liveFrameListeners = new Set<(frame: LiveFrame) => void>();
   private readonly snapshotListeners = new Set<(snapshot: ConversationSnapshot) => void>();
   private readonly interviewListeners = new Set<(event: InterviewWorkerEvent) => void>();
   private readonly interviewAudioCreditListeners = new Set<
@@ -114,6 +116,16 @@ export class AgentWorkerProcess implements AgentWorkerHostPort {
     return () => this.eventListeners.delete(listener);
   }
 
+  onSessionFrame(listener: (frame: SessionFrame) => void): () => void {
+    this.sessionFrameListeners.add(listener);
+    return () => this.sessionFrameListeners.delete(listener);
+  }
+
+  onLiveFrame(listener: (frame: LiveFrame) => void): () => void {
+    this.liveFrameListeners.add(listener);
+    return () => this.liveFrameListeners.delete(listener);
+  }
+
   onSnapshot(listener: (snapshot: ConversationSnapshot) => void): () => void {
     this.snapshotListeners.add(listener);
     return () => this.snapshotListeners.delete(listener);
@@ -186,6 +198,14 @@ export class AgentWorkerProcess implements AgentWorkerHostPort {
     if (frame.version !== 1) return;
     if (frame.type === "event") {
       for (const listener of this.eventListeners) listener(frame.event);
+      return;
+    }
+    if (frame.type === "session-frame") {
+      for (const listener of this.sessionFrameListeners) listener(frame.frame);
+      return;
+    }
+    if (frame.type === "live-frame") {
+      for (const listener of this.liveFrameListeners) listener(frame.frame);
       return;
     }
     if (frame.type === "conversation-snapshot") {

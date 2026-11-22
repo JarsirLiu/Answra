@@ -257,6 +257,18 @@ export function startAgentHost({
   let disposed = false;
   let shutdownPromise: Promise<void> | undefined;
 
+  // 一个 agent 进程只有一个帧广播口：宿主只做转发，不重排、不合并。
+  sessionFrames.subscribe({
+    onFrame: (frame) => {
+      if (disposed) return;
+      transport.send({ version: 1, type: "session-frame", frame });
+    },
+    onLiveFrame: (frame) => {
+      if (disposed) return;
+      transport.send({ version: 1, type: "live-frame", frame });
+    },
+  });
+
   function dispose(): void {
     if (disposed) return;
     disposed = true;
@@ -449,6 +461,9 @@ export function startAgentHost({
         return catalog.delete(command.conversationId);
       case "read-events":
         return runtime.readEventsAfter(command.conversationId, command.afterRevision);
+      // 事实帧按 journal 读取，与会话所属领域无关；恢复仍由各自领域负责。
+      case "read-frames":
+        return runtime.readFramesAfter(command.conversationId, command.afterSeq);
       case "create-conversation":
         return runtime.createConversation(command.conversationId, command.selection);
       case "create-answer-conversation":

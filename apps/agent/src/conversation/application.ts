@@ -15,8 +15,10 @@ import type {
   AgentEventEnvelope,
   AgentRunSnapshot,
   AgentStreamEvent,
+  SessionFrame,
   TurnOutcome,
 } from "@answra/shared/schema";
+import { toSessionFrame } from "@answra/shared/schema";
 import type { ConversationAgentInput } from "../bots/general/agent";
 import { type AgentId, agentId } from "../core/agent/definition";
 import { ProviderStepRunner } from "../core/agent/providerStepRunner";
@@ -275,6 +277,12 @@ export class ConversationApplication {
 
   readEventsAfter(conversationId: string, revision: number): Promise<AgentEventEnvelope[]> {
     return this.projector.readEvents(conversationId, revision);
+  }
+
+  /** 按 durable `seq` 读取事实帧；与 `readEventsAfter` 并行，P2 第 3 步后成为唯一读取口。 */
+  async readFramesAfter(conversationId: string, afterSeq: number): Promise<SessionFrame[]> {
+    const rows = await this.runtimeJournal.readAfter(asSessionId(conversationId), afterSeq);
+    return rows.map(toSessionFrame);
   }
 
   async createConversation(

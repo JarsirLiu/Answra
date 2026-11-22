@@ -8,11 +8,13 @@ import {
   type ContentSize,
   ConversationChannels,
   type ConversationSnapshot,
+  type LiveFrame,
   type RegionSelection,
   RemoteHostChannels,
   type RemoteHostStatus,
   type ReplyBarAction,
   type ReplyBarState,
+  type SessionFrame,
   SurfaceChannels,
   type SurfacePresetId,
   WindowChannels,
@@ -129,6 +131,35 @@ export function sendConversationSnapshot(snapshot: ConversationSnapshot): void {
   )
     replyWindow.webContents.send(ConversationChannels.SnapshotChanged, snapshot);
 }
+
+/** durable 事实帧只发给关心该会话的窗口；迁移期与旧事件通道并行。 */
+export function sendSessionFrame(frame: SessionFrame): void {
+  const mainWindow = getWindow();
+  if (mainWindow && !mainWindow.isDestroyed())
+    mainWindow.webContents.send(ConversationChannels.SessionFrame, frame);
+  const replyWindow = getReplyBarWindow();
+  if (
+    frame.sessionId === replyBarController.getConversationId() &&
+    replyWindow &&
+    !replyWindow.isDestroyed()
+  )
+    replyWindow.webContents.send(ConversationChannels.SessionFrame, frame);
+}
+
+/** live 增量帧不参与重放，窗口不在也不补发。 */
+export function sendLiveFrame(frame: LiveFrame): void {
+  const mainWindow = getWindow();
+  if (mainWindow && !mainWindow.isDestroyed())
+    mainWindow.webContents.send(ConversationChannels.LiveFrame, frame);
+  const replyWindow = getReplyBarWindow();
+  if (
+    frame.sessionId === replyBarController.getConversationId() &&
+    replyWindow &&
+    !replyWindow.isDestroyed()
+  )
+    replyWindow.webContents.send(ConversationChannels.LiveFrame, frame);
+}
+
 /** 把 Agent 连接状态推给所有还活着的窗口（主窗口与独立回复窗口共用一份事实）。 */
 export function sendConnectionState(state: AgentConnectionState): void {
   for (const target of [getWindow(), getReplyBarWindow()]) {

@@ -8,7 +8,7 @@ import type {
   InterviewProfileSeed,
   TeamSendCommand,
 } from "@answra/shared";
-import type { AgentEventEnvelope } from "@answra/shared/schema";
+import type { AgentEventEnvelope, LiveFrame, SessionFrame } from "@answra/shared/schema";
 import type { ConversationSessionQuery } from "../core/transcript/catalog";
 
 export interface InterviewWorkerTranscriptChunk {
@@ -155,6 +155,8 @@ export type AgentCommand =
   | { id: string; type: "session-list"; query?: ConversationSessionQuery }
   | { id: string; type: "session-delete"; conversationId: string }
   | { id: string; type: "read-events"; conversationId: string; afterRevision: number }
+  /** 按 durable `seq` 读取可重放事实帧；与 `read-events` 并行存在。 */
+  | { id: string; type: "read-frames"; conversationId: string; afterSeq: number }
   | {
       id: string;
       type: "create-conversation";
@@ -183,6 +185,10 @@ export type AgentFrame =
   | { version: 1; type: "response"; id: string; ok: true; value?: unknown }
   | { version: 1; type: "response"; id: string; ok: false; error: string }
   | { version: 1; type: "event"; event: AgentEventEnvelope }
+  /** durable 事实帧：可重放、带会话内连续 `seq`；迁移期与 `event` 并行。 */
+  | { version: 1; type: "session-frame"; frame: SessionFrame }
+  /** live 增量帧：不可重放，丢失只影响瞬时观感。 */
+  | { version: 1; type: "live-frame"; frame: LiveFrame }
   | { version: 1; type: "conversation-snapshot"; snapshot: ConversationSnapshot }
   /** Worker DTOs cross to desktop-main for projection into renderer contracts. */
   | { version: 1; type: "interview-event"; event: InterviewWorkerEvent }

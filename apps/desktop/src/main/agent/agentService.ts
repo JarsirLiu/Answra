@@ -18,7 +18,7 @@ import {
   type InterviewProfileSeed,
   type ManualCompactionResult,
 } from "@answra/shared";
-import type { AgentEventEnvelope } from "@answra/shared/schema";
+import type { AgentEventEnvelope, LiveFrame, SessionFrame } from "@answra/shared/schema";
 import type { ResolvedModel } from "../conversation/modelRouter";
 import { AgentWorkerProcess } from "./agentWorkerHost";
 
@@ -90,6 +90,14 @@ export class AgentService {
 
   onEvent(listener: (event: AgentEventEnvelope) => void): () => void {
     return this.workerHost.onEvent(listener);
+  }
+
+  onSessionFrame(listener: (frame: SessionFrame) => void): () => void {
+    return this.workerHost.onSessionFrame(listener);
+  }
+
+  onLiveFrame(listener: (frame: LiveFrame) => void): () => void {
+    return this.workerHost.onLiveFrame(listener);
   }
 
   onSnapshot(listener: (snapshot: ConversationSnapshot) => void): () => void {
@@ -313,6 +321,15 @@ export class AgentService {
       conversationId,
       afterRevision,
     })) as AgentEventEnvelope[];
+  }
+
+  async readFrames(conversationId: string, afterSeq: number): Promise<SessionFrame[]> {
+    await this.start();
+    this.trackConversation(conversationId);
+    return (await this.workerHost.request("read-frames", {
+      conversationId,
+      afterSeq,
+    })) as SessionFrame[];
   }
 
   async startInterview(sessionId: string, conversationId: string): Promise<void> {

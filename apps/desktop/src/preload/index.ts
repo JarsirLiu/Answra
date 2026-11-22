@@ -20,12 +20,14 @@ import {
   type InterviewPcmFrame,
   type InterviewProjectAddRequest,
   type InterviewResumeImportRequest,
+  type LiveFrame,
   type RegionCaptureOptions,
   RemoteHostChannels,
   type RemoteHostStatus,
   type ReplyBarAction,
   type ReplyBarPlacement,
   type ReplyBarState,
+  type SessionFrame,
   type SurfaceActionEvent,
   SurfaceChannels,
   type SurfacePresetId,
@@ -140,6 +142,8 @@ const bridge: DesktopBridge = {
     ipcRenderer.invoke(ConversationChannels.Compact, { conversationId, instructions }),
   readConversationEvents: (conversationId: string, afterRevision: number) =>
     ipcRenderer.invoke(ConversationChannels.ReadEvents, { conversationId, afterRevision }),
+  readSessionFrames: (conversationId: string, afterSeq: number) =>
+    ipcRenderer.invoke(ConversationChannels.ReadFrames, { conversationId, afterSeq }),
   sendConversationMessage: (command: ConversationSendCommand) =>
     ipcRenderer.invoke(ConversationChannels.Send, command),
   waitForConversationQueue: (conversationId: string, queueId: string) =>
@@ -161,6 +165,16 @@ const bridge: DesktopBridge = {
       listener(snapshot);
     ipcRenderer.on(ConversationChannels.SnapshotChanged, wrapped);
     return () => ipcRenderer.removeListener(ConversationChannels.SnapshotChanged, wrapped);
+  },
+  onSessionFrame: (listener: (frame: SessionFrame) => void) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, frame: SessionFrame) => listener(frame);
+    ipcRenderer.on(ConversationChannels.SessionFrame, wrapped);
+    return () => ipcRenderer.removeListener(ConversationChannels.SessionFrame, wrapped);
+  },
+  onLiveFrame: (listener: (frame: LiveFrame) => void) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, frame: LiveFrame) => listener(frame);
+    ipcRenderer.on(ConversationChannels.LiveFrame, wrapped);
+    return () => ipcRenderer.removeListener(ConversationChannels.LiveFrame, wrapped);
   },
   getRemoteHostStatus: () => ipcRenderer.invoke(RemoteHostChannels.GetStatus),
   connectRemoteHost: () => ipcRenderer.invoke(RemoteHostChannels.Connect),

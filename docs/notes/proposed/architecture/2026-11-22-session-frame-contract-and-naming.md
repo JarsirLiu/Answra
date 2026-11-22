@@ -227,7 +227,13 @@ P2 内部再拆四个子步，前两步不改变线上行为，第三步是唯�
   - `SessionRecoveryCoordinator` 顺序变为 `recoverFacts` → seed `lastSeq` → `restoreTranscript`，新增端口 `journalLastSeq` / `seedLastSeq`；Conversation / Coding / Interview 三个 application 接线。
   - 清空流程改为 `store.clear({ eventRevision })` + `runtimeJournal.clear(session)`，transcript 与 journal 一起清空。
   - 证据：`journal.test.ts` / `sqliteJournal.test.ts`（重启读末尾、清空后重编号）、`store.test.ts`（单调推进、重复帧 no-op、非法值、清空归零）、`sqliteConversationStore.test.ts`（游标不持久化）、`transcriptBridge.test.ts`（成功推进 / 失败不推进）、`sessionRuntimeJournal.test.ts`（观察点看到已推进游标）、`recoveryCoordinator.test.ts`（seed 顺序）。
-- P2 第 2–4 步与 Answer 迁移未开始；线上仍走旧 `AgentEventEnvelope`。
+- **P2 第 2 步已完成（2026-11-22）**：
+  - worker 线协议新增 `read-frames` 命令与 `session-frame` / `live-frame` 上行帧；`startAgentHost` 订阅进程级 `SessionFrameBus` 后只做转发（`disposed` 后停发），旧 `event` / `read-events` 未改动。
+  - `ConversationApplication.readFramesAfter` 直接读共享 journal（`runtimeJournal.readAfter` + `toSessionFrame`）：帧读取与会话所属领域无关，只有恢复仍由各领域自己执行。Interview 与 Coding 不再补未使用的读取口，避免死代码。
+  - desktop：`AgentWorkerProcess` 增加帧监听与分发；`AgentService.onSessionFrame` / `onLiveFrame` / `readFrames`；`window.ts` 的 `sendSessionFrame` / `sendLiveFrame`（reply 窗口按 `sessionId` 过滤）；`conversationIpc` 的 `ReadFrames` handler（`afterSeq` 必须为非负安全整数）与两个订阅注册；preload 暴露 `readSessionFrames` / `onSessionFrame` / `onLiveFrame`。
+  - CLI：`CodingHostOptions.sessionFrames` 可注入，`CodingHost.sessionFrames` 暴露同一个 bus；`composition.ts` 导出 `SessionFrameBus` / `SessionFrameListener`；TUI 暂不消费。
+  - 证据：`apps/agent/test/worker/host.test.ts`（实时上行、`seq` 连续、`read-frames` 边界与全量重读）、`apps/agent/test/coding/application.test.ts`（bus 发布 durable + live、注入同一 bus）、`apps/desktop/test/conversationIpc.test.ts`（读取、游标校验、订阅注册、帧不与旧事件混流）。
+- P2 第 3–4 步与 Answer 迁移未开始；线上仍走旧 `AgentEventEnvelope`。
 
 ## 曾考虑的替代方案
 

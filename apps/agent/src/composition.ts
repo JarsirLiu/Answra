@@ -70,6 +70,10 @@ export {
   assertCanHandoff,
   visibleBots,
 } from "./core/bot/directory";
+export {
+  SessionFrameBus,
+  type SessionFrameListener,
+} from "./core/session/sessionFrameBus";
 export { SqliteSessionJournal } from "./core/session/sqliteJournal";
 export * from "./core/skill";
 export { assertHandoffTask, MAX_HANDOFF_TASK_CHARS } from "./core/team/handoff";

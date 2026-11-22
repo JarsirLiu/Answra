@@ -3,9 +3,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const shared = vi.hoisted(() => ({
   handlers: {} as Record<string, (...args: unknown[]) => unknown>,
   onEvent: vi.fn(),
+  onSessionFrame: vi.fn(),
+  onLiveFrame: vi.fn(),
   onSnapshot: vi.fn(),
   send: vi.fn(),
   sendSnapshot: vi.fn(),
+  sendFrame: vi.fn(),
+  sendLiveFrame: vi.fn(),
   signedIn: true,
   modelSource: "cloud" as "local" | "cloud",
   mainWindow: { webContents: { id: "main" } },
@@ -34,6 +38,8 @@ vi.mock("../src/main/window", () => ({
   ) => window.webContents.id === event.sender.id,
   sendConversationEvent: shared.send,
   sendConversationSnapshot: shared.sendSnapshot,
+  sendSessionFrame: shared.sendFrame,
+  sendLiveFrame: shared.sendLiveFrame,
 }));
 
 import {
@@ -50,6 +56,7 @@ const service = {
     .fn()
     .mockResolvedValue({ conversationId: shared.replyConversationId, revision: 0, messages: [] }),
   readEvents: vi.fn().mockResolvedValue([]),
+  readFrames: vi.fn().mockResolvedValue([]),
   send: vi.fn(),
   cancel: vi.fn(),
   clearConversation: vi.fn().mockResolvedValue(undefined),
@@ -65,6 +72,8 @@ const service = {
     },
   }),
   onEvent: shared.onEvent,
+  onSessionFrame: shared.onSessionFrame,
+  onLiveFrame: shared.onLiveFrame,
   onSnapshot: shared.onSnapshot,
 };
 
@@ -114,13 +123,18 @@ describe("conversation IPC read access for reply renderer", () => {
   beforeEach(() => {
     shared.handlers = {};
     shared.onEvent.mockClear();
+    shared.onSessionFrame.mockClear();
+    shared.onLiveFrame.mockClear();
     shared.onSnapshot.mockClear();
     shared.send.mockClear();
     shared.sendSnapshot.mockClear();
+    shared.sendFrame.mockClear();
+    shared.sendLiveFrame.mockClear();
     shared.signedIn = true;
     shared.modelSource = "cloud";
     service.getSnapshot.mockClear();
     service.readEvents.mockClear();
+    service.readFrames.mockClear();
     service.send.mockClear();
     service.clearConversation.mockClear();
     service.createConversation.mockClear();
@@ -160,6 +174,7 @@ describe("conversation IPC read access for reply renderer", () => {
   it("allows the reply renderer to read only the active conversation", async () => {
     const getSnapshot = getHandler(ConversationChannels.GetSnapshot);
     const readEvents = getHandler(ConversationChannels.ReadEvents);
+    const readFrames = getHandler(ConversationChannels.ReadFrames);
     await expect(
       getSnapshot({ sender: { id: "reply" } }, { conversationId: shared.replyConversationId }),
     ).resolves.toMatchObject({
@@ -171,6 +186,12 @@ describe("conversation IPC read access for reply renderer", () => {
         { conversationId: shared.replyConversationId, afterRevision: 0 },
       ),
     ).resolves.toEqual([]);
+    await expect(
+      readFrames(
+        { sender: { id: "reply" } },
+        { conversationId: shared.replyConversationId, afterSeq: 0 },
+      ),
+    ).resolves.toEqual([]);
     await expect(() =>
       getSnapshot({ sender: { id: "reply" } }, { conversationId: "other-conversation" }),
     ).toThrow("非法调用方");
@@ -180,6 +201,62 @@ describe("conversation IPC read access for reply renderer", () => {
         { conversationId: "other-conversation", afterRevision: 0 },
       ),
     ).toThrow("非法调用方");
+    await expect(() =>
+      readFrames(
+        { sender: { id: "reply" } },
+        { conversationId: "other-conversation", afterSeq: 0 },
+      ),
+    ).toThrow("非法调用方");
+  });
+
+  it("rejects a frame cursor that is not a non-negative integer", async () => {
+    const readFrames = getHandler(ConversationChannels.ReadFrames);
+    expect(() =>
+      readFrames(
+        { sender: { id: "main" } },
+        { conversationId: ActiveChatConversationId, afterSeq: -1 },
+      ),
+    ).toThrow("会话请求无效");
+    expect(() =>
+      readFrames(
+        { sender: { id: "main" } },
+        { conversationId: ActiveChatConversationId, afterSeq: 1.5 },
+      ),
+    ).toThrow("会话请求无效");
+    expect(service.readFrames).not.toHaveBeenCalled();
+  });
+
+  it("forwards frames to the window broadcaster without merging them with events", async () => {
+    const frame = {
+      schemaVersion: 2 as const,
+      sessionId: ActiveChatConversationId,
+      seq: 1,
+      eventId: "event-1",
+      occurredAt: "2026-11-22T00:00:00.000Z",
+      producerId: "test",
+      event: {
+        type: "turn-queued" as const,
+        source: "user" as const,
+        input: {
+          id: "user-1",
+          role: "user" as const,
+          text: "hi",
+          images: [],
+          status: "complete" as const,
+        },
+        agentId: "general",
+      },
+    };
+    const live = {
+      sessionId: ActiveChatConversationId,
+      messageId: "assistant-1",
+      event: { type: "text-delta" as const, partId: "text-1", delta: "hi" },
+    };
+    service.onSessionFrame.mock.calls[0]?.[0](frame);
+    service.onLiveFrame.mock.calls[0]?.[0](live);
+    expect(shared.sendFrame).toHaveBeenCalledWith(frame);
+    expect(shared.sendLiveFrame).toHaveBeenCalledWith(live);
+    expect(shared.send).not.toHaveBeenCalled();
   });
 
   it("lets the main renderer clear the current screenshot round", async () => {
@@ -226,6 +303,8 @@ describe("conversation IPC read access for reply renderer", () => {
 
   it("forwards the service change subscription to the window broadcaster", () => {
     expect(shared.onEvent).toHaveBeenCalledWith(shared.send);
+    expect(shared.onSessionFrame).toHaveBeenCalledWith(shared.sendFrame);
+    expect(shared.onLiveFrame).toHaveBeenCalledWith(shared.sendLiveFrame);
     expect(shared.onSnapshot).toHaveBeenCalledWith(shared.sendSnapshot);
   });
 
@@ -294,13 +373,18 @@ describe("conversation IPC model settings", () => {
   beforeEach(() => {
     shared.handlers = {};
     shared.onEvent.mockClear();
+    shared.onSessionFrame.mockClear();
+    shared.onLiveFrame.mockClear();
     shared.onSnapshot.mockClear();
     shared.send.mockClear();
     shared.sendSnapshot.mockClear();
+    shared.sendFrame.mockClear();
+    shared.sendLiveFrame.mockClear();
     shared.signedIn = true;
     shared.modelSource = "cloud";
     service.getSnapshot.mockClear();
     service.readEvents.mockClear();
+    service.readFrames.mockClear();
     service.send.mockClear();
     service.clearConversation.mockClear();
     service.createConversation.mockClear();

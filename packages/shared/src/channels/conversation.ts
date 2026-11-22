@@ -4,7 +4,9 @@ import type {
   ConversationSessionPage,
   ConversationSessionScope,
   ConversationSnapshot,
+  LiveFrame,
   ManualCompactionResult,
+  SessionFrame,
   TurnOutcome,
 } from "../schema";
 
@@ -49,6 +51,12 @@ export const ConversationChannels = {
   Event: "answra:conversation:event",
   /** Pushes the authoritative transcript snapshot after an Agent-owned transcript write. */
   SnapshotChanged: "answra:conversation:snapshot-changed",
+  /** durable 事实帧；P2 迁移期与 `Event` 并行，第 3 步切换后成为唯一事实通道。 */
+  SessionFrame: "answra:conversation:session-frame",
+  /** 高频增量帧；不参与重放，丢失只影响瞬时观感。 */
+  LiveFrame: "answra:conversation:live-frame",
+  /** 按 durable `seq` 读取可重放事实帧。 */
+  ReadFrames: "answra:conversation:read-frames",
 } as const;
 
 /**
@@ -302,4 +310,10 @@ export interface ConversationChannelMap {
   };
   [ConversationChannels.Event]: { request: undefined; response: undefined };
   [ConversationChannels.SnapshotChanged]: { request: undefined; response: ConversationSnapshot };
+  [ConversationChannels.SessionFrame]: { request: undefined; response: SessionFrame };
+  [ConversationChannels.LiveFrame]: { request: undefined; response: LiveFrame };
+  [ConversationChannels.ReadFrames]: {
+    request: { conversationId: string; afterSeq: number };
+    response: SessionFrame[];
+  };
 }

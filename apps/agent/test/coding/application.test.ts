@@ -1,6 +1,11 @@
 import { createServer, type Server } from "node:http";
-import { CODING_AGENT_ID, type CodingHost, startCodingHost } from "@answra/agent/composition";
-import type { AgentEventEnvelope } from "@answra/shared/schema";
+import {
+  CODING_AGENT_ID,
+  type CodingHost,
+  SessionFrameBus,
+  startCodingHost,
+} from "@answra/agent/composition";
+import type { AgentEventEnvelope, LiveFrame, SessionFrame } from "@answra/shared/schema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CodingAgentInput } from "../../src/coding/agent";
 import { CodingApplication } from "../../src/coding/application";
@@ -125,6 +130,38 @@ describe("CLI coding host", () => {
     expect(events.some((event) => event.runId === runId && event.event.type === "text-delta")).toBe(
       true,
     );
+  });
+
+  it("publishes durable and live frames through the coding host bus", async () => {
+    const frames: SessionFrame[] = [];
+    const live: LiveFrame[] = [];
+    host.sessionFrames.subscribe({
+      onFrame: (frame) => frames.push(frame),
+      onLiveFrame: (frame) => live.push(frame),
+    });
+
+    await host.runtime.createConversation("coding-frames");
+    const { runId } = await host.runtime.send(
+      "coding-frames",
+      { text: "读取 README", images: [] },
+      ACCESS_TOKEN,
+    );
+    await host.runtime.waitForRun(runId);
+
+    expect(frames.map((frame) => frame.seq)).toEqual(frames.map((_, index) => index + 1));
+    expect(frames[0]?.event.type).toBe("turn-queued");
+    expect(frames.at(-1)?.event.type).toBe("turn-finished");
+    expect(live.length).toBeGreaterThan(0);
+  });
+
+  it("uses the injected frame bus instead of creating a private one", () => {
+    const bus = new SessionFrameBus();
+    const injected = startCodingHost({ emitEvent: () => undefined, sessionFrames: bus });
+    try {
+      expect(injected.sessionFrames).toBe(bus);
+    } finally {
+      injected.dispose();
+    }
   });
 
   it("accepts image input and forwards it to the model", async () => {

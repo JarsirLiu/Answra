@@ -38,7 +38,7 @@ import type {
   WorkspaceFileContent,
   WorkspaceNode,
 } from "./channels";
-import type { BotSummary, ManualCompactionResult } from "./schema";
+import type { BotSummary, LiveFrame, ManualCompactionResult, SessionFrame } from "./schema";
 import type { SurfacePresetId } from "./surfaces";
 
 /**
@@ -142,6 +142,8 @@ export interface DesktopBridge {
     conversationId: string,
     afterRevision: number,
   ) => Promise<AgentEventEnvelope[]>;
+  /** 按 durable `seq` 读取可重放事实帧；迁移期与事件通道并行。 */
+  readSessionFrames?: (conversationId: string, afterSeq: number) => Promise<SessionFrame[]>;
   sendConversationMessage?: (command: ConversationSendCommand) => Promise<ConversationSendResponse>;
   getConversationQueuePosition?: (
     conversationId: string,
@@ -157,6 +159,10 @@ export interface DesktopBridge {
   ) => Promise<ConversationSnapshot>;
   cancelConversationRun?: (runId: string) => void;
   onConversationEvent?: (listener: (event: AgentEventEnvelope) => void) => () => void;
+  /** 订阅 durable 事实帧；客户端按 `seq` 幂等折叠。 */
+  onSessionFrame?: (listener: (frame: SessionFrame) => void) => () => void;
+  /** 订阅 live 增量帧；允许丢失，不参与重放。 */
+  onLiveFrame?: (listener: (frame: LiveFrame) => void) => () => void;
   /** Receives an authoritative transcript snapshot after an Agent-owned transcript write. */
   onConversationSnapshot?: (listener: (snapshot: ConversationSnapshot) => void) => () => void;
   /** 读取当前 Agent worker 连接状态；浏览器预览/测试环境可未实现。 */

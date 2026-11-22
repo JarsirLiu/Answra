@@ -25,6 +25,8 @@ export interface CodingHostOptions {
   executionStore?: ExecutionStore;
   /** durable session journal；CLI 宿主注入 SQLite 实现，缺省为内存实现。 */
   sessionJournal?: SessionJournal;
+  /** 帧广播口；缺省在宿主内新建。CLI UI 暂不消费，供 P2 第 3 步切换。 */
+  sessionFrames?: SessionFrameBus;
   workspaceRoot?: string | null;
   /** 用户级 AGENTS.md 绝对路径；缺省只加载工作区。 */
   globalInstructionFile?: string | null;
@@ -40,6 +42,8 @@ export interface CodingHostOptions {
 export interface CodingHost {
   runtime: CodingApplication;
   catalog?: ConversationSessionCatalog;
+  /** 该宿主的帧广播口：领域只发布，订阅方决定消费方式。 */
+  sessionFrames: SessionFrameBus;
   /**
    * 切换工作区并重扫工作区来源的 skill。
    * 工作区在 CLI 里是运行时确定的，启动时未必已知。
@@ -58,6 +62,7 @@ export function startCodingHost({
   catalog,
   executionStore = new MemoryExecutionStore(),
   sessionJournal,
+  sessionFrames = new SessionFrameBus(),
   workspaceRoot = null,
   globalInstructionFile = null,
   grepWorkerPath,
@@ -86,7 +91,7 @@ export function startCodingHost({
     store,
     bot,
     ...(sessionJournal ? { sessionJournal } : {}),
-    sessionFrames: new SessionFrameBus(),
+    sessionFrames,
     onSnapshot,
   });
   runtime.setWorkspaceRoot(workspaceRoot);
@@ -96,6 +101,7 @@ export function startCodingHost({
   return {
     runtime,
     ...(catalog ? { catalog } : {}),
+    sessionFrames,
     async setWorkspaceRoot(nextWorkspaceRoot: string | null) {
       runtime.setWorkspaceRoot(nextWorkspaceRoot);
       // 结果迟到由 catalog 自身按 generation 丢弃。

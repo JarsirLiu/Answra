@@ -18,6 +18,8 @@ import {
   isWindowFromSender,
   sendConversationEvent,
   sendConversationSnapshot,
+  sendLiveFrame,
+  sendSessionFrame,
 } from "../window";
 
 /** 模型设置侧的只读/写入面，由 `ModelRouter` 实现。 */
@@ -161,6 +163,19 @@ export function registerConversationIpc(service: AgentService, deps: Conversatio
       return service.readEvents(payload.conversationId, payload.afterRevision);
     },
   );
+  ipcMain.handle(
+    ConversationChannels.ReadFrames,
+    (event, payload: { conversationId: string; afterSeq: number }) => {
+      if (
+        !isValidConversationId(payload?.conversationId) ||
+        !Number.isSafeInteger(payload?.afterSeq) ||
+        payload.afterSeq < 0
+      )
+        throw new Error("会话请求无效");
+      if (!isConversationReadSender(event, payload.conversationId)) throw new Error("非法调用方");
+      return service.readFrames(payload.conversationId, payload.afterSeq);
+    },
+  );
   ipcMain.on(ConversationChannels.Cancel, (event, payload: { runId: string }) => {
     if (!isWindowFromSender(getWindow(), event) || typeof payload?.runId !== "string") return;
     service.cancel(payload.runId);
@@ -182,6 +197,8 @@ export function registerConversationIpc(service: AgentService, deps: Conversatio
     return deps.modelSettings.clear();
   });
   service.onEvent(sendConversationEvent);
+  service.onSessionFrame(sendSessionFrame);
+  service.onLiveFrame(sendLiveFrame);
   service.onSnapshot(sendConversationSnapshot);
 }
 
