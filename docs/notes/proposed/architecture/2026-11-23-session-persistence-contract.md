@@ -54,7 +54,7 @@
 ## 提案
 
 > 接手实现先读第 13 节（写入路径、端口、payload schema、折叠规则、迁移算法、测试清单）；第 1–12 节是决策与理由。
-> P0（条目 schema + 折叠纯函数）已落地；P1–P6 未开始。
+> 实现进度：P0（条目 schema + 折叠纯函数）与 P1（`session_items` 建表、回填迁移与行适配器）已落地；写路径与恢复尚未接线。
 
 ### 1. 两张业务表，两种生命周期
 
@@ -102,7 +102,7 @@ CREATE TABLE sessions (
   scope TEXT NOT NULL,                    -- conversation | coding | interview | answer
   workspace_root TEXT,                    -- coding 域的工作区；其他域为 NULL
   title TEXT NOT NULL,
-  next_seq INTEGER NOT NULL DEFAULT 0,    -- 下一行要分配的 seq；同事务自增
+  next_seq INTEGER NOT NULL DEFAULT 1,    -- 下一条目要分配的 seq；同事务自增，空会话为 1
   message_count INTEGER NOT NULL DEFAULT 0, -- 列表展示与「空会话不列出」
   open_turn_id TEXT,                      -- 正在执行的 Turn；NULL 表示空闲
   state_json TEXT NOT NULL,               -- 上下文状态与种子，不存正文
@@ -130,8 +130,8 @@ CREATE TABLE session_items (
   created_at TEXT NOT NULL,
   PRIMARY KEY (conversation_id, seq),
   UNIQUE (conversation_id, item_id),
-  CHECK ((kind = 'turn-end' AND message_id IS NULL)
-      OR (kind <> 'turn-end' AND message_id IS NOT NULL)),
+  CHECK ((kind IN ('user','turn-end') AND message_id IS NULL)
+      OR (kind NOT IN ('user','turn-end') AND message_id IS NOT NULL)),
   CHECK (kind <> 'turn-end' OR turn_id IS NOT NULL),
   FOREIGN KEY (conversation_id) REFERENCES sessions(conversation_id) ON DELETE CASCADE
 );
@@ -224,8 +224,8 @@ m-a1  assistant  author: general
 
 | 用户/系统做了什么 | 写什么 |
 | --- | --- |
-| 提交一条消息 | 同事务：`next_seq += 1`、`message_count += 1`、插 `user` 条目、更新 `updated_at`；会话空闲时同时置 `open_turn_id` |
-| 排在后面的 Turn 开始执行 | 置 `open_turn_id`（条目在提交时已写入） |
+| 提交一条消息 | 同事务：分配 `seq`、`message_count += 1`、插 `user` 条目、更新 `updated_at`；**不置 `open_turn_id`** |
+| Turn 开始执行（含排队轮到的） | 同事务：置 `open_turn_id`（条目在提交时已写入） |
 | 模型流式输出 | **不写库**；只在内存累积，经 live 帧推给已订阅的客户端 |
 | 文本 / 思考结算 | 插 `text` / `reasoning` 条目 |
 | 工具入参确定 | 插 `tool-call` |
@@ -238,6 +238,8 @@ m-a1  assistant  author: general
 | 删除会话 | 删 `sessions` 一行，级联 |
 
 `message_count` 只在「这个 `message_id` 首次出现」时 +1：每条 `user` 消息一次；assistant 消息在它第一个 part 结算时一次。内存工作集里已经有消息列表，判断不需要额外查询。
+
+`open_turn_id` 只在 Turn 真正开始执行时置位：提交后、开始前崩溃必须留下「有 user 条目、无 `turn-end`、无 `open_turn_id`」的 pending 状态，恢复时重新入队；若提交就置指针，恢复会把它误收口成 `process-exit`，用户消息永远不再被回答。
 
 `turn_id` 在提交时就确定：一条用户消息就是一次 Turn 提交。当前 `appendUserMessage(conversationId, text)` 不接收 turn id，切到条目后要改成由写入方生成并返回，否则「先落用户消息、后开 Turn」的旧数据没有归属。
 
@@ -498,7 +500,8 @@ type SessionItemPayload =
   | { kind: "tool-call";   toolCallId: string; toolName: string; title?: string; input?: unknown; inputText?: string }
   | { kind: "tool-result"; toolCallId: string; outcome: "output" | "error" | "denied";
                            output?: unknown; errorText?: string; durationMs?: number }
-  | { kind: "turn-end";    finishReason?: AgentFinishReason; stepCount: number; toolCalls: number;
+  | { kind: "turn-end";    finishReason?: AgentFinishReason; reason?: TurnFinishReason;
+                           stepCount: number; toolCalls: number;
                            usage?: AgentUsage; durationMs?: number; errorText?: string;
                            interruption?: { reason: "cancelled" | "process-exit" | "migrated"; at: string } };
 ```
@@ -546,30 +549,44 @@ schema 层面已锁死四条组合约束：`turn-end` 必须有 `turnId` 且不�
 #### 13.6 迁移算法（P1）
 
 ```text
-1. 建 session_items（含 CHECK 与唯一约束）。
-2. 对每个 sessions 行：
-   next_seq = 0
-   按 session_messages.seq 升序，对每条消息：
-     若 message_json.parts 非空：
-        逐 part 生成条目：
-          text / reasoning → 同名条目，itemId = part.id；
-            status 取 part.state 映射（completed→complete，failed→failed，其余→interrupted）
-          tool → 一条 tool-call（itemId = part.id，即 toolCallId）；
-            part.state 为 completed / failed / denied 时再补
-            tool-result（itemId = toolCallId + ":result"，outcome 分别为 output / error / denied）；
-            其余状态不补 result，由 Turn 相位折成 interrupted
-     否则若 message_json.text 非空：
-        生成一条 text 条目（itemId = 消息 id + ":text"），避免与 parts 重复
-     两者都空的消息（崩溃前的占位）跳过：不占 seq、不计数
-     条目 turn_id = 行上的 turn_id，为空时留 NULL
-     seq = ++next_seq
-     message_id 计数 → message_count（只数真正产出了条目的消息）
-3. 每个有 items 但缺 turn-end 的 turn_id：补一条 turn-end{interrupted, reason: "migrated"}
-4. 回写 sessions.next_seq / message_count；updated_at 不因迁移而变
-5. 删除 session_events / session_turns / session_message_drafts / meta 与 session_messages
+1. 建 session_items（含 CHECK 与唯一约束），并给 sessions 加 next_seq / open_turn_id。
+2. 先合并草稿：只有 base_revision === sessions.revision 的 draft_json 覆盖消息正文，
+   与 mergeStoredSession 同义；忽略其余草稿。崩溃残留下的半句是那半句的唯一副本。
+3. 按 session_messages.seq 升序分组成 Turn：
+   一条 user 消息开启新 Turn；其后的 assistant 消息同属该 Turn；
+   首条 user 之前的 assistant 消息属于开场 Turn。
+   turn_id 优先取行上的 turn_id；为空时用户 Turn 用 user 消息 id，开场 Turn 用 opening:<首条消息 id>。
+4. 对每条消息生成条目（同一 Turn 内按消息 seq、part 顺序分配 seq）：
+   若 message_json.parts 非空：
+     逐 part 生成条目：
+       text / reasoning → 同名条目，itemId = part.id；
+         status 取 part.state 映射（completed→complete，failed→failed，其余→interrupted）
+       tool → 一条 tool-call（itemId = part.id，status 恒为 complete）；
+         part.state 为 completed / failed / denied 时再补
+         tool-result（itemId = toolCallId + ":result"，outcome 分别为 output / error / denied）；
+         其余状态不补 result，由 Turn 相位折成 interrupted
+   否则若 message_json.text / reasoning 非空：
+     生成 text（itemId = 消息 id + ":text"）与/或 reasoning（itemId = 消息 id + ":reasoning"）
+   两者都空的消息（崩溃前的占位）跳过：不占 seq、不计数
+   user 条目 itemId = 消息 id，status 恒为 complete；part 条目携带 messageId。
+5. 每个 Turn 组末尾补一条 turn-end（itemId = turnId + ":end"）：
+   status 取该 Turn 最后一条 assistant 消息的状态（complete / failed / 其余→interrupted）；
+   没有 assistant 消息的 Turn 一律 interrupted；
+   interrupted 的 interruption.reason：原消息 streaming → "process-exit"，否则 "migrated"；
+   payload.stepCount = 0，toolCalls = 该 Turn 的 tool-call 条目数。
+6. 回写 sessions.next_seq（= 最后分配的 seq + 1）与 message_count（= 真正产出了条目的消息数）；
+   updated_at 不因迁移而变。
+7. 旧表 session_events / session_turns / session_message_drafts / meta / session_messages
+   在 P4 删除；P1 保留，便于回退与比对。
 ```
 
-迁移只搬运「用户看得到的内容」：`session_events` 里的 delta、warning、source、file 一律丢弃（见 12.4）。迁移后 `load` 的折叠结果必须与迁移前 `restoreConversationSnapshot` 逐字段相等，这是 P1 的验收条件。
+迁移只搬运「用户看得到的内容」：`session_events` 里的 delta、warning、source、file 一律丢弃（见 12.4）。迁移后 `load` 的折叠结果必须与迁移前 `restoreConversationSnapshot` 一致：消息身份、角色、正文、作者/接收方、消息状态与 part 状态相同。前两处形状归一是折叠的定义而非数据丢失，P1 测试逐条断言；第三处是 Turn 相位派生的必然结果，写入前已知：
+
+- 折叠总会物化 `audience`（旧消息缺省时写 `{ kind: "user" }`）；
+- 没有 parts 的 assistant 正文（交接消息、早期记录）会物化成一条 text part；
+- failed Turn 里未结算的 tool part 按 Turn 相位折成 `failed`，旧恢复统一折成 `interrupted`。
+
+`message_count` 不把空白占位算作消息；这些占位迁移后不再产出消息，与第 7 节「空白 Turn 不恢复」一致。
 
 迁移**不保留** `session_events` 里的 delta、warning、source、file：它们本来就没有渲染消费者（见 12.4）。
 
@@ -590,14 +607,30 @@ schema 层面已锁死四条组合约束：`turn-end` 必须有 `turnId` 且不�
 - 折叠：乱序输入按 `seq` 排序；只有 `turn-end` 的 Turn 不产出消息；孤儿 `tool-result` 抛错。
 - schema：`turn-end` 缺 `turnId`、带 `messageId`、`interrupted` 无原因；part 类缺 `messageId`；`user` 带作者或非 `complete`；`tool-call` 非 `complete`；未知 `kind` —— 全部拒绝。
 
-随 P1–P5 补：
+P1 已落地（`apps/agent/test/core/transcript/sessionItemsMigration.test.ts`）：
+
+- 旧 schema 只靠新 migration 升级后，`sessions` 列集合与当前 baseline 相同、`session_items` DDL 逐字相同；
+- 完成 Turn、失败 Turn、交接、开场、崩溃草稿、空白占位六类旧数据的折叠结果与 `restoreConversationSnapshot` 一致；
+- 草稿只在 `base_revision === revision` 时合并；
+- `next_seq` = 最后分配的 seq + 1，`message_count` 只数产出了条目的消息；
+- 同一 `item_id` 重复插入 no-op；`afterSeq` + `limit` 分页。
+
+随 P2–P5 补：
 
 - 追加幂等：同一 `item_id` 写两次，条目数不变，`next_seq` 只前进一次。
 - `finishTurn`：`turn-end` 与 `open_turn_id` 清空同事务；并发第二次收口 no-op。
 - `message_count`：user 每条 +1，assistant 按 message_id 首次 +1。
-- 迁移：给定旧 `message_json`（含 parts、streaming、无 turn_id）折叠结果与原消息逐字段相等。
 - 分页：`seq` 倒序 + 游标不重不漏；`/clear` 后 `seq` 从 1 重新开始且客户端视图重置。
 - 客户端：snapshot（含半截）+ 后续条目按 `item_id` 覆盖，正文不重复。
+
+#### 13.9 实现期修正与批次
+
+- **P1 不删旧表。** 第 13.6 节原先写「迁移时删 5 张表」，实际拆到 P4：P1 只建 `session_items` 并回填，旧表和 `revision` 保留，迁移结果可与旧读路径逐条比对，出问题也能回退。P4 再删表并移除 `legacySessionImport` 的 meta 标记。
+- **P2 不能单独落地。** `SessionJournal` 同时是写入口和 durable 读通道（桌面 / CLI / remote 的 `readFramesAfter`）；删 journal 的同一笔必须把读通道换成条目，否则历史补齐立即断链。因此 P2 与 P3（恢复）同批。
+- **帧协议先加兼容变体。** 第二批把 `sessionFrameSchema.event` 扩成 `z.union([agentDurableEventSchema, { type: "session-item", item }])`；`remoteFrameListSchema` 与 `RemoteSessionFrame` 复用同一 schema，所以 remote / mobile 传输层零改动。P5 再做独立的 `SessionItemFrame` / `SessionStatusFrame` 重命名与传输层收口。
+- **`turn-end` 追加 `reason`。** P0 只有 `finishReason`（provider 最后一步终因），会丢掉 `cancelled` / `handoff-failed` / `context-exhausted`；`reason?: TurnFinishReason` 与 `finishReason` 并存，各表一件事。
+- **`open_turn_id` 只在 Turn 开始时置位**，提交时不置；理由见第 5 节。
+- **客户端折叠按 `item_id` upsert 必须在第二批做**：snapshot 可能已带内存半截，同一 part 随后以完整条目到达，盲追加会出现双份。
 
 ## 模块边界
 

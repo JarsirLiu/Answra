@@ -6,7 +6,7 @@
  */
 import { z } from "zod";
 import { conversationImageSchema } from "../conversation";
-import { agentFinishReasonSchema, agentUsageSchema } from "../status";
+import { agentFinishReasonSchema, agentUsageSchema, turnFinishReasonSchema } from "../status";
 
 /** 条目种类；前五种是用户看得到的对话内容，`turn-end` 是 Turn 收口。 */
 export const sessionItemKindSchema = z.enum([
@@ -72,7 +72,10 @@ export const sessionItemInterruptionSchema = z.strictObject({
 /** 一个 Turn 的收口汇总；吸收原来的运行表字段，不再单独建运行表。 */
 const turnEndItemPayloadSchema = z.strictObject({
   kind: z.literal("turn-end"),
+  /** 最后一步 provider 的终因（stop / length / error）；与 Turn 归因不是同一件事。 */
   finishReason: agentFinishReasonSchema.optional(),
+  /** Turn 归因（cancelled / handoff-failed / context-exhausted 等）；由调度器写入。 */
+  reason: turnFinishReasonSchema.optional(),
   stepCount: z.number().int().nonnegative(),
   toolCalls: z.number().int().nonnegative(),
   usage: agentUsageSchema.optional(),

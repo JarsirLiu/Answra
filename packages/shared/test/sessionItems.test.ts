@@ -258,6 +258,22 @@ describe("sessionItemSchema", () => {
     expect(sessionItemSchema.parse(JSON.parse(JSON.stringify(parsed)))).toEqual(parsed);
   });
 
+  it("accepts a turn-end with a turn finish reason and rejects an unknown one", () => {
+    const turnEnd = {
+      ...valid,
+      itemId: turnEndItemId(TURN),
+      messageId: undefined,
+      payload: { kind: "turn-end", reason: "cancelled", stepCount: 1, toolCalls: 0 },
+    };
+    expect(sessionItemSchema.safeParse(turnEnd).success).toBe(true);
+    expect(
+      sessionItemSchema.safeParse({
+        ...turnEnd,
+        payload: { ...turnEnd.payload, reason: "not-a-reason" },
+      }).success,
+    ).toBe(false);
+  });
+
   it("rejects a turn-end without a turn id", () => {
     expect(
       sessionItemSchema.safeParse({
