@@ -1,9 +1,9 @@
 import {
-  type AgentDurableEvent,
   type AgentLiveOnlyEvent,
   type LiveFrame,
   SESSION_FRAME_SCHEMA_VERSION,
   type SessionFrame,
+  type SessionItem,
 } from "@answra/shared/schema";
 
 export const TEST_SESSION_ID = "conversation-1";
@@ -19,24 +19,25 @@ export interface SessionFrameFields {
   occurredAt?: string;
 }
 
-/** 构造一条 durable 事实帧；测试只关心事件与路由字段。 */
+/** 构造一条 durable 条目帧；测试只关心条目与路由字段。 */
 export function sessionFrame(
   seq: number,
-  event: AgentDurableEvent,
+  item: Omit<SessionItem, "seq">,
   fields: SessionFrameFields = {},
 ): SessionFrame {
+  const sessionId = fields.sessionId ?? TEST_SESSION_ID;
   return {
     schemaVersion: SESSION_FRAME_SCHEMA_VERSION,
-    sessionId: fields.sessionId ?? TEST_SESSION_ID,
+    sessionId,
     seq,
-    eventId: `event-${seq}`,
+    eventId: `${sessionId}:${seq}`,
     occurredAt: fields.occurredAt ?? TEST_OCCURRED_AT,
     producerId: "test",
     ...(fields.turnId === undefined ? {} : { turnId: fields.turnId }),
     ...(fields.messageId === undefined ? {} : { messageId: fields.messageId }),
     ...(fields.stepId === undefined ? {} : { stepId: fields.stepId }),
     ...(fields.operationId === undefined ? {} : { operationId: fields.operationId }),
-    event,
+    event: { type: "session-item", item: { ...item, seq } },
   };
 }
 

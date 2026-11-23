@@ -579,7 +579,8 @@ describe("ephemeral conversation runtime", () => {
           (frame) => frame.event.type === "text-delta" && frame.event.delta === "重试成功",
         ),
       ).toBe(true);
-      expect(retryFrames.some((frame) => frame.event.type === "error")).toBe(false);
+      // `error` 是 live-only 的运行提示：重试成功后既不该落 durable 事实，也不该留下错误帧。
+      expect(retryLiveFrames.some((frame) => frame.event.type === "error")).toBe(false);
     } finally {
       retrying.dispose();
       await new Promise<void>((resolve) => retryServer.close(() => resolve()));

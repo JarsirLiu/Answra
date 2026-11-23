@@ -6,10 +6,10 @@ import type {
   ReplyBarState,
 } from "@answra/shared";
 import type {
-  AgentDurableEvent,
   AgentLiveOnlyEvent,
   LiveFrame,
   SessionFrame,
+  SessionItem,
 } from "@answra/shared/schema";
 import { SESSION_FRAME_SCHEMA_VERSION } from "@answra/shared/schema";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -87,17 +87,28 @@ function createBridge() {
   } satisfies Partial<DesktopBridge>;
 }
 
-function frame(seq: number, event: AgentDurableEvent): SessionFrame {
+function frame(seq: number, item: Omit<SessionItem, "seq">): SessionFrame {
   return {
     schemaVersion: SESSION_FRAME_SCHEMA_VERSION,
     sessionId: conversationId,
     seq,
-    eventId: `event-${seq}`,
+    eventId: `${conversationId}:${seq}`,
     occurredAt: "2026-11-07T00:00:00.000Z",
     producerId: "test",
     turnId,
     messageId: runId,
-    event,
+    event: { type: "session-item", item: { ...item, seq } },
+  };
+}
+
+/** ReplyBar 的答案只有一次正文增量，收口用一条 `turn-end` 条目表达。 */
+function turnEndItem(): Omit<SessionItem, "seq"> {
+  return {
+    itemId: `${turnId}:end`,
+    status: "complete",
+    createdAt: "2026-11-07T00:00:01.000Z",
+    turnId,
+    payload: { kind: "turn-end", stepCount: 1, toolCalls: 0 },
   };
 }
 
@@ -271,7 +282,7 @@ describe("ReplyBarWindowApp live conversation popover", () => {
     await waitFor(() => expect(bridge.readSessionFrames).toHaveBeenCalledWith(conversationId, 0));
     act(() => {
       liveListener?.(live({ type: "reasoning-delta", partId: "reasoning-1", delta: "先检查条件" }));
-      frameListener?.(frame(1, { type: "turn-finished", status: "completed" }));
+      frameListener?.(frame(1, turnEndItem()));
     });
     fireEvent.mouseEnter(document.querySelector(".reply-activity-viewport") as HTMLElement);
     const toggle = await screen.findByRole("button", { name: "切换思考过程" });
@@ -298,7 +309,7 @@ describe("ReplyBarWindowApp live conversation popover", () => {
       liveListener?.(
         live({ type: "reasoning-delta", partId: "reasoning-1", delta: "先检查题目条件" }),
       );
-      frameListener?.(frame(1, { type: "turn-finished", status: "completed" }));
+      frameListener?.(frame(1, turnEndItem()));
     });
     const toggle = await screen.findByRole("button", { name: "切换思考过程" });
     expect(toggle).toHaveAttribute("aria-expanded", "false");
@@ -404,7 +415,7 @@ describe("ReplyBarWindowApp live conversation popover", () => {
 
     expect(screen.queryByRole("button", { name: "复制" })).not.toBeInTheDocument();
     act(() => {
-      frameListener?.(frame(1, { type: "turn-finished", status: "completed" }));
+      frameListener?.(frame(1, turnEndItem()));
     });
 
     const copy = await screen.findByRole("button", { name: "复制" });

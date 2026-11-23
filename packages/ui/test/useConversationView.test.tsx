@@ -1,5 +1,5 @@
 import type { ConversationSnapshot, DesktopBridge } from "@answra/shared";
-import type { AgentDurableEvent, SessionFrame } from "@answra/shared/schema";
+import type { SessionFrame, SessionItem } from "@answra/shared/schema";
 import { SESSION_FRAME_SCHEMA_VERSION } from "@answra/shared/schema";
 import { act, render, renderHook, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
@@ -7,19 +7,72 @@ import { useConversationView } from "../src/app/useConversationView";
 
 function frame(
   seq: number,
-  event: AgentDurableEvent,
+  item: Omit<SessionItem, "seq">,
   ids: { turnId?: string; messageId?: string } = {},
 ): SessionFrame {
   return {
     schemaVersion: SESSION_FRAME_SCHEMA_VERSION,
     sessionId: "conversation-1",
     seq,
-    eventId: `event-${seq}`,
+    eventId: `conversation-1:${seq}`,
     occurredAt: "2026-11-07T00:00:00.000Z",
     producerId: "test",
     ...(ids.turnId === undefined ? {} : { turnId: ids.turnId }),
     ...(ids.messageId === undefined ? {} : { messageId: ids.messageId }),
-    event,
+    event: { type: "session-item", item: { ...item, seq } },
+  };
+}
+
+function textItem(text = "答案"): Omit<SessionItem, "seq"> {
+  return {
+    itemId: `text-${text}`,
+    status: "complete",
+    createdAt: "2026-11-07T00:00:00.000Z",
+    turnId: "turn-1",
+    messageId: "run-1",
+    payload: { kind: "text", text },
+  };
+}
+
+function toolCallItem(toolCallId = "tool-1"): Omit<SessionItem, "seq"> {
+  return {
+    itemId: toolCallId,
+    status: "complete",
+    createdAt: "2026-11-07T00:00:00.000Z",
+    turnId: "turn-1",
+    messageId: "run-1",
+    payload: { kind: "tool-call", toolCallId, toolName: "workspace.read", input: { path: "a.ts" } },
+  };
+}
+
+function toolResultItem(toolCallId = "tool-1"): Omit<SessionItem, "seq"> {
+  return {
+    itemId: `${toolCallId}:result`,
+    status: "complete",
+    createdAt: "2026-11-07T00:00:00.000Z",
+    turnId: "turn-1",
+    messageId: "run-1",
+    payload: { kind: "tool-result", toolCallId, outcome: "output", output: "ok" },
+  };
+}
+
+function turnEndItem(
+  turnId = "turn-1",
+  status: "complete" | "interrupted" | "failed" = "complete",
+): Omit<SessionItem, "seq"> {
+  return {
+    itemId: `${turnId}:end`,
+    status,
+    createdAt: "2026-11-07T00:00:00.000Z",
+    turnId,
+    payload: {
+      kind: "turn-end",
+      stepCount: 1,
+      toolCalls: 0,
+      ...(status === "interrupted"
+        ? { interruption: { reason: "cancelled" as const, at: "2026-11-07T00:00:00.000Z" } }
+        : {}),
+    },
   };
 }
 
@@ -57,16 +110,7 @@ describe("useConversationView recovery", () => {
   it("buffers durable frames during initialization, applies them in seq order, and re-reads the gap", async () => {
     const firstRead = deferred<SessionFrame[]>();
     const listeners = new Set<(frame: SessionFrame) => void>();
-    const history = [
-      frame(
-        3,
-        { type: "turn-finished", status: "completed" },
-        {
-          turnId: "turn-1",
-          messageId: "run-1",
-        },
-      ),
-    ];
+    const history = [frame(3, textItem())];
     const readSessionFrames = vi
       .fn()
       .mockImplementationOnce(() => firstRead.promise)
@@ -91,34 +135,22 @@ describe("useConversationView recovery", () => {
     act(() => {
       for (const listener of listeners)
         listener(
-          frame(
-            3,
-            { type: "turn-finished", status: "completed" },
-            {
-              turnId: "turn-1",
-              messageId: "run-1",
-            },
-          ),
+          frame(3, turnEndItem(), {
+            turnId: "turn-1",
+            messageId: "run-1",
+          }),
         );
     });
     await act(async () =>
       firstRead.resolve([
-        frame(
-          1,
-          { type: "turn-started", agentId: "general" },
-          {
-            turnId: "turn-1",
-            messageId: "run-1",
-          },
-        ),
-        frame(
-          2,
-          { type: "step-started", stepId: "step-1", index: 0 },
-          {
-            turnId: "turn-1",
-            messageId: "run-1",
-          },
-        ),
+        frame(1, toolCallItem(), {
+          turnId: "turn-1",
+          messageId: "run-1",
+        }),
+        frame(2, toolResultItem(), {
+          turnId: "turn-1",
+          messageId: "run-1",
+        }),
       ]),
     );
 
@@ -161,14 +193,10 @@ describe("useConversationView recovery", () => {
     act(() => {
       for (const listener of listeners)
         listener(
-          frame(
-            2,
-            { type: "turn-started", agentId: "general" },
-            {
-              turnId: "turn-1",
-              messageId: "run-1",
-            },
-          ),
+          frame(2, toolCallItem(), {
+            turnId: "turn-1",
+            messageId: "run-1",
+          }),
         );
     });
     // 游标停在 0 时第 2 帧是缺口：只能整段重读，历史里还没有第 1 帧。
@@ -177,22 +205,14 @@ describe("useConversationView recovery", () => {
     );
 
     history.push(
-      frame(
-        1,
-        { type: "step-started", stepId: "step-1", index: 0 },
-        {
-          turnId: "turn-1",
-          messageId: "run-1",
-        },
-      ),
-      frame(
-        2,
-        { type: "turn-started", agentId: "general" },
-        {
-          turnId: "turn-1",
-          messageId: "run-1",
-        },
-      ),
+      frame(1, toolCallItem(), {
+        turnId: "turn-1",
+        messageId: "run-1",
+      }),
+      frame(2, toolResultItem(), {
+        turnId: "turn-1",
+        messageId: "run-1",
+      }),
     );
     act(() => {
       applySnapshot?.({
@@ -269,14 +289,10 @@ describe("useConversationView recovery", () => {
     await waitFor(() => expect(bridge.readSessionFrames).toHaveBeenCalledWith("conversation-1", 0));
 
     history.push(
-      frame(
-        1,
-        { type: "turn-started", agentId: "general" },
-        {
-          turnId: "turn-1",
-          messageId: "run-1",
-        },
-      ),
+      frame(1, toolCallItem(), {
+        turnId: "turn-1",
+        messageId: "run-1",
+      }),
     );
     act(() =>
       publishSnapshot?.({
@@ -325,8 +341,7 @@ describe("useConversationView recovery", () => {
     await waitFor(() => expect(listeners.size).toBe(1));
 
     act(() => {
-      for (const listener of listeners)
-        listener(frame(1, { type: "turn-started", agentId: "general" }, { turnId: "turn-1" }));
+      for (const listener of listeners) listener(frame(1, toolCallItem(), { turnId: "turn-1" }));
     });
     await waitFor(() => expect(result.current.view.lastSeq).toBe(1));
 
@@ -334,8 +349,7 @@ describe("useConversationView recovery", () => {
     expect(result.current.view.lastSeq).toBe(0);
 
     act(() => {
-      for (const listener of listeners)
-        listener(frame(1, { type: "turn-started", agentId: "general" }, { turnId: "turn-1" }));
+      for (const listener of listeners) listener(frame(1, toolCallItem(), { turnId: "turn-1" }));
     });
     await waitFor(() => expect(result.current.view.lastSeq).toBe(1));
   });

@@ -1,5 +1,15 @@
-/** 非 TTY 事实呈现：把 durable 帧与 live 增量投影为逐行文本，不引入 ANSI 控制序列。 */
-import type { AgentStreamEvent, LiveFrame, SessionFrame } from "@answra/shared/schema";
+/**
+ * 非 TTY 事实呈现：把已结算条目与 live 增量投影为逐行文本，不引入 ANSI 控制序列。
+ *
+ * 正文只来自 live delta（`text` 条目已包含同一份文本，再打印会重复）；
+ * 工具行与退出码只来自条目，因为它们才是 durable 事实。
+ */
+import type {
+  AgentLiveOnlyEvent,
+  LiveFrame,
+  SessionFrame,
+  SessionItem,
+} from "@answra/shared/schema";
 import type { OutputPort } from "../transport/output";
 import { toolFinishLine, toolStartLine } from "./toolLine";
 
@@ -11,6 +21,7 @@ export interface StreamPresenter {
 }
 
 export function createStreamPresenter(output: OutputPort): StreamPresenter {
+  const toolNames = new Map<string, string>();
   let activeTextPartId: string | undefined;
   let hasOutput = false;
   let errorReported = false;
@@ -23,29 +34,12 @@ export function createStreamPresenter(output: OutputPort): StreamPresenter {
     hasOutput = true;
   };
 
-  const present = (event: AgentStreamEvent): void => {
+  const presentLiveEvent = (event: AgentLiveOnlyEvent): void => {
     switch (event.type) {
-      case "text-start":
-        if (activeTextPartId !== undefined && activeTextPartId !== event.partId) closeText();
-        activeTextPartId = event.partId;
-        break;
       case "text-delta":
         if (activeTextPartId !== undefined && activeTextPartId !== event.partId) closeText();
         activeTextPartId = event.partId;
         output.write(event.delta);
-        hasOutput = true;
-        break;
-      case "text-end":
-        if (activeTextPartId === event.partId) closeText();
-        break;
-      case "tool-execution-started":
-        closeText();
-        if (hasOutput) output.write("\n");
-        output.write(`[tool] ${toolStartLine(event)}\n`);
-        hasOutput = true;
-        break;
-      case "tool-execution-finished":
-        output.write(`[tool] ${toolFinishLine(event)}\n`);
         hasOutput = true;
         break;
       case "error":
@@ -64,41 +58,70 @@ export function createStreamPresenter(output: OutputPort): StreamPresenter {
     }
   };
 
+  const presentToolCall = (item: SessionItem): void => {
+    if (item.payload.kind !== "tool-call") return;
+    toolNames.set(item.payload.toolCallId, item.payload.toolName);
+    closeText();
+    if (hasOutput) output.write("\n");
+    output.write(
+      `[tool] ${toolStartLine({
+        toolName: item.payload.toolName,
+        ...(item.payload.input === undefined ? {} : { input: item.payload.input }),
+      })}\n`,
+    );
+    hasOutput = true;
+  };
+
+  const presentToolResult = (item: SessionItem): void => {
+    if (item.payload.kind !== "tool-result") return;
+    const toolName = toolNames.get(item.payload.toolCallId);
+    if (toolName === undefined) return;
+    output.write(
+      `[tool] ${toolFinishLine({
+        toolName,
+        outcome: item.payload.outcome,
+        ...(item.payload.errorText === undefined ? {} : { errorText: item.payload.errorText }),
+        ...(item.payload.durationMs === undefined ? {} : { durationMs: item.payload.durationMs }),
+      })}\n`,
+    );
+    hasOutput = true;
+  };
+
+  const presentTurnEnd = (item: SessionItem): void => {
+    if (item.payload.kind !== "turn-end") return;
+    if (item.status === "failed") {
+      if (exitCode !== 130) exitCode = 1;
+      if (!errorReported) {
+        output.writeError("run failed\n");
+        errorReported = true;
+      }
+      return;
+    }
+    if (item.status === "interrupted") {
+      exitCode = 130;
+      output.writeError("cancelled\n");
+    }
+  };
+
   return {
     presentFrame(frame) {
-      const event = frame.event;
-      if (event.type === "session-item") return;
-      switch (event.type) {
-        case "turn-finished":
-          if (event.status === "failed") {
-            if (exitCode !== 130) exitCode = 1;
-            if (!errorReported) output.writeError("run failed\n");
-            errorReported = true;
-            return;
-          }
-          if (event.status === "aborted") {
-            exitCode = 130;
-            output.writeError("cancelled\n");
-          }
+      const item = frame.event.item;
+      switch (item.payload.kind) {
+        case "tool-call":
+          presentToolCall(item);
           return;
-        case "turn-queued":
-        case "turn-started":
-        case "turn-handoff":
-        case "compaction-started":
-        case "compaction-finished":
-        case "compaction-failed":
-        case "compaction-aborted":
-        case "step-started":
-        case "step-finished":
-        case "context-usage-changed":
-        case "part-state-changed":
+        case "tool-result":
+          presentToolResult(item);
+          return;
+        case "turn-end":
+          presentTurnEnd(item);
           return;
         default:
-          present(event);
+          return;
       }
     },
     presentLive(frame) {
-      present(frame.event);
+      presentLiveEvent(frame.event);
     },
     finish() {
       closeText();

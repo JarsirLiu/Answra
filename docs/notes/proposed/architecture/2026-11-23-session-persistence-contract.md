@@ -312,7 +312,7 @@ m-a1  assistant  author: general
 | P2 | 写入面切到条目端口（`SessionItemStore`）；SQLite 适配器写条目而不是 message 行；删 journal / `projectSession` / 双通道 | 桌面与 CLI 读同一折叠；`session_items` 无 UPDATE |
 | P3 | 恢复改为 `open_turn_id` + 尾部扫描；删 `recovery.ts` 的事件重放 | 崩溃模拟三类场景通过 |
 | P4 | 删 `session_events`、`session_messages`、`session_turns`、`session_message_drafts`、`meta`、`revision` | 库里只剩 2 张业务表 |
-| P5 | durable 通道改为「按 seq 读条目」；会话级状态改走 snapshot + live status frame；同步 remote/mobile 帧 | 桌面、CLI TUI、远程/移动端共用同一条折叠 |
+| P5 | durable 通道只装条目；不再新增 status frame，会话级状态继续由 snapshot 推送；`retry` / `error` 改走 live | 桌面、CLI TUI、远程/移动端共用同一条折叠 |
 | P6 | 同步 `AGENTS.md`、`.agents/skills/answra-arch/`、本 Note 的 `SessionFrame` 关联文档 | 文档与代码一致 |
 
 P1 与 P2 必须同批交付，否则会出现「读旧表、写新表」的空窗。新增迁移走现有 `migration/registry.gen.ts` 的 append-only 账本，用 `pnpm db:generate` 重建 `schema.snapshot.json`，不手改快照。迁移只前进；回退需要 `pnpm db:reset`。
@@ -663,7 +663,7 @@ P4 已落地（`pnpm db:check` 5 个迁移；agent 799 = P2b-2b 的 801 − 3 �
 
 - **P1 不删旧表。** 第 13.6 节原先写「迁移时删 5 张表」，实际拆到 P4：P1 只建 `session_items` 并回填，旧表和 `revision` 保留，迁移结果可与旧读路径逐条比对，出问题也能回退。P4 再删表并移除 `legacySessionImport` 的 meta 标记。
 - **P2 不能单独落地。** `SessionJournal` 同时是写入口和 durable 读通道（桌面 / CLI / remote 的 `readFramesAfter`）；删 journal 的同一笔必须把读通道换成条目，否则历史补齐立即断链。因此 P2 与 P3（恢复）同批。
-- **帧协议先加兼容变体。** 第二批把 `sessionFrameSchema.event` 扩成 `z.union([agentDurableEventSchema, { type: "session-item", item }])`；`remoteFrameListSchema` 与 `RemoteSessionFrame` 复用同一 schema，所以 remote / mobile 传输层零改动。P5 再做独立的 `SessionItemFrame` / `SessionStatusFrame` 重命名与传输层收口。
+- **帧协议先加兼容变体。** 第二批把 `sessionFrameSchema.event` 扩成 `z.union([agentDurableEventSchema, { type: "session-item", item }])`；`remoteFrameListSchema` 与 `RemoteSessionFrame` 复用同一 schema，所以 remote / mobile 传输层零改动。P5 再把 durable 帧收窄成只装条目（不新增 status frame，也不改 `SessionFrame` 版本号），传输层仍然零改动。
 - **`turn-end` 追加 `reason`。** P0 只有 `finishReason`（provider 最后一步终因），会丢掉 `cancelled` / `handoff-failed` / `context-exhausted`；`reason?: TurnFinishReason` 与 `finishReason` 并存，各表一件事。
 - **`open_turn_id` 只在 Turn 开始时置位**，提交时不置；理由见第 5 节。
 - **客户端折叠按 `item_id` upsert 必须在第二批做**：snapshot 可能已带内存半截，同一 part 随后以完整条目到达，盲追加会出现双份。
@@ -674,6 +674,12 @@ P4 已落地（`pnpm db:check` 5 个迁移；agent 799 = P2b-2b 的 801 − 3 �
 - **恢复投影里的 running 也算 busy。** 恢复只补事实、不重启旧 Turn；若此时放行新排队 Turn，就会出现两个写者。`Scheduler` 因此从投影取 `activeTurnId`，有值即拒绝启动新 Turn，等旧 Turn 收口后再放行。
 - **P4 删表顺序固定为 trigger → table → column。** SQLite 允许 `DROP TABLE` 留下指向它的悬空 trigger，但之后每次删会话都会命中一张不存在的表；先删 `sessions_delete_session_*` 再删表。`revision` 没有索引或 CHECK 引用，可直接 `DROP COLUMN`；重建 `sessions` 后 `session_items` 的外键仍生效，升级测试用「删会话清空条目」验证。
 - **`meta` 导入标记随 P4 删除。** 幂等性由两个已有事实保证：成功导入的文件被移入 `legacy/`（不再进入根目录扫描），同名会话行存在时按重复归档。把旧文件重新放回根目录会再次导入，这是期望行为。
+- **P5 不新增 status frame。** 会话级状态（活动 Turn、用量、压缩）本来就随 `ConversationSnapshot` 在 begin / finish / handoff / 恢复 / 压缩状态变化时推送；再开一条 durable 状态帧等于为同一份状态造第二个来源。`SessionFrame` 因此只剩 `{ type: "session-item", item }`，并删除 `toSessionFrame` 与兼容 union。
+- **`retry` / `error` 移入 live-only。** 它们是可丢的运行提示，不是事实：Turn 的失败归因与错误文本由 `turn-end.errorText` 承担。P2b 之后这两个事件被静默丢弃，UI 的 RetryNotice 与 CLI 重试诊断一度失效；移入 live 后恢复，同时 `agentDurableEventSchema` 34 项、`agentLiveOnlyEventSchema` 6 项、`agentStreamEventSchema` 仍 28 项。
+- **Turn 终态映射唯一化。** 新增 `turnOutcomeOfItemStatus`（`complete → completed`、`failed → failed`、`interrupted → aborted`），agent 的 Turn 投影与 UI 的 `waitForOutcome` 共用；此前两者各写一份三元表达式。
+- **`context-usage-changed` 的 durable 折叠路径删除。** 该事件当前没有生产者，用量只在 snapshot 推送时更新（回合边界）；保留一条永远走不到的分支只会误导后来者。
+- **CLI 非 TTY 呈现改为条目驱动。** 正文仍来自 live `text-delta`（`text` 条目含同一份文本，重复打印会出现两遍）；工具开始/结束行与退出码改由 `tool-call` / `tool-result` / `turn-end` 条目驱动。
+- **`turn-end` 收口同时清 `thinking` / `waitingForStream`。** 折叠代码原先只在 `turn-finished` 事件路径里做这件事，改成条目后必须由 `settleTurn` 自己清；否则思考摘要会一直停在「思考中」。
 
 ## 模块边界
 
@@ -683,7 +689,7 @@ P4 已落地（`pnpm db:check` 5 个迁移；agent 799 = P2b-2b 的 801 − 3 �
 | `core/transcript`（store、SQLite 适配、折叠） | `sessions`、`session_items` | 不判断 Turn 语义，不做恢复决策 |
 | `packages/shared/src/schema/session/fold.ts`（条目 → 消息） | 只读 | 不写库、不带 IO、不依赖领域 |
 | 各领域 application | 只调 store 与 session 端口 | 不拼 SQL，不解析条目 |
-| 客户端折叠（`packages/ui` 的 `foldConversationFrame`，桌面 / CLI TUI / 移动端共用） | 只读 snapshot、item frame、status frame | 不推演缺失状态；按 `item_id` upsert，不盲追加 |
+| 客户端折叠（`packages/ui` 的 `foldConversationFrame`，桌面 / CLI TUI / 移动端共用） | 只读 snapshot 与 `session-item` 帧 | 不推演缺失状态；按 `item_id` upsert，不盲追加 |
 | live 通道 | 内存 → 传输 | 不落库，不要求与条目对齐 |
 
 `packages/shared/src/schema/events.ts` 保留为 **live 通道契约**（UI 与 CLI 的实时帧），不再承担持久化事实的角色。`AgentDurableEvent` 的既有措辞（「仅规定未来适配器的事件资格」）正好允许这次转向。

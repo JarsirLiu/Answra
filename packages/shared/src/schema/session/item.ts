@@ -6,7 +6,12 @@
  */
 import { z } from "zod";
 import { conversationImageSchema } from "../conversation";
-import { agentFinishReasonSchema, agentUsageSchema, turnFinishReasonSchema } from "../status";
+import {
+  agentFinishReasonSchema,
+  agentUsageSchema,
+  type TurnOutcome,
+  turnFinishReasonSchema,
+} from "../status";
 
 /** 条目种类；前五种是用户看得到的对话内容，`turn-end` 是 Turn 收口。 */
 export const sessionItemKindSchema = z.enum([
@@ -154,4 +159,16 @@ export function toolResultItemId(toolCallId: string): string {
 /** Turn 收口的条目 id；与 `turnId` 一一对应，重复收口是 no-op。 */
 export function turnEndItemId(turnId: string): string {
   return `${turnId}:end`;
+}
+
+/**
+ * 条目终态 → Turn 终态的唯一映射。
+ *
+ * `turn-end` 条目与折叠、恢复投影都走这一处：`complete → completed`、
+ * `failed → failed`、`interrupted → aborted`。其它条目也有状态字段，
+ * 但这个映射只对 Turn 收口有意义。
+ */
+export function turnOutcomeOfItemStatus(status: SessionItemStatus): TurnOutcome {
+  if (status === "complete") return "completed";
+  return status === "failed" ? "failed" : "aborted";
 }

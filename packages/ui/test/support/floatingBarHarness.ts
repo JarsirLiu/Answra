@@ -1,11 +1,11 @@
 import type { ConversationMessage, ConversationSnapshot } from "@answra/shared";
 import { ActiveInterviewIntakeConversationId } from "@answra/shared";
 import type {
-  AgentDurableEvent,
   AgentLiveOnlyEvent,
   AgentStreamEvent,
   LiveFrame,
   SessionFrame,
+  SessionItem,
 } from "@answra/shared/schema";
 import { SESSION_FRAME_SCHEMA_VERSION } from "@answra/shared/schema";
 import { fireEvent, screen } from "@testing-library/react";
@@ -36,22 +36,23 @@ export function publishLiveFrame(frame: LiveFrame) {
   for (const listener of liveFrameListeners) listener(frame);
 }
 
-/** 构造测试用 durable 事实帧；seq 由调用方决定，便于断言缺口与重放。 */
-export function testFrame(
+/** 构造测试用条目帧；seq 由调用方决定，便于断言缺口与重放。 */
+export function testItemFrame(
   seq: number,
-  event: AgentDurableEvent,
+  item: Omit<SessionItem, "seq">,
   ids: { sessionId?: string; turnId?: string; messageId?: string } = {},
 ): SessionFrame {
+  const sessionId = ids.sessionId ?? conversationState.emittedConversationId;
   return {
     schemaVersion: SESSION_FRAME_SCHEMA_VERSION,
-    sessionId: ids.sessionId ?? conversationState.emittedConversationId,
+    sessionId,
     seq,
-    eventId: `event-${seq}`,
+    eventId: `${sessionId}:${seq}`,
     occurredAt: "2026-11-07T00:00:00.000Z",
     producerId: "test",
     ...(ids.turnId === undefined ? {} : { turnId: ids.turnId }),
     ...(ids.messageId === undefined ? {} : { messageId: ids.messageId }),
-    event,
+    event: { type: "session-item", item: { ...item, seq } },
   };
 }
 
@@ -150,51 +151,189 @@ export function createConversationBridge() {
   };
   let scopeId = "";
   const messages: ConversationMessage[] = [];
+  const textByPart = new Map<string, string>();
+  const reasoningByPart = new Map<string, string>();
+  const toolCallCounts = new Map<string, number>();
+  const errorByRun = new Map<string, string>();
+  const FRAME_AT = "2026-11-07T00:00:00.000Z";
   const turnIdFor = (runId: string) => (runId === "run-1" ? "turn-1" : `turn-${runId}`);
-  /** durable 事实按会话游标追加；live 增量不进历史，允许丢失。 */
-  const publishFact = (id: string, event: AgentDurableEvent, runId: string) => {
+  /** 条目按会话游标追加；live 增量不进历史，允许丢失。 */
+  const publishItem = (id: string, item: Omit<SessionItem, "seq">, runId: string) => {
     const log = frameLog.get(id) ?? [];
     const seq = (log.at(-1)?.seq ?? snapshotFor(id).lastSeq) + 1;
-    const frame = testFrame(seq, event, {
+    const frame = testItemFrame(seq, item, {
       sessionId: id,
       turnId: turnIdFor(runId),
-      messageId: runId,
+      messageId: item.messageId ?? runId,
     });
     log.push(frame);
     frameLog.set(id, log);
-    saveSnapshot({ ...snapshotFor(id), lastSeq: seq });
+    const turnId = turnIdFor(runId);
+    saveSnapshot({
+      ...snapshotFor(id),
+      lastSeq: seq,
+      ...(item.payload.kind === "turn-end"
+        ? { activeTurnId: undefined, activeMessageId: undefined }
+        : { activeTurnId: turnId, activeMessageId: item.messageId ?? runId }),
+    });
     publishSessionFrame(frame);
+  };
+  const publishLive = (id: string, runId: string, event: AgentStreamEvent) => {
+    if (!isLiveOnly(event)) return;
+    publishLiveFrame({ sessionId: id, messageId: runId, event });
   };
   conversationState.emit = ({ runId, chunk }) => {
     const id = conversationState.emittedConversationId;
     if (scopeId !== id) {
       scopeId = id;
       messages.length = 0;
+      textByPart.clear();
+      reasoningByPart.clear();
+      toolCallCounts.clear();
     }
+    const turnId = turnIdFor(runId);
     const stream = toStream(chunk);
     if (stream) {
-      if (isLiveOnly(stream)) publishLiveFrame({ sessionId: id, messageId: runId, event: stream });
-      else publishFact(id, stream, runId);
-      if (stream.type === "text-delta") {
-        const assistant = messages.find((message) => message.id === runId);
-        if (assistant) assistant.text += stream.delta;
-        else
-          messages.push({
-            id: runId,
-            role: "assistant",
-            text: stream.delta,
-            images: [],
-            status: "streaming",
+      const partKey = (partId: string) => `${runId}:${partId}`;
+      switch (stream.type) {
+        case "text-start":
+          textByPart.set(partKey(stream.partId), "");
+          break;
+        case "text-delta": {
+          const key = partKey(stream.partId);
+          textByPart.set(key, (textByPart.get(key) ?? "") + stream.delta);
+          publishLive(id, runId, stream);
+          const assistant = messages.find((message) => message.id === runId);
+          if (assistant) assistant.text += stream.delta;
+          else
+            messages.push({
+              id: runId,
+              role: "assistant",
+              text: stream.delta,
+              images: [],
+              status: "streaming",
+            });
+          const snapshot = snapshotFor(id);
+          const assistantText =
+            messages.find((message) => message.id === runId)?.text ?? stream.delta;
+          saveSnapshot({
+            ...snapshot,
+            messages: snapshot.messages.map((message) =>
+              message.id === runId ? { ...message, text: assistantText } : message,
+            ),
           });
-        const snapshot = snapshotFor(id);
-        const assistantText =
-          messages.find((message) => message.id === runId)?.text ?? stream.delta;
-        saveSnapshot({
-          ...snapshot,
-          messages: snapshot.messages.map((message) =>
-            message.id === runId ? { ...message, text: assistantText } : message,
-          ),
-        });
+          break;
+        }
+        case "text-end":
+          publishItem(
+            id,
+            {
+              itemId: stream.partId,
+              status: "complete",
+              createdAt: FRAME_AT,
+              turnId,
+              messageId: runId,
+              payload: {
+                kind: "text",
+                text: textByPart.get(partKey(stream.partId)) ?? "",
+              },
+            },
+            runId,
+          );
+          break;
+        case "reasoning-start":
+          reasoningByPart.set(partKey(stream.partId), "");
+          break;
+        case "reasoning-delta": {
+          const key = partKey(stream.partId);
+          reasoningByPart.set(key, (reasoningByPart.get(key) ?? "") + stream.delta);
+          publishLive(id, runId, stream);
+          break;
+        }
+        case "reasoning-end":
+          publishItem(
+            id,
+            {
+              itemId: stream.partId,
+              status: "complete",
+              createdAt: FRAME_AT,
+              turnId,
+              messageId: runId,
+              payload: {
+                kind: "reasoning",
+                text: reasoningByPart.get(partKey(stream.partId)) ?? "",
+              },
+            },
+            runId,
+          );
+          break;
+        case "tool-call":
+          toolCallCounts.set(turnId, (toolCallCounts.get(turnId) ?? 0) + 1);
+          publishItem(
+            id,
+            {
+              itemId: stream.toolCallId,
+              status: "complete",
+              createdAt: FRAME_AT,
+              turnId,
+              messageId: runId,
+              payload: {
+                kind: "tool-call",
+                toolCallId: stream.toolCallId,
+                toolName: stream.toolName,
+                input: stream.input,
+              },
+            },
+            runId,
+          );
+          break;
+        case "tool-result":
+          publishItem(
+            id,
+            {
+              itemId: `${stream.toolCallId}:result`,
+              status: "complete",
+              createdAt: FRAME_AT,
+              turnId,
+              messageId: runId,
+              payload: {
+                kind: "tool-result",
+                toolCallId: stream.toolCallId,
+                outcome: "output",
+                output: stream.output,
+              },
+            },
+            runId,
+          );
+          break;
+        case "tool-error":
+          publishItem(
+            id,
+            {
+              itemId: `${stream.toolCallId}:result`,
+              status: "complete",
+              createdAt: FRAME_AT,
+              turnId,
+              messageId: runId,
+              payload: {
+                kind: "tool-result",
+                toolCallId: stream.toolCallId,
+                outcome: "error",
+                errorText: stream.errorText,
+              },
+            },
+            runId,
+          );
+          break;
+        case "retry":
+        case "error":
+        case "tool-input-delta":
+        case "tool-output-delta":
+          if (stream.type === "error") errorByRun.set(runId, stream.errorText);
+          publishLive(id, runId, stream);
+          break;
+        default:
+          break;
       }
     }
     if (chunk.type === "finish" || chunk.type === "abort") {
@@ -208,7 +347,27 @@ export function createConversationBridge() {
         });
       }
       const aborted = chunk.type === "abort";
-      publishFact(id, { type: "turn-finished", status: aborted ? "aborted" : "completed" }, runId);
+      // 生产侧把流式错误写进 `turn-end`：只有它能作为 durable 归因，live 提示可丢。
+      const errorText = errorByRun.get(runId);
+      errorByRun.delete(runId);
+      const status = aborted ? "interrupted" : errorText === undefined ? "complete" : "failed";
+      publishItem(
+        id,
+        {
+          itemId: `${turnId}:end`,
+          status,
+          createdAt: FRAME_AT,
+          turnId,
+          payload: {
+            kind: "turn-end",
+            stepCount: 0,
+            toolCalls: toolCallCounts.get(turnId) ?? 0,
+            ...(aborted ? { interruption: { reason: "cancelled" as const, at: FRAME_AT } } : {}),
+            ...(errorText === undefined ? {} : { errorText }),
+          },
+        },
+        runId,
+      );
       const snapshot = snapshotFor(id);
       saveSnapshot({
         ...snapshot,
@@ -216,7 +375,10 @@ export function createConversationBridge() {
         activeMessageId: undefined,
         messages: snapshot.messages.map((message) =>
           message.id === runId
-            ? { ...message, status: aborted ? "interrupted" : "complete" }
+            ? {
+                ...message,
+                status: aborted ? "interrupted" : errorText === undefined ? "complete" : "failed",
+              }
             : message,
         ),
       });
@@ -369,13 +531,15 @@ function emptySnapshot(id = conversationId): ConversationSnapshot {
   return { conversationId: id, lastSeq: 0, messages: [] };
 }
 
-/** live-only 增量不进 durable 历史：它们只改变瞬时正文，由后续快照兜底。 */
+/** live-only 事件不进 durable 历史：它们只改变瞬时观感，由条目或快照兜底。 */
 function isLiveOnly(event: AgentStreamEvent): event is AgentLiveOnlyEvent {
   return (
     event.type === "text-delta" ||
     event.type === "reasoning-delta" ||
     event.type === "tool-input-delta" ||
-    event.type === "tool-output-delta"
+    event.type === "tool-output-delta" ||
+    event.type === "retry" ||
+    event.type === "error"
   );
 }
 

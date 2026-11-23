@@ -18,6 +18,7 @@ import {
   type TurnStatus,
   toolResultItemId,
   turnEndItemId,
+  turnOutcomeOfItemStatus,
 } from "@answra/shared/schema";
 import type { SessionItemDraft } from "../transcript/itemStore";
 import { createUserMessage } from "../transcript/message";
@@ -184,8 +185,7 @@ function turnStatusOf(group: SessionTurnGroup, isOpen: boolean): TurnStatus {
 }
 
 function turnEndStatus(item: SessionItem): TurnStatus {
-  if (item.status === "complete") return "completed";
-  return item.status === "failed" ? "failed" : "aborted";
+  return turnOutcomeOfItemStatus(item.status);
 }
 
 function projectGroup(

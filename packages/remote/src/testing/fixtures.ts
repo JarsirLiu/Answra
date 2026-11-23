@@ -45,7 +45,20 @@ export function createFakeSessionFrame(seq = 1): SessionFrame {
     eventId: `frame-${seq}`,
     occurredAt: "2026-11-13T00:00:00.000Z",
     producerId: "fake-host",
-    event: { type: "text-start", partId: "text-1" },
+    turnId: "turn-1",
+    messageId: "assistant-1",
+    event: {
+      type: "session-item",
+      item: {
+        seq,
+        itemId: `text-${seq}`,
+        status: "complete",
+        createdAt: "2026-11-13T00:00:00.000Z",
+        turnId: "turn-1",
+        messageId: "assistant-1",
+        payload: { kind: "text", text: "hello" },
+      },
+    },
   };
 }
 

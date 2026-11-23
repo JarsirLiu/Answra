@@ -137,7 +137,14 @@ function createDependencies(
         onSessionFrame(
           sessionFrame(
             sequence,
-            { type: "text-end", partId: "text-1" },
+            {
+              itemId: "text-1",
+              status: "complete",
+              createdAt: "2026-11-22T00:00:00.000Z",
+              turnId: "turn-1",
+              messageId: "message-1",
+              payload: { kind: "text", text: "hi" },
+            },
             { turnId: "turn-1", messageId: "message-1" },
           ),
         );

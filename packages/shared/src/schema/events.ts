@@ -191,12 +191,14 @@ const durableCandidateStreamEventOptions = [
     mediaType: z.string(),
     base64: z.string(),
   }),
-  // Retry and terminal stream error.
-  z.strictObject({ type: z.literal("retry"), ...agentRetrySchema.shape }),
-  z.strictObject({ type: z.literal("error"), errorText: z.string() }),
 ] as const;
 
-/** High-frequency deltas are live events only and are not durable candidates. */
+/**
+ * live-only 事件：高频增量与可丢的运行提示。
+ *
+ * `retry` / `error` 只影响瞬时观感；durable 事实由 `turn-end` 条目的
+ * `finishReason` / `errorText` 表达，因此不进入 `agentDurableEventSchema`。
+ */
 const liveOnlyStreamEventOptions = [
   z.strictObject({
     type: z.literal("text-delta"),
@@ -218,6 +220,10 @@ const liveOnlyStreamEventOptions = [
     toolCallId: z.string(),
     delta: z.string(),
   }),
+  /** 供应商限流/网络错误后的自动重试提示；重启后没有重放价值。 */
+  z.strictObject({ type: z.literal("retry"), ...agentRetrySchema.shape }),
+  /** 流式终态错误；Turn 的 durable 归因在 `turn-end.errorText`。 */
+  z.strictObject({ type: z.literal("error"), errorText: z.string() }),
 ] as const;
 
 const streamEventOptions = [
@@ -233,7 +239,7 @@ export const agentDurableEventSchema = z.discriminatedUnion("type", [
   ...durableCandidateStreamEventOptions,
 ]);
 
-/** High-frequency deltas: live-only, never persisted, never part of a SessionFrame. */
+/** Live-only stream events: never persisted and never part of a `SessionFrame`. */
 export const agentLiveOnlyEventSchema = z.discriminatedUnion("type", liveOnlyStreamEventOptions);
 
 /** Session journal 的持久化 envelope。 */

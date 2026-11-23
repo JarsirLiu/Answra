@@ -1,34 +1,21 @@
 import { z } from "zod";
-import {
-  agentDurableEventSchema,
-  agentLiveOnlyEventSchema,
-  type SessionEventEnvelope,
-} from "../events";
+import { agentLiveOnlyEventSchema } from "../events";
 import { type SessionItem, sessionItemSchema } from "./item";
 
-/** `SessionFrame` 的协议版本；v1 是迁移期的 `SessionEventEnvelope`。 */
+/** `SessionFrame` 的协议版本；v2 起 durable 通道只承载已结算条目。 */
 export const SESSION_FRAME_SCHEMA_VERSION = 2 as const;
 
-/**
- * 条目帧：一条已结算的会话条目。
- *
- * 与 durable 事件共用同一个 `seq` 游标；条目是持久化事实，事件从 P2b 起只走 live 通道。
- * 传输层复用 `sessionFrameSchema`，因此 remote / mobile 不需要单独适配。
- */
+/** 条目帧：一条已结算的会话条目，与 live 增量共用 `sessionId`。 */
 const sessionItemFrameEventSchema = z.strictObject({
   type: z.literal("session-item"),
   item: sessionItemSchema,
 });
 
-export const sessionFrameEventSchema = z.union([
-  agentDurableEventSchema,
-  sessionItemFrameEventSchema,
-]);
-
 /**
- * durable 通道的传输单位：会话事实 + 路由字段 + 会话内连续 `seq`。
+ * durable 通道的传输单位：一条已结算条目 + 路由字段 + 会话内连续 `seq`。
  *
- * 只承载事实，不承载派生生命周期；客户端按 `seq` 补齐，没有第二份状态副本。
+ * 只承载事实，不承载派生生命周期；Turn/用量等会话状态由快照给出，
+ * 高频增量只走 `liveFrameSchema`。客户端按 `seq` 补齐，没有第二份状态副本。
  */
 export const sessionFrameSchema = z.strictObject({
   schemaVersion: z.literal(SESSION_FRAME_SCHEMA_VERSION),
@@ -41,13 +28,13 @@ export const sessionFrameSchema = z.strictObject({
   messageId: z.string().optional(),
   stepId: z.string().optional(),
   operationId: z.string().optional(),
-  event: sessionFrameEventSchema,
+  event: sessionItemFrameEventSchema,
 });
 
 /**
- * live 通道的传输单位：只承载高频增量。
+ * live 通道的传输单位：只承载高频增量与可丢的运行提示。
  *
- * 无 `seq`、无 `eventId`，不参与重放；丢失只影响瞬时观感，完整值由 durable 事件给出。
+ * 无 `seq`、无 `eventId`，不参与重放；丢失只影响瞬时观感，完整值由条目或快照给出。
  */
 export const liveFrameSchema = z.strictObject({
   sessionId: z.string(),
@@ -58,23 +45,6 @@ export const liveFrameSchema = z.strictObject({
 
 export type SessionFrame = z.infer<typeof sessionFrameSchema>;
 export type LiveFrame = z.infer<typeof liveFrameSchema>;
-
-/** 迁移期适配：journal v1 envelope 与 v2 frame 只差版本号与 `sequence`/`seq` 命名。 */
-export function toSessionFrame(envelope: SessionEventEnvelope): SessionFrame {
-  return {
-    schemaVersion: SESSION_FRAME_SCHEMA_VERSION,
-    sessionId: envelope.sessionId,
-    seq: envelope.sequence,
-    eventId: envelope.eventId,
-    occurredAt: envelope.occurredAt,
-    producerId: envelope.producerId,
-    ...(envelope.turnId === undefined ? {} : { turnId: envelope.turnId }),
-    ...(envelope.messageId === undefined ? {} : { messageId: envelope.messageId }),
-    ...(envelope.stepId === undefined ? {} : { stepId: envelope.stepId }),
-    ...(envelope.operationId === undefined ? {} : { operationId: envelope.operationId }),
-    event: envelope.event,
-  };
-}
 
 /**
  * 条目 → durable 帧。`seq` 已在写入时分配，帧只做承载；`eventId` 由会话与 seq 派生，

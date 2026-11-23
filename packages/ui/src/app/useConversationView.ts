@@ -5,7 +5,7 @@
  * 与 `LiveFrame`（可丢增量），不再保留旧 envelope 分支。
  */
 import type { ConversationSnapshot, DesktopBridge, LiveFrame, SessionFrame } from "@answra/shared";
-import type { TurnOutcome } from "@answra/shared/schema";
+import { type TurnOutcome, turnOutcomeOfItemStatus } from "@answra/shared/schema";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   applyConversationSnapshot,
@@ -72,7 +72,7 @@ export function useConversationView(
       if (frame.seq !== current.lastSeq + 1) return false;
       const terminal = turnOutcomeOf(frame);
       if (terminal !== undefined) resolveOutcome(terminal.turnId, terminal.outcome);
-      const next = foldConversationFrame(current, frame, optionsRef.current);
+      const next = foldConversationFrame(current, frame);
       if (next === current) return true;
       viewRef.current = next;
       setView(next);
@@ -292,8 +292,9 @@ export function useConversationView(
   };
 }
 
-/** 终态事实到等待键的映射：只认 `turn-finished`。 */
+/** 终态事实到等待键的映射：唯一来源是 Turn 收口条目。 */
 function turnOutcomeOf(frame: SessionFrame): { turnId: string; outcome: TurnOutcome } | undefined {
-  if (frame.event.type !== "turn-finished" || frame.turnId === undefined) return undefined;
-  return { turnId: frame.turnId, outcome: frame.event.status };
+  const item = frame.event.item;
+  if (item.payload.kind !== "turn-end" || item.turnId === undefined) return undefined;
+  return { turnId: item.turnId, outcome: turnOutcomeOfItemStatus(item.status) };
 }

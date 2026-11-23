@@ -1,9 +1,8 @@
 /**
- * 唯一的会话视图折叠：snapshot 初始化，`SessionFrame` 折叠 durable 事实，
- * `LiveFrame` 叠加可丢的增量。
+ * 唯一的会话视图折叠：snapshot 初始化，`SessionFrame` 折叠已结算条目，
+ * `LiveFrame` 叠加可丢的增量与运行提示。
  */
 import type {
-  AgentStreamEvent,
   ContextCompactionBoundary,
   ContextCompactionStatus,
   ContextPruningStatus,
@@ -23,7 +22,6 @@ import { foldSessionItemFrame } from "./conversationItems";
 import {
   applyConversationPartEvent,
   reasoningFromConversationParts,
-  settleConversationParts,
   textFromConversationParts,
 } from "./conversationParts";
 import { projectReplyActivity } from "./replyActivity";
@@ -120,210 +118,64 @@ export function applyConversationSnapshot(
 /**
  * 折叠一条 durable 事实帧。
  *
+ * durable 通道只装已结算条目，因此这里没有第二种事件分支。
  * 按 `seq` 幂等：小于等于游标的帧直接丢弃，重复投递不会改变结果。
  * durable 缺口不在这里补；调用方发现 `frame.seq > view.lastSeq + 1` 时整段重读。
  */
 export function foldConversationFrame(
   view: ConversationView,
   frame: SessionFrame,
-  options: ConversationProjectionOptions = {},
 ): ConversationView {
   if (frame.seq <= view.lastSeq) return view;
-  const event = frame.event;
-  if (event.type === "session-item") return foldSessionItemFrame(view, frame, event.item);
-  let next: ConversationView = { ...view, lastSeq: frame.seq };
-  const messageId = frame.messageId;
-
-  switch (event.type) {
-    case "turn-queued":
-      // 排队只表达"已接纳"，不产生活动消息。
-      return next;
-    case "turn-started":
-      return {
-        ...next,
-        ...(frame.turnId === undefined ? {} : { activeTurnId: frame.turnId }),
-        ...(messageId === undefined ? {} : { activeMessageId: messageId }),
-        error: undefined,
-      };
-    case "turn-handoff": {
-      // handoff 的 messageId 是**来源**消息；接收方消息由下一次 snapshot 认领。
-      const settled =
-        messageId === undefined ? next : settleMessage(next, messageId, "complete", false);
-      return {
-        ...settled,
-        activeMessageId: undefined,
-        retry: undefined,
-        retryMessageId: undefined,
-      };
-    }
-    case "turn-finished": {
-      const target = messageId ?? next.activeMessageId;
-      const status = messageStatusForTurnStatus(event.status);
-      if (target !== undefined)
-        next = settleMessage(next, target, status, event.status === "failed");
-      const retryBelongs = target !== undefined && next.retryMessageId === target;
-      const retry = retryBelongs ? next.retry : undefined;
-      return {
-        ...next,
-        activeTurnId: next.activeTurnId === frame.turnId ? undefined : next.activeTurnId,
-        activeMessageId: next.activeMessageId === target ? undefined : next.activeMessageId,
-        retry: retryBelongs
-          ? event.status === "failed" && retry !== undefined
-            ? { ...retry, finished: true }
-            : undefined
-          : next.retry,
-        retryMessageId: retryBelongs && event.status !== "failed" ? undefined : next.retryMessageId,
-      };
-    }
-    case "context-usage-changed": {
-      if (next.contextUsage === undefined) return next;
-      return {
-        ...next,
-        contextUsage: {
-          ...next.contextUsage,
-          usedTokens: event.usedTokens,
-          source: "provider",
-          updatedAt: frame.occurredAt,
-        },
-      };
-    }
-    default:
-      break;
-  }
-
-  if (messageId === undefined) {
-    return event.type === "error" ? { ...next, error: event.errorText } : next;
-  }
-  if (!next.messages.some((message) => message.id === messageId)) {
-    return event.type === "error" ? { ...next, error: event.errorText } : next;
-  }
-  if (
-    event.type === "step-started" ||
-    event.type === "step-finished" ||
-    event.type === "part-state-changed" ||
-    event.type === "compaction-started" ||
-    event.type === "compaction-finished" ||
-    event.type === "compaction-failed" ||
-    event.type === "compaction-aborted"
-  )
-    return next;
-  if (event.type !== "start") {
-    next = updateMessage(next, messageId, (message) => ({
-      ...message,
-      waitingForStream: false,
-    }));
-    // 交接后的第一条事实就是新消息的归属：不必等 snapshot 才认领。
-    if (next.activeMessageId === undefined) next = { ...next, activeMessageId: messageId };
-  }
-  return applyStreamEvent(next, messageId, event, options);
+  return foldSessionItemFrame(view, frame, frame.event.item);
 }
 
 /**
- * 叠加一条 live 增量帧。
+ * 叠加一条 live 帧。
  *
- * 允许丢失、允许乱序：只影响瞬时观感，durable 完整值到达后会被覆盖。
+ * 允许丢失、允许乱序：只影响瞬时观感，条目或快照到达后会被覆盖。
+ * `retry` / `error` 是可丢的运行提示，正文增量只改变当前消息的 parts。
  */
 export function overlayLiveFrame(
   view: ConversationView,
   frame: LiveFrame,
   options: ConversationProjectionOptions = {},
 ): ConversationView {
+  const event = frame.event;
+  if (event.type === "retry") {
+    return { ...view, retry: event, retryMessageId: frame.messageId };
+  }
+  if (event.type === "error") {
+    const next = updateMessage(view, frame.messageId, (item) => ({
+      ...item,
+      thinking: false,
+      waitingForStream: false,
+    }));
+    return { ...next, error: event.errorText };
+  }
   const message = view.messages.find((item) => item.id === frame.messageId);
   if (!message) return view;
-  const parts = applyConversationPartEvent(message.parts ?? [], frame.event);
+  const parts = applyConversationPartEvent(message.parts ?? [], event);
   if (!parts) return view;
   const reasoning = reasoningFromConversationParts(parts);
-  const next = updateMessage(view, frame.messageId, (item) => ({
-    ...item,
-    parts,
-    text: textFromConversationParts(parts),
-    thinking: frame.event.type === "reasoning-delta",
-    waitingForStream: false,
-    ...(reasoning ? { reasoning } : {}),
-  }));
+  const next = {
+    ...updateMessage(view, frame.messageId, (item) => ({
+      ...item,
+      parts,
+      text: textFromConversationParts(parts),
+      thinking: event.type === "reasoning-delta",
+      waitingForStream: false,
+      ...(reasoning ? { reasoning } : {}),
+    })),
+    // 模型重新产出增量即代表上一轮的错误提示已过期。
+    error: undefined,
+  };
   if (!options.trackActivities) return next;
   const activities = projectReplyActivity([...(message.activities ?? [])], {
     messageId: frame.messageId,
-    event: frame.event,
+    event,
   });
   return updateMessage(next, frame.messageId, (item) => ({ ...item, activities }));
-}
-
-function messageStatusForTurnStatus(
-  status: Extract<SessionFrame["event"], { type: "turn-finished" }>["status"],
-): ConversationMessage["status"] {
-  switch (status) {
-    case "completed":
-      return "complete";
-    case "failed":
-      return "failed";
-    case "aborted":
-      return "interrupted";
-  }
-}
-
-function settleMessage(
-  view: ConversationView,
-  messageId: string,
-  status: ConversationMessage["status"],
-  failed: boolean,
-): ConversationView {
-  return updateMessage(view, messageId, (message) => ({
-    ...message,
-    thinking: false,
-    waitingForStream: false,
-    status,
-    parts: message.parts
-      ? settleConversationParts(message.parts, failed ? "failed" : "interrupted")
-      : message.parts,
-  }));
-}
-
-function applyStreamEvent(
-  view: ConversationView,
-  messageId: string,
-  event: AgentStreamEvent,
-  options: ConversationProjectionOptions,
-): ConversationView {
-  let next = view;
-  switch (event.type) {
-    case "retry":
-      next = { ...next, retry: event, retryMessageId: messageId };
-      break;
-    case "start":
-      next = {
-        ...setThinking(next, messageId, false),
-        retry: undefined,
-        retryMessageId: undefined,
-        error: undefined,
-      };
-      break;
-    case "error":
-      next = { ...setThinking(next, messageId, false), error: event.errorText };
-      break;
-    default:
-      next = updateMessage(next, messageId, (message) => {
-        const parts = applyConversationPartEvent(message.parts ?? [], event);
-        if (!parts) return { ...message, thinking: false };
-        const reasoning = reasoningFromConversationParts(parts);
-        return {
-          ...message,
-          parts,
-          text: textFromConversationParts(parts),
-          thinking: event.type === "reasoning-start" || event.type === "reasoning-delta",
-          ...(reasoning ? { reasoning } : {}),
-        };
-      });
-  }
-  if (options.trackActivities) {
-    const message = next.messages.find((item) => item.id === messageId);
-    const activities = projectReplyActivity([...(message?.activities ?? [])], {
-      messageId,
-      event,
-    });
-    next = updateMessage(next, messageId, (item) => ({ ...item, activities }));
-  }
-  return next;
 }
 
 function updateMessage(
@@ -335,10 +187,6 @@ function updateMessage(
     ...view,
     messages: view.messages.map((message) => (message.id === id ? update(message) : message)),
   };
-}
-
-function setThinking(view: ConversationView, id: string, thinking: boolean): ConversationView {
-  return updateMessage(view, id, (message) => ({ ...message, thinking }));
 }
 
 function toViewMessage(

@@ -18,7 +18,18 @@ const sessionFrame = {
   producerId: "host-1",
   turnId: "turn-1",
   messageId: "message-1",
-  event: { type: "text-start", partId: "text-1" },
+  event: {
+    type: "session-item",
+    item: {
+      seq: 1,
+      itemId: "text-1",
+      status: "complete",
+      createdAt: "2026-11-13T00:00:00.000Z",
+      turnId: "turn-1",
+      messageId: "message-1",
+      payload: { kind: "text", text: "hello" },
+    },
+  },
 } as const;
 
 const liveFrame = {

@@ -122,6 +122,8 @@ function settleTurn(view: ConversationView, item: SessionItem): ConversationView
     return {
       ...view,
       activeTurnId: view.activeTurnId === turnId ? undefined : view.activeTurnId,
+      // 即使找不到消息，Turn 归因也必须以本条收口为准，否则上一轮错误会一直留着。
+      error: item.payload.kind === "turn-end" ? item.payload.errorText : view.error,
     };
   }
   const messages = view.messages.map((message) =>
@@ -129,6 +131,8 @@ function settleTurn(view: ConversationView, item: SessionItem): ConversationView
       ? {
           ...message,
           status: item.status,
+          thinking: false,
+          waitingForStream: false,
           parts: settleUnresolvedParts(message.parts, item.status),
         }
       : message,
@@ -139,6 +143,8 @@ function settleTurn(view: ConversationView, item: SessionItem): ConversationView
     messages,
     activeTurnId: view.activeTurnId === turnId ? undefined : view.activeTurnId,
     activeMessageId: view.activeMessageId === target.id ? undefined : view.activeMessageId,
+    // Turn 归因文本是失败原因的 durable 来源；成功或中断不再保留旧错误。
+    error: item.payload.kind === "turn-end" ? item.payload.errorText : undefined,
     retry:
       retryBelongs && item.status === "failed" && view.retry !== undefined
         ? { ...view.retry, finished: true }

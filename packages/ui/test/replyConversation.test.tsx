@@ -1,9 +1,9 @@
 import type { ConversationMessage, DesktopBridge } from "@answra/shared";
 import type {
-  AgentDurableEvent,
   AgentLiveOnlyEvent,
   LiveFrame,
   SessionFrame,
+  SessionItem,
 } from "@answra/shared/schema";
 import { SESSION_FRAME_SCHEMA_VERSION } from "@answra/shared/schema";
 import { act, render, screen, waitFor } from "@testing-library/react";
@@ -28,19 +28,19 @@ interface FakeStore {
 function frame(
   conversationId: string,
   seq: number,
-  event: AgentDurableEvent,
+  item: Omit<SessionItem, "seq">,
   ids: { turnId?: string; messageId?: string } = {},
 ): SessionFrame {
   return {
     schemaVersion: SESSION_FRAME_SCHEMA_VERSION,
     sessionId: conversationId,
     seq,
-    eventId: `event-${seq}`,
+    eventId: `${conversationId}:${seq}`,
     occurredAt: "2026-11-07T00:00:00.000Z",
     producerId: "test",
     ...(ids.turnId === undefined ? {} : { turnId: ids.turnId }),
     ...(ids.messageId === undefined ? {} : { messageId: ids.messageId }),
-    event,
+    event: { type: "session-item", item: { ...item, seq } },
   };
 }
 
@@ -56,15 +56,15 @@ function createFakeStore(): FakeStore {
     }
     return session;
   };
-  const publishFrame = (id: string, event: AgentDurableEvent): void => {
+  const publishFrame = (id: string, item: Omit<SessionItem, "seq">): void => {
     const session = sessionOf(id);
-    const item = frame(id, session.lastSeq + 1, event, {
+    const frameEvent = frame(id, session.lastSeq + 1, item, {
       turnId: "turn-1",
       messageId: "run-1",
     });
-    session.lastSeq = item.seq;
-    session.frames.push(item);
-    for (const listener of frameListeners) listener(item);
+    session.lastSeq = frameEvent.seq;
+    session.frames.push(frameEvent);
+    for (const listener of frameListeners) listener(frameEvent);
   };
   const publishLive = (id: string, event: AgentLiveOnlyEvent): void => {
     const item: LiveFrame = { sessionId: id, messageId: "run-1", event };
@@ -109,7 +109,13 @@ function createFakeStore(): FakeStore {
       const session = sessionOf(id);
       const assistant = session.messages.find((message) => message.id === "run-1");
       if (assistant) assistant.status = "complete";
-      publishFrame(id, { type: "turn-finished", status: "completed" });
+      publishFrame(id, {
+        itemId: "turn-1:end",
+        status: "complete",
+        createdAt: "2026-11-07T00:00:01.000Z",
+        turnId: "turn-1",
+        payload: { kind: "turn-end", stepCount: 1, toolCalls: 0 },
+      });
     },
     clear: (id) => {
       // 清空同时重置 transcript 与 journal 游标：下一次订阅看到的是真正的空会话。

@@ -1,8 +1,39 @@
 import type { ConversationSnapshot, SessionFrame } from "@answra/shared";
+import type { SessionItem } from "@answra/shared/schema";
 import { describe, expect, it, vi } from "vitest";
 import { TuiViewStore } from "../../../src/tui/app/viewStore";
 import { DEFAULT_NOTIFICATION_TIMEOUT_MS } from "../../../src/tui/notices/notification";
 import { liveFrame, sessionFrame } from "../../frameFixtures";
+
+const AT = "2026-11-22T00:00:00.000Z";
+
+function toolCallItem(toolCallId = "tool-1"): Omit<SessionItem, "seq"> {
+  return {
+    itemId: toolCallId,
+    status: "complete",
+    createdAt: AT,
+    turnId: "turn-1",
+    messageId: "message-1",
+    payload: { kind: "tool-call", toolCallId, toolName: "workspace.read", input: { path: "a.ts" } },
+  };
+}
+
+function turnEndItem(status: "complete" | "interrupted" = "complete"): Omit<SessionItem, "seq"> {
+  return {
+    itemId: "turn-1:end",
+    status,
+    createdAt: AT,
+    turnId: "turn-1",
+    payload: {
+      kind: "turn-end",
+      stepCount: 1,
+      toolCalls: 0,
+      ...(status === "interrupted"
+        ? { interruption: { reason: "cancelled" as const, at: AT } }
+        : {}),
+    },
+  };
+}
 
 const snapshot: ConversationSnapshot = {
   conversationId: "conversation-1",
@@ -45,13 +76,7 @@ describe("TuiViewStore", () => {
   it("ignores a stale snapshot and a replayed durable frame", () => {
     const store = new TuiViewStore();
     store.initialize(snapshot);
-    store.applyFrame(
-      sessionFrame(
-        1,
-        { type: "turn-started", agentId: "coding.engineer" },
-        { turnId: "turn-1", messageId: "message-1" },
-      ),
-    );
+    store.applyFrame(sessionFrame(1, toolCallItem(), { turnId: "turn-1", messageId: "message-1" }));
 
     const [firstMessage] = snapshot.messages;
     if (firstMessage === undefined) throw new Error("fixture must contain one message");
@@ -60,7 +85,7 @@ describe("TuiViewStore", () => {
       lastSeq: 0,
       messages: [{ ...firstMessage, text: "stale" }],
     });
-    store.applyFrame(sessionFrame(1, { type: "context-usage-changed", usedTokens: 1 }));
+    store.applyFrame(sessionFrame(1, toolCallItem(), { turnId: "turn-1", messageId: "message-1" }));
 
     expect(store.getSnapshot().view.lastSeq).toBe(1);
     expect(store.getSnapshot().view.messages[0]?.text).toBe("");
@@ -70,13 +95,7 @@ describe("TuiViewStore", () => {
   it("flushes pending live increments before rejecting a stale snapshot", () => {
     const store = new TuiViewStore();
     store.initialize(snapshot);
-    store.applyFrame(
-      sessionFrame(
-        1,
-        { type: "turn-started", agentId: "coding.engineer" },
-        { turnId: "turn-1", messageId: "message-1" },
-      ),
-    );
+    store.applyFrame(sessionFrame(1, toolCallItem(), { turnId: "turn-1", messageId: "message-1" }));
     store.applyLiveFrame(
       liveFrame({ type: "text-delta", partId: "text-1", delta: "new" }, { messageId: "message-1" }),
     );
@@ -88,7 +107,7 @@ describe("TuiViewStore", () => {
     store.dispose();
   });
 
-  it("updates context usage from a durable frame before the turn finishes", () => {
+  it("keeps snapshot context usage because items carry no live usage", () => {
     const store = new TuiViewStore();
     store.initialize({
       ...snapshot,
@@ -104,11 +123,11 @@ describe("TuiViewStore", () => {
       },
     });
 
-    store.applyFrame(sessionFrame(1, { type: "context-usage-changed", usedTokens: 2_700 }));
+    store.applyFrame(sessionFrame(1, toolCallItem(), { turnId: "turn-1", messageId: "message-1" }));
 
     expect(store.getSnapshot().view.contextUsage).toMatchObject({
-      usedTokens: 2_700,
-      source: "provider",
+      usedTokens: 2_400,
+      source: "estimate",
       inputLimit: 216_000,
     });
     expect(store.getSnapshot().view.lastSeq).toBe(1);
@@ -154,19 +173,21 @@ describe("TuiViewStore", () => {
       frames.filter((frame) => frame.seq > afterSeq),
     );
     const store = new TuiViewStore({ readFrames });
-    store.initialize(snapshot);
+    store.initialize({
+      ...snapshot,
+      activeTurnId: "turn-1",
+      activeMessageId: "message-1",
+    });
     await vi.waitFor(() => expect(readFrames).toHaveBeenCalledWith("conversation-1", 0));
 
-    const started = sessionFrame(
-      1,
-      { type: "turn-started", agentId: "coding.engineer" },
-      { turnId: "turn-1", messageId: "message-1" },
-    );
-    const finished = sessionFrame(
-      2,
-      { type: "turn-finished", status: "completed" },
-      { turnId: "turn-1", messageId: "message-1" },
-    );
+    const started = sessionFrame(1, toolCallItem(), {
+      turnId: "turn-1",
+      messageId: "message-1",
+    });
+    const finished = sessionFrame(2, turnEndItem(), {
+      turnId: "turn-1",
+      messageId: "message-1",
+    });
     frames.push(started, finished);
     store.applyFrame(finished);
 

@@ -92,6 +92,8 @@ describe("event schema", () => {
       "reasoning-delta",
       "tool-input-delta",
       "tool-output-delta",
+      "retry",
+      "error",
     ]);
     for (const event of events) {
       expect(agentStreamEventSchema.parse(event)).toEqual(event);
@@ -144,8 +146,8 @@ describe("event schema", () => {
       expect(agentDurableEventSchema.parse(event)).toEqual(event);
     }
 
-    expect(agentDurableEventSchema.options).toHaveLength(36);
-    expect(agentLiveOnlyEventSchema.options).toHaveLength(4);
+    expect(agentDurableEventSchema.options).toHaveLength(34);
+    expect(agentLiveOnlyEventSchema.options).toHaveLength(6);
   });
 
   it("rejects provider-only fields that are not part of the app contract", () => {

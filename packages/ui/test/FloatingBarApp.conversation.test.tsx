@@ -1,6 +1,6 @@
 import type { ConversationSnapshot } from "@answra/shared";
 import { ActiveChatConversationId, AGENT_SERVICE_DISCONNECTED_CODE } from "@answra/shared";
-import type { AgentDurableEvent, SessionFrame } from "@answra/shared/schema";
+import type { SessionFrame, SessionItem } from "@answra/shared/schema";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FloatingBarApp } from "../src/app/FloatingBarApp";
@@ -10,7 +10,7 @@ import {
   publishLiveFrame,
   publishSessionFrame,
   resetFloatingBarTestState,
-  testFrame,
+  testItemFrame,
   testLiveFrame,
 } from "./support/floatingBarHarness";
 
@@ -126,8 +126,8 @@ describe("floating bar conversation", () => {
     expect(input).toBeDisabled();
     await waitFor(() => expect(bridge.sendConversationMessage).toHaveBeenCalled());
 
-    const publishEarlyFrame = (seq: number, event: AgentDurableEvent) => {
-      const frame = testFrame(seq, event, {
+    const publishEarlyFrame = (seq: number, item: Omit<SessionItem, "seq">) => {
+      const frame = testItemFrame(seq, item, {
         sessionId: ActiveChatConversationId,
         turnId: "turn-1",
         messageId: "run-delayed",
@@ -135,17 +135,30 @@ describe("floating bar conversation", () => {
       earlyFrames.push(frame);
       act(() => publishSessionFrame(frame));
     };
-    publishEarlyFrame(1, { type: "turn-started", agentId: "conversation.general" });
+    publishEarlyFrame(1, {
+      itemId: "text-1",
+      status: "complete",
+      createdAt: "2026-11-07T00:00:00.000Z",
+      turnId: "turn-1",
+      messageId: "run-delayed",
+      payload: { kind: "text", text: "模型已经开始回复" },
+    });
     act(() =>
       publishLiveFrame(
         testLiveFrame(
-          { type: "text-delta", partId: "text-1", delta: "模型已经开始回复" },
+          { type: "text-delta", partId: "text-2", delta: "模型已经开始回复" },
           "run-delayed",
           ActiveChatConversationId,
         ),
       ),
     );
-    publishEarlyFrame(2, { type: "turn-finished", status: "completed" });
+    publishEarlyFrame(2, {
+      itemId: "turn-1:end",
+      status: "complete",
+      createdAt: "2026-11-07T00:00:01.000Z",
+      turnId: "turn-1",
+      payload: { kind: "turn-end", stepCount: 1, toolCalls: 0 },
+    });
 
     await act(async () => {
       acceptSend({
@@ -239,11 +252,11 @@ describe("floating bar conversation", () => {
 
     expect(await screen.findByRole("status", { name: "回复运行中" })).toBeInTheDocument();
     act(() =>
-      publishSessionFrame(
-        testFrame(
-          2,
-          { type: "reasoning-start", partId: "reasoning-1" },
-          { sessionId: ActiveChatConversationId, turnId: "turn-1", messageId: "run-accepted" },
+      publishLiveFrame(
+        testLiveFrame(
+          { type: "reasoning-delta", partId: "reasoning-1", delta: "先分析" },
+          "run-accepted",
+          ActiveChatConversationId,
         ),
       ),
     );
@@ -252,9 +265,15 @@ describe("floating bar conversation", () => {
 
     act(() =>
       publishSessionFrame(
-        testFrame(
-          3,
-          { type: "turn-finished", status: "completed" },
+        testItemFrame(
+          2,
+          {
+            itemId: "turn-1:end",
+            status: "complete",
+            createdAt: "2026-11-07T00:00:01.000Z",
+            turnId: "turn-1",
+            payload: { kind: "turn-end", stepCount: 1, toolCalls: 0 },
+          },
           { sessionId: ActiveChatConversationId, turnId: "turn-1", messageId: "run-accepted" },
         ),
       ),
