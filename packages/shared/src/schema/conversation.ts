@@ -10,6 +10,11 @@ import {
 } from "./status";
 
 /** Conversation transcript messages and snapshots; event facts live in events.ts. */
+/** 用户消息内联的图片；适配器与条目共用同一形状，外置需要另立契约。 */
+export const conversationImageSchema = z.strictObject({
+  name: z.string(),
+  dataUrl: z.string(),
+});
 const textPartSchema = z.strictObject({
   id: z.string(),
   kind: z.literal("text"),
@@ -52,7 +57,7 @@ export const conversationMessageSchema = z.strictObject({
   /** Addressee of the message; absent means user-visible (legacy transcript shape). */
   audience: messageAudienceSchema.optional(),
   text: z.string(),
-  images: z.array(z.strictObject({ name: z.string(), dataUrl: z.string() })),
+  images: z.array(conversationImageSchema),
   status: agentMessageStateSchema,
   parts: z.array(conversationMessagePartSchema).optional(),
   reasoning: z.string().optional(),

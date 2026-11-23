@@ -10,6 +10,8 @@ remain in `src/channels/`.
 | `events.ts` | The Agent event catalog, durable-fact and live-only subsets, and `SessionEventEnvelope` (journal v1) | State transitions, durable adapter, UI projection |
 | `status.ts` | Turn/step/compaction status vocabulary, retry metadata and rebuildable snapshots | Event payloads, retry scheduling policy |
 | `session/frame.ts` | `SessionFrame` (durable transport with `seq`) and `LiveFrame` (live-only transport without a cursor), plus the v1 → v2 adapter | State transitions, journal persistence, subscription |
+| `session/item.ts` | The append-only conversation item contract: kinds, terminal statuses, per-kind payloads and derived item ids | Write timing, `seq` allocation, migration, folding |
+| `session/fold.ts` | The pure fold from `SessionItem[]` to `ConversationMessage[]`, shared by the agent snapshot loader and the desktop/CLI client | IO, Turn/Step state machine, domain policy |
 | `session/summary.ts` | Session listing summary and page DTOs | Event catalog, persistence |
 | `conversation.ts` | Conversation message and snapshot DTOs | Event catalog, event log, execution state machine, IPC channel names, renderer projection |
 | `toolDisplay.ts` | Renderer-safe structured tool display payloads, currently `EditDiffDisplay` | Event payloads, tool execution, file reading, renderer projection |

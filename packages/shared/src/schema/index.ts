@@ -16,6 +16,7 @@ export {
   type ConversationMessage,
   type ConversationMessagePart,
   type ConversationSnapshot,
+  conversationImageSchema,
   conversationMessagePartSchema,
   conversationMessageSchema,
   conversationSnapshotSchema,
