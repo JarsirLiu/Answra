@@ -1,29 +1,9 @@
 import type { ConversationMessage, ConversationSnapshot } from "@answra/shared";
-import type { AgentEvent, AgentEventEnvelope } from "@answra/shared/schema";
+import type { AgentStreamEvent } from "@answra/shared/schema";
 import { describe, expect, it } from "vitest";
 import { buildModelMessages } from "../../../src/conversation/turn/modelMessages";
 import { MemoryConversationStore } from "../../../src/core/transcript/memoryStore";
 import type { ConversationStore } from "../../../src/core/transcript/store";
-
-function eventEnvelope(
-  conversationId: string,
-  runId: string,
-  aggregateRevision: number,
-  event: AgentEvent,
-): AgentEventEnvelope {
-  return {
-    schemaVersion: 1,
-    eventId: `event-${aggregateRevision}`,
-    conversationId,
-    runId,
-    attemptId: `${runId}:attempt:1`,
-    sequence: aggregateRevision,
-    aggregateRevision,
-    producerId: "test",
-    occurredAt: "2026-11-10T00:00:00.000Z",
-    event,
-  };
-}
 
 function request(text = "") {
   return { text, images: [] };
@@ -32,7 +12,6 @@ function request(text = "") {
 function legacyStore(messages: ConversationMessage[]): ConversationStore {
   const snapshot: ConversationSnapshot = {
     conversationId: "legacy",
-    eventRevision: 0,
     lastSeq: 0,
     messages,
   };
@@ -46,18 +25,21 @@ describe("conversation model messages", () => {
   it("replays assistant tool calls and results in model order", async () => {
     const store = new MemoryConversationStore();
     await store.create("tools");
-    await store.beginRun("tools", "run-1", {
-      id: "user-1",
-      role: "user",
-      text: "读取文件",
-      images: [],
-      status: "complete",
+    await store.beginSessionTurn("tools", {
+      turnId: "turn-1",
+      messageId: "run-1",
+      authorAgentId: "general",
+      userMessage: {
+        id: "user-1",
+        role: "user",
+        text: "读取文件",
+        images: [],
+        status: "complete",
+      },
     });
 
-    let revision = 0;
-    const apply = async (event: AgentEvent): Promise<void> => {
-      revision += 1;
-      await store.applyAgentEvent("tools", eventEnvelope("tools", "run-1", revision, event));
+    const apply = async (event: AgentStreamEvent): Promise<void> => {
+      await store.applySessionStreamEvent("tools", "run-1", event);
     };
 
     await apply({ type: "text-start", partId: "text-1" });
@@ -69,24 +51,12 @@ describe("conversation model messages", () => {
       toolName: "Read",
       input: { file_path: "a.ts" },
     });
-    await apply({
-      type: "tool-execution-started",
-      toolCallId: "tool-1",
-      toolName: "Read",
-      input: { file_path: "a.ts" },
-    });
-    await apply({
-      type: "tool-execution-finished",
-      toolCallId: "tool-1",
-      toolName: "Read",
-      input: { file_path: "a.ts" },
-      result: { success: true, output: "file-content" },
-      durationMs: 1,
-    });
+    await apply({ type: "tool-result", toolCallId: "tool-1", output: "file-content" });
     await apply({ type: "text-start", partId: "text-2" });
     await apply({ type: "text-delta", partId: "text-2", delta: "读取完成。" });
     await apply({ type: "text-end", partId: "text-2" });
-    await apply({ type: "run-state-changed", state: "completed", attempt: 1 });
+    await store.finishSessionAssistant("tools", "run-1", "completed");
+    await store.finishSessionTurn("tools", "turn-1");
 
     const messages = await buildModelMessages({
       conversationId: "tools",

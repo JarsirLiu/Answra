@@ -18,13 +18,12 @@ describe("coding Agent", () => {
       activeAgentId: CODING_AGENT_ID,
       participantAgentIds: [CODING_AGENT_ID],
     });
-    await store.beginRun(
-      conversationId,
-      runId,
-      createUserMessage("coding-user-1", request),
-      0,
-      CODING_AGENT_ID,
-    );
+    await store.beginSessionTurn(conversationId, {
+      turnId: runId,
+      messageId: runId,
+      userMessage: createUserMessage("coding-user-1", request),
+      authorAgentId: CODING_AGENT_ID,
+    });
 
     const modelRequest = await definition.prepare(
       {

@@ -553,9 +553,9 @@ describe("ContextPreparation", () => {
       usage: { inputTokens: 999, outputTokens: 1 },
     });
     await preparationInstance.recordSessionEvent("conversation-1", {
-      type: "run-state-changed",
-      state: "completed",
-      attempt: 1,
+      type: "turn-finished",
+      status: "completed",
+      reason: "completed",
     });
 
     expect((await store.loadContextState("conversation-1"))?.usageAnchor).toEqual(previousAnchor);

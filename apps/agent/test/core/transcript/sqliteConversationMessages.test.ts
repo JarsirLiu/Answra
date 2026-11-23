@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { AgentEvent, AgentEventEnvelope } from "@answra/shared/schema";
+import type { AgentStreamEvent } from "@answra/shared/schema";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ConversationSessionConflictError,
@@ -31,24 +31,33 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-function eventEnvelope(
+async function startAssistantMessage(
+  store: SqliteConversationStore,
   conversationId: string,
-  runId: string,
-  aggregateRevision: number,
-  event: AgentEvent,
-): AgentEventEnvelope {
-  return {
-    schemaVersion: 1,
-    eventId: `event-${aggregateRevision}`,
-    conversationId,
-    runId,
-    attemptId: `${runId}:attempt:1`,
-    sequence: aggregateRevision,
-    aggregateRevision,
-    producerId: "test",
-    occurredAt: "2026-11-18T00:00:00.000Z",
-    event,
-  };
+  messageId: string,
+  userMessageId: string,
+): Promise<void> {
+  await store.beginSessionTurn(conversationId, {
+    turnId: `turn-${messageId}`,
+    messageId,
+    authorAgentId: "general",
+    userMessage: {
+      id: userMessageId,
+      role: "user",
+      text: "question",
+      images: [],
+      status: "complete",
+    },
+  });
+}
+
+function writeStreamEvent(
+  store: SqliteConversationStore,
+  conversationId: string,
+  messageId: string,
+  event: AgentStreamEvent,
+): Promise<void> {
+  return store.applySessionStreamEvent(conversationId, messageId, event);
 }
 
 function readRows(root: string): Array<{
@@ -108,13 +117,7 @@ describe("SQLite conversation message rows", () => {
       images: [],
       status: "complete",
     });
-    await store.beginRun("coding-1", "run-1", {
-      id: "user-2",
-      role: "user",
-      text: "second",
-      images: [],
-      status: "complete",
-    });
+    await startAssistantMessage(store, "coding-1", "run-1", "user-2");
 
     expect(readRows(root).map((row) => [row.message_id, row.seq])).toEqual([
       ["user-1", 1],
@@ -122,14 +125,8 @@ describe("SQLite conversation message rows", () => {
       ["run-1", 3],
     ]);
 
-    await store.applyAgentEvent(
-      "coding-1",
-      eventEnvelope("coding-1", "run-1", 3, {
-        type: "run-state-changed",
-        state: "completed",
-        attempt: 1,
-      }),
-    );
+    await store.finishSessionAssistant("coding-1", "run-1", "completed");
+    await store.finishSessionTurn("coding-1", "turn-run-1");
     expect(readRows(root).map((row) => [row.message_id, row.status])).toEqual([
       ["user-1", "complete"],
       ["user-2", "complete"],
@@ -228,13 +225,7 @@ describe("SQLite conversation message rows", () => {
     db.close();
 
     await expect(
-      store.beginRun("coding-1", "run-1", {
-        id: "user-1",
-        role: "user",
-        text: "failed",
-        images: [],
-        status: "complete",
-      }),
+      startAssistantMessage(store, "coding-1", "run-1", "user-1"),
     ).rejects.toThrow();
 
     const repair = new DatabaseSync(path.join(root, "sessions.sqlite"));
@@ -263,30 +254,28 @@ describe("SQLite conversation message rows", () => {
     const root = await createRoot();
     const store = storeFor(root);
     await store.create("coding-1", undefined, { scope: "coding" });
-    await store.beginRun("coding-1", "run-1", {
-      id: "user-1",
-      role: "user",
-      text: "question",
-      images: [],
-      status: "complete",
-    });
+    await startAssistantMessage(store, "coding-1", "run-1", "user-1");
     const before = readSessionRevision(root);
 
-    await store.applyAgentEvent(
+    await writeStreamEvent(
+      store,
       "coding-1",
-      eventEnvelope("coding-1", "run-1", 1, {
+      "run-1",
+      {
         type: "text-delta",
         partId: "text-1",
         delta: "partial",
-      }),
+      },
     );
-    await store.applyAgentEvent(
+    await writeStreamEvent(
+      store,
       "coding-1",
-      eventEnvelope("coding-1", "run-1", 2, {
+      "run-1",
+      {
         type: "reasoning-delta",
         partId: "reason-1",
         delta: "thinking",
-      }),
+      },
     );
 
     expect(vi.getTimerCount()).toBe(1);
@@ -296,24 +285,20 @@ describe("SQLite conversation message rows", () => {
     expect(readDraftCount(root)).toBe(1);
     expect(readSessionRevision(root)).toEqual(before);
 
-    await store.applyAgentEvent(
+    await writeStreamEvent(
+      store,
       "coding-1",
-      eventEnvelope("coding-1", "run-1", 3, {
+      "run-1",
+      {
         type: "text-end",
         partId: "text-1",
-      }),
+      },
     );
     await flushMicrotasks();
     expect(readDraftCount(root)).toBe(1);
 
-    await store.applyAgentEvent(
-      "coding-1",
-      eventEnvelope("coding-1", "run-1", 4, {
-        type: "run-state-changed",
-        state: "completed",
-        attempt: 1,
-      }),
-    );
+    await store.finishSessionAssistant("coding-1", "run-1", "completed");
+    await store.finishSessionTurn("coding-1", "turn-run-1");
     expect(readDraftCount(root)).toBe(0);
     expect(readRows(root).find((row) => row.message_id === "run-1")?.status).toBe("complete");
   });
@@ -322,21 +307,17 @@ describe("SQLite conversation message rows", () => {
     const root = await createRoot();
     const store = storeFor(root);
     await store.create("coding-1", undefined, { scope: "coding" });
-    await store.beginRun("coding-1", "run-1", {
-      id: "user-1",
-      role: "user",
-      text: "question",
-      images: [],
-      status: "complete",
-    });
+    await startAssistantMessage(store, "coding-1", "run-1", "user-1");
 
-    await store.applyAgentEvent(
+    await writeStreamEvent(
+      store,
       "coding-1",
-      eventEnvelope("coding-1", "run-1", 1, {
+      "run-1",
+      {
         type: "text-delta",
         partId: "text-1",
         delta: "x".repeat(2_048),
-      }),
+      },
     );
     await flushMicrotasks();
 
@@ -347,20 +328,16 @@ describe("SQLite conversation message rows", () => {
     const root = await createRoot();
     const store = storeFor(root);
     await store.create("coding-1", undefined, { scope: "coding" });
-    await store.beginRun("coding-1", "run-1", {
-      id: "user-1",
-      role: "user",
-      text: "question",
-      images: [],
-      status: "complete",
-    });
-    await store.applyAgentEvent(
+    await startAssistantMessage(store, "coding-1", "run-1", "user-1");
+    await writeStreamEvent(
+      store,
       "coding-1",
-      eventEnvelope("coding-1", "run-1", 1, {
+      "run-1",
+      {
         type: "text-delta",
         partId: "text-1",
         delta: "partial answer",
-      }),
+      },
     );
     await store.close();
     expect(readDraftCount(root)).toBe(1);
@@ -378,24 +355,20 @@ describe("SQLite conversation message rows", () => {
     expect(readSessionRevision(root).revision).toBe(1);
   });
 
-  it("ignores and deletes a draft based on an older revision", async () => {
+  it("ignores and deletes a draft when a newer message row wins", async () => {
     const root = await createRoot();
     const store = storeFor(root);
     await store.create("coding-1", undefined, { scope: "coding" });
-    await store.beginRun("coding-1", "run-1", {
-      id: "user-1",
-      role: "user",
-      text: "question",
-      images: [],
-      status: "complete",
-    });
-    await store.applyAgentEvent(
+    await startAssistantMessage(store, "coding-1", "run-1", "user-1");
+    await writeStreamEvent(
+      store,
       "coding-1",
-      eventEnvelope("coding-1", "run-1", 1, {
+      "run-1",
+      {
         type: "text-delta",
         partId: "text-1",
         delta: "stale draft",
-      }),
+      },
     );
     await store.close();
     expect(readDraftCount(root)).toBe(1);
@@ -430,13 +403,7 @@ describe("SQLite conversation message rows", () => {
     const root = await createRoot();
     const store = storeFor(root);
     await store.create("coding-1", undefined, { scope: "coding" });
-    await store.beginRun("coding-1", "run-1", {
-      id: "user-1",
-      role: "user",
-      text: "question",
-      images: [],
-      status: "complete",
-    });
+    await startAssistantMessage(store, "coding-1", "run-1", "user-1");
 
     const db = new DatabaseSync(path.join(root, "sessions.sqlite"));
     db.prepare("UPDATE sessions SET revision = revision + 1 WHERE conversation_id = ?").run(
@@ -444,13 +411,15 @@ describe("SQLite conversation message rows", () => {
     );
     db.close();
 
-    await store.applyAgentEvent(
+    await writeStreamEvent(
+      store,
       "coding-1",
-      eventEnvelope("coding-1", "run-1", 1, {
+      "run-1",
+      {
         type: "text-delta",
         partId: "text-1",
         delta: "x".repeat(2_048),
-      }),
+      },
     );
     await flushMicrotasks();
 
@@ -536,13 +505,7 @@ describe("SQLite conversation message rows", () => {
     const root = await createRoot();
     const store = storeFor(root);
     await store.create("coding-1", undefined, { scope: "coding" });
-    await store.beginRun("coding-1", "run-1", {
-      id: "user-1",
-      role: "user",
-      text: "question",
-      images: [],
-      status: "complete",
-    });
+    await startAssistantMessage(store, "coding-1", "run-1", "user-1");
     await store.close();
 
     const db = new DatabaseSync(path.join(root, "sessions.sqlite"));
@@ -561,20 +524,16 @@ describe("SQLite conversation message rows", () => {
     const root = await createRoot();
     const store = storeFor(root);
     await store.create("coding-1", undefined, { scope: "coding" });
-    await store.beginRun("coding-1", "run-1", {
-      id: "user-1",
-      role: "user",
-      text: "question",
-      images: [],
-      status: "complete",
-    });
-    await store.applyAgentEvent(
+    await startAssistantMessage(store, "coding-1", "run-1", "user-1");
+    await writeStreamEvent(
+      store,
       "coding-1",
-      eventEnvelope("coding-1", "run-1", 1, {
+      "run-1",
+      {
         type: "text-delta",
         partId: "text-1",
         delta: "live",
-      }),
+      },
     );
     const live = await store.listMessages("coding-1", { limit: 1 });
     expect(live.items[0]).toMatchObject({ id: "run-1", text: "live", status: "streaming" });
@@ -600,24 +559,20 @@ describe("SQLite conversation message rows", () => {
       images: [],
       status: "complete",
     });
-    await loser.beginRun("coding-1", "run-loser", {
-      id: "user-loser",
-      role: "user",
-      text: "local work",
-      images: [],
-      status: "complete",
-    });
+    await startAssistantMessage(loser, "coding-1", "run-loser", "user-loser");
 
     const winner = storeFor(root);
     await winner.load("coding-1");
 
-    await loser.applyAgentEvent(
+    await writeStreamEvent(
+      loser,
       "coding-1",
-      eventEnvelope("coding-1", "run-loser", 1, {
+      "run-loser",
+      {
         type: "text-delta",
         partId: "text-1",
         delta: "x".repeat(2_048),
-      }),
+      },
     );
     await flushMicrotasks();
     expect(readDraftCount(root)).toBe(1);
@@ -631,14 +586,7 @@ describe("SQLite conversation message rows", () => {
     });
 
     await expect(
-      loser.applyAgentEvent(
-        "coding-1",
-        eventEnvelope("coding-1", "run-loser", 2, {
-          type: "run-state-changed",
-          state: "completed",
-          attempt: 1,
-        }),
-      ),
+      loser.finishSessionAssistant("coding-1", "run-loser", "completed"),
     ).rejects.toBeInstanceOf(ConversationSessionConflictError);
 
     expect(readDraftCount(root)).toBe(0);

@@ -74,13 +74,12 @@ describe("skill index reaches the model request", () => {
       participantAgentIds: [CODING_AGENT_ID],
     });
     const request = { text: "帮我改简历", images: [] };
-    await store.beginRun(
-      conversationId,
-      "run-1",
-      createUserMessage("user-1", request),
-      0,
-      CODING_AGENT_ID,
-    );
+    await store.beginSessionTurn(conversationId, {
+      turnId: "turn-1",
+      messageId: "run-1",
+      userMessage: createUserMessage("user-1", request),
+      authorAgentId: CODING_AGENT_ID,
+    });
     const prepared = await definition.prepare(
       { conversationId, runId: "run-1", request, policy: CODING_POLICY, workspaceRoot: null },
       new AbortController().signal,

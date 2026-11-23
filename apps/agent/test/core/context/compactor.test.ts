@@ -73,7 +73,12 @@ describe("ContextCompactor", () => {
 
   it("persists a checkpoint while the conversation still has an active run", async () => {
     const store = await preparedStore();
-    await store.beginRun("conversation-1", "run-1", message("m3", "当前请求"));
+    await store.beginSessionTurn("conversation-1", {
+      turnId: "turn-1",
+      messageId: "run-1",
+      userMessage: message("m3", "当前请求"),
+      authorAgentId: "general",
+    });
     const compactor = new ContextCompactor({
       store,
       generate: async () => "压缩后的摘要",

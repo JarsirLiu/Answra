@@ -1,4 +1,4 @@
-import type { AgentEvent } from "@answra/shared/schema";
+import type { AgentStreamEvent } from "@answra/shared/schema";
 import type { TextStreamPart, ToolSet } from "ai";
 import { describe, expect, it } from "vitest";
 import { consumeModelAttempt, createModelAttemptSink } from "../../../src/core/agent/modelAttempt";
@@ -12,10 +12,10 @@ async function* stream(parts: readonly TextStreamPart<ToolSet>[]) {
 }
 
 function createWriter() {
-  const events: AgentEvent[] = [];
+  const events: AgentStreamEvent[] = [];
   return {
     events,
-    async append(event: AgentEvent): Promise<void> {
+    async append(event: AgentStreamEvent): Promise<void> {
       events.push(event);
     },
   };
@@ -27,7 +27,6 @@ describe("model attempt sink", () => {
     const sink = createModelAttemptSink(writer);
 
     await sink.append({ type: "start" });
-    await sink.append({ type: "step-started", stepId: "step-0", index: 0 });
     await sink.append({ type: "model-warning-other", message: "compat" });
 
     expect(writer.events).toEqual([]);
@@ -37,7 +36,6 @@ describe("model attempt sink", () => {
 
     expect(writer.events.map((event) => event.type)).toEqual([
       "start",
-      "step-started",
       "model-warning-other",
       "text-delta",
     ]);
@@ -49,7 +47,6 @@ describe("model attempt sink", () => {
     const sink = createModelAttemptSink(writer);
 
     await sink.append({ type: "start" });
-    await sink.append({ type: "step-started", stepId: "step-0", index: 0 });
     sink.discard();
     await sink.append({ type: "text-delta", partId: "text", delta: "retry" });
 
@@ -135,7 +132,6 @@ describe("model attempt sink", () => {
     expect(result).toEqual({ kind: "finished" });
     expect(writer.events.map((event) => event.type)).toEqual([
       "start",
-      "step-started",
       "text-start",
       "text-delta",
       "text-end",

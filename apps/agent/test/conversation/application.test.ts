@@ -647,8 +647,8 @@ describe("ephemeral conversation runtime", () => {
   });
 
   it("keeps the single-active-run invariant when every store await spans real time", async () => {
-    // SQLite 形态回归：每个端口方法真实挂起一个宏任务。旧实现（load 检查 → clear →
-    // beginRun 跨多个 await）在该形态下会破坏在途 run；原子认领必须保持不变量。
+    // SQLite 形态回归：每个端口方法真实挂起一个宏任务，分步检查再启动会破坏在途 Turn；
+    // 原子认领必须保持单活动 Turn 不变量。
     const inner = new MemoryConversationStore();
     const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
     const store: ConversationStore = {
@@ -660,9 +660,9 @@ describe("ephemeral conversation runtime", () => {
         await tick();
         return inner.scopeOf(conversationId);
       },
-      clear: async (conversationId, cursor) => {
+      clear: async (conversationId) => {
         await tick();
-        await inner.clear(conversationId, cursor);
+        await inner.clear(conversationId);
       },
       advanceLastSeq: async (conversationId, sequence) => {
         await tick();
@@ -672,37 +672,21 @@ describe("ephemeral conversation runtime", () => {
         await tick();
         return inner.load(conversationId);
       },
-      beginRun: async (conversationId, runId, userMessage, eventRevision, authorAgentId) => {
-        await tick();
-        await inner.beginRun(conversationId, runId, userMessage, eventRevision, authorAgentId);
-      },
-      beginReplyRun: async (conversationId, runId, eventRevision, authorAgentId) => {
-        await tick();
-        return inner.beginReplyRun(conversationId, runId, eventRevision, authorAgentId);
-      },
-      beginOpeningRun: async (conversationId, runId, eventRevision, authorAgentId) => {
-        await tick();
-        await inner.beginOpeningRun(conversationId, runId, eventRevision, authorAgentId);
-      },
-      beginHandoffRun: async (conversationId, runId, targetAgentId, eventRevision) => {
-        await tick();
-        return inner.beginHandoffRun(conversationId, runId, targetAgentId, eventRevision);
-      },
       beginSessionTurn: async (conversationId, input) => {
         await tick();
         await inner.beginSessionTurn(conversationId, input);
       },
-      beginSessionAssistant: async (conversationId, messageId, authorAgentId, eventRevision) => {
+      beginSessionAssistant: async (conversationId, messageId, authorAgentId) => {
         await tick();
-        await inner.beginSessionAssistant(conversationId, messageId, authorAgentId, eventRevision);
+        await inner.beginSessionAssistant(conversationId, messageId, authorAgentId);
       },
       applySessionStreamEvent: async (conversationId, messageId, event) => {
         await tick();
         await inner.applySessionStreamEvent(conversationId, messageId, event);
       },
-      finishSessionAssistant: async (conversationId, messageId, outcome, eventRevision) => {
+      finishSessionAssistant: async (conversationId, messageId, outcome) => {
         await tick();
-        await inner.finishSessionAssistant(conversationId, messageId, outcome, eventRevision);
+        await inner.finishSessionAssistant(conversationId, messageId, outcome);
       },
       finishSessionTurn: async (conversationId, turnId) => {
         await tick();
@@ -719,26 +703,6 @@ describe("ephemeral conversation runtime", () => {
       appendUserMessage: async (conversationId, userMessage) => {
         await tick();
         return inner.appendUserMessage(conversationId, userMessage);
-      },
-      beginEphemeralRun: async (
-        conversationId,
-        runId,
-        userMessage,
-        eventRevision,
-        authorAgentId,
-      ) => {
-        await tick();
-        await inner.beginEphemeralRun(
-          conversationId,
-          runId,
-          userMessage,
-          eventRevision,
-          authorAgentId,
-        );
-      },
-      applyAgentEvent: async (conversationId, envelope) => {
-        await tick();
-        await inner.applyAgentEvent(conversationId, envelope);
       },
       loadContextState: async (conversationId) => {
         await tick();

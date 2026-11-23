@@ -71,23 +71,23 @@ describe("SQLite conversation store", () => {
     const root = await createRoot();
     const store = storeFor(root);
     await store.create("coding-2", undefined, { scope: "coding" });
-    await store.beginRun(
-      "coding-2",
-      "run-1",
-      {
+    await store.beginSessionTurn("coding-2", {
+      turnId: "turn-1",
+      messageId: "run-1",
+      userMessage: {
         id: "user-1",
         role: "user",
         text: "继续实现",
         images: [],
         status: "complete",
       },
-      3,
-    );
+      authorAgentId: "general",
+    });
 
     const reloaded = storeFor(root);
     const snapshot = await reloaded.load("coding-2");
     expect(snapshot.activeMessageId).toBeUndefined();
-    expect(snapshot.eventRevision).toBe(0);
+    expect(snapshot.lastSeq).toBe(0);
     expect(snapshot.messages.map((message) => [message.id, message.status])).toEqual([
       ["user-1", "complete"],
       ["run-1", "interrupted"],
@@ -243,7 +243,6 @@ describe("SQLite conversation store", () => {
       updatedAt: now,
       snapshot: {
         conversationId: "coding-legacy",
-        eventRevision: 0,
         messages: [
           {
             id: "user-1",
@@ -305,7 +304,6 @@ describe("SQLite conversation store", () => {
         updatedAt: now,
         snapshot: {
           conversationId: "coding-dup",
-          eventRevision: 0,
           messages: [],
         },
       }),

@@ -110,7 +110,7 @@ describe("normalizeStreamPart", () => {
     ]);
   });
 
-  it("keeps generation and step lifecycle facts in the Agent event union", () => {
+  it("keeps provider-neutral model facts in the Agent stream event union", () => {
     const parts: TextStreamPart<ToolSet>[] = [
       { type: "start" },
       {
@@ -164,27 +164,11 @@ describe("normalizeStreamPart", () => {
       }),
     ).toEqual([
       { type: "start" },
-      { type: "step-started", stepId: "step-2", index: 2 },
       {
         type: "model-warning-unsupported",
         feature: "temperature",
         details: "ignored",
       },
-      {
-        type: "step-finished",
-        stepId: "step-2",
-        index: 2,
-        state: "completed",
-        finishReason: "stop",
-        usage: {
-          inputTokens: 2,
-          outputTokens: 3,
-          totalTokens: 5,
-          inputTokenDetails: { noCacheTokens: 1 },
-          outputTokenDetails: { textTokens: 2, reasoningTokens: 1 },
-        },
-      },
-      { type: "context-usage-changed", usedTokens: 2 },
       {
         type: "finish",
         finishReason: "stop",
