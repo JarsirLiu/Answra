@@ -216,7 +216,9 @@ function toolResultDraft(
       outcome: facts.outcome,
       ...(facts.output === undefined ? {} : { output: facts.output }),
       ...(facts.errorText === undefined ? {} : { errorText: facts.errorText }),
-      ...(facts.durationMs === undefined ? {} : { durationMs: facts.durationMs }),
+      ...(facts.durationMs === undefined
+        ? {}
+        : { durationMs: wholeMilliseconds(facts.durationMs) }),
     },
   };
 }
@@ -239,6 +241,11 @@ function toolPartOf(
     (candidate) => candidate.kind === "tool" && candidate.toolCallId === toolCallId,
   );
   return part?.kind === "tool" ? part : undefined;
+}
+
+/** 条目里的时长统一为整毫秒：provider 回调给的是 `performance.now()` 差值，会带小数。 */
+function wholeMilliseconds(value: number): number {
+  return Math.max(0, Math.round(value));
 }
 
 function itemStatusOf(

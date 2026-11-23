@@ -1,4 +1,5 @@
 import type { ConversationMessage, ConversationMessagePart } from "@answra/shared";
+import { sessionItemSchema } from "@answra/shared/schema";
 import { describe, expect, it } from "vitest";
 import type { SessionItemDraft } from "../../../src/core/transcript/itemStore";
 import {
@@ -239,6 +240,32 @@ describe("streamItemDrafts", () => {
       errorText: "文件不存在",
       durationMs: 12,
     });
+  });
+
+  it("rounds fractional provider durations before the item contract sees them", () => {
+    const drafts = streamItemDrafts(
+      assistant([toolPart()]),
+      {
+        type: "tool-execution-finished",
+        toolCallId: "call-1",
+        toolName: "read_file",
+        input: {},
+        result: { success: true, output: "文件内容" },
+        durationMs: 4267.823,
+      },
+      context,
+      existing("call-1"),
+    );
+
+    const draft = drafts[0] as SessionItemDraft;
+    expect(payloadOf(draft)).toEqual({
+      kind: "tool-result",
+      toolCallId: "call-1",
+      outcome: "output",
+      output: "文件内容",
+      durationMs: 4268,
+    });
+    expect(() => sessionItemSchema.parse({ ...draft, seq: 1 })).not.toThrow();
   });
 
   it("maps tool-result, tool-error and tool-output-denied to distinct outcomes", () => {
