@@ -30,8 +30,6 @@ export {
   agentDurableEventSchema,
   agentLiveOnlyEventSchema,
   agentStreamEventSchema,
-  type SessionEventEnvelope,
-  sessionEventEnvelopeSchema,
 } from "./events";
 export * from "./remote";
 export * from "./session";

@@ -159,7 +159,6 @@ export type {
   LiveFrame,
   ManualCompactionResult,
   MessageAudience,
-  SessionEventEnvelope,
   SessionFrame,
   TurnFinishReason,
   TurnOutcome,

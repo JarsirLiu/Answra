@@ -242,22 +242,6 @@ export const agentDurableEventSchema = z.discriminatedUnion("type", [
 /** Live-only stream events: never persisted and never part of a `SessionFrame`. */
 export const agentLiveOnlyEventSchema = z.discriminatedUnion("type", liveOnlyStreamEventOptions);
 
-/** Session journal 的持久化 envelope。 */
-export const sessionEventEnvelopeSchema = z.strictObject({
-  schemaVersion: z.literal(1),
-  eventId: z.string(),
-  sessionId: z.string(),
-  turnId: z.string().optional(),
-  messageId: z.string().optional(),
-  stepId: z.string().optional(),
-  operationId: z.string().optional(),
-  sequence: z.number().int().positive(),
-  producerId: z.string(),
-  occurredAt: z.string().datetime(),
-  event: agentDurableEventSchema,
-});
-
 export type AgentStreamEvent = z.infer<typeof agentStreamEventSchema>;
 export type AgentDurableEvent = z.infer<typeof agentDurableEventSchema>;
 export type AgentLiveOnlyEvent = z.infer<typeof agentLiveOnlyEventSchema>;
-export type SessionEventEnvelope = z.infer<typeof sessionEventEnvelopeSchema>;

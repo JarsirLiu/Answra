@@ -15,9 +15,10 @@
 
 ## 游标规则（两处一致）
 
-- durable：`seq === lastSeq + 1` 才折叠；`seq <= lastSeq` 丢弃；出现缺口置 resync，整段 `readAfter(lastSeq)` 重读。
+- durable：帧只装 `session-item`；`seq === lastSeq + 1` 才折叠，`seq <= lastSeq` 丢弃；出现缺口置 resync，整段 `readAfter(lastSeq)` 重读。
 - snapshot：用 `lastSeq` 防 stale；切换会话 reset；断链 abort 所有等待者。
-- live：只覆盖当前消息的增量，不推进 `lastSeq`；`text-end` / `turn-finished` 等 durable 事实负责定稿。
+- live：只覆盖当前消息的增量（含 `retry` / `error` 提示），不推进 `lastSeq`；正文与终态由 `text` / `turn-end` 条目定稿。
+- 会话级状态（活动 Turn、用量、压缩）只从 snapshot 读；没有 durable 状态帧。
 
 ## 工具展示
 

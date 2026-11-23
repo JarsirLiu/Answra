@@ -24,33 +24,32 @@
 | 级别 | 偏差 | 位置 | 处理 |
 | --- | --- | --- | --- |
 | 🔴 | 双份 Bot/Agent 定义：旧文件只剩类型与 ID 常量，但仍在被引用 | `conversation/agent.ts`（被 `conversation/application.ts:56` 取 ID）；`coding/agent.ts` + `coding/bot.ts`（被 `coding/application.ts`、`coding/stepBinding.ts` 取类型）；新实现在 `bots/general/*`、`bots/coding/*` | 收敛到 `bots/*` 后删除旧文件 |
-| 🔴 | `AGENTS.md` 仍描述已删除的 `executeRun.ts`、`sessionEventProjector`、`conversation/turn` 回合认领 | `AGENTS.md` | 随迁移收尾同笔更新 |
-| 🟡 | 旧 envelope 与 `eventRevision` 残留 | `packages/shared/src/schema/events.ts` | 迁移 3d-2/3d-3 删除 |
-| 🟡 | journal 一行损坏即全量读取失败（严格 seq 连续、fail-closed） | `core/session/projection.ts` | 保留 fail-closed，另记恢复边界 Note |
+| 🟡 | 条目一行损坏即整段读取失败（严格 schema 校验、fail-closed） | `core/transcript/persistence/sqlite/sessionItemRows.ts` | 保留 fail-closed，另记恢复边界 Note |
 | 🟡 | `TurnScheduler.finishedTurns` 不清理，长驻进程内存无界增长 | `core/session/scheduler.ts:90` | 按会话生命周期清理 |
 | 🟡 | `MIGRATION_POLICY = "pre-release"` 未翻转 | `core/transcript/persistence/sqlite/migration/policy.ts` | 正式发布前改为 fail-closed |
 | 🟡 | busy 语义三份副本 | `scheduler.isBusy`、answer 活动表、领域 closing 标志 | 收敛到 Scheduler |
 | 🟡 | renderer live delta 无批处理，整视图每 delta 重算 | `packages/ui/src/app/useConversationView.ts` | 对齐 CLI 的 16ms 批 |
-| 🟡 | 工具终态双轨（AI SDK 流的 `tool-result` 与执行钩子的 `tool-execution-finished` 都写同一 part，靠覆盖幂等） | `core/agent/providerStepRunner.ts:147`、`core/transcript/memoryStore.ts:557` | 明确单一终态来源 |
 | 🟡 | `pnpm verify` 并行跑包偶发超时（单独跑全过） | vitest workspace 并发 | 调整 testTimeout 或降低并发 |
 
 ## 验证锚点
 
 2026-11-23 逐条核对：
 
-- `packages/shared/src/schema/session/frame.ts:9`（`SESSION_FRAME_SCHEMA_VERSION = 2`）
-- `packages/shared/src/schema/events.ts:257`（`agentDurableEventSchema`，36 种）
-- `packages/shared/src/schema/events.ts:263`（`agentLiveOnlyEventSchema`，4 种）
-- `apps/agent/src/core/session/sessionRuntimeJournal.ts:51`（唯一写入顺序）
-- `apps/agent/src/core/session/transcriptBridge.ts`（投影成功后才 `advanceLastSeq`）
-- `apps/agent/src/core/session/recoveryCoordinator.ts:56`（恢复顺序）
-- `apps/agent/src/core/agent/toolStepLimit.ts:8`（`MAX_TOOL_STEPS = 20`）
-- `packages/ui/src/app/useConversationView.ts:67`（游标机 `seq === lastSeq + 1`）
-- `apps/cli/src/tui/app/viewStore.ts:349`（CLI 复用同一 fold）
+- `packages/shared/src/schema/session/frame.ts`（`SESSION_FRAME_SCHEMA_VERSION = 2`；帧只装 `session-item`）
+- `packages/shared/src/schema/events.ts`（`agentDurableEventSchema` 34 种、`agentLiveOnlyEventSchema` 6 种、`agentStreamEventSchema` 28 种）
+- `apps/agent/src/core/session/itemRecorder.ts`（唯一写入顺序：内存视图 → 条目 → 帧）
+- `apps/agent/src/core/transcript/persistence/sqlite/sqliteItemStore.ts`（`seq` 分配、`turn-end` 与 `open_turn_id` 同事务）
+- `apps/agent/src/core/session/sessionTurns.ts`（`planSessionRecovery` 与 Turn 投影）
+- `apps/agent/src/core/session/recoveryCoordinator.ts`（恢复顺序）
+- `apps/agent/src/core/agent/toolStepLimit.ts`（`MAX_TOOL_STEPS = 20`）
+- `packages/ui/src/app/useConversationView.ts`（游标机 `seq === lastSeq + 1`）
+- `apps/cli/src/tui/app/viewStore.ts`（CLI 复用同一 fold）
 
-反向检查：全仓只有 `sessionRuntimeJournal.ts:60` 一处调用 `frames.publish(toSessionFrame(...))`，不存在第二条 durable 广播路径。
+反向检查：全仓只有 `itemRecorder.publishItems` 一处 `frames.publish(toSessionItemFrame(...))`，不存在第二条 durable 广播路径。
 
 一致性抽查：`useConversationView.applySequential` 与 `viewStore.foldFrame` 的缺口处理都是「置 resync + 整段重读」，没有各自发明的补帧策略。
+
+去重抽查：同一 `tool-call` 的 `tool-result` 有两条来源（模型流结果与执行钩子），靠 `(conversation_id, item_id)` 唯一约束去重，不靠覆盖写。
 
 ## 维护
 

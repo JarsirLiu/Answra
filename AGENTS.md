@@ -52,10 +52,10 @@
 | `src/worker` | 线协议 `AgentCommand` / `AgentFrame`，跨进程唯一契约 | 只放协议类型；命令/帧变更必须同步 desktop worker |
 | `src/core/run` | 跨领域进程内 run 取消与完成等待原语 | 不保存持久化 run 状态；不放产品策略 |
 | `src/core/agent` | 静态 Agent 注册、模型路由、AI SDK 执行、统一当前时间上下文与事件写入 | 不读写 transcript、不包含领域 prompt/工具授权；领域注入注册后的 executor |
-| `src/core/session` | Session/Turn/Step journal 与投影、恢复写回、SessionRuntime 门面、共享恢复协调器（`recoveryCoordinator`）、UI 兼容投影（`sessionEventProjector`）、journal 写入顺序（`sessionRuntimeJournal`）、FIFO 调度与 step/turn 执行编排 | 不写领域 prompt/工具或 transcript；Scheduler 只写 `turn-*`，StepExecutor 只写 `step-*`/usage，TurnExecutor 只写 `turn-handoff`，Compactor 经 `SessionRuntimeJournal.appendCompaction` 只写 `compaction-*`；SessionRuntime 不复制 turn/queue 状态；恢复只由会话所属领域触发，顺序固定为事实收口 → transcript 写回 → queued 续跑，跨领域恢复或提前续跑都会写坏 Turn |
+| `src/core/session` | Turn/Step 编排与 FIFO 调度、条目写入漏斗（`itemRecorder`）、Turn 投影与恢复计划（`sessionTurns`）、SessionRuntime 门面、共享恢复协调器（`recoveryCoordinator`）、step/turn 执行编排 | 不写领域 prompt/工具或 transcript；条目写入只经 `SessionItemRecorder`，`seq` 只由 `SessionItemStore` 分配；Scheduler 只写 turn 边界，StepExecutor 只写 step/usage；SessionRuntime 不复制 turn/queue 状态；恢复只由会话所属领域触发，顺序固定为收口条目 → transcript 重建 → queued 续跑，跨领域恢复或提前续跑都会写坏 Turn |
 | `src/core/bot` | Bot 身份/发现契约、启动期不可变目录与会话参与者可见性校验 | 不持有 store、不创建 run、不 import 领域、不定义 prompt；独立助手与团队共用同一目录 |
 | `src/core/team` | 团队预置与交接任务校验 | 只描述预置成员；不持有 Bot 身份、执行器或 profile |
-| `src/core/transcript` | Conversation、Answer、Interview 共用的消息 transcript、活动 run 认领、恢复游标端口、内存与 SQLite（`node:sqlite`）适配器；SQLite 使用 `schema.ts` baseline、`_migrations` 账本与 append-only migration | 不保存 Agent 事件、不包含领域产品策略；SQLite 适配器按 scope 写入 `sessions.sqlite` 并迁移旧 JSON，`answer` 只走内存、不读盘不落盘；不得用全局 `SCHEMA_VERSION` 或删库处理版本升级 |
+| `src/core/transcript` | Conversation、Answer、Interview 共用的消息视图、事件 → 条目纯函数（`sessionItemDrafts`）、条目存储端口（`SessionItemStore`）与内存 / SQLite（`node:sqlite`）适配器；SQLite 使用 `schema.ts` baseline、`_migrations` 账本与 append-only migration | 不判断 Turn 语义、不做恢复决策、不包含领域产品策略；SQLite 只有 `sessions` + `session_items` 两张业务表并按 scope 写入 `sessions.sqlite`，`answer` 只走内存、不读盘不落盘；不得用全局 `SCHEMA_VERSION` 或删库处理版本升级 |
 | `src/core/model` | AI SDK/provider 边界归一化、共享模型输入校验与 HTTP 重试原语 | 不放 Conversation profile 或 transcript 规则 |
 | `src/core/tool` | 跨领域工具契约、静态注册表与单次调用执行管理；通用工具在 `builtin/` | 不导入领域、不写工具事件；领域专属工具留在 `<domain>/tools/`，执行器只返回结果 |
 | `src/core/skill` | 三类来源的 skill 扫描、frontmatter 校验、索引渲染与按名查表契约 | 不读领域 prompt、不接受模型传入路径；宿主注入根目录，缺省即没有 skill |

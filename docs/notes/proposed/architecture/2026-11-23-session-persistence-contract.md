@@ -516,7 +516,7 @@ schema 层面已锁死四条组合约束：`turn-end` 必须有 `turnId` 且不�
 
 输入 `SessionItem[]` 与会话行的 `open_turn_id`，输出 `ConversationMessage[]`。**不直接产出模型消息**——`ConversationMessage[]` 之后照旧走 `core/transcript/projection.ts` 与 `conversation/turn/modelMessages.ts`，不再维护第二条模型投影。
 
-放在 `packages/shared` 而不是 `core/session`：agent（快照装载、迁移比对）与 ui（桌面与 CLI TUI 的客户端折叠）都要用，而两者不能互相 import。它和 `toSessionFrame` 同性质——两个共享契约之间的纯投影，不带 IO、不带领域策略。
+放在 `packages/shared` 而不是 `core/session`：agent（快照装载、迁移比对）与 ui（桌面与 CLI TUI 的客户端折叠）都要用，而两者不能互相 import。它和 `toSessionItemFrame` 同性质——两个共享契约之间的纯投影，不带 IO、不带领域策略。
 
 1. 条目按 `seq` 排序（输入无序也成立）；消息按首次出现的 `seq` 排列，part 按各自 `seq` 排列。
 2. `user` 行 → `{ id: itemId, role: "user", text, images, status: "complete", parts: [], audience: { kind: "user" } }`。
@@ -533,18 +533,28 @@ schema 层面已锁死四条组合约束：`turn-end` 必须有 `turnId` 且不�
 
 `open` 只出现在收口之前那一瞬，也只影响 live 视图；落库的每一行仍然是各自终态。`open_turn_id` 指向的 Turn 若已经有 `turn-end`，以 `turn-end` 为准——指针不能复活一个已结束的 Turn。
 
-#### 13.5 `state_json` 只剩三样
+#### 13.5 `state_json` 只存会话级状态
 
 ```jsonc
 {
   "schemaVersion": 1,
-  "seed": { "activeAgentId": "...", "participantAgentIds": ["..."], "bots": [{ "id": "", "name": "", "role": "" }] },
+  "conversationId": "conversation-1",
+  "snapshot": {
+    "activeAgentId": "general",
+    "participantAgentIds": ["general"],
+    "bots": [{ "id": "", "name": "", "role": "" }],
+    "contextCompaction": {},
+    "contextCompactionBoundaries": [],
+    "contextUsage": {},
+    "contextPruning": {}
+  },
   "contextState": { "checkpoints": [], "compaction": {}, "usageAnchor": {}, "usage": {}, "pruning": {},
-                    "prunedToolCallIds": [], "compactionFailureCount": 0, "compactionRetryAt": "" }
+                    "prunedToolCallIds": [], "compactionFailureCount": 0, "compactionRetryAt": "" },
+  "seed": { "activeAgentId": "...", "participantAgentIds": ["..."], "bots": [{ "id": "", "name": "", "role": "" }] }
 }
 ```
 
-`snapshot` 那一层删掉：`conversationId` 用列、`lastSeq` 从 `next_seq - 1` 算、`messages` 从条目折、`contextCompaction` / `contextUsage` / `contextPruning` / `contextCompactionBoundaries` 全部从 `contextState` 派生（`memoryStore.ts` 的 `snapshotOf` 已经是这个做法，照搬）。
+`snapshot` 只作外壳，一律不写 `messages` / `activeTurnId` / `activeMessageId` / `lastSeq`：消息从条目折，活动 Turn 读 `open_turn_id`，`lastSeq` 由 `next_seq - 1` 算。保留 `snapshot` 外壳而不是把字段平铺，是为了复用 `ConversationSnapshot` 的 schema，少一套字段映射与漂移风险；这是 P1 实施时的选择，取代本节原先「删掉 snapshot 层」的写法。
 
 #### 13.6 迁移算法（P1）
 
@@ -592,7 +602,7 @@ schema 层面已锁死四条组合约束：`turn-end` 必须有 `turnId` 且不�
 
 #### 13.7 一并删除的代码
 
-`sqliteJournal.ts`、`memoryJournal.ts`、`projection.ts`（`projectSession`）、`recovery.ts` 的事件重放、`sessionRuntimeJournal.ts`、`transcriptBridge.ts` 的双通道、`draftCheckpoint.ts`、`sessionRows.ts` 里 message/draft/revision 相关函数、`schema.ts` 里 4 张表、`restore.ts` 里的事件恢复分支。
+`sqliteJournal.ts`、`memoryJournal.ts`、`projection.ts`（`projectSession`）、`recovery.ts` 的事件重放、`sessionRuntimeJournal.ts`、`transcriptBridge.ts` 的双通道、`draftCheckpoint.ts`、`sessionRows.ts` 里 message/draft/revision 相关函数、`schema.ts` 里 4 张表、`restore.ts` 里的事件恢复分支；`sessionEventEnvelopeSchema` / `SessionEventEnvelope` 在 P6 删除（journal 删除后已无生产消费者）。
 
 保留并改造：`memoryStore.ts`（内存视图）、`stepExecutor.ts` 的漏斗、`errorSummary` / `tokenEstimate` / `context/*`（与存储无关）。
 
@@ -680,6 +690,7 @@ P4 已落地（`pnpm db:check` 5 个迁移；agent 799 = P2b-2b 的 801 − 3 �
 - **`context-usage-changed` 的 durable 折叠路径删除。** 该事件当前没有生产者，用量只在 snapshot 推送时更新（回合边界）；保留一条永远走不到的分支只会误导后来者。
 - **CLI 非 TTY 呈现改为条目驱动。** 正文仍来自 live `text-delta`（`text` 条目含同一份文本，重复打印会出现两遍）；工具开始/结束行与退出码改由 `tool-call` / `tool-result` / `turn-end` 条目驱动。
 - **`turn-end` 收口同时清 `thinking` / `waitingForStream`。** 折叠代码原先只在 `turn-finished` 事件路径里做这件事，改成条目后必须由 `settleTurn` 自己清；否则思考摘要会一直停在「思考中」。
+- **P6 只做文档与死契约收尾。** `AGENTS.md` 与 `answra-arch` 速查改为两表 + 条目模型；`sessionEventEnvelopeSchema` / `SessionEventEnvelope` 已无任何生产消费者（journal 删除后只剩测试引用），随之删除。留着「journal v1」契约会让人误以为还存在第二个 durable 写入口。
 
 ## 模块边界
 

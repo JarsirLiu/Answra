@@ -8,7 +8,7 @@
 desktop main (Electron)
 ├─ ipc/*                            窗口与领域 IPC（校验来源 + 转发）
 ├─ agent/agentWorkerHost.ts         utilityProcess.fork + AgentCommand/AgentFrame 适配
-└─ conversation/workerTransport.ts  注入 SqliteConversationStore / SqliteSessionJournal
+└─ conversation/workerTransport.ts  注入 SqliteConversationStore 及其 items
         │  worker 线协议：apps/agent/src/worker/protocol.ts
         ▼
 agent utility process
@@ -17,11 +17,11 @@ agent utility process
 ├─ InterviewApplication    ─┼─→ SessionRuntime ─→ TurnScheduler ─→ TurnExecutor
 ├─ CodingApplication       ─┤                         └─→ StepExecutor ─→ ProviderStepRunner
 └─ AnswerApplication       ─┘
-        │  SessionRuntimeJournal.append（唯一写入顺序）
+        │  SessionItemRecorder.append（唯一写入顺序）
         ▼
-  ① SessionJournal（sessions.sqlite / 内存）
-  ② SessionFrameBus.publish(SessionFrame)
-  ③ SessionTranscriptBridge.apply → ConversationStore 快照 + advanceLastSeq
+  ① SessionItemStore（sessions.sqlite / 内存）：分配 seq 并写条目
+  ② SessionFrameBus.publish(toSessionItemFrame)
+  ③ ConversationStore 内存视图 + advanceLastSeq
         │
         ├─ durable：SessionFrame（带连续 seq，可重放）
         └─ live：LiveFrame（无 seq，只承载增量）
@@ -52,14 +52,13 @@ renderer / TUI 输入
   → IPC chat.send（带 botId / profileId）
   → worker AgentCommand
   → Application.submitTurn（校验模型输入与 Bot 归属）
-  → SessionRuntime.submit → TurnScheduler
-      ├─ busy：写 turn-queued，排队等位置
-      └─ 空闲：写 turn-queued + turn-started，占位 assistant 消息
-  → TurnExecutor：step 循环（每次 step 一条 step-started/finished）
-      → ProviderStepRunner：AI SDK 单次请求（流式 text/tool 事实 + live delta）
-      → 工具：ToolRegistry.authorize → executeToolCall → tool-result / tool-error
-  → turn-finished（completed / failed / aborted）
-  → 每条事实按「journal → frame → transcript」固定顺序落地
+  → 用户消息先写 user 条目，再进 TurnScheduler 队列
+  → TurnExecutor：beginTurn 置 open_turn_id，占位 assistant 消息
+  → step 循环（Step 只留在内存与 timeline 投影，不单独落条目）
+      → ProviderStepRunner：AI SDK 单次请求（live delta + 结算事件）
+      → 工具：ToolRegistry.authorize → executeToolCall → tool-call / tool-result 条目
+  → finishTurn：补未结算 part → turn-end（completed / failed / aborted）
+  → 每条条目按「内存视图 → 条目 → 帧」固定顺序落地
   → 宿主按 seq 折叠成 ConversationView
 ```
 

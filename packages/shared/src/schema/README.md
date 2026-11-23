@@ -7,9 +7,9 @@ remain in `src/channels/`.
 
 | File | Contract meaning | Does not own |
 | --- | --- | --- |
-| `events.ts` | The Agent event catalog, durable-fact and live-only subsets, and `SessionEventEnvelope` (journal v1) | State transitions, durable adapter, UI projection |
+| `events.ts` | The Agent event catalog plus its durable and live-only subsets | State transitions, persistence, UI projection |
 | `status.ts` | Turn/step/compaction status vocabulary, retry metadata and rebuildable snapshots | Event payloads, retry scheduling policy |
-| `session/frame.ts` | `SessionFrame` (durable transport with `seq`) and `LiveFrame` (live-only transport without a cursor), plus the v1 → v2 adapter | State transitions, journal persistence, subscription |
+| `session/frame.ts` | `SessionFrame` (durable transport carrying one settled item with `seq`) and `LiveFrame` (live-only transport without a cursor) | State transitions, persistence, subscription |
 | `session/item.ts` | The append-only conversation item contract: kinds, terminal statuses, per-kind payloads and derived item ids | Write timing, `seq` allocation, migration, folding |
 | `session/fold.ts` | The pure fold from `SessionItem[]` to `ConversationMessage[]`, shared by the agent snapshot loader and the desktop/CLI client | IO, Turn/Step state machine, domain policy |
 | `session/summary.ts` | Session listing summary and page DTOs | Event catalog, persistence |
@@ -29,7 +29,7 @@ these files. `index.ts` is the stable export surface.
   `compaction-finished`, `compaction-failed`, `compaction-aborted`,
   `step-started`, `step-finished`, `context-usage-changed`,
   `part-state-changed`.
-- Generation: `start`, `finish`, `abort`, `error`.
+- Generation: `start`, `finish`, `abort`.
 - Text: `text-start`, `text-delta`, `text-end`.
 - Reasoning: `reasoning-start`, `reasoning-delta`, `reasoning-end`.
 - Tool input and request: `tool-input-start`, `tool-input-delta`,
@@ -39,38 +39,35 @@ these files. `index.ts` is the stable export surface.
 - Model warnings: `model-warning-unsupported`, `model-warning-compatibility`,
   `model-warning-other`.
 - Sources and generated content: `source-url`, `source-document`, `file`.
-- Retry: `retry`.
-
-`AgentDurableEvent` is the payload union that may enter the journal. `AgentStreamEvent`
-is the normalized provider stream union; it includes live deltas and completed
-model facts. `SessionEventEnvelope` is the journal row that carries durable facts.
+- Live-only notices: `retry`, `error`.
 
 ## Durable facts and live deltas
 
-`AgentDurableEvent` lists the payloads that may enter a journal and a
-`SessionFrame`: user-visible Turn/Step/compaction facts plus completed-value
-model events.
+`AgentDurableEvent` lists the payloads that can settle into a durable item:
+user-visible Turn/Step/compaction facts plus completed-value model events.
+`AgentStreamEvent` is the normalized provider stream union; it includes live
+deltas and completed model facts.
 
-`AgentLiveOnlyEvent` lists the four high-frequency deltas (`text-delta`,
-`reasoning-delta`, `tool-input-delta`, `tool-output-delta`). They are carried by
-`LiveFrame`, have no cursor and are never persisted.
+`AgentLiveOnlyEvent` lists the six live-only events: the four high-frequency
+deltas (`text-delta`, `reasoning-delta`, `tool-input-delta`,
+`tool-output-delta`) plus `retry` and `error`. They are carried by `LiveFrame`,
+have no cursor and are never persisted.
 
 Two channels therefore exist with separate guarantees:
 
 | | `SessionFrame` | `LiveFrame` |
 | --- | --- | --- |
+| Payload | exactly one settled conversation item | a live delta or disposable notice |
 | Cursor | `seq`, continuous per session | none |
 | Replay | yes, by `seq` | never |
-| Authority | single source of truth | optimistic preview, overwritten by the full-value fact |
+| Authority | single source of truth | optimistic preview, replaced by the settled item |
 
-The connector rows live in `apps/agent/src/core/session/sqliteJournal.ts`; the
-shared package only defines the vocabulary.
+Session-level state (active Turn, context usage, compaction) travels in
+`ConversationSnapshot`; there is no durable status frame.
 
-The durable event catalog does not reconstruct the full transcript by replaying
-deltas. Conversation transcript persistence remains a separate concern. In
-particular, the current `text-end` event carries a part ID, not the completed
-text, so a durable transcript must store its message content through the
-Conversation data boundary.
+`core/session/itemRecorder.ts` is the write path: it settles stream events into
+items. `text-end` carries a part ID rather than the completed text, so the item
+must be generated from the in-memory part after the event is applied.
 
 `tool-call` records the model's request, `tool-execution-started` /
 `tool-execution-finished` record the AI SDK tool executor callbacks, and

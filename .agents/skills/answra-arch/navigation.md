@@ -7,8 +7,8 @@
 | 你要改的 | 先看 | 别做 |
 | --- | --- | --- |
 | 新事件 / 新帧字段 | `shared/src/schema/events.ts`、`session/frame.ts` | 别在 agent 里私自定义 payload 类型 |
-| 事实写入时机 | `sessionRuntimeJournal.ts` | 别绕过 `append` 直接写 journal + 广播 |
-| transcript 投影 | `transcriptBridge.ts` | 别在 bridge 里改 Turn 状态或补 seq |
+| 事实写入时机 | `core/session/itemRecorder.ts` | 别绕过 `append` / `appendDrafts` 直接写条目 + 广播 |
+| 事件 → 条目 | `core/transcript/sessionItemDrafts.ts` | 别在条目生成里改 Turn 状态或补 seq |
 | 调度 / 排队 / 取消 | `core/session/scheduler.ts` | 别在领域里复制 busy 判断 |
 | 新 Bot | `bots/<域>/` + `core/bot/catalog.ts` | 别往 catalog 塞运行期对象；别用 renderer 注入 prompt/工具 |
 | 新工具 | `core/tool/builtin/` + `ToolId` | 别让 desktop 代执行或反向 RPC |
@@ -27,12 +27,13 @@
 
 ## 防回退红线
 
-- 每条 durable 事实只有一个写入顺序；全仓只允许 `sessionRuntimeJournal.ts` 调用 `frames.publish(toSessionFrame(...))`。
-- `seq` 只由 journal 分配；宿主不得补号、不得跳号折叠。
-- transcript 写失败不回滚已追加事实；`lastSeq` 不因投影失败而前进。
-- 恢复必须先写回 transcript 再消费 queued Turn。
+- 每条 durable 条目只有一个写入顺序；全仓只允许 `itemRecorder.publishItems` 一处 `frames.publish(toSessionItemFrame(...))`。
+- `seq` 只由 `SessionItemStore.appendItems` 在插入成功时分配；宿主不得补号、不得跳号折叠。
+- 条目写入失败不回滚已追加事实；内存视图的 `lastSeq` 不因投影失败而前进。
+- 恢复必须先补收口条目、再重建 transcript，最后才消费 queued Turn。
+- 会话级状态（活动 Turn、用量、压缩）只走 `ConversationSnapshot`，不新增 durable 状态帧。
 - 授权缺省即无：未注册工具 ID 直接 throw；renderer 永不注入 prompt/工具。
-- 旧 envelope（含 `run-state-changed`）不是事实目录，不进 journal、不进帧。
+- 旧 envelope（含 `run-state-changed`）不是事实目录，不进条目、不进帧。
 - 不在 desktop 复制连接/重试/信令语义；不在 controller 侧依赖 `remote-node`。
 
 相关：`decisions.md`（这些红线的由来与验证）。

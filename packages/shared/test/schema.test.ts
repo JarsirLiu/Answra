@@ -9,7 +9,6 @@ import {
   conversationMessageSchema,
   conversationSnapshotSchema,
   editDiffDisplaySchema,
-  sessionEventEnvelopeSchema,
   stepOutcomeSchema,
   turnOutcomeSchema,
   turnSourceSchema,
@@ -195,44 +194,6 @@ describe("event schema", () => {
         errorText: "tool failed",
       }),
     ).toMatchObject({ errorText: "tool failed" });
-  });
-
-  it("carries turn, message and compaction identity in the session envelope", () => {
-    expect(
-      sessionEventEnvelopeSchema.parse({
-        schemaVersion: 1,
-        eventId: "event-3",
-        sessionId: "conversation",
-        turnId: "turn-1",
-        messageId: "message-1",
-        operationId: "operation-1",
-        sequence: 3,
-        producerId: "agent-local-1",
-        occurredAt: "2026-11-06T00:00:02.000Z",
-        event: { type: "turn-finished", status: "completed", reason: "completed" },
-      }),
-    ).toMatchObject({
-      sessionId: "conversation",
-      turnId: "turn-1",
-      messageId: "message-1",
-      operationId: "operation-1",
-    });
-  });
-
-  it("rejects live-only stream deltas in the session journal envelope", () => {
-    expect(
-      sessionEventEnvelopeSchema.safeParse({
-        schemaVersion: 1,
-        eventId: "event-4",
-        sessionId: "conversation",
-        turnId: "turn-1",
-        messageId: "message-1",
-        sequence: 4,
-        producerId: "agent-local-1",
-        occurredAt: "2026-11-06T00:00:03.000Z",
-        event: { type: "text-delta", partId: "text-1", delta: "a" },
-      }).success,
-    ).toBe(false);
   });
 });
 
