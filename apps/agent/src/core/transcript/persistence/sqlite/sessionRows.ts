@@ -18,7 +18,6 @@ export interface SessionRowInput {
 
 export interface StoredSessionRow {
   conversationId: string;
-  revision: number;
   state: SessionStatePayload;
   scope: ConversationSessionScope;
   workspaceRoot?: string;
@@ -52,17 +51,22 @@ export class SessionRecordParseError extends Error {
   }
 }
 
-export function insertSessionRow(
-  db: DatabaseSync,
-  input: SessionRowInput,
-  revision: number,
-): number {
+/**
+ * 写入会话元数据与 `state_json`。已存在的会话只更新这两类字段；`updated_at` /
+ * `message_count` / `next_seq` / `open_turn_id` 由条目写入维护，不被本函数覆盖。
+ */
+export function writeSessionRow(db: DatabaseSync, input: SessionRowInput): number {
   const result = db
     .prepare(`
       INSERT INTO sessions
-        (conversation_id, scope, workspace_root, created_at, updated_at, revision,
+        (conversation_id, scope, workspace_root, created_at, updated_at,
          title, message_count, state_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(conversation_id) DO UPDATE SET
+        scope = excluded.scope,
+        workspace_root = excluded.workspace_root,
+        title = excluded.title,
+        state_json = excluded.state_json
     `)
     .run(
       input.state.conversationId,
@@ -70,34 +74,9 @@ export function insertSessionRow(
       input.workspaceRoot ?? null,
       input.createdAt,
       input.updatedAt,
-      revision,
       input.title,
       input.messageCount,
       JSON.stringify(input.state),
-    );
-  return Number(result.changes);
-}
-
-export function updateSessionRow(
-  db: DatabaseSync,
-  input: SessionRowInput,
-  expectedRevision: number,
-): number {
-  // `message_count` 与 `updated_at` 由条目写入维护；这里只改会话元数据与游标状态。
-  const result = db
-    .prepare(`
-      UPDATE sessions
-      SET scope = ?, workspace_root = ?, revision = ?, title = ?, state_json = ?
-      WHERE conversation_id = ? AND revision = ?
-    `)
-    .run(
-      input.scope,
-      input.workspaceRoot ?? null,
-      expectedRevision + 1,
-      input.title,
-      JSON.stringify(input.state),
-      input.state.conversationId,
-      expectedRevision,
     );
   return Number(result.changes);
 }
@@ -109,7 +88,7 @@ export function readSessionRow(
   const row = db
     .prepare(`
       SELECT conversation_id, scope, workspace_root, created_at, updated_at,
-             revision, title, state_json
+             title, state_json
       FROM sessions
       WHERE conversation_id = ?
     `)
@@ -125,7 +104,6 @@ export function readSessionRow(
     }
     return {
       conversationId,
-      revision: row.revision,
       state,
       scope: row.scope,
       ...(row.workspace_root === null ? {} : { workspaceRoot: row.workspace_root }),
@@ -136,13 +114,6 @@ export function readSessionRow(
   } catch (error) {
     throw new SessionRecordParseError(conversationId, error);
   }
-}
-
-export function readSessionRevision(db: DatabaseSync, conversationId: string): number | undefined {
-  const row = db
-    .prepare("SELECT revision FROM sessions WHERE conversation_id = ?")
-    .get(conversationId) as { revision: number } | undefined;
-  return row?.revision;
 }
 
 export function readSessionSummaryRow(
@@ -218,20 +189,10 @@ function toSessionListRow(row: StoredSummaryColumns): SessionListRow {
   };
 }
 
-/** 删除会话行时级联删除条目；调用方负责内存视图与调度器。 */
-export function deleteSessionRowWithRevision(
-  db: DatabaseSync,
-  conversationId: string,
-  expectedRevision: number,
-): number {
-  const result = db
-    .prepare("DELETE FROM sessions WHERE conversation_id = ? AND revision = ?")
-    .run(conversationId, expectedRevision);
-  const changes = Number(result.changes);
-  if (changes === 1) {
-    db.prepare("DELETE FROM session_items WHERE conversation_id = ?").run(conversationId);
-  }
-  return changes;
+/** 删除会话行；不处理条目（调用方在同一事务内先清理）。 */
+export function deleteSessionRow(db: DatabaseSync, conversationId: string): number {
+  const result = db.prepare("DELETE FROM sessions WHERE conversation_id = ?").run(conversationId);
+  return Number(result.changes);
 }
 
 interface StoredSummaryColumns {
@@ -250,7 +211,6 @@ interface StoredSessionColumns {
   workspace_root: string | null;
   created_at: string;
   updated_at: string;
-  revision: number;
   title: string;
   state_json: string;
 }

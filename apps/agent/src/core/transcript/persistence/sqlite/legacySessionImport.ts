@@ -1,6 +1,6 @@
 /** 旧 JSON 会话文件一次性导入 SQLite；不参与运行时读写。 */
 import { readFileSync } from "node:fs";
-import { basename, resolve } from "node:path";
+import { basename } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { archiveLegacySessionFile, listLegacySessionFiles } from "../legacySessionFiles";
 import {
@@ -10,10 +10,8 @@ import {
 } from "../sessionRecord";
 import { legacyMessagesToItems } from "./legacyMessageItems";
 import { insertSessionItemRow, writeSessionItemState } from "./sessionItemRows";
-import { insertSessionRow } from "./sessionRows";
+import { writeSessionRow } from "./sessionRows";
 import { withImmediateTransaction } from "./transaction";
-
-const LEGACY_IMPORT_MARKER_PREFIX = "legacy-import:";
 
 export interface LegacyImportResult {
   imported: number;
@@ -21,10 +19,11 @@ export interface LegacyImportResult {
   failed: number;
 }
 
+/**
+ * 幂等来源是两个事实：导入成功的文件已移入 `legacy/` 子目录，因而不再出现在根目录扫描结果里；
+ * 同名会话行已存在时按重复文件归档。因此不需要额外的导入标记表。
+ */
 export function importLegacySessionFiles(db: DatabaseSync, root: string): LegacyImportResult {
-  const marker = `${LEGACY_IMPORT_MARKER_PREFIX}${resolve(root)}`;
-  if (hasMeta(db, marker)) return { imported: 0, quarantined: 0, failed: 0 };
-
   const result: LegacyImportResult = { imported: 0, quarantined: 0, failed: 0 };
   for (const filePath of listLegacySessionFiles(root)) {
     const name = basename(filePath, ".json");
@@ -55,7 +54,6 @@ export function importLegacySessionFiles(db: DatabaseSync, root: string): Legacy
     archiveLegacySessionFile(root, filePath, false);
     result.imported += 1;
   }
-  if (result.failed === 0) writeMeta(db, marker, new Date().toISOString());
   return result;
 }
 
@@ -70,19 +68,15 @@ function insertLegacyRecord(
     ids.add(message.id);
   }
   const summary = summarizeSessionRecord(payload);
-  insertSessionRow(
-    db,
-    {
-      state,
-      scope: summary.scope,
-      ...(summary.workspaceRoot === undefined ? {} : { workspaceRoot: summary.workspaceRoot }),
-      title: summary.title,
-      messageCount: 0,
-      createdAt: summary.createdAt,
-      updatedAt: summary.updatedAt,
-    },
-    0,
-  );
+  writeSessionRow(db, {
+    state,
+    scope: summary.scope,
+    ...(summary.workspaceRoot === undefined ? {} : { workspaceRoot: summary.workspaceRoot }),
+    title: summary.title,
+    messageCount: 0,
+    createdAt: summary.createdAt,
+    updatedAt: summary.updatedAt,
+  });
   // 导入必须直接写条目：迁移回填只处理 `session_messages`，且发布后已冻结。
   const converted = legacyMessagesToItems(messages, toIsoTimestamp(summary.updatedAt));
   let seq = 0;
@@ -100,14 +94,6 @@ function hasSessionRow(db: DatabaseSync, conversationId: string): boolean {
   return (
     db.prepare("SELECT 1 FROM sessions WHERE conversation_id = ?").get(conversationId) !== undefined
   );
-}
-
-function hasMeta(db: DatabaseSync, key: string): boolean {
-  return db.prepare("SELECT 1 FROM meta WHERE key = ?").get(key) !== undefined;
-}
-
-function writeMeta(db: DatabaseSync, key: string, value: string): void {
-  db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)").run(key, value);
 }
 
 function toIsoTimestamp(value: string): string {

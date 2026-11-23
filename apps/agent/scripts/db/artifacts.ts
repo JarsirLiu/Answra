@@ -57,11 +57,9 @@ export function renderRegistry(files: readonly LoadedMigration[]): string {
   if (files.length === 0) {
     lines.push("export const MIGRATIONS: readonly Migration[] = [];");
   } else {
-    lines.push(
-      `export const MIGRATIONS: readonly Migration[] = [${files
-        .map((_, index) => `migration${index}`)
-        .join(", ")}];`,
-    );
+    lines.push("export const MIGRATIONS: readonly Migration[] = [");
+    for (const [index] of files.entries()) lines.push(`  migration${index},`);
+    lines.push("];");
   }
   lines.push("");
   return lines.join("\n");

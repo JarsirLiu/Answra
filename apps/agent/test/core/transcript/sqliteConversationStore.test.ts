@@ -6,7 +6,6 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { SessionRecordPayload } from "../../../src/core/transcript/persistence/sessionRecord";
 import { MIGRATIONS } from "../../../src/core/transcript/persistence/sqlite/migration/registry.gen";
 import {
-  ConversationSessionConflictError,
   ConversationSessionCorruptError,
   SqliteConversationStore,
 } from "../../../src/core/transcript/persistence/sqlite/sqliteConversationStore";
@@ -215,10 +214,10 @@ describe("SQLite conversation store", () => {
     const db = new DatabaseSync(path.join(root, "sessions.sqlite"));
     db.prepare(`
       INSERT INTO sessions
-        (conversation_id, scope, workspace_root, created_at, updated_at, revision,
+        (conversation_id, scope, workspace_root, created_at, updated_at,
          title, message_count, state_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run("broken", "coding", null, now, now, 0, "损坏会话", 1, "{");
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run("broken", "coding", null, now, now, "损坏会话", 1, "{");
     db.close();
 
     expect((await store.list({ scope: "coding" })).items).toHaveLength(1);
@@ -306,10 +305,6 @@ describe("SQLite conversation store", () => {
     await appendUser(store, "coding-dup", { id: "user-1", text: "已有会话" });
     await store.close();
 
-    const db = new DatabaseSync(path.join(root, "sessions.sqlite"));
-    db.prepare("DELETE FROM meta WHERE key LIKE 'legacy-import:%'").run();
-    db.close();
-
     const now = new Date().toISOString();
     await writeFile(
       path.join(root, "coding-dup.json"),
@@ -332,75 +327,6 @@ describe("SQLite conversation store", () => {
     const archived = await readdir(path.join(root, "legacy"));
     expect(archived).toContain("coding-dup.json");
     expect(archived.some((name) => name.includes(".corrupt-"))).toBe(false);
-  });
-
-  it("rejects a stale write instead of overwriting another store", async () => {
-    const root = await createRoot();
-    const first = storeFor(root);
-    await first.create("coding-conflict", undefined, { scope: "coding" });
-    await appendUser(first, "coding-conflict", { id: "user-0", text: "初始" });
-    const second = storeFor(root);
-    await second.load("coding-conflict");
-
-    await appendUser(first, "coding-conflict", { id: "user-1", text: "先写" });
-
-    await expect(
-      second.appendUserMessage("coding-conflict", {
-        id: "user-2",
-        role: "user",
-        text: "后写",
-        images: [],
-        status: "complete",
-      }),
-    ).rejects.toBeInstanceOf(ConversationSessionConflictError);
-    expect((await second.load("coding-conflict")).messages.map((message) => message.text)).toEqual([
-      "初始",
-      "先写",
-    ]);
-  });
-
-  it("does not delete the winner's messages when clear loses the revision race", async () => {
-    const root = await createRoot();
-    const first = storeFor(root);
-    await first.create("coding-clear", undefined, { scope: "coding" });
-    await appendUser(first, "coding-clear", { id: "user-0", text: "初始" });
-    const second = storeFor(root);
-    await second.load("coding-clear");
-
-    await appendUser(first, "coding-clear", { id: "user-1", text: "先写" });
-
-    await expect(second.clear("coding-clear")).rejects.toBeInstanceOf(
-      ConversationSessionConflictError,
-    );
-    const db = new DatabaseSync(path.join(root, "sessions.sqlite"));
-    expect(db.prepare("SELECT COUNT(*) AS count FROM session_items").get()).toEqual({
-      count: 2,
-    });
-    db.close();
-  });
-
-  it("rejects deleting a session changed by another store", async () => {
-    const root = await createRoot();
-    const first = storeFor(root);
-    await first.create("coding-delete", undefined, { scope: "coding" });
-    await appendUser(first, "coding-delete", { id: "user-0", text: "初始" });
-    const second = storeFor(root);
-    await second.load("coding-delete");
-
-    await appendUser(first, "coding-delete", { id: "user-1", text: "先写" });
-
-    await expect(second.delete("coding-delete")).rejects.toBeInstanceOf(
-      ConversationSessionConflictError,
-    );
-    const db = new DatabaseSync(path.join(root, "sessions.sqlite"));
-    expect(db.prepare("SELECT COUNT(*) AS count FROM session_items").get()).toEqual({
-      count: 2,
-    });
-    db.close();
-    expect((await first.load("coding-delete")).messages.map((message) => message.text)).toEqual([
-      "初始",
-      "先写",
-    ]);
   });
 
   it("writes different sessions in parallel without conflicts", async () => {

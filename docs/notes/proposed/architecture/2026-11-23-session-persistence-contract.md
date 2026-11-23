@@ -650,6 +650,15 @@ P2b-2b 已落地（原子切换，测试基线为 agent 801 / desktop 378 / cli 
 - 随切换删除：`journal.ts`、`memoryJournal.ts`、`sqliteJournal.ts`、`eventFactory.ts`、`sessionTurnProjection.ts`、`projection.ts`、`recovery.ts`、`sessionRuntimeJournal.ts`、`transcriptBridge.ts`、`draftCheckpoint.ts`、`sessionMessageMap.ts`、`sessionConflict.ts`，以及测试里的 `sqliteConversationMessages.test.ts`（测的是已删除的 `session_messages` / draft 语义）。
 - 实现期修正：各 application 在 `store.create` 后显式调用 `SessionRuntime.createSession`（内部 `items.create`，幂等），否则直连 store 的路径会缺内存条目；`SqliteConversationStore.create` 对已加载会话同样比对 `metadata.scope`；`advanceLastSeq` 在 SQLite 下只作内存视图游标，未加载会话时 no-op，快照 `lastSeq` 由条目推导。
 
+P4 已落地（`pnpm db:check` 5 个迁移；agent 799 = P2b-2b 的 801 − 3 条 revision 冲突用例 + 1 条升级路径用例）：
+
+- 迁移 `20261123130000_drop_legacy_session_tables` 先删两个级联 trigger，再删 `session_events` / `session_messages` / `session_turns` / `session_message_drafts` / `meta`，最后 `ALTER TABLE sessions DROP COLUMN revision`；基线同步删掉 5 张表 DDL 与 `revision` 列，新库只应用基线。
+- `legacySessionImport` 去掉 `meta` 导入标记：成功导入的文件已移入 `legacy/` 子目录、不再进入根目录扫描，同名会话行存在时按重复文件归档，因此「扫描根目录 + 会话行存在性」本身就是幂等来源；写库失败的文件留在根目录等下次启动重试。该导入改为 `writeSessionRow` 写条目，不再触碰旧表。
+- `sessionRows` 的 insert/update 合并为 `writeSessionRow` upsert：冲突时只更新 `scope` / `workspace_root` / `title` / `state_json`，`updated_at` / `message_count` / `next_seq` / `open_turn_id` 仍只由条目写入维护。`revision` 乐观锁与 `ConversationSessionConflictError` 随列一起删除（依据第 11 节「同库没有第二个写者」）。
+- 升级路径测试 `apps/agent/test/core/transcript/legacySessionDropMigration.test.ts`：用旧 schema + 只到前 3 个迁移的账本模拟发布过的旧库，跑真实 `MIGRATIONS` 后断言只剩 `_migrations` / `sessions` / `session_items`、无 trigger 与 `revision`、旧消息折叠与 `next_seq` / `message_count` / 时间戳正确、删会话仍清空条目。旧 schema 抽到 `legacySessionSchemaFixture.ts` 供两条迁移测试共用。
+- `sessionItemsMigration.test.ts` 由「只跑 P1」改为「P1 + P4 后与基线比较」：`ALTER TABLE` 会改写 `CREATE TABLE` 文本（`ADD COLUMN` 追加在末尾、`DROP COLUMN` 不重排），因此只比对 `PRAGMA table_info` 的列与 `session_items` 的 DDL 文本，不比对 `sessions` 的 SQL 文本。
+- 删除 3 条 revision 冲突用例（stale write / clear race / delete race）：多写者场景现在只剩「条目按各自 `next_seq` 分配、会话元数据后写覆盖」，与已拍板的取舍一致，不再有可断言的冲突语义。
+
 #### 13.9 实现期修正与批次
 
 - **P1 不删旧表。** 第 13.6 节原先写「迁移时删 5 张表」，实际拆到 P4：P1 只建 `session_items` 并回填，旧表和 `revision` 保留，迁移结果可与旧读路径逐条比对，出问题也能回退。P4 再删表并移除 `legacySessionImport` 的 meta 标记。
@@ -663,6 +672,8 @@ P2b-2b 已落地（原子切换，测试基线为 agent 801 / desktop 378 / cli 
 - **`store.create` 不再隐式建条目存储。** 条目存储是独立端口，直连 store 的测试与恢复路径不会经过 `SessionRuntime`；因此各 application 在 `store.create` 后显式调用 `SessionRuntime.createSession`，否则内存实现会因「会话不存在」拒绝写条目。SQLite 实现由 `SqliteConversationStore.create` 自己保证幂等。
 - **`advanceLastSeq` 降级为内存游标。** 条目 `seq` 已经是 durable 事实，再持久化一份游标就会产生第二份真相；SQLite 适配器只在会话已加载时推进内存快照，未加载时 no-op，`load` 用条目重建 `lastSeq`。
 - **恢复投影里的 running 也算 busy。** 恢复只补事实、不重启旧 Turn；若此时放行新排队 Turn，就会出现两个写者。`Scheduler` 因此从投影取 `activeTurnId`，有值即拒绝启动新 Turn，等旧 Turn 收口后再放行。
+- **P4 删表顺序固定为 trigger → table → column。** SQLite 允许 `DROP TABLE` 留下指向它的悬空 trigger，但之后每次删会话都会命中一张不存在的表；先删 `sessions_delete_session_*` 再删表。`revision` 没有索引或 CHECK 引用，可直接 `DROP COLUMN`；重建 `sessions` 后 `session_items` 的外键仍生效，升级测试用「删会话清空条目」验证。
+- **`meta` 导入标记随 P4 删除。** 幂等性由两个已有事实保证：成功导入的文件被移入 `legacy/`（不再进入根目录扫描），同名会话行存在时按重复归档。把旧文件重新放回根目录会再次导入，这是期望行为。
 
 ## 模块边界
 

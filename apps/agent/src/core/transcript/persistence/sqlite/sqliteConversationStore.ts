@@ -35,17 +35,19 @@ import { importLegacySessionFiles } from "./legacySessionImport";
 import { decodeMessageCursor, encodeMessageCursor } from "./messageCursor";
 import { selectMessagePage } from "./messagePage";
 import { decodeSessionCursor, encodeSessionCursor } from "./sessionCursor";
-import { listSessionItemRows, readSessionItemState } from "./sessionItemRows";
 import {
-  deleteSessionRowWithRevision,
-  insertSessionRow,
+  deleteSessionItemRows,
+  listSessionItemRows,
+  readSessionItemState,
+} from "./sessionItemRows";
+import {
+  deleteSessionRow,
   listSessionRows,
-  readSessionRevision,
   readSessionRow,
   readSessionSummaryRow,
   SessionRecordParseError,
   type StoredSessionRow,
-  updateSessionRow,
+  writeSessionRow,
 } from "./sessionRows";
 import { openSessionDatabase } from "./sqliteDatabase";
 import { SqliteSessionItemStore } from "./sqliteItemStore";
@@ -55,16 +57,6 @@ const DEFAULT_LIST_LIMIT = 50;
 const MAX_LIST_LIMIT = 200;
 const DEFAULT_MESSAGE_LIMIT = 50;
 const MAX_MESSAGE_LIMIT = 200;
-
-export class ConversationSessionConflictError extends Error {
-  readonly conversationId: string;
-
-  constructor(conversationId: string) {
-    super(`会话已被其他进程修改，请重新加载后再试：${conversationId}`);
-    this.name = "ConversationSessionConflictError";
-    this.conversationId = conversationId;
-  }
-}
 
 export class ConversationSessionCorruptError extends Error {
   readonly conversationId: string;
@@ -84,7 +76,6 @@ export class SqliteConversationStore
 {
   readonly items: SqliteSessionItemStore;
   private readonly db: DatabaseSync;
-  private readonly revisions = new Map<string, number>();
   private closePromise?: Promise<void>;
 
   constructor(root: string) {
@@ -247,16 +238,7 @@ export class SqliteConversationStore
       this.forgetSession(conversationId);
       return;
     }
-    const current = readSessionRevision(this.db, conversationId);
-    if (current === undefined) {
-      this.forgetSession(conversationId);
-      return;
-    }
-    const expected = this.revisions.get(conversationId) ?? current;
-    withImmediateTransaction(this.db, () => {
-      const changes = deleteSessionRowWithRevision(this.db, conversationId, expected);
-      if (changes !== 1) throw new ConversationSessionConflictError(conversationId);
-    });
+    this.removeSessionRows(conversationId);
     this.forgetSession(conversationId);
   }
 
@@ -273,17 +255,17 @@ export class SqliteConversationStore
     const session = this.sessions.get(conversationId);
     if (session === undefined || session.metadata?.scope === "answer") return;
     if (mutation.kind === "cleared") {
-      this.deleteClearedSession(conversationId);
+      this.removeSessionRows(conversationId);
       return;
     }
-    this.persist(conversationId, session);
+    this.persist(session);
   }
 
   private async closeDatabase(): Promise<void> {
     this.db.close();
   }
 
-  private persist(conversationId: string, session: ConversationSessionRecord): void {
+  private persist(session: ConversationSessionRecord): void {
     if (session.metadata === undefined) throw new Error("会话缺少 metadata，拒绝持久化");
     const { state, messages } = splitSessionRecord(session);
     const summary = summarizeSessionState(messages, session.metadata.title);
@@ -298,36 +280,17 @@ export class SqliteConversationStore
       createdAt: session.createdAt,
       updatedAt: session.updatedAt,
     };
-    const expected = this.revisions.get(conversationId);
-    try {
-      withImmediateTransaction(this.db, () => {
-        const changes =
-          expected === undefined
-            ? insertSessionRow(this.db, input, 0)
-            : updateSessionRow(this.db, input, expected);
-        if (changes !== 1) throw new ConversationSessionConflictError(conversationId);
-      });
-    } catch (error) {
-      if (error instanceof ConversationSessionConflictError) this.forgetSession(conversationId);
-      throw error;
-    }
-    this.revisions.set(conversationId, expected === undefined ? 0 : expected + 1);
+    withImmediateTransaction(this.db, () => {
+      writeSessionRow(this.db, input);
+    });
   }
 
-  /** 清空即删除会话行与条目；下一次 `create` 会按 seed 重新建行。 */
-  private deleteClearedSession(conversationId: string): void {
+  /** 删会话行与条目；条目显式删除，不依赖连接级 `foreign_keys` 开关。 */
+  private removeSessionRows(conversationId: string): void {
     withImmediateTransaction(this.db, () => {
-      const current = readSessionRevision(this.db, conversationId);
-      if (current === undefined) {
-        this.db.prepare("DELETE FROM session_items WHERE conversation_id = ?").run(conversationId);
-        return;
-      }
-      const expected = this.revisions.get(conversationId) ?? current;
-      if (deleteSessionRowWithRevision(this.db, conversationId, expected) !== 1) {
-        throw new ConversationSessionConflictError(conversationId);
-      }
+      deleteSessionItemRows(this.db, conversationId);
+      deleteSessionRow(this.db, conversationId);
     });
-    this.revisions.delete(conversationId);
   }
 
   private foldMessages(conversationId: string): ConversationMessage[] {
@@ -377,12 +340,10 @@ export class SqliteConversationStore
     });
     record.snapshot = { ...record.snapshot, lastSeq: this.itemSequence(row.conversationId) };
     this.restoreSession(record);
-    this.revisions.set(row.conversationId, row.revision);
   }
 
   private forgetSession(conversationId: string): void {
     this.sessions.delete(conversationId);
-    this.revisions.delete(conversationId);
   }
 }
 

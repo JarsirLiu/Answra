@@ -37,10 +37,10 @@ const harnesses: ReadonlyArray<{ name: string; open: () => Promise<Harness> }> =
       db.exec(SESSION_SCHEMA_SQL);
       db.prepare(`
         INSERT INTO sessions
-          (conversation_id, scope, workspace_root, created_at, updated_at, revision,
+          (conversation_id, scope, workspace_root, created_at, updated_at,
            title, message_count, state_json)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(SESSION, "conversation", null, AT, AT, 0, "测试会话", 0, "{}");
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(SESSION, "conversation", null, AT, AT, "测试会话", 0, "{}");
       const store = new SqliteSessionItemStore(db);
       await store.create(SESSION);
       return { store };
