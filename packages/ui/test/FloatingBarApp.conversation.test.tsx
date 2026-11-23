@@ -155,7 +155,6 @@ describe("floating bar conversation", () => {
         turnId: "turn-1",
         snapshot: {
           conversationId: ActiveChatConversationId,
-          eventRevision: 0,
           lastSeq: 2,
           activeTurnId: "turn-1",
           activeMessageId: "run-delayed",
@@ -215,7 +214,6 @@ describe("floating bar conversation", () => {
         turnId: "turn-1",
         snapshot: {
           conversationId: ActiveChatConversationId,
-          eventRevision: 0,
           lastSeq: 1,
           activeTurnId: "turn-1",
           activeMessageId: "run-accepted",

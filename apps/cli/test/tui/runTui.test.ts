@@ -237,7 +237,6 @@ describe("runInkTui", () => {
     const targetSnapshot: ConversationSnapshot = {
       ...snapshot,
       conversationId: "conversation-2",
-      eventRevision: 4,
       messages: [
         { id: "message-2", role: "user", text: "history", images: [], status: "complete" },
       ],

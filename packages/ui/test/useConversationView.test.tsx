@@ -75,7 +75,6 @@ describe("useConversationView recovery", () => {
       );
     const snapshot: ConversationSnapshot = {
       conversationId: "conversation-1",
-      eventRevision: 0,
       lastSeq: 0,
       activeMessageId: "run-1",
       messages: [{ id: "run-1", role: "assistant", text: "", images: [], status: "streaming" }],
@@ -136,7 +135,6 @@ describe("useConversationView recovery", () => {
       getConversationSnapshot: vi.fn(
         async (): Promise<ConversationSnapshot> => ({
           conversationId: "conversation-1",
-          eventRevision: 0,
           lastSeq: 0,
           activeMessageId: "run-1",
           messages: [
@@ -199,7 +197,6 @@ describe("useConversationView recovery", () => {
     act(() => {
       applySnapshot?.({
         conversationId: "conversation-1",
-        eventRevision: 1,
         lastSeq: 1,
         activeMessageId: "run-1",
         messages: [{ id: "run-1", role: "assistant", text: "A", images: [], status: "streaming" }],
@@ -229,7 +226,6 @@ describe("useConversationView recovery", () => {
     act(() =>
       publishSnapshot?.({
         conversationId: "conversation-1",
-        eventRevision: 0,
         lastSeq: 0,
         messages: [
           { id: "user-1", role: "user", text: "已结算语音", images: [], status: "complete" },
@@ -239,7 +235,6 @@ describe("useConversationView recovery", () => {
     await act(async () => {
       initialSnapshot.resolve({
         conversationId: "conversation-1",
-        eventRevision: 0,
         lastSeq: 0,
         messages: [],
       });
@@ -254,7 +249,6 @@ describe("useConversationView recovery", () => {
     const bridge = {
       getConversationSnapshot: vi.fn(async () => ({
         conversationId: "conversation-1",
-        eventRevision: 0,
         lastSeq: 0,
         messages: [],
       })),
@@ -287,7 +281,6 @@ describe("useConversationView recovery", () => {
     act(() =>
       publishSnapshot?.({
         conversationId: "conversation-1",
-        eventRevision: 0,
         lastSeq: 0,
         activeTurnId: "turn-1",
         activeMessageId: "run-1",
@@ -303,7 +296,6 @@ describe("useConversationView recovery", () => {
     const bridge = {
       getConversationSnapshot: vi.fn(async () => ({
         conversationId: "conversation-1",
-        eventRevision: 0,
         lastSeq: 0,
         messages: [],
       })),
@@ -322,7 +314,6 @@ describe("useConversationView recovery", () => {
     const bridge = {
       getConversationSnapshot: vi.fn(async () => ({
         conversationId: "conversation-1",
-        eventRevision: 0,
         lastSeq: 0,
         messages: [],
       })),

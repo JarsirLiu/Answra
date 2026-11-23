@@ -9,7 +9,6 @@ describe("TUI thinking", () => {
     const store = new TuiViewStore();
     store.initialize({
       conversationId: "conversation-1",
-      eventRevision: 0,
       lastSeq: 0,
       messages: [
         {
@@ -57,7 +56,6 @@ describe("TUI thinking", () => {
     const store = new TuiViewStore();
     store.initialize({
       conversationId: "conversation-1",
-      eventRevision: 0,
       lastSeq: 0,
       messages: [
         {

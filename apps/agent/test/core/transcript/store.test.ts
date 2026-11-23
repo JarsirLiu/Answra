@@ -37,23 +37,27 @@ describe("memory conversation transcript store", () => {
     await store.create("compacted");
     await store.appendUserMessage("compacted", userMessage("user-1"));
     await store.saveContextState("compacted", {
-      checkpoints: [{
-        summary: "private summary",
-        throughMessageId: "user-1",
-        createdAt: "2026-11-14T10:00:01.000Z",
-        messageCount: 1,
-        instructions: "保留迁移决定",
-      }],
+      checkpoints: [
+        {
+          summary: "private summary",
+          throughMessageId: "user-1",
+          createdAt: "2026-11-14T10:00:01.000Z",
+          messageCount: 1,
+          instructions: "保留迁移决定",
+        },
+      ],
     });
 
     await expect(store.load("compacted")).resolves.toMatchObject({
       messages: [{ id: "user-1" }],
-      contextCompactionBoundaries: [{
-        throughMessageId: "user-1",
-        summary: "private summary",
-        summarizedMessages: 1,
-        instructions: "保留迁移决定",
-      }],
+      contextCompactionBoundaries: [
+        {
+          throughMessageId: "user-1",
+          summary: "private summary",
+          summarizedMessages: 1,
+          instructions: "保留迁移决定",
+        },
+      ],
     });
   });
 
@@ -61,18 +65,43 @@ describe("memory conversation transcript store", () => {
     const store = new MemoryConversationStore();
     await store.create("stream");
     await store.beginSessionTurn("stream", {
-      turnId: "turn-1", messageId: "assistant-1", authorAgentId: "general", userMessage: userMessage("user-1"),
-    });
-    await store.applySessionStreamEvent("stream", "assistant-1", { type: "text-delta", partId: "text-1", delta: "answer" });
-    await store.applySessionStreamEvent("stream", "assistant-1", { type: "text-end", partId: "text-1" });
-    await store.applySessionStreamEvent("stream", "assistant-1", { type: "reasoning-start", partId: "reason-1" });
-    await store.applySessionStreamEvent("stream", "assistant-1", { type: "reasoning-delta", partId: "reason-1", delta: "think" });
-    await store.applySessionStreamEvent("stream", "assistant-1", { type: "reasoning-end", partId: "reason-1" });
-    await store.applySessionStreamEvent("stream", "assistant-1", {
-      type: "tool-call", toolCallId: "tool-1", toolName: "Search", input: { query: "topic" },
+      turnId: "turn-1",
+      messageId: "assistant-1",
+      authorAgentId: "general",
+      userMessage: userMessage("user-1"),
     });
     await store.applySessionStreamEvent("stream", "assistant-1", {
-      type: "tool-result", toolCallId: "tool-1", output: "result",
+      type: "text-delta",
+      partId: "text-1",
+      delta: "answer",
+    });
+    await store.applySessionStreamEvent("stream", "assistant-1", {
+      type: "text-end",
+      partId: "text-1",
+    });
+    await store.applySessionStreamEvent("stream", "assistant-1", {
+      type: "reasoning-start",
+      partId: "reason-1",
+    });
+    await store.applySessionStreamEvent("stream", "assistant-1", {
+      type: "reasoning-delta",
+      partId: "reason-1",
+      delta: "think",
+    });
+    await store.applySessionStreamEvent("stream", "assistant-1", {
+      type: "reasoning-end",
+      partId: "reason-1",
+    });
+    await store.applySessionStreamEvent("stream", "assistant-1", {
+      type: "tool-call",
+      toolCallId: "tool-1",
+      toolName: "Search",
+      input: { query: "topic" },
+    });
+    await store.applySessionStreamEvent("stream", "assistant-1", {
+      type: "tool-result",
+      toolCallId: "tool-1",
+      output: "result",
     });
     await store.finishSessionAssistant("stream", "assistant-1", "completed");
     await store.finishSessionTurn("stream", "turn-1");
@@ -82,11 +111,20 @@ describe("memory conversation transcript store", () => {
       messages: [
         { id: "user-1" },
         {
-          id: "assistant-1", text: "answer", reasoning: "think", status: "complete",
+          id: "assistant-1",
+          text: "answer",
+          reasoning: "think",
+          status: "complete",
           parts: [
             { id: "text-1", kind: "text", text: "answer", state: "completed" },
             { id: "reason-1", kind: "reasoning", text: "think", state: "completed" },
-            { id: "tool-1", kind: "tool", toolName: "Search", state: "completed", output: "result" },
+            {
+              id: "tool-1",
+              kind: "tool",
+              toolName: "Search",
+              state: "completed",
+              output: "result",
+            },
           ],
         },
       ],
@@ -96,25 +134,43 @@ describe("memory conversation transcript store", () => {
   it.each([
     ["failed", "failed"],
     ["aborted", "interrupted"],
-  ] as const)("settles unfinished parts when the assistant outcome is %s", async (outcome, state) => {
-    const store = new MemoryConversationStore();
-    await store.create("terminal");
-    await store.beginSessionTurn("terminal", {
-      turnId: "turn-1", messageId: "assistant-1", authorAgentId: "general", userMessage: userMessage("user-1"),
-    });
-    await store.applySessionStreamEvent("terminal", "assistant-1", { type: "text-start", partId: "text-1" });
-    await store.applySessionStreamEvent("terminal", "assistant-1", {
-      type: "tool-call", toolCallId: "tool-1", toolName: "Search", input: {},
-    });
-    await store.finishSessionAssistant("terminal", "assistant-1", outcome);
+  ] as const)(
+    "settles unfinished parts when the assistant outcome is %s",
+    async (outcome, state) => {
+      const store = new MemoryConversationStore();
+      await store.create("terminal");
+      await store.beginSessionTurn("terminal", {
+        turnId: "turn-1",
+        messageId: "assistant-1",
+        authorAgentId: "general",
+        userMessage: userMessage("user-1"),
+      });
+      await store.applySessionStreamEvent("terminal", "assistant-1", {
+        type: "text-start",
+        partId: "text-1",
+      });
+      await store.applySessionStreamEvent("terminal", "assistant-1", {
+        type: "tool-call",
+        toolCallId: "tool-1",
+        toolName: "Search",
+        input: {},
+      });
+      await store.finishSessionAssistant("terminal", "assistant-1", outcome);
 
-    await expect(store.load("terminal")).resolves.toMatchObject({
-      messages: [expect.anything(), {
-        status: state,
-        parts: [{ id: "text-1", state }, { id: "tool-1", state }],
-      }],
-    });
-  });
+      await expect(store.load("terminal")).resolves.toMatchObject({
+        messages: [
+          expect.anything(),
+          {
+            status: state,
+            parts: [
+              { id: "text-1", state },
+              { id: "tool-1", state },
+            ],
+          },
+        ],
+      });
+    },
+  );
 
   it("advances the durable cursor monotonically and resets it on clear", async () => {
     const store = new MemoryConversationStore();
@@ -133,11 +189,17 @@ describe("memory conversation transcript store", () => {
     const seed = {
       activeAgentId: "candidate",
       participantAgentIds: ["candidate", "intake"],
-      bots: [{ id: "candidate", name: "Candidate", role: "candidate" }, { id: "intake", name: "Intake", role: "intake" }],
+      bots: [
+        { id: "candidate", name: "Candidate", role: "candidate" },
+        { id: "intake", name: "Intake", role: "intake" },
+      ],
     };
     await store.create("team", seed);
     await store.beginSessionTurn("team", {
-      turnId: "turn-1", messageId: "assistant-1", authorAgentId: "candidate", userMessage: userMessage("user-1"),
+      turnId: "turn-1",
+      messageId: "assistant-1",
+      authorAgentId: "candidate",
+      userMessage: userMessage("user-1"),
     });
     await store.clear("team");
     expect((await store.load("team")).activeMessageId).toBe("assistant-1");
@@ -146,25 +208,38 @@ describe("memory conversation transcript store", () => {
     await store.setActiveAgent("team", "intake");
     await store.clear("team");
     await expect(store.load("team")).resolves.toMatchObject({
-      messages: [], activeAgentId: "candidate", participantAgentIds: ["candidate", "intake"], bots: seed.bots,
+      messages: [],
+      activeAgentId: "candidate",
+      participantAgentIds: ["candidate", "intake"],
+      bots: seed.bots,
     });
   });
 
   it("writes a handoff message and opens the target assistant message", async () => {
     const store = new MemoryConversationStore();
     await store.create("team", {
-      activeAgentId: "candidate", participantAgentIds: ["candidate", "intake"],
+      activeAgentId: "candidate",
+      participantAgentIds: ["candidate", "intake"],
     });
     const handoff = await store.appendHandoffMessage("team", {
-      id: "handoff-1", fromAgentId: "candidate", toAgentId: "intake", task: "整理资料",
+      id: "handoff-1",
+      fromAgentId: "candidate",
+      toAgentId: "intake",
+      task: "整理资料",
     });
     expect(handoff.messages.at(-1)).toMatchObject({
-      id: "handoff-1", audience: { kind: "bot", agentId: "intake" }, status: "complete",
+      id: "handoff-1",
+      audience: { kind: "bot", agentId: "intake" },
+      status: "complete",
     });
     await store.beginSessionAssistant("team", "assistant-2", "intake");
     await expect(store.load("team")).resolves.toMatchObject({
-      activeAgentId: "intake", activeMessageId: "assistant-2",
-      messages: [expect.objectContaining({ id: "handoff-1" }), { id: "assistant-2", authorAgentId: "intake" }],
+      activeAgentId: "intake",
+      activeMessageId: "assistant-2",
+      messages: [
+        expect.objectContaining({ id: "handoff-1" }),
+        { id: "assistant-2", authorAgentId: "intake" },
+      ],
     });
   });
 });

@@ -76,7 +76,6 @@ function createFakeStore(): FakeStore {
         const session = sessionOf(id);
         return {
           conversationId: id,
-          eventRevision: 0,
           lastSeq: session.lastSeq,
           messages: session.messages.map((message) => ({ ...message })),
         };

@@ -1,10 +1,6 @@
 /** 单次 provider 请求的 StepRunner：准备上下文、消费模型流、写 step 级模型事件；不写 step-* 或 Turn 状态。 */
 import type { ConversationCapabilityEndpoint } from "@answra/shared";
-import type {
-  AgentFinishReason,
-  AgentStreamEvent,
-  AgentUsage,
-} from "@answra/shared/schema";
+import type { AgentFinishReason, AgentStreamEvent, AgentUsage } from "@answra/shared/schema";
 import type { TextStreamPart, ToolSet } from "ai";
 import type { StepContextManager } from "../context/stepContextManager";
 import { isContextOverflowError } from "../model/contextOverflow";

@@ -14,7 +14,6 @@ const nextModel: ConversationModelConfig = {
 
 const snapshot: ConversationSnapshot = {
   conversationId: "conversation-1",
-  eventRevision: 0,
   lastSeq: 0,
   messages: [],
 };
@@ -84,7 +83,7 @@ describe("CodingSession", () => {
   });
 
   it("refreshes the latest snapshot without requiring an idle session", async () => {
-    const latest = { ...snapshot, eventRevision: 8 };
+    const latest = { ...snapshot, lastSeq: 8 };
     const host = createHost({ getSnapshot: vi.fn(async () => latest) });
     const session = createSession(host);
     await session.open();
@@ -96,7 +95,7 @@ describe("CodingSession", () => {
   });
 
   it("clears the conversation and caches the returned snapshot", async () => {
-    const cleared = { ...snapshot, eventRevision: 5 };
+    const cleared = { ...snapshot, lastSeq: 5 };
     const host = createHost({ clearConversation: vi.fn(async () => cleared) });
     const session = createSession(host);
     await session.open();
@@ -106,7 +105,7 @@ describe("CodingSession", () => {
   });
 
   it("delegates manual compaction and caches the returned snapshot", async () => {
-    const compactedSnapshot = { ...snapshot, eventRevision: 3 };
+    const compactedSnapshot = { ...snapshot, lastSeq: 3 };
     const host = createHost({
       compactConversation: vi.fn(async () => ({
         result: { status: "compacted" as const },

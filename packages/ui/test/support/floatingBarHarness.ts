@@ -266,7 +266,6 @@ export function createConversationBridge() {
             };
             const snapshot = saveSnapshot({
               conversationId: command.conversationId,
-              eventRevision: 1,
               lastSeq: 1,
               messages: [userMessage, assistantMessage],
               activeTurnId: "turn-1",
@@ -296,11 +295,10 @@ export function createConversationBridge() {
       const prior = snapshotFor(id);
       const snapshot = saveSnapshot({
         ...prior,
-        eventRevision: prior.eventRevision,
         messages: [
           ...prior.messages,
           {
-            id: `user-${prior.eventRevision + 1}`,
+            id: `user-${prior.messages.length + 1}`,
             role: "user",
             text,
             images: [],
@@ -313,7 +311,6 @@ export function createConversationBridge() {
     openInterviewIntake: vi.fn(async () => {
       const snapshot = saveSnapshot({
         conversationId: ActiveInterviewIntakeConversationId,
-        eventRevision: 0,
         lastSeq: 0,
         messages: [
           {
@@ -369,7 +366,7 @@ export function createConversationBridge() {
 }
 
 function emptySnapshot(id = conversationId): ConversationSnapshot {
-  return { conversationId: id, eventRevision: 0, lastSeq: 0, messages: [] };
+  return { conversationId: id, lastSeq: 0, messages: [] };
 }
 
 /** live-only 增量不进 durable 历史：它们只改变瞬时正文，由后续快照兜底。 */

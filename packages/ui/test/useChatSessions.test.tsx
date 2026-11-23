@@ -17,7 +17,7 @@ const summary: ConversationSessionSummary = {
 };
 
 function snapshot(conversationId: string): ConversationSnapshot {
-  return { conversationId, eventRevision: 0, lastSeq: 0, messages: [] };
+  return { conversationId, lastSeq: 0, messages: [] };
 }
 
 describe("useChatSessions", () => {

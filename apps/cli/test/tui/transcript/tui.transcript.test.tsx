@@ -15,7 +15,6 @@ describe("TUI transcript interaction", () => {
     const store = new TuiViewStore();
     store.initialize({
       conversationId: "conversation-1",
-      eventRevision: 0,
       lastSeq: 0,
       messages: [
         {
@@ -49,7 +48,6 @@ describe("TUI transcript interaction", () => {
     const store = new TuiViewStore();
     store.initialize({
       conversationId: "conversation-image",
-      eventRevision: 0,
       lastSeq: 0,
       messages: [
         {
@@ -85,7 +83,6 @@ describe("TUI transcript interaction", () => {
     const store = new TuiViewStore();
     store.initialize({
       conversationId: "conversation-1",
-      eventRevision: 0,
       lastSeq: 0,
       messages: Array.from({ length: 40 }, (_, index) => ({
         id: `assistant-${index}`,
@@ -126,7 +123,6 @@ describe("TUI transcript interaction", () => {
     const pointer = createPointerSource();
     store.initialize({
       conversationId: "conversation-1",
-      eventRevision: 0,
       lastSeq: 0,
       messages: Array.from({ length: 20 }, (_, index) => ({
         id: `assistant-${index}`,
@@ -197,7 +193,7 @@ describe("TUI transcript interaction", () => {
         },
       ],
     }));
-    store.initialize({ conversationId: "conversation-1", eventRevision: 0, lastSeq: 0, messages });
+    store.initialize({ conversationId: "conversation-1", lastSeq: 0, messages });
     const instance = render(
       <App
         botName="coding.engineer"
@@ -231,7 +227,6 @@ describe("TUI transcript interaction", () => {
       ];
       store.applySnapshot({
         conversationId: "conversation-1",
-        eventRevision: revision,
         lastSeq: 0,
         messages,
       });
@@ -249,7 +244,6 @@ describe("TUI transcript interaction", () => {
     const store = new TuiViewStore();
     store.initialize({
       conversationId: "conversation-1",
-      eventRevision: 0,
       lastSeq: 0,
       messages: [],
     });
@@ -296,7 +290,6 @@ describe("TUI transcript interaction", () => {
     const store = new TuiViewStore();
     store.initialize({
       conversationId: "conversation-1",
-      eventRevision: 0,
       lastSeq: 0,
       messages: [],
     });
@@ -326,7 +319,6 @@ describe("TUI transcript interaction", () => {
     const store = new TuiViewStore();
     store.initialize({
       conversationId: "conversation-1",
-      eventRevision: 0,
       lastSeq: 0,
       messages: Array.from({ length: 40 }, (_, index) => ({
         id: `assistant-${index}`,
@@ -378,7 +370,6 @@ describe("TUI transcript interaction", () => {
     const store = new TuiViewStore();
     store.initialize({
       conversationId: "conversation-1",
-      eventRevision: 0,
       lastSeq: 0,
       messages: Array.from({ length: 40 }, (_, index) => ({
         id: `assistant-${index}`,

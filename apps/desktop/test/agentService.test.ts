@@ -65,7 +65,7 @@ import { AgentService } from "../src/main/agent/agentService";
 
 const emptySnapshot = (conversationId: string): ConversationSnapshot => ({
   conversationId,
-  eventRevision: 0,
+  lastSeq: 0,
   messages: [],
 });
 

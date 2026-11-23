@@ -70,13 +70,11 @@ function createDependencies(
     configure: vi.fn(),
     createConversation: vi.fn(async (conversationId) => ({
       conversationId,
-      eventRevision: 0,
       lastSeq: 0,
       messages: [],
     })),
     clearConversation: vi.fn(async (conversationId) => ({
       conversationId,
-      eventRevision: 0,
       lastSeq: 0,
       messages: [],
     })),
@@ -88,7 +86,6 @@ function createDependencies(
       turnId: "turn-1",
       snapshot: {
         conversationId,
-        eventRevision: 0,
         lastSeq: 0,
         messages: [],
       },
@@ -98,7 +95,6 @@ function createDependencies(
       turnId: "turn-1",
       snapshot: {
         conversationId,
-        eventRevision: 0,
         lastSeq: 0,
         messages: [],
       },

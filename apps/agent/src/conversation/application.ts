@@ -638,7 +638,6 @@ export class ConversationApplication {
     this.sessionRuntime.dispose();
     this.agentRuntime.dispose();
   }
-
 }
 
 const MANUAL_COMPACTION_AGENT_RUN = "manual-compaction";

@@ -9,8 +9,8 @@ const model: ConversationModelConfig = {
   answer: { baseUrl: "http://127.0.0.1:1234/v1", model: "test-model", auth: "local" },
 };
 
-function snapshot(conversationId: string, revision = 0): ConversationSnapshot {
-  return { conversationId, eventRevision: revision, lastSeq: 0, messages: [] };
+function snapshot(conversationId: string, lastSeq = 0): ConversationSnapshot {
+  return { conversationId, lastSeq, messages: [] };
 }
 
 function createSession(conversationId: string) {

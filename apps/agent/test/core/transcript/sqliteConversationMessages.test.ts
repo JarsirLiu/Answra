@@ -224,9 +224,7 @@ describe("SQLite conversation message rows", () => {
     `);
     db.close();
 
-    await expect(
-      startAssistantMessage(store, "coding-1", "run-1", "user-1"),
-    ).rejects.toThrow();
+    await expect(startAssistantMessage(store, "coding-1", "run-1", "user-1")).rejects.toThrow();
 
     const repair = new DatabaseSync(path.join(root, "sessions.sqlite"));
     repair.exec("DROP TRIGGER reject_run");
@@ -257,26 +255,16 @@ describe("SQLite conversation message rows", () => {
     await startAssistantMessage(store, "coding-1", "run-1", "user-1");
     const before = readSessionRevision(root);
 
-    await writeStreamEvent(
-      store,
-      "coding-1",
-      "run-1",
-      {
-        type: "text-delta",
-        partId: "text-1",
-        delta: "partial",
-      },
-    );
-    await writeStreamEvent(
-      store,
-      "coding-1",
-      "run-1",
-      {
-        type: "reasoning-delta",
-        partId: "reason-1",
-        delta: "thinking",
-      },
-    );
+    await writeStreamEvent(store, "coding-1", "run-1", {
+      type: "text-delta",
+      partId: "text-1",
+      delta: "partial",
+    });
+    await writeStreamEvent(store, "coding-1", "run-1", {
+      type: "reasoning-delta",
+      partId: "reason-1",
+      delta: "thinking",
+    });
 
     expect(vi.getTimerCount()).toBe(1);
     expect(readDraftCount(root)).toBe(0);
@@ -285,15 +273,10 @@ describe("SQLite conversation message rows", () => {
     expect(readDraftCount(root)).toBe(1);
     expect(readSessionRevision(root)).toEqual(before);
 
-    await writeStreamEvent(
-      store,
-      "coding-1",
-      "run-1",
-      {
-        type: "text-end",
-        partId: "text-1",
-      },
-    );
+    await writeStreamEvent(store, "coding-1", "run-1", {
+      type: "text-end",
+      partId: "text-1",
+    });
     await flushMicrotasks();
     expect(readDraftCount(root)).toBe(1);
 
@@ -309,16 +292,11 @@ describe("SQLite conversation message rows", () => {
     await store.create("coding-1", undefined, { scope: "coding" });
     await startAssistantMessage(store, "coding-1", "run-1", "user-1");
 
-    await writeStreamEvent(
-      store,
-      "coding-1",
-      "run-1",
-      {
-        type: "text-delta",
-        partId: "text-1",
-        delta: "x".repeat(2_048),
-      },
-    );
+    await writeStreamEvent(store, "coding-1", "run-1", {
+      type: "text-delta",
+      partId: "text-1",
+      delta: "x".repeat(2_048),
+    });
     await flushMicrotasks();
 
     expect(readDraftCount(root)).toBe(1);
@@ -329,16 +307,11 @@ describe("SQLite conversation message rows", () => {
     const store = storeFor(root);
     await store.create("coding-1", undefined, { scope: "coding" });
     await startAssistantMessage(store, "coding-1", "run-1", "user-1");
-    await writeStreamEvent(
-      store,
-      "coding-1",
-      "run-1",
-      {
-        type: "text-delta",
-        partId: "text-1",
-        delta: "partial answer",
-      },
-    );
+    await writeStreamEvent(store, "coding-1", "run-1", {
+      type: "text-delta",
+      partId: "text-1",
+      delta: "partial answer",
+    });
     await store.close();
     expect(readDraftCount(root)).toBe(1);
 
@@ -360,16 +333,11 @@ describe("SQLite conversation message rows", () => {
     const store = storeFor(root);
     await store.create("coding-1", undefined, { scope: "coding" });
     await startAssistantMessage(store, "coding-1", "run-1", "user-1");
-    await writeStreamEvent(
-      store,
-      "coding-1",
-      "run-1",
-      {
-        type: "text-delta",
-        partId: "text-1",
-        delta: "stale draft",
-      },
-    );
+    await writeStreamEvent(store, "coding-1", "run-1", {
+      type: "text-delta",
+      partId: "text-1",
+      delta: "stale draft",
+    });
     await store.close();
     expect(readDraftCount(root)).toBe(1);
 
@@ -411,16 +379,11 @@ describe("SQLite conversation message rows", () => {
     );
     db.close();
 
-    await writeStreamEvent(
-      store,
-      "coding-1",
-      "run-1",
-      {
-        type: "text-delta",
-        partId: "text-1",
-        delta: "x".repeat(2_048),
-      },
-    );
+    await writeStreamEvent(store, "coding-1", "run-1", {
+      type: "text-delta",
+      partId: "text-1",
+      delta: "x".repeat(2_048),
+    });
     await flushMicrotasks();
 
     expect(readDraftCount(root)).toBe(0);
@@ -525,16 +488,11 @@ describe("SQLite conversation message rows", () => {
     const store = storeFor(root);
     await store.create("coding-1", undefined, { scope: "coding" });
     await startAssistantMessage(store, "coding-1", "run-1", "user-1");
-    await writeStreamEvent(
-      store,
-      "coding-1",
-      "run-1",
-      {
-        type: "text-delta",
-        partId: "text-1",
-        delta: "live",
-      },
-    );
+    await writeStreamEvent(store, "coding-1", "run-1", {
+      type: "text-delta",
+      partId: "text-1",
+      delta: "live",
+    });
     const live = await store.listMessages("coding-1", { limit: 1 });
     expect(live.items[0]).toMatchObject({ id: "run-1", text: "live", status: "streaming" });
 
@@ -564,16 +522,11 @@ describe("SQLite conversation message rows", () => {
     const winner = storeFor(root);
     await winner.load("coding-1");
 
-    await writeStreamEvent(
-      loser,
-      "coding-1",
-      "run-loser",
-      {
-        type: "text-delta",
-        partId: "text-1",
-        delta: "x".repeat(2_048),
-      },
-    );
+    await writeStreamEvent(loser, "coding-1", "run-loser", {
+      type: "text-delta",
+      partId: "text-1",
+      delta: "x".repeat(2_048),
+    });
     await flushMicrotasks();
     expect(readDraftCount(root)).toBe(1);
 

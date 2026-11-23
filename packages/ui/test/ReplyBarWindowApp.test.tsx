@@ -28,7 +28,6 @@ let clipboardOverridden = false;
 
 const snapshot: ConversationSnapshot = {
   conversationId,
-  eventRevision: 1,
   lastSeq: 0,
   activeMessageId: runId,
   messages: [
@@ -233,7 +232,6 @@ describe("ReplyBarWindowApp live conversation popover", () => {
     const bridge = createBridge();
     bridge.getConversationSnapshot.mockResolvedValue({
       conversationId,
-      eventRevision: 0,
       lastSeq: 0,
       activeMessageId: runId,
       messages: [
@@ -286,7 +284,6 @@ describe("ReplyBarWindowApp live conversation popover", () => {
     const bridge = createBridge();
     bridge.getConversationSnapshot.mockResolvedValue({
       ...snapshot,
-      eventRevision: 1,
       messages: [
         snapshot.messages[0],
         { ...(snapshot.messages[1] as ConversationMessage), text: "最终答案" },
@@ -316,7 +313,6 @@ describe("ReplyBarWindowApp live conversation popover", () => {
     const bridge = createBridge();
     bridge.getConversationSnapshot.mockResolvedValue({
       ...snapshot,
-      eventRevision: 1,
       // 本轮刚开口：只有思维链，回答正文尚未开始
       messages: [
         snapshot.messages[0],

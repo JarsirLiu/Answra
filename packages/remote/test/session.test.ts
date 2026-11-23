@@ -169,7 +169,7 @@ describe("remote host/controller sessions", () => {
     hostPort.emitSnapshot(
       createFakeConversationSnapshot({
         conversationId: "conversation-live",
-        eventRevision: 3,
+        lastSeq: 3,
       }),
     );
     hostPort.emitFrame(createFakeSessionFrame(4));
@@ -178,7 +178,7 @@ describe("remote host/controller sessions", () => {
 
     expect(snapshots).toHaveLength(1);
     expect(snapshots[0]?.conversationId).toBe("conversation-live");
-    expect(snapshots[0]?.eventRevision).toBe(3);
+    expect(snapshots[0]?.lastSeq).toBe(3);
     expect(frames).toHaveLength(1);
     expect(frames[0]).toMatchObject({ seq: 4, eventId: "frame-4" });
     expect(liveFrames).toHaveLength(1);

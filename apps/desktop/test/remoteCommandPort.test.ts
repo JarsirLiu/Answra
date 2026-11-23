@@ -17,7 +17,7 @@ import { createDesktopRemoteCommandPort } from "../src/main/remote/host/commandP
 const createdAt = "2026-11-21T00:00:00.000Z";
 
 function snapshot(conversationId: string): ConversationSnapshot {
-  return { conversationId, eventRevision: 0, lastSeq: 0, messages: [] };
+  return { conversationId, lastSeq: 0, messages: [] };
 }
 
 function frame(conversationId: string, seq = 1): SessionFrame {

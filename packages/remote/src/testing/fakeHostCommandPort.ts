@@ -99,7 +99,6 @@ export function createFakeHostCommandPort(
     async createConversation(conversationId) {
       currentSnapshot = {
         conversationId,
-        eventRevision: currentSnapshot.eventRevision,
         lastSeq: 0,
         messages: [],
       };

@@ -63,7 +63,6 @@ const service = {
     result: { status: "compacted" },
     snapshot: {
       conversationId: ActiveChatConversationId,
-      eventRevision: 1,
       lastSeq: 0,
       messages: [],
     },

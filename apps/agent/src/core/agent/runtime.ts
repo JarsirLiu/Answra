@@ -1,9 +1,9 @@
 /** 静态 Agent 注册、模型路由与模型辅助能力的稳定运行时入口。 */
 import { randomUUID } from "node:crypto";
-import type { AgentModelRoutes, AgentExecutor, AgentId, AgentDefinition } from "./definition";
 import { generateModelText } from "../model/modelTransport";
 import { validateEndpoint } from "../model/providerFetch";
 import { withCurrentTimeContext } from "./currentTimeContext";
+import type { AgentDefinition, AgentExecutor, AgentId, AgentModelRoutes } from "./definition";
 import { AgentRegistry } from "./registry";
 
 export interface AgentRuntimeOptions {

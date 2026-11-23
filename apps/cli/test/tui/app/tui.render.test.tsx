@@ -71,7 +71,6 @@ describe("TUI rendering", () => {
     const store = new TuiViewStore();
     store.initialize({
       conversationId: "conversation-1",
-      eventRevision: 1,
       lastSeq: 0,
       messages: [
         { id: "user-1", role: "user", text: "question", images: [], status: "complete" },
@@ -123,7 +122,6 @@ describe("TUI rendering", () => {
     const store = new TuiViewStore();
     store.initialize({
       conversationId: "conversation-1",
-      eventRevision: 0,
       lastSeq: 0,
       messages: [],
     });
@@ -150,7 +148,6 @@ describe("TUI rendering", () => {
     const store = new TuiViewStore();
     store.initialize({
       conversationId: "conversation-1",
-      eventRevision: 0,
       lastSeq: 0,
       messages: [],
     });
@@ -181,7 +178,6 @@ describe("TUI rendering", () => {
     const store = new TuiViewStore();
     store.initialize({
       conversationId: "conversation-1",
-      eventRevision: 0,
       lastSeq: 0,
       messages: [],
     });

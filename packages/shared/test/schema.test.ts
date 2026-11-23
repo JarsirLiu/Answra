@@ -232,7 +232,6 @@ describe("event schema", () => {
       }).success,
     ).toBe(false);
   });
-
 });
 
 describe("execution status schema", () => {

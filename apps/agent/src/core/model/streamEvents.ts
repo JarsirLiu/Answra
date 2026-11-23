@@ -4,10 +4,7 @@
  * 这里只保留 provider-neutral 的模型事实，不创建 Conversation 消息、Execution
  * 状态或 UI 状态；provider metadata 和 raw chunk 不进入共享 schema。
  */
-import type {
-  AgentFinishReason,
-  AgentStreamEvent,
-} from "@answra/shared/schema";
+import type { AgentFinishReason, AgentStreamEvent } from "@answra/shared/schema";
 import type { CallWarning, TextStreamPart, ToolSet } from "ai";
 
 type FinishPart = Extract<TextStreamPart<ToolSet>, { type: "finish" }>;

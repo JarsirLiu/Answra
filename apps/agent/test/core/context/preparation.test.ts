@@ -187,16 +187,16 @@ describe("ContextPreparation", () => {
     for (let index = 0; index < 6; index += 1) {
       const toolCallId = `call-${index}`;
       await store.applySessionStreamEvent("conversation-1", "run-1", {
-          type: "tool-call",
-          toolCallId,
-          toolName: READ_TOOL_NAME,
-          input: { path: `src/file-${index}.ts` },
-        });
+        type: "tool-call",
+        toolCallId,
+        toolName: READ_TOOL_NAME,
+        input: { path: `src/file-${index}.ts` },
+      });
       await store.applySessionStreamEvent("conversation-1", "run-1", {
-          type: "tool-result",
-          toolCallId,
-          output: `文件内容 ${index}`,
-        });
+        type: "tool-result",
+        toolCallId,
+        output: `文件内容 ${index}`,
+      });
     }
     const generate = vi.fn<ContextSummaryGenerator>(async ({ prompt }) => {
       expect(prompt).toContain("文件内容 5");
@@ -230,16 +230,16 @@ describe("ContextPreparation", () => {
       userMessage: message("m1", "读取文件"),
     });
     await store.applySessionStreamEvent("conversation-1", "run-1", {
-        type: "tool-call",
-        toolCallId: "call-1",
-        toolName: READ_TOOL_NAME,
-        input: { path: "src/file.ts" },
-      });
+      type: "tool-call",
+      toolCallId: "call-1",
+      toolName: READ_TOOL_NAME,
+      input: { path: "src/file.ts" },
+    });
     await store.applySessionStreamEvent("conversation-1", "run-1", {
-        type: "tool-result",
-        toolCallId: "call-1",
-        output: "RAW_OLD_RESULT",
-      });
+      type: "tool-result",
+      toolCallId: "call-1",
+      output: "RAW_OLD_RESULT",
+    });
     await store.saveContextState("conversation-1", {
       checkpoints: [],
       prunedToolCallIds: ["call-1"],
@@ -274,16 +274,16 @@ describe("ContextPreparation", () => {
     for (let index = 0; index < 6; index += 1) {
       const toolCallId = `call-${index}`;
       await store.applySessionStreamEvent("conversation-1", "run-1", {
-          type: "tool-call",
-          toolCallId,
-          toolName: READ_TOOL_NAME,
-          input: { path: `src/file-${index}.ts` },
-        });
+        type: "tool-call",
+        toolCallId,
+        toolName: READ_TOOL_NAME,
+        input: { path: `src/file-${index}.ts` },
+      });
       await store.applySessionStreamEvent("conversation-1", "run-1", {
-          type: "tool-result",
-          toolCallId,
-          output: `RAW_RESULT_${index}`,
-        });
+        type: "tool-result",
+        toolCallId,
+        output: `RAW_RESULT_${index}`,
+      });
     }
     const generate = vi.fn<ContextSummaryGenerator>(async ({ prompt }) => {
       expect(prompt).toContain(PRUNED_TOOL_RESULT_TEXT);

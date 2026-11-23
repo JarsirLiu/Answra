@@ -96,10 +96,12 @@ export class MemoryConversationStore implements ConversationStore {
     if (session.snapshot.activeMessageId) throw new Error("当前回复尚未完成");
     if (input.userMessage === undefined && session.snapshot.messages.length > 0) {
       const last = session.snapshot.messages.at(-1);
-      if (last?.role !== "user" || last.status !== "complete") throw new Error("没有可回复的用户消息");
+      if (last?.role !== "user" || last.status !== "complete")
+        throw new Error("没有可回复的用户消息");
     }
     const previous = cloneRecord(session);
-    if (input.userMessage !== undefined && input.userMessage.role !== "user") throw new Error("run 必须从用户消息开始");
+    if (input.userMessage !== undefined && input.userMessage.role !== "user")
+      throw new Error("run 必须从用户消息开始");
     session.snapshot = {
       ...session.snapshot,
       messages: [
@@ -262,11 +264,7 @@ export class MemoryConversationStore implements ConversationStore {
 
   async close(): Promise<void> {}
 
-  private finishAssistant(
-    conversationId: string,
-    messageId: string,
-    outcome: TurnOutcome,
-  ): void {
+  private finishAssistant(conversationId: string, messageId: string, outcome: TurnOutcome): void {
     const session = this.requireSession(conversationId);
     if (!session.snapshot.messages.some((message) => message.id === messageId)) return;
     session.snapshot = {

@@ -8,7 +8,7 @@ import { DesktopRemoteHostService } from "../src/main/remote/host/desktopRemoteH
 const NOW = new Date("2026-11-21T00:00:00.000Z");
 
 function snapshot(conversationId: string) {
-  return { conversationId, eventRevision: 0, lastSeq: 0, messages: [] };
+  return { conversationId, lastSeq: 0, messages: [] };
 }
 
 function createAgent(): DesktopRemoteAgentPort {

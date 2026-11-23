@@ -123,11 +123,7 @@ export class SessionTranscriptBridge {
     if (envelope.messageId === undefined) throw new Error("turn-handoff 缺少来源 messageId");
     const event = envelope.event;
     if (event.type !== "turn-handoff") return;
-    await this.store.finishSessionAssistant(
-      envelope.sessionId,
-      envelope.messageId,
-      "completed",
-    );
+    await this.store.finishSessionAssistant(envelope.sessionId, envelope.messageId, "completed");
     await this.store.appendHandoffMessage(envelope.sessionId, {
       id: randomUUID(),
       fromAgentId: event.fromAgentId,
@@ -144,11 +140,7 @@ export class SessionTranscriptBridge {
     if (event.type !== "turn-finished") return;
     const state = this.state(envelope);
     if (state.messageId !== undefined) {
-      await this.store.finishSessionAssistant(
-        envelope.sessionId,
-        state.messageId,
-        event.status,
-      );
+      await this.store.finishSessionAssistant(envelope.sessionId, state.messageId, event.status);
     }
     if (envelope.turnId !== undefined) {
       await this.store.finishSessionTurn(envelope.sessionId, envelope.turnId);

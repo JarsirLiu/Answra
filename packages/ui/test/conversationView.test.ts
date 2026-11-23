@@ -44,7 +44,6 @@ describe("conversation projection", () => {
     const view = applyConversationSnapshot(EMPTY_CONVERSATION_VIEW, {
       conversationId: CONVERSATION,
       lastSeq: 0,
-      eventRevision: 1,
       activeMessageId: "run-1",
       messages: [
         { id: "user-1", role: "user", text: "请自我介绍", images: [], status: "complete" },
@@ -145,7 +144,6 @@ describe("conversation projection", () => {
     const accepted = applyConversationSnapshot(EMPTY_CONVERSATION_VIEW, {
       conversationId: CONVERSATION,
       lastSeq: 0,
-      eventRevision: 0,
       activeTurnId: "turn-1",
       activeMessageId: "run-1",
       messages: [{ id: "run-1", role: "assistant", text: "", images: [], status: "streaming" }],
@@ -166,7 +164,6 @@ describe("conversation projection", () => {
     const restored = applyConversationSnapshot(EMPTY_CONVERSATION_VIEW, {
       conversationId: CONVERSATION,
       lastSeq: 0,
-      eventRevision: 8,
       messages: [
         {
           id: "run-1",
@@ -211,7 +208,6 @@ describe("conversation projection", () => {
     const restored = applyConversationSnapshot(EMPTY_CONVERSATION_VIEW, {
       conversationId: CONVERSATION,
       lastSeq: 0,
-      eventRevision: 1,
       messages: [
         {
           id: "run-1",
@@ -327,7 +323,6 @@ describe("conversation projection", () => {
     const snapshot = applyConversationSnapshot(withProvider, {
       conversationId: CONVERSATION,
       lastSeq: 0,
-      eventRevision: 3,
       messages: [],
       contextUsage: {
         contextWindow: 200_000,
@@ -365,7 +360,6 @@ describe("conversation projection", () => {
     const snapshot = applyConversationSnapshot(withEstimate, {
       conversationId: CONVERSATION,
       lastSeq: 0,
-      eventRevision: 3,
       messages: [],
       contextUsage: {
         contextWindow: 200_000,
@@ -403,7 +397,6 @@ describe("conversation projection", () => {
     const snapshot = applyConversationSnapshot(withProvider, {
       conversationId: CONVERSATION,
       lastSeq: 0,
-      eventRevision: 3,
       messages: [],
       contextUsage: {
         contextWindow: 200_000,
@@ -441,7 +434,6 @@ describe("conversation projection", () => {
     const snapshot = applyConversationSnapshot(withProvider, {
       conversationId: CONVERSATION,
       lastSeq: 0,
-      eventRevision: 4,
       messages: [],
       contextUsage: {
         contextWindow: 200_000,
@@ -465,7 +457,6 @@ describe("conversation projection", () => {
     const snapshot = applyConversationSnapshot(EMPTY_CONVERSATION_VIEW, {
       conversationId: CONVERSATION,
       lastSeq: 0,
-      eventRevision: 1,
       messages: [],
       contextUsage: {
         contextWindow: 200_000,
@@ -566,7 +557,6 @@ describe("conversation projection", () => {
     const next = applyConversationSnapshot(view, {
       conversationId: CONVERSATION,
       lastSeq: 0,
-      eventRevision: 3,
       messages: [],
     });
     expect(next.error).toBeUndefined();
@@ -576,7 +566,6 @@ describe("conversation projection", () => {
     const view = applyConversationSnapshot(EMPTY_CONVERSATION_VIEW, {
       conversationId: CONVERSATION,
       lastSeq: 0,
-      eventRevision: 3,
       messages: [],
       contextCompaction: {
         state: "failed",
@@ -598,7 +587,6 @@ describe("conversation projection", () => {
     const view = applyConversationSnapshot(EMPTY_CONVERSATION_VIEW, {
       conversationId: CONVERSATION,
       lastSeq: 0,
-      eventRevision: 3,
       messages: [],
       contextUsage: {
         contextWindow: 256_000,
@@ -626,7 +614,6 @@ describe("conversation projection", () => {
     const view = applyConversationSnapshot(EMPTY_CONVERSATION_VIEW, {
       conversationId: CONVERSATION,
       lastSeq: 0,
-      eventRevision: 3,
       activeMessageId: "run-1",
       messages: [{ id: "run-1", role: "assistant", text: "", images: [], status: "streaming" }],
       contextUsage: {
