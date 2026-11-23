@@ -1,9 +1,5 @@
 /** `session_items` 行与 `SessionItem` 的纯映射；不执行 SQL、不判断 Turn 语义。 */
-import {
-  type SessionItem,
-  sessionItemPayloadSchema,
-  sessionItemSchema,
-} from "@answra/shared/schema";
+import { type SessionItem, sessionItemSchema } from "@answra/shared/schema";
 
 /** 数据库列名到值的形状；`kind` 单独成列以支持 CHECK 与索引，读取时与 payload 校验。 */
 export interface SessionItemColumns {
@@ -47,11 +43,8 @@ export function fromSessionItemColumns(row: SessionItemColumns): SessionItem {
       }）`,
     );
   }
-  const payload = sessionItemPayloadSchema.parse(value);
-  if (payload.kind !== row.kind) {
-    throw new Error(`条目 kind 与 payload 不一致：${row.item_id}（${row.kind} / ${payload.kind}）`);
-  }
-  return sessionItemSchema.parse({
+  // 整条一次校验：`sessionItemSchema` 已经包含 payload 的联合校验，再单独 parse 一次是重复开支。
+  const item = sessionItemSchema.parse({
     seq: row.seq,
     itemId: row.item_id,
     status: row.status,
@@ -60,6 +53,12 @@ export function fromSessionItemColumns(row: SessionItemColumns): SessionItem {
     ...(row.message_id === null ? {} : { messageId: row.message_id }),
     ...(row.author_agent_id === null ? {} : { authorAgentId: row.author_agent_id }),
     ...(row.audience_agent_id === null ? {} : { audienceAgentId: row.audience_agent_id }),
-    payload,
+    payload: value,
   });
+  if (item.payload.kind !== row.kind) {
+    throw new Error(
+      `条目 kind 与 payload 不一致：${row.item_id}（${row.kind} / ${item.payload.kind}）`,
+    );
+  }
+  return item;
 }

@@ -103,7 +103,7 @@ describe("toLiveFrame", () => {
     });
   });
 
-  it("rejects durable facts so they cannot bypass the journal", () => {
+  it("rejects durable facts so they cannot bypass the item write path", () => {
     expect(toLiveFrame(STEP, { type: "text-start", partId: "text-1" })).toBeUndefined();
     expect(toLiveFrame(STEP, { type: "finish", finishReason: "stop" })).toBeUndefined();
   });

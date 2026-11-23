@@ -13,6 +13,9 @@ import type {
 import type { OutputPort } from "../transport/output";
 import { toolFinishLine, toolStartLine } from "./toolLine";
 
+/** 手动中断沿用 `SIGINT` 惯例，调用方无需再记数字。 */
+const CANCELLED_EXIT_CODE = 130;
+
 export interface StreamPresenter {
   presentFrame(frame: SessionFrame): void;
   presentLive(frame: LiveFrame): void;
@@ -90,7 +93,7 @@ export function createStreamPresenter(output: OutputPort): StreamPresenter {
   const presentTurnEnd = (item: SessionItem): void => {
     if (item.payload.kind !== "turn-end") return;
     if (item.status === "failed") {
-      if (exitCode !== 130) exitCode = 1;
+      if (exitCode !== CANCELLED_EXIT_CODE) exitCode = 1;
       if (!errorReported) {
         output.writeError("run failed\n");
         errorReported = true;
@@ -98,7 +101,7 @@ export function createStreamPresenter(output: OutputPort): StreamPresenter {
       return;
     }
     if (item.status === "interrupted") {
-      exitCode = 130;
+      exitCode = CANCELLED_EXIT_CODE;
       output.writeError("cancelled\n");
     }
   };

@@ -172,3 +172,9 @@ export function turnOutcomeOfItemStatus(status: SessionItemStatus): TurnOutcome 
   if (status === "complete") return "completed";
   return status === "failed" ? "failed" : "aborted";
 }
+
+/** `turnOutcomeOfItemStatus` 的反向映射；写入 `turn-end` 时用它，避免两处各写一套 if。 */
+export function sessionItemStatusOfTurnOutcome(outcome: TurnOutcome): SessionItemStatus {
+  if (outcome === "completed") return "complete";
+  return outcome === "failed" ? "failed" : "interrupted";
+}

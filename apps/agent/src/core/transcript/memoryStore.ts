@@ -1,4 +1,4 @@
-﻿/** 进程内 transcript 仓储；不记录 Agent 事件事实或事件 journal。 */
+﻿/** 进程内 transcript 仓储；不记录 Agent 事件事实。 */
 import type {
   ConversationMessage,
   ConversationMessagePart,

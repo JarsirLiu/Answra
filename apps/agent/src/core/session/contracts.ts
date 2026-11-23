@@ -33,7 +33,7 @@ export function stepId(value: string): StepId {
   return requireId(value, "Step ID") as StepId;
 }
 
-/** 每次 Turn 的运行时依赖；只存在内存，不进入 journal，也不跨进程持久化。 */
+/** 每次 Turn 的运行时依赖；只存在内存，不进入条目，也不跨进程持久化。 */
 export interface TurnRunContext {
   /** 解析当前 Turn 的模型访问令牌；恢复时必须由宿主重新注入。 */
   getAccessToken: () => Promise<string>;
@@ -198,7 +198,7 @@ export interface TurnRecorder {
 /** StepRunner 的运行时上下文；目标 Bot 的 prompt 由领域适配器按 agentId 解析。 */
 export interface StepRunContext {
   events: StepEventSink;
-  /** 当前 Turn 的运行时依赖；同一 Turn 的所有 step 共享，不落 journal。 */
+  /** 当前 Turn 的运行时依赖；同一 Turn 的所有 step 共享，不落条目。 */
   runtime: TurnRunContext;
 }
 

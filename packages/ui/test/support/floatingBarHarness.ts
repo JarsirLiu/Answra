@@ -397,7 +397,7 @@ export function createConversationBridge() {
       .fn()
       .mockImplementation(async (id: string) => saveSnapshot(snapshotFor(id))),
     clearConversationMessages: vi.fn().mockImplementation(async (id: string) => {
-      // worker 清空会话时同时清空 journal 序号：帧从 1 重新开始，客户端游标也归零。
+      // worker 清空会话时条目也一并清空：帧序号从 1 重新开始，客户端游标也归零。
       frameLog.delete(id);
       return saveSnapshot(emptySnapshot(id));
     }),

@@ -73,7 +73,7 @@ export const conversationSnapshotSchema = z.strictObject({
   /**
    * 已投影进该 snapshot 的最后一条 durable 事实 `seq`；客户端从这里继续读帧。
    *
-   * 属于运行期游标，不持久化，恢复时由 journal 末尾重新 seed。
+   * 属于运行期游标，不持久化，恢复时由条目末尾重新 seed。
    */
   lastSeq: z.number().int().nonnegative(),
   messages: z.array(conversationMessageSchema),

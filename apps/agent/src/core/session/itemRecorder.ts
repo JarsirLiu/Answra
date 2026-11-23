@@ -14,7 +14,11 @@ import type {
   SessionItem,
   TurnOutcome,
 } from "@answra/shared/schema";
-import { toSessionItemFrame, turnEndItemId } from "@answra/shared/schema";
+import {
+  sessionItemStatusOfTurnOutcome,
+  toSessionItemFrame,
+  turnEndItemId,
+} from "@answra/shared/schema";
 import type { SessionItemDraft, SessionItemStore } from "../transcript/itemStore";
 import {
   handoffItemDraft,
@@ -296,12 +300,7 @@ function turnEndDraft(
 ): SessionItemDraft {
   return {
     itemId: turnEndItemId(turnId),
-    status:
-      finish.outcome === "completed"
-        ? "complete"
-        : finish.outcome === "failed"
-          ? "failed"
-          : "interrupted",
+    status: sessionItemStatusOfTurnOutcome(finish.outcome),
     createdAt: now,
     turnId,
     payload: {
@@ -314,7 +313,9 @@ function turnEndDraft(
       ...(finish.durationMs === undefined ? {} : { durationMs: finish.durationMs }),
       ...(finish.errorText === undefined ? {} : { errorText: finish.errorText }),
       ...(finish.outcome === "aborted"
-        ? { interruption: { reason: "cancelled" as const, at: now } }
+        ? // aborted 只有「手动取消」一个来源（Scheduler 强制改判），所以中断原因恒为 cancelled；
+          // 其它归因（handoff-failed / context-exhausted）写在 payload.reason，不在这里重复。
+          { interruption: { reason: "cancelled" as const, at: now } }
         : {}),
     },
   };

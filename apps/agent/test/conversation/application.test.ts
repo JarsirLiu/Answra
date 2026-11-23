@@ -187,7 +187,7 @@ describe("ephemeral conversation runtime", () => {
     expect(JSON.stringify(requests[1]?.messages)).toContain("只看问题 B");
     expect(JSON.stringify(requests[1]?.messages)).not.toContain("解释截图 A");
 
-    // 一次性会话：成功轮结束后 transcript 与 journal 都已清空，内存不随轮次增长。
+    // 一次性会话：成功轮结束后 transcript 与条目都已清空，内存不随轮次增长。
     expect((await runtime.getSnapshot("test-conversation")).messages).toEqual([]);
     expect(await runtime.readAnswerFramesAfter("test-conversation", 0)).toEqual([]);
 
@@ -760,7 +760,7 @@ describe("ephemeral conversation runtime", () => {
         type: "session-item",
         item: { status: "complete", payload: { kind: "turn-end" } },
       });
-      // 成功轮 settle 在终态帧之后释放 journal 与 transcript：等清理完成后快照必须为空。
+      // 成功轮 settle 在终态帧之后释放条目与 transcript：等清理完成后快照必须为空。
       await expect
         .poll(() => racing.getSnapshot("race-async-conversation"), {
           timeout: 5_000,

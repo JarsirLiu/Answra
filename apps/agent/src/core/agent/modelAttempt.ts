@@ -59,7 +59,7 @@ export function createModelAttemptSink(writer: EventWriter): ModelAttemptSink {
 }
 
 /**
- * 消费一次 provider 流。错误 part 不立即写入 journal，由调用方决定是否恢复；
+ * 消费一次 provider 流。错误 part 不立即写入条目，由调用方决定是否恢复；
  * 流提前结束时返回稳定的“无终态”错误，不伪造 provider 错误文本。
  */
 export async function consumeModelAttempt(
