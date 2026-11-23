@@ -634,6 +634,12 @@ P2b-1 已落地（`packages/shared/test/sessionFrame.test.ts`、`packages/ui/tes
 - `sessionFrameSchema.event` 接受 `session-item`，与 durable 事件共用同一 `seq` 游标；条目不合法（缺 `messageId` 的 part）被拒；
 - 客户端按 `item_id` 替换而非追加：快照半截正文被完整条目覆盖，多条 text part 无分隔拼接，tool-result 按 `toolCallId` 回填，`turn-end` 结算该 Turn 最后一条消息与未结算工具；缺 `tool-call` 的结果帧被丢弃（等整段重读补齐）。
 
+P2b-2a 已落地（纯新增，不接线）：
+
+- `apps/agent/src/core/transcript/sessionItemDrafts.ts`（`sessionItemDrafts.test.ts`）：内存消息 + 流事件 → 条目草稿。`text-end` / `reasoning-end` 从中已结算 part 读全文；`tool-execution-finished` / `tool-result` / `tool-error` / `tool-output-denied` 映射同一 `item_id`；没有对应 `tool-call` 的结果直接跳过（孤儿结果会让折叠 fail-closed）；Turn 收口时补写「内存已有、库里没有」的未结算 part 与缺失的工具结果。
+- `apps/agent/src/core/session/sessionTurns.ts`（`sessionTurns.test.ts`）：条目 → Turn 投影决定 `queued` / `running` / `aborted` / 终态；没有 `turn-end` 且只有 user 条目的 Turn 进 `pending`（可重新入队），有内容的按进程退出收口。恢复计划为缺失的工具调用补 `tool-result{error}`，再补 `turn-end{interrupted, process-exit}`；`stepCount` 记 0（崩溃前没有 step 事实），`toolCalls` 从条目统计。重复执行幂等。
+- 条目里没有 Bot 身份与 Turn 来源（user 条目按 schema 不携带作者），投影与恢复因此显式接收 `{ agentId, source }` 默认值，不从内容推演。
+
 #### 13.9 实现期修正与批次
 
 - **P1 不删旧表。** 第 13.6 节原先写「迁移时删 5 张表」，实际拆到 P4：P1 只建 `session_items` 并回填，旧表和 `revision` 保留，迁移结果可与旧读路径逐条比对，出问题也能回退。P4 再删表并移除 `legacySessionImport` 的 meta 标记。
@@ -643,6 +649,7 @@ P2b-1 已落地（`packages/shared/test/sessionFrame.test.ts`、`packages/ui/tes
 - **`open_turn_id` 只在 Turn 开始时置位**，提交时不置；理由见第 5 节。
 - **客户端折叠按 `item_id` upsert 必须在第二批做**：snapshot 可能已带内存半截，同一 part 随后以完整条目到达，盲追加会出现双份。
 - **第二批再拆一步（P2a）。** 先把条目存储端口与两套实现（内存 / SQLite）单独落地并测透，旧写路径不动；P2b 再一次性切换写入、读通道、恢复与帧协议。这样「存储语义错了」和「接线错了」不会是同一个提交，回退粒度也更小。
+- **P2b 再拆两步（P2b-1 / P2b-2a）。** P2b-1 只把帧协议扩成兼容变体并让客户端按 `item_id` upsert；P2b-2a 只落「条目草稿」与「Turn 投影 / 恢复计划」两个纯函数模块及其单测，仍不接线。P2b-2b 才原子切换写路径、读通道、恢复与各领域接线，并删除 journal 相关实现。
 
 ## 模块边界
 
