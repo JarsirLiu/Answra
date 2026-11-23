@@ -54,7 +54,7 @@
 ## 提案
 
 > 接手实现先读第 13 节（写入路径、端口、payload schema、折叠规则、迁移算法、测试清单）；第 1–12 节是决策与理由。
-> 实现进度：P0（条目 schema + 折叠纯函数）、P1（`session_items` 建表与回填迁移）与 P2a（条目存储端口 + 内存/SQLite 实现）已落地；写路径、读通道与恢复尚未接线。
+> 实现进度：P0–P6 全部落地（`9aed3fd` → `b2e7e98`，九个提交），`pnpm verify` 与 `pnpm notes:check` 全绿；仅剩「验收标准」末尾两条实机验证未执行，通过后本 Note 转入 `implemented/architecture/`。
 
 ### 1. 两张业务表，两种生命周期
 
@@ -308,12 +308,12 @@ m-a1  assistant  author: general
 | 步骤 | 内容 | 完成标志 |
 | --- | --- | --- |
 | P0 | 定义条目种类、`payload` schema 与折叠函数（纯函数，无 IO） | **已落地**：`packages/shared/src/schema/session/{item,fold}.ts` + `test/sessionItems.test.ts`；折叠单测覆盖 13.8 前六条 |
-| P1 | 新增 append-only 迁移：建 `session_items`，按 13.6 展开 `session_messages`；`streaming` 一律转 `interrupted` 并补 `turn-end` | `pnpm db:check` 通过；迁移后折叠结果与原消息等价 |
-| P2 | 写入面切到条目端口（`SessionItemStore`）；SQLite 适配器写条目而不是 message 行；删 journal / `projectSession` / 双通道 | 桌面与 CLI 读同一折叠；`session_items` 无 UPDATE |
-| P3 | 恢复改为 `open_turn_id` + 尾部扫描；删 `recovery.ts` 的事件重放 | 崩溃模拟三类场景通过 |
-| P4 | 删 `session_events`、`session_messages`、`session_turns`、`session_message_drafts`、`meta`、`revision` | 库里只剩 2 张业务表 |
-| P5 | durable 通道只装条目；不再新增 status frame，会话级状态继续由 snapshot 推送；`retry` / `error` 改走 live | 桌面、CLI TUI、远程/移动端共用同一条折叠 |
-| P6 | 同步 `AGENTS.md`、`.agents/skills/answra-arch/`、本 Note 的 `SessionFrame` 关联文档 | 文档与代码一致 |
+| P1 | 新增 append-only 迁移：建 `session_items`，按 13.6 展开 `session_messages`；`streaming` 一律转 `interrupted` 并补 `turn-end` | **已落地**：`20261123120000_session_items` + `sessionItemsBackfill`；`pnpm db:check` 通过，迁移后折叠与原消息等价（`sessionItemsMigration.test.ts`） |
+| P2 | 写入面切到条目端口（`SessionItemStore`）；SQLite 适配器写条目而不是 message 行；删 journal / `projectSession` / 双通道 | **已落地**：`itemRecorder` 单一漏斗；生产代码无 `UPDATE session_items`；桌面与 CLI 读同一折叠 |
+| P3 | 恢复改为 `open_turn_id` + 尾部扫描；删 `recovery.ts` 的事件重放 | **已落地**：`planSessionRecovery` + `recoveryCoordinator`；崩溃三类场景单测覆盖 |
+| P4 | 删 `session_events`、`session_messages`、`session_turns`、`session_message_drafts`、`meta`、`revision` | **已落地**：`20261123130000_drop_legacy_session_tables`；库里只剩 2 张业务表 |
+| P5 | durable 通道只装条目；不再新增 status frame，会话级状态继续由 snapshot 推送；`retry` / `error` 改走 live | **已落地**：`sessionFrameSchema` 只装 `session-item`；UI / CLI / remote / mobile 共用同一折叠 |
+| P6 | 同步 `AGENTS.md`、`.agents/skills/answra-arch/`、本 Note 的 `SessionFrame` 关联文档 | **已落地**：两表 + 条目模型写进速查；死契约 `SessionEventEnvelope` 已删 |
 
 P1 与 P2 必须同批交付，否则会出现「读旧表、写新表」的空窗。新增迁移走现有 `migration/registry.gen.ts` 的 append-only 账本，用 `pnpm db:generate` 重建 `schema.snapshot.json`，不手改快照。迁移只前进；回退需要 `pnpm db:reset`。
 
