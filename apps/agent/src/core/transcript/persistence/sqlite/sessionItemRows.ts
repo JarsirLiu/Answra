@@ -98,3 +98,73 @@ export function readSessionItemState(
     messageCount: row.message_count,
   };
 }
+
+const MESSAGE_EXISTS_SQL = `
+  SELECT 1 FROM session_items
+  WHERE conversation_id = ?
+    AND (message_id = ? OR (message_id IS NULL AND item_id = ?))
+  LIMIT 1
+`;
+
+const WRITE_STATE_SQL = `
+  UPDATE sessions
+  SET next_seq = ?, message_count = ?, open_turn_id = ?,
+      updated_at = COALESCE(?, updated_at)
+  WHERE conversation_id = ?
+`;
+
+const OPEN_TURN_SQL = `
+  UPDATE sessions
+  SET open_turn_id = ?
+  WHERE conversation_id = ?
+`;
+
+const CLOSE_TURN_SQL = `
+  UPDATE sessions
+  SET open_turn_id = NULL
+  WHERE conversation_id = ? AND open_turn_id = ?
+`;
+
+const DELETE_ITEMS_SQL = "DELETE FROM session_items WHERE conversation_id = ?";
+
+/** `message_count` 只在消息首次出现时 +1；插入前调用。 */
+export function sessionItemMessageExists(
+  db: DatabaseSync,
+  conversationId: string,
+  messageKey: string,
+): boolean {
+  return db.prepare(MESSAGE_EXISTS_SQL).get(conversationId, messageKey, messageKey) !== undefined;
+}
+
+export function writeSessionItemState(
+  db: DatabaseSync,
+  conversationId: string,
+  state: SessionItemState,
+  updatedAt?: string,
+): void {
+  db.prepare(WRITE_STATE_SQL).run(
+    state.nextSeq,
+    state.messageCount,
+    state.openTurnId ?? null,
+    updatedAt ?? null,
+    conversationId,
+  );
+}
+
+/** 无条件置位；Turn 开始时调用。 */
+export function setSessionOpenTurn(db: DatabaseSync, conversationId: string, turnId: string): void {
+  db.prepare(OPEN_TURN_SQL).run(turnId, conversationId);
+}
+
+/** 只在指针仍指向该 Turn 时清空，保证并发第二次收口是 no-op。 */
+export function closeSessionOpenTurn(
+  db: DatabaseSync,
+  conversationId: string,
+  turnId: string,
+): void {
+  db.prepare(CLOSE_TURN_SQL).run(conversationId, turnId);
+}
+
+export function deleteSessionItemRows(db: DatabaseSync, conversationId: string): void {
+  db.prepare(DELETE_ITEMS_SQL).run(conversationId);
+}

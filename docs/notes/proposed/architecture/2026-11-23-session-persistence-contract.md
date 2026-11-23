@@ -54,7 +54,7 @@
 ## 提案
 
 > 接手实现先读第 13 节（写入路径、端口、payload schema、折叠规则、迁移算法、测试清单）；第 1–12 节是决策与理由。
-> 实现进度：P0（条目 schema + 折叠纯函数）与 P1（`session_items` 建表、回填迁移与行适配器）已落地；写路径与恢复尚未接线。
+> 实现进度：P0（条目 schema + 折叠纯函数）、P1（`session_items` 建表与回填迁移）与 P2a（条目存储端口 + 内存/SQLite 实现）已落地；写路径、读通道与恢复尚未接线。
 
 ### 1. 两张业务表，两种生命周期
 
@@ -615,12 +615,18 @@ P1 已落地（`apps/agent/test/core/transcript/sessionItemsMigration.test.ts`�
 - `next_seq` = 最后分配的 seq + 1，`message_count` 只数产出了条目的消息；
 - 同一 `item_id` 重复插入 no-op；`afterSeq` + `limit` 分页。
 
-随 P2–P5 补：
+P2a 已落地（`apps/agent/test/core/transcript/sessionItemStore.test.ts`，内存与 SQLite 两套实现共用同一组用例）：
 
-- 追加幂等：同一 `item_id` 写两次，条目数不变，`next_seq` 只前进一次。
-- `finishTurn`：`turn-end` 与 `open_turn_id` 清空同事务；并发第二次收口 no-op。
-- `message_count`：user 每条 +1，assistant 按 message_id 首次 +1。
-- 分页：`seq` 倒序 + 游标不重不漏；`/clear` 后 `seq` 从 1 重新开始且客户端视图重置。
+- 追加幂等：同一 `item_id` 写两次，条目数不变，`next_seq` 只前进一次；
+- `message_count`：part 条目按 `messageId` 首次 +1，`user` 条目按 `itemId`（它没有 `messageId` 列）；
+- `finishTurn`：`turn-end` 与 `open_turn_id` 清空同事务；第二次收口 no-op；
+- `appendItems` 不覆盖 `openTurnId`；`beginTurn` 置位后写入正文仍保持指针；
+- 分页 `afterSeq` + `limit`；`clear` 后 `seq` 从 1 重新开始；
+- 会话不存在时写入失败（不静默建行）。
+
+随 P2b–P5 补：
+
+- `seq` 倒序 + 游标不重不漏（历史列表分页）；
 - 客户端：snapshot（含半截）+ 后续条目按 `item_id` 覆盖，正文不重复。
 
 #### 13.9 实现期修正与批次
@@ -631,6 +637,7 @@ P1 已落地（`apps/agent/test/core/transcript/sessionItemsMigration.test.ts`�
 - **`turn-end` 追加 `reason`。** P0 只有 `finishReason`（provider 最后一步终因），会丢掉 `cancelled` / `handoff-failed` / `context-exhausted`；`reason?: TurnFinishReason` 与 `finishReason` 并存，各表一件事。
 - **`open_turn_id` 只在 Turn 开始时置位**，提交时不置；理由见第 5 节。
 - **客户端折叠按 `item_id` upsert 必须在第二批做**：snapshot 可能已带内存半截，同一 part 随后以完整条目到达，盲追加会出现双份。
+- **第二批再拆一步（P2a）。** 先把条目存储端口与两套实现（内存 / SQLite）单独落地并测透，旧写路径不动；P2b 再一次性切换写入、读通道、恢复与帧协议。这样「存储语义错了」和「接线错了」不会是同一个提交，回退粒度也更小。
 
 ## 模块边界
 
