@@ -1,8 +1,8 @@
-import { type LiveFrame, type SessionFrame, toSessionFrame } from "@answra/shared/schema";
+import { type LiveFrame, type SessionFrame, toSessionItemFrame } from "@answra/shared/schema";
 import { describe, expect, it, vi } from "vitest";
 import type { StepStart } from "../../../src/core/session/contracts";
 import { SessionFrameBus, toLiveFrame } from "../../../src/core/session/sessionFrameBus";
-import { sessionEvent, TEST_SESSION_ID, TEST_STEP_ID, TEST_TURN_ID } from "./fixtures";
+import { itemOf, TEST_SESSION_ID, TEST_STEP_ID, TEST_TURN_ID } from "./fixtures";
 
 const STEP: StepStart = {
   sessionId: TEST_SESSION_ID,
@@ -15,8 +15,16 @@ const STEP: StepStart = {
 };
 
 function durableFrame(): SessionFrame {
-  return toSessionFrame(
-    sessionEvent(1, { type: "turn-started", agentId: "general" }, { turnId: TEST_TURN_ID }),
+  return toSessionItemFrame(
+    TEST_SESSION_ID,
+    itemOf(1, {
+      itemId: "text-1",
+      turnId: TEST_TURN_ID,
+      messageId: "assistant-1",
+      authorAgentId: "general",
+      payload: { kind: "text", text: "答" },
+    }),
+    "test-producer",
   );
 }
 
@@ -39,7 +47,7 @@ describe("SessionFrameBus", () => {
     bus.publish(durableFrame());
 
     expect(frames).toHaveLength(1);
-    expect(frames[0]?.event.type).toBe("turn-started");
+    expect(frames[0]?.event.type).toBe("session-item");
   });
 
   it("keeps durable and live channels separate", () => {
@@ -54,7 +62,7 @@ describe("SessionFrameBus", () => {
     bus.publish(durableFrame());
     bus.publishLive(liveFrame());
 
-    expect(durable.map((frame) => frame.event.type)).toEqual(["turn-started"]);
+    expect(durable.map((frame) => frame.event.type)).toEqual(["session-item"]);
     expect(live.map((frame) => frame.event.type)).toEqual(["text-delta"]);
   });
 

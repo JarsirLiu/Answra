@@ -1,26 +1,19 @@
 /**
- * 启动恢复的唯一顺序：先收口未完成事实，然后 seed durable 游标，最后写回 transcript。
+ * 启动恢复的唯一顺序：先收口未完成事实，再用条目重建消息视图，最后续跑 queued Turn。
  *
  * 恢复是跨领域需求（Conversation / Interview / Coding），顺序一旦分叉就会出现
- * 不同的游标语义；因此这里只编排注入端口，不持有领域状态。
- * `recover` 必须在 Scheduler 创建前执行，且同一 session 的并发 ensure 只跑一次。
+ * 不同的判据；因此这里只编排注入端口，不持有领域状态。
+ * `ensure` 必须在 Scheduler 创建前执行，且同一 session 的并发 ensure 只跑一次。
  */
 import type { SessionId, SessionRecoveryPlan, TurnRunContext } from "./contracts";
 
 export interface SessionRecoveryPorts {
-  /** 写回未完成 Turn/Step/Compaction 事实；不启动 queued Turn。 */
+  /** 补写缺失的收口条目；不启动 queued Turn。 */
   recoverFacts(sessionId: SessionId): Promise<SessionRecoveryPlan>;
-  /** transcript 写回完成后继续消费 queued Turn。 */
+  /** 用条目重建内存消息视图；保留仍在流式的活动消息。 */
+  refreshTranscript(sessionId: SessionId): Promise<void>;
+  /** 消息视图重建完成后继续消费 queued Turn。 */
   resumeQueued(sessionId: SessionId, runtime: TurnRunContext): Promise<void>;
-  /** journal 已落库的最大 durable seq；恢复后用它 seed 快照游标。 */
-  journalLastSeq(sessionId: SessionId): Promise<number>;
-  /** 把 transcript 快照游标推进到该 seq；晚于它的事实由客户端按帧重放。 */
-  seedLastSeq(sessionId: SessionId, sequence: number): Promise<void>;
-  restoreTranscript(
-    sessionId: SessionId,
-    plan: SessionRecoveryPlan,
-    lastSeq: number,
-  ): Promise<void>;
   /** 恢复完成后通知宿主；是否推送 snapshot 由宿主决定。 */
   onRecovered?(sessionId: SessionId, plan: SessionRecoveryPlan): void | Promise<void>;
 }
@@ -55,11 +48,8 @@ export class SessionRecoveryCoordinator {
 
   private async run(sessionId: SessionId, runtime: TurnRunContext): Promise<void> {
     const plan = await this.ports.recoverFacts(sessionId);
-    // 恢复事实已经写回 transcript；把游标 seed 到 journal 末尾，重启后不重放整本 journal。
-    const lastSeq = await this.ports.journalLastSeq(sessionId);
-    await this.ports.seedLastSeq(sessionId, lastSeq);
-    await this.ports.restoreTranscript(sessionId, plan, lastSeq);
-    // 必须晚于 transcript 写回：queued Turn 一启动就会读 transcript 建 user/assistant 消息。
+    await this.ports.refreshTranscript(sessionId);
+    // 必须晚于视图重建：queued Turn 一启动就会读 transcript 建 user/assistant 消息。
     await this.ports.resumeQueued(sessionId, runtime);
     this.recovered.add(sessionId);
     await this.ports.onRecovered?.(sessionId, plan);

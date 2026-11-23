@@ -10,31 +10,24 @@ import type {
   ConversationSnapshot,
   ManualCompactionResult,
 } from "@answra/shared";
-import type { AgentStreamEvent, SessionFrame, TurnOutcome } from "@answra/shared/schema";
-import { toSessionFrame } from "@answra/shared/schema";
+import type { SessionFrame, TurnOutcome } from "@answra/shared/schema";
 import { ProviderStepRunner } from "../core/agent/providerStepRunner";
 import type { AgentRuntime } from "../core/agent/runtime";
 import { ContextCompactor } from "../core/context/compaction/compactor";
 import { ContextPreparation } from "../core/context/preparation";
 import { PreparationStepContextManager } from "../core/context/stepContextManager";
 import { validateModelRequest } from "../core/model/requestContent";
-import type {
-  SessionCompactionRequest,
-  SessionId,
-  StepRunner,
-  StepStart,
-} from "../core/session/contracts";
+import type { SessionCompactionRequest, SessionId, StepRunner } from "../core/session/contracts";
 import { sessionId as asSessionId, turnId as asTurnId } from "../core/session/contracts";
-import type { SessionJournal } from "../core/session/journal";
-import { MemorySessionJournal } from "../core/session/memoryJournal";
+import { SessionItemRecorder } from "../core/session/itemRecorder";
 import { SessionRecoveryCoordinator } from "../core/session/recoveryCoordinator";
 import { sessionErrorText } from "../core/session/sessionErrorText";
-import { SessionFrameBus, toLiveFrame } from "../core/session/sessionFrameBus";
+import { SessionFrameBus } from "../core/session/sessionFrameBus";
 import { SessionRuntime } from "../core/session/sessionRuntime";
-import { SessionRuntimeJournal } from "../core/session/sessionRuntimeJournal";
 import { SessionStepExecutor } from "../core/session/stepExecutor";
-import { SessionTranscriptBridge } from "../core/session/transcriptBridge";
 import { SessionTurnExecutor } from "../core/session/turnExecutor";
+import type { SessionItemStore } from "../core/transcript/itemStore";
+import { MemorySessionItemStore } from "../core/transcript/memoryItemStore";
 import { createUserMessage } from "../core/transcript/message";
 import type {
   ConversationSessionMetadata,
@@ -51,8 +44,8 @@ export interface CodingApplicationOptions {
   agentRuntime: AgentRuntime;
   store: ConversationStore;
   bot: CodingBot;
-  /** durable session journal；缺省使用内存实现，CLI 宿主注入 SQLite 实现。 */
-  sessionJournal?: SessionJournal;
+  /** durable 会话条目；缺省使用内存实现，CLI 宿主注入 SQLite 实现。 */
+  sessionItems?: SessionItemStore;
   /** durable/live 帧广播口；宿主传入同一实例即可跨领域共享。 */
   sessionFrames?: SessionFrameBus;
   /** 测试注入的 StepRunner；生产由 ProviderStepRunner 提供。 */
@@ -68,10 +61,8 @@ export class CodingApplication {
   private readonly contextCompactor: ContextCompactor;
   private readonly contextPreparation: ContextPreparation;
   private readonly sessionFrames: SessionFrameBus;
-  private readonly bridge: SessionTranscriptBridge;
   private readonly sessionRuntime: SessionRuntime;
   private readonly recovery: SessionRecoveryCoordinator;
-  private readonly runtimeJournal: SessionRuntimeJournal;
   private readonly onSnapshot?: CodingApplicationOptions["onSnapshot"];
   private readonly tokens = new Map<string, () => Promise<string>>();
   private closing = false;
@@ -81,7 +72,7 @@ export class CodingApplication {
     agentRuntime,
     store,
     bot,
-    sessionJournal,
+    sessionItems,
     sessionFrames,
     stepRunner,
     onSnapshot,
@@ -101,24 +92,20 @@ export class CodingApplication {
           ...(signal ? { signal } : {}),
         }),
       ...(onSnapshot ? { onSnapshot } : {}),
-      // 压缩可能发生在 step 中间；事实仍必须经唯一写入链进入 journal 与 transcript。
-      onCompaction: (fact) => this.runtimeJournal.appendCompaction(fact),
     });
     this.contextPreparation = new ContextPreparation({
       compactor: this.contextCompactor,
       contextStateStore: store,
       contextWindow: () => this.agentRuntime.chatContextWindow(),
     });
-    this.bridge = new SessionTranscriptBridge({ store });
-    const journal = new SessionRuntimeJournal({
-      journal: sessionJournal ?? new MemorySessionJournal(),
+    const items = sessionItems ?? new MemorySessionItemStore();
+    const recorder = new SessionItemRecorder({
+      items,
+      store,
       frames: this.sessionFrames,
-      bridge: this.bridge,
-      onDurableEvent: (id, event) => this.contextPreparation.recordSessionEvent(id, event),
-      onBoundary: (id) => this.pushSnapshot(id),
+      onSnapshot: (id) => this.pushSnapshot(id),
+      onTurnFinished: (id, outcome) => this.contextPreparation.recordTurnFinished(id, outcome),
     });
-    // 压缩器先于 journal 构造（journal 又依赖 preparation），因此观察口只在运行期解引用。
-    this.runtimeJournal = journal;
     const binding = createCodingStepBinding({
       bot,
       workspaceRoot: () => this.workspaceRoot,
@@ -135,31 +122,39 @@ export class CodingApplication {
             : undefined,
       });
     const stepExecutor = new SessionStepExecutor({
-      journal,
+      recorder,
       runner,
-      onStreamEvent: (step, event) => this.onStepStream(step, event),
+      onStepFinished: (step, result) =>
+        this.contextPreparation.recordStepFinished(step.sessionId, {
+          index: step.index,
+          ...(result.usage?.inputTokens === undefined
+            ? {}
+            : { inputTokens: result.usage.inputTokens }),
+        }),
     });
     const turnExecutor = new SessionTurnExecutor({
-      journal,
+      recorder,
       stepExecutor,
       createMessageId: () => randomUUID(),
     });
     this.sessionRuntime = new SessionRuntime({
-      journal,
+      items,
+      store,
+      recorder,
       executor: turnExecutor,
       compactor: {
         compact: (request, signal) => this.compactWithRuntime(request, signal),
       },
+      // coding 只有一个 Bot，来源固定为用户消息。
+      defaults: { agentId: bot.id, source: "user" },
       createMessageId: () => randomUUID(),
     });
     this.recovery = new SessionRecoveryCoordinator({
       recoverFacts: (id) => this.sessionRuntime.recoverFacts(id),
+      refreshTranscript: (id) => this.sessionRuntime.refreshTranscript(id),
       resumeQueued: (id, runtime) => this.sessionRuntime.resumeQueued(id, runtime),
-      journalLastSeq: (id) => this.runtimeJournal.lastSequence(id),
-      seedLastSeq: (id, sequence) => this.store.advanceLastSeq(id, sequence),
-      restoreTranscript: (id, plan) => this.bridge.recover(id, plan),
       onRecovered: async (id, plan) => {
-        if (plan.interruptedTurnIds.length > 0) await this.pushSnapshot(id);
+        if (plan.closedTurnIds.length > 0) await this.pushSnapshot(id);
       },
     });
   }
@@ -182,6 +177,7 @@ export class CodingApplication {
   ): Promise<ConversationSnapshot> {
     if (accessToken !== undefined) this.rememberToken(conversationId, accessToken);
     await this.store.create(conversationId, this.seed(), this.sessionMetadata());
+    await this.sessionRuntime.createSession(asSessionId(conversationId));
     await this.ensureRecovered(conversationId);
     return this.loadSnapshot(conversationId);
   }
@@ -196,7 +192,7 @@ export class CodingApplication {
     this.tokens.delete(conversationId);
     this.recovery.forget(session);
     await this.store.clear(conversationId);
-    await this.runtimeJournal.clear(session);
+    await this.sessionRuntime.clear(session);
     return this.loadSnapshot(conversationId);
   }
 
@@ -225,10 +221,9 @@ export class CodingApplication {
     return this.loadSnapshot(conversationId);
   }
 
-  /** 按 durable `seq` 读取事实帧；CLI 的 transcript 直接按帧折叠。 */
+  /** 按 durable `seq` 读取条目帧；CLI 的 transcript 直接按帧折叠。 */
   async readFramesAfter(conversationId: string, afterSeq: number): Promise<SessionFrame[]> {
-    const rows = await this.runtimeJournal.readAfter(asSessionId(conversationId), afterSeq);
-    return rows.map(toSessionFrame);
+    return this.sessionRuntime.readFramesAfter(asSessionId(conversationId), afterSeq);
   }
 
   async enqueue(
@@ -380,12 +375,6 @@ export class CodingApplication {
 
   private loadSnapshot(conversationId: string): Promise<ConversationSnapshot> {
     return this.store.load(conversationId);
-  }
-
-  private async onStepStream(step: StepStart, event: AgentStreamEvent): Promise<void> {
-    const live = toLiveFrame(step, event);
-    if (live !== undefined) this.sessionFrames.publishLive(live);
-    await this.bridge.applyLive(step.sessionId, step.messageId, event);
   }
 
   private async compactWithRuntime(

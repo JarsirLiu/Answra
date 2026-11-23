@@ -26,6 +26,33 @@ function storeFor(root: string): SqliteConversationStore {
   return store;
 }
 
+/**
+ * 测试直写：内存视图 + 用户条目。运行时的 `SessionRuntime` 也是这两步，
+ * 但 store 本身只负责 transcript，不会替调用方写条目。
+ */
+async function appendUser(
+  store: SqliteConversationStore,
+  conversationId: string,
+  message: { id: string; text: string },
+): Promise<void> {
+  await store.appendUserMessage(conversationId, {
+    id: message.id,
+    role: "user",
+    text: message.text,
+    images: [],
+    status: "complete",
+  });
+  await store.items.appendItems(conversationId, [
+    {
+      itemId: message.id,
+      status: "complete",
+      createdAt: new Date().toISOString(),
+      turnId: message.id,
+      payload: { kind: "user", text: message.text, images: [] },
+    },
+  ]);
+}
+
 afterEach(async () => {
   await Promise.all(stores.splice(0).map((store) => store.close()));
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
@@ -39,13 +66,7 @@ describe("SQLite conversation store", () => {
       scope: "coding",
       workspaceRoot: "D:\\workspace",
     });
-    await store.appendUserMessage("coding-1", {
-      id: "user-1",
-      role: "user",
-      text: "修复登录流程",
-      images: [],
-      status: "complete",
-    });
+    await appendUser(store, "coding-1", { id: "user-1", text: "修复登录流程" });
 
     const reloaded = storeFor(root);
     const snapshot = await reloaded.load("coding-1");
@@ -83,46 +104,53 @@ describe("SQLite conversation store", () => {
       },
       authorAgentId: "general",
     });
+    await store.items.appendItems("coding-2", [
+      {
+        itemId: "user-1",
+        status: "complete",
+        createdAt: "2026-11-23T10:00:00.000Z",
+        turnId: "turn-1",
+        payload: { kind: "user", text: "继续实现", images: [] },
+      },
+    ]);
+    await store.items.beginTurn("coding-2", "turn-1");
+    await store.items.appendItems("coding-2", [
+      {
+        itemId: "run-1:text",
+        status: "interrupted",
+        createdAt: "2026-11-23T10:00:01.000Z",
+        turnId: "turn-1",
+        messageId: "run-1",
+        authorAgentId: "general",
+        payload: { kind: "text", text: "半截实现" },
+      },
+    ]);
 
     const reloaded = storeFor(root);
     const snapshot = await reloaded.load("coding-2");
     expect(snapshot.activeMessageId).toBeUndefined();
-    expect(snapshot.lastSeq).toBe(0);
+    expect(snapshot.lastSeq).toBe(2);
     expect(snapshot.messages.map((message) => [message.id, message.status])).toEqual([
       ["user-1", "complete"],
       ["run-1", "interrupted"],
     ]);
   });
 
-  it("keeps the durable cursor in memory only and restores it from zero", async () => {
+  it("derives the durable cursor from the item sequence instead of persisting it", async () => {
     const root = await createRoot();
     const store = storeFor(root);
     await store.create("coding-cursor", undefined, { scope: "coding" });
-    await store.appendUserMessage("coding-cursor", {
-      id: "user-1",
-      role: "user",
-      text: "继续",
-      images: [],
-      status: "complete",
-    });
-    await store.advanceLastSeq("coding-cursor", 12);
-    expect((await store.load("coding-cursor")).lastSeq).toBe(12);
+    await appendUser(store, "coding-cursor", { id: "user-1", text: "继续" });
 
     const reloaded = storeFor(root);
-    expect((await reloaded.load("coding-cursor")).lastSeq).toBe(0);
+    expect((await reloaded.load("coding-cursor")).lastSeq).toBe(1);
   });
 
   it("round-trips the pruning watermark with the context state", async () => {
     const root = await createRoot();
     const store = storeFor(root);
     await store.create("coding-3", undefined, { scope: "coding" });
-    await store.appendUserMessage("coding-3", {
-      id: "user-1",
-      role: "user",
-      text: "保留上下文",
-      images: [],
-      status: "complete",
-    });
+    await appendUser(store, "coding-3", { id: "user-1", text: "保留上下文" });
     await store.saveContextState("coding-3", {
       checkpoints: [],
       prunedToolCallIds: ["call-1", "call-2"],
@@ -140,13 +168,7 @@ describe("SQLite conversation store", () => {
     const root = await createRoot();
     const store = storeFor(root);
     await store.create("coding-retained", undefined, { scope: "coding" });
-    await store.appendUserMessage("coding-retained", {
-      id: "user-1",
-      role: "user",
-      text: "保留原始任务",
-      images: [],
-      status: "complete",
-    });
+    await appendUser(store, "coding-retained", { id: "user-1", text: "保留原始任务" });
     await store.saveContextState("coding-retained", {
       checkpoints: [
         {
@@ -207,6 +229,7 @@ describe("SQLite conversation store", () => {
     const root = await createRoot();
     const store = storeFor(root);
     await store.create("active-exam-conversation", undefined, { scope: "answer" });
+    // answer 域不写条目：直接追加内存消息即可。
     await store.appendUserMessage("active-exam-conversation", {
       id: "user-1",
       role: "user",
@@ -280,13 +303,7 @@ describe("SQLite conversation store", () => {
     const root = await createRoot();
     const store = storeFor(root);
     await store.create("coding-dup", undefined, { scope: "coding" });
-    await store.appendUserMessage("coding-dup", {
-      id: "user-1",
-      role: "user",
-      text: "已有会话",
-      images: [],
-      status: "complete",
-    });
+    await appendUser(store, "coding-dup", { id: "user-1", text: "已有会话" });
     await store.close();
 
     const db = new DatabaseSync(path.join(root, "sessions.sqlite"));
@@ -321,23 +338,11 @@ describe("SQLite conversation store", () => {
     const root = await createRoot();
     const first = storeFor(root);
     await first.create("coding-conflict", undefined, { scope: "coding" });
-    await first.appendUserMessage("coding-conflict", {
-      id: "user-0",
-      role: "user",
-      text: "初始",
-      images: [],
-      status: "complete",
-    });
+    await appendUser(first, "coding-conflict", { id: "user-0", text: "初始" });
     const second = storeFor(root);
     await second.load("coding-conflict");
 
-    await first.appendUserMessage("coding-conflict", {
-      id: "user-1",
-      role: "user",
-      text: "先写",
-      images: [],
-      status: "complete",
-    });
+    await appendUser(first, "coding-conflict", { id: "user-1", text: "先写" });
 
     await expect(
       second.appendUserMessage("coding-conflict", {
@@ -358,29 +363,17 @@ describe("SQLite conversation store", () => {
     const root = await createRoot();
     const first = storeFor(root);
     await first.create("coding-clear", undefined, { scope: "coding" });
-    await first.appendUserMessage("coding-clear", {
-      id: "user-0",
-      role: "user",
-      text: "初始",
-      images: [],
-      status: "complete",
-    });
+    await appendUser(first, "coding-clear", { id: "user-0", text: "初始" });
     const second = storeFor(root);
     await second.load("coding-clear");
 
-    await first.appendUserMessage("coding-clear", {
-      id: "user-1",
-      role: "user",
-      text: "先写",
-      images: [],
-      status: "complete",
-    });
+    await appendUser(first, "coding-clear", { id: "user-1", text: "先写" });
 
     await expect(second.clear("coding-clear")).rejects.toBeInstanceOf(
       ConversationSessionConflictError,
     );
     const db = new DatabaseSync(path.join(root, "sessions.sqlite"));
-    expect(db.prepare("SELECT COUNT(*) AS count FROM session_messages").get()).toEqual({
+    expect(db.prepare("SELECT COUNT(*) AS count FROM session_items").get()).toEqual({
       count: 2,
     });
     db.close();
@@ -390,29 +383,17 @@ describe("SQLite conversation store", () => {
     const root = await createRoot();
     const first = storeFor(root);
     await first.create("coding-delete", undefined, { scope: "coding" });
-    await first.appendUserMessage("coding-delete", {
-      id: "user-0",
-      role: "user",
-      text: "初始",
-      images: [],
-      status: "complete",
-    });
+    await appendUser(first, "coding-delete", { id: "user-0", text: "初始" });
     const second = storeFor(root);
     await second.load("coding-delete");
 
-    await first.appendUserMessage("coding-delete", {
-      id: "user-1",
-      role: "user",
-      text: "先写",
-      images: [],
-      status: "complete",
-    });
+    await appendUser(first, "coding-delete", { id: "user-1", text: "先写" });
 
     await expect(second.delete("coding-delete")).rejects.toBeInstanceOf(
       ConversationSessionConflictError,
     );
     const db = new DatabaseSync(path.join(root, "sessions.sqlite"));
-    expect(db.prepare("SELECT COUNT(*) AS count FROM session_messages").get()).toEqual({
+    expect(db.prepare("SELECT COUNT(*) AS count FROM session_items").get()).toEqual({
       count: 2,
     });
     db.close();
@@ -430,20 +411,8 @@ describe("SQLite conversation store", () => {
     await second.create("coding-b", undefined, { scope: "coding", workspaceRoot: "B" });
 
     await Promise.all([
-      first.appendUserMessage("coding-a", {
-        id: "a-user",
-        role: "user",
-        text: "A",
-        images: [],
-        status: "complete",
-      }),
-      second.appendUserMessage("coding-b", {
-        id: "b-user",
-        role: "user",
-        text: "B",
-        images: [],
-        status: "complete",
-      }),
+      appendUser(first, "coding-a", { id: "a-user", text: "A" }),
+      appendUser(second, "coding-b", { id: "b-user", text: "B" }),
     ]);
 
     expect((await first.load("coding-a")).messages).toHaveLength(1);
@@ -486,23 +455,15 @@ describe("SQLite conversation store", () => {
     expect(() => new SqliteConversationStore(root)).toThrow("pnpm db:reset");
   });
 
-  it("does not persist a session until it has a message and drops an emptied session", async () => {
+  it("hides an empty session from the list and drops it when cleared", async () => {
     const root = await createRoot();
     const store = storeFor(root);
     await store.create("coding-empty", undefined, { scope: "coding" });
 
+    // 会话行要先存在，条目写入才有游标可更新；列表按 message_count 过滤。
     expect((await store.list({ scope: "coding" })).items).toEqual([]);
-    const db = new DatabaseSync(path.join(root, "sessions.sqlite"));
-    expect(db.prepare("SELECT COUNT(*) AS count FROM sessions").get()).toEqual({ count: 0 });
-    db.close();
 
-    await store.appendUserMessage("coding-empty", {
-      id: "user-1",
-      role: "user",
-      text: "第一条消息",
-      images: [],
-      status: "complete",
-    });
+    await appendUser(store, "coding-empty", { id: "user-1", text: "第一条消息" });
     expect((await store.list({ scope: "coding" })).items).toHaveLength(1);
 
     await store.clear("coding-empty");
@@ -514,13 +475,7 @@ describe("SQLite conversation store", () => {
     verification.close();
 
     expect((await store.load("coding-empty")).messages).toEqual([]);
-    await store.appendUserMessage("coding-empty", {
-      id: "user-2",
-      role: "user",
-      text: "清空后重写",
-      images: [],
-      status: "complete",
-    });
+    await appendUser(store, "coding-empty", { id: "user-2", text: "清空后重写" });
     expect((await store.list({ scope: "coding" })).items).toHaveLength(1);
   });
 
@@ -531,13 +486,7 @@ describe("SQLite conversation store", () => {
       scope: "coding",
       workspaceRoot: "D:\\WorkSpace",
     });
-    await store.appendUserMessage("coding-direct", {
-      id: "user-1",
-      role: "user",
-      text: "直接查找",
-      images: [],
-      status: "complete",
-    });
+    await appendUser(store, "coding-direct", { id: "user-1", text: "直接查找" });
 
     expect(await store.getSession("coding-direct")).toMatchObject({
       conversationId: "coding-direct",
@@ -557,13 +506,7 @@ describe("SQLite conversation store", () => {
       scope: "coding",
       workspaceRoot: "D:\\WorkSpace",
     });
-    await store.appendUserMessage("coding-case", {
-      id: "user-1",
-      role: "user",
-      text: "大小写路径",
-      images: [],
-      status: "complete",
-    });
+    await appendUser(store, "coding-case", { id: "user-1", text: "大小写路径" });
 
     expect(
       (await store.list({ scope: "coding", workspaceRoot: "d:\\workspace" })).items,
@@ -575,12 +518,9 @@ describe("SQLite conversation store", () => {
     const store = storeFor(root);
     for (const conversationId of ["coding-1", "coding-2", "coding-3", "coding-4", "coding-5"]) {
       await store.create(conversationId, undefined, { scope: "coding" });
-      await store.appendUserMessage(conversationId, {
+      await appendUser(store, conversationId, {
         id: `user-${conversationId}`,
-        role: "user",
         text: conversationId,
-        images: [],
-        status: "complete",
       });
       await new Promise((resolve) => setTimeout(resolve, 2));
     }

@@ -1,4 +1,7 @@
+import { mkdtemp, rm } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
+import os from "node:os";
+import path from "node:path";
 import {
   CODING_AGENT_ID,
   type CodingHost,
@@ -13,10 +16,11 @@ import type { CodingBot } from "../../src/coding/bot";
 import { CODING_POLICY } from "../../src/coding/policy";
 import type { AgentExecutor } from "../../src/core/agent/definition";
 import type { AgentRuntime } from "../../src/core/agent/runtime";
-import { type StepRunner, sessionId, stepId, turnId } from "../../src/core/session/contracts";
-import { MemorySessionJournal } from "../../src/core/session/memoryJournal";
+import { type StepRunner, sessionId } from "../../src/core/session/contracts";
+import type { SessionItemStore } from "../../src/core/transcript/itemStore";
+import { MemorySessionItemStore } from "../../src/core/transcript/memoryItemStore";
 import { MemoryConversationStore } from "../../src/core/transcript/memoryStore";
-import { createUserMessage } from "../../src/core/transcript/message";
+import { SqliteConversationStore } from "../../src/core/transcript/persistence/sqlite/sqliteConversationStore";
 
 type RecordedRequest = {
   messages: Array<{ role: string; content: unknown }>;
@@ -155,9 +159,13 @@ describe("CLI coding host", () => {
     );
     await host.runtime.waitForTurn("coding-frames", turnId);
 
-    expect(frames.map((frame) => frame.seq)).toEqual(frames.map((_, index) => index + 1));
-    expect(frames[0]?.event.type).toBe("turn-queued");
-    expect(frames.at(-1)?.event.type).toBe("turn-finished");
+    expect(frames.map((frame, index) => frame.seq - index)).toEqual(
+      frames.map(() => frames[0]?.seq ?? 0),
+    );
+    expect(frames[0]?.event.type).toBe("session-item");
+    expect(frames.at(-1)).toMatchObject({
+      event: { type: "session-item", item: { payload: { kind: "turn-end" } } },
+    });
     expect(live.length).toBeGreaterThan(0);
   });
 
@@ -244,11 +252,12 @@ describe("CLI coding host", () => {
     await host.runtime.waitForTurn("coding-turn-queue", first.turnId);
 
     const firstFinished = frames.findIndex(
-      (frame) => frame.turnId === first.turnId && frame.event.type === "turn-finished",
+      (frame) =>
+        frame.turnId === first.turnId &&
+        frame.event.type === "session-item" &&
+        frame.event.item.payload.kind === "turn-end",
     );
-    const secondStarted = frames.findIndex(
-      (frame) => frame.turnId === started.turnId && frame.event.type === "turn-started",
-    );
+    const secondStarted = frames.findIndex((frame) => frame.turnId === started.turnId);
     expect(firstFinished).toBeGreaterThanOrEqual(0);
     expect(secondStarted).toBeGreaterThan(firstFinished);
 
@@ -289,8 +298,9 @@ describe("CLI coding host", () => {
           frames.some(
             (frame) =>
               frame.turnId === turnId &&
-              frame.event.type === "turn-finished" &&
-              frame.event.status === "aborted",
+              frame.event.type === "session-item" &&
+              frame.event.item.payload.kind === "turn-end" &&
+              frame.event.item.status === "interrupted",
           ),
         { timeout: 5_000, interval: 10 },
       )
@@ -382,18 +392,18 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
 
 function makeApp({
   store,
-  journal,
+  items,
   runner,
 }: {
   store: MemoryConversationStore;
-  journal: MemorySessionJournal;
+  items: SessionItemStore;
   runner: StepRunner;
 }): CodingApplication {
   return new CodingApplication({
     agentRuntime: fakeRuntime(),
     store,
     bot: makeBot(),
-    sessionJournal: journal,
+    sessionItems: items,
     stepRunner: runner,
     onSnapshot: () => undefined,
   });
@@ -402,7 +412,7 @@ function makeApp({
 describe("CodingApplication queue and recovery", () => {
   it("runs queued turns in order after the active turn finishes", async () => {
     const store = new MemoryConversationStore();
-    const journal = new MemorySessionJournal();
+    const items = new MemorySessionItemStore();
     const gate = deferred();
     const stepMessages: string[] = [];
     const runner: StepRunner = {
@@ -412,7 +422,7 @@ describe("CodingApplication queue and recovery", () => {
         return { outcome: "completed", finishReason: "stop" };
       },
     };
-    const app = makeApp({ store, journal, runner });
+    const app = makeApp({ store, items, runner });
     await app.createConversation("coding-queue");
 
     const first = await app.enqueue("coding-queue", { text: "first", images: [] }, "token");
@@ -438,15 +448,15 @@ describe("CodingApplication queue and recovery", () => {
     ]);
   });
 
-  it("records manual compaction lifecycle in the session journal", async () => {
+  it("records the manual compaction lifecycle in the context state", async () => {
     const store = new MemoryConversationStore();
-    const journal = new MemorySessionJournal();
+    const items = new MemorySessionItemStore();
     const runner: StepRunner = {
       async run() {
         return { outcome: "completed", finishReason: "stop" };
       },
     };
-    const app = makeApp({ store, journal, runner });
+    const app = makeApp({ store, items, runner });
     await app.createConversation("coding-compact");
     const { turnId } = await app.send("coding-compact", { text: "旧问题", images: [] }, "token");
     await app.waitForTurn("coding-compact", turnId);
@@ -454,20 +464,17 @@ describe("CodingApplication queue and recovery", () => {
     const { result } = await app.compactConversation("coding-compact", "token");
     expect(result.status).toBe("compacted");
 
-    const rows = await journal.readAfter(sessionId("coding-compact"), 0);
-    const compaction = rows.filter((row) => row.event.type.startsWith("compaction-"));
-    expect(compaction.map((row) => row.event.type)).toEqual([
-      "compaction-started",
-      "compaction-finished",
-    ]);
-    expect(compaction[0]?.operationId).toBeDefined();
-    expect(compaction[1]?.operationId).toBe(compaction[0]?.operationId);
-    expect(compaction[0]?.event).toMatchObject({ trigger: "manual", reason: "manual" });
+    const state = await store.loadContextState("coding-compact");
+    expect(state?.compaction).toMatchObject({
+      state: "succeeded",
+      trigger: "manual",
+    });
+    expect(state?.checkpoints).toHaveLength(1);
   });
 
   it("cancels queued turns when the active run is cancelled", async () => {
     const store = new MemoryConversationStore();
-    const journal = new MemorySessionJournal();
+    const items = new MemorySessionItemStore();
     const runner: StepRunner = {
       run: (_step, _context, signal) =>
         new Promise((resolve) => {
@@ -478,7 +485,7 @@ describe("CodingApplication queue and recovery", () => {
           signal.addEventListener("abort", () => resolve({ outcome: "aborted" }), { once: true });
         }),
     };
-    const app = makeApp({ store, journal, runner });
+    const app = makeApp({ store, items, runner });
     await app.createConversation("coding-stop");
 
     const first = await app.enqueue("coding-stop", { text: "first", images: [] }, "token");
@@ -500,104 +507,113 @@ describe("CodingApplication queue and recovery", () => {
   });
 
   it("closes the interrupted message on startup recovery and accepts the next turn", async () => {
-    const store = new MemoryConversationStore();
-    const journal = new MemorySessionJournal();
+    const root = await mkdtemp(path.join(os.tmpdir(), "answra-coding-recovery-"));
     const conversationId = "coding-recovery";
     const id = sessionId(conversationId);
-    const turn = turnId("turn-1");
-    const message = "assistant-1";
-    await store.create(conversationId, codingSeed(), { scope: "coding" });
-    await store.beginSessionTurn(conversationId, {
-      turnId: turn,
-      messageId: message,
-      authorAgentId: CODING_AGENT_ID,
-      userMessage: createUserMessage("user-1", { text: "旧问题", images: [] }),
-    });
-    await journal.append(
-      id,
-      {
-        type: "turn-queued",
-        source: "user",
-        agentId: CODING_AGENT_ID,
-        input: createUserMessage("user-1", { text: "旧问题", images: [] }),
-      },
-      { turnId: turn },
-    );
-    await journal.append(
-      id,
-      { type: "turn-started", agentId: CODING_AGENT_ID },
-      { turnId: turn, messageId: message },
-    );
-    await journal.append(
-      id,
-      { type: "step-started", stepId: "step-1", index: 0, agentId: CODING_AGENT_ID },
-      { turnId: turn, stepId: stepId("step-1"), messageId: message },
-    );
+    try {
+      const previous = new SqliteConversationStore(root);
+      await previous.create(conversationId, codingSeed(), { scope: "coding" });
+      await previous.items.appendItems(id, [
+        {
+          itemId: "user-1",
+          status: "complete",
+          createdAt: "2026-11-23T10:00:00.000Z",
+          turnId: "turn-1",
+          payload: { kind: "user", text: "旧问题", images: [] },
+        },
+      ]);
+      await previous.items.beginTurn(id, "turn-1");
+      await previous.items.appendItems(id, [
+        {
+          itemId: "assistant-1:text",
+          status: "interrupted",
+          createdAt: "2026-11-23T10:00:01.000Z",
+          turnId: "turn-1",
+          messageId: "assistant-1",
+          authorAgentId: CODING_AGENT_ID,
+          payload: { kind: "text", text: "半截回复" },
+        },
+      ]);
+      await previous.close();
 
-    const runner: StepRunner = {
-      async run() {
-        return { outcome: "completed", finishReason: "stop" };
-      },
-    };
-    const app = makeApp({ store, journal, runner });
+      const store = new SqliteConversationStore(root);
+      try {
+        const runner: StepRunner = {
+          async run() {
+            return { outcome: "completed", finishReason: "stop" };
+          },
+        };
+        const app = makeApp({ store, items: store.items, runner });
 
-    const recovered = await app.getSnapshot(conversationId);
-    expect(recovered.activeMessageId).toBeUndefined();
-    expect(recovered.messages.map((item) => [item.role, item.status])).toEqual([
-      ["user", "complete"],
-      ["assistant", "interrupted"],
-    ]);
+        const recovered = await app.getSnapshot(conversationId);
+        expect(recovered.activeMessageId).toBeUndefined();
+        expect(recovered.messages.map((item) => [item.role, item.status])).toEqual([
+          ["user", "complete"],
+          ["assistant", "interrupted"],
+        ]);
 
-    const next = await app.send(conversationId, { text: "继续", images: [] }, "token");
-    await app.waitForTurn(conversationId, next.turnId);
-    const final = await app.getSnapshot(conversationId);
-    expect(final.messages.map((item) => [item.role, item.status])).toEqual([
-      ["user", "complete"],
-      ["assistant", "interrupted"],
-      ["user", "complete"],
-      ["assistant", "complete"],
-    ]);
+        const next = await app.send(conversationId, { text: "继续", images: [] }, "token");
+        await app.waitForTurn(conversationId, next.turnId);
+        const final = await app.getSnapshot(conversationId);
+        expect(final.messages.map((item) => [item.role, item.status])).toEqual([
+          ["user", "complete"],
+          ["assistant", "interrupted"],
+          ["user", "complete"],
+          ["assistant", "complete"],
+        ]);
+      } finally {
+        await store.close();
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("resumes a queued turn from a previous process only when a token is supplied", async () => {
-    const store = new MemoryConversationStore();
-    const journal = new MemorySessionJournal();
+    const root = await mkdtemp(path.join(os.tmpdir(), "answra-coding-queued-"));
     const conversationId = "coding-queued-recovery";
     const id = sessionId(conversationId);
-    const turn = turnId("turn-1");
-    await store.create(conversationId, codingSeed(), { scope: "coding" });
-    await journal.append(
-      id,
-      {
-        type: "turn-queued",
-        source: "user",
-        agentId: CODING_AGENT_ID,
-        input: createUserMessage("user-1", { text: "排队问题", images: [] }),
-      },
-      { turnId: turn },
-    );
+    try {
+      const previous = new SqliteConversationStore(root);
+      await previous.create(conversationId, codingSeed(), { scope: "coding" });
+      await previous.items.appendItems(id, [
+        {
+          itemId: "user-1",
+          status: "complete",
+          createdAt: "2026-11-23T10:00:00.000Z",
+          turnId: "turn-1",
+          payload: { kind: "user", text: "排队问题", images: [] },
+        },
+      ]);
+      await previous.close();
 
-    const runner: StepRunner = {
-      async run() {
-        return { outcome: "completed", finishReason: "stop" };
-      },
-    };
-    const app = makeApp({ store, journal, runner });
+      const store = new SqliteConversationStore(root);
+      try {
+        const runner: StepRunner = {
+          async run() {
+            return { outcome: "completed", finishReason: "stop" };
+          },
+        };
+        const app = makeApp({ store, items: store.items, runner });
 
-    // 没有令牌就恢复会把排队消息烧成一条失败回复，因此必须先拒绝。
-    await expect(app.getSnapshot(conversationId)).rejects.toThrow("排队消息需要访问令牌才能继续");
+        // 没有令牌就恢复会把排队消息烧成一条失败回复，因此必须先拒绝。
+        await expect(app.getSnapshot(conversationId)).rejects.toThrow(
+          "排队消息需要访问令牌才能继续",
+        );
 
-    const recovered = await app.getSnapshot(conversationId, "token");
-    await app.waitForQueue(conversationId, "turn-1");
-    const snapshot = await app.getSnapshot(conversationId);
-    expect(recovered.messages.map((item) => [item.role, item.status])).toEqual([
-      ["user", "complete"],
-      ["assistant", "streaming"],
-    ]);
-    expect(snapshot.messages.map((item) => [item.role, item.status])).toEqual([
-      ["user", "complete"],
-      ["assistant", "complete"],
-    ]);
-    expect(snapshot.activeMessageId).toBeUndefined();
+        await app.getSnapshot(conversationId, "token");
+        await app.waitForQueue(conversationId, "turn-1");
+        const snapshot = await app.getSnapshot(conversationId);
+        expect(snapshot.messages.map((item) => [item.role, item.status])).toEqual([
+          ["user", "complete"],
+          ["assistant", "complete"],
+        ]);
+        expect(snapshot.activeMessageId).toBeUndefined();
+      } finally {
+        await store.close();
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

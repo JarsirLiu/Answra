@@ -73,7 +73,19 @@ function answerTurnFrames(frames: SessionFrame[], turnId: string): SessionFrame[
 }
 
 function answerTerminal(frames: SessionFrame[], turnId: string): SessionFrame | undefined {
-  return frames.find((frame) => frame.turnId === turnId && frame.event.type === "turn-finished");
+  return frames.find(
+    (frame) =>
+      frame.turnId === turnId &&
+      frame.event.type === "session-item" &&
+      frame.event.item.payload.kind === "turn-end",
+  );
+}
+
+function turnEndItem(frame: SessionFrame | undefined) {
+  if (frame?.event.type !== "session-item" || frame.event.item.payload.kind !== "turn-end") {
+    return undefined;
+  }
+  return frame.event.item;
 }
 
 function isFulfilled<T>(result: PromiseSettledResult<T>): result is PromiseFulfilledResult<T> {
@@ -180,15 +192,18 @@ describe("ephemeral conversation runtime", () => {
     expect(await runtime.readAnswerFramesAfter("test-conversation", 0)).toEqual([]);
 
     const firstFrames = answerTurnFrames(frames, first.turnId);
-    expect(firstFrames[0]?.event.type).toBe("turn-queued");
-    expect(firstFrames.every((frame, index) => frame.seq === index + 1)).toBe(true);
+    expect(firstFrames[0]?.event.type).toBe("session-item");
+    const baseSeq = firstFrames[0]?.seq ?? 0;
+    expect(firstFrames.map((frame, index) => frame.seq - index)).toEqual(
+      firstFrames.map(() => baseSeq),
+    );
     expect(answerTerminal(frames, first.turnId)?.event).toMatchObject({
-      type: "turn-finished",
-      status: "completed",
+      type: "session-item",
+      item: { status: "complete", payload: { kind: "turn-end", reason: "completed" } },
     });
     expect(answerTerminal(frames, second.turnId)?.event).toMatchObject({
-      type: "turn-finished",
-      status: "completed",
+      type: "session-item",
+      item: { status: "complete", payload: { kind: "turn-end", reason: "completed" } },
     });
     expect(
       liveFrames.some(
@@ -236,12 +251,10 @@ describe("ephemeral conversation runtime", () => {
     const snapshot = await runtime.getSnapshot("failed-conversation");
     expect(snapshot.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
     expect(snapshot.messages[0]?.text).toBe("这道题选什么");
-    expect(
-      frames.some(
-        (frame) =>
-          frame.event.type === "error" && frame.event.errorText.includes("No model service"),
-      ),
-    ).toBe(true);
+    expect(turnEndItem(answerTerminal(frames, failed.turnId))?.payload).toMatchObject({
+      kind: "turn-end",
+      errorText: expect.stringContaining("No model service"),
+    });
 
     modelFailure = undefined;
     const recovered = await runtime.runAnswer(
@@ -470,10 +483,9 @@ describe("ephemeral conversation runtime", () => {
     await waitForTerminal(turnId);
 
     expect(answerTerminal(frames, turnId)?.event).toMatchObject({
-      type: "turn-finished",
-      status: "aborted",
+      type: "session-item",
+      item: { status: "interrupted", payload: { kind: "turn-end", reason: "cancelled" } },
     });
-    // 取消轮由 settle 释放：journal 与 transcript 都不保留。
     await expect
       .poll(() => runtime.readAnswerFramesAfter("test-conversation", 0), {
         timeout: 5_000,
@@ -508,13 +520,13 @@ describe("ephemeral conversation runtime", () => {
     );
     await waitForTerminal(turnId);
 
-    const errorFrame = frames.find((frame) => frame.event.type === "error");
-    expect(
-      errorFrame && errorFrame.event.type === "error" ? errorFrame.event.errorText : "",
-    ).toContain("auth-required");
+    expect(turnEndItem(answerTerminal(frames, turnId))?.payload).toMatchObject({
+      kind: "turn-end",
+      errorText: expect.stringContaining("auth-required"),
+    });
     expect(answerTerminal(frames, turnId)?.event).toMatchObject({
-      type: "turn-finished",
-      status: "failed",
+      type: "session-item",
+      item: { status: "failed", payload: { kind: "turn-end" } },
     });
   });
 
@@ -604,16 +616,12 @@ describe("ephemeral conversation runtime", () => {
       await waitForTerminal(turnId, retryFrames);
 
       expect(attempts).toEqual(["Bearer stale-token", "Bearer refreshed-token"]);
-      expect(
-        retryFrames.some(
-          (frame) =>
-            frame.event.type === "error" && frame.event.errorText.includes("auth-required"),
-        ),
-      ).toBe(true);
-      expect(answerTerminal(retryFrames, turnId)?.event).toMatchObject({
-        type: "turn-finished",
-        status: "failed",
+      const terminal = turnEndItem(answerTerminal(retryFrames, turnId));
+      expect(terminal?.payload).toMatchObject({
+        kind: "turn-end",
+        errorText: expect.stringContaining("auth-required"),
       });
+      expect(terminal?.status).toBe("failed");
     } finally {
       retrying.dispose();
       await new Promise<void>((resolve) => unauthorizedServer.close(() => resolve()));
@@ -637,12 +645,9 @@ describe("ephemeral conversation runtime", () => {
 
     const survivorTurnId = fulfilled[0]?.value.turnId ?? "";
     await waitForTerminal(survivorTurnId);
-    expect(
-      answerTurnFrames(frames, survivorTurnId).some((frame) => frame.event.type === "error"),
-    ).toBe(false);
     expect(answerTerminal(frames, survivorTurnId)?.event).toMatchObject({
-      type: "turn-finished",
-      status: "completed",
+      type: "session-item",
+      item: { status: "complete", payload: { kind: "turn-end" } },
     });
   });
 
@@ -667,6 +672,10 @@ describe("ephemeral conversation runtime", () => {
       advanceLastSeq: async (conversationId, sequence) => {
         await tick();
         await inner.advanceLastSeq(conversationId, sequence);
+      },
+      refresh: async (conversationId) => {
+        await tick();
+        await inner.refresh(conversationId);
       },
       load: async (conversationId) => {
         await tick();
@@ -746,12 +755,9 @@ describe("ephemeral conversation runtime", () => {
 
       const survivorTurnId = fulfilled[0]?.value.turnId ?? "";
       await waitForTerminal(survivorTurnId, raceFrames);
-      expect(
-        answerTurnFrames(raceFrames, survivorTurnId).some((frame) => frame.event.type === "error"),
-      ).toBe(false);
       expect(answerTerminal(raceFrames, survivorTurnId)?.event).toMatchObject({
-        type: "turn-finished",
-        status: "completed",
+        type: "session-item",
+        item: { status: "complete", payload: { kind: "turn-end" } },
       });
       // 成功轮 settle 在终态帧之后释放 journal 与 transcript：等清理完成后快照必须为空。
       await expect
@@ -879,10 +885,10 @@ describe("local endpoint runtime", () => {
       await waitForRun(frames, turnId);
       // 本地 401 不触发令牌刷新，也不伪装成「需要登录」：服务端消息如实呈现。
       expect(authorizations).toEqual(["Bearer local-key"]);
-      const errorFrame = frames.find((frame) => frame.event.type === "error");
-      expect(
-        errorFrame && errorFrame.event.type === "error" ? errorFrame.event.errorText : "",
-      ).not.toContain("auth-required");
+      const payload = turnEndItem(answerTerminal(frames, turnId))?.payload;
+      expect(payload && payload.kind === "turn-end" ? payload.errorText : "").not.toContain(
+        "auth-required",
+      );
     } finally {
       runtime.dispose();
       await new Promise<void>((resolve) => server.close(() => resolve()));

@@ -503,18 +503,11 @@ describe("ContextPreparation", () => {
       },
     });
 
-    await preparationInstance.recordSessionEvent("conversation-1", {
-      type: "step-finished",
-      stepId: "step-0",
+    await preparationInstance.recordStepFinished("conversation-1", {
       index: 0,
-      state: "completed",
-      usage: { inputTokens: 123, outputTokens: 1 },
+      inputTokens: 123,
     });
-    await preparationInstance.recordSessionEvent("conversation-1", {
-      type: "turn-finished",
-      status: "completed",
-      reason: "completed",
-    });
+    await preparationInstance.recordTurnFinished("conversation-1", "completed");
 
     expect(await store.loadContextState("conversation-1")).toMatchObject({
       usageAnchor: {
@@ -545,18 +538,11 @@ describe("ContextPreparation", () => {
       },
     });
 
-    await preparationInstance.recordSessionEvent("conversation-1", {
-      type: "step-finished",
-      stepId: "step-1",
+    await preparationInstance.recordStepFinished("conversation-1", {
       index: 1,
-      state: "completed",
-      usage: { inputTokens: 999, outputTokens: 1 },
+      inputTokens: 999,
     });
-    await preparationInstance.recordSessionEvent("conversation-1", {
-      type: "turn-finished",
-      status: "completed",
-      reason: "completed",
-    });
+    await preparationInstance.recordTurnFinished("conversation-1", "completed");
 
     expect((await store.loadContextState("conversation-1"))?.usageAnchor).toEqual(previousAnchor);
   });
@@ -573,18 +559,11 @@ describe("ContextPreparation", () => {
       },
     });
 
-    await preparationInstance.recordSessionEvent("conversation-1", {
-      type: "step-finished",
-      stepId: "step-0",
+    await preparationInstance.recordStepFinished("conversation-1", {
       index: 0,
-      state: "completed",
-      usage: { inputTokens: 321, outputTokens: 1 },
+      inputTokens: 321,
     });
-    await preparationInstance.recordSessionEvent("conversation-1", {
-      type: "turn-finished",
-      status: "completed",
-      reason: "completed",
-    });
+    await preparationInstance.recordTurnFinished("conversation-1", "completed");
 
     expect(await store.loadContextState("conversation-1")).toMatchObject({
       usageAnchor: {
@@ -605,24 +584,17 @@ describe("ContextPreparation", () => {
         throw new Error("不应重建");
       },
     });
-    await preparationInstance.recordSessionEvent("conversation-1", {
-      type: "step-finished",
-      stepId: "step-0",
+    await preparationInstance.recordStepFinished("conversation-1", {
       index: 0,
-      state: "completed",
-      usage: { inputTokens: 321, outputTokens: 1 },
+      inputTokens: 321,
     });
 
-    await preparationInstance.recordSessionEvent("conversation-1", {
-      type: "turn-finished",
-      status: "aborted",
-      reason: "cancelled",
-    });
+    await preparationInstance.recordTurnFinished("conversation-1", "aborted");
 
     expect((await store.loadContextState("conversation-1"))?.usageAnchor).toBeUndefined();
   });
 
-  it("persists context usage from every context usage event", async () => {
+  it("persists provider usage reported by a finished step", async () => {
     const store = await preparedStore();
     const preparationInstance = preparation(store, { budget: PRUNE_ONLY_BUDGET });
     await preparationInstance.prepareRequest({
@@ -634,9 +606,9 @@ describe("ContextPreparation", () => {
       },
     });
 
-    await preparationInstance.recordSessionEvent("conversation-1", {
-      type: "context-usage-changed",
-      usedTokens: 2_700,
+    await preparationInstance.recordStepFinished("conversation-1", {
+      index: 0,
+      inputTokens: 2_700,
     });
 
     expect((await store.loadContextState("conversation-1"))?.usage?.usedTokens).toBe(2_700);
@@ -671,11 +643,7 @@ describe("ContextPreparation", () => {
         throw new Error("不应重建");
       },
     });
-    await preparationInstance.recordSessionEvent("conversation-1", {
-      type: "turn-finished",
-      status: "completed",
-      reason: "completed",
-    });
+    await preparationInstance.recordTurnFinished("conversation-1", "completed");
 
     expect((await store.loadContextState("conversation-1"))?.usageAnchor).toBeUndefined();
   });

@@ -8,7 +8,9 @@ import {
   splitLegacySessionRecord,
   summarizeSessionRecord,
 } from "../sessionRecord";
-import { insertMessageRow, insertSessionRow } from "./sessionRows";
+import { legacyMessagesToItems } from "./legacyMessageItems";
+import { insertSessionItemRow, writeSessionItemState } from "./sessionItemRows";
+import { insertSessionRow } from "./sessionRows";
 import { withImmediateTransaction } from "./transaction";
 
 const LEGACY_IMPORT_MARKER_PREFIX = "legacy-import:";
@@ -75,14 +77,22 @@ function insertLegacyRecord(
       scope: summary.scope,
       ...(summary.workspaceRoot === undefined ? {} : { workspaceRoot: summary.workspaceRoot }),
       title: summary.title,
-      messageCount: summary.messageCount,
+      messageCount: 0,
       createdAt: summary.createdAt,
       updatedAt: summary.updatedAt,
     },
     0,
   );
-  messages.forEach((message, index) => {
-    insertMessageRow(db, payload.conversationId, index + 1, message);
+  // 导入必须直接写条目：迁移回填只处理 `session_messages`，且发布后已冻结。
+  const converted = legacyMessagesToItems(messages, toIsoTimestamp(summary.updatedAt));
+  let seq = 0;
+  for (const draft of converted.items) {
+    seq += 1;
+    insertSessionItemRow(db, payload.conversationId, { ...draft, seq });
+  }
+  writeSessionItemState(db, payload.conversationId, {
+    nextSeq: seq + 1,
+    messageCount: converted.messageCount,
   });
 }
 
@@ -98,4 +108,10 @@ function hasMeta(db: DatabaseSync, key: string): boolean {
 
 function writeMeta(db: DatabaseSync, key: string, value: string): void {
   db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)").run(key, value);
+}
+
+function toIsoTimestamp(value: string): string {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) throw new Error(`会话时间戳无效：${value}`);
+  return parsed.toISOString();
 }

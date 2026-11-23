@@ -3,11 +3,7 @@
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import process from "node:process";
-import {
-  SqliteConversationStore,
-  SqliteSessionJournal,
-  startCodingHost,
-} from "@answra/agent/composition";
+import { SqliteConversationStore, startCodingHost } from "@answra/agent/composition";
 import { resolveDefaultConfigDir } from "@answra/config";
 import { createSystemModelCredentialStore } from "@answra/credentials";
 import {
@@ -44,9 +40,6 @@ async function main(): Promise<void> {
     );
     const modelCredentials = createSystemModelCredentialStore();
     const sessionStore = new SqliteConversationStore(
-      join(resolveDefaultConfigDir(), "cli", "sessions"),
-    );
-    const sessionJournal = new SqliteSessionJournal(
       join(resolveDefaultConfigDir(), "cli", "sessions"),
     );
     const promptSecret = createProcessSecretPrompt(process.stdin, process.stdout);
@@ -94,7 +87,7 @@ async function main(): Promise<void> {
               workspaceRoot,
               store: sessionStore,
               catalog: sessionStore,
-              sessionJournal,
+              sessionItems: sessionStore.items,
               globalInstructionFile: resolveCliInstructionFile(),
               skillRoots: resolveCliSkillRoots(workspaceRoot),
             }),
@@ -104,7 +97,6 @@ async function main(): Promise<void> {
         onInterrupt: (handler) => onProcessInterrupt(handler),
       });
     } finally {
-      sessionJournal.close();
       await sessionStore.close();
     }
   } catch (error) {

@@ -4,25 +4,23 @@
  */
 import { randomUUID } from "node:crypto";
 import type { ConversationSnapshot, InterviewProfileSeed } from "@answra/shared";
-import type { AgentStreamEvent, SessionFrame } from "@answra/shared/schema";
-import { toSessionFrame } from "@answra/shared/schema";
+import type { SessionFrame } from "@answra/shared/schema";
 import type { AgentExecutor, AgentId } from "../core/agent/definition";
 import { ProviderStepRunner } from "../core/agent/providerStepRunner";
 import type { AgentRuntime } from "../core/agent/runtime";
 import { ContextCompactor } from "../core/context/compaction/compactor";
 import { ContextPreparation } from "../core/context/preparation";
 import { PreparationStepContextManager } from "../core/context/stepContextManager";
-import type { SessionId, StepRunner, StepStart } from "../core/session/contracts";
+import type { SessionId, StepRunner } from "../core/session/contracts";
 import { sessionId as asSessionId, turnId as asTurnId } from "../core/session/contracts";
-import type { SessionJournal } from "../core/session/journal";
-import { MemorySessionJournal } from "../core/session/memoryJournal";
+import { SessionItemRecorder } from "../core/session/itemRecorder";
 import { SessionRecoveryCoordinator } from "../core/session/recoveryCoordinator";
-import { SessionFrameBus, toLiveFrame } from "../core/session/sessionFrameBus";
+import { SessionFrameBus } from "../core/session/sessionFrameBus";
 import { SessionRuntime } from "../core/session/sessionRuntime";
-import { SessionRuntimeJournal } from "../core/session/sessionRuntimeJournal";
 import { SessionStepExecutor } from "../core/session/stepExecutor";
-import { SessionTranscriptBridge } from "../core/session/transcriptBridge";
 import { SessionTurnExecutor } from "../core/session/turnExecutor";
+import type { SessionItemStore } from "../core/transcript/itemStore";
+import { MemorySessionItemStore } from "../core/transcript/memoryItemStore";
 import { createUserMessage } from "../core/transcript/message";
 import type { ConversationStore } from "../core/transcript/store";
 import type { CommittedInterviewTurn, InterviewAgentInput } from "./contracts";
@@ -36,8 +34,8 @@ export interface InterviewApplicationOptions {
   /** 面试演练回复的 assistant 消息归属。 */
   authorAgentId: AgentId;
   requestAccessToken: () => Promise<string>;
-  /** durable session journal；缺省使用内存实现，桌面宿主注入 SQLite 实现。 */
-  sessionJournal?: SessionJournal;
+  /** durable 会话条目；缺省使用内存实现，桌面宿主注入 SQLite 实现。 */
+  sessionItems?: SessionItemStore;
   /** durable/live 帧广播口；宿主传入同一实例即可跨领域共享。 */
   sessionFrames?: SessionFrameBus;
   /** 测试注入的 StepRunner；生产由 ProviderStepRunner 提供。 */
@@ -57,10 +55,8 @@ export class InterviewApplication {
   private readonly contextCompactor: ContextCompactor;
   private readonly contextPreparation: ContextPreparation;
   private readonly sessionFrames: SessionFrameBus;
-  private readonly bridge: SessionTranscriptBridge;
   private readonly sessionRuntime: SessionRuntime;
   private readonly recovery: SessionRecoveryCoordinator;
-  private readonly runtimeJournal: SessionRuntimeJournal;
   private readonly replyLoop: InterviewReplyLoop;
   private workspaceRoot: string | null = null;
   private interviewDataRoot: string | null = null;
@@ -83,8 +79,6 @@ export class InterviewApplication {
           ...(signal ? { signal } : {}),
         }),
       onSnapshot: options.onSnapshot,
-      // 面试同样会在 step 前自动压缩；事实必须进入同一 journal，恢复才能收口。
-      onCompaction: (fact) => this.runtimeJournal.appendCompaction(fact),
     });
     this.contextPreparation = new ContextPreparation({
       compactor: this.contextCompactor,
@@ -92,16 +86,14 @@ export class InterviewApplication {
       contextWindow: () => options.agentRuntime.chatContextWindow(),
     });
 
-    this.bridge = new SessionTranscriptBridge({ store: options.store });
-    const journal = new SessionRuntimeJournal({
-      journal: options.sessionJournal ?? new MemorySessionJournal(),
+    const items = options.sessionItems ?? new MemorySessionItemStore();
+    const recorder = new SessionItemRecorder({
+      items,
+      store: options.store,
       frames: this.sessionFrames,
-      bridge: this.bridge,
-      onDurableEvent: (id, event) => this.contextPreparation.recordSessionEvent(id, event),
-      onBoundary: (id) => this.pushSnapshot(id),
+      onSnapshot: (id) => this.pushSnapshot(id),
+      onTurnFinished: (id, outcome) => this.contextPreparation.recordTurnFinished(id, outcome),
     });
-    // 压缩器先于 journal 构造（journal 又依赖 preparation），因此观察口只在运行期解引用。
-    this.runtimeJournal = journal;
     const binding = createInterviewStepBinding({
       executor: options.executor,
       workspaceRoot: () => this.workspaceRoot,
@@ -120,28 +112,36 @@ export class InterviewApplication {
             : undefined,
       });
     const stepExecutor = new SessionStepExecutor({
-      journal,
+      recorder,
       runner,
-      onStreamEvent: (step, event) => this.onStepStream(step, event),
+      onStepFinished: (step, result) =>
+        this.contextPreparation.recordStepFinished(step.sessionId, {
+          index: step.index,
+          ...(result.usage?.inputTokens === undefined
+            ? {}
+            : { inputTokens: result.usage.inputTokens }),
+        }),
     });
     const turnExecutor = new SessionTurnExecutor({
-      journal,
+      recorder,
       stepExecutor,
       createMessageId: () => randomUUID(),
     });
     this.sessionRuntime = new SessionRuntime({
-      journal,
+      items,
+      store: options.store,
+      recorder,
       executor: turnExecutor,
+      // 面试只有一位面试官 Bot；转写与开场都由它回复。
+      defaults: { agentId: options.authorAgentId, source: "reply" },
       createMessageId: () => randomUUID(),
     });
     this.recovery = new SessionRecoveryCoordinator({
       recoverFacts: (id) => this.sessionRuntime.recoverFacts(id),
+      refreshTranscript: (id) => this.sessionRuntime.refreshTranscript(id),
       resumeQueued: (id, runtime) => this.sessionRuntime.resumeQueued(id, runtime),
-      journalLastSeq: (id) => this.runtimeJournal.lastSequence(id),
-      seedLastSeq: (id, sequence) => this.store.advanceLastSeq(id, sequence),
-      restoreTranscript: (id, plan) => this.bridge.recover(id, plan),
       onRecovered: async (id, plan) => {
-        if (plan.interruptedTurnIds.length > 0) await this.pushSnapshot(id);
+        if (plan.closedTurnIds.length > 0) await this.pushSnapshot(id);
       },
     });
 
@@ -202,9 +202,9 @@ export class InterviewApplication {
   ): Promise<{ turnId: string; snapshot: ConversationSnapshot }> {
     const trimmed = text.trim();
     if (!trimmed || trimmed.length > 32_000) throw new Error("面试消息无效或过长");
-    await this.ensureRecovered(conversationId);
-    const appended = await this.store.appendUserMessage(
-      conversationId,
+    const session = await this.ensureRecovered(conversationId);
+    const appended = await this.sessionRuntime.appendUserMessage(
+      session,
       createUserMessage(randomUUID(), { text: trimmed, images: [] }),
     );
     await this.onSnapshot(appended);
@@ -230,6 +230,7 @@ export class InterviewApplication {
       scope: "interview",
       ...(this.workspaceRoot ? { workspaceRoot: this.workspaceRoot } : {}),
     });
+    await this.sessionRuntime.createSession(asSessionId(conversationId));
     return this.loadRecoveredSnapshot(conversationId);
   }
 
@@ -247,10 +248,9 @@ export class InterviewApplication {
       .then(() => undefined);
   }
 
-  /** 按 durable `seq` 读取事实帧；面试演练的 UI 与文本会话共用。 */
+  /** 按 durable `seq` 读取条目帧；面试演练的 UI 与文本会话共用。 */
   async readFrames(conversationId: string, afterSeq: number): Promise<SessionFrame[]> {
-    const rows = await this.runtimeJournal.readAfter(asSessionId(conversationId), afterSeq);
-    return rows.map(toSessionFrame);
+    return this.sessionRuntime.readFramesAfter(asSessionId(conversationId), afterSeq);
   }
 
   /** 立即中止活动 Turn；宿主硬退出时使用，正常退出走 `shutdown`。 */
@@ -279,8 +279,9 @@ export class InterviewApplication {
     text: string,
     onTurnCommitted: (turn: CommittedInterviewTurn) => void,
   ): Promise<void> {
-    const snapshot = await this.store.appendUserMessage(
-      conversationId,
+    const session = await this.ensureRecovered(conversationId);
+    const snapshot = await this.sessionRuntime.appendUserMessage(
+      session,
       createUserMessage(randomUUID(), { text, images: [] }),
     );
     await this.onSnapshot(snapshot);
@@ -312,11 +313,5 @@ export class InterviewApplication {
 
   private async pushSnapshot(conversationId: string): Promise<void> {
     await this.onSnapshot(await this.loadRecoverySnapshot(conversationId));
-  }
-
-  private async onStepStream(step: StepStart, event: AgentStreamEvent): Promise<void> {
-    const live = toLiveFrame(step, event);
-    if (live !== undefined) this.sessionFrames.publishLive(live);
-    await this.bridge.applyLive(step.sessionId, step.messageId, event);
   }
 }

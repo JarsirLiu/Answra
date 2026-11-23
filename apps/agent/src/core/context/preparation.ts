@@ -7,7 +7,7 @@ import {
   MANUAL_COMPACTION_INSTRUCTIONS_MAX_CHARS,
   type ManualCompactionResult,
 } from "@answra/shared";
-import type { AgentDurableEvent } from "@answra/shared/schema";
+import type { TurnOutcome } from "@answra/shared/schema";
 import type { ContextUsageAnchor } from "../transcript/contextState";
 import {
   type ContextBudgetPolicy,
@@ -283,9 +283,17 @@ export class ContextPreparation {
     return prepared.compaction.status === "compacted" ? prepared.request : undefined;
   }
 
-  /** 消费 run 事件：首步 usage 维护锚点；provider 输入 usage 持久化供恢复。 */
-  async recordSessionEvent(conversationId: string, event: AgentDurableEvent): Promise<void> {
-    await this.contextState.recordSessionEvent(conversationId, event);
+  /** step 结算：锚点与 provider 实测 usage；由 StepExecutor 显式调用。 */
+  async recordStepFinished(
+    conversationId: string,
+    step: { index: number; inputTokens?: number },
+  ): Promise<void> {
+    await this.contextState.recordStepFinished(conversationId, step);
+  }
+
+  /** Turn 终态：提交或丢弃 usage 锚点；由 TurnRecorder 显式调用。 */
+  async recordTurnFinished(conversationId: string, outcome: TurnOutcome): Promise<void> {
+    await this.contextState.recordTurnFinished(conversationId, outcome);
   }
 
   private resolveBudget(): ResolvedContextBudget {

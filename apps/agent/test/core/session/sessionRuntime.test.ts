@@ -13,13 +13,16 @@ import type {
   TurnRunContext,
   TurnStart,
 } from "../../../src/core/session/contracts";
-import { MemorySessionJournal } from "../../../src/core/session/memoryJournal";
+import { SessionItemRecorder } from "../../../src/core/session/itemRecorder";
+import { SessionFrameBus } from "../../../src/core/session/sessionFrameBus";
 import { SessionRuntime } from "../../../src/core/session/sessionRuntime";
 import { SessionStepExecutor } from "../../../src/core/session/stepExecutor";
 import { SessionTurnExecutor } from "../../../src/core/session/turnExecutor";
+import type { SessionItemStore } from "../../../src/core/transcript/itemStore";
+import type { MemoryConversationStore } from "../../../src/core/transcript/memoryStore";
 import {
+  createSessionFixture,
   TEST_SESSION_ID,
-  TEST_STEP_ID,
   TEST_TURN_ID,
   TEST_TURN_ID_2,
   TEST_TURN_RUNTIME,
@@ -156,20 +159,43 @@ class FakeCompactor implements SessionCompactor {
   }
 }
 
-function createSessionRuntime() {
-  const journal = new MemorySessionJournal();
-  const executor = new SessionTurnExecutor({
-    journal,
-    stepExecutor: new SessionStepExecutor({ journal, runner: new StopRunner() }),
-    createMessageId: sequentialMessageIds(),
-  });
+interface Harness {
+  store: MemoryConversationStore;
+  items: SessionItemStore;
+  runtime: SessionRuntime;
+}
+
+async function harnessWith(
+  options: {
+    stepRunner?: StepRunner;
+    executor?: TurnExecutor;
+    compactor?: SessionCompactor;
+    createMessageId?: () => string;
+  } = {},
+): Promise<Harness> {
+  const { store, items } = await createSessionFixture();
+  const recorder = new SessionItemRecorder({ items, store, frames: new SessionFrameBus() });
+  const executor =
+    options.executor ??
+    new SessionTurnExecutor({
+      recorder,
+      stepExecutor: new SessionStepExecutor({
+        recorder,
+        runner: options.stepRunner ?? new StopRunner(),
+      }),
+      createMessageId: options.createMessageId ?? sequentialMessageIds(),
+    });
   const runtime = new SessionRuntime({
-    journal,
+    items,
+    store,
+    recorder,
     executor,
+    defaults: { agentId: "general", source: "user" },
     createTurnId: () => TEST_TURN_ID_2,
     createMessageId: () => "assistant-message",
+    ...(options.compactor === undefined ? {} : { compactor: options.compactor }),
   });
-  return { journal, runtime };
+  return { store, items, runtime };
 }
 
 function submitUser(
@@ -186,9 +212,25 @@ function submitUser(
   });
 }
 
+async function appendUserItem(
+  items: SessionItemStore,
+  turnId: string,
+  createdAt: string,
+): Promise<void> {
+  await items.appendItems(TEST_SESSION_ID, [
+    {
+      itemId: turnId,
+      status: "complete",
+      createdAt,
+      turnId,
+      payload: { kind: "user", text: "hello", images: [] },
+    },
+  ]);
+}
+
 describe("SessionRuntime", () => {
-  it("submits a turn and exposes the journal projection", async () => {
-    const { journal, runtime } = createSessionRuntime();
+  it("submits a turn and exposes the item projection", async () => {
+    const { runtime } = await harnessWith();
 
     await expect(submitUser(runtime, "turn-1")).resolves.toEqual({
       turnId: TEST_TURN_ID,
@@ -203,31 +245,21 @@ describe("SessionRuntime", () => {
       status: "completed",
       finishReason: "completed",
     });
-    expect(snapshot.steps[0]).toMatchObject({
-      agentId: "general",
-      status: "completed",
+    const frames = await runtime.readFramesAfter(TEST_SESSION_ID, 0);
+    expect(frames.map((frame) => frame.event.type)).toEqual(frames.map(() => "session-item"));
+    expect(frames.at(-1)?.event).toMatchObject({
+      type: "session-item",
+      item: { payload: { kind: "turn-end" }, turnId: TEST_TURN_ID },
     });
-    expect(await runtime.events(TEST_SESSION_ID)).toHaveLength(5);
-    expect((await journal.readAfter(TEST_SESSION_ID, 0)).at(-1)?.event.type).toBe("turn-finished");
   });
 
   it("keeps each queued turn's runtime context", async () => {
-    const journal = new MemorySessionJournal();
     const runner = new TokenRecordingRunner();
-    const executor = new SessionTurnExecutor({
-      journal,
-      stepExecutor: new SessionStepExecutor({ journal, runner }),
-      createMessageId: sequentialMessageIds(),
-    });
-    const runtime = new SessionRuntime({ journal, executor });
+    const { runtime } = await harnessWith({ stepRunner: runner });
 
-    await submitUser(runtime, "turn-1", {
-      getAccessToken: async () => "token-1",
-    });
+    await submitUser(runtime, "turn-1", { getAccessToken: async () => "token-1" });
     await runner.firstStarted.promise;
-    await submitUser(runtime, "turn-2", {
-      getAccessToken: async () => "token-2",
-    });
+    await submitUser(runtime, "turn-2", { getAccessToken: async () => "token-2" });
 
     runner.release();
     await runtime.waitForIdle(TEST_SESSION_ID);
@@ -236,18 +268,8 @@ describe("SessionRuntime", () => {
   });
 
   it("finishes a handoff chain before starting a queued user turn", async () => {
-    const journal = new MemorySessionJournal();
     const runner = new HandoffRunner();
-    const executor = new SessionTurnExecutor({
-      journal,
-      stepExecutor: new SessionStepExecutor({ journal, runner }),
-      createMessageId: sequentialMessageIds(),
-    });
-    const runtime = new SessionRuntime({
-      journal,
-      executor,
-      createMessageId: () => "assistant-message",
-    });
+    const { runtime, items } = await harnessWith({ stepRunner: runner });
 
     await submitUser(runtime, "turn-1");
     await runner.intakeStarted.promise;
@@ -274,31 +296,24 @@ describe("SessionRuntime", () => {
       TEST_TURN_ID_2,
     ]);
 
-    const events = await runtime.events(TEST_SESSION_ID);
-    const handoffIndex = events.findIndex((event) => event.event.type === "turn-handoff");
-    const finishedIndex = events.findIndex(
-      (event) => event.event.type === "turn-finished" && event.turnId === TEST_TURN_ID,
+    const written = await items.readItems(TEST_SESSION_ID);
+    const handoff = written.find((item) => item.audienceAgentId === "intake");
+    const turnEnd = written.find((item) => item.itemId === `${TEST_TURN_ID}:end`);
+    expect(handoff).toMatchObject({
+      payload: { kind: "text", text: "整理资料" },
+      authorAgentId: "general",
+    });
+    expect(turnEnd?.seq).toBeGreaterThan(handoff?.seq ?? 0);
+    // 排队用户的用户条目在提交时即落库，可能早于上一 Turn 的收口；这里只确认它存在且归属正确。
+    const secondUser = written.find(
+      (item) => item.payload.kind === "user" && item.turnId === TEST_TURN_ID_2,
     );
-    const nextStartedIndex = events.findIndex(
-      (event) => event.event.type === "turn-started" && event.turnId === TEST_TURN_ID_2,
-    );
-    expect(handoffIndex).toBeGreaterThan(-1);
-    expect(nextStartedIndex).toBeGreaterThan(finishedIndex);
-    expect(events.filter((event) => event.event.type === "turn-queued")).toMatchObject([
-      { turnId: TEST_TURN_ID },
-      { turnId: TEST_TURN_ID_2 },
-    ]);
+    expect(secondUser?.itemId).toBe("turn-2");
   });
 
   it("cancels the whole handoff chain and keeps the queued user turn", async () => {
-    const journal = new MemorySessionJournal();
     const runner = new AbortableHandoffRunner();
-    const executor = new SessionTurnExecutor({
-      journal,
-      stepExecutor: new SessionStepExecutor({ journal, runner }),
-      createMessageId: sequentialMessageIds(),
-    });
-    const runtime = new SessionRuntime({ journal, executor });
+    const { runtime } = await harnessWith({ stepRunner: runner });
 
     await submitUser(runtime, "turn-1");
     await runner.intakeStarted.promise;
@@ -319,9 +334,8 @@ describe("SessionRuntime", () => {
   });
 
   it("cancels a queued turn without interrupting the active turn", async () => {
-    const journal = new MemorySessionJournal();
     const executor = new BlockingTurnExecutor();
-    const runtime = new SessionRuntime({ journal, executor });
+    const { runtime } = await harnessWith({ executor });
 
     await submitUser(runtime, "turn-1");
     await submitUser(runtime, "turn-2");
@@ -341,62 +355,50 @@ describe("SessionRuntime", () => {
     await runtime.waitForIdle(TEST_SESSION_ID);
   });
 
-  it("closes interrupted facts and resumes queued turns on recovery", async () => {
-    const { journal, runtime } = createSessionRuntime();
-    await journal.append(
-      TEST_SESSION_ID,
-      { type: "turn-queued", source: "user", input: userMessage("turn-1"), agentId: "general" },
-      { turnId: TEST_TURN_ID },
-    );
-    await journal.append(
-      TEST_SESSION_ID,
-      { type: "turn-started", agentId: "general" },
-      { turnId: TEST_TURN_ID },
-    );
-    await journal.append(
-      TEST_SESSION_ID,
+  it("closes interrupted turns and resumes queued turns on recovery", async () => {
+    const { store, items } = await createSessionFixture();
+    await appendUserItem(items, "turn-1", "2026-11-23T10:00:00.000Z");
+    await items.beginTurn(TEST_SESSION_ID, "turn-1");
+    await items.appendItems(TEST_SESSION_ID, [
       {
-        type: "step-started",
-        stepId: "step-1",
-        index: 0,
-        agentId: "general",
-        modelId: "model-a",
+        itemId: "text-1",
+        status: "complete",
+        createdAt: "2026-11-23T10:00:01.000Z",
+        turnId: "turn-1",
+        messageId: "assistant-1",
+        authorAgentId: "general",
+        payload: { kind: "text", text: "半截回复" },
       },
-      { turnId: TEST_TURN_ID, stepId: TEST_STEP_ID },
-    );
-    await journal.append(
-      TEST_SESSION_ID,
-      { type: "compaction-started", trigger: "auto", reason: "threshold" },
-      { operationId: "operation-1" },
-    );
-    await journal.append(
-      TEST_SESSION_ID,
-      { type: "turn-queued", source: "user", input: userMessage("turn-2"), agentId: "general" },
-      { turnId: TEST_TURN_ID_2 },
-    );
+    ]);
+    await appendUserItem(items, "turn-2", "2026-11-23T10:00:02.000Z");
+    const recorder = new SessionItemRecorder({ items, store, frames: new SessionFrameBus() });
+    const executor = new SessionTurnExecutor({
+      recorder,
+      stepExecutor: new SessionStepExecutor({ recorder, runner: new StopRunner() }),
+      createMessageId: sequentialMessageIds(),
+    });
+    const runtime = new SessionRuntime({
+      items,
+      store,
+      recorder,
+      executor,
+      defaults: { agentId: "general", source: "user" },
+      createTurnId: () => TEST_TURN_ID_2,
+      createMessageId: () => "assistant-message",
+    });
 
     const plan = await runtime.recoverFacts(TEST_SESSION_ID);
+    await runtime.refreshTranscript(TEST_SESSION_ID);
     await runtime.resumeQueued(TEST_SESSION_ID, TEST_TURN_RUNTIME);
 
-    expect(plan.interruptedTurnIds).toEqual([TEST_TURN_ID]);
-    expect(plan.interruptedStepIds).toEqual([TEST_STEP_ID]);
-    expect(plan.interruptedCompactionIds).toEqual(["operation-1"]);
+    expect(plan.closedTurnIds).toEqual([TEST_TURN_ID]);
+    expect(plan.pendingTurnIds).toEqual([TEST_TURN_ID_2]);
 
     await runtime.waitForIdle(TEST_SESSION_ID);
     const snapshot = await runtime.snapshot(TEST_SESSION_ID);
     expect(snapshot.turns[0]).toMatchObject({
-      status: "failed",
+      status: "aborted",
       finishReason: "interrupted",
-      errorText: "Session 恢复时发现 Turn 未完成",
-    });
-    expect(snapshot.steps[0]).toMatchObject({
-      status: "failed",
-      finishReason: "error",
-      errorText: "Session 恢复时发现 Step 未完成",
-    });
-    expect(snapshot.compactions[0]).toMatchObject({
-      state: "failed",
-      errorText: "Session 恢复时发现压缩未完成",
     });
     expect(snapshot.turns[1]).toMatchObject({
       turnId: TEST_TURN_ID_2,
@@ -405,7 +407,7 @@ describe("SessionRuntime", () => {
   });
 
   it("does not recover a session that already started", async () => {
-    const { runtime } = createSessionRuntime();
+    const { runtime } = await harnessWith();
     await submitUser(runtime, "turn-1");
     await runtime.waitForIdle(TEST_SESSION_ID);
 
@@ -415,10 +417,8 @@ describe("SessionRuntime", () => {
   });
 
   it("delegates manual compaction without creating a turn", async () => {
-    const journal = new MemorySessionJournal();
     const compactor = new FakeCompactor();
-    const runtime = new SessionRuntime({
-      journal,
+    const { runtime } = await harnessWith({
       executor: new BlockingTurnExecutor(),
       compactor,
     });

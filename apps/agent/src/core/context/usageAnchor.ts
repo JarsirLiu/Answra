@@ -1,5 +1,5 @@
 /** usage 锚点生命周期：记录成功 run 首个 step 的实际输入 token，并在投影或 run 失效后清理。 */
-import type { AgentDurableEvent } from "@answra/shared/schema";
+import type { TurnOutcome } from "@answra/shared/schema";
 import type { ContextState, ContextUsageAnchor } from "../transcript/contextState";
 import type { ConversationStore } from "../transcript/store";
 
@@ -36,22 +36,18 @@ export class ContextUsageAnchorTracker {
     this.pending.set(conversationId, { estimatedTokens, projectionChanged });
   }
 
-  /** 消费 Session 事实：首个 step 记录实际值，Turn 终态决定提交或清理。 */
-  async recordSessionEvent(conversationId: string, event: AgentDurableEvent): Promise<void> {
-    if (event.type === "step-finished") {
-      if (event.index !== 0) return;
-      const pending = this.pending.get(conversationId);
-      const inputTokens = event.usage?.inputTokens;
-      if (pending && inputTokens !== undefined && inputTokens > 0) {
-        pending.inputTokens = inputTokens;
-      }
-      return;
+  /** 消费 step 结算：首个 step 记录实际输入 token；Turn 终态决定提交或清理锚点。 */
+  recordStepFinished(conversationId: string, input: { index: number; inputTokens?: number }): void {
+    if (input.index !== 0) return;
+    const pending = this.pending.get(conversationId);
+    if (pending && input.inputTokens !== undefined && input.inputTokens > 0) {
+      pending.inputTokens = input.inputTokens;
     }
-    if (event.type === "turn-finished") {
-      if (event.status === "completed") await this.commit(conversationId);
-      else await this.discard(conversationId);
-      return;
-    }
+  }
+
+  async recordTurnFinished(conversationId: string, outcome: TurnOutcome): Promise<void> {
+    if (outcome === "completed") await this.commit(conversationId);
+    else await this.discard(conversationId);
   }
 
   private async commit(conversationId: string): Promise<void> {

@@ -7,13 +7,13 @@ import { createConversationBots } from "./conversation/bots";
 import { AgentRuntime } from "./core/agent/runtime";
 import { createBotCatalog } from "./core/bot/catalog";
 import { createInstructionLoader } from "./core/instruction";
-import type { SessionJournal } from "./core/session/journal";
-import { MemorySessionJournal } from "./core/session/memoryJournal";
 import { SessionFrameBus } from "./core/session/sessionFrameBus";
 import { createLazySkillCatalog } from "./core/skill/catalog";
 import type { SkillRoots } from "./core/skill/contracts";
 import { createBuiltinToolRegistry } from "./core/tool";
 import type { ConversationSessionCatalog } from "./core/transcript/catalog";
+import type { SessionItemStore } from "./core/transcript/itemStore";
+import { MemorySessionItemStore } from "./core/transcript/memoryItemStore";
 import { MemoryConversationStore } from "./core/transcript/memoryStore";
 import type { ConversationStore } from "./core/transcript/store";
 import { createInterviewRehearsalAgent, INTERVIEW_REHEARSAL_AGENT_ID } from "./interview/agent";
@@ -43,8 +43,8 @@ export interface AgentHostOptions {
   transport: AgentTransport;
   store?: ConversationStore;
   catalog?: ConversationSessionCatalog;
-  /** durable session journal；desktop 宿主注入 SQLite 实现，测试可用内存实现。 */
-  sessionJournal?: SessionJournal;
+  /** durable 会话条目；desktop 宿主注入 SQLite 实现，测试可用内存实现。 */
+  sessionItems?: SessionItemStore;
   /**
    * 面试 VAD 的资源来源（预编译 TEN VAD wasm 由 desktop 组合根读盘后注入）。
    * 未注入时 interview-start 会显式失败：不静默降级为无 VAD 会话。
@@ -93,7 +93,7 @@ export function startAgentHost({
   transport,
   store = new MemoryConversationStore(),
   catalog,
-  sessionJournal = new MemorySessionJournal(),
+  sessionItems = new MemorySessionItemStore(),
   vad,
   recognizer,
   turnSettler,
@@ -174,7 +174,7 @@ export function startAgentHost({
     agentRuntime,
     store,
     catalog: conversationCatalog,
-    sessionJournal,
+    sessionItems,
     sessionFrames,
     onSnapshot: async (snapshot) => emitConversationSnapshot(snapshot),
     onTeamError: (error) => {
@@ -197,7 +197,7 @@ export function startAgentHost({
     executor: interviewAgent,
     authorAgentId: INTERVIEW_REHEARSAL_AGENT_ID,
     requestAccessToken: () => requestAccessToken({ forceRefresh: false }),
-    sessionJournal,
+    sessionItems,
     sessionFrames,
     onSnapshot: async (snapshot) => emitConversationSnapshot(snapshot),
     onTurnCommitted: (turn) => emitInterviewEvent({ type: "turn-committed", turn }),
@@ -214,7 +214,7 @@ export function startAgentHost({
     executor: interviewIntakeAgent,
     authorAgentId: INTERVIEW_INTAKE_AGENT_ID,
     requestAccessToken: () => requestAccessToken({ forceRefresh: false }),
-    sessionJournal,
+    sessionItems,
     sessionFrames,
     onSnapshot: async (snapshot) => emitConversationSnapshot(snapshot),
     onTurnCommitted: () => undefined,
@@ -296,7 +296,6 @@ export function startAgentHost({
       await tools.dispose().catch((error: unknown) => {
         console.warn("[agent] tool cleanup failed", error);
       });
-      sessionJournal.close?.();
       await store.close();
     })();
     return shutdownPromise;
@@ -447,7 +446,7 @@ export function startAgentHost({
       case "session-delete":
         if (!catalog) throw new Error("会话历史不可用");
         return catalog.delete(command.conversationId);
-      // 事实帧按 journal 读取：Answer 的 journal 只存在内存里，与会话共用读取契约。
+      // 条目帧按会话领域读取：Answer 的条目只存在内存里，与会话共用读取契约。
       case "read-frames": {
         const scope = await store.scopeOf(command.conversationId);
         if (scope === "answer")

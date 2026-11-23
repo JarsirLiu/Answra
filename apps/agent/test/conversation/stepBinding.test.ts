@@ -1,3 +1,4 @@
+import type { AgentStreamEvent } from "@answra/shared/schema";
 import type { TextStreamPart, ToolSet } from "ai";
 import { describe, expect, it, vi } from "vitest";
 import type { ConversationAgentInput } from "../../src/bots/general/agent";
@@ -19,8 +20,7 @@ import {
   type ProviderStepRunnerOptions,
 } from "../../src/core/agent/providerStepRunner";
 import { createBotCatalog } from "../../src/core/bot/catalog";
-import type { StepStart } from "../../src/core/session/contracts";
-import { MemorySessionJournal } from "../../src/core/session/memoryJournal";
+import type { StepEventRecorder, StepStart } from "../../src/core/session/contracts";
 import { SessionStepExecutor } from "../../src/core/session/stepExecutor";
 import {
   TEST_SESSION_ID,
@@ -134,6 +134,14 @@ function createRunner(options: ConversationRunnerOptions): ProviderStepRunner {
   });
 }
 
+class RecordingRecorder implements StepEventRecorder {
+  readonly events: AgentStreamEvent[] = [];
+
+  async append(_step: StepStart, event: AgentStreamEvent): Promise<void> {
+    this.events.push(event);
+  }
+}
+
 describe("Conversation step binding", () => {
   it("uses the handoff task as the target Bot input and keeps the Turn input available", async () => {
     let prepared: ConversationAgentInput | undefined;
@@ -225,7 +233,7 @@ describe("Conversation step binding", () => {
   });
 
   it("runs the real StepExecutor path and returns the target Bot handoff", async () => {
-    const journal = new MemorySessionJournal();
+    const recorder = new RecordingRecorder();
     const onPrepare = vi.fn();
     const runner = createRunner(
       runnerOptions({
@@ -242,7 +250,7 @@ describe("Conversation step binding", () => {
         stream: () => partsStream(completedParts("done")),
       }),
     );
-    const executor = new SessionStepExecutor({ journal, runner });
+    const executor = new SessionStepExecutor({ recorder, runner });
 
     const result = await executor.run(
       stepStart({
@@ -267,15 +275,12 @@ describe("Conversation step binding", () => {
         request: expect.objectContaining({ text: "请接管整理并继续追问。" }),
       }),
     );
-    const events = await journal.readAfter(TEST_SESSION_ID, 0);
-    expect(events.map((event) => event.event.type)).toEqual([
-      "step-started",
+    expect(recorder.events.map((event) => event.type)).toEqual([
       "start",
       "text-start",
+      "text-delta",
       "text-end",
       "finish",
-      "step-finished",
-      "context-usage-changed",
     ]);
   });
 });

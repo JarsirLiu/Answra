@@ -1,6 +1,5 @@
 /** 模型输入 usage 的会话状态协调：维护校准锚点并持久化 provider 实测值。 */
-import type { ContextPruningStatus, ContextUsage } from "@answra/shared";
-import type { AgentDurableEvent } from "@answra/shared/schema";
+import type { ContextPruningStatus, ContextUsage, TurnOutcome } from "@answra/shared";
 import { type ContextStateStore, ContextUsageAnchorTracker } from "./usageAnchor";
 
 export class ContextStateCoordinator {
@@ -48,10 +47,13 @@ export class ContextStateCoordinator {
     }
   }
 
-  async recordSessionEvent(conversationId: string, event: AgentDurableEvent): Promise<void> {
-    await this.anchors.recordSessionEvent(conversationId, event);
-    if (event.type !== "context-usage-changed") return;
-
+  /** step 结算：锚点只认首个 step；provider 实测输入写入会话状态供 UI 展示。 */
+  async recordStepFinished(
+    conversationId: string,
+    input: { index: number; inputTokens?: number },
+  ): Promise<void> {
+    this.anchors.recordStepFinished(conversationId, input);
+    if (input.inputTokens === undefined) return;
     try {
       const state = await this.store.loadContextState(conversationId);
       if (!state?.usage) return;
@@ -59,7 +61,7 @@ export class ContextStateCoordinator {
         ...state,
         usage: {
           ...state.usage,
-          usedTokens: event.usedTokens,
+          usedTokens: input.inputTokens,
           source: "provider",
           updatedAt: this.now().toISOString(),
         },
@@ -70,6 +72,11 @@ export class ContextStateCoordinator {
         error: errorText(error, "provider usage 写入失败"),
       });
     }
+  }
+
+  /** Turn 终态：成功提交锚点，失败或中断丢弃并清理受影响的投影。 */
+  async recordTurnFinished(conversationId: string, outcome: TurnOutcome): Promise<void> {
+    await this.anchors.recordTurnFinished(conversationId, outcome);
   }
 }
 

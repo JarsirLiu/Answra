@@ -1,5 +1,5 @@
 /**
- * Screenshot Answer use case：一次性答题会话只走内存 journal 与单 Turn SessionRuntime，
+ * Screenshot Answer use case：一次性答题会话只走内存条目与单 Turn SessionRuntime，
  * 不读 transcript 历史、不落盘、不参与启动恢复。
  */
 import { randomUUID } from "node:crypto";
@@ -8,22 +8,20 @@ import type {
   ConversationSendRequest,
   ConversationSnapshot,
 } from "@answra/shared";
-import type { AgentStreamEvent, SessionFrame, TurnOutcome } from "@answra/shared/schema";
-import { toSessionFrame } from "@answra/shared/schema";
+import type { SessionFrame, TurnOutcome } from "@answra/shared/schema";
 import type { AgentExecutor, AgentId } from "../core/agent/definition";
 import { ProviderStepRunner } from "../core/agent/providerStepRunner";
 import type { AgentRuntime } from "../core/agent/runtime";
 import { validateModelRequest } from "../core/model/requestContent";
 import type { SessionId, StepRunner, StepStart, TurnId } from "../core/session/contracts";
 import { sessionId as asSessionId, turnId as asTurnId } from "../core/session/contracts";
-import type { SessionJournal } from "../core/session/journal";
-import { MemorySessionJournal } from "../core/session/memoryJournal";
-import { SessionFrameBus, toLiveFrame } from "../core/session/sessionFrameBus";
+import { SessionItemRecorder } from "../core/session/itemRecorder";
+import { SessionFrameBus } from "../core/session/sessionFrameBus";
 import { SessionRuntime } from "../core/session/sessionRuntime";
-import { SessionRuntimeJournal } from "../core/session/sessionRuntimeJournal";
 import { SessionStepExecutor } from "../core/session/stepExecutor";
-import { SessionTranscriptBridge } from "../core/session/transcriptBridge";
 import { SessionTurnExecutor } from "../core/session/turnExecutor";
+import type { SessionItemStore } from "../core/transcript/itemStore";
+import { MemorySessionItemStore } from "../core/transcript/memoryItemStore";
 import { createUserMessage } from "../core/transcript/message";
 import type { ConversationStore } from "../core/transcript/store";
 
@@ -35,8 +33,8 @@ export interface AnswerApplicationOptions {
   authorAgentId: AgentId;
   /** 与其它领域共用同一帧广播口时注入；缺省自建。 */
   sessionFrames?: SessionFrameBus;
-  /** 内存 journal；Answer 事实不落盘，也不进入启动恢复。 */
-  sessionJournal?: SessionJournal;
+  /** 内存条目；Answer 事实不落盘，也不进入启动恢复。 */
+  sessionItems?: SessionItemStore;
   /** 测试注入的 StepRunner；生产由 ProviderStepRunner 提供。 */
   stepRunner?: StepRunner;
 }
@@ -47,8 +45,6 @@ export class AnswerApplication {
   private readonly executor: AgentExecutor<ConversationSendRequest>;
   private readonly authorAgentId: AgentId;
   private readonly sessionFrames: SessionFrameBus;
-  private readonly bridge: SessionTranscriptBridge;
-  private readonly runtimeJournal: SessionRuntimeJournal;
   private readonly sessionRuntime: SessionRuntime;
   /** 每个会话至多一个活动 Turn；同步占位保证并发提交被原子拒绝。 */
   private readonly active = new Map<string, TurnId | "claiming">();
@@ -60,7 +56,7 @@ export class AnswerApplication {
     executor,
     authorAgentId,
     sessionFrames,
-    sessionJournal,
+    sessionItems,
     stepRunner,
   }: AnswerApplicationOptions) {
     this.agentRuntime = agentRuntime;
@@ -68,13 +64,8 @@ export class AnswerApplication {
     this.executor = executor;
     this.authorAgentId = authorAgentId;
     this.sessionFrames = sessionFrames ?? new SessionFrameBus();
-    this.bridge = new SessionTranscriptBridge({ store });
-    const journal = new SessionRuntimeJournal({
-      journal: sessionJournal ?? new MemorySessionJournal(),
-      frames: this.sessionFrames,
-      bridge: this.bridge,
-    });
-    this.runtimeJournal = journal;
+    const items = sessionItems ?? new MemorySessionItemStore();
+    const recorder = new SessionItemRecorder({ items, store, frames: this.sessionFrames });
     const runner =
       stepRunner ??
       new ProviderStepRunner({
@@ -83,19 +74,18 @@ export class AnswerApplication {
           this.executor.prepare(requestFor(step), signal, emitter),
         tokenProvider: this.agentRuntime.modelTokenProvider?.(),
       });
-    const stepExecutor = new SessionStepExecutor({
-      journal,
-      runner,
-      onStreamEvent: (step, event) => this.onStepStream(step, event),
-    });
+    const stepExecutor = new SessionStepExecutor({ recorder, runner });
     const turnExecutor = new SessionTurnExecutor({
-      journal,
+      recorder,
       stepExecutor,
       createMessageId: () => randomUUID(),
     });
     this.sessionRuntime = new SessionRuntime({
-      journal,
+      items,
+      store,
+      recorder,
       executor: turnExecutor,
+      defaults: { agentId: this.authorAgentId, source: "user" },
       createMessageId: () => randomUUID(),
     });
   }
@@ -112,6 +102,7 @@ export class AnswerApplication {
     this.active.set(conversationId, "claiming");
     try {
       await this.store.create(conversationId, undefined, { scope: "answer" });
+      await this.sessionRuntime.createSession(asSessionId(conversationId));
       const submission = await this.sessionRuntime.submit({
         sessionId: asSessionId(conversationId),
         source: "user",
@@ -139,14 +130,14 @@ export class AnswerApplication {
     return this.store.load(conversationId);
   }
 
-  /** 按 durable `seq` 读取事实帧；Answer 的 journal 只在内存里。 */
+  /** 按 durable `seq` 读取条目帧；Answer 的条目只在内存里。 */
   async readFramesAfter(conversationId: string, afterSeq: number): Promise<SessionFrame[]> {
-    const rows = await this.runtimeJournal.readAfter(asSessionId(conversationId), afterSeq);
-    return rows.map(toSessionFrame);
+    return this.sessionRuntime.readFramesAfter(asSessionId(conversationId), afterSeq);
   }
 
   async createConversation(conversationId: string): Promise<ConversationSnapshot> {
     await this.store.create(conversationId, undefined, { scope: "answer" });
+    await this.sessionRuntime.createSession(asSessionId(conversationId));
     return this.getSnapshot(conversationId);
   }
 
@@ -166,8 +157,8 @@ export class AnswerApplication {
   async appendUserMessage(conversationId: string, text: string): Promise<ConversationSnapshot> {
     if (typeof text !== "string" || !text.trim() || text.length > 32_000)
       throw new Error("消息内容无效或过长");
-    return this.store.appendUserMessage(
-      conversationId,
+    return this.sessionRuntime.appendUserMessage(
+      asSessionId(conversationId),
       createUserMessage(randomUUID(), { text: text.trim(), images: [] }),
     );
   }
@@ -195,14 +186,8 @@ export class AnswerApplication {
     this.agentRuntime.dispose();
   }
 
-  private async onStepStream(step: StepStart, event: AgentStreamEvent): Promise<void> {
-    const live = toLiveFrame(step, event);
-    if (live !== undefined) this.sessionFrames.publishLive(live);
-    await this.bridge.applyLive(step.sessionId, step.messageId, event);
-  }
-
   /**
-   * Turn 结束后一次性会话只保留到用户看完：成功与取消都清掉 transcript 与 journal，
+   * Turn 结束后一次性会话只保留到用户看完：成功与取消都清掉 transcript 与条目，
    * 失败轮保留给回复条展示，由用户关闭时显式释放。
    */
   private async settle(conversationId: string, turn: TurnId): Promise<void> {
@@ -224,8 +209,7 @@ export class AnswerApplication {
   }
 
   private async release(session: SessionId): Promise<void> {
-    await this.sessionRuntime.forget(session);
-    await this.runtimeJournal.clear(session);
+    await this.sessionRuntime.clear(session);
     await this.store.clear(session);
   }
 }

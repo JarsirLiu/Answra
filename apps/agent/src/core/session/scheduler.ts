@@ -1,44 +1,43 @@
-/** 每会话串行 Turn 调度：只写 turn 生命周期事件，不执行模型、工具或压缩。 */
+/** 每会话串行 Turn 调度：只写 Turn 边界条目，不执行模型、工具或压缩。 */
 import { randomUUID } from "node:crypto";
-import type {
-  AgentDurableEvent,
-  ManualCompactionResult,
-  TurnFinishReason,
-  TurnOutcome,
-  TurnStatus,
-} from "@answra/shared/schema";
-import type {
-  CancelTurnOptions,
-  SessionCompactionRequest,
-  SessionCompactor,
-  SessionId,
-  SessionProjection,
-  TurnExecutor,
-  TurnFinish,
-  TurnId,
-  TurnProjection,
-  TurnRunContext,
-  TurnStart,
-  TurnSubmission,
-  TurnSubmissionResult,
+import type { ManualCompactionResult, TurnOutcome, TurnStatus } from "@answra/shared/schema";
+import type { SessionItemStore } from "../transcript/itemStore";
+import {
+  type CancelTurnOptions,
+  type SessionCompactionRequest,
+  type SessionCompactor,
+  type SessionId,
+  type SessionProjection,
+  type TurnExecutor,
+  type TurnFinish,
+  type TurnId,
+  type TurnProjection,
+  type TurnRecorder,
+  type TurnRunContext,
+  type TurnStart,
+  type TurnSubmission,
+  type TurnSubmissionResult,
+  turnId,
 } from "./contracts";
-import { turnId } from "./contracts";
-import type { SessionJournal, SessionJournalAppend } from "./journal";
-import { applySessionEvent, projectSession } from "./projection";
 import { sessionErrorText } from "./sessionErrorText";
+import { projectSessionTurns, type SessionTurnDefaults } from "./sessionTurns";
 
 const STARTED_POSITION = 0;
 const FIRST_QUEUED_POSITION = 1;
 
 export interface TurnSchedulerOptions {
   sessionId: SessionId;
-  journal: SessionJournal;
+  items: SessionItemStore;
+  recorder: TurnRecorder;
   executor: TurnExecutor;
   compactor?: SessionCompactor;
+  /** 条目里没有 Bot 身份与 Turn 来源；恢复 queued Turn 时由此补齐。 */
+  defaults: SessionTurnDefaults;
   createTurnId?: () => TurnId;
   createOperationId?: () => string;
   /** assistant 消息 id 由 transcript 宿主提供；Scheduler 只负责分配首条。 */
   createMessageId?: () => string;
+  now?: () => Date;
 }
 
 export interface ManualCompactionRequest {
@@ -50,7 +49,7 @@ export interface ManualCompactionRequest {
 
 interface QueuedTurn {
   start: TurnStart;
-  /** 从 journal 恢复的 queued Turn 没有原提交上下文；resume 必须重新注入，否则 fail-closed。 */
+  /** 从条目恢复的 queued Turn 没有原提交上下文；resume 必须重新注入，否则 fail-closed。 */
   runtime?: TurnRunContext;
 }
 
@@ -72,13 +71,17 @@ interface PendingCompaction {
 
 export class TurnScheduler {
   private readonly sessionId: SessionId;
-  private readonly journal: SessionJournal;
+  private readonly recorder: TurnRecorder;
   private readonly executor: TurnExecutor;
   private readonly compactor?: SessionCompactor;
   private readonly createTurnId: () => TurnId;
   private readonly createOperationId: () => string;
   private readonly createMessageId: () => string;
-  private projection: SessionProjection;
+  private readonly now: () => Date;
+  private turns: TurnProjection[];
+  private sequence: number;
+  private readonly queue: TurnId[] = [];
+  private activeTurnId?: TurnId;
   private readonly queued = new Map<TurnId, QueuedTurn>();
   private active?: ActiveTurn;
   private maintenance?: PendingCompaction;
@@ -92,21 +95,37 @@ export class TurnScheduler {
     { messageId: string; outcome: TurnOutcome; errorText?: string }
   >();
 
-  private constructor(options: TurnSchedulerOptions, projection: SessionProjection) {
+  private constructor(
+    options: TurnSchedulerOptions,
+    projection: {
+      turns: readonly TurnProjection[];
+      sequence: number;
+      activeTurnId?: TurnId;
+    },
+  ) {
     this.sessionId = options.sessionId;
-    this.journal = options.journal;
+    this.recorder = options.recorder;
     this.executor = options.executor;
     this.compactor = options.compactor;
     this.createTurnId = options.createTurnId ?? (() => turnId(randomUUID()));
     this.createOperationId = options.createOperationId ?? randomUUID;
     this.createMessageId = options.createMessageId ?? randomUUID;
-    this.projection = projection;
+    this.now = options.now ?? (() => new Date());
+    this.turns = [...projection.turns];
+    this.sequence = projection.sequence;
+    // 恢复投影里仍标为 running 的 Turn 没有本进程执行器：不能再启动排队 Turn，
+    // 否则两个 Turn 会同时写同一会话。
+    this.activeTurnId = projection.activeTurnId;
     this.hydrateQueued();
   }
 
   static async create(options: TurnSchedulerOptions): Promise<TurnScheduler> {
-    const events = await options.journal.readAfter(options.sessionId, 0);
-    const projection = projectSession(options.sessionId, events);
+    const items = await options.items.readItems(options.sessionId);
+    const cursor = await options.items.readCursor(options.sessionId);
+    const projection = projectSessionTurns(options.sessionId, items, {
+      ...(cursor?.openTurnId === undefined ? {} : { openTurnId: cursor.openTurnId }),
+      defaults: options.defaults,
+    });
     return new TurnScheduler(options, projection);
   }
 
@@ -117,17 +136,16 @@ export class TurnScheduler {
     const assignedTurnId = this.resolveTurnId(submission);
     return this.mutate(async () => {
       this.assertQueuedRuntime();
-      if (this.projection.turns.some((turn) => turn.turnId === assignedTurnId)) {
+      if (this.turns.some((turn) => turn.turnId === assignedTurnId)) {
         throw new Error(`Turn 已存在：${assignedTurnId}`);
       }
       const start = this.startFromSubmission(submission, assignedTurnId);
-      const event: AgentDurableEvent = {
-        type: "turn-queued",
-        source: submission.source,
-        agentId: submission.agentId,
-        ...(submission.input === undefined ? {} : { input: submission.input }),
-      };
-      await this.append(event, { turnId: assignedTurnId });
+      // 提交即落库：排队消息因此能在崩溃后存活，也才有「有 turn_id、无 turn-end」这条判据。
+      if (submission.input !== undefined) {
+        await this.recorder.recordUserMessage(this.sessionId, submission.input, assignedTurnId);
+      }
+      this.turns.push(turnProjectionOf(start, "queued", this.now().toISOString()));
+      this.queue.push(assignedTurnId);
       this.queued.set(assignedTurnId, { start, runtime: submission.runtime });
       await this.scheduleNext();
       return {
@@ -151,7 +169,7 @@ export class TurnScheduler {
         this.active.controller.abort();
         return;
       }
-      if (this.projection.activeTurnId === target) {
+      if (this.activeTurnId === target) {
         throw new Error(`Turn 正在恢复，当前 Scheduler 无法取消：${target}`);
       }
       throw new Error(`Turn 不存在或已结束：${target}`);
@@ -176,14 +194,19 @@ export class TurnScheduler {
 
   async resume(runtime: TurnRunContext): Promise<void> {
     await this.mutate(async () => {
-      await this.refresh();
       this.hydrateQueued(runtime);
       await this.scheduleNext();
     });
   }
 
   snapshot(): SessionProjection {
-    return this.projection;
+    return {
+      sessionId: this.sessionId,
+      sequence: this.sequence,
+      turns: this.turns,
+      queue: this.queue,
+      ...(this.activeTurnId === undefined ? {} : { activeTurnId: this.activeTurnId }),
+    };
   }
 
   /** 宿主退出：显式 abort 活动 Turn/压缩，并把排队 Turn 标成终止，避免等待方挂起。 */
@@ -203,7 +226,7 @@ export class TurnScheduler {
     const finished = this.finishedTurns.get(turnId);
     if (finished !== undefined) return Promise.resolve(finished.messageId);
     if (this.active?.start.turnId === turnId) return Promise.resolve(this.active.start.messageId);
-    const projected = this.projection.turns.find((turn) => turn.turnId === turnId);
+    const projected = this.turns.find((turn) => turn.turnId === turnId);
     if (projected !== undefined && isTerminalTurnStatus(projected.status)) {
       const messageId = projected.assistantMessageIds[0];
       return messageId === undefined
@@ -223,8 +246,8 @@ export class TurnScheduler {
   ): Promise<{ messageId?: string; outcome: TurnOutcome; errorText?: string }> {
     const finished = this.finishedTurns.get(turnId);
     if (finished !== undefined) return Promise.resolve(finished);
-    const projected = this.projection.turns.find((turn) => turn.turnId === turnId);
-    // 新 Scheduler 只从 journal 重建投影；终态 Turn 不应再注册一个永远不会触发的等待者。
+    const projected = this.turns.find((turn) => turn.turnId === turnId);
+    // 终态 Turn 不应再注册一个永远不会触发的等待者。
     const projectedStatus = projected?.status;
     if (
       projected !== undefined &&
@@ -252,12 +275,12 @@ export class TurnScheduler {
     if (this.active?.start.turnId === turnId) return this.active.start.messageId;
     const finished = this.finishedTurns.get(turnId);
     if (finished !== undefined) return finished.messageId;
-    return this.projection.turns.find((turn) => turn.turnId === turnId)?.assistantMessageIds[0];
+    return this.turns.find((turn) => turn.turnId === turnId)?.assistantMessageIds[0];
   }
 
   position(turnId: TurnId): number | undefined {
     if (this.active?.start.turnId === turnId) return STARTED_POSITION;
-    const index = this.projection.queue.indexOf(turnId);
+    const index = this.queue.indexOf(turnId);
     return index < 0 ? undefined : index + FIRST_QUEUED_POSITION;
   }
 
@@ -304,14 +327,15 @@ export class TurnScheduler {
       turnId: turn.turnId,
       source: turn.source,
       agentId: turn.agentId,
-      messageId: turn.assistantMessageIds[0] ?? this.createMessageId(),
+      messageId: this.createMessageId(),
       ...(turn.input === undefined ? {} : { input: turn.input }),
     };
   }
 
   private hydrateQueued(runtime?: TurnRunContext): void {
-    for (const turn of this.projection.turns) {
+    for (const turn of this.turns) {
       if (turn.status !== "queued") continue;
+      if (!this.queue.includes(turn.turnId)) this.queue.push(turn.turnId);
       const existing = this.queued.get(turn.turnId);
       if (existing !== undefined) {
         if (existing.runtime === undefined && runtime !== undefined) {
@@ -342,7 +366,7 @@ export class TurnScheduler {
       void this.executeCompaction(compaction);
       return;
     }
-    const nextTurnId = this.projection.queue[0];
+    const nextTurnId = this.queue[0];
     if (nextTurnId === undefined) {
       this.notifyIdle();
       return;
@@ -356,17 +380,20 @@ export class TurnScheduler {
   }
 
   private async startTurn(start: TurnStart, runtime: TurnRunContext): Promise<void> {
-    const controller = new AbortController();
-    await this.append(
-      { type: "turn-started", agentId: start.agentId },
-      { turnId: start.turnId, messageId: start.messageId },
-    );
+    await this.recorder.beginTurn(this.sessionId, start);
+    this.removeFromQueue(start.turnId);
     this.queued.delete(start.turnId);
-    const active: ActiveTurn = { start, runtime, controller, cancelRequested: false };
-    this.active = active;
+    const controller = new AbortController();
+    this.active = { start, runtime, controller, cancelRequested: false };
+    this.activeTurnId = start.turnId;
+    this.updateTurn(start.turnId, {
+      status: "running",
+      startedAt: this.now().toISOString(),
+    });
+    this.sequence = await this.recorder.lastSeq(this.sessionId);
     for (const resolve of this.turnStartWaiters.get(start.turnId) ?? []) resolve(start.messageId);
     this.turnStartWaiters.delete(start.turnId);
-    void this.executeTurn(active);
+    void this.executeTurn(this.active);
   }
 
   private async executeTurn(active: ActiveTurn): Promise<void> {
@@ -385,21 +412,21 @@ export class TurnScheduler {
       };
     }
     if (active.cancelRequested) {
-      finish = { turnId: active.start.turnId, outcome: "aborted", reason: "cancelled" };
+      finish = { ...finish, outcome: "aborted", reason: "cancelled" };
     }
 
     await this.mutate(async () => {
       if (this.active !== active) return;
-      await this.append(
-        {
-          type: "turn-finished",
-          status: finish.outcome,
-          reason: finish.reason ?? defaultFinishReason(finish.outcome),
-          ...(finish.errorText === undefined ? {} : { errorText: finish.errorText }),
-        },
-        { turnId: finish.turnId },
-      );
+      await this.recorder.finishTurn(this.sessionId, finish.turnId, finish);
       this.active = undefined;
+      this.activeTurnId = undefined;
+      this.updateTurn(finish.turnId, {
+        status: finish.outcome,
+        finishedAt: this.now().toISOString(),
+        ...(finish.reason === undefined ? {} : { finishReason: finish.reason }),
+        ...(finish.errorText === undefined ? {} : { errorText: finish.errorText }),
+      });
+      this.sequence = await this.recorder.lastSeq(this.sessionId);
       this.recordTurnFinished(
         finish.turnId,
         active.start.messageId,
@@ -460,7 +487,6 @@ export class TurnScheduler {
     } finally {
       await this.mutate(async () => {
         if (this.maintenance === job) this.maintenance = undefined;
-        await this.refresh();
         await this.scheduleNext();
       });
     }
@@ -471,49 +497,48 @@ export class TurnScheduler {
     for (const target of targets) {
       const queued = this.queued.get(target);
       if (queued === undefined) continue;
-      await this.append(
-        { type: "turn-finished", status: "aborted", reason: "cancelled" },
-        { turnId: queued.start.turnId },
-      );
-      this.queued.delete(queued.start.turnId);
-      this.recordTurnFinished(queued.start.turnId, queued.start.messageId, "aborted");
+      await this.recorder.cancelQueuedTurn(this.sessionId, queued.start);
+      this.removeFromQueue(target);
+      this.queued.delete(target);
+      this.updateTurn(target, {
+        status: "aborted",
+        finishReason: "cancelled",
+        finishedAt: this.now().toISOString(),
+      });
+      this.sequence = await this.recorder.lastSeq(this.sessionId);
+      this.recordTurnFinished(target, queued.start.messageId, "aborted");
     }
+  }
+
+  private removeFromQueue(target: TurnId): void {
+    const index = this.queue.indexOf(target);
+    if (index >= 0) this.queue.splice(index, 1);
+  }
+
+  private updateTurn(target: TurnId, patch: Partial<TurnProjection>): void {
+    this.turns = this.turns.map((turn) => (turn.turnId === target ? { ...turn, ...patch } : turn));
   }
 
   private positionOf(target: TurnId): number {
     if (this.active?.start.turnId === target) return STARTED_POSITION;
-    const index = this.projection.queue.indexOf(target);
+    const index = this.queue.indexOf(target);
     if (index < 0) throw new Error(`Turn 不在队列中：${target}`);
     return index + FIRST_QUEUED_POSITION;
   }
 
   private isBusy(): boolean {
-    return (
-      this.active !== undefined ||
-      this.maintenance !== undefined ||
-      this.projection.activeTurnId !== undefined
-    );
+    // 恢复投影仍是 running 但没有本进程执行器：视为忙碌，避免与陈旧 Turn 并发写。
+    if (this.active !== undefined || this.maintenance !== undefined) return true;
+    return this.activeTurnId !== undefined;
   }
 
   private isIdle(): boolean {
-    return (
-      !this.isBusy() && this.projection.queue.length === 0 && this.maintenanceQueue.length === 0
-    );
+    return !this.isBusy() && this.queue.length === 0 && this.maintenanceQueue.length === 0;
   }
 
   private notifyIdle(): void {
     if (!this.isIdle()) return;
     for (const resolve of this.idleWaiters.splice(0)) resolve();
-  }
-
-  private async append(event: AgentDurableEvent, metadata: SessionJournalAppend): Promise<void> {
-    await this.journal.append(this.sessionId, event, metadata);
-    await this.refresh();
-  }
-
-  private async refresh(): Promise<void> {
-    const events = await this.journal.readAfter(this.sessionId, this.projection.sequence);
-    for (const event of events) this.projection = applySessionEvent(this.projection, event);
   }
 
   private async mutate<T>(action: () => Promise<T>): Promise<T> {
@@ -526,10 +551,18 @@ export class TurnScheduler {
   }
 }
 
-function defaultFinishReason(outcome: TurnOutcome): TurnFinishReason {
-  if (outcome === "completed") return "completed";
-  if (outcome === "aborted") return "cancelled";
-  return "unknown";
+function turnProjectionOf(start: TurnStart, status: TurnStatus, createdAt: string): TurnProjection {
+  return {
+    sessionId: start.sessionId,
+    turnId: start.turnId,
+    source: start.source,
+    status,
+    agentId: start.agentId,
+    ...(start.input === undefined ? {} : { input: start.input }),
+    assistantMessageIds: [],
+    handoffCount: 0,
+    createdAt,
+  };
 }
 
 function isTerminalTurnStatus(status: TurnStatus): status is Extract<TurnStatus, TurnOutcome> {

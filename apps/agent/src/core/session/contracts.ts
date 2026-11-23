@@ -3,9 +3,6 @@ import type {
   AgentFinishReason,
   AgentStreamEvent,
   AgentUsage,
-  CompactionReason,
-  ContextCompactionState,
-  ContextCompactionTrigger,
   ConversationMessage,
   ManualCompactionResult,
   StepOutcome,
@@ -109,40 +106,20 @@ export interface StepProjection {
   finishedAt?: string;
 }
 
-export interface CompactionProjection {
-  operationId: string;
-  trigger: ContextCompactionTrigger;
-  reason?: CompactionReason;
-  state: ContextCompactionState;
-  summarizedMessages?: number;
-  summary?: string;
-  usage?: AgentUsage;
-  startedAt: string;
-  finishedAt?: string;
-  errorText?: string;
-}
-
-export interface ContextUsageProjection {
-  usedTokens: number;
-  updatedAt: string;
-}
-
+/** 运行状态只存在内存；重启后从条目还原 Turn 与待续跑队列。 */
 export interface SessionProjection {
   sessionId: SessionId;
+  /** 会话已写入的最后一个条目 `seq`。 */
   sequence: number;
   turns: readonly TurnProjection[];
   queue: readonly TurnId[];
   activeTurnId?: TurnId;
-  steps: readonly StepProjection[];
-  compactions: readonly CompactionProjection[];
-  contextUsage?: ContextUsageProjection;
 }
 
+/** 崩溃恢复只补写缺失的收口条目，并把可续跑的 Turn 交回 Scheduler。 */
 export interface SessionRecoveryPlan {
-  projection: SessionProjection;
-  interruptedTurnIds: readonly TurnId[];
-  interruptedStepIds: readonly StepId[];
-  interruptedCompactionIds: readonly string[];
+  closedTurnIds: readonly TurnId[];
+  pendingTurnIds: readonly TurnId[];
 }
 
 export interface TurnFinish {
@@ -150,6 +127,12 @@ export interface TurnFinish {
   outcome: TurnOutcome;
   reason?: TurnFinishReason;
   errorText?: string;
+  /** 本轮执行过的 step 数；由 TurnExecutor 统计，turn-end 直接落库。 */
+  steps?: number;
+  /** 最后一步 provider 的终因与用量；没有 step 时缺省。 */
+  finishReason?: AgentFinishReason;
+  usage?: AgentUsage;
+  durationMs?: number;
 }
 
 /** 当前 Bot 在 step 正常结束后请求交接；交接不是新 Turn。 */
@@ -170,10 +153,46 @@ export interface StepHandoff {
 
 /** StepRunner 只能写模型流事件；step-* 与 usage 由 SessionStepExecutor 独占。 */
 export interface StepEventSink {
-  /** live-only 增量由宿主实时消费；journal 实现只持久化 durable 事件。 */
+  /** live-only 增量由宿主实时消费；实现只持久化结算条目。 */
   append(event: AgentStreamEvent): Promise<void>;
-  /** 等待已排队的 durable 事件写入 journal；live-only 增量不在此等待。 */
+  /** 等待已排队的条目写入；live-only 增量不在此等待。 */
   flush(): Promise<void>;
+}
+
+/** Step 事件漏斗：实现必须先写内存视图，再按需落条目；不改变 Turn 状态。 */
+export interface StepEventRecorder {
+  append(step: StepStart, event: AgentStreamEvent): Promise<void>;
+}
+
+/** Bot→Bot 交接的写入输入；消息 id 由 TurnExecutor 分配。 */
+export interface StoredHandoff {
+  turnId: TurnId;
+  fromAgentId: string;
+  toAgentId: string;
+  task: string;
+  /** 交接前最后一条 assistant 消息 id。 */
+  sourceMessageId: string;
+  /** 交接目标 Bot 的新 assistant 消息 id。 */
+  nextMessageId: string;
+}
+
+/** Scheduler/TurnExecutor 唯一的事实写入面；实现负责条目、内存视图与帧广播。 */
+export interface TurnRecorder {
+  /** 提交即写 user 条目；此时不进入内存视图，也不置 open_turn_id。 */
+  recordUserMessage(
+    sessionId: SessionId,
+    message: ConversationMessage,
+    turnId: TurnId,
+  ): Promise<void>;
+  /** Turn 真正开始：内存占位 + 置 open_turn_id。 */
+  beginTurn(sessionId: SessionId, turn: TurnStart): Promise<void>;
+  /** 收口 Turn：补未结算 part、写 turn-end、清 open_turn_id。 */
+  finishTurn(sessionId: SessionId, turnId: TurnId, finish: TurnFinish): Promise<void>;
+  /** 排队 Turn 被取消：只写 turn-end{interrupted, cancelled}。 */
+  cancelQueuedTurn(sessionId: SessionId, turn: TurnStart): Promise<void>;
+  recordHandoff(sessionId: SessionId, handoff: StoredHandoff): Promise<void>;
+  /** 已写入的最后一条条目 `seq`；Scheduler 用它推进快照游标。 */
+  lastSeq(sessionId: SessionId): Promise<number>;
 }
 
 /** StepRunner 的运行时上下文；目标 Bot 的 prompt 由领域适配器按 agentId 解析。 */

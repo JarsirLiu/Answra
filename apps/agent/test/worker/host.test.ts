@@ -1,6 +1,7 @@
 import { createServer, type Server } from "node:http";
 import type { AgentCommand, AgentFrame, AgentTransport, TenVadSource } from "@answra/agent";
 import { startAgentHost } from "@answra/agent";
+import type { SessionFrame } from "@answra/shared/schema";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { conversationId, sessionId, utteranceId } from "../../src/interview/contracts";
 import {
@@ -507,7 +508,7 @@ describe("agent worker host", () => {
       (frame) =>
         frame.type === "session-frame" &&
         frame.frame.messageId === assistantMessageId &&
-        frame.frame.event.type === "step-started",
+        frame.frame.event.type === "session-item",
     );
     expect(assistantSnapshotIndex).toBeGreaterThanOrEqual(0);
     expect(firstStepFrameIndex).toBeGreaterThan(assistantSnapshotIndex);
@@ -855,13 +856,17 @@ describe("agent worker host", () => {
     await vi.waitFor(() => expect(harness.responses()).toHaveLength(2));
     expect(harness.responses()[1]).toMatchObject({ id: "send", ok: true });
 
-    // 帧随事实写入实时上行；send 返回时 Turn 仍在执行，因此等 turn-finished 再收口断言。
-    await vi.waitFor(() =>
-      expect(harness.sessionFrames().at(-1)?.event.type).toBe("turn-finished"),
-    );
+    // 帧随事实写入实时上行；send 返回时 Turn 仍在执行，因此等收口条目再断言。
+    await vi.waitFor(() => {
+      const last = harness.sessionFrames().at(-1);
+      expect(
+        last?.event.type === "session-item" && last.event.item.payload.kind === "turn-end",
+      ).toBe(true);
+    });
     const pushed = harness.sessionFrames();
-    expect(pushed[0]?.event.type).toBe("turn-queued");
-    expect(pushed.map((frame) => frame.seq)).toEqual(pushed.map((_, index) => index + 1));
+    expect(pushed[0]?.event.type).toBe("session-item");
+    const baseSeq = pushed[0]?.seq ?? 0;
+    expect(pushed.map((frame, index) => frame.seq - index)).toEqual(pushed.map(() => baseSeq));
     expect(harness.liveFrames().length).toBeGreaterThan(0);
 
     // read-frames 按 seq 边界补齐：只返回严格大于游标的事实。
@@ -887,7 +892,11 @@ describe("agent worker host", () => {
     await vi.waitFor(() => expect(harness.responses()).toHaveLength(4));
     const allFrames = harness.responses()[3];
     if (allFrames?.ok !== true) throw new Error("read-frames 未成功");
-    expect(allFrames.value).toEqual(pushed);
+    const replayed = allFrames.value as SessionFrame[];
+    // 用户条目在提交时落库但不广播；replay 包含它，已推送的帧必须全部在内。
+    const replayedSeqs = new Set(replayed.map((frame) => frame.seq));
+    expect(pushed.every((frame) => replayedSeqs.has(frame.seq))).toBe(true);
+    expect(replayed.at(-1)).toEqual(pushed.at(-1));
     host.dispose();
   });
 

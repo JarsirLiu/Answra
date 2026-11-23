@@ -91,7 +91,7 @@ function createHarness({ hold }: { hold?: boolean } = {}) {
 
 describe("InterviewApplication", () => {
   it("writes the user turn, publishes its snapshot, and replies through one Session Turn", async () => {
-    const { app, snapshots, steps } = createHarness();
+    const { app, snapshots, steps, release } = createHarness({ hold: true });
 
     await app.createConversation("conversation-1");
     app.start();
@@ -103,6 +103,7 @@ describe("InterviewApplication", () => {
     const active = await app.getSnapshot("conversation-1");
     if (active.activeTurnId === undefined || active.activeMessageId === undefined)
       throw new Error("reply should own an assistant placeholder");
+    release?.();
     await app.waitForTurn("conversation-1", active.activeTurnId);
     expect(steps).toHaveLength(1);
     expect(steps[0]).toEqual(

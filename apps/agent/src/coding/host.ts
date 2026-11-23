@@ -4,12 +4,12 @@ import type { LiveFrame, SessionFrame } from "@answra/shared/schema";
 import { createCodingBot } from "../bots/coding/bot";
 import { AgentRuntime } from "../core/agent/runtime";
 import { createInstructionLoader } from "../core/instruction";
-import type { SessionJournal } from "../core/session/journal";
 import { SessionFrameBus } from "../core/session/sessionFrameBus";
 import { createLazySkillCatalog } from "../core/skill/catalog";
 import type { SkillRoots } from "../core/skill/contracts";
 import { createBuiltinToolRegistry } from "../core/tool";
 import type { ConversationSessionCatalog } from "../core/transcript/catalog";
+import type { SessionItemStore } from "../core/transcript/itemStore";
 import { MemoryConversationStore } from "../core/transcript/memoryStore";
 import type { ConversationStore } from "../core/transcript/store";
 import { CodingApplication } from "./application";
@@ -23,8 +23,8 @@ export interface CodingHostOptions {
   tokenProvider?: (options: { forceRefresh: boolean }) => Promise<string>;
   store?: ConversationStore;
   catalog?: ConversationSessionCatalog;
-  /** durable session journal；CLI 宿主注入 SQLite 实现，缺省为内存实现。 */
-  sessionJournal?: SessionJournal;
+  /** durable 会话条目；CLI 宿主注入 SQLite 实现，缺省为内存实现。 */
+  sessionItems?: SessionItemStore;
   /** 帧广播口；缺省在宿主内新建。CLI UI 暂不消费，供 P2 第 3 步切换。 */
   sessionFrames?: SessionFrameBus;
   workspaceRoot?: string | null;
@@ -61,7 +61,7 @@ export function startCodingHost({
   tokenProvider,
   store = new MemoryConversationStore(),
   catalog,
-  sessionJournal,
+  sessionItems,
   sessionFrames = new SessionFrameBus(),
   workspaceRoot = null,
   globalInstructionFile = null,
@@ -90,7 +90,7 @@ export function startCodingHost({
     agentRuntime,
     store,
     bot,
-    ...(sessionJournal ? { sessionJournal } : {}),
+    ...(sessionItems ? { sessionItems } : {}),
     sessionFrames,
     onSnapshot,
   });
@@ -135,7 +135,6 @@ export function startCodingHost({
         await tools.dispose().catch((error: unknown) => {
           console.warn("[coding] tool cleanup failed", error);
         });
-        sessionJournal?.close?.();
         await store.close();
       })();
       return shutdownPromise;

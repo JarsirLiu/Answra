@@ -11,8 +11,7 @@ import type {
   ConversationSnapshot,
   ManualCompactionResult,
 } from "@answra/shared";
-import type { AgentStreamEvent, SessionFrame, TurnOutcome } from "@answra/shared/schema";
-import { toSessionFrame } from "@answra/shared/schema";
+import type { SessionFrame, TurnOutcome } from "@answra/shared/schema";
 import type { ConversationAgentInput } from "../bots/general/agent";
 import { type AgentId, agentId } from "../core/agent/definition";
 import { ProviderStepRunner } from "../core/agent/providerStepRunner";
@@ -27,19 +26,15 @@ import type {
   SessionCompactionRequest,
   SessionId,
   StepRunner,
-  StepStart,
   TurnId,
 } from "../core/session/contracts";
 import { sessionId as asSessionId, turnId as asTurnId } from "../core/session/contracts";
-import type { SessionJournal } from "../core/session/journal";
-import { MemorySessionJournal } from "../core/session/memoryJournal";
+import { SessionItemRecorder } from "../core/session/itemRecorder";
 import { SessionRecoveryCoordinator } from "../core/session/recoveryCoordinator";
 import { sessionErrorText } from "../core/session/sessionErrorText";
-import { SessionFrameBus, toLiveFrame } from "../core/session/sessionFrameBus";
+import { SessionFrameBus } from "../core/session/sessionFrameBus";
 import { SessionRuntime } from "../core/session/sessionRuntime";
-import { SessionRuntimeJournal } from "../core/session/sessionRuntimeJournal";
 import { SessionStepExecutor } from "../core/session/stepExecutor";
-import { SessionTranscriptBridge } from "../core/session/transcriptBridge";
 import { SessionTurnExecutor } from "../core/session/turnExecutor";
 import {
   assertTeamPreset,
@@ -47,6 +42,8 @@ import {
   type TeamPreset,
   type TeamPresetCatalog,
 } from "../core/team/preset";
+import type { SessionItemStore } from "../core/transcript/itemStore";
+import { MemorySessionItemStore } from "../core/transcript/memoryItemStore";
 import { createUserMessage } from "../core/transcript/message";
 import type {
   ConversationSessionMetadata,
@@ -67,8 +64,8 @@ export interface ConversationApplicationOptions {
   catalog: ConversationBotCatalog;
   /** 团队预置；缺省时把 conversation 入口 Bot 作为单成员团队。 */
   presets?: readonly TeamPreset[];
-  /** durable session journal；缺省使用内存实现，桌面宿主注入 SQLite 实现。 */
-  sessionJournal?: SessionJournal;
+  /** durable 会话条目；缺省使用内存实现，桌面宿主注入 SQLite 实现。 */
+  sessionItems?: SessionItemStore;
   /** durable/live 帧广播口；宿主传入同一实例即可跨领域共享。 */
   sessionFrames?: SessionFrameBus;
   /** 测试注入的 StepRunner；生产由 ProviderStepRunner 提供。 */
@@ -88,10 +85,8 @@ export class ConversationApplication {
   private readonly contextCompactor: ContextCompactor;
   private readonly contextPreparation: ContextPreparation;
   private readonly sessionFrames: SessionFrameBus;
-  private readonly bridge: SessionTranscriptBridge;
   private readonly sessionRuntime: SessionRuntime;
   private readonly recovery: SessionRecoveryCoordinator;
-  private readonly runtimeJournal: SessionRuntimeJournal;
   private readonly onSnapshot?: ConversationApplicationOptions["onSnapshot"];
   private readonly onTeamError?: ConversationApplicationOptions["onTeamError"];
   private readonly tokens = new Map<string, () => Promise<string>>();
@@ -103,7 +98,7 @@ export class ConversationApplication {
     store,
     catalog,
     presets = [],
-    sessionJournal,
+    sessionItems,
     sessionFrames,
     stepRunner,
     onSnapshot,
@@ -114,6 +109,19 @@ export class ConversationApplication {
     this.onSnapshot = onSnapshot;
     this.onTeamError = onTeamError;
     this.sessionFrames = sessionFrames ?? new SessionFrameBus();
+    this.catalog = catalog;
+    const presetInput = withConversationPreset(presets, this.catalog);
+    this.presets = createTeamPresetCatalog(presetInput);
+    for (const preset of this.presets.list()) {
+      assertTeamPreset(preset, this.catalog, this.presets.teams());
+      this.agentRuntime.assertTeamMembers(preset.entryBotId, preset.memberBotIds);
+    }
+    assertBotDiscoveryReferences({ catalog: this.catalog, teams: this.presets.teams() });
+    this.agentRuntime.assertRegistered(this.catalog.ids());
+    const defaultBotId =
+      this.presets.find(CONVERSATION_TEAM_ID)?.entryBotId ?? this.catalog.ids()[0];
+    if (!defaultBotId) throw new Error("Conversation Bot 目录为空");
+    this.defaultBotId = defaultBotId;
     this.contextCompactor = new ContextCompactor({
       store,
       generate: ({ prompt, accessToken, signal }) =>
@@ -123,21 +131,19 @@ export class ConversationApplication {
           ...(signal ? { signal } : {}),
         }),
       ...(onSnapshot ? { onSnapshot } : {}),
-      // 压缩可能发生在 step 中间；事实仍必须经唯一写入链进入 journal 与 transcript。
-      onCompaction: (fact) => this.runtimeJournal.appendCompaction(fact),
     });
     this.contextPreparation = new ContextPreparation({
       compactor: this.contextCompactor,
       contextStateStore: store,
       contextWindow: () => this.agentRuntime.chatContextWindow(),
     });
-    this.bridge = new SessionTranscriptBridge({ store });
-    const journal = new SessionRuntimeJournal({
-      journal: sessionJournal ?? new MemorySessionJournal(),
+    const items = sessionItems ?? new MemorySessionItemStore();
+    const recorder = new SessionItemRecorder({
+      items,
+      store,
       frames: this.sessionFrames,
-      bridge: this.bridge,
-      onDurableEvent: (id, event) => this.contextPreparation.recordSessionEvent(id, event),
-      onBoundary: (id) => this.pushSnapshot(id),
+      onSnapshot: (id) => this.pushSnapshot(id),
+      onTurnFinished: (id, outcome) => this.contextPreparation.recordTurnFinished(id, outcome),
       authorizeHandoff: async (id, handoff) => {
         const snapshot = await this.loadRecoverySnapshot(id);
         assertCanHandoff({
@@ -149,8 +155,6 @@ export class ConversationApplication {
         });
       },
     });
-    // 压缩器先于 journal 构造（journal 又依赖 preparation），因此观察口只在运行期解引用。
-    this.runtimeJournal = journal;
     const binding = createConversationStepBinding({
       catalog,
       workspaceRoot: () => this.workspaceRoot,
@@ -165,47 +169,40 @@ export class ConversationApplication {
         tokenProvider: this.agentRuntime.modelTokenProvider?.(),
       });
     const stepExecutor = new SessionStepExecutor({
-      journal,
+      recorder,
       runner,
-      onStreamEvent: (step, event) => this.onStepStream(step, event),
+      onStepFinished: (step, result) =>
+        this.contextPreparation.recordStepFinished(step.sessionId, {
+          index: step.index,
+          ...(result.usage?.inputTokens === undefined
+            ? {}
+            : { inputTokens: result.usage.inputTokens }),
+        }),
     });
     const turnExecutor = new SessionTurnExecutor({
-      journal,
+      recorder,
       stepExecutor,
       createMessageId: () => randomUUID(),
     });
     this.sessionRuntime = new SessionRuntime({
-      journal,
+      items,
+      store,
+      recorder,
       executor: turnExecutor,
       compactor: {
         compact: (request, signal) => this.compactWithRuntime(request, signal),
       },
+      defaults: { agentId: this.defaultBotId, source: "user" },
       createMessageId: () => randomUUID(),
     });
     this.recovery = new SessionRecoveryCoordinator({
       recoverFacts: (id) => this.sessionRuntime.recoverFacts(id),
+      refreshTranscript: (id) => this.sessionRuntime.refreshTranscript(id),
       resumeQueued: (id, runtime) => this.sessionRuntime.resumeQueued(id, runtime),
-      journalLastSeq: (id) => this.runtimeJournal.lastSequence(id),
-      seedLastSeq: (id, sequence) => this.store.advanceLastSeq(id, sequence),
-      restoreTranscript: (id, plan) => this.bridge.recover(id, plan),
       onRecovered: async (id, plan) => {
-        if (plan.interruptedTurnIds.length > 0) await this.pushSnapshot(id);
+        if (plan.closedTurnIds.length > 0) await this.pushSnapshot(id);
       },
     });
-
-    this.catalog = catalog;
-    const presetInput = withConversationPreset(presets, this.catalog);
-    this.presets = createTeamPresetCatalog(presetInput);
-    for (const preset of this.presets.list()) {
-      assertTeamPreset(preset, this.catalog, this.presets.teams());
-      this.agentRuntime.assertTeamMembers(preset.entryBotId, preset.memberBotIds);
-    }
-    assertBotDiscoveryReferences({ catalog: this.catalog, teams: this.presets.teams() });
-    this.agentRuntime.assertRegistered(this.catalog.ids());
-    const defaultBotId =
-      this.presets.find(CONVERSATION_TEAM_ID)?.entryBotId ?? this.catalog.ids()[0];
-    if (!defaultBotId) throw new Error("Conversation Bot 目录为空");
-    this.defaultBotId = defaultBotId;
   }
 
   setWorkspaceRoot(root: string | null): void {
@@ -249,10 +246,9 @@ export class ConversationApplication {
     return this.store.load(conversationId);
   }
 
-  /** 按 durable `seq` 读取事实帧；客户端按 `seq` 幂等折叠并补齐缺口。 */
+  /** 按 durable `seq` 读取条目帧；客户端按 `seq` 幂等折叠并补齐缺口。 */
   async readFramesAfter(conversationId: string, afterSeq: number): Promise<SessionFrame[]> {
-    const rows = await this.runtimeJournal.readAfter(asSessionId(conversationId), afterSeq);
-    return rows.map(toSessionFrame);
+    return this.sessionRuntime.readFramesAfter(asSessionId(conversationId), afterSeq);
   }
 
   async createConversation(
@@ -261,6 +257,7 @@ export class ConversationApplication {
   ): Promise<ConversationSnapshot> {
     const seed = this.resolveSelection(selection);
     const snapshot = await this.store.create(conversationId, seed, this.sessionMetadata());
+    await this.sessionRuntime.createSession(asSessionId(conversationId));
     if (
       selection &&
       snapshot.participantAgentIds &&
@@ -278,7 +275,7 @@ export class ConversationApplication {
     this.tokens.delete(conversationId);
     this.recovery.forget(session);
     await this.store.clear(conversationId);
-    await this.runtimeJournal.clear(session);
+    await this.sessionRuntime.clear(session);
     return this.loadRecoverySnapshot(conversationId);
   }
 
@@ -303,9 +300,9 @@ export class ConversationApplication {
   async appendUserMessage(conversationId: string, text: string): Promise<ConversationSnapshot> {
     if (typeof text !== "string" || !text.trim() || text.length > MAX_USER_MESSAGE_CHARS)
       throw new Error("消息内容无效或过长");
-    await this.ensureRecovered(conversationId);
-    return this.store.appendUserMessage(
-      conversationId,
+    const session = await this.ensureRecovered(conversationId);
+    return this.sessionRuntime.appendUserMessage(
+      session,
       createUserMessage(randomUUID(), { text: text.trim(), images: [] }),
     );
   }
@@ -342,6 +339,7 @@ export class ConversationApplication {
     const seed = this.seedForBot((requested ?? this.requireBot(this.defaultBotId)).id);
     const teamSeed = preset === undefined ? seed : this.seedForTeam(preset);
     await this.store.create(conversationId, teamSeed, this.sessionMetadata());
+    await this.sessionRuntime.createSession(asSessionId(conversationId));
     const session = await this.ensureRecovered(conversationId);
     const snapshot = await this.loadRecoverySnapshot(conversationId);
     if (
@@ -471,12 +469,6 @@ export class ConversationApplication {
       turnId: accepted.queueId,
       snapshot: await this.loadRecoverySnapshot(conversationId),
     };
-  }
-
-  private async onStepStream(step: StepStart, event: AgentStreamEvent): Promise<void> {
-    const live = toLiveFrame(step, event);
-    if (live !== undefined) this.sessionFrames.publishLive(live);
-    await this.bridge.applyLive(step.sessionId, step.messageId, event);
   }
 
   private async compactWithRuntime(

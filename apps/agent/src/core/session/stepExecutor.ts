@@ -1,10 +1,7 @@
-/** 一次 provider 请求与工具执行：独占 step-* 与 usage 事件，模型流事件经 sink 写入；不改变 Turn 状态。 */
-import {
-  type AgentDurableEvent,
-  type AgentStreamEvent,
-  agentDurableEventSchema,
-} from "@answra/shared/schema";
+/** 一次 provider 请求与工具执行：模型流事件经 recorder 结算成条目；不改变 Turn 状态。 */
+import type { AgentStreamEvent } from "@answra/shared/schema";
 import type {
+  StepEventRecorder,
   StepEventSink,
   StepExecutor,
   StepResult,
@@ -14,50 +11,32 @@ import type {
   StepStart,
   TurnRunContext,
 } from "./contracts";
-import type { SessionJournal, SessionJournalAppend } from "./journal";
 import { sessionErrorText } from "./sessionErrorText";
 
-export type StepStreamObserver = (step: StepStart, event: AgentStreamEvent) => void | Promise<void>;
-
 export interface SessionStepExecutorOptions {
-  journal: SessionJournal;
+  /** 唯一事件漏斗：实现先写内存视图，再结算条目；不落库的增量只走 live 帧。 */
+  recorder: StepEventRecorder;
   runner: StepRunner;
-  /**
-   * 实时流出口：接收本轮 step 的全部模型事件，包括不落 journal 的 live-only 增量。
-   * 宿主须自行过滤增量与 durable 事件，避免同一事件被重复投影。
-   */
-  onStreamEvent?: StepStreamObserver;
+  /** step 结算观察口：usage 锚点与 Turn 统计；不写事实。 */
+  onStepFinished?: (step: StepStart, result: StepRunnerResult) => void | Promise<void>;
 }
 
 export class SessionStepExecutor implements StepExecutor {
-  private readonly journal: SessionJournal;
+  private readonly recorder: StepEventRecorder;
   private readonly runner: StepRunner;
-  private readonly onStreamEvent?: StepStreamObserver;
+  private readonly onStepFinished?: SessionStepExecutorOptions["onStepFinished"];
 
-  constructor({ journal, runner, onStreamEvent }: SessionStepExecutorOptions) {
-    this.journal = journal;
+  constructor({ recorder, runner, onStepFinished }: SessionStepExecutorOptions) {
+    this.recorder = recorder;
     this.runner = runner;
-    this.onStreamEvent = onStreamEvent;
+    this.onStepFinished = onStepFinished;
   }
 
   async run(step: StepStart, runtime: TurnRunContext, signal: AbortSignal): Promise<StepResult> {
     if (signal.aborted) return { stepId: step.stepId, outcome: "aborted" };
 
-    const metadata = this.metadata(step);
-    await this.append(
-      step,
-      {
-        type: "step-started",
-        stepId: step.stepId,
-        index: step.index,
-        agentId: step.agentId,
-        ...(step.modelId === undefined ? {} : { modelId: step.modelId }),
-      },
-      metadata,
-    );
-
     const context: StepRunContext = {
-      events: new JournalStepEventSink(this.journal, step, metadata, this.onStreamEvent),
+      events: new RecorderStepEventSink(this.recorder, step),
       runtime,
     };
     let result = await this.executeRunner(step, context, signal);
@@ -66,28 +45,7 @@ export class SessionStepExecutor implements StepExecutor {
     } catch (error) {
       result = { outcome: "failed", errorText: sessionErrorText(error) };
     }
-    await this.append(
-      step,
-      {
-        type: "step-finished",
-        stepId: step.stepId,
-        index: step.index,
-        state: result.outcome,
-        ...(result.finishReason === undefined ? {} : { finishReason: result.finishReason }),
-        ...(result.usage === undefined ? {} : { usage: result.usage }),
-        ...(result.errorText === undefined ? {} : { errorText: result.errorText }),
-      },
-      metadata,
-    );
-
-    if (result.usage?.inputTokens !== undefined) {
-      await this.append(
-        step,
-        { type: "context-usage-changed", usedTokens: result.usage.inputTokens },
-        metadata,
-      );
-    }
-
+    await this.onStepFinished?.(step, result);
     return { ...result, stepId: step.stepId };
   }
 
@@ -103,47 +61,23 @@ export class SessionStepExecutor implements StepExecutor {
       return { outcome: "failed", errorText: sessionErrorText(error) };
     }
   }
-
-  private metadata(step: StepStart): SessionJournalAppend {
-    return {
-      turnId: step.turnId,
-      stepId: step.stepId,
-      ...(step.messageId === undefined ? {} : { messageId: step.messageId }),
-    };
-  }
-
-  private async append(
-    step: StepStart,
-    event: AgentDurableEvent,
-    metadata: SessionJournalAppend,
-  ): Promise<void> {
-    await this.journal.append(step.sessionId, event, metadata);
-  }
 }
 
-/** 串行写入 durable 模型事件并转发实时流；高频增量不落 journal，失败延迟到 flush 统一报告。 */
-class JournalStepEventSink implements StepEventSink {
+/** 串行写入：每个事件先落内存视图，再把结算条目追加到存储；失败延迟到 flush 统一报告。 */
+class RecorderStepEventSink implements StepEventSink {
   private chain: Promise<void> = Promise.resolve();
   private failure: unknown;
 
   constructor(
-    private readonly journal: SessionJournal,
+    private readonly recorder: StepEventRecorder,
     private readonly step: StepStart,
-    private readonly metadata: SessionJournalAppend,
-    private readonly observer?: StepStreamObserver,
   ) {}
 
   append(event: AgentStreamEvent): Promise<void> {
-    const durable = agentDurableEventSchema.safeParse(event);
-    const observer = this.observer;
-    if (!durable.success && observer === undefined) return Promise.resolve();
     this.chain = this.chain.then(async () => {
       if (this.failure !== undefined) return;
       try {
-        if (observer !== undefined) await observer(this.step, event);
-        if (durable.success) {
-          await this.journal.append(this.step.sessionId, durable.data, this.metadata);
-        }
+        await this.recorder.append(this.step, event);
       } catch (error) {
         this.failure = error;
       }

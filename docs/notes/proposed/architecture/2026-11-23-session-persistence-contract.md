@@ -640,6 +640,16 @@ P2b-2a 已落地（纯新增，不接线）：
 - `apps/agent/src/core/session/sessionTurns.ts`（`sessionTurns.test.ts`）：条目 → Turn 投影决定 `queued` / `running` / `aborted` / 终态；没有 `turn-end` 且只有 user 条目的 Turn 进 `pending`（可重新入队），有内容的按进程退出收口。恢复计划为缺失的工具调用补 `tool-result{error}`，再补 `turn-end{interrupted, process-exit}`；`stepCount` 记 0（崩溃前没有 step 事实），`toolCalls` 从条目统计。重复执行幂等。
 - 条目里没有 Bot 身份与 Turn 来源（user 条目按 schema 不携带作者），投影与恢复因此显式接收 `{ agentId, source }` 默认值，不从内容推演。
 
+P2b-2b 已落地（原子切换，测试基线为 agent 801 / desktop 378 / cli 393 / ui 352 / shared 67 / remote 48 / config 11 / remote-node 4 / mobile 6）：
+
+- 写入：`core/session/itemRecorder.ts` 成为唯一漏斗（内存视图 → 条目 → 帧）；`SessionRuntime` 的注入端口由 `sessionJournal?` 改为 `sessionItems?: SessionItemStore`，桌面与 CLI 传 `store.items`，answer 域固定使用独立 `MemorySessionItemStore` 且 SQLite `create(scope: "answer")` 直接旁路。
+- 读通道：`readFramesAfter` 读条目并包装成 `session-item` 帧，与 live 帧共用 `seq`；`remote` / `mobile` 传输层零改动；`SessionFrameBus` 的 durable 订阅只收条目帧。
+- 恢复：`planSessionRecovery` 按「有内容无 `turn-end`」补缺失 `tool-result{error}` 与 `turn-end{interrupted, process-exit}`，只有 user 条目的 Turn 重新入队；顺序固定为「事实收口 → `store.refresh` → queued 续跑」。
+- 语义收口：`turn-end.stepCount` 在恢复收口记 0，`toolCalls` 从条目统计；`SessionScheduler` 从投影读取 `activeTurnId`，仍有 running 但无本进程执行器时视为 busy，避免与陈旧 Turn 并发写；`SessionTurnExecutor.steps` 改为实际执行的 step 数。
+- 压缩不再写 journal 事实：删除 `ContextCompactor` 的 `onCompaction` / `ContextCompactionFact` / `ContextCompactionObserver`，生命周期只落 `ContextState.compaction`。
+- 随切换删除：`journal.ts`、`memoryJournal.ts`、`sqliteJournal.ts`、`eventFactory.ts`、`sessionTurnProjection.ts`、`projection.ts`、`recovery.ts`、`sessionRuntimeJournal.ts`、`transcriptBridge.ts`、`draftCheckpoint.ts`、`sessionMessageMap.ts`、`sessionConflict.ts`，以及测试里的 `sqliteConversationMessages.test.ts`（测的是已删除的 `session_messages` / draft 语义）。
+- 实现期修正：各 application 在 `store.create` 后显式调用 `SessionRuntime.createSession`（内部 `items.create`，幂等），否则直连 store 的路径会缺内存条目；`SqliteConversationStore.create` 对已加载会话同样比对 `metadata.scope`；`advanceLastSeq` 在 SQLite 下只作内存视图游标，未加载会话时 no-op，快照 `lastSeq` 由条目推导。
+
 #### 13.9 实现期修正与批次
 
 - **P1 不删旧表。** 第 13.6 节原先写「迁移时删 5 张表」，实际拆到 P4：P1 只建 `session_items` 并回填，旧表和 `revision` 保留，迁移结果可与旧读路径逐条比对，出问题也能回退。P4 再删表并移除 `legacySessionImport` 的 meta 标记。
@@ -650,6 +660,9 @@ P2b-2a 已落地（纯新增，不接线）：
 - **客户端折叠按 `item_id` upsert 必须在第二批做**：snapshot 可能已带内存半截，同一 part 随后以完整条目到达，盲追加会出现双份。
 - **第二批再拆一步（P2a）。** 先把条目存储端口与两套实现（内存 / SQLite）单独落地并测透，旧写路径不动；P2b 再一次性切换写入、读通道、恢复与帧协议。这样「存储语义错了」和「接线错了」不会是同一个提交，回退粒度也更小。
 - **P2b 再拆两步（P2b-1 / P2b-2a）。** P2b-1 只把帧协议扩成兼容变体并让客户端按 `item_id` upsert；P2b-2a 只落「条目草稿」与「Turn 投影 / 恢复计划」两个纯函数模块及其单测，仍不接线。P2b-2b 才原子切换写路径、读通道、恢复与各领域接线，并删除 journal 相关实现。
+- **`store.create` 不再隐式建条目存储。** 条目存储是独立端口，直连 store 的测试与恢复路径不会经过 `SessionRuntime`；因此各 application 在 `store.create` 后显式调用 `SessionRuntime.createSession`，否则内存实现会因「会话不存在」拒绝写条目。SQLite 实现由 `SqliteConversationStore.create` 自己保证幂等。
+- **`advanceLastSeq` 降级为内存游标。** 条目 `seq` 已经是 durable 事实，再持久化一份游标就会产生第二份真相；SQLite 适配器只在会话已加载时推进内存快照，未加载时 no-op，`load` 用条目重建 `lastSeq`。
+- **恢复投影里的 running 也算 busy。** 恢复只补事实、不重启旧 Turn；若此时放行新排队 Turn，就会出现两个写者。`Scheduler` 因此从投影取 `activeTurnId`，有值即拒绝启动新 Turn，等旧 Turn 收口后再放行。
 
 ## 模块边界
 

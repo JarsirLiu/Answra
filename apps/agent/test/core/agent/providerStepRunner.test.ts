@@ -7,8 +7,11 @@ import {
   type ProviderStepRunnerOptions,
 } from "../../../src/core/agent/providerStepRunner";
 import type { StepContextManager } from "../../../src/core/context/stepContextManager";
-import type { StepRunContext, StepStart } from "../../../src/core/session/contracts";
-import { MemorySessionJournal } from "../../../src/core/session/memoryJournal";
+import type {
+  StepEventRecorder,
+  StepRunContext,
+  StepStart,
+} from "../../../src/core/session/contracts";
 import { SessionStepExecutor } from "../../../src/core/session/stepExecutor";
 import {
   TEST_SESSION_ID,
@@ -208,24 +211,26 @@ describe("ProviderStepRunner", () => {
   });
 
   it("keeps Session step ownership separate from provider step framing", async () => {
-    const journal = new MemorySessionJournal();
+    const events: AgentStreamEvent[] = [];
+    const recorder: StepEventRecorder = {
+      async append(_step, event) {
+        events.push(event);
+      },
+    };
     const { stream } = scriptedStream([completedParts("hello")]);
     const executor = new SessionStepExecutor({
-      journal,
+      recorder,
       runner: createRunner({ stream }),
     });
 
     await executor.run(stepStart(), TEST_TURN_RUNTIME, new AbortController().signal);
 
-    const events = await journal.readAfter(TEST_SESSION_ID, 0);
-    expect(events.map((event) => event.event.type)).toEqual([
-      "step-started",
+    expect(events.map((event) => event.type)).toEqual([
       "start",
       "text-start",
+      "text-delta",
       "text-end",
       "finish",
-      "step-finished",
-      "context-usage-changed",
     ]);
   });
 

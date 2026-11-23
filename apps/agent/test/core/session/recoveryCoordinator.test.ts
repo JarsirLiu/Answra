@@ -1,4 +1,4 @@
-/** 恢复顺序与幂等性的端口级测试：不依赖真实 journal 或 transcript。 */
+/** 恢复顺序与幂等性的端口级测试：不依赖真实条目存储或 transcript。 */
 import { describe, expect, it, vi } from "vitest";
 import {
   type SessionId,
@@ -12,29 +12,18 @@ import { SessionRecoveryCoordinator } from "../../../src/core/session/recoveryCo
 const SESSION = sessionId("recovery-session");
 const RUNTIME: TurnRunContext = { getAccessToken: async () => "token" };
 
-function plan(interrupted: boolean): SessionRecoveryPlan {
+function plan(closed: boolean): SessionRecoveryPlan {
   return {
-    projection: {
-      sessionId: SESSION,
-      sequence: 0,
-      turns: [],
-      queue: [],
-      steps: [],
-      compactions: [],
-    },
-    interruptedTurnIds: interrupted ? [turnId("turn-1")] : [],
-    interruptedStepIds: [],
-    interruptedCompactionIds: [],
+    closedTurnIds: closed ? [turnId("turn-1")] : [],
+    pendingTurnIds: [],
   };
 }
 
-const LAST_SEQ = 11;
-
 function createCoordinator({
-  interrupted = true,
+  closed = true,
   failRecovery = false,
 }: {
-  interrupted?: boolean;
+  closed?: boolean;
   failRecovery?: boolean;
 } = {}) {
   const calls: string[] = [];
@@ -42,20 +31,13 @@ function createCoordinator({
     recoverFacts: vi.fn(async (_id: SessionId) => {
       calls.push("recoverFacts");
       if (failRecovery) throw new Error("recover failed");
-      return plan(interrupted);
+      return plan(closed);
+    }),
+    refreshTranscript: vi.fn(async (_id: SessionId) => {
+      calls.push("refreshTranscript");
     }),
     resumeQueued: vi.fn(async (_id: SessionId, _runtime: TurnRunContext) => {
       calls.push("resumeQueued");
-    }),
-    journalLastSeq: vi.fn(async () => {
-      calls.push("journalLastSeq");
-      return LAST_SEQ;
-    }),
-    seedLastSeq: vi.fn(async (_id: SessionId, _sequence: number) => {
-      calls.push("seedLastSeq");
-    }),
-    restoreTranscript: vi.fn(async () => {
-      calls.push("restoreTranscript");
     }),
     onRecovered: vi.fn(async () => {
       calls.push("onRecovered");
@@ -65,23 +47,14 @@ function createCoordinator({
 }
 
 describe("SessionRecoveryCoordinator", () => {
-  it("runs recover, cursor seed, transcript restore, then queued resume in one fixed order", async () => {
+  it("closes facts, rebuilds the message view, then resumes queued turns in one fixed order", async () => {
     const { coordinator, ports, calls } = createCoordinator();
 
     await coordinator.ensure(SESSION, RUNTIME);
 
-    expect(calls).toEqual([
-      "recoverFacts",
-      "journalLastSeq",
-      "seedLastSeq",
-      "restoreTranscript",
-      "resumeQueued",
-      "onRecovered",
-    ]);
-    expect(ports.seedLastSeq).toHaveBeenCalledWith(SESSION, LAST_SEQ);
-    // 恢复写回必须拿到同一个 cursor：晚于它的事实才由客户端按帧重放。
-    expect(ports.restoreTranscript).toHaveBeenCalledWith(SESSION, plan(true), LAST_SEQ);
+    expect(calls).toEqual(["recoverFacts", "refreshTranscript", "resumeQueued", "onRecovered"]);
     expect(ports.resumeQueued).toHaveBeenCalledWith(SESSION, RUNTIME);
+    expect(ports.onRecovered).toHaveBeenCalledWith(SESSION, plan(true));
   });
 
   it("keeps recovery idempotent per session", async () => {
@@ -92,7 +65,7 @@ describe("SessionRecoveryCoordinator", () => {
 
     expect(coordinator.isRecovered(SESSION)).toBe(true);
     expect(ports.recoverFacts).toHaveBeenCalledTimes(1);
-    expect(ports.restoreTranscript).toHaveBeenCalledTimes(1);
+    expect(ports.refreshTranscript).toHaveBeenCalledTimes(1);
     expect(ports.resumeQueued).toHaveBeenCalledTimes(1);
   });
 
@@ -102,7 +75,7 @@ describe("SessionRecoveryCoordinator", () => {
     await Promise.all([coordinator.ensure(SESSION, RUNTIME), coordinator.ensure(SESSION, RUNTIME)]);
 
     expect(ports.recoverFacts).toHaveBeenCalledTimes(1);
-    expect(ports.restoreTranscript).toHaveBeenCalledTimes(1);
+    expect(ports.refreshTranscript).toHaveBeenCalledTimes(1);
   });
 
   it("retries next time when recovery fails", async () => {
@@ -124,13 +97,5 @@ describe("SessionRecoveryCoordinator", () => {
     await coordinator.ensure(SESSION, RUNTIME);
 
     expect(ports.recoverFacts).toHaveBeenCalledTimes(2);
-  });
-
-  it("does not push a snapshot when nothing was interrupted", async () => {
-    const { coordinator, ports } = createCoordinator({ interrupted: false });
-
-    await coordinator.ensure(SESSION, RUNTIME);
-
-    expect(ports.onRecovered).toHaveBeenCalledWith(SESSION, plan(false));
   });
 });

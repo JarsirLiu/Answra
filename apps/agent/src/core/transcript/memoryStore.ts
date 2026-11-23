@@ -74,7 +74,7 @@ export class MemoryConversationStore implements ConversationStore {
     session.contextState = undefined;
     session.snapshot = {
       conversationId,
-      // 清空会同时清空 journal，seq 从 1 重新开始；游标必须归零，否则新事实会被旧游标吞掉。
+      // 清空会同时清空条目，seq 从 1 重新开始；游标必须归零，否则新事实会被旧游标吞掉。
       lastSeq: 0,
       messages: [],
       ...(session.seed ? seedSnapshot(session.seed) : {}),
@@ -102,13 +102,18 @@ export class MemoryConversationStore implements ConversationStore {
     const previous = cloneRecord(session);
     if (input.userMessage !== undefined && input.userMessage.role !== "user")
       throw new Error("run 必须从用户消息开始");
+    const messages = session.snapshot.messages.map(cloneMessage);
+    if (input.userMessage !== undefined) messages.push(normalizeUserMessage(input.userMessage));
+    const placeholder = createAssistantMessage(input.messageId, input.authorAgentId);
+    const anchor =
+      input.afterMessageId === undefined
+        ? -1
+        : messages.findIndex((message) => message.id === input.afterMessageId);
+    if (anchor >= 0) messages.splice(anchor + 1, 0, placeholder);
+    else messages.push(placeholder);
     session.snapshot = {
       ...session.snapshot,
-      messages: [
-        ...session.snapshot.messages.map(cloneMessage),
-        ...(input.userMessage ? [normalizeUserMessage(input.userMessage)] : []),
-        createAssistantMessage(input.messageId, input.authorAgentId),
-      ],
+      messages,
       activeMessageId: input.messageId,
       activeTurnId: input.turnId,
       ...(input.authorAgentId ? { activeAgentId: input.authorAgentId } : {}),
@@ -118,6 +123,9 @@ export class MemoryConversationStore implements ConversationStore {
       dirtyMessageIds: [input.messageId, ...(input.userMessage ? [input.userMessage.id] : [])],
     });
   }
+
+  /** 内存实现自己就是事实来源，没有需要重建的消息视图。 */
+  async refresh(_conversationId: string): Promise<void> {}
 
   async beginSessionAssistant(
     conversationId: string,

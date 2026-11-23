@@ -8,8 +8,9 @@ import type { AgentRuntime } from "../../src/core/agent/runtime";
 import { createBotCatalog } from "../../src/core/bot/catalog";
 import type { StepRunner, StepRunnerResult, TurnHandoff } from "../../src/core/session/contracts";
 import { sessionId } from "../../src/core/session/contracts";
-import { MemorySessionJournal } from "../../src/core/session/memoryJournal";
 import type { TeamPreset } from "../../src/core/team/preset";
+import type { SessionItemStore } from "../../src/core/transcript/itemStore";
+import { MemorySessionItemStore } from "../../src/core/transcript/memoryItemStore";
 import { MemoryConversationStore } from "../../src/core/transcript/memoryStore";
 
 const candidate = agentId("candidate");
@@ -57,11 +58,11 @@ function scriptedRunner({
 function createHarness({
   candidateHandoff,
   gate,
-  journal = new MemorySessionJournal(),
+  items = new MemorySessionItemStore(),
 }: {
   candidateHandoff?: TurnHandoff;
   gate?: Promise<void>;
-  journal?: MemorySessionJournal;
+  items?: SessionItemStore;
 }) {
   const store = new MemoryConversationStore();
   const conversationId = "handoff-conversation";
@@ -107,14 +108,14 @@ function createHarness({
     store,
     catalog: createBotCatalog([makeBot(candidate), makeBot(intake)]),
     presets: [preset],
-    sessionJournal: journal,
+    sessionItems: items,
     stepRunner: runner,
     onSnapshot: (snapshot) => {
       snapshots.push(snapshot);
     },
   });
 
-  return { app, store, conversationId, inputs, snapshots, journal };
+  return { app, store, conversationId, inputs, snapshots, items };
 }
 
 describe("ConversationApplication team handoff", () => {
@@ -177,9 +178,9 @@ describe("ConversationApplication team handoff", () => {
     expect(harness.snapshots.length).toBeGreaterThanOrEqual(3);
   });
 
-  it("records durable step boundaries in the session journal", async () => {
-    const journal = new MemorySessionJournal();
-    const harness = createHarness({ candidateHandoff: undefined, journal });
+  it("records the turn and its settled text as append-only items", async () => {
+    const items = new MemorySessionItemStore();
+    const harness = createHarness({ candidateHandoff: undefined, items });
 
     await harness.app.sendTeamMessage(
       "interview",
@@ -188,17 +189,13 @@ describe("ConversationApplication team handoff", () => {
       "token",
     );
 
-    const events = await journal.readAfter(sessionId("handoff-conversation"), 0);
-    expect(events.map((event) => event.event.type)).toEqual([
-      "turn-queued",
-      "turn-started",
-      "step-started",
-      "text-start",
-      "text-end",
-      "step-finished",
-      "turn-finished",
-    ]);
-    expect(events.every((event) => event.sequence > 0)).toBe(true);
+    const written = await items.readItems(sessionId("handoff-conversation"));
+    expect(written.map((item) => item.payload.kind)).toEqual(["user", "text", "turn-end"]);
+    expect(written.map((item) => item.seq)).toEqual([1, 2, 3]);
+    expect(written.at(-1)).toMatchObject({
+      status: "complete",
+      payload: { kind: "turn-end", reason: "completed" },
+    });
   });
 
   it("rejects an invisible handoff target without writing a handoff record", async () => {

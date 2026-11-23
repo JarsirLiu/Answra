@@ -9,9 +9,12 @@ import type {
   TurnRunContext,
   TurnStart,
 } from "../../../src/core/session/contracts";
-import { MemorySessionJournal } from "../../../src/core/session/memoryJournal";
+import { SessionItemRecorder } from "../../../src/core/session/itemRecorder";
 import { TurnScheduler } from "../../../src/core/session/scheduler";
+import { SessionFrameBus } from "../../../src/core/session/sessionFrameBus";
+import type { SessionItemStore } from "../../../src/core/transcript/itemStore";
 import {
+  createSessionFixture,
   TEST_SESSION_ID,
   TEST_TURN_ID,
   TEST_TURN_ID_2,
@@ -108,18 +111,25 @@ class FakeCompactor implements SessionCompactor {
 }
 
 async function createScheduler(compactor?: SessionCompactor) {
-  const journal = new MemorySessionJournal();
+  const { store, items } = await createSessionFixture();
+  const recorder = new SessionItemRecorder({
+    items,
+    store,
+    frames: new SessionFrameBus(),
+  });
   const executor = new FakeTurnExecutor();
   const scheduler = await TurnScheduler.create({
     sessionId: TEST_SESSION_ID,
-    journal,
+    items,
+    recorder,
     executor,
+    defaults: { agentId: "general", source: "user" },
     ...(compactor === undefined ? {} : { compactor }),
     createTurnId: () => TEST_TURN_ID_2,
     createOperationId: () => "generated-operation",
     createMessageId: () => "assistant-message",
   });
-  return { journal, executor, scheduler };
+  return { store, items, recorder, executor, scheduler };
 }
 
 function submitUser(scheduler: TurnScheduler, messageId: string) {
@@ -130,6 +140,23 @@ function submitUser(scheduler: TurnScheduler, messageId: string) {
     input: userMessage(messageId),
     runtime: TEST_TURN_RUNTIME,
   });
+}
+
+/** 直接写一条用户条目，模拟上一进程留下的排队 Turn。 */
+async function appendQueuedTurn(
+  items: SessionItemStore,
+  turnId: string,
+  messageId: string,
+): Promise<void> {
+  await items.appendItems(TEST_SESSION_ID, [
+    {
+      itemId: messageId,
+      status: "complete",
+      createdAt: "2026-11-23T10:00:00.000Z",
+      turnId,
+      payload: { kind: "user", text: "hello", images: [] },
+    },
+  ]);
 }
 
 describe("TurnScheduler", () => {
@@ -156,7 +183,7 @@ describe("TurnScheduler", () => {
   });
 
   it("starts the next queued turn only after the active turn completes", async () => {
-    const { scheduler, executor } = await createScheduler();
+    const { scheduler, executor, items } = await createScheduler();
     await submitUser(scheduler, "turn-1");
     await submitUser(scheduler, "turn-2");
 
@@ -179,6 +206,10 @@ describe("TurnScheduler", () => {
 
     expect(scheduler.snapshot().activeTurnId).toBeUndefined();
     expect(scheduler.snapshot().queue).toEqual([]);
+    const closeItems = (await items.readItems(TEST_SESSION_ID)).filter(
+      (item) => item.payload.kind === "turn-end",
+    );
+    expect(closeItems.map((item) => item.itemId)).toEqual(["turn-1:end", "turn-2:end"]);
   });
 
   it("keeps the queue moving when a turn fails", async () => {
@@ -207,7 +238,7 @@ describe("TurnScheduler", () => {
   });
 
   it("cancels a queued turn without interrupting the active turn", async () => {
-    const { scheduler, executor } = await createScheduler();
+    const { scheduler, executor, items } = await createScheduler();
     await submitUser(scheduler, "turn-1");
     await submitUser(scheduler, "turn-2");
 
@@ -219,6 +250,10 @@ describe("TurnScheduler", () => {
       status: "aborted",
       finishReason: "cancelled",
     });
+    const cancelled = (await items.readItems(TEST_SESSION_ID)).find(
+      (item) => item.itemId === "turn-2:end",
+    );
+    expect(cancelled?.status).toBe("interrupted");
 
     executor.finish(TEST_TURN_ID, {
       turnId: TEST_TURN_ID,
@@ -335,59 +370,70 @@ describe("TurnScheduler", () => {
     await scheduler.waitForIdle();
   });
 
-  it("resumes queued turns from the journal", async () => {
-    const journal = new MemorySessionJournal();
-    await journal.append(
-      TEST_SESSION_ID,
-      { type: "turn-queued", source: "user", input: userMessage("turn-1"), agentId: "general" },
-      { turnId: TEST_TURN_ID },
-    );
-    await journal.append(
-      TEST_SESSION_ID,
-      {
-        type: "turn-queued",
-        source: "user",
-        input: userMessage("turn-2"),
-        agentId: "general",
-      },
-      { turnId: TEST_TURN_ID_2 },
-    );
+  it("resumes queued turns from the item store", async () => {
+    const { store, items } = await createSessionFixture();
+    await appendQueuedTurn(items, "turn-1", "turn-1");
+    await appendQueuedTurn(items, "turn-2", "turn-2");
+    const recorder = new SessionItemRecorder({ items, store, frames: new SessionFrameBus() });
     const executor = new FakeTurnExecutor();
     const scheduler = await TurnScheduler.create({
       sessionId: TEST_SESSION_ID,
-      journal,
+      items,
+      recorder,
       executor,
+      defaults: { agentId: "general", source: "user" },
     });
 
     expect(executor.starts).toEqual([]);
+    expect(scheduler.snapshot().queue).toEqual([TEST_TURN_ID, TEST_TURN_ID_2]);
     await scheduler.resume(TEST_TURN_RUNTIME);
     await executor.started(TEST_TURN_ID);
 
     expect(executor.runtimes).toEqual([TEST_TURN_RUNTIME]);
     expect(scheduler.snapshot().queue).toEqual([TEST_TURN_ID_2]);
+    expect(executor.starts[0]?.input?.id).toBe("turn-1");
   });
 
-  it("resolves waits for a terminal turn rebuilt from the journal", async () => {
-    const journal = new MemorySessionJournal();
-    await journal.append(
-      TEST_SESSION_ID,
-      { type: "turn-queued", source: "user", input: userMessage("turn-1"), agentId: "general" },
-      { turnId: TEST_TURN_ID },
-    );
-    await journal.append(
-      TEST_SESSION_ID,
-      { type: "turn-started", agentId: "general" },
-      { turnId: TEST_TURN_ID, messageId: "assistant-1" },
-    );
-    await journal.append(
-      TEST_SESSION_ID,
-      { type: "turn-finished", status: "failed", reason: "interrupted", errorText: "中断" },
-      { turnId: TEST_TURN_ID },
-    );
+  it("resolves waits for a terminal turn rebuilt from items", async () => {
+    const { store, items } = await createSessionFixture();
+    await items.appendItems(TEST_SESSION_ID, [
+      {
+        itemId: "message-1",
+        status: "complete",
+        createdAt: "2026-11-23T10:00:00.000Z",
+        turnId: TEST_TURN_ID,
+        payload: { kind: "user", text: "hello", images: [] },
+      },
+      {
+        itemId: "text-1",
+        status: "complete",
+        createdAt: "2026-11-23T10:00:01.000Z",
+        turnId: TEST_TURN_ID,
+        messageId: "assistant-1",
+        authorAgentId: "general",
+        payload: { kind: "text", text: "答" },
+      },
+      {
+        itemId: "turn-1:end",
+        status: "failed",
+        createdAt: "2026-11-23T10:00:02.000Z",
+        turnId: TEST_TURN_ID,
+        payload: {
+          kind: "turn-end",
+          reason: "interrupted",
+          stepCount: 1,
+          toolCalls: 0,
+          errorText: "中断",
+        },
+      },
+    ]);
+    const recorder = new SessionItemRecorder({ items, store, frames: new SessionFrameBus() });
     const scheduler = await TurnScheduler.create({
       sessionId: TEST_SESSION_ID,
-      journal,
+      items,
+      recorder,
       executor: new FakeTurnExecutor(),
+      defaults: { agentId: "general", source: "user" },
     });
 
     await expect(scheduler.waitForTurn(TEST_TURN_ID)).resolves.toEqual({
@@ -399,21 +445,28 @@ describe("TurnScheduler", () => {
   });
 
   it("resolves a cancelled queued turn without waiting for a scheduler that will never start it", async () => {
-    const journal = new MemorySessionJournal();
-    await journal.append(
-      TEST_SESSION_ID,
-      { type: "turn-queued", source: "user", input: userMessage("turn-2"), agentId: "general" },
-      { turnId: TEST_TURN_ID_2 },
-    );
-    await journal.append(
-      TEST_SESSION_ID,
-      { type: "turn-finished", status: "aborted", reason: "cancelled" },
-      { turnId: TEST_TURN_ID_2 },
-    );
+    const { store, items } = await createSessionFixture();
+    await appendQueuedTurn(items, "turn-2", "turn-2");
+    await items.finishTurn(TEST_SESSION_ID, "turn-2", {
+      itemId: "turn-2:end",
+      status: "interrupted",
+      createdAt: "2026-11-23T10:00:01.000Z",
+      turnId: "turn-2",
+      payload: {
+        kind: "turn-end",
+        reason: "cancelled",
+        stepCount: 0,
+        toolCalls: 0,
+        interruption: { reason: "cancelled", at: "2026-11-23T10:00:01.000Z" },
+      },
+    });
+    const recorder = new SessionItemRecorder({ items, store, frames: new SessionFrameBus() });
     const scheduler = await TurnScheduler.create({
       sessionId: TEST_SESSION_ID,
-      journal,
+      items,
+      recorder,
       executor: new FakeTurnExecutor(),
+      defaults: { agentId: "general", source: "user" },
     });
 
     await expect(scheduler.waitForTurn(TEST_TURN_ID_2)).resolves.toEqual({ outcome: "aborted" });
@@ -423,50 +476,46 @@ describe("TurnScheduler", () => {
   });
 
   it("refuses to start unrecovered queued turns without a runtime", async () => {
-    const journal = new MemorySessionJournal();
-    await journal.append(
-      TEST_SESSION_ID,
-      { type: "turn-queued", source: "user", input: userMessage("turn-1"), agentId: "general" },
-      { turnId: TEST_TURN_ID },
-    );
+    const { store, items } = await createSessionFixture();
+    await appendQueuedTurn(items, "turn-1", "turn-1");
+    const recorder = new SessionItemRecorder({ items, store, frames: new SessionFrameBus() });
     const executor = new FakeTurnExecutor();
     const scheduler = await TurnScheduler.create({
       sessionId: TEST_SESSION_ID,
-      journal,
+      items,
+      recorder,
       executor,
+      defaults: { agentId: "general", source: "user" },
     });
 
     await expect(submitUser(scheduler, "turn-2")).rejects.toThrow("queued Turn 缺少运行时上下文");
     expect(executor.starts).toEqual([]);
   });
 
-  it("does not retry a turn that was already running before resume", async () => {
-    const journal = new MemorySessionJournal();
-    await journal.append(
-      TEST_SESSION_ID,
-      { type: "turn-queued", source: "user", input: userMessage("turn-1"), agentId: "general" },
-      { turnId: TEST_TURN_ID },
-    );
-    await journal.append(
-      TEST_SESSION_ID,
-      { type: "turn-started", agentId: "general" },
-      { turnId: TEST_TURN_ID },
-    );
-    await journal.append(
-      TEST_SESSION_ID,
+  it("does not retry a running turn that was already producing content before resume", async () => {
+    const { store, items } = await createSessionFixture();
+    await appendQueuedTurn(items, "turn-1", "turn-1");
+    await items.beginTurn(TEST_SESSION_ID, "turn-1");
+    await items.appendItems(TEST_SESSION_ID, [
       {
-        type: "turn-queued",
-        source: "user",
-        input: userMessage("turn-2"),
-        agentId: "general",
+        itemId: "text-1",
+        status: "complete",
+        createdAt: "2026-11-23T10:00:01.000Z",
+        turnId: "turn-1",
+        messageId: "assistant-1",
+        authorAgentId: "general",
+        payload: { kind: "text", text: "已生成" },
       },
-      { turnId: TEST_TURN_ID_2 },
-    );
+    ]);
+    await appendQueuedTurn(items, "turn-2", "turn-2");
+    const recorder = new SessionItemRecorder({ items, store, frames: new SessionFrameBus() });
     const executor = new FakeTurnExecutor();
     const scheduler = await TurnScheduler.create({
       sessionId: TEST_SESSION_ID,
-      journal,
+      items,
+      recorder,
       executor,
+      defaults: { agentId: "general", source: "user" },
     });
 
     await scheduler.resume(TEST_TURN_RUNTIME);

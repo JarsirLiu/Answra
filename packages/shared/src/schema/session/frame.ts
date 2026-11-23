@@ -4,7 +4,7 @@ import {
   agentLiveOnlyEventSchema,
   type SessionEventEnvelope,
 } from "../events";
-import { sessionItemSchema } from "./item";
+import { type SessionItem, sessionItemSchema } from "./item";
 
 /** `SessionFrame` 的协议版本；v1 是迁移期的 `SessionEventEnvelope`。 */
 export const SESSION_FRAME_SCHEMA_VERSION = 2 as const;
@@ -73,5 +73,27 @@ export function toSessionFrame(envelope: SessionEventEnvelope): SessionFrame {
     ...(envelope.stepId === undefined ? {} : { stepId: envelope.stepId }),
     ...(envelope.operationId === undefined ? {} : { operationId: envelope.operationId }),
     event: envelope.event,
+  };
+}
+
+/**
+ * 条目 → durable 帧。`seq` 已在写入时分配，帧只做承载；`eventId` 由会话与 seq 派生，
+ * 保证同一事实重复读取得到同一身份。
+ */
+export function toSessionItemFrame(
+  sessionId: string,
+  item: SessionItem,
+  producerId: string,
+): SessionFrame {
+  return {
+    schemaVersion: SESSION_FRAME_SCHEMA_VERSION,
+    sessionId,
+    seq: item.seq,
+    eventId: `${sessionId}:${item.seq}`,
+    occurredAt: item.createdAt,
+    producerId,
+    ...(item.turnId === undefined ? {} : { turnId: item.turnId }),
+    ...(item.messageId === undefined ? {} : { messageId: item.messageId }),
+    event: { type: "session-item", item },
   };
 }

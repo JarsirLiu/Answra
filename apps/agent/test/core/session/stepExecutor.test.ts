@@ -1,11 +1,12 @@
+import type { AgentStreamEvent } from "@answra/shared/schema";
 import { describe, expect, it } from "vitest";
 import type {
+  StepEventRecorder,
   StepRunContext,
   StepRunner,
   StepRunnerResult,
   StepStart,
 } from "../../../src/core/session/contracts";
-import { MemorySessionJournal } from "../../../src/core/session/memoryJournal";
 import { SessionStepExecutor } from "../../../src/core/session/stepExecutor";
 import {
   TEST_ACCESS_TOKEN,
@@ -35,6 +36,17 @@ class FakeStepRunner implements StepRunner {
   }
 }
 
+class RecordingSink implements StepEventRecorder {
+  readonly events: AgentStreamEvent[] = [];
+
+  constructor(private readonly failure?: AgentStreamEvent["type"]) {}
+
+  async append(_step: StepStart, event: AgentStreamEvent): Promise<void> {
+    if (event.type === this.failure) throw new Error("条目写入失败");
+    this.events.push(event);
+  }
+}
+
 function stepStart(): StepStart {
   return {
     sessionId: TEST_SESSION_ID,
@@ -49,47 +61,7 @@ function stepStart(): StepStart {
 }
 
 describe("SessionStepExecutor", () => {
-  it("writes step ownership, usage and context projection", async () => {
-    const journal = new MemorySessionJournal();
-    const runner = new FakeStepRunner({
-      outcome: "completed",
-      finishReason: "stop",
-      usage: { inputTokens: 10, outputTokens: 4 },
-    });
-    const executor = new SessionStepExecutor({ journal, runner });
-
-    await expect(
-      executor.run(stepStart(), TEST_TURN_RUNTIME, new AbortController().signal),
-    ).resolves.toMatchObject({
-      stepId: TEST_STEP_ID,
-      outcome: "completed",
-      finishReason: "stop",
-    });
-
-    const events = await journal.readAfter(TEST_SESSION_ID, 0);
-    expect(events.map((event) => event.event.type)).toEqual([
-      "step-started",
-      "step-finished",
-      "context-usage-changed",
-    ]);
-    expect(events[0]).toMatchObject({
-      turnId: TEST_TURN_ID,
-      stepId: TEST_STEP_ID,
-      messageId: "assistant-1",
-      event: { type: "step-started", agentId: "general", modelId: "model-a" },
-    });
-    expect(events[1]).toMatchObject({
-      event: {
-        type: "step-finished",
-        state: "completed",
-        finishReason: "stop",
-        usage: { inputTokens: 10, outputTokens: 4 },
-      },
-    });
-  });
-
   it("passes the turn runtime to the step runner", async () => {
-    const journal = new MemorySessionJournal();
     let receivedToken: string | undefined;
     const runner: StepRunner = {
       async run(_step, context): Promise<StepRunnerResult> {
@@ -97,15 +69,15 @@ describe("SessionStepExecutor", () => {
         return { outcome: "completed", finishReason: "stop" };
       },
     };
-    const executor = new SessionStepExecutor({ journal, runner });
+    const executor = new SessionStepExecutor({ recorder: new RecordingSink(), runner });
 
     await executor.run(stepStart(), TEST_TURN_RUNTIME, new AbortController().signal);
 
     expect(receivedToken).toBe(TEST_ACCESS_TOKEN);
   });
 
-  it("writes only durable model events in order and drops live-only deltas", async () => {
-    const journal = new MemorySessionJournal();
+  it("forwards every model event to the recorder in order", async () => {
+    const recorder = new RecordingSink();
     const runner: StepRunner = {
       async run(_step, context): Promise<StepRunnerResult> {
         await Promise.all([
@@ -117,127 +89,46 @@ describe("SessionStepExecutor", () => {
         return { outcome: "completed", finishReason: "stop" };
       },
     };
-    const executor = new SessionStepExecutor({ journal, runner });
+    const executor = new SessionStepExecutor({ recorder, runner });
 
     await executor.run(stepStart(), TEST_TURN_RUNTIME, new AbortController().signal);
 
-    const events = await journal.readAfter(TEST_SESSION_ID, 0);
-    expect(events.map((event) => event.event.type)).toEqual([
-      "step-started",
+    expect(recorder.events.map((event) => event.type)).toEqual([
       "text-start",
+      "text-delta",
+      "text-delta",
       "text-end",
-      "step-finished",
-    ]);
-    expect(events.slice(1, 3)).toMatchObject([
-      {
-        turnId: TEST_TURN_ID,
-        stepId: TEST_STEP_ID,
-        messageId: "assistant-1",
-        event: { type: "text-start", partId: "text-1" },
-      },
-      {
-        turnId: TEST_TURN_ID,
-        stepId: TEST_STEP_ID,
-        messageId: "assistant-1",
-        event: { type: "text-end", partId: "text-1" },
-      },
     ]);
   });
 
-  it("forwards every model event to the live observer while journaling only durable events", async () => {
-    const journal = new MemorySessionJournal();
-    const observed: string[] = [];
-    const runner: StepRunner = {
-      async run(_step, context): Promise<StepRunnerResult> {
-        await context.events.append({ type: "text-start", partId: "text-1" });
-        await context.events.append({ type: "text-delta", partId: "text-1", delta: "a" });
-        await context.events.append({ type: "text-delta", partId: "text-1", delta: "b" });
-        await context.events.append({ type: "text-end", partId: "text-1" });
-        return { outcome: "completed", finishReason: "stop" };
-      },
-    };
-    const executor = new SessionStepExecutor({
-      journal,
-      runner,
-      onStreamEvent: (step, event) => {
-        expect(step.stepId).toBe(TEST_STEP_ID);
-        observed.push(event.type);
-      },
-    });
-
-    await executor.run(stepStart(), TEST_TURN_RUNTIME, new AbortController().signal);
-
-    expect(observed).toEqual(["text-start", "text-delta", "text-delta", "text-end"]);
-    const events = await journal.readAfter(TEST_SESSION_ID, 0);
-    expect(events.map((event) => event.event.type)).toEqual([
-      "step-started",
-      "text-start",
-      "text-end",
-      "step-finished",
-    ]);
-  });
-
-  it("does not fail the step when a live-only event has no journal counterpart", async () => {
-    const journal = new MemorySessionJournal();
-    const runner: StepRunner = {
-      async run(_step, context): Promise<StepRunnerResult> {
-        await context.events.append({ type: "reasoning-delta", partId: "r-1", delta: "x" });
-        return { outcome: "completed", finishReason: "stop" };
-      },
-    };
-    const executor = new SessionStepExecutor({
-      journal,
-      runner,
-      onStreamEvent: () => undefined,
-    });
-
-    await expect(
-      executor.run(stepStart(), TEST_TURN_RUNTIME, new AbortController().signal),
-    ).resolves.toMatchObject({ outcome: "completed" });
-  });
-
-  it("turns a step event sink failure into an observable failed step", async () => {
-    class FailingStreamJournal extends MemorySessionJournal {
-      override async append(
-        sessionId: Parameters<MemorySessionJournal["append"]>[0],
-        event: Parameters<MemorySessionJournal["append"]>[1],
-        metadata?: Parameters<MemorySessionJournal["append"]>[2],
-      ) {
-        if (event.type === "text-end") throw new Error("journal write failed");
-        return super.append(sessionId, event, metadata);
-      }
-    }
-    const journal = new FailingStreamJournal();
+  it("turns a recorder failure into an observable failed step", async () => {
     const runner: StepRunner = {
       async run(_step, context): Promise<StepRunnerResult> {
         await context.events.append({ type: "text-end", partId: "text-1" });
         return { outcome: "completed", finishReason: "stop" };
       },
     };
-    const executor = new SessionStepExecutor({ journal, runner });
+    const executor = new SessionStepExecutor({
+      recorder: new RecordingSink("text-end"),
+      runner,
+    });
 
     await expect(
       executor.run(stepStart(), TEST_TURN_RUNTIME, new AbortController().signal),
     ).resolves.toEqual({
       stepId: TEST_STEP_ID,
       outcome: "failed",
-      errorText: "journal write failed",
-    });
-
-    const events = await journal.readAfter(TEST_SESSION_ID, 0);
-    expect(events[1]).toMatchObject({
-      event: { type: "step-finished", state: "failed", errorText: "journal write failed" },
+      errorText: "条目写入失败",
     });
   });
 
   it("turns a runner exception into an observable failed step", async () => {
-    const journal = new MemorySessionJournal();
     const runner: StepRunner = {
       async run(): Promise<StepRunnerResult> {
         throw new Error("provider failed");
       },
     };
-    const executor = new SessionStepExecutor({ journal, runner });
+    const executor = new SessionStepExecutor({ recorder: new RecordingSink(), runner });
 
     await expect(
       executor.run(stepStart(), TEST_TURN_RUNTIME, new AbortController().signal),
@@ -246,17 +137,12 @@ describe("SessionStepExecutor", () => {
       outcome: "failed",
       errorText: "provider failed",
     });
-
-    const events = await journal.readAfter(TEST_SESSION_ID, 0);
-    expect(events[1]).toMatchObject({
-      event: { type: "step-finished", state: "failed", errorText: "provider failed" },
-    });
   });
 
   it("does not start a step when the turn was already aborted", async () => {
-    const journal = new MemorySessionJournal();
+    const recorder = new RecordingSink();
     const runner = new FakeStepRunner({ outcome: "completed", finishReason: "stop" });
-    const executor = new SessionStepExecutor({ journal, runner });
+    const executor = new SessionStepExecutor({ recorder, runner });
     const controller = new AbortController();
     controller.abort();
 
@@ -265,13 +151,34 @@ describe("SessionStepExecutor", () => {
       outcome: "aborted",
     });
     expect(runner.calls).toEqual([]);
-    expect(await journal.readAfter(TEST_SESSION_ID, 0)).toEqual([]);
+    expect(recorder.events).toEqual([]);
+  });
+
+  it("reports the settled step result to the usage observer", async () => {
+    const observed: StepRunnerResult[] = [];
+    const runner = new FakeStepRunner({
+      outcome: "completed",
+      finishReason: "stop",
+      usage: { inputTokens: 10, outputTokens: 4 },
+    });
+    const executor = new SessionStepExecutor({
+      recorder: new RecordingSink(),
+      runner,
+      onStepFinished: (_step, result) => {
+        observed.push(result);
+      },
+    });
+
+    await executor.run(stepStart(), TEST_TURN_RUNTIME, new AbortController().signal);
+
+    expect(observed).toEqual([
+      { outcome: "completed", finishReason: "stop", usage: { inputTokens: 10, outputTokens: 4 } },
+    ]);
   });
 
   it("records an aborted runner result without inventing an error", async () => {
-    const journal = new MemorySessionJournal();
     const runner = new FakeStepRunner({ outcome: "aborted" });
-    const executor = new SessionStepExecutor({ journal, runner });
+    const executor = new SessionStepExecutor({ recorder: new RecordingSink(), runner });
 
     await expect(
       executor.run(stepStart(), TEST_TURN_RUNTIME, new AbortController().signal),
@@ -279,11 +186,5 @@ describe("SessionStepExecutor", () => {
       stepId: TEST_STEP_ID,
       outcome: "aborted",
     });
-
-    const events = await journal.readAfter(TEST_SESSION_ID, 0);
-    expect(events[1]).toMatchObject({
-      event: { type: "step-finished", state: "aborted" },
-    });
-    expect(events[1]?.event).not.toHaveProperty("errorText");
   });
 });

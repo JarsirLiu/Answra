@@ -44,6 +44,11 @@ export interface SessionTurnStartInput {
   authorAgentId: string;
   /** 无新用户消息的 opening/reply Turn 可以缺省。 */
   userMessage?: ConversationMessage;
+  /**
+   * 用户消息已由条目折进 transcript 时，把 assistant 占位插到它后面而不是追加到末尾。
+   * 多个排队 Turn 恢复时，后面 Turn 的消息已经存在，追加会打乱顺序。
+   */
+  afterMessageId?: string;
 }
 
 /**
@@ -60,14 +65,21 @@ export interface ConversationStore {
   scopeOf(conversationId: string): Promise<ConversationSessionScope | undefined>;
   /**
    * 仅空闲清理：会话没有活动 run 时才清空消息；仍有活动 run 时 no-op。
-   * 清空即重置：durable 游标归零，调用方负责同时清空 journal。
+   * 清空即重置：调用方负责同时清空条目。
    */
   clear(conversationId: string): Promise<void>;
   /**
-   * 单调推进 snapshot 的 durable 游标；只由 Session 桥接在 transcript 写回后调用。
-   * 小于等于当前游标的写入是同一条事实的重复投影，直接忽略。
+   * 单调推进 snapshot 的 durable 游标；只由条目写入在落库后调用。
+   * 小于等于当前游标的写入是同一条事实的重复写入，直接忽略。
    */
   advanceLastSeq(conversationId: string, sequence: number): Promise<void>;
+  /**
+   * 用条目重建内存消息视图，并保留仍在流式的活动消息。
+   *
+   * 磁盘实现启动时先折条目再删掉旧行；恢复收口后调用一次，避免内存里留着
+   * 「没有 turn-end」的半截消息。内存实现本身就是事实来源，只是 no-op。
+   */
+  refresh(conversationId: string): Promise<void>;
   load(conversationId: string): Promise<ConversationSnapshot>;
   /** 新 Session 运行时：在 turn 开始时安装 user 消息与首条 assistant 占位。 */
   beginSessionTurn(conversationId: string, input: SessionTurnStartInput): Promise<void>;
