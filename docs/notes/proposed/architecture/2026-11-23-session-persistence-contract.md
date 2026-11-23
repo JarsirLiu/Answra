@@ -87,12 +87,14 @@ I1 的 `item_id` 派生规则（不是随机 UUID）：
 | 条目 | `item_id` |
 | --- | --- |
 | `user` | 用户消息 id |
-| `text` / `reasoning` | 该 part 的 `partId` |
+| `text` / `reasoning` | 存储侧作用域化的 part id：`${stepId}:${partId}:${序号}`（旧库导入用 `${messageId}:${partId}:${序号}`） |
 | `tool-call` | `toolCallId` |
 | `tool-result` | `` `${toolCallId}:result` `` |
 | `turn-end` | `` `${turnId}:end` `` |
 
 这样同一段内容重试落库命中唯一约束即跳过，不需要额外的幂等账本。
+
+`text` / `reasoning` 不能直接用 provider 的 `partId`：`@ai-sdk/openai-compatible` 每段文本都发 `txt-0`、每个思考段都发 `reasoning-0`，同一响应里被工具调用打断后再续写也会复用同一个 id。直接用会让同一会话第二条消息命中 `UNIQUE(conversation_id, item_id)` 被静默丢弃，迁移时则直接撞唯一约束失败。因此在事件进入 transcript 前按 step 重新编号（`createStreamPartIdScope`），迁移与旧 JSON 导入按消息重新编号；工具 id 由 provider 生成，本身唯一，不改。
 
 ### 2. 最终 DDL
 
@@ -691,6 +693,7 @@ P4 已落地（`pnpm db:check` 5 个迁移；agent 799 = P2b-2b 的 801 − 3 �
 - **CLI 非 TTY 呈现改为条目驱动。** 正文仍来自 live `text-delta`（`text` 条目含同一份文本，重复打印会出现两遍）；工具开始/结束行与退出码改由 `tool-call` / `tool-result` / `turn-end` 条目驱动。
 - **`turn-end` 收口同时清 `thinking` / `waitingForStream`。** 折叠代码原先只在 `turn-finished` 事件路径里做这件事，改成条目后必须由 `settleTurn` 自己清；否则思考摘要会一直停在「思考中」。
 - **P6 只做文档与死契约收尾。** `AGENTS.md` 与 `answra-arch` 速查改为两表 + 条目模型；`sessionEventEnvelopeSchema` / `SessionEventEnvelope` 已无任何生产消费者（journal 删除后只剩测试引用），随之删除。留着「journal v1」契约会让人误以为还存在第二个 durable 写入口。
+- **文本 part id 必须存储侧作用域化。** 实机旧库升级暴露：`@ai-sdk/openai-compatible` 每段文本固定发 `txt-0`、每段思考固定发 `reasoning-0`，同一响应被工具调用打断后续写还会复用。把它们直接当 `item_id` 会让同一会话第二条消息命中 `UNIQUE(conversation_id, item_id)`：运行时被 `ON CONFLICT DO NOTHING` 静默丢弃，迁移时直接回滚导致 CLI 启动失败。修法是在 provider 边界按 step 重编号（`createStreamPartIdScope`，`${stepId}:${partId}:${序号}`），迁移与旧 JSON 导入按消息重编号；工具 id 不动。真实旧库（7 个会话）升级后条目 id 全唯一、折叠出的消息 id 与迁移前逐条一致。
 
 ## 模块边界
 

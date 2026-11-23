@@ -10,6 +10,7 @@ import {
   streamModel,
 } from "../model/modelTransport";
 import type { RetryAttempt } from "../model/retryFetch";
+import { createStreamPartIdScope } from "../model/streamEvents";
 import type {
   StepRunContext,
   StepRunner,
@@ -94,6 +95,8 @@ export class ProviderStepRunner implements StepRunner {
 
     const accessToken = await context.runtime.getAccessToken();
     let contextRecovered = false;
+    // 每次 step 独立编号；provider 的 `txt-0` 在重试与后续 step 里都会重新出现。
+    const scopePartId = createStreamPartIdScope(step.stepId);
 
     for (;;) {
       let finished: { finishReason: AgentFinishReason; usage?: AgentUsage } | undefined;
@@ -107,7 +110,7 @@ export class ProviderStepRunner implements StepRunner {
               ...(streamEvent.usage === undefined ? {} : { usage: streamEvent.usage }),
             };
           }
-          await context.events.append(streamEvent);
+          await context.events.append(scopePartId(streamEvent));
         },
       });
       const transport: ModelTransportOptions = {

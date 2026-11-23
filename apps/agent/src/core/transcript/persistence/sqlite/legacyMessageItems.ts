@@ -111,20 +111,23 @@ function expandMessage(
     }
     return items;
   }
-  return parts.flatMap((part) => expandPart(base, part, createdAt));
+  const partIds = new Map<string, number>();
+  return parts.flatMap((part) => expandPart(base, message.id, part, createdAt, partIds));
 }
 
 function expandPart(
   base: ItemBase,
+  messageId: string,
   part: ConversationMessagePart,
   createdAt: string,
+  partIds: Map<string, number>,
 ): SessionItemDraft[] {
   switch (part.kind) {
     case "text":
       return [
         {
           ...base,
-          itemId: part.id,
+          itemId: scopedPartId(messageId, part.id, partIds),
           status: partStatusOf(part.state),
           createdAt,
           payload: { kind: "text", text: part.text },
@@ -134,7 +137,7 @@ function expandPart(
       return [
         {
           ...base,
-          itemId: part.id,
+          itemId: scopedPartId(messageId, part.id, partIds),
           status: partStatusOf(part.state),
           createdAt,
           payload: { kind: "reasoning", text: part.text },
@@ -225,6 +228,13 @@ function messageStatusOf(status: ConversationMessage["status"]): SessionItemStat
   if (status === "complete") return "complete";
   if (status === "failed") return "failed";
   return "interrupted";
+}
+
+/** 旧 part id 只在消息内唯一（provider 固定发 `txt-0`），条目 id 需要会话内唯一。 */
+function scopedPartId(messageId: string, partId: string, used: Map<string, number>): string {
+  const next = (used.get(partId) ?? 0) + 1;
+  used.set(partId, next);
+  return `${messageId}:${partId}:${next}`;
 }
 
 function partStatusOf(

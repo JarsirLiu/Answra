@@ -35,6 +35,43 @@ export function normalizeWarning(warning: CallWarning): AgentStreamEvent {
   }
 }
 
+/**
+ * 给文本/推理 part 换一个本次 step 内唯一的 id。
+ *
+ * provider 的 part id 只在单次响应内有意义：`@ai-sdk/openai-compatible` 每段文本都发 `txt-0`、
+ * 每个思考段都发 `reasoning-0`，同一响应里文本被工具调用打断后再续写也会复用同一个 id。
+ * 条目 id 要求会话内唯一，否则第二条消息的正文会被 `UNIQUE(conversation_id, item_id)` 静默丢弃。
+ *
+ * 工具 part 不受影响：`toolCallId` 由 provider 生成，本身唯一。
+ */
+export function createStreamPartIdScope(
+  scopeId: string,
+): (event: AgentStreamEvent) => AgentStreamEvent {
+  let ordinal = 0;
+  const active = new Map<string, string>();
+  return (event) => {
+    switch (event.type) {
+      case "text-start":
+      case "reasoning-start": {
+        ordinal += 1;
+        const partId = `${scopeId}:${event.partId}:${ordinal}`;
+        active.set(event.partId, partId);
+        return { ...event, partId };
+      }
+      case "text-delta":
+      case "text-end":
+      case "reasoning-delta":
+      case "reasoning-end": {
+        const partId = active.get(event.partId);
+        // 没有 start 的孤立事件保持原 id：它是被截断的流，不臆造归属。
+        return partId === undefined ? event : { ...event, partId };
+      }
+      default:
+        return event;
+    }
+  };
+}
+
 export function normalizeStreamPart(
   part: TextStreamPart<ToolSet>,
   context: StreamNormalizationContext,

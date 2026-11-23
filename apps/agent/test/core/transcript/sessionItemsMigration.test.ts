@@ -208,6 +208,34 @@ describe("session items migration", () => {
     expect(listSessionItemRows(db, SESSION, { afterSeq: 1, limit: 1 })[0]?.seq).toBe(2);
     expect(readSessionItemState(db, SESSION)?.nextSeq).toBe(items.length + 1);
   });
+
+  it("scopes repeated provider part ids so every text block is kept", () => {
+    const db = openDatabase();
+    insertSession(db);
+    insertMessage(db, 1, userMessage("m-u1", "第一轮"));
+    insertMessage(db, 2, assistantMessage("m-a1", [textPart("txt-0", "第一段")]));
+    insertMessage(db, 3, userMessage("m-u2", "第二轮"));
+    insertMessage(
+      db,
+      4,
+      assistantMessage("m-a2", [
+        textPart("txt-0", "第二段"),
+        toolPart("c-1", "read", { path: "a" }, { output: "ok" }),
+        textPart("txt-0", "第三段"),
+      ]),
+    );
+
+    migration.up(db);
+
+    const items = listSessionItemRows(db, SESSION);
+    expect(new Set(items.map((item) => item.itemId)).size).toBe(items.length);
+    expect(foldedMessages(db).map((message) => message.text)).toEqual([
+      "第一轮",
+      "第一段",
+      "第二轮",
+      "第二段第三段",
+    ]);
+  });
 });
 
 function openDatabase(): DatabaseSync {
@@ -361,10 +389,19 @@ function expectRestoredEquivalent(db: DatabaseSync, overrides?: ConversationMess
     messages: overrides ?? readStoredMessages(db),
   }).messages;
   const folded = foldedMessages(db);
-  expect(folded).toEqual(normalizeRestored(restored));
+  // part id 是存储侧派生键（按消息作用域重编号），不参与转录语义比较。
+  expect(folded.map(normalizePartIds)).toEqual(normalizeRestored(restored).map(normalizePartIds));
   return folded.map((message) =>
     message.role === "user" ? `${message.id}:user` : `${message.id}:assistant:${message.status}`,
   );
+}
+
+function normalizePartIds(message: ConversationMessage): ConversationMessage {
+  if (message.parts === undefined) return message;
+  return {
+    ...message,
+    parts: message.parts.map((part, index) => ({ ...part, id: `${part.kind}-${index}` })),
+  };
 }
 
 function readStoredMessages(db: DatabaseSync): ConversationMessage[] {

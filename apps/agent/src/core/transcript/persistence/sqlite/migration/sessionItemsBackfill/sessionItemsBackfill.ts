@@ -213,7 +213,10 @@ function expandMessage(turnId: string, message: LegacyMessage): ItemDraft[] {
     }
     return items;
   }
-  return parts.flatMap((part) => expandPart(messageBase, part));
+  // 旧 part id 只在单条消息内唯一（provider 固定发 `txt-0` / `reasoning-0`），
+  // 而条目 id 要求会话内唯一，所以按消息作用域重新编号。
+  const partIds = new Map<string, number>();
+  return parts.flatMap((part) => expandPart(messageBase, part, partIds));
 }
 
 function expandPart(
@@ -224,13 +227,14 @@ function expandPart(
     audienceAgentId?: string;
   },
   part: LegacyPart,
+  partIds: Map<string, number>,
 ): ItemDraft[] {
   switch (part.kind) {
     case "text":
       return [
         {
           ...base,
-          itemId: requireItemId(part.id, "text part"),
+          itemId: scopedPartId(base.messageId, requireItemId(part.id, "text part"), partIds),
           kind: "text",
           status: itemStatusOfPart(part.state),
           payload: { kind: "text", text: requirePartText(part.text) },
@@ -240,7 +244,7 @@ function expandPart(
       return [
         {
           ...base,
-          itemId: requireItemId(part.id, "reasoning part"),
+          itemId: scopedPartId(base.messageId, requireItemId(part.id, "reasoning part"), partIds),
           kind: "reasoning",
           status: itemStatusOfPart(part.state),
           payload: { kind: "reasoning", text: requirePartText(part.text) },
@@ -379,6 +383,13 @@ function requireItemId(value: unknown, label: string): string {
   const id = requirePartText(value);
   if (id.length === 0) throw new Error(`迁移字段缺少 ${label} id`);
   return id;
+}
+
+/** 同一会话内条目 id 必须唯一；旧 part id 只保证消息内唯一，按出现次数补序号。 */
+function scopedPartId(messageId: string, partId: string, used: Map<string, number>): string {
+  const next = (used.get(partId) ?? 0) + 1;
+  used.set(partId, next);
+  return `${messageId}:${partId}:${next}`;
 }
 
 function toIsoTimestamp(value: string): string {

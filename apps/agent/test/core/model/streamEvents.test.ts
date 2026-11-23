@@ -1,6 +1,7 @@
+import type { AgentStreamEvent } from "@answra/shared/schema";
 import type { TextStreamPart, ToolSet } from "ai";
 import { describe, expect, it } from "vitest";
-import { normalizeStreamPart } from "../../../src/core/model/streamEvents";
+import { createStreamPartIdScope, normalizeStreamPart } from "../../../src/core/model/streamEvents";
 
 describe("normalizeStreamPart", () => {
   it("normalizes fullStream content, tool and source events", () => {
@@ -188,5 +189,42 @@ describe("normalizeStreamPart", () => {
   it("does not persist raw provider chunks", () => {
     const raw: TextStreamPart<ToolSet> = { type: "raw", rawValue: { secret: "provider" } };
     expect(normalizeStreamPart(raw, { stepIndex: -1 })).toBeUndefined();
+  });
+});
+
+describe("createStreamPartIdScope", () => {
+  it("renames provider ids that repeat inside one response", () => {
+    const scope = createStreamPartIdScope("step-1");
+    const raw: AgentStreamEvent[] = [
+      { type: "text-start", partId: "txt-0" },
+      { type: "text-delta", partId: "txt-0", delta: "先" },
+      { type: "text-end", partId: "txt-0" },
+      { type: "reasoning-start", partId: "reasoning-0" },
+      { type: "reasoning-end", partId: "reasoning-0" },
+      { type: "text-start", partId: "txt-0" },
+      { type: "text-delta", partId: "txt-0", delta: "后" },
+    ];
+
+    expect(raw.map(scope)).toEqual([
+      { type: "text-start", partId: "step-1:txt-0:1" },
+      { type: "text-delta", partId: "step-1:txt-0:1", delta: "先" },
+      { type: "text-end", partId: "step-1:txt-0:1" },
+      { type: "reasoning-start", partId: "step-1:reasoning-0:2" },
+      { type: "reasoning-end", partId: "step-1:reasoning-0:2" },
+      { type: "text-start", partId: "step-1:txt-0:3" },
+      { type: "text-delta", partId: "step-1:txt-0:3", delta: "后" },
+    ]);
+  });
+
+  it("leaves tool identities untouched", () => {
+    const scope = createStreamPartIdScope("step-1");
+    expect(scope({ type: "tool-call", toolCallId: "call-1", toolName: "read", input: {} })).toEqual(
+      {
+        type: "tool-call",
+        toolCallId: "call-1",
+        toolName: "read",
+        input: {},
+      },
+    );
   });
 });

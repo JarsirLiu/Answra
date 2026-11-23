@@ -46,6 +46,7 @@
 - `kind`：`user` / `text` / `reasoning` / `tool-call` / `tool-result` / `turn-end`。
 - `status`：`complete` / `interrupted` / `failed`；`tool-call` / `tool-result` 行恒为 `complete`，工具成败由 `payload.outcome` 表达。
 - `user` / `turn-end` 不带 `message_id`；`user` 的 `item_id` 就是消息 id。
+- `text` / `reasoning` 的 `item_id` 是存储侧作用域化的 part id（provider 会反复发 `txt-0` / `reasoning-0`，不能直接当主键）。
 - 只允许 INSERT；同一 `item_id` 重复写入是 no-op，同一条目多来源只写一次。
 
 ## 每张表的使用时机
