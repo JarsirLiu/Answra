@@ -2,11 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   agentConnectionStateSchema,
   agentDurableEventSchema,
-  agentEventEnvelopeSchema,
-  agentEventSchema,
-  agentExecutionEventSchema,
   agentLiveOnlyEventSchema,
-  agentRunSnapshotSchema,
   agentStreamEventSchema,
   contextCompactionStateSchema,
   conversationMessagePartSchema,
@@ -99,7 +95,6 @@ describe("event schema", () => {
     ]);
     for (const event of events) {
       expect(agentStreamEventSchema.parse(event)).toEqual(event);
-      expect(agentEventSchema.parse(event)).toEqual(event);
       expect(agentDurableEventSchema.safeParse(event).success).toBe(
         !liveOnlyEventTypes.has(event.type),
       );
@@ -108,15 +103,7 @@ describe("event schema", () => {
     expect(agentStreamEventSchema.options).toHaveLength(28);
   });
 
-  it("keeps derived run lifecycle out of the durable and live catalogs", () => {
-    const derived = { type: "run-state-changed", state: "running", attempt: 1 } as const;
-    expect(agentExecutionEventSchema.parse(derived)).toEqual(derived);
-    expect(agentEventSchema.parse(derived)).toEqual(derived);
-    expect(agentDurableEventSchema.safeParse(derived).success).toBe(false);
-    expect(agentLiveOnlyEventSchema.safeParse(derived).success).toBe(false);
-  });
-
-  it("includes every session fact in the complete and durable catalogs", () => {
+  it("includes every session fact in the durable catalog", () => {
     const events = [
       {
         type: "turn-queued",
@@ -154,42 +141,22 @@ describe("event schema", () => {
     ] as const;
 
     for (const event of events) {
-      expect(agentExecutionEventSchema.parse(event)).toEqual(event);
-      expect(agentEventSchema.parse(event)).toEqual(event);
       expect(agentDurableEventSchema.parse(event)).toEqual(event);
     }
 
-    expect(agentExecutionEventSchema.options).toHaveLength(13);
-    expect(agentEventSchema.options).toHaveLength(41);
     expect(agentDurableEventSchema.options).toHaveLength(36);
     expect(agentLiveOnlyEventSchema.options).toHaveLength(4);
   });
 
   it("rejects provider-only fields that are not part of the app contract", () => {
     expect(
-      agentEventSchema.safeParse({
+      agentStreamEventSchema.safeParse({
         type: "text-delta",
         partId: "text-1",
         delta: "answer",
         providerMetadata: { vendor: "x" },
       }).success,
     ).toBe(false);
-  });
-
-  it("uses one envelope schema for both lifecycle and model stream facts", () => {
-    const envelope = agentEventEnvelopeSchema.parse({
-      schemaVersion: 1,
-      eventId: "event-2",
-      conversationId: "conversation",
-      runId: "run-1",
-      attemptId: "attempt-1",
-      sequence: 2,
-      aggregateRevision: 2,
-      producerId: "agent-local-1",
-      occurredAt: "2026-11-06T00:00:01.000Z",
-      event: { type: "text-delta", partId: "text-1", delta: "answer" },
-    });
-    expect(envelope.event).toEqual({ type: "text-delta", partId: "text-1", delta: "answer" });
   });
 
   it("keeps handoff inside a turn instead of treating it as a turn source", () => {
@@ -199,7 +166,7 @@ describe("event schema", () => {
   it("shares one terminal outcome vocabulary between turn and step events", () => {
     expect(stepOutcomeSchema.options).toEqual(turnOutcomeSchema.options);
     expect(() =>
-      agentEventSchema.parse({
+      agentDurableEventSchema.parse({
         type: "step-finished",
         stepId: "step-1",
         index: 0,
@@ -210,7 +177,7 @@ describe("event schema", () => {
 
   it("carries terminal error text for turn and step observability", () => {
     expect(
-      agentEventSchema.parse({
+      agentDurableEventSchema.parse({
         type: "turn-finished",
         status: "failed",
         reason: "model-error",
@@ -218,7 +185,7 @@ describe("event schema", () => {
       }),
     ).toMatchObject({ errorText: "model failed" });
     expect(
-      agentEventSchema.parse({
+      agentDurableEventSchema.parse({
         type: "step-finished",
         stepId: "step-1",
         index: 0,
@@ -266,31 +233,6 @@ describe("event schema", () => {
     ).toBe(false);
   });
 
-  it("accepts execution facts needed for future hosted adapters", () => {
-    expect(
-      agentRunSnapshotSchema.parse({
-        runId: "run-1",
-        state: "retry-wait",
-        attempt: 2,
-        generation: 0,
-        updatedAt: "2026-11-06T00:00:00.000Z",
-      }),
-    ).toMatchObject({ state: "retry-wait" });
-    expect(
-      agentEventEnvelopeSchema.parse({
-        schemaVersion: 1,
-        eventId: "event-1",
-        conversationId: "conversation",
-        runId: "run-1",
-        attemptId: "attempt-1",
-        sequence: 1,
-        aggregateRevision: 1,
-        producerId: "agent-local-1",
-        occurredAt: "2026-11-06T00:00:00.000Z",
-        event: { type: "run-state-changed", state: "running", attempt: 1 },
-      }),
-    ).toMatchObject({ event: { state: "running" } });
-  });
 });
 
 describe("execution status schema", () => {
@@ -337,7 +279,6 @@ describe("conversation message audience", () => {
   it("carries the active bot and participants in the snapshot", () => {
     const snapshot = {
       conversationId: "conv-1",
-      eventRevision: 3,
       lastSeq: 0,
       messages: [],
       activeAgentId: "intake",
@@ -352,7 +293,6 @@ describe("conversation message audience", () => {
   it("round-trips the context compaction lifecycle in the snapshot", () => {
     const snapshot = {
       conversationId: "conv-1",
-      eventRevision: 4,
       lastSeq: 0,
       messages: [],
       contextCompaction: {
@@ -371,7 +311,6 @@ describe("conversation message audience", () => {
   it("round-trips compaction boundaries with summary and manual instructions", () => {
     const snapshot = {
       conversationId: "conv-1",
-      eventRevision: 5,
       lastSeq: 0,
       messages: [],
       contextCompactionBoundaries: [

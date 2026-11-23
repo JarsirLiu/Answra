@@ -415,7 +415,6 @@ describe("agent worker host", () => {
         }),
       ]);
     });
-    expect(host.runtime.activeRunCount).toBe(0);
     // 模型未配置时回复在取令牌前就失败：用户文本保留，且不产生无意义的反向请求。
     expect(harness.tokenRequests()).toHaveLength(0);
     host.dispose();

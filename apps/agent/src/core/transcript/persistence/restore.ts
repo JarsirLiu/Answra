@@ -31,7 +31,6 @@ export function restoreConversationSnapshot(
   } = persisted;
   return {
     ...snapshot,
-    eventRevision: 0,
     // durable 游标是运行期状态：恢复后由 journal 末尾重新 seed，不能沿用旧进程的值。
     lastSeq: 0,
     messages: snapshot.messages.map(restoreMessage),

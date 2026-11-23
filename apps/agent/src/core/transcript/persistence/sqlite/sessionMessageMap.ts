@@ -80,7 +80,7 @@ export function dirtyMessages(
   persistedMessageIds: ReadonlySet<string>,
 ): ConversationMessage[] {
   if (mutation.kind === "stream-checkpoint") return [];
-  if (mutation.kind === "cleared" || mutation.kind === "event") return [];
+  if (mutation.kind === "cleared") return [];
   const byId = new Map(messages.map((message) => [message.id, message]));
   const ids = new Set<string>();
   for (const id of mutation.dirtyMessageIds ?? []) {

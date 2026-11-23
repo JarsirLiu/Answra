@@ -62,7 +62,6 @@ const stateSnapshotSchema = conversationSnapshotSchema.omit({
   messages: true,
   activeTurnId: true,
   activeMessageId: true,
-  eventRevision: true,
   lastSeq: true,
 });
 
@@ -127,7 +126,6 @@ export function splitSessionRecord(record: ConversationSessionRecord): SplitSess
     messages,
     activeTurnId: _activeTurnId,
     activeMessageId: _activeMessageId,
-    eventRevision: _eventRevision,
     lastSeq: _lastSeq,
     ...snapshot
   } = record.snapshot;
@@ -151,7 +149,6 @@ export function splitLegacySessionRecord(record: SessionRecordPayload): SplitSes
     activeRunId: _activeRunId,
     activeTurnId: _activeTurnId,
     activeMessageId: _activeMessageId,
-    eventRevision: _eventRevision,
     ...snapshot
   } = record.snapshot;
   return {
@@ -173,7 +170,6 @@ export function restoreStoredSession(stored: StoredSessionState): ConversationSe
     snapshot: restoreConversationSnapshot({
       ...stored.state.snapshot,
       conversationId: stored.state.conversationId,
-      eventRevision: 0,
       messages: stored.messages.map(cloneMessage),
     }),
     ...(stored.state.seed ? { seed: cloneSeed(stored.state.seed) } : {}),

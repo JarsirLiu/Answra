@@ -97,7 +97,7 @@ export class InterviewApplication {
       journal: options.sessionJournal ?? new MemorySessionJournal(),
       frames: this.sessionFrames,
       bridge: this.bridge,
-      onDurableEvent: (id, event) => this.contextPreparation.recordRunEvent(id, event),
+      onDurableEvent: (id, event) => this.contextPreparation.recordSessionEvent(id, event),
       onBoundary: (id) => this.pushSnapshot(id),
     });
     // 压缩器先于 journal 构造（journal 又依赖 preparation），因此观察口只在运行期解引用。
@@ -139,7 +139,7 @@ export class InterviewApplication {
       resumeQueued: (id, runtime) => this.sessionRuntime.resumeQueued(id, runtime),
       journalLastSeq: (id) => this.runtimeJournal.lastSequence(id),
       seedLastSeq: (id, sequence) => this.store.advanceLastSeq(id, sequence),
-      restoreTranscript: (id, plan, lastSeq) => this.bridge.recover(id, plan, lastSeq),
+      restoreTranscript: (id, plan) => this.bridge.recover(id, plan),
       onRecovered: async (id, plan) => {
         if (plan.interruptedTurnIds.length > 0) await this.pushSnapshot(id);
       },

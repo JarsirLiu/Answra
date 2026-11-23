@@ -5,8 +5,6 @@ import {
   agentPartKindSchema,
   agentPartStateSchema,
   agentRetrySchema,
-  agentRetryWaitSchema,
-  agentRunStateSchema,
   agentUsageSchema,
   compactionReasonSchema,
   contextCompactionTriggerSchema,
@@ -15,16 +13,6 @@ import {
   turnOutcomeSchema,
   turnSourceSchema,
 } from "./status";
-
-/** 派生 UI 生命周期（旧 run 词汇），不是可落盘事实；迁移期只由旧 wire envelope 承载。 */
-const derivedLifecycleEventOptions = [
-  z.strictObject({
-    type: z.literal("run-state-changed"),
-    state: agentRunStateSchema,
-    attempt: z.number().int().positive(),
-    retry: agentRetryWaitSchema.optional(),
-  }),
-] as const;
 
 /** durable 事实：用户可见的 Turn/Step/压缩生命周期与上下文用量。 */
 const durableFactEventOptions = [
@@ -97,12 +85,6 @@ const durableFactEventOptions = [
     kind: agentPartKindSchema,
     state: agentPartStateSchema,
   }),
-] as const;
-
-/** 旧 wire 的完整执行事件联合；`run-state-changed` 只存在于这里，不进 journal 或 frame。 */
-const executionEventOptions = [
-  ...derivedLifecycleEventOptions,
-  ...durableFactEventOptions,
 ] as const;
 
 /** Model events eligible for durable storage, excluding high-frequency deltas. */
@@ -245,15 +227,7 @@ const streamEventOptions = [
 
 /** Normalized model stream events, including high-frequency live deltas. */
 export const agentStreamEventSchema = z.discriminatedUnion("type", streamEventOptions);
-/** 旧 wire 的执行事件联合；包含派生的 `run-state-changed`，不是事实目录。 */
-export const agentExecutionEventSchema = z.discriminatedUnion("type", executionEventOptions);
-/** The one complete event payload union used by the legacy wire envelope. */
-export const agentEventSchema = z.discriminatedUnion("type", [
-  ...executionEventOptions,
-  ...streamEventOptions,
-]);
-
-/** Durable event payloads: facts only. Derived lifecycle never enters a journal or a frame. */
+/** Durable event payloads: facts only. */
 export const agentDurableEventSchema = z.discriminatedUnion("type", [
   ...durableFactEventOptions,
   ...durableCandidateStreamEventOptions,
@@ -262,26 +236,7 @@ export const agentDurableEventSchema = z.discriminatedUnion("type", [
 /** High-frequency deltas: live-only, never persisted, never part of a SessionFrame. */
 export const agentLiveOnlyEventSchema = z.discriminatedUnion("type", liveOnlyStreamEventOptions);
 
-/** The legacy transport envelope for every Agent event payload. */
-export const agentEventEnvelopeSchema = z.strictObject({
-  schemaVersion: z.literal(1),
-  eventId: z.string(),
-  tenantId: z.string().optional(),
-  actorId: z.string().optional(),
-  conversationId: z.string(),
-  runId: z.string(),
-  attemptId: z.string(),
-  stepId: z.string().optional(),
-  sequence: z.number().int().positive(),
-  aggregateRevision: z.number().int().nonnegative(),
-  causationId: z.string().optional(),
-  correlationId: z.string().optional(),
-  producerId: z.string(),
-  occurredAt: z.string().datetime(),
-  event: agentEventSchema,
-});
-
-/** Session journal 的目标 envelope；迁移期与旧 run envelope 并存，稳定后删旧字段。 */
+/** Session journal 的持久化 envelope。 */
 export const sessionEventEnvelopeSchema = z.strictObject({
   schemaVersion: z.literal(1),
   eventId: z.string(),
@@ -296,10 +251,7 @@ export const sessionEventEnvelopeSchema = z.strictObject({
   event: agentDurableEventSchema,
 });
 
-export type AgentExecutionEvent = z.infer<typeof agentExecutionEventSchema>;
 export type AgentStreamEvent = z.infer<typeof agentStreamEventSchema>;
-export type AgentEvent = z.infer<typeof agentEventSchema>;
 export type AgentDurableEvent = z.infer<typeof agentDurableEventSchema>;
 export type AgentLiveOnlyEvent = z.infer<typeof agentLiveOnlyEventSchema>;
-export type AgentEventEnvelope = z.infer<typeof agentEventEnvelopeSchema>;
 export type SessionEventEnvelope = z.infer<typeof sessionEventEnvelopeSchema>;

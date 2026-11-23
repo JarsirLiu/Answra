@@ -136,7 +136,7 @@ export class ConversationApplication {
       journal: sessionJournal ?? new MemorySessionJournal(),
       frames: this.sessionFrames,
       bridge: this.bridge,
-      onDurableEvent: (id, event) => this.contextPreparation.recordRunEvent(id, event),
+      onDurableEvent: (id, event) => this.contextPreparation.recordSessionEvent(id, event),
       onBoundary: (id) => this.pushSnapshot(id),
       authorizeHandoff: async (id, handoff) => {
         const snapshot = await this.loadRecoverySnapshot(id);
@@ -187,7 +187,7 @@ export class ConversationApplication {
       resumeQueued: (id, runtime) => this.sessionRuntime.resumeQueued(id, runtime),
       journalLastSeq: (id) => this.runtimeJournal.lastSequence(id),
       seedLastSeq: (id, sequence) => this.store.advanceLastSeq(id, sequence),
-      restoreTranscript: (id, plan, lastSeq) => this.bridge.recover(id, plan, lastSeq),
+      restoreTranscript: (id, plan) => this.bridge.recover(id, plan),
       onRecovered: async (id, plan) => {
         if (plan.interruptedTurnIds.length > 0) await this.pushSnapshot(id);
       },
@@ -277,9 +277,7 @@ export class ConversationApplication {
     await this.sessionRuntime.cancelSession(session);
     this.tokens.delete(conversationId);
     this.recovery.forget(session);
-    await this.store.clear(conversationId, {
-      eventRevision: (await this.store.load(conversationId)).eventRevision,
-    });
+    await this.store.clear(conversationId);
     await this.runtimeJournal.clear(session);
     return this.loadRecoverySnapshot(conversationId);
   }
@@ -641,9 +639,6 @@ export class ConversationApplication {
     this.agentRuntime.dispose();
   }
 
-  get activeRunCount(): number {
-    return this.agentRuntime.activeRunCount;
-  }
 }
 
 const MANUAL_COMPACTION_AGENT_RUN = "manual-compaction";

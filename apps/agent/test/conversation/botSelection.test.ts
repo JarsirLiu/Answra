@@ -69,9 +69,6 @@ function createHarness({ handoff }: { handoff?: TurnHandoff } = {}) {
     discovery: { visibleTo: { kind: "team", teamId: "solo" } },
     domain: "conversation",
     executor: {
-      startRun: async () => {
-        throw new Error("Session 底座不应再调用 startRun");
-      },
       prepare: async () => {
         throw new Error("注入的 StepRunner 不需要 prepare");
       },
@@ -92,11 +89,6 @@ function createHarness({ handoff }: { handoff?: TurnHandoff } = {}) {
     assertRegistered: vi.fn(),
     assertTeamMembers: vi.fn(),
     dispose: vi.fn(),
-    cancel: vi.fn(),
-    waitForRun: vi.fn(async () => undefined),
-    getRun: vi.fn(async () => undefined),
-    readEventsForRun: vi.fn(async () => []),
-    activeRunCount: 0,
     chatContextWindow: () => undefined,
   } as unknown as AgentRuntime;
   const app = new ConversationApplication({

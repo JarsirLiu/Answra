@@ -355,9 +355,6 @@ function fakeRuntime(): AgentRuntime {
 
 function makeBot(): CodingBot {
   const executor: AgentExecutor<CodingAgentInput> = {
-    startRun: async () => {
-      throw new Error("Session 底座不应调用 startRun");
-    },
     prepare: async () => ({ system: "", messages: [] }),
   };
   return {

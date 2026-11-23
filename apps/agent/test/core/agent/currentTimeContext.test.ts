@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { withCurrentTimeContext } from "../../../src/core/agent/currentTimeContext";
 import { type AgentDefinition, agentId } from "../../../src/core/agent/definition";
 import { AgentRuntime } from "../../../src/core/agent/runtime";
-import { MemoryExecutionStore } from "../../../src/execution/memoryStore";
 
 describe("agent current time context", () => {
   let runtime: AgentRuntime | undefined;
@@ -32,10 +31,7 @@ describe("agent current time context", () => {
   });
 
   it("injects through the runtime boundary by default and honors an explicit opt-out", async () => {
-    runtime = new AgentRuntime({
-      executionStore: new MemoryExecutionStore(),
-      emitEvent: () => undefined,
-    });
+    runtime = new AgentRuntime();
     const injected = runtime.registerAgent(createDefinition("test.injected"));
     const skipped = runtime.registerAgent({
       ...createDefinition("test.skipped"),

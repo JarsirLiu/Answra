@@ -7,7 +7,7 @@ import type {
   ConversationSessionSummary,
   ConversationSnapshot,
 } from "@answra/shared";
-import type { AgentEventEnvelope, AgentStreamEvent } from "@answra/shared/schema";
+import type { AgentStreamEvent } from "@answra/shared/schema";
 import type {
   ConversationMessageCatalog,
   ConversationMessagePage,
@@ -263,14 +263,6 @@ export class SqliteConversationStore
   async close(): Promise<void> {
     this.closePromise ??= this.closeDatabase();
     return this.closePromise;
-  }
-
-  override async applyAgentEvent(
-    conversationId: string,
-    envelope: AgentEventEnvelope,
-  ): Promise<void> {
-    await super.applyAgentEvent(conversationId, envelope);
-    this.checkpoints.schedule(conversationId, envelope.runId, envelope.event);
   }
 
   override async applySessionStreamEvent(

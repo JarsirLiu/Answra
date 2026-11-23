@@ -7,7 +7,7 @@ import {
   MANUAL_COMPACTION_INSTRUCTIONS_MAX_CHARS,
   type ManualCompactionResult,
 } from "@answra/shared";
-import type { AgentEvent } from "@answra/shared/schema";
+import type { AgentDurableEvent } from "@answra/shared/schema";
 import type { ContextUsageAnchor } from "../transcript/contextState";
 import {
   type ContextBudgetPolicy,
@@ -284,8 +284,8 @@ export class ContextPreparation {
   }
 
   /** 消费 run 事件：首步 usage 维护锚点；provider 输入 usage 持久化供恢复。 */
-  async recordRunEvent(conversationId: string, event: AgentEvent): Promise<void> {
-    await this.contextState.recordRunEvent(conversationId, event);
+  async recordSessionEvent(conversationId: string, event: AgentDurableEvent): Promise<void> {
+    await this.contextState.recordSessionEvent(conversationId, event);
   }
 
   private resolveBudget(): ResolvedContextBudget {

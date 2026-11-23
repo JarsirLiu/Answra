@@ -162,6 +162,10 @@ function checkImports(pkg) {
         errors.push(`${rel}: tool-presentation 必须保持 host 无关，禁止导入 "${spec}"`);
       }
 
+      if (normalizedRel.startsWith("packages/ui/src/") && spec.startsWith("@answra/agent")) {
+        errors.push(`${rel}: packages/ui/src 禁止依赖 apps/agent`);
+      }
+
       // 7. remote 纯库必须保持平台/宿主无关：不得引入 React/DOM/Ink、Node、Electron 或其它应用。
       if (
         normalizedRel.startsWith("packages/remote/") &&

@@ -1,5 +1,4 @@
 import { type ConversationMessage, MANUAL_COMPACTION_INSTRUCTIONS_MAX_CHARS } from "@answra/shared";
-import type { AgentEvent, AgentEventEnvelope } from "@answra/shared/schema";
 import type { ModelMessage } from "ai";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -100,26 +99,6 @@ function checkpoint(throughMessageId: string): ContextCheckpoint {
   };
 }
 
-function eventEnvelope(
-  conversationId: string,
-  runId: string,
-  aggregateRevision: number,
-  event: AgentEvent,
-): AgentEventEnvelope {
-  return {
-    schemaVersion: 1,
-    eventId: `event-${aggregateRevision}`,
-    conversationId,
-    runId,
-    attemptId: `${runId}:attempt:1`,
-    sequence: aggregateRevision,
-    aggregateRevision,
-    producerId: "test",
-    occurredAt: "2026-11-14T10:00:00.000Z",
-    event,
-  };
-}
-
 async function preparedStore(): Promise<MemoryConversationStore> {
   const store = new MemoryConversationStore();
   await store.create("conversation-1");
@@ -199,26 +178,25 @@ describe("ContextPreparation", () => {
   it("auto-compacts a single user turn while its tool loop is still running", async () => {
     const store = new MemoryConversationStore();
     await store.create("conversation-1");
-    await store.beginRun("conversation-1", "run-1", message("m1", "修复这个 bug"));
+    await store.beginSessionTurn("conversation-1", {
+      turnId: "turn-1",
+      messageId: "run-1",
+      authorAgentId: "general",
+      userMessage: message("m1", "修复这个 bug"),
+    });
     for (let index = 0; index < 6; index += 1) {
       const toolCallId = `call-${index}`;
-      await store.applyAgentEvent(
-        "conversation-1",
-        eventEnvelope("conversation-1", "run-1", index * 2 + 1, {
+      await store.applySessionStreamEvent("conversation-1", "run-1", {
           type: "tool-call",
           toolCallId,
           toolName: READ_TOOL_NAME,
           input: { path: `src/file-${index}.ts` },
-        }),
-      );
-      await store.applyAgentEvent(
-        "conversation-1",
-        eventEnvelope("conversation-1", "run-1", index * 2 + 2, {
+        });
+      await store.applySessionStreamEvent("conversation-1", "run-1", {
           type: "tool-result",
           toolCallId,
           output: `文件内容 ${index}`,
-        }),
-      );
+        });
     }
     const generate = vi.fn<ContextSummaryGenerator>(async ({ prompt }) => {
       expect(prompt).toContain("文件内容 5");
@@ -245,24 +223,23 @@ describe("ContextPreparation", () => {
   it("summarizes the transcript with the merged pruning watermark", async () => {
     const store = new MemoryConversationStore();
     await store.create("conversation-1");
-    await store.beginRun("conversation-1", "run-1", message("m1", "读取文件"));
-    await store.applyAgentEvent(
-      "conversation-1",
-      eventEnvelope("conversation-1", "run-1", 1, {
+    await store.beginSessionTurn("conversation-1", {
+      turnId: "turn-1",
+      messageId: "run-1",
+      authorAgentId: "general",
+      userMessage: message("m1", "读取文件"),
+    });
+    await store.applySessionStreamEvent("conversation-1", "run-1", {
         type: "tool-call",
         toolCallId: "call-1",
         toolName: READ_TOOL_NAME,
         input: { path: "src/file.ts" },
-      }),
-    );
-    await store.applyAgentEvent(
-      "conversation-1",
-      eventEnvelope("conversation-1", "run-1", 2, {
+      });
+    await store.applySessionStreamEvent("conversation-1", "run-1", {
         type: "tool-result",
         toolCallId: "call-1",
         output: "RAW_OLD_RESULT",
-      }),
-    );
+      });
     await store.saveContextState("conversation-1", {
       checkpoints: [],
       prunedToolCallIds: ["call-1"],
@@ -288,26 +265,25 @@ describe("ContextPreparation", () => {
   it("summarizes newly pruned tool results instead of the raw transcript", async () => {
     const store = new MemoryConversationStore();
     await store.create("conversation-1");
-    await store.beginRun("conversation-1", "run-1", message("m1", "读取文件"));
+    await store.beginSessionTurn("conversation-1", {
+      turnId: "turn-1",
+      messageId: "run-1",
+      authorAgentId: "general",
+      userMessage: message("m1", "读取文件"),
+    });
     for (let index = 0; index < 6; index += 1) {
       const toolCallId = `call-${index}`;
-      await store.applyAgentEvent(
-        "conversation-1",
-        eventEnvelope("conversation-1", "run-1", index * 2 + 1, {
+      await store.applySessionStreamEvent("conversation-1", "run-1", {
           type: "tool-call",
           toolCallId,
           toolName: READ_TOOL_NAME,
           input: { path: `src/file-${index}.ts` },
-        }),
-      );
-      await store.applyAgentEvent(
-        "conversation-1",
-        eventEnvelope("conversation-1", "run-1", index * 2 + 2, {
+        });
+      await store.applySessionStreamEvent("conversation-1", "run-1", {
           type: "tool-result",
           toolCallId,
           output: `RAW_RESULT_${index}`,
-        }),
-      );
+        });
     }
     const generate = vi.fn<ContextSummaryGenerator>(async ({ prompt }) => {
       expect(prompt).toContain(PRUNED_TOOL_RESULT_TEXT);
@@ -527,17 +503,17 @@ describe("ContextPreparation", () => {
       },
     });
 
-    await preparationInstance.recordRunEvent("conversation-1", {
+    await preparationInstance.recordSessionEvent("conversation-1", {
       type: "step-finished",
       stepId: "step-0",
       index: 0,
       state: "completed",
       usage: { inputTokens: 123, outputTokens: 1 },
     });
-    await preparationInstance.recordRunEvent("conversation-1", {
-      type: "run-state-changed",
-      state: "completed",
-      attempt: 1,
+    await preparationInstance.recordSessionEvent("conversation-1", {
+      type: "turn-finished",
+      status: "completed",
+      reason: "completed",
     });
 
     expect(await store.loadContextState("conversation-1")).toMatchObject({
@@ -569,14 +545,14 @@ describe("ContextPreparation", () => {
       },
     });
 
-    await preparationInstance.recordRunEvent("conversation-1", {
+    await preparationInstance.recordSessionEvent("conversation-1", {
       type: "step-finished",
       stepId: "step-1",
       index: 1,
       state: "completed",
       usage: { inputTokens: 999, outputTokens: 1 },
     });
-    await preparationInstance.recordRunEvent("conversation-1", {
+    await preparationInstance.recordSessionEvent("conversation-1", {
       type: "run-state-changed",
       state: "completed",
       attempt: 1,
@@ -597,14 +573,14 @@ describe("ContextPreparation", () => {
       },
     });
 
-    await preparationInstance.recordRunEvent("conversation-1", {
+    await preparationInstance.recordSessionEvent("conversation-1", {
       type: "step-finished",
       stepId: "step-0",
       index: 0,
       state: "completed",
       usage: { inputTokens: 321, outputTokens: 1 },
     });
-    await preparationInstance.recordRunEvent("conversation-1", {
+    await preparationInstance.recordSessionEvent("conversation-1", {
       type: "turn-finished",
       status: "completed",
       reason: "completed",
@@ -629,7 +605,7 @@ describe("ContextPreparation", () => {
         throw new Error("不应重建");
       },
     });
-    await preparationInstance.recordRunEvent("conversation-1", {
+    await preparationInstance.recordSessionEvent("conversation-1", {
       type: "step-finished",
       stepId: "step-0",
       index: 0,
@@ -637,7 +613,7 @@ describe("ContextPreparation", () => {
       usage: { inputTokens: 321, outputTokens: 1 },
     });
 
-    await preparationInstance.recordRunEvent("conversation-1", {
+    await preparationInstance.recordSessionEvent("conversation-1", {
       type: "turn-finished",
       status: "aborted",
       reason: "cancelled",
@@ -658,7 +634,7 @@ describe("ContextPreparation", () => {
       },
     });
 
-    await preparationInstance.recordRunEvent("conversation-1", {
+    await preparationInstance.recordSessionEvent("conversation-1", {
       type: "context-usage-changed",
       usedTokens: 2_700,
     });
@@ -695,10 +671,10 @@ describe("ContextPreparation", () => {
         throw new Error("不应重建");
       },
     });
-    await preparationInstance.recordRunEvent("conversation-1", {
-      type: "run-state-changed",
-      state: "completed",
-      attempt: 1,
+    await preparationInstance.recordSessionEvent("conversation-1", {
+      type: "turn-finished",
+      status: "completed",
+      reason: "completed",
     });
 
     expect((await store.loadContextState("conversation-1"))?.usageAnchor).toBeUndefined();

@@ -7,7 +7,7 @@ remain in `src/channels/`.
 
 | File | Contract meaning | Does not own |
 | --- | --- | --- |
-| `events.ts` | The complete Agent event catalog, the durable-fact and live-only subsets, the derived run lifecycle, `AgentEventEnvelope` (legacy wire) and `SessionEventEnvelope` (journal v1) | State transitions, durable adapter, UI projection |
+| `events.ts` | The Agent event catalog, durable-fact and live-only subsets, and `SessionEventEnvelope` (journal v1) | State transitions, durable adapter, UI projection |
 | `status.ts` | Turn/step/compaction status vocabulary, retry metadata and rebuildable snapshots | Event payloads, retry scheduling policy |
 | `session/frame.ts` | `SessionFrame` (durable transport with `seq`) and `LiveFrame` (live-only transport without a cursor), plus the v1 → v2 adapter | State transitions, journal persistence, subscription |
 | `session/summary.ts` | Session listing summary and page DTOs | Event catalog, persistence |
@@ -20,14 +20,13 @@ these files. `index.ts` is the stable export surface.
 ## Agent event catalog
 
 `events.ts` is the single source for all event payload definitions. It covers
-execution/session lifecycle and normalized model stream facts:
+  session lifecycle and normalized model stream facts:
 
-- Execution and session lifecycle: `turn-queued`, `turn-started`,
+- Session lifecycle: `turn-queued`, `turn-started`,
   `turn-finished`, `turn-handoff`, `compaction-started`,
   `compaction-finished`, `compaction-failed`, `compaction-aborted`,
   `step-started`, `step-finished`, `context-usage-changed`,
   `part-state-changed`.
-- Derived run lifecycle (legacy only): `run-state-changed`.
 - Generation: `start`, `finish`, `abort`, `error`.
 - Text: `text-start`, `text-delta`, `text-end`.
 - Reasoning: `reasoning-start`, `reasoning-delta`, `reasoning-end`.
@@ -40,18 +39,15 @@ execution/session lifecycle and normalized model stream facts:
 - Sources and generated content: `source-url`, `source-document`, `file`.
 - Retry: `retry`.
 
-`AgentEvent` is the complete payload union carried by the legacy
-`AgentEventEnvelope`. `AgentExecutionEvent` and `AgentStreamEvent` are consumer
-subsets derived from the same definitions; they do not introduce another event
-source. `SessionEventEnvelope` is the v1 journal row that carries
-`AgentDurableEvent`.
+`AgentDurableEvent` is the payload union that may enter the journal. `AgentStreamEvent`
+is the normalized provider stream union; it includes live deltas and completed
+model facts. `SessionEventEnvelope` is the journal row that carries durable facts.
 
 ## Durable facts and live deltas
 
 `AgentDurableEvent` lists the payloads that may enter a journal and a
-`SessionFrame`: user-visible Turn/Step/compaction facts plus the completed-value
-model events. `run-state-changed` is a derived run lifecycle and is therefore
-excluded; it only exists on the legacy wire envelope.
+`SessionFrame`: user-visible Turn/Step/compaction facts plus completed-value
+model events.
 
 `AgentLiveOnlyEvent` lists the four high-frequency deltas (`text-delta`,
 `reasoning-delta`, `tool-input-delta`, `tool-output-delta`). They are carried by

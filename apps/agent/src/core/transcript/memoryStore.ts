@@ -5,17 +5,11 @@ import type {
   ConversationSessionScope,
   ConversationSnapshot,
 } from "@answra/shared";
-import type {
-  AgentEventEnvelope,
-  AgentStreamEvent,
-  RunOutcome,
-  TurnOutcome,
-} from "@answra/shared/schema";
+import type { AgentStreamEvent, TurnOutcome } from "@answra/shared/schema";
 import { compactionBoundaries } from "./contextBoundary";
 import { cloneContextCheckpoint } from "./contextCheckpoint";
 import type { ContextState } from "./contextState";
 import type {
-  ConversationClearCursor,
   ConversationSessionMetadata,
   ConversationSessionSeed,
   ConversationStore,
@@ -52,7 +46,6 @@ export class MemoryConversationStore implements ConversationStore {
     const session: Session = {
       snapshot: {
         conversationId,
-        eventRevision: 0,
         lastSeq: 0,
         messages: [],
         ...(seed ? seedSnapshot(seed) : {}),
@@ -75,13 +68,12 @@ export class MemoryConversationStore implements ConversationStore {
     return snapshotOf(this.requireSession(conversationId));
   }
 
-  async clear(conversationId: string, cursor: ConversationClearCursor = {}): Promise<void> {
+  async clear(conversationId: string): Promise<void> {
     const session = this.sessions.get(conversationId);
     if (!session || session.snapshot.activeMessageId) return;
     session.contextState = undefined;
     session.snapshot = {
       conversationId,
-      eventRevision: Math.max(session.snapshot.eventRevision, cursor.eventRevision ?? 0),
       // 清空会同时清空 journal，seq 从 1 重新开始；游标必须归零，否则新事实会被旧游标吞掉。
       lastSeq: 0,
       messages: [],
@@ -99,93 +91,37 @@ export class MemoryConversationStore implements ConversationStore {
     session.snapshot = { ...session.snapshot, lastSeq: sequence };
   }
 
-  async beginRun(
-    conversationId: string,
-    runId: string,
-    userMessage: ConversationMessage,
-    eventRevision = 0,
-    authorAgentId?: string,
-    turnId?: string,
-  ): Promise<void> {
-    const previous = this.captureSession(conversationId);
-    this.beginMessages(
-      conversationId,
-      runId,
-      userMessage,
-      true,
-      eventRevision,
-      authorAgentId,
-      turnId,
-    );
-    await this.commitMutation(conversationId, previous, {
-      kind: "run-started",
-      dirtyMessageIds: [userMessage.id, runId],
-    });
-  }
-
-  async beginReplyRun(
-    conversationId: string,
-    runId: string,
-    eventRevision = 0,
-    authorAgentId?: string,
-    turnId?: string,
-  ): Promise<ConversationMessage> {
+  async beginSessionTurn(conversationId: string, input: SessionTurnStartInput): Promise<void> {
     const session = this.requireSession(conversationId);
     if (session.snapshot.activeMessageId) throw new Error("当前回复尚未完成");
-    const last = session.snapshot.messages.at(-1);
-    if (last?.role !== "user" || last.status !== "complete")
-      throw new Error("没有可回复的用户消息");
+    if (input.userMessage === undefined && session.snapshot.messages.length > 0) {
+      const last = session.snapshot.messages.at(-1);
+      if (last?.role !== "user" || last.status !== "complete") throw new Error("没有可回复的用户消息");
+    }
     const previous = cloneRecord(session);
-    this.appendAssistantPlaceholder(session, runId, eventRevision, authorAgentId, turnId);
-    await this.commitMutation(conversationId, previous, {
-      kind: "run-started",
-      dirtyMessageIds: [runId],
-    });
-    return cloneMessage(last);
-  }
-
-  async beginOpeningRun(
-    conversationId: string,
-    runId: string,
-    eventRevision = 0,
-    authorAgentId?: string,
-    turnId?: string,
-  ): Promise<void> {
-    const session = this.requireSession(conversationId);
-    if (session.snapshot.activeMessageId) throw new Error("当前回复尚未完成");
-    if (session.snapshot.messages.length > 0) throw new Error("开场只能用于空会话");
-    const previous = cloneRecord(session);
-    this.appendAssistantPlaceholder(session, runId, eventRevision, authorAgentId, turnId);
-    await this.commitMutation(conversationId, previous, {
-      kind: "run-started",
-      dirtyMessageIds: [runId],
-    });
-  }
-
-  private appendAssistantPlaceholder(
-    session: Session,
-    runId: string,
-    eventRevision: number,
-    authorAgentId?: string,
-    turnId?: string,
-  ): void {
-    const assistant = createAssistantMessage(runId, authorAgentId);
+    if (input.userMessage !== undefined && input.userMessage.role !== "user") throw new Error("run 必须从用户消息开始");
     session.snapshot = {
       ...session.snapshot,
-      messages: [...session.snapshot.messages, assistant],
-      activeMessageId: runId,
-      eventRevision: Math.max(session.snapshot.eventRevision, eventRevision),
-      ...(authorAgentId ? { activeAgentId: authorAgentId } : {}),
-      ...(turnId === undefined ? {} : { activeTurnId: turnId }),
+      messages: [
+        ...session.snapshot.messages.map(cloneMessage),
+        ...(input.userMessage ? [normalizeUserMessage(input.userMessage)] : []),
+        createAssistantMessage(input.messageId, input.authorAgentId),
+      ],
+      activeMessageId: input.messageId,
+      activeTurnId: input.turnId,
+      ...(input.authorAgentId ? { activeAgentId: input.authorAgentId } : {}),
     };
+    await this.commitMutation(conversationId, previous, {
+      kind: "run-started",
+      dirtyMessageIds: [input.messageId, ...(input.userMessage ? [input.userMessage.id] : [])],
+    });
   }
 
-  async beginHandoffRun(
+  async beginSessionAssistant(
     conversationId: string,
-    runId: string,
-    targetAgentId: string,
-    eventRevision = 0,
-  ): Promise<ConversationMessage> {
+    messageId: string,
+    authorAgentId: string,
+  ): Promise<void> {
     const session = this.requireSession(conversationId);
     if (session.snapshot.activeMessageId) throw new Error("当前回复尚未完成");
     const last = session.snapshot.messages.at(-1);
@@ -193,64 +129,21 @@ export class MemoryConversationStore implements ConversationStore {
       last?.role !== "assistant" ||
       last.status !== "complete" ||
       last.audience?.kind !== "bot" ||
-      last.audience.agentId !== targetAgentId
-    )
+      last.audience.agentId !== authorAgentId
+    ) {
       throw new Error("没有可接管给当前 Bot 的交接消息");
+    }
     const previous = cloneRecord(session);
-    const assistant = createAssistantMessage(runId, targetAgentId);
     session.snapshot = {
       ...session.snapshot,
-      messages: [...session.snapshot.messages, assistant],
-      activeMessageId: runId,
-      eventRevision: Math.max(session.snapshot.eventRevision, eventRevision),
-      activeAgentId: targetAgentId,
+      messages: [...session.snapshot.messages, createAssistantMessage(messageId, authorAgentId)],
+      activeMessageId: messageId,
+      activeAgentId: authorAgentId,
     };
     await this.commitMutation(conversationId, previous, {
       kind: "run-started",
-      dirtyMessageIds: [assistant.id],
+      dirtyMessageIds: [messageId],
     });
-    return cloneMessage(last);
-  }
-
-  async beginSessionTurn(conversationId: string, input: SessionTurnStartInput): Promise<void> {
-    const session = this.requireSession(conversationId);
-    if (input.userMessage !== undefined) {
-      await this.beginRun(
-        conversationId,
-        input.messageId,
-        input.userMessage,
-        input.eventRevision ?? 0,
-        input.authorAgentId,
-        input.turnId,
-      );
-      return;
-    }
-    if (session.snapshot.messages.length === 0) {
-      await this.beginOpeningRun(
-        conversationId,
-        input.messageId,
-        input.eventRevision ?? 0,
-        input.authorAgentId,
-        input.turnId,
-      );
-      return;
-    }
-    await this.beginReplyRun(
-      conversationId,
-      input.messageId,
-      input.eventRevision ?? 0,
-      input.authorAgentId,
-      input.turnId,
-    );
-  }
-
-  async beginSessionAssistant(
-    conversationId: string,
-    messageId: string,
-    authorAgentId: string,
-    eventRevision = 0,
-  ): Promise<void> {
-    await this.beginHandoffRun(conversationId, messageId, authorAgentId, eventRevision);
   }
 
   async finishSessionTurn(conversationId: string, turnId: string): Promise<void> {
@@ -286,9 +179,8 @@ export class MemoryConversationStore implements ConversationStore {
     conversationId: string,
     messageId: string,
     outcome: TurnOutcome,
-    eventRevision = 0,
   ): Promise<void> {
-    this.finishAssistant(conversationId, messageId, outcome, eventRevision);
+    this.finishAssistant(conversationId, messageId, outcome);
     await this.afterMutation(conversationId, {
       kind: "run-finished",
       dirtyMessageIds: [messageId],
@@ -356,21 +248,6 @@ export class MemoryConversationStore implements ConversationStore {
     return snapshotOf(session);
   }
 
-  async beginEphemeralRun(
-    conversationId: string,
-    runId: string,
-    userMessage: ConversationMessage,
-    eventRevision = 0,
-    authorAgentId?: string,
-  ): Promise<void> {
-    const previous = this.captureSession(conversationId);
-    this.beginMessages(conversationId, runId, userMessage, false, eventRevision, authorAgentId);
-    await this.commitMutation(conversationId, previous, {
-      kind: "run-started",
-      dirtyMessageIds: [userMessage.id, runId],
-    });
-  }
-
   async loadContextState(conversationId: string): Promise<ContextState | undefined> {
     const state = this.requireSession(conversationId).contextState;
     return state ? cloneContextState(state) : undefined;
@@ -385,82 +262,15 @@ export class MemoryConversationStore implements ConversationStore {
 
   async close(): Promise<void> {}
 
-  async applyAgentEvent(conversationId: string, envelope: AgentEventEnvelope): Promise<void> {
-    const { event, runId, aggregateRevision } = envelope;
-    const session = this.requireSession(conversationId);
-    if (envelope.conversationId !== conversationId) throw new Error("事件不属于当前会话");
-    if (aggregateRevision <= session.snapshot.eventRevision) return;
-    if (event.type === "run-state-changed") {
-      const outcome = runOutcomeForState(event.state);
-      if (outcome) {
-        this.finishRun(conversationId, runId, outcome, aggregateRevision);
-        await this.afterMutation(conversationId, {
-          kind: "run-finished",
-          dirtyMessageIds: [runId],
-        });
-        return;
-      }
-      if (session.snapshot.activeMessageId === runId)
-        session.snapshot = { ...session.snapshot, eventRevision: aggregateRevision };
-      return;
-    }
-    if (session.snapshot.activeMessageId !== runId) return;
-    if (
-      event.type === "step-started" ||
-      event.type === "step-finished" ||
-      event.type === "context-usage-changed" ||
-      event.type === "part-state-changed" ||
-      event.type === "turn-queued" ||
-      event.type === "turn-started" ||
-      event.type === "turn-finished" ||
-      event.type === "turn-handoff" ||
-      event.type === "compaction-started" ||
-      event.type === "compaction-finished" ||
-      event.type === "compaction-failed" ||
-      event.type === "compaction-aborted"
-    ) {
-      session.snapshot = { ...session.snapshot, eventRevision: aggregateRevision };
-      return;
-    }
-    this.applyStreamEvent(conversationId, runId, event);
-    session.snapshot = { ...session.snapshot, eventRevision: aggregateRevision };
-  }
-
-  private applyStreamEvent(conversationId: string, runId: string, event: AgentStreamEvent): void {
-    const session = this.requireSession(conversationId);
-    if (session.snapshot.activeMessageId !== runId) throw new Error("会话没有匹配的活动 run");
-    const message = session.snapshot.messages.find((item) => item.id === runId);
-    if (!message) throw new Error("会话没有匹配的助手消息");
-    const nextMessage = applyTranscriptEvent(message, message.parts ?? [], event);
-    if (!nextMessage) return;
-    session.snapshot = {
-      ...session.snapshot,
-      messages: session.snapshot.messages.map((item) => (item.id === runId ? nextMessage : item)),
-    };
-  }
-
-  private finishRun(
-    conversationId: string,
-    runId: string,
-    outcome: RunOutcome,
-    eventRevision = 0,
-  ): void {
-    const session = this.requireSession(conversationId);
-    if (session.snapshot.activeMessageId !== runId) return;
-    this.finishAssistant(conversationId, runId, outcome, eventRevision);
-  }
-
   private finishAssistant(
     conversationId: string,
     messageId: string,
-    outcome: RunOutcome,
-    eventRevision = 0,
+    outcome: TurnOutcome,
   ): void {
     const session = this.requireSession(conversationId);
     if (!session.snapshot.messages.some((message) => message.id === messageId)) return;
     session.snapshot = {
       ...session.snapshot,
-      eventRevision: Math.max(session.snapshot.eventRevision, eventRevision),
       ...(session.snapshot.activeMessageId === messageId ? { activeMessageId: undefined } : {}),
       messages: session.snapshot.messages.map((message) =>
         message.id === messageId
@@ -479,10 +289,6 @@ export class MemoryConversationStore implements ConversationStore {
     };
   }
 
-  private captureSession(conversationId: string): ConversationSessionRecord {
-    return cloneRecord(this.requireSession(conversationId));
-  }
-
   private async commitMutation(
     conversationId: string,
     previous: ConversationSessionRecord,
@@ -495,35 +301,6 @@ export class MemoryConversationStore implements ConversationStore {
       if (this.sessions.has(conversationId)) this.sessions.set(conversationId, previous);
       throw error;
     }
-  }
-
-  private beginMessages(
-    conversationId: string,
-    runId: string,
-    userMessage: ConversationMessage,
-    preserveHistory: boolean,
-    eventRevision: number,
-    authorAgentId?: string,
-    turnId?: string,
-  ): void {
-    const session = this.requireSession(conversationId);
-    if (session.snapshot.activeMessageId) throw new Error("当前回复尚未完成");
-    if (userMessage.role !== "user") throw new Error("run 必须从用户消息开始");
-    if (!preserveHistory) session.contextState = undefined;
-    session.snapshot = {
-      conversationId,
-      eventRevision: Math.max(session.snapshot.eventRevision, eventRevision),
-      lastSeq: session.snapshot.lastSeq,
-      messages: [
-        ...(preserveHistory ? session.snapshot.messages.map(cloneMessage) : []),
-        normalizeUserMessage(userMessage),
-        createAssistantMessage(runId, authorAgentId),
-      ],
-      activeMessageId: runId,
-      ...(turnId === undefined ? {} : { activeTurnId: turnId }),
-      ...(session.seed ? seedSnapshot(session.seed) : {}),
-      ...(authorAgentId ? { activeAgentId: authorAgentId } : {}),
-    };
   }
 
   protected async afterMutation(
@@ -566,7 +343,7 @@ function cloneRecord(record: ConversationSessionRecord): ConversationSessionReco
 
 function settleInterruptedParts(
   parts: ConversationMessagePart[] | undefined,
-  outcome: RunOutcome,
+  outcome: TurnOutcome,
 ): ConversationMessagePart[] | undefined {
   if (!parts || outcome === "completed") return parts;
   const state = outcome === "failed" ? "failed" : "interrupted";
@@ -580,27 +357,6 @@ function settleInterruptedParts(
       return part;
     return { ...part, state };
   });
-}
-
-function runOutcomeForState(
-  state: Extract<AgentEventEnvelope["event"], { type: "run-state-changed" }>["state"],
-): "completed" | "failed" | "aborted" | "superseded" | undefined {
-  switch (state) {
-    case "completed":
-      return "completed";
-    case "failed":
-    case "orphaned":
-      return "failed";
-    case "aborted":
-      return "aborted";
-    case "superseded":
-      return "superseded";
-    case "queued":
-    case "claimed":
-    case "running":
-    case "retry-wait":
-      return undefined;
-  }
 }
 
 function createAssistantMessage(runId: string, authorAgentId?: string): ConversationMessage {

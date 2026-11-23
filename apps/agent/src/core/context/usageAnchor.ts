@@ -1,5 +1,5 @@
 /** usage 锚点生命周期：记录成功 run 首个 step 的实际输入 token，并在投影或 run 失效后清理。 */
-import type { AgentEvent } from "@answra/shared/schema";
+import type { AgentDurableEvent } from "@answra/shared/schema";
 import type { ContextState, ContextUsageAnchor } from "../transcript/contextState";
 import type { ConversationStore } from "../transcript/store";
 
@@ -36,8 +36,8 @@ export class ContextUsageAnchorTracker {
     this.pending.set(conversationId, { estimatedTokens, projectionChanged });
   }
 
-  /** 消费 run 事件：首个 step 记录实际值，终态决定提交或清理。 */
-  async recordRunEvent(conversationId: string, event: AgentEvent): Promise<void> {
+  /** 消费 Session 事实：首个 step 记录实际值，Turn 终态决定提交或清理。 */
+  async recordSessionEvent(conversationId: string, event: AgentDurableEvent): Promise<void> {
     if (event.type === "step-finished") {
       if (event.index !== 0) return;
       const pending = this.pending.get(conversationId);
@@ -47,24 +47,10 @@ export class ContextUsageAnchorTracker {
       }
       return;
     }
-    // Session 底座用 Turn 终态替代 run 终态；两者语义一致，不能只认旧事件。
     if (event.type === "turn-finished") {
       if (event.status === "completed") await this.commit(conversationId);
       else await this.discard(conversationId);
       return;
-    }
-    if (event.type !== "run-state-changed") return;
-    if (event.state === "completed") {
-      await this.commit(conversationId);
-      return;
-    }
-    if (
-      event.state === "failed" ||
-      event.state === "aborted" ||
-      event.state === "orphaned" ||
-      event.state === "superseded"
-    ) {
-      await this.discard(conversationId);
     }
   }
 

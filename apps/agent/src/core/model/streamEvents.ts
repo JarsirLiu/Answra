@@ -5,8 +5,6 @@
  * 状态或 UI 状态；provider metadata 和 raw chunk 不进入共享 schema。
  */
 import type {
-  AgentEvent,
-  AgentExecutionEvent,
   AgentFinishReason,
   AgentStreamEvent,
 } from "@answra/shared/schema";
@@ -43,7 +41,8 @@ export function normalizeWarning(warning: CallWarning): AgentStreamEvent {
 export function normalizeStreamPart(
   part: TextStreamPart<ToolSet>,
   context: StreamNormalizationContext,
-): AgentEvent | AgentEvent[] | undefined {
+): AgentStreamEvent | AgentStreamEvent[] | undefined {
+  void context;
   switch (part.type) {
     case "start":
       return { type: "start" };
@@ -113,11 +112,9 @@ export function normalizeStreamPart(
     case "file":
       return { type: "file", mediaType: part.file.mediaType, base64: part.file.base64 };
     case "start-step":
-      return [stepStarted(context.stepIndex), ...part.warnings.map(normalizeWarning)];
+      return part.warnings.map(normalizeWarning);
     case "finish-step": {
-      const finished = stepFinished(context.stepIndex, part);
-      const usage = contextUsageChanged(part.usage);
-      return usage === undefined ? finished : [finished, usage];
+      return undefined;
     }
     case "error":
       return { type: "error", errorText: modelErrorText(part.error) };
@@ -126,29 +123,6 @@ export function normalizeStreamPart(
     default:
       return undefined;
   }
-}
-
-function stepStarted(index: number): AgentExecutionEvent {
-  return { type: "step-started", stepId: `step-${index}`, index };
-}
-
-function stepFinished(index: number, part: FinishStepPart): AgentExecutionEvent {
-  const finishReason = normalizeFinishReason(part.finishReason);
-  return {
-    type: "step-finished",
-    stepId: `step-${index}`,
-    index,
-    state: finishReason === "error" ? "failed" : "completed",
-    finishReason,
-    usage: normalizeUsage(part.usage),
-  };
-}
-
-function contextUsageChanged(usage: FinishStepPart["usage"]): AgentEvent | undefined {
-  const usedTokens = usage.inputTokens;
-  return usedTokens === undefined || usedTokens <= 0
-    ? undefined
-    : { type: "context-usage-changed", usedTokens };
 }
 
 function normalizeSource(source: SourcePart): AgentStreamEvent {

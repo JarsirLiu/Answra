@@ -9,4 +9,4 @@ answer/
   host.ts         Answer-only worker 组合入口
 ```
 
-Answer 不拥有第二套事件或状态机。它使用共享 `AgentEventEnvelope` 和 `ConversationStore`；失败终态保留失败消息，成功或中止后清理临时 transcript。
+Answer 不拥有第二套事件或状态机。它使用共享 Session 事件与 `ConversationStore`；失败终态保留失败消息，成功或中止后清理临时 transcript。

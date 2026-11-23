@@ -59,8 +59,6 @@ export type {
   ConversationSessionSeed,
   ConversationStore,
 } from "./core/transcript/store";
-export { MemoryExecutionStore } from "./execution/memoryStore";
-export type { ExecutionStore } from "./execution/store";
 export type { AgentHost, AgentHostOptions, AgentTransport } from "./host";
 export { startAgentHost } from "./host";
 export type {

@@ -84,7 +84,6 @@ describe("remote frame schema", () => {
       type: "snapshot",
       snapshot: {
         conversationId: "conversation-1",
-        eventRevision: 0,
         lastSeq: 0,
         messages: [],
       },
@@ -180,7 +179,6 @@ describe("remote frame schema", () => {
       turnId: "turn-1",
       snapshot: {
         conversationId: "conversation-1",
-        eventRevision: 0,
         lastSeq: 0,
         messages: [],
       },

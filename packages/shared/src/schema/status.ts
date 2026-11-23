@@ -11,18 +11,6 @@ export const agentRetrySchema = z.strictObject({
 export const agentRetryWaitSchema = agentRetrySchema.extend({
   scheduledAt: z.string().datetime(),
 });
-export const agentRunStateSchema = z.enum([
-  "queued",
-  "claimed",
-  "running",
-  "retry-wait",
-  "completed",
-  "failed",
-  "aborted",
-  "superseded",
-  "orphaned",
-]);
-export const runOutcomeSchema = z.enum(["completed", "failed", "aborted", "superseded"]);
 /** 用户可见的 turn 生命周期；step 活动、压缩和重试都不是 turn 状态。 */
 export const turnStatusSchema = z.enum(["queued", "running", "completed", "failed", "aborted"]);
 /** Turn/Step 共用的终态词汇；`queued`/`running` 只存在于活动投影。 */
@@ -156,16 +144,6 @@ export const contextPruningSchema = z.strictObject({
   savedTokens: z.number().int().nonnegative(),
   updatedAt: z.string().datetime(),
 });
-export const agentRunSnapshotSchema = z.strictObject({
-  runId: z.string(),
-  state: agentRunStateSchema,
-  attempt: z.number().int().positive(),
-  generation: z.number().int().nonnegative(),
-  currentStepId: z.string().optional(),
-  updatedAt: z.string().datetime(),
-});
-export type AgentRunState = z.infer<typeof agentRunStateSchema>;
-export type RunOutcome = z.infer<typeof runOutcomeSchema>;
 export type TurnStatus = z.infer<typeof turnStatusSchema>;
 export type TurnOutcome = z.infer<typeof turnOutcomeSchema>;
 export type StepOutcome = z.infer<typeof stepOutcomeSchema>;
@@ -179,7 +157,6 @@ export type AgentPartState = z.infer<typeof agentPartStateSchema>;
 export type AgentPartKind = z.infer<typeof agentPartKindSchema>;
 export type AgentFinishReason = z.infer<typeof agentFinishReasonSchema>;
 export type AgentUsage = z.infer<typeof agentUsageSchema>;
-export type AgentRunSnapshot = z.infer<typeof agentRunSnapshotSchema>;
 export type ContextCompactionState = z.infer<typeof contextCompactionStateSchema>;
 export type ContextCompactionTrigger = z.infer<typeof contextCompactionTriggerSchema>;
 export type ContextCompactionStatus = z.infer<typeof contextCompactionSchema>;

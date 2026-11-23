@@ -15,9 +15,6 @@ function createExecutor(): {
   return {
     prepared,
     executor: {
-      startRun: async () => {
-        throw new Error("not used");
-      },
       prepare: async (input) => {
         prepared.push(input);
         return MODEL_REQUEST;

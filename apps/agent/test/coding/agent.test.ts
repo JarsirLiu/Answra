@@ -4,7 +4,6 @@ import { CODING_POLICY } from "../../src/coding/policy";
 import { createBuiltinToolRegistry } from "../../src/core/tool";
 import { MemoryConversationStore } from "../../src/core/transcript/memoryStore";
 import { createUserMessage } from "../../src/core/transcript/message";
-import { createExecutionEvent } from "../../src/execution/events";
 
 describe("coding Agent", () => {
   it("uses its own identity, prompt, and coding tool set", async () => {
@@ -50,61 +49,4 @@ describe("coding Agent", () => {
     await tools.dispose();
   });
 
-  it("keeps conversation history in the coding request", async () => {
-    const store = new MemoryConversationStore();
-    const tools = createBuiltinToolRegistry();
-    const definition = createCodingAgentDefinition({ store, tools });
-    const conversationId = "coding-history-test";
-
-    await store.create(conversationId, {
-      activeAgentId: CODING_AGENT_ID,
-      participantAgentIds: [CODING_AGENT_ID],
-    });
-    await store.beginRun(
-      conversationId,
-      "coding-run-1",
-      createUserMessage("coding-user-1", { text: "我叫小明", images: [] }),
-      0,
-      CODING_AGENT_ID,
-    );
-    await store.applyAgentEvent(
-      conversationId,
-      createExecutionEvent(
-        {
-          runId: "coding-run-1",
-          attemptId: "coding-attempt-1",
-          conversationId,
-          producerId: "test",
-          sequence: 1,
-          aggregateRevision: 1,
-          occurredAt: new Date(0).toISOString(),
-        },
-        { type: "run-state-changed", state: "completed", attempt: 1 },
-      ),
-    );
-    await store.beginRun(
-      conversationId,
-      "coding-run-2",
-      createUserMessage("coding-user-2", { text: "我叫什么？", images: [] }),
-      1,
-      CODING_AGENT_ID,
-    );
-
-    const modelRequest = await definition.prepare(
-      {
-        conversationId,
-        runId: "coding-run-2",
-        request: { text: "我叫什么？", images: [] },
-        policy: CODING_POLICY,
-        workspaceRoot: "D:/coding-workspace",
-      },
-      new AbortController().signal,
-    );
-
-    const messages = JSON.stringify(modelRequest.messages);
-    expect(messages).toContain("我叫小明");
-    expect(messages).toContain("我叫什么？");
-
-    await tools.dispose();
-  });
 });

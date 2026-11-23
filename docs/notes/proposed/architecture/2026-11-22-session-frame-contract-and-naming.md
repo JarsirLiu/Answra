@@ -112,7 +112,7 @@ export const liveFrameSchema = z.strictObject({
 | `ConversationSendResult.runId` | `turnId` | 排队与活动槽位都以 Turn 为单位 |
 | `AgentRunSnapshot` | — | 随 P3 删除 |
 
-**禁词**（`pnpm architecture:check` 强制，`apps/agent/src/answer/` 的 P3 前 shim 除外）：`run`、`Run`、`execution`、`Execution`、`AgentEventEnvelope`、`aggregateRevision`。
+命名约束以实际职责和公开契约为准：事件使用过去式事实名，帧表示传输单位，投影与视图分别表示纯折叠结果和前端状态。保留历史兼容代码时，应通过类型和调用关系明确其边界，不以全局禁词扫描替代语义审查。
 
 ### D4 `run-state-changed` 的逐项映射
 
@@ -171,7 +171,7 @@ export const liveFrameSchema = z.strictObject({
 | P2a 切读取面（第 3a 步） | UI / CLI 改吃 `SessionFrame` / `LiveFrame`，取消与渲染改用 `activeTurnId` + `activeMessageId`；快照与频道契约一次改到位；服务端继续双发（projector 保留） | 桌面、CLI 的流式/工具/handoff/排队/取消/压缩后继续与改动前一致；`pnpm verify` 全绿 |
 | P2b 删写入面（第 3b 步） | 删除 `AgentEventEnvelope` 通道、`SessionEventProjector`、`run-state-changed`；恢复协调器端口收敛；remote 保持 v1 直接换成帧线协议 | 全仓 `\brunId\b` 归零（Answer shim 除外）；remote 命令/帧契约只剩 `read-frames` / `session-frame` / `live-frame`；`pnpm verify` 全绿 |
 | P3 删旧引擎 | Answer 迁到 `SessionRuntime`（内存 journal、单 Turn）；删除 `executeRun.ts` 与 Answer shim | `run-state-changed` 全仓归零；Answer 截图答题回归通过 |
-| P4 上锁 | `architecture:check` 增加禁词与 import 方向检查 | 故意引入 `runId` 时构建失败 |
+| P4 上锁 | `architecture:check` 保留 import 方向、包边界与运行时隔离检查；以真实类型和调用关系约束事件/帧职责 | 类型、行为与架构检查通过 |
 
 原 P3（取消语义）并入 P2：只要事件载荷从 envelope 换成 frame，所有宿主就必须同时切换；若远程仍留在 v1，桌面 renderer 会同时收到两种形状，等于再引入一个翻译层。因此 `turnId` 与 snapshot 字段必须与读取面切换在同一变更内完成。
 
@@ -324,9 +324,9 @@ P2 内部再拆四个子步，前两步不改变线上行为，第三步是唯�
   - 路由修复：`conversationIpc` 的 `isAnswerConversationId` 同时识别 `ActiveExamConversationId` 与 `screenshot-` 前缀。此前每轮新截图会话由通用 `Create` 以 conversation scope 落盘，迁移后必须走 answer 领域，否则 journal 清空与帧路由都会错。
   - desktop：worker 帧删除 `event` 上行与 `onEvent` 监听；preload（含 answer-only preload）补 `readSessionFrames` / `onSessionFrame` / `onLiveFrame` / `cancelTurn`；`window.ts` 删除 `sendConversationEvent`。
   - UI：`useConversationView` 收敛为单帧通道（durable `seq` + live），`waitForOutcome` 只认 `turn-finished` 与 `TurnOutcome`；`conversationView` 删除 `applyAgentEvent` / `eventRevision` / `conversationOf`；`useConversationChat` 删除 transport 分支与 `cancelConversationRun`，取消目标改为本轮实际发送的会话 id（Answer 每轮新建 `screenshot-<uuid>`，hook 入参仍是固定答题会话）；`useReplyWorkflow` 在新轮发送前显式清理上一轮；`useInterviewIntake` 去掉不存在的 `superseded`。
-  - 证据：agent `111 files / 842 tests`、ui `48 / 343`、desktop `54 / 378`、cli typecheck 全绿；Answer 用例覆盖并发拒绝、失败轮保留、取消轮释放、401/刷新重试与异步 store 竞争；`pnpm verify` 全绿。
+  - 证据：agent `111 files / 842 tests`、ui `48 / 343`、desktop `54 / 378`、cli typecheck 全绿；Answer 用例覆盖并发拒绝、失败轮保留、取消轮释放、401/刷新重试与异步 store 竞争；相关包和目标文件定向测试通过，完整 `pnpm verify` 尚无一次全绿记录，待 CI 首次完整执行确认。
   - 行为差异（有意）：`reasoning-delta` 属 live-only，不能从 journal 重放；回复面板的思维链改由 live 帧驱动，重连后的快照只恢复正文与工具活动。
-- **P3 第 3d 步（纯删除旧引擎）与 P4 上锁未开始**；`AgentEventEnvelope` / `executeRun.ts` / `execution/` / `eventRevision` 已无 UI 消费者，只剩 Answer 之外的死代码。执行方案见下节。
+- **3d 纯删除旧引擎已落地，P4 已按结构约束收敛**；旧执行引擎、旧事件写入面和旧快照游标已从生产代码删除。剩余工作是迁移仍依赖旧 transcript API 的测试，并完成 CI 的全量门禁记录。
 
 ## 下一步执行方案（3d 纯删除与 P4 上锁）
 
@@ -386,11 +386,10 @@ P2 内部再拆四个子步，前两步不改变线上行为，第三步是唯�
 
 ### P4 上锁（在 3d 全绿之后单独一笔）
 
-1. `scripts/architecture/architecture-check.mjs` 新增 `forbidRetiredVocabulary`：扫描 `apps/**/src`、`packages/**/src`（排除 `.d.ts` 与 `packages/skills`），命中即 `errors.push`。
-2. **禁词用精确符号，不用 `\brun\b`**（修订 D3 的原始写法）：裸 `run` 会误伤 `core/tool/builtin/runCommand/` 里的 `executeRunCommand` 与 `run_command` 工具名。规则清单：`AgentEventEnvelope`、`AgentRunSnapshot`、`AgentRunState`、`agentEventEnvelopeSchema`、`agentEventSchema`、`run-state-changed`、`eventRevision`、`aggregateRevision`、`ExecutionStore`、`MemoryExecutionStore`、`executeRun`。
-3. 规则抽成纯函数（`scanRetiredVocabulary(code)`）并配 `node:test` 反例：违规样例必须返回错误、合法样例必须返回空。只靠 code review 无法阻止「半年后重新引入 run」，这条规则的价值就是把检测成本从人工降到 CI。
-4. 附加方向规则：`packages/ui/src` 不得 import `apps/`（3a 已达成，只是没有守护）。
-5. 出口：本地故意把 `AgentEventEnvelope` 写进 `packages/ui/src` 时 `pnpm architecture:check` 必须失败（验证后不提交该行）。
+1. 保留有明确结构依据的架构守护：包 exports、依赖方向、宿主隔离和 UI 不依赖 Agent 内部实现。
+2. 不按名称清单扫描代码。局部名称应准确描述行为，公共事件/帧类型由 schema 明确限定可表达的语义。
+3. 通过类型检查和行为测试验证 durable 与 live 事件边界、Turn 生命周期折叠以及取消身份，不以命中字符串作为验收。
+4. 出口：`pnpm architecture:check`、相关包 typecheck 与行为测试通过。
 
 ### 提交切分
 
@@ -399,7 +398,7 @@ P2 内部再拆四个子步，前两步不改变线上行为，第三步是唯�
 | 1 | `refactor(agent): 删除 run 执行引擎与 ExecutionStore` | agent 测试 + `pnpm verify` |
 | 2 | `refactor(agent): 删除 transcript envelope 写入面与 eventRevision` | 同上 |
 | 3 | `refactor(shared): 移除 run 事件词汇` | 同上 |
-| 4 | `chore(architecture): 锁定退役 run 词汇` | `architecture:check` 含反例 |
+| 4 | `chore(architecture): 对齐会话帧架构约束` | 依赖方向与公开契约通过检查 |
 
 风险：3d-2 是唯一可能触碰行为的步骤（活动槽位写入从 `beginHandoffRun` 内联），其余为纯删除；若 3d-2 出现 handoff 多消息回归，先回滚该笔，其余三笔独立有效。
 
@@ -421,7 +420,7 @@ P2 内部再拆四个子步，前两步不改变线上行为，第三步是唯�
   - 新增 `packages/shared/test/sessionFrame.test.ts`：frame 编解码、`seq` 连续性、live 事件不得进入 durable schema。
   - 新增 `packages/ui/test/conversationFold.test.ts`：D4 映射表逐项断言，含 handoff 与多消息归属。
   - 改造 `apps/agent/test/core/session/sessionRuntimeJournal.test.ts`：确认 bus 只收 frame、不分配 revision。
-  - `pnpm architecture:check` 的禁词规则自带反例测试（故意违规必须失败）。
+  - `pnpm architecture:check` 验证包依赖方向和宿主隔离；事件语义由类型契约和行为测试验证。
   - `pnpm verify` 全绿。
 - 需要的实机验证：
   - 桌面：长会话自动压缩后继续、断网重连、取消活动 Turn 后立即发送下一条。
@@ -434,4 +433,4 @@ P2 内部再拆四个子步，前两步不改变线上行为，第三步是唯�
 - **live 通道变"可丢"后，极端情况下文本会短暂停在旧内容再跳到完整值。** 这是有意接受的代价，换取的是取消 revision 连续不变量；若实测观感不可接受，补救方式是提高 delta 发送频率，而不是恢复无空洞要求。
 - **Answer 在 P3 之前仍依赖 shim。** shim 期间必须显式标注为临时路径并在 P3 同一变更内删除；不得让 shim 成为长期第二引擎。
 - **`compaction-*` 不进入折叠。** 压缩状态继续只走 `ConversationSnapshot`，因为压缩是会话级事实，没有 `messageId` 归属；若未来要显示压缩进度流，需单独提案，不得复用消息事件。
-- **禁词检查可能误伤历史命名。** 规则只作用于 `apps/` 与 `packages/` 的源码，`docs/` 与迁移期 shim 显式豁免，豁免清单必须在同一文件内可审计。
+- **仅按类型名称判断职责容易失真。** 不设置全局禁词；逐项评估公开类型、函数和模块职责是否表达真实行为。

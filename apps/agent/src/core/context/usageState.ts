@@ -1,6 +1,6 @@
 /** 模型输入 usage 的会话状态协调：维护校准锚点并持久化 provider 实测值。 */
 import type { ContextPruningStatus, ContextUsage } from "@answra/shared";
-import type { AgentEvent } from "@answra/shared/schema";
+import type { AgentDurableEvent } from "@answra/shared/schema";
 import { type ContextStateStore, ContextUsageAnchorTracker } from "./usageAnchor";
 
 export class ContextStateCoordinator {
@@ -48,8 +48,8 @@ export class ContextStateCoordinator {
     }
   }
 
-  async recordRunEvent(conversationId: string, event: AgentEvent): Promise<void> {
-    await this.anchors.recordRunEvent(conversationId, event);
+  async recordSessionEvent(conversationId: string, event: AgentDurableEvent): Promise<void> {
+    await this.anchors.recordSessionEvent(conversationId, event);
     if (event.type !== "context-usage-changed") return;
 
     try {

@@ -66,9 +66,6 @@ function createExecutor({
   onPrepare?: (input: ConversationAgentInput) => void;
 } = {}): AgentExecutor<ConversationAgentInput> {
   return {
-    startRun: async () => {
-      throw new Error("not used");
-    },
     prepare: async (input) => {
       onPrepare?.(input);
       return MODEL_REQUEST;

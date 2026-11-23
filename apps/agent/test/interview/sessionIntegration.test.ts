@@ -1,6 +1,6 @@
 /** Interview 接入 Session 底座后的断点恢复与 UI 隔离集成测试。 */
 import type { SessionFrame } from "@answra/shared/schema";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { AgentExecutor, AgentModelRequest } from "../../src/core/agent/definition";
 import type { AgentRuntime } from "../../src/core/agent/runtime";
 import type { StepRunner } from "../../src/core/session/contracts";
@@ -17,10 +17,6 @@ const conversationId = "recovered-interview";
 
 function fakeRuntime(): AgentRuntime {
   return {
-    cancel: vi.fn(),
-    waitForRun: vi.fn(async () => undefined),
-    getRun: vi.fn(async () => undefined),
-    readEventsForRun: vi.fn(async () => []),
     chatContextWindow: () => undefined,
     chatEndpoint: () => ({ baseUrl: "http://127.0.0.1:1/v1", model: "test" }),
     generateText: async () => "summary",
@@ -30,9 +26,6 @@ function fakeRuntime(): AgentRuntime {
 
 function makeExecutor(): AgentExecutor<InterviewAgentInput> {
   return {
-    startRun: async () => {
-      throw new Error("Interview 不应再使用 AgentRuntime.startRun");
-    },
     prepare: async (): Promise<AgentModelRequest> => {
       throw new Error("测试 StepRunner 不准备模型请求");
     },

@@ -1,6 +1,5 @@
 /** 描述静态注册的 Agent 输入、模型路由和模型请求准备；不包含领域存储或 IPC DTO。 */
 import type { ConversationCapabilityEndpoint } from "@answra/shared";
-import type { AgentEventEnvelope, RunOutcome } from "@answra/shared/schema";
 import type { ModelMessage, PrepareStepFunction, StopCondition, streamText, ToolSet } from "ai";
 
 type ProviderOptions = NonNullable<Parameters<typeof streamText>[0]["providerOptions"]>;
@@ -38,7 +37,7 @@ export interface BotDiscovery {
   visibleTo: BotVisibility;
 }
 
-/** 一次 run 的结构化控制结果；不包含用户可见回复正文。 */
+/** 一次 Bot 交接的结构化控制结果；不包含用户可见回复正文。 */
 export interface BotTurnResult {
   kind: "handoff";
   /** 目标 Bot；必须出现在当前 Bot 的可见目录中。 */
@@ -74,71 +73,19 @@ export interface AgentDefinition<Input> {
     signal: AbortSignal,
     emitter?: AgentToolOutputEmitter,
   ): Promise<AgentModelRequest>;
-  /** 可选：run 正常结束后产出交接控制结果；未声明时视为普通回复。 */
-  result?(input: Input, runId: string): Promise<BotTurnResult | undefined>;
-}
-
-export interface AgentRunPrepared {
-  runId: string;
-  /** Conversation event revision immediately before this run emits its first event. */
-  eventRevision: number;
-}
-
-export interface AgentRunRequest<Input, Prepared> {
-  conversationId: string;
-  getAccessToken: () => Promise<string>;
-  /** Builds domain state and model input before the first AgentEvent is appended. */
-  prepareRun: (run: AgentRunPrepared) => Promise<{ input: Input; prepared: Prepared }>;
-  /**
-   * 在模型请求组装后、发送前执行上下文准备。
-   * 需要重建时通过 rebuild 重新组装，返回真正要发送的最终模型请求。
-   */
-  prepareContext?: (
-    modelRequest: AgentModelRequest,
-    rebuild: () => Promise<AgentModelRequest>,
-    signal: AbortSignal,
-  ) => Promise<AgentModelRequest>;
-  /**
-   * provider 明确声明上下文溢出时的单次恢复；返回 undefined 表示不恢复。
-   * 调用方保证每次 run 至多一次，且只在尚未产生模型内容时调用。
-   * 恢复后同一 run 继续，不重写 transcript、不重新进入 run、不切换 Bot。
-   */
-  recoverContext?: (
-    modelRequest: AgentModelRequest,
-    rebuild: () => Promise<AgentModelRequest>,
-    error: unknown,
-    signal: AbortSignal,
-  ) => Promise<AgentModelRequest | undefined>;
-  /**
-   * 当前会话是否还有等待下发的用户输入。返回 true 时，活动 run 在当前 step
-   * 完成后结束，由会话队列立即启动下一条消息，而不是等整个 run 完成。
-   */
-  shouldYield?: () => boolean;
-  /** Called in event order after each envelope is appended to ExecutionStore. */
-  onEvent: (event: AgentEventEnvelope) => Promise<void>;
-}
-
-export interface AgentRunHandle<Prepared = void> {
-  runId: string;
-  eventRevision: number;
-  prepared: Prepared;
-  /** 当前 run 的结构化回合结果；未声明或未正常完成时为 undefined。 */
-  result: Promise<BotTurnResult | undefined>;
-  done: Promise<RunOutcome>;
+  /** 可选：Step 正常结束后产出交接控制结果；未声明时视为普通回复。 */
+  result?(input: Input, stepId: string): Promise<BotTurnResult | undefined>;
 }
 
 export interface AgentExecutor<Input> {
-  startRun<Prepared = void>(
-    request: AgentRunRequest<Input, Prepared>,
-  ): Promise<AgentRunHandle<Prepared>>;
-  /** 只读模型请求投影；不创建 run、不写 ExecutionStore、不执行工具。 */
+  /** 只读模型请求投影；不创建会话运行、不写事件、不执行工具。 */
   prepare(
     input: Input,
     signal: AbortSignal,
     emitter?: AgentToolOutputEmitter,
   ): Promise<AgentModelRequest>;
-  /** 只解析正常结束后的结构化结果；不启动 run、不写事件。 */
-  result?(input: Input, runId: string): Promise<BotTurnResult | undefined>;
+  /** 只解析正常结束后的结构化结果；不启动会话运行、不写事件。 */
+  result?(input: Input, stepId: string): Promise<BotTurnResult | undefined>;
 }
 
 export type AgentModelRoutes = Readonly<Record<AgentModelRoute, ConversationCapabilityEndpoint>>;

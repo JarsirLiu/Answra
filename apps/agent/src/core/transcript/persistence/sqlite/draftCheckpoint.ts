@@ -1,5 +1,5 @@
 /** 活动 assistant 消息的草稿 checkpoint 调度；只管定时与边界，不执行 SQL。 */
-import type { AgentEventEnvelope } from "@answra/shared/schema";
+import type { AgentStreamEvent } from "@answra/shared/schema";
 
 const STREAM_CHECKPOINT_INTERVAL_MS = 1_000;
 const STREAM_CHECKPOINT_MIN_CHARS = 2_048;
@@ -28,7 +28,7 @@ export class DraftCheckpointScheduler {
     this.now = options.now ?? (() => Date.now());
   }
 
-  schedule(conversationId: string, messageId: string, event: AgentEventEnvelope["event"]): void {
+  schedule(conversationId: string, messageId: string, event: AgentStreamEvent): void {
     if (!this.options.isTarget(conversationId, messageId)) return;
     const added = checkpointChars(event);
     const boundary = isCheckpointBoundary(event);
@@ -107,7 +107,7 @@ export class DraftCheckpointScheduler {
   }
 }
 
-function checkpointChars(event: AgentEventEnvelope["event"]): number {
+function checkpointChars(event: AgentStreamEvent): number {
   switch (event.type) {
     case "text-delta":
     case "reasoning-delta":
@@ -119,7 +119,7 @@ function checkpointChars(event: AgentEventEnvelope["event"]): number {
   }
 }
 
-function isCheckpointBoundary(event: AgentEventEnvelope["event"]): boolean {
+function isCheckpointBoundary(event: AgentStreamEvent): boolean {
   switch (event.type) {
     case "text-end":
     case "reasoning-end":
@@ -130,7 +130,6 @@ function isCheckpointBoundary(event: AgentEventEnvelope["event"]): boolean {
     case "tool-result":
     case "tool-error":
     case "tool-output-denied":
-    case "step-finished":
     case "error":
       return true;
     default:

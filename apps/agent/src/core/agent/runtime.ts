@@ -1,46 +1,24 @@
-/** 静态 Agent 注册、模型路由、run 取消/等待和 Execution 查询的稳定运行时入口。 */
+/** 静态 Agent 注册、模型路由与模型辅助能力的稳定运行时入口。 */
 import { randomUUID } from "node:crypto";
-import type { AgentEventEnvelope, AgentRunSnapshot, RunOutcome } from "@answra/shared/schema";
-import type { ExecutionStore } from "../../execution/store";
+import type { AgentModelRoutes, AgentExecutor, AgentId, AgentDefinition } from "./definition";
 import { generateModelText } from "../model/modelTransport";
 import { validateEndpoint } from "../model/providerFetch";
-import { RunRegistry } from "../run/registry";
 import { withCurrentTimeContext } from "./currentTimeContext";
-import type {
-  AgentDefinition,
-  AgentExecutor,
-  AgentId,
-  AgentModelRoutes,
-  AgentRunHandle,
-  AgentRunRequest,
-} from "./definition";
-import { executeRun } from "./executeRun";
 import { AgentRegistry } from "./registry";
 
 export interface AgentRuntimeOptions {
-  /** Answer 的 envelope 写入与读取口；纯模型调用宿主（CLI coding）不需要。 */
-  executionStore?: ExecutionStore;
-  emitEvent?: (event: AgentEventEnvelope) => void;
   tokenProvider?: (options: { forceRefresh: boolean }) => Promise<string>;
 }
 
-/** 跨领域模型执行底座。领域应用只拿到注册后的 executor，不接触 AI SDK 或 ExecutionStore。 */
+/** 跨领域模型配置底座。领域应用只拿到注册后的 executor，不接触 AI SDK。 */
 export class AgentRuntime {
   private readonly agentRegistry = new AgentRegistry();
-  private readonly runs = new RunRegistry();
-  private readonly executionStore?: ExecutionStore;
   private readonly tokenProvider?: AgentRuntimeOptions["tokenProvider"];
-  private readonly unsubscribeEvents?: () => void;
   private readonly internalSessionId = randomUUID();
-  private shuttingDown = false;
   private routes?: AgentModelRoutes;
 
-  constructor({ executionStore, emitEvent, tokenProvider }: AgentRuntimeOptions) {
-    this.executionStore = executionStore;
+  constructor({ tokenProvider }: AgentRuntimeOptions = {}) {
     this.tokenProvider = tokenProvider;
-    if (executionStore !== undefined && emitEvent !== undefined) {
-      this.unsubscribeEvents = executionStore.subscribe(emitEvent);
-    }
   }
 
   registerAgent<Input>(definition: AgentDefinition<Input>): AgentExecutor<Input> {
@@ -48,9 +26,8 @@ export class AgentRuntime {
     const result = agent.result;
     this.agentRegistry.register(agent.id);
     return {
-      startRun: (request) => this.startRun(agent, request),
       prepare: (input, signal, emitter) => agent.prepare(input, signal, emitter),
-      ...(result ? { result: (input: Input, runId: string) => result(input, runId) } : {}),
+      ...(result ? { result: (input: Input, stepId: string) => result(input, stepId) } : {}),
     };
   }
 
@@ -111,117 +88,15 @@ export class AgentRuntime {
     });
   }
 
-  cancel(runId: string): void {
-    this.runs.cancel(runId);
-  }
-
-  waitForRun(runId: string): Promise<void> {
-    return this.runs.wait(runId);
-  }
-
-  getRun(runId: string): Promise<AgentRunSnapshot | undefined> {
-    return this.requireExecutionStore().getRun(runId);
-  }
-
-  getConversationRevision(conversationId: string): Promise<number> {
-    return this.requireExecutionStore().getConversationRevision(conversationId);
-  }
-
-  readEvents(conversationId: string, afterRevision: number): Promise<AgentEventEnvelope[]> {
-    return this.requireExecutionStore().readEvents(conversationId, afterRevision);
-  }
-
   /** 暴露反向令牌刷新端口，供 Session StepRunner 的 provider 请求复用。 */
   modelTokenProvider(): AgentRuntimeOptions["tokenProvider"] {
     return this.tokenProvider;
   }
 
-  readEventsForRun(runId: string): Promise<AgentEventEnvelope[]> {
-    return this.requireExecutionStore().readEventsForRun(runId);
-  }
+  /** 保留宿主退出的统一调用点；会话收尾由各领域的 SessionRuntime 负责。 */
+  async shutdown(): Promise<void> {}
 
-  /** 清空会话后同步重置事件游标；renderer 才会从 revision 0 重新消费。 */
-  resetExecution(conversationId: string): Promise<void> {
-    return this.requireExecutionStore().resetConversation(conversationId);
-  }
-
-  /** 宿主退出：先取消并等待所有 run 的最终消息落账，再释放事件订阅。 */
-  async shutdown(): Promise<void> {
-    this.shuttingDown = true;
-    await this.runs.abortAllAndWait();
-    this.unsubscribeEvents?.();
-  }
-
-  dispose(): void {
-    this.shuttingDown = true;
-    this.runs.abortAll();
-    this.unsubscribeEvents?.();
-  }
-
-  get activeRunCount(): number {
-    return this.runs.activeCount;
-  }
-
-  private requireExecutionStore(): ExecutionStore {
-    if (this.executionStore === undefined) {
-      throw new Error("AgentRuntime 未配置 ExecutionStore，不能读写 envelope");
-    }
-    return this.executionStore;
-  }
-
-  private async startRun<Input, Prepared>(
-    definition: AgentDefinition<Input>,
-    request: AgentRunRequest<Input, Prepared>,
-  ): Promise<AgentRunHandle<Prepared>> {
-    if (this.shuttingDown) throw new Error("Agent 运行时正在关闭");
-    this.agentRegistry.require(definition.id);
-    const endpoint = this.requireRoutes()[definition.modelRoute];
-    const runId = randomUUID();
-    const executionStore = this.requireExecutionStore();
-    const eventRevision = await executionStore.getConversationRevision(request.conversationId);
-    const controller = new AbortController();
-    this.runs.register(runId, controller);
-
-    let setup: { input: Input; prepared: Prepared };
-    try {
-      setup = await request.prepareRun({ runId, eventRevision });
-    } catch (error) {
-      this.runs.finish(runId);
-      throw error;
-    }
-    if (this.shuttingDown) {
-      this.runs.finish(runId);
-      throw new Error("Agent 运行时正在关闭");
-    }
-
-    const done: Promise<RunOutcome> = executeRun({
-      definition,
-      request,
-      input: setup.input,
-      runId,
-      endpoint,
-      executionStore,
-      tokenProvider: this.tokenProvider,
-      controller,
-    });
-    const result = done.then((outcome) =>
-      outcome === "completed" && definition.result
-        ? definition.result(setup.input, runId)
-        : undefined,
-    );
-    void done.then(
-      () => this.runs.finish(runId),
-      (error: unknown) => {
-        this.runs.finish(runId);
-        console.error("[agent][run] execution finalization failed", {
-          runId,
-          error: error instanceof Error ? error.message : "未知执行错误",
-        });
-      },
-    );
-
-    return { runId, eventRevision, prepared: setup.prepared, result, done };
-  }
+  dispose(): void {}
 
   private requireRoutes(): AgentModelRoutes {
     if (!this.routes) throw new Error("云端模型服务尚未就绪");

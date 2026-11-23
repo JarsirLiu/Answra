@@ -47,9 +47,6 @@ function createHarness({ hold }: { hold?: boolean } = {}) {
   const steps: StepStart[] = [];
   const gate = hold ? deferred() : undefined;
   const executor: AgentExecutor<InterviewRehearsalInput> = {
-    startRun: vi.fn(async () => {
-      throw new Error("Interview 不应再使用 AgentRuntime.startRun");
-    }),
     prepare: vi.fn(async (input) => {
       prepared.push(input);
       return MODEL_REQUEST;
@@ -63,10 +60,6 @@ function createHarness({ hold }: { hold?: boolean } = {}) {
     },
   };
   const agentRuntime = {
-    cancel: vi.fn(),
-    waitForRun: vi.fn(async () => undefined),
-    getRun: vi.fn(async () => undefined),
-    readEventsForRun: vi.fn(async () => []),
     chatContextWindow: () => undefined,
     chatEndpoint: () => ({ baseUrl: "http://localhost", model: "text.chat" }),
     generateText: vi.fn(async () => "summary"),

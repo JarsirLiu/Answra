@@ -1,7 +1,6 @@
 /** 单次 provider 请求的 StepRunner：准备上下文、消费模型流、写 step 级模型事件；不写 step-* 或 Turn 状态。 */
 import type { ConversationCapabilityEndpoint } from "@answra/shared";
 import type {
-  AgentEvent,
   AgentFinishReason,
   AgentStreamEvent,
   AgentUsage,
@@ -251,15 +250,8 @@ async function flush(
 }
 
 /** AI SDK 内部的 step framing 属于 provider 流，不进入 Session 的 step-*；SessionStepExecutor 独占这些事件。 */
-function asModelStreamEvent(event: AgentEvent): AgentStreamEvent | undefined {
-  if (
-    event.type === "step-started" ||
-    event.type === "step-finished" ||
-    event.type === "context-usage-changed"
-  ) {
-    return undefined;
-  }
-  return event as AgentStreamEvent;
+function asModelStreamEvent(event: AgentStreamEvent): AgentStreamEvent | undefined {
+  return event;
 }
 
 function errorText(error: unknown): string {

@@ -21,11 +21,6 @@ function fakeRuntime(): AgentRuntime {
     assertRegistered: vi.fn(),
     assertTeamMembers: vi.fn(),
     dispose: vi.fn(),
-    cancel: vi.fn(),
-    waitForRun: vi.fn(async () => undefined),
-    getRun: vi.fn(async () => undefined),
-    readEventsForRun: vi.fn(async () => []),
-    activeRunCount: 0,
     chatContextWindow: () => undefined,
     chatEndpoint: () => ({ baseUrl: "http://127.0.0.1:1/v1", model: "test" }),
   } as unknown as AgentRuntime;
@@ -38,9 +33,6 @@ function makeBot(): ConversationBot {
     discovery: { visibleTo: { kind: "team", teamId: "conversation" } },
     domain: "conversation",
     executor: {
-      startRun: async () => {
-        throw new Error("Session 底座不应调用 startRun");
-      },
       prepare: async () => {
         throw new Error("测试 StepRunner 不准备模型请求");
       },

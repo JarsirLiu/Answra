@@ -144,9 +144,6 @@ export {
 } from "./release";
 export type {
   AgentDurableEvent,
-  AgentEvent,
-  AgentEventEnvelope,
-  AgentExecutionEvent,
   AgentLiveOnlyEvent,
   AgentStreamEvent,
   BotSummary,

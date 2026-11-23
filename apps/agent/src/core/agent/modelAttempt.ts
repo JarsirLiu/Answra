@@ -1,5 +1,5 @@
 /** 单次模型尝试的事件缓冲与流终态识别；不决定上下文恢复策略。 */
-import type { AgentEvent } from "@answra/shared/schema";
+import type { AgentStreamEvent } from "@answra/shared/schema";
 import type { TextStreamPart, ToolSet } from "ai";
 import { modelErrorText, normalizeStreamPart } from "../model/streamEvents";
 
@@ -9,14 +9,14 @@ export type ModelAttemptResult =
   | { kind: "failed"; error: unknown; errorText: string };
 
 export interface ModelAttemptSink {
-  append(event: AgentEvent): Promise<void>;
+  append(event: AgentStreamEvent): Promise<void>;
   flush(): Promise<void>;
   discard(): void;
   readonly hasContent: boolean;
 }
 
 interface EventWriter {
-  append(event: AgentEvent): Promise<void>;
+  append(event: AgentStreamEvent): Promise<void>;
 }
 
 /**
@@ -24,7 +24,7 @@ interface EventWriter {
  * 避免同一次 run 留下两次 start/step-started；一旦出现内容就立即落盘。
  */
 export function createModelAttemptSink(writer: EventWriter): ModelAttemptSink {
-  let buffered: AgentEvent[] = [];
+  let buffered: AgentStreamEvent[] = [];
   let hasContent = false;
 
   async function flush(): Promise<void> {
@@ -35,7 +35,7 @@ export function createModelAttemptSink(writer: EventWriter): ModelAttemptSink {
   }
 
   return {
-    async append(event: AgentEvent): Promise<void> {
+    async append(event: AgentStreamEvent): Promise<void> {
       if (hasContent) {
         await writer.append(event);
         return;
@@ -83,10 +83,9 @@ export async function consumeModelAttempt(
   return { kind: "failed", error: undefined, errorText: "模型流未提供终态" };
 }
 
-function isPreludeEvent(event: AgentEvent): boolean {
+function isPreludeEvent(event: AgentStreamEvent): boolean {
   return (
     event.type === "start" ||
-    event.type === "step-started" ||
     event.type === "text-start" ||
     event.type === "reasoning-start" ||
     event.type === "model-warning-unsupported" ||
@@ -95,6 +94,6 @@ function isPreludeEvent(event: AgentEvent): boolean {
   );
 }
 
-function isTerminalEvent(event: AgentEvent): boolean {
+function isTerminalEvent(event: AgentStreamEvent): boolean {
   return event.type === "finish" || event.type === "abort";
 }

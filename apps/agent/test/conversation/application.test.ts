@@ -12,7 +12,6 @@ import { SessionFrameBus } from "../../src/core/session/sessionFrameBus";
 import { createBuiltinToolRegistry } from "../../src/core/tool";
 import { MemoryConversationStore } from "../../src/core/transcript/memoryStore";
 import type { ConversationStore } from "../../src/core/transcript/store";
-import { MemoryExecutionStore } from "../../src/execution/memoryStore";
 
 function createTestRuntime({
   frames,
@@ -34,10 +33,7 @@ function createTestRuntime({
     onFrame: (frame) => frames.push(frame),
     onLiveFrame: (frame) => liveFrames.push(frame),
   });
-  const agentRuntime = new AgentRuntime({
-    executionStore: new MemoryExecutionStore(),
-    tokenProvider,
-  });
+  const agentRuntime = new AgentRuntime({ tokenProvider });
   const conversationBot = createConversationBot({
     agentRuntime,
     store,
@@ -437,7 +433,6 @@ describe("ephemeral conversation runtime", () => {
         ACCESS_TOKEN,
       ),
     ).rejects.toThrow("未授权");
-    expect(runtime.activeRunCount).toBe(0);
   });
 
   it("rejects unsupported or oversized images without starting a run", async () => {
@@ -461,7 +456,6 @@ describe("ephemeral conversation runtime", () => {
         ACCESS_TOKEN,
       ),
     ).rejects.toThrow("8 MB");
-    expect(runtime.activeRunCount).toBe(0);
     expect(frames).toHaveLength(0);
   });
 

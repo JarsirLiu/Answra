@@ -16,8 +16,6 @@ import { createBuiltinToolRegistry } from "./core/tool";
 import type { ConversationSessionCatalog } from "./core/transcript/catalog";
 import { MemoryConversationStore } from "./core/transcript/memoryStore";
 import type { ConversationStore } from "./core/transcript/store";
-import { MemoryExecutionStore } from "./execution/memoryStore";
-import type { ExecutionStore } from "./execution/store";
 import { createInterviewRehearsalAgent, INTERVIEW_REHEARSAL_AGENT_ID } from "./interview/agent";
 import { InterviewApplication } from "./interview/application";
 import type { InterviewDomainEvent } from "./interview/contracts";
@@ -45,7 +43,6 @@ export interface AgentHostOptions {
   transport: AgentTransport;
   store?: ConversationStore;
   catalog?: ConversationSessionCatalog;
-  executionStore?: ExecutionStore;
   /** durable session journal；desktop 宿主注入 SQLite 实现，测试可用内存实现。 */
   sessionJournal?: SessionJournal;
   /**
@@ -96,7 +93,6 @@ export function startAgentHost({
   transport,
   store = new MemoryConversationStore(),
   catalog,
-  executionStore = new MemoryExecutionStore(),
   sessionJournal = new MemorySessionJournal(),
   vad,
   recognizer,
@@ -140,10 +136,7 @@ export function startAgentHost({
     });
   }
 
-  const agentRuntime = new AgentRuntime({
-    executionStore,
-    tokenProvider: requestAccessToken,
-  });
+  const agentRuntime = new AgentRuntime({ tokenProvider: requestAccessToken });
   const skillsReady = skillRoots ? createLazySkillCatalog(skillRoots) : undefined;
   const skills = skillsReady?.catalog;
   // 一个 agent 进程只有一个帧广播口：领域只发布，宿主决定谁订阅。

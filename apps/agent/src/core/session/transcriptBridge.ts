@@ -31,28 +31,28 @@ export class SessionTranscriptBridge {
     this.store = store;
   }
 
-  async apply(envelope: SessionEventEnvelope, eventRevision = envelope.sequence): Promise<void> {
-    await this.project(envelope, eventRevision);
+  async apply(envelope: SessionEventEnvelope): Promise<void> {
+    await this.project(envelope);
     // 只有投影成功才推进游标：失败时客户端必须能从旧游标重读这条事实。
     await this.store.advanceLastSeq(envelope.sessionId, envelope.sequence);
   }
 
-  private async project(envelope: SessionEventEnvelope, eventRevision: number): Promise<void> {
+  private async project(envelope: SessionEventEnvelope): Promise<void> {
     switch (envelope.event.type) {
       case "turn-queued":
         this.state(envelope).input = envelope.event.input;
         return;
       case "turn-started":
-        await this.beginTurn(envelope, eventRevision);
+        await this.beginTurn(envelope);
         return;
       case "step-started":
-        await this.beginStep(envelope, eventRevision);
+        await this.beginStep(envelope);
         return;
       case "turn-handoff":
-        await this.applyHandoff(envelope, eventRevision);
+        await this.applyHandoff(envelope);
         return;
       case "turn-finished":
-        await this.finishTurn(envelope, eventRevision);
+        await this.finishTurn(envelope);
         return;
       default:
         await this.applyDurableStream(envelope);
@@ -66,7 +66,7 @@ export class SessionTranscriptBridge {
   }
 
   /** 启动恢复后收口中断 Turn 的最后一条 assistant 消息；已完成的交接消息不重写。 */
-  async recover(sessionId: SessionId, plan: SessionRecoveryPlan, eventRevision = 0): Promise<void> {
+  async recover(sessionId: SessionId, plan: SessionRecoveryPlan): Promise<void> {
     // `turn-queued` 的输入只存在于旧进程内存或 journal；重启后的 bridge 没有该状态。
     // 用恢复计划补齐 queued Turn 的输入，否则恢复执行时用户消息会从 transcript 消失。
     for (const turn of plan.projection.turns) {
@@ -78,12 +78,12 @@ export class SessionTranscriptBridge {
       const turn = plan.projection.turns.find((candidate) => candidate.turnId === interrupted);
       const messageId = turn?.assistantMessageIds.at(-1);
       if (messageId !== undefined) {
-        await this.store.finishSessionAssistant(sessionId, messageId, "aborted", eventRevision);
+        await this.store.finishSessionAssistant(sessionId, messageId, "aborted");
       }
     }
   }
 
-  private async beginTurn(envelope: SessionEventEnvelope, eventRevision: number): Promise<void> {
+  private async beginTurn(envelope: SessionEventEnvelope): Promise<void> {
     if (envelope.turnId === undefined) throw new Error("turn-started 缺少 turnId");
     if (envelope.messageId === undefined) throw new Error("turn-started 缺少 messageId");
     const event = envelope.event;
@@ -95,11 +95,10 @@ export class SessionTranscriptBridge {
       messageId: envelope.messageId,
       authorAgentId: event.agentId,
       ...(state.input === undefined ? {} : { userMessage: state.input }),
-      eventRevision,
     });
   }
 
-  private async beginStep(envelope: SessionEventEnvelope, eventRevision: number): Promise<void> {
+  private async beginStep(envelope: SessionEventEnvelope): Promise<void> {
     if (envelope.messageId === undefined) throw new Error("step-started 缺少 messageId");
     const state = this.state(envelope);
     if (state.messageId === envelope.messageId) return;
@@ -115,13 +114,12 @@ export class SessionTranscriptBridge {
       envelope.sessionId,
       envelope.messageId,
       state.handoffTarget,
-      eventRevision,
     );
     state.messageId = envelope.messageId;
     state.handoffTarget = undefined;
   }
 
-  private async applyHandoff(envelope: SessionEventEnvelope, eventRevision: number): Promise<void> {
+  private async applyHandoff(envelope: SessionEventEnvelope): Promise<void> {
     if (envelope.messageId === undefined) throw new Error("turn-handoff 缺少来源 messageId");
     const event = envelope.event;
     if (event.type !== "turn-handoff") return;
@@ -129,7 +127,6 @@ export class SessionTranscriptBridge {
       envelope.sessionId,
       envelope.messageId,
       "completed",
-      eventRevision,
     );
     await this.store.appendHandoffMessage(envelope.sessionId, {
       id: randomUUID(),
@@ -142,7 +139,7 @@ export class SessionTranscriptBridge {
     state.handoffTarget = event.toAgentId;
   }
 
-  private async finishTurn(envelope: SessionEventEnvelope, eventRevision: number): Promise<void> {
+  private async finishTurn(envelope: SessionEventEnvelope): Promise<void> {
     const event = envelope.event;
     if (event.type !== "turn-finished") return;
     const state = this.state(envelope);
@@ -151,7 +148,6 @@ export class SessionTranscriptBridge {
         envelope.sessionId,
         state.messageId,
         event.status,
-        eventRevision,
       );
     }
     if (envelope.turnId !== undefined) {
