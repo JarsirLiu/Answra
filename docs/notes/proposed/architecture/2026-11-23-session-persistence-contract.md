@@ -629,6 +629,11 @@ P2a 已落地（`apps/agent/test/core/transcript/sessionItemStore.test.ts`，内
 - `seq` 倒序 + 游标不重不漏（历史列表分页）；
 - 客户端：snapshot（含半截）+ 后续条目按 `item_id` 覆盖，正文不重复。
 
+P2b-1 已落地（`packages/shared/test/sessionFrame.test.ts`、`packages/ui/test/conversationItems.test.ts`）：
+
+- `sessionFrameSchema.event` 接受 `session-item`，与 durable 事件共用同一 `seq` 游标；条目不合法（缺 `messageId` 的 part）被拒；
+- 客户端按 `item_id` 替换而非追加：快照半截正文被完整条目覆盖，多条 text part 无分隔拼接，tool-result 按 `toolCallId` 回填，`turn-end` 结算该 Turn 最后一条消息与未结算工具；缺 `tool-call` 的结果帧被丢弃（等整段重读补齐）。
+
 #### 13.9 实现期修正与批次
 
 - **P1 不删旧表。** 第 13.6 节原先写「迁移时删 5 张表」，实际拆到 P4：P1 只建 `session_items` 并回填，旧表和 `revision` 保留，迁移结果可与旧读路径逐条比对，出问题也能回退。P4 再删表并移除 `legacySessionImport` 的 meta 标记。

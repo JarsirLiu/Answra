@@ -9,6 +9,11 @@ export interface ConversationViewMessage {
   role: ConversationMessage["role"];
   text: string;
   status: ConversationMessage["status"];
+  /**
+   * 仅投影用：条目的 Turn 归属，供 `turn-end` 定位本 Turn 的最后一条消息。
+   * 不参与渲染，也不来自模型消息契约本身。
+   */
+  turnId?: string;
   /** 由模型流事件投影出的思考状态；不从消息正文或 status 推导。 */
   thinking?: boolean;
   /** Agent 已接受活动 run，但尚未发出具体流活动事件。 */

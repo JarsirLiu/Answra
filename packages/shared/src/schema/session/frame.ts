@@ -4,12 +4,29 @@ import {
   agentLiveOnlyEventSchema,
   type SessionEventEnvelope,
 } from "../events";
+import { sessionItemSchema } from "./item";
 
 /** `SessionFrame` 的协议版本；v1 是迁移期的 `SessionEventEnvelope`。 */
 export const SESSION_FRAME_SCHEMA_VERSION = 2 as const;
 
 /**
- * durable 通道的传输单位：journal 事实 + 路由字段 + 会话内连续 `seq`。
+ * 条目帧：一条已结算的会话条目。
+ *
+ * 与 durable 事件共用同一个 `seq` 游标；条目是持久化事实，事件从 P2b 起只走 live 通道。
+ * 传输层复用 `sessionFrameSchema`，因此 remote / mobile 不需要单独适配。
+ */
+const sessionItemFrameEventSchema = z.strictObject({
+  type: z.literal("session-item"),
+  item: sessionItemSchema,
+});
+
+export const sessionFrameEventSchema = z.union([
+  agentDurableEventSchema,
+  sessionItemFrameEventSchema,
+]);
+
+/**
+ * durable 通道的传输单位：会话事实 + 路由字段 + 会话内连续 `seq`。
  *
  * 只承载事实，不承载派生生命周期；客户端按 `seq` 补齐，没有第二份状态副本。
  */
@@ -24,7 +41,7 @@ export const sessionFrameSchema = z.strictObject({
   messageId: z.string().optional(),
   stepId: z.string().optional(),
   operationId: z.string().optional(),
-  event: agentDurableEventSchema,
+  event: sessionFrameEventSchema,
 });
 
 /**

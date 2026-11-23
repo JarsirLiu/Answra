@@ -19,6 +19,7 @@ import type {
   ConversationRetry,
   ConversationViewMessage,
 } from "../components/chat/conversationMessage";
+import { foldSessionItemFrame } from "./conversationItems";
 import {
   applyConversationPartEvent,
   reasoningFromConversationParts,
@@ -129,6 +130,7 @@ export function foldConversationFrame(
 ): ConversationView {
   if (frame.seq <= view.lastSeq) return view;
   const event = frame.event;
+  if (event.type === "session-item") return foldSessionItemFrame(view, frame, event.item);
   let next: ConversationView = { ...view, lastSeq: frame.seq };
   const messageId = frame.messageId;
 

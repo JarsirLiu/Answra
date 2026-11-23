@@ -87,6 +87,53 @@ describe("SessionFrame", () => {
       expect(sessionFrameSchema.safeParse(frame).success).toBe(false);
     }
   });
+
+  it("carries a settled session item on the same seq cursor", () => {
+    const frame = {
+      schemaVersion: 2,
+      sessionId: "conversation-1",
+      seq: 6,
+      eventId: "event-6",
+      occurredAt: "2026-11-22T10:00:03.000Z",
+      producerId: "answra-agent",
+      event: {
+        type: "session-item",
+        item: {
+          seq: 6,
+          itemId: "message-1",
+          status: "complete",
+          createdAt: "2026-11-22T10:00:03.000Z",
+          turnId: "turn-1",
+          payload: { kind: "user", text: "继续", images: [] },
+        },
+      },
+    };
+
+    expect(sessionFrameSchema.parse(JSON.parse(JSON.stringify(frame)))).toEqual(frame);
+  });
+
+  it("rejects a session item that breaks the item contract", () => {
+    const frame = {
+      schemaVersion: 2,
+      sessionId: "conversation-1",
+      seq: 7,
+      eventId: "event-7",
+      occurredAt: "2026-11-22T10:00:04.000Z",
+      producerId: "answra-agent",
+      event: {
+        type: "session-item",
+        item: {
+          seq: 7,
+          itemId: "text-1",
+          status: "complete",
+          createdAt: "2026-11-22T10:00:04.000Z",
+          payload: { kind: "text", text: "缺消息 id" },
+        },
+      },
+    };
+
+    expect(sessionFrameSchema.safeParse(frame).success).toBe(false);
+  });
 });
 
 describe("LiveFrame", () => {

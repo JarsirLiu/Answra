@@ -67,6 +67,7 @@ export function createStreamPresenter(output: OutputPort): StreamPresenter {
   return {
     presentFrame(frame) {
       const event = frame.event;
+      if (event.type === "session-item") return;
       switch (event.type) {
         case "turn-finished":
           if (event.status === "failed") {
