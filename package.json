@@ -15,7 +15,7 @@
     "dev:web": "pnpm --filter @answra/desktop dev:web",
     "dev:web:full": "pnpm --filter @answra/desktop dev:web:full",
     "build": "pnpm -r build",
-    "test": "pnpm -r --if-present test",
+    "test": "pnpm -r --workspace-concurrency=2 --if-present test --maxWorkers=4",
     "typecheck": "pnpm -r --if-present typecheck",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",

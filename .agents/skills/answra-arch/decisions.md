@@ -30,7 +30,7 @@
 | 🟡 | `MIGRATION_POLICY = "pre-release"` 未翻转 | `core/transcript/persistence/sqlite/migration/policy.ts` | 正式发布前改为 fail-closed |
 | 🟡 | busy 语义三份副本 | `scheduler.isBusy`、answer 活动表、领域 closing 标志 | 收敛到 Scheduler |
 | 🟡 | renderer live delta 无批处理，整视图每 delta 重算 | `packages/ui/src/app/useConversationView.ts` | 对齐 CLI 的 16ms 批 |
-| 🟡 | `pnpm verify` 并行跑包偶发超时（单独跑全过） | vitest workspace 并发 | 调整 testTimeout 或降低并发 |
+| 🟡 | `pnpm verify` 的全量测试曾并行跑包并叠加 Vitest workers，造成高 CPU 峰值 | 根 `test` 脚本、各包 Vitest | 根脚本现最多并行跑 2 个 workspace，并将每包 Vitest 限为 4 workers；若耗时明显过长，再按实测调整，不恢复双层无上限并行 |
 
 ## 验证锚点
 
