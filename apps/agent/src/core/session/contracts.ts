@@ -225,6 +225,8 @@ export interface StepResult {
   stepId: StepId;
   outcome: StepOutcome;
   finishReason?: AgentFinishReason;
+  /** 项目级、已完成的恢复动作要求 Turn 创建新 Step 继续执行。 */
+  continuation?: "context-recovered";
   usage?: AgentUsage;
   errorText?: string;
   handoff?: TurnHandoff;
@@ -238,12 +240,11 @@ export interface StepExecutor {
 /**
  * 单次 provider 请求的输入 token。
  *
- * 一个 session step 内部可能有多次 AI SDK 请求（工具循环），`usage` 是这些请求的**总和**，
- * 不能当上下文占用：首个请求用于校准估算锚点，最后一个请求才是当前上下文大小。
+ * 项目 Step 是一次逻辑模型请求；此字段只报告这次请求的输入 token，
+ * Turn usage anchor 使用首个成功报告 usage 的请求作估算校准。
  */
 export interface StepRequestTokens {
   firstInputTokens?: number;
-  lastInputTokens?: number;
 }
 
 /**
@@ -253,6 +254,8 @@ export interface StepRequestTokens {
 export interface StepRunnerResult {
   outcome: StepOutcome;
   finishReason?: AgentFinishReason;
+  /** 项目级、已完成的恢复动作要求 Turn 创建新 Step 继续执行。 */
+  continuation?: "context-recovered";
   usage?: AgentUsage;
   /** provider 逐请求的输入量；缺失表示这条链路没有报告，不推演。 */
   requestTokens?: StepRequestTokens;

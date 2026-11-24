@@ -166,6 +166,10 @@ export class ConversationApplication {
         prepare: binding.prepare,
         contextManager: new PreparationStepContextManager(this.contextPreparation),
         resolveHandoff: binding.resolveHandoff,
+        onRequestFinished: async ({ sessionId, inputTokens }) => {
+          await this.contextPreparation.recordRequestUsage(sessionId, inputTokens);
+          await this.pushSnapshot(sessionId);
+        },
         tokenProvider: this.agentRuntime.modelTokenProvider?.(),
       });
     const stepExecutor = new SessionStepExecutor({
@@ -177,9 +181,6 @@ export class ConversationApplication {
           ...(result.requestTokens?.firstInputTokens === undefined
             ? {}
             : { anchorInputTokens: result.requestTokens.firstInputTokens }),
-          ...(result.requestTokens?.lastInputTokens === undefined
-            ? {}
-            : { contextInputTokens: result.requestTokens.lastInputTokens }),
         }),
     });
     const turnExecutor = new SessionTurnExecutor({

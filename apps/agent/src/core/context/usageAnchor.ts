@@ -1,4 +1,4 @@
-/** usage 锚点生命周期：记录成功 run 首个 step 的实际输入 token，并在投影或 run 失效后清理。 */
+/** usage 锚点生命周期：记录成功 Turn 首个有效请求的实际输入 token，并在投影或 Turn 失效后清理。 */
 import type { TurnOutcome } from "@answra/shared/schema";
 import type { ContextState, ContextUsageAnchor } from "../transcript/contextState";
 import type { ConversationStore } from "../transcript/store";
@@ -33,14 +33,20 @@ export class ContextUsageAnchorTracker {
       projectionChanged: boolean;
     },
   ): void {
+    const pending = this.pending.get(conversationId);
+    if (pending?.inputTokens !== undefined) return;
     this.pending.set(conversationId, { estimatedTokens, projectionChanged });
   }
 
-  /** 消费 step 结算：首个 step 记录实际输入 token；Turn 终态决定提交或清理锚点。 */
+  /** 消费 step 结算：记录 Turn 内首个成功报告 usage 的请求；终态决定提交或清理锚点。 */
   recordStepFinished(conversationId: string, input: { index: number; inputTokens?: number }): void {
-    if (input.index !== 0) return;
     const pending = this.pending.get(conversationId);
-    if (pending && input.inputTokens !== undefined && input.inputTokens > 0) {
+    if (
+      pending &&
+      pending.inputTokens === undefined &&
+      input.inputTokens !== undefined &&
+      input.inputTokens > 0
+    ) {
       pending.inputTokens = input.inputTokens;
     }
   }

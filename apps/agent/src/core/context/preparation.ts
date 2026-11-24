@@ -283,7 +283,12 @@ export class ContextPreparation {
     return prepared.compaction.status === "compacted" ? prepared.request : undefined;
   }
 
-  /** step 结算：锚点取首个请求、展示取最后一个请求；由 StepExecutor 显式调用。 */
+  /** 每次 provider 响应后立即刷新展示用量；不改变 Turn 校准锚点。 */
+  async recordRequestUsage(conversationId: string, inputTokens: number): Promise<void> {
+    await this.contextState.recordRequestUsage(conversationId, inputTokens);
+  }
+
+  /** step 结算：锚点取首个请求；由 StepExecutor 显式调用。 */
   async recordStepFinished(
     conversationId: string,
     step: { index: number; anchorInputTokens?: number; contextInputTokens?: number },

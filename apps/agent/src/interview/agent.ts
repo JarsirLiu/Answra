@@ -38,7 +38,13 @@ export function createInterviewRehearsalAgent({
       const messages = projectContextMessages({
         messages: snapshot.messages,
         checkpoint: latestCheckpoint(await store.loadContextState(input.conversationId)),
-        project: (tail) => projectConversationMessages({ messages: tail }),
+        project: (tail) =>
+          projectConversationMessages({
+            messages: tail,
+            ...(snapshot.activeMessageId === undefined
+              ? {}
+              : { activeMessageId: snapshot.activeMessageId }),
+          }),
       });
       const toolSet = tools.authorize(INTERVIEW_REHEARSAL_TOOLS, {
         signal,

@@ -55,12 +55,15 @@ renderer / TUI 输入
   → 用户消息先写 user 条目，再进 TurnScheduler 队列
   → TurnExecutor：beginTurn 置 open_turn_id，占位 assistant 消息
   → step 循环（Step 只留在内存与 timeline 投影，不单独落条目）
-      → ProviderStepRunner：AI SDK 单次请求（live delta + 结算事件）
-      → 工具：ToolRegistry.authorize → executeToolCall → tool-call / tool-result 条目
+      → ProviderStepRunner：目标为一个 Step 一次 AI SDK 模型响应（live delta + 结算事件）
+      → 项目执行该响应的工具：ToolRegistry.authorize → executeToolCall → tool-call / tool-result 条目
+      → 若响应要求继续，由 TurnExecutor 开始下一 Step；每个 Step 前重做上下文准备
   → finishTurn：补未结算 part → turn-end（completed / failed / aborted）
   → 每条条目按「内存视图 → 条目 → 帧」固定顺序落地
   → 宿主按 seq 折叠成 ConversationView
 ```
+
+项目控制的逐次请求已按提案首阶段落地：SDK 单次响应、项目执行工具、TurnExecutor 决定是否继续。真实兼容端点的工具历史格式与长 Turn 清理/压缩时序仍需集成验证，证据边界见 [逐次请求 Note](../../../docs/notes/proposed/architecture/2026-11-24-project-controlled-model-request-loop.md)。
 
 ## 宿主职责边界
 

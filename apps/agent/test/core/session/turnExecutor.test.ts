@@ -92,6 +92,31 @@ describe("SessionTurnExecutor", () => {
     });
   });
 
+  it("continues a recovered context overflow in a new project step", async () => {
+    const stepExecutor = new ScriptedStepExecutor(
+      {
+        stepId: "step-1" as StepResult["stepId"],
+        outcome: "completed",
+        continuation: "context-recovered",
+      },
+      {
+        stepId: "step-2" as StepResult["stepId"],
+        outcome: "completed",
+        finishReason: "stop",
+      },
+    );
+    const executor = new SessionTurnExecutor({
+      recorder: new RecordingTurnRecorder(),
+      stepExecutor,
+      createMessageId: () => "unused",
+    });
+
+    const finish = await executor.run(turnStart(), TEST_TURN_RUNTIME, new AbortController().signal);
+
+    expect(stepExecutor.calls.map((step) => step.index)).toEqual([0, 1]);
+    expect(finish).toMatchObject({ outcome: "completed", steps: 2, finishReason: "stop" });
+  });
+
   it("records the handoff and continues the same turn as the target bot", async () => {
     const recorder = new RecordingTurnRecorder();
     const stepExecutor = new ScriptedStepExecutor(

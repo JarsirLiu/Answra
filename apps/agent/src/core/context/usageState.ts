@@ -48,20 +48,12 @@ export class ContextStateCoordinator {
   }
 
   /**
-   * step 结算：锚点只认首个 step 的首个请求；展示取最后一个请求的输入量。
+   * 每次 provider 请求结算：把这次请求的输入量写成当前上下文占用。
    *
-   * 一个 step 内可能有多轮工具循环，把多请求之和当上下文占用会让 UI 出现远超窗口的数字，
-   * 并让锚点比例被放大数十倍。
+   * 展示必须跟每次请求走：一个 step 内可能有 20 多轮工具循环，只在 step 结算时写
+   * 会让状态行整段停滞，甚至直到 Turn 收口前都没有 `ctx`。
    */
-  async recordStepFinished(
-    conversationId: string,
-    input: { index: number; anchorInputTokens?: number; contextInputTokens?: number },
-  ): Promise<void> {
-    this.anchors.recordStepFinished(conversationId, {
-      index: input.index,
-      ...(input.anchorInputTokens === undefined ? {} : { inputTokens: input.anchorInputTokens }),
-    });
-    if (input.contextInputTokens === undefined) return;
+  async recordRequestUsage(conversationId: string, inputTokens: number): Promise<void> {
     try {
       const state = await this.store.loadContextState(conversationId);
       if (!state?.usage) return;
@@ -69,7 +61,7 @@ export class ContextStateCoordinator {
         ...state,
         usage: {
           ...state.usage,
-          usedTokens: input.contextInputTokens,
+          usedTokens: inputTokens,
           source: "provider",
           updatedAt: this.now().toISOString(),
         },
@@ -80,6 +72,17 @@ export class ContextStateCoordinator {
         error: errorText(error, "provider usage 写入失败"),
       });
     }
+  }
+
+  /** step 结算：锚点取 Turn 内首个成功请求；展示由每次请求自行写入。 */
+  async recordStepFinished(
+    conversationId: string,
+    input: { index: number; anchorInputTokens?: number },
+  ): Promise<void> {
+    this.anchors.recordStepFinished(conversationId, {
+      index: input.index,
+      ...(input.anchorInputTokens === undefined ? {} : { inputTokens: input.anchorInputTokens }),
+    });
   }
 
   /** Turn 终态：成功提交锚点，失败或中断丢弃并清理受影响的投影。 */

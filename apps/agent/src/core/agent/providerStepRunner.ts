@@ -21,6 +21,8 @@ import type {
 import type { AgentModelRequest, AgentToolOutputEmitter } from "./definition";
 import { createLiveToolOutputRelay } from "./liveToolOutput";
 import { consumeModelAttempt, createModelAttemptSink } from "./modelAttempt";
+import { modelToolSet } from "./modelToolSet";
+import { executeModelToolCalls, type ModelToolCall } from "./toolCallExecutor";
 
 type StepModelStream = (input: {
   transport: ModelTransportOptions;
@@ -42,9 +44,13 @@ export interface ProviderStepRunnerOptions {
   resolveHandoff?: (step: StepStart) => Promise<TurnHandoff | undefined>;
   tokenProvider?: (options: { forceRefresh: boolean }) => Promise<string>;
   stream?: StepModelStream;
+  /**
+   * 每次 provider 请求结束时报告这次请求的输入量。
+   */
+  onRequestFinished?: (event: { sessionId: string; inputTokens: number }) => void | Promise<void>;
 }
 
-/** 单次模型请求；同一 Step 内的工具执行仍由 AI SDK 负责。 */
+/** 单次模型请求；工具执行由项目在模型响应后完成。 */
 export class ProviderStepRunner implements StepRunner {
   private readonly getEndpoint: () => ConversationCapabilityEndpoint;
   private readonly prepareRequest: ProviderStepRunnerOptions["prepare"];
@@ -52,6 +58,7 @@ export class ProviderStepRunner implements StepRunner {
   private readonly resolveHandoff?: ProviderStepRunnerOptions["resolveHandoff"];
   private readonly tokenProvider?: ProviderStepRunnerOptions["tokenProvider"];
   private readonly stream: StepModelStream;
+  private readonly onRequestFinished?: ProviderStepRunnerOptions["onRequestFinished"];
 
   constructor({
     endpoint,
@@ -61,6 +68,7 @@ export class ProviderStepRunner implements StepRunner {
     resolveHandoff,
     tokenProvider,
     stream = streamModel,
+    onRequestFinished,
   }: ProviderStepRunnerOptions) {
     if (endpoint === undefined && getEndpoint === undefined)
       throw new Error("ProviderStepRunner 缺少模型端点");
@@ -70,6 +78,7 @@ export class ProviderStepRunner implements StepRunner {
     this.resolveHandoff = resolveHandoff;
     this.tokenProvider = tokenProvider;
     this.stream = stream;
+    this.onRequestFinished = onRequestFinished;
   }
 
   async run(
@@ -81,150 +90,148 @@ export class ProviderStepRunner implements StepRunner {
 
     const liveOutput = createLiveToolOutputRelay(context.events);
     const emitter: AgentToolOutputEmitter = { toolOutput: liveOutput.emit };
-    let modelRequest = await this.prepareRequest(step, signal, emitter);
+    const prepareModelRequest = async (): Promise<AgentModelRequest> =>
+      prepareForStep(await this.prepareRequest(step, signal, emitter), step.index);
+    let modelRequest = await prepareModelRequest();
     if (this.contextManager !== undefined) {
       modelRequest = await this.contextManager.prepare({
         conversationId: step.sessionId,
         getAccessToken: context.runtime.getAccessToken,
         modelRequest,
-        rebuild: () => this.prepareRequest(step, signal, emitter),
+        rebuild: prepareModelRequest,
         signal,
       });
     }
     if (signal.aborted) return { outcome: "aborted" };
 
     const accessToken = await context.runtime.getAccessToken();
-    let contextRecovered = false;
-    // 每次 step 独立编号；provider 的 `txt-0` 在重试与后续 step 里都会重新出现。
+    // 每次项目 Step 只有一次 streamModel 调用；provider 的传输层重试仍由 ModelTransport 管理。
     const scopePartId = createStreamPartIdScope(step.stepId);
 
-    for (;;) {
-      let finished: { finishReason: AgentFinishReason; usage?: AgentUsage } | undefined;
-      // 一次 session step 内可能有多次 AI SDK 请求；`finish.totalUsage` 是它们之和。
-      const requestTokens: { firstInputTokens?: number; lastInputTokens?: number } = {};
-      const attempt = createModelAttemptSink({
-        append: async (event) => {
-          const streamEvent = asModelStreamEvent(event);
-          if (streamEvent === undefined) return;
-          if (streamEvent.type === "finish") {
-            finished = {
-              finishReason: streamEvent.finishReason,
-              ...(streamEvent.usage === undefined ? {} : { usage: streamEvent.usage }),
-            };
-          }
-          await context.events.append(scopePartId(streamEvent));
-        },
-      });
-      const transport: ModelTransportOptions = {
-        endpoint: this.getEndpoint(),
-        accessToken,
-        conversationId: step.sessionId,
-        runId: step.stepId,
-        ...(this.tokenProvider === undefined ? {} : { tokenProvider: this.tokenProvider }),
-        onRetry: (retry) => context.events.append(retryEvent(retry)),
-      };
+    let finished: { finishReason: AgentFinishReason; usage?: AgentUsage } | undefined;
+    const requestTokens: { firstInputTokens?: number } = {};
+    const toolCalls: ModelToolCall[] = [];
+    const attempt = createModelAttemptSink({
+      append: async (event) => {
+        const streamEvent = asModelStreamEvent(event);
+        if (streamEvent === undefined) return;
+        if (streamEvent.type === "tool-call") {
+          toolCalls.push({
+            toolCallId: streamEvent.toolCallId,
+            toolName: streamEvent.toolName,
+            input: streamEvent.input,
+          });
+        }
+        if (streamEvent.type === "finish") {
+          finished = {
+            finishReason: streamEvent.finishReason,
+            ...(streamEvent.usage === undefined ? {} : { usage: streamEvent.usage }),
+          };
+        }
+        await context.events.append(scopePartId(streamEvent));
+      },
+    });
+    const transport: ModelTransportOptions = {
+      endpoint: this.getEndpoint(),
+      accessToken,
+      conversationId: step.sessionId,
+      runId: step.stepId,
+      ...(this.tokenProvider === undefined ? {} : { tokenProvider: this.tokenProvider }),
+      onRetry: (retry) => context.events.append(retryEvent(retry)),
+    };
 
-      let failure: { error: unknown; errorText: string } | undefined;
-      try {
-        const result = await consumeModelAttempt(
-          this.stream({
-            transport,
-            signal,
-            options: {
-              ...modelRequest,
-              onStepFinish: (event) => {
-                const inputTokens = event.usage?.inputTokens;
-                if (inputTokens === undefined) return;
-                requestTokens.firstInputTokens ??= inputTokens;
-                requestTokens.lastInputTokens = inputTokens;
-              },
-              experimental_onToolCallStart: async (event) => {
-                await context.events.append({
-                  type: "tool-execution-started",
-                  toolCallId: event.toolCall.toolCallId,
-                  toolName: event.toolCall.toolName,
-                  input: event.toolCall.input,
-                  ...(event.stepNumber === undefined ? {} : { stepNumber: event.stepNumber }),
-                });
-              },
-              experimental_onToolCallFinish: async (event) => {
-                await liveOutput.flush();
-                const common = {
-                  type: "tool-execution-finished" as const,
-                  toolCallId: event.toolCall.toolCallId,
-                  toolName: event.toolCall.toolName,
-                  input: event.toolCall.input,
-                  durationMs: event.durationMs,
-                  ...(event.stepNumber === undefined ? {} : { stepNumber: event.stepNumber }),
-                };
-                await context.events.append(
-                  event.success
-                    ? { ...common, result: { success: true, output: event.output } }
-                    : { ...common, result: { success: false, errorText: errorText(event.error) } },
-                );
-              },
+    let failure: { error: unknown; errorText: string } | undefined;
+    try {
+      const result = await consumeModelAttempt(
+        this.stream({
+          transport,
+          signal,
+          options: {
+            ...modelRequest,
+            tools: modelToolSet(modelRequest.tools),
+            prepareStep: undefined,
+            onStepFinish: async (event) => {
+              const inputTokens = event.usage?.inputTokens;
+              if (inputTokens === undefined) return;
+              requestTokens.firstInputTokens ??= inputTokens;
+              await this.onRequestFinished?.({ sessionId: step.sessionId, inputTokens });
             },
-          }),
-          attempt,
-        );
-        if (result.kind === "finished") {
-          await flush(liveOutput, attempt);
-          return this.finish(step, finished, requestTokens);
+          },
+        }),
+        attempt,
+      );
+      if (result.kind === "finished") {
+        await flush(liveOutput, attempt);
+        if (finished?.finishReason === "tool-calls") {
+          const toolOutcome = await executeModelToolCalls({
+            tools: modelRequest.tools,
+            calls: toolCalls,
+            messages: modelRequest.messages,
+            signal,
+            events: context.events,
+            flushOutput: liveOutput.flush,
+          });
+          if (toolOutcome === "aborted") return { outcome: "aborted" };
         }
-        if (result.kind === "aborted") {
-          await flush(liveOutput, attempt);
-          return { outcome: "aborted" };
-        }
-        failure = { error: result.error, errorText: result.errorText };
-      } catch (error) {
-        failure = { error, errorText: errorText(error) };
+        return this.finish(step, finished, requestTokens);
       }
-
-      if (signal.aborted) {
+      if (result.kind === "aborted") {
         await flush(liveOutput, attempt);
         return { outcome: "aborted" };
       }
-      if (
-        failure !== undefined &&
-        !contextRecovered &&
-        !attempt.hasContent &&
-        this.contextManager !== undefined &&
-        isContextOverflowError(failure.error)
-      ) {
-        const recovered = await this.contextManager
-          .recover({
-            conversationId: step.sessionId,
-            getAccessToken: context.runtime.getAccessToken,
-            modelRequest,
-            rebuild: () => this.prepareRequest(step, signal, emitter),
-            signal,
-          })
-          .catch(() => undefined);
+      failure = { error: result.error, errorText: result.errorText };
+    } catch (error) {
+      failure = { error, errorText: errorText(error) };
+    }
+
+    if (signal.aborted) {
+      await flush(liveOutput, attempt);
+      return { outcome: "aborted" };
+    }
+
+    if (
+      failure !== undefined &&
+      !attempt.hasContent &&
+      this.contextManager !== undefined &&
+      isContextOverflowError(failure.error)
+    ) {
+      try {
+        const recovered = await this.contextManager.recover({
+          conversationId: step.sessionId,
+          getAccessToken: context.runtime.getAccessToken,
+          modelRequest,
+          rebuild: prepareModelRequest,
+          signal,
+        });
         if (recovered !== undefined && !signal.aborted) {
           attempt.discard();
-          modelRequest = recovered;
-          contextRecovered = true;
-          continue;
+          return { outcome: "completed", continuation: "context-recovered" };
         }
+      } catch (recoveryError) {
+        failure = {
+          error: recoveryError,
+          errorText: `上下文压缩恢复失败：${errorText(recoveryError)}`,
+        };
       }
-      if (signal.aborted) {
-        await flush(liveOutput, attempt);
-        return { outcome: "aborted" };
-      }
-
-      await flush(liveOutput, attempt);
-      await context.events.append({
-        type: "error",
-        errorText: failure?.errorText ?? "模型流未提供终态",
-      });
-      return { outcome: "failed", errorText: failure?.errorText ?? "模型流未提供终态" };
     }
+
+    if (signal.aborted) {
+      await flush(liveOutput, attempt);
+      return { outcome: "aborted" };
+    }
+
+    await flush(liveOutput, attempt);
+    await context.events.append({
+      type: "error",
+      errorText: failure?.errorText ?? "模型流未提供终态",
+    });
+    return { outcome: "failed", errorText: failure?.errorText ?? "模型流未提供终态" };
   }
 
   private async finish(
     step: StepStart,
     finished: { finishReason: AgentFinishReason; usage?: AgentUsage } | undefined,
-    requestTokens: { firstInputTokens?: number; lastInputTokens?: number },
+    requestTokens: { firstInputTokens?: number },
   ): Promise<StepRunnerResult> {
     if (finished === undefined) {
       return { outcome: "failed", errorText: "模型流未提供终态" };
@@ -240,10 +247,9 @@ export class ProviderStepRunner implements StepRunner {
       outcome: "completed",
       finishReason: finished.finishReason,
       ...(finished.usage === undefined ? {} : { usage: finished.usage }),
-      ...(requestTokens.firstInputTokens === undefined &&
-      requestTokens.lastInputTokens === undefined
+      ...(requestTokens.firstInputTokens === undefined
         ? {}
-        : { requestTokens }),
+        : { requestTokens: { firstInputTokens: requestTokens.firstInputTokens } }),
       ...(handoff === undefined ? {} : { handoff }),
     };
   }
@@ -251,6 +257,15 @@ export class ProviderStepRunner implements StepRunner {
 
 function retryEvent(retry: RetryAttempt): AgentStreamEvent {
   return { type: "retry", ...retry };
+}
+
+async function prepareForStep(
+  request: AgentModelRequest,
+  stepNumber: number,
+): Promise<AgentModelRequest> {
+  const policy = await request.prepareStep?.({ stepNumber, messages: request.messages });
+  if (policy === undefined) return request;
+  return { ...request, ...policy };
 }
 
 async function flush(

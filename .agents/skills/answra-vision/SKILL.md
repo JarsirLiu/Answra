@@ -52,7 +52,7 @@ src/
 ## 防回退红线（一旦违反即偏离方向）
 
 - 不引入 Pi、独立 Node sidecar 或通用插件/DI 框架（rejected 2026-10-11 Pi Note）。
-- Agent loop 先用 AI SDK 多步循环，不自研；自研需实测断点证据并重新提案。
+- Session/Turn/Step 已成为稳定运行边界的场景，由项目拥有请求间 loop：每个项目 Step 只对应一次模型响应；TurnExecutor 决定继续、结束或 handoff。AI SDK `streamText` 只负责单次模型请求、provider 适配和流解析，不得在项目 Step 内执行本地工具后自动再请求模型。工具执行仍复用静态授权的 ToolRegistry 与 `executeToolCall`，不自研 provider/SSE 协议、不引入 Pi。此决定由 [项目控制的逐次模型请求提案](../../../docs/notes/proposed/architecture/2026-11-24-project-controlled-model-request-loop.md) 及 AI SDK 6.0.303 mock-model 实验支撑。实施中要把当前 Turn 尚未结束的 assistant 消息与成对工具结果投影到下一 Step；若只过滤已完成消息，模型会看不到刚完成的工具并重复调用。
 - 不用会话 ID 推断区分场景；每能力显式 profile + 命令类型（10-18）。
 - 不让 `runtime.ts` 长成多领域万能 service；不把算法/产品分支写进 worker 投影（10-19）。
 - 不做 renderer 可注入 prompt/工具的"灵活性"；不做绕过白名单的万能 RPC 通道。

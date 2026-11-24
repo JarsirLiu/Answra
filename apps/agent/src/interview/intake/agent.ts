@@ -42,7 +42,13 @@ export function createInterviewIntakeAgent({
       const messages = projectContextMessages({
         messages: snapshot.messages,
         checkpoint: latestCheckpoint(await store.loadContextState(input.conversationId)),
-        project: (tail) => projectConversationMessages({ messages: tail }),
+        project: (tail) =>
+          projectConversationMessages({
+            messages: tail,
+            ...(snapshot.activeMessageId === undefined
+              ? {}
+              : { activeMessageId: snapshot.activeMessageId }),
+          }),
       });
       if (input.opening) {
         messages.push({ role: "user", content: INTERVIEW_INTAKE_OPENING_PROMPT });

@@ -116,6 +116,10 @@ export class CodingApplication {
         getEndpoint: () => this.agentRuntime.chatEndpoint(),
         prepare: binding.prepare,
         contextManager: new PreparationStepContextManager(this.contextPreparation),
+        onRequestFinished: async ({ sessionId, inputTokens }) => {
+          await this.contextPreparation.recordRequestUsage(sessionId, inputTokens);
+          await this.pushSnapshot(sessionId);
+        },
         tokenProvider:
           typeof this.agentRuntime.modelTokenProvider === "function"
             ? this.agentRuntime.modelTokenProvider()
@@ -130,9 +134,6 @@ export class CodingApplication {
           ...(result.requestTokens?.firstInputTokens === undefined
             ? {}
             : { anchorInputTokens: result.requestTokens.firstInputTokens }),
-          ...(result.requestTokens?.lastInputTokens === undefined
-            ? {}
-            : { contextInputTokens: result.requestTokens.lastInputTokens }),
         });
         // 上下文用量在 step 结束时已经确定，立即推一次快照，状态行不必等 Turn 收口。
         await this.pushSnapshot(step.sessionId);

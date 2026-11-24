@@ -6,15 +6,7 @@ import {
 } from "../../../src/core/agent/toolStepLimit";
 
 describe("conversation tool step limit", () => {
-  it("stops after the tool steps plus one final answer step", () => {
-    const { stopWhen } = createToolStepLimit();
-    const steps = (count: number) => Array.from({ length: count }, () => ({}));
-
-    expect(stopWhen({ steps: steps(MAX_TOOL_STEPS) } as never)).toBe(false);
-    expect(stopWhen({ steps: steps(MAX_TOOL_STEPS + 1) } as never)).toBe(true);
-  });
-
-  it("disables tools and injects the final summary prompt on the last step", async () => {
+  it("injects the final summary prompt at the project step limit", async () => {
     const { prepareStep } = createToolStepLimit();
     const messages = [{ role: "user" as const, content: "读取文件" }];
 

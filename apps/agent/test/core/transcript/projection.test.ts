@@ -105,4 +105,101 @@ describe("conversation projection", () => {
       { role: "assistant", content: "我先看一遍。" },
     ]);
   });
+
+  it("projects the in-flight assistant message so the next step sees its tool round-trip", () => {
+    const inFlight: ConversationMessage = {
+      id: "assistant-2",
+      role: "assistant",
+      authorAgentId: "coding.engineer",
+      audience: { kind: "user" },
+      text: "",
+      images: [],
+      status: "streaming",
+      parts: [
+        {
+          id: "tool-2",
+          kind: "tool",
+          toolCallId: "tool-2",
+          toolName: "Skill",
+          state: "completed",
+          input: { name: "answra-code" },
+          output: "<skill_content/>",
+        },
+      ],
+    };
+
+    const projected = projectConversationMessages({
+      messages: [...messages.slice(0, 1), inFlight],
+      activeMessageId: "assistant-2",
+    });
+
+    expect(projected).toEqual([
+      { role: "user", content: [{ type: "text", text: "帮我整理简历" }] },
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool-call",
+            toolCallId: "tool-2",
+            toolName: "Skill",
+            input: { name: "answra-code" },
+          },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "tool-2",
+            toolName: "Skill",
+            output: { type: "text", value: "<skill_content/>" },
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("still skips a streaming message that is not the active one", () => {
+    const active: ConversationMessage = {
+      id: "assistant-2",
+      role: "assistant",
+      audience: { kind: "user" },
+      text: "",
+      images: [],
+      status: "streaming",
+      parts: [],
+    };
+    const stale: ConversationMessage = { ...active, id: "assistant-stale", text: "残留" };
+
+    const projected = projectConversationMessages({
+      messages: [...messages.slice(0, 1), stale, active],
+      activeMessageId: "assistant-2",
+    });
+
+    expect(projected).toEqual([
+      { role: "user", content: [{ type: "text", text: "帮我整理简历" }] },
+    ]);
+  });
+
+  it("does not project an empty active message before the first step", () => {
+    const active: ConversationMessage = {
+      id: "assistant-2",
+      role: "assistant",
+      audience: { kind: "user" },
+      text: "",
+      images: [],
+      status: "streaming",
+      parts: [],
+    };
+
+    const projected = projectConversationMessages({
+      messages: [...messages.slice(0, 1), active],
+      activeMessageId: "assistant-2",
+    });
+
+    expect(projected).toEqual([
+      { role: "user", content: [{ type: "text", text: "帮我整理简历" }] },
+    ]);
+  });
 });

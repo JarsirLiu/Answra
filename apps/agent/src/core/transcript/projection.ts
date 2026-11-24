@@ -10,13 +10,20 @@ export function projectConversationMessages({
   messages,
   viewerAgentId,
   agentNames,
+  activeMessageId,
 }: {
   messages: readonly ConversationMessage[];
   viewerAgentId?: string;
   agentNames?: ReadonlyMap<string, string>;
+  /**
+   * 当前 Turn 仍在流式的 assistant 消息 id。项目控制的循环在每个请求前重建历史，
+   * 上一 Step 的工具调用与结果只存在于这条未收口消息里；不投影它，模型看不到刚执行过的工具。
+   */
+  activeMessageId?: string;
 }): ModelMessage[] {
-  if (!viewerAgentId) return messages.filter(isComplete).flatMap(legacyMessage);
-  return messages.filter(isComplete).flatMap((message) => {
+  const projectable = messages.filter((message) => isProjectable(message, activeMessageId));
+  if (!viewerAgentId) return projectable.flatMap(legacyMessage);
+  return projectable.flatMap((message) => {
     if (message.audience?.kind === "bot") {
       if (message.audience.agentId === viewerAgentId)
         return [
@@ -36,8 +43,20 @@ export function projectConversationMessages({
   });
 }
 
-function isComplete(message: ConversationMessage): boolean {
-  return message.status !== "streaming";
+function isProjectable(message: ConversationMessage, activeMessageId: string | undefined): boolean {
+  if (message.status !== "streaming") return true;
+  // 未收口的其它消息只可能是恢复前的残留，按旧规则排除；当前 Turn 的活动消息才是本 Step 的历史。
+  if (message.id !== activeMessageId) return false;
+  return hasProjectableContent(message);
+}
+
+function hasProjectableContent(message: ConversationMessage): boolean {
+  if (message.text.trim().length > 0) return true;
+  return (message.parts ?? []).some(
+    (part) =>
+      (part.kind === "text" && part.text.trim().length > 0) ||
+      (part.kind === "tool" && part.input !== undefined),
+  );
 }
 
 function legacyMessage(message: ConversationMessage): ModelMessage[] {

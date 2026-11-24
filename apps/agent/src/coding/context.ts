@@ -25,7 +25,13 @@ export async function buildCodingMessages({
   return projectContextMessages({
     messages: snapshot.messages,
     checkpoint: latestCheckpoint(await store.loadContextState(conversationId)),
-    project: (tail) => projectConversationMessages({ messages: tail }),
+    project: (tail) =>
+      projectConversationMessages({
+        messages: tail,
+        ...(snapshot.activeMessageId === undefined
+          ? {}
+          : { activeMessageId: snapshot.activeMessageId }),
+      }),
   });
 }
 

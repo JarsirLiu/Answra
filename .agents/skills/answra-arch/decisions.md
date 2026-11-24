@@ -23,6 +23,7 @@
 
 | 级别 | 偏差 | 位置 | 处理 |
 | --- | --- | --- | --- |
+| 🟡 | 单请求工具循环已迁入项目；真实兼容端点的 tool-call/result 历史格式尚未实测 | `core/agent/providerStepRunner.ts`、`core/agent/toolCallExecutor.ts` | mock-model 与项目执行路径已有测试；按 [逐次请求 Note](../../../docs/notes/proposed/architecture/2026-11-24-project-controlled-model-request-loop.md) 完成 transcript/压缩/取消等集成验证，并实测兼容端点 |
 | 🔴 | 双份 Bot/Agent 定义：旧文件只剩类型与 ID 常量，但仍在被引用 | `conversation/agent.ts`（被 `conversation/application.ts:56` 取 ID）；`coding/agent.ts` + `coding/bot.ts`（被 `coding/application.ts`、`coding/stepBinding.ts` 取类型）；新实现在 `bots/general/*`、`bots/coding/*` | 收敛到 `bots/*` 后删除旧文件 |
 | 🟡 | 条目一行损坏即整段读取失败（严格 schema 校验、fail-closed） | `core/transcript/persistence/sqlite/sessionItemRows.ts` | 保留 fail-closed，另记恢复边界 Note |
 | 🟡 | `TurnScheduler.finishedTurns` 不清理，长驻进程内存无界增长 | `core/session/scheduler.ts:90` | 按会话生命周期清理 |

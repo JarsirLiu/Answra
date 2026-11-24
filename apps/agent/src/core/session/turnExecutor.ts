@@ -117,6 +117,11 @@ export class SessionTurnExecutor implements TurnExecutor {
       if (result.outcome === "failed") return failedFinish(result, done);
       if (result.finishReason === "error") return done("failed", "model-error", result.errorText);
 
+      if (result.continuation === "context-recovered") {
+        index += 1;
+        continue;
+      }
+
       if (result.handoff !== undefined) {
         const fromAgentId = agentId;
         const nextHandoff = normalizeHandoff(result.handoff);

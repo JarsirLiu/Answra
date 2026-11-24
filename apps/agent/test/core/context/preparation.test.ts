@@ -517,7 +517,7 @@ describe("ContextPreparation", () => {
     });
   });
 
-  it("ignores usage from later steps so a previous anchor stays valid", async () => {
+  it("uses the first successful request after earlier steps reported no usage", async () => {
     const store = await preparedStore();
     const previousAnchor = {
       inputTokens: 500,
@@ -544,7 +544,9 @@ describe("ContextPreparation", () => {
     });
     await preparationInstance.recordTurnFinished("conversation-1", "completed");
 
-    expect((await store.loadContextState("conversation-1"))?.usageAnchor).toEqual(previousAnchor);
+    expect((await store.loadContextState("conversation-1"))?.usageAnchor).toMatchObject({
+      inputTokens: 999,
+    });
   });
 
   it("commits the anchor from a durable turn-finished without a run-state event", async () => {
@@ -594,7 +596,7 @@ describe("ContextPreparation", () => {
     expect((await store.loadContextState("conversation-1"))?.usageAnchor).toBeUndefined();
   });
 
-  it("persists provider usage reported by a finished step", async () => {
+  it("persists provider usage as soon as a request finishes", async () => {
     const store = await preparedStore();
     const preparationInstance = preparation(store, { budget: PRUNE_ONLY_BUDGET });
     await preparationInstance.prepareRequest({
@@ -606,10 +608,7 @@ describe("ContextPreparation", () => {
       },
     });
 
-    await preparationInstance.recordStepFinished("conversation-1", {
-      index: 0,
-      contextInputTokens: 2_700,
-    });
+    await preparationInstance.recordRequestUsage("conversation-1", 2_700);
 
     expect((await store.loadContextState("conversation-1"))?.usage?.usedTokens).toBe(2_700);
     expect((await store.load("conversation-1")).contextUsage?.usedTokens).toBe(2_700);
@@ -627,16 +626,58 @@ describe("ContextPreparation", () => {
       },
     });
 
+    await preparationInstance.recordRequestUsage("conversation-1", 26_000);
+    await preparationInstance.recordRequestUsage("conversation-1", 651_448);
     await preparationInstance.recordStepFinished("conversation-1", {
       index: 0,
       anchorInputTokens: 26_000,
-      contextInputTokens: 651_448,
     });
     await preparationInstance.recordTurnFinished("conversation-1", "completed");
 
     const state = await store.loadContextState("conversation-1");
     expect(state?.usage?.usedTokens).toBe(651_448);
     expect(state?.usageAnchor?.inputTokens).toBe(26_000);
+  });
+
+  it("keeps the first successful request anchor across later step preparation", async () => {
+    const store = await preparedStore();
+    const preparationInstance = preparation(store, { budget: PRUNE_ONLY_BUDGET });
+    const firstRequest = await preparationInstance.prepareRequest({
+      conversationId: "conversation-1",
+      getAccessToken: async () => "token",
+      modelRequest: { system: "first", messages: [{ role: "user", content: "hi" }] },
+      rebuild: async () => {
+        throw new Error("不应重建");
+      },
+    });
+    await preparationInstance.recordRequestUsage("conversation-1", 321);
+    await preparationInstance.recordStepFinished("conversation-1", {
+      index: 0,
+      anchorInputTokens: 321,
+    });
+
+    await preparationInstance.prepareRequest({
+      conversationId: "conversation-1",
+      getAccessToken: async () => "token",
+      modelRequest: { system: "second", messages: [{ role: "user", content: "hi" }] },
+      rebuild: async () => {
+        throw new Error("不应重建");
+      },
+    });
+    await preparationInstance.recordRequestUsage("conversation-1", 999);
+    await preparationInstance.recordStepFinished("conversation-1", {
+      index: 1,
+      anchorInputTokens: 999,
+    });
+    await preparationInstance.recordTurnFinished("conversation-1", "completed");
+
+    expect(await store.loadContextState("conversation-1")).toMatchObject({
+      usageAnchor: {
+        inputTokens: 321,
+        estimatedTokens: estimateContextRequestTokens(firstRequest),
+      },
+      usage: { usedTokens: 999, source: "provider" },
+    });
   });
 
   it("clears a stale anchor when a projection-changing run completes without usage", async () => {

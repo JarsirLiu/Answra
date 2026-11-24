@@ -1,11 +1,14 @@
 import type { AgentStreamEvent } from "@answra/shared/schema";
-import type { TextStreamPart, ToolSet } from "ai";
+import { streamText, type TextStreamPart, type ToolSet, tool } from "ai";
+import { MockLanguageModelV3 } from "ai/test";
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import type { AgentModelRequest } from "../../../src/core/agent/definition";
 import {
   ProviderStepRunner,
   type ProviderStepRunnerOptions,
 } from "../../../src/core/agent/providerStepRunner";
+import { MAX_STEPS_PROMPT, MAX_TOOL_STEPS } from "../../../src/core/agent/toolStepLimit";
 import type { StepContextManager } from "../../../src/core/context/stepContextManager";
 import type {
   StepEventRecorder,
@@ -124,6 +127,73 @@ function multiRequestStream(usages: readonly number[]): ProviderStepRunnerOption
 }
 
 describe("ProviderStepRunner", () => {
+  it("makes one SDK request, then executes its tool call in the project step", async () => {
+    const execute = vi.fn(async ({ query }: { query: string }) => `found:${query}`);
+    const tools: ToolSet = {
+      lookup: tool({
+        description: "Lookup a value",
+        inputSchema: z.object({ query: z.string() }),
+        execute,
+      }),
+    };
+    const model = new MockLanguageModelV3({
+      doStream: {
+        stream: new ReadableStream({
+          start(controller) {
+            controller.enqueue({ type: "stream-start", warnings: [] });
+            controller.enqueue({
+              type: "tool-call",
+              toolCallId: "call-project-loop",
+              toolName: "lookup",
+              input: JSON.stringify({ query: "step" }),
+            });
+            controller.enqueue({
+              type: "finish",
+              finishReason: { unified: "tool-calls", raw: "tool_calls" },
+              usage: {
+                inputTokens: { total: 10, noCache: 10, cacheRead: 0, cacheWrite: 0 },
+                outputTokens: { total: 2, text: 2, reasoning: 0 },
+              },
+            });
+            controller.close();
+          },
+        }),
+      },
+    });
+    let sdkTools: ToolSet | undefined;
+    const stream: NonNullable<ProviderStepRunnerOptions["stream"]> = ({ options }) => {
+      sdkTools = options.tools;
+      return streamText({ model, ...options }).fullStream;
+    };
+    const { context, events } = eventSink();
+    const onRequestFinished = vi.fn();
+    const runner = createRunner({
+      prepare: async () => ({ ...MODEL_REQUEST, tools }),
+      onRequestFinished,
+      stream,
+    });
+
+    const result = await runner.run(stepStart(), context, new AbortController().signal);
+
+    expect(result).toMatchObject({ outcome: "completed", finishReason: "tool-calls" });
+    expect(model.doStreamCalls).toHaveLength(1);
+    expect(onRequestFinished).toHaveBeenCalledWith({
+      sessionId: stepStart().sessionId,
+      inputTokens: 10,
+    });
+    expect(sdkTools?.lookup?.execute).toBeUndefined();
+    expect(execute).toHaveBeenCalledOnce();
+    expect(events.map((event) => event.type)).toContain("tool-call");
+    expect(events.map((event) => event.type)).toContain("tool-execution-started");
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "tool-execution-finished",
+        toolCallId: "call-project-loop",
+        result: { success: true, output: "found:step" },
+      }),
+    );
+  });
+
   it("prepares context, streams model events and returns finish facts", async () => {
     const { context, events } = eventSink();
     const { stream, options } = scriptedStream([completedParts("hello")]);
@@ -162,14 +232,96 @@ describe("ProviderStepRunner", () => {
     ]);
   });
 
-  it("reports the first and last request input while keeping the summed usage", async () => {
+  it("records the input-token anchor and usage for the single model request", async () => {
     const { context } = eventSink();
-    const runner = createRunner({ stream: multiRequestStream([26_000, 40_000, 65_172]) });
+    const runner = createRunner({ stream: multiRequestStream([26_000]) });
 
     const result = await runner.run(stepStart(), context, new AbortController().signal);
 
-    expect(result.requestTokens).toEqual({ firstInputTokens: 26_000, lastInputTokens: 65_172 });
-    expect(result.usage?.inputTokens).toBe(131_172);
+    expect(result.requestTokens).toEqual({ firstInputTokens: 26_000 });
+    expect(result.usage?.inputTokens).toBe(26_000);
+  });
+
+  it("applies the project tool limit before the single model request", async () => {
+    const { context } = eventSink();
+    const { stream, options } = scriptedStream([completedParts("summary")]);
+    const prepareStep = vi.fn(({ stepNumber, messages }) =>
+      stepNumber >= MAX_TOOL_STEPS
+        ? {
+            toolChoice: "none" as const,
+            messages: [...messages, { role: "assistant" as const, content: MAX_STEPS_PROMPT }],
+          }
+        : undefined,
+    );
+    const runner = createRunner({
+      prepare: async () => ({ ...MODEL_REQUEST, prepareStep }),
+      stream,
+    });
+
+    await runner.run(
+      { ...stepStart(), index: MAX_TOOL_STEPS },
+      context,
+      new AbortController().signal,
+    );
+
+    expect(prepareStep).toHaveBeenCalledWith({
+      stepNumber: MAX_TOOL_STEPS,
+      messages: MODEL_REQUEST.messages,
+    });
+    expect(options[0]).toMatchObject({ toolChoice: "none" });
+    expect(options[0]).toMatchObject({
+      messages: [...MODEL_REQUEST.messages, { role: "assistant", content: MAX_STEPS_PROMPT }],
+    });
+  });
+
+  it("fails the project step when an authorized tool executor throws", async () => {
+    const execute = vi.fn(async (_input: { query: string }): Promise<string> => {
+      throw new Error("tool infrastructure failed");
+    });
+    const tools: ToolSet = {
+      lookup: tool({
+        description: "Lookup a value",
+        inputSchema: z.object({ query: z.string() }),
+        execute,
+      }),
+    };
+    const model = new MockLanguageModelV3({
+      doStream: {
+        stream: new ReadableStream({
+          start(controller) {
+            controller.enqueue({ type: "stream-start", warnings: [] });
+            controller.enqueue({
+              type: "tool-call",
+              toolCallId: "call-failing-tool",
+              toolName: "lookup",
+              input: JSON.stringify({ query: "step" }),
+            });
+            controller.enqueue({
+              type: "finish",
+              finishReason: { unified: "tool-calls", raw: "tool_calls" },
+              usage: {
+                inputTokens: { total: 10, noCache: 10, cacheRead: 0, cacheWrite: 0 },
+                outputTokens: { total: 2, text: 2, reasoning: 0 },
+              },
+            });
+            controller.close();
+          },
+        }),
+      },
+    });
+    const stream: NonNullable<ProviderStepRunnerOptions["stream"]> = ({ options }) =>
+      streamText({ model, ...options }).fullStream;
+    const { context, events } = eventSink();
+    const runner = createRunner({ prepare: async () => ({ ...MODEL_REQUEST, tools }), stream });
+
+    const result = await runner.run(stepStart(), context, new AbortController().signal);
+
+    expect(result).toMatchObject({ outcome: "failed", errorText: "tool infrastructure failed" });
+    expect(model.doStreamCalls).toHaveLength(1);
+    expect(execute).toHaveBeenCalledOnce();
+    expect(events).not.toContainEqual(
+      expect.objectContaining({ type: "tool-execution-finished", toolCallId: "call-failing-tool" }),
+    );
   });
 
   it("returns a handoff only for a non-tool-call terminal answer", async () => {
@@ -205,11 +357,10 @@ describe("ProviderStepRunner", () => {
     expect(resolveHandoff).toHaveBeenCalledOnce();
   });
 
-  it("recovers one context overflow before producing content", async () => {
+  it("recovers context overflow for a new project step without retrying this request", async () => {
     const { context, events } = eventSink();
     const { stream, options } = scriptedStream([
       [{ type: "error", error: new Error("maximum context length exceeded") }],
-      completedParts("recovered"),
     ]);
     const contextManager: StepContextManager = {
       prepare: vi.fn(async (input) => input.modelRequest),
@@ -222,10 +373,9 @@ describe("ProviderStepRunner", () => {
       new AbortController().signal,
     );
 
-    expect(result).toMatchObject({ outcome: "completed", finishReason: "stop" });
+    expect(result).toEqual({ outcome: "completed", continuation: "context-recovered" });
     expect(contextManager.recover).toHaveBeenCalledOnce();
-    expect(options.map((request) => request.system)).toEqual(["base", "recovered"]);
-    expect(events.some((event) => event.type === "text-delta")).toBe(true);
+    expect(options).toHaveLength(1);
     expect(events.some((event) => event.type === "error")).toBe(false);
   });
 

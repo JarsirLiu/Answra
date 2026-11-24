@@ -32,17 +32,22 @@ export async function buildModelMessages({
       return { type: "image" as const, image: parsed.bytes, mediaType: parsed.mediaType };
     }),
   ];
-  const messages: ModelMessage[] = includeHistory
-    ? projectContextMessages({
-        messages: (await store.load(conversationId)).messages,
-        checkpoint: latestCheckpoint(await store.loadContextState(conversationId)),
-        project: (tail) =>
-          projectConversationMessages({
-            messages: tail,
-            ...(viewerAgentId ? { viewerAgentId } : {}),
-            ...(agentNames ? { agentNames } : {}),
-          }),
-      })
-    : [{ role: "user", content }];
+  const snapshot = includeHistory ? await store.load(conversationId) : undefined;
+  const messages: ModelMessage[] =
+    snapshot === undefined
+      ? [{ role: "user", content }]
+      : projectContextMessages({
+          messages: snapshot.messages,
+          checkpoint: latestCheckpoint(await store.loadContextState(conversationId)),
+          project: (tail) =>
+            projectConversationMessages({
+              messages: tail,
+              ...(viewerAgentId ? { viewerAgentId } : {}),
+              ...(agentNames ? { agentNames } : {}),
+              ...(snapshot.activeMessageId === undefined
+                ? {}
+                : { activeMessageId: snapshot.activeMessageId }),
+            }),
+        });
   return messages;
 }

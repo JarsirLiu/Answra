@@ -106,6 +106,10 @@ export class InterviewApplication {
         getEndpoint: () => this.agentRuntime.chatEndpoint(),
         prepare: binding.prepare,
         contextManager: new PreparationStepContextManager(this.contextPreparation),
+        onRequestFinished: async ({ sessionId, inputTokens }) => {
+          await this.contextPreparation.recordRequestUsage(sessionId, inputTokens);
+          await this.pushSnapshot(sessionId);
+        },
         tokenProvider:
           typeof this.agentRuntime.modelTokenProvider === "function"
             ? this.agentRuntime.modelTokenProvider()
@@ -120,9 +124,6 @@ export class InterviewApplication {
           ...(result.requestTokens?.firstInputTokens === undefined
             ? {}
             : { anchorInputTokens: result.requestTokens.firstInputTokens }),
-          ...(result.requestTokens?.lastInputTokens === undefined
-            ? {}
-            : { contextInputTokens: result.requestTokens.lastInputTokens }),
         }),
     });
     const turnExecutor = new SessionTurnExecutor({
