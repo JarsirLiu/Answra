@@ -507,6 +507,26 @@ describe("conversation projection", () => {
     expect(recovered.error).toBeUndefined();
   });
 
+  it("keeps the failure text until the next user message arrives", () => {
+    const failed = foldConversationFrame(
+      streamingView(),
+      frame(2, turnEndItem("failed", { errorText: "Insufficient balance" })),
+    );
+    expect(failed.error).toBe("Insufficient balance");
+
+    const next = foldConversationFrame(
+      failed,
+      frame(3, {
+        itemId: "user-2",
+        status: "complete",
+        createdAt: AT,
+        turnId: "turn-2",
+        payload: { kind: "user", text: "继续", images: [] },
+      }),
+    );
+    expect(next.error).toBeUndefined();
+  });
+
   it("keeps a failed retry as a static Wi-Fi record", () => {
     const view: ConversationView = {
       ...streamingView(),
@@ -543,7 +563,21 @@ describe("conversation projection", () => {
     expect(next.error).toBeUndefined();
   });
 
-  it("does not carry a previous model error into a fresh snapshot", () => {
+  it("keeps the failure text through the settling snapshot", () => {
+    const view: ConversationView = {
+      lastSeq: 0,
+      error: "模型流未提供终态",
+      messages: [{ id: "run-1", role: "assistant", text: "", status: "failed" }],
+    };
+    const next = applyConversationSnapshot(view, {
+      conversationId: CONVERSATION,
+      lastSeq: 0,
+      messages: [{ id: "run-1", role: "assistant", text: "", images: [], status: "failed" }],
+    });
+    expect(next.error).toBe("模型流未提供终态");
+  });
+
+  it("drops the failure text when the snapshot has no messages", () => {
     const view: ConversationView = {
       lastSeq: 0,
       error: "模型流未提供终态",

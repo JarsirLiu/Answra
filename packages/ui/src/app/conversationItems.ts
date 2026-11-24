@@ -46,7 +46,8 @@ function appendUser(view: ConversationView, item: SessionItem): ConversationView
     status: "complete",
     parts: [],
   };
-  return { ...view, messages: [...view.messages, message] };
+  // 新的用户输入代表上一轮失败提示已经过期；错误由这一轮的 turn-end 重新给出。
+  return { ...view, error: undefined, messages: [...view.messages, message] };
 }
 
 function upsertSettledPart(view: ConversationView, item: SessionItem): ConversationView {

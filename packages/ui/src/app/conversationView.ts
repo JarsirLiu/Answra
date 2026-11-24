@@ -109,9 +109,9 @@ export function applyConversationSnapshot(
     contextCompactionBoundaries: snapshot.contextCompactionBoundaries,
     contextUsage: selectSnapshotContextUsage(view.contextUsage, snapshot.contextUsage),
     contextPruning: snapshot.contextPruning,
-    // A snapshot is the server's current conversation truth. Do not carry a
-    // terminal error from the previous run into a cleared or resumed view.
-    error: undefined,
+    // 失败原因来自 turn-end 条目，snapshot 不重复承载；保留到下一次用户消息再清除，
+    // 否则收口后的 snapshot 会把用户刚看到的错误立刻擦掉。空快照表示会话已清空。
+    error: snapshot.messages.length === 0 ? undefined : view.error,
   };
 }
 
