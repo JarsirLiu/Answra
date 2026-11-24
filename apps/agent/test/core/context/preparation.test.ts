@@ -505,7 +505,7 @@ describe("ContextPreparation", () => {
 
     await preparationInstance.recordStepFinished("conversation-1", {
       index: 0,
-      inputTokens: 123,
+      anchorInputTokens: 123,
     });
     await preparationInstance.recordTurnFinished("conversation-1", "completed");
 
@@ -540,7 +540,7 @@ describe("ContextPreparation", () => {
 
     await preparationInstance.recordStepFinished("conversation-1", {
       index: 1,
-      inputTokens: 999,
+      anchorInputTokens: 999,
     });
     await preparationInstance.recordTurnFinished("conversation-1", "completed");
 
@@ -561,7 +561,7 @@ describe("ContextPreparation", () => {
 
     await preparationInstance.recordStepFinished("conversation-1", {
       index: 0,
-      inputTokens: 321,
+      anchorInputTokens: 321,
     });
     await preparationInstance.recordTurnFinished("conversation-1", "completed");
 
@@ -586,7 +586,7 @@ describe("ContextPreparation", () => {
     });
     await preparationInstance.recordStepFinished("conversation-1", {
       index: 0,
-      inputTokens: 321,
+      anchorInputTokens: 321,
     });
 
     await preparationInstance.recordTurnFinished("conversation-1", "aborted");
@@ -608,11 +608,35 @@ describe("ContextPreparation", () => {
 
     await preparationInstance.recordStepFinished("conversation-1", {
       index: 0,
-      inputTokens: 2_700,
+      contextInputTokens: 2_700,
     });
 
     expect((await store.loadContextState("conversation-1"))?.usage?.usedTokens).toBe(2_700);
     expect((await store.load("conversation-1")).contextUsage?.usedTokens).toBe(2_700);
+  });
+
+  it("keeps the anchor on the first request and the display on the last one", async () => {
+    const store = await preparedStore();
+    const preparationInstance = preparation(store, { budget: PRUNE_ONLY_BUDGET });
+    await preparationInstance.prepareRequest({
+      conversationId: "conversation-1",
+      getAccessToken: async () => "token",
+      modelRequest: { system: "", messages: [{ role: "user", content: "hi" }] },
+      rebuild: async () => {
+        throw new Error("不应重建");
+      },
+    });
+
+    await preparationInstance.recordStepFinished("conversation-1", {
+      index: 0,
+      anchorInputTokens: 26_000,
+      contextInputTokens: 651_448,
+    });
+    await preparationInstance.recordTurnFinished("conversation-1", "completed");
+
+    const state = await store.loadContextState("conversation-1");
+    expect(state?.usage?.usedTokens).toBe(651_448);
+    expect(state?.usageAnchor?.inputTokens).toBe(26_000);
   });
 
   it("clears a stale anchor when a projection-changing run completes without usage", async () => {

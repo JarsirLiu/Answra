@@ -236,6 +236,17 @@ export interface StepExecutor {
 }
 
 /**
+ * 单次 provider 请求的输入 token。
+ *
+ * 一个 session step 内部可能有多次 AI SDK 请求（工具循环），`usage` 是这些请求的**总和**，
+ * 不能当上下文占用：首个请求用于校准估算锚点，最后一个请求才是当前上下文大小。
+ */
+export interface StepRequestTokens {
+  firstInputTokens?: number;
+  lastInputTokens?: number;
+}
+
+/**
  * 真实 provider/工具执行器返回的事实；step 事件由 SessionStepExecutor 统一写。
  * handoff 目标必须由宿主在返回前校验可见性；TurnExecutor 只做非空与自交接校验。
  */
@@ -243,6 +254,8 @@ export interface StepRunnerResult {
   outcome: StepOutcome;
   finishReason?: AgentFinishReason;
   usage?: AgentUsage;
+  /** provider 逐请求的输入量；缺失表示这条链路没有报告，不推演。 */
+  requestTokens?: StepRequestTokens;
   errorText?: string;
   handoff?: TurnHandoff;
 }

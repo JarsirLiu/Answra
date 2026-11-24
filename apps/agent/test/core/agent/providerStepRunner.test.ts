@@ -96,6 +96,33 @@ function createRunner(overrides: Partial<ProviderStepRunnerOptions> = {}): Provi
   });
 }
 
+/** 模拟一次 session step 内部的多轮 AI SDK 请求，逐轮回调 `onStepFinish`。 */
+function multiRequestStream(usages: readonly number[]): ProviderStepRunnerOptions["stream"] {
+  return (({ options }) =>
+    (async function* () {
+      const onStepFinish = options.onStepFinish as
+        | ((event: { usage: { inputTokens: number; outputTokens: number } }) => void)
+        | undefined;
+      for (const inputTokens of usages) {
+        yield { type: "start-step", warnings: [] } as unknown as TextStreamPart<ToolSet>;
+        onStepFinish?.({ usage: { inputTokens, outputTokens: 1 } });
+        yield {
+          type: "finish-step",
+          finishReason: "tool-calls",
+          usage: { inputTokens, outputTokens: 1 },
+        } as unknown as TextStreamPart<ToolSet>;
+      }
+      yield {
+        type: "finish",
+        finishReason: "stop",
+        totalUsage: {
+          inputTokens: usages.reduce((total, value) => total + value, 0),
+          outputTokens: usages.length,
+        },
+      } as unknown as TextStreamPart<ToolSet>;
+    })()) as ProviderStepRunnerOptions["stream"];
+}
+
 describe("ProviderStepRunner", () => {
   it("prepares context, streams model events and returns finish facts", async () => {
     const { context, events } = eventSink();
@@ -133,6 +160,16 @@ describe("ProviderStepRunner", () => {
       "text-end",
       "finish",
     ]);
+  });
+
+  it("reports the first and last request input while keeping the summed usage", async () => {
+    const { context } = eventSink();
+    const runner = createRunner({ stream: multiRequestStream([26_000, 40_000, 65_172]) });
+
+    const result = await runner.run(stepStart(), context, new AbortController().signal);
+
+    expect(result.requestTokens).toEqual({ firstInputTokens: 26_000, lastInputTokens: 65_172 });
+    expect(result.usage?.inputTokens).toBe(131_172);
   });
 
   it("returns a handoff only for a non-tool-call terminal answer", async () => {

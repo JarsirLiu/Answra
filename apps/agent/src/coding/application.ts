@@ -124,13 +124,19 @@ export class CodingApplication {
     const stepExecutor = new SessionStepExecutor({
       recorder,
       runner,
-      onStepFinished: (step, result) =>
-        this.contextPreparation.recordStepFinished(step.sessionId, {
+      onStepFinished: async (step, result) => {
+        await this.contextPreparation.recordStepFinished(step.sessionId, {
           index: step.index,
-          ...(result.usage?.inputTokens === undefined
+          ...(result.requestTokens?.firstInputTokens === undefined
             ? {}
-            : { inputTokens: result.usage.inputTokens }),
-        }),
+            : { anchorInputTokens: result.requestTokens.firstInputTokens }),
+          ...(result.requestTokens?.lastInputTokens === undefined
+            ? {}
+            : { contextInputTokens: result.requestTokens.lastInputTokens }),
+        });
+        // 上下文用量在 step 结束时已经确定，立即推一次快照，状态行不必等 Turn 收口。
+        await this.pushSnapshot(step.sessionId);
+      },
     });
     const turnExecutor = new SessionTurnExecutor({
       recorder,

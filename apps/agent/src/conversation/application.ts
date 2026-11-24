@@ -174,9 +174,12 @@ export class ConversationApplication {
       onStepFinished: (step, result) =>
         this.contextPreparation.recordStepFinished(step.sessionId, {
           index: step.index,
-          ...(result.usage?.inputTokens === undefined
+          ...(result.requestTokens?.firstInputTokens === undefined
             ? {}
-            : { inputTokens: result.usage.inputTokens }),
+            : { anchorInputTokens: result.requestTokens.firstInputTokens }),
+          ...(result.requestTokens?.lastInputTokens === undefined
+            ? {}
+            : { contextInputTokens: result.requestTokens.lastInputTokens }),
         }),
     });
     const turnExecutor = new SessionTurnExecutor({

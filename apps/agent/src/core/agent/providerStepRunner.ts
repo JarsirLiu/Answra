@@ -100,6 +100,8 @@ export class ProviderStepRunner implements StepRunner {
 
     for (;;) {
       let finished: { finishReason: AgentFinishReason; usage?: AgentUsage } | undefined;
+      // 一次 session step 内可能有多次 AI SDK 请求；`finish.totalUsage` 是它们之和。
+      const requestTokens: { firstInputTokens?: number; lastInputTokens?: number } = {};
       const attempt = createModelAttemptSink({
         append: async (event) => {
           const streamEvent = asModelStreamEvent(event);
@@ -130,6 +132,12 @@ export class ProviderStepRunner implements StepRunner {
             signal,
             options: {
               ...modelRequest,
+              onStepFinish: (event) => {
+                const inputTokens = event.usage?.inputTokens;
+                if (inputTokens === undefined) return;
+                requestTokens.firstInputTokens ??= inputTokens;
+                requestTokens.lastInputTokens = inputTokens;
+              },
               experimental_onToolCallStart: async (event) => {
                 await context.events.append({
                   type: "tool-execution-started",
@@ -161,7 +169,7 @@ export class ProviderStepRunner implements StepRunner {
         );
         if (result.kind === "finished") {
           await flush(liveOutput, attempt);
-          return this.finish(step, finished);
+          return this.finish(step, finished, requestTokens);
         }
         if (result.kind === "aborted") {
           await flush(liveOutput, attempt);
@@ -216,6 +224,7 @@ export class ProviderStepRunner implements StepRunner {
   private async finish(
     step: StepStart,
     finished: { finishReason: AgentFinishReason; usage?: AgentUsage } | undefined,
+    requestTokens: { firstInputTokens?: number; lastInputTokens?: number },
   ): Promise<StepRunnerResult> {
     if (finished === undefined) {
       return { outcome: "failed", errorText: "模型流未提供终态" };
@@ -231,6 +240,10 @@ export class ProviderStepRunner implements StepRunner {
       outcome: "completed",
       finishReason: finished.finishReason,
       ...(finished.usage === undefined ? {} : { usage: finished.usage }),
+      ...(requestTokens.firstInputTokens === undefined &&
+      requestTokens.lastInputTokens === undefined
+        ? {}
+        : { requestTokens }),
       ...(handoff === undefined ? {} : { handoff }),
     };
   }

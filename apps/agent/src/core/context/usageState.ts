@@ -47,13 +47,21 @@ export class ContextStateCoordinator {
     }
   }
 
-  /** step 结算：锚点只认首个 step；provider 实测输入写入会话状态供 UI 展示。 */
+  /**
+   * step 结算：锚点只认首个 step 的首个请求；展示取最后一个请求的输入量。
+   *
+   * 一个 step 内可能有多轮工具循环，把多请求之和当上下文占用会让 UI 出现远超窗口的数字，
+   * 并让锚点比例被放大数十倍。
+   */
   async recordStepFinished(
     conversationId: string,
-    input: { index: number; inputTokens?: number },
+    input: { index: number; anchorInputTokens?: number; contextInputTokens?: number },
   ): Promise<void> {
-    this.anchors.recordStepFinished(conversationId, input);
-    if (input.inputTokens === undefined) return;
+    this.anchors.recordStepFinished(conversationId, {
+      index: input.index,
+      ...(input.anchorInputTokens === undefined ? {} : { inputTokens: input.anchorInputTokens }),
+    });
+    if (input.contextInputTokens === undefined) return;
     try {
       const state = await this.store.loadContextState(conversationId);
       if (!state?.usage) return;
@@ -61,7 +69,7 @@ export class ContextStateCoordinator {
         ...state,
         usage: {
           ...state.usage,
-          usedTokens: input.inputTokens,
+          usedTokens: input.contextInputTokens,
           source: "provider",
           updatedAt: this.now().toISOString(),
         },
