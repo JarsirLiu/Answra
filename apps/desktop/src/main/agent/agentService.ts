@@ -4,6 +4,7 @@ import {
   ActiveInterviewIntakeConversationId,
   type AgentConnectionState,
   type BotSummary,
+  type ConversationImage,
   type ConversationModelConfig,
   type ConversationSelection,
   type ConversationSendCommand,
@@ -21,6 +22,7 @@ import {
 import type { LiveFrame, SessionFrame } from "@answra/shared/schema";
 import type { ResolvedModel } from "../conversation/modelRouter";
 import { AgentWorkerProcess } from "./agentWorkerHost";
+import { parseConversationImages } from "./conversationImages";
 
 /** 重连后要刷新快照的会话上限；截图答题会创建大量一次性会话。 */
 const MAX_TRACKED_CONVERSATIONS = 32;
@@ -204,14 +206,17 @@ export class AgentService {
 
   async sendInterviewIntakeMessage(
     text: string,
+    images: ConversationImage[],
   ): Promise<{ turnId: string; snapshot: ConversationSnapshot }> {
-    if (!text.trim() || text.length > 32_000) throw new Error("面试消息无效或过长");
+    if (text.length > 32_000 || (!text.trim() && images.length === 0))
+      throw new Error("面试消息无效或过长");
     await this.start();
     this.trackConversation(ActiveInterviewIntakeConversationId);
     await this.prepareInterviewModel();
     return (await this.workerHost.request("interview-intake-message", {
       conversationId: ActiveInterviewIntakeConversationId,
       text,
+      images,
     })) as { turnId: string; snapshot: ConversationSnapshot };
   }
 
@@ -414,19 +419,5 @@ function snapshotCommandFor(conversationId: string) {
 function validateSendRequest(request: ConversationSendRequest): void {
   if (typeof request.text !== "string" || request.text.length > 32_000)
     throw new Error("消息内容无效或过长");
-  if (!Array.isArray(request.images) || request.images.length > 8)
-    throw new Error("单次最多发送 8 张图片");
-  const allowedTypes = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
-  for (const image of request.images) {
-    if (
-      typeof image.name !== "string" ||
-      image.name.length > 256 ||
-      typeof image.dataUrl !== "string" ||
-      image.dataUrl.length > 11_200_000
-    )
-      throw new Error("图片附件无效或过大");
-    const match = /^data:(image\/[a-z]+);base64,([A-Za-z0-9+/]+={0,2})$/.exec(image.dataUrl);
-    if (!match?.[1] || !allowedTypes.has(match[1]) || !match[2])
-      throw new Error("图片格式仅支持 PNG、JPEG、WebP 或 GIF");
-  }
+  parseConversationImages(request.images);
 }

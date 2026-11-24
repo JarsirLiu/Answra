@@ -48,6 +48,7 @@ export {
   type ConversationCapabilityEndpoint,
   type ConversationChannelMap,
   ConversationChannels,
+  type ConversationImage,
   type ConversationMessage,
   type ConversationModelConfig,
   type ConversationModelSettings,

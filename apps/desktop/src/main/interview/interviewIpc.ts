@@ -5,6 +5,7 @@ import {
 } from "@answra/shared";
 import { type BrowserWindow, type IpcMainEvent, ipcMain, session } from "electron";
 import type { AgentService } from "../agent/agentService";
+import { parseConversationImages } from "../agent/conversationImages";
 import { getWindow, isWindowFromSender } from "../window";
 import { InterviewCaptureService } from "./interviewCaptureService";
 
@@ -49,10 +50,12 @@ export function registerInterviewIpc(agent: AgentService) {
 
   ipcMain.handle(InterviewChannels.IntakeMessage, async (event, payload: unknown) => {
     if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用");
-    const text = (payload as { text?: unknown } | null)?.text;
-    if (typeof text !== "string" || !text.trim() || text.length > 32_000)
-      throw new Error("面试消息无效");
-    return agent.sendInterviewIntakeMessage(text);
+    const body = payload as { text?: unknown; images?: unknown } | null;
+    const text = body?.text;
+    if (typeof text !== "string" || text.length > 32_000) throw new Error("面试消息无效");
+    const images = parseConversationImages(body?.images);
+    if (!text.trim() && images.length === 0) throw new Error("面试消息无效");
+    return agent.sendInterviewIntakeMessage(text, images);
   });
 
   ipcMain.handle(InterviewChannels.IntakeSnapshot, async (event) => {

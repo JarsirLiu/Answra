@@ -3,7 +3,7 @@
  * Turn/Step 状态由 `SessionRuntime` 持有，本文件只做领域装配、宿主端口与兼容 DTO 接线。
  */
 import { randomUUID } from "node:crypto";
-import type { ConversationSnapshot, InterviewProfileSeed } from "@answra/shared";
+import type { ConversationImage, ConversationSnapshot, InterviewProfileSeed } from "@answra/shared";
 import type { SessionFrame } from "@answra/shared/schema";
 import type { AgentExecutor, AgentId } from "../core/agent/definition";
 import { ProviderStepRunner } from "../core/agent/providerStepRunner";
@@ -11,6 +11,7 @@ import type { AgentRuntime } from "../core/agent/runtime";
 import { ContextCompactor } from "../core/context/compaction/compactor";
 import { ContextPreparation } from "../core/context/preparation";
 import { PreparationStepContextManager } from "../core/context/stepContextManager";
+import { validateModelRequest } from "../core/model/requestContent";
 import type { SessionId, StepRunner } from "../core/session/contracts";
 import { sessionId as asSessionId, turnId as asTurnId } from "../core/session/contracts";
 import { SessionItemRecorder } from "../core/session/itemRecorder";
@@ -206,10 +207,21 @@ export class InterviewApplication {
   ): Promise<{ turnId: string; snapshot: ConversationSnapshot }> {
     const trimmed = text.trim();
     if (!trimmed || trimmed.length > 32_000) throw new Error("面试消息无效或过长");
+    return this.sendMessage(conversationId, { text: trimmed, images: [] });
+  }
+
+  /** 资料 intake 输入：文本与粘贴图片作为同一条 user 消息落账，再开始回复。 */
+  async sendMessage(
+    conversationId: string,
+    request: { text: string; images: readonly ConversationImage[] },
+  ): Promise<{ turnId: string; snapshot: ConversationSnapshot }> {
+    validateModelRequest(request);
+    const text = request.text.trim();
+    if (!text && request.images.length === 0) throw new Error("面试消息无效或过长");
     const session = await this.ensureRecovered(conversationId);
     const appended = await this.sessionRuntime.appendUserMessage(
       session,
-      createUserMessage(randomUUID(), { text: trimmed, images: [] }),
+      createUserMessage(randomUUID(), { text, images: [...request.images] }),
     );
     await this.onSnapshot(appended);
     return this.startReply(conversationId);

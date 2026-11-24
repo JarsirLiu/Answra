@@ -8,6 +8,7 @@ import {
   ConnectionChannels,
   type ContentSize,
   ConversationChannels,
+  type ConversationImage,
   type ConversationModelSettings,
   type ConversationSelection,
   type ConversationSendCommand,
@@ -193,8 +194,8 @@ const bridge: DesktopBridge = {
   sendInterviewMessage: (conversationId: string, text: string) =>
     ipcRenderer.invoke(InterviewChannels.Message, { conversationId, text }),
   openInterviewIntake: () => ipcRenderer.invoke(InterviewChannels.IntakeOpen),
-  sendInterviewIntakeMessage: (text: string) =>
-    ipcRenderer.invoke(InterviewChannels.IntakeMessage, { text }),
+  sendInterviewIntakeMessage: (text: string, images: ConversationImage[]) =>
+    ipcRenderer.invoke(InterviewChannels.IntakeMessage, { text, images }),
   getInterviewIntakeSnapshot: () => ipcRenderer.invoke(InterviewChannels.IntakeSnapshot),
   stopInterview: (sessionId: string) => ipcRenderer.invoke(InterviewChannels.Stop, { sessionId }),
   markInterviewCaptureReady: (sessionId: string) =>

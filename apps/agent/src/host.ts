@@ -417,7 +417,10 @@ export function startAgentHost({
       case "interview-intake-open":
         return interviewIntake.open(command.conversationId);
       case "interview-intake-message":
-        return interviewIntake.sendText(command.conversationId, command.text);
+        return interviewIntake.sendMessage(command.conversationId, {
+          text: command.text,
+          images: command.images,
+        });
       case "interview-intake-snapshot":
         return interviewIntake.getSnapshot(command.conversationId);
       case "chat-send":

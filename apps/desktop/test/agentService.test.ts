@@ -181,4 +181,30 @@ describe("AgentService connection lifecycle", () => {
     );
     await service.stop();
   });
+
+  it("forwards intake text and images to the worker", async () => {
+    const service = createService();
+    await service.start();
+    const images = [{ name: "resume.png", dataUrl: "data:image/png;base64,QUJD" }];
+
+    await service.sendInterviewIntakeMessage("补充简历", images);
+
+    expect(lastWorker().postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "interview-intake-message",
+        conversationId: "interview-intake",
+        text: "补充简历",
+        images,
+      }),
+    );
+    await service.stop();
+  });
+
+  it("rejects an empty intake message without images", async () => {
+    const service = createService();
+
+    await expect(service.sendInterviewIntakeMessage("   ", [])).rejects.toThrow(
+      "面试消息无效或过长",
+    );
+  });
 });

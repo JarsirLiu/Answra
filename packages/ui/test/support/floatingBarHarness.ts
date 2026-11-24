@@ -486,23 +486,25 @@ export function createConversationBridge() {
       });
       return { snapshot };
     }),
-    sendInterviewIntakeMessage: vi.fn(async (text: string) => {
-      const prior = snapshotFor(ActiveInterviewIntakeConversationId);
-      const snapshot = saveSnapshot({
-        ...prior,
-        messages: [
-          ...prior.messages,
-          {
-            id: `user-${prior.messages.length + 1}`,
-            role: "user",
-            text,
-            images: [],
-            status: "complete",
-          },
-        ],
-      });
-      return { turnId: "turn-1", snapshot };
-    }),
+    sendInterviewIntakeMessage: vi.fn(
+      async (text: string, images: Array<{ name: string; dataUrl: string }>) => {
+        const prior = snapshotFor(ActiveInterviewIntakeConversationId);
+        const snapshot = saveSnapshot({
+          ...prior,
+          messages: [
+            ...prior.messages,
+            {
+              id: `user-${prior.messages.length + 1}`,
+              role: "user",
+              text,
+              images,
+              status: "complete",
+            },
+          ],
+        });
+        return { turnId: "turn-1", snapshot };
+      },
+    ),
     getInterviewIntakeSnapshot: vi.fn(async () => snapshotFor(ActiveInterviewIntakeConversationId)),
     readInterviewIntakeEvents: vi.fn(async () => []),
     cancelTurn: vi.fn(),

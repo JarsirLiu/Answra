@@ -132,6 +132,33 @@ describe("InterviewApplication", () => {
     expect(steps[0]).toEqual(expect.objectContaining({ source: "reply" }));
   });
 
+  it("records pasted images on the intake user message", async () => {
+    const { app, snapshots, steps } = createHarness();
+    const image = { name: "简历.png", dataUrl: "data:image/png;base64,QUJD" };
+
+    await app.createConversation("conversation-1");
+    const result = await app.sendMessage("conversation-1", { text: "", images: [image] });
+    await app.waitForTurn("conversation-1", result.turnId);
+
+    expect(result.snapshot.messages[0]).toEqual(
+      expect.objectContaining({ role: "user", text: "", images: [image] }),
+    );
+    expect(snapshots.at(-1)?.messages[0]?.images).toEqual([image]);
+    expect(steps[0]).toEqual(expect.objectContaining({ source: "reply" }));
+  });
+
+  it("rejects intake images that are not supported media types", async () => {
+    const { app } = createHarness();
+
+    await app.createConversation("conversation-1");
+    await expect(
+      app.sendMessage("conversation-1", {
+        text: "",
+        images: [{ name: "note.txt", dataUrl: "data:text/plain;base64,QUJD" }],
+      }),
+    ).rejects.toThrow("图片格式仅支持 PNG、JPEG、WebP 或 GIF");
+  });
+
   it("opens with an assistant placeholder and no user message", async () => {
     const { app, steps, release } = createHarness({ hold: true });
 

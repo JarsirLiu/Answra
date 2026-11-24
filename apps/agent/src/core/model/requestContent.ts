@@ -1,8 +1,14 @@
-/** Validates model request text and image inputs shared by Chat and Answer applications. */
-import type { ConversationSendRequest } from "@answra/shared";
+/** Validates model request text and image inputs shared by Chat, Answer and interview intake. */
+import type { ConversationImage } from "@answra/shared";
 import { parseDataUrl } from "./imageInput";
 
-export function validateModelRequest(request: ConversationSendRequest): void {
+/** 只关心文本与图片本身；readonly 允许 worker 协议直接传入，不复制数组。 */
+export interface ModelRequestContent {
+  text: string;
+  images: readonly ConversationImage[];
+}
+
+export function validateModelRequest(request: ModelRequestContent): void {
   if (typeof request.text !== "string" || request.text.length > 32_000)
     throw new Error("消息内容无效或过长");
   if (!Array.isArray(request.images) || request.images.length > 8)

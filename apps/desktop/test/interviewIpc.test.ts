@@ -146,8 +146,19 @@ describe("interview IPC", () => {
 
     const intakeMessage = harness.handlers.get(InterviewChannels.IntakeMessage);
     if (!intakeMessage) throw new Error("intake message handler not registered");
-    await intakeMessage(senderEvent, { text: "补充一下项目背景" });
-    expect(agent.sendInterviewIntakeMessage).toHaveBeenCalledWith("补充一下项目背景");
+    const image = { name: "简历.png", dataUrl: "data:image/png;base64,QUJD" };
+    await intakeMessage(senderEvent, { text: "补充一下项目背景", images: [image] });
+    expect(agent.sendInterviewIntakeMessage).toHaveBeenCalledWith("补充一下项目背景", [image]);
+
+    await expect(
+      intakeMessage(senderEvent, {
+        text: "",
+        images: [{ name: "a.png", dataUrl: "data:image/bmp;base64,QUJD" }],
+      }),
+    ).rejects.toThrow("图片格式仅支持 PNG、JPEG、WebP 或 GIF");
+    await expect(intakeMessage(senderEvent, { text: "", images: [] })).rejects.toThrow(
+      "面试消息无效",
+    );
 
     const intakeSnapshot = harness.handlers.get(InterviewChannels.IntakeSnapshot);
     if (!intakeSnapshot) throw new Error("intake snapshot handler not registered");

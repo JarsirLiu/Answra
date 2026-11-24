@@ -1,4 +1,5 @@
 import type { ConversationSnapshot } from "../schema";
+import type { ConversationImage } from "./conversation";
 
 /** 面试采集、音频流和回答状态的 IPC 频道和载荷契约。 */
 export const InterviewChannels = {
@@ -178,7 +179,7 @@ export interface InterviewChannelMap {
     response: InterviewIntakeOpenResult;
   };
   [InterviewChannels.IntakeMessage]: {
-    request: { text: string };
+    request: { text: string; images: ConversationImage[] };
     response: { runId: string; snapshot: ConversationSnapshot };
   };
   [InterviewChannels.IntakeSnapshot]: {

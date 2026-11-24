@@ -7,6 +7,7 @@ import type {
 import { type ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
 import type { ChatAttachment } from "../components/panels/ChatPanel";
 import type { ReplyPhase } from "../components/panels/ReplyBar";
+import { createAttachment, revokeAttachment } from "./attachments";
 
 interface UseReplyWorkflowOptions {
   platform: DesktopBridge | undefined;
@@ -133,7 +134,7 @@ export function useReplyWorkflow({
   const removeAttachment = useCallback((id: string) => {
     setAttachments((current) => {
       const target = current.find((candidate) => candidate.id === id);
-      if (target?.previewUrl.startsWith("blob:")) URL.revokeObjectURL(target.previewUrl);
+      if (target) revokeAttachment(target);
       return current.filter((candidate) => candidate.id !== id);
     });
   }, []);
@@ -141,20 +142,17 @@ export function useReplyWorkflow({
   const handleAttachmentChange = useCallback(
     (input: ChangeEvent<HTMLInputElement> | File | null) => {
       const file = input instanceof File ? input : (input?.target.files?.[0] ?? null);
-      if (!file?.type.startsWith("image/")) return;
-      setAttachments((current) => [
-        ...current,
-        { id: crypto.randomUUID(), name: file.name, previewUrl: URL.createObjectURL(file) },
-      ]);
+      if (!file) return;
+      const attachment = createAttachment(file);
+      if (!attachment) return;
+      setAttachments((current) => [...current, attachment]);
     },
     [],
   );
 
   const resetRoundInput = useCallback(() => {
     setAttachments((current) => {
-      current.forEach((candidate) => {
-        if (candidate.previewUrl.startsWith("blob:")) URL.revokeObjectURL(candidate.previewUrl);
-      });
+      current.forEach(revokeAttachment);
       return [];
     });
     setDraft("");

@@ -1,6 +1,7 @@
 import type {
   AnswerSendCommand,
   ChatSendCommand,
+  ConversationImage,
   ConversationModelConfig,
   ConversationSelection,
   ConversationSnapshot,
@@ -131,7 +132,13 @@ export type AgentCommand =
   | { id: string; type: "interview-message"; conversationId: string; text: string }
   | { id: string; type: "interview-snapshot"; conversationId: string }
   | { id: string; type: "interview-intake-open"; conversationId: string }
-  | { id: string; type: "interview-intake-message"; conversationId: string; text: string }
+  | {
+      id: string;
+      type: "interview-intake-message";
+      conversationId: string;
+      text: string;
+      images: readonly ConversationImage[];
+    }
   | { id: string; type: "interview-intake-snapshot"; conversationId: string }
   | ({ id: string; type: "chat-send"; accessToken: string } & ChatSendCommand)
   | ({ id: string; type: "team-send"; accessToken: string } & TeamSendCommand)

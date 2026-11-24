@@ -2,6 +2,7 @@ import type { DesktopBridge, ReplyBarActivity } from "@answra/shared";
 import { isAgentServiceDisconnectedError } from "@answra/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChatAttachment } from "../components/panels/ChatPanel";
+import { attachmentToImage } from "./attachments";
 import { useConversationView } from "./useConversationView";
 
 function useAiConversation(
@@ -85,14 +86,7 @@ function useAiConversation(
       lastActivityMessageIdRef.current = previousAssistant?.id;
       setHideActivities(Boolean(previousAssistant));
       try {
-        const images = await Promise.all(
-          attachments.map(async (attachment) => ({
-            name: attachment.name,
-            dataUrl: attachment.previewUrl.startsWith("data:")
-              ? attachment.previewUrl
-              : await blobUrlToDataUrl(attachment.previewUrl),
-          })),
-        );
+        const images = await Promise.all(attachments.map(attachmentToImage));
         if (targetConversationId !== conversationId) {
           selectConversation(targetConversationId);
           await platform.createConversation?.(targetConversationId);
@@ -193,17 +187,4 @@ export function useGeneralChat(platform: DesktopBridge | undefined, conversation
 
 export function useScreenshotAnswer(platform: DesktopBridge | undefined, conversationId: string) {
   return useAiConversation(platform, conversationId, "answer.send");
-}
-
-async function blobUrlToDataUrl(url: string): Promise<string> {
-  const blob = await fetch(url).then((response) => response.blob());
-  return await new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () =>
-      typeof reader.result === "string"
-        ? resolve(reader.result)
-        : reject(new Error("无法读取图片"));
-    reader.onerror = () => reject(reader.error ?? new Error("无法读取图片"));
-    reader.readAsDataURL(blob);
-  });
 }

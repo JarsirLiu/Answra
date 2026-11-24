@@ -177,9 +177,15 @@ export interface ConversationModelSettingsView {
   configured: boolean;
 }
 
+/** 用户随消息发送的图片；桌面边界统一校验媒体类型、大小与数量。 */
+export interface ConversationImage {
+  name: string;
+  dataUrl: string;
+}
+
 export interface ConversationSendRequest {
   text: string;
-  images: Array<{ name: string; dataUrl: string }>;
+  images: ConversationImage[];
 }
 
 /** Host 接受用户消息后的排队结果；queued 表示尚未创建 Agent Turn。 */

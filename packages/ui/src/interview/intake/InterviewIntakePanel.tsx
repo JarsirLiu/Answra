@@ -36,7 +36,7 @@ export function InterviewIntakePanel({
 
   return (
     <ChatPanel
-      attachments={[]}
+      attachments={intake.attachments}
       bridge={platform}
       draft={intake.draft}
       error={intake.error}
@@ -44,8 +44,10 @@ export function InterviewIntakePanel({
       headerAction={headerAction}
       inputLabel="输入消息"
       messages={intake.messages}
-      onAttachmentChange={() => undefined}
-      onAttachmentRemove={() => undefined}
+      onAttachmentChange={(file) => {
+        if (file) intake.addAttachment(file);
+      }}
+      onAttachmentRemove={intake.removeAttachment}
       onCancel={intake.cancel}
       onClose={onClose}
       onDraftChange={intake.setDraft}
@@ -54,7 +56,6 @@ export function InterviewIntakePanel({
       }}
       placeholder="回答 AI 的问题，或补充简历、项目信息…"
       sending={intake.opening || (intake.sendPending && !intake.activeMessageId)}
-      showAttachments={false}
       stealth={false}
       streaming={Boolean(intake.activeMessageId)}
       title="面试分身"
