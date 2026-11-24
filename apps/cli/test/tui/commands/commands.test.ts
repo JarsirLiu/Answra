@@ -23,6 +23,7 @@ describe("parseTuiCommand", () => {
     expect(parseTuiCommand("/clear")).toMatchObject({ command: { kind: "clear" }, args: [] });
     expect(parseTuiCommand("/new")).toMatchObject({ command: { kind: "new" }, args: [] });
     expect(parseTuiCommand("/sessions")).toMatchObject({ command: { kind: "sessions" }, args: [] });
+    expect(parseTuiCommand("/skills")).toMatchObject({ command: { kind: "skills" }, args: [] });
     expect(parseTuiCommand("/resume abc")).toMatchObject({
       command: { kind: "resume" },
       args: ["abc"],
@@ -68,6 +69,7 @@ describe("parseTuiCommand", () => {
       "clear",
       "new",
       "sessions",
+      "skills",
       "resume",
       "delete",
       "compact",
@@ -99,6 +101,7 @@ describe("parseTuiCommand", () => {
       "clear",
       "new",
       "sessions",
+      "skills",
       "resume",
       "delete",
       "compact",
@@ -155,7 +158,7 @@ describe("parseTuiCommand", () => {
 
 describe("catalog access", () => {
   it("keeps view-only commands available while a run is active", () => {
-    for (const name of ["help", "status", "sessions", "resume"]) {
+    for (const name of ["help", "status", "sessions", "skills", "resume"]) {
       expect(requireCommand(name).access).toEqual({ whileRunning: "allow" });
     }
   });

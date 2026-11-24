@@ -54,6 +54,7 @@ export const PANEL_HANDLERS: TuiPanelHandlers = {
   loadSessions: async () => ({ current: "", sessions: [] }),
   resumeSession: async () => {},
   deleteSession: async () => {},
+  loadSkills: async () => ({ skills: [] }),
   close: () => {},
 };
 

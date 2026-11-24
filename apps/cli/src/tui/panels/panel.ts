@@ -1,8 +1,9 @@
 /** TUI 面板契约：面板种类与 `/config`、`/model` 的窄宿主端口；不持有 store 或会话实现。 */
 import type { ConversationSessionSummary } from "@answra/shared";
+import type { CodingSkillSummary } from "../../session/codingSession";
 import type { ConfigPanelData, ConfigSaveInput } from "./configForm";
 
-export type TuiPanel = "config" | "model" | "status" | "sessions" | "help";
+export type TuiPanel = "config" | "model" | "status" | "sessions" | "skills" | "help";
 
 export interface ModelPickerData {
   readonly current: string;
@@ -17,6 +18,11 @@ export interface SessionsPanelData {
   readonly error?: string;
 }
 
+export interface SkillsPanelData {
+  readonly skills: readonly CodingSkillSummary[];
+  readonly error?: string;
+}
+
 export interface TuiPanelHandlers {
   loadConfig(): Promise<ConfigPanelData>;
   saveConfig(input: ConfigSaveInput): Promise<void>;
@@ -25,5 +31,6 @@ export interface TuiPanelHandlers {
   loadSessions(cursor?: string): Promise<SessionsPanelData>;
   resumeSession(conversationId: string): Promise<void>;
   deleteSession(conversationId: string): Promise<void>;
+  loadSkills(): Promise<SkillsPanelData>;
   close(reason?: "saved" | "dismissed" | "status" | "resumed"): void;
 }

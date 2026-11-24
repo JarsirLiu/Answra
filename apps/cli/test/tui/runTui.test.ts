@@ -284,6 +284,33 @@ describe("runInkTui", () => {
     store.dispose();
   });
 
+  it("opens the skills panel and lists the session skill catalog", async () => {
+    const { session } = createSession();
+    const listSkills = vi.fn(async () => [
+      {
+        name: "answra-code",
+        description: "工程规范",
+        source: "workspace" as const,
+        directory: "D:/repo/.agents/skills/answra-code",
+      },
+    ]);
+    Object.assign(session, { listSkills });
+    const store = new TuiViewStore();
+    const { props, finish } = await start(session, store);
+
+    props.onSubmit("/skills");
+    await tick();
+
+    expect(store.getSnapshot().panel).toBe("skills");
+    await expect(props.panelHandlers.loadSkills()).resolves.toMatchObject({
+      skills: [{ name: "answra-code", source: "workspace" }],
+    });
+    expect(listSkills).toHaveBeenCalledTimes(1);
+
+    finish();
+    store.dispose();
+  });
+
   it("reports session list failures inside the panel data", async () => {
     const { session } = createSession();
     Object.assign(session, {

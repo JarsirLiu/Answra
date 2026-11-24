@@ -13,6 +13,7 @@ import {
   handleResume,
   handleSessions,
 } from "./handlers/session";
+import { handleSkills } from "./handlers/skill";
 import type { TuiCommandInvocation } from "./parse";
 import type { TuiCommandDeps, TuiCommandHandler } from "./ports";
 
@@ -21,6 +22,7 @@ const handlers = {
   clear: handleClear,
   new: handleNew,
   sessions: handleSessions,
+  skills: handleSkills,
   resume: handleResume,
   delete: handleDelete,
   compact: handleCompact,

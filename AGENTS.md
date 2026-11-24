@@ -89,7 +89,7 @@
 | `src/cli` | 顶层命令分派、`code`/`config`/`remote` 用例、依赖端口、help/error | 只依赖端口，不 import Electron 或 desktop |
 | `src/config` | argv 语法、工作区校验与宿主 skill 根目录解析 | 不读写配置、不启动会话、不写事件 |
 | `src/model` | CLI 模型设置域：选择、优先级、应用服务、持久化端口与模型目录端口 | 不 import `tui`/`cli`/`adapters`，不碰 `node:fs`、Ink 或终端输出 |
-| `src/session` | `CodingSession` 单活动 run 用例、新建/恢复/列表/删除与窄宿主端口 | 不实现模型调用、TUI 或进程 I/O |
+| `src/session` | `CodingSession` 单活动 run 用例、新建/恢复/列表/删除、skill 目录读取与窄宿主端口 | 不实现模型调用、TUI 或进程 I/O |
 | `src/adapters` | `@answra/config` 共享文件实现、OpenAI 兼容 `/models` 模型目录、`@answra/agent/composition` 的 `CodingHost` 到 CLI 端口映射 | 不复制 Agent 运行时语义，不承载模型合并规则 |
 | `src/remote` | CLI 远程 host 适配与 host key 存储 | 信令/WebRTC 只调用 `@answra/remote-node`；不保留 controller 入口；key 不进共享 config；TUI 不 import |
 | `src/presentation` | Agent 事件到非 TTY 文本、工具行与模型摘要格式化 | 纯投影，不读写会话或进程 |
@@ -103,8 +103,8 @@
 | `src/tui/composer` | 输入框、搜索框、宽字符/光标布局、历史与粘贴 | 不读写 transcript 或工具状态 |
 | `src/tui/chrome` | 状态行、Spinner、主题与面板外框 | 不持有会话或工具状态 |
 | `src/tui/commands` | slash 命令元数据、解析、`access` 策略、唯一分派边界与帮助/候选/参数提示 | 不承载 Agent 命令或 runtime；`dispatch.ts` 之外不写命令可用性规则 |
-| `src/tui/commands/handlers` | 按命令族执行：session/model/account/remote/meta | 不判断 busy、不写第二套拒绝文案、不 import Ink |
-| `src/tui/panels` | 面板 UI 与本地交互：config/model/sessions/status/help | 不判断 busy、不调用 session 或 `runTui` |
+| `src/tui/commands/handlers` | 按命令族执行：session/skill/model/account/remote/meta | 不判断 busy、不写第二套拒绝文案、不 import Ink |
+| `src/tui/panels` | 面板 UI 与本地交互：config/model/sessions/skills/status/help | 不判断 busy、不调用 session 或 `runTui` |
 | `src/tui/notices` | 通知队列纯状态机与唯一通知渲染 | 队列不依赖 Ink/React/timer；渲染不持有队列或创建 timer |
 | `src/tui/interaction` | 终端交互原语：指针解析、选区 store/action 与剪贴板输出 | 不 import `transcript`/`composer`/`runTui`；不解析 Ink 组件；指针/选区状态只由 store 写 |
 | `src/transport` | stdin/stdout/stderr 适配 | 不定义业务行为 |

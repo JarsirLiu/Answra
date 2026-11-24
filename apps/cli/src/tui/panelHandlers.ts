@@ -172,6 +172,17 @@ export function createTuiPanelHandlers({
         tone: "success",
       });
     },
+    loadSkills: async () => {
+      const activeSession = runController.activeSession;
+      if (activeSession === undefined) {
+        return { skills: [], error: "尚未配置模型，无法读取 skill 目录。" };
+      }
+      try {
+        return { skills: await activeSession.listSkills() };
+      } catch (error) {
+        return { skills: [], error: messageOf(error) };
+      }
+    },
     close: (reason) => {
       const panel = store.getSnapshot().panel;
       store.setPanel(undefined);

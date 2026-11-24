@@ -8,8 +8,12 @@ describe("HelpPanel", () => {
     const instance = render(<HelpPanel close={close} />);
 
     await vi.waitFor(() => expect(instance.lastFrame()).toContain("本地命令："));
-    expect(instance.lastFrame()).toContain("/status");
+    expect(instance.lastFrame()).toContain("/skills");
     expect(instance.lastFrame()).toContain("/config");
+
+    instance.stdin.write("\u001b[6~");
+    await vi.waitFor(() => expect(instance.lastFrame()).toContain("/status"));
+    expect(instance.lastFrame()).toContain("/remote");
 
     instance.stdin.write("\u001b");
     await vi.waitFor(() => expect(close).toHaveBeenCalledTimes(1));

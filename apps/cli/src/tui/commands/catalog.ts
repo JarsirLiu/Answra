@@ -6,6 +6,7 @@ export type TuiCommandKind =
   | "clear"
   | "new"
   | "sessions"
+  | "skills"
   | "resume"
   | "delete"
   | "compact"
@@ -59,6 +60,12 @@ export const TUI_COMMANDS: readonly TuiCommandSpec[] = [
     kind: "sessions",
     name: "sessions",
     summary: "浏览并恢复当前 workspace 的历史会话",
+    access: ALWAYS_AVAILABLE,
+  },
+  {
+    kind: "skills",
+    name: "skills",
+    summary: "浏览当前会话可用的 skill",
     access: ALWAYS_AVAILABLE,
   },
   {

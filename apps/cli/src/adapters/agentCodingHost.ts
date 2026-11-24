@@ -23,6 +23,13 @@ export function createAgentCodingSessionHost(host: CodingHost): CodingSessionHos
       const session = await host.catalog.getSession(conversationId, workspaceRoot);
       return session?.scope === "coding" ? session : undefined;
     },
+    listSkills: async () =>
+      (await host.listSkills()).map(({ name, description, source, directory }) => ({
+        name,
+        description,
+        source,
+        directory,
+      })),
     deleteSession: async (conversationId) => {
       if (!host.catalog) throw new Error("当前宿主不支持会话历史。");
       return host.catalog.delete(conversationId);

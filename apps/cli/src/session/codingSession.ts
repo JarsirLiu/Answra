@@ -18,6 +18,14 @@ export interface ManualCompactionOptions {
   instructions?: string;
 }
 
+/** 面板展示所需的 skill 摘要；只读，不携带正文与工具执行语义。 */
+export interface CodingSkillSummary {
+  readonly name: string;
+  readonly description: string;
+  readonly source: "builtin" | "user" | "workspace";
+  readonly directory: string;
+}
+
 /** 会话用例所需的最小宿主端口；由 adapters 映射到 @answra/agent/composition。 */
 export interface CodingSessionHost {
   configure(model: ConversationModelConfig): void;
@@ -25,6 +33,8 @@ export interface CodingSessionHost {
   createConversation(conversationId: string, accessToken?: string): Promise<ConversationSnapshot>;
   /** 读取快照并完成启动恢复；没有令牌时恢复中的排队消息无法继续。 */
   getSnapshot?(conversationId: string, accessToken?: string): Promise<ConversationSnapshot>;
+  /** 当前宿主合并后的 skill 目录；缺省表示宿主不提供目录。 */
+  listSkills?(): Promise<readonly CodingSkillSummary[]>;
   listSessions?(query: {
     workspaceRoot?: string;
     cursor?: string;
@@ -163,6 +173,11 @@ export class CodingSession {
 
   findSession(conversationId: string): Promise<ConversationSessionSummary | undefined> {
     return this.host.getSession?.(conversationId, this.workspaceRoot) ?? Promise.resolve(undefined);
+  }
+
+  /** 读取面板要展示的 skill 目录；宿主不支持时返回空列表而不是伪造来源。 */
+  listSkills(): Promise<readonly CodingSkillSummary[]> {
+    return this.host.listSkills?.() ?? Promise.resolve([]);
   }
 
   async deleteSession(conversationId: string): Promise<ConversationSnapshot | undefined> {

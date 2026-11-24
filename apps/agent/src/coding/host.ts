@@ -6,7 +6,7 @@ import { AgentRuntime } from "../core/agent/runtime";
 import { createInstructionLoader } from "../core/instruction";
 import { SessionFrameBus } from "../core/session/sessionFrameBus";
 import { createLazySkillCatalog } from "../core/skill/catalog";
-import type { SkillRoots } from "../core/skill/contracts";
+import type { SkillInfo, SkillRoots } from "../core/skill/contracts";
 import { createBuiltinToolRegistry } from "../core/tool";
 import type { ConversationSessionCatalog } from "../core/transcript/catalog";
 import type { SessionItemStore } from "../core/transcript/itemStore";
@@ -44,6 +44,11 @@ export interface CodingHost {
   catalog?: ConversationSessionCatalog;
   /** 该宿主的帧广播口：领域只发布，订阅方决定消费方式。 */
   sessionFrames: SessionFrameBus;
+  /**
+   * 当前宿主的 skill 目录（等待首次扫描完成）。
+   * 未注入 `skillRoots` 时为空数组；宿主要展示目录先看这里，不要自己重扫。
+   */
+  listSkills(): Promise<readonly SkillInfo[]>;
   /**
    * 切换工作区并重扫工作区来源的 skill。
    * 工作区在 CLI 里是运行时确定的，启动时未必已知。
@@ -109,6 +114,9 @@ export function startCodingHost({
     runtime,
     ...(catalog ? { catalog } : {}),
     sessionFrames,
+    async listSkills() {
+      return skillsReady ? await skillsReady.ready() : [];
+    },
     async setWorkspaceRoot(nextWorkspaceRoot: string | null) {
       runtime.setWorkspaceRoot(nextWorkspaceRoot);
       // 结果迟到由 catalog 自身按 generation 丢弃。

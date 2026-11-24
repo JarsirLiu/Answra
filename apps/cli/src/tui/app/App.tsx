@@ -16,6 +16,7 @@ import { HelpPanel } from "../panels/HelpPanel";
 import { ModelPicker } from "../panels/ModelPicker";
 import type { TuiPanelHandlers } from "../panels/panel";
 import { SessionsPanel } from "../panels/SessionsPanel";
+import { SkillsPanel } from "../panels/SkillsPanel";
 import { StatusPanel } from "../panels/StatusPanel";
 import { ContextPruningNotice } from "../transcript/ContextPruningNotice";
 import { COMPACTION_FAILURE_TEXT, COMPACTION_SPINNER_MESSAGE } from "../transcript/compactionText";
@@ -193,6 +194,8 @@ export function App({
               remove={panelHandlers.deleteSession}
               resume={panelHandlers.resumeSession}
             />
+          ) : state.panel === "skills" ? (
+            <SkillsPanel close={() => panelHandlers.close()} load={panelHandlers.loadSkills} />
           ) : state.panel === "status" ? (
             <StatusPanel
               account={state.authAccount}
