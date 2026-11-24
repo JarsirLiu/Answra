@@ -29,5 +29,5 @@ export const CODING_POLICY = {
     toolId("workspace.run-command"),
   ],
   // 编码场景可使用本仓库的开发者 skill（工作区来源即可索引到，无需打包）。
-  skills: ["answra-code", "answra-change", "answra-vision"],
+  skills: ["answra-arch", "answra-change", "answra-code", "answra-vision"],
 } as const satisfies CodingPolicy;

@@ -81,7 +81,7 @@ function resolveSkillRoots(options: AgentWorkerOptions | undefined): SkillRoots 
   const builtin = existingDirectory(options?.builtinSkillsRoot);
   const user = existingDirectory(options?.userSkillsRoot);
   if (!builtin && !user) return undefined;
-  return { builtin, user, workspace: null };
+  return { builtin, user, workspaceRoot: null };
 }
 
 function existingDirectory(candidate: string | undefined): string | null {

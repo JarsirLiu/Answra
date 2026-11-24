@@ -29,7 +29,7 @@ async function writeSkill(root: string, dirName: string, body: string): Promise<
 }
 
 function rootsWith(builtin: string | null): SkillRoots {
-  return { builtin, user: null, workspace: null };
+  return { builtin, user: null, workspaceRoot: null };
 }
 
 afterEach(async () => {
@@ -100,6 +100,18 @@ describe("Skill tool execution", () => {
     if (result.success) return;
     expect(result.error.code).toBe("invalid-input");
     expect(result.modelContent).toContain("known");
+  });
+
+  it("tells the model which roots were scanned when no skill is available", async () => {
+    const root = await makeRoot();
+
+    const result = await runTool("missing", root);
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.modelContent).toContain("没有可用的 skill");
+    expect(result.modelContent).toContain(`内置=${root}`);
+    expect(result.modelContent).toContain("工作区=无");
   });
 
   it("rejects a path-shaped name instead of reading a file outside the skill root", async () => {

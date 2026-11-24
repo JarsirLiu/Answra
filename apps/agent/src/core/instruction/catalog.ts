@@ -4,6 +4,7 @@
  */
 import { promises as fs, type Stats } from "node:fs";
 import path from "node:path";
+import { discoverProjectDirectories } from "../workspace/projectRoot";
 import {
   INSTRUCTION_FILE_MAX_BYTES,
   type InstructionFile,
@@ -11,7 +12,6 @@ import {
 } from "./contracts";
 
 const INSTRUCTION_FILE_NAME = "AGENTS.md";
-const PROJECT_MARKER = ".git";
 
 export interface InstructionLoaderOptions {
   /** 用户级指令文件绝对路径；null 表示不加载全局指令。 */
@@ -66,28 +66,8 @@ export async function loadInstructionFiles({
 export async function discoverProjectInstructionFiles(
   workspaceRoot: string,
 ): Promise<readonly string[]> {
-  const start = path.resolve(workspaceRoot);
-  const stop = await findProjectRoot(start);
-  const directories: string[] = [];
-  let current = start;
-  while (true) {
-    directories.push(current);
-    if (pathKey(current) === pathKey(stop)) break;
-    const parent = path.dirname(current);
-    if (parent === current) break;
-    current = parent;
-  }
-  return directories.reverse().map((directory) => path.join(directory, INSTRUCTION_FILE_NAME));
-}
-
-async function findProjectRoot(start: string): Promise<string> {
-  let current = start;
-  while (true) {
-    if (await pathExists(path.join(current, PROJECT_MARKER))) return current;
-    const parent = path.dirname(current);
-    if (parent === current) return start;
-    current = parent;
-  }
+  const directories = await discoverProjectDirectories(workspaceRoot);
+  return directories.map((directory) => path.join(directory, INSTRUCTION_FILE_NAME));
 }
 
 async function readInstructionFile(
@@ -128,15 +108,6 @@ function isNotFound(error: unknown): boolean {
 
 function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-async function pathExists(target: string): Promise<boolean> {
-  try {
-    await fs.stat(target);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 /** Windows 路径大小写不敏感；去重时不能把同一文件当成两条指令。 */

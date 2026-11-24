@@ -4,6 +4,7 @@
  */
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { discoverProjectDirectories } from "../workspace/projectRoot";
 import {
   SKILL_FILE_MAX_BYTES,
   SKILL_SOURCE_PRECEDENCE,
@@ -24,6 +25,11 @@ export interface SkillCatalog {
   list(): readonly SkillInfo[];
   /** 按 name 查表；未命中返回 undefined。绝不接受路径。 */
   find(name: string): SkillInfo | undefined;
+  /**
+   * 最近一次扫描使用的来源根目录。
+   * 只用于诊断（例如空 catalog 时告诉模型扫了哪里），不代表每个根都真实存在。
+   */
+  roots(): SkillRoots;
 }
 
 export interface LazySkillCatalog {
@@ -35,7 +41,7 @@ export interface LazySkillCatalog {
   /** 等待首次扫描完成；供需要确定结果的调用方（测试、诊断）使用。 */
   ready(): Promise<readonly SkillInfo[]>;
   /**
-   * 更换工作区来源并重扫。工作区根是运行时下发的（workspace-context 命令），
+   * 更换工作区根并重扫。工作区根是运行时下发的（workspace-context 命令），
    * 启动时未知，因此必须支持后续替换；传 null 表示当前没有工作区。
    */
   setWorkspaceRoot(workspaceRoot: string | null): Promise<readonly SkillInfo[]>;
@@ -43,7 +49,7 @@ export interface LazySkillCatalog {
   dispose(): void;
 }
 
-/** 工作区根下的 skill 目录；与 CLI 保持同一约定。 */
+/** 工作区根下逐层查找的 skill 目录名。 */
 const WORKSPACE_SKILL_SEGMENTS = [".agents", "skills"];
 
 /**
@@ -55,6 +61,7 @@ export function createLazySkillCatalog(
   onWarning?: (message: string) => void,
 ): LazySkillCatalog {
   let current: readonly SkillInfo[] = [];
+  let currentRoots: SkillRoots = roots;
   let disposed = false;
   let pending: SkillRoots = roots;
   let generation = 0;
@@ -62,13 +69,17 @@ export function createLazySkillCatalog(
   const catalog: SkillCatalog = {
     list: () => current,
     find: (name: string) => current.find((skill) => skill.name === name),
+    roots: () => currentRoots,
   };
 
   function scan(target: SkillRoots): Promise<readonly SkillInfo[]> {
     const mine = ++generation;
     return scanSkillsWithWarning(target, onWarning).then((scanned) => {
       // 迟到的扫描结果必须丢弃：工作区可能已经换了一个。
-      if (!disposed && mine === generation) current = scanned;
+      if (!disposed && mine === generation) {
+        current = scanned.list();
+        currentRoots = target;
+      }
       return current;
     });
   }
@@ -79,10 +90,7 @@ export function createLazySkillCatalog(
     catalog,
     ready: () => ready,
     setWorkspaceRoot: (workspaceRoot: string | null) => {
-      pending = {
-        ...pending,
-        workspace: workspaceRoot ? path.join(workspaceRoot, ...WORKSPACE_SKILL_SEGMENTS) : null,
-      };
+      pending = { ...pending, workspaceRoot };
       return scan(pending);
     },
     dispose: () => {
@@ -94,14 +102,21 @@ export function createLazySkillCatalog(
 async function scanSkillsWithWarning(
   roots: SkillRoots,
   onWarning: ((message: string) => void) | undefined,
-): Promise<readonly SkillInfo[]> {
+): Promise<SkillCatalog> {
   try {
-    const catalog = await scanSkills(roots, onWarning);
-    return catalog.list();
+    return await scanSkills(roots, onWarning);
   } catch (error) {
     onWarning?.(`skill 扫描失败，按无可用 skill 处理：${describeError(error)}`);
-    return [];
+    return createEmptyCatalog(roots);
   }
+}
+
+function createEmptyCatalog(roots: SkillRoots): SkillCatalog {
+  return {
+    list: () => [],
+    find: () => undefined,
+    roots: () => roots,
+  };
 }
 
 function describeError(error: unknown): string {
@@ -116,18 +131,18 @@ export async function scanSkills(
   const merged = new Map<string, SkillInfo>();
 
   for (const source of SOURCE_ORDER) {
-    const root = roots[source];
-    if (!root) continue;
-    const skills = await scanSource(root, source, onWarning);
-    for (const skill of skills) {
-      const existing = merged.get(skill.name);
-      if (
-        existing &&
-        SKILL_SOURCE_PRECEDENCE[existing.source] >= SKILL_SOURCE_PRECEDENCE[skill.source]
-      ) {
-        continue;
+    for (const root of await resolveSourceRoots(roots, source)) {
+      const skills = await scanSource(root, source, onWarning);
+      for (const skill of skills) {
+        const existing = merged.get(skill.name);
+        if (
+          existing &&
+          SKILL_SOURCE_PRECEDENCE[existing.source] >= SKILL_SOURCE_PRECEDENCE[skill.source]
+        ) {
+          continue;
+        }
+        merged.set(skill.name, skill);
       }
-      merged.set(skill.name, skill);
     }
   }
 
@@ -136,7 +151,35 @@ export async function scanSkills(
   return {
     list: () => list,
     find: (name: string) => byName.get(name),
+    roots: () => roots,
   };
+}
+
+/** 单个来源可能对应多个物理目录；工作区来源按“近 → 远”返回。 */
+async function resolveSourceRoots(
+  roots: SkillRoots,
+  source: SkillSourceKind,
+): Promise<readonly string[]> {
+  switch (source) {
+    case "builtin":
+      return roots.builtin ? [roots.builtin] : [];
+    case "user":
+      return roots.user ? [roots.user] : [];
+    case "workspace":
+      return roots.workspaceRoot ? discoverWorkspaceSkillRoots(roots.workspaceRoot) : [];
+  }
+}
+
+/**
+ * 工作区 skill 目录：从工作区根向上到项目根逐层取 `.agents/skills`。
+ * 返回“最近 → 项目根”，让近层同名 skill 先进入合并结果并覆盖远层。
+ */
+async function discoverWorkspaceSkillRoots(workspaceRoot: string): Promise<readonly string[]> {
+  const directories = await discoverProjectDirectories(workspaceRoot);
+  return directories
+    .slice()
+    .reverse()
+    .map((directory) => path.join(directory, ...WORKSPACE_SKILL_SEGMENTS));
 }
 
 async function scanSource(

@@ -9,8 +9,11 @@ export interface SkillRoots {
   readonly builtin: string | null;
   /** 用户级 skill 目录（同类跨项目复用）。 */
   readonly user: string | null;
-  /** 当前工作区 skill 目录；只在用户打开某工作区时存在。 */
-  readonly workspace: string | null;
+  /**
+   * 当前工作区根目录（不是 `.agents/skills` 目录本身）。
+   * agent 从它向上到项目根逐层扫描 `.agents/skills`；`null` 表示当前没有工作区。
+   */
+  readonly workspaceRoot: string | null;
 }
 
 /** 单个 skill 的扫描结果；`content` 是 frontmatter 之后的正文。 */

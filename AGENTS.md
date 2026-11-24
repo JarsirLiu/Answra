@@ -58,8 +58,9 @@
 | `src/core/transcript` | Conversation、Answer、Interview 共用的消息视图、事件 → 条目纯函数（`sessionItemDrafts`）、条目存储端口（`SessionItemStore`）与内存 / SQLite（`node:sqlite`）适配器；SQLite 使用 `schema.ts` baseline、`_migrations` 账本与 append-only migration | 不判断 Turn 语义、不做恢复决策、不包含领域产品策略；SQLite 只有 `sessions` + `session_items` 两张业务表并按 scope 写入 `sessions.sqlite`，`answer` 只走内存、不读盘不落盘；不得用全局 `SCHEMA_VERSION` 或删库处理版本升级 |
 | `src/core/model` | AI SDK/provider 边界归一化、共享模型输入校验与 HTTP 重试原语 | 不放 Conversation profile 或 transcript 规则 |
 | `src/core/tool` | 跨领域工具契约、静态注册表与单次调用执行管理；通用工具在 `builtin/` | 不导入领域、不写工具事件；领域专属工具留在 `<domain>/tools/`，执行器只返回结果 |
-| `src/core/skill` | 三类来源的 skill 扫描、frontmatter 校验、索引渲染与按名查表契约 | 不读领域 prompt、不接受模型传入路径；宿主注入根目录，缺省即没有 skill |
+| `src/core/skill` | 三类来源的 skill 扫描（工作区来源从工作区根逐层到项目根）、frontmatter 校验、索引渲染与按名查表契约 | 不读领域 prompt、不接受模型传入路径；宿主注入根目录（工作区来源传工作区根，不是 `.agents/skills`），缺省即没有 skill |
 | `src/core/instruction` | 全局与项目 `AGENTS.md` 的发现、逐层读取、去重和 system prompt 渲染 | 不 import 领域或配置包、不猜测配置目录、不写 transcript；宿主注入全局文件路径，发现边界止于项目根 |
+| `src/core/workspace` | 项目根发现：从起始目录向上找最近的 `.git`，供 AGENTS.md 与 skill 共用同一发现边界 | 只读本地磁盘事实；没有 `.git` 时止于起始目录，不猜测项目根，不拼接具体文件 |
 | `src/execution` | run/attempt/step 状态迁移规则、事件 envelope 工厂、进程内 store 和查询投影 | 跨包事件 payload 与状态词汇唯一来自 `packages/shared/src/schema/`；当前只实现进程内 store，不得声称已有 durable store 或恢复流程 |
 | `src/conversation/application.ts` | Conversation 唯一编排循环：按 Bot/团队选择创建会话、运行当前 Bot、执行交接链 | 只组合 catalog/store/run；不复制消息或 run 语义，不让 renderer 选择 Bot 之外的能力 |
 | `src/conversation/turn` | Conversation transcript 回合认领、模型上下文与应用事件回调 | 模型执行/run 生命周期由 `core/agent` 负责；不定义共享执行状态 schema |

@@ -5,7 +5,11 @@
 import { promises as fs } from "node:fs";
 import type { JSONSchema7 } from "ai";
 import type { SkillCatalog } from "../../../skill/catalog";
-import { SKILL_CONTENT_MAX_CHARS, SKILL_FILE_LIST_MAX_ENTRIES } from "../../../skill/contracts";
+import {
+  SKILL_CONTENT_MAX_CHARS,
+  SKILL_FILE_LIST_MAX_ENTRIES,
+  type SkillRoots,
+} from "../../../skill/contracts";
 import { defineTool, type ToolHandlerFailure } from "../../contracts";
 import { assertNotAborted } from "../../executor/abort";
 import { SKILL_TOOL_ID } from "../../ids";
@@ -111,9 +115,18 @@ async function loadSkill(
 function createUnknownSkillMessage(catalog: SkillCatalog, requested: string): string {
   const available = catalog.list().map((skill) => skill.name);
   if (available.length === 0) {
-    return `没有可用的 skill，无法加载「${requested}」。`;
+    return `没有可用的 skill，无法加载「${requested}」。来源：${describeSkillRoots(catalog.roots())}。`;
   }
   return `未知 skill「${requested}」。可用 skill：${available.join("、")}。`;
+}
+
+/** 空 catalog 时把宿主注入的来源原样告诉模型，避免把"扫错目录"误判成"没有 skill"。 */
+function describeSkillRoots(roots: SkillRoots): string {
+  return [
+    `内置=${roots.builtin ?? "无"}`,
+    `用户=${roots.user ?? "无"}`,
+    `工作区=${roots.workspaceRoot ? `${roots.workspaceRoot}（含向上至项目根各层）` : "无"}`,
+  ].join("；");
 }
 
 /** 只列同目录内的文件相对路径，不递归、不读内容。 */

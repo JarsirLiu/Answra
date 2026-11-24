@@ -24,7 +24,15 @@ async function writeSkill(directory: string, dirName: string, content: string): 
 }
 
 function rootsWith(overrides: Partial<SkillRoots>): SkillRoots {
-  return { builtin: null, user: null, workspace: null, ...overrides };
+  return { builtin: null, user: null, workspaceRoot: null, ...overrides };
+}
+
+/** 建一个工作区根，并在其下准备好 `.agents/skills`。 */
+async function makeWorkspaceWithSkills(): Promise<{ workspaceRoot: string; skillDir: string }> {
+  const workspaceRoot = await makeRoot();
+  const skillDir = path.join(workspaceRoot, ".agents", "skills");
+  await fs.mkdir(skillDir, { recursive: true });
+  return { workspaceRoot, skillDir };
 }
 
 afterEach(async () => {
@@ -124,12 +132,12 @@ describe("scanSkills", () => {
   it("lets a higher-precedence source override a same-named skill", async () => {
     const builtin = await makeRoot();
     const user = await makeRoot();
-    const workspace = await makeRoot();
+    const { workspaceRoot, skillDir } = await makeWorkspaceWithSkills();
     await writeSkill(builtin, "shared", skillDocument("shared", "内置"));
     await writeSkill(user, "shared", skillDocument("shared", "用户"));
-    await writeSkill(workspace, "shared", skillDocument("shared", "工作区"));
+    await writeSkill(skillDir, "shared", skillDocument("shared", "工作区"));
 
-    const catalog = await scanSkills(rootsWith({ builtin, user, workspace }));
+    const catalog = await scanSkills(rootsWith({ builtin, user, workspaceRoot }));
 
     expect(catalog.find("shared")).toMatchObject({ description: "工作区", source: "workspace" });
     expect(catalog.list()).toHaveLength(1);
@@ -137,12 +145,71 @@ describe("scanSkills", () => {
 
   it("keeps the higher-precedence source regardless of which root is scanned first", async () => {
     const builtin = await makeRoot();
-    const workspace = await makeRoot();
+    const { workspaceRoot, skillDir } = await makeWorkspaceWithSkills();
     await writeSkill(builtin, "shared", skillDocument("shared", "内置"));
-    await writeSkill(workspace, "shared", skillDocument("shared", "工作区"));
+    await writeSkill(skillDir, "shared", skillDocument("shared", "工作区"));
 
-    const onlyBuiltinThenWorkspace = await scanSkills(rootsWith({ builtin, workspace }));
+    const onlyBuiltinThenWorkspace = await scanSkills(rootsWith({ builtin, workspaceRoot }));
     expect(onlyBuiltinThenWorkspace.find("shared")?.description).toBe("工作区");
+  });
+
+  it("discovers workspace skills from a nested working directory up to the project root", async () => {
+    const projectRoot = await makeRoot();
+    await fs.mkdir(path.join(projectRoot, ".git"), { recursive: true });
+    const nested = path.join(projectRoot, "packages", "app");
+    await fs.mkdir(nested, { recursive: true });
+    await writeSkill(
+      path.join(projectRoot, ".agents", "skills"),
+      "repo-skill",
+      skillDocument("repo-skill", "仓库级"),
+    );
+
+    const catalog = await scanSkills(rootsWith({ workspaceRoot: nested }));
+
+    expect(catalog.find("repo-skill")?.description).toBe("仓库级");
+  });
+
+  it("lets the nearest workspace directory override a same-named skill farther up", async () => {
+    const projectRoot = await makeRoot();
+    await fs.mkdir(path.join(projectRoot, ".git"), { recursive: true });
+    const nested = path.join(projectRoot, "packages", "app");
+    const nestedSkillDir = path.join(nested, ".agents", "skills");
+    await fs.mkdir(nestedSkillDir, { recursive: true });
+    await writeSkill(
+      path.join(projectRoot, ".agents", "skills"),
+      "shared",
+      skillDocument("shared", "项目根"),
+    );
+    await writeSkill(nestedSkillDir, "shared", skillDocument("shared", "子包"));
+
+    const catalog = await scanSkills(rootsWith({ workspaceRoot: nested }));
+
+    expect(catalog.find("shared")?.description).toBe("子包");
+  });
+
+  it("stops at the project root instead of reading skills above it", async () => {
+    const outer = await makeRoot();
+    await writeSkill(
+      path.join(outer, ".agents", "skills"),
+      "outside",
+      skillDocument("outside", "项目根之外"),
+    );
+    const projectRoot = path.join(outer, "project");
+    await fs.mkdir(path.join(projectRoot, ".git"), { recursive: true });
+    const nested = path.join(projectRoot, "src");
+    await fs.mkdir(nested, { recursive: true });
+
+    const catalog = await scanSkills(rootsWith({ workspaceRoot: nested }));
+
+    expect(catalog.find("outside")).toBeUndefined();
+  });
+
+  it("exposes the injected roots for empty-catalog diagnostics", async () => {
+    const roots = rootsWith({ builtin: await makeRoot(), workspaceRoot: await makeRoot() });
+
+    const catalog = await scanSkills(roots);
+
+    expect(catalog.roots()).toEqual(roots);
   });
 
   it("exposes the skill directory so relative references resolve", async () => {

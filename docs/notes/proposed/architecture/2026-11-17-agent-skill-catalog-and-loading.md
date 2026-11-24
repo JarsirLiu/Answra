@@ -59,7 +59,7 @@ description: 改写或优化简历时使用。覆盖 STAR 结构、JD 对齐、�
 |---|---|---|
 | 内置 | `packages/skills/`（随包发布） | 基线 |
 | 用户 | `~/.answra/skills/` | 覆盖同名内置 |
-| 工作区 | `<workspaceRoot>/.agents/skills/` | 覆盖同名用户与内置 |
+| 工作区 | 工作区根到项目根各层的 `.agents/skills/` | 覆盖同名用户与内置；近层覆盖远层 |
 
 同名时高优先级覆盖低优先级，合并为 `Map<name, SkillInfo>`。顺序由 catalog 显式声明，不依赖文件系统遍历顺序。
 
@@ -76,7 +76,8 @@ description: 改写或优化简历时使用。覆盖 STAR 结构、JD 对齐、�
 export interface SkillRoots {
   readonly builtin: string | null;
   readonly user: string | null;
-  readonly workspace: string | null;
+  /** 工作区根（不是 `.agents/skills` 目录）；agent 从它向上到项目根逐层扫描。 */
+  readonly workspaceRoot: string | null;
 }
 ```
 
@@ -87,7 +88,7 @@ export interface SkillRoots {
 
 CLI 与 desktop 是并列宿主，不存在 CLI 依赖 desktop 资源的路径。
 
-**不做静默降级：** 缺少 `skillRoots` 时"没有可用 skill"，`Skill` 工具不注册、索引为空；绝不回退到某个猜测目录。这与 `host.ts` 中 vad/recognizer "未注入即显式失败"的既有立场一致。注意此处与 `grepWorkerPath` 的 fallback 模式不同——grep 有进程内实现可回退，skill 没有。
+**不做静默降级：** 缺少 `skillRoots` 时"没有可用 skill"，`Skill` 工具不注册、索引为空；绝不回退到某个猜测目录。这与 `host.ts` 中 vad/recognizer "未注入即显式失败"的既有立场一致。注意此处与 `grepWorkerPath` 的 fallback 模式不同——grep 有进程内实现可回退，skill 没有。catalog 非空但查不到名字时列出可用名字；catalog 为空时列出内置、用户、工作区三类来源，避免把"扫错目录"误判成"没有 skill"。
 
 ### 4. `Skill` 工具按名字查表，不接受路径
 
@@ -150,11 +151,17 @@ Base directory for this skill: {目录}
 
 每个会话首次 `prepare()` 扫描一次并缓存到会话生命周期，不做文件监听、不做跨会话缓存失效逻辑。理由：skill 数量小、扫描是本地 IO；监听会引入与 context 重载策略的耦合（opencode 源码里对这点也留有未决注释）。
 
+### 8. 实施后的调整（2026-11-24）
+
+初版把工作区来源固定为 `<workspaceRoot>/.agents/skills`，而 `AGENTS.md` 会向上找到项目根，两套发现范围不一致：从子包目录启动时能看到仓库根 `AGENTS.md` 里的 skill 引用，却加载不到对应 skill。
+
+现改为：宿主注入工作区根，agent 复用 `core/workspace/projectRoot.ts` 从工作区根向上到最近的 `.git` 逐层扫描 `.agents/skills`，近层覆盖远层；`SkillCatalog.roots()` 供空 catalog 诊断；源码运行通过 `@answra/skills` 依赖解析内置 skill。详细根因与验证见 [工作区 skill 在子目录启动时不可见](../../implemented/bug-fix/2026-11-24-skill-workspace-root-discovery.md)。
+
 ## 影响表面
 
 - **上下文成本**：每个 skill 常驻约 `name` + `description` 的 token；正文仅在加载时进入 transcript。
 - **安全面**：新增一个可读取磁盘文本的 read-only 工具；路径由查表约束，不接受模型传入路径。
-- **用户可见**：`~/.answra/skills/` 与 `<workspace>/.agents/skills/` 成为用户可自助扩展 AI 能力的入口。用户新增 skill 后新会话生效。
+- **用户可见**：`~/.answra/skills/` 与工作区根到项目根各层的 `.agents/skills/` 成为用户可自助扩展 AI 能力的入口。用户新增 skill 后新会话生效。
 - **打包面**：新增 `packages/skills` 作为 workspace 包；`apps/cli` 与 `apps/desktop` 各增加一条 workspace 依赖，不新增二进制资源。
 - **无协议变化**：`worker/protocol.ts` 不改；skill 加载走既有 tool call 事件流。
 
@@ -163,6 +170,9 @@ Base directory for this skill: {目录}
 依赖方向保持 `domains → core`，新增内容全部落在 `core` 与宿主接线层，不新增领域、不让 core 反向依赖任何领域。
 
 ```text
+apps/agent/src/core/workspace/
+  projectRoot.ts 项目根发现（最近的 .git），AGENTS.md 与 skill 共用
+
 apps/agent/src/core/skill/
   contracts.ts   SkillInfo、SkillRoots、索引与预算常量（唯一类型来源）
   catalog.ts     扫描三类来源 → 校验 → 合并覆盖 → Map<name, SkillInfo>
@@ -177,6 +187,7 @@ apps/agent/src/core/tool/builtin/skill/tool.ts
 | 位置 | 只放 | 禁止 |
 |---|---|---|
 | `core/skill/contracts.ts` | skill 的类型与常量 | 文件系统调用、产品策略 |
+| `core/workspace/projectRoot.ts` | 项目根发现（最近的 `.git`） | 拼接具体文件、产品策略 |
 | `core/skill/catalog.ts` | 扫描、frontmatter 解析、路径安全校验、覆盖合并 | 提示词文案、profile 知识 |
 | `core/skill/guidance.ts` | 索引渲染 | 读文件、扫描目录 |
 | `core/tool/builtin/skill/tool.ts` | 查表与输出格式化 | 扫描目录（由 catalog 承担） |
@@ -225,8 +236,9 @@ apps/agent/src/core/tool/builtin/skill/tool.ts
   - 未注入 `skillRoots` 时不注册 `Skill` 工具且索引为空（不猜目录）
 - 需要的实机验证：
   - CLI 与 desktop 两个宿主分别确认能索引到 `packages/skills` 与 `~/.answra/skills`
-  - 在本仓库根目录运行时，模型能加载 `answra-code` 并按其自查
+  - 在本仓库根或任意子目录运行时，模型能加载 `answra-code` 并按其自查（工作区来源向上到最近的 `.git`）
   - 打包后的安装包中 `packages/skills` 可正常解析
+  - 源码运行（tsx）时内置 skill 通过 `@answra/skills` 工作区依赖可解析
 
 ## 风险
 

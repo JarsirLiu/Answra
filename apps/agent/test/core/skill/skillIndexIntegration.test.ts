@@ -38,19 +38,14 @@ async function writeSkill(
 }
 
 function rootsWith(overrides: Partial<SkillRoots>): SkillRoots {
-  return { builtin: null, user: null, workspace: null, ...overrides };
+  return { builtin: null, user: null, workspaceRoot: null, ...overrides };
 }
 
-/**
- * 建一个工作区根并在其下建好 `.agents/skills`。
- * `SkillRoots.workspace` 指向的是 skill 目录本身，不是工作区根；
- * 工作区根到 skill 目录的拼接只发生在 `setWorkspaceRoot`。
- */
+/** 建一个工作区根并在其下建好 `.agents/skills`；返回工作区根本身。 */
 async function makeWorkspaceWithSkills(): Promise<string> {
   const workspaceRoot = await makeRoot();
-  const skillDir = path.join(workspaceRoot, ".agents", "skills");
-  await fs.mkdir(skillDir, { recursive: true });
-  return skillDir;
+  await fs.mkdir(path.join(workspaceRoot, ".agents", "skills"), { recursive: true });
+  return workspaceRoot;
 }
 
 afterEach(async () => {
@@ -88,9 +83,13 @@ describe("skill index reaches the model request", () => {
   }
 
   it("puts an allowlisted workspace skill into the system prompt", async () => {
-    const workspace = await makeWorkspaceWithSkills();
-    await writeSkill(workspace, "answra-code", "写代码时的工程规范");
-    const skills = createLazySkillCatalog(rootsWith({ workspace }));
+    const workspaceRoot = await makeWorkspaceWithSkills();
+    await writeSkill(
+      path.join(workspaceRoot, ".agents", "skills"),
+      "answra-code",
+      "写代码时的工程规范",
+    );
+    const skills = createLazySkillCatalog(rootsWith({ workspaceRoot }));
     await skills.ready();
 
     const { prepared, tools } = await prepare(skills);
@@ -104,9 +103,13 @@ describe("skill index reaches the model request", () => {
   });
 
   it("keeps a skill outside the profile allowlist out of the prompt and unloadable", async () => {
-    const workspace = await makeWorkspaceWithSkills();
-    await writeSkill(workspace, "not-allowlisted", "不该出现的 skill");
-    const skills = createLazySkillCatalog(rootsWith({ workspace }));
+    const workspaceRoot = await makeWorkspaceWithSkills();
+    await writeSkill(
+      path.join(workspaceRoot, ".agents", "skills"),
+      "not-allowlisted",
+      "不该出现的 skill",
+    );
+    const skills = createLazySkillCatalog(rootsWith({ workspaceRoot }));
     await skills.ready();
 
     const { prepared, tools } = await prepare(skills);
@@ -126,9 +129,8 @@ describe("skill index reaches the model request", () => {
   });
 
   it("resolves a workspace skill only after the workspace root is set", async () => {
-    const workspaceRoot = await makeRoot();
+    const workspaceRoot = await makeWorkspaceWithSkills();
     const skillDir = path.join(workspaceRoot, ".agents", "skills");
-    await fs.mkdir(skillDir, { recursive: true });
     await writeSkill(skillDir, "answra-code", "工作区规范");
     const skills = createLazySkillCatalog(rootsWith({}));
     await skills.ready();
@@ -136,7 +138,6 @@ describe("skill index reaches the model request", () => {
     // 启动时没有工作区：索引为空。
     expect(skills.catalog.list()).toEqual([]);
 
-    // setWorkspaceRoot 接收工作区根，内部再拼 .agents/skills。
     await skills.setWorkspaceRoot(workspaceRoot);
 
     expect(skills.catalog.find("answra-code")?.description).toBe("工作区规范");
