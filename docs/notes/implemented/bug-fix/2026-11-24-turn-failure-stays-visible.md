@@ -17,6 +17,10 @@
 - UI/进程/协议/持久化表面：CLI transcript 尾部错误行；不改变 Agent 事件、快照 schema、数据库结构。
 - 相关 Note：[会话持久化契约](../../proposed/architecture/2026-11-23-session-persistence-contract.md)。
 
+## 决定
+
+失败提示的可见性由 durable `turn-end.errorText` 决定：snapshot 不得清除视图里已有的 `error`，只有新的用户消息到达或会话被清空时才失效。
+
 ## 根因
 
 `foldSessionItemFrame` 处理 `turn-end` 时会把 `payload.errorText` 写进 `ConversationView.error`，TUI 的 `TranscriptTail` 也确实渲染 `view.error`。但 Turn 收口后 `SessionItemRecorder.finishTurn` 紧接着推送一次 snapshot，而 `applyConversationSnapshot` 无条件把 `error` 置为 `undefined`。

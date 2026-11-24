@@ -19,6 +19,10 @@
 - UI/进程/协议/持久化表面：`ContextUsage.usedTokens` 语义不变（当前上下文占用），但来源改为最后一个请求；`usageAnchor.inputTokens` 改为首个请求。不新增事件、不改数据库结构。
 - 相关 Note：[压缩成功后刷新上下文用量](../bug-fix/2026-11-20-refresh-context-usage-after-compaction.md)、[256k 上下文预算与旧工具结果清理](../architecture/2026-11-13-context-budget-and-tool-result-clearing.md)。
 
+## 决定
+
+`ContextUsage.usedTokens` 与 `usageAnchor` 改为读取同一 session step 内逐请求的 `usage.inputTokens`：展示取最后一个请求，锚点取第一个请求；`finish.totalUsage` 只保留为 Turn 总消耗，不再进入上下文展示或校准。
+
 ## 根因
 
 `createToolStepLimit()` 给 `streamText` 设置了 `stopWhen: stepCountIs(21)`，一次 session step 内部会连续发起多次模型请求。AI SDK 的 `finish` 事件携带的是 `totalUsage`——官方定义就是「多步时所有 step 用量之和」；`finish-step` 才是单次请求的 `usage`。
