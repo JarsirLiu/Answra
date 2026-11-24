@@ -22,6 +22,86 @@ const DIFF: EditDiffDisplay = {
 };
 
 describe("tool presentation", () => {
+  it("summarizes a skill load and keeps the body out of the header", () => {
+    const presentation = presentToolCall({
+      toolName: "Skill",
+      state: "completed",
+      input: { name: "answra-code" },
+      output: [
+        '<skill_content name="answra-code">',
+        "# answra-code",
+        "",
+        "写代码时的工程规范。",
+        "第二行。",
+        "",
+        "Base directory for this skill: D:/repo/.agents/skills/answra-code",
+        "Relative paths in this skill are relative to this base directory.",
+        "",
+        "<skill_files>",
+        "  <file>checklist.md</file>",
+        "  <file>examples.md</file>",
+        "</skill_files>",
+        "</skill_content>",
+      ].join("\n"),
+    });
+
+    expect(presentation).toMatchObject({
+      action: "other",
+      category: "skill",
+      primary: "answra-code",
+      resultLine: "Loaded 2 lines · 2 files",
+      expandable: true,
+    });
+    expect(presentation.details).toEqual([
+      {
+        kind: "text",
+        label: "Skill content",
+        text: "写代码时的工程规范。\n第二行。",
+        wrap: true,
+        truncated: false,
+        totalLines: 2,
+      },
+    ]);
+  });
+
+  it("does not report a result while the skill is still loading", () => {
+    const presentation = presentToolCall({
+      toolName: "skill.load",
+      state: "running",
+      input: { name: "answra-code" },
+    });
+
+    expect(presentation).toMatchObject({
+      category: "skill",
+      primary: "answra-code",
+      details: [],
+      expandable: false,
+    });
+    expect(presentation.resultLine).toBeUndefined();
+  });
+
+  it("marks a truncated skill body without leaking the wrapper", () => {
+    const presentation = presentToolCall({
+      toolName: "Skill",
+      state: "completed",
+      input: { name: "large" },
+      output: [
+        '<skill_content name="large">',
+        "# large",
+        "",
+        "body",
+        "",
+        "Note: content truncated to 12000 characters.",
+        "</skill_content>",
+      ].join("\n"),
+    });
+
+    expect(presentation.resultLine).toBe("Loaded 3 lines · truncated");
+    expect(presentation.details[0]).toMatchObject({
+      text: "body\n\nNote: content truncated to 12000 characters.",
+    });
+  });
+
   it("summarizes a structured Read without exposing file contents", () => {
     const presentation = presentToolCall({
       toolName: "Read",

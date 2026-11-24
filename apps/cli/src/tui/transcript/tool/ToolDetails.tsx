@@ -11,6 +11,12 @@ import { NoticeDetail } from "./details/NoticeDetail";
 import { TextDetail } from "./details/TextDetail";
 import { TOOL_RESULT_GUTTER, TOOL_RESULT_GUTTER_WIDTH } from "./toolLayout";
 
+/** 这些类别的正文只在展开时渲染：折叠态保留一行摘要，避免把大段内容挤进 transcript。 */
+const COLLAPSED_HIDDEN_CATEGORIES: ReadonlySet<ToolPresentation["category"]> = new Set([
+  "search",
+  "skill",
+]);
+
 export function ToolDetails({
   presentation,
   expanded,
@@ -20,7 +26,8 @@ export function ToolDetails({
 }) {
   const running = isToolRunning(presentation.state);
   const details = presentation.details.filter(
-    (detail) => expanded || presentation.category !== "search" || detail.kind !== "text",
+    (detail) =>
+      expanded || !COLLAPSED_HIDDEN_CATEGORIES.has(presentation.category) || detail.kind !== "text",
   );
   if (details.length === 0) return null;
 

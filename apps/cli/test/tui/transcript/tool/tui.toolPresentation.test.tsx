@@ -102,6 +102,58 @@ describe("TUI tool presentation", () => {
     expanded.unmount();
   });
 
+  it("renders Skill as a named load summary and keeps its body collapsed", async () => {
+    const output = [
+      '<skill_content name="answra-code">',
+      "# answra-code",
+      "",
+      "SKILL_BODY_LINE",
+      "",
+      "Base directory for this skill: D:/repo/.agents/skills/answra-code",
+      "Relative paths in this skill are relative to this base directory.",
+      "</skill_content>",
+    ].join("\n");
+    const view = {
+      lastSeq: 0,
+      messages: [
+        {
+          id: "assistant-1",
+          role: "assistant" as const,
+          text: "",
+          status: "complete" as const,
+          images: [],
+          parts: [
+            {
+              id: "tool-1",
+              kind: "tool" as const,
+              toolCallId: "call-1",
+              toolName: "Skill",
+              state: "completed" as const,
+              input: { name: "answra-code" },
+              output,
+            },
+          ],
+        },
+      ],
+    };
+
+    const collapsed = render(<Transcript view={view} workspaceRoot="D:\\workspace" />);
+    await nextFrame();
+    expect(collapsed.lastFrame()).toContain("Skill(answra-code)");
+    expect(collapsed.lastFrame()).toContain("Loaded 1 line");
+    expect(collapsed.lastFrame()).toContain("ctrl+o to expand");
+    expect(collapsed.lastFrame()).not.toContain("SKILL_BODY_LINE");
+    collapsed.unmount();
+
+    const expanded = render(
+      <Transcript expandThinking view={view} workspaceRoot="D:\\workspace" />,
+    );
+    await nextFrame();
+    expect(expanded.lastFrame()).toContain("SKILL_BODY_LINE");
+    expect(expanded.lastFrame()).not.toContain("<skill_content");
+    expanded.unmount();
+  });
+
   it("renders RunCommand output under the result gutter", async () => {
     const instance = render(
       <Transcript

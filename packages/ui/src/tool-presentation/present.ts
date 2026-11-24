@@ -5,6 +5,7 @@ import { presentFallback } from "./tools/fallback";
 import { presentGrep } from "./tools/grep";
 import { presentRead } from "./tools/read";
 import { presentRunCommand } from "./tools/runCommand";
+import { presentSkill } from "./tools/skill";
 import type { ToolPresentation, ToolPresentationInput, ToolPresenterContext } from "./types";
 
 type Presenter = (context: ToolPresenterContext) => ToolPresentation;
@@ -14,6 +15,7 @@ const PRESENTERS: Readonly<Record<CanonicalToolName, Presenter>> = {
   Grep: presentGrep,
   Edit: presentEdit,
   RunCommand: presentRunCommand,
+  Skill: presentSkill,
 };
 
 export function presentToolCall(input: ToolPresentationInput): ToolPresentation {

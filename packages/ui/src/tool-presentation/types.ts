@@ -6,7 +6,7 @@ import type { CanonicalToolName } from "./registry";
 export type ToolAction = "read" | "search" | "edit" | "create" | "write" | "run" | "other";
 
 /** Grouping category used by transcript folding. */
-export type ToolCategory = "read" | "search" | "list" | "command" | "write" | "other";
+export type ToolCategory = "read" | "search" | "list" | "command" | "write" | "skill" | "other";
 
 export type ToolDetail =
   | {

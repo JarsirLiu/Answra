@@ -20,6 +20,7 @@ const CANONICAL_LABELS: Readonly<Record<CanonicalToolName, string>> = {
   Grep: "Search",
   Edit: "Update",
   RunCommand: "Bash",
+  Skill: "Skill",
 };
 
 export function actionLabel(action: ToolAction): string {

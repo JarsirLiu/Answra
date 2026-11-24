@@ -38,6 +38,12 @@ describe("tool lines", () => {
         input: { command: ["pnpm", "vitest", "run"] },
       }),
     ).toBe("Bash(pnpm vitest run)");
+    expect(
+      toolStartLine({
+        toolName: "Skill",
+        input: { name: "answra-code" },
+      }),
+    ).toBe("Skill(answra-code)");
   });
 
   it("renders successful, failed and denied finish lines", () => {

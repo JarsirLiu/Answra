@@ -1,6 +1,6 @@
 /** Canonical tool identity for presentation; accepts model names and legacy ids. */
 
-export type CanonicalToolName = "Read" | "Grep" | "Edit" | "RunCommand";
+export type CanonicalToolName = "Read" | "Grep" | "Edit" | "RunCommand" | "Skill";
 
 const ALIASES: Readonly<Record<string, CanonicalToolName>> = {
   read: "Read",
@@ -16,6 +16,8 @@ const ALIASES: Readonly<Record<string, CanonicalToolName>> = {
   run_command: "RunCommand",
   bash: "RunCommand",
   "workspace.run-command": "RunCommand",
+  skill: "Skill",
+  "skill.load": "Skill",
 };
 
 export function canonicalToolName(toolName: string): CanonicalToolName | undefined {
