@@ -1,11 +1,12 @@
 /** transcript 内容投影：Claude 风格欢迎区、消息列表与 run 错误/重试行。 */
 import type { ConversationView } from "@answra/ui/conversation-view";
-import { Box, Text } from "ink";
+import { Box, Text, useWindowSize } from "ink";
 import { BLACK_CIRCLE, TUI_THEME } from "../chrome/theme";
 import type { TuiSetupStep } from "../modelSetup";
 import { MessageRow } from "./MessageRow";
+import { ModelErrorNotice } from "./ModelErrorNotice";
 import { ModelSetupPanel } from "./ModelSetupPanel";
-import { RetryNotice } from "./RetryNotice";
+import { MarkdownColumnsContext } from "./markdown/columns";
 import { SelectableText } from "./SelectableText";
 
 export function Transcript({
@@ -16,6 +17,7 @@ export function Transcript({
   setupStep,
   expandThinking,
   expandedToolIds,
+  expanded = false,
 }: {
   view: ConversationView;
   localError?: string;
@@ -24,26 +26,30 @@ export function Transcript({
   setupStep?: TuiSetupStep;
   expandThinking?: boolean;
   expandedToolIds?: ReadonlySet<string>;
+  expanded?: boolean;
 }) {
+  const { columns } = useWindowSize();
   return (
-    <Box flexDirection="column">
-      {view.messages.length === 0 ? (
-        <Welcome
-          modelConfigured={modelConfigured}
-          setupStep={setupStep}
-          workspaceRoot={workspaceRoot}
-        />
-      ) : null}
-      {view.messages.map((message) => (
-        <MessageRow
-          expandedToolIds={expandedToolIds}
-          expandThinking={expandThinking}
-          key={message.id}
-          message={message}
-        />
-      ))}
-      <TranscriptTail localError={localError} view={view} />
-    </Box>
+    <MarkdownColumnsContext.Provider value={columns}>
+      <Box flexDirection="column">
+        {view.messages.length === 0 ? (
+          <Welcome
+            modelConfigured={modelConfigured}
+            setupStep={setupStep}
+            workspaceRoot={workspaceRoot}
+          />
+        ) : null}
+        {view.messages.map((message) => (
+          <MessageRow
+            expandedToolIds={expandedToolIds}
+            expandThinking={expandThinking}
+            key={message.id}
+            message={message}
+          />
+        ))}
+        <TranscriptTail expanded={expanded} localError={localError} view={view} />
+      </Box>
+    </MarkdownColumnsContext.Provider>
   );
 }
 
@@ -90,21 +96,18 @@ export function Welcome({
 export function TranscriptTail({
   view,
   localError,
+  expanded = false,
 }: {
   view: ConversationView;
   localError?: string;
+  expanded?: boolean;
 }) {
   return (
-    <>
-      {view.retry === undefined ? null : (
-        <RetryNotice key={`${view.retry.kind}:${view.retry.attempt}`} retry={view.retry} />
-      )}
-      {view.error === undefined ? null : (
-        <SelectableText color={TUI_THEME.error}>{view.error}</SelectableText>
-      )}
-      {localError === undefined ? null : (
-        <SelectableText color={TUI_THEME.error}>{localError}</SelectableText>
-      )}
-    </>
+    <ModelErrorNotice
+      error={view.error}
+      expanded={expanded}
+      localError={localError}
+      retry={view.retry}
+    />
   );
 }

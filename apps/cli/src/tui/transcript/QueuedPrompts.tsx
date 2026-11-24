@@ -2,7 +2,7 @@
 import { Box, Text } from "ink";
 import type { TuiQueuedPrompt } from "../app/viewStore";
 import { TUI_THEME } from "../chrome/theme";
-import { MarkdownText } from "./MarkdownText";
+import { MarkdownText } from "./markdown/MarkdownText";
 
 export function QueuedPrompts({ prompts }: { prompts: readonly TuiQueuedPrompt[] }) {
   if (prompts.length === 0) return null;

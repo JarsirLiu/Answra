@@ -52,12 +52,13 @@
 - `running` 清理只作用于当前 `retryRunId`，不得误清其他 run 的重试态。
 - `statusCode` 为可选字段；新增重试来源时必须继续填 `kind/attempt/maxRetries/delayMs`，否则 schema 校验失败。
 - 桌面端 `RetryNotice` 继续使用自己的 kind 文案；本次不改桌面视觉。
+- 2026-11-24 起 CLI 的重试行并入 [模型失败提示块](../feature/2026-11-24-cli-tui-model-error-notice.md) 的 `⎿` 错误块，原因、HTTP 状态、倒计时与次数文案保持不变；`RetryNotice.tsx` 已删除，回归由 `modelErrorNotice.test.tsx` 覆盖。
 
 ## 验收标准
 
 - 可观察结果：触发限流时 transcript 显示“请求触发限流，等待后重试（HTTP 429）”“5 秒后重试 · 1/5”，倒计时递减；恢复请求后提示消失；再次失败显示 2/5。
 - 自动化验证：
-  - `apps/cli/test/tui/transcript/retryNotice.test.tsx` 断言原因、状态码、倒计时与次数。
+  - `apps/cli/test/tui/transcript/modelErrorNotice.test.tsx` 断言原因、状态码、倒计时与次数（原 `retryNotice.test.tsx` 已并入该文件）。
   - `packages/ui/test/conversationView.test.ts` 断言 `retry-wait` 保留状态、`running` 清除状态。
 
 ## 验证

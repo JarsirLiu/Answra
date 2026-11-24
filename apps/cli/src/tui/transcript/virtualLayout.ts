@@ -10,6 +10,8 @@ import {
   compactionContextText,
   compactionSummaryCountText,
 } from "./compactionText";
+import { parseMarkdownBlocks } from "./markdown/blocks";
+import { layoutMarkdownTable, TABLE_MIN_WIDTH, TABLE_SAFETY_MARGIN } from "./markdown/table";
 import { groupMessageParts, type ToolGroup } from "./tool/groups/groupToolCalls";
 import {
   TOOL_EXPANDED_DIFF_LINES,
@@ -26,6 +28,8 @@ const COMPACTION_BOUNDARY_BASE_LINES = 3;
 const COMPACTION_SUMMARY_MARGIN_LINES = 1;
 const COMPACTION_SUMMARY_HEADER_LINES = 1;
 const COMPACTION_SUMMARY_INDENT = 4;
+/** 代码块与表格的 `marginY={1}`：上下各一行。 */
+const MARKDOWN_BLOCK_MARGIN_LINES = 2;
 
 export function estimateMessageHeight(
   message: ConversationViewMessage,
@@ -35,11 +39,12 @@ export function estimateMessageHeight(
 ): number {
   const width = Math.max(8, columns - 2);
   if (message.role === "user") {
-    const textHeight = message.text.length === 0 ? 0 : countTextLines(message.text, width);
+    const textHeight =
+      message.text.length === 0 ? 0 : countMarkdownLines(message.text, width, columns);
     return Math.max(MIN_MESSAGE_HEIGHT, textHeight + 1);
   }
   const parts = message.parts ?? [];
-  if (parts.length === 0) return countTextLines(message.text, width) + 1;
+  if (parts.length === 0) return countMarkdownLines(message.text, width, columns) + 1;
   let height = 0;
   for (const part of groupMessageParts(parts)) {
     if (part.kind === "tool-group") {
@@ -53,11 +58,11 @@ export function estimateMessageHeight(
       continue;
     }
     if (part.kind === "text") {
-      height += 1 + countTextLines(part.text, width);
+      height += 1 + countMarkdownLines(part.text, width, columns);
       continue;
     }
     if (part.kind === "reasoning") {
-      height += 1 + (expandThinking ? countTextLines(part.text, width) + 1 : 1);
+      height += 1 + (expandThinking ? countMarkdownLines(part.text, width, columns) + 1 : 1);
       continue;
     }
     height +=
@@ -99,6 +104,32 @@ export function countTextLines(text: string, columns: number): number {
     total += Math.max(1, Math.ceil(width / Math.max(1, columns)));
   }
   return total;
+}
+
+/**
+ * Markdown 投影的实际渲染行数：表格按与 `<MarkdownText/>` 相同的列宽布局，
+ * 代码块与表格计入 `marginY={1}` 的上下留白；没有 `|`/围栏时退回纯文本估算。
+ */
+export function countMarkdownLines(text: string, width: number, columns: number): number {
+  if (!text.includes("|") && !text.includes("```")) return countTextLines(text, width);
+  const tableWidth = Math.max(TABLE_MIN_WIDTH, columns - TABLE_SAFETY_MARGIN);
+  let total = 0;
+  for (const block of parseMarkdownBlocks(text)) {
+    if (block.kind === "line") {
+      total += countTextLines(block.text, width);
+      continue;
+    }
+    total += MARKDOWN_BLOCK_MARGIN_LINES;
+    if (block.kind === "code") {
+      if (block.language !== undefined && block.language.length > 0) {
+        total += countTextLines(block.language, width);
+      }
+      for (const line of block.lines) total += countTextLines(line.text, width);
+      continue;
+    }
+    total += layoutMarkdownTable(block.table, tableWidth).length;
+  }
+  return Math.max(1, total);
 }
 
 export function buildOffsets(heights: readonly number[]): number[] {

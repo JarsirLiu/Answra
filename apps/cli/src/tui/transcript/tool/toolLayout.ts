@@ -1,8 +1,9 @@
 /** Tool row layout constants shared by Ink rendering and height estimation. */
+import { RESPONSE_GUTTER, RESPONSE_GUTTER_WIDTH } from "../gutter";
 
 export const TOOL_HEADER_WIDTH = 2;
-export const TOOL_RESULT_GUTTER = "  ⎿  ";
-export const TOOL_RESULT_GUTTER_WIDTH = 5;
+export const TOOL_RESULT_GUTTER = RESPONSE_GUTTER;
+export const TOOL_RESULT_GUTTER_WIDTH = RESPONSE_GUTTER_WIDTH;
 export const TOOL_PREVIEW_TEXT_LINES = 3;
 export const TOOL_PREVIEW_DIFF_LINES = 12;
 export const TOOL_RUNNING_TAIL_LINES = 5;

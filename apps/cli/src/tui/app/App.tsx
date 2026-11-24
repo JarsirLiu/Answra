@@ -19,6 +19,7 @@ import { SessionsPanel } from "../panels/SessionsPanel";
 import { StatusPanel } from "../panels/StatusPanel";
 import { ContextPruningNotice } from "../transcript/ContextPruningNotice";
 import { COMPACTION_FAILURE_TEXT, COMPACTION_SPINNER_MESSAGE } from "../transcript/compactionText";
+import { MarkdownColumnsContext } from "../transcript/markdown/columns";
 import { QueuedPrompts } from "../transcript/QueuedPrompts";
 import { SelectionContext } from "../transcript/SelectableText";
 import { VirtualTranscript } from "../transcript/VirtualTranscript";
@@ -70,7 +71,7 @@ export function App({
 }) {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
   const { exit } = useApp();
-  const { rows } = useWindowSize();
+  const { columns, rows } = useWindowSize();
   const frameHeight =
     process.platform === "win32" ? Math.max(1, rows - WINDOWS_RESERVED_FRAME_ROWS) : rows;
   const compaction = state.view.contextCompaction;
@@ -150,81 +151,83 @@ export function App({
 
   return (
     <SelectionContext.Provider value={selectionStore}>
-      <Box flexDirection="column" height={frameHeight} width="100%">
-        <VirtualTranscript
-          compactionBoundaries={state.compactionBoundaries}
-          transcriptMode={transcriptMode}
-          localError={state.localError}
-          modelConfigured={state.modelConfigured}
-          pointerSource={pointerSource}
-          setupStep={state.setupStep}
-          view={state.view}
-          workspaceRoot={workspaceRoot}
-        />
-        <QueuedPrompts prompts={state.queuedPrompts} />
-        {activity}
-        <NotificationLine notification={state.notifications.current} />
-        {transcriptMode ? (
-          <Box paddingX={1}>
-            <Text dimColor wrap="truncate">
-              Showing detailed transcript · ctrl+o to toggle
-            </Text>
-          </Box>
-        ) : null}
-        {state.panel === "config" ? (
-          <ConfigPanel
-            close={panelHandlers.close}
-            load={panelHandlers.loadConfig}
-            save={panelHandlers.saveConfig}
-          />
-        ) : state.panel === "model" ? (
-          <ModelPicker
-            close={panelHandlers.close}
-            load={panelHandlers.loadModels}
-            select={panelHandlers.selectModel}
-          />
-        ) : state.panel === "sessions" ? (
-          <SessionsPanel
-            close={() => panelHandlers.close("resumed")}
-            copyText={onCopyText}
-            load={panelHandlers.loadSessions}
-            remove={panelHandlers.deleteSession}
-            resume={panelHandlers.resumeSession}
-          />
-        ) : state.panel === "status" ? (
-          <StatusPanel
-            account={state.authAccount}
-            authAvailable={state.authAvailable}
-            close={() => panelHandlers.close("status")}
-            contextUsage={state.view.contextUsage}
-            model={state.modelLabel}
-            signedIn={state.authSignedIn}
+      <MarkdownColumnsContext.Provider value={columns}>
+        <Box flexDirection="column" height={frameHeight} width="100%">
+          <VirtualTranscript
+            compactionBoundaries={state.compactionBoundaries}
+            transcriptMode={transcriptMode}
+            localError={state.localError}
+            modelConfigured={state.modelConfigured}
+            pointerSource={pointerSource}
+            setupStep={state.setupStep}
+            view={state.view}
             workspaceRoot={workspaceRoot}
           />
-        ) : state.panel === "help" ? (
-          <HelpPanel close={() => panelHandlers.close()} />
-        ) : (
-          <PromptInput
-            allowEmptySubmit={state.setupStep === "api-key"}
-            busy={busy}
-            idleHint={state.setupStep === undefined ? undefined : SETUP_HINTS[state.setupStep]}
-            imageReader={state.setupStep === undefined ? imageReader : undefined}
-            onCommandPaletteChange={setCommandPaletteOpen}
-            onCopyText={onCopyText}
-            onPasteError={onPasteError}
-            onSubmit={onSubmit}
-            secret={state.setupStep === "api-key"}
-            selectionActive={hasSelection}
+          <QueuedPrompts prompts={state.queuedPrompts} />
+          {activity}
+          <NotificationLine notification={state.notifications.current} />
+          {transcriptMode ? (
+            <Box paddingX={1}>
+              <Text dimColor wrap="truncate">
+                Showing detailed transcript · ctrl+o to toggle
+              </Text>
+            </Box>
+          ) : null}
+          {state.panel === "config" ? (
+            <ConfigPanel
+              close={panelHandlers.close}
+              load={panelHandlers.loadConfig}
+              save={panelHandlers.saveConfig}
+            />
+          ) : state.panel === "model" ? (
+            <ModelPicker
+              close={panelHandlers.close}
+              load={panelHandlers.loadModels}
+              select={panelHandlers.selectModel}
+            />
+          ) : state.panel === "sessions" ? (
+            <SessionsPanel
+              close={() => panelHandlers.close("resumed")}
+              copyText={onCopyText}
+              load={panelHandlers.loadSessions}
+              remove={panelHandlers.deleteSession}
+              resume={panelHandlers.resumeSession}
+            />
+          ) : state.panel === "status" ? (
+            <StatusPanel
+              account={state.authAccount}
+              authAvailable={state.authAvailable}
+              close={() => panelHandlers.close("status")}
+              contextUsage={state.view.contextUsage}
+              model={state.modelLabel}
+              signedIn={state.authSignedIn}
+              workspaceRoot={workspaceRoot}
+            />
+          ) : state.panel === "help" ? (
+            <HelpPanel close={() => panelHandlers.close()} />
+          ) : (
+            <PromptInput
+              allowEmptySubmit={state.setupStep === "api-key"}
+              busy={busy}
+              idleHint={state.setupStep === undefined ? undefined : SETUP_HINTS[state.setupStep]}
+              imageReader={state.setupStep === undefined ? imageReader : undefined}
+              onCommandPaletteChange={setCommandPaletteOpen}
+              onCopyText={onCopyText}
+              onPasteError={onPasteError}
+              onSubmit={onSubmit}
+              secret={state.setupStep === "api-key"}
+              selectionActive={hasSelection}
+            />
+          )}
+          <StatusLine
+            botName={botName}
+            contextUsage={state.view.contextUsage}
+            model={state.modelLabel}
+            phase={state.phase}
+            workspaceRoot={workspaceRoot}
           />
-        )}
-        <StatusLine
-          botName={botName}
-          contextUsage={state.view.contextUsage}
-          model={state.modelLabel}
-          phase={state.phase}
-          workspaceRoot={workspaceRoot}
-        />
-      </Box>
+        </Box>
+      </MarkdownColumnsContext.Provider>
     </SelectionContext.Provider>
   );
 }

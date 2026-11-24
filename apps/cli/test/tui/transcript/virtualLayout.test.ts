@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildOffsets,
+  countMarkdownLines,
   countTextLines,
   estimateCompactionBoundaryHeight,
   estimateMessageHeight,
@@ -124,6 +125,33 @@ describe("virtual transcript layout", () => {
     const withText = { ...imageOnly, text: "look" };
     expect(estimateMessageHeight(imageOnly, 80, false)).toBe(1);
     expect(estimateMessageHeight(withText, 80, false)).toBe(2);
+  });
+
+  it("counts rendered table and fenced-code lines", () => {
+    const table = "| A | B |\n| --- | --- |\n| 1 | 2 |";
+    expect(countMarkdownLines(table, 78, 80)).toBe(7);
+    const code = "```ts\nconst a = 1;\n```";
+    expect(countMarkdownLines(code, 78, 80)).toBe(4);
+    expect(countMarkdownLines("plain text", 78, 80)).toBe(1);
+  });
+
+  it("reserves the table height when estimating an assistant text part", () => {
+    const message = {
+      id: "assistant-1",
+      role: "assistant" as const,
+      text: "",
+      status: "complete" as const,
+      images: [],
+      parts: [
+        {
+          id: "text-1",
+          kind: "text" as const,
+          text: "| A | B |\n| --- | --- |\n| 1 | 2 |",
+          state: "completed" as const,
+        },
+      ],
+    };
+    expect(estimateMessageHeight(message, 80, false)).toBe(8);
   });
 
   it("falls back to estimates until a row has been measured", () => {

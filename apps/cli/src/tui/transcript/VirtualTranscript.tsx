@@ -17,6 +17,7 @@ import type { TuiSetupStep } from "../modelSetup";
 import { CompactionBoundaryRow } from "./CompactionBoundaryRow";
 import type { TuiCompactionBoundary } from "./compactionBoundary";
 import { MessageRow } from "./MessageRow";
+import { MarkdownColumnsContext } from "./markdown/columns";
 import { SelectionContext } from "./SelectableText";
 import { TranscriptTail, Welcome } from "./Transcript";
 import {
@@ -93,10 +94,10 @@ export function VirtualTranscript({
       {
         kind: "tail",
         id: "__tail__",
-        node: <TranscriptTail localError={localError} view={view} />,
+        node: <TranscriptTail expanded={transcriptMode} localError={localError} view={view} />,
       },
     ];
-  }, [view, compactionBoundaries, localError]);
+  }, [view, compactionBoundaries, localError, transcriptMode]);
 
   const lastThinkingMessageId = useMemo(() => lastThinkingId(view.messages), [view.messages]);
   const heights = useMemo(
@@ -243,67 +244,71 @@ export function VirtualTranscript({
 
   if (view.messages.length === 0) {
     return (
-      <Box flexBasis={0} flexDirection="column" flexGrow={1} minHeight={0} overflow="hidden">
-        <Welcome
-          modelConfigured={modelConfigured}
-          setupStep={setupStep}
-          workspaceRoot={workspaceRoot}
-        />
-        <TranscriptTail localError={localError} view={view} />
-      </Box>
+      <MarkdownColumnsContext.Provider value={columns}>
+        <Box flexBasis={0} flexDirection="column" flexGrow={1} minHeight={0} overflow="hidden">
+          <Welcome
+            modelConfigured={modelConfigured}
+            setupStep={setupStep}
+            workspaceRoot={workspaceRoot}
+          />
+          <TranscriptTail expanded={transcriptMode} localError={localError} view={view} />
+        </Box>
+      </MarkdownColumnsContext.Provider>
     );
   }
 
   return (
-    <Box
-      flexBasis={0}
-      flexDirection="column"
-      flexGrow={1}
-      flexShrink={1}
-      minHeight={0}
-      overflow="hidden"
-      ref={viewportRef}
-    >
+    <MarkdownColumnsContext.Provider value={columns}>
       <Box
-        contentOffsetY={virtualWindow.offsetWithin}
+        flexBasis={0}
         flexDirection="column"
-        flexShrink={0}
-        width="100%"
+        flexGrow={1}
+        flexShrink={1}
+        minHeight={0}
+        overflow="hidden"
+        ref={viewportRef}
       >
-        {items.slice(virtualWindow.startIndex, virtualWindow.endIndex).map((item) => {
-          const showReasoning =
-            item.kind === "message" &&
-            (transcriptMode || item.message.id === lastThinkingMessageId);
-          return (
-            <MeasuredItem
-              id={item.id}
-              key={item.id}
-              measureKey={
-                item.kind === "message"
-                  ? `${columns}:${transcriptMode}:${expandedKey}:${showReasoning}:${messageMeasureKey(item.message)}`
-                  : item.kind === "compaction-boundary"
-                    ? `compaction-boundary:${columns}:${transcriptMode}:${item.boundary.summary?.length ?? 0}:${item.boundary.summarizedMessages ?? 0}:${item.boundary.instructions?.length ?? 0}`
-                    : tailMeasureKey(view, localError, columns)
-              }
-              onMeasure={handleMeasure}
-            >
-              {item.kind === "message" ? (
-                <MessageRow
-                  expandedToolIds={expandedToolIds}
-                  expandThinking={transcriptMode}
-                  message={item.message}
-                  showReasoning={showReasoning}
-                />
-              ) : item.kind === "compaction-boundary" ? (
-                <CompactionBoundaryRow boundary={item.boundary} expanded={transcriptMode} />
-              ) : (
-                item.node
-              )}
-            </MeasuredItem>
-          );
-        })}
+        <Box
+          contentOffsetY={virtualWindow.offsetWithin}
+          flexDirection="column"
+          flexShrink={0}
+          width="100%"
+        >
+          {items.slice(virtualWindow.startIndex, virtualWindow.endIndex).map((item) => {
+            const showReasoning =
+              item.kind === "message" &&
+              (transcriptMode || item.message.id === lastThinkingMessageId);
+            return (
+              <MeasuredItem
+                id={item.id}
+                key={item.id}
+                measureKey={
+                  item.kind === "message"
+                    ? `${columns}:${transcriptMode}:${expandedKey}:${showReasoning}:${messageMeasureKey(item.message)}`
+                    : item.kind === "compaction-boundary"
+                      ? `compaction-boundary:${columns}:${transcriptMode}:${item.boundary.summary?.length ?? 0}:${item.boundary.summarizedMessages ?? 0}:${item.boundary.instructions?.length ?? 0}`
+                      : tailMeasureKey(view, localError, columns, transcriptMode)
+                }
+                onMeasure={handleMeasure}
+              >
+                {item.kind === "message" ? (
+                  <MessageRow
+                    expandedToolIds={expandedToolIds}
+                    expandThinking={transcriptMode}
+                    message={item.message}
+                    showReasoning={showReasoning}
+                  />
+                ) : item.kind === "compaction-boundary" ? (
+                  <CompactionBoundaryRow boundary={item.boundary} expanded={transcriptMode} />
+                ) : (
+                  item.node
+                )}
+              </MeasuredItem>
+            );
+          })}
+        </Box>
       </Box>
-    </Box>
+    </MarkdownColumnsContext.Provider>
   );
 }
 
@@ -376,12 +381,13 @@ function tailMeasureKey(
   view: ConversationView,
   localError: string | undefined,
   columns: number,
+  expanded: boolean,
 ): string {
   const retry =
     view.retry === undefined
       ? ""
       : `${view.retry.kind}:${view.retry.attempt}:${view.retry.maxRetries}:${view.retry.statusCode ?? ""}:${view.retry.finished}`;
-  return `tail:${columns}:${view.error?.length ?? 0}:${localError?.length ?? 0}:${retry}`;
+  return `tail:${columns}:${expanded}:${view.error?.length ?? 0}:${localError?.length ?? 0}:${retry}`;
 }
 
 function lastThinkingId(messages: readonly ConversationViewMessage[]): string | undefined {
