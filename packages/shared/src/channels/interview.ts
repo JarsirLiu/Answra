@@ -5,6 +5,11 @@ import type { ConversationImage } from "./conversation";
 export const InterviewChannels = {
   Start: "answra:interview:start",
   Message: "answra:interview:message",
+  Snapshot: "answra:interview:snapshot",
+  RehearsalOpen: "answra:interview:rehearsal-open",
+  AssistOpen: "answra:interview:assist-open",
+  AssistMessage: "answra:interview:assist-message",
+  AssistSnapshot: "answra:interview:assist-snapshot",
   Stop: "answra:interview:stop",
   IntakeOpen: "answra:interview:intake-open",
   IntakeMessage: "answra:interview:intake-message",
@@ -116,6 +121,12 @@ export interface InterviewIntakeOpenResult {
   runId?: string;
 }
 
+/** 演练/辅助打开结果：已有 transcript 时只返回快照；空会话可启动一次开场回复。 */
+export interface InterviewChatOpenResult {
+  snapshot: ConversationSnapshot;
+  turnId?: string;
+}
+
 /** Renderer may only change draft fields; importing a resume and finalizing stay separate. */
 export interface InterviewOnboardingPatch {
   step?: InterviewOnboardingStep;
@@ -172,6 +183,26 @@ export interface InterviewChannelMap {
   [InterviewChannels.Message]: {
     request: { conversationId: string; text: string };
     response: { runId: string; snapshot: ConversationSnapshot };
+  };
+  [InterviewChannels.Snapshot]: {
+    request: undefined;
+    response: ConversationSnapshot;
+  };
+  [InterviewChannels.RehearsalOpen]: {
+    request: undefined;
+    response: InterviewChatOpenResult;
+  };
+  [InterviewChannels.AssistOpen]: {
+    request: undefined;
+    response: InterviewChatOpenResult;
+  };
+  [InterviewChannels.AssistMessage]: {
+    request: { text: string };
+    response: { turnId: string; snapshot: ConversationSnapshot };
+  };
+  [InterviewChannels.AssistSnapshot]: {
+    request: undefined;
+    response: ConversationSnapshot;
   };
   [InterviewChannels.Stop]: { request: { sessionId: string }; response: undefined };
   [InterviewChannels.IntakeOpen]: {
@@ -231,4 +262,5 @@ export interface InterviewChannelMap {
 export const ActiveExamConversationId = "active-exam-conversation";
 export const ActiveChatConversationId = "active-chat-conversation";
 export const ActiveInterviewConversationId = "active-interview-conversation";
+export const ActiveInterviewAssistConversationId = "interview-assist";
 export const ActiveInterviewIntakeConversationId = "interview-intake";

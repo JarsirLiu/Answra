@@ -16,5 +16,23 @@ describe("ModelErrorNotice", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "去登录" }));
     expect(onSignIn).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "配置本地模型" })).not.toBeInTheDocument();
+  });
+
+  it("offers both paths when the local model source is available", () => {
+    const onSignIn = vi.fn();
+    const onConfigureModel = vi.fn();
+    render(
+      <ModelErrorNotice
+        message="请先登录后再使用（设置 → 账户）"
+        onSignIn={onSignIn}
+        onConfigureModel={onConfigureModel}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "去登录" }));
+    fireEvent.click(screen.getByRole("button", { name: "配置本地模型" }));
+    expect(onSignIn).toHaveBeenCalledTimes(1);
+    expect(onConfigureModel).toHaveBeenCalledTimes(1);
   });
 });

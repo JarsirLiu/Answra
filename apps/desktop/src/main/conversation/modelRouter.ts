@@ -81,6 +81,18 @@ export class ModelRouter {
     return this.getView().source === "local" || this.deps.cloud.hasSession();
   }
 
+  /**
+   * 机会式解析：用于打开会话这类「不是模型调用」的路径。
+   * 没有可用来源时返回 undefined，不抛出用户可见失败；真正的调用仍走 resolve()。
+   */
+  async resolveIfReady(): Promise<ResolvedModel | undefined> {
+    await this.deps.store.init();
+    const view = this.getView();
+    if (!view.configured) return undefined;
+    if (view.source === "cloud" && !this.deps.cloud.hasSession()) return undefined;
+    return this.resolve();
+  }
+
   /** 解析本次调用要用的端点与凭据；未登录/未配置时抛错，由渲染层呈现。 */
   async resolve(options?: { forceRefresh?: boolean }): Promise<ResolvedModel> {
     await this.deps.store.init();

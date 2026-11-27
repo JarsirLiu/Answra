@@ -50,6 +50,11 @@ export class AgentRuntime {
     };
   }
 
+  /** 是否已有可用 chat 端点；用于「打开会话时是否启动开场回复」这类机会式判断，不抛错。 */
+  hasChatEndpoint(): boolean {
+    return this.routes !== undefined;
+  }
+
   /** 当前 chat 端点；Session StepRunner 用它执行单次 provider 请求。 */
   chatEndpoint(): NonNullable<AgentModelRoutes>["chat"] {
     return this.requireRoutes().chat;

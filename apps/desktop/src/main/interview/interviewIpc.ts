@@ -43,6 +43,39 @@ export function registerInterviewIpc(agent: AgentService) {
     );
   });
 
+  ipcMain.handle(InterviewChannels.Snapshot, async (event) => {
+    if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用");
+    return agent.getInterviewRehearsalSnapshot();
+  });
+
+  ipcMain.handle(InterviewChannels.RehearsalOpen, async (event) => {
+    if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用");
+    return agent.openInterviewRehearsal();
+  });
+
+  ipcMain.handle(InterviewChannels.AssistOpen, async (event) => {
+    if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用");
+    return agent.openInterviewAssist();
+  });
+
+  ipcMain.handle(InterviewChannels.AssistMessage, async (event, payload: unknown) => {
+    if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用");
+    if (
+      typeof payload !== "object" ||
+      payload === null ||
+      typeof (payload as { text?: unknown }).text !== "string" ||
+      !(payload as { text: string }).text.trim() ||
+      (payload as { text: string }).text.length > 32_000
+    )
+      throw new Error("面试辅助消息无效");
+    return agent.sendInterviewAssistMessage((payload as { text: string }).text);
+  });
+
+  ipcMain.handle(InterviewChannels.AssistSnapshot, async (event) => {
+    if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用");
+    return agent.getInterviewAssistSnapshot();
+  });
+
   ipcMain.handle(InterviewChannels.IntakeOpen, async (event) => {
     if (!isWindowFromSender(getWindow(), event)) throw new Error("非法调用");
     return agent.openInterviewIntake();
@@ -144,6 +177,11 @@ export function registerInterviewIpc(agent: AgentService) {
       session.defaultSession.setPermissionCheckHandler(null);
       ipcMain.removeHandler(InterviewChannels.Start);
       ipcMain.removeHandler(InterviewChannels.Message);
+      ipcMain.removeHandler(InterviewChannels.Snapshot);
+      ipcMain.removeHandler(InterviewChannels.RehearsalOpen);
+      ipcMain.removeHandler(InterviewChannels.AssistOpen);
+      ipcMain.removeHandler(InterviewChannels.AssistMessage);
+      ipcMain.removeHandler(InterviewChannels.AssistSnapshot);
       ipcMain.removeHandler(InterviewChannels.IntakeOpen);
       ipcMain.removeHandler(InterviewChannels.IntakeMessage);
       ipcMain.removeHandler(InterviewChannels.IntakeSnapshot);

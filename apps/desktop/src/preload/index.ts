@@ -193,6 +193,12 @@ const bridge: DesktopBridge = {
     ipcRenderer.invoke(InterviewChannels.Start, { conversationId }),
   sendInterviewMessage: (conversationId: string, text: string) =>
     ipcRenderer.invoke(InterviewChannels.Message, { conversationId, text }),
+  getInterviewRehearsalSnapshot: () => ipcRenderer.invoke(InterviewChannels.Snapshot),
+  openInterviewRehearsal: () => ipcRenderer.invoke(InterviewChannels.RehearsalOpen),
+  openInterviewAssist: () => ipcRenderer.invoke(InterviewChannels.AssistOpen),
+  sendInterviewAssistMessage: (text: string) =>
+    ipcRenderer.invoke(InterviewChannels.AssistMessage, { text }),
+  getInterviewAssistSnapshot: () => ipcRenderer.invoke(InterviewChannels.AssistSnapshot),
   openInterviewIntake: () => ipcRenderer.invoke(InterviewChannels.IntakeOpen),
   sendInterviewIntakeMessage: (text: string, images: ConversationImage[]) =>
     ipcRenderer.invoke(InterviewChannels.IntakeMessage, { text, images }),

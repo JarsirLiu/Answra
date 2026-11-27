@@ -27,14 +27,41 @@ function formatLocalTime(now: Date, timeZone: string): string {
   return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")} ${get("weekday")}`;
 }
 
+const MS_PER_SECOND = 1000;
+const MS_PER_MINUTE = 60 * MS_PER_SECOND;
+const MINUTES_PER_HOUR = 60;
+
 function formatUtcOffset(now: Date, timeZone: string): string {
-  const offset = new Intl.DateTimeFormat("en-US", {
+  // 不解析 ICU 的 timeZoneName：同一 UTC 时区在 Windows 上输出 "UTC"，在 Linux/macOS 上输出
+  // "GMT+00:00"，按字符串替换会得到两种结果。用同一时刻的本地墙上时间减 UTC 时刻算出偏移，
+  // 只依赖 formatToParts 的数字部分，跨平台得到同一个规范值。
+  const parts = new Intl.DateTimeFormat("en-US", {
     timeZone,
-    timeZoneName: "longOffset",
-  })
-    .formatToParts(now)
-    .find((part) => part.type === "timeZoneName")?.value;
-  return offset ? offset.replace(/^GMT/u, "UTC") : "UTC+00:00";
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(now);
+  const get = (type: Intl.DateTimeFormatPartTypes): number =>
+    Number(parts.find((part) => part.type === type)?.value ?? "0");
+  const localWallClockAsUtc = Date.UTC(
+    get("year"),
+    get("month") - 1,
+    get("day"),
+    get("hour"),
+    get("minute"),
+    get("second"),
+  );
+  const utcSeconds = Math.floor(now.getTime() / MS_PER_SECOND) * MS_PER_SECOND;
+  const offsetMinutes = Math.round((localWallClockAsUtc - utcSeconds) / MS_PER_MINUTE);
+  const sign = offsetMinutes < 0 ? "-" : "+";
+  const absolute = Math.abs(offsetMinutes);
+  const hours = String(Math.floor(absolute / MINUTES_PER_HOUR)).padStart(2, "0");
+  const minutes = String(absolute % MINUTES_PER_HOUR).padStart(2, "0");
+  return `UTC${sign}${hours}:${minutes}`;
 }
 
 export function buildCurrentTimeContext({

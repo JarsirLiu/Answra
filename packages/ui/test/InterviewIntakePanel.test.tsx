@@ -1,33 +1,21 @@
-import type { InterviewOnboardingState } from "@answra/shared";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { FloatingBarApp } from "../src/app/FloatingBarApp";
+import { InterviewIntakePanel } from "../src/interview/intake/InterviewIntakePanel";
 import { createConversationBridge, resetFloatingBarTestState } from "./support/floatingBarHarness";
-
-const READY_STATE: InterviewOnboardingState = {
-  version: 2,
-  status: "completed",
-  step: "ready",
-  resume: null,
-  projects: [],
-  selectedProjectIds: [],
-  targetRole: "",
-  updatedAt: "2026-11-24T08:00:00.000Z",
-};
 
 const IMAGE_DATA_URL = "data:image/png;base64,QUJD";
 
-function createIntakeBridge() {
+function renderIntake(): ReturnType<typeof createConversationBridge> {
   const bridge = createConversationBridge();
-  return {
-    ...bridge,
-    getInterviewOnboardingState: vi.fn(async () => READY_STATE),
-  };
-}
-
-function openInterview(): void {
-  fireEvent.click(screen.getByRole("button", { name: "对话" }));
-  fireEvent.click(screen.getByRole("menuitemradio", { name: "面试" }));
+  render(
+    <InterviewIntakePanel
+      onBackToModes={() => undefined}
+      onClose={() => undefined}
+      onReopenOnboarding={vi.fn(async () => undefined)}
+      platform={bridge}
+    />,
+  );
+  return bridge;
 }
 
 function pasteImage(input: HTMLElement, file: File): void {
@@ -41,9 +29,7 @@ describe("interview intake image input", () => {
 
   it("previews a pasted screenshot and sends it with the message", async () => {
     vi.mocked(URL.createObjectURL).mockReturnValue(IMAGE_DATA_URL);
-    const bridge = createIntakeBridge();
-    render(<FloatingBarApp bridge={bridge} />);
-    openInterview();
+    const bridge = renderIntake();
 
     const input = await screen.findByLabelText("输入消息");
     pasteImage(input, new File(["png"], "简历截图.png", { type: "image/png" }));
@@ -63,9 +49,7 @@ describe("interview intake image input", () => {
 
   it("sends a screenshot without any text", async () => {
     vi.mocked(URL.createObjectURL).mockReturnValue(IMAGE_DATA_URL);
-    const bridge = createIntakeBridge();
-    render(<FloatingBarApp bridge={bridge} />);
-    openInterview();
+    const bridge = renderIntake();
 
     const input = await screen.findByLabelText("输入消息");
     pasteImage(input, new File(["png"], "截图.png", { type: "image/png" }));
@@ -81,9 +65,7 @@ describe("interview intake image input", () => {
   });
 
   it("ignores pasted files that are not images", async () => {
-    const bridge = createIntakeBridge();
-    render(<FloatingBarApp bridge={bridge} />);
-    openInterview();
+    renderIntake();
 
     const input = await screen.findByLabelText("输入消息");
     pasteImage(input, new File(["text"], "notes.txt", { type: "text/plain" }));

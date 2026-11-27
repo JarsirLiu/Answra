@@ -27,6 +27,8 @@ interface ChatFeaturePanelProps {
   onClose: () => void;
   onVote: (vote: "up" | "down" | null) => void;
   onSent: () => void;
+  /** 本地模型可用时传入：登录失败提示里给出「配置本地模型」替代路径。 */
+  onConfigureModel?: () => void;
 }
 
 /** Owns general chat state so answer-profile composition can omit this feature module. */
@@ -47,6 +49,7 @@ export function ChatFeaturePanel({
   onClose,
   onVote,
   onSent,
+  onConfigureModel,
 }: ChatFeaturePanelProps) {
   const sessions = useChatSessions(bridge);
   const conversation = useGeneralChat(bridge, sessions.activeConversationId);
@@ -175,6 +178,7 @@ export function ChatFeaturePanel({
       onClose={onClose}
       onDraftChange={onDraftChange}
       onSignIn={needsSignIn ? signIn : undefined}
+      onConfigureModel={needsSignIn ? onConfigureModel : undefined}
       onVote={onVote}
       onSend={send}
       onClear={bridge?.clearConversationMessages ? () => void clearConversation() : undefined}

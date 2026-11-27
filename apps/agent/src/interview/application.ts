@@ -187,7 +187,15 @@ export class InterviewApplication {
    */
   async open(conversationId: string): Promise<{ snapshot: ConversationSnapshot; turnId?: string }> {
     const snapshot = await this.createConversation(conversationId);
-    if (snapshot.messages.length > 0 || snapshot.activeTurnId) return { snapshot };
+    // 打开不是模型调用：没有端点时只恢复空会话，等用户发送时再按统一门禁处理。
+    // 这样未登录/未配置模型不会在打开阶段抛「云端模型服务尚未就绪」。
+    if (
+      snapshot.messages.length > 0 ||
+      snapshot.activeTurnId ||
+      !this.agentRuntime.hasChatEndpoint()
+    ) {
+      return { snapshot };
+    }
     const started = await this.startReply(conversationId, "opening");
     return { snapshot: started.snapshot, turnId: started.turnId };
   }

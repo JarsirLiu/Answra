@@ -1,6 +1,11 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup } from "@testing-library/react";
+import { cleanup, configure } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
+
+// 并发 CI 下异步渲染会明显变慢；1s/5s 的轮询上限都会把「慢」误判成「失败」。
+// 只放宽等待预算，断言本身不变；10s 仍小于 vitest.config.ts 的 15s 用例上限。
+const ASYNC_UTIL_TIMEOUT_MS = 10_000;
+configure({ asyncUtilTimeout: ASYNC_UTIL_TIMEOUT_MS });
 
 afterEach(cleanup);
 

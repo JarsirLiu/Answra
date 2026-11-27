@@ -40,7 +40,13 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
   return { promise, resolve };
 }
 
-function createHarness({ hold }: { hold?: boolean } = {}) {
+function createHarness({
+  hold,
+  withoutEndpoint,
+}: {
+  hold?: boolean;
+  withoutEndpoint?: boolean;
+} = {}) {
   const store = new MemoryConversationStore();
   const snapshots: ConversationSnapshot[] = [];
   const prepared: InterviewRehearsalInput[] = [];
@@ -61,6 +67,7 @@ function createHarness({ hold }: { hold?: boolean } = {}) {
   };
   const agentRuntime = {
     chatContextWindow: () => undefined,
+    hasChatEndpoint: () => !withoutEndpoint,
     chatEndpoint: () => ({ baseUrl: "http://localhost", model: "text.chat" }),
     generateText: vi.fn(async () => "summary"),
     modelTokenProvider: () => async () => "token",
@@ -184,5 +191,15 @@ describe("InterviewApplication", () => {
 
     expect(result.turnId).toBeUndefined();
     expect(steps).toHaveLength(1);
+  });
+
+  it("opens an empty session without an opening turn when no model endpoint is configured", async () => {
+    const { app, steps } = createHarness({ withoutEndpoint: true });
+
+    const result = await app.open("conversation-1");
+
+    expect(result.turnId).toBeUndefined();
+    expect(result.snapshot.messages).toEqual([]);
+    expect(steps).toHaveLength(0);
   });
 });

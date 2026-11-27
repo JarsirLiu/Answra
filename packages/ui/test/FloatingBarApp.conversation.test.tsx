@@ -312,6 +312,46 @@ describe("floating bar conversation", () => {
     fireEvent.click(within(stream).getByRole("button", { name: "去登录" }));
     await waitFor(() => expect(bridge.loginAccount).toHaveBeenCalledTimes(1));
     expect(screen.queryByRole("button", { name: "登录" })).not.toBeInTheDocument();
+    // 本地来源不可用时不给死路入口（full 包 / 桥未声明该能力）。
+    expect(within(stream).queryByRole("button", { name: "配置本地模型" })).not.toBeInTheDocument();
+  });
+
+  it("offers local model configuration alongside sign-in when the source is available", async () => {
+    const bridge = {
+      ...createConversationBridge(),
+      getAuthStatus: vi
+        .fn()
+        .mockResolvedValue({ signedIn: false, plan: null, capabilities: [], cloudBaseUrl: null }),
+      onAuthStatus: vi.fn(() => () => undefined),
+      loginAccount: vi.fn().mockResolvedValue({ opened: true }),
+      getConversationConfig: vi.fn().mockResolvedValue({
+        source: "cloud",
+        localAvailable: true,
+        baseUrl: "",
+        model: "",
+        answerModel: "",
+        configured: false,
+      }),
+      sendConversationMessage: vi
+        .fn()
+        .mockRejectedValue(new Error("auth-required: 请先登录后再使用（设置 → 账户）")),
+    };
+    render(<FloatingBarApp bridge={bridge} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "打开对话" }));
+    const input = screen.getByRole("textbox", { name: "补充问题" });
+    fireEvent.change(input, { target: { value: "你好" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
+
+    const stream = screen.getByRole("log", { name: "对话消息" });
+    const alert = await within(stream).findByRole("alert");
+    // 两条路同时可见，用户自己选。
+    expect(within(alert).getByRole("button", { name: "去登录" })).toBeInTheDocument();
+    fireEvent.click(within(alert).getByRole("button", { name: "配置本地模型" }));
+
+    // 真实动作：不是文案跳转，而是打开设置面板的模型分组。
+    expect(await screen.findByRole("checkbox", { name: /跟随背景色/ })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "模型" })).toBeInTheDocument();
   });
 
   it("shows a service error when a chat send fails because the worker disconnected", async () => {

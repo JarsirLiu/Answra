@@ -1,6 +1,12 @@
 import { EventEmitter } from "node:events";
 import type { AgentCommand, AgentFrame } from "@answra/agent";
-import type { ConversationSnapshot } from "@answra/shared";
+import {
+  ActiveInterviewAssistConversationId,
+  ActiveInterviewConversationId,
+  ActiveInterviewIntakeConversationId,
+  authRequiredError,
+  type ConversationSnapshot,
+} from "@answra/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const shared = vi.hoisted(() => ({
@@ -23,8 +29,19 @@ class FakeWorker extends EventEmitter {
         } satisfies AgentFrame);
       });
     };
-    if (command.type === "snapshot" || command.type === "create-conversation") {
-      reply(emptySnapshot(command.conversationId));
+    if (
+      command.type === "snapshot" ||
+      command.type === "create-conversation" ||
+      command.type === "interview-rehearsal-open" ||
+      command.type === "interview-assist-open" ||
+      command.type === "interview-intake-open"
+    ) {
+      const snapshot = emptySnapshot(command.conversationId);
+      reply(
+        command.type === "snapshot" || command.type === "create-conversation"
+          ? snapshot
+          : { snapshot },
+      );
       return;
     }
     if (command.type === "wait-queue-start") {
@@ -78,6 +95,13 @@ function lastWorker(): FakeWorker {
 function createService(): AgentService {
   return new AgentService({
     resolveModel: async () => ({
+      config: {
+        chat: { baseUrl: "http://127.0.0.1/v1", model: "chat" },
+        answer: { baseUrl: "http://127.0.0.1/v1", model: "chat" },
+      },
+      accessToken: "",
+    }),
+    resolveModelIfReady: async () => ({
       config: {
         chat: { baseUrl: "http://127.0.0.1/v1", model: "chat" },
         answer: { baseUrl: "http://127.0.0.1/v1", model: "chat" },
@@ -206,5 +230,46 @@ describe("AgentService connection lifecycle", () => {
     await expect(service.sendInterviewIntakeMessage("   ", [])).rejects.toThrow(
       "面试消息无效或过长",
     );
+  });
+
+  it("opens interview sessions without model credentials but still gates sends", async () => {
+    const resolveModel = vi.fn(async () => {
+      throw authRequiredError();
+    });
+    const resolveModelIfReady = vi.fn(async () => undefined);
+    const service = new AgentService({
+      resolveModel,
+      resolveModelIfReady,
+      getWorkspaceRoot: () => null,
+      getInterviewDataRoot: () => "C:/data/interview",
+    });
+
+    await expect(service.openInterviewRehearsal()).resolves.toMatchObject({
+      snapshot: expect.objectContaining({ conversationId: ActiveInterviewConversationId }),
+    });
+    await expect(service.openInterviewAssist()).resolves.toMatchObject({
+      snapshot: expect.objectContaining({ conversationId: ActiveInterviewAssistConversationId }),
+    });
+    await expect(service.openInterviewIntake()).resolves.toMatchObject({
+      snapshot: expect.objectContaining({ conversationId: ActiveInterviewIntakeConversationId }),
+    });
+    expect(resolveModel).not.toHaveBeenCalled();
+    expect(resolveModelIfReady).toHaveBeenCalledTimes(3);
+
+    await expect(
+      service.sendInterviewMessage(ActiveInterviewConversationId, "开始演练"),
+    ).rejects.toThrow("auth-required");
+    expect(resolveModel).toHaveBeenCalledOnce();
+    await service.stop();
+  });
+
+  it("configures a ready model when opening an interview session so the opening turn can run", async () => {
+    const service = createService();
+    await service.openInterviewRehearsal();
+
+    expect(lastWorker().postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "configure" }),
+    );
+    await service.stop();
   });
 });

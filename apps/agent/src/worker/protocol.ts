@@ -131,6 +131,10 @@ export type AgentCommand =
   | { id: string; type: "interview-context"; root: string | null; seed: InterviewProfileSeed }
   | { id: string; type: "interview-message"; conversationId: string; text: string }
   | { id: string; type: "interview-snapshot"; conversationId: string }
+  | { id: string; type: "interview-rehearsal-open"; conversationId: string }
+  | { id: string; type: "interview-assist-open"; conversationId: string }
+  | { id: string; type: "interview-assist-message"; conversationId: string; text: string }
+  | { id: string; type: "interview-assist-snapshot"; conversationId: string }
   | { id: string; type: "interview-intake-open"; conversationId: string }
   | {
       id: string;

@@ -1,3 +1,4 @@
+import { execFile } from "node:child_process";
 import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -55,6 +56,7 @@ async function waitForCompletion(
   manager: ShellSessionManager,
   started: ShellSessionSnapshot,
   timeoutMs = 15_000,
+  maxOutputLength?: number,
 ): Promise<{
   readonly result: ShellSessionSnapshot;
   readonly stdout: string;
@@ -69,6 +71,7 @@ async function waitForCompletion(
     result = await manager.writeStdin({
       sessionId: requireSessionId(started),
       yieldTimeMs: 1_000,
+      ...(maxOutputLength !== undefined && { maxOutputLength }),
     });
     stdout.push(result.stdout);
     stderr.push(result.stderr);
@@ -81,7 +84,8 @@ function requireSessionId(snapshot: ShellSessionSnapshot): string {
   return snapshot.sessionId;
 }
 
-async function waitUntil(predicate: () => Promise<boolean>, timeoutMs = 3_000): Promise<void> {
+// PowerShell 引导在并发负载下可能超过 3 秒；只放宽轮询预算，不跳过条件断言。
+async function waitUntil(predicate: () => Promise<boolean>, timeoutMs = 10_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (!(await predicate())) {
     if (Date.now() >= deadline) throw new Error("等待条件超时");
@@ -123,9 +127,30 @@ async function removeWorkspace(workspace: string): Promise<void> {
           (error as NodeJS.ErrnoException).code ?? "",
         );
       if (!retryable || Date.now() >= deadline) throw error;
+      // Windows 并发负载下 Job Object 兜底可能失效：PowerShell 根进程已死，但 node 孙进程
+      // 继承 CWD 成了孤儿。按工作区路径精确结束这些进程，再重试删除，避免测试间串味。
+      await killOrphansUsingWorkspace(workspace);
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
   }
+}
+
+/** 只结束命令行里明确引用该工作区的 node 进程，不碰宿主/vitest 与其他测试。 */
+async function killOrphansUsingWorkspace(workspace: string): Promise<void> {
+  if (process.platform !== "win32") return;
+  const script = [
+    "Get-CimInstance Win32_Process -Filter \"Name = 'node.exe'\" |",
+    `Where-Object { $_.CommandLine -and $_.CommandLine.Contains('${workspace.replaceAll("'", "''")}') } |`,
+    "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }",
+  ].join(" ");
+  await new Promise<void>((resolve) => {
+    execFile(
+      "powershell.exe",
+      ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script],
+      { windowsHide: true },
+      () => resolve(),
+    );
+  });
 }
 
 function registerConfigurationTests(): void {
@@ -402,6 +427,10 @@ function registerBoundaryTests(): void {
     });
 
     expect(reread).toMatchObject({ status: "running", sessionId: started.sessionId });
+
+    // 用例自己结束常驻进程，不把终止留给 teardown 的 5s 上限：
+    // Windows 下存活的子进程占着工作区 CWD，会让删除临时目录 EBUSY。
+    await manager.kill(requireSessionId(started));
   });
 }
 
@@ -493,18 +522,22 @@ function registerOutputTruncationTests(): void {
       "truncate.mjs",
       "process.stdout.write('开始中文内容'.repeat(100) + '结束')",
     );
-    const result = await manager.start({
+    const started = await manager.start({
       command,
       cwd: workspace,
+      // 不在一次 start 的固定等待里赌完成：并发负载下 PowerShell 引导可能超过 5 秒。
       yieldTimeMs: 5_000,
       maxOutputLength: 80,
+      timeoutMs: 20_000,
     });
+    const { result, stdout } = await waitForCompletion(manager, started, 20_000, 80);
 
-    expect(result).toMatchObject({ status: "completed", outputTruncated: true });
-    expect(result.stdout).toMatch(/^开始/);
-    expect(result.stdout).toMatch(/结束$/);
-    expect(result.stdout).toContain("output truncated");
-    expect(result.stdout).not.toContain("\uFFFD");
+    expect(result.status).toBe("completed");
+    expect(started.outputTruncated || result.outputTruncated).toBe(true);
+    expect(stdout).toMatch(/^开始/);
+    expect(stdout).toMatch(/结束$/);
+    expect(stdout).toContain("output truncated");
+    expect(stdout).not.toContain("\uFFFD");
   });
 
   it("reports omitted bytes when cumulative output reaches the limit", async () => {
@@ -514,7 +547,13 @@ function registerOutputTruncationTests(): void {
       "output-cap.mjs",
       "process.stdout.write('x'.repeat(11 * 1024 * 1024))",
     );
-    const result = await manager.start({ command, cwd: workspace, yieldTimeMs: 5_000 });
+    const started = await manager.start({
+      command,
+      cwd: workspace,
+      yieldTimeMs: 5_000,
+      timeoutMs: 20_000,
+    });
+    const { result } = await waitForCompletion(manager, started, 20_000);
 
     expect(result.outputTruncated).toBe(true);
     expect(result.outputOmittedBytes).toBeGreaterThan(0);

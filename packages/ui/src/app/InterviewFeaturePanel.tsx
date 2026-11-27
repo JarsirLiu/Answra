@@ -1,7 +1,11 @@
 import type { DesktopBridge } from "@answra/shared";
+import { useState } from "react";
 import { SurfaceButton } from "../components/controls/SurfaceButton";
 import { PanelShell } from "../components/panels/PanelShell";
-import { InterviewIntakePanel } from "../interview/intake/InterviewIntakePanel";
+import {
+  type InterviewTextChatMode,
+  InterviewTextChatPanel,
+} from "../interview/chat/InterviewTextChatPanel";
 import { InterviewOnboardingPanel } from "../interview/onboarding/InterviewOnboardingPanel";
 import { useInterviewOnboarding } from "../interview/onboarding/useInterviewOnboarding";
 import "../interview/onboarding/onboarding.css";
@@ -9,11 +13,18 @@ import "../interview/onboarding/onboarding.css";
 interface InterviewFeaturePanelProps {
   platform: DesktopBridge | undefined;
   onClose: () => void;
+  /** 本地模型可用时传入：登录失败提示里给出「配置本地模型」替代路径。 */
+  onConfigureModel?: () => void;
 }
 
-/** 面试入口：未完成时显示引导；完成/跳过后直接进入 intake 对话。 */
-export function InterviewFeaturePanel({ platform, onClose }: InterviewFeaturePanelProps) {
+/** 面试入口：未完成时显示引导；完成/跳过后在演练/辅助两个模式间切换。 */
+export function InterviewFeaturePanel({
+  platform,
+  onClose,
+  onConfigureModel,
+}: InterviewFeaturePanelProps) {
   const onboarding = useInterviewOnboarding(platform);
+  const [mode, setMode] = useState<InterviewTextChatMode>("rehearsal");
 
   if (onboarding.loading) {
     return <InterviewNotice message="正在读取面试引导…" onClose={onClose} />;
@@ -43,9 +54,12 @@ export function InterviewFeaturePanel({ platform, onClose }: InterviewFeaturePan
 
   if (onboarding.state) {
     return (
-      <InterviewIntakePanel
+      <InterviewTextChatPanel
+        key={mode}
+        mode={mode}
         onClose={onClose}
-        onReopenOnboarding={onboarding.reopen}
+        onModeChange={setMode}
+        onConfigureModel={onConfigureModel}
         platform={platform}
       />
     );

@@ -7,23 +7,29 @@ import { useInterviewIntake } from "./useInterviewIntake";
 
 interface InterviewIntakePanelProps {
   platform: DesktopBridge | undefined;
+  onBackToModes: () => void;
   onClose: () => void;
   onReopenOnboarding: () => Promise<void>;
 }
 
 export function InterviewIntakePanel({
   platform,
+  onBackToModes,
   onClose,
   onReopenOnboarding,
 }: InterviewIntakePanelProps) {
   const intake = useInterviewIntake(platform);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const headerAction =
-    intake.error && intake.messages.length === 0 ? (
-      <SurfaceButton onClick={intake.retryOpen} variant="quiet">
-        重试
+  const headerAction = (
+    <>
+      {intake.error && intake.messages.length === 0 ? (
+        <SurfaceButton onClick={intake.retryOpen} variant="quiet">
+          重试
+        </SurfaceButton>
+      ) : null}
+      <SurfaceButton onClick={onBackToModes} variant="quiet">
+        返回
       </SurfaceButton>
-    ) : (
       <SurfaceButton
         onClick={() => {
           void onReopenOnboarding().catch(() => undefined);
@@ -32,7 +38,8 @@ export function InterviewIntakePanel({
       >
         资料
       </SurfaceButton>
-    );
+    </>
+  );
 
   return (
     <ChatPanel

@@ -15,6 +15,7 @@ import type {
   ConversationSnapshot,
   DesktopAnnouncement,
   InterviewChange,
+  InterviewChatOpenResult,
   InterviewIntakeOpenResult,
   InterviewOnboardingPatch,
   InterviewOnboardingState,
@@ -185,6 +186,18 @@ export interface DesktopBridge {
     conversationId: string,
     text: string,
   ) => Promise<{ turnId: string; snapshot: ConversationSnapshot }>;
+  /** 读取演练会话的权威 snapshot。 */
+  getInterviewRehearsalSnapshot?: () => Promise<ConversationSnapshot>;
+  /** 打开固定演练会话；空会话由面试官 Bot 先问一个问题。 */
+  openInterviewRehearsal?: () => Promise<InterviewChatOpenResult>;
+  /** 打开固定辅助会话；空会话由教练 Bot 先给出使用说明。 */
+  openInterviewAssist?: () => Promise<InterviewChatOpenResult>;
+  /** 发送辅助模式的面试官问题，由教练 Bot 给出回答建议。 */
+  sendInterviewAssistMessage?: (
+    text: string,
+  ) => Promise<{ turnId: string; snapshot: ConversationSnapshot }>;
+  /** 读取辅助会话的权威 snapshot。 */
+  getInterviewAssistSnapshot?: () => Promise<ConversationSnapshot>;
   /** 打开固定 intake 会话；空会话会启动一次开场回复，已有内容只返回快照。 */
   openInterviewIntake?: () => Promise<InterviewIntakeOpenResult>;
   /** 发送 intake 对话消息（文本与粘贴图片）；conversation ID 由主进程固定，不暴露给 renderer。 */

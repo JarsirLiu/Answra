@@ -1,5 +1,9 @@
 import type { ConversationMessage, ConversationSnapshot } from "@answra/shared";
-import { ActiveInterviewIntakeConversationId } from "@answra/shared";
+import {
+  ActiveInterviewAssistConversationId,
+  ActiveInterviewConversationId,
+  ActiveInterviewIntakeConversationId,
+} from "@answra/shared";
 import type {
   AgentLiveOnlyEvent,
   AgentStreamEvent,
@@ -453,6 +457,57 @@ export function createConversationBridge() {
           };
         },
       ),
+    getInterviewRehearsalSnapshot: vi.fn(async () => snapshotFor(ActiveInterviewConversationId)),
+    openInterviewRehearsal: vi.fn(async () => {
+      const snapshot = saveSnapshot({
+        conversationId: ActiveInterviewConversationId,
+        lastSeq: 0,
+        messages: [
+          {
+            id: "rehearsal-opening",
+            role: "assistant",
+            text: "我们先从自我介绍开始，请讲讲你最近负责的项目。",
+            images: [],
+            status: "complete",
+          },
+        ],
+      });
+      return { snapshot };
+    }),
+    getInterviewAssistSnapshot: vi.fn(async () => snapshotFor(ActiveInterviewAssistConversationId)),
+    openInterviewAssist: vi.fn(async () => {
+      const snapshot = saveSnapshot({
+        conversationId: ActiveInterviewAssistConversationId,
+        lastSeq: 0,
+        messages: [
+          {
+            id: "assist-opening",
+            role: "assistant",
+            text: "把面试官的问题粘贴进来，我会给你回答建议。",
+            images: [],
+            status: "complete",
+          },
+        ],
+      });
+      return { snapshot };
+    }),
+    sendInterviewAssistMessage: vi.fn(async (text: string) => {
+      const prior = snapshotFor(ActiveInterviewAssistConversationId);
+      const snapshot = saveSnapshot({
+        ...prior,
+        messages: [
+          ...prior.messages,
+          {
+            id: `user-${prior.messages.length + 1}`,
+            role: "user",
+            text,
+            images: [],
+            status: "complete",
+          },
+        ],
+      });
+      return { turnId: "turn-1", snapshot };
+    }),
     sendInterviewMessage: vi.fn(async (id: string, text: string) => {
       const prior = snapshotFor(id);
       const snapshot = saveSnapshot({

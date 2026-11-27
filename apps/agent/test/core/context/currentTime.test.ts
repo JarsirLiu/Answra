@@ -49,6 +49,25 @@ describe("current time context", () => {
     expect(reminder).toContain("Current local time: 2026-11-10 06:32 星期二 (UTC, UTC+00:00)");
   });
 
+  it("formats fractional and negative offsets as canonical UTC±HH:MM values", () => {
+    const kolkata = buildCurrentTimeContext({
+      now: new Date("2026-11-10T06:32:00.000Z"),
+      timeZone: "Asia/Kolkata",
+    });
+    const losAngeles = buildCurrentTimeContext({
+      now: new Date("2026-11-10T02:00:00.000Z"),
+      timeZone: "America/Los_Angeles",
+    });
+
+    expect(kolkata).toContain(
+      "Current local time: 2026-11-10 12:02 星期二 (Asia/Kolkata, UTC+05:30)",
+    );
+    // 本地日期落到前一天时，偏移仍由同一时刻的差值决定，而不是从日期字符串推断。
+    expect(losAngeles).toContain(
+      "Current local time: 2026-11-09 18:00 星期一 (America/Los_Angeles, UTC-08:00)",
+    );
+  });
+
   it("recomputes the reminder for each call", () => {
     const first = buildCurrentTimeContext(FIXED_TIME);
     const second = buildCurrentTimeContext({

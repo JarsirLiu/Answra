@@ -13,7 +13,8 @@
 | 域 | Bot | 注册方式 | 工具授权 |
 | --- | --- | --- | --- |
 | conversation | `conversation.general` | `createConversationBots` → `createBotCatalog` | `workspace.read/grep/edit/run-command` |
-| interview 演练 | `interview.rehearsal` | `AgentRuntime.registerAgent`（不进 catalog） | `workspace.read/grep` |
+| interview 演练（面试官身份） | `interview.rehearsal` | `AgentRuntime.registerAgent`（不进 catalog） | `workspace.read/grep` |
+| interview 辅助（教练身份） | `interview.coach` | 同上 | `workspace.read/grep` |
 | interview 资料整理 | `interview.intake` | 同上 | `workspace.read/grep/edit` |
 | coding | `coding.engineer` | `startCodingHost` 单 Bot | 同 conversation + 三个 skill |
 | answer | 截图答题 | 独立 host（纯内存） | 无工具 |

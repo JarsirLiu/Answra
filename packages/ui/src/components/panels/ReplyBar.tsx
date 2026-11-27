@@ -26,6 +26,8 @@ interface ReplyBarProps {
    * 登录动作由调用方执行，回复条本身不认识账号体系。
    */
   onSignIn?: () => void;
+  /** 本地模型可用时传入：失败提示里给出「配置本地模型」替代路径。 */
+  onConfigureModel?: () => void;
   replyPending?: boolean;
   showConversationToggle?: boolean;
   conversationExpanded?: boolean;
@@ -68,6 +70,7 @@ export function ReplyBar({
   replyError,
   connection,
   onSignIn,
+  onConfigureModel,
   replyPending,
   showConversationToggle = false,
   conversationExpanded = false,
@@ -206,7 +209,13 @@ export function ReplyBar({
       {connectionNotice ? (
         <ConnectionNotice state={connection} />
       ) : (
-        replyError && <ModelErrorNotice message={replyError} onSignIn={onSignIn} />
+        replyError && (
+          <ModelErrorNotice
+            message={replyError}
+            onSignIn={onSignIn}
+            onConfigureModel={onConfigureModel}
+          />
+        )
       )}
       <div className="reply-actions">
         {showConversationToggle && (

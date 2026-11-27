@@ -24,6 +24,8 @@ interface ReplyConversationPopoverProps {
   placement: "above" | "below";
   stealth: boolean;
   bridge?: DesktopBridge;
+  /** 本地模型可用时传入：失败提示里给出「配置本地模型」替代路径。 */
+  onConfigureModel?: () => void;
 }
 
 /**
@@ -40,6 +42,7 @@ export function ReplyConversationPopover({
   placement,
   stealth: _stealth,
   bridge,
+  onConfigureModel,
 }: ReplyConversationPopoverProps) {
   const signIn = () => {
     void bridge?.loginAccount?.();
@@ -121,7 +124,11 @@ export function ReplyConversationPopover({
         <ConnectionNotice state={connection} />
         {!connectionNotice && retry && <RetryNotice retry={retry} />}
         {!connectionNotice && failure && !hasErrorActivity && (
-          <ModelErrorNotice message={failure} onSignIn={failureNeedsSignIn ? signIn : undefined} />
+          <ModelErrorNotice
+            message={failure}
+            onSignIn={failureNeedsSignIn ? signIn : undefined}
+            onConfigureModel={failureNeedsSignIn ? onConfigureModel : undefined}
+          />
         )}
         {visibleMessages.length === 0 && !failure && !connectionNotice && (
           <p className="reply-conversation-empty">发送后将在这里显示本轮对话</p>

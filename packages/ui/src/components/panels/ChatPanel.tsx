@@ -76,6 +76,11 @@ interface ChatPanelProps {
    * 登录动作由调用方执行，面板本身不认识账号体系。
    */
   onSignIn?: () => void;
+  /**
+   * 本地模型可用时传入：失败提示里给出「配置本地模型」替代路径。
+   * 与 `onSignIn` 并列，两者都由调用方按失败原因和包能力决定。
+   */
+  onConfigureModel?: () => void;
   /** 分叉对话：从当前消息开启新对话。 */
   onFork?: () => void;
   /** 点赞/点踩反馈。 */
@@ -125,6 +130,7 @@ export function ChatPanel({
   thinkingMs,
   error,
   onSignIn,
+  onConfigureModel,
   onFork,
   onVote,
   onClear,
@@ -289,7 +295,13 @@ export function ChatPanel({
             {contextCompaction && <ContextCompactionNotice status={contextCompaction} />}
             <ConnectionNotice state={connection} />
             {!connectionNotice && retry && <RetryNotice retry={retry} />}
-            {!connectionNotice && error && <ModelErrorNotice message={error} onSignIn={onSignIn} />}
+            {!connectionNotice && error && (
+              <ModelErrorNotice
+                message={error}
+                onSignIn={onSignIn}
+                onConfigureModel={onConfigureModel}
+              />
+            )}
           </MessageStream>
           <ConversationComposer
             inputLabel={inputLabel}

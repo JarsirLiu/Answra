@@ -54,6 +54,8 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
   const [mode, setMode] = useState<Mode>("conversation");
   const [announcements, setAnnouncements] = useState<DesktopAnnouncement[]>([]);
   const [authSignedIn, setAuthSignedIn] = useState(false);
+  // 本地来源是否在当前包可用由主进程裁决；full 包为 false，不给出点进去却是死路的入口。
+  const [localModelAvailable, setLocalModelAvailable] = useState(false);
   const surfaces = useSurfaceCoordinator();
   const { panel, floatingLayers, featureSlot } = surfaces;
   const replyPhase = featureSlot.kind === "reply" ? (featureSlot.phase ?? "composing") : "closed";
@@ -77,6 +79,19 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
     setReplyFailure(undefined);
     answer.clearMessages();
   }, [answer.clearMessages, connection?.status]);
+  useEffect(() => {
+    const getConfig = platform?.getConversationConfig;
+    if (!getConfig) return;
+    let cancelled = false;
+    void getConfig()
+      .then((view) => {
+        if (!cancelled) setLocalModelAvailable(view.localAvailable);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [platform?.getConversationConfig]);
   useEffect(() => {
     if (!platform?.getAuthStatus) return;
     let cancelled = false;
@@ -192,6 +207,9 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
         onClose={closeReplyBar}
         onCancel={reply.cancelReply}
         onSignIn={replyFailure?.needsSignIn ? signInReply : undefined}
+        onConfigureModel={
+          replyFailure?.needsSignIn && localModelAvailable ? openModelSettings : undefined
+        }
         onScreenshot={triggerScreenshot}
         onSend={() => {
           // 重新发送即清掉上一轮的失败提示，避免旧错误压着新结果。
@@ -243,6 +261,11 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
           needsSignIn: true,
         });
       });
+  }
+
+  /** 登录之外的一条路：打开设置面板，默认落在包含「模型」分组的「设置」页。 */
+  function openModelSettings() {
+    surfaces.openPanel("settings");
   }
 
   function handleModeAction(action: ModeAction) {
@@ -328,11 +351,16 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
               })
             }
             onSent={reply.clearPending}
+            onConfigureModel={localModelAvailable ? openModelSettings : undefined}
           />
         )}
 
         {__ANSWRA_FEATURE_INTERVIEW__ && panel === "interview" && (
-          <InterviewFeaturePanel platform={platform} onClose={() => surfaces.openPanel("closed")} />
+          <InterviewFeaturePanel
+            platform={platform}
+            onClose={() => surfaces.openPanel("closed")}
+            onConfigureModel={localModelAvailable ? openModelSettings : undefined}
+          />
         )}
 
         {featureSlot.kind === "reply" ? (
@@ -343,6 +371,9 @@ export function FloatingBarApp({ bridge }: FloatingBarAppProps) {
             connection={connection}
             expanded={replyDetail.expanded}
             stealth={stealthSetting.enabled}
+            onConfigureModel={
+              replyFailure?.needsSignIn && localModelAvailable ? openModelSettings : undefined
+            }
           />
         ) : null}
 

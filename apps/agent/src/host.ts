@@ -18,6 +18,7 @@ import { MemoryConversationStore } from "./core/transcript/memoryStore";
 import type { ConversationStore } from "./core/transcript/store";
 import { createInterviewRehearsalAgent, INTERVIEW_REHEARSAL_AGENT_ID } from "./interview/agent";
 import { InterviewApplication } from "./interview/application";
+import { createInterviewCoachAgent, INTERVIEW_COACH_AGENT_ID } from "./interview/coach/agent";
 import type { InterviewDomainEvent } from "./interview/contracts";
 import { createInterviewIntakeAgent, INTERVIEW_INTAKE_AGENT_ID } from "./interview/intake/agent";
 import { InterviewRuntime } from "./interview/runtime";
@@ -170,6 +171,12 @@ export function startAgentHost({
       tools,
     }),
   );
+  const interviewCoachAgent = agentRuntime.registerAgent(
+    createInterviewCoachAgent({
+      store,
+      tools,
+    }),
+  );
   const runtime = new ConversationApplication({
     agentRuntime,
     store,
@@ -226,6 +233,24 @@ export function startAgentHost({
     },
   });
 
+  const interviewCoach = new InterviewApplication({
+    agentRuntime,
+    store,
+    executor: interviewCoachAgent,
+    authorAgentId: INTERVIEW_COACH_AGENT_ID,
+    requestAccessToken: () => requestAccessToken({ forceRefresh: false }),
+    sessionItems,
+    sessionFrames,
+    onSnapshot: async (snapshot) => emitConversationSnapshot(snapshot),
+    onTurnCommitted: () => undefined,
+    onError: (stage, error) => {
+      console.warn("[interview-coach] failed", {
+        stage,
+        error: error instanceof Error ? error.message : "unknown",
+      });
+    },
+  });
+
   const interviewRuntime = new InterviewRuntime({
     application: interview,
     vad,
@@ -268,8 +293,10 @@ export function startAgentHost({
     interviewRuntime.dispose();
     void interview.stop();
     void interviewIntake.stop();
+    void interviewCoach.stop();
     interview.dispose();
     interviewIntake.dispose();
+    interviewCoach.dispose();
     rejectTokenRequests();
     skillsReady?.dispose();
     void tools.dispose().catch((error: unknown) => {
@@ -287,6 +314,9 @@ export function startAgentHost({
       await interviewIntake
         .shutdown()
         .catch((error: unknown) => console.warn("[interview-intake] stop failed", error));
+      await interviewCoach
+        .shutdown()
+        .catch((error: unknown) => console.warn("[interview-coach] stop failed", error));
       await runtime.shutdown();
       await agentRuntime.shutdown();
       disposed = true;
@@ -401,6 +431,7 @@ export function startAgentHost({
         runtime.setWorkspaceRoot(command.root);
         interview.setWorkspaceRoot(command.root);
         interviewIntake.setWorkspaceRoot(command.root);
+        interviewCoach.setWorkspaceRoot(command.root);
         // 工作区来源的 skill 随工作区变化重扫；结果迟到会被 catalog 自身丢弃。
         void skillsReady?.setWorkspaceRoot(command.root);
         return undefined;
@@ -409,11 +440,21 @@ export function startAgentHost({
         interview.setProfileSeed(command.seed);
         interviewIntake.setInterviewDataRoot(command.root);
         interviewIntake.setProfileSeed(command.seed);
+        interviewCoach.setInterviewDataRoot(command.root);
+        interviewCoach.setProfileSeed(command.seed);
         return undefined;
       case "interview-message":
         return interview.sendText(command.conversationId, command.text);
       case "interview-snapshot":
         return interview.getSnapshot(command.conversationId);
+      case "interview-rehearsal-open":
+        return interview.open(command.conversationId);
+      case "interview-assist-open":
+        return interviewCoach.open(command.conversationId);
+      case "interview-assist-message":
+        return interviewCoach.sendText(command.conversationId, command.text);
+      case "interview-assist-snapshot":
+        return interviewCoach.getSnapshot(command.conversationId);
       case "interview-intake-open":
         return interviewIntake.open(command.conversationId);
       case "interview-intake-message":

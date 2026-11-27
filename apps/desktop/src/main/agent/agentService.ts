@@ -1,5 +1,6 @@
 import { AgentConnectionSupervisor, type InterviewWorkerEvent } from "@answra/agent";
 import {
+  ActiveInterviewAssistConversationId,
   ActiveInterviewConversationId,
   ActiveInterviewIntakeConversationId,
   type AgentConnectionState,
@@ -14,6 +15,7 @@ import {
   type ConversationSessionScope,
   type ConversationSnapshot,
   emptyInterviewProfileSeed,
+  type InterviewChatOpenResult,
   type InterviewIntakeOpenResult,
   type InterviewPcmFrame,
   type InterviewProfileSeed,
@@ -34,6 +36,8 @@ export interface AgentServiceDeps {
    * 未登录/未配置时抛错：云端是 `auth-required`，本地是配置提示。
    */
   resolveModel: (options?: { forceRefresh?: boolean }) => Promise<ResolvedModel>;
+  /** 机会式解析：打开会话时若模型未就绪就跳过，不抛用户可见失败。 */
+  resolveModelIfReady?: () => Promise<ResolvedModel | undefined>;
   getWorkspaceRoot: () => string | null;
   getInterviewDataRoot: () => string;
   /** 读取最近一次引导输入；画像由 Agent 维护，这里只提供只读种子。 */
@@ -195,10 +199,57 @@ export class AgentService {
     })) as { turnId: string; snapshot: ConversationSnapshot };
   }
 
+  async getInterviewRehearsalSnapshot(): Promise<ConversationSnapshot> {
+    await this.start();
+    this.trackConversation(ActiveInterviewConversationId);
+    return (await this.workerHost.request("interview-snapshot", {
+      conversationId: ActiveInterviewConversationId,
+    })) as ConversationSnapshot;
+  }
+
+  async openInterviewRehearsal(): Promise<InterviewChatOpenResult> {
+    await this.start();
+    this.trackConversation(ActiveInterviewConversationId);
+    await this.prepareInterviewContext();
+    return (await this.workerHost.request("interview-rehearsal-open", {
+      conversationId: ActiveInterviewConversationId,
+    })) as InterviewChatOpenResult;
+  }
+
+  async openInterviewAssist(): Promise<InterviewChatOpenResult> {
+    await this.start();
+    this.trackConversation(ActiveInterviewAssistConversationId);
+    await this.prepareInterviewContext();
+    return (await this.workerHost.request("interview-assist-open", {
+      conversationId: ActiveInterviewAssistConversationId,
+    })) as InterviewChatOpenResult;
+  }
+
+  async sendInterviewAssistMessage(
+    text: string,
+  ): Promise<{ turnId: string; snapshot: ConversationSnapshot }> {
+    if (!text.trim() || text.length > 32_000) throw new Error("面试辅助消息无效或过长");
+    await this.start();
+    this.trackConversation(ActiveInterviewAssistConversationId);
+    await this.prepareInterviewModel();
+    return (await this.workerHost.request("interview-assist-message", {
+      conversationId: ActiveInterviewAssistConversationId,
+      text,
+    })) as { turnId: string; snapshot: ConversationSnapshot };
+  }
+
+  async getInterviewAssistSnapshot(): Promise<ConversationSnapshot> {
+    await this.start();
+    this.trackConversation(ActiveInterviewAssistConversationId);
+    return (await this.workerHost.request("interview-assist-snapshot", {
+      conversationId: ActiveInterviewAssistConversationId,
+    })) as ConversationSnapshot;
+  }
+
   async openInterviewIntake(): Promise<InterviewIntakeOpenResult> {
     await this.start();
     this.trackConversation(ActiveInterviewIntakeConversationId);
-    await this.prepareInterviewModel();
+    await this.prepareInterviewContext();
     return (await this.workerHost.request("interview-intake-open", {
       conversationId: ActiveInterviewIntakeConversationId,
     })) as InterviewIntakeOpenResult;
@@ -348,10 +399,23 @@ export class AgentService {
     await this.connection.dispose();
   }
 
-  /** 面试语音与 intake 共用：工作区、画像种子、模型端点和凭据都要先下发。 */
-  private async prepareInterviewModel(): Promise<void> {
+  /**
+   * 打开面试会话只下发工作区与画像种子，不解析模型配置：
+   * 面板打开不是模型调用，云端未登录时不应该在这里抛 auth-required。
+   * 本地与云端两种来源都保留，真正调用模型时由发送路径统一解析。
+   */
+  private async prepareInterviewContext(): Promise<void> {
     await this.workerHost.request("workspace-context", { root: this.deps.getWorkspaceRoot() });
     await this.sendInterviewContext();
+    // 有可用模型就顺手下发，让空会话能生成开场提问；未登录/未配置时跳过，
+    // 由 Agent 侧.open() 直接恢复空页面，真正的失败留到发送路径呈现。
+    const resolved = await this.deps.resolveModelIfReady?.();
+    if (resolved) await this.ensureConfigured(resolved.config);
+  }
+
+  /** 面试发送/语音启动前才解析模型：本地直接可用，云端沿用同一登录门禁。 */
+  private async prepareInterviewModel(): Promise<void> {
+    await this.prepareInterviewContext();
     const { config } = await this.deps.resolveModel();
     await this.ensureConfigured(config);
   }
@@ -411,6 +475,8 @@ export class AgentService {
 /** 固定面试会话必须走所属领域的恢复；conversation 运行时不能替其他领域执行恢复。 */
 function snapshotCommandFor(conversationId: string) {
   if (conversationId === ActiveInterviewConversationId) return "interview-snapshot" as const;
+  if (conversationId === ActiveInterviewAssistConversationId)
+    return "interview-assist-snapshot" as const;
   if (conversationId === ActiveInterviewIntakeConversationId)
     return "interview-intake-snapshot" as const;
   return "snapshot" as const;

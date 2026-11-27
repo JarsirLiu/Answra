@@ -14,6 +14,8 @@ interface ReplyDetailsProps {
   /** 是否展示详情面板。 */
   expanded: boolean;
   stealth: boolean;
+  /** 本地模型可用时传入：失败提示里给出「配置本地模型」替代路径。 */
+  onConfigureModel?: () => void;
 }
 
 /**
@@ -27,6 +29,7 @@ export function ReplyDetails({
   expanded,
   stealth,
   conversation,
+  onConfigureModel,
 }: ReplyDetailsProps) {
   if (!expanded) return null;
   return (
@@ -44,6 +47,7 @@ export function ReplyDetails({
       placement="below"
       stealth={stealth}
       bridge={bridge}
+      onConfigureModel={onConfigureModel}
     />
   );
 }

@@ -122,6 +122,7 @@ const modelRouter = new ModelRouter({
 });
 const agentService = new AgentService({
   resolveModel: (options) => modelRouter.resolve(options),
+  resolveModelIfReady: () => modelRouter.resolveIfReady(),
   getWorkspaceRoot: () => getWorkspaceRoot(),
   getInterviewDataRoot: () => interviewDataRoot,
   readInterviewProfileSeed: () => readInterviewProfileSeed(),

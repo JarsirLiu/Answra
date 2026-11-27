@@ -968,4 +968,101 @@ describe("agent worker host", () => {
     expect(dispose).toHaveBeenCalledTimes(1);
     expect(harness.responses()).toHaveLength(0);
   });
+
+  it("routes the assist session to its own application instead of the rehearsal bot", async () => {
+    const harness = createHarness();
+    const host = startAgentHost({
+      transport: harness.transport,
+      vad: silenceVadSource(),
+      recognizer: scriptedRecognizer("识别文本"),
+    });
+    const baseUrl = await startChatServer("这是基于画像的回答建议");
+    host.runtime.configure({
+      chat: { baseUrl, model: "text.chat" },
+      answer: { baseUrl, model: "image.answer" },
+    });
+    const answeredTokens = new Set<string>();
+    const answerPendingTokens = async () => {
+      await vi.waitFor(() => {
+        for (const request of harness.tokenRequests()) {
+          if (answeredTokens.has(request.id)) continue;
+          answeredTokens.add(request.id);
+          harness.dispatch({ id: request.id, type: "token", accessToken: "fresh-token" });
+        }
+      });
+    };
+    const responseFor = (id: string) =>
+      harness.responses().find((frame) => frame.type === "response" && frame.id === id);
+    let snapshotRequest = 0;
+    const waitForAssistIdle = async () => {
+      await vi.waitFor(async () => {
+        for (const request of harness.tokenRequests()) {
+          if (answeredTokens.has(request.id)) continue;
+          answeredTokens.add(request.id);
+          harness.dispatch({ id: request.id, type: "token", accessToken: "fresh-token" });
+        }
+        const id = `assist-idle-${++snapshotRequest}`;
+        harness.dispatch({
+          id,
+          type: "interview-assist-snapshot",
+          conversationId: "interview-assist",
+        });
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        const response = responseFor(id);
+        expect(response).toMatchObject({ ok: true });
+        expect(response).toMatchObject({ value: { activeTurnId: undefined } });
+      });
+    };
+
+    harness.dispatch({
+      id: "assist-open",
+      type: "interview-assist-open",
+      conversationId: "interview-assist",
+    });
+    await answerPendingTokens();
+    await vi.waitFor(() => expect(responseFor("assist-open")).toBeDefined());
+    expect(responseFor("assist-open")).toMatchObject({
+      ok: true,
+      value: {
+        snapshot: {
+          conversationId: "interview-assist",
+          activeAgentId: "interview.coach",
+        },
+      },
+    });
+    await waitForAssistIdle();
+
+    harness.dispatch({
+      id: "assist-message",
+      type: "interview-assist-message",
+      conversationId: "interview-assist",
+      text: "面试官问我项目难点",
+    });
+    await answerPendingTokens();
+    await vi.waitFor(() => expect(responseFor("assist-message")).toBeDefined());
+    expect(responseFor("assist-message")).toMatchObject({
+      ok: true,
+      value: {
+        snapshot: {
+          conversationId: "interview-assist",
+          activeAgentId: "interview.coach",
+        },
+      },
+    });
+
+    harness.dispatch({
+      id: "assist-snapshot",
+      type: "interview-assist-snapshot",
+      conversationId: "interview-assist",
+    });
+    await vi.waitFor(() => expect(responseFor("assist-snapshot")).toBeDefined());
+    expect(responseFor("assist-snapshot")).toMatchObject({
+      ok: true,
+      value: {
+        conversationId: "interview-assist",
+        activeAgentId: "interview.coach",
+      },
+    });
+    host.dispose();
+  });
 });

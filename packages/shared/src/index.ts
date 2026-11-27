@@ -22,6 +22,7 @@ export type {
 export {
   ActiveChatConversationId,
   ActiveExamConversationId,
+  ActiveInterviewAssistConversationId,
   ActiveInterviewConversationId,
   ActiveInterviewIntakeConversationId,
   type AmbientChannelMap,
@@ -86,6 +87,7 @@ export {
   INTERVIEW_TARGET_ROLE_MAX_LENGTH,
   type InterviewChannelMap,
   InterviewChannels,
+  type InterviewChatOpenResult,
   isAuthRequiredError,
   isInterviewOnboardingStatus,
   isInterviewOnboardingStep,
