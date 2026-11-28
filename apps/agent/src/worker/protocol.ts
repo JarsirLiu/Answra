@@ -144,6 +144,13 @@ export type AgentCommand =
       images: readonly ConversationImage[];
     }
   | { id: string; type: "interview-intake-snapshot"; conversationId: string }
+  /** 演练/辅助交接：intake 下一次打开时把说明作为 model-only 开场上下文。 */
+  | {
+      id: string;
+      type: "interview-intake-handoff";
+      conversationId: string;
+      summary: string;
+    }
   | ({ id: string; type: "chat-send"; accessToken: string } & ChatSendCommand)
   | ({ id: string; type: "team-send"; accessToken: string } & TeamSendCommand)
   | ({ id: string; type: "answer-send"; accessToken: string } & AnswerSendCommand)
@@ -190,7 +197,29 @@ export type AgentFrame =
   | { version: 1; type: "conversation-snapshot"; snapshot: ConversationSnapshot }
   /** Worker DTOs cross to desktop-main for projection into renderer contracts. */
   | { version: 1; type: "interview-event"; event: InterviewWorkerEvent }
+  /** 演练回复的可朗读文本增量；切句与合成归桌面宿主，agent 不持凭证。 */
+  | {
+      version: 1;
+      type: "tts-speak";
+      conversationId: string;
+      messageId: string;
+      sequence: number;
+      delta: string;
+      final: boolean;
+    }
   /** A batch acknowledgment releases a bounded number of renderer audio frames. */
   | { version: 1; type: "interview-audio-credit"; sessionId: string; count: number }
+  /**
+   * 演练/辅助 Bot 提交交接请求后的阶段事件；desktop 据此结束演练并切回资料整理。
+   * reason 用字面量而不是复用领域类型：这是跨进程线协议，不暴露领域实现。
+   */
+  | {
+      version: 1;
+      type: "interview-stage";
+      stage: "profile-review";
+      conversationId: string;
+      reason: "interview-ended" | "user-requested" | "blocked-by-gap";
+      summary: string;
+    }
   /** 反向请求：云端调用收到 401 时，请宿主换一次新的访问令牌。 */
   | { version: 1; type: "token-request"; id: string; forceRefresh: boolean };

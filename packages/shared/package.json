@@ -10,7 +10,8 @@
     "./env": "./src/env.ts",
     "./release-features.json": "./src/release-features.json",
     "./schema": "./src/schema/index.ts",
-    "./surfaces": "./src/surfaces/index.ts"
+    "./surfaces": "./src/surfaces/index.ts",
+    "./tts": "./src/tts/index.ts"
   },
   "scripts": {
     "test": "vitest run",

@@ -6,6 +6,7 @@ import {
   type InterviewTextChatMode,
   InterviewTextChatPanel,
 } from "../interview/chat/InterviewTextChatPanel";
+import { InterviewIntakePanel } from "../interview/intake/InterviewIntakePanel";
 import { InterviewOnboardingPanel } from "../interview/onboarding/InterviewOnboardingPanel";
 import { useInterviewOnboarding } from "../interview/onboarding/useInterviewOnboarding";
 import "../interview/onboarding/onboarding.css";
@@ -17,7 +18,7 @@ interface InterviewFeaturePanelProps {
   onConfigureModel?: () => void;
 }
 
-/** 面试入口：未完成时显示引导；完成/跳过后在演练/辅助两个模式间切换。 */
+/** 面试入口：未完成时显示引导；完成后先进制作分身，点「开始面试演练」才进演练/辅助。 */
 export function InterviewFeaturePanel({
   platform,
   onClose,
@@ -52,7 +53,7 @@ export function InterviewFeaturePanel({
     );
   }
 
-  if (onboarding.state) {
+  if (onboarding.state?.rehearsalStartedAt) {
     return (
       <InterviewTextChatPanel
         key={mode}
@@ -60,6 +61,18 @@ export function InterviewFeaturePanel({
         onClose={onClose}
         onModeChange={setMode}
         onConfigureModel={onConfigureModel}
+        platform={platform}
+      />
+    );
+  }
+
+  if (onboarding.state) {
+    return (
+      <InterviewIntakePanel
+        error={onboarding.error}
+        onClose={onClose}
+        onReopenOnboarding={onboarding.reopen}
+        onStartRehearsal={onboarding.startRehearsal}
         platform={platform}
       />
     );

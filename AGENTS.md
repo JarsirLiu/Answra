@@ -14,6 +14,8 @@
                                    ←  @answra/cli
 @answra/credentials  ←  @answra/desktop(main)
                      ←  @answra/cli
+@answra/shared  ←  @answra/tts  ←  @answra/desktop(main)
+                              ←  @answra/cli
 @answra/shared  ←  @answra/remote  ←  @answra/remote-node  ←  @answra/cli
                                                           ←  @answra/desktop(main)
 @answra/shared  ←  @answra/remote  ←  @answra/mobile
@@ -22,7 +24,8 @@
 
 - 依赖必须单向，禁止环（`pnpm architecture:check` 强制）。
 - 跨包导入只允许使用目标包 `package.json` `exports` 声明的入口；禁止深导入、禁止相对路径跨包（架构脚本强制）。
-- 新增共享能力时：类型/常量进 `shared`，纯 UI 进 `ui`，平台能力进 `desktop`，与平台无关的 Agent 运行时进 `agent`；跨桌面/CLI 的非 secret 客户端配置进 `config`，共享本地模型 API Key 进 `credentials`。
+- 新增共享能力时：类型/常量进 `shared`，纯 UI 进 `ui`，平台能力进 `desktop`，与平台无关的 Agent 运行时进 `agent`；跨桌面/CLI 的非 secret 客户端配置进 `config`，共享本地模型 API Key 进 `credentials`；与宿主无关的第三方 API 协议适配（如 TTS 合成）进 `tts`。
+- `@answra/tts` 是 Node-only 宿主无关合成库：只依赖 `@answra/shared`，不 import Electron / Node 内置 / Agent / config / credentials；只接收已解密 Key，不读 keychain、不写盘、不播放。协议 adapter 在 `src/protocols/`，切句/并发/排序策略在 `src/strategies/`；新增厂商优先加预设数据，换策略只改配置。
 - `@answra/config` 是 Node-only 客户端配置库：只存本地模型地址/模型 ID 等非 secret 字段；API Key 由 `@answra/credentials` 写入 OS keychain，登录令牌仍由桌面 `safeStorage` 负责，CLI 不得解密桌面 `safeStorage` 文件。
 - `@answra/credentials` 是 Node-only OS 凭据库：只封装本地模型 API Key 的 keychain 读写，不读写 `config.json`、不依赖 Electron/CLI/Agent；keychain 不可用时 fail-closed，不回退明文。桌面 main 与 CLI 共用固定 service/account。
 - `@answra/remote` 是平台无关的远程连接核心：只放远程帧编解码、host/controller 端口、配对/信令状态机与 fake ports；只能依赖 `@answra/shared`，不得 import Electron/Node/React/Ink/Agent/CLI/desktop。WebRTC、WebSocket、OS keychain 由各宿主适配。

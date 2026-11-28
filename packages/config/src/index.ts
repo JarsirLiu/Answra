@@ -5,6 +5,8 @@ export {
   type ClientAnswerConfig,
   type ClientConfig,
   type ClientModelConfig,
+  type ClientTtsConfig,
+  type ClientTtsProviderConfig,
   defaultClientConfig,
   type LocalModelConfig,
 } from "./contracts";
@@ -21,3 +23,4 @@ export {
 } from "./paths";
 export { readProviderOptions } from "./providerOptions";
 export { normalizeBaseUrl, parseClientConfig, readClientConfig, writeClientConfig } from "./store";
+export { defaultClientTtsConfig, parseClientTtsConfig } from "./tts";

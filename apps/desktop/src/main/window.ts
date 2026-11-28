@@ -16,6 +16,10 @@ import {
   type SessionFrame,
   SurfaceChannels,
   type SurfacePresetId,
+  type TtsAudioFrame,
+  TtsChannels,
+  type TtsFailureEvent,
+  type TtsStopPayload,
   WindowChannels,
 } from "@answra/shared";
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron";
@@ -163,6 +167,25 @@ export function sendRemoteHostStatus(status: RemoteHostStatus): void {
   const mainWindow = getWindow();
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(RemoteHostChannels.Status, status);
+  }
+}
+/** TTS 音频只发给主窗口：演练面板只存在于主悬浮条。 */
+export function sendTtsAudio(frame: TtsAudioFrame): void {
+  const mainWindow = getWindow();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(TtsChannels.Audio, frame);
+  }
+}
+export function sendTtsStopped(payload: TtsStopPayload): void {
+  const mainWindow = getWindow();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(TtsChannels.Stopped, payload);
+  }
+}
+export function sendTtsFailed(event: TtsFailureEvent): void {
+  const mainWindow = getWindow();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(TtsChannels.Failed, event);
   }
 }
 export function isStealthEnabled(): boolean {

@@ -83,6 +83,10 @@ interface ChatPanelProps {
   onConfigureModel?: () => void;
   /** 分叉对话：从当前消息开启新对话。 */
   onFork?: () => void;
+  /** 朗读一条 assistant 消息（messageId 用于宿主去重与取消）。缺省时操作条不出现「朗读」。 */
+  onAloud?: (messageId: string, text: string) => void;
+  /** 消息流与输入框之间的窄提示（如语音合成失败）；不属于本轮模型失败。 */
+  notice?: ReactNode;
   /** 点赞/点踩反馈。 */
   onVote?: (vote: "up" | "down" | null) => void;
   /** 清空对话历史（经网关链路归零，所有订阅方同步）；缺省不显示清空入口。 */
@@ -132,6 +136,8 @@ export function ChatPanel({
   onSignIn,
   onConfigureModel,
   onFork,
+  onAloud,
+  notice,
   onVote,
   onClear,
   clearDisabledReason,
@@ -274,6 +280,7 @@ export function ChatPanel({
                           Boolean(message.text)
                         }
                         content={message.text}
+                        onAloud={onAloud ? (text) => onAloud(message.id, text) : undefined}
                         onFork={onFork}
                         onReply={() => {
                           composerInputRef.current?.focus();
@@ -303,6 +310,7 @@ export function ChatPanel({
               />
             )}
           </MessageStream>
+          {notice}
           <ConversationComposer
             inputLabel={inputLabel}
             inputRef={composerInputRef}

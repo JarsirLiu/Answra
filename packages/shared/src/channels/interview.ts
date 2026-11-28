@@ -27,6 +27,9 @@ export const InterviewChannels = {
   OnboardingComplete: "answra:interview:onboarding-complete",
   OnboardingSkip: "answra:interview:onboarding-skip",
   OnboardingReopen: "answra:interview:onboarding-reopen",
+  RehearsalStart: "answra:interview:rehearsal-start",
+  /** 主进程改写阶段后推送的最新引导状态；renderer 只订阅，不自行推演。 */
+  OnboardingChanged: "answra:interview:onboarding-changed",
 } as const;
 
 /** Bounds audio frames in flight while the Agent processes them in batches. */
@@ -100,6 +103,8 @@ export interface InterviewOnboardingState {
   projects: InterviewOnboardingProject[];
   selectedProjectIds: string[];
   targetRole: string;
+  /** 用户最近一次显式点击「开始面试演练」的时间；null 表示仍停在制作分身阶段。 */
+  rehearsalStartedAt: string | null;
   updatedAt: string;
 }
 
@@ -256,6 +261,14 @@ export interface InterviewChannelMap {
   [InterviewChannels.OnboardingReopen]: {
     request: undefined;
     response: InterviewOnboardingState;
+  };
+  [InterviewChannels.RehearsalStart]: {
+    request: undefined;
+    response: InterviewOnboardingState;
+  };
+  [InterviewChannels.OnboardingChanged]: {
+    request: undefined;
+    response: undefined;
   };
 }
 

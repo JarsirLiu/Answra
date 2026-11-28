@@ -20,9 +20,11 @@ import {
   type InterviewPcmFrame,
   type InterviewProfileSeed,
   type ManualCompactionResult,
+  type TtsSpeakIntent,
 } from "@answra/shared";
 import type { LiveFrame, SessionFrame } from "@answra/shared/schema";
 import type { ResolvedModel } from "../conversation/modelRouter";
+import type { InterviewStageEvent } from "./agentWorkerHost";
 import { AgentWorkerProcess } from "./agentWorkerHost";
 import { parseConversationImages } from "./conversationImages";
 
@@ -42,6 +44,8 @@ export interface AgentServiceDeps {
   getInterviewDataRoot: () => string;
   /** 读取最近一次引导输入；画像由 Agent 维护，这里只提供只读种子。 */
   readInterviewProfileSeed?: () => Promise<InterviewProfileSeed>;
+  /** 新输入开始前停止该会话正在播放的朗读；TTS 归宿主，这里只发通知。 */
+  stopSpeaking?: (conversationId: string) => void;
   log?: (message: string, error?: unknown) => void;
 }
 
@@ -108,6 +112,14 @@ export class AgentService {
 
   onInterviewEvent(listener: (event: InterviewWorkerEvent) => void): () => void {
     return this.workerHost.onInterviewEvent(listener);
+  }
+
+  onInterviewStage(listener: (event: InterviewStageEvent) => void): () => void {
+    return this.workerHost.onInterviewStage(listener);
+  }
+
+  onTtsSpeak(listener: (intent: TtsSpeakIntent) => void): () => void {
+    return this.workerHost.onTtsSpeak(listener);
   }
 
   onInterviewAudioCredit(
@@ -190,6 +202,8 @@ export class AgentService {
     text: string,
   ): Promise<{ turnId: string; snapshot: ConversationSnapshot }> {
     if (!text.trim() || text.length > 32_000) throw new Error("演练消息无效或过长");
+    // 新 run 开始：上一轮面试官的声音必须立刻停，不能和新回复叠在一起。
+    this.deps.stopSpeaking?.(conversationId);
     await this.start();
     this.trackConversation(conversationId);
     await this.prepareInterviewModel();
@@ -277,6 +291,19 @@ export class AgentService {
     return (await this.workerHost.request("interview-intake-snapshot", {
       conversationId: ActiveInterviewIntakeConversationId,
     })) as ConversationSnapshot;
+  }
+
+  /**
+   * 把演练/辅助的交接说明交给资料整理者；下一次打开 intake 时消费。
+   * 说明只进入模型请求，不写 transcript，也不改阶段事实。
+   */
+  async handoffInterviewIntake(summary: string): Promise<void> {
+    await this.start();
+    this.trackConversation(ActiveInterviewIntakeConversationId);
+    await this.workerHost.request("interview-intake-handoff", {
+      conversationId: ActiveInterviewIntakeConversationId,
+      summary,
+    });
   }
 
   /** 取消指定 Turn；会话/面试/Coding/Answer 共用。 */

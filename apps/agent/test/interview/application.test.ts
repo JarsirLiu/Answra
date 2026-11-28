@@ -193,6 +193,37 @@ describe("InterviewApplication", () => {
     expect(steps).toHaveLength(1);
   });
 
+  it("opens a handoff turn even when history exists and consumes it once", async () => {
+    const { app, steps } = createHarness();
+
+    const first = await app.open("conversation-1");
+    if (first.turnId === undefined) throw new Error("first opening should start");
+    await app.waitForTurn("conversation-1", first.turnId);
+    app.setHandoffTask("conversation-1", "补充项目指标，保留未知字段");
+
+    const result = await app.open("conversation-1");
+    if (result.turnId === undefined) throw new Error("handoff should start an opening turn");
+    await app.waitForTurn("conversation-1", result.turnId);
+    expect(steps.at(-1)).toEqual(expect.objectContaining({ source: "opening" }));
+
+    // 交接只兑现一次；再次打开回到普通恢复。
+    const next = await app.open("conversation-1");
+    expect(next.turnId).toBeUndefined();
+  });
+
+  it("keeps the handoff pending across reply turns", async () => {
+    const { app } = createHarness();
+
+    await app.createConversation("conversation-1");
+    app.setHandoffTask("conversation-1", "补充项目指标");
+    const reply = await app.sendText("conversation-1", "继续");
+    await app.waitForTurn("conversation-1", reply.turnId);
+
+    // 普通回复不消费交接；下一次 opening 仍然带着它。
+    const opened = await app.open("conversation-1");
+    expect(opened.turnId).toBeDefined();
+  });
+
   it("opens an empty session without an opening turn when no model endpoint is configured", async () => {
     const { app, steps } = createHarness({ withoutEndpoint: true });
 

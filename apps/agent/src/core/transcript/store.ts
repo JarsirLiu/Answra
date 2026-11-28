@@ -5,7 +5,7 @@ import type {
   ConversationSessionScope,
   ConversationSnapshot,
 } from "@answra/shared";
-import type { AgentStreamEvent, TurnOutcome } from "@answra/shared/schema";
+import type { AgentStreamEvent, TurnOutcome, TurnSource } from "@answra/shared/schema";
 import type { ContextState } from "./contextState";
 
 /** Team metadata attached to a conversation; identities stay in the Agent registry. */
@@ -44,6 +44,11 @@ export interface SessionTurnStartInput {
   authorAgentId: string;
   /** 无新用户消息的 opening/reply Turn 可以缺省。 */
   userMessage?: ConversationMessage;
+  /**
+   * Turn 提交来源；store 只用它区分「开场」和「回复」。
+   * 开场可以没有用户消息（即使已有历史），回复必须有可回复的用户消息。
+   */
+  source?: TurnSource;
   /**
    * 用户消息已由条目折进 transcript 时，把 assistant 占位插到它后面而不是追加到末尾。
    * 多个排队 Turn 恢复时，后面 Turn 的消息已经存在，追加会打乱顺序。

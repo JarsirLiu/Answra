@@ -26,6 +26,8 @@ interface AssistantMessageProps {
   onVote?: (vote: "up" | "down" | null) => void;
   onReply?: () => void;
   onFork?: () => void;
+  /** 朗读本条正文；缺省时操作条不出现「朗读」。 */
+  onAloud?: (text: string) => void;
   /** 追加的自定义部件（如工具调用卡片），按顺序排在正文之后。 */
   children?: ReactNode;
 }
@@ -47,6 +49,7 @@ export function AssistantMessage({
   onVote,
   onReply,
   onFork,
+  onAloud,
   children,
 }: AssistantMessageProps) {
   const timelineParts = parts ?? legacyParts(content, reasoning);
@@ -63,6 +66,7 @@ export function AssistantMessage({
       {children}
       {done ? (
         <MessageActions
+          onAloud={onAloud ? () => onAloud(text) : undefined}
           onCopy={onCopy}
           onFork={onFork}
           onReply={onReply}

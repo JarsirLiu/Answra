@@ -41,6 +41,14 @@ import type {
 } from "./channels";
 import type { BotSummary, LiveFrame, ManualCompactionResult, SessionFrame } from "./schema";
 import type { SurfacePresetId } from "./surfaces";
+import type {
+  TtsAudioFrame,
+  TtsFailureEvent,
+  TtsSettingsPatch,
+  TtsSettingsView,
+  TtsSpeakRequest,
+  TtsStopPayload,
+} from "./tts";
 
 /**
  * 悬浮条窗口的内容面板标识。
@@ -104,6 +112,11 @@ export interface DesktopBridge {
    * 浏览器预览/测试环境可未实现，调用方需判空。
    */
   getStealthSupport?: () => Promise<boolean>;
+  /**
+   * 在系统浏览器打开一个 https 链接（例如厂商的 API Key 页面）。
+   * 只接受 https；浏览器预览/测试环境可未实现，调用方需判空。
+   */
+  openExternal?: (url: string) => Promise<void>;
   /**
    * 发起区域截图：主进程弹出全屏框选 overlay，用户拖拽选区后返回该区域的
    * PNG data URL；用户取消或截图失败时返回 ok=false（含原因）。
@@ -238,6 +251,32 @@ export interface DesktopBridge {
   skipInterviewOnboarding?: () => Promise<InterviewOnboardingState>;
   /** 从完成/跳过状态回到可编辑的引导步骤。 */
   reopenInterviewOnboarding?: () => Promise<InterviewOnboardingState>;
+  /** 记录用户显式点击「开始面试演练」；之后打开面试直接进演练。 */
+  startInterviewRehearsal?: () => Promise<InterviewOnboardingState>;
+  /**
+   * 订阅主进程推来的阶段状态：演练/辅助 Bot 交接后 `rehearsalStartedAt` 被清空，
+   * UI 据此切回资料整理，不自行推演阶段。
+   */
+  onInterviewOnboardingChanged?: (
+    listener: (state: InterviewOnboardingState) => void,
+  ) => () => void;
+  // ---- 语音合成（BYO Key；浏览器预览/测试环境可未实现，调用方需判空） ----
+  /** 读取 TTS 设置摘要；真 Key 只以 `hasApiKey` 表示。 */
+  getTtsSettings?: () => Promise<TtsSettingsView>;
+  /** 保存设置；`providers` 整体替换，`apiKey` 留空表示沿用已保存的 Key。 */
+  saveTtsSettings?: (patch: TtsSettingsPatch) => Promise<TtsSettingsView>;
+  /** 仅在设置页需要明文时读取某个 provider 的 Key。 */
+  revealTtsApiKey?: (providerId: string) => Promise<{ apiKey: string | null }>;
+  /** 手动朗读一条消息；合成结果经 `onTtsAudio` 推送。 */
+  speakTts?: (request: TtsSpeakRequest) => Promise<{ accepted: boolean }>;
+  /** 停止播放；`conversationId: null` 表示停止全部。 */
+  stopTts?: (payload: TtsStopPayload) => void;
+  /** 订阅合成好的音频帧；返回取消订阅函数。 */
+  onTtsAudio?: (listener: (frame: TtsAudioFrame) => void) => () => void;
+  /** 订阅停止信号。 */
+  onTtsStopped?: (listener: (payload: TtsStopPayload) => void) => () => void;
+  /** 订阅合成失败；渲染层只提示，不弹全局错误。 */
+  onTtsFailed?: (listener: (event: TtsFailureEvent) => void) => () => void;
   // ---- 本地工作区（合并笔记本与资料；浏览器预览/测试环境可未实现，调用方需判空） ----
   /** 读取缓存的上一工作区根目录；未选择过时 root 为 null。 */
   getWorkspaceRoot?: () => Promise<{ root: string | null }>;

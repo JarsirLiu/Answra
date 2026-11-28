@@ -5,6 +5,7 @@ import { useRef } from "react";
 import { SurfaceButton } from "../../components/controls/SurfaceButton";
 import { ChatPanel } from "../../components/panels/ChatPanel";
 import { ICON } from "../../tokens";
+import { useTtsPlayback } from "../../tts/useTtsPlayback";
 import { type InterviewTextChatMode, useInterviewTextChat } from "./useInterviewTextChat";
 import "./chat.css";
 
@@ -38,6 +39,7 @@ export function InterviewTextChatPanel({
   onConfigureModel,
 }: InterviewTextChatPanelProps) {
   const chat = useInterviewTextChat(platform, mode);
+  const tts = useTtsPlayback(platform);
   const copy = COPY[mode];
   const fileInputRef = useRef<HTMLInputElement>(null);
   const headerAction = (
@@ -77,6 +79,23 @@ export function InterviewTextChatPanel({
       headerAction={headerAction}
       inputLabel="输入消息"
       messages={chat.messages}
+      notice={
+        tts.failure ? (
+          <div className="interview-tts-notice" role="status">
+            <span>{tts.failure}</span>
+            <SurfaceButton onClick={tts.dismissFailure} size="sm" variant="quiet">
+              知道了
+            </SurfaceButton>
+          </div>
+        ) : undefined
+      }
+      onAloud={
+        platform?.speakTts
+          ? (messageId, text) => {
+              void platform.speakTts?.({ messageId, text });
+            }
+          : undefined
+      }
       onAttachmentChange={() => undefined}
       onAttachmentRemove={() => undefined}
       onCancel={chat.cancel}

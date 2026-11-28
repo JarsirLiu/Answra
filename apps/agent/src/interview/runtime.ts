@@ -20,7 +20,11 @@ import { InterviewVadPipeline } from "./vad/pipeline";
 import type { TenVadSource } from "./vad/tenVadEngine";
 
 export interface InterviewRuntimeOptions {
-  application: InterviewApplication;
+  /**
+   * 按会话解析所属领域的 application：演练、辅助与资料整理共用同一条
+   * VAD/ASR/turn 管线，结算与停止必须落回发起采集的那个领域。
+   */
+  resolveApplication: (conversationId: string) => InterviewApplication;
   vad: TenVadSource;
   recognizer: RecognizerSource;
   turnSettler?: CandidateTurnSettlerOptions;
@@ -28,7 +32,7 @@ export interface InterviewRuntimeOptions {
 }
 
 export class InterviewRuntime {
-  private readonly application: InterviewApplication;
+  private readonly resolveApplication: (conversationId: string) => InterviewApplication;
   private readonly recognizer: RecognizerSource;
   private readonly emit: (event: InterviewDomainEvent) => void;
   private readonly audio: InterviewAudioIngress;
@@ -37,11 +41,13 @@ export class InterviewRuntime {
   private readonly assembler = new InterviewTurnAssembler();
   private readonly settler: CandidateTurnSettler;
   private readonly conversations = new Map<string, string>();
+  /** 已经开始过的会话；dispose 时逐个收口，避免只停一个领域。 */
+  private readonly startedApplications = new Set<string>();
   private recognizerAssembly?: Promise<LocalParaformerAdapter>;
   private disposed = false;
 
   constructor(options: InterviewRuntimeOptions) {
-    this.application = options.application;
+    this.resolveApplication = options.resolveApplication;
     this.recognizer = options.recognizer;
     this.emit = options.emit;
     this.settler = new CandidateTurnSettler(
@@ -52,7 +58,13 @@ export class InterviewRuntime {
       {
         onSettled: (turns, text) => {
           const first = turns[0];
-          if (first) void this.application.turnSettled(first.conversationId, turns, text);
+          if (first) {
+            void this.resolveApplication(first.conversationId).turnSettled(
+              first.conversationId,
+              turns,
+              text,
+            );
+          }
         },
       },
     );
@@ -81,10 +93,10 @@ export class InterviewRuntime {
       failSession: (id, code) => {
         this.assembler.reset(id);
         this.settler.discard(id);
+        this.stopApplication(this.conversations.get(id));
         this.conversations.delete(id);
         this.transcription.fail(id);
         this.audio.fail(id, code);
-        void this.application.stop();
       },
       onSegment: (segment) => {
         const conversationId = this.conversations.get(segment.sessionId);
@@ -96,8 +108,10 @@ export class InterviewRuntime {
   }
 
   async start(sessionId: string, conversationId: string): Promise<void> {
-    await this.application.createConversation(conversationId);
-    this.application.start();
+    const application = this.resolveApplication(conversationId);
+    await application.createConversation(conversationId);
+    application.start();
+    this.startedApplications.add(conversationId);
     this.conversations.set(sessionId, conversationId);
     this.audio.start(asSessionId(sessionId), asConversationId(conversationId));
     try {
@@ -106,8 +120,8 @@ export class InterviewRuntime {
     } catch (error) {
       this.vad.fail(asSessionId(sessionId));
       this.audio.fail(asSessionId(sessionId), "runtime-failed");
+      this.stopApplication(conversationId);
       this.conversations.delete(sessionId);
-      await this.application.stop();
       throw error;
     }
   }
@@ -120,11 +134,11 @@ export class InterviewRuntime {
     const id = asSessionId(sessionId);
     this.assembler.reset(id);
     this.settler.discard(id);
+    this.stopApplication(this.conversations.get(sessionId));
     this.conversations.delete(sessionId);
     this.vad.fail(id);
     this.transcription.fail(id);
     this.audio.fail(id, "capture-failed");
-    void this.application.stop();
   }
 
   acceptFrame(frame: unknown): ReturnType<InterviewAudioIngress["acceptFrame"]> {
@@ -133,8 +147,9 @@ export class InterviewRuntime {
 
   stop(sessionId: string): void {
     const id = asSessionId(sessionId);
+    const conversationId = this.conversations.get(sessionId);
     this.settler.flush(id);
-    void this.application.stop();
+    this.stopApplication(conversationId);
     this.assembler.reset(id);
     this.conversations.delete(sessionId);
     this.vad.stop(id);
@@ -146,9 +161,19 @@ export class InterviewRuntime {
     if (this.disposed) return;
     this.disposed = true;
     this.settler.discardAll();
-    void this.application.stop();
+    for (const conversationId of this.startedApplications) {
+      void this.resolveApplication(conversationId).stop();
+    }
+    this.startedApplications.clear();
     this.vad.dispose();
     this.transcription.dispose();
+  }
+
+  /** 结束采集时只收口发起该会话的 application，不误停其他领域。 */
+  private stopApplication(conversationId: string | undefined): void {
+    if (conversationId === undefined) return;
+    this.startedApplications.delete(conversationId);
+    void this.resolveApplication(conversationId).stop();
   }
 
   private loadRecognizer(): Promise<LocalParaformerAdapter> {

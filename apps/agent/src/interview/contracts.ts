@@ -21,6 +21,8 @@ export interface InterviewAgentInput {
   interviewDataRoot: string | null;
   profileSeed: InterviewProfileSeed | null;
   opening: boolean;
+  /** 演练/辅助交接给资料整理者的说明；只进入模型请求，不写 transcript。 */
+  handoffTask: string | null;
 }
 
 export function sessionId(value: string): SessionId {

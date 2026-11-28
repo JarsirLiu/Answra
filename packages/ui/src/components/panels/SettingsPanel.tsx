@@ -16,6 +16,7 @@ import { AccountPanel } from "./AccountPanel";
 import { AnnouncementList } from "./AnnouncementList";
 import { PanelShell, type PanelTab } from "./PanelShell";
 import { RemoteHostSettings } from "./RemoteHostSettings";
+import { TtsSettingsGroup } from "./TtsSettingsGroup";
 import { UpdateSettingsGroup } from "./UpdateSettingsGroup";
 import "./SettingsPanel.css";
 
@@ -466,6 +467,8 @@ export function SettingsPanel({
           )}
 
           <RemoteHostSettings bridge={bridge} signedIn={signedIn} />
+
+          <TtsSettingsGroup bridge={bridge} />
 
           <UpdateSettingsGroup bridge={bridge} />
         </div>

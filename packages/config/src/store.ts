@@ -2,6 +2,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { normalizeBaseUrl } from "./baseUrl";
 import {
   CLIENT_CONFIG_VERSION,
   type ClientAnswerConfig,
@@ -9,6 +10,9 @@ import {
   type LocalModelConfig,
 } from "./contracts";
 import { readProviderOptions } from "./providerOptions";
+import { parseClientTtsConfig } from "./tts";
+
+export { normalizeBaseUrl } from "./baseUrl";
 
 const CONFIG_FILE_MODE = 0o600;
 const CONFIG_DIR_MODE = 0o700;
@@ -57,10 +61,12 @@ export function parseClientConfig(input: unknown): ClientConfig {
   if (!isRecord(input.model.local)) throw new Error("共享配置缺少 model.local。");
   const local = parseLocalModel(input.model.local);
   const answer = parseAnswerConfig(input.answer);
+  const tts = parseClientTtsConfig(input.tts);
   return {
     version: CLIENT_CONFIG_VERSION,
     model: { source, local },
     ...(answer === undefined ? {} : { answer }),
+    ...(tts === undefined ? {} : { tts }),
   };
 }
 
@@ -83,23 +89,6 @@ function parseLocalModel(input: Record<string, unknown>): LocalModelConfig {
     chatModel,
     ...(answerModel === "" ? {} : { answerModel }),
   };
-}
-
-export function normalizeBaseUrl(value: string): string {
-  const raw = value.trim();
-  let url: URL;
-  try {
-    url = new URL(raw);
-  } catch {
-    throw new Error("本地模型地址不是合法 URL。");
-  }
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error("本地模型地址只支持 http(s)。");
-  }
-  if (url.username || url.password) {
-    throw new Error("本地模型地址不能包含账号密码。");
-  }
-  return raw.replace(/\/+$/, "");
 }
 
 function readText(value: unknown, field: string): string {

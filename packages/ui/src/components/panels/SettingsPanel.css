@@ -85,7 +85,8 @@
   color: var(--ink-soft);
   font-size: var(--font-xs);
 }
-.setting-field input {
+.setting-field input,
+.setting-field select {
   min-width: 0;
   padding: 8px 9px;
   border: 1px solid var(--edge-line);
@@ -175,4 +176,92 @@
   display: block;
   margin-top: var(--space-1);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* 语音合成：供应商下拉。触发器与输入框同高；菜单覆盖在表单之上，选中态只抬起控件面。 */
+.setting-tts-vendor {
+  position: relative;
+}
+.setting-tts-vendor-trigger {
+  width: 100%;
+  height: var(--ctl-h);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--ctl-pad-x);
+  border: 1px solid var(--edge-line);
+  border-radius: 6px;
+  color: var(--ink);
+  background: var(--field);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.setting-tts-vendor-icon {
+  flex: 0 0 auto;
+  color: var(--icon);
+}
+.setting-tts-vendor-chevron {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--muted);
+}
+.setting-tts-vendor-menu {
+  position: absolute;
+  z-index: 4;
+  top: calc(100% + var(--space-1));
+  left: 0;
+  right: 0;
+  display: grid;
+  gap: calc(var(--space-1) / 2);
+  padding: var(--space-1);
+  border: 1px solid var(--glass-line);
+  border-radius: calc(var(--ctl-radius) + var(--space-1) / 2);
+  background: var(--panel);
+  box-shadow: var(--shadow-pop);
+}
+.setting-tts-vendor-option {
+  height: var(--menu-item-h);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--ctl-pad-x);
+  border: 0;
+  border-radius: var(--ctl-radius);
+  color: var(--ink);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.setting-tts-vendor-option:hover {
+  background: var(--hover);
+}
+.setting-tts-vendor-option[aria-selected="true"] {
+  background: var(--field-strong);
+}
+/* 预设厂商不展示端点；只有「自定义」才给输入框。 */
+.setting-field-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+/* 字段内的轻量文字链接（如「获取 API Key」）：不占按钮层级，hover 才抬到正文色。 */
+.setting-link {
+  padding: 0;
+  border: 0;
+  color: var(--ink-soft);
+  background: transparent;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.setting-link:hover {
+  color: var(--ink);
+}
+.setting-tts-form {
+  display: flex;
+  flex-direction: column;
 }

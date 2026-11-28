@@ -102,8 +102,10 @@ export function useInterviewTextChat(
     void open();
     return () => {
       openGeneration.current += 1;
+      // 离开本模式（切换演练/辅助或关闭面板）必须立即停声，不能把上一模式的朗读留在后台。
+      platform?.stopTts?.({ conversationId });
     };
-  }, [open]);
+  }, [open, platform, conversationId]);
 
   const send = useCallback(async () => {
     const text = draft.trim();
@@ -136,6 +138,7 @@ export function useInterviewTextChat(
 
   const cancel = useCallback(() => {
     if (view.activeTurnId) platform?.cancelTurn?.(conversationId, view.activeTurnId);
+    platform?.stopTts?.({ conversationId });
   }, [conversationId, platform, view.activeTurnId]);
 
   const signIn = useCallback(async () => {

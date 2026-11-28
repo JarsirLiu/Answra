@@ -17,6 +17,7 @@ import {
   type InterviewChange,
   InterviewChannels,
   type InterviewOnboardingPatch,
+  type InterviewOnboardingState,
   type InterviewPcmFrame,
   type InterviewProjectAddRequest,
   type InterviewResumeImportRequest,
@@ -32,6 +33,12 @@ import {
   SurfaceChannels,
   type SurfacePresetId,
   type SurfaceWindowState,
+  type TtsAudioFrame,
+  TtsChannels,
+  type TtsFailureEvent,
+  type TtsSettingsPatch,
+  type TtsSpeakRequest,
+  type TtsStopPayload,
   UpdateChannels,
   type UpdateStatus,
   WindowChannels,
@@ -114,6 +121,7 @@ const bridge: DesktopBridge = {
     ipcRenderer.send(WindowChannels.SetStealth, value);
   },
   getStealthSupport: () => ipcRenderer.invoke(WindowChannels.GetStealthSupport),
+  openExternal: (url: string) => ipcRenderer.invoke(WindowChannels.OpenExternal, url),
   startRegionCapture: (options?: RegionCaptureOptions) =>
     ipcRenderer.invoke(CaptureChannels.StartRegionCapture, options),
   onAmbientColor: (listener: (payload: AmbientColorPayload) => void) => {
@@ -225,6 +233,32 @@ const bridge: DesktopBridge = {
     ipcRenderer.on(InterviewChannels.Change, wrapped);
     return () => ipcRenderer.removeListener(InterviewChannels.Change, wrapped);
   },
+  getTtsSettings: () => ipcRenderer.invoke(TtsChannels.GetSettings),
+  saveTtsSettings: (patch: TtsSettingsPatch) => ipcRenderer.invoke(TtsChannels.SaveSettings, patch),
+  revealTtsApiKey: (providerId: string) =>
+    ipcRenderer.invoke(TtsChannels.RevealApiKey, { providerId }),
+  speakTts: (request: TtsSpeakRequest) => ipcRenderer.invoke(TtsChannels.Speak, request),
+  stopTts: (payload: TtsStopPayload) => {
+    void ipcRenderer.invoke(TtsChannels.Stop, payload).catch((error: unknown) => {
+      console.warn("[tts] 停止请求失败", error);
+    });
+  },
+  onTtsAudio: (listener: (frame: TtsAudioFrame) => void) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, frame: TtsAudioFrame) => listener(frame);
+    ipcRenderer.on(TtsChannels.Audio, wrapped);
+    return () => ipcRenderer.removeListener(TtsChannels.Audio, wrapped);
+  },
+  onTtsStopped: (listener: (payload: TtsStopPayload) => void) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, payload: TtsStopPayload) =>
+      listener(payload);
+    ipcRenderer.on(TtsChannels.Stopped, wrapped);
+    return () => ipcRenderer.removeListener(TtsChannels.Stopped, wrapped);
+  },
+  onTtsFailed: (listener: (event: TtsFailureEvent) => void) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, event: TtsFailureEvent) => listener(event);
+    ipcRenderer.on(TtsChannels.Failed, wrapped);
+    return () => ipcRenderer.removeListener(TtsChannels.Failed, wrapped);
+  },
   getInterviewOnboardingState: () => ipcRenderer.invoke(InterviewChannels.OnboardingGetState),
   pickInterviewResume: () => ipcRenderer.invoke(InterviewChannels.OnboardingPickResume),
   importInterviewResume: (request: InterviewResumeImportRequest) =>
@@ -236,6 +270,13 @@ const bridge: DesktopBridge = {
   completeInterviewOnboarding: () => ipcRenderer.invoke(InterviewChannels.OnboardingComplete),
   skipInterviewOnboarding: () => ipcRenderer.invoke(InterviewChannels.OnboardingSkip),
   reopenInterviewOnboarding: () => ipcRenderer.invoke(InterviewChannels.OnboardingReopen),
+  startInterviewRehearsal: () => ipcRenderer.invoke(InterviewChannels.RehearsalStart),
+  onInterviewOnboardingChanged: (listener: (state: InterviewOnboardingState) => void) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, state: InterviewOnboardingState) =>
+      listener(state);
+    ipcRenderer.on(InterviewChannels.OnboardingChanged, wrapped);
+    return () => ipcRenderer.removeListener(InterviewChannels.OnboardingChanged, wrapped);
+  },
   getWorkspaceRoot: () => ipcRenderer.invoke(WorkspaceChannels.GetRoot),
   pickWorkspaceRoot: () => ipcRenderer.invoke(WorkspaceChannels.PickRoot),
   listWorkspaceTree: () => ipcRenderer.invoke(WorkspaceChannels.ListTree),

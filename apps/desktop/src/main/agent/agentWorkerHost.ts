@@ -14,6 +14,7 @@ import {
   type ConversationSnapshot,
   type InterviewPcmFrame,
   isAgentServiceDisconnectedError,
+  type TtsSpeakIntent,
 } from "@answra/shared";
 import type { LiveFrame, SessionFrame } from "@answra/shared/schema";
 import { app, type UtilityProcess, utilityProcess } from "electron";
@@ -32,6 +33,14 @@ export interface AgentWorkerProcessOptions {
   log?: (message: string, error?: unknown) => void;
 }
 
+/** 演练/辅助 Bot 提交交接后由 agent 发出的阶段事件；desktop 据此切回资料整理。 */
+export interface InterviewStageEvent {
+  stage: "profile-review";
+  conversationId: string;
+  reason: "interview-ended" | "user-requested" | "blocked-by-gap";
+  summary: string;
+}
+
 /**
  * Electron utility process 的 worker host 适配：唯一负责创建/停止进程、
  * 请求应答、反向令牌请求与帧分发；连接状态机只通过端口调用它。
@@ -43,6 +52,8 @@ export class AgentWorkerProcess implements AgentWorkerHostPort {
   private readonly liveFrameListeners = new Set<(frame: LiveFrame) => void>();
   private readonly snapshotListeners = new Set<(snapshot: ConversationSnapshot) => void>();
   private readonly interviewListeners = new Set<(event: InterviewWorkerEvent) => void>();
+  private readonly interviewStageListeners = new Set<(event: InterviewStageEvent) => void>();
+  private readonly ttsSpeakListeners = new Set<(intent: TtsSpeakIntent) => void>();
   private readonly interviewAudioCreditListeners = new Set<
     (credit: { sessionId: string; count: number }) => void
   >();
@@ -130,6 +141,17 @@ export class AgentWorkerProcess implements AgentWorkerHostPort {
     return () => this.interviewListeners.delete(listener);
   }
 
+  onInterviewStage(listener: (event: InterviewStageEvent) => void): () => void {
+    this.interviewStageListeners.add(listener);
+    return () => this.interviewStageListeners.delete(listener);
+  }
+
+  /** 演练回复的朗读文本增量；合成归宿主，worker 不持凭证。 */
+  onTtsSpeak(listener: (intent: TtsSpeakIntent) => void): () => void {
+    this.ttsSpeakListeners.add(listener);
+    return () => this.ttsSpeakListeners.delete(listener);
+  }
+
   onInterviewAudioCredit(
     listener: (credit: { sessionId: string; count: number }) => void,
   ): () => void {
@@ -204,6 +226,19 @@ export class AgentWorkerProcess implements AgentWorkerHostPort {
     }
     if (frame.type === "interview-event") {
       for (const listener of this.interviewListeners) listener(frame.event);
+      return;
+    }
+    if (frame.type === "interview-stage") {
+      const { stage, conversationId, reason, summary } = frame;
+      for (const listener of this.interviewStageListeners)
+        listener({ stage, conversationId, reason, summary });
+      return;
+    }
+    if (frame.type === "tts-speak") {
+      const { conversationId, messageId, sequence, delta, final } = frame;
+      for (const listener of this.ttsSpeakListeners) {
+        listener({ conversationId, messageId, sequence, delta, final });
+      }
       return;
     }
     if (frame.type === "interview-audio-credit") {

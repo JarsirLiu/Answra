@@ -16,6 +16,7 @@ import type {
   ConversationModelSettingsView,
   ConversationModelSource,
 } from "@answra/shared";
+import { updateClientConfig } from "../config/clientConfigFile";
 import { decryptLegacyApiKey, ModelSecretStore } from "./modelSecret";
 
 /**
@@ -124,28 +125,35 @@ export class ModelSettingsStore {
   async save(settings: ConversationModelSettings): Promise<void> {
     await this.init();
     const local = this.resolveLocal(settings);
-    const config: ClientConfig = {
+    if (settings.source === "local" && settings.apiKey) {
+      await this.secret.write(settings.apiKey);
+    }
+    // 只改 model / answer 段，tts 段必须原样保留：两个设置域共用同一个文件。
+    const config = await updateClientConfig(this.paths.configPath, (current) => ({
       version: CLIENT_CONFIG_VERSION,
       model: { source: settings.source, local },
       ...(this.current.answerProviderOptions === undefined
         ? {}
         : { answer: { providerOptions: this.current.answerProviderOptions } }),
-    };
-    if (settings.source === "local" && settings.apiKey) {
-      await this.secret.write(settings.apiKey);
-    }
-    await writeClientConfig(this.paths.configPath, config);
-    this.current = storedSettings(config);
+      ...(current?.tts === undefined ? {} : { tts: current.tts }),
+    }));
+    this.current = storedSettings(config ?? defaultClientConfig());
   }
 
   async clear(): Promise<void> {
     await this.init();
     await this.secret.clear();
-    await Promise.all([
-      rm(this.paths.configPath, { force: true }),
-      rm(this.paths.legacyPath, { force: true }),
-      this.legacySecret.remove(),
-    ]);
+    await Promise.all([rm(this.paths.legacyPath, { force: true }), this.legacySecret.remove()]);
+    // 有 TTS 配置时写回默认模型段而不是删文件，否则清除模型会把语音设置一起删掉。
+    await updateClientConfig(this.paths.configPath, (current) =>
+      current?.tts === undefined
+        ? null
+        : {
+            version: CLIENT_CONFIG_VERSION,
+            model: defaultClientConfig().model,
+            tts: current.tts,
+          },
+    );
     this.current = defaultModelSettings();
   }
 

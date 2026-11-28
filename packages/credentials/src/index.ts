@@ -4,6 +4,14 @@ import { createRequire } from "node:module";
 export const MODEL_CREDENTIAL_SERVICE = "Answra";
 export const MODEL_CREDENTIAL_ACCOUNT = "local-model-api-key";
 
+/** TTS provider 的 Key 与本地模型 Key 隔离：每个 provider 一个 account。 */
+export const TTS_CREDENTIAL_ACCOUNT_PREFIX = "tts-api-key:";
+
+/** providerId 由调用方保证符合 `TTS_PROVIDER_ID_PATTERN`。 */
+export function ttsCredentialAccount(providerId: string): string {
+  return `${TTS_CREDENTIAL_ACCOUNT_PREFIX}${providerId}`;
+}
+
 export interface CredentialEntry {
   getPassword(): string | null;
   setPassword(password: string): void;

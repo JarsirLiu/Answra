@@ -9,9 +9,9 @@ function renderIntake(): ReturnType<typeof createConversationBridge> {
   const bridge = createConversationBridge();
   render(
     <InterviewIntakePanel
-      onBackToModes={() => undefined}
       onClose={() => undefined}
       onReopenOnboarding={vi.fn(async () => undefined)}
+      onStartRehearsal={vi.fn(async () => undefined)}
       platform={bridge}
     />,
   );

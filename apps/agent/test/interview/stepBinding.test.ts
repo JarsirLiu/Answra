@@ -44,6 +44,7 @@ describe("createInterviewStepBinding", () => {
       workspaceRoot: () => "C:/workspace",
       interviewDataRoot: () => "C:/data/interview",
       profileSeed: () => null,
+      handoffTask: () => null,
     });
 
     await binding.prepare(stepStart({ source: "opening" }), new AbortController().signal, {
@@ -61,8 +62,31 @@ describe("createInterviewStepBinding", () => {
         interviewDataRoot: "C:/data/interview",
         profileSeed: null,
         opening: true,
+        handoffTask: null,
       },
       expect.objectContaining({ opening: false }),
     ]);
+  });
+
+  it("applies the handoff task to opening steps only", async () => {
+    const { executor, prepared } = createExecutor();
+    const binding = createInterviewStepBinding({
+      executor,
+      workspaceRoot: () => null,
+      interviewDataRoot: () => null,
+      profileSeed: () => null,
+      handoffTask: (conversationId) =>
+        conversationId === "conversation-1" ? "补充项目指标" : null,
+    });
+
+    await binding.prepare(stepStart({ source: "opening" }), new AbortController().signal, {
+      toolOutput: vi.fn(),
+    });
+    await binding.prepare(stepStart({ source: "reply" }), new AbortController().signal, {
+      toolOutput: vi.fn(),
+    });
+
+    expect(prepared[0]?.handoffTask).toBe("补充项目指标");
+    expect(prepared[1]?.handoffTask).toBeNull();
   });
 });

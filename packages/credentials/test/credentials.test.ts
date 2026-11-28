@@ -3,6 +3,8 @@ import {
   type CredentialEntry,
   CredentialStoreUnavailableError,
   KeychainModelCredentialStore,
+  TTS_CREDENTIAL_ACCOUNT_PREFIX,
+  ttsCredentialAccount,
 } from "../src";
 
 function createEntry(initial: string | null = null): CredentialEntry & {
@@ -78,5 +80,25 @@ describe("KeychainModelCredentialStore", () => {
 
     await expect(store.read()).rejects.toBeInstanceOf(CredentialStoreUnavailableError);
     await expect(store.write("key")).rejects.toThrow("系统凭据库不可用");
+  });
+});
+
+describe("TTS credential accounts", () => {
+  it("isolates each provider from the local model key", () => {
+    expect(ttsCredentialAccount("minimax")).toBe("tts-api-key:minimax");
+    expect(TTS_CREDENTIAL_ACCOUNT_PREFIX).toBe("tts-api-key:");
+    expect(ttsCredentialAccount("minimax")).not.toBe("local-model-api-key");
+  });
+
+  it("uses the given account when a store is created for a provider", async () => {
+    const entry = createEntry("tts-key");
+    const createEntryMock = vi.fn(async () => entry);
+    const store = new KeychainModelCredentialStore({
+      account: ttsCredentialAccount("minimax"),
+      createEntry: createEntryMock,
+    });
+
+    await expect(store.read()).resolves.toBe("tts-key");
+    expect(createEntryMock).toHaveBeenCalledWith("Answra", "tts-api-key:minimax");
   });
 });

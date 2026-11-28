@@ -1,5 +1,6 @@
-import type { ConversationSnapshot } from "@answra/shared";
-import { INTERVIEW_AUDIO_CREDIT_BATCH } from "@answra/shared";
+import type { ConversationSnapshot, TtsSpeakIntent } from "@answra/shared";
+import { ActiveInterviewIntakeConversationId, INTERVIEW_AUDIO_CREDIT_BATCH } from "@answra/shared";
+import type { TurnOutcome } from "@answra/shared/schema";
 import { screenshotAnswerAgent } from "./answer/agent";
 import { AnswerApplication } from "./answer/application";
 import { ConversationApplication } from "./conversation/application";
@@ -22,7 +23,10 @@ import { createInterviewCoachAgent, INTERVIEW_COACH_AGENT_ID } from "./interview
 import type { InterviewDomainEvent } from "./interview/contracts";
 import { createInterviewIntakeAgent, INTERVIEW_INTAKE_AGENT_ID } from "./interview/intake/agent";
 import { InterviewRuntime } from "./interview/runtime";
+import { InterviewProfileReviewRequests } from "./interview/tools/profileReviewRequests";
+import { createInterviewProfileReviewTool } from "./interview/tools/profileReviewTool";
 import type { RecognizerSource } from "./interview/transcription/local/recognizerPort";
+import { rehearsalSpeechIntent } from "./interview/tts/rehearsalSpeech";
 import type { TenVadSource } from "./interview/vad/tenVadEngine";
 import { toInterviewWorkerEvent } from "./interview/workerProjection";
 import type { AgentCommand, AgentFrame } from "./worker/protocol";
@@ -150,6 +154,9 @@ export function startAgentHost({
     ...(grepWorkerPath ? { workerPaths: { grep: grepWorkerPath } } : {}),
     ...(skills ? { skills } : {}),
   });
+  // 交接请求只在内存里过一手；工具提交，Turn 结束后宿主取走并切阶段。
+  const profileReviewRequests = new InterviewProfileReviewRequests();
+  tools.register(createInterviewProfileReviewTool(profileReviewRequests));
   const conversationBots = createConversationBots({
     agentRuntime,
     store,
@@ -208,6 +215,11 @@ export function startAgentHost({
     sessionFrames,
     onSnapshot: async (snapshot) => emitConversationSnapshot(snapshot),
     onTurnCommitted: (turn) => emitInterviewEvent({ type: "turn-committed", turn }),
+    onAssistantReply: (conversationId, message) => {
+      const intent = rehearsalSpeechIntent(conversationId, message);
+      if (intent !== undefined) emitTtsSpeak(intent);
+    },
+    onTurnFinished: (conversationId, outcome) => finishProfileReview(conversationId, outcome),
     onError: (stage, error) => {
       console.warn("[interview-reply] failed", {
         stage,
@@ -243,6 +255,7 @@ export function startAgentHost({
     sessionFrames,
     onSnapshot: async (snapshot) => emitConversationSnapshot(snapshot),
     onTurnCommitted: () => undefined,
+    onTurnFinished: (conversationId, outcome) => finishProfileReview(conversationId, outcome),
     onError: (stage, error) => {
       console.warn("[interview-coach] failed", {
         stage,
@@ -252,7 +265,9 @@ export function startAgentHost({
   });
 
   const interviewRuntime = new InterviewRuntime({
-    application: interview,
+    // 只有资料整理会话走 intake；其余语音仍归演练官。
+    resolveApplication: (conversationId) =>
+      conversationId === ActiveInterviewIntakeConversationId ? interviewIntake : interview,
     vad,
     recognizer,
     turnSettler,
@@ -264,6 +279,33 @@ export function startAgentHost({
   function emitInterviewEvent(event: InterviewDomainEvent): void {
     if (disposed) return;
     transport.send({ version: 1, type: "interview-event", event: toInterviewWorkerEvent(event) });
+  }
+
+  /** 只有演练领域会调用；辅助与资料整理不接朗读。 */
+  function emitTtsSpeak(intent: TtsSpeakIntent): void {
+    if (disposed) return;
+    transport.send({ version: 1, type: "tts-speak", ...intent });
+  }
+
+  /**
+   * Turn 正常收口后才兑现交接：失败或中止的回合不切阶段，也丢弃残留请求。
+   * 工具只提交请求，阶段事实仍由桌面宿主在收到事件后改写。
+   */
+  function finishProfileReview(conversationId: string, outcome: TurnOutcome): void {
+    if (outcome !== "completed") {
+      profileReviewRequests.clear(conversationId);
+      return;
+    }
+    const request = profileReviewRequests.take(conversationId);
+    if (!request || disposed) return;
+    transport.send({
+      version: 1,
+      type: "interview-stage",
+      stage: "profile-review",
+      conversationId,
+      reason: request.reason,
+      summary: request.summary,
+    });
   }
 
   function emitConversationSnapshot(snapshot: ConversationSnapshot): void {
@@ -464,6 +506,9 @@ export function startAgentHost({
         });
       case "interview-intake-snapshot":
         return interviewIntake.getSnapshot(command.conversationId);
+      case "interview-intake-handoff":
+        interviewIntake.setHandoffTask(command.conversationId, command.summary);
+        return undefined;
       case "chat-send":
         return runtime.enqueue(
           command.botId,

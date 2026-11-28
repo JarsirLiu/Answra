@@ -323,6 +323,7 @@ export function MessageActions({
   onVote,
   onReply,
   onFork,
+  onAloud,
   icons,
 }: {
   text?: string;
@@ -331,6 +332,8 @@ export function MessageActions({
   onVote?: (vote: Vote) => void;
   onReply?: () => void;
   onFork?: () => void;
+  /** 朗读本消息；缺省时菜单项不出现。 */
+  onAloud?: () => void;
   icons?: Partial<MessageActionIcons>;
 }) {
   const [vote, setVote] = useState<Vote>(null);
@@ -407,6 +410,7 @@ export function MessageActions({
   };
 
   const act = (action: "aloud" | "fork" | "report") => {
+    if (action === "aloud") onAloud?.();
     if (action === "fork") onFork?.();
     setMenu(false);
   };
@@ -489,15 +493,17 @@ export function MessageActions({
           </Cue>
           {menu ? (
             <div id={menuId} className={styles.menu} role="menu">
-              <button
-                type="button"
-                className={styles.item}
-                role="menuitem"
-                onClick={() => act("aloud")}
-              >
-                <Aloud size={12} />
-                朗读
-              </button>
+              {onAloud ? (
+                <button
+                  type="button"
+                  className={styles.item}
+                  role="menuitem"
+                  onClick={() => act("aloud")}
+                >
+                  <Aloud size={12} />
+                  朗读
+                </button>
+              ) : null}
               <button
                 type="button"
                 className={styles.item}

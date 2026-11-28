@@ -113,6 +113,8 @@ export {
   SurfaceChannels,
   type SurfaceWindowState,
   type TeamSendCommand,
+  type TtsChannelMap,
+  TtsChannels,
   type UpdateChannelMap,
   UpdateChannels,
   type UpdateInstallMode,
@@ -179,3 +181,4 @@ export {
 } from "./schema";
 export * from "./schema/remote";
 export * from "./surfaces";
+export * from "./tts";

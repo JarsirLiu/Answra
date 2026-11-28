@@ -42,6 +42,13 @@ export interface InterviewOnboardingStore {
   complete(): Promise<InterviewOnboardingState>;
   skip(): Promise<InterviewOnboardingState>;
   reopen(): Promise<InterviewOnboardingState>;
+  /** 记录用户显式点击「开始面试演练」；只对已完成/已跳过的状态生效。 */
+  startRehearsal(): Promise<InterviewOnboardingState>;
+  /**
+   * 结束演练阶段并回到资料整理：只清空 `rehearsalStartedAt`，不改完成状态。
+   * 由演练/辅助 Bot 的交接触发，不是用户可见的「重新整理」入口。
+   */
+  endRehearsal(): Promise<InterviewOnboardingState>;
 }
 
 /**
@@ -212,6 +219,32 @@ export function createInterviewOnboardingStore({
       ...current,
       status: "pending",
       step: current.step,
+      rehearsalStartedAt: null,
+      updatedAt: now().toISOString(),
+    };
+    await writeState(next);
+    return next;
+  }
+
+  async function startRehearsal(): Promise<InterviewOnboardingState> {
+    const current = await read();
+    if (current.status === "pending" || current.rehearsalStartedAt) return current;
+    const startedAt = now().toISOString();
+    const next: InterviewOnboardingState = {
+      ...current,
+      rehearsalStartedAt: startedAt,
+      updatedAt: startedAt,
+    };
+    await writeState(next);
+    return next;
+  }
+
+  async function endRehearsal(): Promise<InterviewOnboardingState> {
+    const current = await read();
+    if (!current.rehearsalStartedAt) return current;
+    const next: InterviewOnboardingState = {
+      ...current,
+      rehearsalStartedAt: null,
       updatedAt: now().toISOString(),
     };
     await writeState(next);
@@ -229,7 +262,18 @@ export function createInterviewOnboardingStore({
     }
   }
 
-  return { read, readSeed, importResume, update, addProject, complete, skip, reopen };
+  return {
+    read,
+    readSeed,
+    importResume,
+    update,
+    addProject,
+    complete,
+    skip,
+    reopen,
+    startRehearsal,
+    endRehearsal,
+  };
 }
 
 function normalizeFileName(value: string): string {

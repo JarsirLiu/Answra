@@ -1,6 +1,6 @@
 import type { InterviewOnboardingState } from "@answra/shared";
 import { ActiveInterviewConversationId } from "@answra/shared";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FloatingBarApp } from "../src/app/FloatingBarApp";
 import { createConversationBridge, resetFloatingBarTestState } from "./support/floatingBarHarness";
@@ -13,6 +13,7 @@ const READY_STATE: InterviewOnboardingState = {
   projects: [],
   selectedProjectIds: [],
   targetRole: "",
+  rehearsalStartedAt: "2026-11-27T08:30:00.000Z",
   updatedAt: "2026-11-27T08:00:00.000Z",
 };
 
@@ -100,6 +101,26 @@ describe("interview rehearsal and assist modes", () => {
     fireEvent.click(screen.getByRole("button", { name: "候选者模式：面试辅助" }));
     expect(await screen.findByText("面试辅助")).toBeInTheDocument();
     expect(screen.queryByText("开始演练")).not.toBeInTheDocument();
+  });
+
+  it("switches back to intake when the main process ends the rehearsal", async () => {
+    let push: ((state: InterviewOnboardingState) => void) | undefined;
+    const bridge = {
+      ...createConversationBridge(),
+      getInterviewOnboardingState: vi.fn(async () => READY_STATE),
+      onInterviewOnboardingChanged: vi.fn((listener: (state: InterviewOnboardingState) => void) => {
+        push = listener;
+        return () => undefined;
+      }),
+    };
+    render(<FloatingBarApp bridge={bridge} />);
+    openInterview();
+    await screen.findByText("面试演练");
+
+    act(() => push?.({ ...READY_STATE, rehearsalStartedAt: null }));
+
+    expect(await screen.findByText("制作面试分身")).toBeInTheDocument();
+    await waitFor(() => expect(bridge.openInterviewIntake).toHaveBeenCalledOnce());
   });
 
   it("shows a clean sign-in notice instead of the raw IPC error when cloud send needs login", async () => {

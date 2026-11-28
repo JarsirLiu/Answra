@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const harness = vi.hoisted(() => {
   const handlers = new Map<string, (...args: unknown[]) => unknown>();
-  const window = { webContents: {} };
+  const window = { webContents: { send: vi.fn() } };
   return { handlers, window };
 });
 
@@ -33,6 +33,7 @@ function state() {
     projects: [],
     selectedProjectIds: [],
     targetRole: "",
+    rehearsalStartedAt: null,
     updatedAt: "2026-11-11T08:00:00.000Z",
   };
 }
@@ -46,6 +47,16 @@ function store(overrides: Partial<InterviewOnboardingStore> = {}): InterviewOnbo
     complete: vi.fn(async () => ({ ...state(), status: "completed" as const })),
     skip: vi.fn(async () => ({ ...state(), status: "skipped" as const })),
     reopen: vi.fn(async () => state()),
+    startRehearsal: vi.fn(async () => ({
+      ...state(),
+      status: "completed" as const,
+      rehearsalStartedAt: "2026-11-11T08:30:00.000Z",
+    })),
+    endRehearsal: vi.fn(async () => ({
+      ...state(),
+      status: "completed" as const,
+      rehearsalStartedAt: null,
+    })),
     ...overrides,
   } as InterviewOnboardingStore;
 }
@@ -176,6 +187,39 @@ describe("interview onboarding IPC", () => {
     expect(onboarding.complete).toHaveBeenCalledOnce();
     expect(onboarding.skip).toHaveBeenCalledOnce();
     expect(onboarding.reopen).toHaveBeenCalledOnce();
+    ipc.dispose();
+  });
+
+  it("marks the rehearsal stage only when the user explicitly starts it", async () => {
+    const onboarding = store();
+    const ipc = registerInterviewOnboardingIpc({
+      store: onboarding,
+      pickResumeFile: vi.fn(async () => null),
+    });
+
+    await handler(InterviewChannels.RehearsalStart)({ sender: harness.window.webContents });
+
+    expect(onboarding.startRehearsal).toHaveBeenCalledOnce();
+    ipc.dispose();
+  });
+
+  it("pushes the rewritten stage to the renderer", () => {
+    const ipc = registerInterviewOnboardingIpc({
+      store: store(),
+      pickResumeFile: vi.fn(async () => null),
+    });
+    const next = {
+      ...state(),
+      status: "completed" as const,
+      rehearsalStartedAt: null,
+    };
+
+    ipc.notify(next);
+
+    expect(harness.window.webContents.send).toHaveBeenCalledWith(
+      InterviewChannels.OnboardingChanged,
+      next,
+    );
     ipc.dispose();
   });
 });

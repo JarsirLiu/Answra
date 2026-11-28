@@ -51,6 +51,11 @@ export interface SessionItemRecorderOptions {
   onSnapshot?: (sessionId: SessionId) => void | Promise<void>;
   /** Turn 终态观察口；usage 锚点在这里提交或清理。 */
   onTurnFinished?: (sessionId: SessionId, outcome: TurnOutcome) => void | Promise<void>;
+  /**
+   * 已成功收口的 assistant 消息观察口：core 只报告事实，由领域判断正文是否可朗读。
+   * 非 completed 的 Turn 不通知（中断正文归 UI 展示，不进入朗读）。
+   */
+  onAssistantMessageFinished?: (sessionId: SessionId, message: ConversationMessage) => void;
   /** handoff 落库前的 Bot 发现 ACL 校验。 */
   authorizeHandoff?: (sessionId: SessionId, handoff: StoredHandoff) => Promise<void>;
   producerId?: string;
@@ -63,6 +68,7 @@ export class SessionItemRecorder implements StepEventRecorder, TurnRecorder {
   private readonly frames: SessionFrameBus;
   private readonly onSnapshot?: SessionItemRecorderOptions["onSnapshot"];
   private readonly onTurnFinished?: SessionItemRecorderOptions["onTurnFinished"];
+  private readonly onAssistantMessageFinished?: SessionItemRecorderOptions["onAssistantMessageFinished"];
   private readonly authorizeHandoff?: SessionItemRecorderOptions["authorizeHandoff"];
   private readonly producerId: string;
   private readonly now: () => Date;
@@ -74,6 +80,7 @@ export class SessionItemRecorder implements StepEventRecorder, TurnRecorder {
     this.frames = options.frames;
     this.onSnapshot = options.onSnapshot;
     this.onTurnFinished = options.onTurnFinished;
+    this.onAssistantMessageFinished = options.onAssistantMessageFinished;
     this.authorizeHandoff = options.authorizeHandoff;
     this.producerId = options.producerId ?? DEFAULT_PRODUCER_ID;
     this.now = options.now ?? (() => new Date());
@@ -107,6 +114,7 @@ export class SessionItemRecorder implements StepEventRecorder, TurnRecorder {
       turnId: turn.turnId,
       messageId: turn.messageId,
       authorAgentId: turn.agentId,
+      source: turn.source,
       ...(turn.input === undefined || persistedInput ? {} : { userMessage: turn.input }),
       ...(turn.input === undefined || !persistedInput ? {} : { afterMessageId: turn.input.id }),
     });
@@ -150,6 +158,10 @@ export class SessionItemRecorder implements StepEventRecorder, TurnRecorder {
 
     if (activeMessageId !== undefined) {
       await this.store.finishSessionAssistant(sessionId, activeMessageId, finish.outcome);
+      // 正文此时已全部结算：通知领域「这条 assistant 消息已完成」，不在这里推导可读文本。
+      if (finish.outcome === "completed" && activeMessage?.role === "assistant") {
+        this.onAssistantMessageFinished?.(sessionId, activeMessage);
+      }
     }
     await this.store.finishSessionTurn(sessionId, turnId);
     await this.onTurnFinished?.(sessionId, finish.outcome);

@@ -33,6 +33,7 @@ describe("interview onboarding store", () => {
       projects: [],
       selectedProjectIds: [],
       targetRole: "",
+      rehearsalStartedAt: null,
     });
   });
 
@@ -260,6 +261,50 @@ describe("interview onboarding store", () => {
     await expect(store.reopen()).resolves.toMatchObject({ status: "pending" });
   });
 
+  it("starts rehearsal only after the guide is finished", async () => {
+    const { store } = await setup();
+
+    await expect(store.startRehearsal()).resolves.toMatchObject({
+      status: "pending",
+      rehearsalStartedAt: null,
+    });
+
+    await store.complete();
+    await expect(store.startRehearsal()).resolves.toMatchObject({
+      status: "completed",
+      rehearsalStartedAt: "2026-11-11T08:00:00.000Z",
+    });
+    await expect(store.startRehearsal()).resolves.toMatchObject({
+      rehearsalStartedAt: "2026-11-11T08:00:00.000Z",
+    });
+  });
+
+  it("clears the rehearsal stage when the guide is reopened", async () => {
+    const { store } = await setup();
+    await store.complete();
+    await store.startRehearsal();
+
+    await expect(store.reopen()).resolves.toMatchObject({
+      status: "pending",
+      rehearsalStartedAt: null,
+    });
+  });
+
+  it("ends the rehearsal without reopening the guide", async () => {
+    const { store } = await setup();
+    await store.complete();
+    await store.startRehearsal();
+
+    await expect(store.endRehearsal()).resolves.toMatchObject({
+      status: "completed",
+      step: "ready",
+      rehearsalStartedAt: null,
+    });
+    // 已经不在演练阶段时是不写盘的 no-op。
+    await expect(store.endRehearsal()).resolves.toMatchObject({ rehearsalStartedAt: null });
+    await expect(store.read()).resolves.toMatchObject({ status: "completed" });
+  });
+
   it("falls back to pending when the state file is corrupted", async () => {
     const { root, store } = await setup();
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
@@ -329,6 +374,7 @@ describe("interview onboarding store", () => {
       { id: "resume-1:project:1", name: "项目 A", summary: "旧摘要" },
     ]);
     expect(state.selectedProjectIds).toEqual(["resume-1:project:1"]);
+    expect(state.rehearsalStartedAt).toBeNull();
 
     const migrated = JSON.parse(await readFile(path.join(root, "wizard.json"), "utf8"));
     expect(migrated).toMatchObject({

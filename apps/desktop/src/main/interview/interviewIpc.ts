@@ -1,5 +1,6 @@
 import {
   ActiveInterviewConversationId,
+  ActiveInterviewIntakeConversationId,
   InterviewChannels,
   type InterviewPcmFrame,
 } from "@answra/shared";
@@ -16,14 +17,17 @@ export function registerInterviewIpc(agent: AgentService) {
   ipcMain.handle(InterviewChannels.Start, async (event, payload: unknown) => {
     const window = getWindow();
     if (!isWindowFromSender(window, event)) throw new Error("非法调用方");
+    const conversationId =
+      typeof payload === "object" && payload !== null
+        ? (payload as { conversationId?: unknown }).conversationId
+        : undefined;
     if (
-      typeof payload !== "object" ||
-      payload === null ||
-      (payload as { conversationId?: unknown }).conversationId !== ActiveInterviewConversationId
+      conversationId !== ActiveInterviewConversationId &&
+      conversationId !== ActiveInterviewIntakeConversationId
     )
       throw new Error("面试会话无效");
 
-    return capture.start(ActiveInterviewConversationId);
+    return capture.start(conversationId);
   });
 
   ipcMain.handle(InterviewChannels.Message, async (event, payload: unknown) => {

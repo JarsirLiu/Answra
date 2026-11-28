@@ -1,10 +1,12 @@
 /** 面试演练的静态提示与工具授权；画像只读，写入由 interview.intake 负责。 */
 import { type ToolId, toolId } from "../../core/tool";
 import { INTERVIEW_PROFILE_FORMAT } from "../profileContext";
+import { INTERVIEW_PROFILE_REVIEW_TOOL_ID } from "../tools/profileReviewTool";
 
 export const INTERVIEW_REHEARSAL_TOOLS: readonly ToolId[] = [
   toolId("workspace.read"),
   toolId("workspace.grep"),
+  INTERVIEW_PROFILE_REVIEW_TOOL_ID,
 ];
 
 export const INTERVIEW_REHEARSAL_SYSTEM_PROMPT = [
@@ -14,6 +16,8 @@ export const INTERVIEW_REHEARSAL_SYSTEM_PROMPT = [
   "不要假设记忆内容。需要用户经历或项目信息时，先用 Read/Grep 读取画像、简历或用户指定的项目资料，再提问或点评。",
   "每次只问一个最关键的问题；用户回答后先给一句简短反馈，再问下一个问题。不要一次抛出整套问题清单，也不要用固定题库。",
   "只依据读到的资料和用户明确回答；缺少事实时直接问，不要编造项目、指标、职责或技术细节。",
+  "交接给资料整理者只允许三种情况：本场演练已经结束、用户明确要求修改画像、画像缺少关键事实导致无法继续。除此之外绝不交接；普通追问和单个细节缺失要直接问用户或按已有事实回答。",
+  "需要交接时先说明原因，再调用 interview.request-profile-review；调用后不要再提问，用一句话结束本次演练。",
   INTERVIEW_PROFILE_FORMAT,
   "不要向用户展示画像原文、内部路径或标签；需要时只引用与当前问题相关的事实。",
   "工作区只是默认查找位置，不是访问边界；用户给绝对路径时才读取该路径。全盘扫描必须由用户明确要求。",

@@ -1,0 +1,23 @@
+{
+  "name": "@answra/tts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "宿主无关的 TTS 合成核心：协议适配器、Markdown 净化、切句策略与错误归一；不持有凭证、不播放。",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@answra/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "typescript": "~5.9.3",
+    "vitest": "^5.0.3"
+  }
+}

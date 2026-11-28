@@ -95,9 +95,13 @@ export class MemoryConversationStore implements ConversationStore {
     const session = this.requireSession(conversationId);
     if (session.snapshot.activeMessageId) throw new Error("当前回复尚未完成");
     if (input.userMessage === undefined && session.snapshot.messages.length > 0) {
-      const last = session.snapshot.messages.at(-1);
-      if (last?.role !== "user" || last.status !== "complete")
-        throw new Error("没有可回复的用户消息");
+      // 开场可以有历史且没有新用户消息（例如资料整理者被交接唤醒）；
+      // 回复没有用户消息可认领时才是真的写坏了 transcript。
+      if (input.source !== "opening") {
+        const last = session.snapshot.messages.at(-1);
+        if (last?.role !== "user" || last.status !== "complete")
+          throw new Error("没有可回复的用户消息");
+      }
     }
     const previous = cloneRecord(session);
     if (input.userMessage !== undefined && input.userMessage.role !== "user")

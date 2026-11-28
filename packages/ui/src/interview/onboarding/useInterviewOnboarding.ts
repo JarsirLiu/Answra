@@ -19,6 +19,7 @@ export interface InterviewOnboardingHandle {
   complete: () => Promise<void>;
   skip: () => Promise<void>;
   reopen: () => Promise<void>;
+  startRehearsal: () => Promise<void>;
 }
 
 /** 面试引导的唯一 renderer 状态入口；所有写操作都以主进程返回的快照为准。 */
@@ -46,6 +47,13 @@ export function useInterviewOnboarding(
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  // 阶段由主进程改写后推送；renderer 只用推送的状态，不从消息内容推演。
+  useEffect(() => {
+    const subscribe = platform?.onInterviewOnboardingChanged;
+    if (!subscribe) return;
+    return subscribe((next) => setState(next));
+  }, [platform]);
 
   const pickResume = useCallback(async (): Promise<boolean> => {
     setError(undefined);
@@ -135,6 +143,17 @@ export function useInterviewOnboarding(
     }
   }, [platform]);
 
+  const startRehearsal = useCallback(async (): Promise<void> => {
+    setError(undefined);
+    if (!platform?.startInterviewRehearsal) throw new Error("当前版本不支持开始面试演练");
+    try {
+      setState(await platform.startInterviewRehearsal());
+    } catch (startError) {
+      setError(toMessage(startError, "开始面试演练失败"));
+      throw startError;
+    }
+  }, [platform]);
+
   return {
     state,
     loading,
@@ -147,6 +166,7 @@ export function useInterviewOnboarding(
     complete,
     skip,
     reopen,
+    startRehearsal,
   };
 }
 

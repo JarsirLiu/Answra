@@ -4,7 +4,7 @@ import {
   type ReplyBarState,
   WindowChannels,
 } from "@answra/shared";
-import { app, ipcMain } from "electron";
+import { app, ipcMain, shell } from "electron";
 import {
   applyStealth,
   getWindow,
@@ -66,6 +66,12 @@ export function registerWindowIpc(): void {
     return isStealthSupported();
   });
 
+  ipcMain.handle(WindowChannels.OpenExternal, async (event, url: unknown) => {
+    if (!isWindowFromSender(getWindow(), event)) return;
+    if (!isSafeExternalUrl(url)) return;
+    await shell.openExternal(url);
+  });
+
   ipcMain.on(WindowChannels.SetReplyBarState, (event, state: ReplyBarState | null) => {
     if (!isWindowFromSender(getWindow(), event) || !isValidReplyBarState(state)) return;
     setReplyBarWindowState(state);
@@ -96,6 +102,16 @@ function isValidSize(size: ContentSize): boolean {
     size.width > 0 &&
     size.height > 0
   );
+}
+
+/** 渲染层只允许打开 https 链接；file/javascript 与内网地址一律拒绝。 */
+function isSafeExternalUrl(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  try {
+    return new URL(value).protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 function isValidReplyBarState(state: ReplyBarState | null): boolean {

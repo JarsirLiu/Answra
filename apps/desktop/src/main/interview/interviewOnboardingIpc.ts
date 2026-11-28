@@ -9,6 +9,7 @@ import {
   INTERVIEW_TARGET_ROLE_MAX_LENGTH,
   InterviewChannels,
   type InterviewOnboardingPatch,
+  type InterviewOnboardingState,
   type InterviewProjectAddRequest,
   type InterviewResumeImportRequest,
   isInterviewOnboardingStep,
@@ -77,7 +78,16 @@ export function registerInterviewOnboardingIpc({
     return store.reopen();
   });
 
+  ipcMain.handle(InterviewChannels.RehearsalStart, async (event) => {
+    assertSender(event);
+    return store.startRehearsal();
+  });
+
   return {
+    /** 阶段被主进程改写后推给 renderer；renderer 不轮询、不自行推演。 */
+    notify(state: InterviewOnboardingState): void {
+      getWindow()?.webContents.send(InterviewChannels.OnboardingChanged, state);
+    },
     dispose(): void {
       ipcMain.removeHandler(InterviewChannels.OnboardingGetState);
       ipcMain.removeHandler(InterviewChannels.OnboardingPickResume);
@@ -87,6 +97,7 @@ export function registerInterviewOnboardingIpc({
       ipcMain.removeHandler(InterviewChannels.OnboardingComplete);
       ipcMain.removeHandler(InterviewChannels.OnboardingSkip);
       ipcMain.removeHandler(InterviewChannels.OnboardingReopen);
+      ipcMain.removeHandler(InterviewChannels.RehearsalStart);
     },
   };
 }

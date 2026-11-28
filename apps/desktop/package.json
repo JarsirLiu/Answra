@@ -127,6 +127,7 @@
     "@answra/remote-node": "workspace:*",
     "@answra/shared": "workspace:*",
     "@answra/skills": "workspace:*",
+    "@answra/tts": "workspace:*",
     "@answra/ui": "workspace:*",
     "@resvg/resvg-js": "^2.6.2",
     "@types/node": "^26.6.5",

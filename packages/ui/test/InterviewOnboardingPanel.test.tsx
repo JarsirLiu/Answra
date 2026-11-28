@@ -29,6 +29,7 @@ function onboardingState(
     projects: [],
     selectedProjectIds: [],
     targetRole: "",
+    rehearsalStartedAt: null,
     updatedAt: "2026-11-11T08:00:00.000Z",
     ...overrides,
   };
@@ -65,6 +66,10 @@ function createOnboardingBridge(initial: InterviewOnboardingState) {
     }),
     skipInterviewOnboarding: vi.fn(async () => {
       current = { ...current, status: "skipped" };
+      return current;
+    }),
+    startInterviewRehearsal: vi.fn(async () => {
+      current = { ...current, rehearsalStartedAt: "2026-11-11T08:30:00.000Z" };
       return current;
     }),
   };
@@ -203,6 +208,12 @@ describe("interview onboarding panel", () => {
       }),
     );
     expect(bridge.completeInterviewOnboarding).toHaveBeenCalledOnce();
+    expect(await screen.findByRole("heading", { name: "制作面试分身" })).toBeInTheDocument();
+    await waitFor(() => expect(bridge.openInterviewIntake).toHaveBeenCalledOnce());
+    expect(bridge.openInterviewRehearsal).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "开始面试演练" }));
+    await waitFor(() => expect(bridge.startInterviewRehearsal).toHaveBeenCalledOnce());
     expect(await screen.findByRole("heading", { name: "面试演练" })).toBeInTheDocument();
     expect(screen.getByText("我们先从自我介绍开始，请讲讲你最近负责的项目。")).toBeInTheDocument();
   });
@@ -275,7 +286,7 @@ describe("interview onboarding panel", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "跳过引导" }));
     await waitFor(() => expect(bridge.skipInterviewOnboarding).toHaveBeenCalledOnce());
-    expect(await screen.findByRole("heading", { name: "面试演练" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "制作面试分身" })).toBeInTheDocument();
   });
 
   it("does not offer skip-all or a local-only hint on the resume step", async () => {
@@ -313,7 +324,7 @@ describe("interview onboarding panel", () => {
     expect(screen.getByText(projectA.name)).toBeInTheDocument();
   });
 
-  it("does not show onboarding after it has been completed", async () => {
+  it("opens preparation instead of rehearsal after the guide is completed", async () => {
     const bridge = createOnboardingBridge(
       onboardingState({
         status: "completed",
@@ -330,12 +341,14 @@ describe("interview onboarding panel", () => {
     render(<FloatingBarApp bridge={bridge} />);
     openInterview();
 
-    expect(await screen.findByLabelText("输入消息")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "面试演练" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "制作面试分身" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "开始面试演练" })).toBeInTheDocument();
     expect(screen.queryByText("先让面试分身认识你")).not.toBeInTheDocument();
+    await waitFor(() => expect(bridge.openInterviewIntake).toHaveBeenCalledOnce());
+    expect(bridge.openInterviewRehearsal).not.toHaveBeenCalled();
   });
 
-  it("enters rehearsal after the guide is skipped", async () => {
+  it("enters preparation after the guide is skipped", async () => {
     const bridge = createOnboardingBridge(
       onboardingState({
         status: "skipped",
@@ -352,22 +365,36 @@ describe("interview onboarding panel", () => {
     render(<FloatingBarApp bridge={bridge} />);
     openInterview();
 
-    expect(await screen.findByLabelText("输入消息")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "面试演练" })).toBeInTheDocument();
-    expect(
-      await screen.findByText("我们先从自我介绍开始，请讲讲你最近负责的项目。"),
-    ).toBeInTheDocument();
-    await waitFor(() => expect(bridge.openInterviewRehearsal).toHaveBeenCalledOnce());
+    expect(await screen.findByRole("heading", { name: "制作面试分身" })).toBeInTheDocument();
     expect(screen.queryByText("资料已保存")).not.toBeInTheDocument();
+    await waitFor(() => expect(bridge.openInterviewIntake).toHaveBeenCalledOnce());
+    expect(bridge.openInterviewRehearsal).not.toHaveBeenCalled();
   });
 
-  it("opens rehearsal even without saved material", async () => {
+  it("starts preparation even without saved material", async () => {
     const bridge = createOnboardingBridge(onboardingState({ status: "completed", step: "ready" }));
     render(<FloatingBarApp bridge={bridge} />);
     openInterview();
 
-    expect(await screen.findByLabelText("输入消息")).toBeInTheDocument();
-    await waitFor(() => expect(bridge.openInterviewRehearsal).toHaveBeenCalledOnce());
+    expect(await screen.findByRole("heading", { name: "制作面试分身" })).toBeInTheDocument();
+    await waitFor(() => expect(bridge.openInterviewIntake).toHaveBeenCalledOnce());
     expect(screen.queryByText("还没有面试资料")).not.toBeInTheDocument();
+  });
+
+  it("opens rehearsal directly once the user has started it", async () => {
+    const bridge = createOnboardingBridge(
+      onboardingState({
+        status: "completed",
+        step: "ready",
+        rehearsalStartedAt: "2026-11-11T08:30:00.000Z",
+      }),
+    );
+    render(<FloatingBarApp bridge={bridge} />);
+    openInterview();
+
+    expect(await screen.findByRole("heading", { name: "面试演练" })).toBeInTheDocument();
+    await waitFor(() => expect(bridge.openInterviewRehearsal).toHaveBeenCalledOnce());
+    expect(bridge.openInterviewIntake).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "继续完善资料" })).not.toBeInTheDocument();
   });
 });

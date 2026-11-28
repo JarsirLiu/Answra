@@ -3,6 +3,8 @@
 状态：提案
 
 > 2026-11-19 已实现：[面试 intake 对话页与画像补全](../../implemented/feature/2026-11-19-interview-intake-conversation.md) 将完成/跳过后直接进入对话，由 AI 读取资料并补全 `profile.xml`；本文的静态“制作中”卡片和“制作能力接入中”占位待该提案评审后取代。
+>
+> 2026-11-28 调整：[面试制作分身到演练阶段](../../implemented/feature/2026-11-28-interview-preparation-stage.md) 在制作对话后加入用户显式「开始面试演练」标记；引导完成/跳过后仍先进制作分身，再进演练/辅助。
 
 ## 问题
 

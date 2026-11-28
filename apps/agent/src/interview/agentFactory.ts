@@ -19,6 +19,8 @@ export interface InterviewAgentConfig {
   systemPrompt: string;
   tools: readonly ToolId[];
   openingPrompt?: string;
+  /** 资料整理者被交接时的开场指令；只影响模型请求，不写 user 消息。 */
+  handoffPrompt?: (task: string) => string;
 }
 
 export interface InterviewAgentDependencies {
@@ -47,8 +49,12 @@ export function createInterviewAgent(
               : { activeMessageId: snapshot.activeMessageId }),
           }),
       });
-      if (config.openingPrompt && input.opening) {
-        messages.push({ role: "user", content: config.openingPrompt });
+      if (input.opening) {
+        const openingPrompt =
+          input.handoffTask !== null && config.handoffPrompt
+            ? config.handoffPrompt(input.handoffTask)
+            : config.openingPrompt;
+        if (openingPrompt) messages.push({ role: "user", content: openingPrompt });
       }
       const toolSet = tools.authorize(config.tools, {
         signal,

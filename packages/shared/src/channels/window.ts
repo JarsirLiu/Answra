@@ -18,6 +18,8 @@ export const WindowChannels = {
   SetStealth: "answra:window:set-stealth",
   /** 查询当前系统是否可靠支持会议隐身（内容保护）。 */
   GetStealthSupport: "answra:window:get-stealth-support",
+  /** 在系统浏览器打开一个 https 链接；只允许 https，避免渲染层触达本地协议。 */
+  OpenExternal: "answra:window:open-external",
   /** 主窗口同步任务工作流到独立回复窗口；null 表示结束工作流。 */
   SetReplyBarState: "answra:window:set-reply-bar-state",
   /** 独立回复窗口上报自身尺寸，不调整主工具栏窗口。 */
@@ -84,6 +86,7 @@ export interface WindowChannelMap {
   [WindowChannels.Close]: { request: undefined; response: undefined };
   [WindowChannels.SetStealth]: { request: boolean; response: undefined };
   [WindowChannels.GetStealthSupport]: { request: undefined; response: boolean };
+  [WindowChannels.OpenExternal]: { request: string; response: undefined };
   [WindowChannels.SetReplyBarState]: { request: ReplyBarState | null; response: undefined };
   [WindowChannels.FitReplyBar]: { request: ContentSize; response: undefined };
   [WindowChannels.ReplyBarAction]: { request: ReplyBarAction; response: undefined };

@@ -10,7 +10,7 @@
 
 - `apps/desktop/src/main/agent/agentService.ts`：打开面试会话只下发工作区与画像种子；模型门禁留在发送/语音启动路径。
 - `packages/ui/src/interview/chat/InterviewTextChatPanel.tsx`：头部只剩两个模式按钮，移除“重试”“资料”与 `onOpenIntake` 参数。
-- `packages/ui/src/app/InterviewFeaturePanel.tsx`：移除不可达的 intake 视图分支。
+- `packages/ui/src/app/InterviewFeaturePanel.tsx`：先移除不可达的 intake 视图分支（后由[面试制作分身到演练阶段](../feature/2026-11-28-interview-preparation-stage.md)恢复为可达入口）。
 - `packages/ui/src/interview/chat/useInterviewTextChat.ts`：移除不再使用的 `retryOpen`。
 - 测试：`apps/desktop/test/agentService.test.ts`、`packages/ui/test/InterviewDualMode.test.tsx`、`InterviewOnboardingPanel.test.tsx`、`InterviewIntakePanel.test.tsx`。
 - 相关 Note：[面试演练与辅助模式](../feature/2026-11-27-interview-rehearsal-and-assist-modes.md)、[登录后才可调用模型](../feature/2026-10-18-login-required-at-model-call.md)。不改登录契约本身，也不改两种模型来源。
@@ -19,7 +19,7 @@
 
 1. 打开 `interview.rehearsal` / `interview.coach` / `interview.intake` 会话改用机会式解析 `resolveModelIfReady()`：模型就绪就下发配置以支持开场提问，未就绪就跳过，绝不抛用户可见失败。
 2. 发送消息与语音启动仍调用 `prepareInterviewModel()`：**本地来源直接可用，云端来源照旧用登录令牌**，两种来源都保留。
-3. 面试面板头部只保留“演练/辅助”切换与关闭按钮；“重试”“资料”从面板移除，intake 会话不再从该面板进入。
+3. 面试面板头部只保留“演练/辅助”切换与关闭按钮；“重试”“资料”从面板移除，intake 会话不再从该面板进入。后续由[面试制作分身到演练阶段](../feature/2026-11-28-interview-preparation-stage.md)把 intake 接回制作分身阶段。
 
 ## 根因
 
@@ -29,7 +29,7 @@
 
 - 把 `prepareInterviewModel()` 拆成 `prepareInterviewContext()`（工作区 + 画像种子 + 机会式模型配置）与严格模型解析两步；三个 open 方法只走前者。
 - `ModelRouter.resolveIfReady()` 在未配置或未登录时返回 `undefined`，不抛错；`AgentRuntime.hasChatEndpoint()` 让 `InterviewApplication.open()` 在无端点时只恢复空会话，不启动开场 Turn。
-- 头部 `headerAction` 只保留 `<fieldset>` 模式切换；`InterviewFeaturePanel` 不再持有 `view` 状态，也不再渲染 `InterviewIntakePanel`。
+- 头部 `headerAction` 只保留 `<fieldset>` 模式切换；`InterviewFeaturePanel` 不再持有 `view` 状态，也不再渲染 `InterviewIntakePanel`（该入口由后续阶段 Note 恢复）。
 - `InterviewIntakePanel` 组件与其测试保留，改为直接渲染测试；Agent 侧 `interview.intake` 会话与桥接方法不变。
 - 测试新增：桌面侧断言三个 open 都不触碰严格的 `resolveModel`、模型就绪时仍下发 `configure`，而 `sendInterviewMessage` 仍以 `auth-required` 拒绝；Agent 侧断言无端点时 `open()` 不启动开场 Turn；UI 侧断言头部没有“资料”“重试”。
 
@@ -45,7 +45,7 @@
 - 打开面试会话不得调用严格的 `resolveModel`；机会式解析拿不到模型时必须跳过，不能把失败抛到打开阶段。
 - 云端来源未登录时，错误应在用户**发送消息之后**出现，而不是打开面板时出现；回归时先看 `openInterview*` 是否误调 `prepareInterviewModel`。
 - 面试面板头部不允许增加新的常驻文字按钮，否则标题会再次被挤成省略号。
-- `interview.intake` 会话与画像写入规则不变；若将来要恢复资料整理入口，须另立 Note 说明入口位置，而不是复用被删除的头部按钮。
+- `interview.intake` 会话与画像写入规则不变；后续已由[面试制作分身到演练阶段](../feature/2026-11-28-interview-preparation-stage.md)另立 Note 恢复资料整理入口，位置在制作分身阶段，而不是复用被删除的头部按钮。
 
 ## 验证
 

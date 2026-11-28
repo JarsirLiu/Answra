@@ -3,8 +3,13 @@
  * Turn/Step 状态由 `SessionRuntime` 持有，本文件只做领域装配、宿主端口与兼容 DTO 接线。
  */
 import { randomUUID } from "node:crypto";
-import type { ConversationImage, ConversationSnapshot, InterviewProfileSeed } from "@answra/shared";
-import type { SessionFrame } from "@answra/shared/schema";
+import type {
+  ConversationImage,
+  ConversationMessage,
+  ConversationSnapshot,
+  InterviewProfileSeed,
+} from "@answra/shared";
+import type { SessionFrame, TurnOutcome } from "@answra/shared/schema";
 import type { AgentExecutor, AgentId } from "../core/agent/definition";
 import { ProviderStepRunner } from "../core/agent/providerStepRunner";
 import type { AgentRuntime } from "../core/agent/runtime";
@@ -43,6 +48,10 @@ export interface InterviewApplicationOptions {
   stepRunner?: StepRunner;
   onSnapshot: (snapshot: ConversationSnapshot) => Promise<void>;
   onTurnCommitted: (turn: CommittedInterviewTurn) => void;
+  /** 已收口的 assistant 消息；演练宿主据此发朗读意图，辅助/资料不接线。 */
+  onAssistantReply?: (conversationId: string, message: ConversationMessage) => void;
+  /** Turn 终态观察口；宿主用它取走本轮提交的交接请求。 */
+  onTurnFinished?: (conversationId: string, outcome: TurnOutcome) => void;
   onError: (stage: "append" | "reply", error: unknown) => void;
 }
 
@@ -62,6 +71,10 @@ export class InterviewApplication {
   private workspaceRoot: string | null = null;
   private interviewDataRoot: string | null = null;
   private profileSeed: InterviewProfileSeed | null = null;
+  /** 等待下一次 opening Turn 消费的交接说明；只按会话记录，不落库。 */
+  private readonly pendingHandoffs = new Map<string, string>();
+  /** 已消费交接说明的会话；opening Turn 结束后连同说明一起丢弃。 */
+  private readonly handoffTurns = new Set<string>();
 
   constructor(options: InterviewApplicationOptions) {
     this.agentRuntime = options.agentRuntime;
@@ -88,18 +101,31 @@ export class InterviewApplication {
     });
 
     const items = options.sessionItems ?? new MemorySessionItemStore();
+    const onAssistantReply = options.onAssistantReply;
     const recorder = new SessionItemRecorder({
       items,
       store: options.store,
       frames: this.sessionFrames,
       onSnapshot: (id) => this.pushSnapshot(id),
-      onTurnFinished: (id, outcome) => this.contextPreparation.recordTurnFinished(id, outcome),
+      onTurnFinished: (id, outcome) => {
+        this.contextPreparation.recordTurnFinished(id, outcome);
+        // 只有消费过交接的 opening Turn 才清空；失败/中止同样丢弃，避免污染后续回合。
+        if (this.handoffTurns.delete(id)) this.pendingHandoffs.delete(id);
+        options.onTurnFinished?.(id, outcome);
+      },
+      ...(onAssistantReply === undefined
+        ? {}
+        : {
+            onAssistantMessageFinished: (id: SessionId, message: ConversationMessage) =>
+              onAssistantReply(id, message),
+          }),
     });
     const binding = createInterviewStepBinding({
       executor: options.executor,
       workspaceRoot: () => this.workspaceRoot,
       interviewDataRoot: () => this.interviewDataRoot,
       profileSeed: () => this.profileSeed,
+      handoffTask: (conversationId) => this.pendingHandoffs.get(conversationId) ?? null,
     });
     const runner =
       options.stepRunner ??
@@ -177,25 +203,39 @@ export class InterviewApplication {
     this.profileSeed = seed;
   }
 
+  /**
+   * 记录一次交接任务，交给该会话下一次 opening Turn 消费。
+   * 传 `null` 取消尚未消费的任务；已开始的 Turn 不受影响。
+   */
+  setHandoffTask(conversationId: string, task: string | null): void {
+    if (task === null) {
+      this.pendingHandoffs.delete(conversationId);
+      return;
+    }
+    this.pendingHandoffs.set(conversationId, task);
+  }
+
   start(): void {
     this.replyLoop.start();
   }
 
   /**
-   * 打开演练会话：已有消息或活动 run 时只恢复页面；
-   * 空会话启动一次 opening Turn，不写假的 user 消息。
+   * 打开会话：已有消息或活动 run 时只恢复页面；空会话启动一次 opening Turn。
+   * 存在交接任务时，即使已有历史也起一个 opening Turn，不再写假的 user 消息。
    */
   async open(conversationId: string): Promise<{ snapshot: ConversationSnapshot; turnId?: string }> {
     const snapshot = await this.createConversation(conversationId);
+    const hasHandoff = this.pendingHandoffs.has(conversationId);
     // 打开不是模型调用：没有端点时只恢复空会话，等用户发送时再按统一门禁处理。
     // 这样未登录/未配置模型不会在打开阶段抛「云端模型服务尚未就绪」。
-    if (
-      snapshot.messages.length > 0 ||
-      snapshot.activeTurnId ||
-      !this.agentRuntime.hasChatEndpoint()
-    ) {
+    if (snapshot.activeTurnId || !this.agentRuntime.hasChatEndpoint()) {
       return { snapshot };
     }
+    if (snapshot.messages.length > 0 && !hasHandoff) {
+      return { snapshot };
+    }
+    // 先标记这一轮 opening 消费交接，再提交：opening 可能在任何 await 之后立刻开始准备。
+    if (hasHandoff) this.handoffTurns.add(conversationId);
     const started = await this.startReply(conversationId, "opening");
     return { snapshot: started.snapshot, turnId: started.turnId };
   }

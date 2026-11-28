@@ -76,6 +76,7 @@ export function coerceState(value: unknown, resumesDir: string): InterviewOnboar
       typeof raw.targetRole === "string"
         ? raw.targetRole.slice(0, INTERVIEW_TARGET_ROLE_MAX_LENGTH)
         : "",
+    rehearsalStartedAt: coerceRehearsalStartedAt(raw.rehearsalStartedAt),
     updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : new Date(0).toISOString(),
   };
 }
@@ -128,6 +129,7 @@ function migrateVersion1(value: unknown, resumesDir: string): InterviewOnboardin
       typeof raw.targetRole === "string"
         ? raw.targetRole.slice(0, INTERVIEW_TARGET_ROLE_MAX_LENGTH)
         : "",
+    rehearsalStartedAt: null,
     updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : new Date(0).toISOString(),
   };
 }
@@ -196,6 +198,11 @@ export function defaultState(date: Date): InterviewOnboardingState {
     projects: [],
     selectedProjectIds: [],
     targetRole: "",
+    rehearsalStartedAt: null,
     updatedAt: date.toISOString(),
   };
+}
+
+function coerceRehearsalStartedAt(value: unknown): string | null {
+  return typeof value === "string" && value ? value : null;
 }

@@ -7,12 +7,21 @@ import {
   INTERVIEW_INTAKE_AGENT_ID,
 } from "../../src/interview/intake/agent";
 import { INTERVIEW_INTAKE_OPENING_PROMPT } from "../../src/interview/intake/profile";
+import { InterviewProfileReviewRequests } from "../../src/interview/tools/profileReviewRequests";
+import { createInterviewProfileReviewTool } from "../../src/interview/tools/profileReviewTool";
+
+/** 面试域工具由宿主注册；测试按同一组合根装配。 */
+function createTools() {
+  const tools = createBuiltinToolRegistry();
+  tools.register(createInterviewProfileReviewTool(new InterviewProfileReviewRequests()));
+  return tools;
+}
 
 describe("interview intake agent", () => {
   it("adds the opening prompt to the model request without writing a user message", async () => {
     const store = new MemoryConversationStore();
     await store.create("interview-intake");
-    const tools = createBuiltinToolRegistry();
+    const tools = createTools();
     const agent = createInterviewIntakeAgent({ store, tools });
 
     const request = await agent.prepare(
@@ -23,11 +32,13 @@ describe("interview intake agent", () => {
         interviewDataRoot: "C:/data/interview",
         profileSeed: null,
         opening: true,
+        handoffTask: null,
       },
       new AbortController().signal,
     );
 
     expect(request.system).toContain("面试资料整理者");
+    expect(request.system).toContain("是否现在开始面试演练");
     expect(request.messages).toEqual([{ role: "user", content: INTERVIEW_INTAKE_OPENING_PROMPT }]);
     expect(Object.keys(request.tools ?? {})).toEqual(
       expect.arrayContaining(["Read", "Grep", "Edit"]),
@@ -36,13 +47,40 @@ describe("interview intake agent", () => {
     expect(agent.id).toBe(INTERVIEW_INTAKE_AGENT_ID);
     await tools.dispose();
   });
+
+  it("uses the handoff prompt instead of the first-time opening prompt", async () => {
+    const store = new MemoryConversationStore();
+    await store.create("interview-intake");
+    const tools = createTools();
+    const agent = createInterviewIntakeAgent({ store, tools });
+
+    const request = await agent.prepare(
+      {
+        conversationId: "interview-intake",
+        runId: "run-2",
+        workspaceRoot: null,
+        interviewDataRoot: "C:/data/interview",
+        profileSeed: null,
+        opening: true,
+        handoffTask: "演练结束；本场确认了三个项目，缺少量化指标。",
+      },
+      new AbortController().signal,
+    );
+
+    const [message] = request.messages;
+    if (message?.role !== "user") throw new Error("handoff should send a user-role prompt");
+    expect(message.content).toContain("演练或面试刚结束");
+    expect(message.content).toContain("缺少量化指标");
+    expect(message.content).not.toBe(INTERVIEW_INTAKE_OPENING_PROMPT);
+    await tools.dispose();
+  });
 });
 
 describe("interview rehearsal agent", () => {
   it("references the private memory path without injecting its contents", async () => {
     const store = new MemoryConversationStore();
     await store.create("conversation-1");
-    const tools = createBuiltinToolRegistry();
+    const tools = createTools();
     const agent = createInterviewRehearsalAgent({ store, tools });
 
     const request = await agent.prepare(
@@ -53,6 +91,7 @@ describe("interview rehearsal agent", () => {
         interviewDataRoot: "C:/data/interview",
         profileSeed: null,
         opening: false,
+        handoffTask: null,
       },
       new AbortController().signal,
     );
@@ -70,7 +109,7 @@ describe("interview rehearsal agent", () => {
   it("keeps the memory path absent when the host did not inject it", async () => {
     const store = new MemoryConversationStore();
     await store.create("conversation-1");
-    const tools = createBuiltinToolRegistry();
+    const tools = createTools();
     const agent = createInterviewRehearsalAgent({ store, tools });
 
     const request = await agent.prepare(
@@ -81,6 +120,7 @@ describe("interview rehearsal agent", () => {
         interviewDataRoot: null,
         profileSeed: null,
         opening: false,
+        handoffTask: null,
       },
       new AbortController().signal,
     );
@@ -93,7 +133,7 @@ describe("interview rehearsal agent", () => {
   it("renders the onboarding seed as read-only context", async () => {
     const store = new MemoryConversationStore();
     await store.create("conversation-1");
-    const tools = createBuiltinToolRegistry();
+    const tools = createTools();
     const agent = createInterviewRehearsalAgent({ store, tools });
 
     const request = await agent.prepare(
@@ -113,6 +153,7 @@ describe("interview rehearsal agent", () => {
           updatedAt: "2026-11-19T08:00:00.000Z",
         },
         opening: false,
+        handoffTask: null,
       },
       new AbortController().signal,
     );

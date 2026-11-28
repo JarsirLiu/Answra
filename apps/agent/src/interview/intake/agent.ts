@@ -6,6 +6,7 @@ import {
   INTERVIEW_INTAKE_OPENING_PROMPT,
   INTERVIEW_INTAKE_SYSTEM_PROMPT,
   INTERVIEW_INTAKE_TOOLS,
+  interviewIntakeHandoffPrompt,
 } from "./profile";
 
 export type InterviewIntakeInput = InterviewAgentInput;
@@ -23,4 +24,5 @@ export const createInterviewIntakeAgent = createInterviewAgent({
   systemPrompt: INTERVIEW_INTAKE_SYSTEM_PROMPT,
   tools: INTERVIEW_INTAKE_TOOLS,
   openingPrompt: INTERVIEW_INTAKE_OPENING_PROMPT,
+  handoffPrompt: interviewIntakeHandoffPrompt,
 });

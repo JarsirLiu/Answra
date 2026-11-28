@@ -35,12 +35,23 @@ import { activateMainWindow } from "./mainWindowActivation";
 import { DesktopRemoteHostService } from "./remote/host/desktopRemoteHostService";
 import { registerRemoteHostIpc } from "./remote/remoteIpc";
 import { registerSurfaceIpc } from "./surface/surfaceIpc";
+import { registerTtsIpc } from "./tts/ttsIpc";
+import { TtsService } from "./tts/ttsService";
+import { TtsSettingsStore } from "./tts/ttsSettingsStore";
 import { applyPendingUpdateOnLaunch } from "./updater/applyPendingUpdate";
 import { createMacSwapInstaller } from "./updater/macUpdateSwap";
 import { createUpdateController } from "./updater/updateController";
 import { registerUpdateIpc } from "./updater/updateIpc";
 import { applyUserShellEnv } from "./userShellEnv";
-import { createMainWindow, getWindow, prepareWindowToShow, sendAuthStatus } from "./window";
+import {
+  createMainWindow,
+  getWindow,
+  prepareWindowToShow,
+  sendAuthStatus,
+  sendTtsAudio,
+  sendTtsFailed,
+  sendTtsStopped,
+} from "./window";
 import { registerWorkspaceSchemePrivileges } from "./workspace/scheme";
 
 // 必须在 app ready 前配置，避免 Chromium 先按 HDR 10-bit 输出初始化采集链。
@@ -78,6 +89,7 @@ let readInterviewProfileSeed: () => Promise<InterviewProfileSeed> = async () =>
 let disposeWorkspace: (() => void) | undefined;
 let updateController: ReturnType<typeof createUpdateController> | undefined;
 let disposeUpdateIpc: (() => void) | undefined;
+let disposeTtsIpc: (() => void) | undefined;
 let quitting = false;
 let quitComplete = false;
 let quitShutdown: Promise<void> | undefined;
@@ -110,6 +122,19 @@ const modelSettings = new ModelSettingsStore({
   legacyPath: modelSettingsFilePath(configDir),
   secretPath: modelSettingsSecretPath(configDir),
 });
+const ttsSettings = new TtsSettingsStore({
+  configPath: sharedConfigPath(answraDataRoot),
+  log: (message, error) => console.warn(message, error),
+});
+const ttsService = new TtsService({
+  settings: ttsSettings,
+  emit: {
+    audio: sendTtsAudio,
+    stopped: sendTtsStopped,
+    failed: sendTtsFailed,
+  },
+  log: (message, error) => console.warn(message, error),
+});
 const modelRouter = new ModelRouter({
   store: modelSettings,
   localAvailable: isLocalModelAvailable(app.isPackaged, releaseManifest.features),
@@ -126,7 +151,12 @@ const agentService = new AgentService({
   getWorkspaceRoot: () => getWorkspaceRoot(),
   getInterviewDataRoot: () => interviewDataRoot,
   readInterviewProfileSeed: () => readInterviewProfileSeed(),
+  stopSpeaking: (conversationId) => ttsService.stop({ conversationId }),
   log: (message, error) => console.warn(message, error),
+});
+// 只有演练领域会发朗读意图；合成与播放都留在宿主，agent 不持凭证。
+agentService.onTtsSpeak((intent) => {
+  void ttsService.handleIntent(intent);
 });
 const remoteHostService = new DesktopRemoteHostService({
   configDir,
@@ -180,6 +210,7 @@ if (!app.requestSingleInstanceLock()) {
     }
     // 读盘依赖 safeStorage 就绪；放在注册会话 IPC 之前，避免首次拉取设置时回退到默认值。
     await modelSettings.init();
+    await ttsSettings.init();
     registerWindowIpc();
     registerSurfaceIpc();
     registerCaptureIpc();
@@ -199,8 +230,27 @@ if (!app.requestSingleInstanceLock()) {
       });
       stopInterview = () => interview.stopActive();
       disposeInterview = () => interview.dispose();
-      disposeInterviewOnboarding = () => onboarding.dispose();
       bindInterviewWindow = (window) => interview.bindWindow(window);
+      // 演练/辅助 Bot 提交交接后：停采集 → 交给资料整理者 → 清空演练阶段 → 推送。
+      const unsubscribeStage = agentService.onInterviewStage((event) => {
+        void (async () => {
+          try {
+            await interview.stopActive();
+          } catch (error) {
+            console.warn("[interview-stage] 停止采集失败", error);
+          }
+          try {
+            await agentService.handoffInterviewIntake(event.summary);
+            onboarding.notify(await onboardingStore.endRehearsal());
+          } catch (error) {
+            console.error("[interview-stage] 交接失败", error);
+          }
+        })();
+      });
+      disposeInterviewOnboarding = () => {
+        unsubscribeStage();
+        onboarding.dispose();
+      };
     }
     registerAmbientIpc((enabled) => ambientController?.setEnabled(enabled));
     registerConversationIpc(agentService, {
@@ -211,6 +261,7 @@ if (!app.requestSingleInstanceLock()) {
     registerConnectionIpc(agentService);
     registerAuthIpc(authService);
     registerRemoteHostIpc(remoteHostService);
+    disposeTtsIpc = registerTtsIpc(ttsSettings, ttsService).dispose;
     const startAgent = () => {
       void agentService
         .start()
@@ -267,6 +318,8 @@ if (!app.requestSingleInstanceLock()) {
 
 async function shutdownForQuit(): Promise<void> {
   disposeUpdateIpc?.();
+  disposeTtsIpc?.();
+  ttsService.dispose();
   updateController?.dispose();
   await remoteHostService.dispose();
   authService.dispose();

@@ -13,6 +13,8 @@ export interface InterviewStepBindingOptions {
   workspaceRoot: () => string | null;
   interviewDataRoot: () => string | null;
   profileSeed: () => InterviewProfileSeed | null;
+  /** 交接说明只对 opening Turn 生效，普通回复不继承。 */
+  handoffTask: (conversationId: string) => string | null;
 }
 
 export interface InterviewStepBinding {
@@ -32,6 +34,7 @@ export function createInterviewStepBinding({
   workspaceRoot,
   interviewDataRoot,
   profileSeed,
+  handoffTask,
 }: InterviewStepBindingOptions): InterviewStepBinding {
   return {
     prepare(step, signal, emitter) {
@@ -40,13 +43,15 @@ export function createInterviewStepBinding({
   };
 
   function inputFor(step: StepStart): InterviewAgentInput {
+    const opening = step.source === "opening";
     return {
       conversationId: step.sessionId,
       runId: step.stepId,
       workspaceRoot: workspaceRoot(),
       interviewDataRoot: interviewDataRoot(),
       profileSeed: profileSeed(),
-      opening: step.source === "opening",
+      opening,
+      handoffTask: opening ? handoffTask(step.sessionId) : null,
     };
   }
 }
