@@ -7,6 +7,8 @@ describe("tool lines", () => {
     expect(toolLabel("workspace.read")).toBe("Read");
     expect(toolLabel("Read")).toBe("Read");
     expect(toolLabel("workspace.grep")).toBe("Search");
+    expect(toolLabel("web.search")).toBe("Search");
+    expect(toolLabel("WebFetch")).toBe("Fetch");
     expect(toolLabel("custom.tool")).toBe("custom.tool");
   });
 
@@ -23,6 +25,12 @@ describe("tool lines", () => {
         input: { pattern: "needle" },
       }),
     ).toBe('Search(pattern: "needle")');
+    expect(
+      toolStartLine({
+        toolName: "WebSearch",
+        input: { query: "node.js" },
+      }),
+    ).toBe('Search(query: "node.js")');
   });
 
   it("summarizes read and run-command inputs", () => {

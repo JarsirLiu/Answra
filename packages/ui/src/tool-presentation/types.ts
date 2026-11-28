@@ -35,6 +35,8 @@ export interface ToolPresentation {
   readonly secondary?: string;
   /** Summary statistics such as `+2 -1`, `3 matches`, or `2 files`. */
   readonly meta?: string;
+  /** Search tools only: the noun for the primary target; `pattern` (code) or `query` (web). */
+  readonly searchTerm?: "pattern" | "query";
   /** One-line tool result, rendered after the `⎿` gutter. */
   readonly resultLine?: string;
   readonly errorText?: string;

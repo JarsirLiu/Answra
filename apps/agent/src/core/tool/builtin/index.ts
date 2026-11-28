@@ -7,6 +7,7 @@ import { grepTool } from "./grep/tool";
 import { readTool } from "./read/tool";
 import { createShellTools } from "./runCommand/tool";
 import { createSkillTool } from "./skill/tool";
+import { createWebTools } from "./web/tool";
 
 export function createBuiltinToolRegistry(
   options: { readonly workerPaths?: ToolWorkerPaths; readonly skills?: SkillCatalog } = {},
@@ -15,10 +16,13 @@ export function createBuiltinToolRegistry(
     ...(options.workerPaths ? { workerPaths: options.workerPaths } : {}),
   });
   const shell = createShellTools();
+  const web = createWebTools();
   registry.register(readTool);
   registry.register(grepTool);
   registry.register(editTool);
   registry.register(shell.runCommand);
+  registry.register(web.webSearch);
+  registry.register(web.webFetch);
   // 无 catalog 时不注册 Skill 工具：宁可"没有 skill 可用"，也不猜目录。
   if (options.skills) registry.register(createSkillTool(options.skills));
   return registry;

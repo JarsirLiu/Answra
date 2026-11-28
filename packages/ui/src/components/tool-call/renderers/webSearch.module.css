@@ -1,0 +1,37 @@
+/* WebSearch 展开内容：搜索结果按条列出，标题、链接与摘要保持同一列。 */
+.hits {
+  display: flex;
+  flex-direction: column;
+  padding: 0 var(--space-4);
+}
+
+.hit {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space-1) / 2);
+  padding: var(--space-2) 0;
+}
+
+.hit + .hit {
+  border-top: 1px solid var(--glass-line-soft);
+}
+
+.hitTitle {
+  color: var(--ink);
+  font-size: var(--font-md);
+  line-height: 1.5;
+}
+
+.hitUrl {
+  color: var(--muted);
+  font-family: var(--app-mono-font-family);
+  font-size: var(--font-sm);
+  overflow-wrap: anywhere;
+}
+
+.hitSnippet {
+  margin: 0;
+  color: var(--chat-meta);
+  font-size: var(--font-sm);
+  line-height: 1.6;
+}

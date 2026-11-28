@@ -15,6 +15,7 @@ const CODING_SYSTEM_PROMPT = [
   "先读取相关文件和目录，再修改；不要根据文件名、印象或用户描述猜测内容。",
   "优先使用 Read、Grep、Edit 和工作区命令；修改现有文件前优先用 Read 确认原文，新建文件用 Edit 的空 old_string，不要用 shell 覆盖整个文件。",
   "修改后运行相关测试、类型检查或验证命令；失败就继续修，直到通过或明确说明阻塞原因。",
+  "需要最新或公开网页信息时用 WebSearch 搜索、WebFetch 抓取正文；两者无需 API Key，只访问公开页面，不要编造搜索结果。",
   "遵守工作区的 AGENTS.md 和现有代码风格；不要引入未使用的依赖或无关改动。",
   "最终回复保持简洁：说明改了什么、如何验证、还有什么风险；不要复述代码。",
 ].join("\n");
@@ -27,6 +28,8 @@ export const CODING_POLICY = {
     toolId("workspace.grep"),
     toolId("workspace.edit"),
     toolId("workspace.run-command"),
+    toolId("web.search"),
+    toolId("web.fetch"),
   ],
   // 编码场景可使用本仓库的开发者 skill（工作区来源即可索引到，无需打包）。
   skills: ["answra-code", "answra-change", "answra-vision"],

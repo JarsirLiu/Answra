@@ -4,6 +4,7 @@ import { EditToolCall } from "../src/components/tool-call/renderers/edit";
 import { GrepToolCall } from "../src/components/tool-call/renderers/grep";
 import { ReadToolCall } from "../src/components/tool-call/renderers/read";
 import { RunCommandToolCall } from "../src/components/tool-call/renderers/runCommand";
+import { WebSearchToolCall } from "../src/components/tool-call/renderers/webSearch";
 import { resolveToolCallRenderer } from "../src/components/tool-call/resolveToolCallRenderer";
 import { ToolCallFallback } from "../src/components/tool-call/ToolCallFallback";
 import type { ToolCallPart } from "../src/components/tool-call/toolCallPart";
@@ -599,5 +600,65 @@ describe("tool call renderers", () => {
       .join("\n");
     expect(details).toContain('"target": "prod"');
     expect(details).toContain('"ok": true');
+  });
+
+  it("maps the WebSearch tool name to its search-box renderer", () => {
+    expect(resolveToolCallRenderer("WebSearch")).toBe(WebSearchToolCall);
+  });
+
+  it("renders WebSearch as a query field with results behind an expand", () => {
+    render(
+      <WebSearchToolCall
+        part={toolPart(
+          "WebSearch",
+          { query: "node.js" },
+          [
+            "搜索「node.js」（2 条）：",
+            "1. [Node.js](https://nodejs.org/)",
+            "  Node.js is a JavaScript runtime.",
+            "2. [Docs](https://example.com/docs)",
+            "  Read the docs.",
+          ].join("\n"),
+        )}
+      />,
+    );
+
+    const header = screen.getByRole("button", { name: /搜索网页：node\.js/ });
+    expect(screen.getByText("node.js")).toBeInTheDocument();
+    expect(screen.getByText("2 条结果")).toBeInTheDocument();
+    expect(screen.queryByText("Node.js is a JavaScript runtime.")).toBeNull();
+
+    fireEvent.click(header);
+
+    expect(screen.getByText("结果 · 2 条")).toBeInTheDocument();
+    expect(screen.getByText("Node.js")).toBeInTheDocument();
+    expect(screen.getByText("https://nodejs.org/")).toBeInTheDocument();
+    expect(screen.getByText("Node.js is a JavaScript runtime.")).toBeInTheDocument();
+    expect(screen.getByText("Read the docs.")).toBeInTheDocument();
+  });
+
+  it("reports an empty WebSearch result without inventing links", () => {
+    const { container } = render(
+      <WebSearchToolCall
+        part={toolPart(
+          "WebSearch",
+          { query: "nothing" },
+          "未找到与「nothing」相关的搜索结果，请换关键词重试。",
+        )}
+      />,
+    );
+
+    expect(screen.getByText("未找到")).toBeInTheDocument();
+    expect(container.querySelector("[aria-expanded]")).toBeNull();
+    expect(container.querySelectorAll("pre")).toHaveLength(0);
+  });
+
+  it("falls back to the raw WebSearch output when the text is not the shared format", () => {
+    const { container } = render(
+      <WebSearchToolCall part={toolPart("WebSearch", { query: "q" }, "unexpected payload")} />,
+    );
+
+    expand(/搜索网页/);
+    expect(container.querySelector("pre")?.textContent).toBe("unexpected payload");
   });
 });

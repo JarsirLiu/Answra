@@ -10,6 +10,7 @@ export {
   type ShellSyntax,
 } from "./builtin/runCommand/shell/runtime";
 export { createSkillTool } from "./builtin/skill/tool";
+export { createWebTools } from "./builtin/web/tool";
 export {
   type AnyToolEntry,
   defineTool,

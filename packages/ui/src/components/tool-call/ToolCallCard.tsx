@@ -25,6 +25,11 @@ interface ToolCallCardProps {
   showState?: boolean;
   /** 运行中给主目标文字套用扫光脉冲，用于等宽命令行动态反馈。 */
   pulsePrimary?: boolean;
+  /**
+   * 摘要行外观。`row` 是默认的日志行；`search` 把整行渲染成一条只读搜索框，
+   * 只用于用户语义上「输入关键词去查」的工具（WebSearch）。
+   */
+  variant?: "row" | "search";
   children?: ReactNode;
 }
 
@@ -44,10 +49,12 @@ export function ToolCallCard({
   meta,
   showState: showStateProp,
   pulsePrimary = false,
+  variant = "row",
   children,
 }: ToolCallCardProps) {
   const [open, setOpen] = useState(false);
   const expandable = children !== undefined;
+  const search = variant === "search";
   const running = isToolCallRunning(part.state);
   const showState = showStateProp ?? part.state !== "completed";
   const hasContext = secondary !== undefined || meta !== undefined;
@@ -58,12 +65,16 @@ export function ToolCallCard({
       ? formatToolInputStreamSize(part.inputText.length)
       : undefined;
   const visibleSummaryExtra = expanded ? expandedSummaryExtra : (summaryExtra ?? streamedSize);
+  // 搜索框不显示动作词，把动作与关键词合成按钮的可读名称，避免只剩一串 URL 似的查询词。
+  const headerLabel = search
+    ? `${actionLabel}${typeof primary === "string" ? `：${primary}` : ""}`
+    : undefined;
   const summary = (
     <>
       <span aria-hidden="true" className={styles.icon}>
         {icon}
       </span>
-      <span className={styles.action}>{actionLabel}</span>{" "}
+      {search ? null : <span className={styles.action}>{actionLabel}</span>}{" "}
       <span
         className={styles.primary}
         data-running={(pulsePrimary && running) || undefined}
@@ -89,18 +100,22 @@ export function ToolCallCard({
   );
 
   return (
-    <section className={styles.card} data-state={part.state}>
+    <section className={styles.card} data-state={part.state} data-variant={variant}>
       {expandable ? (
         <button
           aria-expanded={open}
+          aria-label={headerLabel}
           className={styles.header}
+          data-variant={variant}
           onClick={() => setOpen((value) => !value)}
           type="button"
         >
           {summary}
         </button>
       ) : (
-        <div className={styles.header}>{summary}</div>
+        <div className={styles.header} data-variant={variant}>
+          {summary}
+        </div>
       )}
       {expandable && open ? (
         <div className={styles.body}>

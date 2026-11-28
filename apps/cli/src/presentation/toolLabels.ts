@@ -21,6 +21,8 @@ const CANONICAL_LABELS: Readonly<Record<CanonicalToolName, string>> = {
   Edit: "Update",
   RunCommand: "Bash",
   Skill: "Skill",
+  WebSearch: "Search",
+  WebFetch: "Fetch",
 };
 
 export function actionLabel(action: ToolAction): string {

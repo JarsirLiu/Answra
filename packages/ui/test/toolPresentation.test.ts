@@ -442,4 +442,36 @@ describe("tool presentation", () => {
       }),
     ).toMatchObject({ action: "read", primary: "a.ts" });
   });
+
+  it("summarizes web tools without putting page content in the header", () => {
+    expect(
+      presentToolCall({
+        toolName: "web.search",
+        state: "completed",
+        input: { query: "node.js" },
+        output:
+          "搜索「node.js」（2 条）：\n1. [Node](https://nodejs.org/)\n2. [Docs](https://example.com)",
+      }),
+    ).toMatchObject({
+      action: "search",
+      category: "search",
+      primary: "node.js",
+      searchTerm: "query",
+      resultLine: "2 results",
+    });
+
+    expect(
+      presentToolCall({
+        toolName: "WebFetch",
+        state: "completed",
+        input: { url: "https://example.com/docs/page" },
+        output: "抓取 https://example.com/docs/page：\nhello",
+      }),
+    ).toMatchObject({
+      action: "read",
+      category: "read",
+      primary: "example.com",
+      secondary: "/docs/page",
+    });
+  });
 });

@@ -41,7 +41,14 @@ describe("coding Agent", () => {
     expect(modelRequest.system).toContain("命令行编码助手");
     expect(modelRequest.system).toContain("当前工作目录：D:/coding-workspace");
     expect(modelRequest.system).toContain("# 运行环境");
-    expect(Object.keys(modelRequest.tools ?? {})).toEqual(["Read", "Grep", "Edit", "RunCommand"]);
+    expect(Object.keys(modelRequest.tools ?? {})).toEqual([
+      "Read",
+      "Grep",
+      "Edit",
+      "RunCommand",
+      "WebSearch",
+      "WebFetch",
+    ]);
     expect(JSON.stringify(modelRequest.messages)).toContain("读取 README 并概述结构");
     expect(JSON.stringify(modelRequest.messages)).not.toContain("通用 AI 助手");
 

@@ -76,6 +76,38 @@ button.header:focus-visible {
   color: var(--danger);
 }
 
+/* 搜索工具的摘要行是一条只读搜索框：整行可点击展开结果。 */
+.header[data-variant="search"] {
+  width: 100%;
+  margin: 0;
+  padding: 0 var(--control-pad-md);
+  gap: var(--space-2);
+  min-height: var(--control-h-md);
+  border: 1px solid var(--edge-line);
+  border-radius: var(--ctl-radius);
+  background: var(--chat-card-bg);
+}
+
+.header[data-variant="search"]:hover,
+.header[data-variant="search"]:focus-visible {
+  border-color: var(--edge-line-strong);
+}
+
+.header[data-variant="search"] .icon {
+  color: var(--icon);
+}
+
+.header[data-variant="search"] .primary {
+  flex: 1 1 auto;
+  color: var(--ink);
+  font-family: var(--app-ui-font-family);
+  font-size: var(--font-md);
+}
+
+.header[data-variant="search"] .summaryExtra {
+  margin-left: auto;
+}
+
 /* 运行态用文字扫光表达，不用旋转 loading 图标；命令行沿用同一脉冲。 */
 .primary[data-running="true"],
 .state[data-running="true"] {

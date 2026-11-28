@@ -19,7 +19,8 @@ export function summarizePresentation(presentation: ToolPresentation): ToolSumma
         ...(presentation.meta ? { extra: ` ${presentation.meta}` } : {}),
       };
     case "search": {
-      const parts = [`pattern: "${presentation.primary}"`];
+      const term = presentation.searchTerm ?? "pattern";
+      const parts = [`${term}: "${presentation.primary}"`];
       if (presentation.secondary) parts.push(`path: "${presentation.secondary}"`);
       if (presentation.meta) parts.push(presentation.meta);
       return { label: actionLabel("search"), target: parts.join(", ") };

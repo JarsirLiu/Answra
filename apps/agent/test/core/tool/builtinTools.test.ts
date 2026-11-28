@@ -17,6 +17,8 @@ import {
   GREP_TOOL_NAME,
   READ_TOOL_NAME,
   RUN_COMMAND_TOOL_NAME,
+  WEB_FETCH_TOOL_NAME,
+  WEB_SEARCH_TOOL_NAME,
 } from "../../../src/core/tool/names";
 
 function context(
@@ -55,6 +57,8 @@ describe("builtin workspace tools", () => {
       ["workspace.grep", GREP_TOOL_NAME],
       ["workspace.edit", EDIT_TOOL_NAME],
       ["workspace.run-command", RUN_COMMAND_TOOL_NAME],
+      ["web.search", WEB_SEARCH_TOOL_NAME],
+      ["web.fetch", WEB_FETCH_TOOL_NAME],
     ]);
     expect(Object.keys(tools)).toEqual([READ_TOOL_NAME]);
   });
