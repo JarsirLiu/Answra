@@ -5,25 +5,15 @@
 import {
   ActiveInterviewAssistConversationId,
   ActiveInterviewConversationId,
-  AUTH_REQUIRED_NOTICE,
   type ConversationSnapshot,
   type DesktopBridge,
-  isAuthRequiredError,
 } from "@answra/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ConversationViewMessage } from "../../app/conversationView";
 import { useConversationView } from "../../app/useConversationView";
+import { toUserFacingFailure, type UserFacingModelFailure } from "../../modelFailure";
 
 export type InterviewTextChatMode = "rehearsal" | "assist";
-
-/** Electron IPC 会给错误套上 `Error invoking remote method ...: Error:` 外壳；只显示内层事实。 */
-const IPC_ERROR_PREFIX = /^Error invoking remote method [^:]+:\s*(?:Error:\s*)?/u;
-
-function toUserFacingError(error: unknown): string {
-  if (isAuthRequiredError(error)) return AUTH_REQUIRED_NOTICE;
-  const message = error instanceof Error ? error.message : String(error);
-  return message.replace(IPC_ERROR_PREFIX, "");
-}
 
 export interface InterviewTextChatHandle {
   opening: boolean;
@@ -31,8 +21,9 @@ export interface InterviewTextChatHandle {
   activeTurnId?: string;
   activeMessageId?: string;
   error?: string;
-  /** 错误是否需要登录入口；只由共享失败码判定，不解析自然语言。 */
+  /** 错误是否需要登录/配置入口；只由共享失败码判定，不解析自然语言。 */
   needsSignIn: boolean;
+  needsModelSetup: boolean;
   signIn: () => Promise<void>;
   sendPending: boolean;
   draft: string;
@@ -49,10 +40,10 @@ export function useInterviewTextChat(
     mode === "rehearsal" ? ActiveInterviewConversationId : ActiveInterviewAssistConversationId;
   const [initialSnapshot, setInitialSnapshot] = useState<ConversationSnapshot>();
   const [opening, setOpening] = useState(true);
-  const [openError, setOpenError] = useState<string>();
-  const [sendPending, setSendPending] = useState(false);
-  const [sendError, setSendError] = useState<string>();
+  const [openFailure, setOpenFailure] = useState<UserFacingModelFailure>();
+  const [sendFailure, setSendFailure] = useState<UserFacingModelFailure>();
   const [authNotice, setAuthNotice] = useState<string>();
+  const [sendPending, setSendPending] = useState(false);
   const [draft, setDraft] = useState("");
   const openGeneration = useRef(0);
 
@@ -75,13 +66,14 @@ export function useInterviewTextChat(
   const open = useCallback(async () => {
     const generation = ++openGeneration.current;
     setOpening(true);
-    setOpenError(undefined);
+    setOpenFailure(undefined);
     setInitialSnapshot(undefined);
     const openChat =
       mode === "rehearsal" ? platform?.openInterviewRehearsal : platform?.openInterviewAssist;
+    const fallback = mode === "rehearsal" ? "打开面试演练失败" : "打开面试辅助失败";
     if (!openChat) {
       setOpening(false);
-      setOpenError(mode === "rehearsal" ? "当前版本不支持面试演练" : "当前版本不支持面试辅助");
+      setOpenFailure(toUserFacingFailure(`当前版本不支持${fallback}`, fallback));
       return;
     }
     try {
@@ -92,7 +84,7 @@ export function useInterviewTextChat(
       applySnapshot(result.snapshot);
     } catch (error) {
       if (generation !== openGeneration.current) return;
-      setOpenError(error instanceof Error ? error.message : "打开面试会话失败");
+      setOpenFailure(toUserFacingFailure(error, fallback));
     } finally {
       if (generation === openGeneration.current) setOpening(false);
     }
@@ -116,7 +108,8 @@ export function useInterviewTextChat(
         : (value: string) => platform?.sendInterviewAssistMessage?.(value);
     if (!sendMessage) throw new Error("当前版本不支持发送面试消息");
     setSendPending(true);
-    setSendError(undefined);
+    setSendFailure(undefined);
+    setAuthNotice(undefined);
     try {
       const accepted = await sendMessage(text);
       if (!accepted) throw new Error("当前版本不支持发送面试消息");
@@ -129,7 +122,7 @@ export function useInterviewTextChat(
       if (runError) throw new Error(runError);
       if (outcome === "failed") throw new Error("模型请求失败");
     } catch (error) {
-      setSendError(error instanceof Error ? error.message : "发送失败");
+      setSendFailure(toUserFacingFailure(error, "发送失败"));
       throw error;
     } finally {
       setSendPending(false);
@@ -151,15 +144,18 @@ export function useInterviewTextChat(
     }
   }, [platform]);
 
-  // 原始失败只用于判定登录入口；展示层拿到的永远是去掉 IPC 外壳的事实文案。
-  const rawError = authNotice ?? openError ?? sendError ?? view.error;
+  const viewFailure = view.error ? toUserFacingFailure(view.error, "回复失败") : undefined;
+  const failure = openFailure ?? sendFailure ?? viewFailure;
   return {
     opening,
     messages: view.messages,
     activeTurnId: view.activeTurnId,
     activeMessageId: view.activeMessageId,
-    error: rawError ? toUserFacingError(rawError) : undefined,
-    needsSignIn: Boolean(authNotice) || isAuthRequiredError(rawError),
+    error:
+      failure?.message ??
+      (authNotice ? toUserFacingFailure(authNotice, "登录失败").message : undefined),
+    needsSignIn: Boolean(authNotice || failure?.needsSignIn),
+    needsModelSetup: Boolean(failure?.needsModelSetup),
     signIn,
     sendPending,
     draft,

@@ -91,6 +91,8 @@ export {
   isAuthRequiredError,
   isInterviewOnboardingStatus,
   isInterviewOnboardingStep,
+  isModelRequiredError,
+  MODEL_REQUIRED_NOTICE,
   type RegionCaptureOptions,
   type RegionRect,
   type RegionSelection,

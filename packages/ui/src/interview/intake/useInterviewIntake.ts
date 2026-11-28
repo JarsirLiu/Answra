@@ -6,6 +6,7 @@ import { attachmentToImage, createAttachment, revokeAttachment } from "../../app
 import type { ConversationViewMessage } from "../../app/conversationView";
 import { useConversationView } from "../../app/useConversationView";
 import type { ChatAttachment } from "../../components/panels/ChatPanel";
+import { toUserFacingFailure, type UserFacingModelFailure } from "../../modelFailure";
 
 export interface InterviewIntakeHandle {
   opening: boolean;
@@ -13,6 +14,10 @@ export interface InterviewIntakeHandle {
   activeTurnId?: string;
   activeMessageId?: string;
   error?: string;
+  /** 缺登录态/缺本地端点属于正常引导，带出对应动作按钮。 */
+  needsSignIn: boolean;
+  needsModelSetup: boolean;
+  signIn: () => Promise<void>;
   sendPending: boolean;
   draft: string;
   setDraft: (value: string) => void;
@@ -27,9 +32,10 @@ export interface InterviewIntakeHandle {
 export function useInterviewIntake(platform: DesktopBridge | undefined): InterviewIntakeHandle {
   const [initialSnapshot, setInitialSnapshot] = useState<ConversationSnapshot>();
   const [opening, setOpening] = useState(true);
-  const [openError, setOpenError] = useState<string>();
+  const [openFailure, setOpenFailure] = useState<UserFacingModelFailure>();
+  const [sendFailure, setSendFailure] = useState<UserFacingModelFailure>();
+  const [authNotice, setAuthNotice] = useState<string>();
   const [sendPending, setSendPending] = useState(false);
-  const [sendError, setSendError] = useState<string>();
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const attachmentsRef = useRef(attachments);
@@ -50,11 +56,11 @@ export function useInterviewIntake(platform: DesktopBridge | undefined): Intervi
   const open = useCallback(async () => {
     const generation = ++openGeneration.current;
     setOpening(true);
-    setOpenError(undefined);
+    setOpenFailure(undefined);
     setInitialSnapshot(undefined);
     if (!platform?.openInterviewIntake) {
       setOpening(false);
-      setOpenError("当前版本不支持面试对话");
+      setOpenFailure(toUserFacingFailure("当前版本不支持面试对话", "打开面试对话失败"));
       return;
     }
     try {
@@ -65,7 +71,7 @@ export function useInterviewIntake(platform: DesktopBridge | undefined): Intervi
       applySnapshot(result.snapshot);
     } catch (error) {
       if (generation !== openGeneration.current) return;
-      setOpenError(error instanceof Error ? error.message : "打开面试对话失败");
+      setOpenFailure(toUserFacingFailure(error, "打开面试对话失败"));
     } finally {
       if (generation === openGeneration.current) setOpening(false);
     }
@@ -101,11 +107,14 @@ export function useInterviewIntake(platform: DesktopBridge | undefined): Intervi
   }, []);
 
   const send = useCallback(async () => {
-    if (!platform?.sendInterviewIntakeMessage) throw new Error("当前版本不支持面试对话");
+    if (!platform?.sendInterviewIntakeMessage) {
+      throw new Error("当前版本不支持面试对话");
+    }
     const text = draft.trim();
     if (!text && attachments.length === 0) throw new Error("请输入内容或添加图片");
     setSendPending(true);
-    setSendError(undefined);
+    setSendFailure(undefined);
+    setAuthNotice(undefined);
     try {
       const images = await Promise.all(attachments.map(attachmentToImage));
       const accepted = await platform.sendInterviewIntakeMessage(text, images);
@@ -122,7 +131,7 @@ export function useInterviewIntake(platform: DesktopBridge | undefined): Intervi
       if (runError) throw new Error(runError);
       if (outcome === "failed") throw new Error("模型请求失败");
     } catch (error) {
-      setSendError(error instanceof Error ? error.message : "发送失败");
+      setSendFailure(toUserFacingFailure(error, "发送失败"));
       throw error;
     } finally {
       setSendPending(false);
@@ -134,16 +143,33 @@ export function useInterviewIntake(platform: DesktopBridge | undefined): Intervi
       platform?.cancelTurn?.(ActiveInterviewIntakeConversationId, view.activeTurnId);
   }, [platform, view.activeTurnId]);
 
+  const signIn = useCallback(async () => {
+    setAuthNotice(undefined);
+    try {
+      const result = await platform?.loginAccount?.();
+      if (result && !result.opened) setAuthNotice(result.error ?? "无法打开授权页");
+    } catch (error) {
+      setAuthNotice(error instanceof Error ? error.message : "登录失败");
+    }
+  }, [platform]);
+
   const retryOpen = useCallback(() => {
     void open();
   }, [open]);
 
+  const viewFailure = view.error ? toUserFacingFailure(view.error, "回复失败") : undefined;
+  const failure = openFailure ?? sendFailure ?? viewFailure;
   return {
     opening,
     messages: view.messages,
     activeTurnId: view.activeTurnId,
     activeMessageId: view.activeMessageId,
-    error: openError ?? sendError ?? view.error,
+    error:
+      failure?.message ??
+      (authNotice ? toUserFacingFailure(authNotice, "登录失败").message : undefined),
+    needsSignIn: Boolean(authNotice || failure?.needsSignIn),
+    needsModelSetup: Boolean(failure?.needsModelSetup),
+    signIn,
     sendPending,
     draft,
     setDraft,

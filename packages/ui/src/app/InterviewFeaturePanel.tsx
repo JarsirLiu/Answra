@@ -71,6 +71,7 @@ export function InterviewFeaturePanel({
       <InterviewIntakePanel
         error={onboarding.error}
         onClose={onClose}
+        onConfigureModel={onConfigureModel}
         onReopenOnboarding={onboarding.reopen}
         onStartRehearsal={onboarding.startRehearsal}
         platform={platform}

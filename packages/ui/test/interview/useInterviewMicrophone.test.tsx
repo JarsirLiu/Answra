@@ -1,5 +1,10 @@
 import type { DesktopBridge } from "@answra/shared";
-import { ActiveInterviewIntakeConversationId, INTERVIEW_AUDIO_CREDIT_WINDOW } from "@answra/shared";
+import {
+  ActiveInterviewIntakeConversationId,
+  AUTH_REQUIRED_NOTICE,
+  INTERVIEW_AUDIO_CREDIT_WINDOW,
+  MODEL_REQUIRED_NOTICE,
+} from "@answra/shared";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useInterviewMicrophone } from "../../src/interview/voice/useInterviewMicrophone";
@@ -263,5 +268,47 @@ describe("useInterviewMicrophone", () => {
 
     expect(result.current.error).toBe("当前版本不支持语音输入");
     expect(getUserMedia).not.toHaveBeenCalled();
+  });
+
+  it("turns an unauthenticated start into a sign-in prompt instead of an IPC error", async () => {
+    const bridge = createBridge();
+    vi.mocked(bridge.startInterview).mockRejectedValueOnce(
+      new Error(
+        "Error invoking remote method 'answra:interview:start': Error: auth-required: 请先登录后再使用（设置 → 账户）",
+      ),
+    );
+    const { result } = renderHook(() =>
+      useInterviewMicrophone(bridge, ActiveInterviewIntakeConversationId),
+    );
+
+    await act(async () => {
+      result.current.toggle();
+    });
+
+    expect(result.current.error).toBe(AUTH_REQUIRED_NOTICE);
+    expect(result.current.error).not.toContain("Error invoking remote method");
+    expect(result.current.modelFailure).toBe(true);
+    expect(result.current.needsSignIn).toBe(true);
+    expect(result.current.needsModelSetup).toBe(false);
+  });
+
+  it("turns a missing local endpoint into a model-setup prompt", async () => {
+    const bridge = createBridge();
+    vi.mocked(bridge.startInterview).mockRejectedValueOnce(
+      new Error(
+        `Error invoking remote method 'answra:interview:start': Error: ${MODEL_REQUIRED_NOTICE}`,
+      ),
+    );
+    const { result } = renderHook(() =>
+      useInterviewMicrophone(bridge, ActiveInterviewIntakeConversationId),
+    );
+
+    await act(async () => {
+      result.current.toggle();
+    });
+
+    expect(result.current.error).toBe(MODEL_REQUIRED_NOTICE);
+    expect(result.current.needsModelSetup).toBe(true);
+    expect(result.current.needsSignIn).toBe(false);
   });
 });

@@ -5,6 +5,7 @@
 import type { DesktopBridge, InterviewPcmFrame } from "@answra/shared";
 import { INTERVIEW_AUDIO_CREDIT_WINDOW } from "@answra/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toUserFacingFailure } from "../../modelFailure";
 
 const AUDIO_CREDIT_TIMEOUT_MS = 3_000;
 const MAX_FRAME_BYTES = 3_200;
@@ -50,6 +51,10 @@ export interface InterviewMicrophoneHandle {
   active: boolean;
   starting: boolean;
   error?: string;
+  /** 失败来自模型调用门禁（未登录 / 未配置模型），属于正常引导而不是采集故障。 */
+  modelFailure: boolean;
+  needsSignIn: boolean;
+  needsModelSetup: boolean;
   /** 来自 worklet 的 0..1 输入电平，供后续波形展示使用。 */
   level: number;
   toggle: () => void;
@@ -57,7 +62,10 @@ export interface InterviewMicrophoneHandle {
 }
 
 type MicrophonePatch = Partial<
-  Pick<InterviewMicrophoneHandle, "active" | "starting" | "error" | "level">
+  Pick<
+    InterviewMicrophoneHandle,
+    "active" | "starting" | "error" | "level" | "modelFailure" | "needsSignIn" | "needsModelSetup"
+  >
 >;
 
 /** 只处理 candidate（麦克风）一路；面试官声音采集不在本项目范围。 */
@@ -68,6 +76,9 @@ export function useInterviewMicrophone(
   const [starting, setStarting] = useState(false);
   const [active, setActive] = useState(false);
   const [error, setError] = useState<string>();
+  const [modelFailure, setModelFailure] = useState(false);
+  const [needsSignIn, setNeedsSignIn] = useState(false);
+  const [needsModelSetup, setNeedsModelSetup] = useState(false);
   const [level, setLevel] = useState(0);
   const runRef = useRef<CaptureRun | undefined>(undefined);
   const mountedRef = useRef(true);
@@ -78,6 +89,9 @@ export function useInterviewMicrophone(
     if (patch.active !== undefined) setActive(patch.active);
     if (patch.error !== undefined) setError(patch.error);
     if (patch.level !== undefined) setLevel(patch.level);
+    if (patch.modelFailure !== undefined) setModelFailure(patch.modelFailure);
+    if (patch.needsSignIn !== undefined) setNeedsSignIn(patch.needsSignIn);
+    if (patch.needsModelSetup !== undefined) setNeedsModelSetup(patch.needsModelSetup);
   }, []);
 
   const cleanup = useCallback(async (run: CaptureRun) => {
@@ -108,14 +122,33 @@ export function useInterviewMicrophone(
   );
 
   const fail = useCallback(
-    async (run: CaptureRun, reason?: unknown) => {
+    async (run: CaptureRun, reason?: unknown, kind: "model" | "capture" = "capture") => {
       if (run.cancelled) return;
       run.cancelled = true;
       await cleanup(run);
       await failAgent(run);
       if (runRef.current === run) {
         runRef.current = undefined;
-        publish({ starting: false, active: false, error: captureErrorMessage(reason) });
+        if (kind === "model") {
+          const failure = toUserFacingFailure(reason, "无法开始语音输入");
+          publish({
+            starting: false,
+            active: false,
+            error: failure.message,
+            modelFailure: true,
+            needsSignIn: failure.needsSignIn,
+            needsModelSetup: failure.needsModelSetup,
+          });
+        } else {
+          publish({
+            starting: false,
+            active: false,
+            error: captureErrorMessage(reason),
+            modelFailure: false,
+            needsSignIn: false,
+            needsModelSetup: false,
+          });
+        }
       }
     },
     [cleanup, failAgent, publish],
@@ -198,11 +231,25 @@ export function useInterviewMicrophone(
       !platform.failInterviewCapture ||
       !platform.stopInterview
     ) {
-      publish({ error: "当前版本不支持语音输入", starting: false, active: false });
+      publish({
+        error: "当前版本不支持语音输入",
+        starting: false,
+        active: false,
+        modelFailure: false,
+        needsSignIn: false,
+        needsModelSetup: false,
+      });
       return;
     }
     if (!navigator.mediaDevices?.getUserMedia || typeof AudioContext === "undefined") {
-      publish({ error: "当前系统不支持语音输入", starting: false, active: false });
+      publish({
+        error: "当前系统不支持语音输入",
+        starting: false,
+        active: false,
+        modelFailure: false,
+        needsSignIn: false,
+        needsModelSetup: false,
+      });
       return;
     }
 
@@ -212,7 +259,15 @@ export function useInterviewMicrophone(
       lastCreditAt: Date.now(),
     };
     runRef.current = run;
-    publish({ starting: true, active: false, error: undefined, level: 0 });
+    publish({
+      starting: true,
+      active: false,
+      error: undefined,
+      level: 0,
+      modelFailure: false,
+      needsSignIn: false,
+      needsModelSetup: false,
+    });
 
     try {
       // 必须在用户手势内同时发起会话与麦克风申请：主进程只在 starting 态放开媒体权限。
@@ -225,9 +280,16 @@ export function useInterviewMicrophone(
         run.sessionPromise,
         streamPromise,
       ]);
-      if (sessionResult.status === "rejected") throw sessionResult.reason;
+      // 模型门禁在 startInterview：未登录/未配置模型是正常引导，不当成采集故障。
+      if (sessionResult.status === "rejected") {
+        await fail(run, sessionResult.reason, "model");
+        return;
+      }
       run.sessionId = sessionResult.value.sessionId;
-      if (streamResult.status === "rejected") throw streamResult.reason;
+      if (streamResult.status === "rejected") {
+        await fail(run, streamResult.reason, "capture");
+        return;
+      }
       run.stream = streamResult.value;
       if (run.cancelled || runRef.current !== run) {
         await cleanup(run);
@@ -325,7 +387,17 @@ export function useInterviewMicrophone(
     else void start();
   }, [start, stop]);
 
-  return { active, starting, error, level, toggle, stop };
+  return {
+    active,
+    starting,
+    error,
+    modelFailure,
+    needsSignIn,
+    needsModelSetup,
+    level,
+    toggle,
+    stop,
+  };
 }
 
 function captureErrorMessage(error: unknown): string {
@@ -334,7 +406,7 @@ function captureErrorMessage(error: unknown): string {
       return "麦克风权限被拒绝或已取消，请检查 Windows 麦克风隐私设置";
     if (error.name === "NotFoundError") return "未找到麦克风设备";
     if (error.name === "NotReadableError") return "麦克风暂时无法读取，可能正被其它程序占用";
-    return error.message || "语音输入失败";
   }
-  return "语音输入失败";
+  // 非设备类失败也可能是 IPC 抛上来的，统一剥外壳，不再把调试文本给用户。
+  return toUserFacingFailure(error, "语音输入失败").message;
 }

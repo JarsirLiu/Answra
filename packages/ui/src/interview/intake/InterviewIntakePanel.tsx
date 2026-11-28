@@ -16,6 +16,8 @@ interface InterviewIntakePanelProps {
   /** 用户显式进入演练；切换不由模型解析自然语言决定。 */
   onStartRehearsal: () => Promise<void>;
   onReopenOnboarding: () => Promise<void>;
+  /** 未登录/未配置模型时给出真实的配置入口，与登录按钮并列。 */
+  onConfigureModel?: () => void;
   /** 引导状态读写失败；与对话自身的错误互斥展示。 */
   error?: string;
 }
@@ -25,12 +27,19 @@ export function InterviewIntakePanel({
   onClose,
   onStartRehearsal,
   onReopenOnboarding,
+  onConfigureModel,
   error,
 }: InterviewIntakePanelProps) {
   const intake = useInterviewIntake(platform);
   const microphone = useInterviewMicrophone(platform, ActiveInterviewIntakeConversationId);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [starting, setStarting] = useState(false);
+  // 语音启动的门禁失败优先于会话里残留的错误，两者都走同一条「文案 + 动作」呈现。
+  const visibleError = microphone.error ?? intake.error ?? error;
+  const needsSignIn = microphone.modelFailure ? microphone.needsSignIn : intake.needsSignIn;
+  const needsModelSetup = microphone.modelFailure
+    ? microphone.needsModelSetup
+    : intake.needsModelSetup;
 
   async function startRehearsal(): Promise<void> {
     if (starting) return;
@@ -57,7 +66,7 @@ export function InterviewIntakePanel({
         size="sm"
         variant="quiet"
       />
-      {intake.error && intake.messages.length === 0 ? (
+      {intake.error && intake.messages.length === 0 && !needsSignIn && !needsModelSetup ? (
         <SurfaceButton onClick={intake.retryOpen} variant="quiet">
           重试
         </SurfaceButton>
@@ -85,7 +94,7 @@ export function InterviewIntakePanel({
       attachments={intake.attachments}
       bridge={platform}
       draft={intake.draft}
-      error={microphone.error ?? intake.error ?? error}
+      error={visibleError}
       fileInputRef={fileInputRef}
       headerAction={headerAction}
       inputLabel="输入消息"
@@ -96,6 +105,8 @@ export function InterviewIntakePanel({
       onAttachmentRemove={intake.removeAttachment}
       onCancel={intake.cancel}
       onClose={onClose}
+      onConfigureModel={needsSignIn || needsModelSetup ? onConfigureModel : undefined}
+      onSignIn={needsSignIn ? () => void intake.signIn() : undefined}
       onDraftChange={intake.setDraft}
       onSend={() => {
         void intake.send().catch(() => undefined);

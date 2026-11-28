@@ -4,6 +4,7 @@ import {
   type ConversationModelSettings,
   type ConversationModelSettingsView,
   type FeatureId,
+  MODEL_REQUIRED_NOTICE,
 } from "@answra/shared";
 import { type StoredModelSettings, toView, validateModelSettings } from "./modelSettings";
 
@@ -99,7 +100,7 @@ export class ModelRouter {
     const view = this.getView();
     const answerProviderOptions = this.deps.store.read().answerProviderOptions;
     if (view.source === "local") {
-      if (!view.configured) throw new Error("请先在设置 → 模型中配置本地模型服务");
+      if (!view.configured) throw new Error(MODEL_REQUIRED_NOTICE);
       return {
         config: withAnswerProviderOptions(
           {

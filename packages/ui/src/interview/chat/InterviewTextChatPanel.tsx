@@ -99,24 +99,28 @@ export function InterviewTextChatPanel({
     </div>
   );
 
-  const notice =
-    microphone.error || tts.failure ? (
-      <div className="interview-tts-notice" role="status">
-        <span>{microphone.error ?? tts.failure}</span>
-        {tts.failure ? (
-          <SurfaceButton onClick={tts.dismissFailure} size="sm" variant="quiet">
-            知道了
-          </SurfaceButton>
-        ) : null}
-      </div>
-    ) : undefined;
+  // 语音启动的门禁失败是最近一次用户动作的结果，优先于文本会话里残留的错误。
+  const visibleError = microphone.error ?? chat.error;
+  const needsSignIn = microphone.modelFailure ? microphone.needsSignIn : chat.needsSignIn;
+  const needsModelSetup = microphone.modelFailure
+    ? microphone.needsModelSetup
+    : chat.needsModelSetup;
+
+  const notice = tts.failure ? (
+    <div className="interview-tts-notice" role="status">
+      <span>{tts.failure}</span>
+      <SurfaceButton onClick={tts.dismissFailure} size="sm" variant="quiet">
+        知道了
+      </SurfaceButton>
+    </div>
+  ) : undefined;
 
   return (
     <ChatPanel
       attachments={[]}
       bridge={platform}
       draft={chat.draft}
-      error={chat.error}
+      error={visibleError}
       fileInputRef={fileInputRef}
       headerAction={headerAction}
       inputLabel="输入消息"
@@ -133,8 +137,8 @@ export function InterviewTextChatPanel({
       onAttachmentRemove={() => undefined}
       onCancel={chat.cancel}
       onClose={onClose}
-      onSignIn={chat.needsSignIn ? () => void chat.signIn() : undefined}
-      onConfigureModel={chat.needsSignIn ? onConfigureModel : undefined}
+      onSignIn={needsSignIn ? () => void chat.signIn() : undefined}
+      onConfigureModel={needsSignIn || needsModelSetup ? onConfigureModel : undefined}
       onDraftChange={chat.setDraft}
       onSend={() => {
         void chat.send().catch(() => undefined);

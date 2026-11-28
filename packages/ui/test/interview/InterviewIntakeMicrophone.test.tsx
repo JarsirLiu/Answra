@@ -1,3 +1,4 @@
+import { AUTH_REQUIRED_NOTICE } from "@answra/shared";
 import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { InterviewIntakePanel } from "../../src/interview/intake/InterviewIntakePanel";
@@ -9,6 +10,9 @@ const mic = vi.hoisted(() => ({
   active: false,
   starting: false,
   error: undefined as string | undefined,
+  modelFailure: false,
+  needsSignIn: false,
+  needsModelSetup: false,
   level: 0,
 }));
 
@@ -17,6 +21,9 @@ vi.mock("../../src/interview/voice/useInterviewMicrophone", () => ({
     active: mic.active,
     starting: mic.starting,
     error: mic.error,
+    modelFailure: mic.modelFailure,
+    needsSignIn: mic.needsSignIn,
+    needsModelSetup: mic.needsModelSetup,
     level: mic.level,
     toggle: mic.toggle,
     stop: mic.stop,
@@ -24,15 +31,21 @@ vi.mock("../../src/interview/voice/useInterviewMicrophone", () => ({
 }));
 
 function renderPanel(onStartRehearsal = vi.fn(async () => undefined)) {
+  const bridge = {
+    ...createConversationBridge(),
+    loginAccount: vi.fn(async () => ({ opened: true })),
+  };
+  const onConfigureModel = vi.fn();
   render(
     <InterviewIntakePanel
       onClose={() => undefined}
+      onConfigureModel={onConfigureModel}
       onReopenOnboarding={vi.fn(async () => undefined)}
       onStartRehearsal={onStartRehearsal}
-      platform={createConversationBridge()}
+      platform={bridge}
     />,
   );
-  return onStartRehearsal;
+  return { onStartRehearsal, bridge, onConfigureModel };
 }
 
 describe("interview intake microphone", () => {
@@ -41,6 +54,9 @@ describe("interview intake microphone", () => {
     mic.active = false;
     mic.starting = false;
     mic.error = undefined;
+    mic.modelFailure = false;
+    mic.needsSignIn = false;
+    mic.needsModelSetup = false;
     mic.level = 0;
     mic.toggle.mockReset();
     mic.stop.mockReset().mockResolvedValue(undefined);
@@ -76,7 +92,7 @@ describe("interview intake microphone", () => {
     mic.stop.mockImplementation(async () => {
       order.push("stop");
     });
-    const onStartRehearsal = renderPanel(
+    const { onStartRehearsal } = renderPanel(
       vi.fn(async () => {
         order.push("rehearsal");
       }),
@@ -87,5 +103,20 @@ describe("interview intake microphone", () => {
 
     await waitFor(() => expect(order).toEqual(["stop", "rehearsal"]));
     expect(onStartRehearsal).toHaveBeenCalledOnce();
+  });
+
+  it("offers login and model setup instead of an IPC error when voice needs auth", async () => {
+    mic.error = AUTH_REQUIRED_NOTICE;
+    mic.modelFailure = true;
+    mic.needsSignIn = true;
+    const { bridge, onConfigureModel } = renderPanel();
+
+    expect(await screen.findByText(AUTH_REQUIRED_NOTICE)).toBeInTheDocument();
+    expect(screen.queryByText(/Error invoking remote method/u)).not.toBeInTheDocument();
+    screen.getByRole("button", { name: "去登录" }).click();
+    screen.getByRole("button", { name: "配置本地模型" }).click();
+
+    expect(bridge.loginAccount).toHaveBeenCalledOnce();
+    expect(onConfigureModel).toHaveBeenCalledOnce();
   });
 });
